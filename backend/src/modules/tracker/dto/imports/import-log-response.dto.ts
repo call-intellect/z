@@ -1,9 +1,3 @@
-/**
- * Response DTO для ImportLog (Wave 3 / Tracker Phase 5).
- *
- * Сериализуется как обычно: даты → ISO; errors / paramsJson / unmatchedJson
- * — пробрасываем как unknown (JSON-blob).
- */
 export interface ImportLogResponseDto {
   id: string;
   tenantId: string;
@@ -28,7 +22,6 @@ export interface ListImportLogsResponseDto {
   limit: number;
 }
 
-/** Запись об ошибке внутри ImportLog.errors. */
 export interface ImportErrorEntry {
   stage: string;
   externalId?: string | null;

@@ -10,36 +10,15 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
-import type {
-  MyInboxCountDto,
-  MyInboxResponseDto,
-} from '../dto/issues/issue-response.dto';
-import {
-  MyInboxQuerySchema,
-  type MyInboxQuery,
-} from '../dto/issues/my-inbox-query.dto';
+import type { MyInboxCountDto, MyInboxResponseDto } from '../dto/issues/issue-response.dto';
+import { MyInboxQuerySchema, type MyInboxQuery } from '../dto/issues/my-inbox-query.dto';
 import { IssuesService } from '../services/issues.service';
 
-/**
- * REST `/api/v1/me/inbox` — личный инбокс текущего пользователя:
- * задачи, в которых он assignee, во ВСЕХ проектах организации.
- *
- * Отдельный контроллер (не часть IssuesController), потому что:
- *   1. путь не привязан к `:projectId` — это глобальный список.
- *   2. cursor-пагинация (а не page/limit как у `/projects/:id/issues`).
- *   3. семантически другой потребитель: «мой рабочий день», не «таблица задач проекта».
- *
- * RBAC: `issue:read` на уровне tenant'а (любой member видит свой собственный список).
- * Frontend Wave 2: хук `useMyInbox` (`frontend/src/hooks/tracker/useMyInbox.ts`).
- */
 @ApiTags('tracker / me')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -74,15 +53,6 @@ export class MeInboxController {
     return this.svc.findMyInbox(t, user.id, query);
   }
 
-  /**
-   * Wave 2 polish T6-6a — счётчик задач в моём инбоксе для бейджа в
-   * `TrackerBottomNav`. Чем легче запрос — тем меньше нагрузка при каждом
-   * фокусе вкладки (SWR revalidateOnFocus). Возвращаем сразу пару
-   * total/unread, чтобы фронт не делал второй запрос.
-   *
-   * До T6-6a фронт делал `GET /me/inbox?limit=1` и видел только «есть/нет»;
-   * теперь backend отдаёт точное число.
-   */
   @Get('me/inbox/count')
   @ApiOperation({
     summary: 'Счётчик задач в моём инбоксе (total + unread)',
@@ -106,8 +76,6 @@ export class MeInboxController {
     await this.requireRead(user.id, t);
     return this.svc.countMyInbox(t, user.id);
   }
-
-  // ── helpers ──
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

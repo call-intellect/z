@@ -13,18 +13,10 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -43,18 +35,6 @@ import {
 import { TablePropertiesService } from '../services/table-properties.service';
 import { TablesService } from '../services/tables.service';
 
-/**
- * Smart Tables — REST CRUD колонок (`TableProperty`).
- *
- *   GET    /api/v1/tables/:tableId/properties                — список (по order)
- *   POST   /api/v1/tables/:tableId/properties                — создать колонку
- *   PATCH  /api/v1/tables/:tableId/properties/:propertyId    — обновить
- *   POST   /api/v1/tables/:tableId/properties/:propertyId/reorder — перенести
- *   DELETE /api/v1/tables/:tableId/properties/:propertyId    — удалить
- *
- * RBAC: тот же ресурс `table` (колонки — атрибут таблицы; отдельного
- * RBAC-ресурса не плодим).
- */
 @ApiTags('tables')
 @ApiBearerAuth()
 @Controller('api/v1/tables/:tableId/properties')
@@ -158,8 +138,6 @@ export class TablePropertiesController {
     return this.properties.delete({ tenantId: t, propertyId });
   }
 
-  // ─────────────────────────── helpers ────────────────────────────────────
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({
@@ -185,12 +163,7 @@ export class TablePropertiesController {
     tenantId: string,
     ownerUserId?: string,
   ): Promise<void> {
-    const ok = await this.rbac.canWrite(
-      userId,
-      tenantId,
-      'table',
-      ownerUserId ?? null,
-    );
+    const ok = await this.rbac.canWrite(userId, tenantId, 'table', ownerUserId ?? null);
     if (!ok) {
       throw new ForbiddenException({
         ok: false,

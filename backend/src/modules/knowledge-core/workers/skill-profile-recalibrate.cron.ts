@@ -5,26 +5,12 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * SBA γ-1 — SkillProfileRecalibrateCron.
- *
- * Раз в сутки (default '0 5 * * *') проходит все active SkillProfile и
- * применяет decay к traits:
- *   - traits с lastConfirmedAt < now - SKILL_DECAY_MONTHS → confidence↓
- *     (high → medium → low).
- *   - traits с lastConfirmedAt < now - SKILL_ARCHIVE_MONTHS → status='archived'.
- *
- * Также обновляет gauge skill_profiles_active_total + наблюдение
- * skill_traits_per_profile.
- *
- * NB: расписание читается из cfg.skill.recalibrateCron — но `@Cron` требует
- * литерала. Используется дефолтное `0 5 * * *`. Для runtime-настройки в
- * следующей фазе можно вынести в SchedulerRegistry.
- */
 @Injectable()
 export class SkillProfileRecalibrateCron {
   private readonly logger = new Logger(SkillProfileRecalibrateCron.name);
   private static readonly MAX_PROFILES_PER_SWEEP = 500;
+  private static readonly PROFILE_PAGE_SIZE = 200;
+  private static readonly MAX_PROFILE_PAGES = 50;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -37,10 +23,7 @@ export class SkillProfileRecalibrateCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runOnce();
-      this.logger.log(
-        summary,
-        'skill-profile-recalibrate.cron: проход завершён',
-      );
+      this.logger.debug(summary, 'skill-profile-recalibrate.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -49,11 +32,11 @@ export class SkillProfileRecalibrateCron {
     }
   }
 
-  /** Public — для возможного админ-эндпоинта / ручного запуска. */
   async runOnce(): Promise<{
     profilesProcessed: number;
     traitsArchived: number;
     traitsDecayed: number;
+    pendingArchived: number;
     activeProfiles: number;
   }> {
     const decayCutoff = new Date(
@@ -63,75 +46,101 @@ export class SkillProfileRecalibrateCron {
       Date.now() - this.cfg.skill.archiveMonths * 30 * 24 * 60 * 60 * 1000,
     );
 
-    const profiles = await this.prisma.skillProfile.findMany({
-      where: { status: 'active' },
-      select: { id: true },
-      take: SkillProfileRecalibrateCron.MAX_PROFILES_PER_SWEEP,
-    });
-
     let traitsArchived = 0;
     let traitsDecayed = 0;
-    for (const p of profiles) {
-      try {
-        const a = await this.prisma.skillTrait.updateMany({
-          where: {
-            profileId: p.id,
-            status: 'active',
-            lastConfirmedAt: { lt: archiveCutoff },
-          },
-          data: { status: 'archived' },
-        });
-        traitsArchived += a.count;
+    let pendingArchived = 0;
+    let profilesProcessed = 0;
 
-        // Decay на ОДНУ ступень за проход.
-        // порядок: medium→low ДО high→medium — иначе high упадёт в low за один
-        // проход (свежеставший из high `medium` иначе попал бы во второй шаг).
-        const d1 = await this.prisma.skillTrait.updateMany({
-          where: {
-            profileId: p.id,
-            status: 'active',
-            confidence: 'medium',
-            lastConfirmedAt: { lt: decayCutoff },
-          },
-          data: { confidence: 'low' },
-        });
-        const d2 = await this.prisma.skillTrait.updateMany({
-          where: {
-            profileId: p.id,
-            status: 'active',
-            confidence: 'high',
-            lastConfirmedAt: { lt: decayCutoff },
-          },
-          data: { confidence: 'medium' },
-        });
-        traitsDecayed += d1.count + d2.count;
+    let cursorId: string | null = null;
+    const hardCap = SkillProfileRecalibrateCron.MAX_PROFILES_PER_SWEEP;
+    for (
+      let page = 0;
+      page < SkillProfileRecalibrateCron.MAX_PROFILE_PAGES && profilesProcessed < hardCap;
+      page++
+    ) {
+      const remaining = hardCap - profilesProcessed;
+      const pageSize = Math.min(SkillProfileRecalibrateCron.PROFILE_PAGE_SIZE, remaining);
+      const profiles: Array<{ id: string }> = await this.prisma.skillProfile.findMany({
+        where: { status: 'active' },
+        select: { id: true },
+        orderBy: [{ lastBuildAt: { sort: 'asc', nulls: 'first' } }, { id: 'asc' }],
+        take: pageSize,
+        ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+      });
+      if (profiles.length === 0) break;
+      cursorId = profiles[profiles.length - 1]!.id;
 
-        // Histogram observation — сколько активных traits в профиле.
-        const activeCount = await this.prisma.skillTrait.count({
-          where: { profileId: p.id, status: 'active' },
-        });
-        this.metrics.observeSkillTraitsPerProfile(activeCount);
-      } catch (err) {
-        this.logger.warn(
-          {
-            profileId: p.id,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          'skill-profile-recalibrate.cron: ошибка обработки профиля — skip',
-        );
+      for (const p of profiles) {
+        profilesProcessed++;
+        try {
+          const a = await this.prisma.skillTrait.updateMany({
+            where: {
+              profileId: p.id,
+              status: 'active',
+              lastConfirmedAt: { lt: archiveCutoff },
+            },
+            data: { status: 'archived' },
+          });
+          traitsArchived += a.count;
+
+          const pa = await this.prisma.skillTrait.updateMany({
+            where: {
+              profileId: p.id,
+              status: 'pending_verification',
+              createdAt: { lt: archiveCutoff },
+            },
+            data: { status: 'archived' },
+          });
+          pendingArchived += pa.count;
+
+          const d1 = await this.prisma.skillTrait.updateMany({
+            where: {
+              profileId: p.id,
+              status: 'active',
+              confidence: 'medium',
+              lastConfirmedAt: { lt: decayCutoff },
+            },
+            data: { confidence: 'low' },
+          });
+          const d2 = await this.prisma.skillTrait.updateMany({
+            where: {
+              profileId: p.id,
+              status: 'active',
+              confidence: 'high',
+              lastConfirmedAt: { lt: decayCutoff },
+            },
+            data: { confidence: 'medium' },
+          });
+          traitsDecayed += d1.count + d2.count;
+
+          const activeCount = await this.prisma.skillTrait.count({
+            where: { profileId: p.id, status: 'active' },
+          });
+          this.metrics.observeSkillTraitsPerProfile(activeCount);
+        } catch (err) {
+          this.logger.warn(
+            {
+              profileId: p.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'skill-profile-recalibrate.cron: ошибка обработки профиля — skip',
+          );
+        }
       }
+
+      if (profiles.length < pageSize) break;
     }
 
-    // Обновить gauge активных профилей.
     const activeProfiles = await this.prisma.skillProfile.count({
       where: { status: 'active' },
     });
     this.metrics.setSkillProfilesActiveTotal(activeProfiles);
 
     return {
-      profilesProcessed: profiles.length,
+      profilesProcessed,
       traitsArchived,
       traitsDecayed,
+      pendingArchived,
       activeProfiles,
     };
   }

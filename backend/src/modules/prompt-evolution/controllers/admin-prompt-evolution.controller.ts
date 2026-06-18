@@ -44,23 +44,6 @@ import {
   type RollbackPromptBody,
 } from '../dto/prompt-evolution.dto';
 
-/**
- * Agents v2 Фаза B1 (2026-05-30) — Admin REST API для AutoRule.
- *
- *   GET    /api/v1/admin/prompt-evolution/rules
- *   PATCH  /api/v1/admin/prompt-evolution/rules/:id/archive    body: {archivedReason}
- *   PATCH  /api/v1/admin/prompt-evolution/rules/:id/override   body: {}
- *   POST   /api/v1/admin/prompt-evolution/rules/:id/copy-to-manual body: {}
- *
- * RBAC:
- *   - `CookieAuthGuard + TenantGuard + OrgAdminGuard` — Org owner/admin.
- *   - Видит per-tenant rules своего Org + global (tenantId=null).
- *   - Не может архивировать/overrid'ить чужие per-tenant правила —
- *     контроллер проверяет ownership через `rule.tenantId === currentTenantId`.
- *
- * Override sticky: AutoRule extractor больше не предложит правило с
- * аналогичной формулировкой (KNN ≥ 0.90) — см. `AutoRuleExtractorService`.
- */
 @ApiTags('admin-prompt-evolution')
 @Controller('api/v1/admin/prompt-evolution')
 @UseGuards(CookieAuthGuard, TenantGuard, OrgAdminGuard)
@@ -79,8 +62,6 @@ export class AdminPromptEvolutionController {
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<ListPromptRulesResponse> {
     const t = tenantId ?? null;
-    // Видим: per-tenant своей Org + global, если фильтра нет.
-    // Если `q.tenantId === '__mine'` — только per-tenant. Если '__global' — только global.
     const where: Record<string, unknown> = {};
     if (q.promptKey) where.promptKey = q.promptKey;
     if (q.status) where.status = q.status;
@@ -93,7 +74,6 @@ export class AdminPromptEvolutionController {
     } else if (q.tenantId) {
       where.tenantId = q.tenantId;
     } else {
-      // По умолчанию: per-tenant своей Org + global.
       where.OR = [{ tenantId: null }, ...(t ? [{ tenantId: t }] : [])];
     }
 
@@ -159,7 +139,6 @@ export class AdminPromptEvolutionController {
     const rule = await this.requireOwnedRule(id, tenantId ?? null);
     const created = await this.prisma.promptRule.create({
       data: {
-        // Копия всегда живёт в текущем tenant'е (даже если оригинал global).
         tenantId: tenantId ?? null,
         promptKey: rule.promptKey,
         rule: rule.rule,
@@ -173,16 +152,7 @@ export class AdminPromptEvolutionController {
     return toDto(created);
   }
 
-  /**
-   * Загружает правило и проверяет, что текущий tenant имеет право его править.
-   * Global-правила (tenantId=null) разрешены к override/archive/copy для
-   * любого Org-admin — это решение Фазы B (демократичный feedback).
-   * Per-tenant — только своя Org.
-   */
-  private async requireOwnedRule(
-    id: string,
-    currentTenantId: string | null,
-  ): Promise<PromptRule> {
+  private async requireOwnedRule(id: string, currentTenantId: string | null): Promise<PromptRule> {
     const rule = await this.prisma.promptRule.findUnique({ where: { id } });
     if (!rule) {
       throw new NotFoundException({
@@ -191,7 +161,6 @@ export class AdminPromptEvolutionController {
       });
     }
     if (rule.tenantId !== null && rule.tenantId !== currentTenantId) {
-      // Чужой per-tenant rule — притворяемся, что не существует.
       throw new NotFoundException({
         ok: false,
         error: { code: 'rule_not_found', message: 'Правило не найдено' },
@@ -199,8 +168,6 @@ export class AdminPromptEvolutionController {
     }
     return rule;
   }
-
-  // ─────────────────────── Agents v2 Фаза C2 — GEPA ──────────────────
 
   @Get('candidates')
   @ApiOperation({ summary: 'Список PromptCandidate (Pareto frontier + testing + промоутенных)' })
@@ -220,7 +187,6 @@ export class AdminPromptEvolutionController {
     } else if (q.tenantId) {
       where.tenantId = q.tenantId;
     } else {
-      // По умолчанию — global + per-tenant своей Org.
       where.OR = [{ tenantId: null }, ...(t ? [{ tenantId: t }] : [])];
     }
 
@@ -283,11 +249,7 @@ export class AdminPromptEvolutionController {
     @Body(new ZodValidationPipe(RollbackPromptBodySchema)) body: RollbackPromptBody,
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<{ ok: true; affected: number }> {
-    // tenantId резолвим из body (если явно null → global) или из current Org.
-    const targetTenant =
-      body.tenantId === undefined ? tenantId ?? null : body.tenantId;
-    // global-rollback требует super-admin; в Фазе C2 пока не реализован
-    // отдельный гард — оставляем доступ для OrgAdmin (как и lock).
+    const targetTenant = body.tenantId === undefined ? (tenantId ?? null) : body.tenantId;
     const routes = await this.prisma.llmTaskRoute.findMany({
       where: {
         taskType: promptKey,
@@ -301,14 +263,10 @@ export class AdminPromptEvolutionController {
         where: { id: r.id },
         data: {
           promptOverride: null,
-          // Audit-метку оставляем, чтобы видеть «когда-то был auto-promote»;
-          // если админ хочет совсем чисто — может править через UI моделей.
         },
       });
       affected += 1;
     }
-    // Также найдём последний `promoted` candidate и пометим как rejected
-    // (чтобы он больше не маршрутизировался).
     const lastPromoted = await this.prisma.promptCandidate.findFirst({
       where: {
         promptKey,
@@ -340,8 +298,7 @@ export class AdminPromptEvolutionController {
     @Body(new ZodValidationPipe(LockEvolutionBodySchema)) body: LockEvolutionBody,
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<{ ok: true; affected: number; enabled: boolean }> {
-    const targetTenant =
-      body.tenantId === undefined ? tenantId ?? null : body.tenantId;
+    const targetTenant = body.tenantId === undefined ? (tenantId ?? null) : body.tenantId;
     const routes = await this.prisma.llmTaskRoute.findMany({
       where: {
         taskType: promptKey,
@@ -370,9 +327,7 @@ function toDto(r: PromptRule): PromptRuleDto {
     source: r.source as PromptRuleDto['source'],
     status: r.status as PromptRuleDto['status'],
     confidence: r.confidence,
-    examples: Array.isArray(r.examples)
-      ? (r.examples as unknown as PromptRuleDto['examples'])
-      : [],
+    examples: Array.isArray(r.examples) ? (r.examples as unknown as PromptRuleDto['examples']) : [],
     shadowMetrics:
       r.shadowMetrics && typeof r.shadowMetrics === 'object'
         ? (r.shadowMetrics as PromptRuleDto['shadowMetrics'])

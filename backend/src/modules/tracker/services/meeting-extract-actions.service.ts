@@ -32,6 +32,7 @@ import { TaskAssigneeResolverService } from '../../knowledge-core/services/task-
 import { computeExpiresAt } from '../../pending-actions/expires-at.util';
 
 import { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
+import { shouldMaterializeTask } from './task-quality-gate.util';
 
 /**
  * Wave 3 / Tracker Phase 3 part B (2026-05-24) — MeetingExtractActionsService.
@@ -331,6 +332,26 @@ export class MeetingExtractActionsService implements OnModuleInit {
         typeof t.confidence === 'number'
           ? new Prisma.Decimal(clampConfidence(t.confidence))
           : null;
+
+      // Ф0 (ТЗ 2026-06-16) — детерминированный гейт качества ПЕРЕД созданием
+      // задачи из AI-источника: не материализуем «мусор» (вопрос/намерение без
+      // ответственного и срока). Чистые правила, без LLM. При сомнении —
+      // пропускаем создание, поток не падает.
+      const gate = shouldMaterializeTask({
+        title,
+        ownerUserId: suggestedAssigneeId,
+        ownerHint: t.suggestedAssigneeHint ?? t.assignee ?? null,
+        dueDate: suggestedDueDate,
+        source: 'meeting',
+      });
+      if (!gate.ok) {
+        skipped++;
+        this.logger.log(
+          { meetingId, reason: gate.reason, title },
+          'meeting-extract-actions: гейт качества не пропустил задачу',
+        );
+        continue;
+      }
 
       const rawContent =
         sourceQuote.length > 0

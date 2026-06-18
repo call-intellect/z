@@ -1,12 +1,3 @@
-/**
- * Фаза A.3 — Integration-тест PromptResolverService с активным PromptExperiment.
- *
- * Покрытие DoD: «PromptResolverService с активным экспериментом возвращает A
- * или B по hash».
- *
- * Не поднимает реальную БД — мокаем PrismaService и PromptExperimentsService.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';

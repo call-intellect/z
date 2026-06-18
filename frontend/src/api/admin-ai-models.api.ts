@@ -1,31 +1,23 @@
-/**
- * Фаза A.4 — API DTO для `/admin/ai-models` (per-agent цепочка моделей).
- * Контракт — `backend/src/modules/admin/ai-models/`.
- *
- * Layered model: ApiDto → DomainModel → UiModel (skill `frontend-rules`).
- * Здесь только Api-уровень. DomainModel — в `src/domain/admin-ai-model.ts`.
- */
+import { apiClient } from "./api-client";
 
-import { apiClient } from './api-client';
-
-export const AI_MODELS_TIERS = ['primary', 'secondary', 'tertiary'] as const;
+export const AI_MODELS_TIERS = ["primary", "secondary", "tertiary"] as const;
 export type AiModelTier = (typeof AI_MODELS_TIERS)[number];
 
 export const AI_MODELS_GROUPS = [
-  'ai-pipeline',
-  'knowledge-core',
-  'competitor-parity',
+  "ai-pipeline",
+  "knowledge-core",
+  "competitor-parity",
 ] as const;
 export type AiModelGroup = (typeof AI_MODELS_GROUPS)[number];
 
 export const AI_MODELS_PROVIDERS = [
-  'anthropic',
-  'minimax',
-  'openai-via-proxy',
-  'deepseek',
-  'ollama',
-  'kie',
-  'grsai',
+  "anthropic",
+  "minimax",
+  "openai-via-proxy",
+  "deepseek",
+  "ollama",
+  "kie",
+  "grsai",
 ] as const;
 export type AiModelProvider = (typeof AI_MODELS_PROVIDERS)[number];
 
@@ -40,7 +32,7 @@ export type ProviderInTierApi = {
 
 export type TaskTypeRouteApi = {
   taskType: string;
-  group: AiModelGroup | 'unknown';
+  group: AiModelGroup | "unknown";
   primary: ProviderInTierApi | null;
   secondary: ProviderInTierApi | null;
   tertiary: ProviderInTierApi | null;
@@ -48,7 +40,7 @@ export type TaskTypeRouteApi = {
 };
 
 export type TaskTypeMetricsApi = {
-  period: '24h' | '7d' | '30d';
+  period: "24h" | "7d" | "30d";
   totals: {
     calls: number;
     successCalls: number;
@@ -91,7 +83,7 @@ export type ModelExperimentApi = {
   variantModel: string;
   variantProvider: string;
   splitPercent: number;
-  status: 'draft' | 'running' | 'stopped' | 'completed';
+  status: "draft" | "running" | "stopped" | "completed";
   startedAt: string | null;
   endsAt: string | null;
   createdById: string;
@@ -129,11 +121,11 @@ export type CreateExperimentRequest = {
 export const adminAiModelsApi = {
   list: (params?: { group?: AiModelGroup; search?: string }) => {
     const search = new URLSearchParams();
-    if (params?.group) search.set('group', params.group);
-    if (params?.search) search.set('search', params.search);
+    if (params?.group) search.set("group", params.group);
+    if (params?.search) search.set("search", params.search);
     const q = search.toString();
     return apiClient.get<{ items: TaskTypeRouteApi[] }>(
-      `/api/v1/admin/ai-models${q ? `?${q}` : ''}`,
+      `/api/v1/admin/ai-models${q ? `?${q}` : ""}`,
     );
   },
 
@@ -166,24 +158,26 @@ export const adminAiModelsApi = {
       `/api/v1/admin/ai-models/${encodeURIComponent(taskType)}/history`,
     ),
 
-  metrics: (taskType: string, period: '24h' | '7d' | '30d' = '7d') =>
+  metrics: (taskType: string, period: "24h" | "7d" | "30d" = "7d") =>
     apiClient.get<TaskTypeMetricsApi>(
       `/api/v1/admin/ai-models/${encodeURIComponent(taskType)}/metrics?period=${period}`,
     ),
 
-  // Эксперименты.
   experimentsList: (params?: { status?: string; taskType?: string }) => {
     const search = new URLSearchParams();
-    if (params?.status) search.set('status', params.status);
-    if (params?.taskType) search.set('taskType', params.taskType);
+    if (params?.status) search.set("status", params.status);
+    if (params?.taskType) search.set("taskType", params.taskType);
     const q = search.toString();
     return apiClient.get<{ items: ModelExperimentApi[] }>(
-      `/api/v1/admin/llm-model-experiments${q ? `?${q}` : ''}`,
+      `/api/v1/admin/llm-model-experiments${q ? `?${q}` : ""}`,
     );
   },
 
   experimentCreate: (body: CreateExperimentRequest) =>
-    apiClient.post<ModelExperimentApi>('/api/v1/admin/llm-model-experiments', body),
+    apiClient.post<ModelExperimentApi>(
+      "/api/v1/admin/llm-model-experiments",
+      body,
+    ),
 
   experimentStart: (id: string) =>
     apiClient.post<{ ok: true }>(
@@ -202,5 +196,7 @@ export const adminAiModelsApi = {
       experiment: ModelExperimentApi;
       control: Record<string, number | string>;
       variant: Record<string, number | string>;
-    }>(`/api/v1/admin/llm-model-experiments/${encodeURIComponent(id)}/analytics`),
+    }>(
+      `/api/v1/admin/llm-model-experiments/${encodeURIComponent(id)}/analytics`,
+    ),
 };

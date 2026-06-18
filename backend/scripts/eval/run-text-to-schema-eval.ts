@@ -1,31 +1,3 @@
-/**
- * Eval Text-to-Schema (Smart-tables auto-creation, Фаза 1.5) — РЕАЛЬНЫЙ прогон.
- *
- * БЛОКЕР для включения feature-flag `feature.tables_text_to_schema`: прогоняет
- * 100+ русских NL-запросов из `backend/test/eval/text-to-schema/fixtures/*.json`
- * через ПРОДАКШЕН-путь `TableAgentService.inferSchemaFromText` (3 LLM-pass'а:
- * DRAFT → ARCHITECT → ENTITY-CHECK) и сравнивает с golden-схемами по метрикам
- * из `test/eval/text-to-schema/metrics.ts`.
- *
- * ⚠️ ТРЕБУЕТ LLM-ПРОКСИ (proxy.agent-lia.ru) + поднятый Nest-контекст. В среде
- * разработки прокси НЕТ — здесь скрипт не прогоняется. Метрики и валидность
- * фикстур покрыты OFFLINE unit-тестами:
- *   bunx vitest run test/eval/text-to-schema/metrics.spec.ts
- *
- * Запуск на проде (всё в docker-compose):
- *   docker compose exec backend bun run scripts/eval/run-text-to-schema-eval.ts
- *   # с явным тест-tenant:
- *   docker compose exec -e EVAL_TENANT_ID=<orgId> backend \
- *     bun run scripts/eval/run-text-to-schema-eval.ts
- *
- * Tenant: из аргумента `--tenant <id>` или ENV `EVAL_TENANT_ID`. Если не задан —
- * берём первую не-удалённую Org (для eval годится любой tenant: доступные
- * entitySync-типы сейчас одинаковы для всех — все 4).
- *
- * Пороги PASS (см. ТЗ `plans/tz/2026-06-02-smart-tables-auto-creation.md`, Ф1.5):
- *   schema-F1 ≥ 0.85 И hallucination-rate ≤ 0.05.
- * При FAIL — exit code 1 (чтобы CI/оператор не включил флаг).
- */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
@@ -47,10 +19,7 @@ import {
   type EvalSchema,
 } from '../../test/eval/text-to-schema/metrics';
 
-// SCRIPT_DIR с поправкой на Windows-пути (file:///C:/...).
-const SCRIPT_DIR = path
-  .dirname(new URL(import.meta.url).pathname)
-  .replace(/^\/([A-Za-z]):/, '$1:');
+const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
 const FIXTURES_DIR = path.resolve(SCRIPT_DIR, '../../test/eval/text-to-schema/fixtures');
 const REPORTS_DIR = path.resolve(SCRIPT_DIR, '../../test/eval/text-to-schema/reports');
 
@@ -67,7 +36,6 @@ interface Fixture {
   golden: GoldenSchema;
 }
 
-/** Приводит InferredTableSchema (продакшен-результат) к EvalSchema для метрик. */
 function toEvalSchema(s: InferredTableSchema): EvalSchema {
   return {
     name: s.name,
@@ -81,14 +49,10 @@ function toEvalSchema(s: InferredTableSchema): EvalSchema {
 }
 
 async function loadFixtures(): Promise<Fixture[]> {
-  const files = (await fs.readdir(FIXTURES_DIR))
-    .filter((f) => f.endsWith('.json'))
-    .sort();
+  const files = (await fs.readdir(FIXTURES_DIR)).filter((f) => f.endsWith('.json')).sort();
   const out: Fixture[] = [];
   for (const file of files) {
-    const arr = JSON.parse(
-      await fs.readFile(path.join(FIXTURES_DIR, file), 'utf-8'),
-    ) as Fixture[];
+    const arr = JSON.parse(await fs.readFile(path.join(FIXTURES_DIR, file), 'utf-8')) as Fixture[];
     out.push(...arr);
   }
   return out;
@@ -104,10 +68,7 @@ function fmtPct(n: number): string {
   return `${(n * 100).toFixed(1)}%`;
 }
 
-function printBucketTable(
-  title: string,
-  buckets: Record<string, AggregateBucket>,
-): void {
+function printBucketTable(title: string, buckets: Record<string, AggregateBucket>): void {
   console.log(`\n  ${title}:`);
   console.log(
     `    ${'ключ'.padEnd(12)} ${'n'.padStart(3)} ${'F1'.padStart(7)} ${'prec'.padStart(7)} ${'recall'.padStart(7)} ${'type'.padStart(7)} ${'entity'.padStart(7)} ${'halluc'.padStart(7)}`,
@@ -125,23 +86,19 @@ async function main(): Promise<void> {
   const fixtures = await loadFixtures();
   console.log(`  фикстур: ${fixtures.length}`);
   if (fixtures.length < 100) {
-    console.warn(
-      `  ⚠ ожидалось ≥100 фикстур, найдено ${fixtures.length} — набор неполный`,
-    );
+    console.warn(`  ⚠ ожидалось ≥100 фикстур, найдено ${fixtures.length} — набор неполный`);
   }
 
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn'],
   });
 
-  // timestamp для имён отчётов (в скрипте Date — допустимо).
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
   try {
     const prisma = app.get(PrismaService);
     const agent = app.get(TableAgentService);
 
-    // Тест-tenant: arg/ENV или первая не-удалённая Org.
     let tenantId = parseTenantArg();
     if (!tenantId) {
       const org = await prisma.org.findFirst({
@@ -150,9 +107,7 @@ async function main(): Promise<void> {
         orderBy: { createdAt: 'asc' },
       });
       if (!org) {
-        console.error(
-          '✗ Не найдено ни одной Org. Передай --tenant <id> или EVAL_TENANT_ID.',
-        );
+        console.error('✗ Не найдено ни одной Org. Передай --tenant <id> или EVAL_TENANT_ID.');
         process.exit(1);
       }
       tenantId = org.id;
@@ -200,7 +155,6 @@ async function main(): Promise<void> {
         });
         results.push(metrics);
       } else {
-        // Ошибка генерации = худший кейс (F1=0, halluc=0): не теряем его из агрегата.
         const zero: EvalCaseResult = {
           id: fx.id,
           category: fx.category,
@@ -251,7 +205,6 @@ async function main(): Promise<void> {
       `\n  Пороги: F1 ≥ ${THRESHOLDS.schemaF1Min}, hallucination ≤ ${THRESHOLDS.hallucinationRateMax}`,
     );
 
-    // Отчёты JSON + CSV.
     await fs.mkdir(REPORTS_DIR, { recursive: true });
     const jsonPath = path.join(REPORTS_DIR, `result-${timestamp}.json`);
     await fs.writeFile(
@@ -297,9 +250,7 @@ async function main(): Promise<void> {
     console.log(`\n  Отчёты:\n    ${jsonPath}\n    ${csvPath}`);
 
     if (verdict.pass) {
-      console.log(
-        '\n  ✓ PASS — пороги выдержаны, feature-flag можно включать.\n',
-      );
+      console.log('\n  ✓ PASS — пороги выдержаны, feature-flag можно включать.\n');
     } else {
       console.log('\n  ✗ FAIL:');
       for (const r of verdict.reasons) console.log(`    - ${r}`);

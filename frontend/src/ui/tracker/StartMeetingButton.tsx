@@ -1,18 +1,11 @@
-'use client';
+"use client";
 
-/**
- * StartMeetingButton — запустить LiveKit-встречу по задаче.
- *
- * Backend `POST /issues/:id/start-meeting` создаёт Meeting + host JWT, после
- * чего фронт делает редирект на страницу встречи (`/meetings/:id`).
- */
-
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Video, Loader2 } from 'lucide-react';
-import { Button } from '@/ui/shadcn/button';
-import { issuesApi } from '@/api/tracker/issues.api';
-import { humanizeApiError } from '@/api/api-error';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Video, Loader2 } from "lucide-react";
+import { Button } from "@/ui/shadcn/button";
+import { issuesApi } from "@/api/tracker/issues.api";
+import { humanizeApiError } from "@/api/api-error";
 
 export function StartMeetingButton({
   orgId,
@@ -32,11 +25,11 @@ export function StartMeetingButton({
       const res = await issuesApi.startMeeting(orgId, issueId, {
         inviteUserIds: [],
       });
-      // Если backend вернул meetingUrl — используем его, иначе строим по meetingId.
-      const url = res.meetingUrl || `/meetings/${encodeURIComponent(res.meetingId)}`;
+      const url =
+        res.meetingUrl || `/meetings/${encodeURIComponent(res.meetingId)}`;
       router.push(url);
     } catch (e) {
-      setError(humanizeApiError(e, 'Не удалось запустить встречу'));
+      setError(humanizeApiError(e, "Не удалось запустить встречу"));
     } finally {
       setLoading(false);
     }

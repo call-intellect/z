@@ -1,18 +1,3 @@
-/**
- * Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema, pass 2 ARCHITECT.
- *
- * LLM-промпт `table-architect-pass`. Получает ЧЕРНОВИК схемы (выход pass 1) и
- * проводит рефлексию архитектора данных: убирает дубли колонок, выбирает
- * оптимальные типы из каталога, добавляет очевидно недостающие колонки,
- * гарантирует ровно одну `isPrimary`.
- *
- * Cache-friendly: SYSTEM стабилен, переменные данные в USER (Б10 ТЗ).
- *   - SYSTEM: правила рефлексии (стабильны).
- *   - USER: JSON черновика схемы (переменная часть, в конце).
- *
- * Выход — оптимизированная схема в том же JSON-формате, что и pass 1.
- */
-
 import { withInjectionGuard } from './common';
 
 const ARCHITECT_SYSTEM = withInjectionGuard(
@@ -35,17 +20,13 @@ const ARCHITECT_SYSTEM = withInjectionGuard(
 );
 
 export interface BuildTableArchitectPassPromptArgs {
-  /** JSON-черновик схемы (выход pass 1), сериализуемый объект. */
   draftSchema: unknown;
 }
 
-/**
- * Возвращает `{ system, user }` для pass 2 (ARCHITECT). SYSTEM стабилен,
- * переменный черновик схемы — в конце USER.
- */
-export function buildTableArchitectPassPrompt(
-  args: BuildTableArchitectPassPromptArgs,
-): { system: string; user: string } {
+export function buildTableArchitectPassPrompt(args: BuildTableArchitectPassPromptArgs): {
+  system: string;
+  user: string;
+} {
   const user = [
     'Черновик схемы для улучшения:',
     '```json',

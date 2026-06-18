@@ -1,32 +1,23 @@
-'use client';
+"use client";
 
-import type { ReactNode } from 'react';
-import { BookOpenCheck, MessagesSquare, ThumbsUp } from 'lucide-react';
-import useSWR from 'swr';
+import type { ReactNode } from "react";
+import { BookOpenCheck, MessagesSquare, ThumbsUp } from "lucide-react";
+import useSWR from "swr";
 
-import { chatV2Api } from '@/api/chat-v2.api';
-import { chatUsageStatsFromApi } from '@/domain/chat-usage';
+import { chatV2Api } from "@/api/chat-v2.api";
+import { chatUsageStatsFromApi } from "@/domain/chat-usage";
 import {
   CardTitle,
   CHART,
   GlassCard,
   GRAD,
-} from '@/ui/components/dashboard/modern';
+} from "@/ui/components/dashboard/modern";
 
-/**
- * ТЗ-2 Ф5 — виджет «Память помогла» (мой self-scope). Self-fetch через SWR на
- * `chatV2Api.usageStats({ scope: 'self' })`.
- *
- * Показывает «спросили / ответили / с источником», а процент «помог ли ответ»
- * — ТОЛЬКО когда `helpedRateHidden=false`; иначе «мало оценок». `answeredWith
- * Citation` подписан «с источником» (НЕ «дефлекция»). Современный визуальный
- * язык (стекло + градиентный заголовок), токены `modern/`.
- */
 export function MemoryHelpedMeWidget() {
   const swr = useSWR(
-    ['me-chat-usage-stats', 'self'],
+    ["me-chat-usage-stats", "self"],
     async () =>
-      chatUsageStatsFromApi(await chatV2Api.usageStats({ scope: 'self' })),
+      chatUsageStatsFromApi(await chatV2Api.usageStats({ scope: "self" })),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
@@ -45,7 +36,7 @@ export function MemoryHelpedMeWidget() {
               <div
                 key={i}
                 className="h-20 animate-pulse rounded-2xl"
-                style={{ background: 'var(--surface-inset)' }}
+                style={{ background: "var(--surface-inset)" }}
               />
             ))}
           </div>
@@ -78,7 +69,7 @@ export function MemoryHelpedMeWidget() {
 
             <div
               className="mt-4 flex items-center justify-between rounded-2xl px-4 py-3"
-              style={{ background: 'var(--surface-inset)' }}
+              style={{ background: "var(--surface-inset)" }}
             >
               <span
                 className="inline-flex items-center gap-2 text-sm"
@@ -119,10 +110,13 @@ function Stat({
   label: string;
 }) {
   return (
-    <div className="rounded-2xl p-3" style={{ background: 'var(--surface-inset)' }}>
+    <div
+      className="rounded-2xl p-3"
+      style={{ background: "var(--surface-inset)" }}
+    >
       <div
         className="grid h-8 w-8 place-items-center rounded-lg"
-        style={{ background: 'var(--surface-inset)', color: tone }}
+        style={{ background: "var(--surface-inset)", color: tone }}
       >
         {icon}
       </div>

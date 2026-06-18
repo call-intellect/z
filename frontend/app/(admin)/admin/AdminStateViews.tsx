@@ -1,17 +1,9 @@
-'use client';
+"use client";
 
-import { Loader2, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { Loader2, ShieldAlert, AlertTriangle } from "lucide-react";
 
-import { Button } from '@/ui/shadcn/button';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-
-/**
- * Универсальные UI-состояния для админ-страниц:
- *   - loading
- *   - forbidden (403)
- *   - error (неожиданная)
- *   - empty (с подсказкой)
- */
+import { Button } from "@/ui/shadcn/button";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
 export function AdminLoading({ rows = 5 }: { rows?: number }) {
   return (
@@ -23,7 +15,11 @@ export function AdminLoading({ rows = 5 }: { rows?: number }) {
   );
 }
 
-export function AdminLoadingInline({ label = 'Загружаем…' }: { label?: string }) {
+export function AdminLoadingInline({
+  label = "Загружаем…",
+}: {
+  label?: string;
+}) {
   return (
     <div className="flex items-center gap-2 text-sm text-fg-tertiary">
       <Loader2 size={14} className="animate-spin" /> {label}
@@ -32,8 +28,8 @@ export function AdminLoadingInline({ label = 'Загружаем…' }: { label?
 }
 
 export function AdminForbidden({
-  title = 'Нет прав',
-  description = 'Этот раздел доступен только super_admin. Если уверены, что должны видеть — обратитесь к владельцу Z.',
+  title = "Нет прав",
+  description = "Этот раздел доступен только super_admin. Если уверены, что должны видеть — обратитесь к владельцу Z.",
 }: {
   title?: string;
   description?: string;

@@ -1,9 +1,3 @@
-/**
- * Smoke-тест агента `theme-classify` на DeepSeek-V4-Pro.
- * Промпт встроен в backend/src/modules/knowledge-core/services/theme-classification.service.ts.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-theme-classify.ts
- */
 import {
   client,
   computeCost,
@@ -74,8 +68,18 @@ const TOOL = {
         branch: {
           type: 'string',
           enum: [
-            'strategy', 'clients', 'sales', 'marketing', 'product', 'operations',
-            'team', 'finance', 'technology', 'production', 'partnerships', 'legal',
+            'strategy',
+            'clients',
+            'sales',
+            'marketing',
+            'product',
+            'operations',
+            'team',
+            'finance',
+            'technology',
+            'production',
+            'partnerships',
+            'legal',
             'none',
           ],
         },

@@ -1,33 +1,22 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import {
-  type DailyCheckInApi,
-  myCheckInsApi,
-} from '@/api/my-check-ins.api';
+import { ApiError } from "@/api/api-error";
+import { type DailyCheckInApi, myCheckInsApi } from "@/api/my-check-ins.api";
 import {
   VoiceInputButton,
   appendTranscript,
-} from '@/ui/components/voice/VoiceInputButton';
+} from "@/ui/components/voice/VoiceInputButton";
 
-/**
- * SBA β-8 — `/me/check-ins` (client).
- *
- * - История последних 30 дней (GET /history).
- * - Manual create: kind (morning|evening) + текст плана / сделанного / блокеров
- *   (один из трёх). Backend сделает upsert по unique (person, kind, dateLocal).
- */
 export function MyCheckInsClient() {
   const [items, setItems] = useState<DailyCheckInApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Form state.
-  const [kind, setKind] = useState<'morning' | 'evening'>('morning');
-  const [text, setText] = useState('');
+  const [kind, setKind] = useState<"morning" | "evening">("morning");
+  const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
 
@@ -40,13 +29,13 @@ export function MyCheckInsClient() {
         setError(null);
       })
       .catch((err: unknown) => {
-        if (err instanceof ApiError && err.code === 'forbidden') {
+        if (err instanceof ApiError && err.code === "forbidden") {
           setError(
-            'У вас нет персональной записи в этой организации — чек-ины недоступны. Обратитесь к администратору.',
+            "У вас нет персональной записи в этой организации — чек-ины недоступны. Обратитесь к администратору.",
           );
         } else {
           setError(
-            err instanceof Error ? err.message : 'Не удалось загрузить историю',
+            err instanceof Error ? err.message : "Не удалось загрузить историю",
           );
         }
       })
@@ -59,18 +48,18 @@ export function MyCheckInsClient() {
 
   const submit = async () => {
     if (!text.trim()) {
-      setSubmitMsg('Заполните хотя бы одну строку.');
+      setSubmitMsg("Заполните хотя бы одну строку.");
       return;
     }
     setSubmitting(true);
     setSubmitMsg(null);
     try {
       const body =
-        kind === 'morning'
+        kind === "morning"
           ? {
               kind,
               plans: text
-                .split('\n')
+                .split("\n")
                 .map((s) => s.trim())
                 .filter(Boolean)
                 .slice(0, 50)
@@ -80,7 +69,7 @@ export function MyCheckInsClient() {
           : {
               kind,
               dones: text
-                .split('\n')
+                .split("\n")
                 .map((s) => s.trim())
                 .filter(Boolean)
                 .slice(0, 50)
@@ -88,13 +77,13 @@ export function MyCheckInsClient() {
               rawText: text,
             };
       await myCheckInsApi.create(body);
-      setText('');
-      setSubmitMsg('✓ Записано в память компании');
-      toast.success('✓ Записано в память компании');
+      setText("");
+      setSubmitMsg("✓ Записано в память компании");
+      toast.success("✓ Записано в память компании");
       refresh();
     } catch (err: unknown) {
       setSubmitMsg(
-        err instanceof Error ? err.message : 'Не удалось сохранить чек-ин',
+        err instanceof Error ? err.message : "Не удалось сохранить чек-ин",
       );
     } finally {
       setSubmitting(false);
@@ -118,7 +107,7 @@ export function MyCheckInsClient() {
             <select
               className="ml-2 rounded border px-2 py-1 text-sm"
               value={kind}
-              onChange={(e) => setKind(e.target.value as 'morning' | 'evening')}
+              onChange={(e) => setKind(e.target.value as "morning" | "evening")}
             >
               <option value="morning">Утренний (план)</option>
               <option value="evening">Вечерний (что сделано)</option>
@@ -127,11 +116,9 @@ export function MyCheckInsClient() {
         </div>
         <div className="mb-1 flex items-center justify-between gap-2">
           <span className="text-xs text-fg-secondary">
-            {kind === 'morning' ? 'Планы на сегодня' : 'Что сделано'}
+            {kind === "morning" ? "Планы на сегодня" : "Что сделано"}
           </span>
-          {/* Голосовой ВВОД: запись через MediaRecorder → серверный ASR (Vox),
-              расшифровка аппендится в поле. Где запись недоступна (нет
-              getUserMedia/MediaRecorder) — кнопка не появляется. iOS Safari ок. */}
+          {}
           <VoiceInputButton
             onTranscript={(t) => setText((prev) => appendTranscript(prev, t))}
           />
@@ -140,9 +127,9 @@ export function MyCheckInsClient() {
           className="mb-2 w-full rounded border p-2 text-sm"
           rows={4}
           placeholder={
-            kind === 'morning'
-              ? 'Что планирую сегодня (одна строка = один пункт)…'
-              : 'Что удалось закрыть (одна строка = один пункт)…'
+            kind === "morning"
+              ? "Что планирую сегодня (одна строка = один пункт)…"
+              : "Что удалось закрыть (одна строка = один пункт)…"
           }
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -155,7 +142,7 @@ export function MyCheckInsClient() {
             disabled={submitting}
             className="rounded bg-info px-4 py-1.5 text-sm font-medium text-info-fg disabled:opacity-50"
           >
-            {submitting ? 'Сохраняем…' : 'Сохранить'}
+            {submitting ? "Сохраняем…" : "Сохранить"}
           </button>
           {submitMsg ? (
             <span className="text-xs text-fg-secondary">{submitMsg}</span>
@@ -179,9 +166,11 @@ export function MyCheckInsClient() {
               <li key={c.id} className="p-3 text-sm">
                 <div className="mb-1 flex items-center gap-3">
                   <span className="font-medium">
-                    {c.kind === 'morning' ? 'Утро' : 'Вечер'}
+                    {c.kind === "morning" ? "Утро" : "Вечер"}
                   </span>
-                  <span className="text-xs text-fg-secondary">{c.dateLocal}</span>
+                  <span className="text-xs text-fg-secondary">
+                    {c.dateLocal}
+                  </span>
                   <CheckInSourceBadge source={c.source} />
                   {c.curatorReview ? (
                     <span className="rounded bg-chip-warning-bg px-2 py-0.5 text-xs text-chip-warning-fg">
@@ -207,26 +196,28 @@ function CheckInBody({ dto }: { dto: DailyCheckInApi }) {
       <ListBlock
         title="Блокеры"
         items={dto.blockers.map(
-          (b) => `${b.text}${b.severity ? ` (${b.severity})` : ''}`,
+          (b) => `${b.text}${b.severity ? ` (${b.severity})` : ""}`,
         )}
       />
     </div>
   );
 }
 
-/**
- * ТЗ 2026-05-29 telegram-self-initiated-checkins Phase 6 — значок «источник».
- * 🌅 — ответ на cron-prompt, ✋ — сотрудник сам написал боту, 🖊 — manual через UI.
- */
 function CheckInSourceBadge({
   source,
 }: {
-  source: 'cron_prompted' | 'self_initiated' | 'manual';
+  source: "cron_prompted" | "self_initiated" | "manual";
 }) {
   const map: Record<typeof source, { icon: string; title: string }> = {
-    cron_prompted: { icon: '🌅', title: 'Ответ на утренний/вечерний прампт от Коры' },
-    self_initiated: { icon: '✋', title: 'Написал в Telegram-бот сам, без прампта' },
-    manual: { icon: '🖊', title: 'Создан вручную через веб-кабинет' },
+    cron_prompted: {
+      icon: "🌅",
+      title: "Ответ на утренний/вечерний прампт от Коры",
+    },
+    self_initiated: {
+      icon: "✋",
+      title: "Написал в Telegram-бот сам, без прампта",
+    },
+    manual: { icon: "🖊", title: "Создан вручную через веб-кабинет" },
   };
   const m = map[source];
   return (

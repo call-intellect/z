@@ -8,17 +8,6 @@ import type { TrackerEventsService } from '../services/tracker-events.service';
 
 import { Bitrix24ImportStrategy } from './bitrix24-import.strategy';
 
-/**
- * Unit-тесты `Bitrix24ImportStrategy.run` на mock fetch (vi.fn) + mock Prisma:
- *
- *   1) Happy path: 2 группы, 3 задачи (1+2), 1 комментарий, 0 вложений.
- *   2) Идемпотентность: existing task по externalId — skip.
- *   3) 401 INVALID_TOKEN на первом же sonet_group.get → throw (fatal).
- *   4) Rate-limit retry: первый ответ 429 → потом 200.
- */
-
-// ── Fake API responses ────────────────────────────────────────────────────
-
 const GROUP_A = {
   ID: '10',
   NAME: 'Отдел продаж',
@@ -77,8 +66,6 @@ const COMMENT_A1 = {
 const USER_5 = { ID: '5', EMAIL: 'alice@example.com', NAME: 'Alice' };
 const USER_7 = { ID: '7', EMAIL: 'bob@example.com', NAME: 'Bob' };
 
-// ── Helpers ───────────────────────────────────────────────────────────────
-
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -100,11 +87,7 @@ function readBody(init?: RequestInit): Record<string, unknown> {
   }
 }
 
-// ── Prisma mock ───────────────────────────────────────────────────────────
-
-function buildPrismaMock(opts?: {
-  existingIssueIdByExternalId?: Record<string, string>;
-}): {
+function buildPrismaMock(opts?: { existingIssueIdByExternalId?: Record<string, string> }): {
   prisma: PrismaService;
   calls: Record<string, ReturnType<typeof vi.fn>>;
 } {
@@ -114,45 +97,35 @@ function buildPrismaMock(opts?: {
     return { id: `iss-${issueSeq}`, ...data };
   });
   const existingMap = opts?.existingIssueIdByExternalId ?? {};
-  const issueFindFirst = vi.fn(
-    async ({ where }: { where: Record<string, unknown> }) => {
-      const ext = where.externalId as string | undefined;
-      if (ext && ext in existingMap) return { id: existingMap[ext] };
-      return null;
-    },
-  );
+  const issueFindFirst = vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+    const ext = where.externalId as string | undefined;
+    if (ext && ext in existingMap) return { id: existingMap[ext] };
+    return null;
+  });
   const issueAggregate = vi.fn(async () => ({ _max: { sequenceId: 0 } }));
   const issueUpdate = vi.fn(async () => undefined);
   let projectSeq = 0;
-  const projectCreate = vi.fn(
-    async ({ data }: { data: Record<string, unknown> }) => {
-      projectSeq += 1;
-      return { id: `proj-${projectSeq}`, identifier: data.identifier ?? 'PROJ' };
-    },
-  );
+  const projectCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+    projectSeq += 1;
+    return { id: `proj-${projectSeq}`, identifier: data.identifier ?? 'PROJ' };
+  });
   const projectFindFirst = vi.fn(async () => null);
   const projectUpdate = vi.fn(async () => undefined);
   const projectMemberCreate = vi.fn(async () => undefined);
   let stateSeq = 0;
-  const issueStateCreate = vi.fn(
-    async ({ data }: { data: Record<string, unknown> }) => {
-      stateSeq += 1;
-      return { id: `state-${stateSeq}`, ...data };
-    },
-  );
+  const issueStateCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+    stateSeq += 1;
+    return { id: `state-${stateSeq}`, ...data };
+  });
   const issueAssigneeCreate = vi.fn(async () => ({ id: 'ia-1' }));
-  const issueCommentCreate = vi.fn(
-    async ({ data }: { data: Record<string, unknown> }) => ({
-      id: 'cmt-1',
-      ...data,
-    }),
-  );
-  const issueAttachmentCreate = vi.fn(
-    async ({ data }: { data: Record<string, unknown> }) => ({
-      id: 'att-1',
-      ...data,
-    }),
-  );
+  const issueCommentCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+    id: 'cmt-1',
+    ...data,
+  }));
+  const issueAttachmentCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+    id: 'att-1',
+    ...data,
+  }));
   const issueRelationCreate = vi.fn(async () => ({ id: 'rel-1' }));
   const importLogUpdate = vi.fn(async () => undefined);
   const importLogFindUnique = vi.fn(async () => ({ status: 'running' }));
@@ -245,8 +218,6 @@ function buildServices(prisma: PrismaService): {
   return { prisma, s3, events, metrics };
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────
-
 describe('Bitrix24ImportStrategy.run', () => {
   const WEBHOOK_URL = 'https://test.bitrix24.ru/rest/1/abctoken/';
 
@@ -298,7 +269,6 @@ describe('Bitrix24ImportStrategy.run', () => {
         selectedGroupIds: ['10', '20'],
         userMappings: {
           'bob@example.com': 'user-bob-id',
-          // alice не маплена → unmatched.
         },
       },
       services,
@@ -309,15 +279,12 @@ describe('Bitrix24ImportStrategy.run', () => {
     expect(result.totalIssues).toBe(3);
     expect(result.totalComments).toBe(1);
     expect(result.totalAttachments).toBe(0);
-    // alice не маплена — попадает в unmatched (она creator на A1 + responsible на B1).
     expect(result.unmatchedEmails).toContain('alice@example.com');
 
     expect(calls.issueCreate).toHaveBeenCalledTimes(3);
     expect(calls.projectCreate).toHaveBeenCalledTimes(2);
-    // По 7 фиксированных state на каждый проект → 14 всего.
     expect(calls.issueStateCreate).toHaveBeenCalledTimes(14);
     expect(calls.issueCommentCreate).toHaveBeenCalledTimes(1);
-    // parent (TASK_B2.PARENT_ID=201) → issueUpdate должен быть вызван (второй проход).
     expect(calls.issueUpdate).toHaveBeenCalled();
   });
 
@@ -366,8 +333,6 @@ describe('Bitrix24ImportStrategy.run', () => {
       async (input: string | URL) => {
         const url = typeof input === 'string' ? input : input.toString();
         if (url.endsWith('/sonet_group.get.json')) {
-          // Битрикс24 возвращает 200 + body c error — клиент должен
-          // распознать как 401 и стратегия — бросить fatal.
           return jsonResponse({
             error: 'INVALID_TOKEN',
             error_description: 'Wrong token',
@@ -419,7 +384,6 @@ describe('Bitrix24ImportStrategy.run', () => {
       },
     ) as unknown as typeof fetch;
 
-    // setTimeout — мокируем чтобы backoff не ждал реально.
     const origSetTimeout = globalThis.setTimeout;
     (globalThis as unknown as { setTimeout: typeof setTimeout }).setTimeout = ((
       cb: () => void,
@@ -442,10 +406,8 @@ describe('Bitrix24ImportStrategy.run', () => {
         onProgress: vi.fn(async () => undefined),
       });
 
-      // После retry — Issue всё-таки импортировался.
       expect(result.totalProjects).toBe(1);
       expect(result.totalIssues).toBe(1);
-      // groupCalls == 2 (первый 429, второй 200).
       expect(groupCalls).toBe(2);
     } finally {
       globalThis.setTimeout = origSetTimeout;

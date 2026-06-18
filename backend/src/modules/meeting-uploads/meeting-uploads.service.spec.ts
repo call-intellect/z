@@ -8,11 +8,7 @@ import { UploadCreateSchema, UPLOAD_MAX_SIZE_BYTES } from './dto/meeting-uploads
 import type { MeetingUploadsQueueService } from './meeting-uploads-queue.service';
 import { MeetingUploadsService } from './meeting-uploads.service';
 
-function make(setup: {
-  uploadCount?: number;
-  quotaLimit?: number;
-  uploadEnabled?: boolean;
-}): {
+function make(setup: { uploadCount?: number; quotaLimit?: number; uploadEnabled?: boolean }): {
   service: MeetingUploadsService;
   prisma: any;
   s3: any;
@@ -34,12 +30,8 @@ function make(setup: {
   } as unknown as S3Service;
 
   const cfg = {
-    // Key-aware: kill-switch `meeting_upload.enabled` (bool) vs квота
-    // `billing.meetingUploadsPerMonth` (число). Дефолт kill-switch — ON.
     getDynamic: vi.fn(async (key: string) =>
-      key === 'meeting_upload.enabled'
-        ? (setup.uploadEnabled ?? true)
-        : (setup.quotaLimit ?? 20),
+      key === 'meeting_upload.enabled' ? (setup.uploadEnabled ?? true) : (setup.quotaLimit ?? 20),
     ),
     s3: { bucket: 'z-records' },
     retention: { defaultDays: 30 },

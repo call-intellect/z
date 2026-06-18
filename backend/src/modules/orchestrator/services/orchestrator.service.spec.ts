@@ -4,14 +4,6 @@ import type { OrchestratorStreamEvent } from '../orchestrator.types';
 
 import { OrchestratorService } from './orchestrator.service';
 
-/**
- * SBA δ-1 — OrchestratorService spec.
- *
- * Тестируем happy-path SSE-стрим с замоканными зависимостями.
- * Фактический LLM не дёргается — все Planning/Synthesis/Verification
- * замоканы как Jest-сервисы.
- */
-
 const mkPrismaMock = () => {
   const run = {
     id: 'run_1',

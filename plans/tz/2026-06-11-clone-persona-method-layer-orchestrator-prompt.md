@@ -1,6 +1,6 @@
 # Orchestrator-prompt — Слой метода клона
 
-Реализуй ТЗ `plans/tz/2026-06-11-clone-persona-method-layer.md` как `tz-orchestrator`: фаза за фазой, суб-агентами, в отдельном git worktree, с независимой приёмкой.
+Реализуй ТЗ `plans/archive/2026-06-11-clone-persona-method-layer.md` как `tz-orchestrator`: фаза за фазой, суб-агентами, в отдельном git worktree, с независимой приёмкой.
 
 ## Порядок чтения
 1. `CLAUDE.md` + `.claude/CLAUDE.md` (Ship-On §8; Prisma `prisma:migrate` НЕ db push; prod через `docker compose exec`; LLM — DeepSeek/proxy, embeddings text-embedding-3-small).

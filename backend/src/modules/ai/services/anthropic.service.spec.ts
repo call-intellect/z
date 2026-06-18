@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
 
-// Контролируем экземпляр SDK через мок: модуль возвращает класс, чей
-// конструктор сохраняет moudulewide ссылку на инстанс с замоканным `messages`.
-let lastSdkInstance: { messages: { create: ReturnType<typeof vi.fn>; stream: ReturnType<typeof vi.fn> } } | null = null;
+let lastSdkInstance: {
+  messages: { create: ReturnType<typeof vi.fn>; stream: ReturnType<typeof vi.fn> };
+} | null = null;
 
 vi.mock('@anthropic-ai/sdk', () => {
   return {
@@ -58,7 +58,6 @@ describe('AnthropicService.complete', () => {
     });
 
     const svc = new AnthropicService(makeCfg());
-    // Пересоздание выше вернуло новый sdk; используем lastSdkInstance актуального.
     if (!lastSdkInstance) throw new Error('sdk2 not set');
     const sdk2 = lastSdkInstance;
     sdk2.messages.stream.mockReturnValueOnce({
@@ -114,9 +113,9 @@ describe('AnthropicService.complete', () => {
       },
     });
 
-    await expect(
-      svc.complete({ system: { text: 's' }, user: 'u' }),
-    ).rejects.toBeInstanceOf(LlmError);
+    await expect(svc.complete({ system: { text: 's' }, user: 'u' })).rejects.toBeInstanceOf(
+      LlmError,
+    );
     expect(sdk.messages.create).not.toHaveBeenCalled();
   });
 
@@ -126,9 +125,7 @@ describe('AnthropicService.complete', () => {
     const sdk = lastSdkInstance;
     sdk.messages.stream.mockReturnValueOnce({
       finalMessage: async () => ({
-        content: [
-          { type: 'tool_use', name: 'extract_x', input: { foo: 'bar' } },
-        ],
+        content: [{ type: 'tool_use', name: 'extract_x', input: { foo: 'bar' } }],
         usage: { input_tokens: 50, output_tokens: 20 },
       }),
     });
@@ -150,17 +147,6 @@ describe('AnthropicService.complete', () => {
   });
 });
 
-/**
- * T7-F6 — responseFormat: json_schema через synthetic tool_use.
- *
- * Покрытие:
- *   1. system + responseFormat:json_schema → в request улетают
- *      tools=[json_response] + tool_choice={ type: 'tool', name: 'json_response' }.
- *   2. ответ tool_use { name: 'json_response', input: {...} } сериализуется
- *      в result.text как JSON.stringify(input).
- *   3. если root schema — не-object (примитив/массив) — модель отдаёт
- *      { result: <payload> }, mapper извлекает .result в result.text.
- */
 describe('AnthropicService.complete: T7-F6 responseFormat:json_schema → tool_use', () => {
   beforeEach(() => {
     lastSdkInstance = null;
@@ -204,10 +190,8 @@ describe('AnthropicService.complete: T7-F6 responseFormat:json_schema → tool_u
       },
     });
 
-    // tool_use → JSON-сериализованный text для совместимости с JSON.parse.
     expect(result.text).toBe(JSON.stringify({ intent: 'factual' }));
 
-    // Проверим, что request включал synthetic tool + tool_choice.
     const calls = sdk.messages.stream.mock.calls;
     expect(calls.length).toBeGreaterThan(0);
     const req = calls[0]?.[0] as {
@@ -223,9 +207,6 @@ describe('AnthropicService.complete: T7-F6 responseFormat:json_schema → tool_u
     const svc = new AnthropicService(makeCfg());
     if (!lastSdkInstance) throw new Error('sdk not set');
     const sdk = lastSdkInstance;
-    // Голый массив на root — теоретически нашими промтами не используется
-    // (мы оборачиваем в { tasks: [...] } / { chapters: [...] }), но проверяем
-    // механику нормализации.
     sdk.messages.stream.mockReturnValueOnce({
       finalMessage: async () => ({
         content: [

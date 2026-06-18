@@ -15,20 +15,8 @@ import {
   type ChatboxAnalyzeJobData,
 } from './chatbox-analyze.queue';
 
-/**
- * Producer очереди `chatbox.analyze` (ТЗ 2026-06-05, Фаза 5).
- *
- * `enqueue(tenantId, sessionId)` ставит job анализа закрытой сессии.
- * `jobId = chatbox-analyze:${sessionId}` даёт дедупликацию по сессии (BullMQ
- * не добавит второй job с тем же jobId, пока первый не завершён/не очищен).
- *
- * Worker (`chatbox-analyze.worker.ts`) подхватывает и вызывает
- * ChatboxIngestService (summary + мост в knowledge-core).
- */
 @Injectable()
-export class ChatboxAnalyzeQueueService
-  implements OnModuleInit, OnModuleDestroy
-{
+export class ChatboxAnalyzeQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ChatboxAnalyzeQueueService.name);
   private queue: Queue<ChatboxAnalyzeJobData> | null = null;
 
@@ -39,9 +27,7 @@ export class ChatboxAnalyzeQueueService
       connection: this.redis.client,
       defaultJobOptions: CHATBOX_ANALYZE_JOB_OPTIONS,
     });
-    this.logger.log(
-      `ChatboxAnalyzeQueue: очередь ${CHATBOX_ANALYZE_QUEUE} готова`,
-    );
+    this.logger.log(`ChatboxAnalyzeQueue: очередь ${CHATBOX_ANALYZE_QUEUE} готова`);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -51,18 +37,11 @@ export class ChatboxAnalyzeQueueService
     }
   }
 
-  /** Поставить job анализа. Дедуп по jobId `chatbox-analyze-${sessionId}`. */
-  async enqueue(
-    tenantId: string,
-    sessionId: string,
-  ): Promise<{ jobId: string }> {
+  async enqueue(tenantId: string, sessionId: string): Promise<{ jobId: string }> {
     const queue = this.requireQueue();
-    // BullMQ запрещает ':' в custom jobId ("Custom Id cannot contain :") — дефис.
     const jobId = `chatbox-analyze-${sessionId}`;
     await queue.add('analyze', { tenantId, sessionId }, { jobId });
-    this.logger.debug(
-      `enqueue: tenant=${tenantId} session=${sessionId} jobId=${jobId}`,
-    );
+    this.logger.debug(`enqueue: tenant=${tenantId} session=${sessionId} jobId=${jobId}`);
     return { jobId };
   }
 

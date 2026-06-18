@@ -1,37 +1,30 @@
-'use client';
+"use client";
 
-/**
- * Диалог создания клипа из встречи. Принимает таймкоды в виде mm:ss
- * (или hh:mm:ss). После создания делает mutate списка highlights.
- */
+import { useState } from "react";
+import { Loader2 } from "lucide-react";
 
-import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
-
-import { highlightsApi } from '@/api/highlights.api';
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { highlightsApi } from "@/api/highlights.api";
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import { toast } from '@/ui/shadcn/toast';
+} from "@/ui/shadcn/dialog";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { toast } from "@/ui/shadcn/toast";
 
-import { fmtTime, parseTimeInput } from './format-utils';
+import { fmtTime, parseTimeInput } from "./format-utils";
 
 export type HighlightCreatorDialogProps = {
   meetingId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated?: () => void;
-  /** Если задан — будет преподставлен как стартовая позиция клипа. */
   initialStartMs?: number | null;
-  /** Длительность всей записи — чтобы валидировать таймкоды. */
   durationMs: number | null;
 };
 
@@ -43,12 +36,14 @@ export function HighlightCreatorDialog({
   initialStartMs,
   durationMs,
 }: HighlightCreatorDialogProps) {
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState("");
   const [from, setFrom] = useState(
-    typeof initialStartMs === 'number' ? fmtTime(initialStartMs) : '0:00',
+    typeof initialStartMs === "number" ? fmtTime(initialStartMs) : "0:00",
   );
   const [to, setTo] = useState(
-    typeof initialStartMs === 'number' ? fmtTime(initialStartMs + 30_000) : '0:30',
+    typeof initialStartMs === "number"
+      ? fmtTime(initialStartMs + 30_000)
+      : "0:30",
   );
   const [submitting, setSubmitting] = useState(false);
 
@@ -56,19 +51,19 @@ export function HighlightCreatorDialog({
     const startMs = parseTimeInput(from);
     const endMs = parseTimeInput(to);
     if (startMs === null || endMs === null) {
-      toast.error('Введите таймкоды в формате mm:ss');
+      toast.error("Введите таймкоды в формате mm:ss");
       return;
     }
     if (endMs <= startMs) {
-      toast.error('Конец клипа должен быть позже начала');
+      toast.error("Конец клипа должен быть позже начала");
       return;
     }
     if (durationMs && endMs > durationMs) {
-      toast.error('Конец клипа выходит за длительность записи');
+      toast.error("Конец клипа выходит за длительность записи");
       return;
     }
     if (!title.trim()) {
-      toast.error('Введите название клипа');
+      toast.error("Введите название клипа");
       return;
     }
     setSubmitting(true);
@@ -78,12 +73,12 @@ export function HighlightCreatorDialog({
         endMs,
         title: title.trim(),
       });
-      toast.success('Клип создан');
+      toast.success("Клип создан");
       onCreated?.();
       onOpenChange(false);
-      setTitle('');
+      setTitle("");
     } catch (e) {
-      const message = humanizeApiError(e, 'Не удалось создать клип.');
+      const message = humanizeApiError(e, "Не удалось создать клип.");
       toast.error(message);
     } finally {
       setSubmitting(false);
@@ -96,7 +91,8 @@ export function HighlightCreatorDialog({
         <DialogHeader>
           <DialogTitle>Создать клип</DialogTitle>
           <DialogDescription>
-            Выделите фрагмент записи, чтобы сохранить или поделиться им отдельно.
+            Выделите фрагмент записи, чтобы сохранить или поделиться им
+            отдельно.
           </DialogDescription>
         </DialogHeader>
 

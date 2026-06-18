@@ -109,6 +109,6 @@ describe('OpenAiProxyEmbeddingService.embed', () => {
     const svc = new OpenAiProxyEmbeddingService(makeCfg());
     const out = await svc.embed(texts);
     expect(out).toHaveLength(250);
-    expect(fetchMock).toHaveBeenCalledTimes(3); // 100+100+50
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });

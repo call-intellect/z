@@ -13,16 +13,9 @@ import type { TrackerEmitterService } from './tracker-emitter.service';
 import type { TrackerEventsService } from './tracker-events.service';
 import type { WebhookDispatcher } from './webhook-dispatcher.service';
 
-/**
- * Wave 3 finishing (Sprint 10, 2026-05-24) — unit-тесты на интеграцию
- * `HolidayService` в `IssuesService.create()` / `update()`.
- *
- * Изолированно проверяем только `dueDate`-сдвиг — остальные ветки сервиса
- * (RBAC, ingest в knowledge-core, embedding) покрыты другими файлами.
- */
 describe('IssuesService — HolidayService integration', () => {
-  const SATURDAY = new Date(Date.UTC(2026, 0, 3)); // 2026-01-03 (сб)
-  const MONDAY = new Date(Date.UTC(2026, 0, 5)); // 2026-01-05 (пн)
+  const SATURDAY = new Date(Date.UTC(2026, 0, 3));
+  const MONDAY = new Date(Date.UTC(2026, 0, 5));
 
   let prisma: PrismaService;
   let activity: ActivityRecorderService;
@@ -62,9 +55,6 @@ describe('IssuesService — HolidayService integration', () => {
     estimatePoints: null,
     sortOrder: 0,
     startDate: null,
-    // null здесь, чтобы update() trackField('dueDate', adjustedDueDate) видел diff
-    // и фактически вызывал tx.issue.update — так мы можем проверить переданное
-    // значение dueDate.
     dueDate: null,
     completedAt: null,
     lastOverdueDetectedAt: null,
@@ -154,9 +144,9 @@ describe('IssuesService — HolidayService integration', () => {
       events,
       webhooks,
       emitter,
-      undefined, // embedQueue
-      undefined, // inferFieldsSvc
-      undefined, // goalSuggestSvc
+      undefined,
+      undefined,
+      undefined,
       holiday,
     );
   });
@@ -178,7 +168,6 @@ describe('IssuesService — HolidayService integration', () => {
       tenantId: 'org_1',
       dueDate: SATURDAY,
     });
-    // dueDate в issue.create — это сдвинутая дата (понедельник).
     const createArg = issueCreate.mock.calls[0]![0];
     expect(createArg.data.dueDate).toBe(MONDAY);
   });
@@ -228,7 +217,7 @@ describe('IssuesService — HolidayService integration', () => {
       undefined,
       undefined,
       undefined,
-      undefined, // holiday=undefined
+      undefined,
     );
     const dto: CreateIssueDto = {
       title: 'Test',
@@ -245,7 +234,6 @@ describe('IssuesService — HolidayService integration', () => {
   });
 
   it('update — dueDate в субботу сдвигается на понедельник', async () => {
-    // requireIssue + assemble находят issue.
     const dto: UpdateIssueDto = { dueDate: SATURDAY } as unknown as UpdateIssueDto;
     await service.update('i1', dto, 'org_1', 'u1');
 
@@ -254,7 +242,6 @@ describe('IssuesService — HolidayService integration', () => {
       tenantId: 'org_1',
       dueDate: SATURDAY,
     });
-    // Внутри транзакции issue.update получает скорректированный dueDate.
     expect(issueUpdate).toHaveBeenCalled();
     const updateArg = issueUpdate.mock.calls[0]![0];
     expect(updateArg.data.dueDate).toBe(MONDAY);
@@ -282,7 +269,6 @@ describe('IssuesService — HolidayService integration', () => {
     adjustDueDate.mockRejectedValueOnce(new Error('db down'));
     const dto: UpdateIssueDto = { dueDate: SATURDAY } as unknown as UpdateIssueDto;
     await service.update('i1', dto, 'org_1', 'u1');
-    // Под капотом — fallback на исходный dueDate.
     const updateArg = issueUpdate.mock.calls[0]![0];
     expect(updateArg.data.dueDate).toEqual(SATURDAY);
   });
@@ -324,14 +310,6 @@ describe('IssuesService — HolidayService integration', () => {
   });
 });
 
-/**
- * Tracker subtasks UI (2026-05-27) — валидация parentId при create/update:
- * циклы, depth>2, cross-project. Контракт:
- *   `plans/tz/2026-05-27-tracker-subtasks-ui.md` §"Защита от циклов".
- *
- * Тестируем только ветки validateParentForIssue — основной create/update
- * flow покрыт другим describe-блоком выше.
- */
 describe('IssuesService — subtasks parent validation', () => {
   const baseProject = {
     id: 'p1',
@@ -376,11 +354,8 @@ describe('IssuesService — subtasks parent validation', () => {
   } as unknown as Issue;
 
   function buildService(opts: {
-    /** Возвращает родителя по id (либо null, если не найден). */
     parentLookup: (id: string) => Partial<Issue> | null;
-    /** Дети текущей задачи (parentId in [...]) — для BFS-проверки циклов. */
     childrenLookup: (parentIds: string[]) => Array<{ id: string }>;
-    /** Текущая задача при update. */
     existing?: Issue;
   }) {
     const issueCreate = vi.fn().mockImplementation(async ({ data }) => ({
@@ -390,11 +365,9 @@ describe('IssuesService — subtasks parent validation', () => {
     const issueUpdate = vi.fn().mockResolvedValue(opts.existing ?? baseIssue);
     const issueAggregate = vi.fn().mockResolvedValue({ _max: { sequenceId: 0 } });
 
-    // findFirst: либо ищем текущую задачу по id (existing), либо родителя.
     const issueFindFirst = vi
       .fn()
       .mockImplementation(async ({ where }: { where: Record<string, unknown> }) => {
-        // assemble() / requireIssue() — поиск по `id` без `deletedAt` логики.
         if (typeof where.id === 'string' && opts.existing && where.id === opts.existing.id) {
           return {
             ...opts.existing,
@@ -402,7 +375,6 @@ describe('IssuesService — subtasks parent validation', () => {
             labels: [],
           };
         }
-        // validateParentForIssue: ищет parent по id+tenant+deletedAt.
         if (typeof where.id === 'string') {
           const found = opts.parentLookup(where.id);
           if (!found) return null;
@@ -411,7 +383,6 @@ describe('IssuesService — subtasks parent validation', () => {
         return null;
       });
 
-    // findMany: BFS детей.
     const issueFindMany = vi
       .fn()
       .mockImplementation(async ({ where }: { where: { parentId?: { in?: string[] } } }) => {
@@ -442,15 +413,12 @@ describe('IssuesService — subtasks parent validation', () => {
             create: issueCreate,
             update: issueUpdate,
             findFirst: issueFindFirst,
-            // audit-fixes Б9: validateParentForIssue ходит за children
-            // через tx.issue.findMany (BFS вниз).
             findMany: issueFindMany,
           },
           issueAssignee: { createMany: vi.fn() },
           issueLabel: { createMany: vi.fn() },
           label: { findMany: vi.fn().mockResolvedValue([]) },
           issueState: { findUnique: vi.fn().mockResolvedValue(null) },
-          // audit-fixes Б9: advisory_xact_lock — мок просто возвращает [].
           $queryRaw: vi.fn().mockResolvedValue([]),
         }),
       issue: { findFirst: issueFindFirst, findMany: issueFindMany },
@@ -475,14 +443,7 @@ describe('IssuesService — subtasks parent validation', () => {
       emitIssueCreated: vi.fn(),
     } as unknown as TrackerEmitterService;
 
-    return new IssuesService(
-      prisma,
-      activity,
-      projects,
-      events,
-      webhooks,
-      emitter,
-    );
+    return new IssuesService(prisma, activity, projects, events, webhooks, emitter);
   }
 
   it('create — parentId без существующего родителя → BadRequest parent_not_found', async () => {
@@ -498,13 +459,11 @@ describe('IssuesService — subtasks parent validation', () => {
       labelIds: [],
       parentId: 'unknown',
     } as unknown as CreateIssueDto;
-    await expect(service.create('p1', dto, 'org_1', 'u1')).rejects.toMatchObject(
-      {
-        response: expect.objectContaining({
-          error: expect.objectContaining({ code: 'parent_not_found' }),
-        }),
-      },
-    );
+    await expect(service.create('p1', dto, 'org_1', 'u1')).rejects.toMatchObject({
+      response: expect.objectContaining({
+        error: expect.objectContaining({ code: 'parent_not_found' }),
+      }),
+    });
   });
 
   it('create — parent в другом проекте → BadRequest parent_in_different_project', async () => {
@@ -524,15 +483,13 @@ describe('IssuesService — subtasks parent validation', () => {
       labelIds: [],
       parentId: 'p_other',
     } as unknown as CreateIssueDto;
-    await expect(service.create('p1', dto, 'org_1', 'u1')).rejects.toMatchObject(
-      {
-        response: expect.objectContaining({
-          error: expect.objectContaining({
-            code: 'parent_in_different_project',
-          }),
+    await expect(service.create('p1', dto, 'org_1', 'u1')).rejects.toMatchObject({
+      response: expect.objectContaining({
+        error: expect.objectContaining({
+          code: 'parent_in_different_project',
         }),
-      },
-    );
+      }),
+    });
   });
 
   it('create — parent сам подзадача (depth>2) → BadRequest max_subtask_depth_exceeded', async () => {
@@ -540,7 +497,7 @@ describe('IssuesService — subtasks parent validation', () => {
       parentLookup: () => ({
         id: 'i_sub',
         projectId: 'p1',
-        parentId: 'i_root', // уже подзадача
+        parentId: 'i_root',
       }),
       childrenLookup: () => [],
     });
@@ -552,15 +509,13 @@ describe('IssuesService — subtasks parent validation', () => {
       labelIds: [],
       parentId: 'i_sub',
     } as unknown as CreateIssueDto;
-    await expect(service.create('p1', dto, 'org_1', 'u1')).rejects.toMatchObject(
-      {
-        response: expect.objectContaining({
-          error: expect.objectContaining({
-            code: 'max_subtask_depth_exceeded',
-          }),
+    await expect(service.create('p1', dto, 'org_1', 'u1')).rejects.toMatchObject({
+      response: expect.objectContaining({
+        error: expect.objectContaining({
+          code: 'max_subtask_depth_exceeded',
         }),
-      },
-    );
+      }),
+    });
   });
 
   it('update — parentId = текущий id → BadRequest cyclic_parent_not_allowed', async () => {
@@ -570,17 +525,15 @@ describe('IssuesService — subtasks parent validation', () => {
       existing: baseIssue,
     });
     const dto: UpdateIssueDto = {
-      parentId: 'i1', // сама задача
+      parentId: 'i1',
     } as unknown as UpdateIssueDto;
-    await expect(service.update('i1', dto, 'org_1', 'u1')).rejects.toMatchObject(
-      {
-        response: expect.objectContaining({
-          error: expect.objectContaining({
-            code: 'cyclic_parent_not_allowed',
-          }),
+    await expect(service.update('i1', dto, 'org_1', 'u1')).rejects.toMatchObject({
+      response: expect.objectContaining({
+        error: expect.objectContaining({
+          code: 'cyclic_parent_not_allowed',
         }),
-      },
-    );
+      }),
+    });
   });
 
   it('update — parent = потомок текущей задачи → BadRequest cyclic_parent_not_allowed', async () => {
@@ -588,25 +541,21 @@ describe('IssuesService — subtasks parent validation', () => {
       parentLookup: () => ({
         id: 'i_child',
         projectId: 'p1',
-        parentId: null, // допустим, прямой ребёнок i1 пока корневой в проекте
+        parentId: null,
       }),
-      // i1 имеет один ребёнок — i_child. Кандидатом ставим тот же i_child.
-      childrenLookup: (parentIds) =>
-        parentIds.includes('i1') ? [{ id: 'i_child' }] : [],
+      childrenLookup: (parentIds) => (parentIds.includes('i1') ? [{ id: 'i_child' }] : []),
       existing: baseIssue,
     });
     const dto: UpdateIssueDto = {
       parentId: 'i_child',
     } as unknown as UpdateIssueDto;
-    await expect(service.update('i1', dto, 'org_1', 'u1')).rejects.toMatchObject(
-      {
-        response: expect.objectContaining({
-          error: expect.objectContaining({
-            code: 'cyclic_parent_not_allowed',
-          }),
+    await expect(service.update('i1', dto, 'org_1', 'u1')).rejects.toMatchObject({
+      response: expect.objectContaining({
+        error: expect.objectContaining({
+          code: 'cyclic_parent_not_allowed',
         }),
-      },
-    );
+      }),
+    });
   });
 
   it('update — parentId=null (сделать корневой) → не падает', async () => {
@@ -624,10 +573,7 @@ describe('IssuesService — subtasks parent validation', () => {
   it('update — корректный новый parent (корневая задача того же проекта) → не падает', async () => {
     const service = buildService({
       parentLookup: (id) =>
-        id === 'i_new_parent'
-          ? { id: 'i_new_parent', projectId: 'p1', parentId: null }
-          : null,
-      // У текущей задачи нет детей → нет циклов.
+        id === 'i_new_parent' ? { id: 'i_new_parent', projectId: 'p1', parentId: null } : null,
       childrenLookup: () => [],
       existing: baseIssue,
     });
@@ -640,9 +586,7 @@ describe('IssuesService — subtasks parent validation', () => {
   it('update — корректный новый parent (корневая задача того же проекта) → не падает', async () => {
     const service = buildService({
       parentLookup: (id) =>
-        id === 'i_new_parent'
-          ? { id: 'i_new_parent', projectId: 'p1', parentId: null }
-          : null,
+        id === 'i_new_parent' ? { id: 'i_new_parent', projectId: 'p1', parentId: null } : null,
       childrenLookup: () => [],
       existing: baseIssue,
     });
@@ -653,11 +597,6 @@ describe('IssuesService — subtasks parent validation', () => {
   });
 });
 
-/**
- * audit-fixes Б9 (2026-05-29) — concurrent / advisory-lock тесты для
- * validateParentForIssue. Используем тот же buildService и инспектируем
- * tx.$queryRaw мок.
- */
 describe('IssuesService — Б9 advisory_xact_lock', () => {
   const baseIssue = {
     id: 'i1',
@@ -689,12 +628,6 @@ describe('IssuesService — Б9 advisory_xact_lock', () => {
     updatedAt: new Date(),
   } as unknown as Issue;
 
-  /**
-   * Создаёт сервис с тем же набором зависимостей, что и `buildService` в
-   * первом describe, но с трекером вызовов $queryRaw в tx-моке. Если
-   * `serializeLock=true` — симулируем сериализацию (lock держит первый
-   * caller, второй ждёт).
-   */
   function buildServiceWithLockTracking(opts: {
     parentLookup: (id: string) => Partial<Issue> | null;
     childrenLookup?: (parentIds: string[]) => Array<{ id: string }>;
@@ -707,36 +640,27 @@ describe('IssuesService — Б9 advisory_xact_lock', () => {
     const queryRawCalls: Array<unknown[]> = [];
     let lockHeld = false;
     const lockQueue: Array<() => void> = [];
-    const queryRawMock = vi
-      .fn()
-      .mockImplementation(async (...args: unknown[]) => {
-        queryRawCalls.push(args);
-        if (opts.serializeLock) {
-          if (lockHeld) {
-            await new Promise<void>((r) => lockQueue.push(r));
-          }
-          lockHeld = true;
+    const queryRawMock = vi.fn().mockImplementation(async (...args: unknown[]) => {
+      queryRawCalls.push(args);
+      if (opts.serializeLock) {
+        if (lockHeld) {
+          await new Promise<void>((r) => lockQueue.push(r));
         }
-        return [];
-      });
+        lockHeld = true;
+      }
+      return [];
+    });
 
     const issueCreate = vi.fn().mockImplementation(async ({ data }) => ({
       ...(opts.existing ?? baseIssue),
       ...data,
     }));
-    const issueUpdate = vi
+    const issueUpdate = vi.fn().mockResolvedValue(opts.existing ?? baseIssue);
+    const issueAggregate = vi.fn().mockResolvedValue({ _max: { sequenceId: 0 } });
+    const issueFindFirst = vi
       .fn()
-      .mockResolvedValue(opts.existing ?? baseIssue);
-    const issueAggregate = vi
-      .fn()
-      .mockResolvedValue({ _max: { sequenceId: 0 } });
-    const issueFindFirst = vi.fn().mockImplementation(
-      async ({ where }: { where: Record<string, unknown> }) => {
-        if (
-          typeof where.id === 'string' &&
-          opts.existing &&
-          where.id === opts.existing.id
-        ) {
+      .mockImplementation(async ({ where }: { where: Record<string, unknown> }) => {
+        if (typeof where.id === 'string' && opts.existing && where.id === opts.existing.id) {
           return { ...opts.existing, assignees: [], labels: [] };
         }
         if (typeof where.id === 'string') {
@@ -749,14 +673,13 @@ describe('IssuesService — Б9 advisory_xact_lock', () => {
           };
         }
         return null;
-      },
-    );
-    const issueFindMany = vi.fn().mockImplementation(
-      async ({ where }: { where: { parentId?: { in?: string[] } } }) => {
+      });
+    const issueFindMany = vi
+      .fn()
+      .mockImplementation(async ({ where }: { where: { parentId?: { in?: string[] } } }) => {
         const ins = where.parentId?.in ?? [];
         return opts.childrenLookup ? opts.childrenLookup(ins) : [];
-      },
-    );
+      });
 
     const releaseLock = (): void => {
       if (!opts.serializeLock) return;
@@ -766,9 +689,7 @@ describe('IssuesService — Б9 advisory_xact_lock', () => {
     };
 
     const prisma = {
-      $transaction: async (
-        fn: (tx: Record<string, unknown>) => unknown,
-      ) => {
+      $transaction: async (fn: (tx: Record<string, unknown>) => unknown) => {
         try {
           return await fn({
             issue: {
@@ -816,14 +737,7 @@ describe('IssuesService — Б9 advisory_xact_lock', () => {
       emitIssueCompleted: vi.fn(),
     } as unknown as TrackerEmitterService;
 
-    const service = new IssuesService(
-      prisma,
-      activity,
-      projects,
-      events,
-      webhooks,
-      emitter,
-    );
+    const service = new IssuesService(prisma, activity, projects, events, webhooks, emitter);
 
     return { service, queryRawCalls };
   }
@@ -831,9 +745,7 @@ describe('IssuesService — Б9 advisory_xact_lock', () => {
   it('$queryRaw(pg_advisory_xact_lock) вызывается ≥1 раз при update с parentId', async () => {
     const { service, queryRawCalls } = buildServiceWithLockTracking({
       parentLookup: (id) =>
-        id === 'i_new_parent'
-          ? { id: 'i_new_parent', projectId: 'p1', parentId: null }
-          : null,
+        id === 'i_new_parent' ? { id: 'i_new_parent', projectId: 'p1', parentId: null } : null,
       existing: baseIssue,
     });
 
@@ -847,69 +759,36 @@ describe('IssuesService — Б9 advisory_xact_lock', () => {
     expect(queryRawCalls.length).toBeGreaterThan(0);
   });
 
-  it('concurrent update: обе tx выполняются, обе дёргают $queryRaw на пересекающихся parent\'ах', async () => {
+  it("concurrent update: обе tx выполняются, обе дёргают $queryRaw на пересекающихся parent'ах", async () => {
     const { service, queryRawCalls } = buildServiceWithLockTracking({
       parentLookup: (id) =>
-        id === 'p_shared'
-          ? { id: 'p_shared', projectId: 'p1', parentId: null }
-          : null,
+        id === 'p_shared' ? { id: 'p_shared', projectId: 'p1', parentId: null } : null,
       existing: baseIssue,
-      // serializeLock=false — без блокирующей симуляции, чтобы юнит-тест
-      // не висел. В реальной БД pg_advisory_xact_lock сериализует tx
-      // (это тестируется integration-тестом или e2e).
     });
 
     await Promise.all([
-      service.update(
-        'i1',
-        { parentId: 'p_shared' } as unknown as UpdateIssueDto,
-        'org_1',
-        'u1',
-      ),
-      service.update(
-        'i1',
-        { parentId: 'p_shared' } as unknown as UpdateIssueDto,
-        'org_1',
-        'u1',
-      ),
+      service.update('i1', { parentId: 'p_shared' } as unknown as UpdateIssueDto, 'org_1', 'u1'),
+      service.update('i1', { parentId: 'p_shared' } as unknown as UpdateIssueDto, 'org_1', 'u1'),
     ]);
 
-    // Каждая tx делает ≥1 advisory_xact_lock на parentId → суммарно ≥2.
     expect(queryRawCalls.length).toBeGreaterThanOrEqual(2);
   });
 });
 
-/**
- * Issue move-to-project (2026-06-15, plans/tz/2026-06-15-issue-move-to-project.md).
- *
- * Тестируем `IssuesService.moveToProject`: успешный перенос (новый
- * identifier/sequence, ремап state по category, default-доска, cycle=null,
- * activity verb='moved_to_project'); негатив (тот же проект, чужой tenant,
- * архивный проект, подзадача/задача с детьми); ремап state когда нет
- * совпадающей category → defaultStateId.
- */
 describe('IssuesService — moveToProject', () => {
   type MoveOpts = {
-    /** Текущая задача (requireIssue + diff). null → 404. */
     existing: Partial<Issue> | null;
-    /** Целевой проект (requireProject). null → бросает NotFound. */
     targetProject: {
       id: string;
       identifier: string;
       defaultStateId: string | null;
       archivedAt: Date | null;
     } | null;
-    /** Число прямых детей текущей задачи. */
     childrenCount?: number;
-    /** category текущего state (issueState.findUnique). */
     currentStateCategory?: string | null;
-    /** Совпадающий state в целевом проекте (issueState.findFirst). */
     targetStateMatch?: { id: string } | null;
-    /** Максимальный sequenceId в целевом проекте. */
     targetMaxSequence?: number;
-    /** Default-доска целевого проекта (BoardsService). */
     targetBoardId?: string | null;
-    /** Инжектить ли BoardsService. */
     withBoards?: boolean;
   };
 
@@ -923,19 +802,12 @@ describe('IssuesService — moveToProject', () => {
       .mockResolvedValue({ _max: { sequenceId: opts.targetMaxSequence ?? 0 } });
     const issueCount = vi.fn().mockResolvedValue(opts.childrenCount ?? 0);
 
-    // requireIssue + assemble используют prisma.issue.findFirst. requireIssue
-    // первым (без include), assemble — с include. Возвращаем «обновлённую»
-    // задачу для assemble (берём из последнего update-вызова, если был).
     let assembleCall = 0;
     const issueFindFirst = vi.fn().mockImplementation(async () => {
       assembleCall++;
-      // Первый вызов — requireIssue (отдаёт existing as-is).
       if (assembleCall === 1) {
-        return opts.existing
-          ? { ...opts.existing, assignees: [], labels: [] }
-          : null;
+        return opts.existing ? { ...opts.existing, assignees: [], labels: [] } : null;
       }
-      // Последующий — assemble: отдаём с обновлёнными полями из update-mock.
       const last = issueUpdate.mock.calls.at(-1)?.[0]?.data ?? {};
       return {
         ...(opts.existing ?? {}),
@@ -948,13 +820,9 @@ describe('IssuesService — moveToProject', () => {
     const issueStateFindUnique = vi
       .fn()
       .mockResolvedValue(
-        opts.currentStateCategory != null
-          ? { category: opts.currentStateCategory }
-          : null,
+        opts.currentStateCategory != null ? { category: opts.currentStateCategory } : null,
       );
-    const issueStateFindFirst = vi
-      .fn()
-      .mockResolvedValue(opts.targetStateMatch ?? null);
+    const issueStateFindFirst = vi.fn().mockResolvedValue(opts.targetStateMatch ?? null);
 
     const activityRecord = vi.fn().mockResolvedValue('act_move');
 
@@ -995,9 +863,7 @@ describe('IssuesService — moveToProject', () => {
     const emitter = {} as unknown as TrackerEmitterService;
     const boards = opts.withBoards
       ? ({
-          resolveDefaultBoardId: vi
-            .fn()
-            .mockResolvedValue(opts.targetBoardId ?? null),
+          resolveDefaultBoardId: vi.fn().mockResolvedValue(opts.targetBoardId ?? null),
         } as unknown as import('./boards.service').BoardsService)
       : undefined;
     const metrics = {
@@ -1011,10 +877,10 @@ describe('IssuesService — moveToProject', () => {
       events,
       webhooks,
       emitter,
-      undefined, // embedQueue
-      undefined, // inferFieldsSvc
-      undefined, // goalSuggestSvc
-      undefined, // holiday
+      undefined,
+      undefined,
+      undefined,
+      undefined,
       boards,
       metrics,
     );
@@ -1041,7 +907,6 @@ describe('IssuesService — moveToProject', () => {
     stateId: 'st_src_started',
     cycleId: 'cyc_1',
     boardId: 'b_src',
-    // assemble → toResponseFromInclude обращается к этим Date-полям.
     linkedMeetingIds: [],
     sourceBlockIds: [],
     createdAt: new Date('2026-01-01T00:00:00Z'),
@@ -1073,13 +938,12 @@ describe('IssuesService — moveToProject', () => {
     const updateArg = issueUpdate.mock.calls[0]![0];
     expect(updateArg.where).toEqual({ id: 'i1' });
     expect(updateArg.data.projectId).toBe('p_dst');
-    expect(updateArg.data.sequenceId).toBe(15); // max 14 + 1
+    expect(updateArg.data.sequenceId).toBe(15);
     expect(updateArg.data.identifier).toBe('DST-15');
-    expect(updateArg.data.stateId).toBe('st_dst_started'); // совпадение по category
+    expect(updateArg.data.stateId).toBe('st_dst_started');
     expect(updateArg.data.boardId).toBe('b_dst');
     expect(updateArg.data.cycleId).toBeNull();
 
-    // Activity verb='moved_to_project' с oldValue/newValue и metadata.
     expect(activityRecord).toHaveBeenCalledTimes(1);
     const actArg = activityRecord.mock.calls[0]![0];
     expect(actArg.verb).toBe('moved_to_project');
@@ -1091,12 +955,10 @@ describe('IssuesService — moveToProject', () => {
       newIdentifier: 'DST-15',
     });
 
-    // WS-события.
-    expect(events.publishIssueUpdated).toHaveBeenCalledWith(
-      expect.anything(),
-      'org_1',
-      ['projectId', 'identifier'],
-    );
+    expect(events.publishIssueUpdated).toHaveBeenCalledWith(expect.anything(), 'org_1', [
+      'projectId',
+      'identifier',
+    ]);
     expect(events.publishIssueMovedToProject).toHaveBeenCalledWith(
       expect.objectContaining({
         issueId: 'i1',
@@ -1107,7 +969,6 @@ describe('IssuesService — moveToProject', () => {
       }),
     );
 
-    // Ответ — обновлённая задача (новый identifier).
     expect(res.identifier).toBe('DST-15');
   });
 
@@ -1116,7 +977,7 @@ describe('IssuesService — moveToProject', () => {
       existing: { ...SRC_ISSUE, stateId: 'st_src_started' },
       targetProject: TARGET,
       currentStateCategory: 'started',
-      targetStateMatch: null, // нет статуса той же категории
+      targetStateMatch: null,
       targetMaxSequence: 0,
       withBoards: false,
     });
@@ -1124,7 +985,7 @@ describe('IssuesService — moveToProject', () => {
     await service.moveToProject('i1', 'p_dst', 'org_1', 'u1');
 
     const updateArg = issueUpdate.mock.calls[0]![0];
-    expect(updateArg.data.stateId).toBe('st_dst_backlog'); // defaultStateId
+    expect(updateArg.data.stateId).toBe('st_dst_backlog');
     expect(updateArg.data.identifier).toBe('DST-1');
   });
 
@@ -1133,9 +994,7 @@ describe('IssuesService — moveToProject', () => {
       existing: { ...SRC_ISSUE, projectId: 'p_dst' },
       targetProject: TARGET,
     });
-    await expect(
-      service.moveToProject('i1', 'p_dst', 'org_1', 'u1'),
-    ).rejects.toMatchObject({
+    await expect(service.moveToProject('i1', 'p_dst', 'org_1', 'u1')).rejects.toMatchObject({
       response: { error: { code: 'same_project' } },
     });
   });
@@ -1143,11 +1002,9 @@ describe('IssuesService — moveToProject', () => {
   it('чужой tenant (целевой проект не найден) → 404', async () => {
     const { service } = buildService({
       existing: SRC_ISSUE,
-      targetProject: null, // requireProject бросит NotFound
+      targetProject: null,
     });
-    await expect(
-      service.moveToProject('i1', 'p_dst', 'org_1', 'u1'),
-    ).rejects.toMatchObject({
+    await expect(service.moveToProject('i1', 'p_dst', 'org_1', 'u1')).rejects.toMatchObject({
       response: { error: { code: 'project_not_found' } },
     });
   });
@@ -1157,9 +1014,7 @@ describe('IssuesService — moveToProject', () => {
       existing: SRC_ISSUE,
       targetProject: { ...TARGET, archivedAt: new Date() },
     });
-    await expect(
-      service.moveToProject('i1', 'p_dst', 'org_1', 'u1'),
-    ).rejects.toMatchObject({
+    await expect(service.moveToProject('i1', 'p_dst', 'org_1', 'u1')).rejects.toMatchObject({
       response: { error: { code: 'target_project_archived' } },
     });
   });
@@ -1169,9 +1024,7 @@ describe('IssuesService — moveToProject', () => {
       existing: { ...SRC_ISSUE, parentId: 'i_parent' },
       targetProject: TARGET,
     });
-    await expect(
-      service.moveToProject('i1', 'p_dst', 'org_1', 'u1'),
-    ).rejects.toMatchObject({
+    await expect(service.moveToProject('i1', 'p_dst', 'org_1', 'u1')).rejects.toMatchObject({
       response: { error: { code: 'cannot_move_issue_with_subtasks' } },
     });
   });
@@ -1182,9 +1035,7 @@ describe('IssuesService — moveToProject', () => {
       targetProject: TARGET,
       childrenCount: 2,
     });
-    await expect(
-      service.moveToProject('i1', 'p_dst', 'org_1', 'u1'),
-    ).rejects.toMatchObject({
+    await expect(service.moveToProject('i1', 'p_dst', 'org_1', 'u1')).rejects.toMatchObject({
       response: { error: { code: 'cannot_move_issue_with_subtasks' } },
     });
   });

@@ -1,20 +1,3 @@
-/**
- * Доменная модель Specialist 3.8 — Helpfulness (SBA Wave 2).
- *
- * Контракт: `frontend/src/api/helpfulness.api.ts`.
- *
- * Слои (ApiDto → DomainModel):
- *   - `*Api`     — что приходит с бэка (строки-даты, без UI-лейблов).
- *   - `*Domain`  — UI-friendly (Date вместо string, готовые лейблы, narrow union).
- *
- * Этика (КРИТИЧНО):
- *   - 5 позитивных типов trait'ов — публично-визуализируются.
- *   - 2 негативных (question_unanswered, question_acknowledged_no_action) —
- *     только в админ-DTO TeamMap/Unanswered. В `traitType` для /me/* они
- *     не должны приходить (бэк фильтрует), но на клиенте всё равно
- *     добавлен фильтр `isPublicTraitType()` — на случай, если что-то прорвётся.
- */
-
 import type {
   HelpfulnessSpotlightApi,
   HelpfulnessTraitApi,
@@ -25,29 +8,23 @@ import type {
   SpotlightStatusApi,
   TeamHelperRowApi,
   UnansweredQuestionRowApi,
-} from '@/api/helpfulness.api';
+} from "@/api/helpfulness.api";
 
-// ─────────────────────────── Trait types ────────────────────────────────────
-
-/**
- * Все 7 типов trait'ов (для типизации). На UI публично рендерится только
- * подмножество `PublicHelpfulnessTraitType`.
- */
 export type HelpfulnessTraitType =
-  | 'help_provided'
-  | 'proactive_hint'
-  | 'mentoring'
-  | 'emotional_support'
-  | 'constructive_feedback'
-  | 'question_unanswered'
-  | 'question_acknowledged_no_action';
+  | "help_provided"
+  | "proactive_hint"
+  | "mentoring"
+  | "emotional_support"
+  | "constructive_feedback"
+  | "question_unanswered"
+  | "question_acknowledged_no_action";
 
 export const PUBLIC_TRAIT_TYPES = [
-  'help_provided',
-  'proactive_hint',
-  'mentoring',
-  'emotional_support',
-  'constructive_feedback',
+  "help_provided",
+  "proactive_hint",
+  "mentoring",
+  "emotional_support",
+  "constructive_feedback",
 ] as const;
 
 export type PublicHelpfulnessTraitType = (typeof PUBLIC_TRAIT_TYPES)[number];
@@ -56,69 +33,54 @@ export function isPublicTraitType(t: string): t is PublicHelpfulnessTraitType {
   return (PUBLIC_TRAIT_TYPES as readonly string[]).includes(t);
 }
 
-/** Русские лейблы для 5 публичных типов. */
-export const HELPFULNESS_TRAIT_LABEL: Record<PublicHelpfulnessTraitType, string> =
-  {
-    help_provided: 'Помог по вопросу',
-    proactive_hint: 'Проактивная подсказка',
-    mentoring: 'Менторство',
-    emotional_support: 'Эмоциональная поддержка',
-    constructive_feedback: 'Конструктивная обратная связь',
-  };
+export const HELPFULNESS_TRAIT_LABEL: Record<
+  PublicHelpfulnessTraitType,
+  string
+> = {
+  help_provided: "Помог по вопросу",
+  proactive_hint: "Проактивная подсказка",
+  mentoring: "Менторство",
+  emotional_support: "Эмоциональная поддержка",
+  constructive_feedback: "Конструктивная обратная связь",
+};
 
-/** Короткие лейблы для счётчиков-карточек. */
-export const HELPFULNESS_TRAIT_SHORT: Record<PublicHelpfulnessTraitType, string> =
-  {
-    help_provided: 'Ответы на вопросы',
-    proactive_hint: 'Подсказки',
-    mentoring: 'Менторство',
-    emotional_support: 'Поддержка',
-    constructive_feedback: 'Фидбек',
-  };
+export const HELPFULNESS_TRAIT_SHORT: Record<
+  PublicHelpfulnessTraitType,
+  string
+> = {
+  help_provided: "Ответы на вопросы",
+  proactive_hint: "Подсказки",
+  mentoring: "Менторство",
+  emotional_support: "Поддержка",
+  constructive_feedback: "Фидбек",
+};
 
-/** Описание-tooltip — что именно означает каждый тип. */
 export const HELPFULNESS_TRAIT_DESCRIPTION: Record<
   PublicHelpfulnessTraitType,
   string
 > = {
-  help_provided: 'Развёрнутый ответ на конкретный вопрос коллеги.',
+  help_provided: "Развёрнутый ответ на конкретный вопрос коллеги.",
   proactive_hint:
-    'Подсказка без запроса — «кстати, у нас есть инструкция по X».',
-  mentoring: 'Обучающее объяснение — не просто «делай Y», а «потому что Z».',
+    "Подсказка без запроса — «кстати, у нас есть инструкция по X».",
+  mentoring: "Обучающее объяснение — не просто «делай Y», а «потому что Z».",
   emotional_support:
-    '«Не переживай», «давай разберёмся вместе» — поддержка в сложный момент.',
+    "«Не переживай», «давай разберёмся вместе» — поддержка в сложный момент.",
   constructive_feedback:
-    'Критика с предложением решения, а не просто указание на проблему.',
+    "Критика с предложением решения, а не просто указание на проблему.",
 };
-
-// ─────────────────────────── Spotlight status ───────────────────────────────
 
 export type SpotlightStatus = SpotlightStatusApi;
 
 export const SPOTLIGHT_STATUS_LABEL: Record<SpotlightStatus, string> = {
-  pending: 'Ждёт одобрения',
-  approved: 'Одобрено',
-  published: 'Опубликовано',
-  hidden: 'Скрыто',
+  pending: "Ждёт одобрения",
+  approved: "Одобрено",
+  published: "Опубликовано",
+  hidden: "Скрыто",
 };
-
-export const SPOTLIGHT_STATUS_TONE: Record<
-  SpotlightStatus,
-  'neutral' | 'info' | 'success' | 'warning'
-> = {
-  pending: 'warning',
-  approved: 'info',
-  published: 'success',
-  hidden: 'neutral',
-};
-
-// ─────────────────────────── Domain models ──────────────────────────────────
 
 export interface HelpfulnessTrait {
   id: string;
-  /** Может быть «нестандартный» (бэк-валидируем) — храним строкой. */
   traitType: string;
-  /** Узкий тип, если он один из публичных. null — иначе. */
   publicType: PublicHelpfulnessTraitType | null;
   intensity: number;
   topicHint: string | null;
@@ -134,21 +96,17 @@ export interface HelpfulnessTrait {
 export interface SocialContributionProfile {
   id: string;
   userId: string;
-  /** Счётчики per-trait-type (только 5 публичных). */
   counts: {
     help_provided: number;
     proactive_hint: number;
     mentoring: number;
     emotional_support: number;
-    /** Конструктивная обратная связь — на бэке нет отдельной колонки,
-     *  считается из traits на лету (DTO-поле constructiveFeedbackCount). */
     constructive_feedback: number;
   };
   expertiseTopics: string[];
   socialRoles: string[];
   lastWeekHelpCount: number;
   lastMonthHelpCount: number;
-  /** Виден только владельцу + admin/manager. Никогда не показывать как рейтинг! */
   contributionScoreCached: number | null;
   buildVersion: number;
   lastBuiltAt: Date;
@@ -170,7 +128,6 @@ export interface HelpfulnessSpotlight {
 
 export interface MyContributionView {
   profile: SocialContributionProfile | null;
-  /** Только публичные traits (на случай, если бэк по ошибке отдаст приватные). */
   recentTraits: HelpfulnessTrait[];
 }
 
@@ -186,8 +143,6 @@ export interface ListSpotlightsResult {
   limit: number;
 }
 
-// Admin-only
-
 export interface TeamHelperRow {
   userId: string;
   name: string | null;
@@ -197,7 +152,6 @@ export interface TeamHelperRow {
   emotionalSupportCount: number;
   lastWeekHelpCount: number;
   topTopics: string[];
-  /** Сумма всех публичных счётчиков — для сортировки. */
   totalPublicCount: number;
 }
 
@@ -212,9 +166,9 @@ export interface UnansweredQuestionRow {
   lastObservedAt: Date;
 }
 
-// ─────────────────────────── mappers ────────────────────────────────────────
-
-export function mapHelpfulnessTrait(dto: HelpfulnessTraitApi): HelpfulnessTrait {
+export function mapHelpfulnessTrait(
+  dto: HelpfulnessTraitApi,
+): HelpfulnessTrait {
   const publicType = isPublicTraitType(dto.traitType) ? dto.traitType : null;
   return {
     id: dto.id,
@@ -227,9 +181,6 @@ export function mapHelpfulnessTrait(dto: HelpfulnessTraitApi): HelpfulnessTrait 
     visibility: dto.visibility,
     status: dto.status,
     lastObservedAt: new Date(dto.lastObservedAt),
-    // Источник — пока приходит как visibility/нет в DTO; ставим из visibility
-    // как best-effort, доменно «источник наблюдения». Реальный source хранится
-    // в HelpfulnessTrait.contextEntityType — добавим, когда бэк расширит DTO.
     source: dto.visibility,
     createdAt: new Date(dto.lastObservedAt),
   };
@@ -246,7 +197,6 @@ export function mapSocialContributionProfile(
       proactive_hint: dto.proactiveHintCount,
       mentoring: dto.mentoringCount,
       emotional_support: dto.emotionalSupportCount,
-      // ТЗ-E Ф4 — реальный счётчик «Фидбек», бэк считает из traits на лету.
       constructive_feedback: dto.constructiveFeedbackCount,
     },
     expertiseTopics: dto.expertiseTopics,
@@ -279,10 +229,7 @@ export function mapHelpfulnessSpotlight(
 
 export function mapMyProfile(dto: MyProfileResponseApi): MyContributionView {
   return {
-    profile: dto.profile
-      ? mapSocialContributionProfile(dto.profile)
-      : null,
-    // Защита-в-глубину: если бэк прислал негативные traits — фильтруем.
+    profile: dto.profile ? mapSocialContributionProfile(dto.profile) : null,
     recentTraits: dto.recentTraits
       .filter((t) => isPublicTraitType(t.traitType))
       .map(mapHelpfulnessTrait),
@@ -293,9 +240,7 @@ export function mapPersonProfile(
   dto: PersonProfileResponseApi,
 ): PersonContributionView {
   return {
-    profile: dto.profile
-      ? mapSocialContributionProfile(dto.profile)
-      : null,
+    profile: dto.profile ? mapSocialContributionProfile(dto.profile) : null,
     publicTraits: dto.publicTraits
       .filter((t) => isPublicTraitType(t.traitType))
       .map(mapHelpfulnessTrait),
@@ -357,9 +302,6 @@ export function mapUnanswered(
   return rows.map(mapUnansweredRow);
 }
 
-// ─────────────────────────── helpers ────────────────────────────────────────
-
-/** Безопасная сумма всех 5 публичных счётчиков. */
 export function totalPublicCount(p: SocialContributionProfile): number {
   return (
     p.counts.help_provided +
@@ -370,13 +312,12 @@ export function totalPublicCount(p: SocialContributionProfile): number {
   );
 }
 
-/** Русский лейбл социальной роли (пять предустановленных + дефолт). */
 export const SOCIAL_ROLE_LABEL: Record<string, string> = {
-  mentor: 'Ментор',
-  connector: 'Соединитель',
-  problem_solver: 'Решатель проблем',
-  mood_keeper: 'Хранитель настроения',
-  trainer: 'Обучатель новеньких',
+  mentor: "Ментор",
+  connector: "Соединитель",
+  problem_solver: "Решатель проблем",
+  mood_keeper: "Хранитель настроения",
+  trainer: "Обучатель новеньких",
 };
 
 export function socialRoleLabel(role: string): string {

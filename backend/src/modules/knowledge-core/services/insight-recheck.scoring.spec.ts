@@ -2,13 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { shouldReactivateInsight } from './insight-recheck.scoring';
 
-/**
- * TZ-1 Фаза 4.B (daily-value-engine) — unit-тесты re-check митигированных
- * инсайтов. Без БД; время аргументом.
- */
 describe('insight-recheck.scoring → shouldReactivateInsight', () => {
   const now = new Date('2026-06-08T12:00:00.000Z');
-  const mitigatedLongAgo = new Date('2026-05-01T00:00:00.000Z'); // > 14 дней
+  const mitigatedLongAgo = new Date('2026-05-01T00:00:00.000Z');
 
   it('mitigated + прошло >= recheck_days + есть повтор → реактивировать', () => {
     expect(
@@ -41,7 +37,7 @@ describe('insight-recheck.scoring → shouldReactivateInsight', () => {
   });
 
   it('mitigated + повтор, но прошло < recheck_days → ещё рано, НЕ реактивировать', () => {
-    const recent = new Date('2026-06-06T00:00:00.000Z'); // 2 дня назад
+    const recent = new Date('2026-06-06T00:00:00.000Z');
     expect(
       shouldReactivateInsight(
         {

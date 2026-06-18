@@ -1,33 +1,3 @@
-/**
- * AttributionService — атрибуция от лендинга к Org.
- *
- * Поток (ТЗ §9):
- *   1. Лендинг ставит cookie `z_ref=<slug>` (TTL 90 дней) + бьёт
- *      `POST /public/referrals/attribution { slug, fingerprint, referer, ip,
- *      userAgent }`. Создаётся `ReferralAttribution` с `expiresAt = now + 90d`.
- *   2. Юзер регистрирует Org → фронт зовёт
- *      `POST /api/v1/referrals/attribute-current-org` (auth-protected) сразу
- *      после signup. Сервис резолвит атрибуцию по cookie/fingerprint/ip и
- *      пишет в `Org.pendingAttributionSlug + pendingAttributionAt`.
- *   3. При первой реальной оплате (paid) `ReferralPayoutService.onInvoicePaid`
- *      создаёт `ClientReferralLink(firstPaidAt=now)` из этой pending-атрибуции.
- *
- * Идемпотентность:
- *   - `record()` НЕ дедуплицирует — каждый beacon-call создаёт новую запись
- *     (это нужно для аналитики «N касаний»). Резолв всегда берёт самую
- *     свежую запись по slug.
- *   - `attributeOrg()` first-touch (commercial-reliability pack, 2026-05-30):
- *     если у Org уже есть `pendingAttributionSlug` — НЕ перезаписываем.
- *     Это защита от потери комиссий: повторный клик по чужой ссылке (или
- *     умышленная попытка перехватить атрибуцию) больше не отменяет первое
- *     партнёрство. После `clearPendingForOrg` (когда из pending становится
- *     `ClientReferralLink`) поле обнуляется — новая Org того же пользователя
- *     может получить свою first-touch атрибуцию.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §9 и
- * plans/tz/2026-05-29-commercial-reliability-package.md (Фаза 2).
- */
-
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -37,10 +7,6 @@ import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 
 const ATTRIBUTION_TTL_DAYS = 90;
 
-/**
- * UTC YYYY-MM-DD для composite unique (audit-fixes §Б8). Сегодня по UTC,
- * чтобы один beacon = одна запись на партнёра+fingerprint в сутки.
- */
 function dateBucketUtc(now: Date): string {
   return now.toISOString().slice(0, 10);
 }
@@ -55,9 +21,7 @@ export interface RecordAttributionInput {
 
 export interface AttributeOrgInput {
   tenantId: string;
-  /** Из cookie z_ref. Если есть — приоритет. */
   cookieSlug?: string | null;
-  /** Fingerprint в качестве fallback (на случай если cookie блочится). */
   fingerprint?: string | null;
   ip?: string | null;
 }
@@ -77,22 +41,13 @@ export class AttributionService {
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Записать сырое касание лендинга. Возвращает идентификатор записи (не
-   * критичен для фронта, но полезен для debugging'а).
-   */
   async record(input: RecordAttributionInput): Promise<{ id: string }> {
     const referral = await this.prisma.referral.findUnique({
       where: { slug: input.slug.trim() },
       select: { id: true, slug: true },
     });
     if (!referral) {
-      // Партнёр со slug'ом не найден — beacon бесмыслен. Не throw'им —
-      // лендинг шлёт beacon в любом случае (даже на устаревший slug),
-      // важно не падать. Логируем для дебага.
-      this.logger.warn(
-        `Beacon for unknown slug=${input.slug} — skip (без ReferralAttribution)`,
-      );
+      this.logger.warn(`Beacon for unknown slug=${input.slug} — skip (без ReferralAttribution)`);
       return { id: 'skipped' };
     }
 
@@ -118,9 +73,6 @@ export class AttributionService {
       this.metrics.incReferralClick({ partnerTop: tenantTopOf(referral.slug) });
       return { id: record.id };
     } catch (err) {
-      // audit-fixes Б8: composite unique (referralId, fingerprint, dateBucket)
-      // защищает от DoS-flood. P2002 = дубль за сегодня → возвращаем
-      // существующую запись, не падаем (beacon идемпотентен).
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002' &&
@@ -141,18 +93,11 @@ export class AttributionService {
     }
   }
 
-  /**
-   * После регистрации Org — резолвим атрибуцию и сохраняем slug в
-   * `Org.pendingAttributionSlug`. Если ничего не нашли — no-op.
-   *
-   * Возвращает разрешённую атрибуцию (или null).
-   */
   async attributeOrg(input: AttributeOrgInput): Promise<AttributionResolved | null> {
     const now = new Date();
 
     let attribution: { id: string; slug: string; referralId: string } | null = null;
 
-    // 1. Cookie slug имеет приоритет.
     if (input.cookieSlug) {
       const slug = input.cookieSlug.trim();
       const found = await this.prisma.referralAttribution.findFirst({
@@ -163,7 +108,6 @@ export class AttributionService {
       attribution = found ?? null;
     }
 
-    // 2. Fallback на fingerprint (например, cookie заблокировал adblocker).
     if (!attribution && input.fingerprint) {
       const found = await this.prisma.referralAttribution.findFirst({
         where: {
@@ -181,9 +125,6 @@ export class AttributionService {
       return null;
     }
 
-    // audit Б6 (2026-05-29): self-referral блокируется. Если владелец реферала
-    // (Referral.ownerUserId) сам owner/member этой Org — атрибуция отклоняется.
-    // Защита от схемы «создал Referral со своим slug → регаю Org → 20 000 ₽/мес.»
     const referralOwner = await this.prisma.referral.findUnique({
       where: { id: attribution.referralId },
       select: { ownerUserId: true, slug: true },
@@ -214,13 +155,6 @@ export class AttributionService {
       }
     }
 
-    // commercial-reliability pack (2026-05-30): first-touch гард. До этого
-    // была безусловная update — то есть фактически last-touch (повторный клик
-    // по чужому slug перетирал первую атрибуцию). Теперь updateMany WHERE
-    // pendingAttributionSlug IS NULL — first wins. Если повторный клик уже
-    // имеет привязку — count === 0 → метрика + лог + возвращаем существующую
-    // привязку для трассировки (чтобы caller увидел, к какому slug Org уже
-    // привязан).
     const result = await this.prisma.org.updateMany({
       where: { id: input.tenantId, pendingAttributionSlug: null },
       data: {
@@ -253,11 +187,6 @@ export class AttributionService {
     };
   }
 
-  /**
-   * Резолв активной атрибуции по pendingAttributionSlug Org (используется
-   * в ReferralPayoutService.onInvoicePaid). Возвращает referralId если
-   * pending-slug всё ещё валиден (партнёр существует, slug активен).
-   */
   async resolvePendingForOrg(tenantId: string): Promise<{
     referralId: string;
     slug: string;
@@ -280,7 +209,6 @@ export class AttributionService {
     };
   }
 
-  /** Очистить pendingAttribution* после создания ClientReferralLink. */
   async clearPendingForOrg(tenantId: string): Promise<void> {
     await this.prisma.org.update({
       where: { id: tenantId },

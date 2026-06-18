@@ -10,15 +10,6 @@ import {
 import type { TableSyncEventType } from '../queues';
 import { TableSyncQueueService } from '../services/table-sync-queue.service';
 
-/**
- * TableSyncListener (Smart-tables Фаза 2 — live entitySync).
- *
- * Подписывается на события графа (`entity.created/updated/archived`) и кладёт
- * job в очередь `tables.sync`. Тонкий: вся бизнес-логика синка — в
- * `TableSyncService.applyEntityEvent` (вызывается воркером). Listener не
- * должен бросать — ошибка enqueue логируется и проглатывается, чтобы не
- * срывать основной поток knowledge-core (эмиттер синхронный).
- */
 @Injectable()
 export class TableSyncListener {
   private readonly logger = new Logger(TableSyncListener.name);

@@ -19,41 +19,10 @@ import { MeetingsService } from '../../meetings/meetings.service';
 import { transcriptMergedKey } from '../../recordings/s3-keys';
 import { S3Service } from '../../recordings/s3.service';
 import { uploadAudioKey, uploadAudioWavKey } from '../meeting-upload-keys';
-import {
-  MEETING_UPLOAD_QUEUE_NAMES,
-  type MeetingUploadJobData,
-} from '../meeting-uploads.queues';
+import { MEETING_UPLOAD_QUEUE_NAMES, type MeetingUploadJobData } from '../meeting-uploads.queues';
 
-/**
- * Worker очереди `meeting.upload-transcribe` (ТЗ-5 Ф3, meeting-upload-diarization).
- *
- * Берёт ОДНО смешанное аудио загруженной встречи (`audio.ogg`, fallback `.wav`),
- * прогоняет через Vox с диаризацией (`diarizationEnabled:true`) и:
- *   1. Строит `DialogTurn[]` — по одному turn на сегмент диаризации
- *      (`speaker = «Человек N»`, `startSec/endSec` в СЕКУНДАХ напрямую из
- *      `VoxDiarizedSegment`). Сохраняет в `Transcript` (+ зеркало merged.json в
- *      S3 по образцу `MergeWorker`).
- *   2. Строит `MeetingUploadSpeaker[]` — по одному ряду на метку говорящего
- *      (`"SPEAKER N"`): turnsCount, speakingSeconds, sampleText (самый длинный
- *      сегмент). Upsert по `@@unique([meetingId, label])` — идемпотентно.
- *   3. FSM `recording_ready → transcription_processing → awaiting_speakers`.
- *
- * **ГЕЙТ:** анализ (analyze/behavior/report-fast) НЕ ставится — встреча ждёт
- * ручной разметки спикеров (`/speakers/confirm`, Ф4), только после неё уходит
- * в `ai_processing`. Это принципиальное отличие от живого per-track конвейера.
- *
- * Идемпотентность: фиксированный jobId `meeting_upload_transcribe_<meetingId>`
- * + FSM-guard (повторный запуск на уже размеченной встрече — no-op). Сама
- * Vox-задача переиспользуется через polling того же taskId не нужна: upload —
- * одно аудио, повторный submit при ретрае допустим (идемпотентность результата
- * обеспечивается upsert'ом Transcript/Speaker).
- *
- * Concurrency=1 — одно тяжёлое аудио на встречу, не частим Vox.
- */
 @Injectable()
-export class MeetingUploadTranscribeWorker
-  implements OnModuleInit, OnModuleDestroy
-{
+export class MeetingUploadTranscribeWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MeetingUploadTranscribeWorker.name);
   private worker: Worker<MeetingUploadJobData> | null = null;
 
@@ -84,7 +53,7 @@ export class MeetingUploadTranscribeWorker
         concurrency: 1,
       },
     );
-    this.logger.log(
+    this.logger.debug(
       `MeetingUploadTranscribeWorker запущен (${MEETING_UPLOAD_QUEUE_NAMES.UPLOAD_TRANSCRIBE})`,
     );
   }
@@ -96,10 +65,6 @@ export class MeetingUploadTranscribeWorker
     }
   }
 
-  /**
-   * Обработка одной загруженной встречи. Публичный — для прямого вызова в
-   * тестах. Идемпотентна (FSM-guard + фиксированный jobId).
-   */
   async processMeeting(meetingId: string): Promise<void> {
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: meetingId },
@@ -118,13 +83,7 @@ export class MeetingUploadTranscribeWorker
       this.logger.warn({ meetingId }, 'upload-transcribe: не upload-встреча — skip');
       return;
     }
-    // FSM-guard идемпотентности: transcribe имеет смысл только из
-    // `recording_ready` (ingest завершён) или `transcription_processing`
-    // (ретрай после старта). Уже в `awaiting_speakers`/дальше → повтор no-op.
-    if (
-      meeting.status !== 'recording_ready' &&
-      meeting.status !== 'transcription_processing'
-    ) {
+    if (meeting.status !== 'recording_ready' && meeting.status !== 'transcription_processing') {
       this.logger.debug(
         { meetingId, status: meeting.status },
         'upload-transcribe: статус не recording_ready/transcription_processing — повтор no-op',
@@ -138,12 +97,8 @@ export class MeetingUploadTranscribeWorker
       });
     }
 
-    // 1. Читаем нормализованное аудио (opus → fallback wav).
     const audio = await this.loadAudio(meetingId);
 
-    // 2. Vox submit + poll с диаризацией. Submit/poll переиспользуем как
-    //    живой per-track путь, но с diarizationEnabled:true и numSpeakers из
-    //    подсказки (если задана). Одно аудио — submit без сохранённого taskId.
     const submitted = await this.vox.submit(audio, {
       diarizationEnabled: true,
       ...(meeting.uploadNumSpeakersHint != null
@@ -170,9 +125,6 @@ export class MeetingUploadTranscribeWorker
       'upload-transcribe: Vox диаризация получена',
     );
 
-    // 3. DialogTurn[] — по одному turn на сегмент. startSec/endSec — СЕКУНДЫ
-    //    из VoxDiarizedSegment напрямую (без конвертации). speaker = displayLabel
-    //    «Человек N» (то, что увидит пользователь до ручной разметки).
     const turns: DialogTurn[] = segments.map((seg) => ({
       speaker: displayLabel(seg.speakerId),
       text: seg.text,
@@ -185,8 +137,6 @@ export class MeetingUploadTranscribeWorker
     const totalWords = countWordsInTurns(turns);
     const totalDurationSeconds = Math.round(voxResult.durationSeconds);
 
-    // 4. Сохраняем Transcript + зеркалим merged.json в S3 (как MergeWorker).
-    //    upsert — идемпотентно при ретрае.
     const mergedKey = transcriptMergedKey(meetingId);
     await this.s3.putJson(mergedKey, { meetingId, turns });
     await this.prisma.transcript.upsert({
@@ -206,7 +156,6 @@ export class MeetingUploadTranscribeWorker
       },
     });
 
-    // 5. MeetingUploadSpeaker[] — группировка сегментов по метке говорящего.
     const speakers = buildUploadSpeakers(segments);
     for (const sp of speakers) {
       await this.prisma.meetingUploadSpeaker.upsert({
@@ -228,13 +177,11 @@ export class MeetingUploadTranscribeWorker
       });
     }
 
-    // 6. FSM → awaiting_speakers. ГЕЙТ: анализ НЕ ставим — ждём ручной разметки
-    //    спикеров (Ф4 `/speakers/confirm` поставит ai_processing).
     await this.meetings.transitionStatus(meetingId, 'awaiting_speakers', {
       reason: 'upload_transcribe_done',
     });
 
-    this.logger.log(
+    this.logger.debug(
       {
         meetingId,
         turns: turns.length,
@@ -246,11 +193,6 @@ export class MeetingUploadTranscribeWorker
     );
   }
 
-  /**
-   * Читает нормализованное аудио из S3: сначала `audio.ogg` (opus), при
-   * отсутствии — `audio.wav` (fallback PCM, см. ingest-воркер). Бросает, если
-   * ни одного нет (тогда BullMQ ретраит).
-   */
   private async loadAudio(meetingId: string): Promise<Buffer> {
     const oggKey = uploadAudioKey(meetingId);
     try {
@@ -266,14 +208,10 @@ export class MeetingUploadTranscribeWorker
   }
 }
 
-// ─────────────────────────── helpers ───────────────────────────────────────
-
-/** Человеко-читаемая метка говорящего до ручной разметки: «Человек N». */
 function displayLabel(speakerId: number): string {
   return `«Человек ${speakerId}»`;
 }
 
-/** Число слов во всех turn'ах (split по whitespace, как merger.countWords). */
 function countWordsInTurns(turns: DialogTurn[]): number {
   return turns.reduce(
     (sum, t) => sum + (t.text === '' ? 0 : t.text.split(/\s+/).filter(Boolean).length),
@@ -289,11 +227,6 @@ interface UploadSpeakerRow {
   sampleText: string;
 }
 
-/**
- * Группирует сегменты диаризации по метке говорящего (`"SPEAKER N"`) и считает
- * для каждого: turnsCount (число сегментов), speakingSeconds (сумма end-start,
- * округлённая), sampleText (текст самого длинного сегмента).
- */
 function buildUploadSpeakers(segments: VoxDiarizedSegment[]): UploadSpeakerRow[] {
   const byLabel = new Map<
     string,

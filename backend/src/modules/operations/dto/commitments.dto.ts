@@ -1,13 +1,5 @@
 import { z } from 'zod';
 
-/**
- * SBA β-8.2 — DTO для эндпоинтов «Хранителя обещаний».
- *
- *   - /me/promises (личный кабинет сотрудника)
- *   - /dashboard/operations/open-commitments (карта обещаний для COO/owner/admin)
- *   - /personal-relations/commitments?personId= (вкладка обещаний на странице человека)
- */
-
 export const COMMITMENT_STATUS_VALUES = [
   'open',
   'asked',
@@ -37,10 +29,6 @@ export const MarkPromiseBodySchema = z
 
 export type MarkPromiseBody = z.infer<typeof MarkPromiseBodySchema>;
 
-/**
- * ТЗ-E — перенос срока обещания. Статус остаётся `open` (не терминальный),
- * меняется только `commitmentDueDate`. `note` дописывается в trustedAnswer.
- */
 export const ReschedulePromiseBodySchema = z
   .object({
     dueDate: z.string().datetime({ offset: true }),
@@ -70,25 +58,19 @@ export const PersonCommitmentsQuerySchema = z
     message: 'Нужен personId или entityId',
   });
 
-export type PersonCommitmentsQuery = z.infer<
-  typeof PersonCommitmentsQuerySchema
->;
+export type PersonCommitmentsQuery = z.infer<typeof PersonCommitmentsQuerySchema>;
 
 export interface CommitmentDto {
   id: string;
   tenantId: string;
   text: string;
-  /** Один из CommitmentStatus или null если ещё не классифицирован. */
   status: CommitmentStatus | null;
   dueDate: string | null;
   recipientPersonId: string | null;
   recipientPersonName: string | null;
-  /** Имя автора (опц., только в `/open-commitments` и `/personal-relations/commitments`). */
   authorPersonId: string | null;
   authorPersonName: string | null;
-  /** ТЗ-E — id встречи-источника (derive: первое IdeaBlockEvidence sourceType='meeting' → RawEvent.sourceExternalId). null если не из встречи. */
   sourceMeetingId: string | null;
-  /** ТЗ-E — заголовок встречи-источника (Meeting.title). null если не найден. */
   sourceMeetingTitle: string | null;
   askedAt: string | null;
   escalatedAt: string | null;
@@ -100,29 +82,15 @@ export interface OpenCommitmentsListDto {
   total: number;
 }
 
-/**
- * ТЗ редизайн Ф7б (Б-3) — «открытый вопрос»: блок signalType='commitment',
- * упоминающий пользователя, но НЕ являющийся полным обещанием (нет автора,
- * либо нет ни адресата, ни срока). В надёжность не идёт; адресату НЕ
- * показывается как «его обещание». Выдаётся отдельным массивом.
- */
 export interface OpenQuestionDto {
   id: string;
   text: string;
-  /** id встречи-источника (как у CommitmentDto). null если не из встречи. */
   sourceMeetingId: string | null;
-  /** Заголовок встречи-источника. null если не найден. */
   sourceMeetingTitle: string | null;
-  /** Чего не хватает до полного обещания (человекочитаемо, RU). */
   reason: string;
   createdAt: string;
 }
 
-/**
- * ТЗ редизайн Ф7б (Б-3) — ответ `GET /me/promises`.
- *   - `items` — ПОЛНЫЕ обещания (учитываются в надёжности);
- *   - `openQuestions` — неполные блоки-обещания (исключены из надёжности).
- */
 export interface MyPromisesListDto {
   items: CommitmentDto[];
   openQuestions: OpenQuestionDto[];

@@ -1,31 +1,10 @@
-/**
- * TochkaWebhookRegistrarService — единоразовая регистрация webhook'а в Точке.
- *
- * Вызывается из `BillingModule.onApplicationBootstrap` через `setTimeout 1500мс`,
- * чтобы HTTP-сервер успел подняться к моменту, когда Точка пришлёт probe-GET.
- *
- * Алгоритм:
- *   1. Если `TOCHKA_WEBHOOK_AUTO_REGISTER=false` или webhook отключён —
- *      no-op + warn-лог.
- *   2. Если в `BillingProviderConfig['tochka.webhook_registration']` уже есть
- *      запись с тем же URL и events — no-op (идемпотентно).
- *   3. Иначе вызывает `provider.registerWebhooks({url, events})`. URL берём
- *      из `TOCHKA_WEBHOOK_URL` или из `BILLING_PUBLIC_API_URL +
- *      /api/v1/internal/billing/provider-events`.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §7.3.
- */
-
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../../common/config/index';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 import type { BillingProviderPort } from '../billing-provider.port';
 
-import {
-  TOCHKA_WEBHOOK_REGISTRATION_KEY,
-  type StoredWebhookRegistration,
-} from './tochka.types';
+import { TOCHKA_WEBHOOK_REGISTRATION_KEY, type StoredWebhookRegistration } from './tochka.types';
 
 @Injectable()
 export class TochkaWebhookRegistrarService {
@@ -36,11 +15,6 @@ export class TochkaWebhookRegistrarService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  /**
-   * Зарегистрировать webhook один раз. Принимает провайдер как аргумент (а
-   * не через DI), потому что `TochkaWebhookRegistrarService` — часть фабрики
-   * провайдера и не может на себя инжектить `BILLING_PROVIDER` (цикл).
-   */
   async registerOnce(provider: BillingProviderPort): Promise<void> {
     if (!this.cfg.billing.features.tochka) {
       this.logger.warn('FEATURE_BILLING_TOCHKA=false — auto-register webhook пропущен');
@@ -90,9 +64,7 @@ export class TochkaWebhookRegistrarService {
           valueJson: record as object,
         },
       });
-      this.logger.log(
-        `Webhook Точки зарегистрирован: ${url} (events=${events.join(',')})`,
-      );
+      this.logger.log(`Webhook Точки зарегистрирован: ${url} (events=${events.join(',')})`);
     } catch (err) {
       this.logger.error(
         `Auto-register webhook failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -119,11 +91,7 @@ export class TochkaWebhookRegistrarService {
     return (row?.valueJson as unknown as StoredWebhookRegistration) ?? null;
   }
 
-  private isUpToDate(
-    existing: StoredWebhookRegistration,
-    url: string,
-    events: string[],
-  ): boolean {
+  private isUpToDate(existing: StoredWebhookRegistration, url: string, events: string[]): boolean {
     if (existing.url !== url) return false;
     if (existing.events.length !== events.length) return false;
     const set = new Set(existing.events);

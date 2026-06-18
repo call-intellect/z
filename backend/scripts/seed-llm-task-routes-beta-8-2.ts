@@ -1,24 +1,3 @@
-/**
- * SBA β-8.2 — Seed маршрутов LLM для «Хранителя обещаний».
- *
- *   - commitment-extract-dates — извлечь срок + адресата из текста обещания.
- *     Используется как опц. уточняющий вызов (основное извлечение делается
- *     внутри block-ingest). Primary deepseek-chat, secondary gpt-4o-mini,
- *     tertiary ollama qwen3.5:9b.
- *   - commitment-extract-status — разобрать ответ сотрудника на followup в
- *     'fulfilled' | 'missed' + причина + blockerText. Дёшевая частая задача
- *     (один раз на ответ). Тот же провайдерский профиль.
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-beta-8-2.ts
- *   bun run scripts/seed-llm-task-routes-beta-8-2.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - editedByAdmin=true → НЕ перезаписываем.
- *   - Без --update-existing — пропускаем существующие записи.
- *   - С --update-existing — обновляем model/priority/isActive.
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -39,8 +18,7 @@ interface TaskRouteSeed {
 const SEEDS: TaskRouteSeed[] = [
   {
     taskType: 'commitment-extract-dates',
-    playbookSection:
-      '§β-8.2 §9 — извлечение срока/адресата обещания. Дешёвая опц. задача.',
+    playbookSection: '§β-8.2 §9 — извлечение срока/адресата обещания. Дешёвая опц. задача.',
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-4o-mini' },
@@ -99,17 +77,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -134,18 +108,14 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 
 async function main(): Promise<void> {
   const updateExisting = process.argv.includes('--update-existing');
   // eslint-disable-next-line no-console
-  console.log(
-    `=== seed-llm-task-routes-beta-8-2 START (updateExisting=${updateExisting}) ===`,
-  );
+  console.log(`=== seed-llm-task-routes-beta-8-2 START (updateExisting=${updateExisting}) ===`);
   // eslint-disable-next-line no-console
   console.log(`TaskTypes: ${SEEDS.map((s) => s.taskType).join(', ')}`);
 

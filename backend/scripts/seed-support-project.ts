@@ -1,25 +1,3 @@
-/**
- * seed-support-project.ts — идемпотентный сид Support-проекта вендор-Org.
- *
- * ТЗ 2026-06-09 support-desk-clone, Ф1. Создаёт:
- *   - Project(systemGenerated=true, identifier='SUP', slug='support',
- *     name='Поддержка', ownerId=<owner вендор-Org>) — скрыт из обычного
- *     списка проектов фильтром systemGenerated.
- *   - 6 IssueState: Новое/В работе/Ждёт клиента/Решено/Закрыто/Спам
- *     (categories: unstarted/started/started/completed/cancelled/cancelled,
- *     sequence 1..6, isDefault на 'Новое').
- *   - project.defaultStateId = id 'Новое'.
- *   - SupportSlaPolicy(tenantId=вендор-Org) с дефолтами 60/480.
- *
- * Вендор-Org читается из AdminSetting `support.vendor_org_id` (JSON-значение).
- * Не задано/пусто → no-op (выход 0): «параметр владельца» (решение владельца).
- *
- * Идемпотентность: findFirst перед create; повторный прогон = без дублей.
- *
- * Запуск:
- *   bun run scripts/seed-support-project.ts
- */
-
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
@@ -44,7 +22,6 @@ const STATES: StateSeed[] = [
   { name: 'Спам', category: 'cancelled', sequence: 6, isDefault: false, color: '#EF4444' },
 ];
 
-/** Прочитать вендор-Org из AdminSetting (JSON-значение). null если нет/пусто. */
 async function resolveVendorOrgId(): Promise<string | null> {
   const row = await prisma.adminSetting.findUnique({
     where: { key: SUPPORT_VENDOR_ORG_ID_KEY },
@@ -68,7 +45,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Владелец вендор-Org (для Project.ownerId).
   const ownerMembership = await prisma.membership.findFirst({
     where: { orgId: vendorOrgId, role: 'owner' },
     select: { userId: true },
@@ -81,7 +57,6 @@ async function main(): Promise<void> {
   }
   const ownerId = ownerMembership.userId;
 
-  // 1. Project (идемпотентно по identifier+systemGenerated в вендор-Org).
   let project = await prisma.project.findFirst({
     where: {
       tenantId: vendorOrgId,
@@ -108,7 +83,6 @@ async function main(): Promise<void> {
     console.log(`[exists] Project SUP (id=${project.id})`);
   }
 
-  // 2. IssueStates (идемпотентно по projectId+name).
   let defaultStateId: string | null = null;
   for (const s of STATES) {
     let state = await prisma.issueState.findFirst({
@@ -135,7 +109,6 @@ async function main(): Promise<void> {
     if (s.isDefault) defaultStateId = state.id;
   }
 
-  // 3. project.defaultStateId = 'Новое' (если ещё не выставлен).
   if (defaultStateId && project.defaultStateId !== defaultStateId) {
     await prisma.project.update({
       where: { id: project.id },
@@ -144,7 +117,6 @@ async function main(): Promise<void> {
     console.log(`[updated] Project.defaultStateId → '${defaultStateId}' (Новое)`);
   }
 
-  // 4. SupportSlaPolicy (синглтон per вендор-Org, дефолты 60/480).
   const policy = await prisma.supportSlaPolicy.findUnique({
     where: { tenantId: vendorOrgId },
     select: { id: true },

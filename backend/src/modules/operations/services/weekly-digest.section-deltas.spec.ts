@@ -2,33 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { WeeklyDigestService } from './weekly-digest.service';
 
-/**
- * ТЗ-2 Ф3 — посекционные дельты недельного дайджеста (sectionDeltas).
- *
- * Тестируем сборку sectionDeltas внутри `computeRuntimeSections` через
- * публичную точку `getStored` (зовёт `enrichDto` → `computeRuntimeSections`).
- *
- * Проверяем:
- *   - blockers/insights/ideas: current/previous из соответствующих count'ов,
- *     delta = current - previous.
- *   - previous=0 (есть запрос, но нет данных) → delta = current - 0 (не null,
- *     т.к. count всегда возвращает число; null зарезервирован под отсутствие
- *     окна предыдущей недели — здесь его не моделируем, см. ниже отдельный тест).
- *   - count-запросы вызваны с правильными окнами (cur vs prev по signalType=
- *     blocker / status=active / status notIn rejected,archived).
- */
-
 const TENANT = 't1';
 const WEEK_START = '2026-05-18';
 const WEEK_END = '2026-05-24';
 
-/**
- * Полный мок Prisma для `computeRuntimeSections`. Считаем вызовы count по
- * модели и возвращаем заданные cur/prev (в порядке вызова в Promise.all:
- * cur, затем prev).
- */
 function buildSvc(overrides: {
-  blockerCounts?: [number, number]; // [cur, prev]
+  blockerCounts?: [number, number];
   insightCounts?: [number, number];
   ideaCounts?: [number, number];
 }) {
@@ -86,11 +65,7 @@ function buildSvc(overrides: {
     incCooWeeklyDigestGenerated: vi.fn(),
     incCooWeeklyDigestFailed: vi.fn(),
   };
-  const svc = new WeeklyDigestService(
-    prisma as never,
-    llm as never,
-    metrics as never,
-  );
+  const svc = new WeeklyDigestService(prisma as never, llm as never, metrics as never);
   return { svc, prisma, ideaBlockCount, insightCount, ideaCount };
 }
 
@@ -112,7 +87,6 @@ describe('WeeklyDigestService.sectionDeltas (ТЗ-2 Ф3)', () => {
     expect(sd.insights).toEqual({ current: 4, previous: 4, delta: 0 });
     expect(sd.ideas).toEqual({ current: 10, previous: 6, delta: 4 });
 
-    // count'ы вызваны дважды каждый (cur + prev).
     expect(ideaBlockCount).toHaveBeenCalledTimes(2);
     expect(insightCount).toHaveBeenCalledTimes(2);
     expect(ideaCount).toHaveBeenCalledTimes(2);
@@ -126,7 +100,6 @@ describe('WeeklyDigestService.sectionDeltas (ТЗ-2 Ф3)', () => {
     });
     await svc.getStored({ tenantId: TENANT, weekStart: WEEK_START });
 
-    // Блокеры — signalType=blocker.
     expect(ideaBlockCount).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -135,7 +108,6 @@ describe('WeeklyDigestService.sectionDeltas (ТЗ-2 Ф3)', () => {
         }),
       }),
     );
-    // Инсайты — status=active (мирроринг topInsights).
     expect(insightCount).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -144,7 +116,6 @@ describe('WeeklyDigestService.sectionDeltas (ТЗ-2 Ф3)', () => {
         }),
       }),
     );
-    // Идеи — status notIn rejected/archived (мирроринг topIdeas).
     expect(ideaCount).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({

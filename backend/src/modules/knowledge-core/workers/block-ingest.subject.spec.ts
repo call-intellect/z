@@ -5,17 +5,6 @@ import type { Segment } from '../services/segment-builder.service';
 
 import { BlockIngestWorker } from './block-ingest.worker';
 
-/**
- * Фаза 1.2 (meeting-identity & clones-attribution) — юнит-тесты для
- * детерминированной атрибуции автора блока-рассуждения как
- * `IdeaBlockEntity.role='subject'` (без LLM, prompt-cache сохранён).
- *
- * Тест дёргает приватный `persistBlock` через any-cast — он внутри сам
- * вызывает `attributeSubject` для блоков из reasoning-семейства. Все
- * зависимости замоканы: `entities.resolveSubjectEntityId`,
- * `prisma.ideaBlockEntity.upsert`, `cfg.getDynamic`.
- */
-
 interface Mocks {
   resolveSubjectEntityId: ReturnType<typeof vi.fn>;
   upsert: ReturnType<typeof vi.fn>;
@@ -46,10 +35,10 @@ function buildFakeTx() {
   };
 }
 
-function buildWorker(opts: {
-  subjectEntityId: string | null;
-  killSwitch: boolean;
-}): { worker: BlockIngestWorker; mocks: Mocks } {
+function buildWorker(opts: { subjectEntityId: string | null; killSwitch: boolean }): {
+  worker: BlockIngestWorker;
+  mocks: Mocks;
+} {
   const fakeTx = buildFakeTx();
   const upsert = vi.fn(async () => ({}));
   const prisma = {
@@ -70,20 +59,20 @@ function buildWorker(opts: {
   const metrics = { incSubjectAttribution } as unknown;
 
   const worker = new BlockIngestWorker(
-    {} as never, // redis
-    prisma as never, // prisma
-    {} as never, // s3
-    {} as never, // segments
-    {} as never, // extractor
-    {} as never, // embeddings
-    entities as never, // entities
-    {} as never, // coreQueue
-    {} as never, // gate
-    {} as never, // graph
-    metrics as never, // metrics
-    {} as never, // axisClassifier
-    cfg as never, // cfg
-    {} as never, // blockAccessDeriver (Ф3 — не дёргается в persistBlock)
+    {} as never,
+    prisma as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    entities as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    metrics as never,
+    {} as never,
+    cfg as never,
+    {} as never,
   );
   return {
     worker,
@@ -140,7 +129,9 @@ describe('BlockIngestWorker — Фаза 1.2 атрибуция role=subject', (
       },
     ];
 
-    await (worker as unknown as { persistBlock: (a: unknown) => Promise<string | null> }).persistBlock({
+    await (
+      worker as unknown as { persistBlock: (a: unknown) => Promise<string | null> }
+    ).persistBlock({
       event: meetingEvent,
       block: buildBlock({ evidenceStartMs: 1500 }),
       embedding: null,
@@ -171,13 +162,14 @@ describe('BlockIngestWorker — Фаза 1.2 атрибуция role=subject', (
       killSwitch: true,
     });
 
-    await (worker as unknown as { persistBlock: (a: unknown) => Promise<string | null> }).persistBlock({
+    await (
+      worker as unknown as { persistBlock: (a: unknown) => Promise<string | null> }
+    ).persistBlock({
       event: textEvent,
       block: buildBlock({ evidenceStartMs: 0, evidenceEndMs: 0 }),
       embedding: null,
       roleRelevant: false,
       roleId: null,
-      // Для text endMs=0 → ни один сегмент не покрывает; identity по authorUserId.
       segments: [{ startMs: 0, endMs: 0, speakers: [], text: 'заметка' }],
       authorUserId: 'u1',
     });
@@ -205,7 +197,9 @@ describe('BlockIngestWorker — Фаза 1.2 атрибуция role=subject', (
       killSwitch: false,
     });
 
-    await (worker as unknown as { persistBlock: (a: unknown) => Promise<string | null> }).persistBlock({
+    await (
+      worker as unknown as { persistBlock: (a: unknown) => Promise<string | null> }
+    ).persistBlock({
       event: meetingEvent,
       block: buildBlock(),
       embedding: null,
@@ -228,7 +222,9 @@ describe('BlockIngestWorker — Фаза 1.2 атрибуция role=subject', (
       killSwitch: true,
     });
 
-    await (worker as unknown as { persistBlock: (a: unknown) => Promise<string | null> }).persistBlock({
+    await (
+      worker as unknown as { persistBlock: (a: unknown) => Promise<string | null> }
+    ).persistBlock({
       event: meetingEvent,
       block: buildBlock({ signalType: 'fact' }),
       embedding: null,
@@ -251,7 +247,9 @@ describe('BlockIngestWorker — Фаза 1.2 атрибуция role=subject', (
       killSwitch: true,
     });
 
-    await (worker as unknown as { persistBlock: (a: unknown) => Promise<string | null> }).persistBlock({
+    await (
+      worker as unknown as { persistBlock: (a: unknown) => Promise<string | null> }
+    ).persistBlock({
       event: meetingEvent,
       block: buildBlock(),
       embedding: null,

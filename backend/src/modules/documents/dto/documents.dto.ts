@@ -19,53 +19,21 @@ import type {
 } from '@prisma/client';
 import { z } from 'zod';
 
-/**
- * Zod-схемы и DTO для `DocumentsController` (Фаза 0b knowledge-core).
- *
- * NB: тело multipart-POST (`POST /api/v1/documents`) валидируется не zod'ом,
- * а multer'ом — здесь только query/params/JSON-схемы.
- */
-
 export const UploadDocumentQuerySchema = z.object({
-  /** Если задан — документ привязывается к Role (`attachedRoleId`). */
   attachedRoleId: z.string().cuid().optional(),
 });
 export type UploadDocumentQuery = z.infer<typeof UploadDocumentQuerySchema>;
 
-/**
- * ТЗ-4 Ф3 — атрибуция multipart-загрузки. Поля передаются как form-fields
- * в том же multipart-теле, что и файлы (`files`). Валидируется отдельно от
- * query (query-поле `attachedRoleId` остаётся работать для обратной
- * совместимости; если задано и тут, и там — приоритет у body).
- *
- *   - `attachedRoleId` / `attachedThemeId` / `attachedProjectId` — привязка к
- *     должности / теме графа / проекту трекера (все опц.; tenantId-проверка в
- *     сервисе).
- *   - `docType` — смысловой тип документа (enum совпадает с Prisma
- *     `DocumentType`).
- */
 export const UploadDocumentBodySchema = z.object({
   attachedRoleId: z.string().cuid().optional(),
   attachedThemeId: z.string().cuid().optional(),
   attachedProjectId: z.string().cuid().optional(),
   docType: z
-    .enum([
-      'regulation',
-      'policy',
-      'instruction',
-      'process',
-      'job_description',
-      'other',
-    ])
+    .enum(['regulation', 'policy', 'instruction', 'process', 'job_description', 'other'])
     .optional(),
 });
 export type UploadDocumentBodyDto = z.infer<typeof UploadDocumentBodySchema>;
 
-/**
- * Результат multipart-загрузки (ТЗ-4 Ф3). Один элемент на загруженный файл.
- *   - `deduped: true` — файл с тем же `contentHash` уже существует в Org;
- *     новый Document НЕ создан, `id`/`status` — у существующего.
- */
 export interface UploadDocumentItemDto {
   id: string;
   status: DocumentStatus;
@@ -86,16 +54,6 @@ const DocTypeEnumSchema = z.enum([
   'other',
 ]);
 
-/**
- * ТЗ-4 Ф7/Ф8 — атрибуция batch-импорта ZIP (`POST /api/v1/documents/import-zip`).
- * Поля передаются как form-fields вместе с файлом архива (`file`). Применяются
- * ко ВСЕМ Document'ам, созданным из записей архива.
- *
- * ТЗ-4 Ф8 (`source`): `upload_zip` (обычный архив, по умолчанию) или `notion`
- * (экспорт Notion — те же `.md`/`.csv`, но имена несут дерево страниц + 32-hex
- * id, который чистится). `confluence` сюда НЕ принимается — у него отдельный
- * JSON-эндпоинт (`/import-confluence`), архив не передаётся.
- */
 export const ImportZipBodySchema = z.object({
   source: z.enum(['upload_zip', 'notion']).optional(),
   attachedThemeId: z.string().cuid().optional(),
@@ -108,18 +66,6 @@ export interface ImportZipResultDto {
   importId: string;
 }
 
-/**
- * ТЗ-4 Ф9 — тело `POST /api/v1/documents/import-confluence` (JSON, без файла).
- * Тянет страницы одного пространства Confluence Cloud и заводит их как
- * Document'ы (source=confluence). `apiToken` НЕ хранится в БД — шифруется
- * (`CryptoService`) и кладётся в зашифрованном виде в job-payload.
- *
- *   - `baseUrl` — адрес инстанса, например `https://acme.atlassian.net`.
- *   - `email` — email учётки Atlassian (логин Basic-auth).
- *   - `apiToken` — API-токен Atlassian (НЕ пароль).
- *   - `spaceKey` — ключ пространства (например `ENG`).
- *   - `attachedThemeId` / `attachedProjectId` / `docType` — batch-атрибуция (опц.).
- */
 export const ImportConfluenceBodySchema = z.object({
   baseUrl: z.string().trim().url().max(500),
   email: z.string().trim().email().max(320),
@@ -135,10 +81,6 @@ export interface ImportConfluenceResultDto {
   importId: string;
 }
 
-/**
- * ТЗ-4 Волна 2 (B1) — статус batch-импорта для UI прогресса
- * (`GET /api/v1/documents/imports/:id`). Один элемент `errorLog` — `{file, error}`.
- */
 export interface DocumentImportDto {
   id: string;
   source: DocumentImportSource;
@@ -151,11 +93,6 @@ export interface DocumentImportDto {
   updatedAt: string;
 }
 
-/**
- * Сериализует `DocumentImport` для статус-эндпоинта. `errorLog` хранится как
- * `Json?` — нормализуем в массив `{file, error}` (мусор/невалидные элементы
- * отбрасываем, чтобы UI не падал на неожиданной форме).
- */
 export function toDocumentImportDto(row: DocumentImport): DocumentImportDto {
   return {
     id: row.id,
@@ -170,9 +107,7 @@ export function toDocumentImportDto(row: DocumentImport): DocumentImportDto {
   };
 }
 
-function normalizeImportErrorLog(
-  raw: unknown,
-): Array<{ file: string; error: string }> {
+function normalizeImportErrorLog(raw: unknown): Array<{ file: string; error: string }> {
   if (!Array.isArray(raw)) return [];
   const out: Array<{ file: string; error: string }> = [];
   for (const e of raw) {
@@ -191,13 +126,6 @@ function normalizeImportErrorLog(
   return out;
 }
 
-/**
- * ТЗ-4 Волна 2 (B2) — тело `PATCH /api/v1/documents/:id/attribution`.
- * Устанавливает/меняет смысловую атрибуцию документа человеком и очищает
- * подсказки классификатора (`suggestedDocType`/`suggestedThemeId`). Все поля
- * опц.; `null` явно снимает привязку. Theme/Project проверяются на принадлежность
- * tenantId (как при загрузке). После — проекция в граф для блоков документа.
- */
 export const SetAttributionBodySchema = z.object({
   docType: DocTypeEnumSchema.nullable().optional(),
   attachedThemeId: z.string().cuid().nullable().optional(),
@@ -213,45 +141,29 @@ export const ListDocumentsQuerySchema = z.object({
 export type ListDocumentsQuery = z.infer<typeof ListDocumentsQuerySchema>;
 
 export const CreateTextDumpSchema = z.object({
-  /** Текст дампа. ТЗ §9: лимит 50_000 символов. */
   content: z.string().trim().min(1).max(50_000),
 });
 export type CreateTextDumpDto = z.infer<typeof CreateTextDumpSchema>;
 
-/**
- * Сериализация `Document` для API. Не возвращаем `inlineContent` —
- * это могут быть мегабайты бинарных данных, для просмотра используется
- * либо `parsedText`, либо presigned URL S3 (отдельный эндпоинт в Фазе γ).
- */
 export interface DocumentDto {
   id: string;
   tenantId: string;
-  /** D10 (ТЗ 2026-06-11) — алиас tenantId под контракт фронта DocumentApi. */
   orgId: string;
   uploaderId: string;
-  /** D10 — имя загрузчика (из связи uploader→Person). null, если связь не подгружена. */
   uploaderName: string | null;
   kind: DocumentKind;
   name: string;
   mimeType: string;
   originalSize: number;
-  /** D10 — алиас originalSize под контракт фронта (sizeBytes). */
   sizeBytes: number;
   status: DocumentStatus;
   attachedRoleId: string | null;
-  /** D10 — имя привязанной роли (из связи attachedRole→Role). null, если нет/не подгружена. */
   attachedRoleName: string | null;
-  /** D10 — дата разбора. Источника пока нет (см. 04_не-сделано) → всегда null, это не баг маппера. */
   parsedAt: string | null;
-  /** ТЗ-4 Ф5 — смысловой тип документа (отдельно от формата `kind`). */
   docType: DocumentType | null;
-  /** ТЗ-4 — привязка к теме графа (Theme). */
   attachedThemeId: string | null;
-  /** ТЗ-4 — привязка к проекту трекера (Project). */
   attachedProjectId: string | null;
-  /** ТЗ-4 Ф10 — предложенный классификатором тип (до подтверждения человеком). */
   suggestedDocType: DocumentType | null;
-  /** ТЗ-4 Ф10 — предложенная классификатором тема (Theme.id) до подтверждения. */
   suggestedThemeId: string | null;
   parsedText: string | null;
   parseError: string | null;
@@ -292,21 +204,8 @@ export function toDocumentDto(
   };
 }
 
-/**
- * Метка доверия карточки знаний (Фаза C1). Контракт совпадает с enum
- * `TrustTier` в Prisma и `TrustTier` во frontend `TrustBadge`.
- */
 export type TrustTierDto = 'auto' | 'provisional' | 'human';
 
-/**
- * Provenance группы Б для GET /api/v1/documents/:id (Фаза 0b §10).
- * Readonly-список сущностей, извлечённых из этого документа.
- * Возвращается только для owner/admin (см. RBAC в контроллере).
- *
- * Фаза C1: критические карточки (process / decision / regulation / policy)
- * несут `trustTier` — провизорные/авто карточки подсвечиваются плашкой
- * на фронте. metric / tool не версионируются → без trustTier.
- */
 export interface DocumentExtractedEntitiesDto {
   processes: Array<{
     id: string;
@@ -365,15 +264,6 @@ export function toIdeaBlockSummaryDto(block: IdeaBlock): IdeaBlockSummaryDto {
   };
 }
 
-/**
- * Деталка `GET /api/v1/documents/:id` (Фаза 0b §10).
- *
- *   - `extractedEntities` — provenance группы Б. Только для owner/admin. Для
- *     manager — поле отсутствует (undefined).
- *   - `ideaBlocks` — список блоков идей, извлечённых из этого документа.
- *     Не возвращаем `trustedAnswer` (полный текст блока) ради лаконичности —
- *     это можно получить отдельным запросом.
- */
 export interface DocumentDetailDto {
   document: DocumentDto;
   parsedText: string | null;
@@ -409,8 +299,6 @@ export function toDecisionProvenance(
   confidence: number | null;
   trustTier: TrustTierDto;
 } {
-  // SBA β-3: Decision.text — legacy nullable; новые Decision'ы используют statement.
-  // Если text пуст — fallback на statement.
   return {
     id: d.id,
     text: d.text ?? d.statement ?? '',
@@ -465,7 +353,6 @@ export function toMetricProvenance(m: Pick<Metric, 'id' | 'name' | 'unit'>): {
   unit: string;
   confidence: number | null;
 } {
-  // Metric в schema.prisma confidence нет — возвращаем null (зарезервировано).
   return { id: m.id, name: m.name, unit: m.unit, confidence: null };
 }
 
@@ -475,6 +362,5 @@ export function toToolProvenance(t: Pick<Tool, 'id' | 'name' | 'kind'>): {
   kind: ToolKind;
   confidence: number | null;
 } {
-  // Tool в schema.prisma confidence нет — возвращаем null (зарезервировано).
   return { id: t.id, name: t.name, kind: t.kind, confidence: null };
 }

@@ -1,11 +1,3 @@
-/**
- * Admin-redesign Фаза 5 — DTO для `SystemMessagesAdminController`.
- *
- * CRUD «системных» сообщений (баннеры/maintenance/alerts), модель
- * `SystemMessage`. type — `banner | maintenance | alert`, severity —
- * `info | warning | critical`.
- */
-
 import { z } from 'zod';
 
 export const SYSTEM_MESSAGE_TYPES = ['banner', 'maintenance', 'alert'] as const;

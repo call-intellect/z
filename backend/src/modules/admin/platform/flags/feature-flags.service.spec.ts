@@ -1,22 +1,8 @@
-/**
- * Admin-redesign Фаза 8 — unit-тесты `FeatureFlagsService` + helpers.
- *
- * Покрываем:
- *   1) create() — INSERT при отсутствии записи; ConflictException при дубле.
- *   2) resolve() с overrides — orgOverride принимает решение.
- *   3) resolve() с rolloutPercent — корректное распределение по hash.
- *   4) computeRolloutHash() — детерминированный (одинаковый вход → одинаковый выход).
- *   5) setOverride/clearOverride — обновляют orgOverrides JSON.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../../common/prisma/prisma.service';
 
-import {
-  computeRolloutHash,
-  normalizeOrgOverrides,
-} from './feature-flags.helpers';
+import { computeRolloutHash, normalizeOrgOverrides } from './feature-flags.helpers';
 import { FeatureFlagsService } from './feature-flags.service';
 
 interface FlagRow {
@@ -36,38 +22,31 @@ function buildService(initial: { rows?: FlagRow[] } = {}) {
     return rows.find((r) => r.key === args.where.key) ?? null;
   });
   const findMany = vi.fn(async () => [...rows]);
-  const create = vi.fn(
-    async (args: { data: Omit<FlagRow, 'updatedAt'> }) => {
-      const row: FlagRow = {
-        ...args.data,
-        orgOverrides: normalizeOrgOverrides(args.data.orgOverrides),
-        updatedAt: new Date('2026-05-25T12:00:00Z'),
-      };
-      rows.push(row);
-      return row;
-    },
-  );
-  const update = vi.fn(
-    async (args: {
-      where: { key: string };
-      data: Partial<FlagRow>;
-    }) => {
-      const idx = rows.findIndex((r) => r.key === args.where.key);
-      if (idx < 0) throw new Error('not found');
-      const cur = rows[idx]!;
-      const next: FlagRow = {
-        ...cur,
-        ...args.data,
-        orgOverrides:
-          args.data.orgOverrides !== undefined
-            ? normalizeOrgOverrides(args.data.orgOverrides)
-            : cur.orgOverrides,
-        updatedAt: new Date('2026-05-25T13:00:00Z'),
-      };
-      rows[idx] = next;
-      return next;
-    },
-  );
+  const create = vi.fn(async (args: { data: Omit<FlagRow, 'updatedAt'> }) => {
+    const row: FlagRow = {
+      ...args.data,
+      orgOverrides: normalizeOrgOverrides(args.data.orgOverrides),
+      updatedAt: new Date('2026-05-25T12:00:00Z'),
+    };
+    rows.push(row);
+    return row;
+  });
+  const update = vi.fn(async (args: { where: { key: string }; data: Partial<FlagRow> }) => {
+    const idx = rows.findIndex((r) => r.key === args.where.key);
+    if (idx < 0) throw new Error('not found');
+    const cur = rows[idx]!;
+    const next: FlagRow = {
+      ...cur,
+      ...args.data,
+      orgOverrides:
+        args.data.orgOverrides !== undefined
+          ? normalizeOrgOverrides(args.data.orgOverrides)
+          : cur.orgOverrides,
+      updatedAt: new Date('2026-05-25T13:00:00Z'),
+    };
+    rows[idx] = next;
+    return next;
+  });
   const del = vi.fn(async (args: { where: { key: string } }) => {
     const idx = rows.findIndex((r) => r.key === args.where.key);
     if (idx < 0) throw new Error('not found');
@@ -149,7 +128,6 @@ describe('FeatureFlagsService', () => {
     expect(all.value).toBe(true);
     expect(all.source).toBe('rollout');
 
-    // Меняем на 0 — пользуемся update.
     await svc.update({
       key: 'feat.r',
       patch: { rolloutPercent: 0 },
@@ -158,7 +136,6 @@ describe('FeatureFlagsService', () => {
     const none = await svc.resolve('feat.r', 'tenant-any');
     expect(none.value).toBe(false);
 
-    // Среднее: 50% — для разных tenantId должны быть и true, и false.
     await svc.update({
       key: 'feat.r',
       patch: { rolloutPercent: 50 },
@@ -171,7 +148,6 @@ describe('FeatureFlagsService', () => {
       if (r.value) trues += 1;
       else falses += 1;
     }
-    // Грубая проверка: для 100 разных tenantId хоть какое-то распределение.
     expect(trues).toBeGreaterThan(0);
     expect(falses).toBeGreaterThan(0);
   });

@@ -1,26 +1,20 @@
-'use client';
+"use client";
 
-import { ClipboardCheck } from 'lucide-react';
-import Link from 'next/link';
-import useSWR from 'swr';
+import { ClipboardCheck } from "lucide-react";
+import Link from "next/link";
+import useSWR from "swr";
 
-import { curationApi } from '@/api/curation.api';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+import { curationApi } from "@/api/curation.api";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-/**
- * Виджет «На проверке у меня» (SBA α-4 §6.4).
- *
- * Источник правды: `GET /api/v1/curation/queue?assignedToMe=true&status=pending&limit=0`.
- * `limit=0` — count-only режим, без выгрузки items (см. CurationService.listQueue).
- */
 export function CurationPendingWidget() {
   const swr = useSWR(
-    ['curation-pending-me'],
+    ["curation-pending-me"],
     async () =>
       curationApi.listQueue({
         assignedToMe: true,
-        status: 'pending',
+        status: "pending",
         limit: 0,
       }),
     { revalidateOnFocus: false, shouldRetryOnError: false },

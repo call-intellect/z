@@ -7,16 +7,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { TablePropertiesService } from './table-properties.service';
 
-/**
- * Unit-тесты `TablePropertiesService`.
- *
- * Покрытие:
- *  1. list — проверка scope таблицы + сортировка по order.
- *  2. create — лимит превышен → 400.
- *  3. create — order не задан → ставится maxOrder+1.
- *  4. update — несуществующая колонка → NotFoundException.
- *  5. delete — успешно удаляет.
- */
 describe('TablePropertiesService', () => {
   const TENANT = 'org-1';
 
@@ -99,7 +89,7 @@ describe('TablePropertiesService', () => {
 
   it('create — лимит превышен → BadRequestException', async () => {
     tableFindUnique.mockResolvedValueOnce({ tenantId: TENANT, deletedAt: null });
-    propCount.mockResolvedValueOnce(3); // === maxPropsPerTable
+    propCount.mockResolvedValueOnce(3);
 
     await expect(
       svc.create({

@@ -11,18 +11,8 @@ import type { QuotaService } from '../../quotas/quota.service';
 import { GoalsService } from './goals.service';
 import type { StrategicAlignmentIssuesService } from './strategic-alignment-issues.service';
 
-/**
- * Goals OKR v2 (Фаза 1, M0) — unit-тесты ручного слоя:
- *   - supersede: старая validUntil проставлена, новая supersededById=old,
- *     promotionState='active', status старой НЕ изменён, транзакция вызвана.
- *   - assertNoCycle (через update): self-parent и цикл бросают BadRequest,
- *     валидный reparent проходит.
- *   - manualOverride: ручная правка поля мерджит имя в manualOverride.
- */
-
 type Fn = ReturnType<typeof vi.fn>;
 
-/** Первый аргумент первого вызова мока (vi.fn без сигнатуры типизирует calls как []). */
 function firstArg<T>(fn: Fn): T {
   const calls = fn.mock.calls as unknown as unknown[][];
   return calls[0]![0] as T;
@@ -51,7 +41,9 @@ function makeService(prismaStub: PrismaStub): {
   const svc = new GoalsService(
     prismaStub as unknown as PrismaService,
     audit as unknown as AuditLogService,
-    {} as unknown as CoreQueueService,
+    {
+      enqueueGoalEmbed: vi.fn().mockResolvedValue(undefined),
+    } as unknown as CoreQueueService,
     {} as unknown as QuotaService,
     {} as unknown as TypedConfigService,
     metrics as unknown as BusinessMetricsService,
@@ -84,7 +76,6 @@ function baseGoalRow(over: Record<string, unknown> = {}): Record<string, unknown
     confidence: null,
     validUntil: null,
     manualOverride: {},
-    // ── ТЗ-F (2026-06-05) — поля ответственного/кэша, читаемые mapList ──
     ownerPersonId: null,
     ownerPerson: null,
     cachedBlocksCount: null,
@@ -113,11 +104,7 @@ describe('GoalsService.supersede', () => {
 
     const prisma: PrismaStub = {
       goal: {
-        // 1) первая findUnique — загрузка старой; затем get() для новой.
-        findUnique: vi
-          .fn()
-          .mockResolvedValueOnce(oldRow) // supersede: загрузка old
-          .mockResolvedValue(newRow), // get(): деталка новой
+        findUnique: vi.fn().mockResolvedValueOnce(oldRow).mockResolvedValue(newRow),
         findFirst: vi.fn(),
         create: vi.fn(),
         update: goalUpdate,
@@ -139,14 +126,12 @@ describe('GoalsService.supersede', () => {
     });
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    // новая создаётся с supersededById=old, promotionState=active, source=manual
     const createArg = firstArg<{ data: Record<string, unknown> }>(txGoalCreate);
     expect(createArg.data.supersededById).toBe('gOld');
     expect(createArg.data.promotionState).toBe('active');
     expect(createArg.data.source).toBe('manual');
     expect(createArg.data.validUntil).toBeNull();
     expect(createArg.data.name).toBe('Новая цель');
-    // старой проставляется validUntil (не null) и НЕ трогается status.
     const updateArg = firstArg<{
       where: { id: string };
       data: Record<string, unknown>;
@@ -165,7 +150,6 @@ describe('GoalsService.update — защита от цикла при reparent',
   function prismaForReparent(opts: {
     existing: Record<string, unknown>;
     parentExists?: Record<string, unknown> | null;
-    // карта id → parentGoalId для подъёма по цепочке (assertNoCycle)
     chain?: Record<string, string | null>;
   }): PrismaStub {
     const chain = opts.chain ?? {};
@@ -173,13 +157,11 @@ describe('GoalsService.update — защита от цикла при reparent',
       goal: {
         findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
           if (where.id === opts.existing.id) return opts.existing;
-          // assertParentExists использует findUnique по родителю
           if (opts.parentExists && where.id === opts.parentExists.id) {
             return opts.parentExists;
           }
           return opts.parentExists ?? null;
         }),
-        // assertNoCycle поднимается через findFirst({ where: { id, tenantId } })
         findFirst: vi.fn(async ({ where }: { where: { id: string } }) => {
           if (where.id in chain) return { parentGoalId: chain[where.id] };
           return null;
@@ -205,12 +187,10 @@ describe('GoalsService.update — защита от цикла при reparent',
   });
 
   it('бросает BadRequest когда новый родитель — потомок цели (цикл)', async () => {
-    // дерево: g1 (цель) ← child  ← grandchild. reparent g1 под grandchild = цикл.
     const existing = baseGoalRow({ id: 'g1' });
     const prisma = prismaForReparent({
       existing,
       parentExists: { id: 'grandchild', tenantId: 't1' },
-      // подъём от grandchild: grandchild→child→g1 (встретили g1 → цикл)
       chain: { grandchild: 'child', child: 'g1', g1: null },
     });
     const { svc } = makeService(prisma);
@@ -229,7 +209,6 @@ describe('GoalsService.update — защита от цикла при reparent',
     const prisma = prismaForReparent({
       existing,
       parentExists: { id: 'other', tenantId: 't1' },
-      // подъём от other: other→root→null, g1 не встречается → цикла нет
       chain: { other: 'root', root: null },
     });
     const { svc } = makeService(prisma);
@@ -240,9 +219,7 @@ describe('GoalsService.update — защита от цикла при reparent',
       body: { parentGoalId: 'other' },
     });
     expect(res).toBeDefined();
-    const updateArg = firstArg<{ data: Record<string, unknown> }>(
-      prisma.goal.update as Fn,
-    );
+    const updateArg = firstArg<{ data: Record<string, unknown> }>(prisma.goal.update as Fn);
     expect(updateArg.data.parent).toEqual({ connect: { id: 'other' } });
   });
 });
@@ -271,12 +248,10 @@ describe('GoalsService.update — manualOverride', () => {
       body: { name: 'Новое имя' },
     });
     const arg = firstArg<{ data: { manualOverride: Record<string, true> } }>(updateFn);
-    // прежний override (description) сохранён + добавлено name.
     expect(arg.data.manualOverride).toEqual({ description: true, name: true });
   });
 });
 
-// ─────────────────── ТЗ-F (2026-06-05) — ownerPersonId ──────────────────
 describe('GoalsService — ownerPersonId (ТЗ-F)', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -315,7 +290,6 @@ describe('GoalsService — ownerPersonId (ТЗ-F)', () => {
     expect(personFindUnique).toHaveBeenCalledTimes(1);
     expect(res.ownerPersonId).toBe('p1');
     expect(res.ownerPersonName).toBe('Иван');
-    // в data create передан скалярный ownerPersonId.
     const createArg = firstArg<{ data: Record<string, unknown> }>(goalCreate);
     expect(createArg.data.ownerPersonId).toBe('p1');
   });
@@ -386,13 +360,10 @@ describe('GoalsService — ownerPersonId (ТЗ-F)', () => {
     expect(res.ownerPersonId).toBeNull();
     expect(res.ownerPersonName).toBeNull();
     const arg = firstArg<{ data: Record<string, unknown> }>(updateFn);
-    expect(arg.data).toEqual(
-      expect.objectContaining({ ownerPerson: { disconnect: true } }),
-    );
+    expect(arg.data).toEqual(expect.objectContaining({ ownerPerson: { disconnect: true } }));
   });
 });
 
-// ─────────────────── ТЗ-2 Ф6.A — setPriority (MoSCoW) ───────────────────
 describe('GoalsService.setPriority', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -417,9 +388,7 @@ describe('GoalsService.setPriority', () => {
     });
 
     expect(res).toEqual({ id: 'g1', priority: 'must' });
-    const arg = firstArg<{ where: { id: string }; data: Record<string, unknown> }>(
-      updateFn,
-    );
+    const arg = firstArg<{ where: { id: string }; data: Record<string, unknown> }>(updateFn);
     expect(arg.where.id).toBe('g1');
     expect(arg.data.priority).toBe('must');
     expect(metrics.incPortfolioPrioritySet).toHaveBeenCalledWith(

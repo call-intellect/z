@@ -2,30 +2,12 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * Pulse Wave 4 §4.1 — журнал согласий 152-ФЗ. Append-only лог `ConsentLog`
- * + денормализованное «полное согласие» в `Person.analyticsOptIn`.
- *
- * Логика «полного согласия» (`analyticsOptIn = true`):
- *   - `checkin_processing` = true (последняя запись)
- *   - `risk_analysis`      = true (последняя запись)
- *
- * `card_visible_to_manager` отдельный — отказ от него НЕ выключает
- * аналитику, только скрывает карточку у руководителя.
- *
- * Endpoint'ы — `OnboardingController` (POST/GET `/api/v1/me/consents`).
- */
 @Injectable()
 export class ConsentService {
   private readonly logger = new Logger(ConsentService.name);
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  /**
-   * Записывает событие согласия / отзыва. Идёт в `ConsentLog` (append-only).
-   * Если `dataType ∈ {checkin_processing, risk_analysis}` — пересчитывает
-   * флаг `Person.analyticsOptIn` по последним записям этих двух типов.
-   */
   async recordConsent(args: {
     tenantId: string;
     personId: string;
@@ -55,10 +37,6 @@ export class ConsentService {
     }
   }
 
-  /**
-   * Возвращает текущее состояние согласий по каждому типу — последняя
-   * запись `ConsentLog` per `dataType` для пары (tenantId, personId).
-   */
   async getActiveConsents(args: {
     tenantId: string;
     personId: string;
@@ -98,8 +76,7 @@ export class ConsentService {
       if (!latestByType.has(c.dataType)) latestByType.set(c.dataType, c.consented);
     }
     const allConsented =
-      latestByType.get('checkin_processing') === true &&
-      latestByType.get('risk_analysis') === true;
+      latestByType.get('checkin_processing') === true && latestByType.get('risk_analysis') === true;
 
     try {
       await this.prisma.person.update({
@@ -110,8 +87,6 @@ export class ConsentService {
         },
       });
     } catch (err) {
-      // Person мог быть удалён между findMany и update — это не критично
-      // для аудита: ConsentLog уже записан.
       this.logger.warn(
         `recomputeAnalyticsOptIn: не удалось обновить Person ${args.personId}: ${
           err instanceof Error ? err.message : String(err)

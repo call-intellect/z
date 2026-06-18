@@ -1,27 +1,16 @@
-'use client';
+"use client";
 
-/**
- * Диалог редактирования расписания @Cron для `/admin/platform/crons`.
- *
- * Поля:
- *   - expression: строка cron (с превью human-readable);
- *   - enabled: Switch;
- *   - reason: Textarea (обязателен, ≥ 10 символов — severity='high' на бэке).
- *
- * Save → PATCH /admin/crons/:name { expression?, enabled?, reason }.
- */
+import { useEffect, useState } from "react";
+import { Loader2, Save } from "lucide-react";
+import { toast } from "sonner";
 
-import { useEffect, useState } from 'react';
-import { Loader2, Save } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { adminCronsApi } from '@/api/admin-crons.api';
-import { ApiError } from '@/api/api-error';
+import { adminCronsApi } from "@/api/admin-crons.api";
+import { ApiError } from "@/api/api-error";
 import {
   humanizeCronExpression,
   type CronScheduleDomain,
-} from '@/domain/admin-cron';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-cron";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -29,11 +18,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import { Switch } from '@/ui/shadcn/switch';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { Switch } from "@/ui/shadcn/switch";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 const MIN_REASON_LENGTH = 10;
 
@@ -45,9 +34,9 @@ type Props = {
 };
 
 export function CronEditDialog({ cron, open, onOpenChange, onSaved }: Props) {
-  const [expression, setExpression] = useState('');
+  const [expression, setExpression] = useState("");
   const [enabled, setEnabled] = useState(true);
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,7 +44,7 @@ export function CronEditDialog({ cron, open, onOpenChange, onSaved }: Props) {
     if (!cron) return;
     setExpression(cron.expression);
     setEnabled(cron.enabled);
-    setReason('');
+    setReason("");
     setError(null);
   }, [cron]);
 
@@ -75,7 +64,7 @@ export function CronEditDialog({ cron, open, onOpenChange, onSaved }: Props) {
       return;
     }
     if (!expression.trim()) {
-      setError('Расписание не может быть пустым.');
+      setError("Расписание не может быть пустым.");
       return;
     }
     setSaving(true);
@@ -93,7 +82,7 @@ export function CronEditDialog({ cron, open, onOpenChange, onSaved }: Props) {
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось сохранить';
+            : "Не удалось сохранить";
       setError(msg);
       toast.error(msg);
     } finally {
@@ -112,12 +101,11 @@ export function CronEditDialog({ cron, open, onOpenChange, onSaved }: Props) {
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>
-            Изменить расписание: {cron.name}
-          </DialogTitle>
+          <DialogTitle>Изменить расписание: {cron.name}</DialogTitle>
           <DialogDescription>
             Сохранение синхронизируется во всех процессах через Redis pub/sub.
-            Дефолтное расписание из кода — <code>{cron.defaultExpression || '—'}</code>.
+            Дефолтное расписание из кода —{" "}
+            <code>{cron.defaultExpression || "—"}</code>.
           </DialogDescription>
         </DialogHeader>
 
@@ -151,7 +139,7 @@ export function CronEditDialog({ cron, open, onOpenChange, onSaved }: Props) {
             />
             <div className="min-w-0 text-xs">
               <p className="font-medium text-fg-primary">
-                {enabled ? 'Включён' : 'Выключен'}
+                {enabled ? "Включён" : "Выключен"}
               </p>
               <p className="text-fg-tertiary">
                 Выключенный крон не запускается по расписанию, но остаётся

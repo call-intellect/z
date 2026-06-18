@@ -16,7 +16,6 @@ describe('WebhookSigner', () => {
     const b = signer.sign(body, secret);
     expect(a).toBe(b);
     expect(a.startsWith('sha256=')).toBe(true);
-    // hex длина SHA-256 = 64.
     expect(a.length).toBe('sha256='.length + 64);
   });
 

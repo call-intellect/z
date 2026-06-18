@@ -13,53 +13,24 @@ import {
   CHANNEL_TOOL_WHITELIST_MANAGER,
   CHANNEL_TOOL_WHITELIST_SELF,
 } from './assistant-channel.bridge';
-import type {
-  ConciergeService,
-  ConciergeStreamEvent,
-} from './concierge.service';
+import type { ConciergeService, ConciergeStreamEvent } from './concierge.service';
 import type { ToolRouterService } from './tool-router.service';
 
-/**
- * Unit-тесты Ф5 assistant-channels (2026-06-11) — AssistantChannelBridge.
- *
- * Покрывают контракт моста «каналы → помощник»:
- *   - текст → ConciergeService.process(authMode='service') → sendChatReply
- *     с финальным текстом (solicited:true, dataClass='internal');
- *   - память per-binding: первый ход пишет Redis-маппинг
- *     `concierge:channel-conv:<bindingId>` → conversationId (TTL 24ч),
- *     второй ход читает его и передаёт conversationId в process;
- *   - деградации: quota_exceeded / error / пустой ответ LLM (с tool_result
- *     и без) → русские тексты-заглушки.
- *
- * Ф6 (канальный whitelist + текст-подтверждение):
- *   - роль Membership → SELF / MANAGER whitelist в process(toolWhitelist);
- *   - confirm_required → Redis `concierge:confirm:<bindingId>` (TTL 300) +
- *     вопрос «Подтвердите действие…» в канал;
- *   - следующий ход «да»/«нет»/unclear → исполнение / отмена / переспрос,
- *     одноразовость (del ДО execute).
- *
- * Все зависимости мокаются через `vi.fn()` + cast to type — паттерн проекта.
- */
-
-/** Превращает массив событий в AsyncIterable (мок ConciergeService.process). */
-async function* eventStream(
-  events: ConciergeStreamEvent[],
-): AsyncIterable<ConciergeStreamEvent> {
+async function* eventStream(events: ConciergeStreamEvent[]): AsyncIterable<ConciergeStreamEvent> {
   for (const e of events) {
     yield e;
   }
 }
 
-function makeBridge(opts: {
-  events: ConciergeStreamEvent[];
-  redisGetReturns?: string | null;
-  /** Ф6 — точечные значения Redis.get по ключу (перебивают redisGetReturns). */
-  redisState?: Record<string, string | null>;
-  /** Ф6 — роль Membership (rbac.getMembershipRole). Default null (рядовой). */
-  membershipRole?: string | null;
-  /** Ф6 — ответ LLM-judge assistant-confirm-classify. */
-  judgeText?: string;
-} = { events: [] }) {
+function makeBridge(
+  opts: {
+    events: ConciergeStreamEvent[];
+    redisGetReturns?: string | null;
+    redisState?: Record<string, string | null>;
+    membershipRole?: string | null;
+    judgeText?: string;
+  } = { events: [] },
+) {
   const processMock = vi.fn().mockReturnValue(eventStream(opts.events));
   const concierge = {
     process: processMock,
@@ -76,8 +47,6 @@ function makeBridge(opts: {
     if (opts.redisState && key in opts.redisState) {
       return opts.redisState[key] ?? null;
     }
-    // Ф6: confirm-ключи по умолчанию пусты (нет ожидания подтверждения);
-    // legacy-фолбэк redisGetReturns действует только для conv-памяти.
     if (key.startsWith('concierge:confirm:')) return null;
     return opts.redisGetReturns ?? null;
   });
@@ -87,9 +56,7 @@ function makeBridge(opts: {
     client: { get: redisGet, set: redisSet, del: redisDel },
   } as unknown as RedisService;
 
-  const getMembershipRole = vi
-    .fn()
-    .mockResolvedValue(opts.membershipRole ?? null);
+  const getMembershipRole = vi.fn().mockResolvedValue(opts.membershipRole ?? null);
   const rbac = { getMembershipRole } as unknown as RbacService;
 
   const toolRouterExecute = vi.fn().mockResolvedValue({
@@ -112,7 +79,6 @@ function makeBridge(opts: {
   });
   const llm = { call: llmCall } as unknown as LlmRouterService;
 
-  // L-4 — счётчик исходов z_assistant_turn_total.
   const incAssistantTurn = vi.fn();
   const metrics = { incAssistantTurn } as unknown as BusinessMetricsService;
 
@@ -127,7 +93,6 @@ function makeBridge(opts: {
   );
   bridge.onModuleInit();
 
-  // Достаём зарегистрированный handler — мост подписан на 'assistant_turn'.
   const call = subscribeInbound.mock.calls[0]!;
   const handler = call[1] as (msg: InboundMessage) => Promise<void>;
 
@@ -147,11 +112,6 @@ function makeBridge(opts: {
   };
 }
 
-/**
- * C-1 — прогон фактических аргументов sendChatReply через РЕАЛЬНУЮ
- * Zod-валидацию payload'а chat.answer (как делает sendNotification).
- * Раньше пустые conversationId/messageId роняли схему → тишина в канале.
- */
 function expectChatAnswerPayloadValid(sendChatReply: ReturnType<typeof vi.fn>): void {
   const args = (sendChatReply.mock.calls[0]?.[0] ?? {}) as {
     conversationId?: string;
@@ -168,7 +128,9 @@ function expectChatAnswerPayloadValid(sendChatReply: ReturnType<typeof vi.fn>): 
   ).not.toThrow();
 }
 
-const turn = (overrides: Partial<Extract<InboundMessage, { type: 'assistant_turn' }>> = {}): InboundMessage => ({
+const turn = (
+  overrides: Partial<Extract<InboundMessage, { type: 'assistant_turn' }>> = {},
+): InboundMessage => ({
   type: 'assistant_turn',
   userId: 'user-42',
   tenantId: 'org-1',
@@ -184,10 +146,7 @@ describe('AssistantChannelBridge — Ф5 assistant_turn', () => {
 
   it('подписывается на inbound assistant_turn в onModuleInit', () => {
     const { subscribeInbound } = makeBridge({ events: [] });
-    expect(subscribeInbound).toHaveBeenCalledWith(
-      'assistant_turn',
-      expect.any(Function),
-    );
+    expect(subscribeInbound).toHaveBeenCalledWith('assistant_turn', expect.any(Function));
   });
 
   it('(а) текст → process(authMode=service) → sendChatReply с финальным текстом, solicited:true, dataClass=internal', async () => {
@@ -210,7 +169,6 @@ describe('AssistantChannelBridge — Ф5 assistant_turn', () => {
         authMode: 'service',
       }),
     );
-    // Память пуста (redis.get → null) → conversationId НЕ передаётся.
     expect(processMock.mock.calls[0]![0]).not.toHaveProperty('conversationId');
 
     expect(sendChatReply).toHaveBeenCalledWith(
@@ -260,20 +218,17 @@ describe('AssistantChannelBridge — Ф5 assistant_turn', () => {
 
     await handler(turn());
 
-    expect(processMock).toHaveBeenCalledWith(
-      expect.objectContaining({ conversationId: 'conv-1' }),
-    );
+    expect(processMock).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conv-1' }));
   });
 
   it('без originChannelBindingId — Redis не трогается, разговор новый', async () => {
-    const { handler, processMock, redisGet, redisSet, sendChatReply } =
-      makeBridge({
-        events: [
-          { type: 'started', conversationId: 'conv-x' },
-          { type: 'message', text: 'Ок.' },
-          { type: 'done', messageId: 'msg-3' },
-        ],
-      });
+    const { handler, processMock, redisGet, redisSet, sendChatReply } = makeBridge({
+      events: [
+        { type: 'started', conversationId: 'conv-x' },
+        { type: 'message', text: 'Ок.' },
+        { type: 'done', messageId: 'msg-3' },
+      ],
+    });
 
     const msg = turn();
     delete (msg as { originChannelBindingId?: string }).originChannelBindingId;
@@ -282,9 +237,7 @@ describe('AssistantChannelBridge — Ф5 assistant_turn', () => {
     expect(redisGet).not.toHaveBeenCalled();
     expect(redisSet).not.toHaveBeenCalled();
     expect(processMock.mock.calls[0]![0]).not.toHaveProperty('conversationId');
-    expect(sendChatReply).toHaveBeenCalledWith(
-      expect.objectContaining({ text: 'Ок.' }),
-    );
+    expect(sendChatReply).toHaveBeenCalledWith(expect.objectContaining({ text: 'Ок.' }));
   });
 
   it('(в) quota_exceeded → текст про дневной лимит, маппинг не пишется', async () => {
@@ -363,9 +316,7 @@ describe('AssistantChannelBridge — Ф5 assistant_turn', () => {
 
     await handler(turn());
 
-    expect(sendChatReply).toHaveBeenCalledWith(
-      expect.objectContaining({ text: 'Готово.' }),
-    );
+    expect(sendChatReply).toHaveBeenCalledWith(expect.objectContaining({ text: 'Готово.' }));
   });
 
   it('process бросил исключение → handler не пробрасывает (логирует), sendChatReply не вызван', async () => {
@@ -395,8 +346,6 @@ describe('AssistantChannelBridge — Ф5 assistant_turn', () => {
   });
 });
 
-// ───────────────── Ф6 — канальный whitelist по роли Membership ─────────────────
-
 describe('AssistantChannelBridge — Ф6 канальный whitelist', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -424,8 +373,6 @@ describe('AssistantChannelBridge — Ф6 канальный whitelist', () => {
     expect(args.toolWhitelist).toEqual([...CHANNEL_TOOL_WHITELIST_SELF]);
     expect(args.toolWhitelist).not.toContain('get_person_pulse');
     expect(args.toolWhitelist).not.toContain('get_team_health');
-    // ТЗ 2026-06-14 channels-sync: SELF теперь без search_knowledge (память —
-    // только ask_chat_v2), с create_task/search_tasks/ingest_note.
     expect(args.toolWhitelist).not.toContain('search_knowledge');
     expect(args.toolWhitelist).toContain('ask_chat_v2');
     expect(args.toolWhitelist).toContain('create_task');
@@ -464,8 +411,6 @@ describe('AssistantChannelBridge — Ф6 канальный whitelist', () => {
     expect(args.toolWhitelist).toEqual([...CHANNEL_TOOL_WHITELIST_SELF]);
   });
 });
-
-// ───────────────── Ф6 — текстовое подтверждение мутаций ─────────────────
 
 describe('AssistantChannelBridge — Ф6 текст-подтверждение (zero-button)', () => {
   beforeEach(() => {
@@ -509,23 +454,15 @@ describe('AssistantChannelBridge — Ф6 текст-подтверждение (
   });
 
   it('«да» при висящем confirm-ключе → del ДО execute, исполнение отложенного tool, «Готово…»; process НЕ вызван', async () => {
-    const {
-      handler,
-      processMock,
-      redisDel,
-      toolRouterExecute,
-      sendChatReply,
-      llmCall,
-    } = makeBridge({
-      events: [],
-      redisState: { [CONFIRM_KEY]: pendingState },
-    });
+    const { handler, processMock, redisDel, toolRouterExecute, sendChatReply, llmCall } =
+      makeBridge({
+        events: [],
+        redisState: { [CONFIRM_KEY]: pendingState },
+      });
 
     await handler(turn({ text: 'да' }));
 
-    // Это ответ на подтверждение, не новый ход диалога.
     expect(processMock).not.toHaveBeenCalled();
-    // Эвристика сработала — LLM-judge не дёргался.
     expect(llmCall).not.toHaveBeenCalled();
 
     expect(toolRouterExecute).toHaveBeenCalledWith({
@@ -536,7 +473,6 @@ describe('AssistantChannelBridge — Ф6 текст-подтверждение (
       authMode: 'service',
     });
 
-    // Идемпотентность: del ключа СТРОГО ДО execute.
     expect(redisDel).toHaveBeenCalledWith(CONFIRM_KEY);
     const delOrder = redisDel.mock.invocationCallOrder[0]!;
     const execOrder = toolRouterExecute.mock.invocationCallOrder[0]!;
@@ -565,12 +501,11 @@ describe('AssistantChannelBridge — Ф6 текст-подтверждение (
   });
 
   it('«может быть» → LLM-judge unclear: переспрос, ключ ЖИВ, execute НЕ вызван', async () => {
-    const { handler, redisDel, toolRouterExecute, sendChatReply, llmCall } =
-      makeBridge({
-        events: [],
-        redisState: { [CONFIRM_KEY]: pendingState },
-        judgeText: '{"decision":"unclear","confidence":0.4}',
-      });
+    const { handler, redisDel, toolRouterExecute, sendChatReply, llmCall } = makeBridge({
+      events: [],
+      redisState: { [CONFIRM_KEY]: pendingState },
+      judgeText: '{"decision":"unclear","confidence":0.4}',
+    });
 
     await handler(turn({ text: 'может быть' }));
 
@@ -642,7 +577,6 @@ describe('AssistantChannelBridge — Ф6 текст-подтверждение (
       events: [],
       redisState: { [CONFIRM_KEY]: pendingState },
     });
-    // Конкурентный обработчик уже удалил ключ между GET и DEL.
     redisDel.mockResolvedValueOnce(0);
 
     await handler(turn({ text: 'да' }));
@@ -652,8 +586,6 @@ describe('AssistantChannelBridge — Ф6 текст-подтверждение (
     expect(sendChatReply).not.toHaveBeenCalled();
   });
 });
-
-// ───────────────── C-1 — payload chat.answer проходит реальную Zod-схему ─────────────────
 
 describe('AssistantChannelBridge — C-1 совместимость payload с registry', () => {
   beforeEach(() => {
@@ -682,7 +614,7 @@ describe('AssistantChannelBridge — C-1 совместимость payload с r
       messageId?: string;
     };
     expect(sent.messageId).toBe('assistant-channel');
-    expect(sent.conversationId).toBe('binding-1'); // pendingState.conversationId='' → originChannelBindingId
+    expect(sent.conversationId).toBe('binding-1');
     expectChatAnswerPayloadValid(sendChatReply);
   });
 
@@ -702,8 +634,6 @@ describe('AssistantChannelBridge — C-1 совместимость payload с r
     expectChatAnswerPayloadValid(sendChatReply);
   });
 });
-
-// ───────────────── L-4 — метрика z_assistant_turn_total{outcome} ─────────────────
 
 describe('AssistantChannelBridge — L-4 метрика исходов ходов', () => {
   beforeEach(() => {

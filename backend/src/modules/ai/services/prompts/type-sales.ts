@@ -25,7 +25,6 @@ export const SCHEMA = z
     decision_maker: z.string().nullable(),
     urgency: z.string().nullable(),
     next_step: z.string(),
-    // A11-Волна2 (additive, опциональные — обратная совместимость):
     competitors: z.array(z.string()).optional(),
     decision_criteria: z.array(z.string()).optional(),
     what_hooked: z.string().nullable().optional(),
@@ -97,16 +96,11 @@ const SYSTEM = `Ты — аналитик продаж в Коре, памяти
 
 export function buildPrompt(input: PromptInput): PromptOutput {
   return {
-    // A2 (ТЗ consolidation Ф3.2): SYSTEM уже содержит финальную инструкцию
-    // tool-use, поэтому withToolInstructions НЕ применяем (иначе дубль).
-    // org-контекст и ASR-нота навешиваются снаружи в analyze.worker.
     system: withRoomChatNote(SYSTEM, input.roomChat),
     user: `Тип встречи: ${meetingTypeLabelRu(input.meeting.type)}\nЗаголовок: ${input.meeting.title}\n\nДиалог:\n${turnsToText(input.dialog, input.roomChat)}`,
   };
 }
 
-// Для Anthropic: enum без null отдельно, nullable enum через type=['string','null']
-// тут не нужен — берём строку, но контролируем enum в Zod на парсе.
 export const TOOL = buildExtractTool(
   TOOL_NAME,
   'Извлечь отчёт по продажной встрече',
@@ -143,6 +137,5 @@ export const TOOL = buildExtractTool(
   ],
 );
 
-// Подавляем неиспользуемые имена (на случай будущих рефакторов).
 void fieldEnum;
 void fieldNullableEnum;

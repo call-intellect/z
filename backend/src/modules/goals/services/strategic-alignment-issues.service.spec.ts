@@ -6,12 +6,6 @@ import type { RedisService } from '../../../common/redis/redis.service';
 
 import { StrategicAlignmentIssuesService } from './strategic-alignment-issues.service';
 
-/**
- * Sprint 3 B1-3.2 — тесты на чистые вычисления:
- *   - compute(): score-формула 50%/50% + timeProgress + блокированные.
- *   - findMisalignedUsers(): порог 80% per-user за 30 дней.
- */
-
 interface PrismaStubs {
   goalFindFirst?: ReturnType<typeof vi.fn>;
   issueCount?: ReturnType<typeof vi.fn>;
@@ -65,7 +59,7 @@ describe('StrategicAlignmentIssuesService.compute', () => {
     const createdAt = new Date('2026-01-01T00:00:00Z');
     const targetDate = new Date('2026-12-31T00:00:00Z');
 
-    const counts = [10, 5, 2, 3]; // total, completed, blocked, recentlyUpdated
+    const counts = [10, 5, 2, 3];
     let i = 0;
     const issueCount = vi.fn(async () => counts[i++]!);
 
@@ -87,7 +81,6 @@ describe('StrategicAlignmentIssuesService.compute', () => {
     expect(snap.completedIssues).toBe(5);
     expect(snap.blockedIssues).toBe(2);
     expect(snap.recentlyUpdatedIssues).toBe(3);
-    // completion = 5/10 * 50 = 25, recency = 50 (есть свежие), → 75.
     expect(snap.alignmentScore).toBe(75);
     expect(snap.timeProgressPct).not.toBeNull();
     expect(snap.timeProgressPct).toBeGreaterThanOrEqual(0);
@@ -128,7 +121,6 @@ describe('StrategicAlignmentIssuesService.compute', () => {
       issueCount: vi.fn(async () => counts[i++]!),
     });
     const snap = await svc.compute({ tenantId: 't1', goalId: 'g1' });
-    // completion = 1/4 * 50 = 12.5 → round = 13; recency = 0.
     expect(snap.alignmentScore).toBe(13);
   });
 });
@@ -139,9 +131,6 @@ describe('StrategicAlignmentIssuesService.findMisalignedUsers', () => {
   });
 
   it('возвращает пользователя ≥80% задач без goalId за 30д', async () => {
-    // u1 — 10 задач, 9 без goalId (90%) → попадает.
-    // u2 — 10 задач, 5 без goalId (50%) → не попадает.
-    // u3 — 3 задачи, все без goalId (100%) → но total < MIN (5).
     const issues: Array<{
       id: string;
       goalId: string | null;

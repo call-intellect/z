@@ -8,15 +8,6 @@ import type { MeetingsService } from '../meetings.service';
 
 import { IdleMeetingCron } from './idle-meeting.cron';
 
-/**
- * Юнит-тесты IdleMeetingCron на mock-зависимостях.
- *
- * Покрывают второй проход sweep — reconcile брошенных `scheduled` (ТЗ Ф6/Р2):
- *   пустая room → failed(never_activated); живые участники → recover active
- *   (+ запись при recordByDefault); ошибка listParticipants → пусто.
- * И регрессию: active-ветка (sweepIdleActive) не сломана.
- */
-
 interface Mocks {
   prisma: any;
   livekit: any;
@@ -57,9 +48,7 @@ describe('IdleMeetingCron — reconcileAbandonedScheduled (ТЗ Ф6/Р2)', () =>
   it('scheduled без участников → failed(never_activated) + deleteRoom', async () => {
     const m = makeMocks();
     m.prisma.meeting.findMany.mockImplementation(async ({ where }: any) =>
-      where.status === 'scheduled'
-        ? [{ id: 'm-s', ownerId: 'u-o', recordByDefault: true }]
-        : [],
+      where.status === 'scheduled' ? [{ id: 'm-s', ownerId: 'u-o', recordByDefault: true }] : [],
     );
     m.livekit.listParticipants.mockImplementation(async () => []);
 
@@ -77,9 +66,7 @@ describe('IdleMeetingCron — reconcileAbandonedScheduled (ТЗ Ф6/Р2)', () =>
   it('scheduled с участниками → recover active + start recording', async () => {
     const m = makeMocks();
     m.prisma.meeting.findMany.mockImplementation(async ({ where }: any) =>
-      where.status === 'scheduled'
-        ? [{ id: 'm-s', ownerId: 'u-o', recordByDefault: true }]
-        : [],
+      where.status === 'scheduled' ? [{ id: 'm-s', ownerId: 'u-o', recordByDefault: true }] : [],
     );
     m.livekit.listParticipants.mockImplementation(async () => [{ identity: 'u-1' }]);
 
@@ -97,9 +84,7 @@ describe('IdleMeetingCron — reconcileAbandonedScheduled (ТЗ Ф6/Р2)', () =>
   it('scheduled с участниками, recordByDefault=false → recover active, без записи', async () => {
     const m = makeMocks();
     m.prisma.meeting.findMany.mockImplementation(async ({ where }: any) =>
-      where.status === 'scheduled'
-        ? [{ id: 'm-s', ownerId: 'u-o', recordByDefault: false }]
-        : [],
+      where.status === 'scheduled' ? [{ id: 'm-s', ownerId: 'u-o', recordByDefault: false }] : [],
     );
     m.livekit.listParticipants.mockImplementation(async () => [{ identity: 'u-1' }]);
 
@@ -116,9 +101,7 @@ describe('IdleMeetingCron — reconcileAbandonedScheduled (ТЗ Ф6/Р2)', () =>
   it('listParticipants бросает → трактуем как пусто → failed(never_activated)', async () => {
     const m = makeMocks();
     m.prisma.meeting.findMany.mockImplementation(async ({ where }: any) =>
-      where.status === 'scheduled'
-        ? [{ id: 'm-s', ownerId: 'u-o', recordByDefault: true }]
-        : [],
+      where.status === 'scheduled' ? [{ id: 'm-s', ownerId: 'u-o', recordByDefault: true }] : [],
     );
     m.livekit.listParticipants.mockRejectedValueOnce(new Error('room not found'));
 
@@ -141,7 +124,6 @@ describe('IdleMeetingCron — reconcileAbandonedScheduled (ТЗ Ф6/Р2)', () =>
     await makeCron(m).sweep();
 
     expect(m.livekit.deleteRoom).toHaveBeenCalledWith({ id: 'm-a' });
-    // active-ветка не дёргает FSM-переходы — это делает webhook room_finished.
     expect(m.meetings.transitionStatus).not.toHaveBeenCalled();
   });
 });

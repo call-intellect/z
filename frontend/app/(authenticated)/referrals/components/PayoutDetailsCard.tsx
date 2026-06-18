@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -9,54 +9,39 @@ import {
   Loader2,
   ShieldCheck,
   Wallet,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { referralsApi } from '@/api/referrals.api';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { referralsApi } from "@/api/referrals.api";
 import {
   legalFormLabel,
   payoutDetailsAreFilled,
   referralFromApi,
   type ReferralDomain,
   type ReferralLegalForm,
-} from '@/domain/referral';
-import { GRAD, STATUS_TONE, glass } from '@/ui/components/dashboard/modern';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/domain/referral";
+import { GRAD, STATUS_TONE, glass } from "@/ui/components/dashboard/modern";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
 interface Props {
   referral: ReferralDomain;
   onUpdated: (referral: ReferralDomain) => void;
 }
 
-type PayoutStatus = 'empty' | 'unverified' | 'verified';
+type PayoutStatus = "empty" | "unverified" | "verified";
 
-/**
- * PayoutDetailsCard — карточка реквизитов для вывода денег (ТЗ §8.2).
- *
- * Состояния (бейдж в заголовке):
- *   - `empty` — реквизиты не заполнены, вывод недоступен.
- *   - `unverified` — заполнены, но ИНН не подтверждён (кнопка «Проверить ИНН»).
- *   - `verified` — всё готово, выплаты идут автоматически 10-го числа.
- *
- * Карточка свёрнута по умолчанию в состоянии `verified` (там нечего
- * делать). В состоянии `empty` и `unverified` — развёрнута, чтобы
- * подтолкнуть к действию.
- *
- * Редизайн B10: стеклянная обёртка `glass()`, заголовок и статус-бейдж в
- * новом языке. ИНН-гейт, валидация и логика статусов — без изменений.
- */
 export function PayoutDetailsCard({ referral, onUpdated }: Props) {
   const status: PayoutStatus = computeStatus(referral);
-  const [expanded, setExpanded] = useState<boolean>(status !== 'verified');
+  const [expanded, setExpanded] = useState<boolean>(status !== "verified");
 
   return (
     <div style={glass()} className="overflow-hidden">
@@ -64,16 +49,19 @@ export function PayoutDetailsCard({ referral, onUpdated }: Props) {
         <div className="flex items-center gap-2.5">
           <span
             className="grid h-8 w-8 place-items-center rounded-xl"
-            style={{ background: GRAD.amber, color: 'oklch(0.99 0.005 280)' }}
+            style={{ background: GRAD.amber, color: "oklch(0.99 0.005 280)" }}
             aria-hidden="true"
           >
             <Wallet className="h-4 w-4" />
           </span>
           <div>
-            <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            <h2
+              className="text-[15px] font-semibold"
+              style={{ color: "var(--text-primary)" }}
+            >
               Реквизиты для вывода
             </h2>
-            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
               ИНН, форма ведения деятельности и банковский счёт. Нужны для
               выплаты 10-го числа.
             </p>
@@ -86,7 +74,7 @@ export function PayoutDetailsCard({ referral, onUpdated }: Props) {
             variant="ghost"
             size="icon"
             onClick={() => setExpanded((v) => !v)}
-            aria-label={expanded ? 'Свернуть' : 'Развернуть'}
+            aria-label={expanded ? "Свернуть" : "Развернуть"}
             aria-expanded={expanded}
           >
             {expanded ? (
@@ -99,7 +87,7 @@ export function PayoutDetailsCard({ referral, onUpdated }: Props) {
       </header>
 
       {expanded && (
-        <div style={{ borderTop: '1px solid var(--border-inset)' }}>
+        <div style={{ borderTop: "1px solid var(--border-inset)" }}>
           <PayoutDetailsForm referral={referral} onUpdated={onUpdated} />
         </div>
       )}
@@ -108,25 +96,29 @@ export function PayoutDetailsCard({ referral, onUpdated }: Props) {
 }
 
 function computeStatus(ref: ReferralDomain): PayoutStatus {
-  if (!payoutDetailsAreFilled(ref)) return 'empty';
-  if (ref.innVerifiedAt === null) return 'unverified';
-  return 'verified';
+  if (!payoutDetailsAreFilled(ref)) return "empty";
+  if (ref.innVerifiedAt === null) return "unverified";
+  return "verified";
 }
 
-/**
- * Статус-бейдж реквизитов в стиле `StatusPill` (парные токены `STATUS_TONE`),
- * но с осмысленной подписью и иконкой по состоянию.
- */
 function StatusBadge({ status }: { status: PayoutStatus }) {
   const map: Record<
     PayoutStatus,
-    { tone: 'ok' | 'warning' | 'risk'; label: string; icon: typeof CheckCircle2 }
+    {
+      tone: "ok" | "warning" | "risk";
+      label: string;
+      icon: typeof CheckCircle2;
+    }
   > = {
-    verified: { tone: 'ok', label: 'Готово', icon: CheckCircle2 },
-    unverified: { tone: 'warning', label: 'Не подтверждены', icon: AlertTriangle },
+    verified: { tone: "ok", label: "Готово", icon: CheckCircle2 },
+    unverified: {
+      tone: "warning",
+      label: "Не подтверждены",
+      icon: AlertTriangle,
+    },
     empty: {
-      tone: 'risk',
-      label: 'Не заполнены — вывод недоступен',
+      tone: "risk",
+      label: "Не заполнены — вывод недоступен",
       icon: AlertTriangle,
     },
   };
@@ -142,8 +134,6 @@ function StatusBadge({ status }: { status: PayoutStatus }) {
     </span>
   );
 }
-
-// ───────────────────────── Form ─────────────────────────
 
 interface PayoutDetailsFormValues {
   inn: string;
@@ -164,11 +154,11 @@ function PayoutDetailsForm({ referral, onUpdated }: Props) {
     e.preventDefault();
     setError(null);
     if (!/^(\d{10}|\d{12})$/.test(values.inn.trim())) {
-      setError('ИНН должен содержать 10 или 12 цифр.');
+      setError("ИНН должен содержать 10 или 12 цифр.");
       return;
     }
     if (!values.bankName.trim() || !values.bankAccount.trim()) {
-      setError('Заполни банк и номер счёта.');
+      setError("Заполни банк и номер счёта.");
       return;
     }
     setSaving(true);
@@ -184,9 +174,7 @@ function PayoutDetailsForm({ referral, onUpdated }: Props) {
       onUpdated(referralFromApi(updated));
       setSavedAt(Date.now());
     } catch (e2) {
-      setError(
-        humanizeApiError(e2, 'Не удалось сохранить реквизиты.'),
-      );
+      setError(humanizeApiError(e2, "Не удалось сохранить реквизиты."));
     } finally {
       setSaving(false);
     }
@@ -202,7 +190,7 @@ function PayoutDetailsForm({ referral, onUpdated }: Props) {
       setError(
         e2 instanceof ApiError
           ? e2.message
-          : 'Не удалось запустить проверку ИНН.',
+          : "Не удалось запустить проверку ИНН.",
       );
     } finally {
       setVerifying(false);
@@ -218,7 +206,10 @@ function PayoutDetailsForm({ referral, onUpdated }: Props) {
             id="referral-inn"
             value={values.inn}
             onChange={(e) =>
-              setValues((v) => ({ ...v, inn: e.target.value.replace(/\D/g, '') }))
+              setValues((v) => ({
+                ...v,
+                inn: e.target.value.replace(/\D/g, ""),
+              }))
             }
             placeholder="7707083893"
             maxLength={12}
@@ -227,7 +218,9 @@ function PayoutDetailsForm({ referral, onUpdated }: Props) {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="referral-legal-form">Форма ведения деятельности</Label>
+          <Label htmlFor="referral-legal-form">
+            Форма ведения деятельности
+          </Label>
           <Select
             value={values.legalForm}
             onValueChange={(v) =>
@@ -239,13 +232,13 @@ function PayoutDetailsForm({ referral, onUpdated }: Props) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="self_employed">
-                {legalFormLabel('self_employed')}
+                {legalFormLabel("self_employed")}
               </SelectItem>
               <SelectItem value="individual_entrepreneur">
-                {legalFormLabel('individual_entrepreneur')}
+                {legalFormLabel("individual_entrepreneur")}
               </SelectItem>
               <SelectItem value="legal_entity">
-                {legalFormLabel('legal_entity')}
+                {legalFormLabel("legal_entity")}
               </SelectItem>
             </SelectContent>
           </Select>
@@ -284,9 +277,8 @@ function PayoutDetailsForm({ referral, onUpdated }: Props) {
 
       {referral.innVerifiedAt && (
         <div className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
-          ИНН подтверждён{' '}
-          {referral.innVerifiedAt.toLocaleDateString('ru-RU')}. Выплаты пойдут
-          автоматически 10-го числа.
+          ИНН подтверждён {referral.innVerifiedAt.toLocaleDateString("ru-RU")}.
+          Выплаты пойдут автоматически 10-го числа.
         </div>
       )}
 
@@ -307,9 +299,9 @@ function PayoutDetailsForm({ referral, onUpdated }: Props) {
           }
           title={
             referral.innVerifiedAt
-              ? 'ИНН уже подтверждён'
+              ? "ИНН уже подтверждён"
               : !payoutDetailsAreFilled(referral)
-                ? 'Сначала сохрани реквизиты'
+                ? "Сначала сохрани реквизиты"
                 : undefined
           }
         >
@@ -329,14 +321,10 @@ function PayoutDetailsForm({ referral, onUpdated }: Props) {
 }
 
 function readInitialValues(ref: ReferralDomain): PayoutDetailsFormValues {
-  // payoutDetails не приходит в ReferralViewApi — это намеренно (защита от
-  // утечки приватных банковских реквизитов через API). Форма стартует с
-  // пустыми банковскими полями, ИНН и форма — из профиля. Если партнёр
-  // что-то менял — увидит это после сохранения.
   return {
-    inn: ref.inn ?? '',
-    legalForm: ref.legalForm ?? 'self_employed',
-    bankName: '',
-    bankAccount: '',
+    inn: ref.inn ?? "",
+    legalForm: ref.legalForm ?? "self_employed",
+    bankName: "",
+    bankAccount: "",
   };
 }

@@ -1,20 +1,10 @@
-'use client';
+"use client";
 
-/**
- * Фаза A.4 — детальная карточка `/admin/ai-models/[taskType]`.
- *
- * Компоненты:
- *   - <TaskTypeDetailsCard /> — шапка + цепочка provider'ов.
- *   - <TaskTypeMetricsWidget /> — графики cost/latency/success/% fallback.
- *   - История переключений (audit log).
- *   - Модалка <SwitchPrimaryModal /> — переключение primary с опцией A/B.
- */
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { ArrowLeft, Loader2 } from "lucide-react";
 
-import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Loader2 } from 'lucide-react';
-
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   AI_MODELS_PROVIDERS,
   adminAiModelsApi,
@@ -23,7 +13,7 @@ import {
   type RouteChangeApi,
   type TaskTypeMetricsApi,
   type TaskTypeRouteApi,
-} from '@/api/admin-ai-models.api';
+} from "@/api/admin-ai-models.api";
 import {
   formatCostRub,
   formatLatency,
@@ -31,23 +21,22 @@ import {
   mapTaskTypeRoute,
   tierLabel,
   type TaskTypeRouteUi,
-} from '@/domain/admin-ai-model';
-import { toast } from 'sonner';
-import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-ai-model";
+import { toast } from "sonner";
+import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 
 interface Props {
   taskType: string;
 }
 
 export function TaskTypeDetailsClient({ taskType }: Props) {
-
   const [route, setRoute] = useState<TaskTypeRouteUi | null>(null);
   const [metrics, setMetrics] = useState<TaskTypeMetricsApi | null>(null);
   const [history, setHistory] = useState<RouteChangeApi[]>([]);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<'24h' | '7d' | '30d'>('7d');
+  const [period, setPeriod] = useState<"24h" | "7d" | "30d">("7d");
   const [error, setError] = useState<string | null>(null);
   const [switchOpen, setSwitchOpen] = useState(false);
   const { ask, dialog: confirmDialog } = useConfirmDialog();
@@ -65,7 +54,7 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
       setMetrics(m);
       setHistory(h.items);
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось загрузить';
+      const msg = e instanceof ApiError ? e.message : "Не удалось загрузить";
       setError(msg);
     } finally {
       setLoading(false);
@@ -78,18 +67,18 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
 
   const handleRemoveProvider = async (entry: ProviderInTierApi) => {
     const ok = await ask({
-      title: 'Удалить провайдера?',
+      title: "Удалить провайдера?",
       description: `Удалить ${entry.providerName} из tier=${entry.tier}?`,
-      confirmLabel: 'Удалить',
+      confirmLabel: "Удалить",
       destructive: true,
     });
     if (!ok) return;
     try {
       await adminAiModelsApi.removeProvider(taskType, entry.id);
-      toast.success('Провайдер удалён');
+      toast.success("Провайдер удалён");
       await refresh();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить');
+      toast.error(e instanceof ApiError ? e.message : "Не удалось удалить");
     }
   };
 
@@ -120,17 +109,21 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
         <p className="text-sm text-fg-secondary">{route.groupLabel}</p>
       </header>
 
-      {/* Цепочка моделей */}
+      {}
       <section className="mb-6 rounded-lg border border-border-subtle bg-bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-fg-primary">Цепочка моделей</h2>
+          <h2 className="text-base font-semibold text-fg-primary">
+            Цепочка моделей
+          </h2>
           <Button size="sm" onClick={() => setSwitchOpen(true)}>
             Переключить основную
           </Button>
         </div>
         <div className="space-y-2">
           {route.chain.length === 0 && (
-            <div className="text-xs text-fg-secondary">Пусто — примените seed дефолтов.</div>
+            <div className="text-xs text-fg-secondary">
+              Пусто — примените seed дефолтов.
+            </div>
           )}
           {route.chain.map((entry) => (
             <div
@@ -140,11 +133,11 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
               <Badge
                 variant="outline"
                 className={`w-fit ${
-                  entry.tierColor === 'green'
-                    ? 'border-chip-success-bg bg-chip-success-bg text-chip-success-fg'
-                    : entry.tierColor === 'orange'
-                      ? 'border-chip-warning-bg bg-chip-warning-bg text-chip-warning-fg'
-                      : 'border-border-subtle bg-bg-subtle text-fg-secondary'
+                  entry.tierColor === "green"
+                    ? "border-chip-success-bg bg-chip-success-bg text-chip-success-fg"
+                    : entry.tierColor === "orange"
+                      ? "border-chip-warning-bg bg-chip-warning-bg text-chip-warning-fg"
+                      : "border-border-subtle bg-bg-subtle text-fg-secondary"
                 }`}
               >
                 {tierLabel(entry.tier)}
@@ -153,9 +146,13 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
                 {entry.providerLabel}
               </span>
               {entry.model && (
-                <span className="text-xs text-fg-secondary">/ {entry.model}</span>
+                <span className="text-xs text-fg-secondary">
+                  / {entry.model}
+                </span>
               )}
-              <span className="text-[10px] text-fg-tertiary">priority={entry.priority}</span>
+              <span className="text-[10px] text-fg-tertiary">
+                priority={entry.priority}
+              </span>
               {entry.editedByAdmin && (
                 <Badge variant="secondary" className="text-[10px]">
                   ручная правка
@@ -174,23 +171,23 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
         </div>
       </section>
 
-      {/* Метрики per-tier */}
+      {}
       <section className="mb-6 rounded-lg border border-border-subtle bg-bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-semibold text-fg-primary">Метрики</h2>
           <div className="flex gap-1">
-            {(['24h', '7d', '30d'] as const).map((p) => (
+            {(["24h", "7d", "30d"] as const).map((p) => (
               <button
                 key={p}
                 type="button"
                 onClick={() => setPeriod(p)}
                 className={`rounded px-2 py-1 text-xs ${
                   period === p
-                    ? 'bg-fg-primary text-bg-card'
-                    : 'bg-bg-subtle text-fg-secondary hover:bg-bg-overlay'
+                    ? "bg-fg-primary text-bg-card"
+                    : "bg-bg-subtle text-fg-secondary hover:bg-bg-overlay"
                 }`}
               >
-                {p === '24h' ? '24ч' : p === '7d' ? '7 дней' : '30 дней'}
+                {p === "24h" ? "24ч" : p === "7d" ? "7 дней" : "30 дней"}
               </button>
             ))}
           </div>
@@ -198,13 +195,17 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
         {metrics ? (
           <MetricsTable metrics={metrics} />
         ) : (
-          <div className="text-xs text-fg-secondary">Нет данных за выбранный период.</div>
+          <div className="text-xs text-fg-secondary">
+            Нет данных за выбранный период.
+          </div>
         )}
       </section>
 
-      {/* Audit log */}
+      {}
       <section className="mb-6 rounded-lg border border-border-subtle bg-bg-card p-4">
-        <h2 className="mb-3 text-base font-semibold text-fg-primary">История изменений</h2>
+        <h2 className="mb-3 text-base font-semibold text-fg-primary">
+          История изменений
+        </h2>
         {history.length === 0 ? (
           <div className="text-xs text-fg-secondary">История пуста.</div>
         ) : (
@@ -216,16 +217,20 @@ export function TaskTypeDetailsClient({ taskType }: Props) {
               >
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-[10px] text-fg-secondary">
-                    {new Date(h.createdAt).toLocaleString('ru-RU')}
+                    {new Date(h.createdAt).toLocaleString("ru-RU")}
                   </span>
                   <Badge variant="outline" className="text-[10px]">
                     {h.changeType}
                   </Badge>
                   {h.tier && (
-                    <span className="text-[10px] text-fg-secondary">{tierLabel(h.tier as AiModelTier)}</span>
+                    <span className="text-[10px] text-fg-secondary">
+                      {tierLabel(h.tier as AiModelTier)}
+                    </span>
                   )}
                 </div>
-                {h.reason && <div className="mt-1 text-fg-secondary">{h.reason}</div>}
+                {h.reason && (
+                  <div className="mt-1 text-fg-secondary">{h.reason}</div>
+                )}
               </li>
             ))}
           </ul>
@@ -257,20 +262,28 @@ function MetricsTable({ metrics }: { metrics: TaskTypeMetricsApi }) {
             <th className="px-3 py-2 text-left font-medium">Уровень</th>
             <th className="px-3 py-2 text-right font-medium">Вызовов</th>
             <th className="px-3 py-2 text-right font-medium">Успех</th>
-            <th className="px-3 py-2 text-right font-medium">Латентность p95</th>
+            <th className="px-3 py-2 text-right font-medium">
+              Латентность p95
+            </th>
             <th className="px-3 py-2 text-right font-medium">Стоимость</th>
           </tr>
         </thead>
         <tbody>
-          {(['primary', 'secondary', 'tertiary'] as const).map((t) => {
+          {(["primary", "secondary", "tertiary"] as const).map((t) => {
             const row = metrics.perTier[t];
             return (
               <tr key={t} className="border-t border-border-subtle">
                 <td className="px-3 py-2">{tierLabel(t)}</td>
                 <td className="px-3 py-2 text-right">{row.calls}</td>
-                <td className="px-3 py-2 text-right">{formatPercent(row.successRate)}</td>
-                <td className="px-3 py-2 text-right">{formatLatency(row.p95LatencyMs)}</td>
-                <td className="px-3 py-2 text-right">{formatCostRub(row.costUsd)}</td>
+                <td className="px-3 py-2 text-right">
+                  {formatPercent(row.successRate)}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {formatLatency(row.p95LatencyMs)}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  {formatCostRub(row.costUsd)}
+                </td>
               </tr>
             );
           })}
@@ -279,13 +292,17 @@ function MetricsTable({ metrics }: { metrics: TaskTypeMetricsApi }) {
             <td className="px-3 py-2 text-right">{metrics.totals.calls}</td>
             <td className="px-3 py-2 text-right">
               {metrics.totals.calls > 0
-                ? formatPercent(metrics.totals.successCalls / metrics.totals.calls)
-                : '—'}
+                ? formatPercent(
+                    metrics.totals.successCalls / metrics.totals.calls,
+                  )
+                : "—"}
             </td>
             <td className="px-3 py-2 text-right text-xs text-fg-secondary">
               fallback: {formatPercent(metrics.totals.fallbackRate)}
             </td>
-            <td className="px-3 py-2 text-right">{formatCostRub(metrics.totals.totalCostUsd)}</td>
+            <td className="px-3 py-2 text-right">
+              {formatCostRub(metrics.totals.totalCostUsd)}
+            </td>
           </tr>
         </tbody>
       </table>
@@ -304,19 +321,17 @@ function SwitchPrimaryModal({
   onClose: () => void;
   onDone: () => void;
 }) {
-
-  const [providerName, setProviderName] = useState<typeof AI_MODELS_PROVIDERS[number]>(
-    'openai-via-proxy',
-  );
-  const [model, setModel] = useState('gpt-5.5');
-  const [reason, setReason] = useState('');
+  const [providerName, setProviderName] =
+    useState<(typeof AI_MODELS_PROVIDERS)[number]>("openai-via-proxy");
+  const [model, setModel] = useState("gpt-5.5");
+  const [reason, setReason] = useState("");
   const [abPercent, setAbPercent] = useState(100);
   const [days, setDays] = useState(7);
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
     if (reason.length < 3) {
-      toast.error('Опишите причину (минимум 3 символа)');
+      toast.error("Опишите причину (минимум 3 символа)");
       return;
     }
     setBusy(true);
@@ -325,12 +340,18 @@ function SwitchPrimaryModal({
         providerName,
         model,
         reason,
-        ...(abPercent < 100 ? { abSplitPercent: abPercent, abDurationDays: days } : {}),
+        ...(abPercent < 100
+          ? { abSplitPercent: abPercent, abDurationDays: days }
+          : {}),
       });
-      toast.success(abPercent < 100 ? 'A/B-эксперимент запущен' : 'Основная модель переключена');
+      toast.success(
+        abPercent < 100
+          ? "A/B-эксперимент запущен"
+          : "Основная модель переключена",
+      );
       onDone();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось переключить');
+      toast.error(e instanceof ApiError ? e.message : "Не удалось переключить");
     } finally {
       setBusy(false);
     }
@@ -343,7 +364,8 @@ function SwitchPrimaryModal({
           Переключить основную модель
         </h3>
         <p className="mb-3 text-xs text-fg-secondary">
-          Текущая: <code className="font-mono">{currentPrimary ?? '— не задана —'}</code>
+          Текущая:{" "}
+          <code className="font-mono">{currentPrimary ?? "— не задана —"}</code>
         </p>
         <div className="space-y-3">
           <label className="block">
@@ -351,7 +373,9 @@ function SwitchPrimaryModal({
             <select
               value={providerName}
               onChange={(e) =>
-                setProviderName(e.target.value as typeof AI_MODELS_PROVIDERS[number])
+                setProviderName(
+                  e.target.value as (typeof AI_MODELS_PROVIDERS)[number],
+                )
               }
               className="mt-1 w-full rounded-md border border-border-subtle bg-bg-card px-2 py-1.5 text-sm"
             >
@@ -372,13 +396,17 @@ function SwitchPrimaryModal({
             />
           </label>
           <label className="block">
-            <span className="text-xs text-fg-secondary">Доля трафика на новую модель, %</span>
+            <span className="text-xs text-fg-secondary">
+              Доля трафика на новую модель, %
+            </span>
             <input
               type="number"
               min={1}
               max={100}
               value={abPercent}
-              onChange={(e) => setAbPercent(Math.max(1, Math.min(100, Number(e.target.value))))}
+              onChange={(e) =>
+                setAbPercent(Math.max(1, Math.min(100, Number(e.target.value))))
+              }
               className="mt-1 w-full rounded-md border border-border-subtle bg-bg-card px-2 py-1.5 text-sm"
             />
             <span className="text-[10px] text-fg-secondary">
@@ -387,19 +415,25 @@ function SwitchPrimaryModal({
           </label>
           {abPercent < 100 && (
             <label className="block">
-              <span className="text-xs text-fg-secondary">Длительность A/B-эксперимента, дней</span>
+              <span className="text-xs text-fg-secondary">
+                Длительность A/B-эксперимента, дней
+              </span>
               <input
                 type="number"
                 min={1}
                 max={30}
                 value={days}
-                onChange={(e) => setDays(Math.max(1, Math.min(30, Number(e.target.value))))}
+                onChange={(e) =>
+                  setDays(Math.max(1, Math.min(30, Number(e.target.value))))
+                }
                 className="mt-1 w-full rounded-md border border-border-subtle bg-bg-card px-2 py-1.5 text-sm"
               />
             </label>
           )}
           <label className="block">
-            <span className="text-xs text-fg-secondary">Причина переключения*</span>
+            <span className="text-xs text-fg-secondary">
+              Причина переключения*
+            </span>
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
@@ -414,7 +448,11 @@ function SwitchPrimaryModal({
             Отмена
           </Button>
           <Button size="sm" onClick={() => void submit()} disabled={busy}>
-            {busy ? <Loader2 size={12} className="animate-spin" /> : 'Применить'}
+            {busy ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              "Применить"
+            )}
           </Button>
         </div>
       </div>

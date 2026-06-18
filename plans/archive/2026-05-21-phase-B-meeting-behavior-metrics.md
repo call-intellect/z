@@ -412,7 +412,7 @@ Response: { meetings: number, avgDominanceIndex: number, avgSilencePercent: numb
 
 ### 9.3. Локализация (русский)
 
-Добавить в `delivery/ui/copy-strings.ru.md`:
+Добавить в `second-brain/13_glossary/copy-strings.ru.md`:
 - «Время говорения» / «% времени»
 - «Перевороты речи» (turns) / «Монологи» (`turn ≥ 60 сек`)
 - «Самый длинный монолог»

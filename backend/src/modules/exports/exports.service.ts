@@ -22,17 +22,9 @@ import { AUDIT } from '../audit/audit.types';
 import { S3Service } from '../recordings/s3.service';
 
 import type { BulkExportDto } from './dto/export.dto';
-import {
-  EXPORT_QUEUE,
-  EXPORT_JOB_OPTIONS,
-  type ExportJobData,
-} from './exports-queue';
+import { EXPORT_QUEUE, EXPORT_JOB_OPTIONS, type ExportJobData } from './exports-queue';
 import { ExportsRepository } from './exports.repository';
 
-/**
- * Бизнес-сервис экспортов. Постановка job в очередь, выдача presigned URL,
- * валидация лимитов и идемпотентности.
- */
 @Injectable()
 export class ExportsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ExportsService.name);
@@ -80,7 +72,6 @@ export class ExportsService implements OnModuleInit, OnModuleDestroy {
       );
     }
     await this.assertMeetingOwner(meetingId, userId);
-    // Идемпотентность: если уже queued/processing — возвращаем тот же id.
     const inProgress = await this.repo.findInProgress({
       userId,
       type,
@@ -105,10 +96,7 @@ export class ExportsService implements OnModuleInit, OnModuleDestroy {
     return { exportId: created.id };
   }
 
-  async createBulkExport(
-    userId: string,
-    dto: BulkExportDto,
-  ): Promise<{ exportId: string }> {
+  async createBulkExport(userId: string, dto: BulkExportDto): Promise<{ exportId: string }> {
     const limitMeetings = this.cfg.workspace.exportZipMaxMeetings;
     if (dto.meetingIds.length > limitMeetings) {
       throw new BadRequestException({
@@ -119,7 +107,6 @@ export class ExportsService implements OnModuleInit, OnModuleDestroy {
         },
       });
     }
-    // Daily quota.
     const usedToday = await this.repo.countCompletedToday(userId, 'bulk_zip');
     const maxPerDay = this.cfg.workspace.maxBulkExportsPerDay;
     if (usedToday >= maxPerDay) {
@@ -136,7 +123,6 @@ export class ExportsService implements OnModuleInit, OnModuleDestroy {
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
-    // Все meetingIds должны принадлежать юзеру.
     const owned = await this.prisma.meeting.count({
       where: {
         id: { in: dto.meetingIds },
@@ -153,7 +139,6 @@ export class ExportsService implements OnModuleInit, OnModuleDestroy {
         },
       });
     }
-    // Идемпотентность.
     const inProgress = await this.repo.findInProgress({
       userId,
       type: 'bulk_zip',
@@ -202,11 +187,14 @@ export class ExportsService implements OnModuleInit, OnModuleDestroy {
       });
     }
     if (exp.status === 'queued' || exp.status === 'processing') {
-      // 425 Too Early — Nest 10 не имеет константы, используем код напрямую.
       throw new HttpException(
         {
           ok: false,
-          error: { code: 'export_not_ready', message: 'Export ещё в обработке', status: exp.status },
+          error: {
+            code: 'export_not_ready',
+            message: 'Export ещё в обработке',
+            status: exp.status,
+          },
         },
         425,
       );
@@ -260,18 +248,11 @@ export class ExportsService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────────
-
   private async enqueue(exportId: string): Promise<void> {
     if (!this.queue) {
       throw new NotImplementedException('Export queue не инициализирован');
     }
-    await this.queue.add(
-      'export',
-      { exportId },
-      // BullMQ 5.x: ':' в jobId допустим только при ровно 3 частях — '_'.
-      { jobId: `export_${exportId}` },
-    );
+    await this.queue.add('export', { exportId }, { jobId: `export_${exportId}` });
   }
 
   private async assertMeetingOwner(meetingId: string, userId: string): Promise<void> {

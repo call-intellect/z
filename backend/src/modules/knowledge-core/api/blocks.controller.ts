@@ -14,11 +14,9 @@ import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
+import { RequireEntitlement } from '../../entitlements/require-entitlement.decorator';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import {
@@ -26,6 +24,7 @@ import {
   type KnowledgeAccessContext,
 } from '../../rbac/knowledge-access-resolver.service';
 import { RbacService } from '../../rbac/rbac.service';
+import { ACTIVE_LINK_FILTER } from '../services/link-read-filter';
 import { ReasoningChainService } from '../services/reasoning-chain.service';
 
 import type { BlockDetailDto } from './dto/block.dto';
@@ -35,18 +34,8 @@ import {
   type BlockLinksResultDto,
   type ReasoningChainResultDto,
 } from './dto/graph.dto';
-import type {
-  BlockSearchItemDto,
-  EntityItemDto,
-  EvidenceItemDto,
-} from './dto/search.dto';
+import type { BlockSearchItemDto, EntityItemDto, EvidenceItemDto } from './dto/search.dto';
 
-/**
- * `GET /api/v1/knowledge/blocks/:id` — деталка IdeaBlock с evidence + entities.
- *
- * Если запрошен блок со status='merged_into' — следуем по mergedIntoId один
- * шаг и возвращаем canonical, помечая `redirectedToCanonical=true`.
- */
 @ApiTags('knowledge-core')
 @Controller('api/v1/knowledge')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -54,14 +43,8 @@ export class KnowledgeBlocksController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RbacService) private readonly rbac: RbacService,
-    // KC-Temporal W3.2 (2026-05-25) — BFS-обход reasoning-link'ов для
-    // GET /blocks/:id/reasoning-chain.
     @Inject(ReasoningChainService)
     private readonly reasoningChain: ReasoningChainService,
-    // Ф4 (knowledge-access) — гейт доступа в деталке блока / связях /
-    // reasoning-chain. RbacModule/MetricsModule/Config @Global. @Optional,
-    // чтобы legacy-тесты, создающие контроллер позиционно (без этих сервисов),
-    // не падали — при null гейт не активируется (поведение = off).
     @Optional()
     @Inject(KnowledgeAccessResolver)
     private readonly accessResolver: KnowledgeAccessResolver | null = null,
@@ -73,11 +56,6 @@ export class KnowledgeBlocksController {
     private readonly metrics: BusinessMetricsService | null = null,
   ) {}
 
-  /**
-   * Ф4 (knowledge-access) — резолв режима гейта + контекста групп пользователя.
-   * Если сервисы не подключены (legacy позиционные тесты) или флаг off —
-   * возвращает enf='off' + ctx=null (поведение байт-в-байт текущее).
-   */
   private async resolveAccess(
     tenantId: string,
     userId: string,
@@ -96,13 +74,6 @@ export class KnowledgeBlocksController {
     return { enf, accessCtx };
   }
 
-  /**
-   * Ф4 (knowledge-access) — gate доступа к ОДНОМУ блоку (root деталки/связей/
-   * цепочки). Возвращает true, если блок доступен ИЛИ гейт неактивен (off /
-   * shadow / bypass / нет сервисов). При enforce + недоступном блоке — false
-   * (caller бросает NotFound block_not_found, не раскрывая существование).
-   * shadow → метрика расхождения, но true (выдачу не меняем).
-   */
   private async isRootBlockAccessible(
     enf: 'off' | 'shadow' | 'enforce',
     accessCtx: KnowledgeAccessContext | null,
@@ -119,7 +90,6 @@ export class KnowledgeBlocksController {
       this.metrics.incAccessDenied({ surface: 'blocks' }, 1);
       return false;
     }
-    // shadow — считаем расхождение, но отдаём как раньше.
     this.metrics.incAccessShadowDiff({ surface: 'blocks' }, 1);
     return true;
   }
@@ -167,9 +137,6 @@ export class KnowledgeBlocksController {
       }
     }
 
-    // Ф4 (knowledge-access) — гейт доступа к canonical-блоку (после редиректа
-    // merged_into). При enforce + недоступном блоке — NotFound (не раскрываем
-    // существование закрытого блока); off/shadow/bypass → отдаём как раньше.
     const { enf, accessCtx } = await this.resolveAccess(tenantId, user.id);
     if (!(await this.isRootBlockAccessible(enf, accessCtx, target.id))) {
       throw new NotFoundException({
@@ -225,13 +192,11 @@ export class KnowledgeBlocksController {
     };
   }
 
-  /**
-   * `GET /api/v1/knowledge/blocks/:id/links` — типизированные связи блока
-   * (Фаза 3). Возвращает outgoing (где блок — fromBlockId) и incoming
-   * (где блок — toBlockId), отсортированные по убыванию confidence.
-   * Архивированные связи не показываем (`status='active'`).
-   */
   @Get('blocks/:id/links')
+  // G1 — связи блока = граф знаний (платная feature.graph, как
+  // KnowledgeGraphController). Глобальный EntitlementGuard читает декоратор
+  // через Reflector. Без него /blocks/:id/links был обходом paywall'а графа.
+  @RequireEntitlement('feature.graph')
   @ApiOperation({ summary: 'Типизированные связи блока (outgoing + incoming)' })
   async links(
     @Param('id') id: string,
@@ -251,7 +216,6 @@ export class KnowledgeBlocksController {
         error: { code: 'forbidden', message: 'Недостаточно прав' },
       });
     }
-    // Проверяем существование и принадлежность Org.
     const block = await this.prisma.ideaBlock.findUnique({
       where: { id },
       select: { id: true, tenantId: true },
@@ -263,8 +227,6 @@ export class KnowledgeBlocksController {
       });
     }
 
-    // Ф4 (knowledge-access) — гейт доступа к root-блоку. При enforce +
-    // недоступном root — NotFound (как в byId); off/shadow/bypass → как раньше.
     const { enf, accessCtx } = await this.resolveAccess(tenantId, user.id);
     if (!(await this.isRootBlockAccessible(enf, accessCtx, id))) {
       throw new NotFoundException({
@@ -274,28 +236,25 @@ export class KnowledgeBlocksController {
     }
 
     let outgoing = await this.prisma.ideaBlockLink.findMany({
-      where: { fromBlockId: id, status: 'active', tenantId },
+      where: { fromBlockId: id, ...ACTIVE_LINK_FILTER, tenantId },
       include: { toBlock: true },
       orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
     });
     let incoming = await this.prisma.ideaBlockLink.findMany({
-      where: { toBlockId: id, status: 'active', tenantId },
+      where: { toBlockId: id, ...ACTIVE_LINK_FILTER, tenantId },
       include: { fromBlock: true },
       orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
     });
 
-    // Ф4 (knowledge-access) — соседи. Контент «другого» блока (name/
-    // criticalQuestion) утекает через каждую связь. Партиционируем id «других»
-    // блоков по группам: enforce — оставляем только связи с доступным соседом
-    // (+incAccessDenied); shadow — только метрика, выдачу не меняем; bypass /
-    // off / нет сервисов → без изменений.
     if (this.accessResolver && this.metrics && accessCtx && !accessCtx.isBypass) {
       const otherIds = [
         ...outgoing.map((l) => l.toBlock.id),
         ...incoming.map((l) => l.fromBlock.id),
       ];
-      const { accessible, denied } =
-        await this.accessResolver.partitionBlockIdsByAccess(accessCtx, otherIds);
+      const { accessible, denied } = await this.accessResolver.partitionBlockIdsByAccess(
+        accessCtx,
+        otherIds,
+      );
       if (enf === 'enforce') {
         const allow = new Set(accessible);
         outgoing = outgoing.filter((l) => allow.has(l.toBlock.id));
@@ -348,15 +307,10 @@ export class KnowledgeBlocksController {
     };
   }
 
-  /**
-   * KC-Temporal W3.2 (2026-05-25) — reasoning-chain вокруг блока.
-   * BFS по `IdeaBlockLink` (status='active') по белому списку relationType'ов
-   * (causes/consequences_of/develops/question_answered_by). Защита: max 50
-   * узлов, depth ∈ [1,3].
-   *
-   * RBAC: `block:read` (как у других block-эндпоинтов).
-   */
   @Get('blocks/:id/reasoning-chain')
+  // G1 — reasoning-chain = BFS по графу связей блока (платная feature.graph,
+  // как KnowledgeGraphController). Без декоратора был обходом paywall'а графа.
+  @RequireEntitlement('feature.graph')
   @ApiOperation({
     summary: 'Reasoning chain блока (BFS по логическим связям)',
   })
@@ -395,7 +349,6 @@ export class KnowledgeBlocksController {
       });
     }
 
-    // Ф4 (knowledge-access) — гейт доступа к root-блоку (как в byId/links).
     const { enf, accessCtx } = await this.resolveAccess(tenantId, user.id);
     if (!(await this.isRootBlockAccessible(enf, accessCtx, id))) {
       throw new NotFoundException({
@@ -405,15 +358,9 @@ export class KnowledgeBlocksController {
     }
 
     const q = ReasoningChainQuerySchema.parse(query ?? {});
-    // Ф4 (knowledge-access) — при enforce передаём accessWhere в BFS: цепочка
-    // не протащит недоступные соседние узлы (R11). off/shadow → undefined →
-    // поведение байт-в-байт текущее.
     const accessWhere =
       enf === 'enforce' && this.accessResolver && accessCtx
-        ? (this.accessResolver.buildAccessWhere(accessCtx) as Record<
-            string,
-            unknown
-          >)
+        ? (this.accessResolver.buildAccessWhere(accessCtx) as Record<string, unknown>)
         : undefined;
     const chain = await this.reasoningChain.buildChain(id, q.depth, accessWhere);
     return {

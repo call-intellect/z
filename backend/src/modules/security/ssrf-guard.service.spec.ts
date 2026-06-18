@@ -81,9 +81,7 @@ describe('SsrfGuardService.assertSafeOutboundUrl', () => {
 
   it('блокирует 10.0.0.1', async () => {
     const svc = new SsrfGuardService(makeCfg());
-    await expect(svc.assertSafeOutboundUrl('http://10.0.0.1')).rejects.toThrow(
-      /Приватный IPv4/u,
-    );
+    await expect(svc.assertSafeOutboundUrl('http://10.0.0.1')).rejects.toThrow(/Приватный IPv4/u);
   });
 
   it('блокирует 169.254.169.254 (AWS metadata)', async () => {
@@ -122,10 +120,8 @@ describe('SsrfGuardService.assertSafeOutboundUrl', () => {
     const svc = new SsrfGuardService(
       makeCfg({ egressAllowedHosts: ['hooks.slack.com', 'localhost'] }),
     );
-    // localhost в whitelist пропускается, проверка идёт по проверкам протокола.
     const r = await svc.assertSafeOutboundUrl('http://localhost/hook');
     expect(r.url.hostname).toBe('localhost');
-    // DNS-resolve не вызывался — vitest spy на dns.lookup был бы лишним.
     vi.restoreAllMocks();
   });
 });

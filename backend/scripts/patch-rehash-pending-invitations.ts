@@ -1,33 +1,3 @@
-/**
- * audit Б1 (2026-05-29) — перегенерация одноразовых паролей в pending-инвайтах.
- *
- * Проблема: в β-10 (commit-ы до 2026-05-29) `OrgInvitation.tempPasswordHash`
- * писался как `sha256(tempPassword)`, а `accounts.login` использует
- * `PasswordService.verify(argon2)`. argon2.verify бросает на sha256-хексе,
- * пользователь не может войти по credentials из письма.
- *
- * Что делает (идемпотентно):
- *   1. Находит OrgInvitation с `acceptedAt IS NULL`, `status = 'pending'`,
- *      `tempPasswordHash IS NOT NULL`, у которого хеш НЕ argon2-конверта
- *      (sha256-хекс — 64 hex chars; argon2id-конверт начинается с `$argon2id$`).
- *   2. Генерирует новый одноразовый пароль (15 байт base64url = 120 бит).
- *   3. Хеширует его argon2id с параметрами из ENV (ARGON_MEMORY_KB / _ITERATIONS / _PARALLELISM).
- *   4. Пишет новый `tempPasswordHash`, инкрементит `magicTokenHash`/`magicTokenUsedAt=null`,
- *      пересоздаёт `linkCode` НЕ трогает (telegram отдельная история).
- *   5. Шлёт письмо повторно через MailService (`sendInviteWithCredentials`).
- *
- * NB: магик-линк и telegram-deep-link мы НЕ перевыпускаем — они через
- * другие проверки и не зависят от sha256/argon2. Цель скрипта — оживить
- * именно credentials-логин.
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/patch-rehash-pending-invitations.ts          # apply
- *   docker compose exec backend bun run scripts/patch-rehash-pending-invitations.ts --dry-run
- *   docker compose exec backend bun run scripts/patch-rehash-pending-invitations.ts --limit=100
- *
- * Зарегистрирован в `apply-prod-deploy.ts` STEPS (phase: 'patch', skipBootstrap: true).
- */
-
 import { randomBytes } from 'node:crypto';
 
 import argon2 from 'argon2';
@@ -53,11 +23,6 @@ function parseArgs(argv: string[]): CliOptions {
   return opts;
 }
 
-/**
- * argon2id-конверт начинается с `$argon2id$v=19$m=...,t=...,p=...$salt$hash`.
- * sha256-хекс — ровно 64 символа [0-9a-f]. Любой другой формат считаем
- * «непонятным» и пропускаем (для безопасности — не перезаписываем).
- */
 function looksLikeArgon2(hash: string | null): boolean {
   return typeof hash === 'string' && hash.startsWith('$argon2');
 }
@@ -146,10 +111,6 @@ async function main(): Promise<void> {
     });
     updated += 1;
 
-    // Письмо — best-effort. Скрипт не должен падать из-за SMTP-проблем.
-    // В audit Б1 (5.) указано «повторно отправить письмо». Если в скрипте
-    // нет доступа к MailService (Nest DI), мы хотя бы логируем тенант/инвайт,
-    // чтобы оператор знал кому ручную ссылку выслать.
     if (inv.email) {
       console.log(
         `[audit Б1 rehash invitations] ⚠ инвайт ${inv.id} (org=${inv.orgId}, email=${inv.email}) — ` +

@@ -1,47 +1,17 @@
-/**
- * Smart-tables auto-creation (2026-06-02, Фаза 5) — NL Saved Views.
- *
- * LLM-промпт `table-semantic-filter` (cheap tier — DeepSeek V4 Flash). По
- * NL-запросу пользователя и схеме колонок ТЕКУЩЕЙ таблицы конвертирует запрос в
- * JSON-фильтр `{ filters: [{ propertyId, op, value? }] }`. Применяет фильтр фронт
- * клиент-сайд по той же семантике операторов, что описана в SYSTEM.
- *
- * Cache-friendly: SYSTEM стабилен (каталог операторов/правила), переменное
- * (колонки таблицы + дата + запрос) в USER (Б10).
- */
-
 import { withInjectionGuard, wrapUserData } from './common';
 
-/** Колонка таблицы для подсказки модели (переменная часть, в USER). */
 export interface SemanticFilterColumn {
-  /** id колонки (TableProperty.id) — модель обязана брать propertyId ТОЛЬКО отсюда. */
   id: string;
-  /** Человекочитаемое имя колонки. */
   name: string;
-  /** Тип колонки (TablePropType). */
   type: string;
 }
 
 export interface BuildTableSemanticFilterPromptArgs {
-  /** Схема колонок ТЕКУЩЕЙ таблицы (переменная часть, в USER). */
   properties: ReadonlyArray<SemanticFilterColumn>;
-  /** NL-запрос пользователя (переменная часть, в USER). */
   nlQuery: string;
-  /**
-   * Сегодняшняя дата ISO `ГГГГ-ММ-ДД` — точка отсчёта для older_than/before/after.
-   * ВАЖНО: это UTC-календарная дата (формируется как `toISOString().slice(0,10)`).
-   * Все относительные/абсолютные даты в фильтре считаются от неё в UTC, поэтому
-   * границы суток едины для всех часовых поясов (по UTC), а не по локальному
-   * времени клиента.
-   */
   today: string;
 }
 
-/**
- * Каталог операторов с семантикой. Совпадает с картой совместимости в
- * `table-filter.dto.ts` (источник правды — там; здесь — текстовое описание для
- * модели). Каждая строка: оператор — семантика — где применим.
- */
 const OPERATOR_CATALOG: ReadonlyArray<string> = [
   '`eq` — равно. Для любого типа. value — искомое значение.',
   '`neq` — не равно. Для любого типа. value — значение.',
@@ -60,8 +30,6 @@ function buildSystem(): string {
 
   return withInjectionGuard(
     [
-      // Cache-friendly: SYSTEM стабилен (каталог операторов/правила), переменное
-      // (колонки таблицы + дата + запрос) в USER (Б10).
       'Ты конвертируешь запрос пользователя в JSON-фильтр для таблицы. Тебе дают список колонок текущей таблицы (id, название, тип), сегодняшнюю дату и сам запрос на естественном языке. Твоя задача — вернуть набор условий фильтра, которые отбирают строки, соответствующие запросу.',
       '',
       '## Каталог операторов (используй ТОЛЬКО их)',
@@ -82,17 +50,12 @@ function buildSystem(): string {
   );
 }
 
-// SYSTEM не зависит от данных — собираем один раз (стабильный prefix для кэша).
 const SYSTEM = buildSystem();
 
-/**
- * Возвращает `{ system, user }`. SYSTEM стабилен (кэшируется), переменные данные
- * (колонки таблицы + сегодняшняя дата + запрос) идут в USER. Пользовательский
- * NL-запрос обёрнут в маркеры данных (защита от prompt-injection).
- */
-export function buildTableSemanticFilterPrompt(
-  args: BuildTableSemanticFilterPromptArgs,
-): { system: string; user: string } {
+export function buildTableSemanticFilterPrompt(args: BuildTableSemanticFilterPromptArgs): {
+  system: string;
+  user: string;
+} {
   const colLines = args.properties
     .map((p) => `  - id=${p.id} | «${p.name}» | тип ${p.type}`)
     .join('\n');

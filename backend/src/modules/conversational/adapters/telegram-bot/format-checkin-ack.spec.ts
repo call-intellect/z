@@ -1,7 +1,3 @@
-/**
- * ТЗ 2026-05-29 telegram-self-initiated-checkins §Backend.12 — 4 шаблона
- * подтверждения. Покрываем все четыре + проверку pluralize.
- */
 import { describe, expect, it } from 'vitest';
 
 import { formatCheckinAck } from './format-checkin-ack';

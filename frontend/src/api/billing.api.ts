@@ -1,11 +1,4 @@
-/**
- * API-слой биллинга. Все вызовы через единый apiClient.
- *
- * Эндпоинты — backend BillingController + AdminBillingController +
- * BillingTochkaOAuthController. См. ТЗ §11.
- */
-
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 import type {
   AdminActivateBody,
   AdminActivateResultApi,
@@ -24,27 +17,26 @@ import type {
   StartCardPaymentBody,
   SubscriptionEventApi,
   SubscriptionViewApi,
-} from './types/billing';
+} from "./types/billing";
 
-const BASE = '/api/v1/billing';
-const ADMIN = '/api/v1/admin';
+const BASE = "/api/v1/billing";
+const ADMIN = "/api/v1/admin";
 
 export const billingApi = {
-  // ── Cabinet ──
   getSubscription: () =>
     apiClient.get<SubscriptionViewApi | null>(`${BASE}/subscription`),
   getMeetingsBalance: () =>
     apiClient.get<MeetingsBalanceApi>(`${BASE}/meetings-balance`),
   getInvoices: (params?: { limit?: number; offset?: number }) => {
     const search = new URLSearchParams();
-    if (params?.limit) search.set('limit', String(params.limit));
-    if (params?.offset) search.set('offset', String(params.offset));
+    if (params?.limit) search.set("limit", String(params.limit));
+    if (params?.offset) search.set("offset", String(params.offset));
     const qs = search.toString();
     return apiClient.get<InvoiceListResponseApi>(
-      `${BASE}/invoices${qs ? `?${qs}` : ''}`,
+      `${BASE}/invoices${qs ? `?${qs}` : ""}`,
     );
   },
-  getQuote: (billingPeriod: 'monthly' | 'yearly', seatsExtra: number) =>
+  getQuote: (billingPeriod: "monthly" | "yearly", seatsExtra: number) =>
     apiClient.get<QuoteApi>(
       `${BASE}/quote?billingPeriod=${billingPeriod}&seatsExtra=${seatsExtra}`,
     ),
@@ -53,11 +45,9 @@ export const billingApi = {
   payBankInvoice: (body: StartBankInvoiceBody) =>
     apiClient.post<PaymentStartResultApi>(`${BASE}/pay/bank-invoice`, body),
 
-  // ── Admin (overview) ──
   adminGetOverview: () =>
     apiClient.get<BillingOverviewApi>(`${ADMIN}/billing/overview`),
 
-  // ── Admin (per-Org) ──
   adminGetOrgBilling: (tenantId: string) =>
     apiClient.get<AdminOrgBillingResponseApi>(
       `${ADMIN}/orgs/${tenantId}/billing`,
@@ -83,7 +73,6 @@ export const billingApi = {
       `${ADMIN}/orgs/${tenantId}/billing/events`,
     ),
 
-  // ── Admin (invoices) ──
   adminMarkInvoicePaid: (invoiceId: string, body: AdminMarkPaidBody) =>
     apiClient.post<InvoiceViewApi>(
       `${ADMIN}/billing/invoices/${invoiceId}/mark-paid`,
@@ -95,7 +84,6 @@ export const billingApi = {
       body,
     ),
 
-  // ── Admin (Tochka OAuth) ──
   adminGetTochkaAuthorizeUrl: () =>
     apiClient.get<{ url: string }>(
       `${ADMIN}/billing/tochka/oauth/authorize-url`,

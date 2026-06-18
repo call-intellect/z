@@ -1,15 +1,3 @@
-/**
- * Integration spec для EntityResolutionService (Phase F.2).
- *
- * Реальный Postgres + pgvector из docker-compose.dev.yml. Если БД недоступна —
- * тесты skip'аются.
- *
- * Покрываемые сценарии (минимум, расширяется по мере надобности):
- *   - findOrCreateEntity: новое имя → create + mentionsCount=1.
- *   - findOrCreateEntity: повторное точное совпадение → update + mentionsCount+=1.
- *   - findOrCreateEntity: case-insensitive дедуп («Альфа» = «АЛЬФА»).
- *   - Изоляция per-tenant: одно имя в двух Org → две разные Entity.
- */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -43,8 +31,6 @@ beforeAll(async () => {
   ctx.fixture = await buildKnowledgeCoreFixture(prisma, PREFIX);
   ctx.cleanup = ctx.fixture.cleanup;
 
-  // Эмбеддинги мокаем — для F.2 они нам не критичны, плюс OpenAI ключи в
-  // test-env поддельные. Возвращаем фиксированный 1536-мерный вектор.
   const embed = {
     embedEntityNames: vi.fn(async (names: string[]) =>
       names.map(() => new Array<number>(1536).fill(0)),
@@ -52,15 +38,11 @@ beforeAll(async () => {
     embedQuery: vi.fn(async () => new Array<number>(1536).fill(0)),
   } as unknown as KnowledgeEmbeddingService;
 
-  ctx.svc = new EntityResolutionService(
-    prisma as unknown as PrismaService,
-    embed,
-  );
+  ctx.svc = new EntityResolutionService(prisma as unknown as PrismaService, embed);
 });
 
 afterAll(async () => {
   if (ctx.cleanup) await ctx.cleanup();
-  // Гарантия: даже если фикстура не отработала — стираем созданные нами entity.
   const prisma = await getPrismaClient().catch(() => null);
   if (prisma) await cleanupByPrefix(prisma, PREFIX);
   await closePrismaClient();
@@ -90,8 +72,6 @@ describe('EntityResolutionService (integration)', () => {
       expect(entity.mentionsCount).toBe(1);
       expect(entity.canonicalName).toBe(`${PREFIX}-новая-тема`);
 
-      // Подчищаем созданную сущность (не покрыта prefix-cleanup'ом —
-      // id у неё cuid).
       await prisma.entity.delete({ where: { id: entity.id } }).catch(() => undefined);
     });
 
@@ -175,30 +155,21 @@ describe('EntityResolutionService (integration)', () => {
     });
   });
 
-  // ─────────────────────────────────────────────────────────────────────
-  // KC-Temporal W3.4 — Strong IDs (ИНН/ОГРН/email/domain/phone).
-  // Дедуп БЕЗ LLM: одно и то же юр.лицо с разными написаниями имени
-  // (например "ООО Альфа" и "Альфа") должно резолвиться в одну Entity,
-  // если совпадает ИНН.
-  // ─────────────────────────────────────────────────────────────────────
   describe('findOrCreateEntity — strong-IDs (W3.4)', () => {
     it('резолвит по ИНН — старая Entity возвращается, mentionsCount++', async (testCtx) => {
       if (skipIfNoDb(testCtx)) return;
       const f = ctx.fixture!;
       const prisma = await getPrismaClient();
 
-      // 1) Первый вызов — создаём vendor с ИНН.
       const r1 = await ctx.svc!.findOrCreateEntity({
         tenantId: f.orgAId,
         type: 'vendor',
         name: `${PREFIX}-ООО Альфа Продакшн`,
-        inn: '7707083893', // 10 цифр — валидный ИНН юр.лица
+        inn: '7707083893',
       });
       expect(r1.created).toBe(true);
       expect(r1.entity.inn).toBe('7707083893');
 
-      // 2) Второй вызов — другое написание имени, тот же ИНН → должна
-      //    вернуться ТА ЖЕ Entity (resolve по strong-ID до exact-name).
       const r2 = await ctx.svc!.findOrCreateEntity({
         tenantId: f.orgAId,
         type: 'vendor',
@@ -209,7 +180,6 @@ describe('EntityResolutionService (integration)', () => {
       expect(r2.entity.id).toBe(r1.entity.id);
       expect(r2.entity.mentionsCount).toBe(2);
 
-      // 3) И ИНН в форматированном виде ("7707-083-893") должен нормализоваться.
       const r3 = await ctx.svc!.findOrCreateEntity({
         tenantId: f.orgAId,
         type: 'vendor',
@@ -228,7 +198,6 @@ describe('EntityResolutionService (integration)', () => {
       const f = ctx.fixture!;
       const prisma = await getPrismaClient();
 
-      // 1) Создаём по имени БЕЗ strong-IDs.
       const r1 = await ctx.svc!.findOrCreateEntity({
         tenantId: f.orgAId,
         type: 'customer',
@@ -237,8 +206,6 @@ describe('EntityResolutionService (integration)', () => {
       expect(r1.created).toBe(true);
       expect(r1.entity.inn).toBeNull();
 
-      // 2) Второй вызов с НОВЫМ ИНН (которого ни у кого нет) — strong-ID
-      //    lookup промахнётся → fallback на exact-name → найдёт ту же Entity.
       const r2 = await ctx.svc!.findOrCreateEntity({
         tenantId: f.orgAId,
         type: 'customer',
@@ -247,8 +214,6 @@ describe('EntityResolutionService (integration)', () => {
       });
       expect(r2.created).toBe(false);
       expect(r2.entity.id).toBe(r1.entity.id);
-      // Заодно проверяем, что новый ИНН подписался на существующую Entity
-      // (W3.4 backfill пустых strong-полей).
       expect(r2.entity.inn).toBe('1234567890');
 
       await prisma.entity.delete({ where: { id: r1.entity.id } }).catch(() => undefined);
@@ -293,7 +258,6 @@ describe('EntityResolutionService (integration)', () => {
       expect(r1.created).toBe(true);
       expect(r1.entity.email).toBe('ivan.petrov@example.com');
 
-      // Другое написание имени, тот же email (в другом регистре) → та же Entity.
       const r2 = await ctx.svc!.findOrCreateEntity({
         tenantId: f.orgAId,
         type: 'person',
@@ -308,12 +272,6 @@ describe('EntityResolutionService (integration)', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// Ф1 (knowledge-access, 2026-06-06) — новые ветки resolveSubjectEntityId:
-// authorPersonId (прямой Person.id) и authorEmail (Person по email,
-// case-insensitive), оба с приоритетом над authorUserId. Юнит-тесты с
-// моканым prisma — БД не нужна (в отличие от integration-блоков выше).
-// ───────────────────────────────────────────────────────────────────────────
 describe('EntityResolutionService.resolveSubjectEntityId — Ф1 per-adapter identity (unit)', () => {
   function buildSvc(personFindFirst: ReturnType<typeof vi.fn>): EntityResolutionService {
     const prisma = {
@@ -367,7 +325,6 @@ describe('EntityResolutionService.resolveSubjectEntityId — Ф1 per-adapter ide
   });
 
   it('authorPersonId имеет приоритет над authorUserId (первый успех возвращается)', async () => {
-    // Первый вызов (ветка authorPersonId) находит Person → дальше не идём.
     const findFirst = vi.fn(async () => ({ id: 'pers-3', entityId: 'ent-3' }));
     const svc = buildSvc(findFirst);
 
@@ -377,12 +334,221 @@ describe('EntityResolutionService.resolveSubjectEntityId — Ф1 per-adapter ide
     });
 
     expect(res).toBe('ent-3');
-    // Ровно один lookup — ветка authorUserId не достигнута.
     expect(findFirst).toHaveBeenCalledTimes(1);
     expect(findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ id: 'pers-3' }),
       }),
     );
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Б15/Б20 [K3] (2026-06-16) — детерминированная привязка Entity↔Person:
+// при >1 тёзке НЕ линкуем; при ровно 1 совпадении — линкуем детерминированно
+// (orderBy id ASC). Юнит-тесты с моканым prisma (БД не нужна).
+// ───────────────────────────────────────────────────────────────────────────
+describe('EntityResolutionService — Entity↔Person линковка тёзок (Б15/Б20)', () => {
+  describe('linkEntityPerson (Entity{person} → Person)', () => {
+    function buildSvc(opts: {
+      entity: { tenantId: string; type: string; canonicalName: string } | null;
+      persons: Array<{ id: string; name: string }>;
+      personUpdate: ReturnType<typeof vi.fn>;
+    }): EntityResolutionService {
+      const prisma = {
+        entity: { findUnique: vi.fn(async () => opts.entity) },
+        person: {
+          findMany: vi.fn(async () => opts.persons),
+          update: opts.personUpdate,
+        },
+      } as unknown as PrismaService;
+      const embed = {} as unknown as KnowledgeEmbeddingService;
+      return new EntityResolutionService(prisma, embed);
+    }
+
+    it('РОВНО 1 Person-тёзка → линкуется', async () => {
+      const personUpdate = vi.fn(async () => ({}));
+      const svc = buildSvc({
+        entity: { tenantId: 't1', type: 'person', canonicalName: 'Иван Иванов' },
+        persons: [{ id: 'p-1', name: 'Иван Иванов' }],
+        personUpdate,
+      });
+
+      await svc.linkEntityPerson({ tenantId: 't1', entityId: 'e-1' });
+
+      expect(personUpdate).toHaveBeenCalledTimes(1);
+      expect(personUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'p-1' },
+          data: { entityId: 'e-1' },
+        }),
+      );
+    });
+
+    it('>1 Person-тёзка → НЕ линкуется (неоднозначность)', async () => {
+      const personUpdate = vi.fn(async () => ({}));
+      const svc = buildSvc({
+        entity: { tenantId: 't1', type: 'person', canonicalName: 'Иван Иванов' },
+        // Два Person с одинаковым именем — тёзки.
+        persons: [
+          { id: 'p-1', name: 'Иван Иванов' },
+          { id: 'p-2', name: 'иван иванов' },
+        ],
+        personUpdate,
+      });
+
+      await svc.linkEntityPerson({ tenantId: 't1', entityId: 'e-1' });
+
+      expect(personUpdate).not.toHaveBeenCalled();
+    });
+
+    it('findMany вызывается с детерминированным orderBy id ASC', async () => {
+      const findMany = vi.fn(async () => [] as Array<{ id: string; name: string }>);
+      const prisma = {
+        entity: {
+          findUnique: vi.fn(async () => ({
+            tenantId: 't1',
+            type: 'person',
+            canonicalName: 'Кто-то',
+          })),
+        },
+        person: { findMany, update: vi.fn() },
+      } as unknown as PrismaService;
+      const svc = new EntityResolutionService(
+        prisma,
+        {} as unknown as KnowledgeEmbeddingService,
+      );
+
+      await svc.linkEntityPerson({ tenantId: 't1', entityId: 'e-1' });
+
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { id: 'asc' } }),
+      );
+    });
+  });
+
+  describe('linkPersonEntity (Person → Entity{person})', () => {
+    function buildSvc(opts: {
+      person: {
+        tenantId: string;
+        name: string;
+        entityId: string | null;
+        deletedAt: Date | null;
+      } | null;
+      entities: Array<{ id: string; canonicalName: string }>;
+      personUpdate: ReturnType<typeof vi.fn>;
+    }): EntityResolutionService {
+      const prisma = {
+        person: {
+          findUnique: vi.fn(async () => opts.person),
+          update: opts.personUpdate,
+        },
+        entity: { findMany: vi.fn(async () => opts.entities) },
+      } as unknown as PrismaService;
+      const embed = {} as unknown as KnowledgeEmbeddingService;
+      return new EntityResolutionService(prisma, embed);
+    }
+
+    it('РОВНО 1 Entity-тёзка → линкуется', async () => {
+      const personUpdate = vi.fn(async () => ({}));
+      const svc = buildSvc({
+        person: { tenantId: 't1', name: 'Пётр Петров', entityId: null, deletedAt: null },
+        entities: [{ id: 'e-1', canonicalName: 'Пётр Петров' }],
+        personUpdate,
+      });
+
+      await svc.linkPersonEntity({ tenantId: 't1', personId: 'p-1' });
+
+      expect(personUpdate).toHaveBeenCalledTimes(1);
+      expect(personUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'p-1' },
+          data: { entityId: 'e-1' },
+        }),
+      );
+    });
+
+    it('>1 Entity-тёзка → НЕ линкуется (неоднозначность)', async () => {
+      const personUpdate = vi.fn(async () => ({}));
+      const svc = buildSvc({
+        person: { tenantId: 't1', name: 'Пётр Петров', entityId: null, deletedAt: null },
+        entities: [
+          { id: 'e-1', canonicalName: 'Пётр Петров' },
+          { id: 'e-2', canonicalName: 'ПЁТР ПЕТРОВ' },
+        ],
+        personUpdate,
+      });
+
+      await svc.linkPersonEntity({ tenantId: 't1', personId: 'p-1' });
+
+      expect(personUpdate).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Б29 [K6] (2026-06-16) — negative-cache distinct-пар (Redis).
+// markEntityPairDistinct / isEntityPairDistinct: ключ симметричен по паре,
+// best-effort (нет Redis → no-op / false).
+// ───────────────────────────────────────────────────────────────────────────
+describe('EntityResolutionService — negative-cache distinct-пар (Б29)', () => {
+  function buildSvc(redisClient: {
+    get: ReturnType<typeof vi.fn>;
+    set: ReturnType<typeof vi.fn>;
+  }): EntityResolutionService {
+    const prisma = {} as unknown as PrismaService;
+    const embed = {} as unknown as KnowledgeEmbeddingService;
+    const redis = { client: redisClient } as never;
+    // (prisma, embeddings, redis, coreQueue, metrics, cfg, events)
+    return new EntityResolutionService(prisma, embed, redis);
+  }
+
+  it('markEntityPairDistinct пишет SET с симметричным ключом (порядок id не важен)', async () => {
+    const set = vi.fn(async (..._args: unknown[]) => 'OK');
+    const get = vi.fn();
+    const svc = buildSvc({ get, set });
+
+    await svc.markEntityPairDistinct('b-zzz', 'a-aaa');
+    await svc.markEntityPairDistinct('a-aaa', 'b-zzz');
+
+    expect(set).toHaveBeenCalledTimes(2);
+    const key1 = set.mock.calls[0]![0] as string;
+    const key2 = set.mock.calls[1]![0] as string;
+    expect(key1).toBe(key2); // симметрично по паре
+    // упорядоченная пара (lo:hi) → a-aaa раньше b-zzz
+    expect(key1).toContain('a-aaa');
+    expect(key1).toContain('b-zzz');
+    // TTL задан (EX, число секунд > 0)
+    expect(set.mock.calls[0]).toEqual(
+      expect.arrayContaining(['EX']),
+    );
+  });
+
+  it('isEntityPairDistinct: судёная пара → true; несудёная → false', async () => {
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce('1') // первая пара есть в кэше
+      .mockResolvedValueOnce(null); // вторая — нет
+    const svc = buildSvc({ get, set: vi.fn() });
+
+    expect(await svc.isEntityPairDistinct('e1', 'e2')).toBe(true);
+    expect(await svc.isEntityPairDistinct('e3', 'e4')).toBe(false);
+  });
+
+  it('isEntityPairDistinct по одному и тому же id → false (без обращения к Redis)', async () => {
+    const get = vi.fn();
+    const svc = buildSvc({ get, set: vi.fn() });
+    expect(await svc.isEntityPairDistinct('same', 'same')).toBe(false);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('нет Redis → markEntityPairDistinct no-op, isEntityPairDistinct false', async () => {
+    const prisma = {} as unknown as PrismaService;
+    const embed = {} as unknown as KnowledgeEmbeddingService;
+    const svc = new EntityResolutionService(prisma, embed); // без redis
+    await expect(
+      svc.markEntityPairDistinct('e1', 'e2'),
+    ).resolves.toBeUndefined();
+    expect(await svc.isEntityPairDistinct('e1', 'e2')).toBe(false);
   });
 });

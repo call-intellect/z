@@ -5,23 +5,16 @@ import type { ConversationalService } from '../../conversational/conversational.
 import type { ConflictService } from '../../curation/services/conflict.service';
 import type { CurationService } from '../../curation/services/curation.service';
 import type { IntakeService } from '../../tracker/services/intake.service';
+import type { IssuesService } from '../../tracker/services/issues.service';
 import type { ConflictPendingProvider } from '../providers/conflict.provider';
 import type { CurationPendingProvider } from '../providers/curation.provider';
 import type { IntakePendingProvider } from '../providers/intake.provider';
 import type { PendingActionItem } from '../providers/pending-actions-provider.types';
 import type { ProbePendingProvider } from '../providers/probe.provider';
+import type { TaskClosurePendingProvider } from '../providers/task-closure.provider';
+import type { TaskReviewPendingProvider } from '../providers/task-review.provider';
 
 import { PendingActionsService } from './pending-actions.service';
-
-/**
- * Unit-тесты PendingActionsService (Action Center B0).
- *
- * Покрытие:
- *   - getCount: total = сумма bySource; роль резолвится из Membership;
- *     snoozed-сет передаётся провайдерам по source;
- *   - getList: объединение, сортировка urgent-first → ageDays desc, limit;
- *   - snooze: upsert PendingActionSnooze + валидация hours (1..720).
- */
 
 function item(
   source: PendingActionItem['source'],
@@ -51,11 +44,20 @@ describe('PendingActionsService (B0)', () => {
   let conflict: ConflictPendingProvider;
   let intake: IntakePendingProvider;
   let probe: ProbePendingProvider;
+  let taskClosure: TaskClosurePendingProvider;
+  let taskReview: TaskReviewPendingProvider;
   let curationService: CurationService;
   let conflictService: ConflictService;
   let intakeService: IntakeService;
   let conversational: ConversationalService;
+  let issuesService: IssuesService;
   let curationItemFindUnique: ReturnType<typeof vi.fn>;
+  let taskClosureFindUnique: ReturnType<typeof vi.fn>;
+  let taskClosureUpdate: ReturnType<typeof vi.fn>;
+  let issueFindFirst: ReturnType<typeof vi.fn>;
+  let issueUpdate: ReturnType<typeof vi.fn>;
+  let issueStateFindFirst: ReturnType<typeof vi.fn>;
+  let transitionState: ReturnType<typeof vi.fn>;
   let decide: ReturnType<typeof vi.fn>;
   let resolveConflict: ReturnType<typeof vi.fn>;
   let triage: ReturnType<typeof vi.fn>;
@@ -66,10 +68,23 @@ describe('PendingActionsService (B0)', () => {
     snoozeFindMany = vi.fn().mockResolvedValue([]);
     snoozeUpsert = vi.fn().mockResolvedValue({});
     curationItemFindUnique = vi.fn().mockResolvedValue(null);
+    taskClosureFindUnique = vi.fn().mockResolvedValue(null);
+    taskClosureUpdate = vi.fn().mockResolvedValue({});
+    issueFindFirst = vi
+      .fn()
+      .mockResolvedValue({ id: 'iss-1', projectId: 'proj-1' });
+    issueUpdate = vi.fn().mockResolvedValue({ id: 'iss-1' });
+    issueStateFindFirst = vi.fn().mockResolvedValue({ id: 'state-done' });
     prisma = {
       membership: { findUnique: membershipFindUnique },
       pendingActionSnooze: { findMany: snoozeFindMany, upsert: snoozeUpsert },
       curationItem: { findUnique: curationItemFindUnique },
+      taskClosureCandidate: {
+        findUnique: taskClosureFindUnique,
+        update: taskClosureUpdate,
+      },
+      issue: { findFirst: issueFindFirst, update: issueUpdate },
+      issueState: { findFirst: issueStateFindFirst },
     } as unknown as PrismaService;
 
     decide = vi.fn().mockResolvedValue({ id: 'ci-1', status: 'decided' });
@@ -82,6 +97,8 @@ describe('PendingActionsService (B0)', () => {
     conversational = {
       respondToProbe,
     } as unknown as ConversationalService;
+    transitionState = vi.fn().mockResolvedValue({ id: 'iss-1' });
+    issuesService = { transitionState } as unknown as IssuesService;
 
     curation = {
       source: 'curation',
@@ -103,6 +120,16 @@ describe('PendingActionsService (B0)', () => {
       countForUser: vi.fn().mockResolvedValue(0),
       listForUser: vi.fn().mockResolvedValue([]),
     } as unknown as ProbePendingProvider;
+    taskClosure = {
+      source: 'task_closure',
+      countForUser: vi.fn().mockResolvedValue(0),
+      listForUser: vi.fn().mockResolvedValue([]),
+    } as unknown as TaskClosurePendingProvider;
+    taskReview = {
+      source: 'task_review',
+      countForUser: vi.fn().mockResolvedValue(0),
+      listForUser: vi.fn().mockResolvedValue([]),
+    } as unknown as TaskReviewPendingProvider;
 
     svc = new PendingActionsService(
       prisma,
@@ -110,10 +137,13 @@ describe('PendingActionsService (B0)', () => {
       conflict,
       intake,
       probe,
+      taskClosure,
+      taskReview,
       curationService,
       conflictService,
       intakeService,
       conversational,
+      issuesService,
     );
   });
 
@@ -129,6 +159,8 @@ describe('PendingActionsService (B0)', () => {
       conflict: 1,
       intake: 2,
       probe: 4,
+      task_closure: 0,
+      task_review: 0,
     });
     expect(res.total).toBe(10);
   });
@@ -141,21 +173,18 @@ describe('PendingActionsService (B0)', () => {
     ]);
     await svc.getCount({ tenantId: 't-1', userId: 'u-1' });
 
-    const curationArgs = (curation.countForUser as ReturnType<typeof vi.fn>).mock
-      .calls[0]![0];
+    const curationArgs = (curation.countForUser as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(curationArgs.role).toBe('manager');
     expect([...curationArgs.snoozedResourceIds]).toEqual(['ci-1']);
 
-    const probeArgs = (probe.countForUser as ReturnType<typeof vi.fn>).mock
-      .calls[0]![0];
+    const probeArgs = (probe.countForUser as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect([...probeArgs.snoozedResourceIds]).toEqual(['nt-1']);
   });
 
   it('getCount: не член Org → role=null', async () => {
     membershipFindUnique.mockResolvedValue(null);
     await svc.getCount({ tenantId: 't-1', userId: 'u-x' });
-    const args = (curation.countForUser as ReturnType<typeof vi.fn>).mock
-      .calls[0]![0];
+    const args = (curation.countForUser as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(args.role).toBeNull();
   });
 
@@ -174,17 +203,13 @@ describe('PendingActionsService (B0)', () => {
       userId: 'u-1',
       limit: 3,
     });
-    // urgent сначала (c[age8], b[age1]), потом normal (a[age10], d[age2]); limit=3
     expect(items.map((i) => i.resourceId)).toEqual(['c', 'b', 'a']);
   });
 
   it('getList: передаёт limit и snoozed-сет провайдерам', async () => {
-    snoozeFindMany.mockResolvedValue([
-      { source: 'intake', resourceId: 'ii-1' },
-    ]);
+    snoozeFindMany.mockResolvedValue([{ source: 'intake', resourceId: 'ii-1' }]);
     await svc.getList({ tenantId: 't-1', userId: 'u-1', limit: 25 });
-    const intakeArgs = (intake.listForUser as ReturnType<typeof vi.fn>).mock
-      .calls[0]![0];
+    const intakeArgs = (intake.listForUser as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(intakeArgs.limit).toBe(25);
     expect([...intakeArgs.snoozedResourceIds]).toEqual(['ii-1']);
   });
@@ -235,8 +260,6 @@ describe('PendingActionsService (B0)', () => {
     ).rejects.toThrow();
     expect(snoozeUpsert).not.toHaveBeenCalled();
   });
-
-  // ──────────────────── confirm (Ф4 — сквозной резолв) ────────────
 
   it('confirm curation: light pending → decide(approve) вызван', async () => {
     curationItemFindUnique.mockResolvedValue({
@@ -377,6 +400,148 @@ describe('PendingActionsService (B0)', () => {
       }),
     ).rejects.toThrow();
     expect(respondToProbe).not.toHaveBeenCalled();
+  });
+
+  // ──── task_closure (TZ task-dedup, 2026-06-16, Ф2) ────
+
+  it('confirm task_closure approve → закрытие Issue (transitionState) + accepted', async () => {
+    taskClosureFindUnique.mockResolvedValue({
+      id: 'tcc-1',
+      tenantId: 't-1',
+      issueId: 'iss-1',
+      status: 'pending',
+    });
+    const res = await svc.confirm({
+      tenantId: 't-1',
+      userId: 'u-1',
+      source: 'task_closure',
+      resourceId: 'tcc-1',
+      resolution: 'approve',
+    });
+    expect(res).toEqual({ ok: true });
+    // Issue закрыта через transitionState в completed-статус проекта.
+    expect(transitionState).toHaveBeenCalledTimes(1);
+    const [issueId, dto, tenantId, userId] = transitionState.mock.calls[0]!;
+    expect(issueId).toBe('iss-1');
+    expect((dto as { stateId: string }).stateId).toBe('state-done');
+    expect(tenantId).toBe('t-1');
+    expect(userId).toBe('u-1');
+    // Кандидат → accepted.
+    expect(taskClosureUpdate.mock.calls[0]![0].data.status).toBe('accepted');
+  });
+
+  it('confirm task_closure reject → Issue НЕ тронут, кандидат rejected', async () => {
+    taskClosureFindUnique.mockResolvedValue({
+      id: 'tcc-2',
+      tenantId: 't-1',
+      issueId: 'iss-1',
+      status: 'pending',
+    });
+    await svc.confirm({
+      tenantId: 't-1',
+      userId: 'u-1',
+      source: 'task_closure',
+      resourceId: 'tcc-2',
+      resolution: 'reject',
+    });
+    expect(transitionState).not.toHaveBeenCalled();
+    expect(taskClosureUpdate.mock.calls[0]![0].data.status).toBe('rejected');
+  });
+
+  it('confirm task_closure: уже не pending → BadRequest, Issue не тронут', async () => {
+    taskClosureFindUnique.mockResolvedValue({
+      id: 'tcc-3',
+      tenantId: 't-1',
+      issueId: 'iss-1',
+      status: 'accepted',
+    });
+    await expect(
+      svc.confirm({
+        tenantId: 't-1',
+        userId: 'u-1',
+        source: 'task_closure',
+        resourceId: 'tcc-3',
+        resolution: 'approve',
+      }),
+    ).rejects.toThrow();
+    expect(transitionState).not.toHaveBeenCalled();
+  });
+
+  it('confirm task_closure: чужой tenant → BadRequest', async () => {
+    taskClosureFindUnique.mockResolvedValue({
+      id: 'tcc-4',
+      tenantId: 'other',
+      issueId: 'iss-1',
+      status: 'pending',
+    });
+    await expect(
+      svc.confirm({
+        tenantId: 't-1',
+        userId: 'u-1',
+        source: 'task_closure',
+        resourceId: 'tcc-4',
+        resolution: 'approve',
+      }),
+    ).rejects.toThrow();
+  });
+
+  // ──── task_review (TZ task-dedup, 2026-06-16, Ф4, R11/R13) ────
+
+  it('confirm task_review: пометка снята (closureReviewState=null), Issue НЕ закрыт', async () => {
+    issueFindFirst.mockResolvedValue({
+      id: 'iss-1',
+      closureReviewState: 'superseded_decision',
+    });
+    const res = await svc.confirm({
+      tenantId: 't-1',
+      userId: 'u-1',
+      source: 'task_review',
+      resourceId: 'iss-1',
+    });
+    expect(res).toEqual({ ok: true });
+    // снята ТОЛЬКО review-пометка.
+    expect(issueUpdate).toHaveBeenCalledTimes(1);
+    const call = issueUpdate.mock.calls[0]![0];
+    expect(call.where).toEqual({ id: 'iss-1' });
+    expect(call.data).toEqual({
+      closureReviewState: null,
+      closureReviewReason: null,
+      closureReviewAt: null,
+    });
+    // R13: задача НЕ закрывается/не отменяется — статус/completedAt не трогаем.
+    expect(call.data.completedAt).toBeUndefined();
+    expect(call.data.stateId).toBeUndefined();
+    // closure-путь (transitionState) не задействован.
+    expect(transitionState).not.toHaveBeenCalled();
+  });
+
+  it('confirm task_review: задача уже без пометки → BadRequest, update не вызван', async () => {
+    issueFindFirst.mockResolvedValue({
+      id: 'iss-2',
+      closureReviewState: null,
+    });
+    await expect(
+      svc.confirm({
+        tenantId: 't-1',
+        userId: 'u-1',
+        source: 'task_review',
+        resourceId: 'iss-2',
+      }),
+    ).rejects.toThrow();
+    expect(issueUpdate).not.toHaveBeenCalled();
+  });
+
+  it('confirm task_review: задача не найдена (чужой tenant) → BadRequest', async () => {
+    issueFindFirst.mockResolvedValue(null);
+    await expect(
+      svc.confirm({
+        tenantId: 't-1',
+        userId: 'u-1',
+        source: 'task_review',
+        resourceId: 'iss-x',
+      }),
+    ).rejects.toThrow();
+    expect(issueUpdate).not.toHaveBeenCalled();
   });
 
   it('confirm curation: не-light уровень → BadRequest, decide не вызван', async () => {

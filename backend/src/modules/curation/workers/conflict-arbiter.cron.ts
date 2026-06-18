@@ -13,56 +13,15 @@ import { resourceTypeRu } from '../../pending-actions/resource-type-ru';
 import type { ConflictResolutionDto } from '../dto/curation.dto';
 import { ConflictService } from '../services/conflict.service';
 
-/**
- * ConflictArbiterCron — Autonomy W1 «LLM-арбитр конфликтов» (2026-06-12,
- * ТЗ plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md, Фаза W1).
- *
- * Переводит конфликты знаний (ConflictItem open) из «всегда человек» в HYBRID:
- * раз в сутки (02:00) ночной мульти-агентный дебат (`conflict-arbiter` в
- * MultiAgentDebateService — strict-critic / empathetic-supporter /
- * neutral-judge) выносит verdict по каждому открытому конфликту, и при
- * уверенном консенсусе конфликт авто-резолвится от имени владельца Org.
- *
- * Условия авто-резолва (Р1.1):
- *   - consensusType ∈ {unanimous, majority};
- *   - fallbackUsed === null (debate отработал штатно, без cost_cap /
- *     provider_unavailable);
- *   - decision ∈ {keep_old, accept_new, merge} (см. ниже);
- *   - средняя confidence голосов-победителей ≥
- *     `knowledge.curationConflictArbiterMinConfidence` (default 0.7).
- *
- * ВАЖНО (решение оркестратора): авто-резолвим ТОЛЬКО verdicts
- * keep_old | accept_new | merge. `evolving` НЕ авто-резолвим — для него
- * ConflictService.resolve требует evolvingMeta (existingValidUntil +
- * newValidFrom), а схема debate_vote_v1 (verdict + reasoning + confidence)
- * не имеет механизма передачи дат. `escalate` НЕ авто-резолвим по
- * определению — арбитр сам говорит «нужен человек». В обоих случаях конфликт
- * остаётся open и ждёт человека.
- *
- * Актор резолюции (Р1.2) — владелец Org (`Org.ownerId`). После каждого
- * авто-резолва владельцу уходит post-hoc `system.message` (не critical) —
- * Ф1.4: уведомление о факте, не запрос подтверждения.
- *
- * Гейт (Р1): `knowledge.curationConflictArbiterEnabled` — kill-switch,
- * default TRUE (Ship-On: фича выкатывается включённой). Реестр —
- * docs/operations/feature-flags.md.
- *
- * Метрика: `z_conflict_arbiter_total{verdict, outcome}`,
- * outcome ∈ auto_resolved | left_open | error.
- *
- * Cron-литерал в декораторе `'0 2 * * *'`.
- */
 @Injectable()
 export class ConflictArbiterCron {
   private readonly logger = new Logger(ConflictArbiterCron.name);
 
-  /**
-   * Verdicts, которые можно авто-резолвить через ConflictService.resolve без
-   * дополнительных данных. evolving (нужен evolvingMeta с датами) и escalate
-   * (явный запрос человека) сюда НЕ входят — конфликт остаётся open.
-   */
-  private static readonly AUTO_RESOLVABLE_VERDICTS: ReadonlySet<string> =
-    new Set(['keep_old', 'accept_new', 'merge']);
+  private static readonly AUTO_RESOLVABLE_VERDICTS: ReadonlySet<string> = new Set([
+    'keep_old',
+    'accept_new',
+    'merge',
+  ]);
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -72,11 +31,6 @@ export class ConflictArbiterCron {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-    /**
-     * Debate — @Optional по образцу CurationService: в worker-процессе без
-     * AiModule зависимость null → конфликты безопасно остаются open (ждут
-     * человека), как до W1.
-     */
     @Optional()
     @Inject(MultiAgentDebateService)
     private readonly debate: MultiAgentDebateService | null = null,
@@ -86,7 +40,7 @@ export class ConflictArbiterCron {
   async runArbiter(): Promise<void> {
     try {
       const summary = await this.runForAllOrgs();
-      this.logger.log(summary, 'conflict-arbiter: проход завершён');
+      this.logger.debug(summary, 'conflict-arbiter: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -103,11 +57,9 @@ export class ConflictArbiterCron {
     skipped: number;
     errors: number;
   }> {
-    // Гейт Р1 — kill-switch (default TRUE, Ship-On). OFF → ни одного вызова
-    // дебата, конфликты остаются на человеке (поведение до W1).
     if (this.cfg.curation.conflictArbiterEnabled !== true) {
-      this.logger.log(
-        'conflict-arbiter: выключен kill-switch\'ем (knowledge.curationConflictArbiterEnabled=false) — пропускаю проход',
+      this.logger.debug(
+        "conflict-arbiter: выключен kill-switch'ем (knowledge.curationConflictArbiterEnabled=false) — пропускаю проход",
       );
       return {
         enabled: false,
@@ -132,7 +84,6 @@ export class ConflictArbiterCron {
       };
     }
 
-    // Только Org'и, у которых есть открытые конфликты.
     const tenants = await this.prisma.conflictItem.findMany({
       where: { status: 'open' },
       distinct: ['tenantId'],
@@ -173,11 +124,6 @@ export class ConflictArbiterCron {
     };
   }
 
-  /**
-   * Проход по одному Org: батч старейших open-конфликтов → дебат → авто-резолв
-   * при уверенном консенсусе. Ошибка одного конфликта не валит sweep
-   * (try/catch на конфликт, outcome='error').
-   */
   async runForOrg(tenantId: string): Promise<{
     autoResolved: number;
     leftOpen: number;
@@ -190,7 +136,6 @@ export class ConflictArbiterCron {
     const batchSize = this.cfg.curation.conflictArbiterBatchSize ?? 20;
     const minConfidence = this.cfg.curation.conflictArbiterMinConfidence ?? 0.7;
 
-    // Р1.2 — актор резолюции: владелец Org.
     const org = await this.prisma.org.findUnique({
       where: { id: tenantId },
       select: { ownerId: true },
@@ -239,8 +184,6 @@ export class ConflictArbiterCron {
     return out;
   }
 
-  // ─────────────────────────── private ──────────────────────────────────
-
   private async processOneConflict(args: {
     tenantId: string;
     ownerId: string;
@@ -258,7 +201,6 @@ export class ConflictArbiterCron {
     const { tenantId, ownerId, minConfidence, conflict } = args;
     const debate = this.debate as MultiAgentDebateService;
 
-    // Материал дела: payload'ы последних версий обеих карточек.
     const [existingVersion, newVersion] = await Promise.all([
       this.latestCardVersion(tenantId, conflict.resourceType, conflict.existingId),
       this.latestCardVersion(tenantId, conflict.resourceType, conflict.newId),
@@ -276,15 +218,11 @@ export class ConflictArbiterCron {
       return 'skipped';
     }
 
-    // Переменные данные дела уходят в USER-message дебата (task / candidates /
-    // contextBlocks → MultiAgentDebateService.buildUserMessage); SYSTEM каждого
-    // stance стабилен — cache-friendly.
     const verdict = await debate.judge({
       taskFamily: 'conflict-arbiter',
       taskType: 'debate-conflict-arbiter',
       tenantId,
-      task:
-        'Конфликт знаний компании: существующее утверждение (existing) противоречит новому (new). Выбери исход: keep_old | accept_new | merge | evolving | escalate.',
+      task: 'Конфликт знаний компании: существующее утверждение (existing) противоречит новому (new). Выбери исход: keep_old | accept_new | merge | evolving | escalate.',
       candidates: [
         {
           role: 'existing',
@@ -310,15 +248,12 @@ export class ConflictArbiterCron {
     const winningVotes = verdict.votes.filter((v) => v.verdict === decision);
     const avgConfidence =
       winningVotes.length > 0
-        ? winningVotes.reduce((sum, v) => sum + v.confidence, 0) /
-          winningVotes.length
+        ? winningVotes.reduce((sum, v) => sum + v.confidence, 0) / winningVotes.length
         : 0;
 
     const isConsensus =
-      verdict.consensusType === 'unanimous' ||
-      verdict.consensusType === 'majority';
-    const autoResolvable =
-      ConflictArbiterCron.AUTO_RESOLVABLE_VERDICTS.has(decision);
+      verdict.consensusType === 'unanimous' || verdict.consensusType === 'majority';
+    const autoResolvable = ConflictArbiterCron.AUTO_RESOLVABLE_VERDICTS.has(decision);
 
     if (
       !isConsensus ||
@@ -330,7 +265,7 @@ export class ConflictArbiterCron {
         verdict: decision,
         outcome: 'left_open',
       });
-      this.logger.log(
+      this.logger.debug(
         {
           tenantId,
           conflictId: conflict.id,
@@ -345,7 +280,6 @@ export class ConflictArbiterCron {
       return 'leftOpen';
     }
 
-    // Уверенный консенсус → авто-резолв от имени владельца Org.
     const reasoning = this.buildResolveReasoning(verdict);
     await this.conflicts.resolve({
       tenantId,
@@ -358,7 +292,7 @@ export class ConflictArbiterCron {
       verdict: decision,
       outcome: 'auto_resolved',
     });
-    this.logger.log(
+    this.logger.debug(
       {
         tenantId,
         conflictId: conflict.id,
@@ -369,7 +303,6 @@ export class ConflictArbiterCron {
       'conflict-arbiter: конфликт авто-разрешён по консенсусу дебата',
     );
 
-    // Ф1.4 — post-hoc уведомление владельца (не critical): факт, не запрос.
     await this.notifyOwner({
       tenantId,
       ownerId,
@@ -394,22 +327,15 @@ export class ConflictArbiterCron {
     });
   }
 
-  /**
-   * Reasoning резолюции: маркер арбитра + consensus + краткое обоснование
-   * нейтрального арбитра (если его голос за победивший verdict; иначе —
-   * первый голос-победитель).
-   */
   private buildResolveReasoning(verdict: DebateVerdict): string {
     const neutral = verdict.votes.find(
       (v) => v.stance === 'neutral-judge' && v.verdict === verdict.decision,
     );
-    const source =
-      neutral ?? verdict.votes.find((v) => v.verdict === verdict.decision);
+    const source = neutral ?? verdict.votes.find((v) => v.verdict === verdict.decision);
     const short = (source?.reasoning ?? '').slice(0, 400);
     return `[Кора-арбитр] consensus=${verdict.consensusType}; ${short}`;
   }
 
-  /** Post-hoc system.message владельцу Org — best-effort (ошибка → warn). */
   private async notifyOwner(args: {
     tenantId: string;
     ownerId: string;
@@ -418,17 +344,14 @@ export class ConflictArbiterCron {
     verdict: DebateVerdict;
     avgConfidence: number;
   }): Promise<void> {
-    const { tenantId, ownerId, conflict, decision, verdict, avgConfidence } =
-      args;
+    const { tenantId, ownerId, conflict, decision, verdict, avgConfidence } = args;
     const verdictRu: Record<string, string> = {
       keep_old: 'оставлено прежнее знание',
       accept_new: 'принято новое знание',
       merge: 'версии объединены',
     };
     const consensusRu =
-      verdict.consensusType === 'unanimous'
-        ? 'единогласно'
-        : 'большинством голосов';
+      verdict.consensusType === 'unanimous' ? 'единогласно' : 'большинством голосов';
     try {
       await this.conversational.sendNotification({
         tenantId,

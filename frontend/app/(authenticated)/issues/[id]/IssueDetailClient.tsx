@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useAuth } from '@/contexts/auth-context';
-import { useIssue } from '@/hooks/tracker/useIssue';
-import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
+import { useAuth } from "@/contexts/auth-context";
+import { useIssue } from "@/hooks/tracker/useIssue";
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 import {
   IssueActivityFeed,
   IssueAttachments,
@@ -16,15 +16,12 @@ import {
   IssueSidebar,
   IssueSimilar,
   IssueSubtasks,
-} from '@/ui/tracker';
+} from "@/ui/tracker";
 
 export function IssueDetailClient({ issueId }: { issueId: string }) {
   const { currentOrgId, user } = useAuth();
   const { issue, isLoading, error, mutate } = useIssue(currentOrgId, issueId);
 
-  // Хлебные крошки: заголовок задачи из уже загруженного объекта. Slug проекта
-  // на `issue` нет (только projectId-UUID) — parentHref не задаём, чтобы не
-  // делать доп. запрос; сегмент `issues` помечен non-navigable в конфиге крошек.
   useRegisterBreadcrumb(issue ? { label: issue.title } : null);
 
   if (isLoading) {
@@ -56,8 +53,7 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
 
   return (
     <div className="mx-auto w-full max-w-6xl p-4 md:p-6">
-      {/* Tracker subtasks UI (2026-05-27) — breadcrumb «← родитель / эта»
-          для подзадач. Виден только если у задачи задан parentId. */}
+      {}
       {issue.parentId ? (
         <IssueBreadcrumb
           orgId={currentOrgId}
@@ -73,17 +69,14 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
             <IssueDescription description={issue.description} />
           </section>
 
-          {/* Tracker subtasks UI (2026-05-27) — блок «Подзадачи».
-              Компонент сам прячется, если у задачи есть parentId
-              (запрет глубины >2). */}
+          {}
           <IssueSubtasks
             issue={issue}
             orgId={currentOrgId}
             currentUserId={user?.id ?? null}
           />
 
-          {/* Чек-листы (2026-05-27, plans/tz/2026-05-27-tracker-checklists.md):
-              блок между описанием и связями — плоские пункты «сделано/нет». */}
+          {}
           <section className="flex flex-col gap-2">
             <h2 className="text-sm font-medium text-fg-primary">Чек-листы</h2>
             <IssueChecklists orgId={currentOrgId} issueId={issue.id} />
@@ -94,9 +87,7 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
             <IssueRelations orgId={currentOrgId} issueId={issue.id} />
           </section>
 
-          {/* Phase 3 (Sprint 6) — KNN-блок «Похожие задачи».
-              Компонент сам рендерит заголовок и прячет всю секцию,
-              когда backend вернул пустой список. */}
+          {}
           <IssueSimilar orgId={currentOrgId} issueId={issue.id} />
 
           <section className="flex flex-col gap-2">
@@ -129,9 +120,7 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
         </div>
 
         <div>
-          {/* onMoved: перенос в другой проект меняет identifier/projectId —
-              перезагружаем карточку (URL по стабильному issue.id, редирект
-              не нужен; breadcrumb/идентификатор обновятся из свежих данных). */}
+          {}
           <IssueSidebar issue={issue} orgId={currentOrgId} onMoved={mutate} />
         </div>
       </div>

@@ -32,9 +32,6 @@ import {
 import { OrgEconomicsCron } from './org-economics.cron';
 import { UnitEconomicsService } from './unit-economics.service';
 
-/**
- * SBA α-10 wave 3 — /api/v1/admin/unit-economics + /api/v1/admin/orgs/:id/budget.
- */
 @ApiExcludeController()
 @Controller('api/v1/admin')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -65,9 +62,6 @@ export class AdminEconomicsController {
     return this.svc.getOrg(id, q.days);
   }
 
-  /**
-   * Ручной перерасчёт за конкретный день (admin-debug, после починки записи).
-   */
   @Post('unit-economics/aggregate')
   aggregate(
     @Body(new ZodValidationPipe(AggregateUnitEconomicsBodySchema))
@@ -81,8 +75,6 @@ export class AdminEconomicsController {
   refreshOrgMetrics() {
     return this.orgEconomics.runForAll();
   }
-
-  // ─── per-org budget ──────────────────────────────────────────────────
 
   @Get('orgs/:id/budget')
   getBudget(@Param('id') id: string) {

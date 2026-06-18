@@ -12,14 +12,14 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import type { TypedConfigService } from '../../../common/config/index';
-import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import {
   checkDbAvailable,
   closePrismaClient,
   getPrismaClient,
 } from '../../../../test/integration/knowledge-core/db-availability';
 import { buildKnowledgeCoreFixture } from '../../../../test/integration/knowledge-core/fixtures';
+import type { TypedConfigService } from '../../../common/config/index';
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import type {
@@ -263,26 +263,24 @@ function graphPrisma(): PrismaService {
       findUnique: vi.fn(async () => ({ id: 'B0', name: 'B0', tenantId: TENANT })),
     },
     ideaBlockLink: {
-      findMany: vi.fn(async (args: { where?: { fromBlockId?: string } }) => {
-        // from-direction (fromBlockId=B0) → ссылка на B1; to-direction → пусто.
-        if (args?.where && 'fromBlockId' in args.where) {
-          return [
-            {
-              fromBlockId: 'B0',
-              toBlockId: 'B1',
-              relationType: 'supports',
-              status: 'active',
-              confidence: 0.9,
-              toBlock: { id: 'B1', name: 'B1' },
-            },
-          ];
-        }
-        return [];
-      }),
+      // G3 (perf) — батч-запрос: один findMany с OR:[{fromBlockId:{in}},…].
+      // Ребро B0→B1 (block-link). include обоих концов (toBlock/fromBlock).
+      findMany: vi.fn(async () => [
+        {
+          fromBlockId: 'B0',
+          toBlockId: 'B1',
+          relationType: 'supports',
+          status: 'active',
+          confidence: 0.9,
+          toBlock: { id: 'B1', name: 'B1' },
+          fromBlock: { id: 'B0', name: 'B0' },
+        },
+      ]),
     },
     ideaBlockEntity: {
+      // Батч: blockId:{in}. m.blockId нужен для ребра block-entity.
       findMany: vi.fn(async () => [
-        { entity: { id: 'E1', canonicalName: 'E1' } },
+        { blockId: 'B0', entityId: 'E1', entity: { id: 'E1', canonicalName: 'E1' } },
       ]),
     },
   } as unknown as PrismaService;
@@ -392,5 +390,143 @@ describe('KnowledgeGraphController.neighbors — Ф4 гейт (unit)', () => {
     expect(ids).toContain('E1');
     expect(incShadow).toHaveBeenCalledWith({ surface: 'graph' }, 1);
     expect(incDenied).not.toHaveBeenCalled();
+  });
+});
+
+// ──────────────── G3 (perf): BFS батчит запросы по уровню (unit) ──────────────
+//
+// Регрессия N+1: раньше каждый block-узел frontier стоил 3 findMany; при
+// frontier из N узлов → 3·N последовательных запросов в одном HTTP. Теперь —
+// ОДИН findMany на уровень (per тип связи) c `OR:[...{in:[...frontier]}]`.
+// Проверяем: (1) число вызовов ideaBlockLink.findMany == число уровней
+// (а не число узлов); (2) findMany получает батч `in:[...frontier]`, не
+// per-node; (3) семантика обхода (узлы/рёбра/depth) сохранена.
+
+const G3_USER: CurrentUserPayload = {
+  id: 'g3-user',
+  email: 'g3@test',
+  role: 'user',
+};
+const G3_TENANT = 'g3-org';
+
+/**
+ * Mock-граф из block'ов: root B0 → {B1, B2, B3} (уровень 1), каждый из них →
+ * один новый сосед (уровень 2). Все рёбра — block-link. Один findMany на
+ * IdeaBlockLink обслуживает ВЕСЬ frontier через `OR:[{fromBlockId:{in}},…]`.
+ */
+function g3BatchPrisma(): {
+  prisma: PrismaService;
+  linkFindMany: ReturnType<typeof vi.fn>;
+  entityFindMany: ReturnType<typeof vi.fn>;
+} {
+  const adjacency: Record<string, string[]> = {
+    B0: ['B1', 'B2', 'B3'],
+    B1: ['B1a'],
+    B2: ['B2a'],
+    B3: ['B3a'],
+  };
+  const linkFindMany = vi.fn(async (args: { where?: { OR?: unknown[] } }) => {
+    // Достаём frontier из OR:[{fromBlockId:{in:[...]}},{toBlockId:{in:[...]}}].
+    const or = (args?.where?.OR ?? []) as Array<{
+      fromBlockId?: { in?: string[] };
+      toBlockId?: { in?: string[] };
+    }>;
+    const frontier = new Set<string>();
+    for (const cond of or) {
+      for (const id of cond.fromBlockId?.in ?? []) frontier.add(id);
+      for (const id of cond.toBlockId?.in ?? []) frontier.add(id);
+    }
+    const rows: unknown[] = [];
+    for (const src of frontier) {
+      for (const dst of adjacency[src] ?? []) {
+        rows.push({
+          fromBlockId: src,
+          toBlockId: dst,
+          relationType: 'supports',
+          status: 'active',
+          confidence: 0.9,
+          fromBlock: { id: src, name: src },
+          toBlock: { id: dst, name: dst },
+        });
+      }
+    }
+    return rows;
+  });
+  const entityFindMany = vi.fn(async () => []);
+  const prisma = {
+    ideaBlock: {
+      findUnique: vi.fn(async () => ({
+        id: 'B0',
+        name: 'B0',
+        tenantId: G3_TENANT,
+      })),
+    },
+    ideaBlockLink: { findMany: linkFindMany },
+    ideaBlockEntity: { findMany: entityFindMany },
+  } as unknown as PrismaService;
+  return { prisma, linkFindMany, entityFindMany };
+}
+
+describe('KnowledgeGraphController.neighbors — G3 батчинг (unit)', () => {
+  it('depth=2, frontier из 3 узлов → ОДИН findMany на уровень (не per-node)', async () => {
+    const { prisma, linkFindMany, entityFindMany } = g3BatchPrisma();
+    const ctrl = new KnowledgeGraphController(prisma, gateRbac());
+    const Q = GraphNeighborsQuerySchema.parse({
+      nodeType: 'block',
+      id: 'B0',
+      depth: 2,
+    });
+
+    const res = await ctrl.neighbors(Q, G3_USER, G3_TENANT);
+
+    // 2 уровня → ровно 2 вызова findMany (НЕ 1 + 3 = 4 при per-node N+1).
+    expect(linkFindMany).toHaveBeenCalledTimes(2);
+    expect(entityFindMany).toHaveBeenCalledTimes(2);
+
+    // Уровень 2 получил БАТЧ всех трёх узлов frontier одним запросом.
+    const lvl2Where = linkFindMany.mock.calls[1]![0].where as {
+      OR: Array<{ fromBlockId?: { in?: string[] }; toBlockId?: { in?: string[] } }>;
+    };
+    const batched = new Set<string>();
+    for (const cond of lvl2Where.OR) {
+      for (const id of cond.fromBlockId?.in ?? []) batched.add(id);
+      for (const id of cond.toBlockId?.in ?? []) batched.add(id);
+    }
+    expect([...batched].sort()).toEqual(['B1', 'B2', 'B3']);
+
+    // Семантика обхода сохранена: все узлы двух уровней + root в выдаче.
+    const ids = res.nodes.map((n) => n.id).sort();
+    expect(ids).toEqual([
+      'B0',
+      'B1',
+      'B1a',
+      'B2',
+      'B2a',
+      'B3',
+      'B3a',
+    ]);
+    // Глубины проставлены по уровню.
+    const byId = new Map(res.nodes.map((n) => [n.id, n.depth]));
+    expect(byId.get('B0')).toBe(0);
+    expect(byId.get('B1')).toBe(1);
+    expect(byId.get('B1a')).toBe(2);
+    // 6 block-link рёбер (3 на ур.1 + 3 на ур.2).
+    expect(res.edges.filter((e) => e.type === 'block-link')).toHaveLength(6);
+  });
+
+  it('число запросов НЕ растёт линейно с числом узлов (батч, не N+1)', async () => {
+    const { prisma, linkFindMany } = g3BatchPrisma();
+    const ctrl = new KnowledgeGraphController(prisma, gateRbac());
+    const Q = GraphNeighborsQuerySchema.parse({
+      nodeType: 'block',
+      id: 'B0',
+      depth: 2,
+    });
+
+    const res = await ctrl.neighbors(Q, G3_USER, G3_TENANT);
+
+    // 7 узлов в графе, но запросов по уровням — только 2.
+    expect(res.nodes.length).toBe(7);
+    expect(linkFindMany.mock.calls.length).toBeLessThanOrEqual(2);
   });
 });

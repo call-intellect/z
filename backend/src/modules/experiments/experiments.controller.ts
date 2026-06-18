@@ -15,10 +15,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -38,24 +35,6 @@ import {
 } from './dto/experiments.dto';
 import { ExperimentsService } from './services/experiments.service';
 
-/**
- * REST API экспериментов компании (SBA β-6).
- *
- *   GET    /api/v1/experiments               — список (фильтры + пагинация).
- *   GET    /api/v1/experiments/:id           — детали + история.
- *   POST   /api/v1/experiments               — ручное создание.
- *   PATCH  /api/v1/experiments/:id           — частичное обновление.
- *   POST   /api/v1/experiments/:id/transition — явная смена status'а.
- *   DELETE /api/v1/experiments/:id           — soft-archive (status='dropped').
- *
- * RBAC:
- *   - `experiment` ResourceType.
- *   - Read: все member'ы Org (эксперимент — shared knowledge).
- *   - Write: owner / admin / manager open.
- *   - Delete (soft-archive): owner / admin.
- *
- * Multi-tenancy: TenantGuard. Все user-facing строки на русском.
- */
 @ApiTags('experiments')
 @Controller('api/v1/experiments')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -147,8 +126,6 @@ export class ExperimentsController {
     return this.svc.softDelete({ tenantId: t, id });
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({
@@ -182,8 +159,7 @@ export class ExperimentsController {
         ok: false,
         error: {
           code: 'forbidden',
-          message:
-            'Только owner / admin / manager могут редактировать эксперименты.',
+          message: 'Только owner / admin / manager могут редактировать эксперименты.',
         },
       });
     }

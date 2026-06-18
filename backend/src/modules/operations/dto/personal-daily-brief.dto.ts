@@ -7,16 +7,6 @@ import type {
   PersonalDailyBriefPayload,
 } from '../services/personal-daily-brief.synth';
 
-/**
- * TZ-1 Фаза 2 (daily-value-engine) — DTO «Твой день» + «кто знает X».
- *
- * Self-эндпоинты `/api/v1/me/daily-brief`, `/api/v1/me/knows-who`. Только
- * self-scope (по Person.userId) — операционные данные не открываем (Р8).
- */
-
-// ──────────────────────────── daily-brief ───────────────────────────
-
-/** Query для `GET /me/daily-brief?date=YYYY-MM-DD`. date опционально. */
 export const DailyBriefQuerySchema = z
   .object({
     date: z
@@ -28,7 +18,6 @@ export const DailyBriefQuerySchema = z
 
 export type DailyBriefQuery = z.infer<typeof DailyBriefQuerySchema>;
 
-/** Один пункт брифа (DomainModel из payloadJson). */
 export interface DailyBriefItemDto {
   kind: BriefItem['kind'];
   title: string;
@@ -46,7 +35,6 @@ export interface DailyBriefKnowsWhoDto {
 }
 
 export interface DailyBriefDto {
-  /** null — брифа за этот день ещё нет (cron не построил / не утро). */
   id: string | null;
   dateLocal: string;
   myTasks: DailyBriefItemDto[];
@@ -86,7 +74,6 @@ function mapKnowsWho(k: BriefKnowsWhoHint | null): DailyBriefKnowsWhoDto | null 
   };
 }
 
-/** Маппер payload → DTO (один источник правды для контроллера). */
 export function toDailyBriefDto(args: {
   id: string | null;
   payload: PersonalDailyBriefPayload;
@@ -109,7 +96,6 @@ export function toDailyBriefDto(args: {
   };
 }
 
-/** Пустой бриф (когда cron ещё не построил снимок за дату). */
 export function emptyDailyBriefDto(dateLocal: string): DailyBriefDto {
   return {
     id: null,
@@ -126,9 +112,6 @@ export function emptyDailyBriefDto(dateLocal: string): DailyBriefDto {
   };
 }
 
-// ──────────────────────────── knows-who ─────────────────────────────
-
-/** Query для `GET /me/knows-who?blockId=|q=`. Ровно один из blockId/q. */
 export const KnowsWhoQuerySchema = z
   .object({
     blockId: z.string().min(1).max(80).optional(),

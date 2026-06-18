@@ -1,12 +1,3 @@
-/**
- * Snapshot-тест промта `entity-merge-arbiter.prompt.ts`.
- *
- * Фиксирует:
- *   - текст `ENTITY_MERGE_ARBITER_SYSTEM_PROMPT`;
- *   - JSON-схему `ENTITY_MERGE_ARBITER_JSON_SCHEMA`.
- *
- * Обновлять только при осознанном изменении: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import {

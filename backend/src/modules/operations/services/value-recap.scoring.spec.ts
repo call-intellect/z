@@ -10,16 +10,6 @@ import {
   type ValueRecapTeam,
 } from './value-recap.scoring';
 
-/**
- * TZ-1 Фаза 5 (daily-value-engine) — unit-тесты чистой логики value-recap.
- *
- * Покрываем:
- *   1. дельта к прошлому месяцу (baseline → null);
- *   2. ЧЕСТНОСТЬ (Р6) — assert NO forbidden metric keys в собранном payload
- *      (нет ₽/часы×ставка, было→стало, medianHoursToAnswer, roiScore/alignment);
- *   3. allow-list — throughputPercent / helpedRate НЕ считаются запрещёнными;
- *   4. детектор ловит подсунутый запрещённый ключ.
- */
 describe('value-recap.scoring', () => {
   const routine: ValueRecapRoutine = {
     meetingsAutoProtocoled: 12,
@@ -83,8 +73,6 @@ describe('value-recap.scoring', () => {
       expect(payload.isBaseline).toBe(true);
       expect(payload.delta).toBeNull();
       expect(payload.decisions).toHaveLength(2);
-      // КЛЮЧЕВОЙ assert честности: запрещённых наружу метрик в payload НЕТ
-      // (вкл. decisions[].throughputPercent — он в allow-list).
       expect(findForbiddenMetricKeys(payload)).toEqual([]);
     });
 
@@ -122,12 +110,9 @@ describe('value-recap.scoring', () => {
       expect(findForbiddenMetricKeys({ hoursSaved: 42 })).toContain('hoursSaved');
       expect(findForbiddenMetricKeys({ roiScore: 3 })).toContain('roiScore');
       expect(findForbiddenMetricKeys({ alignmentScore: 0.7 })).toContain('alignmentScore');
-      expect(findForbiddenMetricKeys({ medianHoursToAnswer: 2 })).toContain(
-        'medianHoursToAnswer',
-      );
+      expect(findForbiddenMetricKeys({ medianHoursToAnswer: 2 })).toContain('medianHoursToAnswer');
       expect(findForbiddenMetricKeys({ beforeAfter: {} })).toContain('beforeAfter');
       expect(findForbiddenMetricKeys({ knowledgeSaved: 5 })).toContain('knowledgeSaved');
-      // часы×ставка — поле «rate».
       expect(findForbiddenMetricKeys({ hourlyRate: 50 })).toContain('hourlyRate');
     });
 
@@ -136,9 +121,7 @@ describe('value-recap.scoring', () => {
     });
 
     it('обходит вложенность и массивы', () => {
-      expect(
-        findForbiddenMetricKeys({ a: { b: [{ roiScore: 1 }] } }),
-      ).toContain('roiScore');
+      expect(findForbiddenMetricKeys({ a: { b: [{ roiScore: 1 }] } })).toContain('roiScore');
     });
   });
 });

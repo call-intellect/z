@@ -1,20 +1,3 @@
-/**
- * Backfill системных Smart-таблиц (Smart-tables Фаза 0).
- *
- * Задача: для каждой существующей `Org` создать недостающие системные таблицы
- * по каталогу `SYSTEM_TABLES_CATALOG` (10 шаблонов, ПУСТЫЕ — без строк). Новые
- * Org получают эти таблицы автоматически в `OrgsService.createForOwner` через
- * `TablesAutoProvisionService`; этот скрипт — для уже-существующих Org.
- *
- * Запуск:
- *   bun run scripts/backfill-system-tables.ts
- *
- * Идемпотентен: для каждого шаблона делаем findFirst({ tenantId, systemKey }) и
- * создаём только отсутствующие. Повторный запуск ничего не ломает.
- *
- * См. safe-seed-rules: не делаем mass updateMany, создаём только недостающее.
- */
-
 import { Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -85,9 +68,7 @@ async function main(): Promise<void> {
     if (createdForOrg > 0) {
       orgsTouched++;
       // eslint-disable-next-line no-console
-      console.log(
-        `  + Org "${org.name}" (${org.id}): создано ${createdForOrg} системных таблиц`,
-      );
+      console.log(`  + Org "${org.name}" (${org.id}): создано ${createdForOrg} системных таблиц`);
     }
   }
 

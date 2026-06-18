@@ -4,27 +4,8 @@ import { TypedConfigService } from '../../../../common/config/index';
 import { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import { RedisService } from '../../../../common/redis/redis.service';
 
-import type {
-  MaxSendMessageRequest,
-  MaxSendMessageResponse,
-} from './max.types';
+import type { MaxSendMessageRequest, MaxSendMessageResponse } from './max.types';
 
-/**
- * Тонкий клиент MAX Bot API.
- *
- * Документация (context7 verified 2026-05-22, source `dev.max.ru/docs-api`):
- *   - Base URL: `https://platform-api.max.ru` (override через
- *     `MAX_BOT_API_BASE`).
- *   - Авторизация: header `Authorization: <access_token>`.
- *     Передача через query больше не поддерживается.
- *   - Recommended rate: ≤30 RPS (см. «Обзор → Рекомендации»).
- *
- * Здесь — только `sendMessage`, `subscribe`/`unsubscribe` webhook, `getMe`.
- * Этого достаточно для SBA β-1.
- *
- * Каркас параллелен `TelegramApiClient`. Throttle — общий per-process
- * Redis-bucket (`cfg.maxBot.globalRps`).
- */
 @Injectable()
 export class MaxApiClient {
   private readonly logger = new Logger(MaxApiClient.name);
@@ -40,8 +21,6 @@ export class MaxApiClient {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  // ─────────────────────── outbound ────────────────────────────────
-
   async sendMessage(args: {
     accessToken: string;
     chatId?: string | number;
@@ -54,25 +33,10 @@ export class MaxApiClient {
       ...(args.userId !== undefined ? { user_id: args.userId } : {}),
       text: args.text,
     };
-    return this.call<MaxSendMessageResponse>(
-      args.accessToken,
-      'POST',
-      '/messages',
-      body,
-    );
+    return this.call<MaxSendMessageResponse>(args.accessToken, 'POST', '/messages', body);
   }
 
-  /**
-   * Скачать бинарный контент вложения по полному URL. MAX обычно отдаёт
-   * `payload.url` уже как полную ссылку с подписью — поэтому отдельный
-   * `getFile` не нужен, достаточно тонкого GET'а. Если адаптер найдёт
-   * только `file_id`, эта функция вернёт ошибку (специфичный GET endpoint
-   * для file_id в MAX-API на момент 2026-05-23 не документирован).
-   */
-  async downloadAttachment(args: {
-    accessToken: string;
-    url: string;
-  }): Promise<Buffer> {
+  async downloadAttachment(args: { accessToken: string; url: string }): Promise<Buffer> {
     let res: Response;
     try {
       res = await fetch(args.url, {
@@ -84,12 +48,7 @@ export class MaxApiClient {
         apiMethod: 'downloadAttachment',
         code: 'network_error',
       });
-      throw new MaxApiError(
-        'downloadAttachment',
-        0,
-        `network: ${message}`,
-        true,
-      );
+      throw new MaxApiError('downloadAttachment', 0, `network: ${message}`, true);
     }
     if (!res.ok) {
       this.metrics.incMaxBotApiError({
@@ -107,21 +66,13 @@ export class MaxApiClient {
     return Buffer.from(arrayBuffer);
   }
 
-  // ─────────────────────── setup ───────────────────────────────────
-
-  async subscribeWebhook(args: {
-    accessToken: string;
-    url: string;
-  }): Promise<void> {
+  async subscribeWebhook(args: { accessToken: string; url: string }): Promise<void> {
     await this.call<unknown>(args.accessToken, 'POST', '/subscriptions', {
       url: args.url,
     });
   }
 
-  async unsubscribeWebhook(args: {
-    accessToken: string;
-    url: string;
-  }): Promise<void> {
+  async unsubscribeWebhook(args: { accessToken: string; url: string }): Promise<void> {
     const path = `/subscriptions?url=${encodeURIComponent(args.url)}`;
     await this.call<unknown>(args.accessToken, 'DELETE', path, undefined);
   }
@@ -138,8 +89,6 @@ export class MaxApiClient {
       undefined,
     );
   }
-
-  // ─────────────────────── internals ───────────────────────────────
 
   private async call<T>(
     accessToken: string,
@@ -178,7 +127,6 @@ export class MaxApiClient {
       }
     } else {
       try {
-        // некоторые ответы (subscribe / unsubscribe) могут быть без content-type
         const text = await res.text();
         parsed = text ? safeJsonParse(text) : null;
       } catch {
@@ -198,10 +146,6 @@ export class MaxApiClient {
     return (parsed ?? ({} as T)) as T;
   }
 
-  /**
-   * Лёгкий throttle (per-second-bucket). Параллельная реализация
-   * `TelegramApiClient.throttle`.
-   */
   private async throttle(): Promise<void> {
     const limit = this.cfg.maxBot.globalRps;
     if (limit <= 0) return;
@@ -229,9 +173,7 @@ export class MaxApiError extends Error {
     description: string,
     readonly transient: boolean,
   ) {
-    super(
-      `MAX Bot API ${apiMethod} failed (code=${code}, transient=${transient}): ${description}`,
-    );
+    super(`MAX Bot API ${apiMethod} failed (code=${code}, transient=${transient}): ${description}`);
     this.name = 'MaxApiError';
   }
 }

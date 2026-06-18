@@ -7,12 +7,6 @@ import type { S3Service } from '../recordings/s3.service';
 import type { MeetingUploadsQueueService } from './meeting-uploads-queue.service';
 import { MeetingUploadsService } from './meeting-uploads.service';
 
-/**
- * Спеки разметки спикеров загруженной встречи (ТЗ-5 Ф4): confirmSpeakers.
- * Мокаем prisma (meeting/meetingUploadSpeaker/transcript/participant/person),
- * S3, очереди (analyze/behavior/fast) и FSM transitionStatus.
- */
-
 interface SpeakerRow {
   label: string;
   displayLabel: string;
@@ -28,7 +22,9 @@ interface SpeakerRow {
   participantId: string | null;
 }
 
-function makeSpeaker(over: Partial<SpeakerRow> & Pick<SpeakerRow, 'label' | 'displayLabel'>): SpeakerRow {
+function makeSpeaker(
+  over: Partial<SpeakerRow> & Pick<SpeakerRow, 'label' | 'displayLabel'>,
+): SpeakerRow {
   return {
     turnsCount: 1,
     speakingSeconds: 30,
@@ -48,7 +44,6 @@ function makeService(setup: {
   meetingStatus?: string;
   speakers: SpeakerRow[];
   turns?: any[];
-  /** Person.findFirst (employee resolve) / findMany (validate) lookups. */
   persons?: Record<string, { id: string; name: string }>;
 }): {
   service: MeetingUploadsService;
@@ -94,7 +89,6 @@ function makeService(setup: {
     participant: {
       create: participantCreate,
       findUnique: vi.fn(async ({ where }: any) => {
-        // Идемпотентность: реюз существующего Participant по id.
         const reuse = Object.values(personsById);
         void reuse;
         if (where.id?.startsWith?.('part-')) {
@@ -201,15 +195,28 @@ describe('MeetingUploadsService.confirmSpeakers', () => {
         }),
       ],
       turns: [
-        { speaker: '«Человек 0»', text: 'Привет', startSec: 0, endSec: 2, speakerParticipantId: null, speakerLivekitIdentity: null },
-        { speaker: '«Человек 1»', text: 'Здравствуйте', startSec: 2, endSec: 4, speakerParticipantId: null, speakerLivekitIdentity: null },
+        {
+          speaker: '«Человек 0»',
+          text: 'Привет',
+          startSec: 0,
+          endSec: 2,
+          speakerParticipantId: null,
+          speakerLivekitIdentity: null,
+        },
+        {
+          speaker: '«Человек 1»',
+          text: 'Здравствуйте',
+          startSec: 2,
+          endSec: 4,
+          speakerParticipantId: null,
+          speakerLivekitIdentity: null,
+        },
       ],
     });
 
     const res = await ctx.service.confirmSpeakers('m-1', 'org-1');
 
     expect(res.status).toBe('ai_processing');
-    // 2 Participant созданы (employee + external), role=guest, livekitIdentity=upload:*
     expect(ctx.participantCreate).toHaveBeenCalledTimes(2);
     const idents = ctx.participantCreate.mock.calls.map((c: any) => c[0].data.livekitIdentity);
     expect(idents).toContain('upload:SPEAKER 0');
@@ -217,28 +224,23 @@ describe('MeetingUploadsService.confirmSpeakers', () => {
     for (const c of ctx.participantCreate.mock.calls) {
       expect(c[0].data.role).toBe('guest');
     }
-    // external Person создан с company/jobTitle
     expect(ctx.personsSvc.findOrCreateExternal).toHaveBeenCalledWith({
       tenantId: 'org-1',
       name: 'Анна Клиент',
       company: 'ООО Ромашка',
       jobTitle: 'Директор',
     });
-    // Транскрипт переразмечен реальными именами + speakerParticipantId
     const written = (ctx.transcriptUpdate.mock.calls[0] as any)[0].data.turns;
     expect(written[0].speaker).toBe('Иван Петров');
     expect(written[0].speakerParticipantId).toBe('part-upload:SPEAKER 0');
     expect(written[1].speaker).toBe('Анна Клиент');
     expect(written[1].speakerParticipantId).toBe('part-upload:SPEAKER 1');
-    // merged.json перезаписан в S3
     expect((ctx.s3 as any).putJson).toHaveBeenCalledTimes(1);
-    // FSM → ai_processing
     expect(ctx.meetings.transitionStatus).toHaveBeenCalledWith(
       'm-1',
       'ai_processing',
       expect.anything(),
     );
-    // 3 enqueue
     expect(ctx.aiQueue.enqueueAnalyze).toHaveBeenCalledWith('m-1');
     expect(ctx.aiQueue.enqueueBehaviorMetrics).toHaveBeenCalledWith('m-1');
     expect(ctx.coreQueue.enqueueMeetingReportFast).toHaveBeenCalledWith('m-1');
@@ -262,16 +264,31 @@ describe('MeetingUploadsService.confirmSpeakers', () => {
         }),
       ],
       turns: [
-        { speaker: '«Человек 0»', text: 'Раз', startSec: 0, endSec: 1, speakerParticipantId: null, speakerLivekitIdentity: null },
-        { speaker: '«Человек 1»', text: 'Два', startSec: 1, endSec: 2, speakerParticipantId: null, speakerLivekitIdentity: null },
+        {
+          speaker: '«Человек 0»',
+          text: 'Раз',
+          startSec: 0,
+          endSec: 1,
+          speakerParticipantId: null,
+          speakerLivekitIdentity: null,
+        },
+        {
+          speaker: '«Человек 1»',
+          text: 'Два',
+          startSec: 1,
+          endSec: 2,
+          speakerParticipantId: null,
+          speakerLivekitIdentity: null,
+        },
       ],
     });
 
     await ctx.service.confirmSpeakers('m-1', 'org-1');
 
-    // Один Participant на финальную метку SPEAKER 0.
     expect(ctx.participantCreate).toHaveBeenCalledTimes(1);
-    expect((ctx.participantCreate.mock.calls[0] as any)[0].data.livekitIdentity).toBe('upload:SPEAKER 0');
+    expect((ctx.participantCreate.mock.calls[0] as any)[0].data.livekitIdentity).toBe(
+      'upload:SPEAKER 0',
+    );
     const written = (ctx.transcriptUpdate.mock.calls[0] as any)[0].data.turns;
     expect(written).toHaveLength(2);
     expect(written[0].speaker).toBe('Иван Петров');
@@ -297,8 +314,22 @@ describe('MeetingUploadsService.confirmSpeakers', () => {
         }),
       ],
       turns: [
-        { speaker: '«Человек 0»', text: 'Оставить', startSec: 0, endSec: 1, speakerParticipantId: null, speakerLivekitIdentity: null },
-        { speaker: '«Человек 1»', text: 'Выкинуть', startSec: 1, endSec: 2, speakerParticipantId: null, speakerLivekitIdentity: null },
+        {
+          speaker: '«Человек 0»',
+          text: 'Оставить',
+          startSec: 0,
+          endSec: 1,
+          speakerParticipantId: null,
+          speakerLivekitIdentity: null,
+        },
+        {
+          speaker: '«Человек 1»',
+          text: 'Выкинуть',
+          startSec: 1,
+          endSec: 2,
+          speakerParticipantId: null,
+          speakerLivekitIdentity: null,
+        },
       ],
     });
 
@@ -307,7 +338,6 @@ describe('MeetingUploadsService.confirmSpeakers', () => {
     const written = (ctx.transcriptUpdate.mock.calls[0] as any)[0].data.turns;
     expect(written).toHaveLength(1);
     expect(written[0].speaker).toBe('Иван Петров');
-    // excluded не создаёт Participant — только employee.
     expect(ctx.participantCreate).toHaveBeenCalledTimes(1);
   });
 
@@ -324,15 +354,20 @@ describe('MeetingUploadsService.confirmSpeakers', () => {
         }),
       ],
       turns: [
-        { speaker: '«Человек 0»', text: 'Привет', startSec: 0, endSec: 1, speakerParticipantId: null, speakerLivekitIdentity: null },
+        {
+          speaker: '«Человек 0»',
+          text: 'Привет',
+          startSec: 0,
+          endSec: 1,
+          speakerParticipantId: null,
+          speakerLivekitIdentity: null,
+        },
       ],
     });
 
     await ctx.service.confirmSpeakers('m-1', 'org-1');
 
-    // participantId уже задан → Participant НЕ создаётся повторно.
     expect(ctx.participantCreate).not.toHaveBeenCalled();
-    // Транскрипт всё равно переразмечается под существующего участника.
     const written = (ctx.transcriptUpdate.mock.calls[0] as any)[0].data.turns;
     expect(written[0].speakerParticipantId).toBe('part-upload:SPEAKER 0');
   });

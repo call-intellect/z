@@ -1,23 +1,3 @@
-/**
- * SBA α-8 wave 4 — seed маршрутов LLM для 2 taskType'ов Role Map:
- *
- *   - role-map-extract           — батч blocks → нормализованная Role Map.
- *     JSON-mode, важна точность для structured extraction → DeepSeek primary.
- *   - role-completeness-rationale — короткое (1-3 предложения) объяснение
- *     для tooltip. Лёгкая локальная задача → Ollama primary.
- *
- * Источник цепочек: docs/reference/llm-models-playbook.md + sub-ТЗ §9.
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-role-map.ts
- *   bun run scripts/seed-llm-task-routes-role-map.ts --update-existing
- *
- * Идемпотентность (skill safe-seed-rules):
- *   - editedByAdmin=true НЕ перезаписываются.
- *   - Без --update-existing — пропускаем существующие записи.
- *   - С --update-existing — обновляем model/priority/isActive (но НЕ editedByAdmin).
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -38,8 +18,7 @@ interface TaskRouteSeed {
 const SEEDS: TaskRouteSeed[] = [
   {
     taskType: 'role-map-extract',
-    playbookSection:
-      '§2.1 medium-complexity structured JSON (батч extraction wave-2 элементов)',
+    playbookSection: '§2.1 medium-complexity structured JSON (батч extraction wave-2 элементов)',
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
@@ -105,17 +84,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -140,18 +115,14 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 
 async function main(): Promise<void> {
   const updateExisting = process.argv.includes('--update-existing');
   // eslint-disable-next-line no-console
-  console.log(
-    `=== seed-llm-task-routes-role-map START (updateExisting=${updateExisting}) ===`,
-  );
+  console.log(`=== seed-llm-task-routes-role-map START (updateExisting=${updateExisting}) ===`);
   // eslint-disable-next-line no-console
   console.log(`TaskTypes: ${SEEDS.map((s) => s.taskType).join(', ')}`);
 

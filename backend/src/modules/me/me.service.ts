@@ -33,12 +33,6 @@ export interface MeProfileRoleProfileDto {
   status: 'forming' | 'ready' | 'stale' | 'error';
   buildVersion: number;
   lastBuildAt: string | null;
-  /**
-   * Полная карта должности текущего пользователя (self-scoped, без RBAC
-   * role-profile — пользователь смотрит СВОЮ роль). Формат идентичен
-   * `GET /api/v1/roles/:id/map` (RoleMapDto). `null` — нет primaryRole,
-   * сервис карты недоступен или произошла ошибка (мягкая деградация).
-   */
   roleMap: RoleMapDto | null;
 }
 
@@ -87,9 +81,6 @@ export class MeService {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    // @Optional — кросс-модульный инжект (MeModule импортирует RoleMapModule).
-    // Если по какой-то причине провайдер не зарезолвился, /me/profile
-    // продолжает работать без карты (roleMap=null), не падая.
     @Optional()
     @Inject(RoleMapBuilderService)
     private readonly roleMapBuilder: RoleMapBuilderService | null = null,
@@ -101,10 +92,7 @@ export class MeService {
     private readonly cfg: TypedConfigService | null = null,
   ) {}
 
-  async getProfile(args: {
-    tenantId: string;
-    userId: string;
-  }): Promise<MeProfileDto> {
+  async getProfile(args: { tenantId: string; userId: string }): Promise<MeProfileDto> {
     const person = await this.prisma.person.findFirst({
       where: {
         tenantId: args.tenantId,
@@ -154,9 +142,7 @@ export class MeService {
         name: person.name,
         email: person.email,
       },
-      primaryRole: link
-        ? { id: link.role.id, name: link.role.name }
-        : null,
+      primaryRole: link ? { id: link.role.id, name: link.role.name } : null,
       primaryDepartment: person.primaryDepartment
         ? {
             id: person.primaryDepartment.id,
@@ -177,13 +163,6 @@ export class MeService {
     };
   }
 
-  /**
-   * Self-scoped загрузка полной карты должности через RoleMapBuilderService
-   * (тот же источник, что `GET /api/v1/roles/:id/map`). RBAC живёт в
-   * RoleMapController, а не в сервисе — поэтому прямой вызов из MeService для
-   * СВОЕЙ роли пользователя безопасен. Мягкая деградация: любой сбой (сервис
-   * недоступен / роль не найдена / иная ошибка) → `null`, /me/profile не падает.
-   */
   private async loadRoleMap(args: {
     tenantId: string;
     roleId: string;

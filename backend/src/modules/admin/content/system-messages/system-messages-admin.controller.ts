@@ -33,12 +33,6 @@ import {
 } from './dto/system-messages-admin.dto';
 import { SystemMessagesAdminService } from './system-messages-admin.service';
 
-/**
- * Admin-redesign Фаза 5 — `SystemMessagesAdminController`.
- *
- * CRUD баннеров / maintenance / alerts. `/active` возвращает только сейчас
- * активные (для будущего public endpoint в Фазе 9 — здесь под admin).
- */
 @ApiTags('admin-content-system-messages')
 @Controller('api/v1/admin/content/system-messages')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)

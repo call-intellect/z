@@ -4,18 +4,6 @@ import { EmbeddingFallbackService } from '../../embeddings/services/embedding-fa
 
 import type { ExtractedBlock } from './block-extraction.service';
 
-/**
- * KnowledgeEmbeddingService — обёртка над `EmbeddingFallbackService`
- * для batched-эмбеддинга блоков и сущностей.
- *
- * Логика «что эмбеддим»:
- *   - Блоки: `criticalQuestion + ' ' + trustedAnswer`. Это то, по чему ищем
- *     ближайшего канонического кандидата в block-distill.
- *   - Сущности: `canonicalName` (короткая строка достаточна для KNN).
- *
- * Батчинг — внутри `EmbeddingFallbackService.embed(...)` (он сам режет на
- * batch-100 по `EMBEDDING_BATCH_SIZE`).
- */
 @Injectable()
 export class KnowledgeEmbeddingService {
   constructor(
@@ -34,11 +22,6 @@ export class KnowledgeEmbeddingService {
     return this.embeddings.embed(names);
   }
 
-  /**
-   * Эмбеддинг одного запроса (search). Тонкая обёртка над batched embed —
-   * берёт первый (и единственный) элемент. Если строка пустая —
-   * возвращает null, чтобы caller'ы могли пропустить cosine-фильтр.
-   */
   async embedQuery(text: string): Promise<number[] | null> {
     const trimmed = text.trim();
     if (trimmed.length === 0) return null;

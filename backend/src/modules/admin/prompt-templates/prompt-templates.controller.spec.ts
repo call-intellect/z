@@ -1,22 +1,7 @@
-/**
- * Фаза A.2 — controller-level integration тест для AdminPromptTemplatesController.
- *
- * Не поднимает full NestJS-app (Docker выключен, БД недоступна), но создаёт
- * контроллер с мокнутым сервисом и проверяет, что:
- *   - GET /prompt-templates делегирует list() с фильтрами.
- *   - POST /prompt-templates делегирует create() с user.id.
- *   - PATCH /prompt-templates/:id делегирует update().
- *   - POST /prompt-templates/:id/activate-version/:versionId делегирует activate.
- *   - POST /prompt-templates/:id/preview делегирует preview-сервис.
- *
- * Покрытие ≥4 эндпоинтов из ТЗ §7.1 — DoD.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
-
 
 import type { PromptTemplatesPreviewService } from './prompt-templates-preview.service';
 import { AdminPromptTemplatesController } from './prompt-templates.controller';
@@ -56,8 +41,6 @@ function build() {
       outputTokens: 200,
     })),
   } as unknown as PromptTemplatesPreviewService;
-  // Фаза A.3 — контроллер теперь резолвит rbac через PrismaService.
-  // В этом spec'е пользователь — super_admin, без owned Org.
   const prisma = {
     user: { findUnique: vi.fn(async () => ({ isSuperAdmin: true })) },
     membership: { findMany: vi.fn(async () => []) },
@@ -118,11 +101,7 @@ describe('AdminPromptTemplatesController', () => {
 
   it('POST /prompt-templates/:id/preview — вызывает preview-сервис', async () => {
     const { ctrl, previewSvc } = build();
-    const out = await ctrl.preview(
-      't-1',
-      { demoMeetingKey: 'demo-sales' } as never,
-      sampleUser,
-    );
+    const out = await ctrl.preview('t-1', { demoMeetingKey: 'demo-sales' } as never, sampleUser);
     expect(previewSvc.runPreview).toHaveBeenCalledWith(
       't-1',
       { demoMeetingKey: 'demo-sales' },

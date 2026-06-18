@@ -1,15 +1,3 @@
-/**
- * Unit-тесты `TeamHealthService` (Pulse Wave 1 §1.6).
- *
- * Покрывают:
- *   - 0 отделов → пустой teams + totalDepartments=0;
- *   - отдел <3 чел. → belowCohort=true, все attrs neutral;
- *   - sentiment с положительным/отрицательным/нулевым индексом и tone;
- *   - promises: tone + trend по дельте;
- *   - conflicts: 0 / 1-2 / >2 → success / warning / danger;
- *   - кэш-hit (Prisma не дёргается);
- *   - graceful fallback при ошибке Redis.get.
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -19,10 +7,7 @@ import type { OperationsDashboardService } from '../../operations/services/opera
 
 import type { CommitmentReliabilityService } from './commitment-reliability.service';
 import type { HangingDecisionsService } from './hanging-decisions.service';
-import {
-  TeamHealthService,
-  type TeamHealthDto,
-} from './team-health.service';
+import { TeamHealthService, type TeamHealthDto } from './team-health.service';
 
 interface DepartmentRow {
   id: string;
@@ -36,19 +21,18 @@ interface ConflictRow {
   toEntityId: string;
 }
 
-function buildService(opts: {
-  departments?: DepartmentRow[];
-  conflicts?: ConflictRow[];
-  temperature?: OperationsTeamTemperatureDto;
-  reliabilityByDept?: Record<
-    string,
-    { reliabilityPercent: number; delta14d: number | null }
-  >;
-  cacheValue?: string | null;
-  cacheGetError?: Error;
-  cacheSetError?: Error;
-  hangingList?: Array<{ id: string; decidedByPersonIds: string[] }>;
-} = {}): {
+function buildService(
+  opts: {
+    departments?: DepartmentRow[];
+    conflicts?: ConflictRow[];
+    temperature?: OperationsTeamTemperatureDto;
+    reliabilityByDept?: Record<string, { reliabilityPercent: number; delta14d: number | null }>;
+    cacheValue?: string | null;
+    cacheGetError?: Error;
+    cacheSetError?: Error;
+    hangingList?: Array<{ id: string; decidedByPersonIds: string[] }>;
+  } = {},
+): {
   service: TeamHealthService;
   deptFindMany: ReturnType<typeof vi.fn>;
   entityLinkFindMany: ReturnType<typeof vi.fn>;
@@ -77,16 +61,17 @@ function buildService(opts: {
     client: { get: redisGet, set: redisSet },
   } as unknown as RedisService;
 
-  const opsGet = vi.fn(async () =>
-    opts.temperature ?? {
-      days: 7,
-      totalCheckIns: 0,
-      greenShare: 0,
-      yellowShare: 0,
-      redShare: 0,
-      redShareDelta: null,
-      byPerson: [],
-    },
+  const opsGet = vi.fn(
+    async () =>
+      opts.temperature ?? {
+        days: 7,
+        totalCheckIns: 0,
+        greenShare: 0,
+        yellowShare: 0,
+        redShare: 0,
+        redShareDelta: null,
+        byPerson: [],
+      },
   );
   const ops = {
     getTeamTemperature: opsGet,
@@ -177,7 +162,6 @@ describe('TeamHealthService', () => {
     expect(row.conflicts).toEqual({ value: 0, tone: 'neutral' });
     expect(row.decisions).toEqual({ value: 0, tone: 'neutral' });
     expect(row.healthSummary).toBeNull();
-    // CommitmentReliabilityService не вызывался для below-cohort отделов.
     expect(commitsGet).not.toHaveBeenCalled();
   });
 
@@ -203,7 +187,6 @@ describe('TeamHealthService', () => {
     const res = await service.getHealth({ tenantId: 't-1' });
     const row = res.teams[0]!;
     expect(row.belowCohort).toBe(false);
-    // (green - red) / total = (2-1)/3 = 0.333 → 33
     expect(row.sentiment.value).toBe(33);
     expect(row.sentiment.tone).toBe('success');
   });
@@ -220,7 +203,6 @@ describe('TeamHealthService', () => {
       byPerson: [
         { personId: 'p-1', personName: 'A', green: 0, yellow: 0, red: 2, total: 2 },
         { personId: 'p-2', personName: 'B', green: 1, yellow: 0, red: 1, total: 2 },
-        // (1 - 3) / 4 = -0.5 → -50
       ],
     };
     const { service } = buildService({
@@ -239,7 +221,6 @@ describe('TeamHealthService', () => {
       { id: 'p-2', entityId: null },
       { id: 'p-3', entityId: null },
     ];
-    // 3 green + 2 red → (3-2)/5 = 20% → tone=warning
     const temperature: OperationsTeamTemperatureDto = {
       ...emptyTemperature(),
       byPerson: [
@@ -292,10 +273,7 @@ describe('TeamHealthService', () => {
   });
 
   it('conflicts: 0 → success, 1 → warning, 5 → danger', async () => {
-    const makeRow = (
-      id: string,
-      entityIds: string[],
-    ): DepartmentRow => ({
+    const makeRow = (id: string, entityIds: string[]): DepartmentRow => ({
       id,
       name: id,
       persons: [
@@ -313,11 +291,7 @@ describe('TeamHealthService', () => {
       { fromEntityId: 'd-dang-e1', toEntityId: 'other-6' },
     ];
     const { service } = buildService({
-      departments: [
-        makeRow('d-ok', []),
-        makeRow('d-warn', []),
-        makeRow('d-dang', []),
-      ],
+      departments: [makeRow('d-ok', []), makeRow('d-warn', []), makeRow('d-dang', [])],
       conflicts,
       reliabilityByDept: {
         'd-ok': { reliabilityPercent: 90, delta14d: null },
@@ -465,16 +439,10 @@ describe('TeamHealthService', () => {
       teams: [],
       totalDepartments: 0,
     };
-    const {
-      service,
-      deptFindMany,
-      entityLinkFindMany,
-      opsGet,
-      commitsGet,
-      hangingList,
-    } = buildService({
-      cacheValue: JSON.stringify(cached),
-    });
+    const { service, deptFindMany, entityLinkFindMany, opsGet, commitsGet, hangingList } =
+      buildService({
+        cacheValue: JSON.stringify(cached),
+      });
     const res = await service.getHealth({ tenantId: 't-1' });
     expect(res).toEqual(cached);
     expect(deptFindMany).not.toHaveBeenCalled();

@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { Gauge } from 'lucide-react';
-import Link from 'next/link';
+import { Gauge } from "lucide-react";
+import Link from "next/link";
 
-import { getCompanyStageLabel } from '@/lib/cause-category-presentation';
-import type { MaturitySnapshotDomain } from '@/domain/operations-dashboard';
+import { getCompanyStageLabel } from "@/lib/cause-category-presentation";
+import type { MaturitySnapshotDomain } from "@/domain/operations-dashboard";
 import {
   BarTrend,
   CardTitle,
@@ -12,22 +12,8 @@ import {
   GlassCard,
   GRAD,
   RadarCard,
-} from '@/ui/components/dashboard/modern';
+} from "@/ui/components/dashboard/modern";
 
-/**
- * SBA β-8.3 Wave 3 — виджет «Зрелость компании» на COO-дашборде.
- *
- * Источник данных — `OperationsOverviewDomain.maturity` (см.
- * `frontend/src/domain/operations-dashboard.ts`).
- *
- * Состояния:
- *   - `score=null` (cron ещё не отработал) — карточка-заглушка с подсказкой.
- *   - `score=number` — кольцо + stage + две колонки доменов + ссылка на /maturity.
- *
- * Кольцо нарисовано чистым SVG (без сторонних библиотек), цвет accent —
- * mint accent токен дизайн-системы Z (резервный hex — для случаев, когда
- * Tailwind-токен в SVG-stroke не работает).
- */
 export function MaturityWidget(props: { maturity: MaturitySnapshotDomain }) {
   const { maturity } = props;
 
@@ -48,7 +34,7 @@ export function MaturityWidget(props: { maturity: MaturitySnapshotDomain }) {
         </div>
         <p
           className="rounded-xl p-3 text-sm"
-          style={{ background: 'var(--surface-inset)', color: CHART.dim }}
+          style={{ background: "var(--surface-inset)", color: CHART.dim }}
         >
           Расчёт зрелости — каждое утро в 05:00 UTC. Проверьте позже.
         </p>
@@ -59,8 +45,6 @@ export function MaturityWidget(props: { maturity: MaturitySnapshotDomain }) {
   const percent = maturity.scorePercent ?? 0;
   const stageLabel = getCompanyStageLabel(maturity.stage);
 
-  // Оси для лепестковой диаграммы: объединяем слабые и сильные домены,
-  // дедуплицируем по slug. Подпись по completenessPercent.
   const domainAxes = (() => {
     const seen = new Set<string>();
     const axes: { k: string; v: number }[] = [];
@@ -101,18 +85,17 @@ export function MaturityWidget(props: { maturity: MaturitySnapshotDomain }) {
             </div>
             {maturity.lastCalcAt ? (
               <div className="mt-1 text-[10px]" style={{ color: CHART.faint }}>
-                обновлено{' '}
-                {maturity.lastCalcAt.toLocaleString('ru-RU', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: 'numeric',
+                обновлено{" "}
+                {maturity.lastCalcAt.toLocaleString("ru-RU", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
                 })}
               </div>
             ) : null}
           </div>
         </div>
-        {/* Зрелость по доменам: ≥3 осей — лепестковая диаграмма, иначе
-            столбчатая (radar на 1–2 осях вырождается). */}
+        {}
         {domainAxes.length === 0 ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <DomainList
@@ -149,7 +132,6 @@ export function MaturityWidget(props: { maturity: MaturitySnapshotDomain }) {
 }
 
 function ScoreRing({ percent }: { percent: number }) {
-  // SVG-кольцо. Радиус 36, толщина 8, размер 88×88.
   const size = 88;
   const radius = 36;
   const stroke = 8;
@@ -201,9 +183,9 @@ function ScoreRing({ percent }: { percent: number }) {
 function DomainList(props: {
   title: string;
   items: Array<{ slug: string; name: string; completenessPercent: number }>;
-  tone: 'danger' | 'success';
+  tone: "danger" | "success";
 }) {
-  const dotColor = props.tone === 'danger' ? CHART.red : CHART.mint;
+  const dotColor = props.tone === "danger" ? CHART.red : CHART.mint;
   return (
     <div>
       <h3

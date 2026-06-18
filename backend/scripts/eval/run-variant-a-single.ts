@@ -1,18 +1,7 @@
-/**
- * Variant A — раздельные вызовы цепочки №1 на одной фикстуре.
- *
- *   fixture → парсинг → сегменты → block-ingest → blocks[]
- *                                     → chapters-v2 ∥ tasks-v2 ∥ summary-v2
- *                                     → meeting-quality-score (на transcript)
- *
- * Запуск: cd backend && bun run scripts/eval/run-variant-a-single.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
 
-// Промпты — напрямую из src/ (структурная типизация позволяет передавать
-// локальные MeetingBlock-объекты в функции, ожидающие точный Prisma-тип).
 import {
   BLOCK_INGEST_JSON_SCHEMA,
   buildBlockIngestPrompt,
@@ -33,29 +22,22 @@ import {
   condenseTranscriptForQualityScore,
 } from '../../src/modules/ai/services/prompts/meeting-quality-score';
 
-// ── константы ────────────────────────────────────────────────────────────────
 const MODEL = 'deepseek-v4-pro';
-// DeepSeek-V4-Pro со скидкой 75% (постоянная):
-//   input miss $0.435/M, cache hit $0.003625/M, output $0.87/M.
 const PRICE_IN = 0.435 / 1_000_000;
 const PRICE_CACHED_IN = 0.003625 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
-// На Pro `completion_tokens` включает thinking-токены. Закладываем с запасом.
-const MAX_TOKENS_INGEST = 48000; // встреча на 15k знаков → 30-80 блоков
+const MAX_TOKENS_INGEST = 48000;
 const MAX_TOKENS_CHAPTERS = 12000;
 const MAX_TOKENS_TASKS = 8000;
 const MAX_TOKENS_SUMMARY = 8000;
 const MAX_TOKENS_QUALITY = 16000;
 
 const FIXTURE_ID = process.argv[2] ?? 'fixture-01-pilot';
-const FIXTURE_PATH = path.resolve(
-  `test/eval/sales-merge-experiment/fixtures/${FIXTURE_ID}.json`,
-);
+const FIXTURE_PATH = path.resolve(`test/eval/sales-merge-experiment/fixtures/${FIXTURE_ID}.json`);
 const REPORT_PATH = path.resolve(
   `test/eval/sales-merge-experiment/reports/${FIXTURE_ID}-variant-a.json`,
 );
 
-// ── типы ─────────────────────────────────────────────────────────────────────
 interface FixtureJson {
   fixtureId: string;
   meetingType: 'sales';
@@ -98,7 +80,6 @@ interface CallReport {
   outputSizeChars?: number;
 }
 
-// ── клиент ───────────────────────────────────────────────────────────────────
 if (!process.env.DEEPSEEK_API_KEY) {
   console.error('✗ DEEPSEEK_API_KEY не задан');
   process.exit(1);
@@ -108,12 +89,10 @@ const client = new OpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
 });
 
-// ── парсинг транскрипта [mm:ss] Имя: текст ───────────────────────────────────
 function parseTimestamp(s: string): number {
   const parts = s.split(':').map(Number);
   if (parts.length === 2) return (parts[0] ?? 0) * 60 + (parts[1] ?? 0);
-  if (parts.length === 3)
-    return (parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0);
+  if (parts.length === 3) return (parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0);
   return 0;
 }
 
@@ -132,12 +111,10 @@ function parseTranscript(transcript: string): Turn[] {
       raw.push({ startSec, speaker, text });
       pendingText = null;
     } else if (raw.length > 0 && line.trim().length > 0) {
-      // продолжение реплики на следующей строке (редко)
       raw[raw.length - 1]!.text += ' ' + line.trim();
       pendingText = raw[raw.length - 1]!.text;
     }
   }
-  // вычисляем endSec — момент начала следующей реплики, иначе +5 сек
   const turns: Turn[] = raw.map((r, i) => ({
     speaker: r.speaker,
     text: r.text,
@@ -147,7 +124,6 @@ function parseTranscript(transcript: string): Turn[] {
   return turns;
 }
 
-// ── сегментирование (упрощённая копия SegmentBuilderService) ────────────────
 function buildSegments(
   turns: Turn[],
 ): Array<{ startMs: number; endMs: number; speakers: string[]; text: string }> {
@@ -171,14 +147,6 @@ function buildSegments(
   }));
 }
 
-// ── общий вызов DeepSeek с замерами ──────────────────────────────────────────
-//
-// На DeepSeek-V4-Pro с thinking mode поддерживается ТОЛЬКО `tool_choice='auto'`
-// (см. backend/scripts/eval/probe-deepseek-formats.ts).
-// json_schema / forced tool_choice / required tool_choice — все падают 400.
-//
-// Структурный вывод — через tool с auto: модель сама решает позвать tool,
-// и в наших тестах всегда зовёт (быстрее и дешевле, чем json_object).
 interface LocalTool {
   name: string;
   description: string;
@@ -190,8 +158,7 @@ async function callDeepseek(opts: {
   system: string;
   user: string;
   maxTokens: number;
-  tool?: LocalTool; // структурный вывод через tool
-  // без tool → свободный текст (для summary-v2)
+  tool?: LocalTool;
 }): Promise<CallReport> {
   console.log(`  → ${opts.step}…`);
   const start = Date.now();
@@ -241,8 +208,6 @@ async function callDeepseek(opts: {
     if (opts.tool) {
       const call = msg?.tool_calls?.[0];
       if (!call) {
-        // Модель не позвала tool — упала на свободный текст. Это валидный
-        // ответ, но без структуры; в нашем эксперименте — фейл.
         jsonValid = false;
         error = 'модель не позвала tool (свободный текст вместо структурного)';
         output = msg?.content ?? '';
@@ -256,7 +221,6 @@ async function callDeepseek(opts: {
         }
       }
     } else {
-      // свободный текст (markdown — для summary-v2)
       output = msg?.content ?? '';
     }
   } catch (e) {
@@ -273,11 +237,9 @@ async function callDeepseek(opts: {
     usage.prompt_tokens_details?.cached_tokens ??
     0;
   const uncached = Math.max(0, tokensIn - cachedTokens);
-  const costUsd =
-    uncached * PRICE_IN + cachedTokens * PRICE_CACHED_IN + tokensOut * PRICE_OUT;
+  const costUsd = uncached * PRICE_IN + cachedTokens * PRICE_CACHED_IN + tokensOut * PRICE_OUT;
 
-  const outputStr =
-    typeof output === 'string' ? output : JSON.stringify(output ?? '');
+  const outputStr = typeof output === 'string' ? output : JSON.stringify(output ?? '');
   const outputSizeChars = outputStr.length;
 
   console.log(
@@ -298,8 +260,6 @@ async function callDeepseek(opts: {
   };
 }
 
-// ── шаги ─────────────────────────────────────────────────────────────────────
-
 async function step1BlockIngest(
   fixture: FixtureJson,
   segments: ReturnType<typeof buildSegments>,
@@ -316,8 +276,7 @@ async function step1BlockIngest(
     maxTokens: MAX_TOKENS_INGEST,
     tool: {
       name: 'submit_block_ingest',
-      description:
-        'Отдать извлечённые блоки и типизированные сущности по схеме block-ingest.',
+      description: 'Отдать извлечённые блоки и типизированные сущности по схеме block-ingest.',
       parameters: BLOCK_INGEST_JSON_SCHEMA,
     },
   });
@@ -375,10 +334,7 @@ interface MeetingBlockLocal {
   }>;
 }
 
-async function step2Chapters(
-  blocks: MeetingBlockLocal[],
-  title: string,
-): Promise<CallReport> {
+async function step2Chapters(blocks: MeetingBlockLocal[], title: string): Promise<CallReport> {
   const { system, user } = buildChaptersV2Prompt({
     meetingId: FIXTURE_ID,
     meetingTitle: title,
@@ -397,10 +353,7 @@ async function step2Chapters(
   });
 }
 
-async function step3Tasks(
-  blocks: MeetingBlockLocal[],
-  title: string,
-): Promise<CallReport> {
+async function step3Tasks(blocks: MeetingBlockLocal[], title: string): Promise<CallReport> {
   const TASK_SIGNALS = new Set(['commitment', 'decision']);
   const filtered = blocks.filter((b) => TASK_SIGNALS.has(b.signalType));
   console.log(`    блоков под фильтр tasks: ${filtered.length}`);
@@ -422,10 +375,7 @@ async function step3Tasks(
   });
 }
 
-async function step4Summary(
-  blocks: MeetingBlockLocal[],
-  title: string,
-): Promise<CallReport> {
+async function step4Summary(blocks: MeetingBlockLocal[], title: string): Promise<CallReport> {
   const { system, user } = buildSummaryV2Prompt({
     meetingType: 'sales' as unknown as Parameters<typeof buildSummaryV2Prompt>[0]['meetingType'],
     meetingTitle: title,
@@ -439,10 +389,7 @@ async function step4Summary(
   });
 }
 
-async function step5Quality(
-  turns: Turn[],
-  fixture: FixtureJson,
-): Promise<CallReport> {
+async function step5Quality(turns: Turn[], fixture: FixtureJson): Promise<CallReport> {
   const lastTurn = turns[turns.length - 1];
   const durationMs = Math.round((lastTurn?.endSec ?? 0) * 1000);
   const dialogTurns = turns.map((t) => ({
@@ -468,22 +415,18 @@ async function step5Quality(
     tool: {
       name: MEETING_QUALITY_SCORE_TOOL.name,
       description: MEETING_QUALITY_SCORE_TOOL.description,
-      parameters:
-        MEETING_QUALITY_SCORE_TOOL.input_schema as unknown as Record<string, unknown>,
+      parameters: MEETING_QUALITY_SCORE_TOOL.input_schema as unknown as Record<string, unknown>,
     },
   });
 }
 
-// ── main ─────────────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
   console.log('=== Variant A — раздельные вызовы цепочки №1 ===');
   console.log(`  модель:    ${MODEL}`);
   console.log(`  фикстура:  ${path.basename(FIXTURE_PATH)}`);
   const fixtureRaw = await fs.readFile(FIXTURE_PATH, 'utf-8');
   const fixture: FixtureJson = JSON.parse(fixtureRaw);
-  console.log(
-    `  знаков:    ${fixture.transcript.length}, тип: ${fixture.meetingType}\n`,
-  );
+  console.log(`  знаков:    ${fixture.transcript.length}, тип: ${fixture.meetingType}\n`);
 
   const turns = parseTranscript(fixture.transcript);
   const segments = buildSegments(turns);
@@ -492,10 +435,8 @@ async function main(): Promise<void> {
   const title = `Продажная встреча: ${fixture.meta.vendorName} ↔ ${fixture.meta.clientName}`;
   const totalStart = Date.now();
 
-  // Шаг 1 — последовательно (нужен для остальных)
   const { blocks, report: rIngest } = await step1BlockIngest(fixture, segments);
 
-  // Шаги 2-5 — параллельно
   console.log('\n→ параллельно: chapters-v2 | tasks-v2 | summary-v2 | quality-score');
   const [rChapters, rTasks, rSummary, rQuality] = await Promise.all([
     step2Chapters(blocks, title),
@@ -507,7 +448,6 @@ async function main(): Promise<void> {
   const totalMs = Date.now() - totalStart;
   const reports = [rIngest, rChapters, rTasks, rSummary, rQuality];
 
-  // ── итоги ──────────────────────────────────────────────────────────────────
   const tokensIn = reports.reduce((s, r) => s + r.tokensIn, 0);
   const tokensOut = reports.reduce((s, r) => s + r.tokensOut, 0);
   const cached = reports.reduce((s, r) => s + r.cachedTokens, 0);

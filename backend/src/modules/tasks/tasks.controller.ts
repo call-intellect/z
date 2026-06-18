@@ -18,10 +18,7 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 
-import {
-  type CreateTaskDto,
-  CreateTaskSchema,
-} from './dto/create-task.dto';
+import { type CreateTaskDto, CreateTaskSchema } from './dto/create-task.dto';
 import {
   type BulkTasksDto,
   BulkTasksSchema,
@@ -30,29 +27,9 @@ import {
   type SendTaskDto,
   SendTaskSchema,
 } from './dto/list-tasks.dto';
-import {
-  type UpdateTaskDto,
-  UpdateTaskSchema,
-} from './dto/update-task.dto';
+import { type UpdateTaskDto, UpdateTaskSchema } from './dto/update-task.dto';
 import { TasksService } from './tasks.service';
 
-/**
- * @deprecated Sprint 3 B1-3.3 — legacy API задач (action items из встреч).
- *
- * Эти эндпоинты остаются для обратной совместимости старого фронтенда (1-2 фазы),
- * но новый код должен использовать трекерный API: `/api/v1/projects/:projectId/issues`
- * и `/api/v1/issues/:id`. Миграция legacy `Task` → `Issue` выполняется скриптом
- * `backend/scripts/migrate-task-to-issue.ts` (виртуальный проект «Из встреч» per Org,
- * `externalSource='meeting_legacy'`).
- *
- *   `GET /api/v1/tasks`                          — все задачи юзера
- *   `GET /api/v1/meetings/:meetingId/tasks`      — задачи одной встречи
- *   `POST /api/v1/meetings/:meetingId/tasks`     — ручное создание
- *   `PATCH /api/v1/tasks/:id`                    — обновить
- *   `DELETE /api/v1/tasks/:id`                   — удалить (hard, у Task нет deletedAt)
- *   `POST /api/v1/tasks/:id/send`                — отправить в IntegrationDestination
- *   `POST /api/v1/tasks/bulk`                    — массовая операция
- */
 @ApiTags('legacy / tasks (deprecated)')
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard)
@@ -88,8 +65,7 @@ export class TasksController {
   @ApiOperation({
     deprecated: true,
     summary: 'DEPRECATED — задачи одной встречи',
-    description:
-      'Используй `GET /api/v1/issues?linkedMeetingId=:meetingId` (трекер).',
+    description: 'Используй `GET /api/v1/issues?linkedMeetingId=:meetingId` (трекер).',
   })
   async listByMeeting(
     @Param('meetingId') meetingId: string,
@@ -138,10 +114,7 @@ export class TasksController {
     summary: 'DEPRECATED — удаление задачи',
     description: 'Используй `DELETE /api/v1/issues/:id` (soft-delete в трекере).',
   })
-  async delete(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<void> {
+  async delete(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload): Promise<void> {
     await this.tasks.delete(id, user.id);
   }
 
@@ -175,8 +148,6 @@ export class TasksController {
     return this.tasks.bulk(user.id, body);
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────────
-
   private mapTask(t: {
     id: string;
     meetingId: string | null;
@@ -209,13 +180,6 @@ export class TasksController {
     sourceQuote: string | null;
     confidence: number | null;
     createdManually: boolean;
-    /**
-     * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — метка генератора задачи.
-     * `'fast'` = новый `MeetingReportFastWorker` (приоритет в UI пользователя),
-     * `'v2'` = историческое значение снятого v2-стека (генератор удалён
-     *          2026-06-10; старые строки в БД могут его нести),
-     * `null` = legacy `tasks-extract.worker`.
-     */
     extractorVersion: string | null;
     createdAt: string;
     updatedAt: string;
@@ -227,9 +191,6 @@ export class TasksController {
       description: t.description,
       status: t.status,
       assigneeRaw: t.assigneeRaw,
-      // ТЗ 2026-05-25 hard-participant-identification — отдаём userId
-      // ответственного, когда AI смог жёстко сопоставить. UI использует для
-      // фильтра «мои задачи» и аватара.
       assigneeUserId: t.assigneeUserId,
       dueDate: t.dueDate?.toISOString() ?? null,
       sourceStartMs: t.sourceStartMs,

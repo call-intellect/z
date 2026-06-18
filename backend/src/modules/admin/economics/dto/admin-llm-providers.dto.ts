@@ -1,8 +1,5 @@
 import { z } from 'zod';
 
-/**
- * SBA α-10 wave 3 — DTO для /api/v1/admin/llm-providers.
- */
 export const ProtocolKindSchema = z.enum([
   'openai-chat',
   'openai-responses',
@@ -10,7 +7,6 @@ export const ProtocolKindSchema = z.enum([
   'ollama-native',
   'custom-http',
 ]);
-export type ProtocolKindDto = z.infer<typeof ProtocolKindSchema>;
 
 export const CreateLlmProviderSchema = z.object({
   name: z.string().min(1).max(60),

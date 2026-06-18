@@ -9,17 +9,6 @@ import {
 
 import { SubscriptionActivatedListener } from './subscription-activated.listener';
 
-/**
- * ТЗ 2026-06-01-demo-shared-org-model §4.8.
- *
- * Покрытие:
- *   - happy path: при активации snimaем `Membership(demo_observer)` у владельца
- *     Org к эталонной демо-Org;
- *   - ZDEMO_ORG_ID не задана → ничего не делаем;
- *   - tenant == demoOrgId → не отвязываем сам эталон;
- *   - Org не найдена → не падаем, лог + return;
- *   - оба события (_PAID и _BONUS) обрабатываются одинаково.
- */
 describe('SubscriptionActivatedListener', () => {
   let prisma: {
     org: { findUnique: ReturnType<typeof vi.fn> };
@@ -89,13 +78,7 @@ describe('SubscriptionActivatedListener', () => {
   });
 
   it('событие _BONUS обрабатывается так же, как _PAID', async () => {
-    // Оба события маршрутизируются в один handler onActivated — проверяем,
-    // что имена событий определены (контракт с @OnEvent).
-    expect(BillingEvent.SUBSCRIPTION_ACTIVATED_PAID).toBe(
-      'billing.subscription.activated_paid',
-    );
-    expect(BillingEvent.SUBSCRIPTION_ACTIVATED_BONUS).toBe(
-      'billing.subscription.activated_bonus',
-    );
+    expect(BillingEvent.SUBSCRIPTION_ACTIVATED_PAID).toBe('billing.subscription.activated_paid');
+    expect(BillingEvent.SUBSCRIPTION_ACTIVATED_BONUS).toBe('billing.subscription.activated_bonus');
   });
 });

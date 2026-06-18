@@ -1,17 +1,3 @@
-/**
- * Snapshot-тест сборки промта `cdm-case-interview.prompt.ts`
- * (TZ clone-method Э3.1 — CDM-интервью носителя роли).
- *
- * ⚠ НЕ про качество LLM-вывода. Snapshot фиксирует:
- *   - текст `CDM_CASE_INTERVIEW_SYSTEM_PROMPT` (constant — guard от
- *     случайных правок жёстких правил: 4 направления CDM, запрет наводящих
- *     вопросов, запрет вариантов ответа/кнопок, few-shot с антипримером
- *     должны быть стабильны; плюс SYSTEM cache-friendly — правка ломает
- *     prompt-кэш);
- *   - сборку `CDM_CASE_INTERVIEW_USER_TEMPLATE` для типичного входа.
- *
- * Обновлять только при осознанном изменении: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -30,29 +16,20 @@ describe('cdm-case-interview — snapshot сборки промта', () => {
     expect(CDM_CASE_INTERVIEW_SYSTEM_PROMPT).toContain('почему выбрали');
     expect(CDM_CASE_INTERVIEW_SYSTEM_PROMPT).toContain('насторожило');
     expect(CDM_CASE_INTERVIEW_SYSTEM_PROMPT).toContain('альтернативы');
-    expect(CDM_CASE_INTERVIEW_SYSTEM_PROMPT).toContain(
-      'что могло бы изменить решение',
-    );
+    expect(CDM_CASE_INTERVIEW_SYSTEM_PROMPT).toContain('что могло бы изменить решение');
   });
 
   it('system запрещает наводящие вопросы (без подсказки ответа, без да/нет)', () => {
     expect(CDM_CASE_INTERVIEW_SYSTEM_PROMPT).toContain('НЕ наводящий');
-    expect(CDM_CASE_INTERVIEW_SYSTEM_PROMPT).toContain(
-      'подсказки «правильного» ответа',
-    );
+    expect(CDM_CASE_INTERVIEW_SYSTEM_PROMPT).toContain('подсказки «правильного» ответа');
     expect(CDM_CASE_INTERVIEW_SYSTEM_PROMPT).toContain('да/нет');
-    // Антипример наводящего «вы ведь … верно?» присутствует как few-shot.
     expect(CDM_CASE_INTERVIEW_SYSTEM_PROMPT).toContain('АНТИПРИМЕР');
     expect(CDM_CASE_INTERVIEW_SYSTEM_PROMPT).toContain('Вы ведь');
   });
 
   it('system запрещает варианты ответа и кнопки (только открытый вопрос, текст/голос)', () => {
-    expect(CDM_CASE_INTERVIEW_SYSTEM_PROMPT).toContain(
-      'НИКАКИХ вариантов ответа, кнопок',
-    );
-    expect(CDM_CASE_INTERVIEW_SYSTEM_PROMPT).toContain(
-      'свободным текстом или голосом',
-    );
+    expect(CDM_CASE_INTERVIEW_SYSTEM_PROMPT).toContain('НИКАКИХ вариантов ответа, кнопок');
+    expect(CDM_CASE_INTERVIEW_SYSTEM_PROMPT).toContain('свободным текстом или голосом');
   });
 
   it('schema strict: question(10..500) + cdmAngle ∈ 4 направления, additionalProperties=false', () => {
@@ -107,7 +84,6 @@ describe('cdm-case-interview — snapshot сборки промта', () => {
         { quote: 'Выбрал вариант с подрядчиком', observedAt: '2026-06-02T09:00:00.000Z' },
       ],
     });
-    // Первая строка — ровно «Сотрудник: Анна.» (без скобок должности).
     expect(user.split('\n')[0]).toBe('Сотрудник: Анна.');
   });
 });

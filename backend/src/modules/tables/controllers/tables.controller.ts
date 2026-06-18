@@ -29,10 +29,7 @@ import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -67,10 +64,6 @@ import { TablePropertiesService } from '../services/table-properties.service';
 import { TableSemanticFilterService } from '../services/table-semantic-filter.service';
 import { TablesService } from '../services/tables.service';
 
-/**
- * Минимальный тип multer-файла. Объявлен локально, чтобы не зависеть от
- * опционального `@types/multer` (как в documents.controller.ts).
- */
 interface MulterFile {
   fieldname: string;
   originalname: string;
@@ -79,33 +72,10 @@ interface MulterFile {
   buffer: Buffer;
 }
 
-/** AdminSetting-ключ feature-flag Text-to-Schema (default off). */
 const FEATURE_TABLES_TEXT_TO_SCHEMA = 'feature.tables_text_to_schema';
 
-/**
- * Жёсткий DoS-предохранитель на размер загружаемого файла импорта (multer
- * `limits.fileSize`). Чуть выше дефолтного admin-лимита `importMaxFileMb`:
- * точный конфигурируемый лимит проверяется в коде (даёт понятное сообщение),
- * а этот потолок не даёт multer буферизовать гигантский файл в память.
- */
 const IMPORT_FILE_HARD_LIMIT_BYTES = 30 * 1024 * 1024;
 
-/**
- * Smart Tables — REST CRUD верхнего уровня (Table).
- *
- *   POST   /api/v1/tables             — создать таблицу
- *   GET    /api/v1/tables             — список (active / archived / all)
- *   GET    /api/v1/tables/:id         — карточка таблицы
- *   PATCH  /api/v1/tables/:id         — обновить
- *   POST   /api/v1/tables/:id/archive — в архив (soft)
- *   POST   /api/v1/tables/:id/unarchive — из архива
- *   DELETE /api/v1/tables/:id         — hard-delete (только архивная)
- *
- * RBAC: ресурс `table`. read — все member'ы Org; write/delete — owner/admin/
- * manager-self (см. policy.csv §Smart Tables). super_admin — bypass.
- *
- * Multi-tenancy: `TenantGuard` обязателен.
- */
 @ApiTags('tables')
 @ApiBearerAuth()
 @Controller('api/v1/tables')
@@ -118,16 +88,12 @@ export class TablesController {
     @Inject(TablePropertiesService)
     private readonly properties: TablePropertiesService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-    // Document-to-Table (Фаза 4).
     @Inject(TableFileParserService)
     private readonly fileParser: TableFileParserService,
     @Inject(TableImportService) private readonly importer: TableImportService,
-    // NL Saved Views (Фаза 5) — NL-запрос → JSON-фильтр.
     @Inject(TableSemanticFilterService)
     private readonly semanticFilter: TableSemanticFilterService,
   ) {}
-
-  // ──────────────────── Text-to-Schema (Фаза 1, за feature-flag) ───────────
 
   @Post('infer-schema')
   @HttpCode(HttpStatus.OK)
@@ -187,8 +153,6 @@ export class TablesController {
     return toTableViewDto(row);
   }
 
-  // ──────────────────── Document-to-Table (Фаза 4) ────────────────────────
-
   @Post('import/analyze')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -204,9 +168,6 @@ export class TablesController {
   @ApiOkResponse({ description: 'Схема + первые строки + кандидаты на слияние' })
   @UseInterceptors(
     FileInterceptor('file', {
-      // DoS-предохранитель: один файл, размер ≤ жёсткого потолка. Точный
-      // конфигурируемый лимит проверяется ниже (понятное сообщение). Превышение
-      // multer-лимита маппится в 400 (см. catch ниже).
       limits: { fileSize: IMPORT_FILE_HARD_LIMIT_BYTES, files: 1 },
     }),
   )
@@ -246,10 +207,6 @@ export class TablesController {
       mimeType: file.mimetype,
     });
 
-    // Лимит строк на импорт (admin/ENV) — обрезаем то, что переносим дальше.
-    // ВАЖНО: в ответ отдаём ВСЕ limitedRows (до importMaxRows), НЕ режем до 500 —
-    // иначе фронт отправит в commit только первые 500 и строки 501..N потеряются.
-    // commit-DTO пропускает до `rows.max(5000)`.
     const maxRows = this.cfg.smartTables.importMaxRows;
     const rawRowsCount = parsed.rows.length;
     const limitedRows = parsed.rows.slice(0, maxRows);
@@ -269,7 +226,6 @@ export class TablesController {
       schema,
       rows: limitedRows,
       rawRowsCount,
-      // truncated = файл реально длиннее лимита импорта importMaxRows.
       truncated: rawRowsCount > limitedRows.length,
       truncatedColumns: parsed.truncatedColumns,
       mergeCandidates,
@@ -290,7 +246,6 @@ export class TablesController {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
 
-    // Приводим Zod-схему к InferredTableSchema (нормализуем optional → null).
     const schema: InferredTableSchema = {
       name: body.schema.name,
       description: body.schema.description ?? null,
@@ -366,14 +321,8 @@ export class TablesController {
     return toTableViewDto(row);
   }
 
-  // ──────────────────── NL Saved Views (Фаза 5) ───────────────────────────
-
   @Post(':id/semantic-filter')
   @HttpCode(HttpStatus.OK)
-  // Точечный rate-limit ТОЛЬКО на этот платный LLM-эндпоинт (не глобально):
-  // 20 запросов/мин на клиента. ThrottlerGuard навешан per-route (глобально он
-  // не зарегистрирован), @Throttle строже дефолта (120/мин) — защита от
-  // случайного/злонамеренного расхода LLM-бюджета через NL-фильтр.
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @ApiOperation({
@@ -390,8 +339,6 @@ export class TablesController {
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<SemanticFilterResultDto> {
     const t = this.requireTenant(tenantId);
-    // Read-доступа достаточно: NL-фильтр лишь отбирает строки для просмотра,
-    // ничего не мутирует.
     await this.requireRead(user.id, t);
     return this.semanticFilter.parseSemanticFilter({
       tenantId: t,
@@ -456,13 +403,6 @@ export class TablesController {
     return this.tables.hardDelete({ tenantId: t, id });
   }
 
-  // ─────────────────────────── helpers ────────────────────────────────────
-
-  /**
-   * Smart-tables auto-creation (Фаза 1) — гейт по feature-flag.
-   * `feature.tables_text_to_schema` (AdminSetting, default false). Если выключен —
-   * `403 feature_tables_text_to_schema_disabled`.
-   */
   private async requireFeatureEnabled(): Promise<void> {
     const enabled = await this.cfg.getDynamic<boolean>(
       FEATURE_TABLES_TEXT_TO_SCHEMA,
@@ -508,12 +448,7 @@ export class TablesController {
     tenantId: string,
     ownerUserId?: string,
   ): Promise<void> {
-    const ok = await this.rbac.canWrite(
-      userId,
-      tenantId,
-      'table',
-      ownerUserId ?? null,
-    );
+    const ok = await this.rbac.canWrite(userId, tenantId, 'table', ownerUserId ?? null);
     if (!ok) {
       throw new ForbiddenException({
         ok: false,

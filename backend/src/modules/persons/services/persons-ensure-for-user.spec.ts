@@ -1,16 +1,3 @@
-/**
- * Юнит-тесты `PersonsService.ensurePersonForUser` (Ф9 «владелец без Person»,
- * `plans/tz/2026-06-04-razblokirovka-konveyera.md`).
- *
- * Покрытие:
- *   (а) существующая Person по userId → возвращается, не дублируется;
- *   (б) осиротевшая Person через membership.personId → линкуется userId;
- *   (в) нет Person → создаётся с name/email из User (relationship=employee);
- *   (г) P2002 на email → линкует существующую безличную карточку.
- *
- * Prisma полностью замокан; транзакцию не используем (метод работает на
- * `tx ?? this.prisma`).
- */
 import { Prisma } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -49,11 +36,7 @@ describe('PersonsService.ensurePersonForUser', () => {
   it('(б) осиротевшая Person через membership.personId → линкуется userId', async () => {
     const prisma = {
       person: {
-        // 1-й вызов — поиск по userId (нет); 2-й — поиск осиротевшей по id.
-        findFirst: vi
-          .fn()
-          .mockResolvedValueOnce(null)
-          .mockResolvedValueOnce({ id: 'p-orphan' }),
+        findFirst: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'p-orphan' }),
         create: vi.fn(),
         update: vi.fn(async () => ({})),
       },
@@ -130,11 +113,8 @@ describe('PersonsService.ensurePersonForUser', () => {
       person: {
         findFirst: vi
           .fn()
-          // 1: поиск по userId (нет)
           .mockResolvedValueOnce(null)
-          // 2: гонка по userId после P2002 (нет)
           .mockResolvedValueOnce(null)
-          // 3: поиск по email — безличная карточка
           .mockResolvedValueOnce({ id: 'p-byemail', userId: null }),
         create: vi.fn(async () => {
           throw p2002();
@@ -160,10 +140,7 @@ describe('PersonsService.ensurePersonForUser', () => {
   it('(г2) P2002, но Person появилась по userId (гонка) → возвращается без линковки по email', async () => {
     const prisma = {
       person: {
-        findFirst: vi
-          .fn()
-          .mockResolvedValueOnce(null) // поиск по userId
-          .mockResolvedValueOnce({ id: 'p-raced' }), // гонка по userId
+        findFirst: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'p-raced' }),
         create: vi.fn(async () => {
           throw p2002();
         }),

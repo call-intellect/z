@@ -19,17 +19,9 @@ import { AuditLogService } from '../audit/audit-log.service';
 import { extractKeyFromUrl } from '../recordings/s3-keys';
 import { S3Service } from '../recordings/s3.service';
 
-import type {
-  CreateHighlightShareDto,
-  CreateMeetingShareDto,
-} from './dto/create-share.dto';
+import type { CreateHighlightShareDto, CreateMeetingShareDto } from './dto/create-share.dto';
 import { SharesRepository } from './shares.repository';
 
-/**
- * Bundle public share-bundle для `/api/v1/public/share/:token`.
- * `videoUrl` — presigned (`S3Service.presignGet`) на mainVideoUrl, если
- * `allowVideo` и запись `ready`.
- */
 export interface PublicMeetingSharePayload {
   meeting: {
     id: string;
@@ -81,17 +73,6 @@ export interface PublicMeetingSharePayload {
   expiresAt: string;
 }
 
-/**
- * Сервис публичных и приватных share-операций.
- *
- * Безопасность:
- *   - Токен — `randomBytes(cfg.share.tokenLengthBytes).toString('base64url')`,
- *     уникальный (UNIQUE constraint в БД).
- *   - При публичном просмотре считаем уникальные просмотры по `ipHash` за день
- *     (если уже видели сегодня — `viewCount` не инкрементим).
- *   - `ipHash = sha256(ip + cfg.hashing.ipDailySalt + dateString)`. Соль — daily,
- *     поэтому через день/после смены соли невозможно сопоставить тот же IP.
- */
 @Injectable()
 export class SharesService {
   private readonly logger = new Logger(SharesService.name);
@@ -103,8 +84,6 @@ export class SharesService {
     @Inject(S3Service) private readonly s3: S3Service,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
   ) {}
-
-  // ─────────────────────────── meeting share ────────────────────────────
 
   async listByMeeting(meetingId: string, userId: string): Promise<MeetingShare[]> {
     await this.assertMeetingOwner(meetingId, userId);
@@ -156,12 +135,8 @@ export class SharesService {
     if (!share) throw new NotFoundException('share_not_found');
     await this.assertMeetingOwner(share.meetingId, userId);
     await this.repo.revoke(id);
-    await this.audit
-      .log({ action: 'share.revoke', userId, resourceId: id })
-      .catch(() => undefined);
+    await this.audit.log({ action: 'share.revoke', userId, resourceId: id }).catch(() => undefined);
   }
-
-  // ─────────────────────────── highlight share ──────────────────────────
 
   async listByHighlight(highlightId: string, userId: string): Promise<HighlightShare[]> {
     await this.assertHighlightOwner(highlightId, userId);
@@ -205,17 +180,6 @@ export class SharesService {
       .catch(() => undefined);
   }
 
-  // ─────────────────────────── public ───────────────────────────────────
-
-  /**
-   * GET /api/v1/public/share/:token
-   *
-   * Проверки в строгом порядке:
-   *   1. token найден      — иначе 404.
-   *   2. revokedAt is null — иначе 410.
-   *   3. expiresAt > now   — иначе 410.
-   * Затем — записываем просмотр (один уникальный inc на ipHash в сутки).
-   */
   async getPublicMeetingShare(
     token: string,
     visitor: { ip: string | null; userAgent: string | null; referrer: string | null },
@@ -308,8 +272,18 @@ export class SharesService {
     }
 
     if (share.allowTranscript && meeting.transcript?.turns) {
-      const turns = meeting.transcript.turns as Array<{ speaker: string; text: string; startSec: number; endSec: number }>;
-      const roomChat = (meeting.transcript.roomChat as Array<{ sentAt: string; authorName: string; content: string }> | null) ?? undefined;
+      const turns = meeting.transcript.turns as Array<{
+        speaker: string;
+        text: string;
+        startSec: number;
+        endSec: number;
+      }>;
+      const roomChat =
+        (meeting.transcript.roomChat as Array<{
+          sentAt: string;
+          authorName: string;
+          content: string;
+        }> | null) ?? undefined;
       payload.transcript = {
         turns,
         ...(roomChat && roomChat.length > 0 ? { roomChat } : {}),
@@ -323,10 +297,7 @@ export class SharesService {
       meeting.recording.mainVideoUrl
     ) {
       try {
-        const key = extractKeyFromUrl(
-          meeting.recording.mainVideoUrl,
-          this.cfg.s3.bucket,
-        );
+        const key = extractKeyFromUrl(meeting.recording.mainVideoUrl, this.cfg.s3.bucket);
         const presigned = await this.s3.presignGet(key);
         payload.videoUrl = {
           url: presigned.url,
@@ -339,24 +310,14 @@ export class SharesService {
       }
     }
 
-    // Учёт просмотра — fire-and-forget по сути, но нам нужны await'ы для
-    // корректности тестов. Если упадёт — не валим основной flow.
     await this.recordView(share.id, visitor).catch((err) => {
-      this.logger.warn(
-        `recordView failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      this.logger.warn(`recordView failed: ${err instanceof Error ? err.message : String(err)}`);
     });
 
     return payload;
   }
 
-  /**
-   * GET /api/v1/public/share/clip/:token
-   * Аналогичные проверки + наличие готового MP4 (`renderStatus=ready`).
-   */
-  async getPublicHighlightShare(
-    token: string,
-  ): Promise<{
+  async getPublicHighlightShare(token: string): Promise<{
     title: string;
     description: string | null;
     presignedMp4Url: string;
@@ -396,14 +357,11 @@ export class SharesService {
     };
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────────
-
   private async recordView(
     shareId: string,
     visitor: { ip: string | null; userAgent: string | null; referrer: string | null },
   ): Promise<void> {
     const ipHash = this.hashIp(visitor.ip ?? '');
-    // Уникальный просмотр в сутки на пару (shareId, ipHash).
     const now = Date.now();
     const dayStart = new Date(now - (now % 86_400_000));
     const seenToday = await this.repo.countDistinctViewToday(shareId, ipHash, dayStart);
@@ -420,7 +378,7 @@ export class SharesService {
   }
 
   private hashIp(ip: string): string {
-    const dateString = new Date().toISOString().slice(0, 10); // YYYY-MM-DD UTC
+    const dateString = new Date().toISOString().slice(0, 10);
     const salt = this.cfg.hashing.ipDailySalt;
     return createHash('sha256').update(`${ip}|${salt}|${dateString}`).digest('hex');
   }

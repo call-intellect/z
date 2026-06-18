@@ -1,12 +1,3 @@
-/**
- * Unit-тесты `PulsePatternsService` (Pulse Wave 6).
- *
- * Цели:
- *   - happy-path: все 7 виджетов мокаются и собираются в один DTO.
- *   - пустой tenant: ничего не падает, все массивы — пустые.
- *   - period 'month': окно расширяется (4w → 12w для goal vector), запросы
- *     к Prisma делаются с правильным since.
- */
 import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -97,7 +88,6 @@ describe('PulsePatternsService', () => {
   it('happy path — все виджеты заполняются корректно', async () => {
     const now = new Date();
     const { service, mocks } = buildService({
-      // Bus Factor: 2 snapshot'а для cat-A (берём свежий), 1 для cat-B.
       knowledgeRiskSnapshotFindMany: vi.fn(async () => [
         {
           categoryName: 'AI/LLM',
@@ -257,7 +247,6 @@ describe('PulsePatternsService', () => {
 
     expect(res.bottlenecks.departments).toHaveLength(3);
     expect(res.bottlenecks.heatmap).toHaveLength(3);
-    // d-1×d-2 = high (3); d-2×d-3 = medium (2); d-1×d-1 (диагональ) = low (1).
     expect(res.bottlenecks.heatmap[0]?.[1]).toBe(3);
     expect(res.bottlenecks.heatmap[1]?.[2]).toBe(2);
     expect(res.bottlenecks.heatmap[0]?.[0]).toBe(1);
@@ -293,7 +282,6 @@ describe('PulsePatternsService', () => {
         netScore: 5,
       },
     ]);
-    // byDepartment: p-1 → 'd-1' (Маркетинг), p-2 → null (Без отдела).
     const byDept = res.goalVector.goals[0]?.byDepartment ?? [];
     expect(byDept).toHaveLength(2);
     const marketing = byDept.find((d) => d.departmentId === 'd-1');
@@ -333,7 +321,6 @@ describe('PulsePatternsService', () => {
       hasAlternatives: true,
     });
 
-    // sanity: основные запросы вызваны.
     expect(mocks.knowledgeRiskSnapshotFindMany).toHaveBeenCalledTimes(1);
     expect(mocks.recurringTopicFindMany).toHaveBeenCalledTimes(1);
     expect(mocks.meetingFindMany).toHaveBeenCalledTimes(1);
@@ -343,22 +330,17 @@ describe('PulsePatternsService', () => {
     const { service, mocks } = buildService();
     await service.getPulsePatterns({ tenantId: 't-2', period: 'month' });
 
-    // groupBy вызван с weekStart.gte; проверим что разница ≥ 11 недель.
     const groupByMock = mocks.personGoalContributionGroupBy;
     expect(groupByMock).toBeDefined();
     expect(groupByMock!).toHaveBeenCalledTimes(1);
     const groupByArgs = groupByMock!.mock.calls[0]?.[0];
     expect(groupByArgs).toBeDefined();
-    const gte = (groupByArgs as { where: { weekStart: { gte: Date } } }).where
-      .weekStart.gte;
+    const gte = (groupByArgs as { where: { weekStart: { gte: Date } } }).where.weekStart.gte;
     const weeksAgo = (Date.now() - gte.getTime()) / (7 * 24 * 3600 * 1000);
     expect(weeksAgo).toBeGreaterThanOrEqual(11.5);
     expect(weeksAgo).toBeLessThanOrEqual(12.5);
   });
 
-  // ─── §6.6 — getGoalVector (компас): прямые юнит-тесты приватного метода ──────
-
-  /** Приведение типа для вызова private-метода `getGoalVector` напрямую. */
   type GoalVectorAccess = {
     getGoalVector: (
       tenantId: string,
@@ -398,11 +380,7 @@ describe('PulsePatternsService', () => {
     tenantId = 't1',
     periodDays = 7,
   ): ReturnType<GoalVectorAccess['getGoalVector']> {
-    return (service as unknown as GoalVectorAccess).getGoalVector(
-      tenantId,
-      periodDays,
-      FIXED_NOW,
-    );
+    return (service as unknown as GoalVectorAccess).getGoalVector(tenantId, periodDays, FIXED_NOW);
   }
 
   it('главная цель + разрез по 2 отделам + проброс pro/contra', async () => {
@@ -443,7 +421,6 @@ describe('PulsePatternsService', () => {
         },
       ]),
       personGoalContributionFindMany: vi.fn(async () => [
-        // goalA: два отдела + один без отдела.
         {
           goalId: 'goalA',
           personId: 'p1',
@@ -465,7 +442,6 @@ describe('PulsePatternsService', () => {
           contraScore: new Prisma.Decimal('0.000'),
           netScore: new Prisma.Decimal('3.000'),
         },
-        // goalB: только один отдел.
         {
           goalId: 'goalB',
           personId: 'p1',
@@ -490,7 +466,6 @@ describe('PulsePatternsService', () => {
     expect(res.primaryGoalId).toBe('goalA');
     expect(res.goals).toHaveLength(2);
 
-    // department.findMany должен фильтроваться по tenantId (multi-tenancy).
     expect(mocks.departmentFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ tenantId: 't1' }),
@@ -499,11 +474,9 @@ describe('PulsePatternsService', () => {
 
     const goalA = res.goals.find((g) => g.goalId === 'goalA')!;
     expect(goalA.isPrimary).toBe(true);
-    // pro/contra проброшены наружу (> 0) и net = round3(pro - contra).
     expect(goalA.proScore).toBeGreaterThan(0);
     expect(goalA.contraScore).toBeGreaterThan(0);
     expect(goalA.netScore).toBeCloseTo(goalA.proScore - goalA.contraScore, 3);
-    // 3 человека в трёх разных отделах (dep1, dep2, null) → byDepartment=3.
     expect(goalA.byDepartment).toHaveLength(3);
     const none = goalA.byDepartment.find((d) => d.departmentId === null)!;
     expect(none.departmentName).toBe('Без отдела');
@@ -511,7 +484,6 @@ describe('PulsePatternsService', () => {
 
     const goalB = res.goals.find((g) => g.goalId === 'goalB')!;
     expect(goalB.isPrimary).toBe(false);
-    // goalB: только один отдел dep1.
     expect(goalB.byDepartment).toHaveLength(1);
     expect(goalB.byDepartment[0]?.departmentId).toBe('dep1');
   });
@@ -519,14 +491,12 @@ describe('PulsePatternsService', () => {
   it('пустой набор — { goals: [], primaryGoalId: null } без обращения к isPrimary', async () => {
     const { service, mocks } = buildService({
       personGoalContributionGroupBy: vi.fn(async () => []),
-      // даже если findFirst вернул бы цель — метод возвращает раньше.
       goalFindFirst: vi.fn(async () => ({ id: 'goalA' })),
     });
 
     const res = await callGoalVector(service);
 
     expect(res).toEqual({ goals: [], primaryGoalId: null });
-    // ранний выход: goal.findFirst/findMany и contributions НЕ дёргаются.
     expect(mocks.goalFindFirst).not.toHaveBeenCalled();
     expect(mocks.goalFindMany).not.toHaveBeenCalled();
     expect(mocks.personGoalContributionFindMany).not.toHaveBeenCalled();
@@ -589,7 +559,6 @@ describe('PulsePatternsService', () => {
 
     const res = await callGoalVector(service);
 
-    // goalX и goalY оба weight=2 (максимум), но goalY раньше по createdAt.
     expect(res.primaryGoalId).toBe('goalY');
   });
 
@@ -616,7 +585,6 @@ describe('PulsePatternsService', () => {
         },
       ]),
       personGoalContributionFindMany: vi.fn(async () => [
-        // |net| = 2
         {
           goalId: 'g1',
           personId: 'small',
@@ -624,7 +592,6 @@ describe('PulsePatternsService', () => {
           contraScore: new Prisma.Decimal('1.000'),
           netScore: new Prisma.Decimal('2.000'),
         },
-        // |net| = 9 (самый большой по модулю)
         {
           goalId: 'g1',
           personId: 'big',
@@ -632,7 +599,6 @@ describe('PulsePatternsService', () => {
           contraScore: new Prisma.Decimal('3.000'),
           netScore: new Prisma.Decimal('9.000'),
         },
-        // |net| = 5 (отрицательный — abs всё равно учитывается)
         {
           goalId: 'g1',
           personId: 'neg',
@@ -652,9 +618,7 @@ describe('PulsePatternsService', () => {
 
     const top = res.goals[0]!.topContributors;
     expect(top).toHaveLength(3);
-    // Сортировка по убыванию |net|: big(9) → neg(5) → small(2).
     expect(top.map((c) => c.personId)).toEqual(['big', 'neg', 'small']);
-    // Каждый contributor содержит personId + pro/contra/net.
     expect(top[0]).toEqual({
       personId: 'big',
       personName: 'Большой',

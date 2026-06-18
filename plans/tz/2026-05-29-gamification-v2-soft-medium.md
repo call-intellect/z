@@ -3,9 +3,9 @@ type: tz
 status: planned
 feature: Геймификация v2 «мягко-средняя» — Зёрна (внутренняя валюта без денежной конвертации), 10 уровней с правами, двусторонние «спасибо», мини-лиги команды, личный прогресс «рост относительно себя», Telegram-канал мотивации, AI-оценка качества признаний, защиты от накрутки и от выгорания. Полная русификация. Поверх существующего модуля recognition. Под РФ-компанию 5–100 человек.
 date: 2026-05-29
-parent: plans/tz/2026-05-23-gamification-and-motivation.md
+parent: plans/archive/2026-05-23-gamification-and-motivation.md
 related:
-  - plans/tz/2026-05-23-gamification-and-motivation.md
+  - plans/archive/2026-05-23-gamification-and-motivation.md
   - second-brain/01_projects/probe-agent.md
   - second-brain/02_architecture/module-map.md
 research:
@@ -36,7 +36,7 @@ language_rule: вся коммуникация с сотрудниками и р
 
 ## Зачем именно это (с источниками)
 
-Old план [plans/tz/2026-05-23-gamification-and-motivation.md](plans/tz/2026-05-23-gamification-and-motivation.md) запрещал баллы и рейтинги. Два pass deep-research (2026-05-29) показали нюанс:
+Old план [plans/archive/2026-05-23-gamification-and-motivation.md](plans/archive/2026-05-23-gamification-and-motivation.md) запрещал баллы и рейтинги. Два pass deep-research (2026-05-29) показали нюанс:
 
 - ✓ **Геймификация работает узко-условно**: β = 0.31 (Zhang 2025 Frontiers, N=418) — но только при принятии сотрудниками и оргподдержке.
 - ✓ **Принятие — модератор × 1.5** (PMC12263921 2025). Без опт-ин эффект падает на 33%, для отказников — отрицательный.
@@ -613,7 +613,7 @@ POST   /api/v1/admin/recognition/seasonal-events
 PATCH  /api/v1/admin/recognition/level-multiplier      # 0.5..2.0
 ```
 
-Все DTO — через `nestjs-zod`, Swagger `@ApiTags('recognition-v2')`. Все enum-значения (`reason`, `pattern`, `category`) — справочник в `delivery/ui/copy-strings.ru.md` с русскими лейблами.
+Все DTO — через `nestjs-zod`, Swagger `@ApiTags('recognition-v2')`. Все enum-значения (`reason`, `pattern`, `category`) — справочник в `second-brain/13_glossary/copy-strings.ru.md` с русскими лейблами.
 
 ## Cron / Workers
 
@@ -798,7 +798,7 @@ seasonal_event_participants_total{tenant, slug}
 - [ ] **apply-prod-deploy.ts** — добавлены seed-скрипты (`seed-levels.ts`, `seed-recognition-v2-templates.ts`, `seed-seasonal-events.ts`).
 - [ ] **second-brain** обновлён: `02_architecture/data-model.md`, `01_projects/workers-queues.md`, `01_projects/api-layer.md`, `02_architecture/module-map.md`.
 - [ ] **docs/operations/prod-deploy-log.md** — Шаги 1 (ENV), 4 (schema), 7 (seed), 12 (smoke).
-- [ ] **delivery/ui/copy-strings.ru.md** обновлён всеми новыми лейблами.
+- [ ] **second-brain/13_glossary/copy-strings.ru.md** обновлён всеми новыми лейблами.
 
 ## Срок
 

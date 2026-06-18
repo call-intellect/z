@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import useSWR from 'swr';
+import useSWR from "swr";
 
-import { apiClient } from '@/api/api-client';
+import { apiClient } from "@/api/api-client";
 
 type AdminSettingResponse<T> = {
   key: string;
@@ -11,19 +11,6 @@ type AdminSettingResponse<T> = {
   updatedBy?: string | null;
 };
 
-/**
- * useAdminSettingValue — read-only хук для одного ключа `AdminSetting`.
- *
- * - SWR под капотом, ревалидация раз в 30 секунд.
- * - При ошибке возвращает `fallback` (если задан) или `undefined`.
- * - Запрос идёт на `GET /api/v1/admin/settings/:key`.
- *
- * Использование:
- *   const cosine = useAdminSettingValue<number>(
- *     'knowledge.theme.cosine_threshold',
- *     0.78,
- *   );
- */
 export function useAdminSettingValue<T>(
   key: string,
   fallback?: T,

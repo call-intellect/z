@@ -1,28 +1,3 @@
-/**
- * SBA β-5 — Layer 6 (Probe-Agent).
- *
- * LLM-промпт `probe-formulate` — берёт probe-event (reason + payload +
- * suggestedActions) и формирует короткий, тёплый человеческий уточняющий
- * вопрос (≤ 200 символов). Без вариантов ответа: ЦА — не разработчики, и
- * ответ ожидается в свободной форме (текст или голос, ASR).
- *
- * Probe-система Фаза 1 (2026-06-11) — переписан промпт (вариант §9-B):
- *   - SYSTEM получил персону + цель + правила «хорошего вопроса» + few-shot
- *     примеры + self-check. Стабилен (без переменных) → cache-friendly.
- *   - USER больше НЕ подаёт машинные коды (emittedByService, сырой reason).
- *     Вместо них — человеческий `reasonLabel` (рус. ярлык ситуации из
- *     `probe-reason-labels.ts`). Это закрывает корневое противоречие:
- *     SYSTEM запрещал коды, а старый USER их подавал.
- *   - Schema поднята до `probe_formulate_v3` (контракт USER сменился; форма
- *     ответа `{question}` без изменений).
- *
- * Совместимость с prompt caching:
- *   - SYSTEM стабилен (few-shot внутри, без переменных) → ловит cache hit у
- *     DeepSeek/OpenAI-proxy/MiniMax с экономией ≈99%.
- *   - Все переменные данные (`reasonLabel`, `message`, объект, подсказки) — в
- *     КОНЦЕ USER, чтобы prefix SYSTEM не ломал кэш между вызовами.
- */
-
 export const PROBE_FORMULATE_SYSTEM_PROMPT = `# Кто ты
 Ты — голос «Коры», памяти компании. Внутренние наблюдатели Коры находят в знаниях компании пробелы и противоречия и присылают тебе служебный сигнал. Твоя единственная задача — превратить сигнал в ОДИН короткий, тёплый человеческий вопрос тому, кто может закрыть пробел.
 
@@ -68,17 +43,9 @@ export const PROBE_FORMULATE_USER_TEMPLATE = (args: {
   message: string;
   suggestedActions: readonly string[];
   contextCard?: { kind: string; title: string } | null;
-  /**
-   * Probe Ф5 re-ask (2026-06-17) — это повторный вопрос (в прошлый раз ответа
-   * не было). Добавляет пометку в КОНЕЦ USER (cache-friendly: переменная в
-   * хвосте, SYSTEM не трогаем), чтобы вопрос был переформулирован иначе и мягче.
-   */
   isReask?: boolean;
 }): string => {
-  const lines = [
-    `Тип ситуации: ${args.reasonLabel}`,
-    `Суть находки: ${args.message}`,
-  ];
+  const lines = [`Тип ситуации: ${args.reasonLabel}`, `Суть находки: ${args.message}`];
   if (args.contextCard) {
     lines.push(`Объект: ${args.contextCard.kind} «${args.contextCard.title}»`);
   }

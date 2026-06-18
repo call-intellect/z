@@ -4,24 +4,9 @@ import OpenAI from 'openai';
 import { TypedConfigService } from '../../../common/config/index';
 
 import { ensureJsonWordInUser } from './json-mode.util';
-import type {
-  LlmCompleteInput,
-  LlmCompleteOutput,
-  LlmToolCall,
-} from './llm.types';
+import type { LlmCompleteInput, LlmCompleteOutput, LlmToolCall } from './llm.types';
 import { LlmError } from './llm.types';
 
-/**
- * Ollama через OpenAI-совместимый endpoint `/v1/chat/completions`.
- *
- * - baseURL: `cfg.ai.ollama.baseUrl` (default `https://ollama.agent-lia.ru/v1`).
- * - apiKey: `cfg.ai.ollama.apiKey` (опционально; default = пустая строка → `'no-key'`).
- * - Дефолт-модель: `qwen3:30b-a3b-instruct-2507`.
- * - JSON-mode: `response_format: {type:'json_object'}` поддерживается нативно.
- * - JSON Schema strict: НЕ поддерживается → тихий downgrade в json_object
- *   (+ слово «json» в промпте). Структуру гарантирует zod-валидация в сервисах.
- * - Embeddings (`bge-m3`) — TODO Фаза 11.
- */
 @Injectable()
 export class OllamaService {
   private readonly logger = new Logger(OllamaService.name);
@@ -29,9 +14,7 @@ export class OllamaService {
   private readonly defaultModel = 'qwen3:30b-a3b-instruct-2507';
   private readonly retryDelaysMs = [500, 1000, 2000];
 
-  constructor(
-    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-  ) {
+  constructor(@Inject(TypedConfigService) private readonly cfg: TypedConfigService) {
     const apiKey = this.cfg.ai.ollama.apiKey || 'no-key';
     this.client = new OpenAI({
       baseURL: this.cfg.ai.ollama.baseUrl,
@@ -42,10 +25,6 @@ export class OllamaService {
   async complete(input: LlmCompleteInput): Promise<LlmCompleteOutput> {
     const model = input.model ?? this.defaultModel;
 
-    // Фикс 2026-06-03 — Ollama не поддерживает strict json_schema, но это
-    // tertiary-провайдер: вместо throw (= гарантированное падение всей задачи)
-    // тихо деградируем json_schema → json_object. Структуру гарантирует
-    // zod-валидация на стороне сервисов (см. buildParams).
     if (input.responseFormat?.type === 'json_schema') {
       this.logger.debug(
         `Ollama: json_schema → json_object downgrade (модель=${model}, schema=${input.responseFormat.name})`,
@@ -66,9 +45,7 @@ export class OllamaService {
         const status = extractStatus(err);
         const isRetriable = status === 429 || (status !== undefined && status >= 500);
         if (!isRetriable || attempt === this.retryDelaysMs.length) {
-          this.logger.warn(
-            `Ollama complete (${status ?? 'no-status'}): ${errMsg(err)}`,
-          );
+          this.logger.warn(`Ollama complete (${status ?? 'no-status'}): ${errMsg(err)}`);
           throw new LlmError(`Ollama: ${errMsg(err)}`, status, err);
         }
         const delayMs = this.retryDelaysMs[attempt] ?? 0;
@@ -81,11 +58,7 @@ export class OllamaService {
     throw new LlmError(`Ollama: исчерпали retry: ${errMsg(lastErr)}`, undefined, lastErr);
   }
 
-  // ─────────────────────────── private ─────────────────────────────────────
-
   private buildParams(input: LlmCompleteInput, model: string): Record<string, unknown> {
-    // T7-F3: LlmUserInput может быть string или {text, cacheControl?}.
-    // Ollama (локальный) не имеет prompt caching API; распаковываем в строку.
     const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const params: Record<string, unknown> = {
       model,
@@ -101,9 +74,6 @@ export class OllamaService {
     if (input.temperature !== undefined) {
       params['temperature'] = input.temperature;
     }
-    // json_object — нативно; json_schema деградируем в json_object (strict
-    // не поддерживается Ollama). В обоих случаях гарантируем слово «json» в
-    // промпте — иначе OpenAI-compat сервер отвергает json_object режим.
     const fmtType = input.responseFormat?.type;
     if (fmtType === 'json_object' || fmtType === 'json_schema') {
       params['response_format'] = { type: 'json_object' };
@@ -111,7 +81,6 @@ export class OllamaService {
         role: string;
         content: string;
       }>;
-      // Слово «json» — в ХВОСТ последнего USER (не в SYSTEM, ради prompt caching).
       ensureJsonWordInUser(messages);
     }
     if (input.tools && input.tools.length > 0) {

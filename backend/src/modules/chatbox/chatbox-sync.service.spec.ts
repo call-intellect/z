@@ -3,19 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { AdminSettingsService } from '../admin/settings/admin-settings.service';
 import type { EntityResolutionService } from '../knowledge-core/services/entity-resolution.service';
+import type { PersonsService } from '../persons/services/persons.service';
 
 import type { ChatboxApiClient } from './chatbox-api.client';
 import type { ChatboxIntegrationService } from './chatbox-integration.service';
 import type { ChatboxSessionService } from './chatbox-session.service';
 import { ChatboxSyncService } from './chatbox-sync.service';
-
-/**
- * Unit-тесты ChatboxSyncService с замоканными client / prisma / integration /
- * session / adminSettings / entityResolution. БД и сети нет. Проверяем
- * kill-switch (no-op без вызова клиента), контракт upsert для members
- * (linkedPersonId не в data), каскад автосвязки (email → имя-fuzzy) и автосвязку
- * клиентов (ChatboxCustomer / ChatboxChannelClient).
- */
+import type { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
 
 const CFG = { workspaceId: 'ws1', token: 'tok', integrationId: 'int1' };
 
@@ -45,12 +39,19 @@ describe('ChatboxSyncService', () => {
       update: ReturnType<typeof vi.fn>;
     };
     chatboxChannel: { findMany: ReturnType<typeof vi.fn> };
-    person: { findMany: ReturnType<typeof vi.fn> };
+    person: {
+      findMany: ReturnType<typeof vi.fn>;
+      findFirst: ReturnType<typeof vi.fn>;
+      updateMany: ReturnType<typeof vi.fn>;
+    };
+    membership: { findFirst: ReturnType<typeof vi.fn> };
   };
   let integrationMock: { getConfigForSync: ReturnType<typeof vi.fn> };
   let sessionMock: { rebuildSessions: ReturnType<typeof vi.fn> };
   let adminMock: { get: ReturnType<typeof vi.fn> };
   let entityResolutionMock: { resolvePersonByHint: ReturnType<typeof vi.fn> };
+  let personsMock: { create: ReturnType<typeof vi.fn> };
+  let analyzeQueueMock: { enqueue: ReturnType<typeof vi.fn> };
   let service: ChatboxSyncService;
 
   beforeEach(() => {
@@ -79,15 +80,21 @@ describe('ChatboxSyncService', () => {
         update: vi.fn().mockResolvedValue({ id: 'cc1' }),
       },
       chatboxChannel: { findMany: vi.fn().mockResolvedValue([]) },
-      person: { findMany: vi.fn().mockResolvedValue([]) },
+      person: {
+        findMany: vi.fn().mockResolvedValue([]),
+        findFirst: vi.fn().mockResolvedValue(null),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      membership: { findFirst: vi.fn().mockResolvedValue(null) },
     };
     integrationMock = {
       getConfigForSync: vi.fn().mockResolvedValue(CFG),
     };
     sessionMock = { rebuildSessions: vi.fn().mockResolvedValue({ sessionCount: 0 }) };
-    // По умолчанию: chatbox.enabled=true, chatbox.match.name_fuzzy_enabled=true.
     adminMock = { get: vi.fn().mockResolvedValue(true) };
     entityResolutionMock = { resolvePersonByHint: vi.fn().mockResolvedValue(null) };
+    personsMock = { create: vi.fn().mockResolvedValue({ id: 'p1' }) };
+    analyzeQueueMock = { enqueue: vi.fn().mockResolvedValue({ jobId: 'j1' }) };
 
     service = new ChatboxSyncService(
       prismaMock as unknown as PrismaService,
@@ -96,6 +103,8 @@ describe('ChatboxSyncService', () => {
       sessionMock as unknown as ChatboxSessionService,
       adminMock as unknown as AdminSettingsService,
       entityResolutionMock as unknown as EntityResolutionService,
+      personsMock as unknown as PersonsService,
+      analyzeQueueMock as unknown as ChatboxAnalyzeQueueService,
     );
   });
 
@@ -133,7 +142,6 @@ describe('ChatboxSyncService', () => {
         role: 'MANAGER',
       }),
     );
-    // Фаза 9: linkedPersonId / linkMode НЕ синкаем в upsert (только автосвязкой).
     expect(firstCall.create).not.toHaveProperty('linkedPersonId');
     expect(firstCall.create).not.toHaveProperty('linkMode');
     expect(firstCall.update).not.toHaveProperty('linkedPersonId');
@@ -144,18 +152,13 @@ describe('ChatboxSyncService', () => {
       members: [{ id: 'a', email: 'A@X.ru', name: 'A', role: 'MANAGER' }],
       total: 1,
     });
-    // Кандидат на автосвязку (linkMode != manual, email есть).
     prismaMock.chatboxMember.findMany.mockResolvedValue([
       { id: 'mem-a', email: 'A@X.ru', linkedPersonId: null },
     ]);
-    // Person найден по email (case-insensitive).
-    prismaMock.person.findMany.mockResolvedValue([
-      { id: 'p1', email: 'a@x.ru' },
-    ]);
+    prismaMock.person.findMany.mockResolvedValue([{ id: 'p1', email: 'a@x.ru' }]);
 
     await service.syncMembers('t1');
 
-    // findMany Person — один батч-запрос (без N+1).
     expect(prismaMock.person.findMany).toHaveBeenCalledTimes(1);
     expect(prismaMock.chatboxMember.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -170,13 +173,10 @@ describe('ChatboxSyncService', () => {
       members: [{ id: 'a', email: 'A@X.ru', name: 'A', role: 'MANAGER' }],
       total: 1,
     });
-    // manual-члены отфильтрованы запросом (linkMode: { not: 'manual' }) —
-    // кандидатов нет, значит update не вызывается.
     prismaMock.chatboxMember.findMany.mockResolvedValue([]);
 
     await service.syncMembers('t1');
 
-    // where кандидатов исключает manual.
     expect(prismaMock.chatboxMember.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -195,20 +195,14 @@ describe('ChatboxSyncService', () => {
         members: [{ id: 'a', email: null, name: 'Иван Петров', role: 'MANAGER' }],
         total: 1,
       });
-      // Кандидат без email, есть имя, не связан.
       prismaMock.chatboxMember.findMany.mockResolvedValue([
         { id: 'mem-a', email: null, name: 'Иван Петров', linkedPersonId: null },
       ]);
-      // email-ступень: Person.findMany не зовётся (emails пуст); имя-ступень даёт хит.
       entityResolutionMock.resolvePersonByHint.mockResolvedValue('p-name');
 
       await service.syncMembers('t1');
 
-      // Имя-ступень: резолвер вызван с именем.
-      expect(entityResolutionMock.resolvePersonByHint).toHaveBeenCalledWith(
-        't1',
-        'Иван Петров',
-      );
+      expect(entityResolutionMock.resolvePersonByHint).toHaveBeenCalledWith('t1', 'Иван Петров');
       expect(prismaMock.chatboxMember.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'mem-a' },
@@ -234,7 +228,6 @@ describe('ChatboxSyncService', () => {
     });
 
     it('флаг name_fuzzy OFF → имя-ступень не выполняется (resolvePersonByHint не зовётся)', async () => {
-      // chatbox.enabled=true, но chatbox.match.name_fuzzy_enabled=false.
       adminMock.get.mockImplementation(async (key: string, def?: unknown) => {
         if (key === 'chatbox.match.name_fuzzy_enabled') return false;
         return def ?? true;
@@ -261,9 +254,7 @@ describe('ChatboxSyncService', () => {
       prismaMock.chatboxMember.findMany.mockResolvedValue([
         { id: 'mem-a', email: 'a@x.ru', name: 'Иван', linkedPersonId: null },
       ]);
-      prismaMock.person.findMany.mockResolvedValue([
-        { id: 'p1', email: 'a@x.ru' },
-      ]);
+      prismaMock.person.findMany.mockResolvedValue([{ id: 'p1', email: 'a@x.ru' }]);
 
       await service.syncMembers('t1');
 
@@ -272,7 +263,6 @@ describe('ChatboxSyncService', () => {
           data: { linkedPersonId: 'p1', linkMode: 'auto' },
         }),
       );
-      // Связан по email — на имя-ступень не попал.
       expect(entityResolutionMock.resolvePersonByHint).not.toHaveBeenCalled();
     });
   });
@@ -285,13 +275,10 @@ describe('ChatboxSyncService', () => {
         ],
         total: 1,
       });
-      // Кандидат на автосвязку (linkMode != manual).
       prismaMock.chatboxCustomer.findMany.mockResolvedValue([
         { id: 'cus-1', email: 'C@X.ru', name: 'Клиент', linkedPersonId: null },
       ]);
-      prismaMock.person.findMany.mockResolvedValue([
-        { id: 'p1', email: 'c@x.ru' },
-      ]);
+      prismaMock.person.findMany.mockResolvedValue([{ id: 'p1', email: 'c@x.ru' }]);
 
       const count = await service.syncCustomers('t1');
       expect(count).toBe(1);
@@ -315,10 +302,7 @@ describe('ChatboxSyncService', () => {
 
       await service.syncCustomers('t1');
 
-      expect(entityResolutionMock.resolvePersonByHint).toHaveBeenCalledWith(
-        't1',
-        'ООО Ромашка',
-      );
+      expect(entityResolutionMock.resolvePersonByHint).toHaveBeenCalledWith('t1', 'ООО Ромашка');
       expect(prismaMock.chatboxCustomer.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: { linkedPersonId: 'p-name', linkMode: 'auto' },
@@ -331,7 +315,7 @@ describe('ChatboxSyncService', () => {
         customers: [{ id: 'c1', name: 'Клиент', email: 'c@x.ru', phone: null, externalId: null }],
         total: 1,
       });
-      prismaMock.chatboxCustomer.findMany.mockResolvedValue([]); // manual отфильтрован
+      prismaMock.chatboxCustomer.findMany.mockResolvedValue([]);
 
       await service.syncCustomers('t1');
 
@@ -367,9 +351,7 @@ describe('ChatboxSyncService', () => {
       prismaMock.chatboxChannelClient.findMany.mockResolvedValue([
         { id: 'cli-1', email: 'cc@x.ru', name: 'Собеседник', linkedPersonId: null },
       ]);
-      prismaMock.person.findMany.mockResolvedValue([
-        { id: 'p2', email: 'cc@x.ru' },
-      ]);
+      prismaMock.person.findMany.mockResolvedValue([{ id: 'p2', email: 'cc@x.ru' }]);
 
       await service.syncChannelClients('t1');
 

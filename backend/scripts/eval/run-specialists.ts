@@ -1,15 +1,3 @@
-/**
- * Эксперимент: 5 специалистов knowledge-core (3-1, 3-3, 3-5, 3-6, 3-9) — три варианта.
- *
- *   Variant A: 5 раздельных вызовов, каждый — batch блоков своего типа.
- *   Variant Б: 1 объединённый вызов на все блоки.
- *   Variant В: 2 групповых вызова (Группа 1: decisions+ideas+experiments; Группа 2: regulations+insights).
- *
- * Запуск:
- *   cd backend && bun run scripts/eval/run-specialists.ts a   # Variant A
- *   cd backend && bun run scripts/eval/run-specialists.ts b   # Variant Б
- *   cd backend && bun run scripts/eval/run-specialists.ts c   # Variant В
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -26,7 +14,6 @@ if (!['a', 'b', 'c'].includes(VARIANT)) {
   process.exit(1);
 }
 
-// Абсолютные пути от расположения скрипта (не зависят от cwd).
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
 const FIXTURE_PATH = path.resolve(
   SCRIPT_DIR,
@@ -70,7 +57,6 @@ const client = new OpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
 });
 
-// ── фильтры блоков по signalType ────────────────────────────────────────────
 const SIGNAL_FILTERS = {
   decisions: ['decision', 'rationale'],
   ideas: ['idea', 'feature_request'],
@@ -93,7 +79,6 @@ function blocksToContext(blocks: MeetingBlock[]): string {
     .join('\n\n');
 }
 
-// ── общий вызов ─────────────────────────────────────────────────────────────
 interface Usage {
   prompt_tokens?: number;
   completion_tokens?: number;
@@ -138,7 +123,8 @@ async function callOne(opts: {
         { role: 'system', content: opts.system },
         {
           role: 'user',
-          content: opts.user + `\n\nВажно: верни результат через вызов инструмента ${opts.toolName}.`,
+          content:
+            opts.user + `\n\nВажно: верни результат через вызов инструмента ${opts.toolName}.`,
         },
       ],
       max_tokens: MAX_TOKENS_PER_CALL,
@@ -155,7 +141,10 @@ async function callOne(opts: {
       tool_choice: 'auto',
     } as Parameters<typeof client.chat.completions.create>[0])) as unknown as {
       choices: Array<{
-        message?: { content?: string | null; tool_calls?: Array<{ function: { arguments: string } }> };
+        message?: {
+          content?: string | null;
+          tool_calls?: Array<{ function: { arguments: string } }>;
+        };
       }>;
       usage?: Usage;
     };
@@ -184,10 +173,8 @@ async function callOne(opts: {
     usage.prompt_tokens_details?.cached_tokens ??
     0;
   const uncached = Math.max(0, tokensIn - cachedTokens);
-  const costUsd =
-    uncached * PRICE_IN + cachedTokens * PRICE_CACHED_IN + tokensOut * PRICE_OUT;
+  const costUsd = uncached * PRICE_IN + cachedTokens * PRICE_CACHED_IN + tokensOut * PRICE_OUT;
 
-  // подсчёт сущностей в выходе
   let entitiesExtracted = 0;
   if (output && typeof output === 'object') {
     if (opts.entityCountKey) {
@@ -218,7 +205,6 @@ async function callOne(opts: {
   };
 }
 
-// ── схемы (упрощённые версии, отражают суть продовых) ──────────────────────
 const DECISION_ITEM = {
   type: 'object',
   required: ['sourceBlockId', 'statement', 'confidence'],
@@ -253,7 +239,16 @@ const INSIGHT_ITEM = {
     severity: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
     causeCategory: {
       type: 'string',
-      enum: ['process_gap', 'tooling', 'role_skill', 'communication', 'priority', 'resource_constraint', 'external', 'unknown'],
+      enum: [
+        'process_gap',
+        'tooling',
+        'role_skill',
+        'communication',
+        'priority',
+        'resource_constraint',
+        'external',
+        'unknown',
+      ],
     },
     mitigationSuggestion: { type: ['string', 'null'] },
     confidence: { type: 'number', minimum: 0, maximum: 1 },
@@ -295,7 +290,6 @@ const REGULATION_ITEM = {
   },
 };
 
-// ── system промпты (компактно — суть из прода) ───────────────────────────────
 const SYS_DECISIONS =
   'Ты — knowledge-инженер. Тебе дают батч IdeaBlock-ов с signalType ∈ {decision, rationale}. Для каждого блока извлеки структурированное решение. Не выдумывай факты вне блока. statement — суть решения одним предложением. rationale — ПОЧЕМУ так решили. alternatives — какие варианты рассматривали (пустой массив если не упоминалось). status по умолчанию "approved". sourceBlockId — id блока, из которого извлёк решение.';
 const SYS_IDEAS =
@@ -342,7 +336,6 @@ const SYS_GROUP2 = `Ты — knowledge-инженер. Получаешь бат
 
 sourceBlockId — обязательно. Не выдумывай.`;
 
-// ── варианты ─────────────────────────────────────────────────────────────────
 async function runVariantA(fixture: Fixture): Promise<CallReport[]> {
   const tasks = [
     {
@@ -494,7 +487,6 @@ async function runVariantC(fixture: Fixture): Promise<CallReport[]> {
   ]);
 }
 
-// ── main ─────────────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
   console.log(`=== Variant ${VARIANT.toUpperCase()} — specialists ===`);
   console.log(`  модель: ${MODEL}`);

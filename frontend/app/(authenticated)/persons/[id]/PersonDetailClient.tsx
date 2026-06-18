@@ -1,26 +1,26 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Activity, AlertTriangle, Loader2, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Activity, AlertTriangle, Loader2, Trash2 } from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   appointmentsApi,
   type AppointmentTimelineItemApi,
-} from '@/api/appointments.api';
-import { commitmentsApi } from '@/api/commitments.api';
-import type { CommitmentApi, CommitmentStatusApi } from '@/api/promises.api';
+} from "@/api/appointments.api";
+import { commitmentsApi } from "@/api/commitments.api";
+import type { CommitmentApi, CommitmentStatusApi } from "@/api/promises.api";
 import {
   personsApi,
   type EraseReportApi,
   type PersonDetailApi,
-} from '@/api/persons.api';
-import type { CurrentOrgRole } from '@/domain/account';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
+} from "@/api/persons.api";
+import type { CurrentOrgRole } from "@/domain/account";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -28,34 +28,22 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { Textarea } from "@/ui/shadcn/textarea";
 
-import { PersonSubpagesNav } from '@/ui/components/persons/PersonSubpagesNav';
-import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
+import { PersonSubpagesNav } from "@/ui/components/persons/PersonSubpagesNav";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-const ERASED_NAME = '[удалено по запросу]';
+const ERASED_NAME = "[удалено по запросу]";
 
-/**
- * `/persons/[id]` — карточка персоны (минимальная) + блок «Удалить все
- * данные о персоне» (152-ФЗ, owner-only).
- *
- * Шаг 13 Фазы 11. Бэкэнд:
- *   - GET    /api/v1/knowledge/entities/:id          — данные сущности.
- *   - DELETE /api/v1/persons/:entityId/data          — стирание.
- *
- * UX-состояния (frontend-rules):
- *   loading / forbidden / not-found / data + диалоговое подтверждение в
- *   две стадии (сравнение ФИО + причина).
- */
 export function PersonDetailClient({ entityId }: { entityId: string }) {
   const {
     currentOrgId,
@@ -78,7 +66,7 @@ export function PersonDetailClient({ entityId }: { entityId: string }) {
     <PersonDetailContent
       entityId={entityId}
       orgId={currentOrgId}
-      isOwner={currentOrgRole === 'owner'}
+      isOwner={currentOrgRole === "owner"}
       orgRole={currentOrgRole}
       isSuperAdmin={user?.isSuperAdmin === true}
     />
@@ -115,14 +103,14 @@ function PersonDetailContent({
       setData(dto);
     } catch (e) {
       if (e instanceof ApiError) {
-        if (e.code === 'forbidden') setForbidden(true);
-        else if (e.code === 'entity_not_found' || e.code === 'http_404') {
+        if (e.code === "forbidden") setForbidden(true);
+        else if (e.code === "entity_not_found" || e.code === "http_404") {
           setNotFound(true);
         } else {
           setError(humanizeApiError(e));
         }
       } else {
-        setError('Ошибка загрузки');
+        setError("Ошибка загрузки");
       }
     } finally {
       setIsLoading(false);
@@ -133,7 +121,6 @@ function PersonDetailContent({
     void load();
   }, [load]);
 
-  // Хлебные крошки: имя персоны из уже загруженного объекта (без доп. запроса).
   useRegisterBreadcrumb(
     data?.entity ? { label: data.entity.canonicalName } : null,
   );
@@ -160,7 +147,7 @@ function PersonDetailContent({
 
   const { entity, blocks } = data;
   const isAlreadyErased = entity.canonicalName === ERASED_NAME;
-  const isPerson = entity.type === 'person';
+  const isPerson = entity.type === "person";
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 px-6 py-8">
@@ -171,12 +158,12 @@ function PersonDetailContent({
         <h1 className="text-2xl font-semibold">{entity.canonicalName}</h1>
         <p className="text-sm text-fg-secondary">
           Тип: <code className="font-mono text-xs">{entity.type}</code>
-          {' · '}
+          {" · "}
           Упоминаний: {entity.mentionsCount}
           {entity.aliases.length > 0 && (
             <>
-              {' · '}
-              Алиасы: {entity.aliases.join(', ')}
+              {" · "}
+              Алиасы: {entity.aliases.join(", ")}
             </>
           )}
         </p>
@@ -245,9 +232,8 @@ function PersonDetailContent({
               <p className="text-sm text-fg-secondary">
                 Необратимая операция. Будут стёрты все RawEvent-источники с
                 упоминанием персоны, удалены связанные evidence и связи между
-                сущностями. Блоки без оставшихся источников переведутся в
-                архив. Сама сущность будет обезличена. Действие фиксируется в
-                AuditLog.
+                сущностями. Блоки без оставшихся источников переведутся в архив.
+                Сама сущность будет обезличена. Действие фиксируется в AuditLog.
               </p>
             </div>
           </div>
@@ -281,7 +267,6 @@ function PersonDetailContent({
           canonicalName={entity.canonicalName}
           onClose={() => setDialogOpen(false)}
           onSuccess={() => {
-            // Заметка: backend может отдать alreadyErased — toast уже показан.
             setDialogOpen(false);
           }}
         />
@@ -290,9 +275,7 @@ function PersonDetailContent({
   );
 }
 
-// ─── Двухстадийный диалог подтверждения ─────────────────────────────────
-
-type Stage = 'confirm-name' | 'confirm-reason';
+type Stage = "confirm-name" | "confirm-reason";
 
 function ErasePersonDialog({
   orgId,
@@ -308,9 +291,9 @@ function ErasePersonDialog({
   onSuccess: () => void;
 }) {
   const router = useRouter();
-  const [stage, setStage] = useState<Stage>('confirm-name');
-  const [typedName, setTypedName] = useState('');
-  const [reason, setReason] = useState('');
+  const [stage, setStage] = useState<Stage>("confirm-name");
+  const [typedName, setTypedName] = useState("");
+  const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const nameMatches = typedName.trim() === canonicalName.trim();
@@ -320,16 +303,12 @@ function ErasePersonDialog({
     if (!reasonValid) return;
     setSubmitting(true);
     try {
-      const report = await personsApi.eraseData(
-        orgId,
-        entityId,
-        reason.trim(),
-      );
+      const report = await personsApi.eraseData(orgId, entityId, reason.trim());
       showEraseToast(report);
       onSuccess();
-      router.push('/persons');
+      router.push("/persons");
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось удалить данные'));
+      toast.error(humanizeApiError(e, "Не удалось удалить данные"));
     } finally {
       setSubmitting(false);
     }
@@ -343,7 +322,7 @@ function ErasePersonDialog({
       }}
     >
       <DialogContent>
-        {stage === 'confirm-name' ? (
+        {stage === "confirm-name" ? (
           <>
             <DialogHeader>
               <DialogTitle className="text-danger">
@@ -378,7 +357,7 @@ function ErasePersonDialog({
                 Отмена
               </Button>
               <Button
-                onClick={() => setStage('confirm-reason')}
+                onClick={() => setStage("confirm-reason")}
                 disabled={!nameMatches}
               >
                 Далее
@@ -388,7 +367,9 @@ function ErasePersonDialog({
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle className="text-danger">Причина удаления</DialogTitle>
+              <DialogTitle className="text-danger">
+                Причина удаления
+              </DialogTitle>
               <DialogDescription>
                 Поле обязательно для compliance. Будет записано в AuditLog
                 вместе с user_id, инициировавшим удаление.
@@ -413,7 +394,7 @@ function ErasePersonDialog({
             <DialogFooter>
               <Button
                 variant="outline"
-                onClick={() => setStage('confirm-name')}
+                onClick={() => setStage("confirm-name")}
                 disabled={submitting}
               >
                 Назад
@@ -429,7 +410,7 @@ function ErasePersonDialog({
                     Удаляем…
                   </>
                 ) : (
-                  'Удалить навсегда'
+                  "Удалить навсегда"
                 )}
               </Button>
             </DialogFooter>
@@ -442,30 +423,22 @@ function ErasePersonDialog({
 
 function showEraseToast(report: EraseReportApi): void {
   if (report.alreadyErased) {
-    toast('Эта персона уже была обезличена ранее.');
+    toast("Эта персона уже была обезличена ранее.");
     return;
   }
-  toast.success(`Удалено: ${report.erasedRawEvents} RawEvent, ${report.deletedEvidences} evidence, ${report.archivedBlocks} ${pluralizeBlocks(report.archivedBlocks)} в архив.`);
+  toast.success(
+    `Удалено: ${report.erasedRawEvents} RawEvent, ${report.deletedEvidences} evidence, ${report.archivedBlocks} ${pluralizeBlocks(report.archivedBlocks)} в архив.`,
+  );
 }
 
 function pluralizeBlocks(n: number): string {
   const mod10 = n % 10;
   const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'блок';
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'блока';
-  return 'блоков';
+  if (mod10 === 1 && mod100 !== 11) return "блок";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "блока";
+  return "блоков";
 }
 
-// ─── SBA α-8 wave 3 — Appointments timeline ─────────────────────────────
-
-/**
- * Минимальная вкладка «Назначения» — список Appointment'ов для Person,
- * привязанного к Entity{type=person} через `Person.entityId`. На бэке
- * резолв идёт автоматически (если связи нет — возвращается пустой список).
- *
- * Полноценный UI для Appointment'ов (создание, редактирование, фильтры
- * по статусу) — в SBA α-8 wave 4 (role-map UI).
- */
 function AppointmentsTimelineSection({
   orgId,
   entityId,
@@ -487,9 +460,7 @@ function AppointmentsTimelineSection({
         if (!cancelled) setItems(res.items);
       } catch (e) {
         if (!cancelled) {
-          setError(
-            humanizeApiError(e, 'Не удалось загрузить назначения'),
-          );
+          setError(humanizeApiError(e, "Не удалось загрузить назначения"));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -507,9 +478,7 @@ function AppointmentsTimelineSection({
       {loading && (
         <p className="text-sm text-fg-tertiary">Загрузка истории назначений…</p>
       )}
-      {!loading && error && (
-        <p className="text-sm text-danger">{error}</p>
-      )}
+      {!loading && error && <p className="text-sm text-danger">{error}</p>}
       {!loading && !error && items !== null && items.length === 0 && (
         <p className="text-sm text-fg-tertiary">
           У этого сотрудника пока нет назначений. Создайте их через раздел
@@ -522,22 +491,23 @@ function AppointmentsTimelineSection({
             <li key={a.id} className="py-2.5">
               <div className="flex items-baseline justify-between gap-3">
                 <div className="text-sm font-medium">
-                  {a.roleName ?? '(должность удалена)'}
+                  {a.roleName ?? "(должность удалена)"}
                 </div>
                 <span className="text-xs text-fg-tertiary">
                   {renderStatus(a.status)}
                 </span>
               </div>
               <p className="mt-0.5 text-xs text-fg-tertiary">
-                {a.departmentName
-                  ? `Отдел: ${a.departmentName}`
-                  : 'Отдел: —'}{' '}
-                · Ставка: {a.loadPercent}%
+                {a.departmentName ? `Отдел: ${a.departmentName}` : "Отдел: —"} ·
+                Ставка: {a.loadPercent}%
               </p>
               <p className="mt-0.5 text-xs text-fg-secondary">
                 {formatPeriod(a.validFrom, a.validTo)}
                 {a.durationDays !== null && (
-                  <> · {a.durationDays} {pluralizeDays(a.durationDays)}</>
+                  <>
+                    {" "}
+                    · {a.durationDays} {pluralizeDays(a.durationDays)}
+                  </>
                 )}
               </p>
             </li>
@@ -548,33 +518,28 @@ function AppointmentsTimelineSection({
   );
 }
 
-function renderStatus(s: AppointmentTimelineItemApi['status']): string {
-  if (s === 'active') return 'действующее';
-  if (s === 'acting') return 'и.о.';
-  return 'архив';
+function renderStatus(s: AppointmentTimelineItemApi["status"]): string {
+  if (s === "active") return "действующее";
+  if (s === "acting") return "и.о.";
+  return "архив";
 }
 
 function formatPeriod(validFrom: string, validTo: string | null): string {
-  const from = new Date(validFrom).toLocaleDateString('ru-RU');
-  const to = validTo ? new Date(validTo).toLocaleDateString('ru-RU') : 'сейчас';
+  const from = new Date(validFrom).toLocaleDateString("ru-RU");
+  const to = validTo ? new Date(validTo).toLocaleDateString("ru-RU") : "сейчас";
   return `${from} — ${to}`;
 }
 
 function pluralizeDays(n: number): string {
   const mod10 = n % 10;
   const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'день';
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'дня';
-  return 'дней';
+  if (mod10 === 1 && mod100 !== 11) return "день";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "дня";
+  return "дней";
 }
 
-// ─── SBA β-8.2 — Обещания человека ──────────────────────────────────────
-
-const COMMITMENT_ADMIN_ROLES: ReadonlySet<NonNullable<CurrentOrgRole>> = new Set([
-  'owner',
-  'admin',
-  'coo',
-]);
+const COMMITMENT_ADMIN_ROLES: ReadonlySet<NonNullable<CurrentOrgRole>> =
+  new Set(["owner", "admin", "coo"]);
 
 function canSeePersonCommitments(
   role: CurrentOrgRole,
@@ -585,16 +550,6 @@ function canSeePersonCommitments(
   return COMMITMENT_ADMIN_ROLES.has(role);
 }
 
-/**
- * Вкладка «Обещания» — исходящие (что человек обещал) и входящие
- * (что обещали ему). Доступна только админ-ролям (owner/admin/coo/
- * super_admin). Сам сотрудник видит свои обещания в `/me/promises`.
- *
- * Запрос идёт по `entityId` — на бэке `personal-relations/commitments`
- * сам резолвит `Person.id` через `Person.entityId`. Если Person не
- * привязан к Entity — отдаётся пустой результат, тогда секция показывает
- * empty state.
- */
 function PersonCommitmentsSection({ entityId }: { entityId: string }) {
   const [outgoing, setOutgoing] = useState<CommitmentApi[] | null>(null);
   const [incoming, setIncoming] = useState<CommitmentApi[] | null>(null);
@@ -614,14 +569,11 @@ function PersonCommitmentsSection({ entityId }: { entityId: string }) {
         }
       } catch (e) {
         if (!cancelled) {
-          if (e instanceof ApiError && e.code === 'forbidden') {
-            // Тихо скрываем секцию — у роли нет прав на чтение обещаний.
+          if (e instanceof ApiError && e.code === "forbidden") {
             setOutgoing([]);
             setIncoming([]);
           } else {
-            setError(
-              humanizeApiError(e, 'Не удалось загрузить обещания'),
-            );
+            setError(humanizeApiError(e, "Не удалось загрузить обещания"));
           }
         }
       } finally {
@@ -704,7 +656,7 @@ function CommitmentsList({
           </div>
           <p className="mt-1 text-xs text-fg-tertiary">
             {c.dueDate ? (
-              <>Срок: {new Date(c.dueDate).toLocaleDateString('ru-RU')}</>
+              <>Срок: {new Date(c.dueDate).toLocaleDateString("ru-RU")}</>
             ) : (
               <>Срок не указан</>
             )}
@@ -724,11 +676,11 @@ function CommitmentsList({
 }
 
 function renderCommitmentStatus(status: CommitmentStatusApi | null): string {
-  if (status === 'open') return 'открыто';
-  if (status === 'asked') return 'ждём ответа';
-  if (status === 'fulfilled') return 'выполнено';
-  if (status === 'missed') return 'не выполнено';
-  if (status === 'cancelled') return 'отменено';
-  if (status === 'superseded') return 'заменено';
-  return '—';
+  if (status === "open") return "открыто";
+  if (status === "asked") return "ждём ответа";
+  if (status === "fulfilled") return "выполнено";
+  if (status === "missed") return "не выполнено";
+  if (status === "cancelled") return "отменено";
+  if (status === "superseded") return "заменено";
+  return "—";
 }

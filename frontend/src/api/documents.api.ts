@@ -1,63 +1,35 @@
-/**
- * API-клиент для модуля documents (Фаза 0c / sub-TZ 0b).
- *
- * Backend контракт — `backend/src/modules/documents/`:
- *   - `GET    /api/v1/documents`           — список (фильтры: uploaderId, roleId, status)
- *   - `POST   /api/v1/documents`           — multipart upload (file + опц. attachedRoleId)
- *   - `GET    /api/v1/documents/:id`       — деталь (parsedText + extracted)
- *   - `DELETE /api/v1/documents/:id`       — удалить
- *
- * Статусы парсинга: uploaded → parsing → parsed | failed.
- */
+import { apiClient } from "./api-client";
+import { ApiError } from "./api-error";
+import { buildQuery, orgHeaders } from "./admin-helpers";
 
-import { apiClient } from './api-client';
-import { ApiError } from './api-error';
-import { buildQuery, orgHeaders } from './admin-helpers';
+export type DocumentStatusApi = "uploaded" | "parsing" | "parsed" | "failed";
 
-export type DocumentStatusApi =
-  | 'uploaded'
-  | 'parsing'
-  | 'parsed'
-  | 'failed';
-
-/**
- * `DocumentKind` (формат файла) — что это за файл по расширению. Совпадает с
- * Prisma-enum `DocumentKind` (`backend/prisma/schema.prisma`). НЕ путать со
- * смысловым типом документа `DocumentTypeApi` (что это по сути).
- */
 export type DocumentKindApi =
-  | 'pdf'
-  | 'docx'
-  | 'markdown'
-  | 'text'
-  | 'xlsx'
-  | 'pptx'
-  | 'html'
-  | 'rtf'
-  | 'odt'
-  | 'csv'
-  | 'other';
+  | "pdf"
+  | "docx"
+  | "markdown"
+  | "text"
+  | "xlsx"
+  | "pptx"
+  | "html"
+  | "rtf"
+  | "odt"
+  | "csv"
+  | "other";
 
-/**
- * `DocumentType` (смысл документа) — чем документ является по сути (регламент,
- * политика и т.п.). Совпадает с Prisma-enum `DocumentType`. Опционален: задаётся
- * вручную при загрузке либо предлагается классификатором (ТЗ-4 Ф10).
- */
 export type DocumentTypeApi =
-  | 'regulation'
-  | 'policy'
-  | 'instruction'
-  | 'process'
-  | 'job_description'
-  | 'other';
+  | "regulation"
+  | "policy"
+  | "instruction"
+  | "process"
+  | "job_description"
+  | "other";
 
 export interface DocumentApi {
   id: string;
   orgId: string;
   name: string;
-  /** Формат файла (pdf/docx/…). */
   kind: DocumentKindApi;
-  /** Смысловой тип документа (регламент/политика/…). Может отсутствовать. */
   docType: DocumentTypeApi | null;
   mimeType: string | null;
   sizeBytes: number | null;
@@ -66,87 +38,74 @@ export interface DocumentApi {
   uploaderName: string | null;
   attachedRoleId: string | null;
   attachedRoleName: string | null;
-  /** Привязка к теме графа (ТЗ-4 Ф3). Может отсутствовать. */
   attachedThemeId: string | null;
-  /** Привязка к проекту трекера (ТЗ-4 Ф3). Может отсутствовать. */
   attachedProjectId: string | null;
-  /**
-   * ТЗ-4 Ф10 — предложенный Корой смысловой тип (до подтверждения человеком).
-   * Заполняется, пока `docType`/`attachedThemeId` не выставлены вручную.
-   */
   suggestedDocType?: DocumentTypeApi | null;
-  /** ТЗ-4 Ф10 — предложенная Корой тема (Theme.id) до подтверждения. */
   suggestedThemeId?: string | null;
   createdAt: string;
   parsedAt: string | null;
 }
 
-/** Расширения файлов, которые принимает загрузка документов (ТЗ-4 Ф5).
- *  Единственный источник правды для `<input accept>` (Bug-2). Без `.doc` —
- *  это бинарный legacy-формат, который наш парсер не разбирает. */
 export const ACCEPTED_DOCUMENT_EXTENSIONS = [
-  '.pdf',
-  '.docx',
-  '.xlsx',
-  '.pptx',
-  '.md',
-  '.txt',
-  '.html',
-  '.htm',
-  '.rtf',
-  '.odt',
-  '.csv',
+  ".pdf",
+  ".docx",
+  ".xlsx",
+  ".pptx",
+  ".md",
+  ".txt",
+  ".html",
+  ".htm",
+  ".rtf",
+  ".odt",
+  ".csv",
 ] as const;
 
-/** Готовая строка для атрибута `accept` (`<input type="file">`). */
-export const ACCEPTED_DOCUMENT_ACCEPT = ACCEPTED_DOCUMENT_EXTENSIONS.join(',');
+export const ACCEPTED_DOCUMENT_ACCEPT = ACCEPTED_DOCUMENT_EXTENSIONS.join(",");
 
-/** RU-метка ФОРМАТА файла (`DocumentKind`). Bug-1: формат, не смысл. */
 export function documentKindLabel(kind: DocumentKindApi): string {
   switch (kind) {
-    case 'pdf':
-      return 'PDF';
-    case 'docx':
-      return 'Word';
-    case 'markdown':
-      return 'Markdown';
-    case 'text':
-      return 'текст';
-    case 'xlsx':
-      return 'Excel';
-    case 'pptx':
-      return 'PowerPoint';
-    case 'html':
-      return 'HTML';
-    case 'rtf':
-      return 'RTF';
-    case 'odt':
-      return 'ODT';
-    case 'csv':
-      return 'CSV';
-    case 'other':
+    case "pdf":
+      return "PDF";
+    case "docx":
+      return "Word";
+    case "markdown":
+      return "Markdown";
+    case "text":
+      return "текст";
+    case "xlsx":
+      return "Excel";
+    case "pptx":
+      return "PowerPoint";
+    case "html":
+      return "HTML";
+    case "rtf":
+      return "RTF";
+    case "odt":
+      return "ODT";
+    case "csv":
+      return "CSV";
+    case "other":
     default:
-      return 'другое';
+      return "другое";
   }
 }
 
-/** RU-метка СМЫСЛОВОГО типа документа (`DocumentType`). */
 export function documentTypeLabel(docType: DocumentTypeApi | null): string {
   switch (docType) {
-    case 'regulation':
-      return 'Регламент';
-    case 'policy':
-      return 'Политика';
-    case 'instruction':
-      return 'Инструкция';
-    case 'process':
-      return 'Процесс';
-    case 'job_description':
-      return 'Должностная инструкция';
-    case 'other':
-      return 'другое';
+    case "regulation":
+      return "Регламент";
+    case "policy":
+      return "Политика";
+    case "instruction":
+      return "Инструкция";
+    case "process":
+      return "Процесс";
+    case "job_description":
+      return "Должностная инструкция";
+    case "other":
+      return "другое";
     default:
-      return '—';
+      return "—";
   }
 }
 
@@ -170,26 +129,20 @@ export interface DocumentIdeaBlockApi {
 }
 
 export type DocumentEntityKindApi =
-  | 'process'
-  | 'decision'
-  | 'regulation'
-  | 'policy'
-  | 'metric'
-  | 'tool';
+  | "process"
+  | "decision"
+  | "regulation"
+  | "policy"
+  | "metric"
+  | "tool";
 
-/**
- * Метка доверия карточки знаний (Фаза C1). Контракт совпадает с backend
- * `TrustTierDto` и frontend `TrustBadge`. Несут только критические карточки
- * (process / decision / regulation / policy); metric / tool — без неё.
- */
-export type DocumentTrustTierApi = 'auto' | 'provisional' | 'human';
+export type DocumentTrustTierApi = "auto" | "provisional" | "human";
 
 export interface DocumentEntityApi {
   id: string;
   kind: DocumentEntityKindApi;
   name: string;
   confidence: number;
-  /** Только для process / decision / regulation / policy. */
   trustTier?: DocumentTrustTierApi;
 }
 
@@ -206,7 +159,6 @@ export interface DocumentDetailApi {
   entityGroups: DocumentEntitiesGroupApi[];
 }
 
-/** Атрибуция, общая для пакета файлов (ТЗ-4 Ф3/Ф5). Все поля опц. */
 export interface DocumentAttribution {
   attachedRoleId?: string | null;
   attachedThemeId?: string | null;
@@ -214,17 +166,14 @@ export interface DocumentAttribution {
   docType?: DocumentTypeApi | null;
 }
 
-/** Аргументы одиночной загрузки (обратная совместимость). */
 export interface UploadDocumentArgs extends DocumentAttribution {
   file: File;
 }
 
-/** Аргументы пакетной загрузки (ТЗ-4 Ф5 — несколько файлов за раз). */
 export interface UploadDocumentsBatchArgs extends DocumentAttribution {
   files: File[];
 }
 
-/** Один элемент ответа загрузки. `deduped:true` — дубликат по contentHash. */
 export interface UploadDocumentItemApi {
   id: string;
   status: DocumentStatusApi;
@@ -236,22 +185,18 @@ export interface UploadDocumentsResponseApi {
   items: UploadDocumentItemApi[];
 }
 
-/** Источник batch-импорта (ТЗ-4 Волна 2). */
-export type DocumentImportSourceApi = 'upload_zip' | 'notion' | 'confluence';
+export type DocumentImportSourceApi = "upload_zip" | "notion" | "confluence";
 
-/** Статус batch-импорта (ТЗ-4 Волна 2). */
 export type DocumentImportStatusApi =
-  | 'pending'
-  | 'processing'
-  | 'completed'
-  | 'failed';
+  | "pending"
+  | "processing"
+  | "completed"
+  | "failed";
 
-/** Ответ `POST /import-zip` и `POST /import-confluence` (ТЗ-4 Волна 2). */
 export interface ImportResultApi {
   importId: string;
 }
 
-/** Статус batch-импорта (ТЗ-4 Волна 2, `GET /documents/imports/:id`). */
 export interface DocumentImportApi {
   id: string;
   source: DocumentImportSourceApi;
@@ -264,7 +209,6 @@ export interface DocumentImportApi {
   updatedAt: string;
 }
 
-/** Параметры импорта из Confluence Cloud (ТЗ-4 Волна 2). */
 export interface ImportConfluenceArgs extends DocumentAttribution {
   baseUrl: string;
   email: string;
@@ -272,13 +216,13 @@ export interface ImportConfluenceArgs extends DocumentAttribution {
   spaceKey: string;
 }
 
-/** Дописывает поля атрибуции в FormData (только заданные). */
 function appendAttribution(form: FormData, attr: DocumentAttribution): void {
-  if (attr.attachedRoleId) form.append('attachedRoleId', attr.attachedRoleId);
-  if (attr.attachedThemeId) form.append('attachedThemeId', attr.attachedThemeId);
+  if (attr.attachedRoleId) form.append("attachedRoleId", attr.attachedRoleId);
+  if (attr.attachedThemeId)
+    form.append("attachedThemeId", attr.attachedThemeId);
   if (attr.attachedProjectId)
-    form.append('attachedProjectId', attr.attachedProjectId);
-  if (attr.docType) form.append('docType', attr.docType);
+    form.append("attachedProjectId", attr.attachedProjectId);
+  if (attr.docType) form.append("docType", attr.docType);
 }
 
 async function postDocumentsMultipart(
@@ -286,13 +230,13 @@ async function postDocumentsMultipart(
   form: FormData,
 ): Promise<UploadDocumentsResponseApi> {
   const baseUrl =
-    process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
-  const url = `${baseUrl.replace(/\/+$/, '')}/api/v1/documents`;
+    process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
+  const url = `${baseUrl.replace(/\/+$/, "")}/api/v1/documents`;
 
   const res = await fetch(url, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'X-Org-Id': orgId },
+    method: "POST",
+    credentials: "include",
+    headers: { "X-Org-Id": orgId },
     body: form,
   });
 
@@ -305,65 +249,49 @@ async function postDocumentsMultipart(
       };
       if (body?.error?.message) message = body.error.message;
       if (body?.error?.code) code = body.error.code;
-    } catch {
-      // ignore
-    }
+    } catch {}
     throw new ApiError({ code, message });
   }
   return (await res.json()) as UploadDocumentsResponseApi;
 }
 
-/**
- * Пакетная загрузка (ТЗ-4 Ф5): несколько файлов в одном multipart-запросе под
- * полем `files`. Не идём через apiClient (он JSON-only), но соблюдаем те же
- * headers (X-Org-Id) и cookie-сессию.
- */
 async function uploadDocumentsBatch(
   orgId: string,
   args: UploadDocumentsBatchArgs,
 ): Promise<UploadDocumentsResponseApi> {
   const form = new FormData();
-  for (const file of args.files) form.append('files', file);
+  for (const file of args.files) form.append("files", file);
   appendAttribution(form, args);
   return postDocumentsMultipart(orgId, form);
 }
 
-/**
- * Одиночная загрузка (обратная совместимость для прочих вызывающих). Шлёт
- * файл под legacy-полем `file`; backend по-прежнему его принимает.
- */
 async function uploadDocumentMultipart(
   orgId: string,
   args: UploadDocumentArgs,
 ): Promise<UploadDocumentsResponseApi> {
   const form = new FormData();
-  form.append('file', args.file);
+  form.append("file", args.file);
   appendAttribution(form, args);
   return postDocumentsMultipart(orgId, form);
 }
 
-/**
- * ТЗ-4 Волна 2 — импорт ZIP-архива (обычный или экспорт Notion). Multipart
- * (`file` = .zip + `source` + batch-атрибуция). Возвращает `{ importId }` —
- * статус UI опрашивает через `getImportStatus`.
- */
 async function importZip(
   orgId: string,
-  args: { file: File; source: 'upload_zip' | 'notion' } & DocumentAttribution,
+  args: { file: File; source: "upload_zip" | "notion" } & DocumentAttribution,
 ): Promise<ImportResultApi> {
   const baseUrl =
-    process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
-  const url = `${baseUrl.replace(/\/+$/, '')}/api/v1/documents/import-zip`;
+    process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
+  const url = `${baseUrl.replace(/\/+$/, "")}/api/v1/documents/import-zip`;
 
   const form = new FormData();
-  form.append('file', args.file);
-  form.append('source', args.source);
+  form.append("file", args.file);
+  form.append("source", args.source);
   appendAttribution(form, args);
 
   const res = await fetch(url, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'X-Org-Id': orgId },
+    method: "POST",
+    credentials: "include",
+    headers: { "X-Org-Id": orgId },
     body: form,
   });
 
@@ -376,30 +304,37 @@ async function importZip(
       };
       if (body?.error?.message) message = body.error.message;
       if (body?.error?.code) code = body.error.code;
-    } catch {
-      // ignore
-    }
+    } catch {}
     throw new ApiError({ code, message });
   }
   return (await res.json()) as ImportResultApi;
 }
 
-/**
- * RAW-форма ответа backend `GET /api/v1/documents/:id` (то, что реально
- * приходит по сети). Backend отдаёт извлечённые карточки в `extractedEntities`
- * как именованные секции, а не как готовый `entityGroups[]`. Трансформацию
- * в UI-модель (`DocumentDetailApi.entityGroups`) делает `buildEntityGroups`.
- *
- * NB: у decisions поле называется `text` (а не `name`); metric / tool
- * приходят без `trustTier`. Доп. поля backend (category / severity / unit /
- * kind) здесь не объявлены — они не нужны UI-модели, а structural typing
- * TS допускает лишние поля в фактическом ответе.
- */
 interface DocumentExtractedEntitiesRawApi {
-  processes: Array<{ id: string; name: string; confidence: number | null; trustTier: DocumentTrustTierApi }>;
-  decisions: Array<{ id: string; text: string; confidence: number | null; trustTier: DocumentTrustTierApi }>;
-  regulations: Array<{ id: string; name: string; confidence: number | null; trustTier: DocumentTrustTierApi }>;
-  policies: Array<{ id: string; name: string; confidence: number | null; trustTier: DocumentTrustTierApi }>;
+  processes: Array<{
+    id: string;
+    name: string;
+    confidence: number | null;
+    trustTier: DocumentTrustTierApi;
+  }>;
+  decisions: Array<{
+    id: string;
+    text: string;
+    confidence: number | null;
+    trustTier: DocumentTrustTierApi;
+  }>;
+  regulations: Array<{
+    id: string;
+    name: string;
+    confidence: number | null;
+    trustTier: DocumentTrustTierApi;
+  }>;
+  policies: Array<{
+    id: string;
+    name: string;
+    confidence: number | null;
+    trustTier: DocumentTrustTierApi;
+  }>;
   metrics: Array<{ id: string; name: string; confidence: number | null }>;
   tools: Array<{ id: string; name: string; confidence: number | null }>;
 }
@@ -411,18 +346,6 @@ interface DocumentDetailRawApi {
   extractedEntities?: DocumentExtractedEntitiesRawApi;
 }
 
-/**
- * Трансформирует RAW-секции `extractedEntities` в UI-модель `entityGroups[]`.
- *
- * - Пустые группы НЕ включаются: так `entityGroups.length === 0` сохраняет
- *   смысл «ничего не извлечено».
- * - `name`: для decisions берётся из `text`, для остальных — из `name`.
- * - `confidence`: `null` → `0`.
- * - `trustTier`: только для критических карточек (process / decision /
- *   regulation / policy); для metric / tool остаётся `undefined`.
- *
- * Exported только ради unit-теста.
- */
 export function buildEntityGroups(
   ex?: DocumentExtractedEntitiesRawApi,
 ): DocumentEntitiesGroupApi[] {
@@ -432,11 +355,11 @@ export function buildEntityGroups(
 
   if (ex.processes.length > 0) {
     groups.push({
-      kind: 'process',
+      kind: "process",
       total: ex.processes.length,
       items: ex.processes.map((e) => ({
         id: e.id,
-        kind: 'process',
+        kind: "process",
         name: e.name,
         confidence: e.confidence ?? 0,
         trustTier: e.trustTier,
@@ -446,11 +369,11 @@ export function buildEntityGroups(
 
   if (ex.decisions.length > 0) {
     groups.push({
-      kind: 'decision',
+      kind: "decision",
       total: ex.decisions.length,
       items: ex.decisions.map((e) => ({
         id: e.id,
-        kind: 'decision',
+        kind: "decision",
         name: e.text,
         confidence: e.confidence ?? 0,
         trustTier: e.trustTier,
@@ -460,11 +383,11 @@ export function buildEntityGroups(
 
   if (ex.regulations.length > 0) {
     groups.push({
-      kind: 'regulation',
+      kind: "regulation",
       total: ex.regulations.length,
       items: ex.regulations.map((e) => ({
         id: e.id,
-        kind: 'regulation',
+        kind: "regulation",
         name: e.name,
         confidence: e.confidence ?? 0,
         trustTier: e.trustTier,
@@ -474,11 +397,11 @@ export function buildEntityGroups(
 
   if (ex.policies.length > 0) {
     groups.push({
-      kind: 'policy',
+      kind: "policy",
       total: ex.policies.length,
       items: ex.policies.map((e) => ({
         id: e.id,
-        kind: 'policy',
+        kind: "policy",
         name: e.name,
         confidence: e.confidence ?? 0,
         trustTier: e.trustTier,
@@ -488,11 +411,11 @@ export function buildEntityGroups(
 
   if (ex.metrics.length > 0) {
     groups.push({
-      kind: 'metric',
+      kind: "metric",
       total: ex.metrics.length,
       items: ex.metrics.map((e) => ({
         id: e.id,
-        kind: 'metric',
+        kind: "metric",
         name: e.name,
         confidence: e.confidence ?? 0,
       })),
@@ -501,11 +424,11 @@ export function buildEntityGroups(
 
   if (ex.tools.length > 0) {
     groups.push({
-      kind: 'tool',
+      kind: "tool",
       total: ex.tools.length,
       items: ex.tools.map((e) => ({
         id: e.id,
-        kind: 'tool',
+        kind: "tool",
         name: e.name,
         confidence: e.confidence ?? 0,
       })),
@@ -536,20 +459,16 @@ export const documentsApi = {
   },
 
   remove: (orgId: string, id: string) =>
-    apiClient.del<{ ok: true }>(
-      `/api/v1/documents/${encodeURIComponent(id)}`,
-      { headers: orgHeaders(orgId) },
-    ),
+    apiClient.del<{ ok: true }>(`/api/v1/documents/${encodeURIComponent(id)}`, {
+      headers: orgHeaders(orgId),
+    }),
 
   upload: uploadDocumentMultipart,
 
-  /** Пакетная загрузка нескольких файлов с общей атрибуцией (ТЗ-4 Ф5). */
   uploadBatch: uploadDocumentsBatch,
 
-  /** Импорт ZIP-архива (обычного или экспорта Notion) — ТЗ-4 Волна 2. */
   importZip,
 
-  /** Импорт пространства Confluence Cloud (JSON-тело) — ТЗ-4 Волна 2. */
   importConfluence: (
     orgId: string,
     args: ImportConfluenceArgs,
@@ -561,7 +480,9 @@ export const documentsApi = {
         email: args.email,
         apiToken: args.apiToken,
         spaceKey: args.spaceKey,
-        ...(args.attachedThemeId ? { attachedThemeId: args.attachedThemeId } : {}),
+        ...(args.attachedThemeId
+          ? { attachedThemeId: args.attachedThemeId }
+          : {}),
         ...(args.attachedProjectId
           ? { attachedProjectId: args.attachedProjectId }
           : {}),
@@ -570,17 +491,15 @@ export const documentsApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  /** Статус batch-импорта (для UI прогресса) — ТЗ-4 Волна 2. */
-  getImportStatus: (orgId: string, importId: string): Promise<DocumentImportApi> =>
+  getImportStatus: (
+    orgId: string,
+    importId: string,
+  ): Promise<DocumentImportApi> =>
     apiClient.get<DocumentImportApi>(
       `/api/v1/documents/imports/${encodeURIComponent(importId)}`,
       { headers: orgHeaders(orgId) },
     ),
 
-  /**
-   * Установить/изменить смысловую атрибуцию документа и принять подсказку Коры
-   * (ТЗ-4 Волна 2). `undefined` поле не трогает колонку, `null` снимает привязку.
-   */
   setAttribution: (
     orgId: string,
     id: string,

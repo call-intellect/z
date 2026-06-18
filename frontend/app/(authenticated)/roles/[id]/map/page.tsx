@@ -1,15 +1,11 @@
-import type { Metadata } from 'next';
+import type { Metadata } from "next";
 
-import { RoleMapClient } from './RoleMapClient';
+import { RoleMapClient } from "./RoleMapClient";
 
 export const metadata: Metadata = {
-  title: 'Карта должности',
+  title: "Карта должности",
 };
 
-/**
- * SBA α-8 wave 4 — графический вид карты должности (5 нормализованных
- * категорий wave-2 + KPI + completeness + maturity).
- */
 export default async function RoleMapPage({
   params,
 }: {

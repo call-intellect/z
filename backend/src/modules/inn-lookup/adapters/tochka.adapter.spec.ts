@@ -1,18 +1,3 @@
-/**
- * Unit-тесты TochkaOpenBankingAdapter.
- *
- * Покрытие:
- *   - Sandbox-режим → null (не делает HTTP)
- *   - !features.tochka → null
- *   - Нет access_token → null + warn
- *   - Match по inn → InnLookupResult с bankBik/account
- *   - Несовпадающий inn → null
- *   - HTTP 4xx/5xx → null (graceful)
- *   - Customer без kpp → payerType='individual_entrepreneur'
- *
- * fetch + OAuth моки через vi.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
@@ -20,11 +5,13 @@ import type { TochkaOAuthService } from '../../billing/providers/tochka/tochka-o
 
 import { TochkaOpenBankingAdapter } from './tochka.adapter';
 
-function makeCfg(over: {
-  isSandbox?: boolean;
-  isProduction?: boolean;
-  tochkaEnabled?: boolean;
-} = {}): TypedConfigService {
+function makeCfg(
+  over: {
+    isSandbox?: boolean;
+    isProduction?: boolean;
+    tochkaEnabled?: boolean;
+  } = {},
+): TypedConfigService {
   return {
     billing: {
       features: { tochka: over.tochkaEnabled ?? true },
@@ -64,10 +51,7 @@ describe('TochkaOpenBankingAdapter', () => {
   });
 
   it('sandbox-режим → null, fetch не зовётся', async () => {
-    const adapter = new TochkaOpenBankingAdapter(
-      makeCfg({ isSandbox: true }),
-      makeOAuth('any'),
-    );
+    const adapter = new TochkaOpenBankingAdapter(makeCfg({ isSandbox: true }), makeOAuth('any'));
     const result = await adapter.lookup('7707083893');
     expect(result).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -124,10 +108,10 @@ describe('TochkaOpenBankingAdapter', () => {
     expect(result?.bankBik).toBe('044525104');
     expect(result?.bankAccount).toBe('40702810901234567890');
 
-    // Bearer передан в обоих запросах.
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    const headers0 = (fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)
-      ?.headers as Record<string, string> | undefined;
+    const headers0 = (fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.headers as
+      | Record<string, string>
+      | undefined;
     expect(headers0?.Authorization).toBe('Bearer valid-bearer');
   });
 

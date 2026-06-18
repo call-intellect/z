@@ -7,15 +7,6 @@ import { TenantGuard } from '../../rbac/guards/tenant.guard';
 
 import { ReferralsController } from './referrals.controller';
 
-/**
- * audit-fixes §Б14: проверка, что POST /referrals/attribute-current-org
- * защищён TenantGuard (помимо контроллерного CookieAuthGuard).
- *
- * Сейчас юнит-тест через рефлексию метаданных декораторов NestJS — это
- * единственный способ убедиться в наличии guard без поднятия полного
- * Nest TestingModule. Если декоратор @UseGuards снимут — тест упадёт.
- */
-
 const GUARDS_METADATA_KEY = '__guards__';
 
 function getMethodGuards(target: object, methodName: string): unknown[] {
@@ -35,10 +26,7 @@ describe('ReferralsController guards (Б14)', () => {
   });
 
   it('attributeCurrentOrg: дополнительно защищён TenantGuard', () => {
-    const guards = getMethodGuards(
-      ReferralsController.prototype,
-      'attributeCurrentOrg',
-    );
+    const guards = getMethodGuards(ReferralsController.prototype, 'attributeCurrentOrg');
     expect(guards).toContain(TenantGuard);
   });
 });

@@ -5,7 +5,6 @@ export const ListPricesQuerySchema = z.object({
     .union([z.boolean(), z.string()])
     .transform((v) => (typeof v === 'boolean' ? v : v === 'true' || v === '1'))
     .default(false),
-  // SBA α-10 wave 3 — фильтры для history-view (UI «Прайс LLM»).
   modelId: z.string().optional(),
   providerId: z.string().optional(),
   provider: z.string().optional(),

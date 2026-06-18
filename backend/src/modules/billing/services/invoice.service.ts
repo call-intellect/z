@@ -1,20 +1,3 @@
-/**
- * InvoiceService — CRUD счетов + markPaid/markBonus/void.
- *
- * Ключевая идиома: Invoice создаётся БЕЗ invoiceNumber (Prisma не даёт
- * `@unique` поле без значения), поэтому `create()` идёт через двухшаговую
- * транзакцию: вставляем placeholder, читаем `billingNumber` (autoincrement),
- * формируем `Z-YYYY-NNNNNN`, обновляем. Это атомарно (одна транзакция) и
- * избегает race condition при параллельных create.
- *
- * Альтернатива: сгенерировать UUID до вставки и потом backfill — но это
- * усложняет схему. Текущий подход проще и подходит для MVP.
- *
- * Все суммы — копейки (Int).
- *
- * Источник: plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §7.1.
- */
-
 import { randomBytes } from 'node:crypto';
 
 import {
@@ -36,7 +19,11 @@ import {
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { InvoiceItem } from '../billing.types';
-import { BillingEvent, type InvoicePaidPayload, type InvoiceVoidedPayload } from '../events/billing.events';
+import {
+  BillingEvent,
+  type InvoicePaidPayload,
+  type InvoiceVoidedPayload,
+} from '../events/billing.events';
 
 import { InvoiceNumberService } from './invoice-number.service';
 
@@ -48,17 +35,12 @@ export interface CreateInvoiceInput {
   items: InvoiceItem[];
   paymentMethod: BillingPaymentMethod;
   dueAt?: Date | null;
-  /** Уже распарсенный bonus-режим — invoice сразу пишется со status='bonus'. */
   bonusOnCreate?: boolean;
-  /** Опц. внешняя транзакция. */
   tx?: Prisma.TransactionClient;
 }
 
 export interface MarkPaidInput {
   invoiceId: string;
-  // 2026-06-01 — `reference` режим эталонной демо-Org не порождает инвойсов,
-  // markPaid вызывается только для платных подписок (paid/bonus). См. ТЗ
-  // demo-shared-org-model §4.11 (Billing исключает reference из метрик).
   paymentMode: 'paid' | 'bonus';
   byUserId?: string | null;
   externalRef?: string | null;
@@ -74,22 +56,12 @@ export class InvoiceService {
     @Inject(EventEmitter2) private readonly events: EventEmitter2,
   ) {}
 
-  /**
-   * Создать инвойс. Считает `totalKopecks` как сумму items[].totalKopecks
-   * (allowing negative для скидок). Сразу формирует строковый `invoiceNumber`.
-   *
-   * Статус по умолчанию:
-   *   - 'bonus' если `bonusOnCreate=true` (admin-активация в bonus-режиме).
-   *   - 'draft' иначе. Перевод в 'issued' — отдельный шаг (issueInvoice).
-   */
   async create(input: CreateInvoiceInput): Promise<Invoice> {
     if (input.items.length === 0) {
       throw new BadRequestException('Invoice не может быть пустым (items=[])');
     }
     if (input.periodEnd <= input.periodStart) {
-      throw new BadRequestException(
-        'Invoice.periodEnd должен быть позже periodStart',
-      );
+      throw new BadRequestException('Invoice.periodEnd должен быть позже periodStart');
     }
 
     const total = input.items.reduce((acc, it) => acc + it.totalKopecks, 0);
@@ -102,12 +74,6 @@ export class InvoiceService {
     const initialStatus: InvoiceStatus = input.bonusOnCreate ? 'bonus' : 'draft';
 
     return this.runInTx(input.tx, async (tx) => {
-      // Шаг 1: создаём с placeholder invoiceNumber. audit В5 (2026-05-29) —
-      // 16 байт crypto-random (`randomBytes(16).toString('base64url')` = 22
-      // символа, ≈128 бит) делает коллизию между параллельными `create()`
-      // в одну миллисекунду математически невозможной. Прежний
-      // `Date.now()-Math.random()` давал ~40 бит и теоретически мог биться
-      // на бёрсте инвойсов от одного nodejs-процесса.
       const placeholder = `PENDING-${randomBytes(16).toString('base64url')}`;
       const draft = await tx.invoice.create({
         data: {
@@ -124,7 +90,6 @@ export class InvoiceService {
         },
       });
 
-      // Шаг 2: подставляем нормальный invoiceNumber на основе billingNumber.
       const final = await tx.invoice.update({
         where: { id: draft.id },
         data: { invoiceNumber: this.numbering.format(draft.billingNumber, draft.createdAt) },
@@ -137,14 +102,12 @@ export class InvoiceService {
     });
   }
 
-  /** Получить инвойс или 404. */
   async findOrFail(invoiceId: string): Promise<Invoice> {
     const inv = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
     if (!inv) throw new NotFoundException(`Invoice ${invoiceId} не найден`);
     return inv;
   }
 
-  /** Список инвойсов Org. */
   async listByTenant(args: {
     tenantId: string;
     limit?: number;
@@ -153,9 +116,7 @@ export class InvoiceService {
   }): Promise<{ items: Invoice[]; total: number }> {
     const where: Prisma.InvoiceWhereInput = {
       tenantId: args.tenantId,
-      ...(args.statuses && args.statuses.length > 0
-        ? { status: { in: args.statuses } }
-        : {}),
+      ...(args.statuses && args.statuses.length > 0 ? { status: { in: args.statuses } } : {}),
     };
     const [items, total] = await Promise.all([
       this.prisma.invoice.findMany({
@@ -169,10 +130,6 @@ export class InvoiceService {
     return { items, total };
   }
 
-  /**
-   * Перевести invoice в `paid` (или `bonus`). Идемпотентно: повторный вызов
-   * на уже paid/bonus инвойсе → возвращает текущее состояние без event'а.
-   */
   async markPaid(input: MarkPaidInput, tx?: Prisma.TransactionClient): Promise<Invoice> {
     return this.runInTx(tx, async (runner) => {
       const inv = await runner.invoice.findUnique({ where: { id: input.invoiceId } });
@@ -182,7 +139,6 @@ export class InvoiceService {
           `Invoice ${inv.invoiceNumber} отменён (void), нельзя пометить оплаченным`,
         );
       }
-      // Идемпотентность: если уже paid/bonus с тем же paymentMode — no-op.
       const targetStatus: InvoiceStatus = input.paymentMode === 'paid' ? 'paid' : 'bonus';
       if (inv.status === targetStatus) {
         return inv;
@@ -198,7 +154,6 @@ export class InvoiceService {
         },
       });
 
-      // Fire-and-forget после транзакции (если tx внешняя — emit отложен в caller).
       if (!tx) {
         const payload: InvoicePaidPayload = {
           invoiceId: updated.id,
@@ -217,7 +172,6 @@ export class InvoiceService {
     });
   }
 
-  /** Отменить инвойс. Только из статусов draft/issued. */
   async void(args: { invoiceId: string; reason: string; byUserId: string }): Promise<Invoice> {
     const inv = await this.findOrFail(args.invoiceId);
     if (inv.status === 'paid' || inv.status === 'bonus') {
@@ -246,8 +200,6 @@ export class InvoiceService {
     void this.safeEmit(BillingEvent.INVOICE_VOIDED, payload);
     return updated;
   }
-
-  // ────────────────────── private ──────────────────────
 
   private async runInTx<T>(
     tx: Prisma.TransactionClient | undefined,

@@ -1,63 +1,17 @@
 import type { TablePropType } from '@prisma/client';
 
-/**
- * Каталог системных Smart-таблиц (Smart-tables Фаза 0).
- *
- * При создании любой новой Org автоматически создаются ПУСТЫЕ (без строк)
- * системные таблицы по этим 10 шаблонам — см.
- * `TablesAutoProvisionService.provisionDefaults`. Наполнение строками — Фаза 2.
- *
- * Каждый шаблон:
- *   - `systemKey`   — стабильный ключ, уникальный в пределах Org
- *                     (`@@unique([tenantId, systemKey])` в schema.prisma).
- *                     Гарантирует идемпотентность авто-провижининга.
- *   - `entitySync`  — привязка строк к Entity графа (`org`/`person`/`document`)
- *                     либо `null`, если для этой таблицы entity-тип ещё не заведён.
- *   - `properties`  — колонки. Ровно одна с `isPrimary: true` — именующая.
- *
- * Форма `config` колонок (по schema.prisma §Smart Tables):
- *   - status / selectSingle / selectMulti → `{ options: [{ id, name, color }] }`,
- *     где `color` — тон из палитры Grid (success/warning/danger/info/neutral).
- *   - остальные типы (text/longtext/number/currency/date/person/...) → `{}`.
- *
- * Smart-tables Фаза 2 (graph-driven rows): колонки, значение которых приходит
- * из связанной Entity графа, помечаются read-only:
- *   `{ readonly: true, source: 'entity', entityAttribute: 'canonicalName'|'email'|'phone' }`.
- * Такие ячейки нельзя редактировать в таблице (PATCH → 422 `table_cell_readonly`) —
- * они обновляются автоматически из памяти компании при изменении сущности.
- *
- * NB: все пользовательские строки (названия таблиц, колонок, опций) — на русском.
- */
-
-/** Тон чипа статуса/выбора. Совпадает с палитрой Grid (`pickToneByLabel`). */
-export type SystemTableOptionColor =
-  | 'success'
-  | 'warning'
-  | 'danger'
-  | 'info'
-  | 'neutral';
-
-export interface SystemTableOption {
-  id: string;
-  name: string;
-  color: SystemTableOptionColor;
-}
+export type SystemTableOptionColor = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 
 export interface SystemTablePropertyTemplate {
   name: string;
   type: TablePropType;
   isPrimary?: boolean;
-  /** Тип-специфичный конфиг. Для status/select — `{ options: [...] }`, иначе `{}`. */
   config?: Record<string, unknown>;
 }
 
 export interface SystemTableEntitySync {
   type: 'org' | 'person' | 'meeting' | 'document';
   autoCreate: boolean;
-  /**
-   * Точный фильтр классов Entity для живого синка строк (Smart-tables Фаза 2).
-   * Если не задан — резолвер выводит дефолт по `type` (см. `resolveEntityTypes`).
-   */
   entityTypes?: string[];
 }
 
@@ -65,12 +19,10 @@ export interface SystemTableTemplate {
   systemKey: string;
   name: string;
   icon: string;
-  /** `null`, если для таблицы ещё нет подходящего entity-типа (см. TODO Фаза 2). */
   entitySync: SystemTableEntitySync | null;
   properties: SystemTablePropertyTemplate[];
 }
 
-/** Хелпер: собрать `{ options: [...] }` из списка `[name, color]`. */
 function statusConfig(
   options: ReadonlyArray<[name: string, color: SystemTableOptionColor]>,
 ): Record<string, unknown> {
@@ -167,7 +119,6 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'hypotheses',
     name: 'Гипотезы и эксперименты',
     icon: '🧪',
-    // TODO Фаза 2: завести entity-тип experiment + расширить entitySync enum.
     entitySync: null,
     properties: [
       { name: 'Формулировка', type: 'longtext', isPrimary: true },
@@ -258,7 +209,6 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'ideas',
     name: 'Идеи и бэклог',
     icon: '💡',
-    // TODO Фаза 2: entity-тип idea.
     entitySync: null,
     properties: [
       { name: 'Формулировка', type: 'longtext', isPrimary: true },
@@ -298,7 +248,6 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'promises',
     name: 'Обещания и обязательства',
     icon: '🤞',
-    // TODO Фаза 2: entity-тип promise.
     entitySync: null,
     properties: [
       { name: 'Что', type: 'longtext', isPrimary: true },
@@ -399,8 +348,6 @@ export const SYSTEM_TABLES_CATALOG: readonly SystemTableTemplate[] = [
     systemKey: 'okr',
     name: 'Цели и метрики',
     icon: '🎯',
-    // TODO Фаза 2: entitySync enum поддерживает только org/person/meeting/document;
-    // goal есть в EntityType, но требует расширения DTO-enum.
     entitySync: null,
     properties: [
       { name: 'Формулировка', type: 'longtext', isPrimary: true },

@@ -1,12 +1,5 @@
-/**
- * API-клиент технических логов (LoggingModule).
- *
- * Контракт: backend `SystemLogsController` под `/api/v1/platform/logs`.
- * Защита — SuperAdminGuard. См. plans/tz/2026-06-01-logging-module.md §13.
- */
-
-import { apiClient } from './api-client';
-import { buildQuery } from './admin-helpers';
+import { apiClient } from "./api-client";
+import { buildQuery } from "./admin-helpers";
 import type {
   LogCleanupResultApi,
   LoggingSettingsApi,
@@ -14,7 +7,7 @@ import type {
   SystemLogChainApi,
   SystemLogListApi,
   SystemLogRecordApi,
-} from '@/domain/system-logs';
+} from "@/domain/system-logs";
 
 export type SystemLogQuery = {
   level?: string;
@@ -30,19 +23,19 @@ export type SystemLogQuery = {
   method?: string;
   path?: string;
   statusCode?: number;
-  dateFrom?: string; // ISO
-  dateTo?: string; // ISO
+  dateFrom?: string;
+  dateTo?: string;
   search?: string;
   limit?: number;
   offset?: number;
 };
 
 export type AggregatesQuery = {
-  dateFrom?: string; // ISO
-  dateTo?: string; // ISO
+  dateFrom?: string;
+  dateTo?: string;
 };
 
-const BASE = '/api/v1/platform/logs';
+const BASE = "/api/v1/platform/logs";
 
 export const logsApi = {
   list: (params: SystemLogQuery) =>

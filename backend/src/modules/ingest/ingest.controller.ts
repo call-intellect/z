@@ -25,23 +25,9 @@ import { S3Service } from '../recordings/s3.service';
 
 import { IngestEventSchema, type IngestEventDto } from './dto/ingest-event.dto';
 import type { IngestResponseDto, RawEventResponseDto } from './dto/raw-event.dto';
-import {
-  IngestTokenGuard,
-  type RequestWithIngestContext,
-} from './guards/ingest-token.guard';
+import { IngestTokenGuard, type RequestWithIngestContext } from './guards/ingest-token.guard';
 import { IngestService } from './ingest.service';
 
-/**
- * HTTP API для knowledge-core ingest pipeline.
- *
- *   - `POST /api/v1/ingest` — внешние адаптеры (telegram/email/IMAP, Фаза 10).
- *     Защищён `IngestTokenGuard` (shared secret в ENV `INGEST_INTERNAL_TOKEN`).
- *     In-process meeting-adapter сюда не ходит — он дёргает `IngestService`
- *     напрямую.
- *   - `GET /api/v1/raw-events/:id` — отладочный endpoint. Доступен `owner`/
- *     `admin` той же Org, которой принадлежит `RawEvent`. Под `CookieAuthGuard +
- *     TenantGuard`.
- */
 @ApiExcludeController()
 @Controller('api/v1/ingest')
 @UseGuards(IngestTokenGuard)
@@ -54,8 +40,6 @@ export class IngestController {
     @Body(new ZodValidationPipe(IngestEventSchema)) body: IngestEventDto,
     @Req() req: RequestWithIngestContext,
   ): Promise<IngestResponseDto> {
-    // Per-Org ApiKey фиксирует tenantId: body.tenantId должен совпасть либо
-    // отсутствовать. Shared-secret режим — body.tenantId обязателен (как раньше).
     const ctxTenantId = req.ingestContext?.tenantId ?? null;
     let effectiveTenantId: string;
     if (ctxTenantId) {
@@ -64,14 +48,12 @@ export class IngestController {
           ok: false,
           error: {
             code: 'tenant_mismatch',
-            message:
-              'body.tenantId не совпадает с tenantId, привязанным к ingest-ключу',
+            message: 'body.tenantId не совпадает с tenantId, привязанным к ingest-ключу',
           },
         });
       }
       effectiveTenantId = ctxTenantId;
     } else {
-      // shared-secret режим — body.tenantId обязателен.
       effectiveTenantId = body.tenantId;
     }
 
@@ -90,10 +72,6 @@ export class IngestController {
   }
 }
 
-/**
- * Отладочный endpoint просмотра `RawEvent` по id.
- * Под `CookieAuthGuard + TenantGuard`. Доступ — только owner/admin Org.
- */
 @ApiExcludeController()
 @Controller('api/v1/raw-events')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -125,8 +103,7 @@ export class RawEventsController {
       });
     }
     const ctx = await this.rbac.loadContext(user.id, tenantId);
-    const allowed =
-      ctx?.isSuperAdmin === true || ctx?.role === 'owner' || ctx?.role === 'admin';
+    const allowed = ctx?.isSuperAdmin === true || ctx?.role === 'owner' || ctx?.role === 'admin';
     if (!allowed) {
       throw new ForbiddenException({
         ok: false,

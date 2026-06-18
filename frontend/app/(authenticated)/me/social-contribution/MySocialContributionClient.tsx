@@ -1,30 +1,7 @@
-'use client';
+"use client";
 
-/**
- * `/me/social-contribution` — клиентская часть (Specialist 3.8).
- *
- * Что показываем:
- *   - 5 публичных типов trait'ов с счётчиками (week / month / total).
- *   - Список последних traits с evidence-цитатами (прозрачность).
- *   - Кнопка «Пометить как ошибку» (POST mark-as-misleading).
- *   - Toggle «Не показывать публично» (опт-аут целиком).
- *   - Честное предупреждение: «Руководитель видит дополнительные сигналы».
- *
- * Что НЕ показываем:
- *   - Никаких question_unanswered / question_acknowledged_no_action (даже
- *     если они вдруг придут в DTO — domain-маппер их фильтрует).
- *   - Никаких рейтингов / сравнений с коллегами.
- *
- * Опт-аут (ТЗ-E Ф4):
- *   - GET/POST `/api/v1/me/social-contribution/opt-out` — реальное сохранение
- *     намерения в Redis (SocialContributionPreferenceService). Switch читает
- *     текущее значение при загрузке и сразу сохраняет изменение.
- *   - ⚠ Фактическая фильтрация публичной ленты «Спасибо команде» и счётчиков
- *     по optedOut=true — вне scope Ф4 (отдельная задача в spotlight-pipeline).
- */
-
-import { useEffect, useMemo, useState } from 'react';
-import useSWR, { mutate } from 'swr';
+import { useEffect, useMemo, useState } from "react";
+import useSWR, { mutate } from "swr";
 import {
   AlertCircle,
   Calendar,
@@ -34,12 +11,12 @@ import {
   Loader2,
   ShieldAlert,
   Sparkles,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { helpfulnessApi } from '@/api/helpfulness.api';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
+import { ApiError } from "@/api/api-error";
+import { helpfulnessApi } from "@/api/helpfulness.api";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
 import {
   HELPFULNESS_TRAIT_DESCRIPTION,
   HELPFULNESS_TRAIT_LABEL,
@@ -50,30 +27,29 @@ import {
   type HelpfulnessTrait,
   type PublicHelpfulnessTraitType,
   type SocialContributionProfile,
-} from '@/domain/helpfulness';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { Switch } from '@/ui/shadcn/switch';
+} from "@/domain/helpfulness";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { Switch } from "@/ui/shadcn/switch";
 
-const MY_PROFILE_SWR_KEY = ['me/social-contribution'];
-const OPT_OUT_SWR_KEY = ['me/social-contribution/opt-out'];
+const MY_PROFILE_SWR_KEY = ["me/social-contribution"];
+const OPT_OUT_SWR_KEY = ["me/social-contribution/opt-out"];
 
 export function MySocialContributionClient() {
   const { currentOrgId, isLoading: authLoading } = useAuth();
-  const { data, error, isLoading: loadingProfile } = useSWR(
-    currentOrgId ? MY_PROFILE_SWR_KEY : null,
-    async () => {
-      const res = await helpfulnessApi.getMySocialContribution();
-      return mapMyProfile(res);
-    },
-  );
+  const {
+    data,
+    error,
+    isLoading: loadingProfile,
+  } = useSWR(currentOrgId ? MY_PROFILE_SWR_KEY : null, async () => {
+    const res = await helpfulnessApi.getMySocialContribution();
+    return mapMyProfile(res);
+  });
 
   const [markingId, setMarkingId] = useState<string | null>(null);
 
-  // Опт-аут: читаем текущее значение с бэка (Redis), храним локально для
-  // мгновенного отклика Switch; busy блокирует переключатель на время записи.
   const { data: optOutData } = useSWR(
     currentOrgId ? OPT_OUT_SWR_KEY : null,
     () => helpfulnessApi.getMyOptOut(),
@@ -89,13 +65,13 @@ export function MySocialContributionClient() {
     setMarkingId(trait.id);
     try {
       await helpfulnessApi.markTraitAsMisleading(trait.id);
-      toast.success('Отмечено как ошибка — наблюдение исключено из счётчиков.');
+      toast.success("Отмечено как ошибка — наблюдение исключено из счётчиков.");
       await mutate(MY_PROFILE_SWR_KEY);
     } catch (e) {
       const message =
         e instanceof ApiError
           ? e.message
-          : 'Не удалось пометить — попробуйте ещё раз.';
+          : "Не удалось пометить — попробуйте ещё раз.";
       toast.error(message);
     } finally {
       setMarkingId(null);
@@ -103,8 +79,6 @@ export function MySocialContributionClient() {
   }
 
   async function handleToggleOptOut(next: boolean) {
-    // Оптимистично переключаем, сохраняем на бэк (Redis). При ошибке —
-    // откатываем переключатель к предыдущему значению.
     const prev = optOut;
     setOptOut(next);
     setOptOutSaving(true);
@@ -114,15 +88,15 @@ export function MySocialContributionClient() {
       await mutate(OPT_OUT_SWR_KEY);
       toast.success(
         next
-          ? 'Сохранено — ваш вклад скрыт из публичной ленты.'
-          : 'Сохранено — ваш вклад снова виден публично.',
+          ? "Сохранено — ваш вклад скрыт из публичной ленты."
+          : "Сохранено — ваш вклад снова виден публично.",
       );
     } catch (e) {
       setOptOut(prev);
       const message =
         e instanceof ApiError
           ? e.message
-          : 'Не удалось сохранить — попробуйте ещё раз.';
+          : "Не удалось сохранить — попробуйте ещё раз.";
       toast.error(message);
     } finally {
       setOptOutSaving(false);
@@ -149,9 +123,9 @@ export function MySocialContributionClient() {
         </h1>
         <p className="text-sm text-fg-tertiary">
           Кора подсвечивает, как вы помогаете коллегам — отвечаете на вопросы,
-          подсказываете, менторите, поддерживаете. Это не оценка работы и не
-          KPI — мы показываем только позитивные паттерны. Никаких рейтингов,
-          никаких сравнений с коллегами.
+          подсказываете, менторите, поддерживаете. Это не оценка работы и не KPI
+          — мы показываем только позитивные паттерны. Никаких рейтингов, никаких
+          сравнений с коллегами.
         </p>
       </header>
 
@@ -188,8 +162,6 @@ export function MySocialContributionClient() {
   );
 }
 
-// ─────────────────────────── Sub-components ─────────────────────────────────
-
 function EthicsBanner() {
   return (
     <Card className="border-chip-warning-bg bg-chip-warning-bg">
@@ -201,8 +173,8 @@ function EthicsBanner() {
             На этой странице вы видите всё, что Кора собрала про ваш позитивный
             вклад — счётчики и цитаты-источники. Руководитель и администратор
             видят дополнительные приватные сигналы (например, «вопрос остался
-            без ответа») в своей служебной панели — они никогда не публикуются
-            и не отображаются здесь. Любой trait можно пометить как ошибку.
+            без ответа») в своей служебной панели — они никогда не публикуются и
+            не отображаются здесь. Любой trait можно пометить как ошибку.
           </p>
         </div>
       </CardContent>
@@ -220,7 +192,7 @@ function ProfileMeta({
     <div className="flex flex-wrap items-center gap-3 text-sm text-fg-tertiary">
       <span className="inline-flex items-center gap-1.5">
         <Calendar size={14} />
-        Обновлён: {profile.lastBuiltAt.toLocaleString('ru-RU')}
+        Обновлён: {profile.lastBuiltAt.toLocaleString("ru-RU")}
       </span>
       <span>Версия: {profile.buildVersion}</span>
       {profile.contributionScoreCached !== null && (
@@ -429,7 +401,7 @@ function TraitCard({
               )}
             </div>
             <p className="text-xs text-fg-tertiary">
-              {trait.lastObservedAt.toLocaleString('ru-RU')} · уверенность{' '}
+              {trait.lastObservedAt.toLocaleString("ru-RU")} · уверенность{" "}
               {(trait.confidence * 100).toFixed(0)}%
             </p>
           </div>
@@ -439,7 +411,7 @@ function TraitCard({
             size="sm"
             className="shrink-0"
             onClick={onMarkMisleading}
-            disabled={busy || trait.status === 'mark_as_misleading'}
+            disabled={busy || trait.status === "mark_as_misleading"}
             aria-label="Пометить наблюдение как ошибочное"
           >
             {busy ? (
@@ -447,9 +419,7 @@ function TraitCard({
             ) : (
               <Flag className="mr-1.5 h-3.5 w-3.5" />
             )}
-            {trait.status === 'mark_as_misleading'
-              ? 'Помечено'
-              : 'Это ошибка'}
+            {trait.status === "mark_as_misleading" ? "Помечено" : "Это ошибка"}
           </Button>
         </CardHeader>
         {trait.evidenceQuote && (
@@ -527,5 +497,4 @@ function ProfileSkeleton() {
   );
 }
 
-// Touch unused exports to keep imports stable across refactors.
 void AlertCircle;

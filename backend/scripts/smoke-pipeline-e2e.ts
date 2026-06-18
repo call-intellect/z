@@ -1,29 +1,3 @@
-/**
- * smoke-pipeline-e2e — БОЕВОЙ ТЕСТ knowledge-core на синтетике.
- *
- * Вбрасывает синтетические данные в КАЖДУЮ точку входа (web_form/dump,
- * free_note, meeting низ-цепочки в обход Vox, low-level RawEvent) и проверяет
- * прохождение цепочки до графа/проекций/задач. Выдаёт матрицу pass/fail по
- * каналам × узлам и зачищает синтетический тенант.
- *
- * Полное ТЗ: plans/tz/2026-06-04-combat-test-harness.md.
- *
- * ВАЖНО: backend с воркерами должен быть УЖЕ запущен (`bun run dev` из
- * backend/ или `docker compose up -d backend`). Этот скрипт — внешний инжектор
- * + поллер, он НЕ поднимает свой Nest-контекст (иначе второй раз
- * зарегистрирует те же BullMQ-воркеры).
- *
- * Запуск (из backend/):
- *   MODE=direct bun run scripts/smoke-pipeline-e2e.ts
- *   MODE=both BASE_URL=http://localhost:3000 INGEST_TOKEN=... \
- *     SESSION_COOKIE='z_session=...' bun run scripts/smoke-pipeline-e2e.ts
- *   VOX_LIVE=1 MODE=direct bun run scripts/smoke-pipeline-e2e.ts   # полный Vox-путь
- *   KEEP_TENANT=1 MODE=direct bun run scripts/smoke-pipeline-e2e.ts # без teardown
- *   ALLOW_PROD=1 ... # осознанный обход prod-guard
- *
- * Флаги: --gate (любой FAIL роняет exit) / --audit (default: known-bug FAIL не роняет).
- */
-
 import {
   type ChannelRow,
   type HarnessConfig,
@@ -55,13 +29,7 @@ function log(msg: string): void {
   console.log(msg);
 }
 
-// ───────────────────────── channel injectors ───────────────────────
-
-/** low-level: RawEvent(internal/web_form) + enqueue core.raw-events. */
-async function injectLowLevel(
-  infra: HarnessInfra,
-  t: SyntheticTenant,
-): Promise<void> {
+async function injectLowLevel(infra: HarnessInfra, t: SyntheticTenant): Promise<void> {
   const src = await upsertSource(infra.prisma, {
     tenantId: t.orgId,
     type: 'web_form',
@@ -83,7 +51,6 @@ async function injectLowLevel(
   });
 }
 
-/** web_form / «запись мысли». Direct: legacy RawEvent. HTTP: POST /ingest/dump. */
 async function injectWebForm(
   cfg: HarnessConfig,
   infra: HarnessInfra,
@@ -115,17 +82,17 @@ async function injectWebForm(
       cfg,
       '/api/v1/ingest/dump',
       {
-        text:
-          'HTTP-дамп: договорились пересмотреть процесс ревью. Метрика — время до мержа.',
+        text: 'HTTP-дамп: договорились пересмотреть процесс ревью. Метрика — время до мержа.',
         nonce: `cmbt-${t.tag}-dump`,
       },
       { tenantId: t.orgId, useCookie: true },
     );
-    log(`  http web_form → status=${res.status} ok=${res.ok}${res.error ? ` err=${res.error}` : ''}`);
+    log(
+      `  http web_form → status=${res.status} ok=${res.ok}${res.error ? ` err=${res.error}` : ''}`,
+    );
   }
 }
 
-/** free_note. Direct: RawEvent(conversational). HTTP: POST free-note. */
 async function injectFreeNote(
   cfg: HarnessConfig,
   infra: HarnessInfra,
@@ -141,7 +108,7 @@ async function injectFreeNote(
       tenantId: t.orgId,
       sourceId: src.id,
       sourceType: 'conversational',
-      sourceExternalId: null, // как ingestFreeNote — дедуп по checksum
+      sourceExternalId: null,
       occurredAt: new Date(),
       payload: {
         kind: 'free_note',
@@ -158,24 +125,17 @@ async function injectFreeNote(
       cfg,
       '/api/v1/conversational/notifications/free-note',
       {
-        text:
-          'HTTP free_note: предложение нанять ещё одного бэкенд-разработчика в Q3.',
+        text: 'HTTP free_note: предложение нанять ещё одного бэкенд-разработчика в Q3.',
       },
       { tenantId: t.orgId, useCookie: true },
     );
-    log(`  http free_note → status=${res.status} ok=${res.ok}${res.error ? ` err=${res.error}` : ''}`);
+    log(
+      `  http free_note → status=${res.status} ok=${res.ok}${res.error ? ` err=${res.error}` : ''}`,
+    );
   }
 }
 
-/**
- * meeting низ-цепочки В ОБХОД Vox: создаём Meeting + Transcript(turns) и
- * вбрасываем RawEvent(meeting) с payload-mirror meeting.adapter.ts — это тот же
- * вход в knowledge-core, что и реальный ingestMeeting (блокер #7 обходим).
- */
-async function injectMeetingDirect(
-  infra: HarnessInfra,
-  t: SyntheticTenant,
-): Promise<void> {
+async function injectMeetingDirect(infra: HarnessInfra, t: SyntheticTenant): Promise<void> {
   const { prisma } = infra;
   const src = await upsertSource(prisma, {
     tenantId: t.orgId,
@@ -188,22 +148,19 @@ async function injectMeetingDirect(
   const turns = [
     {
       speaker: 'Алексей',
-      text:
-        'Сегодня обсудим проект Альфа. Клиент Ромашка просит ускорить релиз до конца квартала.',
+      text: 'Сегодня обсудим проект Альфа. Клиент Ромашка просит ускорить релиз до конца квартала.',
       startSec: 0,
       endSec: 8,
     },
     {
       speaker: 'Алексей',
-      text:
-        'Главный риск — нехватка разработчиков. Решили привлечь подрядчика. Иван берёт API.',
+      text: 'Главный риск — нехватка разработчиков. Решили привлечь подрядчика. Иван берёт API.',
       startSec: 8,
       endSec: 16,
     },
     {
       speaker: 'Иван',
-      text:
-        'Я возьму на себя API-часть. Обещаю закончить к пятнице. Бюджет около 500к.',
+      text: 'Я возьму на себя API-часть. Обещаю закончить к пятнице. Бюджет около 500к.',
       startSec: 16,
       endSec: 28,
     },
@@ -211,7 +168,7 @@ async function injectMeetingDirect(
   await prisma.meeting.create({
     data: {
       id: meetingId,
-      roomName: meetingId, // @unique, равен id
+      roomName: meetingId,
       title: `Combat встреча ${t.tag}`,
       type: 'team',
       tenantId: t.orgId,
@@ -230,7 +187,6 @@ async function injectMeetingDirect(
     },
   });
 
-  // payload-mirror meeting.adapter.ts ingestMeeting (раздел 3 ТЗ).
   const payload = {
     meetingId,
     type: 'team',
@@ -262,16 +218,11 @@ async function injectMeetingDirect(
   });
 }
 
-// ───────────────────────── verification ───────────────────────────
-
 interface ThresholdInfo {
   linkerMinBlocks: number;
 }
 
-/** Читает фактический порог linker (ENV/AdminSetting) — отличить SKIP(порог) от FAIL(bug). */
-async function readThresholds(
-  infra: HarnessInfra,
-): Promise<ThresholdInfo> {
+async function readThresholds(infra: HarnessInfra): Promise<ThresholdInfo> {
   let linkerMinBlocks = Number(process.env['LINKER_MIN_BLOCKS'] ?? '50');
   try {
     const setting = await infra.prisma.adminSetting.findFirst({
@@ -281,14 +232,12 @@ async function readThresholds(
     if (setting?.value != null) {
       const v = Number(
         typeof setting.value === 'object'
-          ? (setting.value as { value?: unknown }).value ?? setting.value
+          ? ((setting.value as { value?: unknown }).value ?? setting.value)
           : setting.value,
       );
       if (Number.isFinite(v) && v > 0) linkerMinBlocks = v;
     }
-  } catch {
-    // AdminSetting может отсутствовать / иметь иную форму — остаёмся на ENV.
-  }
+  } catch {}
   return { linkerMinBlocks };
 }
 
@@ -296,7 +245,6 @@ function cell(status: MatrixCell['status'], note?: string): MatrixCell {
   return note ? { status, note } : { status };
 }
 
-/** Строит строку матрицы для канала по итоговым счётчикам. */
 function buildRow(
   channel: string,
   c: TenantCounts,
@@ -308,10 +256,10 @@ function buildRow(
 
   cells.raw_event = c.rawEvent > 0 ? cell('PASS') : cell('FAIL');
   cells.idea_block = c.ideaBlock > 0 ? cell('PASS') : cell('FAIL');
-  cells.canonical = c.canonicalBlock > 0 ? cell('PASS') : cell('FAIL', 'distill не дал canonical в окне');
+  cells.canonical =
+    c.canonicalBlock > 0 ? cell('PASS') : cell('FAIL', 'distill не дал canonical в окне');
   cells.entity = c.entity > 0 ? cell('PASS') : cell('FAIL');
 
-  // typed group-Б: блоки есть, но typed=0 → почти наверняка AGE-rollback (#3/#11).
   const typedB = typedGroupBTotal(c);
   cells.typed_group_b =
     typedB > 0
@@ -327,7 +275,6 @@ function buildRow(
         ? cell('FAIL', 'known bug #14: addEdge rollback при недоступном AGE')
         : cell('SKIP', 'мало сущностей для ребра');
 
-  // block_link: гейт по порогу — SKIP, если блоков меньше порога (by design, #18).
   cells.block_link =
     c.ideaBlockLink > 0
       ? cell('PASS')
@@ -335,9 +282,9 @@ function buildRow(
         ? cell('SKIP', `порог linker ${thr.linkerMinBlocks} > canonical ${c.canonicalBlock}`)
         : cell('FAIL', 'known bug #18/#35: linker не строит связи');
 
-  cells.theme = c.theme > 0 ? cell('PASS') : cell('SKIP', 'порог theme не достигнут (малый тенант)');
+  cells.theme =
+    c.theme > 0 ? cell('PASS') : cell('SKIP', 'порог theme не достигнут (малый тенант)');
 
-  // terminal_projection: блоки canonical есть, но проекций 0 → routing/draft→canonical (#15/#16/#24).
   const term = terminalProjectionTotal(c);
   cells.terminal_projection =
     term > 0
@@ -363,30 +310,30 @@ function buildRow(
   return { channel, cells };
 }
 
-// ───────────────────────── main ─────────────────────────────────────
-
 async function main(): Promise<void> {
   const cfg = readConfig();
   assertNotProd(cfg);
 
-  log(`=== smoke-pipeline-e2e START (mode=${cfg.mode}, runMode=${cfg.runMode}, voxLive=${cfg.voxLive}) ===`);
+  log(
+    `=== smoke-pipeline-e2e START (mode=${cfg.mode}, runMode=${cfg.runMode}, voxLive=${cfg.voxLive}) ===`,
+  );
   const infra = makeInfra(cfg);
   let tenant: SyntheticTenant | null = null;
 
   try {
     tenant = await bootstrapTenant(infra.prisma);
-    log(`✓ Синтетический тенант: Org=${tenant.orgId} User=${tenant.userId} Person=${tenant.personId} tag=${tenant.tag}`);
+    log(
+      `✓ Синтетический тенант: Org=${tenant.orgId} User=${tenant.userId} Person=${tenant.personId} tag=${tenant.tag}`,
+    );
 
     const ageEnabled =
       (process.env['GRAPH_AGE_ENABLED'] ?? '').toLowerCase() === 'true' ||
       process.env['GRAPH_AGE_ENABLED'] === '1' ||
-      // если флага нет — пробуем пробу всё равно, но в матрице это N/A.
       false;
 
     const thr = await readThresholds(infra);
     log(`  пороги: linkerMinBlocks=${thr.linkerMinBlocks}`);
 
-    // 1. Вброс по каналам.
     log('— Вброс low-level RawEvent…');
     await injectLowLevel(infra, tenant);
     log('— Вброс web_form / дамп мысли…');
@@ -397,10 +344,11 @@ async function main(): Promise<void> {
     await injectMeetingDirect(infra, tenant);
 
     if (cfg.voxLive) {
-      log('— VOX_LIVE=1: полный meeting-путь через Vox требует живого ASR-прокси + синтетического аудио → SKIP в этой версии каркаса (блокер #1).');
+      log(
+        '— VOX_LIVE=1: полный meeting-путь через Vox требует живого ASR-прокси + синтетического аудио → SKIP в этой версии каркаса (блокер #1).',
+      );
     }
 
-    // 2. Поллинг: ждём, пока хоть один блок дойдёт до canonical (или таймаут).
     log(`— Поллинг до canonical-блоков (timeout=${cfg.verifyTimeoutMs}ms)…`);
     const counts = await pollUntil(
       infra.prisma,
@@ -408,25 +356,19 @@ async function main(): Promise<void> {
       (c) => c.canonicalBlock > 0 || c.ideaBlock >= 3,
       cfg.verifyTimeoutMs,
     );
-    // ещё небольшой добор на specialist/projection после canonical.
     await sleep(Math.min(15_000, cfg.verifyTimeoutMs / 4));
     const finalCounts = await loadCounts(infra.prisma, tenant.orgId);
     log(`  итоговые счётчики: ${JSON.stringify(finalCounts)}`);
     void counts;
 
-    // 3. AGE-проба.
     const age = await probeAge(infra.prisma, tenant.orgId);
-    log(`  AGE-проба: available=${age.available} nodes=${age.nodeCount ?? '—'}${age.error ? ` err=${age.error.slice(0, 120)}` : ''}`);
+    log(
+      `  AGE-проба: available=${age.available} nodes=${age.nodeCount ?? '—'}${age.error ? ` err=${age.error.slice(0, 120)}` : ''}`,
+    );
 
-    // 4. Матрица. Для всех каналов knowledge-core счётчики агрегатные по тенанту
-    //    (узлы цепочки общие), поэтому строим агрегатную строку + по-канальные
-    //    строки на основе входных счётчиков RawEvent (вход подтверждён фактом
-    //    создания RawEvent выше). Узлы цепочки оцениваем по агрегату тенанта.
     const rows: ChannelRow[] = [];
     rows.push(buildRow('AGGREGATE (все каналы, узлы цепочки)', finalCounts, age, thr, ageEnabled));
 
-    // Per-channel: подтверждаем только факт приёма RawEvent на канал
-    // (узлы цепочки — общий граф тенанта, см. строку AGGREGATE).
     for (const ch of ['low_level', 'web_form', 'free_note', 'meeting_direct'] as const) {
       const srcType =
         ch === 'free_note' ? 'conversational' : ch === 'meeting_direct' ? 'meeting' : 'web_form';
@@ -439,16 +381,23 @@ async function main(): Promise<void> {
       });
     }
     if (cfg.voxLive) {
-      rows.push({ channel: 'meeting_vox', cells: { raw_event: cell('SKIP', 'нужен живой Vox/ASR (блокер #1)') } });
+      rows.push({
+        channel: 'meeting_vox',
+        cells: { raw_event: cell('SKIP', 'нужен живой Vox/ASR (блокер #1)') },
+      });
     }
 
     log('\n' + renderMatrix(rows));
 
     const exit = computeExitCode(rows, cfg.runMode);
-    log(`\n=== smoke-pipeline-e2e ${exit === 0 ? 'PASSED' : 'FAILED'} (exit=${exit}, runMode=${cfg.runMode}) ===`);
+    log(
+      `\n=== smoke-pipeline-e2e ${exit === 0 ? 'PASSED' : 'FAILED'} (exit=${exit}, runMode=${cfg.runMode}) ===`,
+    );
 
     if (cfg.keepTenant) {
-      log(`⚠ KEEP_TENANT=1 — тенант НЕ удалён. Org=${tenant.orgId}. Ручная очистка: см. teardownTenant.`);
+      log(
+        `⚠ KEEP_TENANT=1 — тенант НЕ удалён. Org=${tenant.orgId}. Ручная очистка: см. teardownTenant.`,
+      );
     } else {
       await teardownTenant(infra.prisma, tenant);
       log('✓ Teardown синтетического тенанта готов');

@@ -1,10 +1,3 @@
-/**
- * Доменная модель A/B-эксперимента LLM (Z-Admin Фаза 7).
- *
- * Контракт: backend `AdminExperimentsService.ExperimentStatus`,
- * `ExperimentMetrics`, `ExperimentCallRow`.
- */
-
 export type AdminExperimentConfigApi = {
   enabled?: boolean;
   modelA?: string;
@@ -63,7 +56,7 @@ export type AdminExperimentConfigDomain = {
 
 export type AdminExperimentCallRowDomain = Omit<
   AdminExperimentCallRowApi,
-  'createdAt'
+  "createdAt"
 > & {
   createdAt: Date;
 };
@@ -97,8 +90,8 @@ export function adminExperimentStatusFromApi(
       cfg && cfg.enabled === true
         ? {
             enabled: true,
-            modelA: cfg.modelA ?? 'unknown:default',
-            modelB: cfg.modelB ?? 'unknown:default',
+            modelA: cfg.modelA ?? "unknown:default",
+            modelB: cfg.modelB ?? "unknown:default",
             splitPercent: cfg.splitPercent ?? 50,
             startedAt: cfg.startedAt ? new Date(cfg.startedAt) : null,
             endsAt: cfg.endsAt ? new Date(cfg.endsAt) : null,
@@ -111,8 +104,6 @@ export function adminExperimentStatusFromApi(
     },
   };
 }
-
-// ─── Function (taskType) detail ─────────────────────────────────────────────
 
 export type AdminFunctionListItemApi = {
   taskType: string;
@@ -131,7 +122,7 @@ export type AdminFunctionListApi = {
 
 export type AdminFunctionListItemDomain = Omit<
   AdminFunctionListItemApi,
-  'lastCallAt'
+  "lastCallAt"
 > & {
   lastCallAt: Date | null;
 };
@@ -170,8 +161,8 @@ export function adminFunctionDetailFromApi(
       cfg && cfg.enabled === true
         ? {
             enabled: true,
-            modelA: cfg.modelA ?? 'unknown:default',
-            modelB: cfg.modelB ?? 'unknown:default',
+            modelA: cfg.modelA ?? "unknown:default",
+            modelB: cfg.modelB ?? "unknown:default",
             splitPercent: cfg.splitPercent ?? 50,
             startedAt: cfg.startedAt ? new Date(cfg.startedAt) : null,
             endsAt: cfg.endsAt ? new Date(cfg.endsAt) : null,
@@ -180,32 +171,29 @@ export function adminFunctionDetailFromApi(
   };
 }
 
-// ─── Lables ─────────────────────────────────────────────────────────────────
-
-/** Расшифровки taskType (для UI). taskType-keys взяты из ALL_LLM_TASK_TYPES. */
 export const TASK_TYPE_LABELS: Record<string, string> = {
-  summary: 'Summary встречи',
-  chapters: 'Главы встречи',
-  tasks: 'Задачи из встречи',
-  chat: 'Чат по встрече',
-  'regenerate-section': 'Регенерация секции',
-  'custom-prompt': 'Произвольный промпт',
-  'follow-up': 'Follow-up email',
-  'clip-title': 'Заголовок клипа',
-  'card-rollup': 'Карточка: rollup',
-  'card-chat': 'Карточка: чат',
-  'block-ingest': 'Блок: извлечение',
-  'block-distill': 'Блок: дистилляция',
-  'block-linker': 'Блок: связи',
-  'entity-resolver': 'Сущности: распознавание',
-  'entity-merge-arbiter': 'Сущности: арбитр слияний',
-  'entity-graph-builder': 'Сущности: граф',
-  'theme-classify': 'Темы: классификация',
-  reframing: 'Темы: переформулировка',
-  'card-rollup-v2': 'Карточка: rollup v2',
-  'chat-v2': 'Чат v2 (knowledge)',
-  'goal-alignment': 'Goal alignment',
-  'dashboard-summary': 'Дашборд: summary',
+  summary: "Summary встречи",
+  chapters: "Главы встречи",
+  tasks: "Задачи из встречи",
+  chat: "Чат по встрече",
+  "regenerate-section": "Регенерация секции",
+  "custom-prompt": "Произвольный промпт",
+  "follow-up": "Follow-up email",
+  "clip-title": "Заголовок клипа",
+  "card-rollup": "Карточка: rollup",
+  "card-chat": "Карточка: чат",
+  "block-ingest": "Блок: извлечение",
+  "block-distill": "Блок: дистилляция",
+  "block-linker": "Блок: связи",
+  "entity-resolver": "Сущности: распознавание",
+  "entity-merge-arbiter": "Сущности: арбитр слияний",
+  "entity-graph-builder": "Сущности: граф",
+  "theme-classify": "Темы: классификация",
+  reframing: "Темы: переформулировка",
+  "card-rollup-v2": "Карточка: rollup v2",
+  "chat-v2": "Чат v2 (knowledge)",
+  "goal-alignment": "Goal alignment",
+  "dashboard-summary": "Дашборд: summary",
 };
 
 export function taskTypeLabel(taskType: string): string {

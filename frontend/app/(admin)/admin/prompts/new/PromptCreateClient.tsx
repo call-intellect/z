@@ -1,15 +1,8 @@
-'use client';
+"use client";
 
-/**
- * Фаза A.2 — `/admin/prompts/new` — форма создания нового шаблона.
- *
- * Создаёт пустой шаблон со status='draft'. После создания редирект на
- * `/admin/prompts/[id]` для добавления секций и активации.
- */
-
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
 
 import {
   adminPromptTemplatesApi,
@@ -19,63 +12,66 @@ import {
   type MeetingTypeApi,
   type PromptTaskType,
   type PromptTemplateScope,
-} from '@/api/admin-prompt-templates.api';
+} from "@/api/admin-prompt-templates.api";
 import {
   meetingTypeLabel,
   scopeLabel,
   taskTypeLabel,
-} from '@/domain/admin-prompt-template';
-import { ApiError } from '@/api/api-error';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-prompt-template";
+import { ApiError } from "@/api/api-error";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
 export function PromptCreateClient() {
   const router = useRouter();
 
-  const [scope, setScope] = useState<PromptTemplateScope>('system');
-  const [orgId, setOrgId] = useState('');
-  const [key, setKey] = useState('');
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [taskType, setTaskType] = useState<PromptTaskType>('summary');
-  const [meetingType, setMeetingType] = useState<'none' | MeetingTypeApi>('none');
+  const [scope, setScope] = useState<PromptTemplateScope>("system");
+  const [orgId, setOrgId] = useState("");
+  const [key, setKey] = useState("");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [taskType, setTaskType] = useState<PromptTaskType>("summary");
+  const [meetingType, setMeetingType] = useState<"none" | MeetingTypeApi>(
+    "none",
+  );
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
     if (name.trim().length < 3) {
-      toast.error('Название — минимум 3 символа');
+      toast.error("Название — минимум 3 символа");
       return;
     }
     if (key.trim().length < 3) {
-      toast.error('Ключ — минимум 3 символа');
+      toast.error("Ключ — минимум 3 символа");
       return;
     }
-    if (scope === 'org' && !orgId.trim()) {
-      toast.error('Для шаблона Org нужен ID организации');
+    if (scope === "org" && !orgId.trim()) {
+      toast.error("Для шаблона Org нужен ID организации");
       return;
     }
     setSaving(true);
     try {
       const res = await adminPromptTemplatesApi.create({
         scope,
-        ...(scope === 'org' ? { orgId: orgId.trim() } : {}),
+        ...(scope === "org" ? { orgId: orgId.trim() } : {}),
         key: key.trim(),
         name: name.trim(),
         description: description.trim() || null,
         taskType,
-        ...(meetingType !== 'none' ? { meetingType } : { meetingType: null }),
+        ...(meetingType !== "none" ? { meetingType } : { meetingType: null }),
       });
-      toast.success('Шаблон создан');
+      toast.success("Шаблон создан");
       router.push(`/admin/prompts/${encodeURIComponent(res.id)}`);
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось создать шаблон';
+      const msg =
+        e instanceof ApiError ? e.message : "Не удалось создать шаблон";
       toast.error(msg);
     } finally {
       setSaving(false);
@@ -88,12 +84,16 @@ export function PromptCreateClient() {
         Новый шаблон промпта
       </h1>
       <p className="mb-6 text-sm text-fg-secondary">
-        После создания вы попадёте в редактор: добавите разделы отчёта и активируете шаблон.
+        После создания вы попадёте в редактор: добавите разделы отчёта и
+        активируете шаблон.
       </p>
 
       <div className="space-y-4 rounded-lg border border-border-subtle bg-bg-card p-5">
         <Field label="Область">
-          <Select value={scope} onValueChange={(v) => setScope(v as PromptTemplateScope)}>
+          <Select
+            value={scope}
+            onValueChange={(v) => setScope(v as PromptTemplateScope)}
+          >
             <SelectTrigger className="h-9 bg-bg-card text-sm">
               <SelectValue />
             </SelectTrigger>
@@ -107,7 +107,7 @@ export function PromptCreateClient() {
           </Select>
         </Field>
 
-        {scope === 'org' && (
+        {scope === "org" && (
           <Field label="ID организации">
             <input
               type="text"
@@ -119,7 +119,10 @@ export function PromptCreateClient() {
           </Field>
         )}
 
-        <Field label="Ключ шаблона (slug)" hint="Латиница, цифры, дефис. Уникален в рамках области.">
+        <Field
+          label="Ключ шаблона (slug)"
+          hint="Латиница, цифры, дефис. Уникален в рамках области."
+        >
           <input
             type="text"
             value={key}
@@ -150,7 +153,10 @@ export function PromptCreateClient() {
         </Field>
 
         <Field label="Вид отчёта">
-          <Select value={taskType} onValueChange={(v) => setTaskType(v as PromptTaskType)}>
+          <Select
+            value={taskType}
+            onValueChange={(v) => setTaskType(v as PromptTaskType)}
+          >
             <SelectTrigger className="h-9 bg-bg-card text-sm">
               <SelectValue />
             </SelectTrigger>
@@ -164,10 +170,13 @@ export function PromptCreateClient() {
           </Select>
         </Field>
 
-        <Field label="Тип встречи (необязательно)" hint="Если не задан — шаблон работает для любого типа.">
+        <Field
+          label="Тип встречи (необязательно)"
+          hint="Если не задан — шаблон работает для любого типа."
+        >
           <Select
             value={meetingType}
-            onValueChange={(v) => setMeetingType(v as 'none' | MeetingTypeApi)}
+            onValueChange={(v) => setMeetingType(v as "none" | MeetingTypeApi)}
           >
             <SelectTrigger className="h-9 bg-bg-card text-sm">
               <SelectValue />
@@ -184,7 +193,12 @@ export function PromptCreateClient() {
         </Field>
 
         <div className="flex items-center justify-end gap-2 pt-3">
-          <Button variant="ghost" size="sm" onClick={() => router.back()} disabled={saving}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.back()}
+            disabled={saving}
+          >
             Отмена
           </Button>
           <Button size="sm" onClick={submit} disabled={saving}>

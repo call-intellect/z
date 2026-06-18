@@ -1,19 +1,3 @@
-/**
- * Гипотеза 3 — кэш-префикс на МАЛОМ источнике.
- *
- * Проверяем: на чек-инах (короткий user-msg) даёт ли смысл «обвешивать»
- * system-промпт длинным префиксом ради кэширования?
- *
- * Два прохода по 25 чек-инам ПОСЛЕДОВАТЕЛЬНО (не параллельно, чтобы кэш
- * успел прогреться):
- *   Прохода A — текущий короткий system (~150 токенов). Прогноз: cache_hit = 0%.
- *   Прохода B — расширенный system с 5 эталонными примерами (~2500 токенов).
- *               Ожидание: cache_hit на 2-м и далее вызовах будет >0,
- *               но даст ли это экономию суммарно? (вероятно нет — overhead
- *               на uncached первый вызов плюс длинный input на каждом).
- *
- * Запуск: cd backend && bun run scripts/eval/run-checkin-cache-test.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -22,12 +6,17 @@ const MODEL = 'deepseek-v4-pro';
 const PRICE_IN = 0.435 / 1_000_000;
 const PRICE_CACHED_IN = 0.003625 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
-// ВАЖНО: thinking-токены входят в output, 300 мало (см. находку в single).
 const MAX_TOKENS = 2000;
 
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
-const CHECKINS_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/fixtures/checkins-week.json');
-const REPORT_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/reports/cache-test-checkin.json');
+const CHECKINS_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/fixtures/checkins-week.json',
+);
+const REPORT_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/reports/cache-test-checkin.json',
+);
 
 if (!process.env.DEEPSEEK_API_KEY) {
   console.error('✗ DEEPSEEK_API_KEY не задан');
@@ -38,7 +27,6 @@ const client = new OpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
 });
 
-// ── system-промпт SHORT (как в реальном коде) ────────────────────────────────
 const SYSTEM_SHORT = [
   'Ты — внимательный читатель ежедневных вечерних чек-инов сотрудников.',
   'Тебе дают короткий свободный текст (что человек сделал за день, что мешает, как ощущения).',
@@ -52,7 +40,6 @@ const SYSTEM_SHORT = [
   'Если текст пустой, бессмысленный или односложный («ок», «всё хорошо») — sentiment="green", rationale="мало деталей, явных проблем нет".',
 ].join('\n');
 
-// ── system-промпт LONG (с 5 эталонными примерами для прогрева кэша) ─────────
 const SYSTEM_LONG = `${SYSTEM_SHORT}
 
 ═══ Эталонные примеры классификации (ориентируйся на них) ═══
@@ -88,14 +75,10 @@ const SYSTEM_LONG = `${SYSTEM_SHORT}
 
 function buildUserMessage(kind: 'morning' | 'evening', rawText: string): string {
   const kindLabel =
-    kind === 'evening'
-      ? 'вечерний (что сделано + блокеры + ощущения)'
-      : 'утренний (план на день)';
-  return [
-    `Тип чек-ина: ${kindLabel}.`,
-    'Текст сотрудника:',
-    (rawText ?? '').slice(0, 4_000),
-  ].join('\n');
+    kind === 'evening' ? 'вечерний (что сделано + блокеры + ощущения)' : 'утренний (план на день)';
+  return [`Тип чек-ина: ${kindLabel}.`, 'Текст сотрудника:', (rawText ?? '').slice(0, 4_000)].join(
+    '\n',
+  );
 }
 
 interface CheckIn {
@@ -206,7 +189,9 @@ async function runSequential(
   systemPrompt: string,
   checkins: CheckIn[],
 ): Promise<CallReport[]> {
-  console.log(`\n--- Проход ${label} (system ≈ ${Math.round(systemPrompt.length / 4)} токенов) ---`);
+  console.log(
+    `\n--- Проход ${label} (system ≈ ${Math.round(systemPrompt.length / 4)} токенов) ---`,
+  );
   const reports: CallReport[] = [];
   for (let i = 0; i < checkins.length; i++) {
     const r = await callOne(systemPrompt, checkins[i]!);
@@ -238,7 +223,6 @@ function summarize(reports: CallReport[]): {
   const totalCached = reports.reduce((s, r) => s + r.cachedTokens, 0);
   const totalCost = reports.reduce((s, r) => s + r.costUsd, 0);
   const avgRatio = reports.reduce((s, r) => s + r.cacheHitRatio, 0) / reports.length;
-  // Хит после первого вызова (когда кэш уже должен быть прогрет):
   const afterFirst = reports.slice(1);
   const afterFirstRatio =
     afterFirst.length > 0
@@ -264,8 +248,12 @@ async function main(): Promise<void> {
   const raw = JSON.parse(await fs.readFile(CHECKINS_PATH, 'utf-8'));
   const checkins: CheckIn[] = raw.checkins;
   console.log(`  чек-инов: ${checkins.length}`);
-  console.log(`  system-короткий: ${SYSTEM_SHORT.length} знаков (≈${Math.round(SYSTEM_SHORT.length / 4)} токенов)`);
-  console.log(`  system-длинный:  ${SYSTEM_LONG.length} знаков (≈${Math.round(SYSTEM_LONG.length / 4)} токенов)`);
+  console.log(
+    `  system-короткий: ${SYSTEM_SHORT.length} знаков (≈${Math.round(SYSTEM_SHORT.length / 4)} токенов)`,
+  );
+  console.log(
+    `  system-длинный:  ${SYSTEM_LONG.length} знаков (≈${Math.round(SYSTEM_LONG.length / 4)} токенов)`,
+  );
 
   const passA = await runSequential('A (short)', SYSTEM_SHORT, checkins);
   const passB = await runSequential('B (long с 5 эталонными примерами)', SYSTEM_LONG, checkins);
@@ -293,8 +281,12 @@ async function main(): Promise<void> {
   console.log(`  стоимость за чек-ин:     $${sumB.costPerCall.toFixed(5)}`);
   console.log(`  точность:                ${(sumB.accuracy * 100).toFixed(0)}%`);
   console.log('\nДельта B vs A:');
-  console.log(`  цена за чек-ин:    ${sumB.costPerCall > sumA.costPerCall ? '+' : ''}${(((sumB.costPerCall - sumA.costPerCall) / sumA.costPerCall) * 100).toFixed(0)}%`);
-  console.log(`  точность:          ${sumB.accuracy >= sumA.accuracy ? '+' : ''}${((sumB.accuracy - sumA.accuracy) * 100).toFixed(0)} процентных пункта`);
+  console.log(
+    `  цена за чек-ин:    ${sumB.costPerCall > sumA.costPerCall ? '+' : ''}${(((sumB.costPerCall - sumA.costPerCall) / sumA.costPerCall) * 100).toFixed(0)}%`,
+  );
+  console.log(
+    `  точность:          ${sumB.accuracy >= sumA.accuracy ? '+' : ''}${((sumB.accuracy - sumA.accuracy) * 100).toFixed(0)} процентных пункта`,
+  );
 
   await fs.writeFile(
     REPORT_PATH,

@@ -1,15 +1,3 @@
-/**
- * Фаза A.4 — AdminAiModelsService.
- *
- * Обслуживает `/admin/ai-models` API (см. ТЗ A §7.4): список цепочек по
- * taskType, переключение primary, добавление/удаление провайдеров, метрики,
- * audit, A/B-эксперименты на моделях.
- *
- * Источник правды по дефолтам — `scripts/seed-llm-task-routes-default.ts`
- * (playbook §2.1). Любое изменение через UI → запись в `LlmTaskRouteChange` +
- * метрика `z_admin_ai_models_route_change_total`.
- */
-
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   Prisma,
@@ -20,10 +8,7 @@ import {
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  ALL_LLM_TASK_TYPES,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
+import { ALL_LLM_TASK_TYPES, LlmRouterService } from '../../ai/services/llm-router.service';
 
 import type {
   AddProviderDto,
@@ -36,7 +21,6 @@ import type {
 
 const TIERS_ORDER: LlmRouteTier[] = ['primary', 'secondary', 'tertiary'];
 
-/** Группа отображения для UI. Из playbook + sub-TZ. */
 const TASK_TYPE_GROUP: Record<string, 'ai-pipeline' | 'knowledge-core' | 'competitor-parity'> = {
   summary: 'ai-pipeline',
   tasks: 'ai-pipeline',
@@ -81,7 +65,6 @@ export interface TaskTypeRouteView {
   primary: ProviderInTierView | null;
   secondary: ProviderInTierView | null;
   tertiary: ProviderInTierView | null;
-  // Все записи цепочки в одном массиве (для drag-n-drop UI).
   chain: ProviderInTierView[];
 }
 
@@ -117,8 +100,6 @@ export class AdminAiModelsService {
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
   ) {}
 
-  // ─── list & detail ──────────────────────────────────────────────────
-
   async list(filters: { group?: string; search?: string }): Promise<TaskTypeRouteView[]> {
     const all = await this.prisma.llmTaskRoute.findMany({
       where: { tenantId: null, tier: { not: null } },
@@ -132,8 +113,6 @@ export class AdminAiModelsService {
     }
 
     const result: TaskTypeRouteView[] = [];
-    // Идём по полному списку taskType'ов, даже если в БД ещё ничего нет —
-    // UI должен показывать пустые строки с предложением применить seed.
     for (const tt of ALL_LLM_TASK_TYPES) {
       const records = byTask.get(tt) ?? [];
       const view = this.buildTaskView(tt, records);
@@ -153,13 +132,14 @@ export class AdminAiModelsService {
     return this.buildTaskView(taskType, records);
   }
 
-  // ─── mutations: switch-primary / add / remove ────────────────────────
-
-  async switchPrimary(taskType: string, dto: SwitchPrimaryDto, userId: string): Promise<{ ok: true }> {
+  async switchPrimary(
+    taskType: string,
+    dto: SwitchPrimaryDto,
+    userId: string,
+  ): Promise<{ ok: true }> {
     this.assertKnownTaskType(taskType);
     const before = await this.detail(taskType);
 
-    // A/B-режим: split < 100 → создаём LlmModelExperiment вместо немедленной замены.
     if (dto.abSplitPercent !== undefined && dto.abSplitPercent < 100) {
       if (!dto.abDurationDays) {
         throw new BadRequestException({
@@ -181,9 +161,7 @@ export class AdminAiModelsService {
       return { ok: true };
     }
 
-    // Полная замена primary.
     await this.prisma.$transaction(async (tx) => {
-      // Старая primary (если есть) уходит в secondary с priority=0.
       const oldPrimary = await tx.llmTaskRoute.findFirst({
         where: { tenantId: null, taskType, tier: 'primary' },
         orderBy: { priority: 'asc' },
@@ -194,8 +172,6 @@ export class AdminAiModelsService {
           data: { tier: 'secondary', priority: 0, editedByAdmin: true },
         });
       }
-      // Если у нового provider'а уже есть запись на этот taskType — поднимаем её
-      // в primary. Иначе создаём новую.
       const existing = await tx.llmTaskRoute.findFirst({
         where: {
           tenantId: null,
@@ -249,7 +225,6 @@ export class AdminAiModelsService {
     this.assertKnownTaskType(taskType);
     const before = await this.detail(taskType);
 
-    // Защита уникальности (tier, providerName) — если уже есть, отвечаем 400.
     const existing = await this.prisma.llmTaskRoute.findFirst({
       where: {
         tenantId: null,
@@ -264,7 +239,6 @@ export class AdminAiModelsService {
         error: { code: 'provider_already_in_tier' },
       });
     }
-    // Дефолтный priority — следующий после существующих в этом tier'е.
     let priority = dto.priority;
     if (priority === undefined) {
       const last = await this.prisma.llmTaskRoute.findFirst({
@@ -311,7 +285,6 @@ export class AdminAiModelsService {
       throw new NotFoundException({ ok: false, error: { code: 'provider_not_found' } });
     }
     if (target.tier === 'primary') {
-      // Нельзя удалить единственного primary — нужно сначала switch-primary.
       const primaryCount = await this.prisma.llmTaskRoute.count({
         where: { tenantId: null, taskType, tier: 'primary' },
       });
@@ -339,8 +312,6 @@ export class AdminAiModelsService {
     return { ok: true };
   }
 
-  // ─── history & metrics ───────────────────────────────────────────────
-
   async history(taskType: string, limit = 50): Promise<LlmTaskRouteChange[]> {
     this.assertKnownTaskType(taskType);
     return this.prisma.llmTaskRouteChange.findMany({
@@ -350,17 +321,13 @@ export class AdminAiModelsService {
     });
   }
 
-  async metrics_(
-    taskType: string,
-    query: MetricsQueryDto,
-  ): Promise<TaskTypeMetricsView> {
+  async metrics_(taskType: string, query: MetricsQueryDto): Promise<TaskTypeMetricsView> {
     this.assertKnownTaskType(taskType);
     const period = query.period ?? '7d';
-    const ms = period === '24h' ? 24 * 3600_000 : period === '7d' ? 7 * 24 * 3600_000 : 30 * 24 * 3600_000;
+    const ms =
+      period === '24h' ? 24 * 3600_000 : period === '7d' ? 7 * 24 * 3600_000 : 30 * 24 * 3600_000;
     const since = new Date(Date.now() - ms);
 
-    // Берём минимально необходимое: per-tier success/failure count, durationMs, costUsd.
-    // GroupBy по (tier, success). p95 считаем отдельно по сортировке.
     const grouped = await this.prisma.aiUsageLog.groupBy({
       by: ['tier', 'success'],
       where: { taskType, createdAt: { gte: since } },
@@ -374,7 +341,10 @@ export class AdminAiModelsService {
       tertiary: { calls: 0, successRate: 0, avgLatencyMs: 0, p95LatencyMs: 0, costUsd: 0 },
     } satisfies TaskTypeMetricsView['perTier'];
 
-    const tierTotals: Record<LlmRouteTier, { ok: number; fail: number; latency: number; cost: number }> = {
+    const tierTotals: Record<
+      LlmRouteTier,
+      { ok: number; fail: number; latency: number; cost: number }
+    > = {
       primary: { ok: 0, fail: 0, latency: 0, cost: 0 },
       secondary: { ok: 0, fail: 0, latency: 0, cost: 0 },
       tertiary: { ok: 0, fail: 0, latency: 0, cost: 0 },
@@ -390,8 +360,6 @@ export class AdminAiModelsService {
       bucket.cost += decimalToNumber(row._sum.costUsd);
     }
 
-    // p95 — берём top 5% по latencyMs из выборки. Чтобы не таскать всё в память,
-    // ограничиваем 5000 записей. Этого достаточно для admin'а в обычной нагрузке.
     const latencyRows = await this.prisma.aiUsageLog.findMany({
       where: { taskType, createdAt: { gte: since } },
       select: { tier: true, durationMs: true, success: true },
@@ -411,14 +379,16 @@ export class AdminAiModelsService {
       perTier[t].calls = calls;
       perTier[t].successRate = calls > 0 ? tot.ok / calls : 0;
       perTier[t].avgLatencyMs = calls > 0 ? Math.round(tot.latency / calls) : 0;
-      perTier[t].p95LatencyMs = arr.length > 0 ? arr[Math.floor(arr.length * 0.95)] ?? 0 : 0;
+      perTier[t].p95LatencyMs = arr.length > 0 ? (arr[Math.floor(arr.length * 0.95)] ?? 0) : 0;
       perTier[t].costUsd = Math.round(tot.cost * 1_000_000) / 1_000_000;
     }
 
     const totalCalls = perTier.primary.calls + perTier.secondary.calls + perTier.tertiary.calls;
     const successCalls = tierTotals.primary.ok + tierTotals.secondary.ok + tierTotals.tertiary.ok;
-    const failedCalls = tierTotals.primary.fail + tierTotals.secondary.fail + tierTotals.tertiary.fail;
-    const totalCost = perTier.primary.costUsd + perTier.secondary.costUsd + perTier.tertiary.costUsd;
+    const failedCalls =
+      tierTotals.primary.fail + tierTotals.secondary.fail + tierTotals.tertiary.fail;
+    const totalCost =
+      perTier.primary.costUsd + perTier.secondary.costUsd + perTier.tertiary.costUsd;
     const fallbackCalls = perTier.secondary.calls + perTier.tertiary.calls;
     const fallbackRate = totalCalls > 0 ? fallbackCalls / totalCalls : 0;
 
@@ -435,8 +405,6 @@ export class AdminAiModelsService {
       perTier,
     };
   }
-
-  // ─── experiments ─────────────────────────────────────────────────────
 
   async createExperiment(dto: CreateExperimentDto, userId: string) {
     return this.startExperimentImpl({
@@ -469,9 +437,12 @@ export class AdminAiModelsService {
     if (!exp) throw new NotFoundException({ ok: false, error: { code: 'experiment_not_found' } });
     if (exp.status === 'running') return { ok: true as const };
     const startedAt = new Date();
-    const endsAt = new Date(startedAt.getTime() + ((exp.endsAt && exp.startedAt
-      ? exp.endsAt.getTime() - exp.startedAt.getTime()
-      : 7 * 24 * 3600_000)));
+    const endsAt = new Date(
+      startedAt.getTime() +
+        (exp.endsAt && exp.startedAt
+          ? exp.endsAt.getTime() - exp.startedAt.getTime()
+          : 7 * 24 * 3600_000),
+    );
     await this.prisma.llmModelExperiment.update({
       where: { id },
       data: { status: 'running', startedAt, endsAt },
@@ -512,18 +483,14 @@ export class AdminAiModelsService {
     return { experiment: exp, control, variant };
   }
 
-  // ─── private helpers ─────────────────────────────────────────────────
-
   private buildTaskView(taskType: string, records: LlmTaskRoute[]): TaskTypeRouteView {
     const group = TASK_TYPE_GROUP[taskType] ?? 'unknown';
-    const sorted = records
-      .slice()
-      .sort((a, b) => {
-        const ta = TIERS_ORDER.indexOf(a.tier as LlmRouteTier);
-        const tb = TIERS_ORDER.indexOf(b.tier as LlmRouteTier);
-        if (ta !== tb) return ta - tb;
-        return a.priority - b.priority;
-      });
+    const sorted = records.slice().sort((a, b) => {
+      const ta = TIERS_ORDER.indexOf(a.tier as LlmRouteTier);
+      const tb = TIERS_ORDER.indexOf(b.tier as LlmRouteTier);
+      if (ta !== tb) return ta - tb;
+      return a.priority - b.priority;
+    });
     const toView = (r: LlmTaskRoute): ProviderInTierView => ({
       id: r.id,
       tier: r.tier as LlmRouteTier,

@@ -5,36 +5,10 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
 
-/**
- * CurationItemLifecycleCron (Action Center B5 — «оживление expiresAt»).
- *
- * Раз в сутки переводит просроченные pending-CurationItem'ы в статус `expired`,
- * чтобы очередь проверки не копилась вечно. До B5 поле `expiresAt` было мёртвым:
- * ни один крон не закрывал items, severity вычислялась только на чтении.
- *
- * Алгоритм (per-Org, best-effort):
- *   1. Находим pending-items с `expiresAt < now`.
- *   2. `updateMany status='expired'` (батч).
- *   3. Метрики: `curation_item_expired_total{resource_type}` на каждый item +
- *      `curation_item_age_seconds{level}` (createdAt → expiresAt).
- *   4. Если просроченных >0 — уведомляем owner/admin Org (best-effort,
- *      `system.message`, severity 'warning'). Дедуп не критичен — крон раз в сутки.
- *
- * Cron-литерал `'0 2 * * *'` (раз в сутки, ночь UTC).
- *
- * Редизайн Ф4 «Требует вас» (2026-06-13) — тот же крон авто-закрывает и
- * другие протухшие источники единой очереди решений (idempotent updateMany):
- *   - ConflictItem `status=open & expiresAt<now` → `dismissed`
- *     (+ reasoning «авто-закрыт по сроку»);
- *   - IntakeIssue `status=pending & expiresAt<now` → `rejected`
- *     (+ rejectedReason «авто-закрыт по сроку»).
- * Так очередь решений не копится вечно ни по одному источнику.
- */
 @Injectable()
 export class CurationItemLifecycleCron {
   private readonly logger = new Logger(CurationItemLifecycleCron.name);
 
-  /** Причина авто-закрытия по сроку (редизайн Ф4). */
   static readonly AUTO_EXPIRE_REASON = 'авто-закрыт по сроку';
 
   constructor(
@@ -49,7 +23,7 @@ export class CurationItemLifecycleCron {
   async runLifecycle(): Promise<void> {
     try {
       const summary = await this.runForAllOrgs();
-      this.logger.log(summary, 'curation-item-lifecycle: проход завершён');
+      this.logger.debug(summary, 'curation-item-lifecycle: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -83,7 +57,6 @@ export class CurationItemLifecycleCron {
         conflictsDismissed += sent.conflictsDismissed;
         intakesRejected += sent.intakesRejected;
       } catch (err) {
-        // best-effort: ошибка одной Org не должна валить весь проход.
         this.logger.warn(
           {
             tenantId: org.id,
@@ -111,13 +84,11 @@ export class CurationItemLifecycleCron {
   }> {
     const now = new Date();
 
-    // 0. Редизайн Ф4 — авто-закрытие протухших конфликтов/intake (idempotent
-    //    updateMany по фильтру status+expiresAt). Выполняется ВСЕГДА, даже
-    //    если протухших curation-items нет.
-    const { conflictsDismissed, intakesRejected } =
-      await this.sweepConflictAndIntake(tenantId, now);
+    const { conflictsDismissed, intakesRejected } = await this.sweepConflictAndIntake(
+      tenantId,
+      now,
+    );
 
-    // 1. Собираем просроченные pending-items (нужны поля для метрик).
     const candidates = await this.prisma.curationItem.findMany({
       where: {
         tenantId,
@@ -137,14 +108,12 @@ export class CurationItemLifecycleCron {
       return { expired: 0, notified: 0, conflictsDismissed, intakesRejected };
     }
 
-    // 2. Батчевый перевод pending → expired.
     const ids = candidates.map((c) => c.id);
     await this.prisma.curationItem.updateMany({
       where: { id: { in: ids }, status: 'pending' },
       data: { status: 'expired' },
     });
 
-    // 3. Метрики по каждому просроченному item.
     for (const c of candidates) {
       this.metrics.incCurationItemExpired({ resourceType: c.resourceType });
       this.metrics.incCurationItem({
@@ -164,7 +133,6 @@ export class CurationItemLifecycleCron {
       }
     }
 
-    // 4. Уведомление owner/admin Org (best-effort).
     let notified = 0;
     try {
       notified = await this.notifyOwners(tenantId, candidates.length);
@@ -186,13 +154,6 @@ export class CurationItemLifecycleCron {
     };
   }
 
-  /**
-   * Редизайн Ф4 «Требует вас» (2026-06-13) — авто-закрытие протухших
-   * источников единой очереди решений. Идемпотентно: `updateMany` по фильтру
-   * `status + expiresAt<now` — повторный прогон не находит уже закрытых.
-   *   - ConflictItem open → dismissed (reasoning «авто-закрыт по сроку»);
-   *   - IntakeIssue pending → rejected (rejectedReason «авто-закрыт по сроку»).
-   */
   private async sweepConflictAndIntake(
     tenantId: string,
     now: Date,
@@ -227,7 +188,7 @@ export class CurationItemLifecycleCron {
     ]);
 
     if (conflicts.count > 0 || intakes.count > 0) {
-      this.logger.log(
+      this.logger.debug(
         {
           tenantId,
           conflictsDismissed: conflicts.count,
@@ -243,14 +204,7 @@ export class CurationItemLifecycleCron {
     };
   }
 
-  /**
-   * Уведомляет owner/admin Org о просроченных карточках. Best-effort:
-   * ошибка одного получателя не валит остальных.
-   */
-  private async notifyOwners(
-    tenantId: string,
-    expiredCount: number,
-  ): Promise<number> {
+  private async notifyOwners(tenantId: string, expiredCount: number): Promise<number> {
     const owners = await this.prisma.membership.findMany({
       where: { orgId: tenantId, role: { in: ['owner', 'admin'] } },
       select: { userId: true },

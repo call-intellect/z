@@ -1,29 +1,13 @@
-'use client';
+"use client";
 
-/**
- * Inline-кнопки действий с одним инвойсом — `mark-paid` и `void`.
- *
- * Видимость кнопок зависит от статуса:
- *   - `mark-paid` — только для `issued` (бэк всё равно блокирует другие
- *     состояния, но фронт прячет кнопку чтобы саппорт не натыкался на 403).
- *   - `void` — для `draft` и `issued` (бэк блокирует `paid`/`bonus` через
- *     `InvoiceService.void` → 403).
- *   - для `paid` / `bonus` / `void` обе кнопки **не показываются**.
- *
- * Используется в таблице `RecentInvoicesTable` карточки Org
- * (`/admin/orgs/[id]?tab=subscription`).
- *
- * См. plans/tz/2026-05-29-admin-subscription-ui-v2.md (Фаза 2).
- */
+import { useState } from "react";
+import { CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { toast } from "sonner";
 
-import { useState } from 'react';
-import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { ApiError } from '@/api/api-error';
-import { billingApi } from '@/api/billing.api';
-import type { InvoiceDomain } from '@/domain/billing';
-import { Button } from '@/ui/shadcn/button';
+import { ApiError } from "@/api/api-error";
+import { billingApi } from "@/api/billing.api";
+import type { InvoiceDomain } from "@/domain/billing";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -31,10 +15,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 type Props = {
   invoice: InvoiceDomain;
@@ -45,8 +29,8 @@ export function InvoiceRowActions({ invoice, onChanged }: Props) {
   const [openMarkPaid, setOpenMarkPaid] = useState(false);
   const [openVoid, setOpenVoid] = useState(false);
 
-  const canMarkPaid = invoice.status === 'issued';
-  const canVoid = invoice.status === 'draft' || invoice.status === 'issued';
+  const canMarkPaid = invoice.status === "issued";
+  const canVoid = invoice.status === "draft" || invoice.status === "issued";
 
   if (!canMarkPaid && !canVoid) return null;
 
@@ -101,8 +85,6 @@ export function InvoiceRowActions({ invoice, onChanged }: Props) {
   );
 }
 
-// ─── Mark paid ──────────────────────────────────────────────────────────────
-
 function MarkPaidDialog({
   open,
   onOpenChange,
@@ -114,8 +96,8 @@ function MarkPaidDialog({
   invoice: InvoiceDomain;
   onSuccess: () => void;
 }) {
-  const [externalRef, setExternalRef] = useState('');
-  const [reason, setReason] = useState('');
+  const [externalRef, setExternalRef] = useState("");
+  const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const reasonValid = reason.trim().length >= 3;
@@ -132,12 +114,12 @@ function MarkPaidDialog({
         reason: reason.trim(),
       });
       toast.success(`Счёт ${invoice.invoiceNumber} помечен как оплачен`);
-      setExternalRef('');
-      setReason('');
+      setExternalRef("");
+      setReason("");
       onSuccess();
     } catch (e2) {
       toast.error(
-        e2 instanceof ApiError ? e2.message : 'Не удалось пометить счёт',
+        e2 instanceof ApiError ? e2.message : "Не удалось пометить счёт",
       );
     } finally {
       setSubmitting(false);
@@ -151,7 +133,7 @@ function MarkPaidDialog({
           <DialogHeader>
             <DialogTitle>Пометить счёт как оплачен</DialogTitle>
             <DialogDescription>
-              Счёт{' '}
+              Счёт{" "}
               <code className="rounded bg-bg-overlay px-1">
                 {invoice.invoiceNumber}
               </code>
@@ -162,7 +144,7 @@ function MarkPaidDialog({
 
           <div className="space-y-2">
             <Label htmlFor="markPaid-externalRef">
-              Номер платёжки / внешний референс{' '}
+              Номер платёжки / внешний референс{" "}
               <span className="text-danger">*</span>
             </Label>
             <Input
@@ -217,8 +199,6 @@ function MarkPaidDialog({
   );
 }
 
-// ─── Void ───────────────────────────────────────────────────────────────────
-
 function VoidDialog({
   open,
   onOpenChange,
@@ -230,7 +210,7 @@ function VoidDialog({
   invoice: InvoiceDomain;
   onSuccess: () => void;
 }) {
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const reasonValid = reason.trim().length >= 3;
@@ -245,11 +225,11 @@ function VoidDialog({
         reason: reason.trim(),
       });
       toast.success(`Счёт ${invoice.invoiceNumber} аннулирован`);
-      setReason('');
+      setReason("");
       onSuccess();
     } catch (e2) {
       toast.error(
-        e2 instanceof ApiError ? e2.message : 'Не удалось аннулировать',
+        e2 instanceof ApiError ? e2.message : "Не удалось аннулировать",
       );
     } finally {
       setSubmitting(false);
@@ -263,10 +243,10 @@ function VoidDialog({
           <DialogHeader>
             <DialogTitle>Аннулировать счёт?</DialogTitle>
             <DialogDescription>
-              Счёт{' '}
+              Счёт{" "}
               <code className="rounded bg-bg-overlay px-1">
                 {invoice.invoiceNumber}
-              </code>{' '}
+              </code>{" "}
               перейдёт в статус «Отменён» и будет исключён из метрик выручки.
               Для оплаченных счетов операция запрещена бэкендом.
             </DialogDescription>

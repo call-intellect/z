@@ -1,35 +1,29 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
+import Link from "next/link";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   departmentDomainLinksApi,
   functionalDomainsApi,
   type DepartmentDomainLinkApi,
   type FunctionalDomainApi,
-} from '@/api/functional-domains.api';
-import { orgsApi, type OrgApi } from '@/api/orgs.api';
-import { departmentsApi, type DepartmentApi } from '@/api/structure.api';
-import { useAuth } from '@/contexts/auth-context';
-import { DEPARTMENT_TEMPLATES } from '@/lib/department-templates';
-import { Button } from '@/ui/shadcn/button';
-import { Card } from '@/ui/shadcn/card';
+} from "@/api/functional-domains.api";
+import { orgsApi, type OrgApi } from "@/api/orgs.api";
+import { departmentsApi, type DepartmentApi } from "@/api/structure.api";
+import { useAuth } from "@/contexts/auth-context";
+import { DEPARTMENT_TEMPLATES } from "@/lib/department-templates";
+import { Button } from "@/ui/shadcn/button";
+import { Card } from "@/ui/shadcn/card";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-/**
- * `/departments` UI — master-detail с FunctionalDomain-связкой.
- *
- * Левая колонка: список отделов. Правая: детали выбранного отдела +
- * управление связями с FunctionalDomain.
- */
 export function DepartmentsClient(): JSX.Element {
   const { currentOrgId, currentOrgRole, isLoading: authLoading } = useAuth();
   if (authLoading) return <AdminLoading rows={4} />;
@@ -41,7 +35,7 @@ export function DepartmentsClient(): JSX.Element {
       />
     );
   }
-  const canManage = currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const canManage = currentOrgRole === "owner" || currentOrgRole === "admin";
   return <DepartmentsContent orgId={currentOrgId} canManage={canManage} />;
 }
 
@@ -60,7 +54,7 @@ function DepartmentsContent({
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [addDomainId, setAddDomainId] = useState('');
+  const [addDomainId, setAddDomainId] = useState("");
   const [org, setOrg] = useState<OrgApi | null>(null);
 
   const loadList = useCallback(async () => {
@@ -73,13 +67,12 @@ function DepartmentsContent({
         orgsApi.byId(orgId),
       ]);
       setDepartments(depsRes.items ?? []);
-      // Плоский список доменов (для select'а связи).
       const flatten = (arr: FunctionalDomainApi[]): FunctionalDomainApi[] =>
         arr.flatMap((d) => [d, ...(d.children ? flatten(d.children) : [])]);
       setDomains(flatten(domsRes.items));
       setOrg(orgRes.org);
     } catch (err) {
-      setError(humanizeApiError(err, 'Не удалось загрузить отделы'));
+      setError(humanizeApiError(err, "Не удалось загрузить отделы"));
     } finally {
       setLoading(false);
     }
@@ -95,7 +88,7 @@ function DepartmentsContent({
         );
         setLinks(r.items);
       } catch (err) {
-        setError(humanizeApiError(err, 'Не удалось загрузить связи'));
+        setError(humanizeApiError(err, "Не удалось загрузить связи"));
         setLinks([]);
       } finally {
         setLoadingDetail(false);
@@ -118,12 +111,12 @@ function DepartmentsContent({
     try {
       await departmentDomainLinksApi.link(orgId, selectedId, {
         domainId: addDomainId,
-        role: 'secondary',
+        role: "secondary",
       });
-      setAddDomainId('');
+      setAddDomainId("");
       await loadLinks(selectedId);
     } catch (err) {
-      setError(humanizeApiError(err, 'Не удалось привязать домен'));
+      setError(humanizeApiError(err, "Не удалось привязать домен"));
     } finally {
       setBusy(false);
     }
@@ -137,7 +130,7 @@ function DepartmentsContent({
         await departmentDomainLinksApi.unlink(orgId, selectedId, domainId);
         await loadLinks(selectedId);
       } catch (err) {
-        setError(humanizeApiError(err, 'Не удалось отвязать домен'));
+        setError(humanizeApiError(err, "Не удалось отвязать домен"));
       } finally {
         setBusy(false);
       }
@@ -165,12 +158,12 @@ function DepartmentsContent({
       <header>
         <h1 className="text-2xl font-semibold text-fg-primary">Отделы</h1>
         <p className="mt-1 text-sm text-fg-tertiary">
-          Список отделов компании и их функциональная нагрузка (привязка к доменам).
-          Базовый CRUD отделов — в{' '}
+          Список отделов компании и их функциональная нагрузка (привязка к
+          доменам). Управление отделами — в разделе{" "}
           <Link href="/structure" className="underline">
-            Структуре
+            «Структура»
           </Link>
-          ; здесь — связи Department ↔ FunctionalDomain.
+          ; здесь — привязки отделов к функциональным областям.
         </p>
       </header>
 
@@ -201,8 +194,8 @@ function DepartmentsContent({
                     onClick={() => setSelectedId(d.id)}
                     className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
                       d.id === selectedId
-                        ? 'bg-accent-muted text-accent-fg'
-                        : 'hover:bg-bg-overlay'
+                        ? "bg-accent-muted text-accent-fg"
+                        : "hover:bg-bg-overlay"
                     }`}
                   >
                     <div className="font-medium">{d.name}</div>
@@ -220,7 +213,9 @@ function DepartmentsContent({
 
         <Card className="p-5">
           {!selectedDep ? (
-            <div className="text-sm text-fg-tertiary">Выберите отдел слева.</div>
+            <div className="text-sm text-fg-tertiary">
+              Выберите отдел слева.
+            </div>
           ) : (
             <div className="space-y-4">
               <div>
@@ -253,7 +248,7 @@ function DepartmentsContent({
                             роль: {l.role}
                             {l.coverageRatio !== null
                               ? ` · покрытие ${Math.round(l.coverageRatio * 100)}%`
-                              : ''}
+                              : ""}
                           </div>
                         </div>
                         {canManage && (
@@ -307,17 +302,15 @@ function DepartmentsContent({
   );
 }
 
-// ─── DepartmentTemplatesPanel ────────────────────────────────────────────────
-
 const INDUSTRY_LABELS: Record<string, string> = {
-  software:      'Разработка программного обеспечения',
-  services:      'Услуги и агентства',
-  manufacturing: 'Производство',
-  retail:        'Торговля',
-  construction:  'Строительство',
-  finance:       'Финансы',
-  education:     'Образование',
-  other:         'Другое',
+  software: "Разработка программного обеспечения",
+  services: "Услуги и агентства",
+  manufacturing: "Производство",
+  retail: "Торговля",
+  construction: "Строительство",
+  finance: "Финансы",
+  education: "Образование",
+  other: "Другое",
 };
 
 function DepartmentTemplatesPanel({
@@ -331,7 +324,8 @@ function DepartmentTemplatesPanel({
   canManage: boolean;
   onDepartmentsAdded: () => void;
 }): JSX.Element | null {
-  const templates = DEPARTMENT_TEMPLATES[industry] ?? DEPARTMENT_TEMPLATES['other'] ?? [];
+  const templates =
+    DEPARTMENT_TEMPLATES[industry] ?? DEPARTMENT_TEMPLATES["other"] ?? [];
   const [adding, setAdding] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -346,7 +340,6 @@ function DepartmentTemplatesPanel({
       setDone(true);
       onDepartmentsAdded();
     } catch {
-      // silent
     } finally {
       setAdding(false);
     }
@@ -368,7 +361,7 @@ function DepartmentTemplatesPanel({
         ))}
       </div>
       <Button size="sm" onClick={() => void handleAddAll()} disabled={adding}>
-        {adding ? 'Добавляю...' : 'Добавить все'}
+        {adding ? "Добавляю..." : "Добавить все"}
       </Button>
     </div>
   );

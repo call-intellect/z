@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import { type Job } from 'bullmq';
 
-
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -17,42 +16,13 @@ import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { ProcessExtractionService } from '../../processes/services/process-extraction.service';
 import { ProcessTemplateProbeService } from '../../processes/services/process-template-probe.service';
 
-/**
- * SBA α-7 wave 2 — ProcessDetectorWorker (handler `core.specialist-routing`,
- * jobName='3-1-process-detector').
- *
- * Вызывается из `SpecialistRoutingDispatcherWorker.dispatch` для блоков
- * signalType ∈ {process_step, methodology_step}. Маршрутизацию по jobName
- * делает диспетчер. Структурный pipeline извлечения ProcessTemplate — здесь
- * (текстовое описание регламента — в Specialist31Regulations).
- *
- * Дебаунс — батч-окно §5 sub-TZ:
- *   - Каждый job push'ит blockId в Redis-list `processdetector:batch:<tenantId>`.
- *   - Также записывает «первый-в-окне» timestamp в Redis-key
- *     `processdetector:since:<tenantId>` (SET NX EX = batchTimeoutSeconds).
- *   - Если list достиг `batchSize` — flush сейчас.
- *   - Иначе таймер (worker сам опрашивает раз в 30s) flush'ит все tenants,
- *     у которых истёк timeout. Таймер живёт в onModuleInit (Worker'а у класса
- *     больше нет — единственный Worker очереди в `SpecialistRoutingDispatcherWorker`).
- *
- * Идемпотентность: jobId = `3-1-process-detector_<blockId>` (см.
- * `CoreQueueService.enqueueSpecialistRouting`). Повторный enqueue одного и
- * того же блока не приведёт к дублированию в Redis-list (мы используем
- * SADD-семантику через `RPUSH` + дедуп по `sismember`).
- *
- * Метрика `process_template_extract_duration_seconds` пишется внутри
- * `ProcessExtractionService.extractBatch`.
- */
 @Injectable()
 export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ProcessDetectorWorker.name);
   private timer: NodeJS.Timeout | null = null;
 
   static readonly SPECIALIST_NAME = '3-1-process-detector';
-  private static readonly RELEVANT_SIGNALS = new Set([
-    'process_step',
-    'methodology_step',
-  ]);
+  private static readonly RELEVANT_SIGNALS = new Set(['process_step', 'methodology_step']);
 
   @Inject(PipelineRunner)
   private readonly pipe!: PipelineRunner;
@@ -69,8 +39,6 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    // Каждые 30s проверяем все батчи на timeout. Worker очереди живёт
-    // централизованно в SpecialistRoutingDispatcherWorker.
     this.timer = setInterval(() => {
       void this.flushExpiredBatches().catch((err) => {
         this.logger.debug(
@@ -91,28 +59,21 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // ─────────────────────────── consumer ─────────────────────────────
-
   async handle(job: Job<SpecialistRoutingJobData>): Promise<void> {
-    await this.pipe.job(
-      SystemLogPipeline.KNOWLEDGE_GRAPH,
-      'kc.process-detector',
-      job,
-      () => this.process(job),
+    await this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'kc.process-detector', job, () =>
+      this.process(job),
     );
   }
 
   private async process(job: Job<SpecialistRoutingJobData>): Promise<void> {
     const { blockId, tenantId, signalType } = job.data;
     if (!ProcessDetectorWorker.RELEVANT_SIGNALS.has(signalType)) {
-      // RouterService может прислать что-то ещё — фильтруем.
       this.metrics.incCoreSpecialistSkipped({
         specialist: ProcessDetectorWorker.SPECIALIST_NAME,
         reason: 'signal_out_of_scope',
       });
       return;
     }
-    // Проверим, что block ещё существует и canonical — иначе skip.
     const block = await this.prisma.ideaBlock.findUnique({
       where: { id: blockId },
       select: { id: true, tenantId: true, status: true, signalType: true },
@@ -144,7 +105,6 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
     const sinceKey = this.sinceKey(tenantId);
 
     try {
-      // Дедуп: SADD возвращает 1, если новый элемент. Иначе пропускаем RPUSH.
       const added = await this.redis.client.sadd(setKey, blockId);
       if (added === 1) {
         await this.redis.client.rpush(listKey, blockId);
@@ -157,7 +117,6 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
           this.cfg.processTemplate.detectorBatchTimeoutSeconds * 4,
         );
       }
-      // SET sinceKey only NX — первый-в-окне ставит timestamp.
       await this.redis.client.set(
         sinceKey,
         String(Date.now()),
@@ -183,23 +142,13 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // ─────────────────────────── timer flush ──────────────────────────
-
   private async flushExpiredBatches(): Promise<void> {
-    // Сканируем все sinceKey'и и проверяем age.
     const pattern = `processdetector:since:*`;
     let cursor = '0';
     const expired: string[] = [];
-    const timeoutMs =
-      this.cfg.processTemplate.detectorBatchTimeoutSeconds * 1000;
+    const timeoutMs = this.cfg.processTemplate.detectorBatchTimeoutSeconds * 1000;
     do {
-      const [next, keys] = await this.redis.client.scan(
-        cursor,
-        'MATCH',
-        pattern,
-        'COUNT',
-        100,
-      );
+      const [next, keys] = await this.redis.client.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
       cursor = next;
       for (const key of keys) {
         const sinceRaw = await this.redis.client.get(key);
@@ -207,7 +156,6 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
         const since = Number(sinceRaw);
         if (!Number.isFinite(since)) continue;
         if (Date.now() - since >= timeoutMs) {
-          // Извлекаем tenantId из ключа.
           const tenantId = key.substring('processdetector:since:'.length);
           if (tenantId) expired.push(tenantId);
         }
@@ -234,7 +182,6 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
     const setKey = this.setKey(args.tenantId);
     const sinceKey = this.sinceKey(args.tenantId);
 
-    // Атомарно «вынем» весь list (LRANGE + DEL — в multi для атомарности).
     const multi = this.redis.client.multi();
     multi.lrange(listKey, 0, -1);
     multi.del(listKey);
@@ -244,7 +191,7 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
     const blockIds = (results?.[0]?.[1] as string[] | undefined) ?? [];
     if (blockIds.length === 0) return;
 
-    this.logger.log(
+    this.logger.debug(
       { tenantId: args.tenantId, batchSize: blockIds.length },
       'process-detector: flush batch',
     );
@@ -253,9 +200,6 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
       blockIds,
     });
 
-    // После extract — для всех updated/new template'ов вызываем probe-check
-    // (проверка missing_input/output/owner). Делаем простой проход по
-    // последним обновлённым template'ам Org.
     if (outcome.new + outcome.updated > 0) {
       try {
         const recentlyTouched = await this.prisma.processTemplate.findMany({
@@ -279,11 +223,7 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
         );
       }
     }
-    // Метрики extractBatch инкрементятся внутри ProcessExtractionService;
-    // skip-метрика — в process() выше.
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private listKey(tenantId: string): string {
     return `processdetector:batch:${tenantId}`;

@@ -1,28 +1,3 @@
-/**
- * ТЗ 2026-06-14 (assistant-router-dedup-and-prompt) — Seed AdminSetting для
- * крутилок помощника (Concierge).
- *
- * Регистрирует ключи динамической конфигурации (читаются через
- * `TypedConfigService.getDynamic`):
- *   - `concierge.history_pairs` (int, default 4) — глубина истории диалога
- *     (пар сообщений; 1 пара = реплика пользователя + ответ помощника).
- *     4 пары = 8 сообщений.
- *   - `concierge.clarify_min_confidence` (int, default 80) — порог самооценки
- *     понимания запроса (0–100): ниже — помощник переспрашивает. Высокий, с
- *     креном в вопрос. Жёсткого numeric-gate в коде нет — уточнение управляется
- *     промптом (Приложение A) + валидацией required-параметров в ToolRouter;
- *     крутилка зарезервирована для будущего тюнинга по проду.
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-concierge.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем только
- *     метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- */
-
 import { type Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -90,7 +65,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },

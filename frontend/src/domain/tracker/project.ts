@@ -1,11 +1,3 @@
-/**
- * Доменная модель проекта трекера задач.
- *
- * Контракт: `backend/src/modules/tracker/dto/projects/project-response.dto.ts`.
- */
-
-// ─── ApiDto (зеркало backend) ───────────────────────────────────────────────
-
 export interface ProjectApi {
   id: string;
   tenantId: string;
@@ -35,7 +27,6 @@ export interface ProjectMemberApi {
   userId: string;
   role: number;
   joinedAt: string;
-  // T8 (2026-05-24): для @-mention autocomplete'а в IssueComments.
   displayName?: string | null;
   email?: string | null;
 }
@@ -45,20 +36,16 @@ export interface ListProjectsResponseApi {
   total: number;
 }
 
-// ─── Domain ─────────────────────────────────────────────────────────────────
-
 export interface Project {
   id: string;
   tenantId: string;
   slug: string;
-  /** Префикс идентификаторов задач, напр. `KORA`. */
   identifier: string;
   name: string;
   description: string | null;
   ownerId: string;
   defaultAssigneeId: string | null;
   defaultStateId: string | null;
-  /** 0 = private, 2 = public (см. backend). */
   network: number;
   timezone: string;
   cycleViewEnabled: boolean;
@@ -76,16 +63,11 @@ export interface ProjectMember {
   id: string;
   projectId: string;
   userId: string;
-  /** Числовая роль (5/15/20). */
   role: number;
   joinedAt: Date;
-  // T8 (2026-05-24): User.name для отображения в @-mention popup'е;
-  // email — для fallback'ового локального псевдонима (anna@org → @anna).
   displayName: string | null;
   email: string | null;
 }
-
-// ─── Mappers ────────────────────────────────────────────────────────────────
 
 const parseDate = (s: string | null | undefined): Date | null =>
   s ? new Date(s) : null;
@@ -127,35 +109,27 @@ export function projectMemberFromApi(api: ProjectMemberApi): ProjectMember {
   };
 }
 
-/**
- * Локальная часть email (часть до '@'). Используется как fallback-handle
- * для @-mention'ов, если у юзера не задан displayName.
- */
 export function memberHandle(member: ProjectMember): string {
   if (member.email) {
-    const localPart = member.email.split('@')[0];
+    const localPart = member.email.split("@")[0];
     if (localPart) return localPart;
   }
   return member.userId;
 }
 
-/** Человекочитаемое имя — name, затем email-local, затем хвост userId. */
 export function memberDisplayName(member: ProjectMember): string {
   if (member.displayName?.trim()) return member.displayName.trim();
   if (member.email) {
-    const localPart = member.email.split('@')[0];
+    const localPart = member.email.split("@")[0];
     if (localPart) return localPart;
   }
   return member.userId.slice(0, 8);
 }
 
-// ─── UI helpers ─────────────────────────────────────────────────────────────
-
 export function isArchived(p: Project): boolean {
   return p.archivedAt !== null;
 }
 
-/** Краткая подпись «KORA · MyProject». */
 export function projectShortLabel(p: Project): string {
   return `${p.identifier} · ${p.name}`;
 }

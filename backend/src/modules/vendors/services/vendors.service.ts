@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -18,30 +13,13 @@ import {
   type VendorStatusDto,
 } from '../dto/vendors.dto';
 
-/**
- * VendorsService.
- *
- * α-3 (read-only): list + getById.
- * Sprints (2026-05-28) §1.1 — добавлены `create`/`update`/`softDelete` для
- * inline-create в SprintCreateWizard и паритета с Card/Person/Department.
- *
- * При создании поставщика мы атомарно создаём связанный `Entity{type=vendor}`
- * (см. модель `Vendor.entityId` с `@unique`). Дедуп по `inn` (если задан) и
- * `name` (case-insensitive) делается через `EntityResolutionService` в потоке
- * ingest'а; ручной create в этом сервисе намеренно не дедупит — пользователь
- * сам подтвердил, что хочет нового vendor'а (и UI показывает существующих в
- * combobox'е до клика «+ Создать»).
- */
 @Injectable()
 export class VendorsService {
   private readonly logger = new Logger(VendorsService.name);
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  async list(args: {
-    tenantId: string;
-    query: ListVendorsQuery;
-  }): Promise<ListVendorsResponse> {
+  async list(args: { tenantId: string; query: ListVendorsQuery }): Promise<ListVendorsResponse> {
     const { tenantId, query } = args;
     const where: Prisma.VendorWhereInput = { tenantId };
 
@@ -89,17 +67,6 @@ export class VendorsService {
     return this.toDetail(vendor);
   }
 
-  /**
-   * Sprints (2026-05-28) §1.1 — создание поставщика + связанного `Entity{type=vendor}`
-   * в одной транзакции. Дубли по имени НЕ запрещаем (это не уникальный ключ); если
-   * нужна дедупликация — фронт сначала ищет в combobox'е через `list({q})`.
-   *
-   * Поведение коллизии: `Entity.canonicalName` уникален per tenant
-   * (см. schema.prisma `Entity`), поэтому одинаковое имя в одной Org вызовет
-   * `P2002`. В этом случае мы дотягиваем существующий Entity и аттачимся к нему;
-   * если на нём уже висит Vendor — переиспользуем (idempotent для гонки), иначе
-   * создаём только Vendor-запись на этот Entity.
-   */
   async create(args: {
     tenantId: string;
     dto: CreateVendorDto;
@@ -113,8 +80,6 @@ export class VendorsService {
     const responsibleUserId = dto.responsibleUserId ?? null;
 
     const vendor = await this.prisma.$transaction(async (tx) => {
-      // 1. Создаём Entity{type=vendor}. canonicalName = lower(name) — поле
-      //    уникально per tenant (см. Entity @@unique). На коллизии — дотягиваем.
       const canonicalName = name.toLowerCase();
       let entityId: string;
       try {
@@ -130,12 +95,7 @@ export class VendorsService {
         });
         entityId = ent.id;
       } catch (err) {
-        if (
-          err instanceof Object &&
-          'code' in err &&
-          (err as { code?: string }).code === 'P2002'
-        ) {
-          // Существующая Entity для этого vendor'а в этой Org — переиспользуем.
+        if (err instanceof Object && 'code' in err && (err as { code?: string }).code === 'P2002') {
           const existingEntity = await tx.entity.findFirst({
             where: { tenantId, type: 'vendor', canonicalName },
             select: { id: true },
@@ -147,8 +107,6 @@ export class VendorsService {
         }
       }
 
-      // 2. Если на этом Entity уже висит Vendor (idempotent для гонки) —
-      //    возвращаем его и не плодим дубликат.
       const existingVendor = await tx.vendor.findUnique({
         where: { entityId },
         select: { id: true },
@@ -158,7 +116,6 @@ export class VendorsService {
         return v!;
       }
 
-      // 3. Создаём Vendor.
       return tx.vendor.create({
         data: {
           tenantId,
@@ -175,10 +132,6 @@ export class VendorsService {
     return this.toDetail(vendor);
   }
 
-  /**
-   * Частичное обновление. Soft-deleted vendor нельзя редактировать (404 как и
-   * на read — внешнего поведенческого различия нет).
-   */
   async update(args: {
     tenantId: string;
     id: string;
@@ -212,12 +165,6 @@ export class VendorsService {
     return this.toDetail(updated);
   }
 
-  /**
-   * Soft-delete. Идемпотентно: повторный вызов вернёт `{ ok: true }`. Связанные
-   * Project, у которых `vendorId = id`, продолжают существовать (Prisma onDelete
-   * SetNull нам не подходит — мы НЕ удаляем строку, а лишь помечаем `deletedAt`).
-   * В UI спринт показывает «(удалён)» — см. `SprintsService.list`.
-   */
   async softDelete(args: {
     tenantId: string;
     id: string;
@@ -234,7 +181,6 @@ export class VendorsService {
       });
     }
     if (existing.deletedAt) {
-      // идемпотентно
       return { ok: true };
     }
     await this.prisma.vendor.update({
@@ -243,8 +189,6 @@ export class VendorsService {
     });
     return { ok: true };
   }
-
-  // ─────────────────────────── mappers ─────────────────────────────────
 
   private toListItem(v: {
     id: string;

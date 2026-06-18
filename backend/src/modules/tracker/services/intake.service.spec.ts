@@ -5,16 +5,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { IntakeService } from './intake.service';
 
-/**
- * §1 Ф3 (2026-06-11) — unit-тесты резолва имён в `IntakeService.findAll`.
- *
- * Покрытие (детерминизм: мок Prisma, без сети/времени):
- *  (а) резолвит имена проекта / цели / исполнителя (Project.name / Goal.name /
- *      Person.name по userId);
- *  (б) null-ID → соответствующее имя null без падения;
- *  (в) ID есть, но запись удалена/не найдена → имя null (cuid НЕ протекает).
- */
-
 const TENANT = 'tenant-1';
 
 type IntakeRow = {
@@ -94,53 +84,34 @@ function makePrismaMock(opts: {
       count: vi.fn(async () => opts.intakes.length),
     },
     project: {
-      findMany: vi.fn(
-        async (args: { where: { id: { in: string[] }; tenantId: string } }) => {
-          calls.project += 1;
-          const ids = new Set(inArr(args.where));
-          return opts.projects.filter(
-            (p) => ids.has(p.id) && args.where.tenantId === TENANT,
-          );
-        },
-      ),
+      findMany: vi.fn(async (args: { where: { id: { in: string[] }; tenantId: string } }) => {
+        calls.project += 1;
+        const ids = new Set(inArr(args.where));
+        return opts.projects.filter((p) => ids.has(p.id) && args.where.tenantId === TENANT);
+      }),
     },
     goal: {
-      findMany: vi.fn(
-        async (args: { where: { id: { in: string[] }; tenantId: string } }) => {
-          calls.goal += 1;
-          const ids = new Set(inArr(args.where));
-          return opts.goals.filter(
-            (g) => ids.has(g.id) && args.where.tenantId === TENANT,
-          );
-        },
-      ),
+      findMany: vi.fn(async (args: { where: { id: { in: string[] }; tenantId: string } }) => {
+        calls.goal += 1;
+        const ids = new Set(inArr(args.where));
+        return opts.goals.filter((g) => ids.has(g.id) && args.where.tenantId === TENANT);
+      }),
     },
     person: {
-      findMany: vi.fn(
-        async (args: {
-          where: { userId: { in: string[] }; tenantId: string };
-        }) => {
-          calls.person += 1;
-          const ids = new Set(inArr(args.where));
-          return opts.persons.filter(
-            (p) => p.userId != null && ids.has(p.userId) && args.where.tenantId === TENANT,
-          );
-        },
-      ),
+      findMany: vi.fn(async (args: { where: { userId: { in: string[] }; tenantId: string } }) => {
+        calls.person += 1;
+        const ids = new Set(inArr(args.where));
+        return opts.persons.filter(
+          (p) => p.userId != null && ids.has(p.userId) && args.where.tenantId === TENANT,
+        );
+      }),
     },
   } as unknown as PrismaService;
   return { prisma, calls };
 }
 
 function makeService(prisma: PrismaService): IntakeService {
-  // issues / events / webhooks / cfg не задействованы в findAll — заглушки.
-  return new IntakeService(
-    prisma,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-  );
+  return new IntakeService(prisma, {} as never, {} as never, {} as never, {} as never);
 }
 
 const QUERY = { page: 1, limit: 50 } as never;
@@ -170,7 +141,6 @@ describe('IntakeService.findAll — резолв имён suggested*', () => {
     expect(item.suggestedProjectName).toBe('Маркетинг');
     expect(item.suggestedGoalTitle).toBe('Удвоить выручку');
     expect(item.suggestedAssigneeName).toBe('Иван Петров');
-    // id остаются для рендеринга чипа, имена обогащены
     expect(item.suggestedProjectId).toBe('proj-1');
     expect(item.suggestedAssigneeId).toBe('user-1');
   });
@@ -191,7 +161,6 @@ describe('IntakeService.findAll — резолв имён suggested*', () => {
     expect(item.suggestedProjectName).toBeNull();
     expect(item.suggestedGoalTitle).toBeNull();
     expect(item.suggestedAssigneeName).toBeNull();
-    // нет id → не делаем лишних запросов
     expect(calls.project).toBe(0);
     expect(calls.goal).toBe(0);
     expect(calls.person).toBe(0);
@@ -206,7 +175,7 @@ describe('IntakeService.findAll — резолв имён suggested*', () => {
     });
     const { prisma, calls } = makePrismaMock({
       intakes: [intake],
-      projects: [], // ничего не найдено
+      projects: [],
       goals: [],
       persons: [],
     });
@@ -215,30 +184,16 @@ describe('IntakeService.findAll — резолв имён suggested*', () => {
     const res = await svc.findAll(TENANT, QUERY);
 
     const item = res.items[0]!;
-    // имена null — UI покажет fallback, не сырой cuid
     expect(item.suggestedProjectName).toBeNull();
     expect(item.suggestedGoalTitle).toBeNull();
     expect(item.suggestedAssigneeName).toBeNull();
-    // id-поля содержат cuid (для рендера чипа), но имя null
     expect(item.suggestedProjectId).toBe('proj-deleted');
-    // ровно по одному резолв-запросу на каждую сущность (есть id → запрос был)
     expect(calls.project).toBe(1);
     expect(calls.goal).toBe(1);
     expect(calls.person).toBe(1);
   });
 });
 
-/**
- * A4 (2026-06-14) — `/intake` как зеркало pending-секции `/actions`.
- *
- * Инвариант: дефолтный «требует разбора»-вид (status='pending' или статус не
- * задан) исключает карточки, отложенные пользователем через очередь
- * (PendingActionSnooze, source='intake', активный snoozedUntil) — тем же
- * фильтром, что IntakePendingProvider. Явный status=accepted историю не режет.
- *
- * Мок Prisma учитывает where.id.notIn в intakeIssue.findMany/count и
- * pendingActionSnooze.findMany по (tenantId, userId, source, snoozedUntil>now).
- */
 describe('IntakeService.findAll — зеркало snooze очереди /actions (A4)', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -252,15 +207,12 @@ describe('IntakeService.findAll — зеркало snooze очереди /action
     snoozedUntil: Date;
   };
 
-  function makeMirrorPrisma(opts: {
-    intakes: IntakeRow[];
-    snoozes: SnoozeRow[];
-  }): { prisma: PrismaService; snoozeQueries: number } {
+  function makeMirrorPrisma(opts: { intakes: IntakeRow[]; snoozes: SnoozeRow[] }): {
+    prisma: PrismaService;
+    snoozeQueries: number;
+  } {
     const counter = { n: 0 };
-    const applyWhere = (where: {
-      status?: string;
-      id?: { notIn: string[] };
-    }): IntakeRow[] => {
+    const applyWhere = (where: { status?: string; id?: { notIn: string[] } }): IntakeRow[] => {
       const notIn = new Set(where.id?.notIn ?? []);
       return opts.intakes.filter((i) => {
         if (where.status && i.status !== where.status) return false;
@@ -273,8 +225,9 @@ describe('IntakeService.findAll — зеркало snooze очереди /action
         findMany: vi.fn(async (args: { where: { status?: string; id?: { notIn: string[] } } }) =>
           applyWhere(args.where),
         ),
-        count: vi.fn(async (args: { where: { status?: string; id?: { notIn: string[] } } }) =>
-          applyWhere(args.where).length,
+        count: vi.fn(
+          async (args: { where: { status?: string; id?: { notIn: string[] } } }) =>
+            applyWhere(args.where).length,
         ),
       },
       pendingActionSnooze: {
@@ -301,7 +254,6 @@ describe('IntakeService.findAll — зеркало snooze очереди /action
           },
         ),
       },
-      // suggested*-резолв не задействован (нет suggested-полей в фикстурах).
       project: { findMany: vi.fn(async () => []) },
       goal: { findMany: vi.fn(async () => []) },
       person: { findMany: vi.fn(async () => []) },
@@ -317,7 +269,7 @@ describe('IntakeService.findAll — зеркало snooze очереди /action
 
   it('pending-вид с userId исключает отложенную в очереди карточку (== вклад в /actions)', async () => {
     const a = makeIntake({ id: 'i-a', status: 'pending' });
-    const b = makeIntake({ id: 'i-b', status: 'pending' }); // эту отложили
+    const b = makeIntake({ id: 'i-b', status: 'pending' });
     const { prisma } = makeMirrorPrisma({
       intakes: [a, b],
       snoozes: [
@@ -370,7 +322,7 @@ describe('IntakeService.findAll — зеркало snooze очереди /action
           userId: USER,
           source: 'intake',
           resourceId: 'i-a',
-          snoozedUntil: past, // уже истёк
+          snoozedUntil: past,
         },
       ],
     });
@@ -399,11 +351,8 @@ describe('IntakeService.findAll — зеркало snooze очереди /action
 
     const res = await svc.findAll(TENANT, ACCEPTED_QUERY, USER);
 
-    // snooze-запрос не должен исключать разобранную карточку
     expect(res.items.map((i) => i.id)).toEqual(['i-acc']);
-    expect(
-      (prisma.pendingActionSnooze.findMany as ReturnType<typeof vi.fn>),
-    ).not.toHaveBeenCalled();
+    expect(prisma.pendingActionSnooze.findMany as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
   });
 
   it('без userId snooze не применяется (внутренние вызовы — поведение прежнее)', async () => {
@@ -423,26 +372,13 @@ describe('IntakeService.findAll — зеркало snooze очереди /action
     });
     const svc = makeService(prisma);
 
-    const res = await svc.findAll(TENANT, PENDING_QUERY); // без userId
+    const res = await svc.findAll(TENANT, PENDING_QUERY);
 
     expect(res.items.map((i) => i.id)).toEqual(['i-a', 'i-b']);
-    expect(
-      (prisma.pendingActionSnooze.findMany as ReturnType<typeof vi.fn>),
-    ).not.toHaveBeenCalled();
+    expect(prisma.pendingActionSnooze.findMany as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
   });
 });
 
-/**
- * Редизайн кабинета Ф5а (2026-06-13) — next-step отчёта → кандидат в задачу.
- *
- * Покрытие:
- *   1. happy-path: встреча есть, дубля нет → intakeIssue.create вызван с
- *      source='meeting', rawContent=text, extractedTitle=text.slice(0,120),
- *      externalSource='meeting', externalId детерминирован.
- *   2. встреча не найдена / чужой tenant → NotFoundException, create НЕ вызван.
- *   3. идемпотентность: уже есть intake с тем же externalId → возвращаем его,
- *      create НЕ вызван.
- */
 describe('IntakeService.createFromMeetingNextStep', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -467,11 +403,10 @@ describe('IntakeService.createFromMeetingNextStep', () => {
     const cfg = { pendingActions: { intakeTtlDays: 14 } };
     const svc = new IntakeService(
       prisma,
-      {} as never, // issues
+      {} as never,
       events as never,
       webhooks as never,
       cfg as never,
-      // autoTriageQueue @Optional — не передаём
     );
     return { svc, create };
   }
@@ -516,19 +451,22 @@ describe('IntakeService.createFromMeetingNextStep', () => {
     expect(create).not.toHaveBeenCalled();
     expect(res.id).toBe('dup-1');
   });
+
+  // Ф0 (ТЗ 2026-06-16) — гейт качества: текст-вопрос НЕ материализуется в
+  // задачу (BadRequestException, create НЕ вызван).
+  it('гейт качества: текст-вопрос → BadRequestException, create НЕ вызван', async () => {
+    const { svc, create } = build({ meetingFound: true });
+    await expect(
+      svc.createFromMeetingNextStep({
+        meetingId: 'm-1',
+        text: 'Как нам ускорить релиз?',
+        tenantId: TENANT,
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(create).not.toHaveBeenCalled();
+  });
 });
 
-/**
- * A10 (2026-06-14) — замыкание петли next-step → IntakeIssue.sourceBlockIds →
- * Issue → DecisionTaskLink('derived').
- *
- * Покрытие (детерминизм: мок Prisma, без сети/времени):
- *   (а) triage accept с непустым sourceBlockIds + пересекающийся Decision →
- *       создаётся DecisionTaskLink(linkType='derived') + пересчёт linkedTaskCount;
- *       в Issue прокидываются sourceBlockIds;
- *   (б) пустой sourceBlockIds → линк НЕ создаётся (no-op, decision.findMany не зван);
- *   (в) идемпотентность: повторный accept → createMany(skipDuplicates), не падает.
- */
 describe('IntakeService.triage — DecisionTaskLink(derived) (A10)', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -539,9 +477,7 @@ describe('IntakeService.triage — DecisionTaskLink(derived) (A10)', () => {
 
   function build(opts: {
     intake: IntakeRow;
-    /** Decision'ы, чьи sourceBlockIds пересекаются с задачей (мок findMany). */
     matchingDecisions: { id: string }[];
-    /** createMany.count (число фактически созданных строк). */
     createdLinks: number;
   }): {
     svc: IntakeService;
@@ -606,28 +542,21 @@ describe('IntakeService.triage — DecisionTaskLink(derived) (A10)', () => {
       projectId: 'proj-1',
       sourceBlockIds: ['blk-1', 'blk-2'],
     });
-    const {
-      svc,
-      issuesCreate,
-      decisionFindMany,
-      decisionTaskLinkCreateMany,
-      decisionUpdate,
-    } = build({
-      intake,
-      matchingDecisions: [{ id: 'dec-1' }],
-      createdLinks: 1,
-    });
+    const { svc, issuesCreate, decisionFindMany, decisionTaskLinkCreateMany, decisionUpdate } =
+      build({
+        intake,
+        matchingDecisions: [{ id: 'dec-1' }],
+        createdLinks: 1,
+      });
 
     await svc.triage('i-acc', ACCEPT_DTO, TENANT, 'user-1');
 
-    // Issue получил провенанс.
     expect(issuesCreate).toHaveBeenCalledTimes(1);
     const issueDto = issuesCreate.mock.calls[0]![1] as {
       sourceBlockIds?: string[];
     };
     expect(issueDto.sourceBlockIds).toEqual(['blk-1', 'blk-2']);
 
-    // Пересечение → createMany linkType='derived'.
     expect(decisionFindMany).toHaveBeenCalledTimes(1);
     expect(decisionTaskLinkCreateMany).toHaveBeenCalledTimes(1);
     const createArg = decisionTaskLinkCreateMany.mock.calls[0]![0] as {
@@ -638,7 +567,6 @@ describe('IntakeService.triage — DecisionTaskLink(derived) (A10)', () => {
     expect(createArg.data).toEqual([
       { decisionId: 'dec-1', issueId: 'issue-created-1', linkType: 'derived' },
     ]);
-    // Пересчёт linkedTaskCount.
     expect(decisionUpdate).toHaveBeenCalledWith({
       where: { id: 'dec-1' },
       data: { linkedTaskCount: 1 },
@@ -652,13 +580,15 @@ describe('IntakeService.triage — DecisionTaskLink(derived) (A10)', () => {
       projectId: 'proj-1',
       sourceBlockIds: [],
     });
-    const { svc, issuesCreate, decisionFindMany, decisionTaskLinkCreateMany } =
-      build({ intake, matchingDecisions: [], createdLinks: 0 });
+    const { svc, issuesCreate, decisionFindMany, decisionTaskLinkCreateMany } = build({
+      intake,
+      matchingDecisions: [],
+      createdLinks: 0,
+    });
 
     await svc.triage('i-empty', ACCEPT_DTO, TENANT, 'user-1');
 
     expect(issuesCreate).toHaveBeenCalledTimes(1);
-    // Без блоков — даже не ходим в decision.findMany.
     expect(decisionFindMany).not.toHaveBeenCalled();
     expect(decisionTaskLinkCreateMany).not.toHaveBeenCalled();
   });
@@ -670,41 +600,22 @@ describe('IntakeService.triage — DecisionTaskLink(derived) (A10)', () => {
       projectId: 'proj-1',
       sourceBlockIds: ['blk-1'],
     });
-    // Повтор: пересечение есть, но createMany ничего не создал (count=0) —
-    // skipDuplicates съел дубликат. Пересчёт счётчика пропускается (count=0).
     const { svc, decisionTaskLinkCreateMany, decisionUpdate } = build({
       intake,
       matchingDecisions: [{ id: 'dec-1' }],
       createdLinks: 0,
     });
 
-    await expect(
-      svc.triage('i-idem', ACCEPT_DTO, TENANT, 'user-1'),
-    ).resolves.toBeDefined();
+    await expect(svc.triage('i-idem', ACCEPT_DTO, TENANT, 'user-1')).resolves.toBeDefined();
 
     const createArg = decisionTaskLinkCreateMany.mock.calls[0]![0] as {
       skipDuplicates: boolean;
     };
     expect(createArg.skipDuplicates).toBe(true);
-    // count=0 → пересчёт linkedTaskCount не запускается.
     expect(decisionUpdate).not.toHaveBeenCalled();
   });
 });
 
-/**
- * QA B1 (2026-06-15) — fallback «Входящие» при accept без проекта.
- * Решение владельца: задача без привязки к проекту не должна выдавать ошибку
- * «не указан проект» — кладётся в общую папку «Входящие» tenant'а (тот же
- * проект, что использует авто-приём входящих: find-or-create по имени,
- * владелец = владелец Org).
- *
- * Покрытие (детерминизм: мок Prisma/ProjectsService):
- *   (а) accept без проекта, «Входящие» нет → создаётся (name=«Входящие»,
- *       network=0, owner=Org.ownerId) и Issue кладётся в него;
- *   (б) accept без проекта, «Входящие» уже есть → переиспользуется (create НЕ зван);
- *   (в) negative: ProjectsService недоступен (DI без него) → прежняя ошибка
- *       target_project_required (обратная совместимость).
- */
 describe('IntakeService.triage — fallback «Входящие» (QA B1)', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -712,9 +623,7 @@ describe('IntakeService.triage — fallback «Входящие» (QA B1)', () =>
 
   function build(opts: {
     intake: IntakeRow;
-    /** Существующий дефолт-проект «Входящие» (project.findFirst), либо null. */
     existingDefault: { id: string } | null;
-    /** Подключён ли ProjectsService (false = DI без него, как в проде нельзя). */
     withProjects?: boolean;
   }): {
     svc: IntakeService;
@@ -747,9 +656,9 @@ describe('IntakeService.triage — fallback «Входящие» (QA B1)', () =>
       events as never,
       webhooks as never,
       cfg as never,
-      undefined, // autoTriageQueue
-      undefined, // blockFetch
-      projects as never, // ProjectsService (@Optional)
+      undefined,
+      undefined,
+      projects as never,
     );
     return { svc, issuesCreate, projectsCreate, projectFindFirst };
   }
@@ -772,15 +681,9 @@ describe('IntakeService.triage — fallback «Входящие» (QA B1)', () =>
     expect(projectsCreate).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Входящие', network: 0 }),
       TENANT,
-      'org-owner', // владелец дефолт-проекта = владелец Org, не принявший
+      'org-owner',
     );
-    // Issue создан в свежесозданном дефолт-проекте «Входящие».
-    expect(issuesCreate).toHaveBeenCalledWith(
-      'inbox-created',
-      expect.anything(),
-      TENANT,
-      'user-1',
-    );
+    expect(issuesCreate).toHaveBeenCalledWith('inbox-created', expect.anything(), TENANT, 'user-1');
   });
 
   it('(б) accept без проекта, «Входящие» уже есть → переиспользует, create НЕ зван', async () => {
@@ -821,9 +724,9 @@ describe('IntakeService.triage — fallback «Входящие» (QA B1)', () =>
       withProjects: false,
     });
 
-    await expect(
-      svc.triage('i-noproj3', ACCEPT_NO_PROJECT, TENANT, 'user-1'),
-    ).rejects.toThrow(BadRequestException);
+    await expect(svc.triage('i-noproj3', ACCEPT_NO_PROJECT, TENANT, 'user-1')).rejects.toThrow(
+      BadRequestException,
+    );
     expect(issuesCreate).not.toHaveBeenCalled();
   });
 });

@@ -1,19 +1,4 @@
-/**
- * KC-Temporal W3.3 (2026-05-25) — unit-тесты counter-evidence в Chat-v2.
- *
- * Покрытие:
- *   1. Если у блока есть active contradicts-link — другой конец подмешивается
- *      в LLM-контекст с тегом `[CONTRADICTING BLOCK]`, метрика
- *      `observeChatV2ContradictingBlocksInContext` инкрементируется
- *      положительным числом.
- *   2. Если нет contradicts-link — counter-evidence пусто, метрика observe(0).
- *
- * Тестируем через `loadContradictingBlocks` напрямую (private) — для этого
- * используем `as any` cast. Это допустимо: метод проверяется в полной
- * intent unit-режим, без NestJS setup.
- */
 import { describe, expect, it, vi } from 'vitest';
-
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -46,9 +31,7 @@ function makeService(args: {
     ideaBlockFindMany: ReturnType<typeof vi.fn>;
   };
 } {
-  const ideaBlockLinkFindMany = vi.fn(
-    async () => args.contradictsLinks ?? [],
-  );
+  const ideaBlockLinkFindMany = vi.fn(async () => args.contradictsLinks ?? []);
   const ideaBlockFindMany = vi.fn(async () => args.contradictsBlockRows ?? []);
 
   const prisma = {
@@ -74,9 +57,6 @@ function makeService(args: {
     fetchCandidates: vi.fn(),
   } as unknown as ChatV2RetrievalService;
 
-  // Ф4 — accessResolver обязателен в конструкторе. Здесь null-ctx гейт не
-  // используется (loadContradictingBlocks зовётся с accessCtx=null), поэтому
-  // достаточно stub без реальных методов.
   const accessResolver = {
     partitionBlockIdsByAccess: vi.fn(),
   } as unknown as import('../../rbac/knowledge-access-resolver.service').KnowledgeAccessResolver;
@@ -88,9 +68,7 @@ function makeService(args: {
     retrieval,
     metrics,
     accessResolver,
-    // dataClassPolicy: undefined (optional)
     undefined,
-    // reasoningChain: undefined (optional) — отдельный тест W3.2
     undefined,
   );
 
@@ -107,10 +85,7 @@ function makeService(args: {
 describe('ChatV2Service — counter-evidence (W3.3)', () => {
   it('подмешивает contradicting блоки и observe-ит метрику с count>0', async () => {
     const { svc, metrics, prisma } = makeService({
-      // seed-блоки: b-seed-1, b-seed-2. contradicts links: b-seed-1 ↔ b-ext-1.
-      contradictsLinks: [
-        { fromBlockId: 'b-seed-1', toBlockId: 'b-ext-1', confidence: 0.85 },
-      ],
+      contradictsLinks: [{ fromBlockId: 'b-seed-1', toBlockId: 'b-ext-1', confidence: 0.85 }],
       contradictsBlockRows: [
         {
           id: 'b-ext-1',
@@ -121,7 +96,6 @@ describe('ChatV2Service — counter-evidence (W3.3)', () => {
       ],
     });
 
-    // Контекст-блоки (типа того, что вернул бы loadContextBlocks).
     const contextBlocks = [
       {
         id: 'b-seed-1',
@@ -141,7 +115,6 @@ describe('ChatV2Service — counter-evidence (W3.3)', () => {
       },
     ];
 
-    // Вызываем private метод через cast.
     const result = await (
       svc as unknown as {
         loadContradictingBlocks: (
@@ -160,12 +133,8 @@ describe('ChatV2Service — counter-evidence (W3.3)', () => {
 
     expect(result).toHaveLength(1);
     expect((result[0] as { id: string }).id).toBe('b-ext-1');
-    expect(
-      (result[0] as { contradictsBlockId: string }).contradictsBlockId,
-    ).toBe('b-seed-1');
-    expect(
-      metrics.observeChatV2ContradictingBlocksInContext,
-    ).toHaveBeenCalledWith(1);
+    expect((result[0] as { contradictsBlockId: string }).contradictsBlockId).toBe('b-seed-1');
+    expect(metrics.observeChatV2ContradictingBlocksInContext).toHaveBeenCalledWith(1);
   });
 
   it('без contradicts-link: возвращает [] и observe(0)', async () => {
@@ -197,8 +166,6 @@ describe('ChatV2Service — counter-evidence (W3.3)', () => {
     ).loadContradictingBlocks('org-1', contextBlocks, null, 'off');
 
     expect(result).toEqual([]);
-    expect(
-      metrics.observeChatV2ContradictingBlocksInContext,
-    ).toHaveBeenCalledWith(0);
+    expect(metrics.observeChatV2ContradictingBlocksInContext).toHaveBeenCalledWith(0);
   });
 });

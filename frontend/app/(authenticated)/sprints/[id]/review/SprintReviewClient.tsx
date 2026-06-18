@@ -1,15 +1,8 @@
-'use client';
+"use client";
 
-/**
- * `/sprints/[id]/review` — экран финального отчёта спринта.
- *
- * Источник: `GET /api/v1/cycles/:id/review` (discriminated union ready /
- * pending / failed). При pending — SWR с авто-refresh каждые 10с.
- */
-
-import { useState } from 'react';
-import Link from 'next/link';
-import useSWR from 'swr';
+import { useState } from "react";
+import Link from "next/link";
+import useSWR from "swr";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -17,30 +10,29 @@ import {
   RefreshCcw,
   Rocket,
   XCircle,
-} from 'lucide-react';
-import { Button } from '@/ui/shadcn/button';
-import { useAuth } from '@/contexts/auth-context';
-import { sprintsApi } from '@/api/tracker/sprints.api';
-import type { SprintReviewPayloadApi } from '@/domain/sprint';
+} from "lucide-react";
+import { Button } from "@/ui/shadcn/button";
+import { useAuth } from "@/contexts/auth-context";
+import { sprintsApi } from "@/api/tracker/sprints.api";
+import type { SprintReviewPayloadApi } from "@/domain/sprint";
 
 export function SprintReviewClient({ cycleId }: { cycleId: string }) {
   const { currentOrgId } = useAuth();
   const key =
     currentOrgId && cycleId
-      ? ['tracker.sprint.review', currentOrgId, cycleId]
+      ? ["tracker.sprint.review", currentOrgId, cycleId]
       : null;
 
   const swr = useSWR(
     key,
     async () => {
-      if (!currentOrgId) throw new Error('orgId required');
+      if (!currentOrgId) throw new Error("orgId required");
       return sprintsApi.getReview(currentOrgId, cycleId);
     },
     {
       revalidateOnFocus: false,
-      // При pending — авто-poll каждые 10с (см. ниже refreshInterval-функцию).
       refreshInterval: (latestData) =>
-        latestData?.status === 'pending' ? 10_000 : 0,
+        latestData?.status === "pending" ? 10_000 : 0,
     },
   );
 
@@ -58,7 +50,7 @@ export function SprintReviewClient({ cycleId }: { cycleId: string }) {
       setRegenError(
         e instanceof Error
           ? e.message
-          : 'Не удалось перегенерировать отчёт. Попробуйте позже.',
+          : "Не удалось перегенерировать отчёт. Попробуйте позже.",
       );
     } finally {
       setRegenPending(false);
@@ -83,9 +75,9 @@ export function SprintReviewClient({ cycleId }: { cycleId: string }) {
 
       {swr.isLoading || !swr.data ? (
         <SkeletonState />
-      ) : swr.data.status === 'pending' ? (
+      ) : swr.data.status === "pending" ? (
         <PendingState />
-      ) : swr.data.status === 'failed' ? (
+      ) : swr.data.status === "failed" ? (
         <FailedState
           error={swr.data.error}
           onRegenerate={() => void handleRegenerate()}
@@ -122,8 +114,8 @@ function PendingState() {
         Генерируем отчёт…
       </div>
       <p className="max-w-md text-xs text-fg-tertiary">
-        Помощник анализирует встречи и задачи спринта. Обычно это занимает
-        от 30 секунд до нескольких минут. Страница обновится автоматически.
+        Помощник анализирует встречи и задачи спринта. Обычно это занимает от 30
+        секунд до нескольких минут. Страница обновится автоматически.
       </p>
     </div>
   );
@@ -181,7 +173,7 @@ function ReadyState({
 }) {
   return (
     <div className="flex flex-col gap-4">
-      {/* Narrative */}
+      {}
       <section className="rounded-md border border-border-subtle bg-bg-elevated p-5">
         <div className="flex items-center justify-between gap-3">
           <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-fg-tertiary">
@@ -202,14 +194,10 @@ function ReadyState({
         </p>
       </section>
 
-      {/* 4 списка: planned / completed / notCompleted / carriedOver */}
+      {}
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <ListBlock title="План" items={review.planned} />
-        <ListBlock
-          title="Готово"
-          items={review.completed}
-          accent="mint"
-        />
+        <ListBlock title="Готово" items={review.completed} accent="mint" />
         <ListBlock
           title="Не закрыто"
           items={review.notCompleted}
@@ -222,18 +210,14 @@ function ReadyState({
         />
       </section>
 
-      {/* Blockers / Reasons / Hints */}
+      {}
       <section className="grid gap-3 md:grid-cols-3">
-        <ListBlock
-          title="Что мешало"
-          items={review.blockers}
-          accent="rose"
-        />
+        <ListBlock title="Что мешало" items={review.blockers} accent="rose" />
         <ListBlock title="Почему не закрыто" items={review.reasons} />
         <ListBlock title="Подсказки помощника" items={review.hints} />
       </section>
 
-      {/* Next plan candidates */}
+      {}
       {review.nextPlanCandidates.length > 0 && (
         <section className="rounded-md border border-border-subtle bg-bg-elevated p-5">
           <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-fg-tertiary">
@@ -264,7 +248,7 @@ function ReadyState({
         </section>
       )}
 
-      {/* Regenerate */}
+      {}
       <section className="flex flex-col gap-2 rounded-md border border-border-subtle bg-bg-elevated p-4 md:flex-row md:items-center md:justify-between">
         <div className="text-xs text-fg-tertiary">
           Отчёт можно перегенерировать — например, если в спринт добавились
@@ -299,18 +283,18 @@ function ListBlock({
 }: {
   title: string;
   items: string[];
-  accent?: 'mint' | 'amber' | 'rose' | 'slate';
+  accent?: "mint" | "amber" | "rose" | "slate";
 }) {
   const dotClass =
-    accent === 'mint'
-      ? 'bg-mint-500'
-      : accent === 'amber'
-        ? 'bg-amber-500'
-        : accent === 'rose'
-          ? 'bg-rose-500'
-          : accent === 'slate'
-            ? 'bg-slate-400'
-            : 'bg-accent';
+    accent === "mint"
+      ? "bg-mint-500"
+      : accent === "amber"
+        ? "bg-amber-500"
+        : accent === "rose"
+          ? "bg-rose-500"
+          : accent === "slate"
+            ? "bg-slate-400"
+            : "bg-accent";
   return (
     <div className="flex flex-col gap-2 rounded-md border border-border-subtle bg-bg-elevated p-4">
       <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-fg-tertiary">

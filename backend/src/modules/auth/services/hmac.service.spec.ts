@@ -6,10 +6,6 @@ import type { TypedConfigService } from '../../../common/config/index';
 
 import { HmacService } from './hmac.service';
 
-/**
- * Юнит-тесты HmacService — проверка подписи, окна timestamp, hashKey/generateKey.
- */
-
 function makeCfg(windowSeconds: number): TypedConfigService {
   return {
     crossmark: { hmacTimestampWindowSeconds: windowSeconds },
@@ -23,7 +19,7 @@ function sign(key: string, timestamp: string, body: string): string {
 describe('HmacService', () => {
   const KEY = 'a'.repeat(64);
   const BODY = '{"foo":"bar","n":42}';
-  const WINDOW = 300; // 5 min
+  const WINDOW = 300;
 
   it('принимает валидную подпись со свежим timestamp', () => {
     const svc = new HmacService(makeCfg(WINDOW));
@@ -45,7 +41,7 @@ describe('HmacService', () => {
     const signature = sign(KEY, ts, BODY);
 
     const ok = svc.verify({
-      body: Buffer.from('{"foo":"BAR"}'), // изменили тело
+      body: Buffer.from('{"foo":"BAR"}'),
       signature,
       timestamp: ts,
       key: KEY,
@@ -108,7 +104,7 @@ describe('HmacService', () => {
     const ts = String(Math.floor(Date.now() / 1000));
     const ok = svc.verify({
       body: Buffer.from(BODY),
-      signature: 'aabb', // короткая
+      signature: 'aabb',
       timestamp: ts,
       key: KEY,
     });

@@ -267,6 +267,61 @@ describe('RoleClonePersonaVersioningHandler', () => {
     expect(createdPersonas[0]?.roleVersion).toBe(2);
   });
 
+  it('Б47: после успешного buildForRole(active) нет холостого updateMany по pending_rebuild новой персоны', async () => {
+    const existingActive: PersonaRow = {
+      id: 'persona-v1',
+      roleVersion: 1,
+      version: 1,
+      currentBearerPersonId: 'person-A',
+      status: 'active',
+      scope: 'role',
+      scopeRefId: 'role-1',
+      succeedsPersonaId: null,
+      snapshotAt: new Date('2026-05-01T00:00:00Z'),
+      tenantId: 't-1',
+    };
+    const { prisma, createdPersonas, updateManyCalls } = buildPrismaMock({
+      role: ROLE,
+      existingPersonas: [existingActive],
+    });
+    // builder возвращает active — раньше это запускало холостой supersede
+    // нашего pending_rebuild (buildForRole его уже погасил внутри своей tx).
+    const builder = {
+      buildForRole: vi.fn(async () => ({ id: 'rebuilt', status: 'active' })),
+      buildForProfile: vi.fn(async () => null),
+    } as unknown as ExecutablePersonaBuildService;
+
+    const handler = new RoleClonePersonaVersioningHandler(
+      prisma,
+      builder,
+      buildMetricsMock(),
+    );
+
+    const personaId = await handler.handle({
+      tenantId: 't-1',
+      roleId: 'role-1',
+      oldPersonId: 'person-A',
+      newPersonId: 'person-B',
+      changedAt: new Date('2026-05-25T10:00:00Z'),
+    });
+
+    expect(personaId).not.toBeNull();
+    expect(createdPersonas).toHaveLength(1);
+    const createdId = createdPersonas[0]?.id;
+    // buildForRole был вызван (немедленная пересборка).
+    expect(
+      (builder.buildForRole as ReturnType<typeof vi.fn>).mock.calls,
+    ).toHaveLength(1);
+    // Холостого supersede по новой pending_rebuild персоне быть НЕ должно.
+    const stalePendingSupersede = updateManyCalls.find(
+      (c) =>
+        (c.where as { id?: string; status?: string }).id === createdId &&
+        (c.where as { status?: string }).status === 'pending_rebuild' &&
+        (c.data as { status?: string }).status === 'superseded',
+    );
+    expect(stalePendingSupersede).toBeUndefined();
+  });
+
   it('Сценарий D: Role не существует / удалена → skip (без exceptions, без create)', async () => {
     const { prisma, createdPersonas } = buildPrismaMock({
       role: null,

@@ -7,24 +7,10 @@ import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
 import { TableEnrichService } from './table-enrich.service';
 
-/**
- * Unit-тесты `TableEnrichService` (Smart-tables Фаза 3 — Event-to-Cells).
- *
- * Покрытие:
- *  (a) пустая ячейка + confidence ≥ threshold → ячейка патчится + provenance с deep-link.
- *  (b) непустая ячейка + высокий confidence → НЕ патчится, pending reason 'overwrite'.
- *  (c) confidence < threshold → pending reason 'low_confidence', ячейка не тронута.
- *  (d) read-only entity-колонка → не попадает в схему extract (агент игнорирует).
- *  (e) кэш: provenance с тем же (row,property,meetingId) → факт пропущен, патча нет.
- *  (f) decidePendingPatch approve → ячейка обновляется + provenance; reject → не меняется.
- *  (g) undoCellEdit → previousValue восстановлен, rolledBackAt проставлен.
- */
 describe('TableEnrichService', () => {
   const TENANT = 'org-1';
   const MEETING = 'mtg-1';
 
-  // Колонки таблицы clients_deals: name(readonly entity), stage(ручная,
-  // selectSingle), budget(ручная, currency).
   const PROPS = [
     {
       id: 'p-name',
@@ -54,13 +40,17 @@ describe('TableEnrichService', () => {
       type: 'sales',
       transcript: {
         turns: [
-          { speaker: 'Менеджер', text: 'По клиенту Бета-Корп бюджет проекта 500000 рублей.', startSec: 12, endSec: 18 },
+          {
+            speaker: 'Менеджер',
+            text: 'По клиенту Бета-Корп бюджет проекта 500000 рублей.',
+            startSec: 12,
+            endSec: 18,
+          },
         ],
       },
     };
   }
 
-  // Транскрипт содержит "Бета-Корп" → fallback-матч по canonicalName.
   const ENTITY = {
     id: 'ent-1',
     canonicalName: 'Бета-Корп',
@@ -131,19 +121,11 @@ describe('TableEnrichService', () => {
     );
   });
 
-  /** Поднимает стандартный happy-path: 1 sync-таблица, 1 строка (entity), fallback-матч. */
   function arrangeEnrich(rowCells: Record<string, unknown>): void {
     prisma.meeting.findUnique.mockResolvedValue(meeting());
     prisma.table.findMany.mockResolvedValue([TABLE]);
-    // resolveMeetingEntities: граф пустой → fallback entity.findMany (1-й вызов).
-    // collectMatchingEntities не вызывается (граф пуст), значит entity.findMany
-    // вызывается только в fallback.
     prisma.entity.findMany.mockResolvedValueOnce([ENTITY]);
-    // строки таблицы для найденной entity
-    prisma.tableRow.findMany.mockResolvedValue([
-      { id: 'r-1', cells: rowCells, entityId: 'ent-1' },
-    ]);
-    // entityLabel
+    prisma.tableRow.findMany.mockResolvedValue([{ id: 'r-1', cells: rowCells, entityId: 'ent-1' }]);
     prisma.entity.findUnique.mockResolvedValue({ canonicalName: 'Бета-Корп' });
   }
 
@@ -154,18 +136,22 @@ describe('TableEnrichService', () => {
   it('(a) пустая ячейка + confidence ≥ threshold → патч + provenance с deep-link', async () => {
     arrangeEnrich({});
     llmFacts([
-      { propertyId: 'p-budget', value: 500000, confidence: 0.92, quote: 'Бюджет 500000', timeSec: 12 },
+      {
+        propertyId: 'p-budget',
+        value: 500000,
+        confidence: 0.92,
+        quote: 'Бюджет 500000',
+        timeSec: 12,
+      },
     ]);
 
     const res = await svc.enrichFromEvent({ meetingId: MEETING, tenantId: TENANT });
 
     expect(res.applied).toBe(1);
     expect(res.pending).toBe(0);
-    // ячейка записана
     expect(prisma.tableRow.update).toHaveBeenCalledTimes(1);
     const upd = prisma.tableRow.update.mock.calls[0]![0].data.cells;
     expect(upd['p-budget']).toBe(500000);
-    // provenance с deep-link на тайминг
     expect(prisma.tableCellProvenance.create).toHaveBeenCalledTimes(1);
     const prov = prisma.tableCellProvenance.create.mock.calls[0]![0].data;
     expect(prov.sourceType).toBe('meeting');
@@ -173,14 +159,19 @@ describe('TableEnrichService', () => {
     expect(prov.sourceLink).toBe(`/meetings/${MEETING}?t=12`);
     expect(prov.appliedBy).toBe('agent');
     expect(prov.previousValue).toBe(Prisma.JsonNull);
-    // pending не создавался
     expect(prisma.tableCellPendingPatch.create).not.toHaveBeenCalled();
   });
 
   it("(b) непустая ячейка + высокий confidence → pending reason 'overwrite', ячейка не тронута", async () => {
     arrangeEnrich({ 'p-stage': 'opt-1' });
     llmFacts([
-      { propertyId: 'p-stage', value: 'opt-2', confidence: 0.95, quote: 'перешли к контракту', timeSec: 30 },
+      {
+        propertyId: 'p-stage',
+        value: 'opt-2',
+        confidence: 0.95,
+        quote: 'перешли к контракту',
+        timeSec: 30,
+      },
     ]);
 
     const res = await svc.enrichFromEvent({ meetingId: MEETING, tenantId: TENANT });
@@ -220,9 +211,7 @@ describe('TableEnrichService', () => {
 
     expect(llm.call).toHaveBeenCalledTimes(1);
     const userMsg = llm.call.mock.calls[0]![0].userMessage as string;
-    // p-name (readonly+entity) не в схеме колонок для extract
     expect(userMsg).not.toContain('id=p-name');
-    // ручные колонки — есть
     expect(userMsg).toContain('id=p-stage');
     expect(userMsg).toContain('id=p-budget');
   });
@@ -232,7 +221,6 @@ describe('TableEnrichService', () => {
     llmFacts([
       { propertyId: 'p-budget', value: 500000, confidence: 0.92, quote: 'x', timeSec: 12 },
     ]);
-    // кэш-хит
     prisma.tableCellProvenance.findFirst.mockResolvedValue({ id: 'prov-old' });
 
     const res = await svc.enrichFromEvent({ meetingId: MEETING, tenantId: TENANT });
@@ -244,7 +232,6 @@ describe('TableEnrichService', () => {
   });
 
   it('(f) decidePendingPatch approve → ячейка обновляется + provenance; reject → не меняется', async () => {
-    // approve
     prisma.tableCellPendingPatch.findUnique.mockResolvedValue({
       id: 'pp-1',
       tenantId: TENANT,
@@ -279,7 +266,6 @@ describe('TableEnrichService', () => {
     expect(prov.appliedBy).toBe('user-2');
     expect(prov.previousValue).toBe('opt-1');
 
-    // reject
     vi.clearAllMocks();
     prisma.tableCellPendingPatch.findUnique.mockResolvedValue({
       id: 'pp-2',
@@ -303,7 +289,7 @@ describe('TableEnrichService', () => {
       tenantId: TENANT,
       tableRowId: 'r-1',
       propertyId: 'p-budget',
-      previousValue: null, // была пустой → undo удаляет ключ
+      previousValue: null,
       rolledBackAt: null,
     });
     prisma.tableRow.findUnique.mockResolvedValue({
@@ -320,12 +306,12 @@ describe('TableEnrichService', () => {
     });
 
     expect(res.rolledBack).toBe(true);
-    // previousValue был null → ключ удалён
     const updatedCells = prisma.tableRow.update.mock.calls[0]![0].data.cells;
     expect(updatedCells['p-budget']).toBeUndefined();
     expect(updatedCells['p-stage']).toBe('opt-1');
-    // rolledBackAt проставлен
     expect(prisma.tableCellProvenance.update).toHaveBeenCalledTimes(1);
-    expect(prisma.tableCellProvenance.update.mock.calls[0]![0].data.rolledBackAt).toBeInstanceOf(Date);
+    expect(prisma.tableCellProvenance.update.mock.calls[0]![0].data.rolledBackAt).toBeInstanceOf(
+      Date,
+    );
   });
 });

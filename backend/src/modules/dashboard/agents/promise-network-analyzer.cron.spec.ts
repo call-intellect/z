@@ -1,14 +1,8 @@
-/**
- * Unit-тесты `PromiseNetworkAnalyzerCron` (Pulse Wave 6 §6.5).
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 
-import {
-  PromiseNetworkAnalyzerCron,
-  classifyRole,
-} from './promise-network-analyzer.cron';
+import { PromiseNetworkAnalyzerCron, classifyRole } from './promise-network-analyzer.cron';
 
 interface MockCommitment {
   id: string;
@@ -133,9 +127,7 @@ describe('PromiseNetworkAnalyzerCron.runOnce', () => {
     expect(p2?.inDegree).toBe(2);
     expect(p2?.outDegree).toBe(0);
 
-    const edgeP1P2 = graph.edges.find(
-      (e) => e.fromPersonId === 'p1' && e.toPersonId === 'p2',
-    );
+    const edgeP1P2 = graph.edges.find((e) => e.fromPersonId === 'p1' && e.toPersonId === 'p2');
     expect(edgeP1P2?.count).toBe(2);
   });
 

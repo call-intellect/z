@@ -10,21 +10,10 @@ import { OrgSwitcher } from './OrgSwitcher';
 import { PendingActionsBell } from './PendingActionsBell';
 import { useBreadcrumbTrail } from '@/ui/components/breadcrumbs/useBreadcrumbTrail';
 
-/**
- * Mobile header — burger который открывает sidebar в Sheet.
- * На desktop этот компонент не показывается (см. AppShell).
- *
- * Расположение элементов (Фаза 0c §5.3):
- *   [Лого Z] [OrgSwitcher mobile] ...spacer... [бургер]
- *
- * `OrgSwitcher` сам решает, что рендерить (0/1/N memberships) и скрывается
- * автоматически на роутах wizard'а `/onboarding/company/*`.
- */
 export function MobileHeader() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const trail = useBreadcrumbTrail();
-  // Цель «назад» — ближайшее предшествующее звено с href.
   const backItem = [...trail].slice(0, -1).reverse().find((it) => it.href);
   const showBack = trail.length >= 2 && Boolean(backItem);
 
@@ -59,7 +48,6 @@ export function MobileHeader() {
         </>
       )}
 
-      {/* Action Center B1 — глобальный колокольчик рядом с бургером. */}
       <PendingActionsBell />
 
       <Button

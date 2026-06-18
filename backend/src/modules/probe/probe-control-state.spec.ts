@@ -2,15 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { ProbeController } from './probe.controller';
 
-/**
- * Юнит-тесты маппинга состояния вопроса Коры (`/probe/control`).
- *
- * state выводится из Notification.status / responseStatus / expiresAt:
- *   answered    — responseStatus='answered' (или status='responded').
- *   expired     — responseStatus='expired' ИЛИ expiresAt < now.
- *   read_silent — status='read' && responseStatus in (pending|null).
- *   unseen      — всё остальное (queued/sent/delivered, ещё не открыт).
- */
 describe('ProbeController.deriveState', () => {
   const now = new Date('2026-06-15T12:00:00.000Z');
 

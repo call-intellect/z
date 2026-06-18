@@ -1,26 +1,3 @@
-/**
- * TochkaRecurringChargeCron — попытка списания у card_recurring подписок.
- *
- * Расписание: `0 * * * *` (раз в час). Это упрощённый вариант — в проде
- * можно сделать чаще (раз в 15 мин), но при ~500 ACTIVE подписок раз в час
- * достаточно.
- *
- * Условия выборки:
- *   - status = ACTIVE
- *   - autoRenew = true
- *   - renewalMethod = card_recurring
- *   - currentPeriodEnd < now + 3 days  (попытка заранее, чтобы при failure
- *     успеть перейти в PAST_DUE и оповестить клиента до отключения)
- *   - lastRenewalAttemptAt < now - 6 hours  (не долбим чаще 4 раз/сутки)
- *
- * Поведение:
- *   - provider.chargeRecurringSubscription({...}) → pending
- *   - lastRenewalAttemptAt = now
- *   - финализация (статус ACTIVE с новым периодом) приходит через webhook
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §7.4 + §14 Фаза 5.7.
- */
-
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 
@@ -34,7 +11,7 @@ import type { BillingProviderPort } from '../providers/billing-provider.port';
 import { InvoiceService } from './invoice.service';
 
 const LOCK_KEY = 'billing:tochka-recurring-charge:lock';
-const LOCK_TTL_SECONDS = 900; // 15 минут
+const LOCK_TTL_SECONDS = 900;
 const LOOKAHEAD_DAYS = 3;
 const MIN_ATTEMPT_INTERVAL_HOURS = 6;
 
@@ -82,10 +59,7 @@ export class TochkaRecurringChargeCron {
           renewalMethod: 'card_recurring',
           providerSubscriptionId: { not: null },
           currentPeriodEnd: { lt: lookahead },
-          OR: [
-            { lastRenewalAttemptAt: null },
-            { lastRenewalAttemptAt: { lt: minInterval } },
-          ],
+          OR: [{ lastRenewalAttemptAt: null }, { lastRenewalAttemptAt: { lt: minInterval } }],
         },
         select: {
           id: true,
@@ -112,8 +86,6 @@ export class TochkaRecurringChargeCron {
             ? Math.round(sub.monthlyPriceKopecks * 12 * 0.8)
             : sub.monthlyPriceKopecks;
 
-        // audit-fixes Б15: создаём локальный Invoice ДО chargeRecurringSubscription.
-        // Период нового счёта = currentPeriodEnd → +1 месяц/год.
         const periodStart: Date = sub.currentPeriodEnd;
         const periodEnd = new Date(periodStart);
         if (sub.billingPeriod === 'yearly') {
@@ -163,9 +135,6 @@ export class TochkaRecurringChargeCron {
             providerSubscriptionId: sub.providerSubscriptionId,
             amountKopecks: amount,
           });
-          // audit-fixes Б15: записываем реальный operationId Точки.
-          // Без этого webhook не найдёт Invoice по providerInvoiceId →
-          // подписка падает в PAST_DUE при успешном списании.
           await this.prisma.invoice.update({
             where: { id: invoiceId },
             data: {
@@ -184,8 +153,6 @@ export class TochkaRecurringChargeCron {
               err instanceof Error ? err.message : String(err)
             }`,
           );
-          // Invoice остаётся в draft — его подберёт InvoiceStatusSyncCron
-          // или void'ит cron очистки draft'ов.
         }
         await this.prisma.subscription.update({
           where: { id: sub.id },
@@ -193,7 +160,7 @@ export class TochkaRecurringChargeCron {
         });
       }
 
-      this.logger.log(
+      this.logger.debug(
         `TochkaRecurringChargeCron: candidates=${candidates.length} attempted=${attempted} failed=${failed}`,
       );
     } finally {

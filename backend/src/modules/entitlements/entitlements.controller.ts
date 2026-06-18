@@ -14,10 +14,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { SuperAdminGuard } from '../auth/guards/super-admin.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
@@ -32,18 +29,6 @@ import {
 import { EntitlementService } from './entitlement.service';
 import type { ResolvedEntitlement } from './entitlement.service';
 
-/**
- * REST API entitlements (Фаза 12 knowledge-core, Шаг 7).
- *
- * Routes:
- *   - GET   /api/v1/me/entitlements                         — текущий tier + features + quotas
- *                                                             текущей Org (без `notes`).
- *   - GET   /api/v1/settings/billing                        — то же + `notes` (owner-only).
- *   - GET   /api/v1/admin/orgs/:tenantId/entitlement        — Z-Admin (super_admin).
- *   - PATCH /api/v1/admin/orgs/:tenantId/entitlement        — Z-Admin: смена tier'а / override'ов.
- *
- * Обязательное поле `reason` в PATCH — фиксируется в AuditLog для compliance.
- */
 @ApiTags('entitlements')
 @Controller('api/v1')
 export class EntitlementsController {
@@ -51,8 +36,6 @@ export class EntitlementsController {
     @Inject(EntitlementService) private readonly svc: EntitlementService,
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
-
-  // ─────────────────────────── /me/entitlements ───────────────────────────
 
   @Get('me/entitlements')
   @UseGuards(CookieAuthGuard, TenantGuard)
@@ -62,10 +45,8 @@ export class EntitlementsController {
   ): Promise<EntitlementResponseDto> {
     const t = this.requireTenant(tenantId);
     const ent = await this.svc.getEntitlement(t);
-    return this.toDto(t, ent, /* includeNotes */ false);
+    return this.toDto(t, ent, false);
   }
-
-  // ─────────────────────────── /settings/billing ──────────────────────────
 
   @Get('settings/billing')
   @UseGuards(CookieAuthGuard, TenantGuard)
@@ -77,17 +58,13 @@ export class EntitlementsController {
     const t = this.requireTenant(tenantId);
     await this.requireOwner(user.id, t);
     const ent = await this.svc.getEntitlement(t);
-    return this.toDto(t, ent, /* includeNotes */ true);
+    return this.toDto(t, ent, true);
   }
-
-  // ─────────────────────────── /admin/orgs/:tenantId/entitlement ─────────
 
   @Get('admin/orgs/:tenantId/entitlement')
   @UseGuards(CookieAuthGuard, SuperAdminGuard)
   @ApiOperation({ summary: 'Z-Admin: entitlement любой Org (super_admin only)' })
-  async adminGet(
-    @Param('tenantId') tenantId: string,
-  ): Promise<EntitlementResponseDto> {
+  async adminGet(@Param('tenantId') tenantId: string): Promise<EntitlementResponseDto> {
     if (!tenantId) {
       throw new BadRequestException({
         ok: false,
@@ -95,7 +72,7 @@ export class EntitlementsController {
       });
     }
     const ent = await this.svc.getEntitlement(tenantId);
-    return this.toDto(tenantId, ent, /* includeNotes */ true);
+    return this.toDto(tenantId, ent, true);
   }
 
   @Patch('admin/orgs/:tenantId/entitlement')
@@ -114,47 +91,29 @@ export class EntitlementsController {
       });
     }
 
-    // Применяем по полям. Каждое — отдельный AuditLog'овый event.
     if (body.tier !== undefined) {
       await this.svc.setTier(tenantId, body.tier, user.id, body.reason);
     }
 
     if (body.featureOverrides !== undefined) {
       for (const [key, value] of Object.entries(body.featureOverrides)) {
-        await this.svc.setOverride(
-          tenantId,
-          'feature',
-          key,
-          value,
-          user.id,
-          body.reason,
-        );
+        await this.svc.setOverride(tenantId, 'feature', key, value, user.id, body.reason);
       }
     }
 
     if (body.quotaOverrides !== undefined) {
       for (const [key, value] of Object.entries(body.quotaOverrides)) {
-        await this.svc.setOverride(
-          tenantId,
-          'quota',
-          key,
-          value,
-          user.id,
-          body.reason,
-        );
+        await this.svc.setOverride(tenantId, 'quota', key, value, user.id, body.reason);
       }
     }
 
     if (body.notes !== undefined) {
       await this.svc.setNotes(tenantId, body.notes);
-      // notes не пишем в audit как отдельный override — это часть PATCH.
     }
 
     const ent = await this.svc.getEntitlement(tenantId);
-    return this.toDto(tenantId, ent, /* includeNotes */ true);
+    return this.toDto(tenantId, ent, true);
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
@@ -173,8 +132,7 @@ export class EntitlementsController {
         ok: false,
         error: {
           code: 'forbidden',
-          message:
-            'Billing-страница доступна только владельцу Org или super_admin.',
+          message: 'Billing-страница доступна только владельцу Org или super_admin.',
         },
       });
     }

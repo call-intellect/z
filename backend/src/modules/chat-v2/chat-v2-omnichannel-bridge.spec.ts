@@ -1,14 +1,3 @@
-/**
- * M-1 (2026-06-12) — ChatV2OmnichannelBridge: derived класс данных ответа
- * chat-v2 НЕ должен литься текстом во внешний канал.
- *
- *   - ask() вернул dataClass='sensitive'/'private' → sendChatReply получает
- *     УКАЗАТЕЛЬ на кабинет (text содержит «кабинете»), не исходный текст;
- *     сам факт ответа классифицируется как 'internal' (solicited:true).
- *   - dataClass='internal' → исходный текст как раньше.
- *
- * Все зависимости мокированы (vi.fn() + cast — паттерн проекта).
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ConversationalService } from '../conversational/conversational.service';
@@ -68,9 +57,7 @@ describe('ChatV2OmnichannelBridge — M-1 derived dataClass ответа', () =>
   });
 
   it('dataClass=sensitive → в канал уходит указатель на кабинет, НЕ исходный текст', async () => {
-    const { handler, sendChatReply } = makeBridge(
-      makeAnswer({ dataClass: 'sensitive' }),
-    );
+    const { handler, sendChatReply } = makeBridge(makeAnswer({ dataClass: 'sensitive' }));
 
     await handler(query());
 
@@ -88,9 +75,7 @@ describe('ChatV2OmnichannelBridge — M-1 derived dataClass ответа', () =>
   });
 
   it('dataClass=private → тоже указатель (не текст)', async () => {
-    const { handler, sendChatReply } = makeBridge(
-      makeAnswer({ dataClass: 'private' }),
-    );
+    const { handler, sendChatReply } = makeBridge(makeAnswer({ dataClass: 'private' }));
 
     await handler(query());
 
@@ -100,9 +85,7 @@ describe('ChatV2OmnichannelBridge — M-1 derived dataClass ответа', () =>
   });
 
   it('dataClass=internal → исходный текст как раньше', async () => {
-    const { handler, sendChatReply } = makeBridge(
-      makeAnswer({ dataClass: 'internal' }),
-    );
+    const { handler, sendChatReply } = makeBridge(makeAnswer({ dataClass: 'internal' }));
 
     await handler(query());
 

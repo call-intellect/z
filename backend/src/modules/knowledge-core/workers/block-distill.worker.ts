@@ -10,15 +10,12 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { type IdeaBlock, Prisma, type SignalType } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
-
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { maxDataClass } from '../../ai/services/llm-router.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
-import {
-  type BlockDistillJobData,
-  CORE_QUEUE_NAMES,
-} from '../../core-queue/queues';
+import { type BlockDistillJobData, CORE_QUEUE_NAMES } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { BlockMergeService } from '../services/block-merge.service';
@@ -44,7 +41,11 @@ import { RouterService } from '../services/router.service';
  *            confidence, tags union.
  *      - после транзакции — enqueueBlockLinker(canonicalId).
  *
- * Concurrency=2: KNN-запрос и LLM-арбитр оба могут быть медленными.
+ * Б11 [K4]: concurrency=1 (сериализация). При concurrency>1 два draft-дубля
+ * одного tenant'а могли обрабатываться параллельно: оба видят себя `draft`,
+ * `knnCandidates` ищет только среди `canonical` → друг друга не находят → оба
+ * канонизируются, дубль остаётся навсегда. Сериализация воркера закрывает гонку:
+ * второй блок видит первый уже как canonical-кандидата в KNN.
  */
 @Injectable()
 export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
@@ -61,20 +62,10 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(BlockMergeService) private readonly merger: BlockMergeService,
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
-    // Ф3 МТЗ «разблокировка конвейера» — диспатч специалистов перенесён сюда
-    // из block-ingest. Специалисты обрабатывают только `canonical`, поэтому
-    // dispatch вызывается на переходе draft→canonical (markCanonical /
-    // mergeInto), а не на свежесозданном draft-блоке.
     @Inject(RouterService) private readonly router: RouterService,
-    // KC-Temporal W1.2 — Optional, потому что воркер также крутится в
-    // окружениях, где KnowledgeCoreModule пока не подключён (e2e/test).
     @Optional()
     @Inject(FactSupersedeService)
     private readonly factSupersede?: FactSupersedeService,
-    // KC-Temporal W3.5 — Optional EventEmitter2 для emit'а
-    // `idea_block.updated` (подписан ProjectionRebuilderService).
-    // Optional, чтобы worker'у не было обязательным наличие
-    // EventEmitterModule в DI-контексте (унит-тесты воркера).
     @Optional()
     @Inject(EventEmitter2)
     private readonly eventEmitter?: EventEmitter2,
@@ -89,19 +80,17 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         ),
       {
         connection: this.redis.client,
-        concurrency: 2,
+        // Б11 [K4]: concurrency=1 — сериализация устраняет гонку двух draft-дублей
+        // (оба видели себя draft → оба канонизировались). Подробнее в шапке класса.
+        concurrency: 1,
       },
     );
     this.worker.on('failed', (job, err) => {
       this.onJobFailed(job ?? null, err).catch((e) => {
-        this.logger.error(
-          `onJobFailed: ${e instanceof Error ? e.message : String(e)}`,
-        );
+        this.logger.error(`onJobFailed: ${e instanceof Error ? e.message : String(e)}`);
       });
     });
-    this.logger.log(
-      `BlockDistillWorker запущен (${CORE_QUEUE_NAMES.BLOCK_DISTILL})`,
-    );
+    this.logger.debug(`BlockDistillWorker запущен (${CORE_QUEUE_NAMES.BLOCK_DISTILL})`);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -110,8 +99,6 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       this.worker = null;
     }
   }
-
-  // ─────────────────────────── core ────────────────────────────────────────
 
   private async process(job: Job<BlockDistillJobData>): Promise<void> {
     const { blockId } = job.data;
@@ -131,7 +118,6 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Org-Admin Фаза 7: проверка тумблера.
     await this.gate.checkOrThrow(block.tenantId, 'block-distill');
 
     const candidates = await this.merger.knnCandidates({
@@ -158,14 +144,6 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Report-to-graph Ф4 ГАРД B (детерминированный пост-гард) — транскрипт
-    // ПОБЕЖДАЕТ при дедупе с отчётом. Опасный случай: LLM решил merge, НОВЫЙ
-    // блок — транскриптный (первичный, дословный), а выбранный canonical —
-    // из отчёта (вторичный). Слепой mergeInto превратил бы транскрипт в
-    // merged_into под report-canonical → провенанс деградирует. Вместо этого
-    // разворачиваем направление: транскрипт становится canonical-носителем,
-    // report → merged_into. Условие СТРОГОЕ по primarySource, поэтому
-    // transcript↔transcript и report↔report не затронуты (регресс-тесты Ф4 а/б).
     const chosenCanonical = candidates.find(
       (c) => c.candidate.id === verdict.canonicalId,
     )?.candidate;
@@ -187,8 +165,6 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  // ─────────────────────────── transitions ─────────────────────────────────
-
   private async markCanonical(block: IdeaBlock): Promise<void> {
     await this.prisma.ideaBlock.update({
       where: { id: block.id },
@@ -200,13 +176,8 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         'block-distill: enqueueBlockLinker упал — линковка отложена',
       );
     });
-    this.logger.log({ blockId: block.id }, 'block-distill: canonical');
+    this.logger.debug({ blockId: block.id }, 'block-distill: canonical');
 
-    // Ф3 МТЗ «разблокировка конвейера» — диспатч специалистов на переходе в
-    // canonical (раньше шёл из block-ingest на draft-блоке, где специалисты
-    // молча скипали). Best-effort: dispatch внутри уже не throw'ит, но
-    // оборачиваем в .catch на случай падения enqueue/Redis, чтобы не ронять
-    // markCanonical (статус блока уже зафиксирован).
     await this.router
       .dispatch({
         id: block.id,
@@ -223,8 +194,6 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         );
       });
 
-    // KC-Temporal W3.5 — best-effort emit для ProjectionRebuilderService.
-    // Если EventEmitter2 не задан (тестовое окружение) — просто пропускаем.
     this.emitIdeaBlockUpdated({
       tenantId: block.tenantId,
       blockId: block.id,
@@ -232,14 +201,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       emittedAt: Date.now(),
     });
 
-    // KC-Temporal W1.2 — fact-supersede best-effort. Запускается только
-    // если включены оба флага (BITEMPORAL_ENABLED + BITEMPORAL_SUPERSEDE_ENABLED).
-    // Все ошибки сервиса проглатываются, чтобы не ронять воркер distill.
-    if (
-      this.factSupersede &&
-      this.cfg.bitemporal.enabled &&
-      this.cfg.bitemporal.supersedeEnabled
-    ) {
+    if (this.factSupersede && this.cfg.bitemporal.enabled && this.cfg.bitemporal.supersedeEnabled) {
       try {
         await this.factSupersede.processNewBlock(block.id);
       } catch (err) {
@@ -269,9 +231,6 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Ф3 МТЗ «разблокировка конвейера» — захватываем signalType канонического
-    // блока ВНУТРИ транзакции, чтобы после коммита диспатчить специалистов по
-    // правильному типу (мердж мог уточнить сигнал; берём актуальный canonical).
     let canonicalSignalType: SignalType | null = null;
 
     await this.prisma.$transaction(async (tx) => {
@@ -279,21 +238,15 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         where: { id: canonicalId },
       });
       if (!canonical) {
-        throw new Error(
-          `block-distill: canonical ${canonicalId} не найден — abort merge`,
-        );
+        throw new Error(`block-distill: canonical ${canonicalId} не найден — abort merge`);
       }
       canonicalSignalType = canonical.signalType;
       if (canonical.status !== 'canonical') {
-        // Канонический блок мог быть сам merged_into между KNN и сейчас.
-        // Безопаснее всего — fallback в canonical: цепочки merge не
-        // выстраиваем, чтобы не запутаться.
         throw new Error(
           `block-distill: target ${canonicalId} имеет статус ${canonical.status}, не canonical`,
         );
       }
 
-      // 1. Помечаем текущий блок как merged_into.
       await tx.ideaBlock.update({
         where: { id: block.id },
         data: {
@@ -302,7 +255,6 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         },
       });
 
-      // 2. Переносим все evidence на canonical.
       await tx.ideaBlockEvidence.updateMany({
         where: { blockId: block.id },
         data: { blockId: canonicalId },
@@ -310,44 +262,49 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
 
       // 3. Переносим entity-mention'ы. Composite PK (blockId, entityId) может
       //    конфликтовать, если canonical уже линкован к той же entity —
-      //    делаем по одному с try/skip P2002.
+      //    делаем по одному с pre-check целевой пары, иначе update
+      //    (Б1: без catch P2002 в tx).
       const mentions = await tx.ideaBlockEntity.findMany({
         where: { blockId: block.id },
       });
       for (const m of mentions) {
-        try {
-          await tx.ideaBlockEntity.update({
+        // Б1: pre-check вместо catch(P2002) внутри tx — иначе ошибка SQL
+        // абортит всю транзакцию (PostgreSQL 25P02), и шаг 4 (обновление
+        // canonical) не выполнится. Проверяем целевую пару (canonicalId, entityId).
+        const conflicting = await tx.ideaBlockEntity.findUnique({
+          where: { blockId_entityId: { blockId: canonicalId, entityId: m.entityId } },
+        });
+        if (conflicting) {
+          // Дубль — удаляем mention со старого блока, оставляем canonical-вариант.
+          await tx.ideaBlockEntity.delete({
             where: { blockId_entityId: { blockId: block.id, entityId: m.entityId } },
-            data: { blockId: canonicalId },
           });
-        } catch (err) {
-          if (
-            err instanceof Prisma.PrismaClientKnownRequestError &&
-            err.code === 'P2002'
-          ) {
-            // Дубль — удаляем mention со старого блока, оставляем canonical-вариант.
-            await tx.ideaBlockEntity.delete({
-              where: { blockId_entityId: { blockId: block.id, entityId: m.entityId } },
-            });
-            continue;
-          }
-          throw err;
+          continue;
         }
+        await tx.ideaBlockEntity.update({
+          where: { blockId_entityId: { blockId: block.id, entityId: m.entityId } },
+          data: { blockId: canonicalId },
+        });
       }
 
-      // 4. Обновляем canonical: evidenceCount, confidence (weighted average),
-      //    tags (union), updatedAt.
-      const newEvidenceCount =
-        canonical.evidenceCount + Math.max(1, block.evidenceCount);
+      const newEvidenceCount = canonical.evidenceCount + Math.max(1, block.evidenceCount);
       const canonicalConf = new Prisma.Decimal(canonical.confidence);
       const blockConf = new Prisma.Decimal(block.confidence);
       const totalWeighted = canonicalConf
         .mul(canonical.evidenceCount)
         .plus(blockConf.mul(Math.max(1, block.evidenceCount)));
       const avgConf = totalWeighted.div(newEvidenceCount);
-      const mergedTags = Array.from(
-        new Set([...canonical.tags, ...block.tags]),
-      );
+      const mergedTags = Array.from(new Set([...canonical.tags, ...block.tags]));
+
+      // Б13 [K5]: пересчёт dataClass = max(canonical, merged). Без этого мердж
+      // более-чувствительного блока (например `confidential`) в менее
+      // чувствительный canonical (`internal`) тихо понижал бы класс носителя —
+      // evidence чувствительного блока переехало в canonical, а метка осталась
+      // старой → утечка при последующем retrieval/проекциях.
+      const mergedDataClass = maxDataClass([
+        canonical.dataClass,
+        block.dataClass,
+      ]);
 
       await tx.ideaBlock.update({
         where: { id: canonicalId },
@@ -355,11 +312,11 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
           evidenceCount: newEvidenceCount,
           confidence: new Prisma.Decimal(avgConf.toFixed(3)),
           tags: mergedTags,
+          dataClass: mergedDataClass,
         },
       });
     });
 
-    // 5. Линкер для canonical — связи могли поменяться.
     await this.coreQueue.enqueueBlockLinker(canonicalId).catch((err) => {
       this.logger.warn(
         {
@@ -370,15 +327,11 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       );
     });
 
-    this.logger.log(
+    this.logger.debug(
       { blockId: block.id, canonicalId, explanation: args.explanation },
       'block-distill: merged_into',
     );
 
-    // Ф3 МТЗ «разблокировка конвейера» — диспатч специалистов на canonicalId
-    // (живой блок, вобравший evidence/tags merged-блока). signalType берём из
-    // canonical, захваченного внутри транзакции. Best-effort: не роняем
-    // mergeInto, статус уже зафиксирован.
     if (canonicalSignalType !== null) {
       await this.router
         .dispatch({
@@ -397,11 +350,6 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         });
     }
 
-    // KC-Temporal W3.5 — emit'им по canonicalId (это «живой» блок,
-    // через который пересобираются Decision/Insight/...; merged-блок
-    // больше не используется как источник). changeKind='merged' даёт
-    // ProjectionRebuilderService возможность отличить merge-trigger
-    // от обычного update'а (для метрик / алертов).
     this.emitIdeaBlockUpdated({
       tenantId: block.tenantId,
       blockId: canonicalId,
@@ -410,20 +358,6 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /**
-   * Report-to-graph Ф4 ГАРД B — РАЗВОРОТ направления merge.
-   *
-   * Зеркало `mergeInto`, но роли меняются местами: новый ТРАНСКРИПТНЫЙ блок
-   * становится canonical-носителем, а выбранный REPORT-canonical помечается
-   * `merged_into` под транскрипт. Срабатывает СТРОГО при
-   * `new.primarySource='transcript' && canonical.primarySource='report'`
-   * (проверка в `process()`), поэтому transcript↔transcript и report↔report
-   * НЕ затрагиваются.
-   *
-   * Ключевое отличие от `mergeInto`: confidence нового canonical =
-   * `max(transcript, report)`, НЕ weighted-average — иначе высокоуверенный
-   * транскрипт просел бы в низкоуверенном (capped ≤0.6) report.
-   */
   private async swapDirection(args: {
     transcriptBlock: IdeaBlock;
     reportCanonicalId: string;
@@ -450,21 +384,14 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
           `block-distill: report-canonical ${reportCanonicalId} не найден — abort swap`,
         );
       }
-      // Идемпотентность/гонка: report-canonical мог быть сам merged_into между
-      // KNN и сейчас. Безопаснее всего — fallback: новый транскриптный блок
-      // просто становится canonical (цепочки merge не выстраиваем).
       if (reportCanonical.status !== 'canonical') {
         throw new Error(
           `block-distill: swap target ${reportCanonicalId} имеет статус ${reportCanonical.status}, не canonical`,
         );
       }
 
-      // 1. Транскриптный блок становится canonical-носителем.
-      //    signalType берём с транскрипта (он первичный) — это итоговый тип
-      //    для диспатча специалистов после коммита.
       canonicalSignalType = transcriptBlock.signalType;
 
-      // 2. Report-canonical → merged_into под транскрипт.
       await tx.ideaBlock.update({
         where: { id: reportCanonicalId },
         data: {
@@ -473,50 +400,48 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         },
       });
 
-      // 3. Переносим все evidence С report НА транскрипт.
       await tx.ideaBlockEvidence.updateMany({
         where: { blockId: reportCanonicalId },
         data: { blockId: transcriptBlock.id },
       });
 
-      // 4. Переносим entity-mention'ы С report НА транскрипт (skip ON CONFLICT
-      //    composite PK, как в mergeInto).
       const mentions = await tx.ideaBlockEntity.findMany({
         where: { blockId: reportCanonicalId },
       });
       for (const m of mentions) {
-        try {
-          await tx.ideaBlockEntity.update({
+        // Б1: pre-check вместо catch(P2002) внутри tx — иначе ошибка SQL
+        // абортит всю транзакцию (PostgreSQL 25P02), и шаг 5 (canonical-носитель)
+        // не выполнится. Проверяем целевую пару (transcriptBlock.id, entityId).
+        const conflicting = await tx.ideaBlockEntity.findUnique({
+          where: {
+            blockId_entityId: {
+              blockId: transcriptBlock.id,
+              entityId: m.entityId,
+            },
+          },
+        });
+        if (conflicting) {
+          await tx.ideaBlockEntity.delete({
             where: {
               blockId_entityId: {
                 blockId: reportCanonicalId,
                 entityId: m.entityId,
               },
             },
-            data: { blockId: transcriptBlock.id },
           });
-        } catch (err) {
-          if (
-            err instanceof Prisma.PrismaClientKnownRequestError &&
-            err.code === 'P2002'
-          ) {
-            await tx.ideaBlockEntity.delete({
-              where: {
-                blockId_entityId: {
-                  blockId: reportCanonicalId,
-                  entityId: m.entityId,
-                },
-              },
-            });
-            continue;
-          }
-          throw err;
+          continue;
         }
+        await tx.ideaBlockEntity.update({
+          where: {
+            blockId_entityId: {
+              blockId: reportCanonicalId,
+              entityId: m.entityId,
+            },
+          },
+          data: { blockId: transcriptBlock.id },
+        });
       }
 
-      // 5. Транскрипт делаем canonical-носителем: статус, evidenceCount (сумма),
-      //    confidence = MAX (НЕ усреднение — транскрипт не должен просесть в
-      //    capped report), tags = union.
       const newEvidenceCount =
         transcriptBlock.evidenceCount + Math.max(1, reportCanonical.evidenceCount);
       const transcriptConf = new Prisma.Decimal(transcriptBlock.confidence);
@@ -527,6 +452,13 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       const mergedTags = Array.from(
         new Set([...transcriptBlock.tags, ...reportCanonical.tags]),
       );
+      // Б13 [K5]: dataClass = max(transcript, report). Транскрипт-носитель
+      // вобрал evidence report'а — если report был чувствительнее, метка
+      // носителя должна подняться, иначе тихий downgrade (как в mergeInto).
+      const mergedDataClass = maxDataClass([
+        transcriptBlock.dataClass,
+        reportCanonical.dataClass,
+      ]);
 
       await tx.ideaBlock.update({
         where: { id: transcriptBlock.id },
@@ -536,12 +468,11 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
           evidenceCount: newEvidenceCount,
           confidence: new Prisma.Decimal(maxConf.toFixed(3)),
           tags: mergedTags,
+          dataClass: mergedDataClass,
         },
       });
     });
 
-    // 6. Линкер для нового canonical-транскрипта (как markCanonical) — связи
-    //    изменились (вобрал evidence/entities report'а).
     await this.coreQueue.enqueueBlockLinker(transcriptBlock.id).catch((err) => {
       this.logger.warn(
         {
@@ -552,7 +483,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       );
     });
 
-    this.logger.log(
+    this.logger.debug(
       {
         transcriptBlockId: transcriptBlock.id,
         reportCanonicalId,
@@ -561,8 +492,6 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       'block-distill: swapDirection — транскрипт стал canonical, report → merged_into',
     );
 
-    // 7. Диспатч специалистов на новый canonical-транскрипт (как markCanonical
-    //    делает для нового canonical). Best-effort — статус уже зафиксирован.
     if (canonicalSignalType !== null) {
       await this.router
         .dispatch({
@@ -581,7 +510,6 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         });
     }
 
-    // KC-Temporal W3.5 — emit по новому canonical (транскрипт), changeKind='merged'.
     this.emitIdeaBlockUpdated({
       tenantId: transcriptBlock.tenantId,
       blockId: transcriptBlock.id,
@@ -590,11 +518,6 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /**
-   * KC-Temporal W3.5 — best-effort emit `idea_block.updated`. Все ошибки
-   * проглатываем (warn-лог), чтобы не валить distill из-за проблем в
-   * подписчиках.
-   */
   private emitIdeaBlockUpdated(event: IdeaBlockUpdatedEvent): void {
     if (!this.eventEmitter) return;
     try {
@@ -610,10 +533,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async onJobFailed(
-    job: Job<BlockDistillJobData> | null,
-    err: Error,
-  ): Promise<void> {
+  private async onJobFailed(job: Job<BlockDistillJobData> | null, err: Error): Promise<void> {
     if (!job) return;
     if (job.attemptsMade < (job.opts.attempts ?? 5)) return;
     this.logger.error(

@@ -15,28 +15,6 @@ import {
   weeksSilent,
 } from './theme-silence-detector.scoring';
 
-/**
- * Редизайн кабинета Ф8.2 🔴 — Theme-Silence-Detector cron.
- *
- * Источник: plans/tz/2026-06-13-cabinet-redesign-rhythms-and-decision-queue.md (Ф8.2).
- *
- * Daily (`@Cron('0 4 * * *')`, 04:00 UTC). Для каждой Org:
- *   1. Берёт активные каноничные `Theme` (status='active', mergedIntoId=null)
- *      с `lastSignalAt < now - N недель` (N = `dashboard.theme_silence_weeks`,
- *      default 3) → тема «молчит».
- *   2. Surface риска: создаёт/обновляет `Insight` (kind='risk') «Тема X молчит
- *      N недель». Идемпотентно — ключ по `causeCategory='ts:<themeId>'`
- *      (повторный прогон апдейтит тот же Insight, не плодит дубль).
- *   3. severity по давности: >=12 нед → critical, >=6 → high, иначе medium.
- *   4. Авто-разрешение: тема снова получила свежий сигнал, а silence-Insight
- *      ещё active → помечает его 'mitigated' (радар не копит протухшее).
- *
- * Без LLM — чистая SQL + детерминированная классификация. Best-effort:
- * ошибка по одной Org не валит остальных.
- *
- * Kill-switch `dashboard.theme_silence.enabled` (ON по умолчанию).
- * Метрика `theme_silence_surfaced_total{severity}`.
- */
 @Injectable()
 export class ThemeSilenceDetectorCron {
   private readonly logger = new Logger(ThemeSilenceDetectorCron.name);
@@ -50,7 +28,6 @@ export class ThemeSilenceDetectorCron {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /** Daily 04:00 UTC. */
   @Cron('0 4 * * *')
   async run(): Promise<void> {
     const enabled = await this.cfg.getDynamic<boolean>(
@@ -59,14 +36,12 @@ export class ThemeSilenceDetectorCron {
       true,
     );
     if (!enabled) {
-      this.logger.debug(
-        'theme-silence-detector.cron: dashboard.theme_silence.enabled=false, skip',
-      );
+      this.logger.debug('theme-silence-detector.cron: dashboard.theme_silence.enabled=false, skip');
       return;
     }
     try {
       const stats = await this.runOnce(new Date());
-      this.logger.log(stats, 'theme-silence-detector.cron: проход завершён');
+      this.logger.debug(stats, 'theme-silence-detector.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -75,7 +50,6 @@ export class ThemeSilenceDetectorCron {
     }
   }
 
-  /** Выделен для unit-тестов: можно передать произвольный `now`. */
   async runOnce(now: Date): Promise<{
     orgsProcessed: number;
     surfaced: number;
@@ -124,7 +98,6 @@ export class ThemeSilenceDetectorCron {
   }): Promise<{ surfaced: number; resolved: number }> {
     const { tenantId, now, cutoff } = args;
 
-    // 1. Молчащие темы: активные каноничные, последний сигнал старше cutoff.
     const silentThemes = await this.prisma.theme.findMany({
       where: {
         tenantId,
@@ -157,8 +130,6 @@ export class ThemeSilenceDetectorCron {
       }
     }
 
-    // 2. Авто-разрешение: silence-Insight'ы тем, которые БОЛЬШЕ не молчат
-    //    (тема ожила — получила свежий сигнал, или была удалена/слита).
     const resolved = await this.resolveRevivedThemes({
       tenantId,
       stillSilentThemeIds: silentThemeIds,
@@ -167,11 +138,6 @@ export class ThemeSilenceDetectorCron {
     return { surfaced, resolved };
   }
 
-  /**
-   * Idempotent create/update silence-Insight по теме. Ключ —
-   * `causeCategory='ts:<themeId>'` (точный, не fuzzy по statement).
-   * Возвращает `true`, если Insight был СОЗДАН (для метрики/счётчика).
-   */
   private async upsertSilenceInsight(args: {
     tenantId: string;
     themeId: string;
@@ -186,7 +152,6 @@ export class ThemeSilenceDetectorCron {
     });
 
     if (existing) {
-      // Обновляем давность/severity/текст; «оживляем», если был замитигирован.
       await this.prisma.insight.update({
         where: { id: existing.id },
         data: {
@@ -219,12 +184,6 @@ export class ThemeSilenceDetectorCron {
     return true;
   }
 
-  /**
-   * Помечает 'mitigated' активные silence-Insight'ы, чья тема больше не в
-   * списке молчащих (ожила или исчезла). Дёшево: один findMany по префиксу
-   * causeCategory + точечные update. Идемпотентно (повтор — no-op, уже
-   * mitigated не трогаем).
-   */
   private async resolveRevivedThemes(args: {
     tenantId: string;
     stillSilentThemeIds: Set<string>;

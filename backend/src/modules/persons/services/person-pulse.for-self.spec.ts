@@ -1,23 +1,7 @@
-/**
- * Юнит-тесты self-режима `PersonPulseService.getPulse` (ТЗ-E Фаза 2).
- *
- * Проверяем три инварианта self-vs-manager без реальной БД/Redis —
- * конструктор сервиса вызывается напрямую с замоканными зависимостями
- * (Prisma / Redis / CommitmentReliabilityService):
- *   1. forSelf:true → hrSuggestions === null и hrSuggestionsGeneratedAt === null
- *      (служебная аналитика руководителя не отдаётся в self-режиме).
- *   2. forSelf отсутствует/false → hrSuggestions НЕ null (manager-вид сохранён).
- *   3. Кэш-ключ self ≠ mgr — redis.client.get вызывается с ключом,
- *      содержащим ':self' при forSelf=true и ':mgr' при forSelf=false.
- *
- * Redis: get → null (cache miss), set → no-op. Так каждый вызов идёт в «live»
- * ветку и формирует DTO из мок-person.
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import { PersonPulseService } from './person-pulse.service';
 
-/** Валидный `hrSuggestionsJson` с одной рекомендацией (формат HrRecommenderCron). */
 const HR_JSON = {
   generatedAt: '2026-06-01T10:00:00.000Z',
   recommendations: [
@@ -30,10 +14,6 @@ const HR_JSON = {
   ],
 };
 
-/**
- * Мок-person со ВСЕМИ полями, которые запрашивает `select` в getPulse, —
- * иначе на runtime получим undefined при чтении.
- */
 function buildPerson() {
   return {
     id: 'p-1',
@@ -48,7 +28,6 @@ function buildPerson() {
   };
 }
 
-/** Заглушка CommitmentReliabilityService.getReliability — валидный DTO. */
 function buildCommitsStub() {
   return {
     getReliability: vi.fn(async () => ({
@@ -62,10 +41,6 @@ function buildCommitsStub() {
   };
 }
 
-/**
- * Собирает сервис + возвращает шпион на `redis.client.get`, чтобы проверять,
- * с каким cache-ключом он вызван.
- */
 function buildService(opts?: { person?: unknown }) {
   const person = 'person' in (opts ?? {}) ? opts!.person : buildPerson();
 
@@ -78,21 +53,15 @@ function buildService(opts?: { person?: unknown }) {
     },
   };
 
-  // Явные сигнатуры с аргументами — иначе vi.fn выводит арность [] и
-  // redisGet.mock.calls[i][0] не типизируется как string.
-  const redisGet = vi.fn(async (_key: string): Promise<string | null> => null); // cache miss
+  const redisGet = vi.fn(async (_key: string): Promise<string | null> => null);
   const redisSet = vi.fn(
     async (_key: string, _val: string, _mode: string, _ttl: number): Promise<string> => 'OK',
-  ); // no-op
+  );
   const redis = { client: { get: redisGet, set: redisSet } };
 
   const commits = buildCommitsStub();
 
-  const svc = new PersonPulseService(
-    prisma as never,
-    redis as never,
-    commits as never,
-  );
+  const svc = new PersonPulseService(prisma as never, redis as never, commits as never);
 
   return { svc, redisGet, redisSet, prisma, commits };
 }

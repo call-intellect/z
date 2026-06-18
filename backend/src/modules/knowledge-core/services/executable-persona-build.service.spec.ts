@@ -11,6 +11,7 @@
  * integration-test scope.
  */
 
+import { Prisma } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
@@ -580,5 +581,194 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
     expect(userMessage).not.toContain('битый-скилл-триггер');
     // Счётчик в заголовке блока — только валидные скиллы.
     expect(userMessage).toContain('Процедуры (1)');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// K1 (Б24) — гонка версий/active + K11 (Б23) — поля версионирования роли.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const P2002 = () =>
+  new Prisma.PrismaClientKnownRequestError('unique', {
+    code: 'P2002',
+    clientVersion: 'x',
+  });
+
+/** prisma для buildForRole с управляемым executablePersona.create / findFirst. */
+function makeRolePrisma(args: {
+  createSpy: ReturnType<typeof vi.fn>;
+  updateManySpy: ReturnType<typeof vi.fn>;
+  findFirstSpy: ReturnType<typeof vi.fn>;
+}) {
+  return {
+    org: { findUnique: vi.fn(async () => null) },
+    appointment: { findMany: vi.fn(async () => []) },
+    rolePrinciple: { findMany: vi.fn(async () => []) },
+    practiceSkill: { findMany: vi.fn(async () => []) },
+    role: { findUnique: vi.fn(async () => ({ name: 'Маркетолог' })) },
+    personRole: {
+      findMany: vi.fn(async () => [{ personId: 'person-A' }]),
+    },
+    skillTrait: { findMany: vi.fn(async () => []) },
+    skillProfile: {
+      findMany: vi.fn(async () => [
+        {
+          id: 'sp-A',
+          person: { name: 'A', relationship: 'employee' },
+          traits: [
+            makeSkillTraitRow('t1', { conceptId: undefined }),
+            makeSkillTraitRow('t2', { conceptId: undefined }),
+            makeSkillTraitRow('t3', { conceptId: undefined }),
+          ],
+        },
+      ]),
+    },
+    executablePersona: {
+      findFirst: args.findFirstSpy,
+      updateMany: args.updateManySpy,
+      create: args.createSpy,
+    },
+    $transaction: vi.fn(async (cb: (tx: unknown) => unknown) =>
+      cb({
+        executablePersona: {
+          updateMany: args.updateManySpy,
+          create: args.createSpy,
+        },
+      }),
+    ),
+  };
+}
+
+describe('ExecutablePersonaBuildService.buildForRole — Б23/Б24', () => {
+  it('K11 (Б23): role-персона проставляет roleVersion/currentBearerPersonId/publicName/succeedsPersonaId', async () => {
+    const createSpy = makeCreateSpy();
+    const updateManySpy = makeUpdateManySpy();
+    // findFirst: (1) computeRoleVersioning.prevActive → есть active v2 у person-X;
+    //            (2) nextVersion.last → version=2.
+    const findFirstSpy = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: 'prev-active',
+        roleVersion: 2,
+        currentBearerPersonId: 'person-X',
+      })
+      .mockResolvedValueOnce({ version: 2 });
+    const prisma = makeRolePrisma({ createSpy, updateManySpy, findFirstSpy });
+
+    const { svc } = makeService(prisma);
+    const result = await svc.buildForRole({
+      tenantId: 't-1',
+      roleId: 'role-1',
+      triggerReason: 'manual',
+    });
+
+    expect(result).not.toBeNull();
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    const data = (
+      createSpy.mock.calls[0] as unknown as [{ data: Record<string, unknown> }]
+    )[0].data;
+    // carry-forward: prevActive.roleVersion=2 → 3; succeed-link на prev-active.
+    expect(data.roleVersion).toBe(3);
+    expect(data.succeedsPersonaId).toBe('prev-active');
+    // единственный носитель роли (person-A из personRole) → currentBearerPersonId.
+    expect(data.currentBearerPersonId).toBe('person-A');
+    expect(data.publicName).toBe('Клон Маркетолог v3');
+    // глобальный version = last(2) + 1 = 3.
+    expect(data.version).toBe(3);
+  });
+
+  it('K11 (Б23): без прошлой active → roleVersion=1, succeedsPersonaId=null', async () => {
+    const createSpy = makeCreateSpy();
+    const updateManySpy = makeUpdateManySpy();
+    const findFirstSpy = vi
+      .fn()
+      .mockResolvedValueOnce(null) // computeRoleVersioning.prevActive — нет
+      .mockResolvedValueOnce(null); // nextVersion.last — нет
+    const prisma = makeRolePrisma({ createSpy, updateManySpy, findFirstSpy });
+
+    const { svc } = makeService(prisma);
+    const result = await svc.buildForRole({ tenantId: 't-1', roleId: 'role-1' });
+
+    expect(result).not.toBeNull();
+    const data = (
+      createSpy.mock.calls[0] as unknown as [{ data: Record<string, unknown> }]
+    )[0].data;
+    expect(data.roleVersion).toBe(1);
+    expect(data.succeedsPersonaId).toBeNull();
+    expect(data.version).toBe(1);
+  });
+
+  it('K1 (Б24): P2002 на create → retry с пересчётом nextVersion, одна active без дубля', async () => {
+    const updateManySpy = makeUpdateManySpy();
+    // create: 1-я попытка кидает P2002, 2-я успешна.
+    const createSpy = vi
+      .fn()
+      .mockRejectedValueOnce(P2002())
+      .mockImplementationOnce(async (q: { data: Record<string, unknown> }) => ({
+        id: 'p-final',
+        ...q.data,
+      }));
+    // findFirst последовательность (по 2 на попытку: prevActive, last):
+    //  попытка 1: prevActive=null, last={version:1}
+    //  попытка 2 (после P2002): prevActive=null, last={version:2} (конкурент вписал v2)
+    const findFirstSpy = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ version: 1 })
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ version: 2 });
+    const prisma = makeRolePrisma({ createSpy, updateManySpy, findFirstSpy });
+
+    const { svc } = makeService(prisma);
+    const result = await svc.buildForRole({ tenantId: 't-1', roleId: 'role-1' });
+
+    expect(result).not.toBeNull();
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    // 2-я (успешная) попытка использует пересчитанную версию = last(2)+1 = 3.
+    const finalData = (
+      createSpy.mock.calls[1] as unknown as [{ data: Record<string, unknown> }]
+    )[0].data;
+    expect(finalData.version).toBe(3);
+    expect(finalData.status).toBe('active');
+  });
+});
+
+describe('ExecutablePersonaBuildService.buildForProfile — Б24', () => {
+  it('K1 (Б24): P2002 на create → retry с пересчётом nextVersion', async () => {
+    const updateManySpy = makeUpdateManySpy();
+    const createSpy = vi
+      .fn()
+      .mockRejectedValueOnce(P2002())
+      .mockImplementationOnce(async (q: { data: Record<string, unknown> }) => ({
+        id: 'pp-final',
+        ...q.data,
+      }));
+    // person-scope: nextVersion.findFirst по одному на попытку.
+    const findFirstSpy = vi
+      .fn()
+      .mockResolvedValueOnce({ version: 1 })
+      .mockResolvedValueOnce({ version: 2 });
+    const prisma = {
+      ...makePrismaBase({ createSpy, updateManySpy }),
+      skillProfile: { findUnique: vi.fn(async () => makeProfileRow()) },
+      executablePersona: {
+        findFirst: findFirstSpy,
+        updateMany: updateManySpy,
+        create: createSpy,
+      },
+      $transaction: vi.fn(async (cb: (tx: unknown) => unknown) =>
+        cb({ executablePersona: { updateMany: updateManySpy, create: createSpy } }),
+      ),
+    };
+
+    const { svc } = makeService(prisma);
+    const result = await svc.buildForProfile({ profileId: 'sp-1' });
+
+    expect(result).not.toBeNull();
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    const finalData = (
+      createSpy.mock.calls[1] as unknown as [{ data: Record<string, unknown> }]
+    )[0].data;
+    expect(finalData.version).toBe(3); // пересчитан = last(2)+1
   });
 });

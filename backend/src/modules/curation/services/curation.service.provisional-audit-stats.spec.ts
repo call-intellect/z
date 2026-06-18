@@ -8,16 +8,6 @@ import type { ConversationalService } from '../../conversational/conversational.
 import { CurationService } from './curation.service';
 import type { CuratorRoutingService } from './curator-routing.service';
 
-/**
- * Action Center A2 «лестница доверия» (2026-06-02) — юнит-тесты
- * getProvisionalAuditStats.
- *
- * Проверяют:
- *   1. wrongRate считается только по аудит-выборке (triageReason.reason=
- *      'audit_sample'); reject/mark_as_misleading/supersede = wrong.
- *   2. items без аудит-маркера / без решений не учитываются.
- *   3. 0 при отсутствии аудит-решений.
- */
 describe('CurationService.getProvisionalAuditStats (A2)', () => {
   let prisma: PrismaService;
   let svc: CurationService;
@@ -55,29 +45,16 @@ describe('CurationService.getProvisionalAuditStats (A2)', () => {
     const conversational = {} as unknown as ConversationalService;
     const routing = {} as unknown as CuratorRoutingService;
 
-    svc = new CurationService(
-      prisma,
-      cfg,
-      metrics,
-      conversational,
-      routing,
-      null,
-      null,
-    );
+    svc = new CurationService(prisma, cfg, metrics, conversational, routing, null, null);
   });
 
   it('считает provisionalWrongRate только по аудит-выборке', async () => {
     findManyMock.mockResolvedValue([
-      // regulation: 4 аудит-решения, 2 wrong (reject + supersede) → 0.5
       auditItem('regulation', [decision('approve', '2026-06-01T10:00:00Z')]),
       auditItem('regulation', [decision('reject', '2026-06-01T10:00:00Z')]),
       auditItem('regulation', [decision('supersede', '2026-06-01T10:00:00Z')]),
-      auditItem('regulation', [
-        decision('approve_with_edits', '2026-06-01T10:00:00Z'),
-      ]),
-      // process: 1 wrong (mark_as_misleading) → 1.0
+      auditItem('regulation', [decision('approve_with_edits', '2026-06-01T10:00:00Z')]),
       auditItem('process', [decision('mark_as_misleading', '2026-06-01T10:00:00Z')]),
-      // НЕ аудит (обычный triage) — должен игнорироваться полностью.
       {
         resourceType: 'regulation',
         triageReason: { reason: 'stale' },

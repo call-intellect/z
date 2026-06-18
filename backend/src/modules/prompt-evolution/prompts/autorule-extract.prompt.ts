@@ -1,32 +1,5 @@
-/**
- * Agents v2 Фаза B1 (2026-05-30) — AutoRule extract.
- *
- * Анализирует группу пар (original, edited) AI-output'ов и выводит ОДНО
- * консистентное правило, отличающее edited от original. Игнорирует
- * опечатки/перестановки слов. Фокус на: что добавили, что убрали, какой
- * структуры стало больше.
- *
- * Результат — JSON по схеме `autorule_extract_v1`:
- *   {
- *     rule: string,               // human-readable, ≤200 символов, на русском
- *     ruleType: 'must_do' | 'must_not_do' | 'tone' | 'structure',
- *     confidence: number 0..1,
- *     examples: Array<{originalSnippet, editedSnippet, why}>, // 1..3
- *     reasoning: string            // почему именно это правило
- *   }
- *
- * В Фазе B (shadow) правила НЕ инъектируются в промпты — только записываются
- * в `PromptRule(status='shadow')` для последующей валидации админом.
- *
- * Совместимость с prompt caching (см. second-brain/02_architecture/llm-cache-status.md):
- *   - SYSTEM стабилен → cache hit у DeepSeek/OpenAI-via-proxy с экономией ≈99%.
- *   - Все переменные (promptKey + список пар) — в конце USER.
- *   - Шаблон USER начинается с фиксированного префикса; пары добавляются
- *     последним блоком.
- */
-
 export const AUTORULE_EXTRACT_SYSTEM_PROMPT = [
-  'Ты — Кора. Тебе дают пары (original, edited) AI-output\'ов одного типа.',
+  "Ты — Кора. Тебе дают пары (original, edited) AI-output'ов одного типа.",
   'Найди ОДНО консистентное правило, по которому edited отличается от original.',
   'Игнорируй: опечатки, перестановки слов, мелкие синонимы.',
   'Сосредоточься: что пользователь систематически ДОБАВЛЯЕТ, что УБИРАЕТ, какой структуры становится БОЛЬШЕ.',
@@ -44,11 +17,6 @@ export interface AutoRuleExtractExample {
   edited: string;
 }
 
-/**
- * Формирует USER-сообщение из списка пар. Переменные данные — в конце,
- * чтобы префикс USER оставался стабильным между разными группами одного
- * `promptKey` (cache hit).
- */
 export const AUTORULE_EXTRACT_USER_TEMPLATE = (args: {
   promptKey: string;
   examples: AutoRuleExtractExample[];
@@ -65,11 +33,7 @@ export const AUTORULE_EXTRACT_USER_TEMPLATE = (args: {
   const pairs = args.examples
     .map((p, i) => {
       const idx = i + 1;
-      return [
-        `--- Пара ${idx} ---`,
-        `ORIGINAL: ${p.original}`,
-        `EDITED: ${p.edited}`,
-      ].join('\n');
+      return [`--- Пара ${idx} ---`, `ORIGINAL: ${p.original}`, `EDITED: ${p.edited}`].join('\n');
     })
     .join('\n\n');
 
@@ -107,8 +71,7 @@ export const AUTORULE_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
       type: 'array',
       minItems: 1,
       maxItems: 3,
-      description:
-        '1–3 самых ярких примера из переданных пар, демонстрирующих правило.',
+      description: '1–3 самых ярких примера из переданных пар, демонстрирующих правило.',
       items: {
         type: 'object',
         additionalProperties: false,
@@ -118,22 +81,19 @@ export const AUTORULE_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
             type: 'string',
             minLength: 1,
             maxLength: 500,
-            description:
-              'Короткий фрагмент original-текста, который пользователь правил.',
+            description: 'Короткий фрагмент original-текста, который пользователь правил.',
           },
           editedSnippet: {
             type: 'string',
             minLength: 1,
             maxLength: 500,
-            description:
-              'Соответствующий фрагмент edited-текста (после правки).',
+            description: 'Соответствующий фрагмент edited-текста (после правки).',
           },
           why: {
             type: 'string',
             minLength: 5,
             maxLength: 200,
-            description:
-              'Объяснение, почему этот пример демонстрирует правило (1–2 предложения).',
+            description: 'Объяснение, почему этот пример демонстрирует правило (1–2 предложения).',
           },
         },
       },
@@ -142,8 +102,7 @@ export const AUTORULE_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
       type: 'string',
       minLength: 10,
       maxLength: 500,
-      description:
-        'Обоснование: почему именно это правило, какой паттерн ты увидел в группе.',
+      description: 'Обоснование: почему именно это правило, какой паттерн ты увидел в группе.',
     },
   },
 };

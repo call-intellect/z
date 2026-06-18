@@ -5,10 +5,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { BillingEventService } from './billing-event.service';
 
-/**
- * audit Б4 (2026-05-29) — спецификация BillingEventService.log на атомарный
- * insert с обработкой P2002 (replay-защита через unique-jti).
- */
 describe('BillingEventService.log (audit Б4)', () => {
   let prisma: {
     billingEventLog: {
@@ -68,7 +64,6 @@ describe('BillingEventService.log (audit Б4)', () => {
     });
     expect(res.duplicate).toBe(true);
     expect(res.event).toBe(existing);
-    // findFirst по jti, не по externalEventId.
     expect(prisma.billingEventLog.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { jti: 'jti-X' },

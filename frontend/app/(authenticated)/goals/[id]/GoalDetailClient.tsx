@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
-import useSWR from 'swr';
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -21,19 +21,18 @@ import {
   Target,
   Trash2,
   XCircle,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
-import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
+} from "lucide-react";
+import { toast } from "sonner";
+import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   goalsApi,
   type CreateKeyResultRequest,
   type UpdateKeyResultRequest,
-} from '@/api/goals.api';
-import { themesApi } from '@/api/themes.api';
-import { useAuth } from '@/contexts/auth-context';
+} from "@/api/goals.api";
+import { themesApi } from "@/api/themes.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   GOAL_HORIZON_LABELS,
   GOAL_HORIZON_VALUES,
@@ -63,10 +62,12 @@ import {
   type GoalKeyResultDomain,
   type GoalKrSourceKind,
   type GoalThemeLinkDomain,
-} from '@/domain/goal';
-import { themeFromApi } from '@/domain/theme';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/goal";
+import { themeFromApi } from "@/domain/theme";
+import { pluralRu } from "@/domain/contribution";
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -74,29 +75,29 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/ui/shadcn/select";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-import { EditGoalDialog } from '../GoalsClient';
+import { EditGoalDialog } from "../GoalsClient";
 
 export function GoalDetailClient({ goalId }: { goalId: string }) {
   const router = useRouter();
   const { currentOrgId, currentOrgRole, isSuperAdmin } = useAuth();
-  const isOwner = currentOrgRole === 'owner';
-  const canRecompute = isOwner || currentOrgRole === 'admin' || isSuperAdmin;
+  const isOwner = currentOrgRole === "owner";
+  const canRecompute = isOwner || currentOrgRole === "admin" || isSuperAdmin;
 
   const swrKey = currentOrgId
-    ? (['goal', currentOrgId, goalId] as const)
+    ? (["goal", currentOrgId, goalId] as const)
     : null;
 
   const { data, isLoading, error, mutate } = useSWR(
@@ -107,7 +108,6 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
     },
   );
 
-  // Хлебные крошки: имя цели из уже загруженного объекта (без доп. запроса).
   useRegisterBreadcrumb(data ? { label: data.name } : null);
 
   const [editOpen, setEditOpen] = useState(false);
@@ -133,7 +133,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
     return (
       <div className="mx-auto w-full max-w-3xl px-6 py-8">
         <div className="rounded-xl border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
-          {humanizeApiError(error, 'Цель не найдена или у вас нет доступа.')}
+          {humanizeApiError(error, "Цель не найдена или у вас нет доступа.")}
         </div>
         <Button asChild variant="ghost" className="mt-3">
           <Link href="/goals">
@@ -173,16 +173,15 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
     setRecomputing(true);
     try {
       await goalsApi.recompute(currentOrgId, goal.id);
-      toast.success('Пересчёт запущен — обновится через несколько секунд');
-      // Через 5 сек обновляем (snapshot обычно за 5-10 сек).
+      toast.success("Пересчёт запущен — обновится через несколько секунд");
       setTimeout(() => {
         void mutate();
       }, 5000);
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'quota_exceeded') {
-        toast.error('Quota exceeded — попробуйте завтра');
+      if (err instanceof ApiError && err.code === "quota_exceeded") {
+        toast.error("Quota exceeded — попробуйте завтра");
       } else {
-        const msg = humanizeApiError(err, 'Не удалось запустить');
+        const msg = humanizeApiError(err, "Не удалось запустить");
         toast.error(msg);
       }
     } finally {
@@ -193,19 +192,19 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
   async function handleArchive() {
     if (!currentOrgId || archiving) return;
     const ok = await ask({
-      title: 'Архивировать цель?',
-      description: 'Она будет помечена как abandoned.',
-      confirmLabel: 'Архивировать',
+      title: "Архивировать цель?",
+      description: "Она будет помечена как abandoned.",
+      confirmLabel: "Архивировать",
       destructive: true,
     });
     if (!ok) return;
     setArchiving(true);
     try {
       await goalsApi.archive(currentOrgId, goal.id);
-      toast.success('Цель архивирована');
+      toast.success("Цель архивирована");
       void mutate();
     } catch (err) {
-      const msg = humanizeApiError(err, 'Не удалось архивировать');
+      const msg = humanizeApiError(err, "Не удалось архивировать");
       toast.error(msg);
     } finally {
       setArchiving(false);
@@ -216,10 +215,10 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
     if (!currentOrgId) return;
     try {
       await goalsApi.removeTheme(currentOrgId, goal.id, themeId);
-      toast.success('Тема отвязана');
+      toast.success("Тема отвязана");
       void mutate();
     } catch (err) {
-      const msg = humanizeApiError(err, 'Не удалось отвязать');
+      const msg = humanizeApiError(err, "Не удалось отвязать");
       toast.error(msg);
     }
   }
@@ -228,11 +227,13 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
     if (!currentOrgId || accepting) return;
     setAccepting(true);
     try {
-      await goalsApi.update(currentOrgId, goal.id, { promotionState: 'active' });
-      toast.success('Цель принята');
+      await goalsApi.update(currentOrgId, goal.id, {
+        promotionState: "active",
+      });
+      toast.success("Цель принята");
       void mutate();
     } catch (err) {
-      const msg = humanizeApiError(err, 'Не удалось принять цель');
+      const msg = humanizeApiError(err, "Не удалось принять цель");
       toast.error(msg);
     } finally {
       setAccepting(false);
@@ -242,18 +243,18 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
   async function handleRemoveKr(kr: GoalKeyResultDomain) {
     if (!currentOrgId) return;
     const ok = await ask({
-      title: 'Удалить ключевой результат?',
+      title: "Удалить ключевой результат?",
       description: `«${kr.name}» будет удалён вместе с историей значений.`,
-      confirmLabel: 'Удалить',
+      confirmLabel: "Удалить",
       destructive: true,
     });
     if (!ok) return;
     try {
       await goalsApi.removeKeyResult(currentOrgId, goal.id, kr.id);
-      toast.success('Ключевой результат удалён');
+      toast.success("Ключевой результат удалён");
       void mutate();
     } catch (err) {
-      const msg = humanizeApiError(err, 'Не удалось удалить');
+      const msg = humanizeApiError(err, "Не удалось удалить");
       toast.error(msg);
     }
   }
@@ -271,14 +272,19 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-6">
       <div className="mb-4">
-        <Button asChild variant="ghost" size="sm" className="gap-1 text-fg-tertiary">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="gap-1 text-fg-tertiary"
+        >
           <Link href="/goals">
             <ChevronLeft size={16} /> Все цели
           </Link>
         </Button>
       </div>
 
-      {/* Header */}
+      {}
       <header className="mb-6 flex flex-wrap items-start gap-4">
         <div className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-accent/20 text-accent">
           <Target size={22} />
@@ -291,12 +297,12 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
             <Badge variant={statusBadgeVariant(goal.status)}>
               {GOAL_STATUS_LABELS[goal.status]}
             </Badge>
-            {goal.source === 'ai' && <SuggestedByKoraBadge />}
+            {goal.source === "ai" && <SuggestedByKoraBadge />}
             {targetLabel && (
               <span
                 className={cn(
-                  'text-xs',
-                  overdue ? 'text-danger font-medium' : 'text-fg-tertiary',
+                  "text-xs",
+                  overdue ? "text-danger font-medium" : "text-fg-tertiary",
                 )}
               >
                 {targetLabel}
@@ -326,7 +332,11 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
             </Button>
           )}
           {isOwner && (
-            <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEditOpen(true)}
+            >
               Редактировать
             </Button>
           )}
@@ -350,7 +360,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
               Заменить цель
             </Button>
           )}
-          {isOwner && goal.status !== 'abandoned' && (
+          {isOwner && goal.status !== "abandoned" && (
             <Button
               variant="ghost"
               size="sm"
@@ -358,14 +368,14 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
               onClick={() => void handleArchive()}
               disabled={archiving}
             >
-              {archiving ? 'Архивируем…' : 'Архивировать'}
+              {archiving ? "Архивируем…" : "Архивировать"}
             </Button>
           )}
         </div>
       </header>
 
-      {/* Маркер AI-кандидата: предложенная Корой цель, ещё не принятая. */}
-      {goal.promotionState === 'suggested' && (
+      {}
+      {goal.promotionState === "suggested" && (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-chip-info-fg/40 bg-chip-info-bg p-4">
           <div className="flex items-start gap-2 text-sm text-chip-info-fg">
             <Sparkles size={16} className="mt-0.5 shrink-0" />
@@ -380,20 +390,25 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
               onClick={() => void handleAcceptGoal()}
               disabled={accepting}
             >
-              {accepting ? 'Принимаем…' : 'Принять цель'}
+              {accepting ? "Принимаем…" : "Принять цель"}
             </Button>
           )}
         </div>
       )}
 
-      {/* Key Results — измеримые ориентиры */}
+      {}
       <section className="mb-6 rounded-xl border border-border-subtle bg-bg-elevated p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
           <h2 className="text-sm font-medium text-fg-tertiary">
             Ключевые результаты ({goal.keyResults.length})
           </h2>
           {isOwner && (
-            <Button size="sm" variant="outline" className="gap-1" onClick={openCreateKr}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1"
+              onClick={openCreateKr}
+            >
               <Plus size={12} /> Добавить ключевой результат
             </Button>
           )}
@@ -419,7 +434,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
       </section>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Alignment card */}
+        {}
         <section className="lg:col-span-2">
           <div className="rounded-xl border border-border-subtle bg-bg-elevated p-4">
             <h2 className="mb-3 text-sm font-medium text-fg-tertiary">
@@ -428,7 +443,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
             <div className="flex flex-wrap items-center gap-4">
               <div
                 className={cn(
-                  'text-5xl font-semibold tabular-nums',
+                  "text-5xl font-semibold tabular-nums",
                   alignmentTextColor(alignmentClamped),
                 )}
               >
@@ -437,7 +452,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
               <DeltaPill delta={goal.cachedAlignmentDelta} />
               <span
                 className={cn(
-                  'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+                  "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
                   verdictChip.bg,
                   verdictChip.fg,
                 )}
@@ -449,7 +464,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
                   {alignmentClamped !== null && (
                     <div
                       className={cn(
-                        'h-full rounded-full',
+                        "h-full rounded-full",
                         alignmentBarColor(alignmentClamped),
                       )}
                       style={{ width: `${alignmentClamped}%` }}
@@ -459,7 +474,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
                 <p className="mt-1 flex items-center gap-1.5 text-[11px] text-fg-tertiary">
                   <span
                     className={cn(
-                      'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
+                      "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium",
                       confChip.bg,
                       confChip.fg,
                     )}
@@ -485,14 +500,14 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
               <div className="mt-3 flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
                 <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                 <span>
-                  Резкое падение согласованности. Проверьте темы цели и
-                  обсудите с командой.
+                  Резкое падение согласованности. Проверьте темы цели и обсудите
+                  с командой.
                 </span>
               </div>
             )}
           </div>
 
-          {/* Signals pro/contra */}
+          {}
           {goal.latestSnapshot && (
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <SignalsList
@@ -508,7 +523,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
             </div>
           )}
 
-          {/* Timeline */}
+          {}
           <div className="mt-6 rounded-xl border border-border-subtle bg-bg-elevated p-4">
             <h2 className="mb-3 text-sm font-medium text-fg-tertiary">
               История движения к цели
@@ -536,7 +551,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
           </div>
         </section>
 
-        {/* Themes */}
+        {}
         <aside>
           <div className="rounded-xl border border-border-subtle bg-bg-elevated p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -650,9 +665,6 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
   );
 }
 
-// ─── Suggested-by-Kora badge ──────────────────────────────────────────────────
-
-/** Маркер AI-кандидата цели. Парные токены chip-info (bg + fg). */
 function SuggestedByKoraBadge() {
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-chip-info-bg px-2 py-0.5 text-[11px] font-medium text-chip-info-fg">
@@ -662,10 +674,7 @@ function SuggestedByKoraBadge() {
   );
 }
 
-// ─── Key Result item ──────────────────────────────────────────────────────────
-
 function formatKrValue(value: number): string {
-  // Без лишних нулей: 42, 12.5, 1000.
   return Number.isInteger(value)
     ? String(value)
     : String(Number(value.toFixed(2)));
@@ -683,7 +692,7 @@ function KeyResultItem({
   onRemove: () => void;
 }) {
   const pct = Math.max(0, Math.min(100, Math.round(kr.progressPercent)));
-  const unitSuffix = kr.unit ? ` ${kr.unit}` : '';
+  const unitSuffix = kr.unit ? ` ${kr.unit}` : "";
 
   return (
     <li className="rounded-lg border border-border-subtle bg-bg-card p-3">
@@ -693,8 +702,8 @@ function KeyResultItem({
             <span className="text-sm font-medium text-fg-primary">
               {kr.name}
             </span>
-            {kr.source === 'ai' && <SuggestedByKoraBadge />}
-            {kr.sourceKind !== 'manual' && (
+            {kr.source === "ai" && <SuggestedByKoraBadge />}
+            {kr.sourceKind !== "manual" && (
               <Badge variant="outline" className="text-[10px]">
                 {GOAL_KR_SOURCE_KIND_LABELS[kr.sourceKind]}
               </Badge>
@@ -731,7 +740,7 @@ function KeyResultItem({
       <div className="mt-2 flex items-center gap-2">
         <div className="h-2 flex-1 overflow-hidden rounded-full bg-bg-overlay">
           <div
-            className={cn('h-full rounded-full', krProgressBarColor(pct))}
+            className={cn("h-full rounded-full", krProgressBarColor(pct))}
             style={{ width: `${pct}%` }}
           />
         </div>
@@ -742,8 +751,6 @@ function KeyResultItem({
     </li>
   );
 }
-
-// ─── Key Result dialog (создание/редактирование) ──────────────────────────────
 
 function KeyResultDialog({
   open,
@@ -761,31 +768,30 @@ function KeyResultDialog({
   onSaved: () => void;
 }) {
   const isEdit = editing !== null;
-  const [name, setName] = useState('');
-  const [unit, setUnit] = useState('');
-  const [startValue, setStartValue] = useState('0');
-  const [targetValue, setTargetValue] = useState('100');
-  const [currentValue, setCurrentValue] = useState('0');
-  const [sourceKind, setSourceKind] = useState<GoalKrSourceKind>('manual');
+  const [name, setName] = useState("");
+  const [unit, setUnit] = useState("");
+  const [startValue, setStartValue] = useState("0");
+  const [targetValue, setTargetValue] = useState("100");
+  const [currentValue, setCurrentValue] = useState("0");
+  const [sourceKind, setSourceKind] = useState<GoalKrSourceKind>("manual");
   const [submitting, setSubmitting] = useState(false);
 
-  // Префилл при открытии / смене редактируемого KR.
   useEffect(() => {
     if (!open) return;
     if (editing) {
       setName(editing.name);
-      setUnit(editing.unit ?? '');
+      setUnit(editing.unit ?? "");
       setStartValue(String(editing.startValue));
       setTargetValue(String(editing.targetValue));
       setCurrentValue(String(editing.currentValue));
       setSourceKind(editing.sourceKind);
     } else {
-      setName('');
-      setUnit('');
-      setStartValue('0');
-      setTargetValue('100');
-      setCurrentValue('0');
-      setSourceKind('manual');
+      setName("");
+      setUnit("");
+      setStartValue("0");
+      setTargetValue("100");
+      setCurrentValue("0");
+      setSourceKind("manual");
     }
   }, [open, editing]);
 
@@ -793,14 +799,14 @@ function KeyResultDialog({
     e.preventDefault();
     if (submitting) return;
     if (!name.trim()) {
-      toast.error('Укажите название ключевого результата');
+      toast.error("Укажите название ключевого результата");
       return;
     }
     const start = Number(startValue);
     const target = Number(targetValue);
     const current = Number(currentValue);
     if (![start, target, current].every((n) => Number.isFinite(n))) {
-      toast.error('Значения должны быть числами');
+      toast.error("Значения должны быть числами");
       return;
     }
     setSubmitting(true);
@@ -816,7 +822,7 @@ function KeyResultDialog({
           sourceKind,
         };
         await goalsApi.updateKeyResult(orgId, goalId, editing.id, body);
-        toast.success('Ключевой результат обновлён');
+        toast.success("Ключевой результат обновлён");
       } else {
         const body: CreateKeyResultRequest = {
           name: name.trim(),
@@ -827,11 +833,11 @@ function KeyResultDialog({
           sourceKind,
         };
         await goalsApi.createKeyResult(orgId, goalId, body);
-        toast.success('Ключевой результат добавлен');
+        toast.success("Ключевой результат добавлен");
       }
       onSaved();
     } catch (err) {
-      const msg = humanizeApiError(err, 'Не удалось сохранить');
+      const msg = humanizeApiError(err, "Не удалось сохранить");
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -843,7 +849,9 @@ function KeyResultDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? 'Изменить ключевой результат' : 'Новый ключевой результат'}
+            {isEdit
+              ? "Изменить ключевой результат"
+              : "Новый ключевой результат"}
           </DialogTitle>
         </DialogHeader>
         <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
@@ -933,7 +941,7 @@ function KeyResultDialog({
               Отмена
             </Button>
             <Button type="submit" disabled={submitting}>
-              {submitting ? 'Сохраняем…' : isEdit ? 'Сохранить' : 'Добавить'}
+              {submitting ? "Сохраняем…" : isEdit ? "Сохранить" : "Добавить"}
             </Button>
           </DialogFooter>
         </form>
@@ -942,9 +950,7 @@ function KeyResultDialog({
   );
 }
 
-// ─── Reparent dialog («Сделать подцелью…») ────────────────────────────────────
-
-const NO_PARENT = '__none__';
+const NO_PARENT = "__none__";
 
 function ReparentGoalDialog({
   open,
@@ -966,11 +972,10 @@ function ReparentGoalDialog({
     if (open) setParentId(goal.parentGoalId ?? NO_PARENT);
   }, [open, goal.parentGoalId]);
 
-  // Список активных целей Org для выбора родителя (исключая саму цель).
   const { data: candidates, isLoading } = useSWR(
-    open ? (['goals-for-parent', orgId] as const) : null,
+    open ? (["goals-for-parent", orgId] as const) : null,
     async ([, oid]) => {
-      const res = await goalsApi.list(oid, { status: 'active', limit: 200 });
+      const res = await goalsApi.list(oid, { status: "active", limit: 200 });
       return res.items.filter((g) => g.id !== goal.id);
     },
   );
@@ -982,20 +987,20 @@ function ReparentGoalDialog({
       const nextParent = parentId === NO_PARENT ? null : parentId;
       await goalsApi.update(orgId, goal.id, { parentGoalId: nextParent });
       toast.success(
-        nextParent ? 'Цель стала подцелью' : 'Цель откреплена от родителя',
+        nextParent ? "Цель стала подцелью" : "Цель откреплена от родителя",
       );
       onReparented();
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.code === 'goal_cycle' || err.code === 'goal_cycle_self') {
-          toast.error('Нельзя: цель станет своим же потомком');
-        } else if (err.code === 'parent_goal_not_found') {
-          toast.error('Выбранная родительская цель не найдена');
+        if (err.code === "goal_cycle" || err.code === "goal_cycle_self") {
+          toast.error("Нельзя: цель станет своим же потомком");
+        } else if (err.code === "parent_goal_not_found") {
+          toast.error("Выбранная родительская цель не найдена");
         } else {
           toast.error(humanizeApiError(err));
         }
       } else {
-        toast.error('Не удалось перепривязать цель');
+        toast.error("Не удалось перепривязать цель");
       }
     } finally {
       setSubmitting(false);
@@ -1047,15 +1052,13 @@ function ReparentGoalDialog({
             disabled={submitting || isLoading}
             onClick={() => void handleSubmit()}
           >
-            {submitting ? 'Сохраняем…' : 'Сохранить'}
+            {submitting ? "Сохраняем…" : "Сохранить"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
-
-// ─── Supersede dialog («Заменить цель / передумали») ──────────────────────────
 
 function SupersedeGoalDialog({
   open,
@@ -1072,8 +1075,8 @@ function SupersedeGoalDialog({
 }) {
   const [name, setName] = useState(goal.name);
   const [description, setDescription] = useState(goal.description);
-  const [targetDate, setTargetDate] = useState('');
-  const [horizon, setHorizon] = useState<GoalHorizon>('quarterly');
+  const [targetDate, setTargetDate] = useState("");
+  const [horizon, setHorizon] = useState<GoalHorizon>("quarterly");
   const [weight, setWeight] = useState(String(goal.weight));
   const [submitting, setSubmitting] = useState(false);
 
@@ -1081,8 +1084,8 @@ function SupersedeGoalDialog({
     if (!open) return;
     setName(goal.name);
     setDescription(goal.description);
-    setTargetDate(goal.targetDate ? formatDateInputUtc(goal.targetDate) : '');
-    setHorizon('quarterly');
+    setTargetDate(goal.targetDate ? formatDateInputUtc(goal.targetDate) : "");
+    setHorizon("quarterly");
     setWeight(String(goal.weight));
   }, [open, goal]);
 
@@ -1090,12 +1093,12 @@ function SupersedeGoalDialog({
     e.preventDefault();
     if (submitting) return;
     if (!name.trim() || !description.trim()) {
-      toast.error('Укажите название и описание');
+      toast.error("Укажите название и описание");
       return;
     }
     const w = Number(weight);
     if (Number.isNaN(w) || w < 0.001 || w > 1) {
-      toast.error('Вес должен быть в диапазоне 0.001..1.0');
+      toast.error("Вес должен быть в диапазоне 0.001..1.0");
       return;
     }
     setSubmitting(true);
@@ -1110,10 +1113,10 @@ function SupersedeGoalDialog({
         horizon,
         weight: w,
       });
-      toast.success('Цель заменена — прежняя версия сохранена в истории');
+      toast.success("Цель заменена — прежняя версия сохранена в истории");
       onSuperseded(created.id);
     } catch (err) {
-      const msg = humanizeApiError(err, 'Не удалось заменить цель');
+      const msg = humanizeApiError(err, "Не удалось заменить цель");
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -1203,7 +1206,7 @@ function SupersedeGoalDialog({
               Отмена
             </Button>
             <Button type="submit" disabled={submitting}>
-              {submitting ? 'Заменяем…' : 'Заменить цель'}
+              {submitting ? "Заменяем…" : "Заменить цель"}
             </Button>
           </DialogFooter>
         </form>
@@ -1214,12 +1217,10 @@ function SupersedeGoalDialog({
 
 function formatDateInputUtc(d: Date): string {
   const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
-
-// ─── Delta pill ─────────────────────────────────────────────────────────────
 
 function DeltaPill({ delta }: { delta: number | null }) {
   const tone = deltaTone(delta);
@@ -1228,22 +1229,20 @@ function DeltaPill({ delta }: { delta: number | null }) {
   return (
     <div
       className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
-        tone === 'up' && 'bg-success/15 text-success',
-        tone === 'down' && 'bg-danger/15 text-danger',
-        tone === 'flat' && 'bg-bg-overlay text-fg-tertiary',
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
+        tone === "up" && "bg-success/15 text-success",
+        tone === "down" && "bg-danger/15 text-danger",
+        tone === "flat" && "bg-bg-overlay text-fg-tertiary",
       )}
       title="Изменение по сравнению с прошлым замером"
     >
-      {tone === 'up' && <ArrowUpRight size={12} />}
-      {tone === 'down' && <ArrowDownRight size={12} />}
-      {tone === 'flat' && <Minus size={12} />}
+      {tone === "up" && <ArrowUpRight size={12} />}
+      {tone === "down" && <ArrowDownRight size={12} />}
+      {tone === "flat" && <Minus size={12} />}
       {text}
     </div>
   );
 }
-
-// ─── Signals list ───────────────────────────────────────────────────────────
 
 function SignalsList({
   title,
@@ -1252,24 +1251,28 @@ function SignalsList({
 }: {
   title: string;
   items: string[];
-  tone: 'success' | 'danger';
+  tone: "success" | "danger";
 }) {
   return (
     <div
       className={cn(
-        'rounded-xl border p-3',
-        tone === 'success' && 'border-success/30 bg-success/5',
-        tone === 'danger' && 'border-danger/30 bg-danger/5',
+        "rounded-xl border p-3",
+        tone === "success" && "border-success/30 bg-success/5",
+        tone === "danger" && "border-danger/30 bg-danger/5",
       )}
     >
       <h3
         className={cn(
-          'mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide',
-          tone === 'success' && 'text-success',
-          tone === 'danger' && 'text-danger',
+          "mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide",
+          tone === "success" && "text-success",
+          tone === "danger" && "text-danger",
         )}
       >
-        {tone === 'success' ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+        {tone === "success" ? (
+          <CheckCircle2 size={12} />
+        ) : (
+          <XCircle size={12} />
+        )}
         {title}
       </h3>
       {items.length === 0 ? (
@@ -1286,8 +1289,6 @@ function SignalsList({
     </div>
   );
 }
-
-// ─── Theme link ─────────────────────────────────────────────────────────────
 
 function ThemeLinkItem({
   link,
@@ -1332,14 +1333,11 @@ function ThemeLinkItem({
   );
 }
 
-// ─── Timeline chart (simple SVG) ────────────────────────────────────────────
-
 function TimelineChart({
   snapshots,
 }: {
   snapshots: GoalAlignmentSnapshotDomain[];
 }) {
-  // Снапшоты в API приходят DESC; для графика нужно ASC по времени.
   const series = useMemo(() => {
     return [...snapshots].sort(
       (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
@@ -1364,13 +1362,16 @@ function TimelineChart({
   const xFor = (i: number) => PADDING_X + i * xStep;
 
   const path = series
-    .map((s, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(s.score).toFixed(1)}`)
-    .join(' ');
+    .map(
+      (s, i) =>
+        `${i === 0 ? "M" : "L"} ${xFor(i).toFixed(1)} ${yFor(s.score).toFixed(1)}`,
+    )
+    .join(" ");
 
   function pointColor(score: number): string {
-    if (score < 40) return 'fill-danger';
-    if (score < 70) return 'fill-warning';
-    return 'fill-success';
+    if (score < 40) return "fill-danger";
+    if (score < 70) return "fill-warning";
+    return "fill-success";
   }
 
   return (
@@ -1381,7 +1382,7 @@ function TimelineChart({
         role="img"
         aria-label="График согласованности по дням"
       >
-        {/* gridlines */}
+        {}
         {[0, 40, 70, 100].map((g) => (
           <line
             key={g}
@@ -1394,13 +1395,13 @@ function TimelineChart({
             strokeDasharray="2 4"
           />
         ))}
-        {/* line */}
+        {}
         <path
           d={path}
           className="fill-none stroke-fg-tertiary"
           strokeWidth={1.5}
         />
-        {/* points */}
+        {}
         {series.map((s, i) => (
           <circle
             key={s.id}
@@ -1410,12 +1411,14 @@ function TimelineChart({
             className={pointColor(s.score)}
           >
             <title>
-              {s.createdAt.toLocaleDateString('ru', {
-                day: '2-digit',
-                month: 'short',
+              {s.createdAt.toLocaleDateString("ru", {
+                day: "2-digit",
+                month: "short",
               })}
               : {s.score}
-              {s.delta !== null ? ` (Δ ${s.delta > 0 ? '+' : ''}${s.delta})` : ''}
+              {s.delta !== null
+                ? ` (Δ ${s.delta > 0 ? "+" : ""}${s.delta})`
+                : ""}
             </title>
           </circle>
         ))}
@@ -1424,15 +1427,13 @@ function TimelineChart({
   );
 }
 
-// ─── Snapshot row ───────────────────────────────────────────────────────────
-
 function SnapshotRow({ snapshot }: { snapshot: GoalAlignmentSnapshotDomain }) {
   const tone = deltaTone(snapshot.delta);
   const deltaText = formatDelta(snapshot.delta);
-  const dateLabel = snapshot.createdAt.toLocaleDateString('ru', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
+  const dateLabel = snapshot.createdAt.toLocaleDateString("ru", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
   });
 
   return (
@@ -1442,7 +1443,7 @@ function SnapshotRow({ snapshot }: { snapshot: GoalAlignmentSnapshotDomain }) {
       </div>
       <div
         className={cn(
-          'w-12 shrink-0 text-right font-semibold tabular-nums',
+          "w-12 shrink-0 text-right font-semibold tabular-nums",
           alignmentTextColor(snapshot.score),
         )}
       >
@@ -1452,9 +1453,9 @@ function SnapshotRow({ snapshot }: { snapshot: GoalAlignmentSnapshotDomain }) {
         {tone && deltaText && (
           <span
             className={cn(
-              tone === 'up' && 'text-success',
-              tone === 'down' && 'text-danger',
-              tone === 'flat' && 'text-fg-tertiary',
+              tone === "up" && "text-success",
+              tone === "down" && "text-danger",
+              tone === "flat" && "text-fg-tertiary",
             )}
           >
             {deltaText}
@@ -1462,13 +1463,11 @@ function SnapshotRow({ snapshot }: { snapshot: GoalAlignmentSnapshotDomain }) {
         )}
       </div>
       <div className="flex-1 line-clamp-2 text-xs text-fg-secondary">
-        {snapshot.explanation || '—'}
+        {snapshot.explanation || "—"}
       </div>
     </li>
   );
 }
-
-// ─── Add themes dialog ──────────────────────────────────────────────────────
 
 function AddThemesDialog({
   open,
@@ -1485,18 +1484,15 @@ function AddThemesDialog({
   existingThemeIds: string[];
   onAdded: () => void;
 }) {
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
 
-  // Загрузка тем активных тем org для выбора (без X-Org-Id — themesApi
-  // использует cookie session, но тут мы не передаём orgId. Это ОК — backend
-  // сам определит tenantId из cookie/первой Org.).
   const { data: themesData, isLoading } = useSWR(
-    open ? ['themes-for-goal', search] : null,
+    open ? ["themes-for-goal", search] : null,
     async () => {
       const res = await themesApi.list({
-        status: 'active',
+        status: "active",
         ...(search.trim() ? { q: search.trim() } : {}),
         limit: 50,
       });
@@ -1523,7 +1519,7 @@ function AddThemesDialog({
   async function handleSubmit() {
     if (submitting) return;
     if (selected.size === 0) {
-      toast.error('Выберите хотя бы одну тему');
+      toast.error("Выберите хотя бы одну тему");
       return;
     }
     setSubmitting(true);
@@ -1532,13 +1528,13 @@ function AddThemesDialog({
         themeIds: Array.from(selected),
       });
       toast.success(
-        `Добавлено: ${res.added}${res.skipped > 0 ? `, пропущено: ${res.skipped}` : ''}`,
+        `Добавлено: ${res.added}${res.skipped > 0 ? `, пропущено: ${res.skipped}` : ""}`,
       );
       setSelected(new Set());
-      setSearch('');
+      setSearch("");
       onAdded();
     } catch (err) {
-      const msg = humanizeApiError(err, 'Не удалось добавить');
+      const msg = humanizeApiError(err, "Не удалось добавить");
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -1548,7 +1544,7 @@ function AddThemesDialog({
   function handleOpenChange(v: boolean) {
     if (!v) {
       setSelected(new Set());
-      setSearch('');
+      setSearch("");
     }
     onOpenChange(v);
   }
@@ -1580,16 +1576,16 @@ function AddThemesDialog({
                       type="button"
                       onClick={() => toggle(t.id)}
                       className={cn(
-                        'flex w-full items-start gap-2 p-2 text-left text-sm transition-colors hover:bg-bg-overlay',
-                        selected.has(t.id) && 'bg-accent/10',
+                        "flex w-full items-start gap-2 p-2 text-left text-sm transition-colors hover:bg-bg-overlay",
+                        selected.has(t.id) && "bg-accent/10",
                       )}
                     >
                       <div
                         className={cn(
-                          'mt-0.5 h-4 w-4 shrink-0 rounded border',
+                          "mt-0.5 h-4 w-4 shrink-0 rounded border",
                           selected.has(t.id)
-                            ? 'border-accent bg-accent'
-                            : 'border-border',
+                            ? "border-accent bg-accent"
+                            : "border-border",
                         )}
                       />
                       <div className="flex-1 min-w-0">
@@ -1597,7 +1593,13 @@ function AddThemesDialog({
                           {t.name}
                         </div>
                         <div className="mt-0.5 truncate text-[11px] text-fg-tertiary">
-                          {t.blocksCount} блоков · {t.entitiesCount} сущностей
+                          {pluralRu(t.blocksCount, "блок", "блока", "блоков")} ·{" "}
+                          {pluralRu(
+                            t.entitiesCount,
+                            "сущность",
+                            "сущности",
+                            "сущностей",
+                          )}
                         </div>
                       </div>
                     </button>
@@ -1625,11 +1627,10 @@ function AddThemesDialog({
             disabled={submitting || selected.size === 0}
             onClick={() => void handleSubmit()}
           >
-            {submitting ? 'Добавляем…' : `Добавить (${selected.size})`}
+            {submitting ? "Добавляем…" : `Добавить (${selected.size})`}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
-

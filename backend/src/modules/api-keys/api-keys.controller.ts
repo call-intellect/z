@@ -21,13 +21,6 @@ import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { ApiKeysService } from './api-keys.service';
 import { CreateApiKeySchema, type CreateApiKeyDto } from './dto/create-api-key.dto';
 
-/**
- * Внутренние эндпоинты для управления API-ключами.
- *
- * GET    /api/v1/api-keys          — список (без plain key)
- * POST   /api/v1/api-keys          — создать (возвращает rawKey 1 раз!)
- * DELETE /api/v1/api-keys/:id      — отозвать
- */
 @ApiTags('api-keys')
 @Controller('api/v1/api-keys')
 @UseGuards(CookieAuthGuard)
@@ -45,16 +38,21 @@ export class ApiKeysController {
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Создать API-ключ',
-    description: 'rawKey возвращается в ответе ОДИН раз. Сохраните его сразу. Для scope="ingest" нужно передать заголовок X-Org-Id.',
+    description:
+      'rawKey возвращается в ответе ОДИН раз. Сохраните его сразу. Для scope="ingest" нужно передать заголовок X-Org-Id.',
   })
   async create(
     @CurrentUser() user: CurrentUserPayload,
     @Body(new ZodValidationPipe(CreateApiKeySchema)) dto: CreateApiKeyDto,
     @Req() req: ExpressRequest,
-  ): Promise<{ id: string; name: string; prefix: string; rawKey: string; scopes: unknown; scope: string }> {
-    // Для ingest-ключа нужен tenant. Берём из заголовка X-Org-Id (без полного TenantGuard:
-    // здесь сам ApiKeysController исторически не под TenantGuard, и менять его поведение
-    // для api-ключей было бы избыточно).
+  ): Promise<{
+    id: string;
+    name: string;
+    prefix: string;
+    rawKey: string;
+    scopes: unknown;
+    scope: string;
+  }> {
     let tenantId: string | null = null;
     if (dto.scope === 'ingest') {
       const headerVal = req.headers['x-org-id'];
@@ -67,7 +65,7 @@ export class ApiKeysController {
       id: apiKey.id,
       name: apiKey.name,
       prefix: apiKey.prefix,
-      rawKey, // !! plain — отдаётся ТОЛЬКО здесь
+      rawKey,
       scopes: apiKey.scopes,
       scope: apiKey.scope,
     };
@@ -76,10 +74,7 @@ export class ApiKeysController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Отозвать API-ключ' })
-  async revoke(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<void> {
+  async revoke(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload): Promise<void> {
     await this.svc.revoke(id, user.id);
   }
 }

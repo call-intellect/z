@@ -5,10 +5,7 @@ import { BusinessMetricsService } from '../../common/metrics/business-metrics.se
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { tryParseJson } from '../ai/services/json-extract.util';
 import { LlmRouterService } from '../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../ai/services/prompts/common';
+import { withInjectionGuard, wrapUserData } from '../ai/services/prompts/common';
 import { EmbeddingFallbackService } from '../embeddings/services/embedding-fallback.service';
 import {
   TASK_DEDUPE_JSON_SCHEMA,
@@ -18,39 +15,11 @@ import {
   TaskDedupeResponseSchema,
 } from '../knowledge-core/prompts/task-dedupe.prompt';
 
-/**
- * MeetingTaskDedupeService (Ф5 Р2, 2026-06-08) — семантический дедуп задач
- * встречи.
- *
- * Контракт NON-LOSSY:
- *   - canonical-задачи (Task.extractorVersion IS NULL) НИКОГДА не удаляются.
- *   - fast-задачи (Task.extractorVersion='fast') — это черновики. Если
- *     fast-черновик семантически совпадает с canonical-задачей ТОЙ ЖЕ встречи —
- *     удаляется ТОЛЬКО черновик (сама задача остаётся как canonical, данные
- *     не теряются). fast-черновик без canonical-эквивалента не трогаем.
- *
- * РИСКОВО (может скрыть задачу) → весь сервис под флагом
- * `cfg.knowledgeCore.taskDedupeEnabled` (дефолт FALSE). Любая ошибка дедупа —
- * best-effort (warn-лог), вызывающий воркер не падает.
- *
- * Алгоритм:
- *   1. flag OFF → no-op.
- *   2. embed заголовки canonical + drafts одним батчем.
- *   3. для каждого draft — max cosine по canonical:
- *      - sim >= threshold              → дубль (knn_merged), удалить черновик;
- *      - [threshold-0.07, threshold)   → LLM-арбитр task-dedupe (серая зона):
- *                                        verdict='same' → llm_merged, удалить;
- *                                        иначе → kept;
- *      - sim < threshold-0.07          → kept.
- *   4. deleteMany помеченных черновиков.
- */
 @Injectable()
 export class MeetingTaskDedupeService {
   private readonly logger = new Logger(MeetingTaskDedupeService.name);
 
-  /** Ширина «серой зоны» под порогом, где решение делегируется LLM-арбитру. */
   private static readonly GRAY_BAND = 0.07;
-  /** Максимум попыток вызова+парсинга LLM-арбитра (зеркалит block-link). */
   private static readonly LLM_RETRIES = 2;
 
   constructor(
@@ -64,11 +33,6 @@ export class MeetingTaskDedupeService {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  /**
-   * Дедуп fast-черновиков встречи против canonical-задач. Возвращает число
-   * удалённых черновиков. Никогда не бросает — на любой сбой возвращает
-   * `{ merged: 0 }` (best-effort).
-   */
   async dedupeForMeeting(args: {
     tenantId: string | null;
     meetingId: string;
@@ -99,7 +63,6 @@ export class MeetingTaskDedupeService {
 
       const threshold = this.threshold();
 
-      // Эмбеддинг заголовков ОДНИМ батчем: [canonical..., drafts...].
       let vectors: number[][];
       try {
         vectors = await this.embeddings.embed([
@@ -133,7 +96,6 @@ export class MeetingTaskDedupeService {
         const draft = drafts[i]!;
         const dv = draftVecs[i]!;
 
-        // max cosine по canonical + индекс лучшего кандидата (для LLM-арбитра).
         let bestSim = -Infinity;
         let bestIdx = -1;
         for (let j = 0; j < canonical.length; j++) {
@@ -151,7 +113,6 @@ export class MeetingTaskDedupeService {
         }
 
         if (bestSim >= threshold - MeetingTaskDedupeService.GRAY_BAND && bestIdx >= 0) {
-          // Серая зона — один LLM-вызов на пару (draft, лучший canonical).
           const same = await this.judgeSame(
             args.tenantId,
             args.meetingId,
@@ -181,7 +142,6 @@ export class MeetingTaskDedupeService {
       );
       return { merged: toDelete.length };
     } catch (err) {
-      // Best-effort: ошибка дедупа НЕ должна валить вызывающий воркер.
       this.metrics?.incTaskDedupe({ result: 'skipped' });
       this.logger.warn(
         {
@@ -193,8 +153,6 @@ export class MeetingTaskDedupeService {
       return { merged: 0 };
     }
   }
-
-  // ─────────────────────────── helpers ─────────────────────────────────────
 
   private isEnabled(): boolean {
     try {
@@ -213,7 +171,6 @@ export class MeetingTaskDedupeService {
     }
   }
 
-  /** Текст для эмбеддинга: title + (description, обрезано до ~200). */
   private titleText(row: { title: string; description?: string | null }): string {
     const title = (row.title ?? '').trim();
     const desc = (row.description ?? '').trim();
@@ -237,11 +194,6 @@ export class MeetingTaskDedupeService {
     return dot / (Math.sqrt(na) * Math.sqrt(nb));
   }
 
-  /**
-   * LLM-арбитр для серой зоны: один вызов task-dedupe на пару (draft, canonical).
-   * verdict='same' → true (дубль). Зеркалит block-link: retry×2 + validate +
-   * tryParseJson + Zod. Любая неудача после ретраев → false (kept, non-lossy).
-   */
   private async judgeSame(
     tenantId: string | null,
     meetingId: string,
@@ -288,7 +240,6 @@ export class MeetingTaskDedupeService {
         );
       }
     }
-    // После ретраев — консервативно НЕ удаляем (non-lossy).
     return false;
   }
 

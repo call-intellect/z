@@ -1,17 +1,13 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Webhook, Send, Loader2 } from 'lucide-react';
-import { Button } from '@/ui/shadcn/button';
-import { Badge } from '@/ui/shadcn/badge';
-import { useAuth } from '@/contexts/auth-context';
-import { useWebhooks } from '@/hooks/tracker/useWebhooks';
-import { webhooksApi } from '@/api/tracker/webhooks.api';
+import { useState } from "react";
+import { Webhook, Send, Loader2 } from "lucide-react";
+import { Button } from "@/ui/shadcn/button";
+import { Badge } from "@/ui/shadcn/badge";
+import { useAuth } from "@/contexts/auth-context";
+import { useWebhooks } from "@/hooks/tracker/useWebhooks";
+import { webhooksApi } from "@/api/tracker/webhooks.api";
 
-/**
- * `/admin/webhooks` — управление авто-уведомлениями другой системе
- * (исходящие webhook'и трекера). Создание/удаление формами — Sprint 3.
- */
 export function AdminWebhooksClient() {
   const { currentOrgId } = useAuth();
   const { webhooks, isLoading, error, mutate } = useWebhooks(currentOrgId);

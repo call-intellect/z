@@ -1,26 +1,3 @@
-/**
- * BillingProviderPort — абстракция внешнего платёжного провайдера.
- *
- * Реализации:
- *   - `ManualBillingProvider` (этот модуль) — заглушка для admin-only
- *     сценариев. Все методы throw'ят (исключение: webhook-методы возвращают
- *     no-op, чтобы фабрика провайдеров не падала когда BILLING_PROVIDER=manual
- *     и webhook-эндпоинт всё равно поднят).
- *   - `TochkaBillingProvider` (Фаза 5) — реальная интеграция с Точкой.
- *
- * Выбор реализации — через ENV `BILLING_PROVIDER` + feature-flag
- * `FEATURE_BILLING_TOCHKA` (см. BillingModule.useFactory в Фазе 4b).
- *
- * Денежные суммы — **копейки** (Int). Конкретные провайдеры конвертируют в
- * нужный формат внутри (Точка принимает рубли числом → /100 в её адаптере).
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §7.2 + port-brief §5.
- */
-
-// ────────────────────────── Ошибки ──────────────────────────
-
-/** Кидается провайдером когда внешний ресурс (платёж/инвойс/подписка) не
- *  найден (HTTP 404/410/424 у Точки). Не путать с `NotFoundException` Nest. */
 export class BillingProviderResourceNotFoundError extends Error {
   constructor(message: string) {
     super(message);
@@ -28,17 +5,13 @@ export class BillingProviderResourceNotFoundError extends Error {
   }
 }
 
-// ────────────────────────── Запросы / ответы ──────────────────────────
-
 export interface CreatePaymentRequest {
-  /** Наш `Invoice.id` — провайдер должен сохранить как `paymentLinkId`. */
   invoiceId: string;
   amountKopecks: number;
   currency: 'RUB';
   description: string;
   customerCode?: string;
   merchantId?: string;
-  /** ID платёжной ссылки (по умолчанию = invoiceId). */
   paymentLinkId?: string;
   paymentMode?: Array<'card' | 'sbp' | 'tinkoff' | 'dolyame'>;
   returnUrl?: string;
@@ -129,26 +102,14 @@ export interface PaymentStatusResult {
 }
 
 export interface WebhookEvent {
-  /** Идентификатор события для дедупа: `<type>:<operationId>:<status>`. */
   eventId: string;
   eventType: string;
   providerInvoiceId: string;
   status: string;
-  /** Сумма в копейках (для UI; не используется в верификации). */
   amountKopecks?: number;
   currency?: string;
   paidAt?: Date;
-  /**
-   * audit Б4 (2026-05-29): JWT-jti для replay-защиты на уровне БД.
-   * null если провайдер не положил jti в payload (legacy fallback).
-   */
   jti?: string | null;
-  /**
-   * audit В3 (2026-05-29): customerCode из payload — сверяется
-   * с `cfg.billing.tochka.customerCode` чтобы webhook от чужого
-   * customer'а не финализировал наш Invoice. null если провайдер
-   * не положил поле (manual / legacy).
-   */
   customerCode?: string | null;
   rawPayload: Record<string, unknown>;
 }
@@ -169,13 +130,9 @@ export interface BankInvoiceFileResult {
   fileName?: string;
 }
 
-// ────────────────────────── Интерфейс ──────────────────────────
-
 export interface BillingProviderPort {
-  /** Имя провайдера для логов/метрик/BillingEventLog.providerName. */
   readonly providerName: 'tochka' | 'manual';
 
-  // Acquiring (карта/СБП) ─────────────────────────────
   createPayment(request: CreatePaymentRequest): Promise<CreatePaymentResult>;
   createRecurringSubscription(
     request: CreateRecurringSubscriptionRequest,
@@ -188,17 +145,12 @@ export interface BillingProviderPort {
   refundPayment(request: { providerInvoiceId: string; amountKopecks: number }): Promise<void>;
   getPaymentStatus(providerInvoiceId: string): Promise<PaymentStatusResult>;
 
-  // Bank invoice (безнал) ─────────────────────────────
   createBankInvoice(request: CreateBankInvoiceRequest): Promise<CreateBankInvoiceResult>;
   getBankInvoiceStatus(providerInvoiceId: string): Promise<GetBankInvoiceStatusResult>;
-  sendBankInvoiceToEmail(request: {
-    providerInvoiceId: string;
-    email: string;
-  }): Promise<void>;
+  sendBankInvoiceToEmail(request: { providerInvoiceId: string; email: string }): Promise<void>;
   getBankInvoiceFile(providerInvoiceId: string): Promise<BankInvoiceFileResult>;
   deleteBankInvoice(providerInvoiceId: string): Promise<void>;
 
-  // Webhook ───────────────────────────────────────────
   registerWebhooks?(request: RegisterWebhooksRequest): Promise<RegisterWebhooksResult>;
   parseWebhook(headers: Record<string, string>, body: unknown): WebhookEvent;
   verifyWebhookSignature(

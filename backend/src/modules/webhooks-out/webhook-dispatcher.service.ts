@@ -17,19 +17,6 @@ import {
   type WebhookDeliveryJobData,
 } from './webhook-queue';
 
-/**
- * Постановка webhook'ов в очередь доставки.
- *
- * `dispatch({ event, userId, payload })`:
- *   1. Найти все active подписки юзера, у которых event ∈ events.
- *   2. Для каждой создать `WebhookDelivery(status=pending)`.
- *   3. Поставить job `{ deliveryId }` в очередь `webhook.delivery`.
- *
- * Worker (`webhook-delivery.worker.ts`) подхватывает и реально POST'ит.
- *
- * Используется из бизнес-кода:
- *   await dispatcher.dispatch({ event: 'meeting.completed', userId, payload: {...} });
- */
 @Injectable()
 export class WebhookDispatcherService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WebhookDispatcherService.name);
@@ -80,11 +67,7 @@ export class WebhookDispatcherService implements OnModuleInit, OnModuleDestroy {
         eventId,
         payload: wrappedPayload,
       });
-      await queue.add(
-        'deliver',
-        { deliveryId: delivery.id },
-        { jobId: `delivery_${delivery.id}` },
-      );
+      await queue.add('deliver', { deliveryId: delivery.id }, { jobId: `delivery_${delivery.id}` });
       enqueued += 1;
     }
     this.logger.debug(
@@ -93,9 +76,6 @@ export class WebhookDispatcherService implements OnModuleInit, OnModuleDestroy {
     return { enqueued };
   }
 
-  /**
-   * Тестовая доставка одной подписки. Используется в `POST /test`.
-   */
   async dispatchOne(args: {
     subscriptionId: string;
     event: string;
@@ -116,15 +96,10 @@ export class WebhookDispatcherService implements OnModuleInit, OnModuleDestroy {
       eventId,
       payload: wrappedPayload,
     });
-    await queue.add(
-      'deliver',
-      { deliveryId: delivery.id },
-      { jobId: `delivery:${delivery.id}` },
-    );
+    await queue.add('deliver', { deliveryId: delivery.id }, { jobId: `delivery:${delivery.id}` });
     return { deliveryId: delivery.id };
   }
 
-  /** Используется worker'ом для постановки retry job. */
   async enqueueRetry(deliveryId: string, delayMs: number): Promise<void> {
     const queue = this.requireQueue();
     await queue.add(

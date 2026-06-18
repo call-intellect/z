@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -17,16 +12,6 @@ import type {
 
 import { resolveProcessTenantTop } from './tenant-top';
 
-/**
- * SBA γ-3 — CrossFunctionalFrictionService.
- *
- * CRUD-операции вокруг `CrossFunctionalFrictionReport` и list cross-functional
- * шаблонов. Сам пересчёт отчётов делает `CrossFunctionalFrictionAggregatorCron`.
- *
- * Read-side используется REST'ом /api/v1/processes/cross-functional/*.
- *
- * Все user-facing сообщения — на русском.
- */
 @Injectable()
 export class CrossFunctionalFrictionService {
   private readonly logger = new Logger(CrossFunctionalFrictionService.name);
@@ -36,8 +21,6 @@ export class CrossFunctionalFrictionService {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
   ) {}
-
-  // ─────────────────────────── list cross-functional templates ──────
 
   async listCrossFunctionalProcesses(args: {
     tenantId: string;
@@ -62,10 +45,7 @@ export class CrossFunctionalFrictionService {
     const [rows, total] = await Promise.all([
       this.prisma.processTemplate.findMany({
         where,
-        orderBy: [
-          { crossFunctionalScore: 'desc' },
-          { updatedAt: 'desc' },
-        ],
+        orderBy: [{ crossFunctionalScore: 'desc' }, { updatedAt: 'desc' }],
         skip,
         take: q.limit,
         select: {
@@ -84,7 +64,6 @@ export class CrossFunctionalFrictionService {
       this.prisma.processTemplate.count({ where }),
     ]);
 
-    // Подгрузим активные friction-отчёты одним батчем.
     const ids = rows.map((r) => r.id);
     const activeFrictionByTemplate = new Map<string, number>();
     if (ids.length > 0) {
@@ -125,14 +104,11 @@ export class CrossFunctionalFrictionService {
     };
   }
 
-  // ─────────────────────────── list friction reports ────────────────
-
   async listFrictionReports(args: {
     tenantId: string;
     processTemplateId: string;
     includeResolved: boolean;
   }): Promise<ListCrossFunctionalFrictionResponse> {
-    // Проверим, что шаблон принадлежит tenant'у.
     const t = await this.prisma.processTemplate.findFirst({
       where: {
         id: args.processTemplateId,
@@ -158,8 +134,6 @@ export class CrossFunctionalFrictionService {
     return { items: rows.map((r) => this.toDto(r)) };
   }
 
-  // ─────────────────────────── resolve ──────────────────────────────
-
   async resolveReport(args: {
     tenantId: string;
     reportId: string;
@@ -181,7 +155,6 @@ export class CrossFunctionalFrictionService {
         resolvedByUserId: args.resolvedByUserId,
       },
     });
-    // Best-effort: метрика resolution time.
     try {
       const seconds = Math.max(
         0,
@@ -199,8 +172,6 @@ export class CrossFunctionalFrictionService {
     }
     return this.toDto(updated);
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private toDto(r: {
     id: string;
@@ -231,9 +202,7 @@ export class CrossFunctionalFrictionService {
     };
   }
 
-  private severityToDto(
-    s: string,
-  ): CrossFunctionalFrictionReportDto['severity'] {
+  private severityToDto(s: string): CrossFunctionalFrictionReportDto['severity'] {
     if (s === 'low' || s === 'medium' || s === 'high') return s;
     return 'medium';
   }

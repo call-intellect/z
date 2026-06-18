@@ -1,16 +1,12 @@
 import type * as LivekitSdk from 'livekit-server-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Перехватываем конструктор EgressClient до импорта тестируемого файла:
-// SDK инициализирует rpc → tries to call live API. Нам нужен полный мок.
 const mockStartRoomCompositeEgress = vi.fn();
 const mockStartTrackEgress = vi.fn();
 const mockStopEgress = vi.fn();
 
 vi.mock('livekit-server-sdk', async () => {
-  const actual = await vi.importActual<typeof LivekitSdk>(
-    'livekit-server-sdk',
-  );
+  const actual = await vi.importActual<typeof LivekitSdk>('livekit-server-sdk');
   class EgressClientMock {
     startRoomCompositeEgress = mockStartRoomCompositeEgress;
     startTrackEgress = mockStartTrackEgress;
@@ -22,7 +18,6 @@ vi.mock('livekit-server-sdk', async () => {
   };
 });
 
-// Импортируем после mock'а.
 import type { TypedConfigService } from '../../common/config/index';
 
 import { LivekitEgressClient } from './livekit-egress.client';
@@ -65,8 +60,17 @@ describe('LivekitEgressClient', () => {
     expect(mockStartRoomCompositeEgress).toHaveBeenCalledTimes(1);
     const [room, opts] = mockStartRoomCompositeEgress.mock.calls[0]!;
     expect(room).toBe('m-1');
-    // file output → S3, с правильным bucket / accessKey / forcePathStyle.
-    const file = (opts as { file: { filepath: string; output: { value: { bucket: string; accessKey: string; forcePathStyle: boolean }; case: string } } }).file;
+    const file = (
+      opts as {
+        file: {
+          filepath: string;
+          output: {
+            value: { bucket: string; accessKey: string; forcePathStyle: boolean };
+            case: string;
+          };
+        };
+      }
+    ).file;
     expect(file.filepath).toBe('meetings/m-1/composite.mp4');
     expect(file.output.case).toBe('s3');
     expect(file.output.value.bucket).toBe('z-records');
@@ -78,19 +82,16 @@ describe('LivekitEgressClient', () => {
     mockStartTrackEgress.mockResolvedValueOnce({ egressId: 'EG_T1' });
 
     const client = new LivekitEgressClient(makeCfg());
-    const out = await client.startTrackEgress(
-      { id: 'm-1' },
-      'TR_sid',
-      { bucket: 'z-records', key: 'meetings/m-1/audio/guest:1.ogg' },
-    );
+    const out = await client.startTrackEgress({ id: 'm-1' }, 'TR_sid', {
+      bucket: 'z-records',
+      key: 'meetings/m-1/audio/guest:1.ogg',
+    });
 
     expect(out).toEqual({ egressId: 'EG_T1' });
     const [room, file, trackId] = mockStartTrackEgress.mock.calls[0]!;
     expect(room).toBe('m-1');
     expect(trackId).toBe('TR_sid');
-    expect((file as { filepath: string }).filepath).toBe(
-      'meetings/m-1/audio/guest:1.ogg',
-    );
+    expect((file as { filepath: string }).filepath).toBe('meetings/m-1/audio/guest:1.ogg');
   });
 
   it('stopEgress: глотает «not found» и не бросает', async () => {

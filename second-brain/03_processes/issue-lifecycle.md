@@ -8,10 +8,10 @@ owners_human:
   - продакт трекера
   - инженер tracker-модуля
 related_plans:
-  - plans/tz/2026-05-23-tracker-phase-1-models-api.md
-  - plans/tz/2026-05-23-tracker-phase-2-frontend-mobile-first.md
-  - plans/tz/2026-05-23-tracker-phase-3-ai-features.md
-  - plans/tz/2026-05-23-coo-and-tracker-umbrella.md
+  - plans/archive/2026-05-23-tracker-phase-1-models-api.md
+  - plans/archive/2026-05-23-tracker-phase-2-frontend-mobile-first.md
+  - plans/archive/2026-05-23-tracker-phase-3-ai-features.md
+  - plans/archive/2026-05-23-coo-and-tracker-umbrella.md
   - plans/sprints/2026-05-24-sprint-plan-wave-1.md
 related_projects:
   - 01_projects/tracker.md

@@ -1,37 +1,8 @@
-/**
- * KC-Temporal W1.1 (2026-05-25) — backfill bi-temporal полей для существующих
- * IdeaBlock'ов и EntityLink'ов.
- *
- * Что делает (идемпотентно):
- *   - IdeaBlock с `validFrom IS NULL`:
- *       validFrom  = COALESCE(min(IdeaBlockEvidence.sourceTimestamp), createdAt)
- *       recordedAt = createdAt (только если совпадает с дефолтом now() — на новых
- *                    блоках, созданных после prisma:push, recordedAt=createdAt
- *                    автоматически из @default(now()); миграция переписывает
- *                    только historic-блоки, где default зафиксирован при insert).
- *   - EntityLink: переносит `validTo` (legacy) → `validUntil`, ставит
- *       `recordedAt = createdAt`. Идемпотентно: пропускает строки, где
- *       `validUntil` уже не NULL ИЛИ `validTo` был NULL.
- *
- * Безопасность (skill safe-seed-rules):
- *   - WHERE-условия исключают уже обработанные строки.
- *   - Batch 1000, прогресс-лог.
- *   - Поддерживает `--dry-run` (печатает SQL/COUNT, не пишет) и `--limit=N`
- *     (потолок строк к обновлению за прогон).
- *
- * Запуск:
- *   cd backend
- *   bun run scripts/patch-bitemporal-backfill.ts             # обычный
- *   bun run scripts/patch-bitemporal-backfill.ts --dry-run   # сухой прогон
- *   bun run scripts/patch-bitemporal-backfill.ts --limit=5000
- */
-
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
 import { columnExists } from './_lib/schema-guards';
 
-// Prisma 7: driver adapter обязателен. URL из env (bun грузит .env).
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }),
 });
@@ -64,7 +35,6 @@ interface IdeaBlockToBackfill {
 async function backfillIdeaBlocks(opts: CliOptions): Promise<void> {
   console.log('\n=== IdeaBlock backfill (validFrom, recordedAt) ===');
 
-  // Сколько всего блоков с validFrom IS NULL.
   const totalRows = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
     `SELECT COUNT(*)::bigint AS count FROM "IdeaBlock" WHERE "validFrom" IS NULL`,
   );
@@ -85,7 +55,6 @@ async function backfillIdeaBlocks(opts: CliOptions): Promise<void> {
     const remaining = opts.limit !== null ? opts.limit - processed : BATCH_SIZE;
     const take = Math.min(BATCH_SIZE, remaining);
 
-    // Берём batch блоков с агрегатом min(evidence.sourceTimestamp) одним SELECT'ом.
     const rows = await prisma.$queryRawUnsafe<IdeaBlockToBackfill[]>(
       `
         SELECT b.id, b."createdAt",
@@ -104,13 +73,8 @@ async function backfillIdeaBlocks(opts: CliOptions): Promise<void> {
         id: r.id,
         validFrom: r.minSourceTs ?? r.createdAt,
       }));
-      console.log(
-        `[ideaBlock][dry-run] batch=${rows.length}, sample=`,
-        sample,
-      );
+      console.log(`[ideaBlock][dry-run] batch=${rows.length}, sample=`, sample);
     } else {
-      // Один UPDATE на batch через VALUES — быстрее, чем N updateMany.
-      // Используем CTE с unnest.
       const ids: string[] = [];
       const vfs: Date[] = [];
       const rcs: Date[] = [];
@@ -135,9 +99,7 @@ async function backfillIdeaBlocks(opts: CliOptions): Promise<void> {
     }
 
     processed += rows.length;
-    console.log(
-      `[ideaBlock] обработано ${processed}/${total} (updated=${updated})`,
-    );
+    console.log(`[ideaBlock] обработано ${processed}/${total} (updated=${updated})`);
     if (rows.length < take) break;
   }
 
@@ -147,10 +109,6 @@ async function backfillIdeaBlocks(opts: CliOptions): Promise<void> {
 async function backfillEntityLinks(opts: CliOptions): Promise<void> {
   console.log('\n=== EntityLink backfill (validUntil ← validTo, recordedAt) ===');
 
-  // 1) Перенос validTo → validUntil (только если validUntil ещё NULL).
-  // Guard: legacy-колонка EntityLink.validTo помечена «только для чтения» и
-  // планово удаляется. Если её уже нет — COUNT по ней упал бы raw-ошибкой
-  // `column "validTo" does not exist`. Тогда перенос не нужен — он сделан ранее.
   const hasValidTo = await columnExists(prisma, 'EntityLink', 'validTo');
   if (!hasValidTo) {
     console.log(
@@ -187,15 +145,6 @@ async function backfillEntityLinks(opts: CliOptions): Promise<void> {
     }
   }
 
-  // 2) Backfill recordedAt = createdAt — только если recordedAt равен
-  //    default'у (now() при текущем прогоне). На свежих БД default уже
-  //    выставлен в `now()` при insert (а это будет дата запуска backfill'а,
-  //    а нам нужно `createdAt`). Перезаписываем безусловно — это безопасно:
-  //    recordedAt по контракту = «когда система узнала» ≡ createdAt
-  //    для legacy-данных, и для будущих insert'ов значение будет
-  //    выставляться явно в block-ingest'е.
-  //
-  //    Идемпотентность: повторный прогон обновит ту же дату на ту же — noop.
   const total2Row = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
     `SELECT COUNT(*)::bigint AS count FROM "EntityLink" WHERE "recordedAt" <> "createdAt"`,
   );
@@ -213,7 +162,6 @@ async function backfillEntityLinks(opts: CliOptions): Promise<void> {
     }
   }
 
-  // 3) IdeaBlock recordedAt тоже выровняем (по тем же причинам).
   const total3Row = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
     `SELECT COUNT(*)::bigint AS count FROM "IdeaBlock" WHERE "recordedAt" <> "createdAt"`,
   );
@@ -234,7 +182,9 @@ async function backfillEntityLinks(opts: CliOptions): Promise<void> {
 
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
-  console.log(`=== patch-bitemporal-backfill START (dry-run=${opts.dryRun}, limit=${opts.limit ?? 'none'}) ===`);
+  console.log(
+    `=== patch-bitemporal-backfill START (dry-run=${opts.dryRun}, limit=${opts.limit ?? 'none'}) ===`,
+  );
 
   await backfillIdeaBlocks(opts);
   await backfillEntityLinks(opts);

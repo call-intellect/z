@@ -1,18 +1,3 @@
-/**
- * Тесты для `buildTasksStructuredJsonSchema` — динамической сборки JSON Schema
- * для strict-провайдеров (OpenAI/DeepSeek `response_format: json_schema strict`).
- *
- * ТЗ 2026-05-25 hard-participant-identification (закрытие vNext-gap).
- *
- * Проверяем:
- *   1. Без participants (undefined / null / []) — `assigneeUserId` не присутствует
- *      в JSON Schema (legacy-поведение, обратная совместимость).
- *   2. С непустым participants — `assigneeUserId` присутствует как
- *      nullable string.
- *   3. Базовая структура schema (object с properties.tasks: array of object)
- *      сохраняется во всех вариантах.
- *   4. Snapshot — без participants и с одним участником.
- */
 import { describe, expect, it } from 'vitest';
 
 import type { AiParticipantContext } from './participant-context';
@@ -28,13 +13,7 @@ const PARTICIPANTS: AiParticipantContext[] = [
   },
 ];
 
-/**
- * Достаёт properties одного task'а из верхнеуровневой schema
- * `{ properties: { tasks: { items: { properties: ... } } } }`.
- */
-function extractTaskItemProperties(
-  schema: Record<string, unknown>,
-): Record<string, unknown> {
+function extractTaskItemProperties(schema: Record<string, unknown>): Record<string, unknown> {
   const root = schema as {
     properties?: {
       tasks?: { items?: { properties?: Record<string, unknown> } };
@@ -52,7 +31,6 @@ describe('buildTasksStructuredJsonSchema', () => {
     const schema = buildTasksStructuredJsonSchema();
     const props = extractTaskItemProperties(schema);
     expect(props).not.toHaveProperty('assigneeUserId');
-    // sanity: базовые поля structured-пути на месте
     expect(props).toHaveProperty('title');
     expect(props).toHaveProperty('assigneeRaw');
     expect(props).toHaveProperty('sourceStartMs');
@@ -85,8 +63,6 @@ describe('buildTasksStructuredJsonSchema', () => {
       type?: unknown;
       anyOf?: Array<{ type?: string }>;
     };
-    // zod v4 может сериализовать nullable как `type: ["string", "null"]`
-    // или как `anyOf: [{type:'string'}, {type:'null'}]`. Поддерживаем обе формы.
     const isNullableString =
       (Array.isArray(field.type) && field.type.includes('null') && field.type.includes('string')) ||
       (Array.isArray(field.anyOf) &&

@@ -4,38 +4,12 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import type { AiParticipantContext } from './prompts/participant-context';
 
-/**
- * Загружает контекст участников встречи для AI-промптов жёсткой
- * идентификации (ТЗ 2026-05-25 `hard-participant-identification`).
- *
- * Не пишет в БД, не зависит от LLM-провайдеров. Используется
- * `tasks-extract.worker`, `meeting-report-fast.worker` и любым другим
- * caller'ом, которому нужно передать список участников в промпт.
- */
 @Injectable()
 export class ParticipantContextService {
   private readonly logger = new Logger(ParticipantContextService.name);
 
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-  ) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  /**
-   * Возвращает список участников встречи в формате для AI-промпта.
-   *
-   *   - Любой зарегистрированный участник (`isRegisteredUser=true`,
-   *     есть `userId`) — с полным контекстом (userId, fullName из User),
-   *     независимо от `role` (host ИЛИ приглашённый сотрудник-гость).
-   *   - Анонимные гости (`isRegisteredUser=false`) — userId=null.
-   *     fullName подтягивается из User для всех, у кого есть userId.
-   *   - Soft-deleted/duplicate участников НЕ фильтруем здесь — на уровне
-   *     `Participant` в БД дублей нет (есть `@@unique([meetingId,
-   *     livekitIdentity])`).
-   *
-   * Сортировка: host'ы первыми, затем гости — чтобы LLM «видел» сначала
-   * сотрудников. Внутри группы — стабильно по `id` (детерминированно
-   * для тестов/snapshot'ов).
-   */
   async loadForMeeting(meetingId: string): Promise<AiParticipantContext[]> {
     const participants = await this.prisma.participant.findMany({
       where: { meetingId },
@@ -43,9 +17,6 @@ export class ParticipantContextService {
     });
     if (participants.length === 0) return [];
 
-    // Подгружаем User'ов для всех участников с userId одним запросом,
-    // чтобы достать `name` (fullName). `Participant.name` — display name,
-    // введённый в форме, может отличаться от User.name.
     const userIds = participants
       .map((p) => p.userId)
       .filter((u): u is string => typeof u === 'string' && u.length > 0);
@@ -59,7 +30,7 @@ export class ParticipantContextService {
 
     const result: AiParticipantContext[] = participants.map((p) => {
       const isHost = p.role === 'host';
-      const user = p.userId ? userById.get(p.userId) ?? null : null;
+      const user = p.userId ? (userById.get(p.userId) ?? null) : null;
       return {
         livekitIdentity: p.livekitIdentity,
         displayName: p.name,

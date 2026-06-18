@@ -1,17 +1,7 @@
-/**
- * Демо-данные «ТехноСтрим» — Фаза 7 ТЗ 2026-05-31-demo-content-expansion-pulse.md.
- *
- * Один файл — 10 небольших seed-функций (Regulations, Ideas, Documents,
- * Calendar, Referrals, Feedback, Experiments, BrandVoice, Vendors,
- * ProbeEvents). Каждая создаёт небольшое число записей — суммарно
- * экономно по объёму кода и легко поддерживать.
- */
 import type { Prisma } from '@prisma/client';
 
 import type { SeedFn } from './types';
 import { daysAgo, req } from './types';
-
-// ─── 7.1 Regulations × 5 ──────────────────────────────────────────────────
 
 export const seedRegulations: SeedFn = async (ctx, ids) => {
   const { prisma, tenantId } = ctx;
@@ -33,7 +23,7 @@ export const seedRegulations: SeedFn = async (ctx, ids) => {
       contentMd:
         '# Регламент релиза hotfix\n\n' +
         '## Когда применять\nПрод-инцидент с потерей дохода или security-уязвимость.\n\n' +
-        '## Процесс\n1. Создать PR в hotfix-branch\n2. Минимум 2 reviewer\'а\n3. Smoke-тест на staging\n4. Деплой в течение 4 часов\n5. Post-mortem в течение 48 часов',
+        "## Процесс\n1. Создать PR в hotfix-branch\n2. Минимум 2 reviewer'а\n3. Smoke-тест на staging\n4. Деплой в течение 4 часов\n5. Post-mortem в течение 48 часов",
       ownerPersonKey: 'kozlov',
     },
     {
@@ -84,14 +74,16 @@ export const seedRegulations: SeedFn = async (ctx, ids) => {
   console.log(`[demo/regulations] Создано ${REGULATIONS.length} регламентов.`);
 };
 
-// ─── 7.2 Ideas × 10 + IdeaCluster × 3 ─────────────────────────────────────
-
 export const seedIdeas: SeedFn = async (ctx, ids) => {
   const { prisma, tenantId } = ctx;
 
   const CLUSTERS = [
     { key: 'ui', name: 'UI улучшения', description: 'Идеи по визуальной полировке и UX' },
-    { key: 'integrations', name: 'Интеграции', description: 'Запросы на интеграции с внешними системами' },
+    {
+      key: 'integrations',
+      name: 'Интеграции',
+      description: 'Запросы на интеграции с внешними системами',
+    },
     { key: 'perf', name: 'Производительность', description: 'Идеи по ускорению платформы' },
   ];
 
@@ -108,16 +100,76 @@ export const seedIdeas: SeedFn = async (ctx, ids) => {
   }
 
   const IDEAS = [
-    { clusterKey: 'ui', kind: 'internal', authorKey: 'petrova', statement: 'Добавить тёмную тему для длинных встреч', supporters: 5 },
-    { clusterKey: 'ui', kind: 'internal', authorKey: 'petrova', statement: 'Кастомизируемые горячие клавиши для модераторов', supporters: 3 },
-    { clusterKey: 'ui', kind: 'internal', authorKey: 'sidorov', statement: 'Компактный режим дашборда — больше виджетов в одно окно', supporters: 2 },
-    { clusterKey: 'integrations', kind: 'client_request', authorKey: 'sokolova', statement: 'Slack-интеграция (запрос от Ростелекома)', supporters: 7 },
-    { clusterKey: 'integrations', kind: 'client_request', authorKey: 'sokolova', statement: 'Webhooks для CRM (Сбербанк)', supporters: 4 },
-    { clusterKey: 'integrations', kind: 'client_request', authorKey: 'volkova', statement: 'Calendar 2-way sync с Google Calendar', supporters: 6 },
-    { clusterKey: 'integrations', kind: 'internal', authorKey: 'kozlov', statement: 'GitHub PR-bot — статус ревью в Slack', supporters: 3 },
-    { clusterKey: 'perf', kind: 'internal', authorKey: 'novikov', statement: 'Lazy-load транскриптов на странице встречи', supporters: 4 },
-    { clusterKey: 'perf', kind: 'internal', authorKey: 'kozlov', statement: 'Кэширование embeddings в Redis на 24 часа', supporters: 2 },
-    { clusterKey: 'perf', kind: 'client_request', authorKey: 'sokolova', statement: 'Ускорить открытие больших проектов в трекере', supporters: 5 },
+    {
+      clusterKey: 'ui',
+      kind: 'internal',
+      authorKey: 'petrova',
+      statement: 'Добавить тёмную тему для длинных встреч',
+      supporters: 5,
+    },
+    {
+      clusterKey: 'ui',
+      kind: 'internal',
+      authorKey: 'petrova',
+      statement: 'Кастомизируемые горячие клавиши для модераторов',
+      supporters: 3,
+    },
+    {
+      clusterKey: 'ui',
+      kind: 'internal',
+      authorKey: 'sidorov',
+      statement: 'Компактный режим дашборда — больше виджетов в одно окно',
+      supporters: 2,
+    },
+    {
+      clusterKey: 'integrations',
+      kind: 'client_request',
+      authorKey: 'sokolova',
+      statement: 'Slack-интеграция (запрос от Ростелекома)',
+      supporters: 7,
+    },
+    {
+      clusterKey: 'integrations',
+      kind: 'client_request',
+      authorKey: 'sokolova',
+      statement: 'Webhooks для CRM (Сбербанк)',
+      supporters: 4,
+    },
+    {
+      clusterKey: 'integrations',
+      kind: 'client_request',
+      authorKey: 'volkova',
+      statement: 'Calendar 2-way sync с Google Calendar',
+      supporters: 6,
+    },
+    {
+      clusterKey: 'integrations',
+      kind: 'internal',
+      authorKey: 'kozlov',
+      statement: 'GitHub PR-bot — статус ревью в Slack',
+      supporters: 3,
+    },
+    {
+      clusterKey: 'perf',
+      kind: 'internal',
+      authorKey: 'novikov',
+      statement: 'Lazy-load транскриптов на странице встречи',
+      supporters: 4,
+    },
+    {
+      clusterKey: 'perf',
+      kind: 'internal',
+      authorKey: 'kozlov',
+      statement: 'Кэширование embeddings в Redis на 24 часа',
+      supporters: 2,
+    },
+    {
+      clusterKey: 'perf',
+      kind: 'client_request',
+      authorKey: 'sokolova',
+      statement: 'Ускорить открытие больших проектов в трекере',
+      supporters: 5,
+    },
   ];
 
   for (let i = 0; i < IDEAS.length; i++) {
@@ -143,17 +195,39 @@ export const seedIdeas: SeedFn = async (ctx, ids) => {
   console.log(`[demo/ideas] Создано ${IDEAS.length} идей + ${CLUSTERS.length} кластеров.`);
 };
 
-// ─── 7.3 Documents × 5 ────────────────────────────────────────────────────
-
 export const seedDocuments: SeedFn = async (ctx, ids) => {
   const { prisma, tenantId } = ctx;
 
   const DOCS = [
-    { name: 'Должностная инструкция Tech Lead', uploaderKey: 'morozov', content: '# Tech Lead\n\nОтвечает за архитектуру backend, code review SLA, технический долг и инциденты P0.' },
-    { name: 'Брендбук ТехноСтрим v2', uploaderKey: 'volkova', content: '# Брендбук ТехноСтрим v2\n\n## Логотип\nИспользуем основной знак на светлом фоне.\n\n## Цвета\n- Primary: #4F46E5\n- Accent: #10B981' },
-    { name: 'Шаблон NDA для клиентов', uploaderKey: 'morozov', content: '# NDA шаблон\n\nСтандартное соглашение о неразглашении со сроком 3 года.' },
-    { name: 'Положение об оплате труда', uploaderKey: 'mikhailova', content: '# Положение об оплате\n\nДва раза в месяц — аванс 15-го, основная 30-го. Премии — по KPI квартала.' },
-    { name: 'Roadmap Q2-Q3 2026', uploaderKey: 'volkova', content: '# Roadmap\n\n## Q2\n- OAuth2 миграция\n- Мобильное MVP\n- Ростелеком пилот\n\n## Q3\n- ФСТЭК сертификация\n- Slack-интеграция' },
+    {
+      name: 'Должностная инструкция Tech Lead',
+      uploaderKey: 'morozov',
+      content:
+        '# Tech Lead\n\nОтвечает за архитектуру backend, code review SLA, технический долг и инциденты P0.',
+    },
+    {
+      name: 'Брендбук ТехноСтрим v2',
+      uploaderKey: 'volkova',
+      content:
+        '# Брендбук ТехноСтрим v2\n\n## Логотип\nИспользуем основной знак на светлом фоне.\n\n## Цвета\n- Primary: #4F46E5\n- Accent: #10B981',
+    },
+    {
+      name: 'Шаблон NDA для клиентов',
+      uploaderKey: 'morozov',
+      content: '# NDA шаблон\n\nСтандартное соглашение о неразглашении со сроком 3 года.',
+    },
+    {
+      name: 'Положение об оплате труда',
+      uploaderKey: 'mikhailova',
+      content:
+        '# Положение об оплате\n\nДва раза в месяц — аванс 15-го, основная 30-го. Премии — по KPI квартала.',
+    },
+    {
+      name: 'Roadmap Q2-Q3 2026',
+      uploaderKey: 'volkova',
+      content:
+        '# Roadmap\n\n## Q2\n- OAuth2 миграция\n- Мобильное MVP\n- Ростелеком пилот\n\n## Q3\n- ФСТЭК сертификация\n- Slack-интеграция',
+    },
   ];
 
   for (let i = 0; i < DOCS.length; i++) {
@@ -180,8 +254,6 @@ export const seedDocuments: SeedFn = async (ctx, ids) => {
   console.log(`[demo/documents] Создано ${DOCS.length} документов.`);
 };
 
-// ─── 7.4 Calendar × 18 events ─────────────────────────────────────────────
-
 export const seedCalendar: SeedFn = async (ctx, ids) => {
   const { prisma, tenantId, ownerUserId } = ctx;
 
@@ -192,26 +264,132 @@ export const seedCalendar: SeedFn = async (ctx, ids) => {
     kind: 'meeting' | 'release' | 'milestone' | 'incident' | 'deadline' | 'other';
     participantPersonKeys: string[];
   }> = [
-    // Прошедшие 12
-    { title: 'CustDev: Ростелеком', daysFromNow: -28, durationMin: 60, kind: 'meeting', participantPersonKeys: ['sokolova', 'volkova', 'morozov'] },
-    { title: 'Sprint 12 планирование', daysFromNow: -25, durationMin: 60, kind: 'meeting', participantPersonKeys: ['kozlov', 'novikov', 'sidorov'] },
-    { title: 'Дизайн-ревью v2', daysFromNow: -22, durationMin: 45, kind: 'meeting', participantPersonKeys: ['petrova', 'volkova'] },
-    { title: 'All-hands старт Q2', daysFromNow: -19, durationMin: 60, kind: 'meeting', participantPersonKeys: ['morozov', 'volkova', 'kozlov', 'sokolova'] },
-    { title: 'Релиз v1.9.0', daysFromNow: -17, durationMin: 30, kind: 'release', participantPersonKeys: ['kozlov', 'novikov'] },
-    { title: 'Sales pipeline review', daysFromNow: -14, durationMin: 45, kind: 'meeting', participantPersonKeys: ['sokolova', 'morozov'] },
-    { title: 'CustDev: Сбербанк', daysFromNow: -12, durationMin: 60, kind: 'meeting', participantPersonKeys: ['sokolova', 'volkova'] },
-    { title: 'HR-синк', daysFromNow: -10, durationMin: 30, kind: 'meeting', participantPersonKeys: ['mikhailova', 'morozov'] },
-    { title: 'Ретро Sprint 12', daysFromNow: -8, durationMin: 45, kind: 'meeting', participantPersonKeys: ['kozlov', 'sidorov'] },
-    { title: 'Demo для борда', daysFromNow: -6, durationMin: 60, kind: 'meeting', participantPersonKeys: ['morozov', 'volkova'] },
-    { title: 'Релиз v1.9.5 hotfix', daysFromNow: -4, durationMin: 20, kind: 'release', participantPersonKeys: ['kozlov'] },
-    { title: 'Code review session', daysFromNow: -2, durationMin: 45, kind: 'meeting', participantPersonKeys: ['kozlov', 'novikov', 'sidorov'] },
-    // Будущие 6
-    { title: 'Sprint 14 planning', daysFromNow: 1, durationMin: 60, kind: 'meeting', participantPersonKeys: ['kozlov', 'novikov', 'sidorov', 'popov'] },
-    { title: 'CustDev: Тинькофф', daysFromNow: 2, durationMin: 90, kind: 'meeting', participantPersonKeys: ['sokolova', 'morozov'] },
-    { title: 'Дизайн-ревью CallScreen v4', daysFromNow: 3, durationMin: 45, kind: 'meeting', participantPersonKeys: ['petrova', 'volkova', 'sidorov'] },
-    { title: 'Демо-день для команды', daysFromNow: 5, durationMin: 30, kind: 'meeting', participantPersonKeys: ['morozov', 'volkova', 'kozlov'] },
-    { title: 'Ретроспектива Q2', daysFromNow: 7, durationMin: 90, kind: 'meeting', participantPersonKeys: ['morozov', 'volkova', 'kozlov', 'sokolova', 'mikhailova'] },
-    { title: 'Релиз v2.0 milestone', daysFromNow: 14, durationMin: 60, kind: 'milestone', participantPersonKeys: ['kozlov', 'volkova'] },
+    {
+      title: 'CustDev: Ростелеком',
+      daysFromNow: -28,
+      durationMin: 60,
+      kind: 'meeting',
+      participantPersonKeys: ['sokolova', 'volkova', 'morozov'],
+    },
+    {
+      title: 'Sprint 12 планирование',
+      daysFromNow: -25,
+      durationMin: 60,
+      kind: 'meeting',
+      participantPersonKeys: ['kozlov', 'novikov', 'sidorov'],
+    },
+    {
+      title: 'Дизайн-ревью v2',
+      daysFromNow: -22,
+      durationMin: 45,
+      kind: 'meeting',
+      participantPersonKeys: ['petrova', 'volkova'],
+    },
+    {
+      title: 'All-hands старт Q2',
+      daysFromNow: -19,
+      durationMin: 60,
+      kind: 'meeting',
+      participantPersonKeys: ['morozov', 'volkova', 'kozlov', 'sokolova'],
+    },
+    {
+      title: 'Релиз v1.9.0',
+      daysFromNow: -17,
+      durationMin: 30,
+      kind: 'release',
+      participantPersonKeys: ['kozlov', 'novikov'],
+    },
+    {
+      title: 'Sales pipeline review',
+      daysFromNow: -14,
+      durationMin: 45,
+      kind: 'meeting',
+      participantPersonKeys: ['sokolova', 'morozov'],
+    },
+    {
+      title: 'CustDev: Сбербанк',
+      daysFromNow: -12,
+      durationMin: 60,
+      kind: 'meeting',
+      participantPersonKeys: ['sokolova', 'volkova'],
+    },
+    {
+      title: 'HR-синк',
+      daysFromNow: -10,
+      durationMin: 30,
+      kind: 'meeting',
+      participantPersonKeys: ['mikhailova', 'morozov'],
+    },
+    {
+      title: 'Ретро Sprint 12',
+      daysFromNow: -8,
+      durationMin: 45,
+      kind: 'meeting',
+      participantPersonKeys: ['kozlov', 'sidorov'],
+    },
+    {
+      title: 'Demo для борда',
+      daysFromNow: -6,
+      durationMin: 60,
+      kind: 'meeting',
+      participantPersonKeys: ['morozov', 'volkova'],
+    },
+    {
+      title: 'Релиз v1.9.5 hotfix',
+      daysFromNow: -4,
+      durationMin: 20,
+      kind: 'release',
+      participantPersonKeys: ['kozlov'],
+    },
+    {
+      title: 'Code review session',
+      daysFromNow: -2,
+      durationMin: 45,
+      kind: 'meeting',
+      participantPersonKeys: ['kozlov', 'novikov', 'sidorov'],
+    },
+    {
+      title: 'Sprint 14 planning',
+      daysFromNow: 1,
+      durationMin: 60,
+      kind: 'meeting',
+      participantPersonKeys: ['kozlov', 'novikov', 'sidorov', 'popov'],
+    },
+    {
+      title: 'CustDev: Тинькофф',
+      daysFromNow: 2,
+      durationMin: 90,
+      kind: 'meeting',
+      participantPersonKeys: ['sokolova', 'morozov'],
+    },
+    {
+      title: 'Дизайн-ревью CallScreen v4',
+      daysFromNow: 3,
+      durationMin: 45,
+      kind: 'meeting',
+      participantPersonKeys: ['petrova', 'volkova', 'sidorov'],
+    },
+    {
+      title: 'Демо-день для команды',
+      daysFromNow: 5,
+      durationMin: 30,
+      kind: 'meeting',
+      participantPersonKeys: ['morozov', 'volkova', 'kozlov'],
+    },
+    {
+      title: 'Ретроспектива Q2',
+      daysFromNow: 7,
+      durationMin: 90,
+      kind: 'meeting',
+      participantPersonKeys: ['morozov', 'volkova', 'kozlov', 'sokolova', 'mikhailova'],
+    },
+    {
+      title: 'Релиз v2.0 milestone',
+      daysFromNow: 14,
+      durationMin: 60,
+      kind: 'milestone',
+      participantPersonKeys: ['kozlov', 'volkova'],
+    },
   ];
 
   for (let i = 0; i < EVENTS.length; i++) {
@@ -219,7 +397,6 @@ export const seedCalendar: SeedFn = async (ctx, ids) => {
     const startAt = e.daysFromNow >= 0 ? daysAgo(-e.daysFromNow) : daysAgo(-e.daysFromNow);
     const endAt = new Date(startAt.getTime() + e.durationMin * 60_000);
 
-    // Создаём Entity для Event (обязательная связка @unique).
     const entity = await prisma.entity.create({
       data: {
         tenantId,
@@ -259,7 +436,6 @@ export const seedCalendar: SeedFn = async (ctx, ids) => {
     });
     ids.events[`event_${i}`] = created.id;
 
-    // EventReminder для 5 будущих
     if (e.daysFromNow > 0 && i < EVENTS.length && EVENTS.slice(EVENTS.length - 6).includes(e)) {
       await prisma.eventReminder.create({
         data: {
@@ -275,13 +451,9 @@ export const seedCalendar: SeedFn = async (ctx, ids) => {
   console.log(`[demo/calendar] Создано ${EVENTS.length} событий.`);
 };
 
-// ─── 7.5 Referrals: 1 реферал (slug владельца) ────────────────────────────
-
 export const seedReferrals: SeedFn = async (ctx, ids) => {
   const { prisma, ownerUserId } = ctx;
 
-  // Один Referral на ownerUser. ownerUserId @unique → upsert на случай
-  // если у пользователя уже есть реферальная программа.
   const slug = `demo${ownerUserId.slice(-6)}`;
   const ref = await prisma.referral.upsert({
     where: { ownerUserId },
@@ -293,8 +465,6 @@ export const seedReferrals: SeedFn = async (ctx, ids) => {
   console.log(`[demo/referrals] Создан 1 Referral (slug=${slug}).`);
 };
 
-// ─── 7.6 Feedback: 8 сообщений (без topic'ов — глобальные) ────────────────
-
 export const seedFeedback: SeedFn = async (ctx, ids) => {
   const { prisma, tenantId, ownerUserId } = ctx;
 
@@ -305,7 +475,10 @@ export const seedFeedback: SeedFn = async (ctx, ids) => {
     { text: 'Календарь не синхронизируется с Google.', daysAgoN: 4 },
     { text: 'AI-отчёт по CustDev — местами повторы. Хочется лаконичнее.', daysAgoN: 3 },
     { text: 'Slack-интеграция: нужны ссылки на встречу прямо в канале.', daysAgoN: 2 },
-    { text: 'Заметил баг: при поиске по транскрипту иногда подсвечиваются не те фразы.', daysAgoN: 1 },
+    {
+      text: 'Заметил баг: при поиске по транскрипту иногда подсвечиваются не те фразы.',
+      daysAgoN: 1,
+    },
     { text: 'Очень нравится новый дашборд! Спасибо команде.', daysAgoN: 0 },
   ];
 
@@ -326,8 +499,6 @@ export const seedFeedback: SeedFn = async (ctx, ids) => {
   console.log(`[demo/feedback] Создано ${MESSAGES.length} FeedbackMessage.`);
 };
 
-// ─── 7.7 Experiments × 3 ──────────────────────────────────────────────────
-
 export const seedExperiments: SeedFn = async (ctx, ids) => {
   const { prisma, tenantId } = ctx;
 
@@ -337,7 +508,8 @@ export const seedExperiments: SeedFn = async (ctx, ids) => {
       name: 'A/B тест: 3 vs 4 тарифа на лендинге',
       hypothesisText: '4 тарифа дают больше выбора и повышают конверсию на 5%.',
       status: 'running',
-      currentResult: 'Промежуточно: 4 тарифа дают +2.1% конверсии (p=0.18, маловато для значимости).',
+      currentResult:
+        'Промежуточно: 4 тарифа дают +2.1% конверсии (p=0.18, маловато для значимости).',
     },
     {
       key: 'exp_onboarding_video',
@@ -374,8 +546,6 @@ export const seedExperiments: SeedFn = async (ctx, ids) => {
   console.log(`[demo/experiments] Создано ${EXPERIMENTS.length} экспериментов.`);
 };
 
-// ─── 7.8 BrandVoiceProfile × 1 ────────────────────────────────────────────
-
 export const seedBrandVoice: SeedFn = async (ctx, _ids) => {
   const { prisma, tenantId } = ctx;
 
@@ -408,8 +578,6 @@ export const seedBrandVoice: SeedFn = async (ctx, _ids) => {
   console.log('[demo/brand-voice] Создан 1 BrandVoiceProfile.');
 };
 
-// ─── 7.9 Vendors × 4 ──────────────────────────────────────────────────────
-
 export const seedVendors: SeedFn = async (ctx, ids) => {
   const { prisma, tenantId } = ctx;
 
@@ -421,7 +589,6 @@ export const seedVendors: SeedFn = async (ctx, ids) => {
   ];
 
   for (const v of VENDORS) {
-    // Создаём Entity{type=vendor} для @unique связки.
     const entity = await prisma.entity.create({
       data: {
         tenantId,
@@ -445,17 +612,30 @@ export const seedVendors: SeedFn = async (ctx, ids) => {
   console.log(`[demo/vendors] Создано ${VENDORS.length} вендоров.`);
 };
 
-// ─── 7.10 ProbeEvents × 10 ─────────────────────────────────────────────────
-
 export const seedProbeEvents: SeedFn = async (ctx, ids) => {
   const { prisma, tenantId } = ctx;
 
   const PROBES = [
     { reason: 'decision_outcome_unknown', emittedBy: 'specialist-3-3', priority: 70, daysAgoN: 5 },
     { reason: 'commitment_overdue', emittedBy: 'commitment-keeper', priority: 80, daysAgoN: 4 },
-    { reason: 'recurring_topic_no_decision', emittedBy: 'topic-recurrence', priority: 60, daysAgoN: 3 },
-    { reason: 'knowledge_gap_unanswered', emittedBy: 'knowledge-velocity', priority: 65, daysAgoN: 3 },
-    { reason: 'process_friction_detected', emittedBy: 'cross-functional-detector', priority: 75, daysAgoN: 2 },
+    {
+      reason: 'recurring_topic_no_decision',
+      emittedBy: 'topic-recurrence',
+      priority: 60,
+      daysAgoN: 3,
+    },
+    {
+      reason: 'knowledge_gap_unanswered',
+      emittedBy: 'knowledge-velocity',
+      priority: 65,
+      daysAgoN: 3,
+    },
+    {
+      reason: 'process_friction_detected',
+      emittedBy: 'cross-functional-detector',
+      priority: 75,
+      daysAgoN: 2,
+    },
     { reason: 'idea_supporter_threshold', emittedBy: 'ideas-collector', priority: 50, daysAgoN: 2 },
     { reason: 'goal_alignment_drop', emittedBy: 'goal-vector', priority: 70, daysAgoN: 1 },
     { reason: 'bus_factor_critical', emittedBy: 'bus-factor-analyzer', priority: 85, daysAgoN: 1 },

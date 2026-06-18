@@ -1,12 +1,7 @@
-import { ProjectViewShell } from '../ProjectViewShell';
+import { ProjectViewShell } from "../ProjectViewShell";
 
-import { OverviewClient } from './OverviewClient';
+import { OverviewClient } from "./OverviewClient";
 
-/**
- * `/projects/[slug]/overview` — стартовая страница проекта.
- *
- * Tracker Project Overview (2026-05-27). ТЗ: plans/tz/2026-05-27-tracker-project-overview.md.
- */
 export default async function ProjectOverviewPage({
   params,
 }: {

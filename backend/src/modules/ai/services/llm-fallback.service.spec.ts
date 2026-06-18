@@ -1,12 +1,3 @@
-/**
- * Unit-тесты `LlmFallbackService` (retest3 Ф5 #51/Р3).
- *
- * Проверяем две ветки каскада по `ai.mainReport.primary`:
- *   - deepseek: DeepSeek → MiniMax → OpenAI, с per-agent model на DeepSeek и
- *     СБРОСОМ model (D1) перед MiniMax/OpenAI;
- *   - minimax (kill-switch-откат): дословно прежний каскад MiniMax → OpenAI,
- *     без deepseek-model, DeepSeek не вызывается.
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
@@ -30,7 +21,7 @@ function mkOut(provider: string, model: string): LlmCompleteOutput {
 const INPUT: LlmCompleteInput = {
   system: { text: 'sys' },
   user: 'u',
-  model: 'deepseek-v4-pro', // per-agent модель главного отчёта
+  model: 'deepseek-v4-pro',
 };
 
 function build(primary: 'deepseek' | 'minimax') {
@@ -56,7 +47,6 @@ describe('LlmFallbackService — ветка deepseek (primary)', () => {
 
     expect(out.provider).toBe('deepseek');
     expect(deepseek.complete).toHaveBeenCalledTimes(1);
-    // DeepSeek получает model как есть (pro).
     expect(deepseek.complete.mock.calls[0]![0].model).toBe('deepseek-v4-pro');
     expect(minimax.complete).not.toHaveBeenCalled();
     expect(openai.complete).not.toHaveBeenCalled();
@@ -71,7 +61,6 @@ describe('LlmFallbackService — ветка deepseek (primary)', () => {
 
     expect(out.provider).toBe('minimax');
     expect(minimax.complete).toHaveBeenCalledTimes(1);
-    // КЛЮЧЕВОЕ: model сброшен — иначе MiniMax попытается взять имя deepseek-модели.
     expect(minimax.complete.mock.calls[0]![0].model).toBeUndefined();
     expect(openai.complete).not.toHaveBeenCalled();
   });
@@ -124,8 +113,6 @@ describe('LlmFallbackService — cacheControl', () => {
 
     await svc.complete(INPUT);
 
-    expect(deepseek.complete.mock.calls[0]![0].system.cacheControl).toBe(
-      'ephemeral',
-    );
+    expect(deepseek.complete.mock.calls[0]![0].system.cacheControl).toBe('ephemeral');
   });
 });

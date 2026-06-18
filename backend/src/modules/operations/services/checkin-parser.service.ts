@@ -3,34 +3,13 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { applyInputGuards } from '../../ai/services/prompts/common';
 
-/**
- * SBA β-8 — CheckinParserService.
- *
- * LLM-парсинг сырого ответа сотрудника на morning/evening probe в
- * структурированные plans/dones/blockers + confidence (0..1).
- *
- * Контракт:
- *   - Возвращает `parseConfidence` ∈ [0,1].
- *   - При confidence < 0.6 caller (CheckinResponseHandler) сохраняет raw +
- *     curatorReview=true.
- *   - Best-effort: любая ошибка LLM → возвращает confidence=0 и пустые
- *     массивы (caller сохранит как curatorReview).
- *
- * Использует `taskType='checkin-parse'` (cм. seed-llm-task-routes-beta-8.ts).
- */
 @Injectable()
 export class CheckinParserService {
   private readonly logger = new Logger(CheckinParserService.name);
 
-  constructor(
-    @Inject(LlmRouterService) private readonly llm: LlmRouterService,
-  ) {}
+  constructor(@Inject(LlmRouterService) private readonly llm: LlmRouterService) {}
 
-  async parse(args: {
-    tenantId: string;
-    kind: 'morning' | 'evening';
-    rawText: string;
-  }): Promise<{
+  async parse(args: { tenantId: string; kind: 'morning' | 'evening'; rawText: string }): Promise<{
     plans: Array<{ text: string; priority?: number }>;
     dones: Array<{ text: string }>;
     blockers: Array<{ text: string; severity?: 'low' | 'medium' | 'high' }>;
@@ -56,9 +35,6 @@ export class CheckinParserService {
       args.rawText.slice(0, 4_000),
     ].join('\n');
 
-    // Анти-инъекционная обёртка: rawText — свободный текст сотрудника (raw).
-    // У сервиса нет TypedConfigService, поэтому глобальный kill-switch
-    // (aiFeatures.promptInjectionGuardEnabled) здесь не гейтит — guards всегда ON.
     const { system: guardedSystem, user: userMessage } = applyInputGuards(
       systemPrompt,
       rawUserMessage,
@@ -119,9 +95,7 @@ export class CheckinParserService {
     };
   }
 
-  private normalizePlans(
-    raw: unknown,
-  ): Array<{ text: string; priority?: number }> {
+  private normalizePlans(raw: unknown): Array<{ text: string; priority?: number }> {
     if (!Array.isArray(raw)) return [];
     const out: Array<{ text: string; priority?: number }> = [];
     for (const item of raw) {
@@ -129,11 +103,12 @@ export class CheckinParserService {
       const text = (item as { text?: unknown }).text;
       if (typeof text !== 'string' || text.length === 0) continue;
       const priorityRaw = (item as { priority?: unknown }).priority;
-      const priority =
-        typeof priorityRaw === 'number'
-          ? clamp(priorityRaw, 0, 5)
-          : undefined;
-      out.push(priority !== undefined ? { text: text.slice(0, 2_000), priority } : { text: text.slice(0, 2_000) });
+      const priority = typeof priorityRaw === 'number' ? clamp(priorityRaw, 0, 5) : undefined;
+      out.push(
+        priority !== undefined
+          ? { text: text.slice(0, 2_000), priority }
+          : { text: text.slice(0, 2_000) },
+      );
       if (out.length >= 50) break;
     }
     return out;
@@ -162,9 +137,10 @@ export class CheckinParserService {
       const text = (item as { text?: unknown }).text;
       if (typeof text !== 'string' || text.length === 0) continue;
       const sev = (item as { severity?: unknown }).severity;
-      const severity =
-        sev === 'low' || sev === 'medium' || sev === 'high' ? sev : undefined;
-      out.push(severity ? { text: text.slice(0, 2_000), severity } : { text: text.slice(0, 2_000) });
+      const severity = sev === 'low' || sev === 'medium' || sev === 'high' ? sev : undefined;
+      out.push(
+        severity ? { text: text.slice(0, 2_000), severity } : { text: text.slice(0, 2_000) },
+      );
       if (out.length >= 50) break;
     }
     return out;

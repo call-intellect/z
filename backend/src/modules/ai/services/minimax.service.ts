@@ -12,13 +12,6 @@ import {
 import type { LlmCompleteInput, LlmCompleteOutput } from './llm.types';
 import { LlmError } from './llm.types';
 
-/**
- * MiniMax — Anthropic-совместимый канал. Используется как первый fallback,
- * если Anthropic вернул 403 (блокировка из РФ).
- *
- * Endpoint: `cfg.ai.minimax.baseUrl` (по умолчанию `https://api.minimax.io/anthropic`).
- * Ключ — `cfg.ai.minimax.apiKey`. SDK тот же `@anthropic-ai/sdk` с кастомным `baseURL`.
- */
 @Injectable()
 export class MinimaxService {
   private readonly logger = new Logger(MinimaxService.name);
@@ -35,7 +28,6 @@ export class MinimaxService {
   async complete(input: LlmCompleteInput): Promise<LlmCompleteOutput> {
     const model = input.model ?? this.defaultModel;
     try {
-      // T7-F6: тот же tool_use-эмулятор responseFormat:json_schema, что и у Anthropic.
       const { tools, toolChoice } = buildAnthropicToolBindings(input);
       const message = await this.client.messages.create({
         model,
@@ -47,12 +39,7 @@ export class MinimaxService {
         ...(toolChoice ? { tool_choice: toolChoice } : {}),
         stream: false,
       });
-      return mapAnthropicResponseToOutput(
-        message,
-        model,
-        'minimax',
-        input.responseFormat,
-      );
+      return mapAnthropicResponseToOutput(message, model, 'minimax', input.responseFormat);
     } catch (err) {
       const status = extractStatus(err);
       this.logger.warn(`MiniMax complete (${status ?? 'no-status'}): ${errMsg(err)}`);

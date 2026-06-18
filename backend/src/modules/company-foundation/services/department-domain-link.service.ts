@@ -15,11 +15,6 @@ import type {
   LinkDepartmentDomainDto,
 } from '../dto/department-domain-link.dto';
 
-/**
- * SBA α-9 wave 3 — m:n связи Department ↔ FunctionalDomain.
- *
- * Уникальность пары (departmentId, domainId) гарантируется БД (@@unique).
- */
 @Injectable()
 export class DepartmentDomainLinkService {
   private readonly logger = new Logger(DepartmentDomainLinkService.name);
@@ -100,10 +95,7 @@ export class DepartmentDomainLinkService {
       });
       return this.toDto(created);
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException({
           ok: false,
           error: {
@@ -152,12 +144,7 @@ export class DepartmentDomainLinkService {
     return { ok: true };
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  private async assertDepartmentExists(
-    tenantId: string,
-    departmentId: string,
-  ): Promise<void> {
+  private async assertDepartmentExists(tenantId: string, departmentId: string): Promise<void> {
     const dep = await this.prisma.department.findUnique({
       where: { id: departmentId },
       select: { tenantId: true, deletedAt: true },
@@ -173,10 +160,7 @@ export class DepartmentDomainLinkService {
     }
   }
 
-  private async assertDomainExists(
-    tenantId: string,
-    domainId: string,
-  ): Promise<void> {
+  private async assertDomainExists(tenantId: string, domainId: string): Promise<void> {
     const dom = await this.prisma.functionalDomain.findUnique({
       where: { id: domainId },
       select: { tenantId: true, deletedAt: true },

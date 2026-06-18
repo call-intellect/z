@@ -1,9 +1,5 @@
 import { z } from 'zod';
 
-/**
- * `POST /api/v1/meetings/:id/highlights`. Бизнес-валидации (max длительность,
- * лимит на встречу, `endMs <= meeting.durationMs`) — в сервисе.
- */
 export const CreateHighlightSchema = z
   .object({
     startMs: z.coerce.number().int().min(0),

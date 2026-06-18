@@ -4,7 +4,7 @@ status: proposed
 date: 2026-06-02
 owner: tozixwot@gmail.com
 relates_to:
-  - plans/tz/2026-05-31-document-ingest-universal.md
+  - plans/archive/2026-05-31-document-ingest-universal.md
   - plans/analysis/2026-05-31-document-conversion-stack.md
   - second-brain/02_architecture/document-conversion-service.md
   - second-brain/01_projects/document-ingest.md

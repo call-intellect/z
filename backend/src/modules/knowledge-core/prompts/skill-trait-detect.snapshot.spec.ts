@@ -1,15 +1,3 @@
-/**
- * Snapshot-тест сборки промта `skill-trait-detect.prompt.ts`.
- *
- * ⚠ НЕ про качество LLM-вывода. Snapshot фиксирует:
- *   - текст `SKILL_TRAIT_DETECT_SYSTEM_PROMPT` (constant — guard от
- *     случайных правок жёстких правил формулировок; включает
- *     `withEdgeCasePolicy` в конце);
- *   - текст user, который собирает `SKILL_TRAIT_DETECT_USER_TEMPLATE`
- *     для фикстуры с тремя reasoning-цитатами.
- *
- * Обновлять только при осознанном изменении: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -22,12 +10,8 @@ describe('skill-trait-detect — snapshot сборки промта', () => {
     expect(SKILL_TRAIT_DETECT_SYSTEM_PROMPT).toMatchSnapshot('system');
   });
 
-  // C1 agent-chain-overhaul (2026-06-07) — ASR-нота применена ко ВСЕМ
-  // извлекающим промптам (восстановление искажённых ASR чисел/имён по контексту).
   it('system содержит ASR-ноту (withAsrNote)', () => {
-    expect(SKILL_TRAIT_DETECT_SYSTEM_PROMPT).toContain(
-      'автоматического распознавания речи',
-    );
+    expect(SKILL_TRAIT_DETECT_SYSTEM_PROMPT).toContain('автоматического распознавания речи');
   });
 
   it('user prompt стабилен для 3 reasoning-цитат Сергея', () => {

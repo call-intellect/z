@@ -1,14 +1,3 @@
-/**
- * Ф2 knowledge-access-groups — юнит-тесты KnowledgeAccessResolver.
- *
- * Мокаем PrismaService + RbacService.loadContext. Проверяем:
- *   - owner / super_admin → isBypass=true, buildAccessWhere=={}.
- *   - member отдела → его dept-группа в deptGroupIds.
- *   - матрица GroupVisibilityPolicy → +visibleGroup.
- *   - closed membership → closedGroupIds.
- *   - buildAccessWhere(non-bypass) → AND[2]: none-closed + OR[none-dept, some-in].
- *   - canAccessKnowledgeGroup (RbacService) — closed / dept / открытый.
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../common/prisma/prisma.service';
@@ -181,7 +170,6 @@ describe('KnowledgeAccessResolver.resolveAccessibleGroups', () => {
   });
 });
 
-// ─── ТЗ 2026-06-10 meeting-visibility — resolveDirectGroupIds ───────────────
 describe('KnowledgeAccessResolver.resolveDirectGroupIds', () => {
   it('owner → isBypass=true, personId=null, пустые группы', async () => {
     const { resolver } = buildResolver({ loadContext: { role: 'owner' } });
@@ -208,7 +196,6 @@ describe('KnowledgeAccessResolver.resolveDirectGroupIds', () => {
       headOf: [],
       deptGroups: [{ id: 'g-dep-1' }],
       memberships: [],
-      // Матрица даёт visibleGroup — он НЕ должен попасть в прямые группы.
       policies: [{ visibleGroupId: 'g-visible-via-matrix' }],
     });
     const res = await resolver.resolveDirectGroupIds({ tenantId: TENANT, userId: USER });
@@ -269,24 +256,19 @@ describe('KnowledgeAccessResolver.buildAccessWhere', () => {
 });
 
 describe('RbacService.canAccessKnowledgeGroup', () => {
-  // canAccessKnowledgeGroup — чистая функция, не требует prisma/policy.csv.
   const rbac = Object.create(RbacService.prototype) as RbacService;
 
   it('bypass → true для любого блока', () => {
     expect(
-      rbac.canAccessKnowledgeGroup(
-        { deptGroupIds: [], closedGroupIds: [], isBypass: true },
-        [{ groupId: 'g-council', isClosed: true, kind: 'council' }],
-      ),
+      rbac.canAccessKnowledgeGroup({ deptGroupIds: [], closedGroupIds: [], isBypass: true }, [
+        { groupId: 'g-council', isClosed: true, kind: 'council' },
+      ]),
     ).toBe(true);
   });
 
   it('пустой blockGroups → true (блок открыт)', () => {
     expect(
-      rbac.canAccessKnowledgeGroup(
-        { deptGroupIds: [], closedGroupIds: [], isBypass: false },
-        [],
-      ),
+      rbac.canAccessKnowledgeGroup({ deptGroupIds: [], closedGroupIds: [], isBypass: false }, []),
     ).toBe(true);
   });
 
@@ -323,10 +305,7 @@ describe('RbacService.canAccessKnowledgeGroup', () => {
   });
 });
 
-// ─── Ф4 ────────────────────────────────────────────────────────────────
-
 describe('KnowledgeAccessResolver.buildAccessSqlPredicate (Ф4)', () => {
-  // Для предиката prisma не нужна — чистая строковая функция.
   const { resolver } = buildResolver({ loadContext: { role: 'manager' } });
 
   it('bypass → пустая строка', () => {
@@ -350,14 +329,11 @@ describe('KnowledgeAccessResolver.buildAccessSqlPredicate (Ф4)', () => {
     expect(sql).toContain('IdeaBlockAccess');
     expect(sql).toContain('$1');
     expect(sql).toContain('$2');
-    // closed-параметр пушится первым, dept — вторым.
     expect(params).toEqual([['g-council'], ['g-log']]);
   });
 });
 
 describe('KnowledgeAccessResolver.partitionBlockIdsByAccess (Ф4)', () => {
-  // Резолвер с настоящим RbacService.canAccessKnowledgeGroup и мок-prisma
-  // для ideaBlockAccess.findMany.
   function buildPartitionResolver(
     accessRows: Array<{
       blockId: string;
@@ -401,7 +377,6 @@ describe('KnowledgeAccessResolver.partitionBlockIdsByAccess (Ф4)', () => {
         groupId: 'g-council',
         group: { isClosed: true, kind: 'council' },
       },
-      // b-open — без access-строк → открытый.
     ]);
     const res = await resolver.partitionBlockIdsByAccess(
       { deptGroupIds: [], closedGroupIds: [], isBypass: false },
@@ -428,11 +403,7 @@ describe('KnowledgeAccessResolver.partitionBlockIdsByAccess (Ф4)', () => {
   });
 });
 
-// ─── Ф6 ────────────────────────────────────────────────────────────────
-
 describe('KnowledgeAccessResolver.partitionProjectionsByAccess (Ф6)', () => {
-  // Резолвер с настоящим RbacService.canAccessKnowledgeGroup и мок-prisma для
-  // ideaBlockAccess.findMany (группы блоков-источников проекции).
   function buildResolverFor(
     accessRows: Array<{
       blockId: string;
@@ -522,7 +493,6 @@ describe('KnowledgeAccessResolver.partitionProjectionsByAccess (Ф6)', () => {
   });
 
   it('строжайшее union: любой council-source среди нескольких → проекция закрыта', async () => {
-    // d-mix имеет два блока: открытый b-open и закрытый b-council.
     const resolver = buildResolverFor([
       {
         blockId: 'b-council',

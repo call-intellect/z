@@ -11,13 +11,6 @@ import { ListIdeasQuerySchema } from '../dto/ideas.dto';
 
 import { IdeasService } from './ideas.service';
 
-/**
- * Goals OKR v2 (Фаза 5, мост к гипотезам) — unit-тесты `IdeasService.linkGoal`:
- *   - ставит goalId при валидной цели того же tenant;
- *   - чужой/несуществующий goal → BadRequest;
- *   - goalId=null отвязывает (update вызван с goalId:null).
- */
-
 type Fn = ReturnType<typeof vi.fn>;
 
 interface PrismaStub {
@@ -117,11 +110,6 @@ describe('IdeasService.linkGoal (Goals OKR v2, Фаза 5)', () => {
   });
 });
 
-/**
- * Ф6 knowledge-access (R12) — гейт проекций (Idea) по доступу спрашивающего на
- * листинге. off→все; enforce→недоступная убрана + incAccessDenied; shadow→та
- * же выдача + incAccessShadowDiff; bypass→все.
- */
 describe('IdeasService — Ф6 гейт проекций на list', () => {
   const FIXED = new Date('2026-01-01');
   function makeIdea(over: Record<string, unknown> = {}) {

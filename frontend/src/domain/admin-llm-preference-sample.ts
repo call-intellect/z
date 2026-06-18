@@ -1,11 +1,4 @@
-/**
- * W2.3 KC-Temporal (2026-05-25) — DomainModel для LlmPreferenceSample.
- *
- * Источник данных: `backend/src/modules/admin/llm-preference-dataset/
- * llm-preference-dataset.controller.ts` — endpoints `GET /items` и `GET /stats`.
- */
-
-export type AdminPreferenceLabelApi = 'correct' | 'wrong' | 'misleading';
+export type AdminPreferenceLabelApi = "correct" | "wrong" | "misleading";
 
 export type AdminPreferenceSampleApi = {
   id: string;

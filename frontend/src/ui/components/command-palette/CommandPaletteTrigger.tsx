@@ -1,37 +1,27 @@
-'use client';
+"use client";
 
-import { Search } from 'lucide-react';
+import { Search } from "lucide-react";
 
-import { cn } from '@/ui/shadcn/lib/utils';
-import { useCommandPalette } from './CommandPaletteProvider';
+import { cn } from "@/ui/shadcn/lib/utils";
+import { useCommandPalette } from "./CommandPaletteProvider";
 
-/**
- * Wave 2 B2 — кнопка «⌘K» для desktop topbar/sidebar.
- *
- * На мобильных скрыта (`hidden md:inline-flex`) — там палитра открывается
- * через bottom-nav иконку «Кора-помощник» (γ-2) или жест.
- *
- * Использование:
- *
- *   <CommandPaletteTrigger className="ml-auto" />
- */
 export function CommandPaletteTrigger({
   className,
-  variant = 'subtle',
+  variant = "subtle",
 }: {
   className?: string;
-  variant?: 'subtle' | 'compact';
+  variant?: "subtle" | "compact";
 }) {
   const { open } = useCommandPalette();
 
-  if (variant === 'compact') {
+  if (variant === "compact") {
     return (
       <button
         type="button"
         onClick={() => open()}
         aria-label="Открыть командную палитру"
         className={cn(
-          'hidden h-8 w-8 items-center justify-center rounded-md border border-border-subtle bg-bg-elevated text-fg-tertiary transition-colors hover:bg-bg-overlay hover:text-fg-primary md:inline-flex',
+          "hidden h-8 w-8 items-center justify-center rounded-md border border-border-subtle bg-bg-elevated text-fg-tertiary transition-colors hover:bg-bg-overlay hover:text-fg-primary md:inline-flex",
           className,
         )}
       >
@@ -46,7 +36,7 @@ export function CommandPaletteTrigger({
       onClick={() => open()}
       aria-label="Открыть командную палитру"
       className={cn(
-        'hidden h-9 items-center gap-2 rounded-md border border-border-subtle bg-bg-elevated px-3 text-sm text-fg-tertiary transition-colors hover:bg-bg-overlay hover:text-fg-primary md:inline-flex',
+        "hidden h-9 items-center gap-2 rounded-md border border-border-subtle bg-bg-elevated px-3 text-sm text-fg-tertiary transition-colors hover:bg-bg-overlay hover:text-fg-primary md:inline-flex",
         className,
       )}
     >

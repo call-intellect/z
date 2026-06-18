@@ -3,19 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { CommitmentsService } from './commitments.service';
 
-/**
- * SBA β-8.2 — CommitmentsService unit-тесты.
- *
- * Главный фокус — ИЗОЛЯЦИЯ: сотрудник A через `listMine` НЕ должен видеть
- * обещания сотрудника B. Реализовано через JOIN
- * `IdeaBlockEntity.entity.persons.some({ id: selfPersonId })`.
- *
- * Дополнительно:
- *   - resolveSelfPerson бросает 403 если нет Person'а.
- *   - markMine бросает 404 если блок не принадлежит сотруднику.
- *   - markMine добавляет статус и note в trustedAnswer.
- *   - listOpenForTenant возвращает только open + asked в окне.
- */
 describe('CommitmentsService', () => {
   function build(overrides: {
     person?: { id: string } | null;
@@ -35,9 +22,7 @@ describe('CommitmentsService', () => {
       evidence?: Array<{ rawEvent: { sourceExternalId: string | null } }>;
     }>;
     findFirstResult?: unknown;
-    /** ТЗ-E — что вернёт meeting.findMany (батч-резолв заголовков). */
     meetingResults?: Array<{ id: string; title: string }>;
-    /** ТЗ-E — кастомный результат ideaBlock.update (по умолчанию = findFirstResult). */
     updateResult?: unknown;
   }) {
     const prisma = {
@@ -47,25 +32,23 @@ describe('CommitmentsService', () => {
       ideaBlock: {
         findMany: vi.fn().mockResolvedValue(overrides.findManyResults ?? []),
         findFirst: vi.fn().mockResolvedValue(overrides.findFirstResult ?? null),
-        update: vi
-          .fn()
-          .mockResolvedValue(
-            overrides.updateResult ??
-              overrides.findFirstResult ?? {
-                id: 'b1',
-                tenantId: 't1',
-                criticalQuestion: 'X',
-                trustedAnswer: 'Y',
-                commitmentStatus: 'fulfilled',
-                commitmentDueDate: null,
-                commitmentRecipientPersonId: null,
-                commitmentAskedAt: null,
-                commitmentEscalatedAt: null,
-                createdAt: new Date(),
-                commitmentRecipient: null,
-                evidence: [],
-              },
-          ),
+        update: vi.fn().mockResolvedValue(
+          overrides.updateResult ??
+            overrides.findFirstResult ?? {
+              id: 'b1',
+              tenantId: 't1',
+              criticalQuestion: 'X',
+              trustedAnswer: 'Y',
+              commitmentStatus: 'fulfilled',
+              commitmentDueDate: null,
+              commitmentRecipientPersonId: null,
+              commitmentAskedAt: null,
+              commitmentEscalatedAt: null,
+              createdAt: new Date(),
+              commitmentRecipient: null,
+              evidence: [],
+            },
+        ),
         count: vi.fn().mockResolvedValue(0),
       },
       meeting: {
@@ -76,12 +59,6 @@ describe('CommitmentsService', () => {
     return { svc, prisma };
   }
 
-  /**
-   * ТЗ-E — заготовка блока-обещания в форме commitmentSelect().
-   * ТЗ редизайн Ф7б — по умолчанию ПОЛНОЕ обещание (есть автор + срок), чтобы
-   * derive-source тесты не уезжали в openQuestions. Для проверки неполноты —
-   * переопределяй commitmentAuthorPersonId/commitmentRecipientPersonId/dueDate.
-   */
   function makeBlock(over: Record<string, unknown> = {}) {
     return {
       id: 'b1',
@@ -103,9 +80,7 @@ describe('CommitmentsService', () => {
 
   it('resolveSelfPerson: 403 если нет Person-записи', async () => {
     const { svc } = build({ person: null });
-    await expect(
-      svc.resolveSelfPerson({ tenantId: 't1', userId: 'u1' }),
-    ).rejects.toThrow();
+    await expect(svc.resolveSelfPerson({ tenantId: 't1', userId: 'u1' })).rejects.toThrow();
   });
 
   it('listMine: where-фильтр ВКЛЮЧАЕТ self-personId через JOIN — изоляция между сотрудниками', async () => {
@@ -130,7 +105,6 @@ describe('CommitmentsService', () => {
         };
       };
     };
-    // КРИТИЧНО: фильтр должен ссылаться именно на selfPersonId.
     expect(call.where.entities.some.entity.persons.some.id).toBe('p-self');
     expect(call.where.tenantId).toBe('t1');
     expect(call.where.signalType).toBe('commitment');
@@ -220,8 +194,6 @@ describe('CommitmentsService', () => {
     expect(call.where.createdAt?.gte).toBeInstanceOf(Date);
   });
 
-  // ───────────────────── ТЗ-E: rescheduleMine ─────────────────────
-
   it('rescheduleMine: open → срок обновлён, статус остаётся open + заметка', async () => {
     const future = new Date(Date.now() + 7 * 24 * 3600 * 1000);
     const { svc, prisma } = build({
@@ -253,8 +225,8 @@ describe('CommitmentsService', () => {
   it('rescheduleMine: note дописывается в trustedAnswer', async () => {
     const future = new Date(Date.now() + 3 * 24 * 3600 * 1000);
     const { svc, prisma } = build({ findFirstResult: makeBlock() });
-    prisma.ideaBlock.update.mockImplementationOnce(
-      async (arg: { data: Record<string, unknown> }) => makeBlock(arg.data),
+    prisma.ideaBlock.update.mockImplementationOnce(async (arg: { data: Record<string, unknown> }) =>
+      makeBlock(arg.data),
     );
 
     await svc.rescheduleMine({
@@ -337,13 +309,9 @@ describe('CommitmentsService', () => {
     expect(prisma.ideaBlock.update).not.toHaveBeenCalled();
   });
 
-  // ───────────────────── ТЗ-E: derive источника ─────────────────────
-
   it('listMine: derive источника — evidence из встречи → sourceMeetingId/Title (1 батч)', async () => {
     const { svc, prisma } = build({
-      findManyResults: [
-        makeBlock({ evidence: [{ rawEvent: { sourceExternalId: 'mtg-42' } }] }),
-      ],
+      findManyResults: [makeBlock({ evidence: [{ rawEvent: { sourceExternalId: 'mtg-42' } }] })],
       meetingResults: [{ id: 'mtg-42', title: 'Планёрка' }],
     });
 
@@ -353,7 +321,6 @@ describe('CommitmentsService', () => {
       query: { status: 'open', limit: 50 },
     });
 
-    // Один батч на встречи — без N+1.
     expect(prisma.meeting.findMany).toHaveBeenCalledOnce();
     expect(prisma.meeting.findMany.mock.calls[0]?.[0]).toMatchObject({
       where: { id: { in: ['mtg-42'] }, tenantId: 't1' },
@@ -380,10 +347,8 @@ describe('CommitmentsService', () => {
 
   it('listMine: meetingId есть, но встреча чужого tenant (не найдена) → title null', async () => {
     const { svc } = build({
-      findManyResults: [
-        makeBlock({ evidence: [{ rawEvent: { sourceExternalId: 'mtg-x' } }] }),
-      ],
-      meetingResults: [], // findMany по tenantId вернул пусто
+      findManyResults: [makeBlock({ evidence: [{ rawEvent: { sourceExternalId: 'mtg-x' } }] })],
+      meetingResults: [],
     });
 
     const res = await svc.listMine({
@@ -396,33 +361,27 @@ describe('CommitmentsService', () => {
     expect(res.items[0]!.sourceMeetingTitle).toBeNull();
   });
 
-  // ─────────────── ТЗ редизайн Ф7б (Б-3): split полные vs «открытые вопросы» ───────────────
-
   it('listMine split: полное обещание → items, неполное → openQuestions', async () => {
     const { svc } = build({
       findManyResults: [
-        // Полное: автор + срок (адресата нет — ок, есть срок).
         makeBlock({
           id: 'full-1',
           commitmentAuthorPersonId: 'a1',
           commitmentRecipientPersonId: null,
           commitmentDueDate: new Date('2026-06-10T00:00:00Z'),
         }),
-        // Полное: автор + адресат (срока нет — ок).
         makeBlock({
           id: 'full-2',
           commitmentAuthorPersonId: 'a1',
           commitmentRecipientPersonId: 'r1',
           commitmentDueDate: null,
         }),
-        // Неполное: автор есть, но ни адресата, ни срока.
         makeBlock({
           id: 'inc-1',
           commitmentAuthorPersonId: 'a1',
           commitmentRecipientPersonId: null,
           commitmentDueDate: null,
         }),
-        // Неполное: нет автора.
         makeBlock({
           id: 'inc-2',
           commitmentAuthorPersonId: null,
@@ -468,17 +427,13 @@ describe('CommitmentsService', () => {
 
     const byId = new Map(res.openQuestions.map((q) => [q.id, q]));
     expect(byId.get('inc-noauthor')!.reason).toBe('не определён автор обещания');
-    expect(byId.get('inc-nodue')!.reason).toBe(
-      'не назначен ответственный и нет срока',
-    );
+    expect(byId.get('inc-nodue')!.reason).toBe('не назначен ответственный и нет срока');
     expect(byId.get('inc-noauthor')!.text).toBe('Прислать отчёт');
   });
 
   it('listMine split: неполное обещание адресату НЕ показывается как его обещание (items пуст)', async () => {
     const { svc } = build({
       findManyResults: [
-        // Этот блок упоминает self как адресата, но автор не разрешён и срока нет
-        // → это «открытый вопрос», а не обещание адресата.
         makeBlock({
           id: 'inc-recipient-view',
           commitmentAuthorPersonId: null,

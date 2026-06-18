@@ -17,24 +17,10 @@ import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 
-import {
-  type CreateHighlightDto,
-  CreateHighlightSchema,
-} from './dto/create-highlight.dto';
-import {
-  type UpdateHighlightDto,
-  UpdateHighlightSchema,
-} from './dto/update-highlight.dto';
+import { type CreateHighlightDto, CreateHighlightSchema } from './dto/create-highlight.dto';
+import { type UpdateHighlightDto, UpdateHighlightSchema } from './dto/update-highlight.dto';
 import { HighlightsService } from './highlights.service';
 
-/**
- *   `GET    /api/v1/meetings/:id/highlights`           — список
- *   `POST   /api/v1/meetings/:id/highlights`           — создать
- *   `PATCH  /api/v1/highlights/:id`                    — title/description
- *   `DELETE /api/v1/highlights/:id`                    — удалить
- *   `POST   /api/v1/highlights/:id/render-mp4`         — поставить в очередь
- *   `GET    /api/v1/highlights/:id/download`           — presigned URL (если ready)
- */
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard)
 export class HighlightsController {
@@ -75,10 +61,7 @@ export class HighlightsController {
   @Delete('highlights/:id')
   @RequireSubscription()
   @HttpCode(HttpStatus.NO_CONTENT)
-  async delete(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<void> {
+  async delete(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload): Promise<void> {
     await this.highlights.delete(id, user.id);
   }
 
@@ -102,8 +85,6 @@ export class HighlightsController {
   ): Promise<{ url: string; expiresAt: string }> {
     return this.highlights.getDownloadUrl(id, user.id);
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────────
 
   private mapHighlight(h: {
     id: string;

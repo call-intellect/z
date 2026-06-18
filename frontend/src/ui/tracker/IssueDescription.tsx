@@ -1,9 +1,4 @@
-'use client';
-
-/**
- * IssueDescription — рендер описания задачи.
- * Phase 2: текстовый рендер с переносами строк. Markdown / rich-text — Sprint 4+.
- */
+"use client";
 
 export function IssueDescription({
   description,

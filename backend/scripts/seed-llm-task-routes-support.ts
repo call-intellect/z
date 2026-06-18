@@ -1,44 +1,3 @@
-/**
- * Seed LlmTaskRoute для support-desk Ф3 (TZ 2026-06-09
- * support-desk-clone-and-closed-contour).
- *
- * TaskType'ы (3 шт.):
- *   - support-clone-draft   — генерация черновика ответа клиенту (RAG из
- *     закрытого контура + few-shot принятых пар). CAPABLE-задача → DeepSeek
- *     V4 Pro primary (Б9).
- *   - support-answer-critic — groundedness-проверка черновика (claims vs
- *     контур-блоки). Дешёвый judge → deepseek-v4-flash primary (Б9).
- *   - support-edit-classify — классификация типа правки человека
- *     (factual|tone|policy|empty). Дешёвый классификатор → deepseek-v4-flash
- *     primary (Б9).
- *   - support-contour-curate — ночной куратор контура (Ф4): решение
- *     keep|promote|fix|merge|archive по блокам базы. CAPABLE-задача → DeepSeek
- *     V4 Pro primary (Б9).
- *
- * Цепочки (second-brain/01_projects/llm-providers-verified.md):
- *   - deepseek `deepseek-v4-pro` (capable), `deepseek-v4-flash` (cheap).
- *   - openai-via-proxy `gpt-5.4-mini` (secondary reserve).
- *   - ollama `qwen3.5:9b` (tertiary local fallback,
- *     feedback_ollama_tertiary_only_deepseek_flash_cheap).
- *
- * Anthropic НЕ используем (нет ключа). См. project_z_infra_and_ai.
- *
- * requiredDataClass:
- *   - support-clone-draft: primary/secondary internal (контур поддержки —
- *     internal-факты), tertiary (локальная ollama) private — может тянуть всё.
- *   - critic/classify: primary/secondary internal, tertiary private.
- *
- * Идемпотентность (как seed-llm-task-routes-dialog-layer.ts):
- *   - upsert по (taskType, tenantId=null, tier, providerName).
- *   - existing + editedByAdmin=true → skip ВСЕГДА;
- *   - existing + editedByAdmin=false → skip без флага; обновить с
- *     `--update-existing`.
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-support.ts
- *   bun run scripts/seed-llm-task-routes-support.ts --update-existing
- */
-
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
@@ -51,7 +10,6 @@ interface RouteSeed {
   maxDataClass: 'public' | 'internal' | 'sensitive' | 'private';
 }
 
-/** Capable-цепочка для генерации черновика (DeepSeek V4 Pro primary, Б9). */
 const DRAFT_ROUTES: RouteSeed[] = [
   {
     tier: 'primary',
@@ -76,7 +34,6 @@ const DRAFT_ROUTES: RouteSeed[] = [
   },
 ];
 
-/** Дешёвая цепочка для judge/classify (deepseek-v4-flash primary, Б9). */
 const JUDGE_ROUTES: RouteSeed[] = [
   {
     tier: 'primary',
@@ -105,7 +62,6 @@ const TASK_ROUTES: Array<{ taskType: string; routes: RouteSeed[] }> = [
   { taskType: 'support-clone-draft', routes: DRAFT_ROUTES },
   { taskType: 'support-answer-critic', routes: JUDGE_ROUTES },
   { taskType: 'support-edit-classify', routes: JUDGE_ROUTES },
-  // Ф4 — ночной куратор контура: capable-задача (DeepSeek V4 Pro primary, Б9).
   { taskType: 'support-contour-curate', routes: DRAFT_ROUTES },
 ];
 
@@ -143,9 +99,7 @@ async function main(): Promise<void> {
         if (!updateExisting) {
           skipped++;
 
-          console.log(
-            `[skipped:exists] ${taskType} ${r.tier} ${r.provider}:${r.model}`,
-          );
+          console.log(`[skipped:exists] ${taskType} ${r.tier} ${r.provider}:${r.model}`);
           continue;
         }
         if (

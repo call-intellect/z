@@ -1,34 +1,21 @@
 import { z } from 'zod';
 
-/**
- * DTO модуля Decisions (SBA β-3). REST API `/api/v1/decisions` — реестр
- * решений компании.
- *
- * Под капотом — Prisma-таблица `decisions` (расширенная in-place из Фазы 0a).
- * Все user-facing строки — на русском.
- */
-
 export const DecisionStatusSchema = z.enum([
-  // β-3 значения
   'proposed',
   'approved',
   'rejected',
   'implemented',
   'cancelled',
   'superseded',
-  // legacy Фазы 0a — для обратной совместимости (могут существовать в БД).
   'active',
   'rolled_back',
 ]);
 export type DecisionStatusDto = z.infer<typeof DecisionStatusSchema>;
 
 export const DeadlineFilterSchema = z.enum(['overdue', 'upcoming', 'all']);
-export type DeadlineFilterDto = z.infer<typeof DeadlineFilterSchema>;
 
 export const TrustTierSchema = z.enum(['auto', 'provisional', 'human']);
 export type TrustTierDto = z.infer<typeof TrustTierSchema>;
-
-// ─────────────────────────── Query / Filters ─────────────────────────
 
 export const ListDecisionsQuerySchema = z.object({
   q: z.string().trim().min(1).max(200).optional(),
@@ -45,9 +32,7 @@ export const SupersedeDecisionBodySchema = z.object({
   supersededByDecisionId: z.string().min(1).max(60),
   supersedeReason: z.string().min(1).max(2_000).optional(),
 });
-export type SupersedeDecisionBody = z.infer<
-  typeof SupersedeDecisionBodySchema
->;
+export type SupersedeDecisionBody = z.infer<typeof SupersedeDecisionBodySchema>;
 
 export const ChangeStatusBodySchema = z.object({
   newStatus: DecisionStatusSchema,
@@ -60,8 +45,6 @@ export const SetOutcomesBodySchema = z.object({
 });
 export type SetOutcomesBody = z.infer<typeof SetOutcomesBodySchema>;
 
-// ── Action Center E1 «поправить карточку знаний» (2026-06-04) ──
-// «Это неверно» (dispute) — флаг без правки → обучающий сигнал misleading.
 export const DisputeDecisionBodySchema = z
   .object({
     reason: z.string().trim().max(2000).optional(),
@@ -69,8 +52,6 @@ export const DisputeDecisionBodySchema = z
   .strict();
 export type DisputeDecisionBody = z.infer<typeof DisputeDecisionBodySchema>;
 
-// «Исправить» (correct) — правка текста. owner/admin → применяем сразу
-// (новая человеко-проверенная версия); read-only → предложение в очередь курации.
 export const CorrectDecisionBodySchema = z
   .object({
     correctedPayload: z
@@ -86,7 +67,6 @@ export const CorrectDecisionBodySchema = z
   .strict();
 export type CorrectDecisionBody = z.infer<typeof CorrectDecisionBodySchema>;
 
-// Manual create — owner/admin only (UI на β-3 не добавляем; см. §14.3 sub-TZ).
 export const CreateDecisionBodySchema = z.object({
   statement: z.string().min(3).max(4_000),
   rationale: z.string().min(1).max(8_000).optional(),
@@ -106,8 +86,6 @@ export const CreateDecisionBodySchema = z.object({
   affectsEntityIds: z.array(z.string().min(1).max(60)).max(20).optional(),
 });
 export type CreateDecisionBody = z.infer<typeof CreateDecisionBodySchema>;
-
-// ─────────────────────────── Response DTOs ───────────────────────────
 
 export interface DecisionListItemDto {
   id: string;
@@ -164,8 +142,6 @@ export interface DecisionHistoryResponse {
 }
 
 export interface DecisionSupersedeChainResponse {
-  /** Цепочка вверх (родительские, от прямого предка к самому древнему). */
   ancestors: DecisionListItemDto[];
-  /** Цепочка вниз (потомки — Decision'ы, чей supersedesId = this.id). */
   descendants: DecisionListItemDto[];
 }

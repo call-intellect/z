@@ -1,12 +1,5 @@
 import { z } from 'zod';
 
-/**
- * SBA δ-2 — DTO для `/api/v1/me/proactive-notifications`.
- *
- * Используем плейн-zod (как в operations/daily-check-in.dto.ts), валидация —
- * через `ZodValidationPipe` в контроллере.
- */
-
 export const ListProactiveQuerySchema = z.object({
   includeDismissed: z
     .union([z.literal('true'), z.literal('false'), z.boolean()])
@@ -25,13 +18,9 @@ export const ProactiveNotificationDtoSchema = z.object({
   emittedAt: z.string(),
   dismissedAt: z.string().nullable(),
 });
-export type ProactiveNotificationDto = z.infer<
-  typeof ProactiveNotificationDtoSchema
->;
+export type ProactiveNotificationDto = z.infer<typeof ProactiveNotificationDtoSchema>;
 
 export const ListProactiveResponseSchema = z.object({
   items: z.array(ProactiveNotificationDtoSchema),
 });
-export type ListProactiveResponseDto = z.infer<
-  typeof ListProactiveResponseSchema
->;
+export type ListProactiveResponseDto = z.infer<typeof ListProactiveResponseSchema>;

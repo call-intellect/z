@@ -1,16 +1,6 @@
-'use client';
+"use client";
 
-/**
- * `/admin/platform/limits` — глобальные лимиты. Фаза 8 редизайна Z-Admin.
- *
- * Вкладки (AdminTabs):
- *   - Глобальные: список `AdminSetting` с префиксом `limits.*` через
- *     `useAdminSettingEditor` (severity='high', reason обязателен).
- *   - По тарифу: список `Plan` с их `quotas` (read-only ссылка на CRUD).
- *   - Override по Org: AdminEmpty со ссылкой на /admin/orgs/entitlements.
- */
-
-import { useState } from 'react';
+import { useState } from "react";
 import {
   ArrowRight,
   CreditCard,
@@ -18,29 +8,29 @@ import {
   Loader2,
   Settings2,
   ToggleLeft,
-} from 'lucide-react';
-import Link from 'next/link';
-import { toast } from 'sonner';
+} from "lucide-react";
+import Link from "next/link";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import { GLOBAL_LIMITS, type LimitSpec } from '@/domain/admin-limit';
-import { useAdminSettingEditor } from '@/hooks/useAdminSettingEditor';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminSettingField } from '@/ui/components/admin/AdminSettingField';
-import { AdminSettingHistoryDrawer } from '@/ui/components/admin/AdminSettingHistoryDrawer';
-import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
-import { Button } from '@/ui/shadcn/button';
-import { Textarea } from '@/ui/shadcn/textarea';
+import { ApiError } from "@/api/api-error";
+import { GLOBAL_LIMITS, type LimitSpec } from "@/domain/admin-limit";
+import { useAdminSettingEditor } from "@/hooks/useAdminSettingEditor";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminSettingField } from "@/ui/components/admin/AdminSettingField";
+import { AdminSettingHistoryDrawer } from "@/ui/components/admin/AdminSettingHistoryDrawer";
+import { AdminTabs, type AdminTabDef } from "@/ui/components/admin/AdminTabs";
+import { Button } from "@/ui/shadcn/button";
+import { Textarea } from "@/ui/shadcn/textarea";
 
-import { AdminEmpty } from '../../AdminStateViews';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+import { AdminEmpty } from "../../AdminStateViews";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 const MIN_REASON_LENGTH = 10;
 
 const TABS: AdminTabDef[] = [
-  { value: 'global', label: 'Глобальные', icon: Settings2 },
-  { value: 'by-plan', label: 'По тарифу', icon: CreditCard },
-  { value: 'by-org', label: 'Override по Org', icon: ToggleLeft },
+  { value: "global", label: "Глобальные", icon: Settings2 },
+  { value: "by-plan", label: "По тарифу", icon: CreditCard },
+  { value: "by-org", label: "Override по Org", icon: ToggleLeft },
 ];
 
 export function LimitsClient() {
@@ -50,15 +40,15 @@ export function LimitsClient() {
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'Платформа' },
-        { label: 'Лимиты и квоты' },
+        { label: "Платформа" },
+        { label: "Лимиты и квоты" },
       ]}
       title="Глобальные лимиты"
       description="Жёсткие верхние границы платформы. Org может получить меньшие значения через тариф или override. Сохранение требует причину (severity='high')."
     >
       <AdminTabs tabs={TABS} defaultTab="global">
         {(active) => {
-          if (active === 'global') {
+          if (active === "global") {
             return (
               <div className="grid gap-3 sm:grid-cols-2">
                 {GLOBAL_LIMITS.map((spec) => (
@@ -71,10 +61,10 @@ export function LimitsClient() {
               </div>
             );
           }
-          if (active === 'by-plan') {
+          if (active === "by-plan") {
             return <ByPlanTab />;
           }
-          if (active === 'by-org') {
+          if (active === "by-org") {
             return (
               <AdminEmpty
                 title="Override по Org"
@@ -97,8 +87,6 @@ export function LimitsClient() {
   );
 }
 
-// ─────────────────────────── Global tab ───────────────────────────
-
 function LimitRow({
   spec,
   onOpenHistory,
@@ -109,9 +97,9 @@ function LimitRow({
   const editor = useAdminSettingEditor<number>(spec.key, {
     schema: spec.schema,
     defaultValue: spec.defaultValue,
-    requiresReason: 'high',
+    requiresReason: "high",
   });
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState<string | null>(null);
 
   const handleSave = async () => {
@@ -126,14 +114,14 @@ function LimitRow({
     try {
       await editor.save(trimmed);
       toast.success(`Лимит «${spec.label}» сохранён`);
-      setReason('');
+      setReason("");
     } catch (e) {
       const msg =
         e instanceof ApiError
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось сохранить';
+            : "Не удалось сохранить";
       toast.error(msg);
     }
   };
@@ -175,7 +163,9 @@ function LimitRow({
         </div>
       ) : null}
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="font-mono text-[10px] text-fg-tertiary">{spec.key}</span>
+        <span className="font-mono text-[10px] text-fg-tertiary">
+          {spec.key}
+        </span>
         <div className="flex items-center gap-1">
           <Button
             size="sm"
@@ -201,14 +191,6 @@ function LimitRow({
   );
 }
 
-// ─────────────────────────── By-plan tab ───────────────────────────
-
-/**
- * После collapse-to-standard (ТЗ 2026-05-31) тариф в Z один — `tier_standard`,
- * и его лимиты/квоты редактируются вместе с ценой на отдельной карточке
- * `/admin/orgs/plans`. Здесь оставлена только ссылка туда — отдельный pivot
- * «лимиты по каждому тарифу» больше не нужен.
- */
 function ByPlanTab() {
   return (
     <div className="space-y-3">

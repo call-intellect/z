@@ -1,8 +1,3 @@
-/**
- * SBA α-10 wave 3 — DomainModel для LlmProvider.
- *
- * Контракт: backend `AdminLlmProvidersService.list`.
- */
 export type AdminLlmProviderApi = {
   id: string;
   name: string;
@@ -68,12 +63,12 @@ export type CreateLlmProviderRequest = {
   displayName: string;
   baseUrl: string;
   protocolKind:
-    | 'openai-chat'
-    | 'openai-responses'
-    | 'anthropic-messages'
-    | 'ollama-native'
-    | 'custom-http';
-  capability?: 'public' | 'internal' | 'sensitive' | 'private';
+    | "openai-chat"
+    | "openai-responses"
+    | "anthropic-messages"
+    | "ollama-native"
+    | "custom-http";
+  capability?: "public" | "internal" | "sensitive" | "private";
   apiKey?: string;
   defaultHeaders?: Record<string, string>;
   globalRps?: number;
@@ -81,7 +76,7 @@ export type CreateLlmProviderRequest = {
 };
 
 export type UpdateLlmProviderRequest = Partial<
-  Omit<CreateLlmProviderRequest, 'name'>
+  Omit<CreateLlmProviderRequest, "name">
 >;
 
 export type SmokeTestResultApi = {

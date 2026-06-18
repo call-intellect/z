@@ -1,26 +1,15 @@
-/**
- * Variant Б для диалоговой цепочки — один объединённый вызов.
- *
- *   fixture → один tool-вызов, возвращающий:
- *     { intent, standalone_question, multi_queries, confidence, answer_mode, answer_markdown }
- *
- * Запуск: cd backend && bun run scripts/eval/run-dialog-variant-b.ts <fixture-id>
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
 
 const MODEL = 'deepseek-v4-pro';
-// DeepSeek-V4-Pro со скидкой 75%.
 const PRICE_IN = 0.435 / 1_000_000;
 const PRICE_CACHED_IN = 0.003625 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
 const MAX_TOKENS_COMBINED = 16000;
 
 const FIXTURE_ID = process.argv[2] ?? 'dialog-01-factual';
-const FIXTURE_PATH = path.resolve(
-  `test/eval/dialog-experiment/fixtures/${FIXTURE_ID}.json`,
-);
+const FIXTURE_PATH = path.resolve(`test/eval/dialog-experiment/fixtures/${FIXTURE_ID}.json`);
 const REPORT_PATH = path.resolve(
   `test/eval/dialog-experiment/reports/${FIXTURE_ID}-variant-b.json`,
 );
@@ -62,7 +51,6 @@ const client = new OpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
 });
 
-// ── объединённый tool ───────────────────────────────────────────────────────
 const COMBINED_TOOL = {
   type: 'function' as const,
   function: {
@@ -184,10 +172,7 @@ function buildBlocksContext(blocks: MockBlock[]): string {
     .join('\n\n');
 }
 
-function buildHistoryBlock(
-  history: DialogFixture['history'],
-  summary: string | null,
-): string {
+function buildHistoryBlock(history: DialogFixture['history'], summary: string | null): string {
   const parts: string[] = [];
   if (summary && summary.length > 0) {
     parts.push('Контекст диалога (сжато):', summary, '');
@@ -208,12 +193,8 @@ async function main(): Promise<void> {
   console.log('=== Variant Б — один объединённый вызов диалоговой цепочки ===');
   console.log(`  модель:    ${MODEL}`);
   console.log(`  фикстура:  ${path.basename(FIXTURE_PATH)}`);
-  const fixture: DialogFixture = JSON.parse(
-    await fs.readFile(FIXTURE_PATH, 'utf-8'),
-  );
-  console.log(
-    `  сценарий:  ${fixture.scenario}\n  блоков:    ${fixture.mock_blocks.length}\n`,
-  );
+  const fixture: DialogFixture = JSON.parse(await fs.readFile(FIXTURE_PATH, 'utf-8'));
+  console.log(`  сценарий:  ${fixture.scenario}\n  блоков:    ${fixture.mock_blocks.length}\n`);
 
   const userMessage = `${buildHistoryBlock(fixture.history, fixture.conversation_summary)}
 
@@ -286,8 +267,7 @@ ${buildBlocksContext(fixture.mock_blocks)}
     usage.prompt_tokens_details?.cached_tokens ??
     0;
   const uncached = Math.max(0, tokensIn - cachedTokens);
-  const costUsd =
-    uncached * PRICE_IN + cachedTokens * PRICE_CACHED_IN + tokensOut * PRICE_OUT;
+  const costUsd = uncached * PRICE_IN + cachedTokens * PRICE_CACHED_IN + tokensOut * PRICE_OUT;
 
   console.log(
     `\n  ${error ? '✗' : '✓'} ${ms} мс | вход=${tokensIn} (кэш=${cachedTokens}) выход=${tokensOut} | $${costUsd.toFixed(4)}${error ? ` | ${error}` : ''}`,

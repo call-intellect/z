@@ -7,7 +7,7 @@ related:
   - 01_projects/chat-v2.md
   - 01_projects/skill-and-clone.md
   - 01_projects/tracker.md
-  - 01_projects/concierge-voice.md
+  - 01_projects/concierge-agent.md
 ---
 
 # Telegram-бот Z (Кора) — пользовательские сценарии
@@ -111,17 +111,15 @@ Cron [`TelegramDigestCron`](../../backend/src/modules/conversational/adapters/te
 
 ## 4. Что НЕ РАБОТАЕТ через Telegram
 
-### 4.1 Утренние и вечерние чек-ины НЕ доставляются в Telegram
+### 4.1 Утренние и вечерние чек-ины — ✅ доставляются в Telegram (Задача 1 закрыта)
 
-В системе есть [`DailyCheckInPromptCron`](../../backend/src/modules/operations/workers/daily-checkin-prompt.cron.ts), который каждый час проверяет, у кого сейчас 9:00 (утренний чек-ин) или 18:00 (вечерний), и хочет спросить «как день / какие планы». Но событие `checkin.prompt` **не указано** в карте маршрутизации `EVENT_TYPE_CHANNEL_POLICY`, поэтому уходит только в веб-кабинет (in-app), а не в Telegram.
+В системе есть [`DailyCheckInPromptCron`](../../backend/src/modules/operations/workers/daily-checkin-prompt.cron.ts), который каждый час проверяет, у кого сейчас 9:00 (утренний чек-ин) или 18:00 (вечерний), и спрашивает «как день / какие планы». Раньше событие `checkin.prompt` не было указано в карте маршрутизации `EVENT_TYPE_CHANNEL_POLICY` и уходило только в веб-кабинет (in-app). Теперь строка добавлена: `'checkin.prompt': ['telegram_bot', 'max_bot', 'in_app']` ([`conversational.service.ts:157`](../../backend/src/modules/conversational/conversational.service.ts#L157)) — бот-каналы приоритетны, in-app fallback. Чек-ин-prompt доходит до Telegram.
 
-Исправление — одна строка в [`conversational.service.ts:83`](../../backend/src/modules/conversational/conversational.service.ts#L83): добавить `'checkin.prompt': ['telegram_bot', 'max_bot', 'in_app']`. Это **Задача 1** из плана работ.
+### 4.2 Спросить клона роли через Telegram — пока нельзя (Concierge подключён, но clone-инструмент не в канальном whitelist)
 
-### 4.2 Спросить клона роли через Telegram — нельзя
+Concierge как обработчик уже подключён (2026-06-12, **Задача 2 закрыта**): входящие свободные сообщения из бота (вопросы и задачи) уходят типом `assistant_turn` → [`AssistantChannelBridge`](../../backend/src/modules/concierge/services/assistant-channel.bridge.ts) → `ConciergeService.process`, который сам решает, какой инструмент позвать (AI-чат компании, создание события/встречи, постановка/чтение задач, поиск свободного слота). Маршрутизация за kill-switch `ASSISTANT_CHANNEL_ROUTING_ENABLED` (default true).
 
-В кабинете и через REST-эндпоинты (`POST /api/v1/clones/roles/:id/ask`, `POST /api/v1/clones/persons/:id/ask`) клон роли отвечает. Через Telegram — нет: все вопросы из бота уходят в дефолтный режим AI-чата компании, без переключения на режим клона.
-
-Исправление — подключить Concierge как обработчик `chat_query` из Telegram. Concierge сам решает, какой инструмент позвать (AI-чат, клон роли, создание события, поиск сотрудника по компетенции). Это **Задача 2** из плана работ.
+Но **именно клон роли через бот пока недоступен**: инструмент `ask_role_clone` (`POST /api/v1/clones/roles/:roleId/ask`) зарегистрирован в реестре Concierge, однако НЕ входит в канальные whitelist'ы (`CHANNEL_TOOL_WHITELIST_SELF` / `CHANNEL_TOOL_WHITELIST_MANAGER` в [`assistant-channel.bridge.ts`](../../backend/src/modules/concierge/services/assistant-channel.bridge.ts)) — значит провайдер его в канале не видит и не вызовет. Чтобы «спросить клон должности» работало из Telegram, нужно добавить `ask_role_clone` (и при желании `list_clones`) в канальный whitelist. Это **открытый пункт Задачи 2**.
 
 ### 4.3 Личная «память моего клона» концептуально не существует
 
@@ -149,7 +147,7 @@ Cron [`TelegramDigestCron`](../../backend/src/modules/conversational/adapters/te
 | `specialist.probe` (подсказка специалиста 3-1..3-9) | `in_app`, `email_smtp` | ❌ |
 | `curation.pending` (нужна модерация) | `in_app`, `email_smtp` | ❌ |
 | `idea.status_changed` (изменился статус идеи) | `in_app` | ❌ |
-| `checkin.prompt` (утренний/вечерний чек-ин) | `in_app` (дефолтная политика) | ❌ см. 4.1 |
+| `checkin.prompt` (утренний/вечерний чек-ин) | `telegram_bot`, `max_bot`, `in_app` | ✅ см. 4.1 |
 
 ## 6. Сводная таблица «что работает / что не работает»
 
@@ -166,19 +164,20 @@ Cron [`TelegramDigestCron`](../../backend/src/modules/conversational/adapters/te
 | Уточняющий вопрос от агента и ответ через Reply | ✅ |
 | Создание задачи (текст / голос / forward) | ✅ |
 | Reply на уведомление о задаче | ✅ |
-| Утренний чек-ин «планы на день» в Telegram | ❌ Задача 1 |
-| Вечерний чек-ин «итоги дня» в Telegram | ❌ Задача 1 |
+| Утренний чек-ин «планы на день» в Telegram | ✅ Задача 1 (2026-06-12) |
+| Вечерний чек-ин «итоги дня» в Telegram | ✅ Задача 1 (2026-06-12) |
 | Самоинициированный «план / отчёт» (сотрудник пишет сам) | ✅ Задача 3 (2026-05-30) |
-| Спросить клона роли в Telegram | ❌ Задача 2 |
+| Concierge как обработчик свободных сообщений из Telegram | ✅ Задача 2 (2026-06-12) |
+| Спросить клона роли в Telegram | ❌ `ask_role_clone` не в канальном whitelist (открытый пункт Задачи 2) |
 | Голосовой ответ от бота | ❌ (по дизайну) |
 
 ## 7. Открытые задачи
 
 См. [`plans/`](../../plans/) — будут оформлены отдельными ТЗ:
 
-1. **Чек-ины в Telegram.** Добавить `checkin.prompt` в карту маршрутизации, утром в 9:00 бот спрашивает «планы на день», вечером в 18:00 — «как прошёл день»; ответ обрабатывает `CheckinResponseHandler` и сохраняет в `DailyCheckIn`. Минимальная работа.
-2. **Concierge как обработчик `chat_query` из Telegram.** Чтобы через бот можно было «спросить клона роли», создать событие календаря, найти сотрудника по компетенции и другие сценарии, которые Concierge уже умеет в кабинете.
-3. **Утренний план и вечерний отчёт как структурированный тип запроса** — ✅ **Реализовано 2026-05-30**. ТЗ: [`plans/tz/2026-05-29-telegram-self-initiated-checkins.md`](../../plans/tz/2026-05-29-telegram-self-initiated-checkins.md) (ревизия 3 — LLM primary). Расширили `QueryClassifierService.classify` на 3 новые intent (`daily_plan_morning`, `daily_report_evening`, `note`) + параметр `skipHeuristicFirstPass=true` для bot-flow. SYSTEM-промпт `DIALOG_CLASSIFY_SYSTEM_PROMPT` зафиксирован (см. Приложение А ТЗ) — НЕ править без явного согласования владельцем, ломает prompt cache deepseek-v4-flash. Маппинг в `TelegramBotChannelAdapter.classifyIntent`: confidence-gate ≥0.7 для plan/report → `InboundMessage{type='daily_checkin_self', kind}`; иначе fall through в `free_note`. Подписчик в `CheckinResponseHandler.onModuleInit` (`conversational.subscribeInbound('daily_checkin_self', ...)`) → `processSelfInitiated()` парсит, upsert'ит `DailyCheckIn{source='self_initiated'}` (всегда, даже при низкой parser confidence — curatorReview=true), закрывает pending `checkin.prompt` notification через `markAsAnsweredByCheckin` (без эмиссии event'а, чтобы не зациклить), отправляет `checkin.ack` подтверждение по originChannelBindingId (4 шаблона `formatCheckinAck`). Fallback-эвристика (5+5 триггеров в `dialog-layer/services/checkin-fallback-triggers.ts`) — только при недоступности LLM. Новое поле `DailyCheckIn.source ∈ {cron_prompted, self_initiated, manual}` (default `cron_prompted`) + patch-скрипт `patch-daily-checkin-backfill-source.ts` (manual для записей без notificationId). Frontend `/me/check-ins` — значок 🌅/✋/🖊 рядом с датой. Метрики: `z_bot_checkin_intent_classifier_total{kind, source}`, `z_bot_daily_checkin_self_total{kind, outcome}`. SMOKE — 8 сценариев в `backend/src/modules/conversational/adapters/telegram-bot/SMOKE.md`.
+1. **Чек-ины в Telegram** — ✅ **Реализовано 2026-06-12.** `checkin.prompt` добавлен в карту маршрутизации (`'checkin.prompt': ['telegram_bot', 'max_bot', 'in_app']`, [`conversational.service.ts:157`](../../backend/src/modules/conversational/conversational.service.ts#L157)): утром в 9:00 бот спрашивает «планы на день», вечером в 18:00 — «как прошёл день»; ответ обрабатывает `CheckinResponseHandler` и сохраняет в `DailyCheckIn`.
+2. **Concierge как обработчик свободных сообщений из Telegram** — ✅ **Реализовано 2026-06-12** (Ф5 assistant-channels + channels-sync). Входящие вопросы и задачи из бота идут типом `assistant_turn` → `AssistantChannelBridge` → `ConciergeService.process`; помощник сам вызывает AI-чат компании, создаёт события/встречи, ставит/читает задачи, ищет свободный слот. **Открытый пункт:** клон роли пока недоступен из бота — `ask_role_clone` зарегистрирован в реестре Concierge, но не добавлен в канальные whitelist'ы (`CHANNEL_TOOL_WHITELIST_SELF` / `_MANAGER` в [`assistant-channel.bridge.ts`](../../backend/src/modules/concierge/services/assistant-channel.bridge.ts)), поэтому в канале не вызывается. Нужно добавить `ask_role_clone` (и опц. `list_clones`) в whitelist.
+3. **Утренний план и вечерний отчёт как структурированный тип запроса** — ✅ **Реализовано 2026-05-30**. ТЗ: [`plans/archive/2026-05-29-telegram-self-initiated-checkins.md`](../../plans/archive/2026-05-29-telegram-self-initiated-checkins.md) (ревизия 3 — LLM primary). Расширили `QueryClassifierService.classify` на 3 новые intent (`daily_plan_morning`, `daily_report_evening`, `note`) + параметр `skipHeuristicFirstPass=true` для bot-flow. SYSTEM-промпт `DIALOG_CLASSIFY_SYSTEM_PROMPT` зафиксирован (см. Приложение А ТЗ) — НЕ править без явного согласования владельцем, ломает prompt cache deepseek-v4-flash. Маппинг в `TelegramBotChannelAdapter.classifyIntent`: confidence-gate ≥0.7 для plan/report → `InboundMessage{type='daily_checkin_self', kind}`; иначе fall through в `free_note`. Подписчик в `CheckinResponseHandler.onModuleInit` (`conversational.subscribeInbound('daily_checkin_self', ...)`) → `processSelfInitiated()` парсит, upsert'ит `DailyCheckIn{source='self_initiated'}` (всегда, даже при низкой parser confidence — curatorReview=true), закрывает pending `checkin.prompt` notification через `markAsAnsweredByCheckin` (без эмиссии event'а, чтобы не зациклить), отправляет `checkin.ack` подтверждение по originChannelBindingId (4 шаблона `formatCheckinAck`). Fallback-эвристика (5+5 триггеров в `dialog-layer/services/checkin-fallback-triggers.ts`) — только при недоступности LLM. Новое поле `DailyCheckIn.source ∈ {cron_prompted, self_initiated, manual}` (default `cron_prompted`) + patch-скрипт `patch-daily-checkin-backfill-source.ts` (manual для записей без notificationId). Frontend `/me/check-ins` — значок 🌅/✋/🖊 рядом с датой. Метрики: `z_bot_checkin_intent_classifier_total{kind, source}`, `z_bot_daily_checkin_self_total{kind, outcome}`. SMOKE — 8 сценариев в `backend/src/modules/conversational/adapters/telegram-bot/SMOKE.md`.
 
 ---
 

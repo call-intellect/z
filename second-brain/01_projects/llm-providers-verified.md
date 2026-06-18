@@ -27,7 +27,7 @@ updated: 2026-06-05
 > Колонка **«В LlmRouter»** показывает, подключён ли канал к `LlmTaskRoute` /
 > админке `/admin/ai-models`. Если ✗ — модель проверена smoke-вызовом, но
 > переключить её на agent через админку **нельзя**, пока не реализовано ТЗ
-> [2026-05-24-kie-grsai-llm-router-integration.md](../../plans/tz/2026-05-24-kie-grsai-llm-router-integration.md).
+> [2026-05-24-kie-grsai-llm-router-integration.md](../../plans/archive/2026-05-24-kie-grsai-llm-router-integration.md).
 
 ### A. Каналы в продакшен-роутере (доступны через админку)
 

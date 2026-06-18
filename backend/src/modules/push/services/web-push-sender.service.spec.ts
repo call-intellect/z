@@ -5,7 +5,6 @@ import type { TypedConfigService } from '../../../common/config/typed-config.ser
 import type { PushSubscriptionsService } from './push-subscriptions.service';
 import { WebPushSender } from './web-push-sender.service';
 
-// Mock npm `web-push` (default export).
 vi.mock('web-push', () => ({
   default: {
     setVapidDetails: vi.fn(),
@@ -13,7 +12,6 @@ vi.mock('web-push', () => ({
   },
 }));
 
-// Достаём mock'нутый default из ESM-обёртки.
 async function getWebpushMock(): Promise<{
   setVapidDetails: ReturnType<typeof vi.fn>;
   sendNotification: ReturnType<typeof vi.fn>;
@@ -53,10 +51,7 @@ function mkSender(opts: {
     markFailure: vi.fn().mockResolvedValue({ failureCount: 1, deleted: false }),
     markSuccess: vi.fn().mockResolvedValue(undefined),
   };
-  const sender = new WebPushSender(
-    cfg,
-    subs as unknown as PushSubscriptionsService,
-  );
+  const sender = new WebPushSender(cfg, subs as unknown as PushSubscriptionsService);
   return { sender, subs };
 }
 
@@ -122,7 +117,6 @@ describe('WebPushSender', () => {
     expect(m.sendNotification).toHaveBeenCalledTimes(2);
     expect(subs.markSuccess).toHaveBeenCalledTimes(2);
     expect(subs.markFailure).not.toHaveBeenCalled();
-    // payload содержит url
     const payloadStr = m.sendNotification.mock.calls[0]?.[1];
     expect(typeof payloadStr).toBe('string');
     const payload = JSON.parse(String(payloadStr));
@@ -144,9 +138,7 @@ describe('WebPushSender', () => {
     const m = await getWebpushMock();
     const err410 = Object.assign(new Error('Gone'), { statusCode: 410 });
     const err404 = Object.assign(new Error('Not Found'), { statusCode: 404 });
-    m.sendNotification
-      .mockRejectedValueOnce(err410)
-      .mockRejectedValueOnce(err404);
+    m.sendNotification.mockRejectedValueOnce(err410).mockRejectedValueOnce(err404);
 
     const r = await sender.sendToUser({
       tenantId: 't1',

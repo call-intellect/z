@@ -10,24 +10,21 @@ import type { BudgetGuardService } from './budget-guard.service';
 import type { DeepSeekService } from './deepseek.service';
 import type { GrsaiService } from './grsai.service';
 import type { KieService } from './kie.service';
-import {
-  LlmBudgetExceededError,
-  LlmRouterService,
-  type LlmTaskType,
-} from './llm-router.service';
+import { LlmBudgetExceededError, LlmRouterService, type LlmTaskType } from './llm-router.service';
 import type { LlmCompleteOutput } from './llm.types';
 import type { MinimaxService } from './minimax.service';
 import type { OllamaService } from './ollama.service';
 import type { OpenAiProxyService } from './openai-proxy.service';
 
-function makeOutput(provider: LlmCompleteOutput['provider'], model = 'deepseek-v4-flash'): LlmCompleteOutput {
+function makeOutput(
+  provider: LlmCompleteOutput['provider'],
+  model = 'deepseek-v4-flash',
+): LlmCompleteOutput {
   return { text: `text-${provider}`, inputTokens: 100, outputTokens: 20, model, provider };
 }
 
 interface BuildOpts {
-  /** Что вернёт budgetGuard.evaluate. undefined → budgetGuard отсутствует (DI off). */
   bev?: { over: boolean; mtdRub: number; capRub: number | null; capKind: string };
-  /** Значение флага llm.budget.enforce_enabled. */
   enforce?: boolean;
 }
 
@@ -48,13 +45,20 @@ function build(opts: BuildOpts = {}) {
   const anthropic = passthrough('anthropic') as AnthropicService;
   const minimax = passthrough('minimax') as MinimaxService;
   const ollama = passthrough('ollama') as OllamaService;
-  const kie = { complete: vi.fn(async () => makeOutput('kie', 'gemini-3-pro')) } as unknown as KieService;
-  const grsai = { complete: vi.fn(async () => makeOutput('grsai', 'gemini-3-pro')) } as unknown as GrsaiService;
+  const kie = {
+    complete: vi.fn(async () => makeOutput('kie', 'gemini-3-pro')),
+  } as unknown as KieService;
+  const grsai = {
+    complete: vi.fn(async () => makeOutput('grsai', 'gemini-3-pro')),
+  } as unknown as GrsaiService;
 
   const usage = { record: vi.fn() } as unknown as AiUsageLogService;
   const incLlmRouterDispatch = vi.fn();
   const incLlmBudgetExceeded = vi.fn();
-  const metrics = { incLlmRouterDispatch, incLlmBudgetExceeded } as unknown as BusinessMetricsService;
+  const metrics = {
+    incLlmRouterDispatch,
+    incLlmBudgetExceeded,
+  } as unknown as BusinessMetricsService;
 
   const getDynamic = vi.fn(async (key: string, _env: unknown, def: unknown) => {
     if (key === 'llm.budget.enforce_enabled') return opts.enforce ?? false;
@@ -62,7 +66,9 @@ function build(opts: BuildOpts = {}) {
   });
   const cfg = { getDynamic } as unknown as TypedConfigService;
 
-  const evaluate = vi.fn(async () => opts.bev ?? { over: false, mtdRub: 0, capRub: null, capKind: 'soft' });
+  const evaluate = vi.fn(
+    async () => opts.bev ?? { over: false, mtdRub: 0, capRub: null, capKind: 'soft' },
+  );
   const budgetGuard =
     opts.bev === undefined && !('bev' in opts)
       ? undefined
@@ -80,9 +86,9 @@ function build(opts: BuildOpts = {}) {
     usage,
     metrics,
     cfg,
-    undefined as never, // adapterRegistry
-    undefined as never, // providerInfo
-    undefined as never, // events
+    undefined as never,
+    undefined as never,
+    undefined as never,
     budgetGuard,
   );
 
@@ -110,7 +116,6 @@ describe('LlmRouterService — budget gate (cost-safety Ф2)', () => {
     expect(ctx.incLlmBudgetExceeded).toHaveBeenCalledWith(
       expect.objectContaining({ mode: 'observe' }),
     );
-    // dispatch не заблокирован — провайдер вызван, есть результат
     expect(ctx.deepseekComplete).toHaveBeenCalledOnce();
     expect(out.modelUsed).toBe('deepseek:deepseek-v4-flash');
   });
@@ -122,13 +127,10 @@ describe('LlmRouterService — budget gate (cost-safety Ф2)', () => {
     });
     await ctx.router.refreshCache();
 
-    await expect(ctx.router.call({ ...baseParams })).rejects.toBeInstanceOf(
-      LlmBudgetExceededError,
-    );
+    await expect(ctx.router.call({ ...baseParams })).rejects.toBeInstanceOf(LlmBudgetExceededError);
     expect(ctx.incLlmBudgetExceeded).toHaveBeenCalledWith(
       expect.objectContaining({ mode: 'enforce' }),
     );
-    // dispatch НЕ состоялся
     expect(ctx.deepseekComplete).not.toHaveBeenCalled();
   });
 

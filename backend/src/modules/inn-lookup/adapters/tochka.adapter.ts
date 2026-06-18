@@ -1,25 +1,3 @@
-/**
- * TochkaOpenBankingAdapter — лукап реквизитов через OpenBanking API Точки.
- *
- * Endpoint'ы:
- *   GET /open-banking/{v}/customers
- *     → список customerCode'ов в нашем app (только клиенты, дающие consent
- *       нашему clientId — обычно сами Org-ы которые подписаны на Точку).
- *   GET /open-banking/{v}/customers/{customerCode}
- *     → детали: name, inn, kpp, ogrn, address, bankCode (BIK), AccountList.
- *
- * Алгоритм:
- *   1. Sandbox — возвращаем `null` (в sandbox нет реальных customers).
- *   2. Получаем bearer token через TochkaOAuthService.
- *   3. GET список customers → для каждого GET details → match по `info.inn`.
- *   4. Возвращаем `InnLookupResult` с `source='tochka'` либо `null`.
- *
- * Ошибки сети / 4xx / неверный токен — graceful null (даём DaData-fallback'у
- * шанс через `tochka_then_dadata`).
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §8.
- */
-
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -58,8 +36,6 @@ export class TochkaOpenBankingAdapter implements InnLookupAdapter {
 
   async lookup(inn: string): Promise<InnLookupResult | null> {
     if (this.cfg.billing.tochka.isSandbox) {
-      // В sandbox Tochka не возвращает реальных customers — пропускаем,
-      // даём fallback на DaData в InnLookupService.
       return null;
     }
     if (!this.cfg.billing.features.tochka) {
@@ -94,9 +70,9 @@ export class TochkaOpenBankingAdapter implements InnLookupAdapter {
           kpp: info.kpp ?? null,
           ogrn: info.ogrn ?? null,
           legalAddress: info.address ?? null,
-          directorName: null, // OpenBanking не отдаёт ФИО директора
+          directorName: null,
           bankBik: info.bankCode ?? null,
-          bankAccount: firstAccount ? firstAccount.split('/')[0] ?? null : null,
+          bankAccount: firstAccount ? (firstAccount.split('/')[0] ?? null) : null,
         };
       }
       return null;
@@ -107,8 +83,6 @@ export class TochkaOpenBankingAdapter implements InnLookupAdapter {
       return null;
     }
   }
-
-  // ────────────────────────── private ──────────────────────────
 
   private async fetchCustomersList(bearer: string): Promise<TochkaCustomer[]> {
     const url = new URL(

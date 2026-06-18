@@ -2,30 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { DailyDigestService } from './daily-digest.service';
 
-/**
- * ТЗ-2 Ф3 — секция «Хронические блокеры» (chronicBlockers) в ежедневном
- * дайджесте.
- *
- * Тестируем сборку chronicBlockers внутри `computeRuntimeSections` через
- * публичную точку `getStored` (она зовёт `enrichDto` → `computeRuntimeSections`).
- * Метод приватный, поэтому идём через выдачу DTO с замоканной существующей
- * записью дайджеста.
- *
- * Проверяем:
- *   - listChronicForTenant вернул элементы → chronicBlockers замаплены в DTO
- *     (id/representativeText/status/daysOpen/linkedInsightId/responsiblePersonId),
- *     поля businessImpactScore/даты отброшены.
- *   - listChronicForTenant бросил ошибку → chronicBlockers=[] (дайджест не падает).
- *   - listChronicForTenant вызван с { tenantId, limit: 5 }.
- */
-
 const TENANT = 't1';
 const DATE = '2026-05-24';
 
-function buildSvc(overrides: {
-  chronic?: unknown[];
-  chronicReject?: Error;
-}) {
+function buildSvc(overrides: { chronic?: unknown[]; chronicReject?: Error }) {
   const storedRow = {
     id: 'dd1',
     tenantId: TENANT,
@@ -39,7 +19,6 @@ function buildSvc(overrides: {
     createdAt: new Date('2026-05-25T01:00:00Z'),
   };
 
-  // computeRuntimeSections делает много findMany — все пустые.
   const prisma = {
     dailyOperationsDigest: {
       findUnique: vi.fn().mockResolvedValue(storedRow),
@@ -120,7 +99,6 @@ describe('DailyDigestService.chronicBlockers (ТЗ-2 Ф3)', () => {
       linkedInsightId: 'ins1',
       responsiblePersonId: 'p1',
     });
-    // businessImpactScore / даты не выносятся в DTO.
     expect(first).not.toHaveProperty('businessImpactScore');
     expect(first).not.toHaveProperty('firstSeenDateLocal');
     expect(first).not.toHaveProperty('lastSeenDateLocal');

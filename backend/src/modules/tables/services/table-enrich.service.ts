@@ -11,10 +11,8 @@ import {
 
 import { parseEntitySync, resolveEntityTypes } from './entity-sync.util';
 
-/** Дефолты крутилок (code-fallback; источник правды — AdminSetting). */
 const DEFAULT_CONFIRMATION_THRESHOLD = 0.85;
 
-/** Один извлечённый LLM факт по колонке. */
 interface ExtractedFact {
   propertyId: string;
   value: unknown;
@@ -23,7 +21,6 @@ interface ExtractedFact {
   timeSec: number;
 }
 
-/** Реплика транскрипта (`Transcript.turns`). */
 interface DialogTurn {
   speaker: string;
   text: string;
@@ -34,32 +31,9 @@ interface DialogTurn {
 export interface EnrichResult {
   applied: number;
   pending: number;
-  /** Сколько фактов пропущено по кэшу (уже обрабатывались для этого события). */
   skippedCached: number;
 }
 
-/**
- * TableEnrichService (Smart-tables auto-creation Фаза 3 — Event-to-Cells).
- *
- * После завершения встречи (`meeting.ai_ready`) агент:
- *   1. Читает транскрипт встречи.
- *   2. Определяет Entity, которых касается встреча (граф знаний + canonicalName-фолбэк).
- *   3. Находит sync-таблицы tenant'а и строки этих Entity.
- *   4. LLM `table-extract-rows` извлекает факты по схеме НЕ-readonly колонок.
- *   5. Пустую ячейку при confidence ≥ порога — патчит (+ provenance с deep-link).
- *      Спорное (overwrite) / низкий confidence — кладёт в очередь подтверждений.
- *   6. Проактивно уведомляет владельца встречи о сводке (best-effort).
- *
- * Идемпотентность: повторный enrich той же встречи не патчит ячейку повторно —
- * кэш по `TableCellProvenance(tableRowId, propertyId, sourceId=meetingId)`.
- *
- * КАК встреча связана с Entity (механизм, см. отчёт):
- *   - прямой путь графа: RawEvent(sourceExternalId=meetingId) →
- *     IdeaBlockEvidence(rawEventId) → IdeaBlockEntity(blockId) → Entity;
- *   - Event(relatedMeetingId) → Event.entityId (event-сущность встречи);
- *   - fallback (граф ещё не обработал встречу): матч canonicalName Entity
- *     sync-классов в тексте транскрипта.
- */
 @Injectable()
 export class TableEnrichService {
   private readonly logger = new Logger(TableEnrichService.name);
@@ -70,22 +44,15 @@ export class TableEnrichService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  // ─────────────────────────── enrich from event ──────────────────────────
-
-  async enrichFromEvent(args: {
-    meetingId: string;
-    tenantId: string;
-  }): Promise<EnrichResult> {
+  async enrichFromEvent(args: { meetingId: string; tenantId: string }): Promise<EnrichResult> {
     const empty: EnrichResult = { applied: 0, pending: 0, skippedCached: 0 };
 
-    // 1. Встреча + транскрипт.
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: args.meetingId },
       include: { transcript: { select: { turns: true } } },
     });
     if (!meeting || meeting.tenantId !== args.tenantId) return empty;
-    const turns =
-      (meeting.transcript?.turns as unknown as DialogTurn[] | null) ?? null;
+    const turns = (meeting.transcript?.turns as unknown as DialogTurn[] | null) ?? null;
     if (!turns || turns.length === 0) {
       this.logger.debug(
         { meetingId: args.meetingId },
@@ -95,7 +62,6 @@ export class TableEnrichService {
     }
     const transcriptText = this.turnsToText(turns);
 
-    // 2. Sync-таблицы tenant'а (autoCreate) + их классы Entity.
     const syncTables = await this.findAutoSyncTables(args.tenantId);
     if (syncTables.length === 0) return empty;
     const syncEntityTypes = new Set<string>();
@@ -103,7 +69,6 @@ export class TableEnrichService {
       for (const ty of t.entityTypes) syncEntityTypes.add(ty);
     }
 
-    // 3. Entity, которых касается встреча, среди sync-классов.
     const entityIds = await this.resolveMeetingEntities({
       tenantId: args.tenantId,
       meetingId: args.meetingId,
@@ -125,13 +90,8 @@ export class TableEnrichService {
     let pending = 0;
     let skippedCached = 0;
 
-    // 4. Для каждой sync-таблицы — её строки с этими Entity.
     for (const table of syncTables) {
-      const relevantEntityIds = [...entityIds].filter((id) =>
-        // строка может ссылаться на entity любого из классов таблицы;
-        // фильтр по факту делаем через rows.entityId IN.
-        Boolean(id),
-      );
+      const relevantEntityIds = [...entityIds].filter((id) => Boolean(id));
       if (relevantEntityIds.length === 0) continue;
 
       const rows = await this.prisma.tableRow.findMany({
@@ -146,7 +106,6 @@ export class TableEnrichService {
       });
       if (rows.length === 0) continue;
 
-      // Схема НЕ-readonly колонок (агент не трогает entity-атрибуты).
       const fillable = this.fillableProperties(table.properties);
       if (fillable.length === 0) continue;
       const propSchema: ExtractRowsPropertySchemaItem[] = fillable.map((p) => ({
@@ -170,9 +129,8 @@ export class TableEnrichService {
         const cells = (row.cells as Record<string, unknown> | null) ?? {};
 
         for (const fact of facts) {
-          if (!fillableIds.has(fact.propertyId)) continue; // чужой/readonly id
+          if (!fillableIds.has(fact.propertyId)) continue;
 
-          // 5a. Кэш: это событие уже обрабатывалось для этой ячейки?
           const already = await this.prisma.tableCellProvenance.findFirst({
             where: {
               tableRowId: row.id,
@@ -186,7 +144,6 @@ export class TableEnrichService {
             skippedCached++;
             continue;
           }
-          // Также не дублируем pending по той же (row, property, meeting).
           const pendingDup = await this.prisma.tableCellPendingPatch.findFirst({
             where: {
               tableRowId: row.id,
@@ -208,13 +165,12 @@ export class TableEnrichService {
           const sourceLabel = this.factSourceLabel(meetingLabel, fact.timeSec);
 
           if (isEmpty && fact.confidence >= threshold) {
-            // 5b. Применяем патч в пустую ячейку.
             const merged = { ...cells, [fact.propertyId]: fact.value };
             await this.prisma.tableRow.update({
               where: { id: row.id },
               data: { cells: merged as Prisma.InputJsonValue },
             });
-            cells[fact.propertyId] = fact.value; // отражаем в локальной копии
+            cells[fact.propertyId] = fact.value;
             await this.prisma.tableCellProvenance.create({
               data: {
                 tenantId: args.tenantId,
@@ -232,7 +188,6 @@ export class TableEnrichService {
             });
             applied++;
           } else {
-            // 5c. Перезапись непустой ИЛИ низкий confidence → очередь.
             const reason = !isEmpty ? 'overwrite' : 'low_confidence';
             await this.prisma.tableCellPendingPatch.create({
               data: {
@@ -257,7 +212,6 @@ export class TableEnrichService {
       }
     }
 
-    // 6. Проактивное уведомление владельцу (best-effort).
     if (applied > 0 || pending > 0) {
       await this.notifyOwner({
         tenantId: args.tenantId,
@@ -275,13 +229,6 @@ export class TableEnrichService {
     return { applied, pending, skippedCached };
   }
 
-  // ─────────────────────────── decide / undo / list ───────────────────────
-
-  /**
-   * Решение по pending-патчу. approve → применить proposedValue в cells +
-   * provenance (previousValue=currentValue, appliedBy=userId); reject → только
-   * пометить. Идемпотентно: если уже decided — no-op (возвращаем как есть).
-   */
   async decidePendingPatch(args: {
     tenantId: string;
     patchId: string;
@@ -301,7 +248,6 @@ export class TableEnrichService {
       });
     }
     if (patch.status !== 'pending') {
-      // Идемпотентно: повторное решение — no-op.
       return { status: patch.status };
     }
 
@@ -317,7 +263,6 @@ export class TableEnrichService {
       return { status: 'rejected' };
     }
 
-    // approve: применяем в cells (последнее текущее значение — для previousValue).
     const row = await this.prisma.tableRow.findUnique({
       where: { id: patch.tableRowId },
       select: { id: true, cells: true, tenantId: true, deletedAt: true },
@@ -344,9 +289,7 @@ export class TableEnrichService {
         sourceId: patch.sourceId,
         sourceLabel: patch.sourceLabel,
         sourceLink: patch.sourceLink,
-        previousValue: this.isEmptyCell(previous)
-          ? Prisma.JsonNull
-          : this.toJson(previous),
+        previousValue: this.isEmptyCell(previous) ? Prisma.JsonNull : this.toJson(previous),
         appliedValue: patch.proposedValue as Prisma.InputJsonValue,
         confidence: patch.confidence,
         appliedBy: args.userId,
@@ -363,10 +306,6 @@ export class TableEnrichService {
     return { status: 'approved' };
   }
 
-  /**
-   * Откат правки ячейки: восстановить previousValue в cells, проставить
-   * rolledBackAt. Идемпотентно (повторный undo — no-op).
-   */
   async undoCellEdit(args: {
     tenantId: string;
     provenanceId: string;
@@ -419,10 +358,7 @@ export class TableEnrichService {
     return { rolledBack: true };
   }
 
-  async listPendingPatches(args: {
-    tenantId: string;
-    tableId?: string;
-  }): Promise<
+  async listPendingPatches(args: { tenantId: string; tableId?: string }): Promise<
     Array<{
       id: string;
       tableId: string;
@@ -465,10 +401,7 @@ export class TableEnrichService {
     }));
   }
 
-  async listRowProvenance(args: {
-    tenantId: string;
-    rowId: string;
-  }): Promise<
+  async listRowProvenance(args: { tenantId: string; rowId: string }): Promise<
     Array<{
       id: string;
       propertyId: string;
@@ -505,16 +438,6 @@ export class TableEnrichService {
     }));
   }
 
-  // ─────────────────────────── meeting → entities ─────────────────────────
-
-  /**
-   * Сопоставить встрече Entity (среди sync-классов). Объединяет 3 источника:
-   *   1) граф знаний: RawEvent(sourceExternalId=meetingId) → IdeaBlockEvidence
-   *      → IdeaBlockEntity → Entity;
-   *   2) Event(relatedMeetingId=meetingId) → Event.entityId;
-   *   3) fallback: матч canonicalName Entity sync-классов в тексте транскрипта.
-   * Возвращает множество Entity.id, чей type входит в syncEntityTypes.
-   */
   private async resolveMeetingEntities(args: {
     tenantId: string;
     meetingId: string;
@@ -524,7 +447,6 @@ export class TableEnrichService {
     const found = new Set<string>();
     if (args.syncEntityTypes.size === 0) return found;
 
-    // 1. Граф знаний — RawEvent по meetingId.
     const rawEvents = await this.prisma.rawEvent.findMany({
       where: { tenantId: args.tenantId, sourceExternalId: args.meetingId },
       select: { id: true },
@@ -550,7 +472,6 @@ export class TableEnrichService {
       }
     }
 
-    // 2. Event.relatedMeetingId → Event.entityId.
     const events = await this.prisma.event.findMany({
       where: {
         tenantId: args.tenantId,
@@ -568,9 +489,6 @@ export class TableEnrichService {
       );
     }
 
-    // 3. Fallback — матч canonicalName в транскрипте (если граф ещё не готов).
-    //    Берём только Entity sync-классов; ограничиваем выборку, чтобы не
-    //    тащить тысячи сущностей. Матч — case-insensitive подстрока имени.
     if (found.size === 0) {
       const text = args.transcriptText.toLowerCase();
       const candidates = await this.prisma.entity.findMany({
@@ -595,10 +513,6 @@ export class TableEnrichService {
     return found;
   }
 
-  /**
-   * Из набора candidate Entity.id оставить «живые» (mergedIntoId=null) того же
-   * tenant'а и с типом ∈ syncEntityTypes; добавить в `out`.
-   */
   private async collectMatchingEntities(
     tenantId: string,
     candidateIds: string[],
@@ -619,9 +533,6 @@ export class TableEnrichService {
     for (const e of entities) out.add(e.id);
   }
 
-  // ─────────────────────────── tables / props ─────────────────────────────
-
-  /** Все НЕ-archived sync-таблицы (autoCreate) tenant'а + классы Entity. */
   private async findAutoSyncTables(tenantId: string): Promise<
     Array<{
       id: string;
@@ -653,11 +564,6 @@ export class TableEnrichService {
     return out;
   }
 
-  /**
-   * Колонки, которые агент может заполнять: НЕ readonly и НЕ entity-source
-   * (entity-атрибуты приходят из памяти компании, агент их не трогает), и НЕ
-   * структурные (relation/rollup/formula/file и системные авто-типы).
-   */
   private fillableProperties(properties: TableProperty[]): TableProperty[] {
     const skipTypes = new Set<string>([
       'relation',
@@ -679,8 +585,6 @@ export class TableEnrichService {
       return true;
     });
   }
-
-  // ─────────────────────────── LLM extract ────────────────────────────────
 
   private async extractFacts(args: {
     tenantId: string;
@@ -721,7 +625,6 @@ export class TableEnrichService {
     return this.parseFacts(text);
   }
 
-  /** Достаёт `{ facts: [...] }` из ответа LLM; невалидные факты отбрасывает. */
   private parseFacts(text: string): ExtractedFact[] {
     if (!text) return [];
     let candidate = text.trim();
@@ -749,27 +652,15 @@ export class TableEnrichService {
       const value = o['value'];
       if (value === undefined || value === null || value === '') continue;
       const confRaw = o['confidence'];
-      const confidence =
-        typeof confRaw === 'number' && Number.isFinite(confRaw) ? confRaw : 0;
+      const confidence = typeof confRaw === 'number' && Number.isFinite(confRaw) ? confRaw : 0;
       const quote = typeof o['quote'] === 'string' ? o['quote'] : '';
       const timeRaw = o['timeSec'];
-      const timeSec =
-        typeof timeRaw === 'number' && Number.isFinite(timeRaw) ? timeRaw : 0;
+      const timeSec = typeof timeRaw === 'number' && Number.isFinite(timeRaw) ? timeRaw : 0;
       out.push({ propertyId, value, confidence, quote, timeSec });
     }
     return out;
   }
 
-  // ─────────────────────────── notify (best-effort) ───────────────────────
-
-  /**
-   * Проактивное уведомление владельцу встречи (Concierge-механизм через
-   * ProactiveNotification — тот же канал, что у δ-2 ProactiveWatcher; оно
-   * показывается в `/me/notifications` вкладка «Проактивные»).
-   *
-   * Best-effort: ошибка/отсутствие не валит enrich. Если механизм недоступен —
-   * pending-патчи всё равно видны во фронте через эндпоинты.
-   */
   private async notifyOwner(args: {
     tenantId: string;
     ownerId: string;
@@ -780,7 +671,9 @@ export class TableEnrichService {
     try {
       const parts: string[] = [];
       if (args.applied > 0) {
-        parts.push(`обновила ${args.applied} ${this.plural(args.applied, 'ячейку', 'ячейки', 'ячеек')}`);
+        parts.push(
+          `обновила ${args.applied} ${this.plural(args.applied, 'ячейку', 'ячейки', 'ячеек')}`,
+        );
       }
       if (args.pending > 0) {
         parts.push(
@@ -815,8 +708,6 @@ export class TableEnrichService {
     }
   }
 
-  // ─────────────────────────── helpers ────────────────────────────────────
-
   private async getConfirmationThreshold(): Promise<number> {
     const v = await this.cfg.getDynamic<number>(
       'table.agent.confirmation_threshold',
@@ -837,9 +728,7 @@ export class TableEnrichService {
   }
 
   private turnsToText(turns: DialogTurn[]): string {
-    return turns
-      .map((t) => `[${this.fmtTime(t.startSec)}] ${t.speaker}: ${t.text}`)
-      .join('\n');
+    return turns.map((t) => `[${this.fmtTime(t.startSec)}] ${t.speaker}: ${t.text}`).join('\n');
   }
 
   private meetingLabel(title: string): string {
@@ -866,7 +755,6 @@ export class TableEnrichService {
 
   private clampConfidence(c: number): number {
     const n = Number.isFinite(c) ? c : 0;
-    // 2 знака после запятой — поле @db.Decimal(3,2).
     return Math.round(Math.min(Math.max(n, 0), 1) * 100) / 100;
   }
 

@@ -8,17 +8,10 @@ import {
   emptyByStatus,
 } from './portfolio-health.scoring';
 
-/**
- * ТЗ-2 Ф6.A (daily-value-dashboards) — unit-тесты чистого скоринга здоровья
- * портфеля. Без БД/времени/сети. Покрываем взвешенное среднее, total=0,
- * зажим [0,100], негативные пути (мусор) и пороги уровня.
- */
 describe('portfolio-health.scoring', () => {
   describe('computePortfolioHealth', () => {
     it('total=0 → score 0', () => {
-      expect(
-        computePortfolioHealth(emptyByStatus(), DEFAULT_PORTFOLIO_HEALTH_WEIGHTS),
-      ).toBe(0);
+      expect(computePortfolioHealth(emptyByStatus(), DEFAULT_PORTFOLIO_HEALTH_WEIGHTS)).toBe(0);
     });
 
     it('все achieved → 100 (вес achieved = 100)', () => {
@@ -29,9 +22,7 @@ describe('portfolio-health.scoring', () => {
         achieved: 4,
         dropped: 0,
       };
-      expect(
-        computePortfolioHealth(byStatus, DEFAULT_PORTFOLIO_HEALTH_WEIGHTS),
-      ).toBe(100);
+      expect(computePortfolioHealth(byStatus, DEFAULT_PORTFOLIO_HEALTH_WEIGHTS)).toBe(100);
     });
 
     it('все stalled → 0 (вес stalled = 0)', () => {
@@ -42,9 +33,7 @@ describe('portfolio-health.scoring', () => {
         achieved: 0,
         dropped: 0,
       };
-      expect(
-        computePortfolioHealth(byStatus, DEFAULT_PORTFOLIO_HEALTH_WEIGHTS),
-      ).toBe(0);
+      expect(computePortfolioHealth(byStatus, DEFAULT_PORTFOLIO_HEALTH_WEIGHTS)).toBe(0);
     });
 
     it('взвешенное среднее: 1 achieved(100)+1 on_track(80)+1 at_risk(40)+1 stalled(0) = 220/4 = 55', () => {
@@ -55,10 +44,7 @@ describe('portfolio-health.scoring', () => {
         achieved: 1,
         dropped: 0,
       };
-      // (1*100 + 1*80 + 1*40 + 1*0) / 4 = 220/4 = 55
-      expect(
-        computePortfolioHealth(byStatus, DEFAULT_PORTFOLIO_HEALTH_WEIGHTS),
-      ).toBe(55);
+      expect(computePortfolioHealth(byStatus, DEFAULT_PORTFOLIO_HEALTH_WEIGHTS)).toBe(55);
     });
 
     it('округляет до целого', () => {
@@ -69,10 +55,7 @@ describe('portfolio-health.scoring', () => {
         achieved: 0,
         dropped: 2,
       };
-      // (1*80 + 2*0) / 3 = 26.66… → round → 27
-      expect(
-        computePortfolioHealth(byStatus, DEFAULT_PORTFOLIO_HEALTH_WEIGHTS),
-      ).toBe(27);
+      expect(computePortfolioHealth(byStatus, DEFAULT_PORTFOLIO_HEALTH_WEIGHTS)).toBe(27);
     });
 
     it('зажимает в [0,100] даже при весе > 100', () => {
@@ -101,39 +84,24 @@ describe('portfolio-health.scoring', () => {
         achieved: 2,
         dropped: 0,
       };
-      // только achieved(2)*100 / 2 = 100
-      expect(
-        computePortfolioHealth(byStatus, DEFAULT_PORTFOLIO_HEALTH_WEIGHTS),
-      ).toBe(100);
+      expect(computePortfolioHealth(byStatus, DEFAULT_PORTFOLIO_HEALTH_WEIGHTS)).toBe(100);
     });
   });
 
   describe('classifyPortfolioLevel', () => {
     it('>= healthy → healthy', () => {
-      expect(classifyPortfolioLevel(60, DEFAULT_PORTFOLIO_HEALTH_THRESHOLDS)).toBe(
-        'healthy',
-      );
-      expect(classifyPortfolioLevel(75, DEFAULT_PORTFOLIO_HEALTH_THRESHOLDS)).toBe(
-        'healthy',
-      );
+      expect(classifyPortfolioLevel(60, DEFAULT_PORTFOLIO_HEALTH_THRESHOLDS)).toBe('healthy');
+      expect(classifyPortfolioLevel(75, DEFAULT_PORTFOLIO_HEALTH_THRESHOLDS)).toBe('healthy');
     });
 
     it('>= warning и < healthy → warning', () => {
-      expect(classifyPortfolioLevel(40, DEFAULT_PORTFOLIO_HEALTH_THRESHOLDS)).toBe(
-        'warning',
-      );
-      expect(classifyPortfolioLevel(59, DEFAULT_PORTFOLIO_HEALTH_THRESHOLDS)).toBe(
-        'warning',
-      );
+      expect(classifyPortfolioLevel(40, DEFAULT_PORTFOLIO_HEALTH_THRESHOLDS)).toBe('warning');
+      expect(classifyPortfolioLevel(59, DEFAULT_PORTFOLIO_HEALTH_THRESHOLDS)).toBe('warning');
     });
 
     it('< warning → critical', () => {
-      expect(classifyPortfolioLevel(39, DEFAULT_PORTFOLIO_HEALTH_THRESHOLDS)).toBe(
-        'critical',
-      );
-      expect(classifyPortfolioLevel(0, DEFAULT_PORTFOLIO_HEALTH_THRESHOLDS)).toBe(
-        'critical',
-      );
+      expect(classifyPortfolioLevel(39, DEFAULT_PORTFOLIO_HEALTH_THRESHOLDS)).toBe('critical');
+      expect(classifyPortfolioLevel(0, DEFAULT_PORTFOLIO_HEALTH_THRESHOLDS)).toBe('critical');
     });
   });
 });

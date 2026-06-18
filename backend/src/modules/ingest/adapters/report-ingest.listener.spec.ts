@@ -5,16 +5,6 @@ import type { TypedConfigService } from '../../../common/config/index';
 import { ReportIngestListener } from './report-ingest.listener';
 import type { ReportIngestAdapter } from './report.adapter';
 
-/**
- * Юнит-тесты ReportIngestListener (Фаза 2 «отчёт встречи → граф»,
- * ТЗ 2026-06-11-report-to-graph-phase2.md §4).
- *
- * Покрытие:
- *   1. Событие → adapter.ingestReport ровно один раз.
- *   2. Kill-switch REPORT_INGEST_ENABLED=false → adapter НЕ вызывается.
- *   3. throw в ingestReport НЕ пробрасывается (best-effort).
- *   4. Событие без meetingId → skip.
- */
 describe('ReportIngestListener', () => {
   let cfg: TypedConfigService;
   let adapter: ReportIngestAdapter;

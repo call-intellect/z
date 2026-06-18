@@ -1,22 +1,4 @@
-'use client';
-
-/**
- * IssueChecklists — блок чек-листов в карточке задачи (2026-05-27).
- *
- * Контракт TZ: `plans/tz/2026-05-27-tracker-checklists.md`.
- *
- * Состав:
- *   - Список существующих чек-листов задачи (заголовок + прогресс «3/7» +
- *     mint-полоса + список пунктов).
- *   - Пункт: чекбокс + inline-edit текста + DnD-handle + кнопка «×».
- *   - «+ Пункт» под каждым чек-листом (Enter создаёт, Esc закрывает).
- *   - Bulk-paste: paste многострочного текста → модалка «Создать N пунктов?».
- *   - «+ Чек-лист» внизу всех существующих.
- *
- * Live-обновления: WS-события `checklist.*` / `checklist_item.*` /
- * `issue.checklist_progress_changed` автоинвалидируют SWR через
- * `useTrackerLiveRefresh` (используется в IssueDetailClient).
- */
+"use client";
 
 import {
   closestCenter,
@@ -25,14 +7,14 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
-} from '@dnd-kit/core';
+} from "@dnd-kit/core";
 import {
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Loader2, Plus, X } from 'lucide-react';
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical, Loader2, Plus, X } from "lucide-react";
 import {
   type ClipboardEvent,
   type KeyboardEvent,
@@ -41,17 +23,17 @@ import {
   useMemo,
   useRef,
   useState,
-} from 'react';
+} from "react";
 
-import { checklistsApi } from '@/api/tracker/checklists.api';
+import { checklistsApi } from "@/api/tracker/checklists.api";
 import {
   checklistProgressLabel,
   type Checklist,
   type ChecklistItem,
-} from '@/domain/tracker';
-import { useIssueChecklists } from '@/hooks/tracker/useIssueChecklists';
-import { Button } from '@/ui/shadcn/button';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/domain/tracker";
+import { useIssueChecklists } from "@/hooks/tracker/useIssueChecklists";
+import { Button } from "@/ui/shadcn/button";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 export interface IssueChecklistsProps {
   orgId: string;
@@ -92,7 +74,7 @@ export function IssueChecklists({ orgId, issueId }: IssueChecklistsProps) {
   if (error) {
     return (
       <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-        Не удалось загрузить чек-листы.{' '}
+        Не удалось загрузить чек-листы.{" "}
         <button
           type="button"
           onClick={() => void mutate()}
@@ -156,8 +138,6 @@ export function IssueChecklists({ orgId, issueId }: IssueChecklistsProps) {
   );
 }
 
-// ── Один чек-лист ─────────────────────────────────────────────────────────
-
 interface ChecklistBlockProps {
   orgId: string;
   checklist: Checklist;
@@ -174,7 +154,7 @@ function ChecklistBlock({
   const [editingTitle, setEditingTitle] = useState(false);
   const [title, setTitle] = useState(checklist.title);
   const [adding, setAdding] = useState(false);
-  const [newText, setNewText] = useState('');
+  const [newText, setNewText] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -193,14 +173,16 @@ function ChecklistBlock({
       setTitle(checklist.title);
       return;
     }
-    await checklistsApi.updateChecklist(orgId, checklist.id, { title: trimmed });
+    await checklistsApi.updateChecklist(orgId, checklist.id, {
+      title: trimmed,
+    });
     await onChange();
   }, [orgId, checklist.id, checklist.title, title, onChange]);
 
   const handleDeleteChecklist = useCallback(async () => {
     if (
-      typeof window !== 'undefined' &&
-      !window.confirm('Удалить чек-лист и все его пункты?')
+      typeof window !== "undefined" &&
+      !window.confirm("Удалить чек-лист и все его пункты?")
     ) {
       return;
     }
@@ -219,7 +201,7 @@ function ChecklistBlock({
     setBusy(true);
     try {
       await checklistsApi.createItem(orgId, checklist.id, { text: trimmed });
-      setNewText('');
+      setNewText("");
       await onChange();
     } finally {
       setBusy(false);
@@ -228,8 +210,8 @@ function ChecklistBlock({
 
   const handlePaste = useCallback(
     (e: ClipboardEvent<HTMLInputElement>) => {
-      const text = e.clipboardData.getData('text');
-      if (!text || !text.includes('\n')) return;
+      const text = e.clipboardData.getData("text");
+      if (!text || !text.includes("\n")) return;
       e.preventDefault();
       const lines = text
         .split(/\r?\n/u)
@@ -237,13 +219,11 @@ function ChecklistBlock({
         .filter((l) => l.length > 0);
       if (lines.length === 0) return;
       if (lines.length === 1) {
-        // Одна строка — просто вставляем в input.
-        setNewText(lines[0] ?? '');
+        setNewText(lines[0] ?? "");
         return;
       }
-      // Несколько строк — bulk-paste UX через модалку.
       onBulkPaste(lines);
-      setNewText('');
+      setNewText("");
       setAdding(false);
     },
     [onBulkPaste],
@@ -289,10 +269,10 @@ function ChecklistBlock({
             onChange={(e) => setTitle(e.target.value)}
             onBlur={() => void handleTitleSubmit()}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
+              if (e.key === "Enter") {
                 e.preventDefault();
                 void handleTitleSubmit();
-              } else if (e.key === 'Escape') {
+              } else if (e.key === "Escape") {
                 e.preventDefault();
                 setTitle(checklist.title);
                 setEditingTitle(false);
@@ -312,10 +292,10 @@ function ChecklistBlock({
         {progress !== null && (
           <span
             className={cn(
-              'shrink-0 rounded-full px-2 py-0.5 text-[11px]',
+              "shrink-0 rounded-full px-2 py-0.5 text-[11px]",
               checklist.isFullyCompleted
-                ? 'bg-success/15 text-success'
-                : 'bg-bg-overlay text-fg-secondary',
+                ? "bg-success/15 text-success"
+                : "bg-bg-overlay text-fg-secondary",
             )}
           >
             {progress}
@@ -338,8 +318,8 @@ function ChecklistBlock({
       >
         <div
           className={cn(
-            'h-full transition-all',
-            checklist.isFullyCompleted ? 'bg-success' : 'bg-accent',
+            "h-full transition-all",
+            checklist.isFullyCompleted ? "bg-success" : "bg-accent",
           )}
           style={{ width: `${Math.round(checklist.progressRatio * 100)}%` }}
         />
@@ -375,13 +355,13 @@ function ChecklistBlock({
               onChange={(e) => setNewText(e.target.value)}
               onPaste={handlePaste}
               onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
-                if (e.key === 'Enter') {
+                if (e.key === "Enter") {
                   e.preventDefault();
                   void handleAddItem();
-                } else if (e.key === 'Escape') {
+                } else if (e.key === "Escape") {
                   e.preventDefault();
                   setAdding(false);
-                  setNewText('');
+                  setNewText("");
                 }
               }}
               onBlur={() => {
@@ -414,8 +394,6 @@ function ChecklistBlock({
   );
 }
 
-// ── Один пункт ──────────────────────────────────────────────────────────
-
 interface ChecklistItemRowProps {
   orgId: string;
   item: ChecklistItem;
@@ -432,8 +410,14 @@ function ChecklistItemRow({ orgId, item, onChange }: ChecklistItemRowProps) {
     setText(item.text);
   }, [item.text]);
 
-  const { setNodeRef, attributes, listeners, transform, transition, isDragging } =
-    useSortable({ id: item.id });
+  const {
+    setNodeRef,
+    attributes,
+    listeners,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -512,10 +496,10 @@ function ChecklistItemRow({ orgId, item, onChange }: ChecklistItemRowProps) {
           onChange={(e) => setText(e.target.value)}
           onBlur={() => void handleTextSubmit()}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') {
+            if (e.key === "Enter") {
               e.preventDefault();
               void handleTextSubmit();
-            } else if (e.key === 'Escape') {
+            } else if (e.key === "Escape") {
               e.preventDefault();
               setText(item.text);
               setEditing(false);
@@ -528,10 +512,10 @@ function ChecklistItemRow({ orgId, item, onChange }: ChecklistItemRowProps) {
           type="button"
           onClick={() => setEditing(true)}
           className={cn(
-            'min-w-0 flex-1 truncate text-left text-sm',
+            "min-w-0 flex-1 truncate text-left text-sm",
             item.isDone
-              ? 'text-fg-tertiary line-through'
-              : 'text-fg-primary hover:text-accent',
+              ? "text-fg-tertiary line-through"
+              : "text-fg-primary hover:text-accent",
           )}
         >
           {item.text}
@@ -551,8 +535,6 @@ function ChecklistItemRow({ orgId, item, onChange }: ChecklistItemRowProps) {
   );
 }
 
-// ── Bulk-paste модалка ───────────────────────────────────────────────────
-
 interface BulkPasteDialogProps {
   checklistId: string;
   lines: string[];
@@ -570,7 +552,6 @@ function BulkPasteDialog({
 }: BulkPasteDialogProps) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  // ТЗ: bulk-create — до 50 строк.
   const limited = lines.slice(0, 50);
   const preview = limited.slice(0, 5);
 
@@ -584,7 +565,7 @@ function BulkPasteDialog({
       });
       await onCreated();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Не удалось создать пункты');
+      setErr(e instanceof Error ? e.message : "Не удалось создать пункты");
       setBusy(false);
     }
   }, [orgId, checklistId, limited, onCreated]);
@@ -597,8 +578,8 @@ function BulkPasteDialog({
     >
       <div className="w-full max-w-md rounded-md border border-border-subtle bg-bg-card p-4 shadow-lg">
         <h3 className="text-sm font-medium text-fg-primary">
-          Создать {limited.length}{' '}
-          {pluralizeRu(limited.length, 'пункт', 'пункта', 'пунктов')}?
+          Создать {limited.length}{" "}
+          {pluralizeRu(limited.length, "пункт", "пункта", "пунктов")}?
         </h3>
         <p className="mt-1 text-xs text-fg-tertiary">
           В буфере обмена несколько строк. Будут созданы как отдельные пункты
@@ -624,9 +605,7 @@ function BulkPasteDialog({
           </p>
         )}
 
-        {err && (
-          <p className="mt-2 text-xs text-danger">{err}</p>
-        )}
+        {err && <p className="mt-2 text-xs text-danger">{err}</p>}
 
         <div className="mt-4 flex justify-end gap-2">
           <Button

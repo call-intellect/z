@@ -1,38 +1,7 @@
-/**
- * SpecialistsCombinedService — ТЗ 2026-05-25 llm-architecture-changes §3
- * (Variant Б+).
- *
- * Заменяет 8 раздельных вызовов специалистов 3-1..3-9 ОДНИМ объединённым
- * LLM-вызовом на все блоки одной встречи. Эксперимент показал: 18:13 по
- * качеству судьи vs Variant Г (8 раздельных) при 3.7× меньшей стоимости и
- * том же числе сущностей (41 шт).
- *
- * Стратегия rollout (см. RouterSchema.SPECIALISTS_COMBINED_ENABLED):
- *   - default `false` — старые специалисты работают как сейчас.
- *   - `true` — параллельно со старыми запускается этот сервис. Старые НЕ
- *     отключаются: сначала проверяем дубли/качество на проде, потом удаляем
- *     старых отдельным шагом.
- *
- * Сохранение сущностей. На MVP — простой write через `prisma.$transaction`:
- *   - decisions   → `prisma.decision.create` (без KNN-dedup, без supersede-detect)
- *   - ideas       → `prisma.idea.create`
- *   - insights    → `prisma.insight.create`
- *   - experiments → `prisma.experiment.create`
- *   - regulations → `prisma.regulation.upsert` (по tenantId+name — уникально)
- *   - knowledge_categories → `prisma.personKnowledgeCategoryEmbedding.create`
- *     (без embedding — построится в γ-фазе при необходимости)
- *   - skill_traits → `prisma.skillTrait.create` (поверх SkillProfile,
- *     создаём профиль если нет)
- *   - helpfulness_traits → `prisma.helpfulnessTrait.create`
- *
- * НЕ дублирует логику dedup/triage/probe старых специалистов: это MVP-вариант,
- * на проде смотрим на качество — если дубли мешают, добавим merge-арбитр
- * следующей волной.
- */
-
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   type DataClass,
+  type DecisionStatus,
   type IdeaKind,
   type InsightKind,
   type InsightSeverity,
@@ -56,41 +25,28 @@ import {
   SUBMIT_ALL_8_ENTITIES_TOOL,
 } from '../prompts/specialists-combined.prompt';
 
-/**
- * Аргументы `extractAll`. `meetingTitle` опц. — если не передан, генерируется
- * placeholder вида `meeting:<meetingId>`.
- */
 export interface SpecialistsCombinedExtractArgs {
   tenantId: string;
   meetingId: string;
   meetingTitle?: string;
   blocks: CombinedInputBlock[];
-  /** Если задан — пробрасывается в LlmRouter для drill-down аудита. */
   jobId?: string;
-  /** dataClass пакета (max по blocks). Default 'internal'. */
   dataClass?: DataClass;
 }
 
-/**
- * Результат `extractAll` (для логов / метрик / тестов).
- */
 export interface SpecialistsCombinedExtractResult {
-  /** Сколько сущностей каждого типа было создано фактически (post-persist). */
   created: {
     decisions: number;
     ideas: number;
     insights: number;
     experiments: number;
     regulations: number;
-    /** A12 (Волна 6) — инструкции (kind='instruction' в regulations[]). */
     instructions: number;
     knowledgeCategories: number;
     skillTraits: number;
     helpfulnessTraits: number;
   };
-  /** Какие parsed-payload-секции были пустые (для диагностики промпта). */
   emptySections: string[];
-  /** Метаданные LLM-вызова. */
   llm: {
     modelUsed: string;
     durationMs: number;
@@ -98,15 +54,9 @@ export interface SpecialistsCombinedExtractResult {
     outputTokens: number;
     cachedTokens: number;
   };
-  /** Ошибки при сохранении (best-effort, не блокируют остальные типы). */
   errors: string[];
 }
 
-/**
- * Доменная ошибка: модель не вернула tool_call или вернула невалидный JSON.
- * Бросается из `extractAll`; worker должен показать failed-статус и не
- * ретраить бесконечно.
- */
 export class SpecialistsCombinedParseError extends Error {
   constructor(
     message: string,
@@ -134,11 +84,6 @@ export class SpecialistsCombinedService {
     private readonly cfg?: TypedConfigService,
   ) {}
 
-  /**
-   * Основной публичный метод. Один LLM-вызов на ВСЕ blocks встречи + persist
-   * восьми типов сущностей. Best-effort: ошибка одного типа не блокирует
-   * остальные.
-   */
   async extractAll(
     args: SpecialistsCombinedExtractArgs,
   ): Promise<SpecialistsCombinedExtractResult> {
@@ -156,7 +101,6 @@ export class SpecialistsCombinedService {
       });
     }
 
-    // ── 1. LLM-вызов ──
     const systemPrompt = buildSpecialistsCombinedSystemPrompt();
     const userMessage = buildSpecialistsCombinedUserMessage({
       meetingTitle: args.meetingTitle ?? `meeting:${args.meetingId}`,
@@ -177,10 +121,8 @@ export class SpecialistsCombinedService {
       dataClass: args.dataClass ?? 'internal',
     });
 
-    // ── 2. Парсинг tool_call ──
     const parsed = this.parseToolCallOutput(result.toolCalls, result.text);
 
-    // ── 3. Persist (best-effort по типу) ──
     const errors: string[] = [];
     const created = {
       decisions: 0,
@@ -201,12 +143,25 @@ export class SpecialistsCombinedService {
     created.insights = await this.persistInsights(args.tenantId, parsed, blockIdSet, errors);
     created.experiments = await this.persistExperiments(args.tenantId, parsed, blockIdSet, errors);
     created.regulations = await this.persistRegulations(args.tenantId, parsed, blockIdSet, errors);
-    created.instructions = await this.persistInstructions(args.tenantId, parsed, blockIdSet, errors);
-    created.knowledgeCategories = await this.persistKnowledgeCategories(args.tenantId, parsed, errors);
+    created.instructions = await this.persistInstructions(
+      args.tenantId,
+      parsed,
+      blockIdSet,
+      errors,
+    );
+    created.knowledgeCategories = await this.persistKnowledgeCategories(
+      args.tenantId,
+      parsed,
+      errors,
+    );
     created.skillTraits = await this.persistSkillTraits(args.tenantId, parsed, errors);
-    created.helpfulnessTraits = await this.persistHelpfulness(args.tenantId, parsed, blockIdSet, errors);
+    created.helpfulnessTraits = await this.persistHelpfulness(
+      args.tenantId,
+      parsed,
+      blockIdSet,
+      errors,
+    );
 
-    // ── 4. Метрики ──
     this.recordMetrics(created, result);
 
     const emptySections: string[] = [];
@@ -233,8 +188,6 @@ export class SpecialistsCombinedService {
     };
   }
 
-  // ─────────────────────── parse helpers ───────────────────────
-
   private parseToolCallOutput(
     toolCalls: Array<{ name: string; input: unknown }> | undefined,
     fallbackText: string,
@@ -242,19 +195,14 @@ export class SpecialistsCombinedService {
     let rawInput: unknown = null;
 
     if (toolCalls && toolCalls.length > 0) {
-      const direct = toolCalls.find(
-        (tc) => tc.name === SPECIALISTS_COMBINED_TOOL_NAME,
-      );
+      const direct = toolCalls.find((tc) => tc.name === SPECIALISTS_COMBINED_TOOL_NAME);
       rawInput = (direct ?? toolCalls[0])?.input ?? null;
     }
 
-    // Fallback — некоторые провайдеры возвращают строку, другие сразу объект.
     if (rawInput === null && fallbackText) {
       try {
         rawInput = JSON.parse(fallbackText);
-      } catch {
-        // ignore — упадём ниже на schema-валидации.
-      }
+      } catch {}
     }
 
     if (rawInput === null) {
@@ -264,7 +212,6 @@ export class SpecialistsCombinedService {
       );
     }
 
-    // Если LLM сериализовал arguments как строку — пробуем распарсить.
     if (typeof rawInput === 'string') {
       try {
         rawInput = JSON.parse(rawInput);
@@ -288,8 +235,6 @@ export class SpecialistsCombinedService {
     return validated.data;
   }
 
-  // ─────────────────────── persist: decisions ──────────────────
-
   private async persistDecisions(
     tenantId: string,
     parsed: SpecialistsCombinedOutput,
@@ -305,6 +250,21 @@ export class SpecialistsCombinedService {
         );
         continue;
       }
+      // Б50 (K4) — детерминированный source-block дедуп. Combined-путь может
+      // запускаться параллельно со старыми специалистами (см. шапку файла) или
+      // ретраиться BullMQ → голый create плодил бы дубли. Guard по
+      // sourceBlockIds:{has} перед create (как в single-специалистах).
+      const dupDecision = await this.prisma.decision.findFirst({
+        where: { tenantId, sourceBlockIds: { has: d.sourceBlockId } },
+        select: { id: true },
+      });
+      if (dupDecision) {
+        this.metrics?.incCoreSpecialistSkipped({
+          specialist: 'decision',
+          reason: 'source_block_dedup',
+        });
+        continue;
+      }
       try {
         await this.prisma.decision.create({
           data: {
@@ -318,11 +278,12 @@ export class SpecialistsCombinedService {
                 : Prisma.JsonNull,
             sourceBlockIds: [d.sourceBlockId],
             sourceIdeaBlockId: d.sourceBlockId,
-            status: (d.status ?? 'approved') as
-              | 'proposed'
-              | 'approved'
-              | 'rejected'
-              | 'implemented',
+            // Б58: каст согласован с полным enum `DecisionStatus`
+            // (active/rolled_back/superseded/proposed/approved/rejected/
+            // implemented/cancelled), чтобы combined-путь не терял статусы
+            // (в т.ч. 'cancelled') в отличие от single-пути. Источник enum —
+            // schema.prisma; контракт извлечения — DecisionDraftSchema.
+            status: (d.status ?? 'approved') as DecisionStatus,
             confidence: new Prisma.Decimal(this.clamp01(d.confidence)),
           },
         });
@@ -339,8 +300,6 @@ export class SpecialistsCombinedService {
     return created;
   }
 
-  // ─────────────────────── persist: ideas ──────────────────────
-
   private async persistIdeas(
     tenantId: string,
     parsed: SpecialistsCombinedOutput,
@@ -350,6 +309,18 @@ export class SpecialistsCombinedService {
     let created = 0;
     for (const i of parsed.ideas) {
       if (!blockIdSet.has(i.sourceBlockId)) continue;
+      // Б50 (K4) — source-block дедуп перед create (см. persistDecisions).
+      const dupIdea = await this.prisma.idea.findFirst({
+        where: { tenantId, sourceBlockIds: { has: i.sourceBlockId } },
+        select: { id: true },
+      });
+      if (dupIdea) {
+        this.metrics?.incCoreSpecialistSkipped({
+          specialist: 'idea',
+          reason: 'source_block_dedup',
+        });
+        continue;
+      }
       try {
         await this.prisma.idea.create({
           data: {
@@ -372,8 +343,6 @@ export class SpecialistsCombinedService {
     return created;
   }
 
-  // ─────────────────────── persist: insights ───────────────────
-
   private async persistInsights(
     tenantId: string,
     parsed: SpecialistsCombinedOutput,
@@ -383,6 +352,18 @@ export class SpecialistsCombinedService {
     let created = 0;
     for (const it of parsed.insights) {
       if (!blockIdSet.has(it.sourceBlockId)) continue;
+      // Б50 (K4) — source-block дедуп перед create (см. persistDecisions).
+      const dupInsight = await this.prisma.insight.findFirst({
+        where: { tenantId, sourceBlockIds: { has: it.sourceBlockId } },
+        select: { id: true },
+      });
+      if (dupInsight) {
+        this.metrics?.incCoreSpecialistSkipped({
+          specialist: 'insight',
+          reason: 'source_block_dedup',
+        });
+        continue;
+      }
       try {
         await this.prisma.insight.create({
           data: {
@@ -407,8 +388,6 @@ export class SpecialistsCombinedService {
     return created;
   }
 
-  // ─────────────────────── persist: experiments ────────────────
-
   private async persistExperiments(
     tenantId: string,
     parsed: SpecialistsCombinedOutput,
@@ -418,6 +397,18 @@ export class SpecialistsCombinedService {
     let created = 0;
     for (const e of parsed.experiments) {
       if (!blockIdSet.has(e.sourceBlockId)) continue;
+      // Б50 (K4) — source-block дедуп перед create (см. persistDecisions).
+      const dupExperiment = await this.prisma.experiment.findFirst({
+        where: { tenantId, sourceBlockIds: { has: e.sourceBlockId } },
+        select: { id: true },
+      });
+      if (dupExperiment) {
+        this.metrics?.incCoreSpecialistSkipped({
+          specialist: 'experiment',
+          reason: 'source_block_dedup',
+        });
+        continue;
+      }
       try {
         await this.prisma.experiment.create({
           data: {
@@ -444,8 +435,6 @@ export class SpecialistsCombinedService {
     return created;
   }
 
-  // ─────────────────────── persist: regulations ────────────────
-
   private async persistRegulations(
     tenantId: string,
     parsed: SpecialistsCombinedOutput,
@@ -455,24 +444,14 @@ export class SpecialistsCombinedService {
     let created = 0;
     for (const r of parsed.regulations) {
       if (!blockIdSet.has(r.sourceBlockId)) continue;
-      // A12 (Волна 6) — инструкции едут в отдельную таблицу `instructions`
-      // через persistInstructions. Здесь — только regulation/process/policy/
-      // standard (process/policy сейчас тоже схлопываются в regulation, как и
-      // раньше — это поведение НЕ меняем).
       if (r.kind === 'instruction') continue;
-      // A2.2 (ТЗ 2026-06-11) — анти-плодёж гейт isOrgNorm (тот же смысл, что у
-      // single-экстрактора): фрагмент с isOrgNorm=false (чужая практика /
-      // гипотетика / разовое поручение) НЕ создаёт регламент. Исключение —
-      // заявленная потребность (extractionStatus нужен/обсуждается). Kill-switch
-      // regulationGateStrict (default ON); OFF → старое поведение.
       let gateStrict: boolean;
       try {
         gateStrict = this.cfg?.aiFeatures.regulationGateStrict !== false;
       } catch {
         gateStrict = true;
       }
-      const isDeclaredNeed =
-        r.extractionStatus === 'нужен' || r.extractionStatus === 'обсуждается';
+      const isDeclaredNeed = r.extractionStatus === 'нужен' || r.extractionStatus === 'обсуждается';
       if (gateStrict && r.isOrgNorm === false && !isDeclaredNeed) {
         this.metrics?.incCoreSpecialistSkipped({
           specialist: 'regulation',
@@ -481,13 +460,24 @@ export class SpecialistsCombinedService {
         continue;
       }
       try {
+        // Б57 (K4) — провенанс через `set: union(...)` вместо `{ push }`:
+        // pre-fetch существующего массива → дедуп при повторной встрече того же
+        // имени. Контракт совпадает с single-путём (mergeIntoExisting).
+        const existingReg = await this.prisma.regulation.findUnique({
+          where: { tenantId_name: { tenantId, name: r.name } },
+          select: { sourceBlockIds: true },
+        });
         await this.prisma.regulation.upsert({
           where: {
             tenantId_name: { tenantId, name: r.name },
           },
           update: {
             statement: r.statement,
-            sourceBlockIds: { push: r.sourceBlockId },
+            sourceBlockIds: {
+              set: this.union(existingReg?.sourceBlockIds ?? [], [
+                r.sourceBlockId,
+              ]),
+            },
             confidence: r.confidence,
             category: r.kind === 'standard' ? 'standard' : 'regulation',
           },
@@ -510,15 +500,6 @@ export class SpecialistsCombinedService {
     return created;
   }
 
-  // ─────────────────────── persist: instructions (A12) ─────────
-  //
-  // Инструкции (kind='instruction' в regulations[]) — пошаговое «как сделать X»
-  // для ОДНОЙ роли. Едут в отдельную таблицу `instructions` (не regulations).
-  // Зеркалит persistRegulations по простоте: upsert по (tenantId, name), без
-  // KNN-дедупа и triage (MVP, как у остальных типов в combined-сервисе).
-  //   - extractionStatus → status: «существует»→active; иначе deprecated.
-  //   - roles[0] → forRole (≤120 символов, лимит схемы).
-
   private async persistInstructions(
     tenantId: string,
     parsed: SpecialistsCombinedOutput,
@@ -530,19 +511,31 @@ export class SpecialistsCombinedService {
       if (r.kind !== 'instruction') continue;
       if (!blockIdSet.has(r.sourceBlockId)) continue;
       const forRole =
-        r.roles?.find((x) => x && x.trim().length > 0)?.trim().slice(0, 120) ??
-        null;
+        r.roles
+          ?.find((x) => x && x.trim().length > 0)
+          ?.trim()
+          .slice(0, 120) ?? null;
       const status: 'active' | 'deprecated' =
         r.extractionStatus === 'нужен' || r.extractionStatus === 'обсуждается'
           ? 'deprecated'
           : 'active';
       try {
+        // Б57 (K4) — провенанс через `set: union(...)` вместо `{ push }`
+        // (см. persistRegulations).
+        const existingInstr = await this.prisma.instruction.findUnique({
+          where: { tenantId_name: { tenantId, name: r.name } },
+          select: { sourceBlockIds: true },
+        });
         await this.prisma.instruction.upsert({
           where: { tenantId_name: { tenantId, name: r.name } },
           update: {
             statement: r.statement,
             contentMd: r.statement,
-            sourceBlockIds: { push: r.sourceBlockId },
+            sourceBlockIds: {
+              set: this.union(existingInstr?.sourceBlockIds ?? [], [
+                r.sourceBlockId,
+              ]),
+            },
             confidence: r.confidence,
             forRole: forRole ?? undefined,
             status,
@@ -567,8 +560,6 @@ export class SpecialistsCombinedService {
     return created;
   }
 
-  // ─────────────────────── persist: knowledge_categories ───────
-
   private async persistKnowledgeCategories(
     tenantId: string,
     parsed: SpecialistsCombinedOutput,
@@ -576,7 +567,6 @@ export class SpecialistsCombinedService {
   ): Promise<number> {
     if (parsed.knowledge_categories.length === 0) return 0;
 
-    // Резолвим personName → Person.id batch'ем (один запрос на всех).
     const names = Array.from(
       new Set(parsed.knowledge_categories.map((c) => c.personName.trim())),
     ).filter((n) => n.length > 0);
@@ -617,15 +607,11 @@ export class SpecialistsCombinedService {
         created += 1;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        errors.push(
-          `knowledge_category[${c.personName}/${c.category}]: ${msg}`,
-        );
+        errors.push(`knowledge_category[${c.personName}/${c.category}]: ${msg}`);
       }
     }
     return created;
   }
-
-  // ─────────────────────── persist: skill_traits ───────────────
 
   private async persistSkillTraits(
     tenantId: string,
@@ -634,9 +620,9 @@ export class SpecialistsCombinedService {
   ): Promise<number> {
     if (parsed.skill_traits.length === 0) return 0;
 
-    const names = Array.from(
-      new Set(parsed.skill_traits.map((s) => s.personName.trim())),
-    ).filter((n) => n.length > 0);
+    const names = Array.from(new Set(parsed.skill_traits.map((s) => s.personName.trim()))).filter(
+      (n) => n.length > 0,
+    );
     if (names.length === 0) return 0;
 
     const persons = await this.prisma.person.findMany({
@@ -674,10 +660,7 @@ export class SpecialistsCombinedService {
     return created;
   }
 
-  private async ensureSkillProfile(
-    tenantId: string,
-    personId: string,
-  ): Promise<{ id: string }> {
+  private async ensureSkillProfile(tenantId: string, personId: string): Promise<{ id: string }> {
     const existing = await this.prisma.skillProfile.findUnique({
       where: { personId },
       select: { id: true },
@@ -689,8 +672,6 @@ export class SpecialistsCombinedService {
     });
   }
 
-  // ─────────────────────── persist: helpfulness ────────────────
-
   private async persistHelpfulness(
     tenantId: string,
     parsed: SpecialistsCombinedOutput,
@@ -699,8 +680,6 @@ export class SpecialistsCombinedService {
   ): Promise<number> {
     if (parsed.helpfulness_traits.length === 0) return 0;
 
-    // helperUserHint / recipientUserHint — это имя или email; резолвим
-    // через Person → User. Если не находим — skip (best-effort).
     const hints = new Set<string>();
     for (const h of parsed.helpfulness_traits) {
       hints.add(h.helperUserHint.trim());
@@ -732,8 +711,20 @@ export class SpecialistsCombinedService {
       const helperUserId = userByHint.get(h.helperUserHint.trim());
       if (!helperUserId) continue;
       const recipientUserId = h.recipientUserHint
-        ? userByHint.get(h.recipientUserHint.trim()) ?? null
+        ? (userByHint.get(h.recipientUserHint.trim()) ?? null)
         : null;
+      // Б50 (K4) — source-block дедуп перед create (см. persistDecisions).
+      const dupHelpfulness = await this.prisma.helpfulnessTrait.findFirst({
+        where: { tenantId, sourceBlockIds: { has: h.sourceBlockId } },
+        select: { id: true },
+      });
+      if (dupHelpfulness) {
+        this.metrics?.incCoreSpecialistSkipped({
+          specialist: 'helpfulness',
+          reason: 'source_block_dedup',
+        });
+        continue;
+      }
       try {
         await this.prisma.helpfulnessTrait.create({
           data: {
@@ -760,13 +751,21 @@ export class SpecialistsCombinedService {
     return created;
   }
 
-  // ─────────────────────── helpers ───────────────────────
-
   private clamp01(value: number): number {
     if (!Number.isFinite(value)) return 0;
     if (value < 0) return 0;
     if (value > 1) return 1;
     return value;
+  }
+
+  /**
+   * Б57 (K4) — объединение массивов с дедупом (эталон —
+   * specialist-3-3-decisions.service.ts `union`). Combined-путь обновляет
+   * провенанс regulation/instruction через upsert; `{ push }` без дедупа
+   * накапливал бы дубли sourceBlockId при повторной встрече того же имени.
+   */
+  private union<T>(a: readonly T[], b: readonly T[]): T[] {
+    return [...new Set([...a, ...b])];
   }
 
   private emptyResult(
@@ -807,9 +806,6 @@ export class SpecialistsCombinedService {
     const type = SpecialistsCombinedService.METRIC_TYPE;
     const tier = llm.tier ?? 'unknown';
 
-    // Один общий счётчик cards{type='combined', status='canonical'}
-    // (status — обязательная лейбла в шаблоне специалиста, см.
-    // BusinessMetricsService.incCoreSpecialistCards).
     const total =
       created.decisions +
       created.ideas +

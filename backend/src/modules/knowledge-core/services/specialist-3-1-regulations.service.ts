@@ -13,16 +13,11 @@ import {
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
+import { buildVectorLiteral } from '../../embeddings/services/vector-literal.util';
 import {
   REGULATION_DEDUPE_JSON_SCHEMA,
   REGULATION_DEDUPE_SCHEMA_NAME,
@@ -35,7 +30,6 @@ import {
   REGULATION_EXTRACT_SYSTEM_PROMPT,
   REGULATION_EXTRACT_USER_TEMPLATE,
 } from '../prompts/regulation-extract.prompt';
-
 import type { OrgDocumentKind } from '../prompts/structured-document-compiler.prompt';
 
 import { DataClassPolicyService } from './dataclass-policy.service';
@@ -46,47 +40,12 @@ import {
   StructuredDocumentCompilerService,
 } from './structured-document-compiler.service';
 
-/**
- * SBA α-7 — Specialist31Service.
- *
- * Логика специалиста 3.1: блок (signalType='regulation'/'process_step'/'policy')
- * → черновик карточки (Regulation/Process/Policy) → KNN+LLM-дедуп → triage →
- * (auto-canonical / curation review) → probe-events / conflict-events.
- *
- * Решение по моделям данных (см. план α-7):
- *   - НЕ создавать новую таблицу `Regulation` с `kind`. Расширяем существующие
- *     `Process`, `Regulation`, `Policy` (Phase 0b) новыми полями in-place.
- *   - Specialist 3.1 пишет в нужную таблицу по `signalType`:
- *       - 'regulation' → Regulation (kind='regulation'/'standard')
- *       - 'process_step' → Process + ProcessStep
- *       - 'policy' (резерв) → Policy
- *   - Параллельно работает legacy block-ingest.worker (Phase 0b extraction'а),
- *     который создаёт эти же записи через `GraphService.upsertEntity`. Это
- *     ОЖИДАЕМОЕ дублирование: legacy создаёт минимальные записи (name+content),
- *     специалист 3.1 их обогащает (statement, scope, ownerHint, sourceBlockIds,
- *     personSubjectIds, embedding) через `merge`-арбитра.
- *
- * Контракт §5:
- *   1. consumer `core.specialist-routing` jobName='3-1-regulations' (worker).
- *   2. Prisma-модели — Process/Regulation/Policy (in-place extension).
- *   3. triage перед канонизацией — все три типа в CURATION_CRITICAL_TYPES_DEFAULT
- *      → всегда deep review.
- *   4. probe-events — Specialist31ProbeService (4 trigger'а: missing_owner /
- *      process_no_steps / stale / scope_unclear).
- *   5. conflict-events — `ConflictService.report` при LLM-arbiter
- *      decision='contradicts'.
- *   6. chat-v2 support — Specialist31CardHandler (через CardSpecialistRegistry).
- *   7. metrics — `core_specialist_*` + `core_specialist_extraction_failures_total`.
- */
 @Injectable()
 export class Specialist31Service {
   private readonly logger = new Logger(Specialist31Service.name);
 
-  /** Имя специалиста (соответствует RouterService.SPECIALIST.REGULATIONS). */
   static readonly SPECIALIST_NAME = '3-1-regulations';
-  /** Top-K для cosine KNN арбитра дедупа. */
   private static readonly KNN_TOP_K = 5;
-  /** Минимальная уверенность LLM-extraction, ниже которой пропускаем триаж. */
   private static readonly MIN_EXTRACT_CONFIDENCE = 0.4;
 
   constructor(
@@ -100,13 +59,9 @@ export class Specialist31Service {
     private readonly probes: Specialist31ProbeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
-    // Волна 6 A7 — агент-компилятор contentMd орг-документа. @Optional,
-    // потому что unit-тесты могут не поднимать KnowledgeCoreModule целиком.
     @Optional()
     @Inject(StructuredDocumentCompilerService)
     private readonly docCompiler?: StructuredDocumentCompilerService,
-    // W4.1 — DataClassPolicyService для shadow-compare. @Optional, потому что
-    // unit-тесты могут не поднимать KnowledgeCoreModule целиком.
     @Optional()
     @Inject(DataClassPolicyService)
     private readonly dataClassPolicy?: DataClassPolicyService,
@@ -115,9 +70,6 @@ export class Specialist31Service {
     private readonly cfg?: TypedConfigService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -126,12 +78,6 @@ export class Specialist31Service {
     }
   }
 
-  // ──────────────── публичные методы (вызываются из воркера) ────────────────
-
-  /**
-   * Обработка блока `signalType='regulation'`. Извлекает черновик → дедуп →
-   * triage в Regulation (kind='regulation' | 'standard').
-   */
   async processRegulationBlock(
     block: IdeaBlock & {
       evidence: IdeaBlockEvidence[];
@@ -141,8 +87,6 @@ export class Specialist31Service {
     const draft = await this.extractDraft(block);
     if (!draft) return;
     if (draft.kind !== 'regulation' && draft.kind !== 'standard') {
-      // LLM решила, что блок — про process / policy / instruction. Делегируем
-      // соответствующий путь. Это «misrouted» сигнал, но не failure.
       if (draft.kind === 'process') {
         await this.upsertProcess(block, draft);
         return;
@@ -159,10 +103,6 @@ export class Specialist31Service {
     await this.upsertRegulation(block, draft);
   }
 
-  /**
-   * Обработка блока `signalType='process_step'`. Извлекает черновик → дедуп →
-   * triage в Process (+ ProcessStep — отдельный LLM-вызов опционально).
-   */
   async processProcessStepBlock(
     block: IdeaBlock & {
       evidence: IdeaBlockEvidence[];
@@ -172,7 +112,6 @@ export class Specialist31Service {
     const draft = await this.extractDraft(block);
     if (!draft) return;
     if (draft.kind !== 'process') {
-      // LLM думает иначе. Если regulation/policy/standard/instruction — делегируем.
       if (draft.kind === 'regulation' || draft.kind === 'standard') {
         await this.upsertRegulation(block, draft);
         return;
@@ -189,12 +128,6 @@ export class Specialist31Service {
     await this.upsertProcess(block, draft);
   }
 
-  /**
-   * Обработка блока с `signalType='policy'` (на текущий момент NB:
-   * Layer-1 разметка возможно не выделяет 'policy' как отдельный signalType
-   * — в Фазе 0b всё идёт через 'regulation'. Метод оставлен для готовности
-   * к расширению Layer-1 в β-/γ-).
-   */
   async processPolicyBlock(
     block: IdeaBlock & {
       evidence: IdeaBlockEvidence[];
@@ -220,8 +153,6 @@ export class Specialist31Service {
     await this.upsertPolicy(block, draft);
   }
 
-  // ──────────────────────── extraction (общая) ────────────────────────
-
   private async extractDraft(
     block: IdeaBlock & {
       evidence: IdeaBlockEvidence[];
@@ -233,7 +164,6 @@ export class Specialist31Service {
       .map((e) => e.quote)
       .filter((q) => q && q.length > 0);
 
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (контент блока) в маркеры.
     const guardOnExtract = this.isPromptInjectionGuardEnabled();
     const rawUserExtract = REGULATION_EXTRACT_USER_TEMPLATE({
       blockName: block.name,
@@ -281,7 +211,6 @@ export class Specialist31Service {
       });
     }
 
-    // Метрика токенов специалиста.
     if (result.modelUsed) {
       this.metrics.incCoreSpecialistLlmTokens({
         type: 'regulation',
@@ -324,12 +253,6 @@ export class Specialist31Service {
       );
       return null;
     }
-    // A1.2 (ТЗ 2026-06-11) — анти-плодёж гейт «это норма КОМПАНИИ?». Фрагменты
-    // с isOrgNorm=false (чужая практика / гипотетика / разовое поручение / голое
-    // упоминание) НЕ создают карточку-документ. Исключение — заявленная
-    // потребность (extractionStatus нужен/обсуждается): её сохраняем (recall —
-    // реальных регламентов меньше и они важнее). За kill-switch
-    // regulationGateStrict (default ON); OFF → старое поведение «создавать всегда».
     let gateStrict: boolean;
     try {
       gateStrict = this.cfg?.aiFeatures.regulationGateStrict !== false;
@@ -352,12 +275,7 @@ export class Specialist31Service {
     return parsed;
   }
 
-  // ──────────────────────── upsert per-kind ────────────────────────
-
-  private async upsertRegulation(
-    block: IdeaBlock,
-    draft: RegulationDraft,
-  ): Promise<void> {
+  private async upsertRegulation(block: IdeaBlock, draft: RegulationDraft): Promise<void> {
     try {
       const candidates = await this.knnCandidates({
         tenantId: block.tenantId,
@@ -373,10 +291,7 @@ export class Specialist31Service {
         blockId: block.id,
       });
 
-      const ownerPersonId = await this.resolveOwnerPersonHint(
-        block.tenantId,
-        draft.ownerHint,
-      );
+      const ownerPersonId = await this.resolveOwnerPersonHint(block.tenantId, draft.ownerHint);
       const sourceBlockIds = [block.id];
       const personSubjectIds = await this.resolvePersonSubjects(block.id);
 
@@ -468,12 +383,10 @@ export class Specialist31Service {
           });
         }
       } else {
-        // merge / extension / contradicts → загружаем существующую и обновляем.
         const existing = await this.prisma.regulation.findUnique({
           where: { id: verdict.targetId },
         });
         if (!existing) {
-          // Кандидат пропал — fallback к 'new'.
           regulation = await this.prisma.regulation.upsert({
             where: {
               tenantId_name: { tenantId: block.tenantId, name: draft.name },
@@ -486,8 +399,7 @@ export class Specialist31Service {
               name: draft.name,
               contentMd: draft.statement,
               statement: draft.statement,
-              category:
-                draft.category === 'standard' ? 'standard' : 'regulation',
+              category: draft.category === 'standard' ? 'standard' : 'regulation',
               confidence: draft.confidence ?? null,
               scope: draft.scope ?? null,
               ownerPersonId: ownerPersonId ?? null,
@@ -498,9 +410,6 @@ export class Specialist31Service {
             },
           });
         } else {
-          // Волна 6 A7 — на merge/extension собираем структурный contentMd
-          // компилятором (ДОПОЛНЕНИЕ к existing.contentMd), не теряя старое.
-          // На fallback (null) — contentMd остаётся прежним (legacy-поведение).
           const compiled =
             verdict.decision === 'merge' || verdict.decision === 'extension'
               ? await this.tryCompileContent({
@@ -513,8 +422,6 @@ export class Specialist31Service {
                 })
               : null;
           if (compiled) {
-            // A3.2 — фиксируем новую версию contentMd снимком в CardVersion
-            // (история ревизий орг-документа) в одной транзакции с update'ом.
             const newVersion = (existing.version ?? 1) + 1;
             regulation = await this.prisma.$transaction(async (tx) => {
               const cv = await tx.cardVersion.create({
@@ -529,8 +436,7 @@ export class Specialist31Service {
                     signals: compiled.signals,
                     changeReasonText: compiled.changeReason,
                   } as unknown as Prisma.InputJsonValue,
-                  changeReason:
-                    verdict.decision === 'merge' ? 'merge' : 'extension',
+                  changeReason: verdict.decision === 'merge' ? 'merge' : 'extension',
                   trustTier: 'auto',
                   previousVersionId: existing.currentVersionId,
                   createdByUserId: null,
@@ -541,16 +447,12 @@ export class Specialist31Service {
                 data: {
                   statement: draft.statement,
                   scope: draft.scope ?? existing.scope ?? undefined,
-                  ownerPersonId:
-                    ownerPersonId ?? existing.ownerPersonId ?? undefined,
+                  ownerPersonId: ownerPersonId ?? existing.ownerPersonId ?? undefined,
                   sourceBlockIds: {
                     set: this.union(sourceBlockIds, existing.sourceBlockIds),
                   },
                   personSubjectIds: {
-                    set: this.union(
-                      personSubjectIds,
-                      existing.personSubjectIds,
-                    ),
+                    set: this.union(personSubjectIds, existing.personSubjectIds),
                   },
                   confidence: draft.confidence ?? existing.confidence,
                   contentMd: compiled.contentMd,
@@ -565,8 +467,7 @@ export class Specialist31Service {
               data: {
                 statement: draft.statement,
                 scope: draft.scope ?? existing.scope ?? undefined,
-                ownerPersonId:
-                  ownerPersonId ?? existing.ownerPersonId ?? undefined,
+                ownerPersonId: ownerPersonId ?? existing.ownerPersonId ?? undefined,
                 sourceBlockIds: {
                   set: this.union(sourceBlockIds, existing.sourceBlockIds),
                 },
@@ -592,14 +493,12 @@ export class Specialist31Service {
         }
       }
 
-      // 6. Эмбеддинг (best-effort, не блокирует triage).
       await this.tryWriteEmbedding({
         table: 'regulation',
         id: regulation.id,
         text: `${draft.name} ${draft.statement}`,
       });
 
-      // 7. Triage — Regulation в critical → deep review.
       await this.triageProposed({
         tenantId: block.tenantId,
         resourceType: 'regulation',
@@ -619,7 +518,6 @@ export class Specialist31Service {
         sourceBlockId: block.id,
       });
 
-      // 8. Probe-events.
       await this.probes.checkAndEmitProbesRegulation(regulation);
     } catch (err) {
       this.metrics.incCoreSpecialistExtractionFailure({
@@ -636,10 +534,7 @@ export class Specialist31Service {
     }
   }
 
-  private async upsertProcess(
-    block: IdeaBlock,
-    draft: RegulationDraft,
-  ): Promise<void> {
+  private async upsertProcess(block: IdeaBlock, draft: RegulationDraft): Promise<void> {
     try {
       const candidates = await this.knnCandidates({
         tenantId: block.tenantId,
@@ -655,17 +550,12 @@ export class Specialist31Service {
         blockId: block.id,
       });
 
-      const ownerPersonId = await this.resolveOwnerPersonHint(
-        block.tenantId,
-        draft.ownerHint,
-      );
+      const ownerPersonId = await this.resolveOwnerPersonHint(block.tenantId, draft.ownerHint);
       const sourceBlockIds = [block.id];
       const personSubjectIds = await this.resolvePersonSubjects(block.id);
 
       let proc: Process;
 
-      // Для process: имя берём из processStepHint.processName (приоритет),
-      // иначе draft.name.
       const processName = draft.processStepHint?.processName ?? draft.name;
 
       const dcResProc = this.deriveDataClassForPersist({
@@ -770,12 +660,6 @@ export class Specialist31Service {
             },
           });
         } else {
-          // Волна 6 A7 — на merge/extension собираем структурное описание
-          // процесса компилятором (тело хранится в Process.description).
-          // На fallback (null) — legacy: оставляем существующее описание.
-          // NB: синхронизация steps[] из вывода компилятора с таблицей
-          //     ProcessStep — следующая волна (сейчас шаги пишутся отдельным
-          //     single-step upsert'ом из processStepHint).
           const compiled =
             verdict.decision === 'merge' || verdict.decision === 'extension'
               ? await this.tryCompileContent({
@@ -788,15 +672,7 @@ export class Specialist31Service {
                 })
               : null;
           if (compiled) {
-            // A3.2 — снимок новой версии описания процесса в CardVersion
-            // (тело процесса хранится в Process.description) одной транзакцией.
-            // NB: у Process нет колонки `version` (только currentVersionId),
-            // поэтому номер версии берём из последнего снимка CardVersion.
-            const newVersion = (await this.nextCardVersion(
-              block.tenantId,
-              'process',
-              existing.id,
-            ));
+            const newVersion = await this.nextCardVersion(block.tenantId, 'process', existing.id);
             proc = await this.prisma.$transaction(async (tx) => {
               const cv = await tx.cardVersion.create({
                 data: {
@@ -810,8 +686,7 @@ export class Specialist31Service {
                     signals: compiled.signals,
                     changeReasonText: compiled.changeReason,
                   } as unknown as Prisma.InputJsonValue,
-                  changeReason:
-                    verdict.decision === 'merge' ? 'merge' : 'extension',
+                  changeReason: verdict.decision === 'merge' ? 'merge' : 'extension',
                   trustTier: 'auto',
                   previousVersionId: existing.currentVersionId,
                   createdByUserId: null,
@@ -821,16 +696,12 @@ export class Specialist31Service {
                 where: { id: existing.id },
                 data: {
                   scope: draft.scope ?? existing.scope ?? undefined,
-                  ownerPersonId:
-                    ownerPersonId ?? existing.ownerPersonId ?? undefined,
+                  ownerPersonId: ownerPersonId ?? existing.ownerPersonId ?? undefined,
                   sourceBlockIds: {
                     set: this.union(sourceBlockIds, existing.sourceBlockIds),
                   },
                   personSubjectIds: {
-                    set: this.union(
-                      personSubjectIds,
-                      existing.personSubjectIds,
-                    ),
+                    set: this.union(personSubjectIds, existing.personSubjectIds),
                   },
                   confidence: draft.confidence ?? existing.confidence,
                   description: compiled.contentMd,
@@ -844,8 +715,7 @@ export class Specialist31Service {
               data: {
                 description: existing.description ?? draft.statement,
                 scope: draft.scope ?? existing.scope ?? undefined,
-                ownerPersonId:
-                  ownerPersonId ?? existing.ownerPersonId ?? undefined,
+                ownerPersonId: ownerPersonId ?? existing.ownerPersonId ?? undefined,
                 sourceBlockIds: {
                   set: this.union(sourceBlockIds, existing.sourceBlockIds),
                 },
@@ -856,8 +726,6 @@ export class Specialist31Service {
               },
             });
           }
-          // A3.3 — недеструктивная синхронизация ProcessStep из steps[]
-          // компилятора (best-effort, вне транзакции версии; ничего не удаляем).
           if (compiled && compiled.steps.length > 0) {
             await this.reconcileProcessSteps({
               tenantId: block.tenantId,
@@ -880,10 +748,6 @@ export class Specialist31Service {
         }
       }
 
-      // ProcessStep — если в черновике пришёл processStepHint, создаём один шаг.
-      // На α-7 — простой single-step upsert (отдельный pass полного извлечения
-      // шагов процесса не реализован — промпт-сирота process-steps-extract
-      // удалён 2026-06-10 как нереализованный).
       if (draft.processStepHint) {
         await this.upsertSingleProcessStep({
           tenantId: block.tenantId,
@@ -932,10 +796,7 @@ export class Specialist31Service {
     }
   }
 
-  private async upsertPolicy(
-    block: IdeaBlock,
-    draft: RegulationDraft,
-  ): Promise<void> {
+  private async upsertPolicy(block: IdeaBlock, draft: RegulationDraft): Promise<void> {
     try {
       const candidates = await this.knnCandidates({
         tenantId: block.tenantId,
@@ -951,27 +812,19 @@ export class Specialist31Service {
         blockId: block.id,
       });
 
-      const ownerPersonId = await this.resolveOwnerPersonHint(
-        block.tenantId,
-        draft.ownerHint,
-      );
+      const ownerPersonId = await this.resolveOwnerPersonHint(block.tenantId, draft.ownerHint);
       const sourceBlockIds = [block.id];
       const personSubjectIds = await this.resolvePersonSubjects(block.id);
 
-      // Маппинг severity LLM → Prisma enum.
-      const severityMap: Record<string, 'advisory' | 'mandatory' | 'blocking'> =
-        {
-          advisory: 'advisory',
-          mandatory: 'mandatory',
-          blocking: 'blocking',
-          // legacy LLM-вариант:
-          critical: 'blocking',
-          recommended: 'advisory',
-          standard: 'mandatory',
-        };
-      const severity = draft.severity
-        ? severityMap[draft.severity] ?? 'advisory'
-        : 'advisory';
+      const severityMap: Record<string, 'advisory' | 'mandatory' | 'blocking'> = {
+        advisory: 'advisory',
+        mandatory: 'mandatory',
+        blocking: 'blocking',
+        critical: 'blocking',
+        recommended: 'advisory',
+        standard: 'mandatory',
+      };
+      const severity = draft.severity ? (severityMap[draft.severity] ?? 'advisory') : 'advisory';
 
       let policy: Policy;
 
@@ -1079,9 +932,6 @@ export class Specialist31Service {
             },
           });
         } else {
-          // Волна 6 A7 — на merge/extension собираем структурный contentMd
-          // политики компилятором (ДОПОЛНЕНИЕ к existing.contentMd). На
-          // fallback (null) — legacy: contentMd = draft.statement.
           const compiled =
             verdict.decision === 'merge' || verdict.decision === 'extension'
               ? await this.tryCompileContent({
@@ -1094,14 +944,7 @@ export class Specialist31Service {
                 })
               : null;
           if (compiled) {
-            // A3.2 — снимок новой версии contentMd политики в CardVersion.
-            // NB: у Policy нет колонки `version` (только currentVersionId),
-            // поэтому номер версии берём из последнего снимка CardVersion.
-            const newVersion = (await this.nextCardVersion(
-              block.tenantId,
-              'policy',
-              existing.id,
-            ));
+            const newVersion = await this.nextCardVersion(block.tenantId, 'policy', existing.id);
             policy = await this.prisma.$transaction(async (tx) => {
               const cv = await tx.cardVersion.create({
                 data: {
@@ -1115,8 +958,7 @@ export class Specialist31Service {
                     signals: compiled.signals,
                     changeReasonText: compiled.changeReason,
                   } as unknown as Prisma.InputJsonValue,
-                  changeReason:
-                    verdict.decision === 'merge' ? 'merge' : 'extension',
+                  changeReason: verdict.decision === 'merge' ? 'merge' : 'extension',
                   trustTier: 'auto',
                   previousVersionId: existing.currentVersionId,
                   createdByUserId: null,
@@ -1127,16 +969,12 @@ export class Specialist31Service {
                 data: {
                   severity: severity ?? existing.severity,
                   scope: draft.scope ?? existing.scope ?? undefined,
-                  ownerPersonId:
-                    ownerPersonId ?? existing.ownerPersonId ?? undefined,
+                  ownerPersonId: ownerPersonId ?? existing.ownerPersonId ?? undefined,
                   sourceBlockIds: {
                     set: this.union(sourceBlockIds, existing.sourceBlockIds),
                   },
                   personSubjectIds: {
-                    set: this.union(
-                      personSubjectIds,
-                      existing.personSubjectIds,
-                    ),
+                    set: this.union(personSubjectIds, existing.personSubjectIds),
                   },
                   confidence: draft.confidence ?? existing.confidence,
                   contentMd: compiled.contentMd,
@@ -1151,8 +989,7 @@ export class Specialist31Service {
                 contentMd: draft.statement,
                 severity: severity ?? existing.severity,
                 scope: draft.scope ?? existing.scope ?? undefined,
-                ownerPersonId:
-                  ownerPersonId ?? existing.ownerPersonId ?? undefined,
+                ownerPersonId: ownerPersonId ?? existing.ownerPersonId ?? undefined,
                 sourceBlockIds: {
                   set: this.union(sourceBlockIds, existing.sourceBlockIds),
                 },
@@ -1219,34 +1056,9 @@ export class Specialist31Service {
     }
   }
 
-  /**
-   * A12 (Волна 6) — upsert инструкции (kind='instruction') в ОТДЕЛЬНУЮ таблицу
-   * `instructions` (НЕ regulations). Инструкция — пошаговое «как сделать X» для
-   * ОДНОЙ роли (single-role). Зеркалит upsertProcess по структуре, но проще:
-   * без KNN-дедуп-арбитра и без curation-triage (Instruction не входит в
-   * RBAC resourceType триажа regulation/process/policy — версии/триаж
-   * инструкций добавятся следующей волной). Upsert идемпотентен по
-   * (tenantId, name).
-   *
-   * Маппинг A12-полей:
-   *   - extractionStatus → status (ProcessStatus): «существует» → active;
-   *     «нужен»/«обсуждается» → deprecated (ближайший не-active статус в enum
-   *     ProcessStatus, у которого нет 'draft'/'proposed' — deprecated означает
-   *     «ещё/уже не действующий»).
-   *   - roles[0] (или scope 'role:<id>') → forRole.
-   *   - roles → personSubjectIds НЕ кладём (roles — это должности, не Person'ы);
-   *     personSubjectIds резолвятся из упомянутых в блоке Person-entity, как у
-   *     остальных типов.
-   */
-  private async upsertInstruction(
-    block: IdeaBlock,
-    draft: RegulationDraft,
-  ): Promise<void> {
+  private async upsertInstruction(block: IdeaBlock, draft: RegulationDraft): Promise<void> {
     try {
-      const ownerPersonId = await this.resolveOwnerPersonHint(
-        block.tenantId,
-        draft.ownerHint,
-      );
+      const ownerPersonId = await this.resolveOwnerPersonHint(block.tenantId, draft.ownerHint);
       const sourceBlockIds = [block.id];
       const personSubjectIds = await this.resolvePersonSubjects(block.id);
       const dcRes = this.deriveDataClassForPersist({
@@ -1256,9 +1068,7 @@ export class Specialist31Service {
       });
 
       const forRole = this.deriveForRole(draft);
-      const status = this.mapExtractionStatusToProcessStatus(
-        draft.extractionStatus,
-      );
+      const status = this.mapExtractionStatusToProcessStatus(draft.extractionStatus);
 
       // Ф1 — компилятор для instruction (раньше НЕ вызывался вообще). Режим
       // СОЗДАНИЕ; fallback (null) → legacy сырой statement.
@@ -1339,7 +1149,6 @@ export class Specialist31Service {
         });
       }
 
-      // Эмбеддинг (best-effort) — для будущего KNN-дедупа инструкций.
       await this.tryWriteInstructionEmbedding({
         id: instruction.id,
         text: `${draft.name} ${draft.statement}`,
@@ -1359,11 +1168,6 @@ export class Specialist31Service {
     }
   }
 
-  /**
-   * A12 — выбор forRole для инструкции: из scope вида 'role:<id>' (приоритет),
-   * иначе первая роль из draft.roles. Возвращает строку ≤120 символов (лимит
-   * Instruction.forRole в схеме) или null.
-   */
   private deriveForRole(draft: RegulationDraft): string | null {
     const scope = draft.scope?.trim();
     if (scope && scope.startsWith('role:')) {
@@ -1374,24 +1178,13 @@ export class Specialist31Service {
     return first ? first.slice(0, 120) : null;
   }
 
-  /**
-   * A12 — маппинг extractionStatus (русские ярлыки LLM) → ProcessStatus:
-   *   «существует» → active; «нужен»/«обсуждается» → deprecated; null → active.
-   */
   private mapExtractionStatusToProcessStatus(
     s: RegulationDraft['extractionStatus'],
   ): 'active' | 'deprecated' {
     return s === 'нужен' || s === 'обсуждается' ? 'deprecated' : 'active';
   }
 
-  /**
-   * A12 — embedding для Instruction (best-effort). Отдельный метод, т.к.
-   * tableMap в tryWriteEmbedding покрывает только regulation/process/policy.
-   */
-  private async tryWriteInstructionEmbedding(args: {
-    id: string;
-    text: string;
-  }): Promise<void> {
+  private async tryWriteInstructionEmbedding(args: { id: string; text: string }): Promise<void> {
     try {
       const text = args.text.trim().slice(0, 2_000);
       if (!text) return;
@@ -1414,14 +1207,6 @@ export class Specialist31Service {
     }
   }
 
-  // ──────────────────────── helpers ────────────────────────
-
-  /**
-   * KNN cosine top-K по embedding'у — но если embedding отсутствует, fallback
-   * к простому name-LIKE через ILIKE. На pre-prod без HNSW-индекса (или с
-   * пустыми embedding'ами) — name-fallback всё равно даёт работоспособный
-   * dedupe-арбитр.
-   */
   private async knnCandidates(args: {
     tenantId: string;
     table: 'regulation' | 'process' | 'policy';
@@ -1430,7 +1215,6 @@ export class Specialist31Service {
     const queryText = args.nameQuery.trim().slice(0, 1_000);
     if (!queryText) return [];
 
-    // Попытка KNN через pgvector (raw SQL): требует embedding в строке.
     let queryEmbedding: number[] | null;
     try {
       queryEmbedding = await this.embedder.embedQuery(queryText);
@@ -1477,7 +1261,25 @@ export class Specialist31Service {
     };
     const table = tableMap[args.table];
     if (!table) return [];
-    const vec = `[${args.embedding.join(',')}]`;
+    // Класс G2 — guard pgvector-литерала query-вектора. При reject (смена
+    // модели → другая размерность; битый вектор → NaN/Infinity) возвращаем []:
+    // caller (`knnCandidates`) деградирует на name-like fallback, не валя `<=>`.
+    const expectedDim = this.cfg?.ai?.embeddings?.dimensions ?? 1536;
+    const guard = buildVectorLiteral(args.embedding, expectedDim);
+    if (guard.literal === null) {
+      this.logger.debug(
+        {
+          tenantId: args.tenantId,
+          table: args.table,
+          reason: guard.rejectReason,
+          actualDim: args.embedding.length,
+          expectedDim,
+        },
+        'specialist-3-1.knnByEmbedding: query-вектор отвергнут guard-ом — name-like fallback',
+      );
+      return [];
+    }
+    const vec = guard.literal;
     // Raw SQL: cosine distance (1 - cos similarity). LIMIT KNN_TOP_K.
     const rows = await this.prisma.$queryRawUnsafe<
       Array<{ id: string; name: string; statement: string | null; scope: string | null }>
@@ -1506,7 +1308,6 @@ export class Specialist31Service {
     table: 'regulation' | 'process' | 'policy';
     nameQuery: string;
   }): Promise<KnnCandidate[]> {
-    // Fallback: первые 2-3 слова запроса как ILIKE.
     const firstWords = args.nameQuery
       .split(/\s+/)
       .filter((w) => w.length >= 3)
@@ -1554,7 +1355,6 @@ export class Specialist31Service {
       select: { id: true, name: true, contentMd: true, scope: true },
       take: Specialist31Service.KNN_TOP_K,
     });
-    // Используем pattern для type-safety только; запрос выше уже идёт через contains.
     void pattern;
     return rows.map((r) => ({
       id: r.id,
@@ -1575,7 +1375,6 @@ export class Specialist31Service {
       return { decision: 'new', targetId: null, reasoning: 'нет кандидатов' };
     }
 
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (draft + кандидаты) в маркеры.
     const guardOnDedupe = this.isPromptInjectionGuardEnabled();
     const rawUserDedupe = REGULATION_DEDUPE_USER_TEMPLATE({
       draft: {
@@ -1639,13 +1438,8 @@ export class Specialist31Service {
       return { decision: 'new', targetId: null, reasoning: 'arbiter_parse_failed' };
     }
 
-    // Sanity: target должен принадлежать candidates.
     const candidateIds = new Set(args.candidates.map((c) => c.id));
-    if (
-      verdict.decision !== 'new' &&
-      verdict.targetId &&
-      !candidateIds.has(verdict.targetId)
-    ) {
+    if (verdict.decision !== 'new' && verdict.targetId && !candidateIds.has(verdict.targetId)) {
       this.logger.warn(
         {
           tenantId: args.tenantId,
@@ -1672,11 +1466,8 @@ export class Specialist31Service {
     proposedPayload: Record<string, unknown>;
     conflictSignal: 'none' | 'soft' | 'hard';
     dataClass: 'public' | 'internal' | 'sensitive' | 'private';
-    /** W4.1 shadow-compare — id блока-источника + его DataClass. */
     sourceBlockId?: string;
   }): Promise<void> {
-    // W4.1 — shadow-вызов DataClassPolicyService. РЯДОМ с legacy, без
-    // изменения реального write — реально пишется args.dataClass (legacy).
     if (this.dataClassPolicy && args.sourceBlockId) {
       const proposed = this.dataClassPolicy.derive({
         sources: [
@@ -1731,8 +1522,6 @@ export class Specialist31Service {
     blockId: string;
   }): Promise<void> {
     if (args.existingId === args.draftId) {
-      // Это `merge` поверх той же записи — ConflictService.report требует
-      // existingId !== newId. Виртуально различаем через суффикс :next.
       try {
         await this.conflicts.report({
           tenantId: args.tenantId,
@@ -1795,7 +1584,6 @@ export class Specialist31Service {
     if (!hint) return null;
     const trimmed = hint.trim();
     if (trimmed.length < 2) return null;
-    // Эвристика: name-like match через ILIKE по Person.name (top-1).
     const person = await this.prisma.person.findFirst({
       where: {
         tenantId,
@@ -1808,7 +1596,6 @@ export class Specialist31Service {
   }
 
   private async resolvePersonSubjects(blockId: string): Promise<string[]> {
-    // Person'ы, упомянутые в блоке как entity{type=person} → Person.entityId.
     const mentions = await this.prisma.ideaBlockEntity.findMany({
       where: {
         blockId,
@@ -1833,8 +1620,6 @@ export class Specialist31Service {
     hint: NonNullable<RegulationDraft['processStepHint']>;
   }): Promise<void> {
     try {
-      // Определяем order: если hint.stepOrder задан — используем его, иначе
-      // last + 1.
       let order = args.hint.stepOrder ?? 0;
       if (order <= 0) {
         const last = await this.prisma.processStep.findFirst({
@@ -1844,7 +1629,6 @@ export class Specialist31Service {
         });
         order = (last?.order ?? 0) + 1;
       }
-      // unique constraint: (processId, order). Если занят — апдейт.
       const existing = await this.prisma.processStep.findUnique({
         where: { processId_order: { processId: args.processId, order } },
         select: { id: true },
@@ -1879,12 +1663,6 @@ export class Specialist31Service {
     }
   }
 
-  /**
-   * A3.2 — следующий номер версии для CardVersion-снимка ресурса, у которого
-   * на самой карточке нет колонки `version` (Process/Policy: только
-   * currentVersionId). Берём max(version) последнего снимка + 1, иначе 1.
-   * best-effort: при сбое — 1 (всё равно создастся первый снимок).
-   */
   private async nextCardVersion(
     tenantId: string,
     resourceType: string,
@@ -1902,14 +1680,6 @@ export class Specialist31Service {
     }
   }
 
-  /**
-   * A3.3 — недеструктивная синхронизация шагов процесса из вывода компилятора
-   * (steps[]) с таблицей ProcessStep. Совпадение по нормализованному имени
-   * (trim+lowercase): найден → обновляем description+order, не найден → создаём.
-   * Ничего НЕ удаляем (даже если шаг пропал из компиляции — это могла быть
-   * усечённая выборка блоков). best-effort: collision на @@unique([processId,
-   * order]) ловим и пропускаем конкретный шаг, общий try/catch логирует в debug.
-   */
   private async reconcileProcessSteps(args: {
     tenantId: string;
     processId: string;
@@ -1950,14 +1720,11 @@ export class Specialist31Service {
             });
           }
         } catch (stepErr) {
-          // collision на @@unique([processId, order]) или иной локальный сбой —
-          // пропускаем конкретный шаг (best-effort, без удалений).
           this.logger.debug(
             {
               processId: args.processId,
               order,
-              err:
-                stepErr instanceof Error ? stepErr.message : String(stepErr),
+              err: stepErr instanceof Error ? stepErr.message : String(stepErr),
             },
             'specialist-3-1.reconcileProcessSteps: skip step (best-effort)',
           );
@@ -1998,7 +1765,6 @@ export class Specialist31Service {
         args.id,
       );
     } catch (err) {
-      // Best-effort: embedding не критичен для триажа.
       this.logger.debug(
         {
           table: args.table,
@@ -2014,16 +1780,6 @@ export class Specialist31Service {
     return [...new Set([...a, ...b])];
   }
 
-  /**
-   * Волна 6 A7 — собрать `contentMd` орг-документа через агент-компилятор на
-   * verdict merge/extension. Возвращает готовый markdown по шаблону типа
-   * (режим ДОПОЛНЕНИЕ — существующее тело + новый блок, ничего не теряя) либо
-   * `null`, если компилятор отключён/недоступен/вернул fallback (тогда caller
-   * остаётся на legacy plain-update поля).
-   *
-   * best-effort: компилятор сам не падает (внутренний try/catch + fallback);
-   * здесь дополнительный guard на отсутствие сервиса / kill-switch OFF.
-   */
   private async tryCompileContent(args: {
     kind: OrgDocumentKind;
     tenantId: string;
@@ -2059,8 +1815,6 @@ export class Specialist31Service {
           sourceRef: { type: 'idea_block', id: args.block.id },
         },
       );
-      // ok=false → вернулся fallback (existingContentMd); не считаем это
-      // «успешной сборкой» — пусть caller использует legacy-логику.
       return res.ok ? res : null;
     } catch (err) {
       this.logger.debug(
@@ -2075,17 +1829,6 @@ export class Specialist31Service {
     }
   }
 
-  /**
-   * W4.1/W4.2 helper — резолвит финальный `dataClass` + Json-audit для
-   * persist'а Regulation/Process/Policy.
-   *
-   * Возвращает кортеж `{ dataClass, dataClassAudit }`:
-   *   - на `enforcement === 'enforce'` — derive().dataClass + serialized audit.
-   *   - иначе — legacy `block.dataClass`, audit = JsonNull (NULL в БД).
-   *
-   * compareWithLegacy дёргается всегда при наличии сервиса — это даёт
-   * shadow-метрику расхождения даже после переключения в enforce.
-   */
   private deriveDataClassForPersist(args: {
     blockId: string;
     blockDataClass: DataClass;
@@ -2114,9 +1857,7 @@ export class Specialist31Service {
       });
     }
     const finalDc =
-      enforcement === 'enforce' && proposed
-        ? proposed.dataClass
-        : args.blockDataClass;
+      enforcement === 'enforce' && proposed ? proposed.dataClass : args.blockDataClass;
     const audit: Prisma.InputJsonValue | typeof Prisma.JsonNull =
       enforcement === 'enforce' && proposed
         ? (proposed.audit as unknown as Prisma.InputJsonValue)
@@ -2125,22 +1866,13 @@ export class Specialist31Service {
   }
 }
 
-// ──────────────────────── shared types ────────────────────────
-
 export interface RegulationDraft {
   kind: 'regulation' | 'process' | 'policy' | 'standard' | 'instruction';
   name: string;
   statement: string;
   scope?: string | null;
   ownerHint?: string | null;
-  severity?:
-    | 'advisory'
-    | 'mandatory'
-    | 'blocking'
-    | 'critical'
-    | 'recommended'
-    | 'standard'
-    | null;
+  severity?: 'advisory' | 'mandatory' | 'blocking' | 'critical' | 'recommended' | 'standard' | null;
   category?: 'regulation' | 'standard' | null;
   processStepHint?: {
     processName: string;
@@ -2148,18 +1880,9 @@ export interface RegulationDraft {
     stepOrder?: number | null;
     stepDescription?: string | null;
   } | null;
-  /**
-   * A1.2 (ТЗ 2026-06-11) — флаг «это повторяемая норма КОМПАНИИ?». LLM-схема
-   * `regulation-extract.prompt` уже возвращает это поле (required); здесь —
-   * его TS-зеркало для анти-плодёж гейта в `extractDraft`. Контракт инструмента
-   * не меняется — поле задаётся в промпте, не тут.
-   */
   isOrgNorm?: boolean | null;
-  /** A12 (Волна 6) — статус существования документа (русские ярлыки LLM). */
   extractionStatus?: 'существует' | 'нужен' | 'обсуждается' | null;
-  /** A12 — роли/должности, которых касается норма. Для instruction — исполнитель. */
   roles?: string[];
-  /** A12 — дословная опора из блока (≤15-20 слов). */
   evidenceQuote?: string | null;
   confidence: number;
 }
@@ -2177,7 +1900,4 @@ interface DedupeVerdict {
   reasoning: string;
 }
 
-// Prisma `_namespace` — отметка, что мы используем Prisma transactional types
-// внутри (пока ничего из Prisma не нужно как value, но JSON-валидация Prisma
-// будет нужна для proposedPayload приведения).
 void Prisma;

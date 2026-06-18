@@ -1,17 +1,11 @@
-import type { Metadata } from 'next';
+import type { Metadata } from "next";
 
-import { StorageClient } from './StorageClient';
+import { StorageClient } from "./StorageClient";
 
 export const metadata: Metadata = {
-  title: 'S3 хранилище',
+  title: "S3 хранилище",
 };
 
-/**
- * Фаза 7 редизайна — `/admin/media/storage`.
- *
- * Обзор бакетов, статистика по объёмам, переключение провайдера S3
- * (severity='destructive', через AdminDangerZone).
- */
 export default function AdminMediaStoragePage() {
   return <StorageClient />;
 }

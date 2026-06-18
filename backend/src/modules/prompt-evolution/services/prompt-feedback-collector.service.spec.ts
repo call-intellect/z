@@ -1,17 +1,3 @@
-/**
- * Agents v2 Фаза B1 (2026-05-30) — Unit-тесты `PromptFeedbackCollectorService`.
- *
- * Сценарии:
- *   1. handleInvocationCompleted → создан PromptFeedback с originalOutput,
- *      editedOutput=null, метрика z_prompt_feedback_total{has_edit=false}++.
- *   2. handleInvocationCompleted второй раз с тем же invocationId → no-op
- *      (защита от race в эмиттере).
- *   3. handleInvocationEdited по существующему feedback'у → update с
- *      editedOutput + editDistance, метрика {has_edit=true}++.
- *   4. handleInvocationEdited без существующего feedback'а → silent skip.
- *
- * Все Prisma/Embeddings/Metrics мокированы.
- */
 import type { PromptFeedback } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -60,7 +46,7 @@ function buildSvc(args: {
   return new PromptFeedbackCollectorService(
     args.prisma as unknown as PrismaService,
     args.metrics,
-    undefined, // EmbeddingFallbackService — optional; skip для unit'а
+    undefined,
   );
 }
 

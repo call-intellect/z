@@ -1,21 +1,10 @@
-'use client';
+"use client";
 
-/**
- * HealthEmbeddingsTab — вкладка «Эмбеддинги» в /admin/health.
- *
- * Источник: `GET /api/v1/admin/health/embeddings` (Фаза 1 ТЗ admin-redesign).
- * Эндпоинт пока не реализован — gracefully показываем `AdminEmpty`.
- */
+import { ApiError } from "@/api/api-error";
+import { apiClient } from "@/api/api-client";
 
-import { ApiError } from '@/api/api-error';
-import { apiClient } from '@/api/api-client';
-
-import {
-  AdminEmpty,
-  AdminError,
-  AdminLoading,
-} from '../AdminStateViews';
-import { useAdminQuery } from '../useAdminQuery';
+import { AdminEmpty, AdminError, AdminLoading } from "../AdminStateViews";
+import { useAdminQuery } from "../useAdminQuery";
 
 type EmbeddingsHealthApi = {
   provider: string;
@@ -28,16 +17,16 @@ type EmbeddingsHealthApi = {
 
 export function HealthEmbeddingsTab() {
   const q = useAdminQuery(
-    'admin-health-embeddings',
+    "admin-health-embeddings",
     async () => {
       try {
         return await apiClient.get<EmbeddingsHealthApi>(
-          '/api/v1/admin/health/embeddings',
+          "/api/v1/admin/health/embeddings",
         );
       } catch (e) {
         if (
           e instanceof ApiError &&
-          (e.code === 'http_404' || e.code === 'not_found')
+          (e.code === "http_404" || e.code === "not_found")
         ) {
           return null;
         }
@@ -62,8 +51,8 @@ export function HealthEmbeddingsTab() {
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <Tile title="Провайдер">{d.provider || '—'}</Tile>
-      <Tile title="Модель">{d.model || '—'}</Tile>
+      <Tile title="Провайдер">{d.provider || "—"}</Tile>
+      <Tile title="Модель">{d.model || "—"}</Tile>
       <Tile title="Доступность">
         {d.available ? (
           <span className="text-success">в строю</span>
@@ -72,12 +61,12 @@ export function HealthEmbeddingsTab() {
         )}
       </Tile>
       <Tile title="Задержка">
-        {d.latencyMs !== null ? `${d.latencyMs} мс` : '—'}
+        {d.latencyMs !== null ? `${d.latencyMs} мс` : "—"}
       </Tile>
       <Tile title="Попадание в кэш">
         {d.cacheHitRate !== undefined
           ? `${(d.cacheHitRate * 100).toFixed(1)}%`
-          : '—'}
+          : "—"}
       </Tile>
       <Tile title="Недавние ошибки">
         {d.recentErrors && d.recentErrors.length > 0 ? (

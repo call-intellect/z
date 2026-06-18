@@ -1,12 +1,3 @@
-/**
- * Доменная модель чек-листа задачи (2026-05-27).
- *
- * Контракт: `backend/src/modules/tracker/dto/checklists/checklist.dto.ts`
- * + `backend/src/modules/tracker/services/checklists.service.ts`.
- */
-
-// ─── ApiDto ─────────────────────────────────────────────────────────────────
-
 export interface ChecklistItemApi {
   id: string;
   tenantId: string;
@@ -34,8 +25,6 @@ export interface ChecklistApi {
   doneCount: number;
 }
 
-// ─── Domain ─────────────────────────────────────────────────────────────────
-
 export interface ChecklistItem {
   id: string;
   tenantId: string;
@@ -61,14 +50,9 @@ export interface Checklist {
   items: ChecklistItem[];
   totalCount: number;
   doneCount: number;
-  // ─ computed ─
-  /** Все пункты выполнены (totalCount>0 && totalCount==doneCount). */
   isFullyCompleted: boolean;
-  /** Прогресс в долях [0..1]. Для пустого чек-листа = 0. */
   progressRatio: number;
 }
-
-// ─── Mappers ────────────────────────────────────────────────────────────────
 
 const parseDate = (s: string | null | undefined): Date | null =>
   s ? new Date(s) : null;
@@ -109,9 +93,6 @@ export function checklistFromApi(api: ChecklistApi): Checklist {
   };
 }
 
-// ─── UI helpers ─────────────────────────────────────────────────────────────
-
-/** Текст прогресса «3 / 7». Возвращает null если totalCount=0. */
 export function checklistProgressLabel(
   total: number,
   done: number,

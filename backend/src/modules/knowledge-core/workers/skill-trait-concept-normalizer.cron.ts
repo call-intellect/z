@@ -16,37 +16,12 @@ import {
 } from '../prompts/skill-trait-concept-name.prompt';
 import { SkillTraitConceptService } from '../services/skill-trait-concept.service';
 
-/**
- * ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 —
- * SkillTraitConceptNormalizerCron.
- *
- * Расписание: `0 3 * * *` (раз в сутки в 03:00) — за час до decay-cron'а в
- * 05:00, чтобы нормализация попадала в текущий день.
- *
- * Per-tenant Redis-замок с TTL 1 час (защита от двух одновременных проходов).
- *
- * Алгоритм для каждой Org:
- *   1. Загрузить все активные концепты с embedding.
- *   2. Union-find кластеризация: для каждой пары (i, j) считаем cosine —
- *      similarity >= cfg.skill.conceptMergeThreshold (0.92) → union.
- *   3. Для каждого кластера из 2+ концептов:
- *      - выбрать опорный с max traitCount;
- *      - вызвать LLM `skill-trait-concept-name` — получить новое каноническое
- *        имя; при ошибке оставить старое опорного;
- *      - merge остальных в опорный через SkillTraitConceptService.mergeConcepts.
- *   4. Архивировать концепты без активных traits старше `cfg.skill.conceptArchiveAfterMonths`.
- *   5. Метрики: skill_trait_concepts_total{status} (gauge) +
- *      skill_trait_concepts_merged_total (counter).
- *   6. Probe-event `skill.concepts_merged` — если в слитом кластере были
- *      концепты с разными canonicalName и совокупно ≥ 5 traits.
- */
 @Injectable()
 export class SkillTraitConceptNormalizerCron {
   private readonly logger = new Logger(SkillTraitConceptNormalizerCron.name);
   private static readonly EMITTED_BY = 'skill-trait-concept-normalizer';
-  private static readonly LOCK_TTL_SEC = 60 * 60; // 1 час
+  private static readonly LOCK_TTL_SEC = 60 * 60;
   private static readonly MAX_CONCEPTS_PER_TENANT = 2_000;
-  /** Минимум traits в слитом кластере для probe-event'а. */
   private static readonly PROBE_MIN_TRAITS_IN_CLUSTER = 5;
 
   constructor(
@@ -59,12 +34,6 @@ export class SkillTraitConceptNormalizerCron {
     @Inject(SkillTraitConceptService)
     private readonly concepts: SkillTraitConceptService,
     @Inject(ProbeService) private readonly probe: ProbeService,
-    /**
-     * Agents v2 Фаза C1 (2026-05-30) — эмит `skill-trait-concept.normalized`
-     * после прохода нормализации, чтобы PracticeSkillExtractWorker подхватил
-     * концепты и извлёк выполняемые навыки. @Optional — старые тесты
-     * без EventEmitterModule в DI продолжат работать (no-op).
-     */
     @Optional()
     @Inject(EventEmitter2)
     private readonly eventEmitter: EventEmitter2 | null = null,
@@ -74,7 +43,7 @@ export class SkillTraitConceptNormalizerCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runOnce();
-      this.logger.log(summary, 'skill-trait-concept-normalizer.cron: проход завершён');
+      this.logger.debug(summary, 'skill-trait-concept-normalizer.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -83,7 +52,6 @@ export class SkillTraitConceptNormalizerCron {
     }
   }
 
-  /** Public — для ручного запуска из backfill-скрипта / админ-эндпоинта. */
   async runOnce(): Promise<{
     tenantsScanned: number;
     tenantsLocked: number;
@@ -145,13 +113,10 @@ export class SkillTraitConceptNormalizerCron {
       } finally {
         try {
           await this.redis.client.del(lockKey);
-        } catch {
-          // ignore — TTL подчистит сам
-        }
+        } catch {}
       }
     }
 
-    // Глобальные gauge'и по всем Org.
     await this.refreshGauges();
 
     return {
@@ -163,14 +128,11 @@ export class SkillTraitConceptNormalizerCron {
     };
   }
 
-  // ─────────────────────────── per-tenant ───────────────────────────
-
   private async processTenant(tenantId: string): Promise<{
     clustersMerged: number;
     conceptsArchived: number;
     probesSent: number;
   }> {
-    // 1) Загрузить активные концепты с embedding.
     type RawConcept = {
       id: string;
       canonical_name: string;
@@ -207,13 +169,31 @@ export class SkillTraitConceptNormalizerCron {
       embedding: r.embedding_text ? parseVector(r.embedding_text) : null,
     }));
 
-    // 2) Union-find кластеризация.
+    if (concepts.length > 0) {
+      try {
+        const liveCounts = await this.prisma.skillTrait.groupBy({
+          by: ['conceptId'],
+          where: { conceptId: { in: concepts.map((c) => c.id) }, status: 'active' },
+          _count: { _all: true },
+        });
+        const byConcept = new Map<string, number>();
+        for (const lc of liveCounts) {
+          if (lc.conceptId) byConcept.set(lc.conceptId, lc._count._all);
+        }
+        for (const c of concepts) c.trait_count = byConcept.get(c.id) ?? 0;
+      } catch (err) {
+        this.logger.debug(
+          { tenantId, err: err instanceof Error ? err.message : String(err) },
+          'skill-trait-concept-normalizer: live trait-count groupBy упал — использую денормализованный',
+        );
+      }
+    }
+
     const threshold = this.cfg.skill.conceptMergeThreshold;
     const parents = new Map<string, string>();
     const find = (id: string): string => {
       let cur = id;
       while (parents.get(cur) && parents.get(cur) !== cur) cur = parents.get(cur)!;
-      // path compression
       let walker = id;
       while (parents.get(walker) && parents.get(walker) !== cur) {
         const next = parents.get(walker)!;
@@ -240,7 +220,6 @@ export class SkillTraitConceptNormalizerCron {
       }
     }
 
-    // Группируем по корню.
     const clusters = new Map<string, RawConcept[]>();
     for (const c of concepts) {
       const root = find(c.id);
@@ -252,10 +231,8 @@ export class SkillTraitConceptNormalizerCron {
     let clustersMerged = 0;
     let probesSent = 0;
 
-    // 3) Для каждого кластера из 2+ концептов — слить.
     for (const [, group] of clusters) {
       if (group.length < 2) continue;
-      // Опорный — с max traitCount.
       group.sort((a, b) => b.trait_count - a.trait_count);
       const target = group[0]!;
       const sources = group.slice(1);
@@ -264,7 +241,6 @@ export class SkillTraitConceptNormalizerCron {
         ...target.variants,
         ...sources.flatMap((s) => [s.canonical_name, ...s.variants]),
       ]);
-      // Каноническое имя — спросить агент. На ошибке оставим текущее опорное.
       let newCanonicalName: string | undefined;
       try {
         newCanonicalName = await this.askConceptName(tenantId, variants);
@@ -278,15 +254,21 @@ export class SkillTraitConceptNormalizerCron {
           'skill-trait-concept-normalizer: LLM concept-name упал — оставляю старое имя',
         );
       }
-      await this.concepts.mergeConcepts({
+      const merged = await this.concepts.mergeConcepts({
         tenantId,
         sourceIds: sources.map((s) => s.id),
         targetId: target.id,
         ...(newCanonicalName ? { newCanonicalName } : {}),
       });
+      if (!merged) {
+        this.logger.debug(
+          { tenantId, targetId: target.id, sourceIds: sources.map((s) => s.id) },
+          'skill-trait-concept-normalizer: mergeConcepts вернул false — кластер не слит, пропускаю',
+        );
+        continue;
+      }
       clustersMerged++;
 
-      // Probe-event: если canonicalName-ы различались и совокупный traitCount ≥ 5.
       const totalTraits = group.reduce((acc, c) => acc + c.trait_count, 0);
       const uniqueNames = new Set(group.map((c) => c.canonical_name));
       if (
@@ -304,35 +286,25 @@ export class SkillTraitConceptNormalizerCron {
       }
     }
 
-    // 4) Архивация концептов без активных traits старше N месяцев.
     const archiveCutoff = new Date(
-      Date.now() -
-        this.cfg.skill.conceptArchiveAfterMonths * 30 * 24 * 60 * 60 * 1000,
+      Date.now() - this.cfg.skill.conceptArchiveAfterMonths * 30 * 24 * 60 * 60 * 1000,
     );
     const archiveRes = await this.prisma.skillTraitConcept.updateMany({
       where: {
         tenantId,
         status: 'active',
-        traitCount: 0,
+        traits: { none: { status: 'active' } },
         lastSeenAt: { lt: archiveCutoff },
       },
       data: { status: 'archived' },
     });
 
-    // 5) Эмит события для PracticeSkillExtractWorker (Agents v2 Фаза C1).
-    // Берём все active концепты с traitCount ≥ minTraitsForExtract; extractor
-    // дополнительно перепроверит порог (defensive). Если EventEmitter2 не
-    // инжектирован (старые тесты) — no-op.
     try {
       if (this.eventEmitter) {
         const candidates = await this.prisma.skillTraitConcept.findMany({
           where: {
             tenantId,
             status: 'active',
-            // Берём «жирные» концепты — экономим на пустых extract-вызовах.
-            // Сам extractor использует cfg.practiceSkills.minTraitsForExtract,
-            // но здесь нет ссылки на cfg.practiceSkills (cross-module);
-            // безопасный нижний bound 3 — extractor отфильтрует точно.
             traitCount: { gte: 3 },
           },
           select: { id: true },
@@ -359,11 +331,7 @@ export class SkillTraitConceptNormalizerCron {
     };
   }
 
-  /** Спрашивает LLM-агент `skill-trait-concept-name` — короткое каноническое имя. */
-  private async askConceptName(
-    tenantId: string,
-    variants: string[],
-  ): Promise<string | undefined> {
+  private async askConceptName(tenantId: string, variants: string[]): Promise<string | undefined> {
     if (variants.length === 0) return undefined;
     const result = await this.llm.call({
       taskType: 'skill-trait-concept-name',
@@ -386,18 +354,10 @@ export class SkillTraitConceptNormalizerCron {
       if (typeof parsed.canonicalName === 'string' && parsed.canonicalName.trim()) {
         return parsed.canonicalName.trim().slice(0, 200);
       }
-    } catch {
-      // парсинг упал — fallback
-    }
+    } catch {}
     return undefined;
   }
 
-  /**
-   * Probe-event: «Мы автоматически слили N разных названий в один смысловой
-   * блок — проверь, что новое имя адекватно».
-   * Получатели — глава отдела субъекта или админы (через resolveProbeRecipients).
-   * Так как probe не привязан к конкретному Person — берём всех админов.
-   */
   private async emitProbe(args: {
     tenantId: string;
     targetConceptId: string;
@@ -406,9 +366,6 @@ export class SkillTraitConceptNormalizerCron {
     totalTraits: number;
   }): Promise<boolean> {
     try {
-      // Получателей выбираем как admins организации.
-      // (resolveProbeRecipients требует Person — здесь концепт не привязан к
-      // конкретному человеку, поэтому берём admins напрямую.)
       const admins = await this.prisma.membership.findMany({
         where: {
           orgId: args.tenantId,
@@ -420,7 +377,10 @@ export class SkillTraitConceptNormalizerCron {
       const recipients = admins.map((a) => a.userId).filter((u): u is string => !!u);
       if (recipients.length === 0) return false;
 
-      const namesPreview = args.previousNames.slice(0, 5).map((n) => `«${n}»`).join(', ');
+      const namesPreview = args.previousNames
+        .slice(0, 5)
+        .map((n) => `«${n}»`)
+        .join(', ');
       const message = `Автоматически слиты ${args.previousNames.length} формулировки одного смыслового блока навыка (всего ${args.totalTraits} наблюдений у сотрудников): ${namesPreview}. Каноническое имя: «${args.newCanonicalName}». Проверь — корректно ли?`;
 
       await this.probe.suggest({
@@ -453,7 +413,6 @@ export class SkillTraitConceptNormalizerCron {
     }
   }
 
-  /** Обновить gauge skill_trait_concepts_total{status} по всем Org. */
   private async refreshGauges(): Promise<void> {
     try {
       const rows = await this.prisma.skillTraitConcept.groupBy({
@@ -486,9 +445,6 @@ export class SkillTraitConceptNormalizerCron {
   }
 }
 
-// ────────────────────────── helpers ──────────────────────────
-
-/** Парсит pgvector textual представление вида `[0.1,0.2,...]`. */
 function parseVector(text: string): number[] | null {
   const trimmed = text.trim();
   if (trimmed.length < 2 || trimmed[0] !== '[' || trimmed[trimmed.length - 1] !== ']') {
@@ -530,4 +486,3 @@ function unique(arr: readonly string[]): string[] {
   }
   return out;
 }
-

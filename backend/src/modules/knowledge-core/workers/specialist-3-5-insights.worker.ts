@@ -7,32 +7,10 @@ import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { RouterService } from '../services/router.service';
 import { Specialist35Service } from '../services/specialist-3-5-insights.service';
 
-/**
- * SBA β-4 — Specialist 3.5 (Insights Radar) — handler
- * `core.specialist-routing` с jobName='3-5-insights'.
- *
- * Вызывается из `SpecialistRoutingDispatcherWorker.dispatch` для блоков с
- * signalType ∈ { pain, risk, churn_risk, objection }, которые
- * RouterService.dispatch диспатчит этому специалисту. Маршрутизацию по jobName
- * делает диспетчер.
- *
- * Логика делегируется в `Specialist35Service.processBlock`. См. sub-TZ
- * `plans/tz/2026-05-21-sba-beta-4-specialist-3-5-insights.md` §5.
- *
- * Идемпотентность:
- *   - jobId диспатча = `'3-5-insights_<blockId>'` (см. CoreQueueService).
- *   - Внутри Specialist35Service — KNN-кластеризация на existing Insight'ах
- *     гарантирует, что повторная обработка того же блока обновит уже
- *     существующий Insight, а не создаст дубликат.
- *
- * Метрики:
- *   - `core_specialist_pipeline_duration_seconds{type='insight'}`.
- */
 @Injectable()
 export class Specialist35InsightsWorker {
   private readonly logger = new Logger(Specialist35InsightsWorker.name);
 
-  /** Имя специалиста (ключ маршрутизации диспетчера). Совпадает с RouterService.SPECIALIST.INSIGHTS. */
   static readonly SPECIALIST_NAME = RouterService.SPECIALIST.INSIGHTS;
 
   constructor(
@@ -52,10 +30,7 @@ export class Specialist35InsightsWorker {
         select: { id: true, tenantId: true, status: true, signalType: true },
       });
       if (!block) {
-        this.logger.debug(
-          { blockId },
-          'specialist-3-5: блок не найден — skip',
-        );
+        this.logger.debug({ blockId }, 'specialist-3-5: блок не найден — skip');
         this.metrics.incCoreSpecialistSkipped({
           specialist: Specialist35InsightsWorker.SPECIALIST_NAME,
           reason: 'block_not_found',
@@ -84,7 +59,6 @@ export class Specialist35InsightsWorker {
         });
         return;
       }
-      // sub-TZ §5 — допустимые signalType.
       const allowed = new Set(['pain', 'risk', 'churn_risk', 'objection']);
       if (!allowed.has(block.signalType)) {
         this.logger.debug(
@@ -100,7 +74,7 @@ export class Specialist35InsightsWorker {
 
       await this.svc.processBlock({ tenantId, blockId });
 
-      this.logger.log(
+      this.logger.debug(
         { blockId, signalType: block.signalType },
         'specialist-3-5: блок обработан',
       );

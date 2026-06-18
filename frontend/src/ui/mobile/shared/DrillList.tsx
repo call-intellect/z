@@ -1,17 +1,7 @@
-/**
- * DrillList — универсальный список строк для drill-навигации (мобайл).
- *
- * Минимальный примитив под Ф3 (B2): строка = заголовок + опц. мета + опц.
- * StatusDot по тону; если задан `href` — строка-ссылка (Link). Здесь, на B1,
- * не используется напрямую, но входит в контракт shared-примитивов.
- *
- * Парные токены; серверный компонент (без хуков).
- */
+import Link from "next/link";
 
-import Link from 'next/link';
-
-import { cn } from '@/ui/shadcn/lib/utils';
-import { StatusDot, type StatusTone } from './StatusDot';
+import { cn } from "@/ui/shadcn/lib/utils";
+import { StatusDot, type StatusTone } from "./StatusDot";
 
 export interface DrillListItem {
   id: string;
@@ -25,9 +15,13 @@ function Row({ item }: { item: DrillListItem }) {
   return (
     <div className="flex items-center gap-3 px-3 py-2.5 text-sm">
       {item.tone && <StatusDot tone={item.tone} />}
-      <span className="min-w-0 flex-1 truncate text-fg-primary">{item.title}</span>
+      <span className="min-w-0 flex-1 truncate text-fg-primary">
+        {item.title}
+      </span>
       {item.meta && (
-        <span className="shrink-0 text-xs tabular-nums text-fg-tertiary">{item.meta}</span>
+        <span className="shrink-0 text-xs tabular-nums text-fg-tertiary">
+          {item.meta}
+        </span>
       )}
     </div>
   );
@@ -43,8 +37,8 @@ export function DrillList({ items }: { items: DrillListItem[] }) {
             <Link
               href={item.href}
               className={cn(
-                'block transition-colors active:bg-bg-elevated',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                "block transition-colors active:bg-bg-elevated",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
               )}
             >
               <Row item={item} />

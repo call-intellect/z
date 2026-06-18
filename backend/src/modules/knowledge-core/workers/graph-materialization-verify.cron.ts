@@ -8,21 +8,6 @@ import { traceForMeeting } from '../../logging/log-pipeline';
 import { LogService } from '../../logging/log.service';
 import { GraphMaterializationService } from '../services/graph-materialization.service';
 
-/**
- * Agent-chain overhaul Фаза 0a (2026-06-07, plans/tz/2026-06-07-agent-chain-overhaul.md).
- *
- * GraphMaterializationVerifyCron — догоночная наблюдаемость материализации
- * графа знаний. Раз в 30 минут по каждой активной Org сканирует недавние
- * встречи (последние 24ч) и проверяет: у встречи есть блоки с signalType
- * (decision/idea), но соответствующая запись (Decision/Idea) не
- * материализовалась → расхождение.
- *
- * На каждое расхождение — метрика `kc_materialization_gap_total{type}` + WARN-лог
- * (traceId=mtg_<id>). Это READ-ONLY проход: никаких записей в граф, только
- * метрика + лог (чтобы расхождение было видно в Grafana/админке).
- *
- * Лимит ~50 встреч на Org за тик. На малом тенанте холостые проходы допустимы.
- */
 @Injectable()
 export class GraphMaterializationVerifyCron {
   private readonly logger = new Logger(GraphMaterializationVerifyCron.name);
@@ -44,10 +29,7 @@ export class GraphMaterializationVerifyCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runForAllOrgs();
-      this.logger.log(
-        summary,
-        'graph-materialization-verify: проход завершён',
-      );
+      this.logger.debug(summary, 'graph-materialization-verify: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -56,7 +38,6 @@ export class GraphMaterializationVerifyCron {
     }
   }
 
-  /** Вынесен публично для ручного запуска / тестов. */
   async runForAllOrgs(): Promise<{
     scannedOrgs: number;
     scannedMeetings: number;
@@ -72,19 +53,13 @@ export class GraphMaterializationVerifyCron {
       select: { id: true },
     });
 
-    const recentCutoff = new Date(
-      Date.now() - GraphMaterializationVerifyCron.RECENT_WINDOW_MS,
-    );
+    const recentCutoff = new Date(Date.now() - GraphMaterializationVerifyCron.RECENT_WINDOW_MS);
     let scannedMeetings = 0;
     let gapCount = 0;
 
     for (const org of orgs) {
-      // Org-Admin тумблер: если воркер выключен для Org — скипаем.
       try {
-        await this.gate.checkOrThrow(
-          org.id,
-          GraphMaterializationVerifyCron.WORKER_NAME,
-        );
+        await this.gate.checkOrThrow(org.id, GraphMaterializationVerifyCron.WORKER_NAME);
       } catch {
         this.logger.debug(
           { tenantId: org.id },
@@ -107,10 +82,7 @@ export class GraphMaterializationVerifyCron {
 
         for (const meeting of meetings) {
           scannedMeetings += 1;
-          const result = await this.graphMat.getMeetingMaterialization(
-            org.id,
-            meeting.id,
-          );
+          const result = await this.graphMat.getMeetingMaterialization(org.id, meeting.id);
           if (result.gaps.length === 0) continue;
           for (const gap of result.gaps) {
             gapCount += 1;

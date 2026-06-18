@@ -1,20 +1,3 @@
-/**
- * Unit-тесты ReferralPayoutService — реф-комиссии.
- *
- * Покрытие:
- *   - onInvoicePaid:
- *     * paymentMode='bonus' → no-op
- *     * subscriptionId=null → no-op
- *     * существующий payout по triggerInvoiceId → no-op (идемпотентно)
- *     * есть ClientReferralLink → создаёт payout 2 000 000
- *     * нет link → резолвит pending → создаёт link + payout + clearPending
- *     * нет link + нет pending → no-op
- *   - closePeriod:
- *     * verified реферал → status='paid' + paidAt
- *     * неверифицированный → status='void' + voidReason='referral_not_verified'
- *   - markPaidByAdmin / voidByAdmin
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -23,10 +6,7 @@ import type { RedisService } from '../../../common/redis/redis.service';
 import type { InvoicePaidPayload } from '../../billing/events/billing.events';
 
 import type { AttributionService } from './attribution.service';
-import {
-  REFERRAL_COMMISSION_KOPECKS,
-  ReferralPayoutService,
-} from './referral-payout.service';
+import { REFERRAL_COMMISSION_KOPECKS, ReferralPayoutService } from './referral-payout.service';
 
 interface Mocks {
   prisma: {
@@ -122,9 +102,6 @@ describe('ReferralPayoutService.onInvoicePaid', () => {
   });
 
   it('payout уже есть по triggerInvoiceId → P2002 на create → idempotent skip', async () => {
-    // audit Б7: дедуп идёт через unique-индекс и catch(P2002). findFirst
-    // больше не используется. Параллельный onInvoicePaid: первый создаёт
-    // запись, второй ловит P2002 и тихо завершается.
     mocks.prisma.subscription.findUnique.mockResolvedValueOnce({
       id: 'sub-1',
       clientReferralLink: {
@@ -327,12 +304,6 @@ describe('ReferralPayoutService.closePeriod', () => {
     });
   });
 
-  /**
-   * ТЗ referrals-cabinet-revamp §6.3 + §7.7 — расширение условия verified:
-   * payoutDetails == null или пустой объект → void (несмотря на innVerifiedAt
-   * и contractAcceptedAt). voidReason остаётся 'referral_not_verified' для
-   * обратной совместимости с аналитикой.
-   */
   it('cabinet-revamp: payoutDetails == null → void', async () => {
     mocks.prisma.referralPayout.findMany.mockResolvedValueOnce([
       {
@@ -418,9 +389,7 @@ describe('ReferralPayoutService.markPaidByAdmin / voidByAdmin', () => {
       id: 'pay-1',
       status: 'void',
     });
-    await expect(
-      svc.markPaidByAdmin({ payoutId: 'pay-1' }),
-    ).rejects.toThrow(/нельзя пометить/);
+    await expect(svc.markPaidByAdmin({ payoutId: 'pay-1' })).rejects.toThrow(/нельзя пометить/);
   });
 
   it('voidByAdmin: pending → void с reason', async () => {

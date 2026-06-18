@@ -3,18 +3,6 @@ import { Cron } from '@nestjs/schedule';
 
 import { TemporalProbeService } from '../services/temporal-probe.service';
 
-/**
- * W2.4 KC-Temporal (2026-05-25) — TemporalProbeCron.
- *
- * Источник: plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §W2.4.
- *
- * Раз в неделю (понедельник 07:00 UTC по умолчанию):
- *   1) `TemporalProbeService.runAllOrgs()` — поиск расхождений «древний/свежий».
- *   2) `escalateUnanswered()` — эскалация старых неотвеченных probe'ов.
- *
- * Cron-выражение в декораторе литерально — `@nestjs/schedule` парсит его при
- * DI. Hot-reload расписания живёт в CronManagerService (CronSchedule таблица).
- */
 @Injectable()
 export class TemporalProbeCron {
   private readonly logger = new Logger(TemporalProbeCron.name);
@@ -29,7 +17,7 @@ export class TemporalProbeCron {
     try {
       const stats = await this.svc.runAllOrgs();
       const esc = await this.svc.escalateUnanswered();
-      this.logger.log(
+      this.logger.debug(
         { ...stats, escalated: esc.escalated },
         'temporal-probe.cron: weekly проход завершён',
       );

@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   Activity,
   BookOpen,
@@ -11,40 +11,32 @@ import {
   Sparkles,
   TrendingUp,
   type LucideIcon,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { cn } from '@/ui/shadcn/lib/utils';
+import { cn } from "@/ui/shadcn/lib/utils";
 
-/**
- * `PersonSubpagesNav` — горизонтальные pill-табы для карточки сотрудника.
- *
- * Закрывает «orphan»-проблему 6 подстраниц `/persons/[id]/*`, у которых до
- * 2026-06-01 не было входа из карточки. Раздел Фазы 1 ТЗ
- * `plans/tz/2026-06-01-dashboards-wow-polish.md`.
- *
- * Активный таб подсвечивается через `usePathname()`. Все подписи на русском,
- * парные цветовые токены (`bg-accent/15 text-accent-fg`), без жёстких hex.
- * На узких экранах — горизонтальный скролл, не перенос.
- */
 type SubpageItem = {
-  /** Относительный сегмент после `/persons/[id]`. Пустая строка = «Обзор». */
   segment: string;
   label: string;
   icon: LucideIcon;
 };
 
 const ITEMS: readonly SubpageItem[] = [
-  { segment: '', label: 'Обзор', icon: Home },
-  { segment: 'knowledge-profile', label: 'Знания', icon: BookOpen },
-  { segment: 'skill-profile', label: 'Навыки', icon: Sparkles },
-  { segment: 'appointments', label: 'Встречи', icon: CalendarDays },
-  { segment: 'contributions', label: 'Вклад', icon: TrendingUp },
-  { segment: 'social-contribution', label: 'Командный вклад', icon: HeartHandshake },
-  { segment: 'pulse', label: 'Пульс', icon: Activity },
+  { segment: "", label: "Обзор", icon: Home },
+  { segment: "knowledge-profile", label: "Знания", icon: BookOpen },
+  { segment: "skill-profile", label: "Навыки", icon: Sparkles },
+  { segment: "appointments", label: "Встречи", icon: CalendarDays },
+  { segment: "contributions", label: "Вклад", icon: TrendingUp },
+  {
+    segment: "social-contribution",
+    label: "Командный вклад",
+    icon: HeartHandshake,
+  },
+  { segment: "pulse", label: "Пульс", icon: Activity },
 ];
 
 export function PersonSubpagesNav({ entityId }: { entityId: string }) {
-  const pathname = usePathname() ?? '';
+  const pathname = usePathname() ?? "";
   const base = `/persons/${encodeURIComponent(entityId)}`;
 
   return (
@@ -54,9 +46,6 @@ export function PersonSubpagesNav({ entityId }: { entityId: string }) {
     >
       {ITEMS.map((item) => {
         const href = item.segment ? `${base}/${item.segment}` : base;
-        // Активный определяем по точному совпадению последнего сегмента.
-        // Корень `/persons/[id]` подсвечивается только когда мы ровно на нём
-        // (а не на любой из подстраниц).
         const isActive = item.segment
           ? pathname === href || pathname.startsWith(`${href}/`)
           : pathname === base || pathname === `${base}/`;
@@ -64,15 +53,15 @@ export function PersonSubpagesNav({ entityId }: { entityId: string }) {
 
         return (
           <Link
-            key={item.segment || 'root'}
+            key={item.segment || "root"}
             href={href}
             className={cn(
-              'inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+              "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
               isActive
-                ? 'bg-accent/15 text-accent-fg'
-                : 'bg-bg-overlay/60 text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary',
+                ? "bg-accent/15 text-accent-fg"
+                : "bg-bg-overlay/60 text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary",
             )}
-            aria-current={isActive ? 'page' : undefined}
+            aria-current={isActive ? "page" : undefined}
           >
             <Icon size={14} strokeWidth={1.75} className="shrink-0" />
             <span>{item.label}</span>

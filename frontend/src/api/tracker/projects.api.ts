@@ -1,17 +1,10 @@
-/**
- * API-клиент модуля tracker.projects.
- *
- * Контракт: `backend/src/modules/tracker/controllers/projects.controller.ts`.
- * Auth: `CookieAuthGuard + TenantGuard` (cookie + `X-Org-Id` header).
- */
-
-import { apiClient } from '../api-client';
-import { buildQuery, orgHeaders } from '../admin-helpers';
+import { apiClient } from "../api-client";
+import { buildQuery, orgHeaders } from "../admin-helpers";
 import type {
   ListProjectsResponseApi,
   ProjectApi,
   ProjectMemberApi,
-} from '@/domain/tracker';
+} from "@/domain/tracker";
 
 export interface ListProjectsRequest {
   includeArchived?: boolean;
@@ -22,7 +15,6 @@ export interface ListProjectsRequest {
 }
 
 export interface CreateProjectRequest {
-  // D2 (ТЗ 2026-06-11): slug/identifier опциональны — сервер генерит их из name.
   slug?: string;
   identifier?: string;
   name: string;
@@ -37,18 +29,12 @@ export interface CreateProjectRequest {
   teamTemplateId?: string | null;
 }
 
-/**
- * Тело `POST /api/v1/projects/from-template`.
- * Контракт: `backend/.../dto/projects/create-from-template.dto.ts`.
- */
 export interface CreateProjectFromTemplateRequest {
   templateSlug: string;
   projectName: string;
   identifier: string;
-  /** Если не передан — формируется из identifier.toLowerCase(). */
   slug?: string;
   withExampleTasks?: boolean;
-  /** IANA TZ id (например `Europe/Moscow`). Опц., default backend — `Europe/Moscow`. */
   timezone?: string;
 }
 
@@ -80,17 +66,12 @@ export interface AddProjectMemberRequest {
   role?: 5 | 15 | 20;
 }
 
-/**
- * Tracker Phase 4 (Email-to-task, T5) — DTO ответа REST-а
- * `/api/v1/projects/:id/email-inbox`.
- * Контракт: backend/src/modules/mail/inbound/project-email-inbox.service.ts.
- */
 export interface MailInboundLogApi {
   id: string;
   messageId: string;
   fromEmail: string;
   subject: string;
-  status: 'received' | 'bounced' | 'failed' | 'created';
+  status: "received" | "bounced" | "failed" | "created";
   reason: string | null;
   issueId: string | null;
   createdAt: string;
@@ -124,16 +105,13 @@ export const projectsApi = {
     ),
 
   create: (orgId: string, body: CreateProjectRequest) =>
-    apiClient.post<ProjectApi>('/api/v1/projects', body, {
+    apiClient.post<ProjectApi>("/api/v1/projects", body, {
       headers: orgHeaders(orgId),
     }),
 
-  createFromTemplate: (
-    orgId: string,
-    body: CreateProjectFromTemplateRequest,
-  ) =>
+  createFromTemplate: (orgId: string, body: CreateProjectFromTemplateRequest) =>
     apiClient.post<CreateProjectFromTemplateResponse>(
-      '/api/v1/projects/from-template',
+      "/api/v1/projects/from-template",
       body,
       { headers: orgHeaders(orgId) },
     ),
@@ -170,7 +148,11 @@ export const projectsApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  addMember: (orgId: string, projectId: string, body: AddProjectMemberRequest) =>
+  addMember: (
+    orgId: string,
+    projectId: string,
+    body: AddProjectMemberRequest,
+  ) =>
     apiClient.post<ProjectMemberApi>(
       `/api/v1/projects/${encodeURIComponent(projectId)}/members`,
       body,
@@ -185,7 +167,6 @@ export const projectsApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  // ── Tracker Phase 4 (Email-to-task, T5) ──
   getEmailInbox: (orgId: string, projectId: string) =>
     apiClient.get<ProjectEmailInboxApi>(
       `/api/v1/projects/${encodeURIComponent(projectId)}/email-inbox`,

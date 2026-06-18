@@ -1,27 +1,27 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { Plus, Save, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { useEffect, useState } from "react";
+import { Plus, Save, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import { adminEmailTemplatesApi } from '@/api/admin-email-templates.api';
+import { ApiError } from "@/api/api-error";
+import { adminEmailTemplatesApi } from "@/api/admin-email-templates.api";
 import {
   type EmailTemplateItemDomain,
   type EmailTemplateVariablesMap,
   type UpdateEmailTemplateRequest,
-} from '@/domain/admin-email-template';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/domain/admin-email-template";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/ui/shadcn/select";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 type VariableRow = { id: string; key: string; hint: string };
 
@@ -30,11 +30,6 @@ type Props = {
   onSaved: (updated: EmailTemplateItemDomain) => void;
 };
 
-/**
- * Inline-редактор для одного email-шаблона. Используется на вкладке
- * «Редактор» — слева формы, справа (на широком экране) рендерится превью
- * через `EmailPreviewPanel` (вкладка `Превью` в `EmailTemplatesClient`).
- */
 export function EmailTemplateEditor({ template, onSaved }: Props) {
   const [subject, setSubject] = useState(template.subject);
   const [body, setBody] = useState(template.body);
@@ -45,10 +40,6 @@ export function EmailTemplateEditor({ template, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset при смене активного шаблона. Зависим только от key+updatedAt:
-  // когда родитель меняет шаблон или после save — приходит новый objekt,
-  // мы перезаписываем draft. Прочие свойства тянуть в deps не нужно —
-  // это привело бы к перезаписи draft при каждом keystroke.
   useEffect(() => {
     setSubject(template.subject);
     setBody(template.body);
@@ -93,7 +84,7 @@ export function EmailTemplateEditor({ template, onSaved }: Props) {
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось сохранить';
+            : "Не удалось сохранить";
       setError(msg);
       toast.error(msg);
     } finally {
@@ -102,10 +93,7 @@ export function EmailTemplateEditor({ template, onSaved }: Props) {
   };
 
   const addRow = () => {
-    setVariables((prev) => [
-      ...prev,
-      { id: cryptoId(), key: '', hint: '' },
-    ]);
+    setVariables((prev) => [...prev, { id: cryptoId(), key: "", hint: "" }]);
   };
 
   return (
@@ -145,8 +133,9 @@ export function EmailTemplateEditor({ template, onSaved }: Props) {
           className="font-mono text-xs"
         />
         <p className="text-[11px] text-fg-tertiary">
-          Поддерживаются `{`{{var}}`}` и `{`{{{var}}}`}` (без escape). Helper-блоки
-          (`#if`, `#each`) сохраняются как есть — превью покажет их сырыми.
+          Поддерживаются `{`{{var}}`}` и `{`{{{var}}}`}` (без escape).
+          Helper-блоки (`#if`, `#each`) сохраняются как есть — превью покажет их
+          сырыми.
         </p>
       </div>
 
@@ -227,14 +216,12 @@ export function EmailTemplateEditor({ template, onSaved }: Props) {
           onClick={() => void handleSave()}
         >
           <Save size={14} />
-          {saving ? 'Сохраняем…' : 'Сохранить'}
+          {saving ? "Сохраняем…" : "Сохранить"}
         </Button>
       </div>
     </div>
   );
 }
-
-// ─────────────────────────────── helpers ────────────────────────────────────
 
 function variablesMapToRows(map: EmailTemplateVariablesMap): VariableRow[] {
   return Object.entries(map).map(([key, hint]) => ({
@@ -246,9 +233,9 @@ function variablesMapToRows(map: EmailTemplateVariablesMap): VariableRow[] {
 
 function cryptoId(): string {
   if (
-    typeof globalThis !== 'undefined' &&
-    'crypto' in globalThis &&
-    typeof globalThis.crypto.randomUUID === 'function'
+    typeof globalThis !== "undefined" &&
+    "crypto" in globalThis &&
+    typeof globalThis.crypto.randomUUID === "function"
   ) {
     return globalThis.crypto.randomUUID();
   }

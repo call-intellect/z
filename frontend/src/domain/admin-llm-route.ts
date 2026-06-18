@@ -1,22 +1,7 @@
-/**
- * Domain-слой для admin/llm-routes — группировка сырых записей `LlmTaskRoute`
- * (по одной на tier) в одну UI-строку для таблицы.
- *
- * Бэкенд может вернуть для одного `taskType`:
- *   - до 3 нормализованных записей (по `tier=primary|secondary|tertiary`,
- *     полями `providerName` + `model` + `isActive` + `editedByAdmin`); либо
- *   - одну legacy-запись с массивом `providers: [{provider, model?}]` — там
- *     primary = providers[0], secondary = providers[1] и т.д.
- *
- * Здесь оба формата сводятся к одному `LlmRouteUi` с тремя слотами и общим
- * флагом `editedByAdmin` (true, если хотя бы одна составляющая запись
- * помечена админом).
- */
-
 import type {
   LlmRouteRawApi,
   LlmRoutesListApiResponse,
-} from '@/api/admin-llm-routes.api';
+} from "@/api/admin-llm-routes.api";
 
 export type LlmRouteTierEntryUi = {
   providerName: string;
@@ -26,25 +11,20 @@ export type LlmRouteTierEntryUi = {
 
 export type LlmRouteUi = {
   taskType: string;
-  /** null = глобальный дефолт; в этой странице обрабатываем только null. */
   tenantId: string | null;
   primary?: LlmRouteTierEntryUi;
   secondary?: LlmRouteTierEntryUi;
   tertiary?: LlmRouteTierEntryUi;
   editedByAdmin: boolean;
   requiredDataClass: string;
-  /**
-   * ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — заморозка версии модели.
-   * null = не закреплено (для критичных агентов UI показывает предупреждение).
-   */
   pinnedVersionNote: string | null;
 };
 
-const EMPTY_MODEL_PLACEHOLDER = '—';
+const EMPTY_MODEL_PLACEHOLDER = "—";
 
 function entryFromRaw(raw: LlmRouteRawApi): LlmRouteTierEntryUi {
   return {
-    providerName: raw.providerName ?? '',
+    providerName: raw.providerName ?? "",
     model: raw.model ?? EMPTY_MODEL_PLACEHOLDER,
     isActive: raw.isActive,
   };
@@ -61,12 +41,6 @@ function entryFromLegacy(
   };
 }
 
-/**
- * Группировка списка по `taskType`. Глобальные дефолты (`tenantId === null`)
- * + раздельные `tier`-ы сливаются в один `LlmRouteUi`. Если для taskType
- * есть и tier-записи, и legacy — приоритет у tier-записей (как и в бэкенде,
- * см. `LlmRouterService.refreshCache`).
- */
 export function llmRoutesUiListFromApi(
   res: LlmRoutesListApiResponse,
 ): LlmRouteUi[] {
@@ -82,7 +56,8 @@ export function llmRoutesUiListFromApi(
   const out: LlmRouteUi[] = [];
   for (const [taskType, rows] of grouped) {
     const tieredRows = rows.filter(
-      (r) => r.tier === 'primary' || r.tier === 'secondary' || r.tier === 'tertiary',
+      (r) =>
+        r.tier === "primary" || r.tier === "secondary" || r.tier === "tertiary",
     );
     const legacyRows = rows.filter((r) => r.tier == null);
 
@@ -90,36 +65,33 @@ export function llmRoutesUiListFromApi(
     let secondary: LlmRouteTierEntryUi | undefined;
     let tertiary: LlmRouteTierEntryUi | undefined;
     let editedByAdmin = false;
-    let requiredDataClass = 'public';
-    // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — берём первое
-    // непустое значение из любой записи по этому taskType (заметка
-    // синхронизируется backend'ом на все строки одного taskType).
+    let requiredDataClass = "public";
     let pinnedVersionNote: string | null = null;
     for (const r of rows) {
       const v = r.pinnedVersionNote;
-      if (typeof v === 'string' && v.length > 0) {
+      if (typeof v === "string" && v.length > 0) {
         pinnedVersionNote = v;
         break;
       }
     }
 
     if (tieredRows.length > 0) {
-      // Внутри tier'а может быть несколько записей — берём с минимальным priority.
-      const byTier = (tier: 'primary' | 'secondary' | 'tertiary') => {
+      const byTier = (tier: "primary" | "secondary" | "tertiary") => {
         const rs = tieredRows
           .filter((r) => r.tier === tier)
           .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
         return rs[0];
       };
-      const p = byTier('primary');
-      const s = byTier('secondary');
-      const t = byTier('tertiary');
+      const p = byTier("primary");
+      const s = byTier("secondary");
+      const t = byTier("tertiary");
       if (p) primary = entryFromRaw(p);
       if (s) secondary = entryFromRaw(s);
       if (t) tertiary = entryFromRaw(t);
       editedByAdmin = tieredRows.some((r) => r.editedByAdmin === true);
       requiredDataClass =
-        tieredRows.find((r) => r.requiredDataClass)?.requiredDataClass ?? 'public';
+        tieredRows.find((r) => r.requiredDataClass)?.requiredDataClass ??
+        "public";
     } else if (legacyRows.length > 0) {
       const r = legacyRows[0]!;
       const list = r.providers ?? [];
@@ -127,7 +99,7 @@ export function llmRoutesUiListFromApi(
       if (list[1]) secondary = entryFromLegacy(list[1], r.isActive);
       if (list[2]) tertiary = entryFromLegacy(list[2], r.isActive);
       editedByAdmin = r.editedByAdmin === true;
-      requiredDataClass = r.requiredDataClass ?? 'public';
+      requiredDataClass = r.requiredDataClass ?? "public";
     }
 
     out.push({
@@ -146,42 +118,38 @@ export function llmRoutesUiListFromApi(
   return out;
 }
 
-/* ─────────────────────────── KNOWN_MODELS для UI ─────────────────────────── */
-
 export const KNOWN_MODELS: Record<string, string[]> = {
-  deepseek: ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-chat'],
-  'openai-via-proxy': ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano'],
-  ollama: ['qwen3.5:9b'],
-  // Anthropic-ключ невалиден (см. second-brain/01_projects/llm-providers-verified.md),
-  // claude-* модели реально доступны только через провайдер 'kie'.
+  deepseek: ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat"],
+  "openai-via-proxy": ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"],
+  ollama: ["qwen3.5:9b"],
   anthropic: [],
-  minimax: ['MiniMax-M2.7'],
+  minimax: ["MiniMax-M2.7"],
   kie: [
-    'claude-opus-4-7',
-    'gpt-5-4',
-    'gemini-3-pro',
-    'gemini-3.1-pro',
-    'gemini-3-flash',
+    "claude-opus-4-7",
+    "gpt-5-4",
+    "gemini-3-pro",
+    "gemini-3.1-pro",
+    "gemini-3-flash",
   ],
-  grsai: ['gemini-3-pro', 'gemini-3.1-pro'],
+  grsai: ["gemini-3-pro", "gemini-3.1-pro"],
 };
 
 export function providerLabel(provider: string): string {
   switch (provider) {
-    case 'deepseek':
-      return 'DeepSeek';
-    case 'openai-via-proxy':
-      return 'OpenAI (через прокси)';
-    case 'ollama':
-      return 'Ollama (локально)';
-    case 'anthropic':
-      return 'Anthropic (не подключён — ключ невалиден)';
-    case 'minimax':
-      return 'MiniMax';
-    case 'kie':
-      return 'KIE (Claude / GPT / Gemini hub)';
-    case 'grsai':
-      return 'GRSAI (Gemini через прокси)';
+    case "deepseek":
+      return "DeepSeek";
+    case "openai-via-proxy":
+      return "OpenAI (через прокси)";
+    case "ollama":
+      return "Ollama (локально)";
+    case "anthropic":
+      return "Anthropic (не подключён — ключ невалиден)";
+    case "minimax":
+      return "MiniMax";
+    case "kie":
+      return "KIE (Claude / GPT / Gemini hub)";
+    case "grsai":
+      return "GRSAI (Gemini через прокси)";
     default:
       return provider;
   }

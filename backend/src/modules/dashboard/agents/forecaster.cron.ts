@@ -12,39 +12,11 @@ import {
   type ForecasterTrendPoint,
 } from '../prompts/forecaster.prompt';
 
-/**
- * Pulse Wave 4 §4.6 — Forecaster cron.
- *
- * Источник: plans/tz/2026-05-30-pulse-full.md §4.6.
- *
- * Weekly (`@Cron('0 4 * * 1')`, понедельник 04:00 UTC) для каждой Org
- * считает тренды 4 метрик за последние 4 недели, вызывает LLM-агент
- * `forecast-weekly` и сохраняет результат в `ForecastSnapshot`
- * (scope='company', scopeId=null). Используется в Weekly digest вместо
- * placeholder'а из §2.2.
- *
- * 4 метрики (агрегаты по неделе):
- *   - sentiment_index: (green - red) / total из DailyCheckIn.
- *   - commitment_kept_ratio: kept / (kept+broken+overdue) из IdeaBlock(commitment).
- *   - hanging_decisions: Decision.raisedCount ≥ 2, активные за неделю.
- *   - engagement_score: avg(Person.engagementScore) среди employee'ев Org
- *     (используем PersonEngagementSnapshot — историческая лента).
- *
- * Принципы:
- *   - cache-friendly промпт (стабильный SYSTEM, переменные данные в конце);
- *   - JSON-strict через `responseFormat: json_schema`;
- *   - best-effort: ошибка по одной Org не валит общий проход;
- *   - history: каждую неделю create-запись (не upsert) — для UI трендов;
- *   - EU AI Act: только структурированные метрики, без текстов.
- *
- * Master-flag: пока нет. 1 LLM-вызов на Org в неделю — дёшево.
- */
 @Injectable()
 export class ForecasterCron {
   private readonly logger = new Logger(ForecasterCron.name);
   private static readonly WEEKS = 4;
   private static readonly WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-  /** Жёсткий лимит на размер выборки Org-ов за прогон (страхуем worker memory). */
   private static readonly MAX_ORGS_PER_RUN = 5_000;
 
   constructor(
@@ -52,12 +24,11 @@ export class ForecasterCron {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
   ) {}
 
-  /** Weekly Mon 04:00 UTC (после Engagement-Scorer 03:00 / Burnout 03:45). */
   @Cron('0 4 * * 1')
   async run(): Promise<void> {
     try {
       const stats = await this.runOnce();
-      this.logger.log(stats, 'forecaster.cron: проход завершён');
+      this.logger.debug(stats, 'forecaster.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         `forecaster.cron fail: ${err instanceof Error ? err.message : String(err)}`,
@@ -139,19 +110,13 @@ export class ForecasterCron {
     return { orgsProcessed, snapshotsCreated, parseErrors, errors };
   }
 
-  /**
-   * Считает 4 тренд-точки (одна на неделю) для Org. Каждая точка —
-   * структурированный JSON с 4 метриками.
-   */
   private async computeTrends(args: {
     tenantId: string;
     now: Date;
   }): Promise<ForecasterTrendPoint[]> {
     const trends: ForecasterTrendPoint[] = [];
     for (let weeksAgo = ForecasterCron.WEEKS; weeksAgo >= 1; weeksAgo--) {
-      const start = new Date(
-        args.now.getTime() - weeksAgo * ForecasterCron.WEEK_MS,
-      );
+      const start = new Date(args.now.getTime() - weeksAgo * ForecasterCron.WEEK_MS);
       const end = new Date(start.getTime() + ForecasterCron.WEEK_MS);
       const point = await this.aggregateWeek({
         tenantId: args.tenantId,
@@ -202,7 +167,6 @@ export class ForecasterCron {
       }),
     ]);
 
-    // sentiment_index: (green - red) / total, [-1..+1]; null если total=0.
     let g = 0;
     let r = 0;
     for (const c of checkIns) {
@@ -212,7 +176,6 @@ export class ForecasterCron {
     const total = checkIns.length;
     const sentimentIndex = total > 0 ? round3((g - r) / total) : null;
 
-    // commitment_kept_ratio: kept / (kept+broken+overdue); null если знаменатель=0.
     let kept = 0;
     let broken = 0;
     let overdue = 0;
@@ -232,13 +195,9 @@ export class ForecasterCron {
     const denom = kept + broken + overdue;
     const commitmentKeptRatio = denom > 0 ? round3(kept / denom) : null;
 
-    // engagement_score: avg(score) по снапшотам недели; null если нет данных.
     let engagementScore: number | null = null;
     if (engagementSnapshots.length > 0) {
-      const sum = engagementSnapshots.reduce(
-        (acc, s) => acc + Number(s.score),
-        0,
-      );
+      const sum = engagementSnapshots.reduce((acc, s) => acc + Number(s.score), 0);
       engagementScore = round3(sum / engagementSnapshots.length);
     }
 

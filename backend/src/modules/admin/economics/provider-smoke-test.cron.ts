@@ -8,37 +8,14 @@ import { LlmProtocolAdapterRegistry } from '../../ai/services/protocol-adapter/l
 import { ProviderInfoResolver } from '../../ai/services/protocol-adapter/provider-info.resolver';
 import { ConversationalService } from '../../conversational/conversational.service';
 
-/**
- * SBA α-10 wave 3 — ProviderSmokeTestCron.
- *
- * Каждые 30 минут — короткий «ping» каждого активного LlmProvider:
- * минимальный prompt "Reply with the single word OK.", maxTokens=8.
- *
- * Запись результата:
- *   - LlmProvider.{lastSmokeAt, lastSmokeSuccess, lastSmokeError}
- *   - gauge provider_smoke_test_success{provider} 1.0 / 0.0
- *   - histogram provider_smoke_test_duration_seconds{provider}
- *
- * Alert: после `cfg.budget.providerSmokeTestFailThreshold` (default 3) подряд
- * провалов — отправляем system.message всем super_admin пользователям. После
- * восстановления — recovery-уведомление (один раз).
- *
- * НЕ идёт через LlmRouterService (direct call через adapter registry), потому
- * что:
- *   - taskType='_smoke_test' не зарегистрирован в LlmTaskType union;
- *   - не должен попадать в AiUsageLog / cost-aggregator (это пинг, не usage);
- *   - изоляция: smoke-test не должен зависеть от LlmRouter routes/cache.
- */
 @Injectable()
 export class ProviderSmokeTestCron {
   private readonly logger = new Logger(ProviderSmokeTestCron.name);
-  /** Сколько подряд провалов уже было — in-memory anti-spam. */
   private readonly failStreak = new Map<string, number>();
-  /** Когда последний раз отправляли alert (anti-spam, 1 alert per 2h max). */
   private readonly lastAlertAt = new Map<string, number>();
   private static readonly ALERT_COOLDOWN_MS = 2 * 3600 * 1000;
   private static readonly SMOKE_PROMPT = 'Reply with the single word OK.';
-  private static readonly SMOKE_MAX_TOKENS = 64; // > OpenAI floor (16) + запас на reasoning-вывод
+  private static readonly SMOKE_MAX_TOKENS = 64;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -61,25 +38,16 @@ export class ProviderSmokeTestCron {
     }
     try {
       const result = await this.runOnce();
-      this.logger.log(result, 'provider-smoke-test.cron: проход завершён');
+      this.logger.debug(result, 'provider-smoke-test.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
         'provider-smoke-test.cron: непойманная ошибка',
       );
     }
-    // Ф6 Часть 3 — отдельный best-effort шаг: доля prompt-cache хитов DeepSeek.
-    // Не бросает, не влияет на основной smoke выше.
     await this.checkCacheHitRatio();
   }
 
-  /**
-   * Ф6 Часть 3 — наблюдаемость: считает долю prompt-cache хитов по DeepSeek
-   * (z_llm_cache_hit_total / z_llm_calls_total) и пишет WARN, если ниже порога.
-   * Best-effort: никогда не бросает.
-   *
-   * ratio === null (мало данных) → debug, без WARN (не шуметь на низком трафике).
-   */
   async checkCacheHitRatio(): Promise<void> {
     try {
       if (!this.cfg.llm.cacheSmokeEnabled) {
@@ -87,8 +55,7 @@ export class ProviderSmokeTestCron {
         return;
       }
       const threshold = this.cfg.llm.cacheHitRatioWarnThreshold;
-      const { hits, total, ratio } =
-        await this.metrics.getLlmCacheHitRatio('deepseek');
+      const { hits, total, ratio } = await this.metrics.getLlmCacheHitRatio('deepseek');
 
       if (ratio === null) {
         this.logger.debug(
@@ -134,11 +101,8 @@ export class ProviderSmokeTestCron {
     let failures = 0;
     let scanned = 0;
     for (const p of providers) {
-      // Без baseUrl провайдер заведомо упадёт — это конфиг, а не сбой; пропускаем со скипом.
       if (!p.baseUrl || p.baseUrl.trim().length === 0) {
-        this.logger.debug(
-          `provider-smoke-test: skip ${p.name} — нет baseUrl (не сконфигурирован)`,
-        );
+        this.logger.debug(`provider-smoke-test: skip ${p.name} — нет baseUrl (не сконфигурирован)`);
         continue;
       }
       scanned++;
@@ -153,10 +117,6 @@ export class ProviderSmokeTestCron {
     };
   }
 
-  /**
-   * Public — manual trigger через POST /admin/llm-providers/:id/smoke-test.
-   * Возвращает результат для UI.
-   */
   async testProvider(providerName: string): Promise<{
     provider: string;
     success: boolean;
@@ -221,8 +181,7 @@ export class ProviderSmokeTestCron {
       }
     } else {
       const wasFailing =
-        (this.failStreak.get(providerName) ?? 0) >=
-        this.cfg.budget.providerSmokeTestFailThreshold;
+        (this.failStreak.get(providerName) ?? 0) >= this.cfg.budget.providerSmokeTestFailThreshold;
       this.failStreak.set(providerName, 0);
       if (wasFailing) {
         await this.notifyRecovery(providerName);
@@ -285,15 +244,11 @@ export class ProviderSmokeTestCron {
           },
           dataClass: 'internal',
         });
-      } catch {
-        // ignore — recovery is best-effort
-      }
+      } catch {}
     }
   }
 
-  private async findSuperAdminRecipients(): Promise<
-    Array<{ userId: string; tenantId: string }>
-  > {
+  private async findSuperAdminRecipients(): Promise<Array<{ userId: string; tenantId: string }>> {
     const admins = await this.prisma.user.findMany({
       where: { isSuperAdmin: true, deletedAt: null },
       select: { id: true, memberships: { select: { orgId: true } } },

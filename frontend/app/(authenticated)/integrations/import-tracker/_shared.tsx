@@ -1,55 +1,22 @@
-'use client';
+"use client";
 
-/**
- * Общие хелперы и UI-компоненты для wizard-ов импорта трекеров
- * (Wave 3 / Tracker Phase 5 — Bitrix24 + Я.Трекер ветки).
- *
- * Trello-wizard живёт inline в ImportTrackerClient.tsx (исторически), а новые
- * Bitrix24/Я.Трекер wizard-ы используют этот общий набор:
- *   - parseUserMappings  — парсер textarea email=value / email=skip.
- *   - MaskedWebhookDisplay — компонент маскирующий токен в URL.
- *   - WizardSteps          — общая шкала шагов 1-2-3-4.
- *   - FreeTextMappingStep  — простой шаг маппинга через textarea
- *                            (без member-list, как в Trello).
- *   - SummaryTile          — плитка статистики для preview-шага.
- */
+import { useMemo } from "react";
+import { AlertTriangle, ArrowLeft, ArrowRight } from "lucide-react";
 
-import { useMemo } from 'react';
-import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-} from 'lucide-react';
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent } from "@/ui/shadcn/card";
+import { Label } from "@/ui/shadcn/label";
+import { Textarea } from "@/ui/shadcn/textarea";
 
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent } from '@/ui/shadcn/card';
-import { Label } from '@/ui/shadcn/label';
-import { Textarea } from '@/ui/shadcn/textarea';
-
-/** Результат парсинга textarea с маппингами пользователей. */
 export interface ParsedUserMappings {
-  /** email → ourUserId | null. Готово для отправки на бэкенд. */
   mappings: Record<string, string | null>;
-  /** Сколько строк «email=ourUserId» (валидные). */
   mappedCount: number;
-  /** Сколько строк «email=skip». */
   skippedCount: number;
-  /** Строки, которые не удалось распарсить (для подсветки в UI). */
   invalidLines: string[];
 }
 
 const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/**
- * Парсер пар "email=value" из textarea.
- *
- * Формат строки:
- *   - "email@example.com=user-id-123" -> mapping в нашего пользователя
- *   - "email@example.com=skip"        -> явный пропуск (null)
- *   - "# комментарий"                  -> игнорируется
- *   - пустая строка                    -> игнорируется
- *   - всё остальное                    -> попадёт в invalidLines.
- */
 export function parseUserMappings(text: string): ParsedUserMappings {
   const mappings: Record<string, string | null> = {};
   const invalidLines: string[] = [];
@@ -60,9 +27,9 @@ export function parseUserMappings(text: string): ParsedUserMappings {
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (line.length === 0) continue;
-    if (line.startsWith('#')) continue;
+    if (line.startsWith("#")) continue;
 
-    const eqIdx = line.indexOf('=');
+    const eqIdx = line.indexOf("=");
     if (eqIdx === -1) {
       invalidLines.push(rawLine);
       continue;
@@ -73,7 +40,7 @@ export function parseUserMappings(text: string): ParsedUserMappings {
       invalidLines.push(rawLine);
       continue;
     }
-    if (value.toLowerCase() === 'skip') {
+    if (value.toLowerCase() === "skip") {
       mappings[email] = null;
       skippedCount += 1;
     } else {
@@ -85,14 +52,6 @@ export function parseUserMappings(text: string): ParsedUserMappings {
   return { mappings, mappedCount, skippedCount, invalidLines };
 }
 
-/**
- * Маскирующее отображение webhook URL Битрикс24.
- *
- * Превращает https://your-portal.bitrix24.ru/rest/12/abc123secret/
- * в https://your-portal.bitrix24.ru/rest/12/(token)/.
- *
- * Также маскирует обычные OAuth-токены: показывает первые/последние 4 символа.
- */
 export function MaskedWebhookDisplay({
   url,
   className,
@@ -104,8 +63,8 @@ export function MaskedWebhookDisplay({
   return (
     <code
       className={
-        'inline-block break-all rounded bg-bg-overlay px-2 py-0.5 font-mono text-xs text-fg-secondary ' +
-        (className ?? '')
+        "inline-block break-all rounded bg-bg-overlay px-2 py-0.5 font-mono text-xs text-fg-secondary " +
+        (className ?? "")
       }
     >
       {masked}
@@ -113,34 +72,28 @@ export function MaskedWebhookDisplay({
   );
 }
 
-/** Маскирующий преобразователь URL/токена — экспортируется для preview-шагов. */
 export function maskWebhookUrl(input: string): string {
-  if (!input) return '';
-  // Bitrix24 формат: .../rest/{userId}/{token}/...
+  if (!input) return "";
   const bitrixRx = /^(https?:\/\/[^/]+\/rest\/\d+\/)([^/]+)(\/.*)?$/i;
   const m = input.match(bitrixRx);
   if (m) {
-    return m[1] + '****' + (m[3] ?? '/');
+    return m[1] + "****" + (m[3] ?? "/");
   }
-  // OAuth-токен (без слешей) — оставим хвост и голову.
-  if (!input.includes('/') && input.length > 10) {
-    return input.slice(0, 4) + '...' + input.slice(-4);
+  if (!input.includes("/") && input.length > 10) {
+    return input.slice(0, 4) + "..." + input.slice(-4);
   }
-  // Иначе — просто заменим всё кроме хоста.
   try {
     const u = new URL(input);
-    return u.protocol + '//' + u.host + '/****';
+    return u.protocol + "//" + u.host + "/****";
   } catch {
-    return '****';
+    return "****";
   }
 }
 
-/** Простая валидация формата Bitrix24 webhook URL. */
 export function isLikelyBitrixWebhook(url: string): boolean {
   return /^https?:\/\/[^/]+\/rest\/\d+\/[^/]+\/?$/i.test(url.trim());
 }
 
-/** Парсер comma/newline-separated списка идентификаторов. */
 export function parseIdList(input: string): string[] {
   return Array.from(
     new Set(
@@ -152,7 +105,6 @@ export function parseIdList(input: string): string[] {
   );
 }
 
-/** Валидатор ключа очереди Я.Трекера: 2-10 заглавных латинских букв/цифр. */
 const QUEUE_KEY_RX = /^[A-Z][A-Z0-9]{1,9}$/;
 
 export function validateQueueKeys(keys: string[]): {
@@ -167,8 +119,6 @@ export function validateQueueKeys(keys: string[]): {
   }
   return { valid, invalid };
 }
-
-// ─── Шкала шагов wizard'а (универсальная) ──────────────────────────────────
 
 export interface WizardStepDef {
   id: string;
@@ -193,10 +143,10 @@ export function WizardSteps({
             key={s.id}
             className={
               active
-                ? 'rounded-full bg-accent/10 px-3 py-1 text-accent'
+                ? "rounded-full bg-accent/10 px-3 py-1 text-accent"
                 : done
-                  ? 'rounded-full bg-bg-overlay px-3 py-1 text-fg-secondary'
-                  : 'rounded-full bg-bg-overlay px-3 py-1'
+                  ? "rounded-full bg-bg-overlay px-3 py-1 text-fg-secondary"
+                  : "rounded-full bg-bg-overlay px-3 py-1"
             }
           >
             {i + 1}. {s.label}
@@ -206,8 +156,6 @@ export function WizardSteps({
     </ol>
   );
 }
-
-// ─── Шаг маппинга через свободный текст (общий для Bitrix24 / Я.Трекер) ───
 
 export function FreeTextMappingStep({
   value,
@@ -243,22 +191,22 @@ export function FreeTextMappingStep({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder={
-              '# Один маппинг на строку. Примеры:\n' +
-              'alice@example.com=user_abc123\n' +
-              'bob@example.com=skip\n' +
-              '# carol@example.com=user_def456  (строки с # игнорируются)\n'
+              "# Один маппинг на строку. Примеры:\n" +
+              "alice@example.com=user_abc123\n" +
+              "bob@example.com=skip\n" +
+              "# carol@example.com=user_def456  (строки с # игнорируются)\n"
             }
             className="min-h-[160px] font-mono text-xs"
           />
           <p className="text-xs text-fg-tertiary">
-            Формат:{' '}
+            Формат:{" "}
             <code className="rounded bg-bg-overlay px-1 py-0.5">
               email = ourUserId
-            </code>{' '}
-            (назначить) или{' '}
+            </code>{" "}
+            (назначить) или{" "}
             <code className="rounded bg-bg-overlay px-1 py-0.5">
               email = skip
-            </code>{' '}
+            </code>{" "}
             (игнорировать). ID пользователя можно скопировать из раздела
             «Команда».
           </p>
@@ -282,7 +230,7 @@ export function FreeTextMappingStep({
             <ul className="mt-1 list-disc space-y-0.5 pl-5">
               {parsed.invalidLines.slice(0, 5).map((line, i) => (
                 <li key={i}>
-                  <code className="font-mono">{line || '(пустая строка)'}</code>
+                  <code className="font-mono">{line || "(пустая строка)"}</code>
                 </li>
               ))}
               {parsed.invalidLines.length > 5 && (
@@ -299,8 +247,8 @@ export function FreeTextMappingStep({
           <AlertTriangle size={14} className="mt-0.5 shrink-0 text-accent" />
           <p>
             Email-адреса, которых нет в этом списке, попадут в журнал «не
-            сопоставлено» в карточке импорта — вы сможете доделать маппинг
-            позже из раздела «Команда».
+            сопоставлено» в карточке импорта — вы сможете доделать маппинг позже
+            из раздела «Команда».
           </p>
         </div>
 
@@ -329,17 +277,17 @@ function MappingStat({
   return (
     <div
       className={
-        'rounded-md border p-2 ' +
+        "rounded-md border p-2 " +
         (danger
-          ? 'border-warn/30 bg-warn/10 text-warn'
-          : 'border-border-subtle bg-bg-card text-fg-secondary')
+          ? "border-warn/30 bg-warn/10 text-warn"
+          : "border-border-subtle bg-bg-card text-fg-secondary")
       }
     >
       <div className="text-[11px] uppercase tracking-wide">{label}</div>
       <div
         className={
-          'mt-0.5 text-lg font-semibold ' +
-          (danger ? 'text-warn' : 'text-fg-primary')
+          "mt-0.5 text-lg font-semibold " +
+          (danger ? "text-warn" : "text-fg-primary")
         }
       >
         {value}
@@ -347,8 +295,6 @@ function MappingStat({
     </div>
   );
 }
-
-// ─── Плитка для preview-шага ──────────────────────────────────────────────
 
 export function SummaryTile({
   icon,

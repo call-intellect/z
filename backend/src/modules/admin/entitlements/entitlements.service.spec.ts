@@ -1,16 +1,3 @@
-/**
- * Admin-redesign Фаза 4 — unit-тесты `AdminEntitlementsService`.
- *
- * Покрываем:
- *   1) listOverview(hasOverrides=true): фильтрует только Org с override'ами.
- *   2) listOverview(hasOverrides=false): возвращает все OrgEntitlement.
- *   3) upsertForOrg(): создаёт OrgEntitlement, если записи нет.
- *   4) upsertForOrg(): обновляет существующую запись.
- *   5) removeFeatureKey(): удаляет ключ из featureOverrides.
- *   6) removeFeatureKey(): removed=false если ключа не было.
- *   7) resolveForOrg(): plan.features ∪ overrides с приоритетом override.
- */
-
 import { NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -53,21 +40,16 @@ function buildPrisma(state: { ents: EntRow[]; plans: PlanRow[]; orgs: OrgRow[] }
     return state.plans.find((p) => p.id === where.id) ?? null;
   });
 
-  const entFindMany = vi.fn(
-    async (args: {
-      where?: { tier?: string };
-      take?: number;
-    }) => {
-      let rows = [...state.ents];
-      if (args.where?.tier) rows = rows.filter((r) => r.tier === args.where!.tier);
-      rows.sort((a, b) => {
-        const t = b.updatedAt.getTime() - a.updatedAt.getTime();
-        if (t !== 0) return t;
-        return b.id.localeCompare(a.id);
-      });
-      return rows.slice(0, args.take ?? rows.length);
-    },
-  );
+  const entFindMany = vi.fn(async (args: { where?: { tier?: string }; take?: number }) => {
+    let rows = [...state.ents];
+    if (args.where?.tier) rows = rows.filter((r) => r.tier === args.where!.tier);
+    rows.sort((a, b) => {
+      const t = b.updatedAt.getTime() - a.updatedAt.getTime();
+      if (t !== 0) return t;
+      return b.id.localeCompare(a.id);
+    });
+    return rows.slice(0, args.take ?? rows.length);
+  });
 
   const entFindUnique = vi.fn(async ({ where }: { where: { tenantId: string } }) => {
     return state.ents.find((e) => e.tenantId === where.tenantId) ?? null;
@@ -205,9 +187,7 @@ describe('AdminEntitlementsService', () => {
   });
 
   it('upsertForOrg(): NotFoundException если Org не существует', async () => {
-    const svc = new AdminEntitlementsService(
-      buildPrisma({ orgs: [], plans: [], ents: [] }),
-    );
+    const svc = new AdminEntitlementsService(buildPrisma({ orgs: [], plans: [], ents: [] }));
     await expect(svc.upsertForOrg('missing', { tier: 'tier_pro' })).rejects.toBeInstanceOf(
       NotFoundException,
     );
@@ -275,7 +255,6 @@ describe('AdminEntitlementsService', () => {
         makeEnt({
           tenantId: 'tenant-1',
           tier: 'tier_pro',
-          // override фичи и quota.
           featureOverrides: { ai_chat: false, custom_thing: true },
           quotaOverrides: { max_meetings_per_day: 9999 },
         }),
@@ -285,18 +264,16 @@ describe('AdminEntitlementsService', () => {
     const res = await svc.resolveForOrg('tenant-1');
     expect(res.tier).toBe('tier_pro');
     expect(res.features).toEqual({
-      ai_chat: false, // override
-      employee_clones: true, // из плана
-      custom_thing: true, // только в overrides
+      ai_chat: false,
+      employee_clones: true,
+      custom_thing: true,
     });
     expect(res.quotas).toEqual({ max_meetings_per_day: 9999 });
     expect(res.plan?.id).toBe('tier_pro');
   });
 
   it('resolveForOrg(): NotFoundException если Org нет', async () => {
-    const svc = new AdminEntitlementsService(
-      buildPrisma({ orgs: [], plans: [], ents: [] }),
-    );
+    const svc = new AdminEntitlementsService(buildPrisma({ orgs: [], plans: [], ents: [] }));
     await expect(svc.resolveForOrg('missing')).rejects.toBeInstanceOf(NotFoundException);
   });
 

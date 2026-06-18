@@ -7,20 +7,6 @@ import { EntityMergeService } from '../../knowledge-core/services/entity-merge.s
 
 import { AdminCacheService } from './admin-cache.service';
 
-/**
- * OrgAdminKnowledgeService (Фаза 7 шаг 7).
- *
- * Локальная отладка ядра знаний для owner/admin Org:
- *   - тумблеры воркеров (Org.workersEnabled),
- *   - просмотр AuditLog,
- *   - listLinks / deleteLink / bulkDeleteLinks (soft-delete),
- *   - mergeEntities / renameEntity / addAlias,
- *   - reprocessRawEvent — удалить старые блоки и переотправить в очередь,
- *   - getOrgMetrics — счётчики и средние confidence.
- *
- * Все методы принимают `tenantId` явно (передаётся из контроллера через @CurrentOrg()),
- * проверка прав делается guard'ами `OrgAdminGuard`.
- */
 @Injectable()
 export class OrgAdminKnowledgeService {
   private readonly logger = new Logger(OrgAdminKnowledgeService.name);
@@ -32,8 +18,6 @@ export class OrgAdminKnowledgeService {
     @Inject(AdminCacheService) private readonly cache: AdminCacheService,
   ) {}
 
-  // ─────────────────────────── workers ────────────────────────────────────
-
   async setWorkersEnabled(
     tenantId: string,
     patch: Record<string, boolean>,
@@ -44,10 +28,8 @@ export class OrgAdminKnowledgeService {
       select: { workersEnabled: true },
     });
     if (!org) throw new Error(`Org not found: ${tenantId}`);
-    const current =
-      (org.workersEnabled ?? {}) as Record<string, unknown>;
+    const current = (org.workersEnabled ?? {}) as Record<string, unknown>;
     const merged: Record<string, boolean> = {};
-    // Нормализуем существующие boolean'ы.
     for (const [k, v] of Object.entries(current)) {
       if (typeof v === 'boolean') merged[k] = v;
     }
@@ -66,18 +48,11 @@ export class OrgAdminKnowledgeService {
         metadata: { patch } as unknown as Prisma.InputJsonValue,
       },
     });
-    // Тумблер не влияет напрямую на usage-метрики, но дашборд может содержать
-    // «есть ли активные jobs» (vNext). На всякий случай инвалидируем.
     this.cache.invalidate(`usage:dashboard:org:${tenantId}:`);
     return { ok: true, workersEnabled: merged };
   }
 
-  // ─────────────────────────── audit-logs ─────────────────────────────────
-
-  async getRecentAuditLogs(
-    tenantId: string,
-    args: { limit: number; entityTypes?: string[] },
-  ) {
+  async getRecentAuditLogs(tenantId: string, args: { limit: number; entityTypes?: string[] }) {
     const where: Prisma.AuditLogWhereInput = { tenantId };
     if (args.entityTypes && args.entityTypes.length > 0) {
       where.OR = args.entityTypes.map((et) => ({
@@ -100,8 +75,6 @@ export class OrgAdminKnowledgeService {
       })),
     };
   }
-
-  // ─────────────────────────── links ──────────────────────────────────────
 
   async listLinks(
     tenantId: string,
@@ -189,7 +162,9 @@ export class OrgAdminKnowledgeService {
       if (!link) throw new Error('Link not found');
       await this.prisma.ideaBlockLink.update({
         where: { id: linkId },
-        data: { deletedAt: new Date(), deletedBy: actor.userId },
+        // status:'archived' — defense-in-depth (Б2/K2): даже ридер, забывший
+        // фильтр deletedAt, не покажет soft-deleted ребро (он фильтрует status).
+        data: { deletedAt: new Date(), deletedBy: actor.userId, status: 'archived' },
       });
     } else {
       const link = await this.prisma.entityLink.findFirst({
@@ -198,7 +173,9 @@ export class OrgAdminKnowledgeService {
       if (!link) throw new Error('Link not found');
       await this.prisma.entityLink.update({
         where: { id: linkId },
-        data: { deletedAt: new Date(), deletedBy: actor.userId },
+        // status:'archived' — defense-in-depth (Б2/K2): даже ридер, забывший
+        // фильтр deletedAt, не покажет soft-deleted ребро (он фильтрует status).
+        data: { deletedAt: new Date(), deletedBy: actor.userId, status: 'archived' },
       });
     }
     await this.prisma.auditLog.create({
@@ -232,7 +209,8 @@ export class OrgAdminKnowledgeService {
       if (args.beforeDate) where.createdAt = { lt: args.beforeDate };
       const result = await this.prisma.ideaBlockLink.updateMany({
         where,
-        data: { deletedAt: now, deletedBy: actor.userId },
+        // status:'archived' — defense-in-depth (Б2/K2), см. deleteLink.
+        data: { deletedAt: now, deletedBy: actor.userId, status: 'archived' },
       });
       await this.prisma.auditLog.create({
         data: {
@@ -252,7 +230,8 @@ export class OrgAdminKnowledgeService {
     if (args.beforeDate) where.createdAt = { lt: args.beforeDate };
     const result = await this.prisma.entityLink.updateMany({
       where,
-      data: { deletedAt: now, deletedBy: actor.userId },
+      // status:'archived' — defense-in-depth (Б2/K2), см. deleteLink.
+      data: { deletedAt: now, deletedBy: actor.userId, status: 'archived' },
     });
     await this.prisma.auditLog.create({
       data: {
@@ -264,8 +243,6 @@ export class OrgAdminKnowledgeService {
     });
     return { ok: true, affected: result.count };
   }
-
-  // ─────────────────────────── entities ───────────────────────────────────
 
   async mergeEntities(
     tenantId: string,
@@ -306,9 +283,7 @@ export class OrgAdminKnowledgeService {
       data.canonicalName = args.canonicalName.slice(0, 200);
     }
     if (args.addAlias) {
-      const aliases = Array.from(
-        new Set([...entity.aliases, args.addAlias.slice(0, 200)]),
-      );
+      const aliases = Array.from(new Set([...entity.aliases, args.addAlias.slice(0, 200)]));
       data.aliases = aliases;
     }
     if (Object.keys(data).length === 0) return { ok: true };
@@ -325,8 +300,6 @@ export class OrgAdminKnowledgeService {
     return { ok: true };
   }
 
-  // ─────────────────────────── reprocess raw-event ────────────────────────
-
   async reprocessRawEvent(
     tenantId: string,
     rawEventId: string,
@@ -337,7 +310,6 @@ export class OrgAdminKnowledgeService {
     });
     if (!event) throw new Error('RawEvent not found');
 
-    // Найдём blockId через IdeaBlockEvidence.rawEventId.
     const evidences = await this.prisma.ideaBlockEvidence.findMany({
       where: { rawEventId },
       select: { blockId: true },
@@ -346,15 +318,12 @@ export class OrgAdminKnowledgeService {
 
     let deletedBlocks = 0;
     if (blockIds.length > 0) {
-      // Cascade onDelete уберёт IdeaBlockEntity, IdeaBlockEvidence, IdeaBlockLink.
       const result = await this.prisma.ideaBlock.deleteMany({
         where: { id: { in: blockIds }, tenantId },
       });
       deletedBlocks = result.count;
     }
 
-    // RawEvent: возвращаем processingStatus в 'received', чтобы воркер обработал
-    // повторно. Иначе block-ingest.worker сделает skip (уже 'ingested').
     await this.prisma.rawEvent.update({
       where: { id: rawEventId },
       data: {
@@ -364,7 +333,6 @@ export class OrgAdminKnowledgeService {
       },
     });
 
-    // Enqueue с suffix-jobId чтобы пройти BullMQ-дедуп.
     await this.coreQueue.enqueueRawReceived(rawEventId, {
       suffix: Date.now().toString(),
     });
@@ -385,8 +353,6 @@ export class OrgAdminKnowledgeService {
     );
     return { ok: true, deletedBlocks };
   }
-
-  // ─────────────────────────── metrics ────────────────────────────────────
 
   async getOrgMetrics(tenantId: string) {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -438,9 +404,6 @@ export class OrgAdminKnowledgeService {
         block: { active: blockLinksActive },
         entity: { active: entityLinksActive },
       },
-      // costUsd намеренно НЕ отдаётся: себестоимость LLM не показывается
-      // владельцу Org (defense-in-depth, ТЗ 2026-06-02 §4). Остаются только
-      // счётчики calls/tokens без стоимости и без провайдеров/моделей.
       llm: {
         last24h: {
           calls: ai24h._count._all,

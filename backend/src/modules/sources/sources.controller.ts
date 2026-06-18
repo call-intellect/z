@@ -17,10 +17,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { EntitlementService } from '../entitlements/entitlement.service';
 import type { FeatureKey } from '../entitlements/tier-config';
@@ -41,22 +38,6 @@ import {
 } from './dto/source.dto';
 import { SourcesService } from './sources.service';
 
-/**
- * REST API подключённых источников Org (Фаза 10 knowledge-core).
- *
- *   - GET    /api/v1/sources?type=          — список (read).
- *   - GET    /api/v1/sources/:id            — деталка (read).
- *   - POST   /api/v1/sources                — создать (write/manage).
- *   - PATCH  /api/v1/sources/:id            — обновить (write/manage).
- *   - DELETE /api/v1/sources/:id            — soft-delete `isActive=false` (delete).
- *   - POST   /api/v1/sources/:id/test       — адаптер-зависимый smoke-test (manage).
- *
- * RBAC ресурс — `source`. policy.csv:
- *   - owner — read/write/delete/manage.
- *   - admin — read/write/manage.
- *   - manager — read.
- *   - super_admin — bypass.
- */
 @ApiTags('sources')
 @Controller('api/v1/sources')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -67,10 +48,6 @@ export class SourcesController {
     @Inject(EntitlementService) private readonly entitlements: EntitlementService,
   ) {}
 
-  /**
-   * Phase 12: маппинг `SourceType` → требуемая `FeatureKey`. Если для типа
-   * нет gating'а (`meeting`, `chat`, `external`) — возвращает null.
-   */
   private featureForType(type: string): FeatureKey | null {
     switch (type) {
       case 'bot':
@@ -121,9 +98,6 @@ export class SourcesController {
     const t = this.requireTenant(tenantId);
     await this.requireManage(user.id, t);
 
-    // Phase 12: gating создания Source по типу адаптера. meeting/chat/external —
-    // без gating'а; bot/email/phone_call/web_form — требуют соответствующей
-    // `feature.adapter_*`.
     const requiredFeature = this.featureForType(body.type);
     if (requiredFeature) {
       const allowed = await this.entitlements.hasFeature(t, requiredFeature);
@@ -171,6 +145,19 @@ export class SourcesController {
     return this.sources.softDelete(t, user.id, id);
   }
 
+  @Delete(':id/purge')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Полное удаление источника + его RawEvent (необратимо)' })
+  async purge(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true; deletedRawEvents: number }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireDelete(user.id, t);
+    return this.sources.hardDelete(t, user.id, id);
+  }
+
   @Post(':id/test')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Smoke-test адаптера' })
@@ -183,8 +170,6 @@ export class SourcesController {
     await this.requireManage(user.id, t);
     return this.sources.test(t, user.id, id);
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

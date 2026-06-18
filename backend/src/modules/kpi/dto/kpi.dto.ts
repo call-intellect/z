@@ -1,49 +1,23 @@
 import { z } from 'zod';
 
-/**
- * DTO модуля KPI (SBA α-8 wave 3).
- *
- * KPI = `Metric` с заполненным `attachedTo*Id` (Role / Department /
- * ResponsibilityElement). Это subset, не отдельная сущность.
- *
- * См. plans/tz/2026-05-23-sba-alpha-8-wave3-appointment-kpi.md §7.
- */
-
-export const KPI_FREQUENCIES = [
-  'daily',
-  'weekly',
-  'monthly',
-  'quarterly',
-  'adhoc',
-] as const;
+export const KPI_FREQUENCIES = ['daily', 'weekly', 'monthly', 'quarterly', 'adhoc'] as const;
 export type KpiFrequency = (typeof KPI_FREQUENCIES)[number];
 
-export const METRIC_VALUE_TYPES = [
-  'count',
-  'ratio',
-  'duration_seconds',
-  'money',
-  'other',
-] as const;
+export const METRIC_VALUE_TYPES = ['count', 'ratio', 'duration_seconds', 'money', 'other'] as const;
 export type MetricValueTypeLiteral = (typeof METRIC_VALUE_TYPES)[number];
 
 const FrequencySchema = z.enum(KPI_FREQUENCIES);
 const ValueTypeSchema = z.enum(METRIC_VALUE_TYPES);
-
-// ─────────────────────────── Query ──────────────────────────────────
 
 export const ListKpiQuerySchema = z.object({
   attachedToRoleId: z.string().min(1).optional(),
   attachedToDepartmentId: z.string().min(1).optional(),
   attachedToResponsibilityElementId: z.string().min(1).optional(),
   frequency: FrequencySchema.optional(),
-  /** Только KPI с заполненным любым attachedTo*Id. По умолчанию true. */
   kpiOnly: z.coerce.boolean().optional().default(true),
   limit: z.coerce.number().int().min(1).max(500).default(200),
 });
 export type ListKpiQuery = z.infer<typeof ListKpiQuerySchema>;
-
-// ─────────────────────────── Body ────────────────────────────────────
 
 const NameSchema = z
   .string({ error: 'Имя KPI обязательно' })
@@ -51,11 +25,7 @@ const NameSchema = z
   .min(1, 'Имя не может быть пустым')
   .max(200);
 
-const UnitSchema = z
-  .string()
-  .trim()
-  .min(1, 'Единица измерения обязательна')
-  .max(50);
+const UnitSchema = z.string().trim().min(1, 'Единица измерения обязательна').max(50);
 
 export const CreateKpiSchema = z
   .object({
@@ -66,19 +36,15 @@ export const CreateKpiSchema = z
     valueType: ValueTypeSchema.optional(),
     attachedToRoleId: z.string().min(1).nullable().optional(),
     attachedToDepartmentId: z.string().min(1).nullable().optional(),
-    attachedToResponsibilityElementId: z
-      .string()
-      .min(1)
-      .nullable()
-      .optional(),
+    attachedToResponsibilityElementId: z.string().min(1).nullable().optional(),
     frequency: FrequencySchema.nullable().optional(),
   })
   .refine(
     (data) =>
       Boolean(
         data.attachedToRoleId ??
-          data.attachedToDepartmentId ??
-          data.attachedToResponsibilityElementId,
+        data.attachedToDepartmentId ??
+        data.attachedToResponsibilityElementId,
       ),
     {
       message:
@@ -96,11 +62,7 @@ export const UpdateKpiSchema = z
     valueType: ValueTypeSchema.optional(),
     attachedToRoleId: z.string().min(1).nullable().optional(),
     attachedToDepartmentId: z.string().min(1).nullable().optional(),
-    attachedToResponsibilityElementId: z
-      .string()
-      .min(1)
-      .nullable()
-      .optional(),
+    attachedToResponsibilityElementId: z.string().min(1).nullable().optional(),
     frequency: FrequencySchema.nullable().optional(),
   })
   .refine((data) => Object.values(data).some((v) => v !== undefined), {
@@ -116,8 +78,6 @@ export const KpiMeasurementSchema = z.object({
   measuredAt: z.coerce.date().optional(),
 });
 export type KpiMeasurementDto = z.infer<typeof KpiMeasurementSchema>;
-
-// ─────────────────────────── Response DTO ────────────────────────────
 
 export interface KpiDto {
   id: string;

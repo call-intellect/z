@@ -1,10 +1,5 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 
-/**
- * Доменные исключения room-chat. Маппинг на HTTP делает Nest по типу
- * (Forbidden → 403, BadRequest → 400). `code` в payload — для фронта.
- */
-
 export class NotMeetingParticipantError extends ForbiddenException {
   constructor() {
     super({

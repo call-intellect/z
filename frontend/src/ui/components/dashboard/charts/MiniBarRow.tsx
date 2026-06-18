@@ -1,31 +1,18 @@
-'use client';
+"use client";
 
-import { cn } from '@/ui/shadcn/lib/utils';
+import { cn } from "@/ui/shadcn/lib/utils";
 
-import { autoTone, toneVars, type ChartTone } from './tones';
+import { autoTone, toneVars, type ChartTone } from "./tones";
 
 type Props = {
   value: number;
-  /** Если 0 — рисуем пустую полоску. */
   max: number;
   tone?: ChartTone;
-  /** Подпись слева — например, название метрики. */
   label?: string;
-  /** Суффикс справа после числа — `%`, `руб.` и т.п. */
   suffix?: string;
   className?: string;
 };
 
-/**
- * MiniBarRow — горизонтальная полоска прогресса от 0 до max.
- *
- * Используется для ROI, goal progress, mention count. Если `tone` не передан —
- * выбирается автоматически: <30% → danger, 30..70% → warning, ≥70% → success.
- *
- * a11y: имеет роль `progressbar` с `aria-valuemin/max/now`. Подпись и значение
- * рендерятся текстом (для скринридеров достаточно `aria-label`-fallback по
- * `label`).
- */
 export function MiniBarRow({
   value,
   max,
@@ -43,7 +30,7 @@ export function MiniBarRow({
   const widthPct = `${(ratio * 100).toFixed(1)}%`;
 
   return (
-    <div className={cn('flex items-center gap-2', className)}>
+    <div className={cn("flex items-center gap-2", className)}>
       {label && (
         <span className="min-w-0 flex-1 truncate text-xs text-fg-secondary">
           {label}
@@ -56,8 +43,8 @@ export function MiniBarRow({
         aria-valuenow={safeValue}
         aria-label={label}
         className={cn(
-          'relative h-1.5 flex-1 overflow-hidden rounded-full bg-bg-overlay/60',
-          label ? 'min-w-[40px]' : 'min-w-0',
+          "relative h-1.5 flex-1 overflow-hidden rounded-full bg-bg-overlay/60",
+          label ? "min-w-[40px]" : "min-w-0",
         )}
       >
         <div
@@ -72,7 +59,7 @@ export function MiniBarRow({
       {(suffix !== undefined || value !== undefined) && (
         <span className="shrink-0 text-xs tabular-nums text-fg-secondary">
           {formatValue(value)}
-          {suffix ? ` ${suffix}` : ''}
+          {suffix ? ` ${suffix}` : ""}
         </span>
       )}
     </div>
@@ -80,7 +67,7 @@ export function MiniBarRow({
 }
 
 function formatValue(v: number): string {
-  if (!Number.isFinite(v)) return '—';
+  if (!Number.isFinite(v)) return "—";
   if (Number.isInteger(v)) return v.toString();
   return v.toFixed(1);
 }

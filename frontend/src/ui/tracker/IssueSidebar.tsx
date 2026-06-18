@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 import {
   Calendar,
   Flag,
@@ -10,25 +10,21 @@ import {
   Layers,
   CornerUpRight,
   FolderInput,
-} from 'lucide-react';
-import { toast } from 'sonner';
+} from "lucide-react";
+import { toast } from "sonner";
 import {
   ISSUE_PRIORITY_LABELS,
   dueDateLabel,
   type Issue,
-} from '@/domain/tracker';
-import { issuesApi } from '@/api/tracker/issues.api';
-import { humanizeApiError } from '@/api/api-error';
-import { useProjects } from '@/hooks/tracker/useProjects';
-import { IssuePriorityIcon } from './IssuePriorityIcon';
-import { AssigneeAvatarGroup } from './AssigneeAvatar';
-import { StartMeetingButton } from './StartMeetingButton';
-import { ProjectPickerDialog } from './ProjectPickerDialog';
+} from "@/domain/tracker";
+import { issuesApi } from "@/api/tracker/issues.api";
+import { humanizeApiError } from "@/api/api-error";
+import { useProjects } from "@/hooks/tracker/useProjects";
+import { IssuePriorityIcon } from "./IssuePriorityIcon";
+import { AssigneeAvatarGroup } from "./AssigneeAvatar";
+import { StartMeetingButton } from "./StartMeetingButton";
+import { ProjectPickerDialog } from "./ProjectPickerDialog";
 
-/**
- * IssueSidebar — правая колонка карточки задачи: исполнители, приоритет,
- * метки, цикл, цель, сроки + кнопка «Запустить встречу».
- */
 export function IssueSidebar({
   issue,
   orgId,
@@ -36,10 +32,6 @@ export function IssueSidebar({
 }: {
   issue: Issue;
   orgId: string;
-  /**
-   * Перенос задачи в другой проект сменил identifier/projectId — родитель
-   * должен перезагрузить карточку (и при необходимости URL/breadcrumb).
-   */
   onMoved?: () => void;
 }) {
   const due = dueDateLabel(issue.dueDate);
@@ -47,49 +39,55 @@ export function IssueSidebar({
   return (
     <aside className="flex flex-col gap-3 rounded-md border border-border-subtle bg-bg-elevated p-4 text-sm">
       <Row icon={<Users size={14} />} label="Исполнители">
-        <AssigneeAvatarGroup userIds={issue.assigneeUserIds} max={6} size={22} />
+        <AssigneeAvatarGroup
+          userIds={issue.assigneeUserIds}
+          max={6}
+          size={22}
+        />
       </Row>
 
       <Row icon={<FolderInput size={14} />} label="Проект">
         <ProjectMoveRow issue={issue} orgId={orgId} onMoved={onMoved} />
       </Row>
 
-      <Row icon={<IssuePriorityIcon priority={issue.priority} />} label="Приоритет">
+      <Row
+        icon={<IssuePriorityIcon priority={issue.priority} />}
+        label="Приоритет"
+      >
         <span className="text-fg-primary">
           {ISSUE_PRIORITY_LABELS[issue.priority]}
         </span>
       </Row>
 
       <Row icon={<Flag size={14} />} label="Срок">
-        <span className={due && issue.isOverdue ? 'text-danger' : 'text-fg-primary'}>
-          {due ?? '—'}
+        <span
+          className={due && issue.isOverdue ? "text-danger" : "text-fg-primary"}
+        >
+          {due ?? "—"}
         </span>
       </Row>
 
       <Row icon={<Tag size={14} />} label="Метки">
         <span className="text-fg-primary">
-          {issue.labelIds.length > 0 ? `${issue.labelIds.length} меток` : '—'}
+          {issue.labelIds.length > 0 ? `${issue.labelIds.length} меток` : "—"}
         </span>
       </Row>
 
       <Row icon={<Layers size={14} />} label="Спринт">
-        <span className="text-fg-primary">{issue.cycleId ?? '—'}</span>
+        <span className="text-fg-primary">{issue.cycleId ?? "—"}</span>
       </Row>
 
       <Row icon={<Target size={14} />} label="Цель">
-        <span className="text-fg-primary">{issue.goalId ?? '—'}</span>
+        <span className="text-fg-primary">{issue.goalId ?? "—"}</span>
       </Row>
 
       <Row icon={<Calendar size={14} />} label="Создана">
         <span className="text-fg-secondary text-xs">
-          {issue.createdAt.toLocaleDateString('ru-RU')}
+          {issue.createdAt.toLocaleDateString("ru-RU")}
         </span>
       </Row>
 
-      {/* Tracker subtasks UI (2026-05-27) — селектор «Родительская задача».
-          Простой identifier-input (типа KORA-100) + кнопка «Сделать
-          самостоятельной». Полный typeahead-поиск — отдельная итерация,
-          здесь — минимальный путь для MVP. */}
+      {}
       <Row icon={<CornerUpRight size={14} />} label="Родитель">
         <ParentTaskSelector issue={issue} orgId={orgId} />
       </Row>
@@ -101,17 +99,8 @@ export function IssueSidebar({
   );
 }
 
-/**
- * ParentTaskSelector — простое поле «KORA-N» для смены родителя.
- *
- * Текущее значение показано как chip (clear через крестик = сделать корневой).
- * Ввод нового identifier → blur/Enter → backend.
- *
- * Полный typeahead-поиск (`useIssues({ q })`) — TODO в отдельной итерации,
- * требует UX-решений по позиционированию выпадашки.
- */
 function ParentTaskSelector({ issue, orgId }: { issue: Issue; orgId: string }) {
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
 
@@ -121,19 +110,15 @@ function ParentTaskSelector({ issue, orgId }: { issue: Issue; orgId: string }) {
     setSaving(true);
     setErrorText(null);
     try {
-      // Принимаем как identifier (KORA-N), так и сырой id. Сначала пробуем
-      // identifier → если 404, считаем что это сырой id и шлём как есть.
       let parentId = id;
       try {
         const parent = await issuesApi.getByIdentifier(orgId, id);
         parentId = parent.id;
-      } catch {
-        // Игнорируем — отдадим на backend, он сам проверит.
-      }
+      } catch {}
       await issuesApi.update(orgId, issue.id, { parentId });
-      setDraft('');
+      setDraft("");
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Не удалось обновить';
+      const msg = e instanceof Error ? e.message : "Не удалось обновить";
       setErrorText(msg);
     } finally {
       setSaving(false);
@@ -146,7 +131,7 @@ function ParentTaskSelector({ issue, orgId }: { issue: Issue; orgId: string }) {
     try {
       await issuesApi.update(orgId, issue.id, { parentId: null });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Не удалось снять родителя';
+      const msg = e instanceof Error ? e.message : "Не удалось снять родителя";
       setErrorText(msg);
     } finally {
       setSaving(false);
@@ -178,7 +163,7 @@ function ParentTaskSelector({ issue, orgId }: { issue: Issue; orgId: string }) {
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+          if (e.key === "Enter") {
             e.preventDefault();
             void submit();
           }
@@ -194,15 +179,6 @@ function ParentTaskSelector({ issue, orgId }: { issue: Issue; orgId: string }) {
   );
 }
 
-/**
- * ProjectMoveRow — текущий проект задачи + кнопка «Перенести» (2026-06-15,
- * plans/tz/2026-06-15-issue-move-to-project.md).
- *
- * Открывает переиспользуемый ProjectPickerDialog (исключая текущий проект) →
- * issuesApi.move. Перенос меняет identifier/projectId, поэтому после успеха
- * зовём onMoved (родитель перезагружает карточку). Ошибки — через
- * humanizeApiError + тост.
- */
 function ProjectMoveRow({
   issue,
   orgId,
@@ -214,7 +190,6 @@ function ProjectMoveRow({
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [moving, setMoving] = useState(false);
-  // Имя текущего проекта для отображения (список проектов уже кэшируется SWR).
   const { projects } = useProjects(orgId);
   const currentProject = projects.find((p) => p.id === issue.projectId) ?? null;
   const currentLabel = currentProject?.name ?? issue.projectId;
@@ -225,11 +200,11 @@ function ProjectMoveRow({
     setMoving(true);
     try {
       await issuesApi.move(orgId, issue.id, targetProjectId);
-      toast.success('Задача перенесена в другой проект.');
+      toast.success("Задача перенесена в другой проект.");
       onMoved?.();
     } catch (e) {
       toast.error(
-        `Не удалось перенести задачу: ${humanizeApiError(e, 'попробуйте ещё раз')}`,
+        `Не удалось перенести задачу: ${humanizeApiError(e, "попробуйте ещё раз")}`,
         { duration: 5000 },
       );
     } finally {
@@ -248,7 +223,7 @@ function ProjectMoveRow({
         onClick={() => setPickerOpen(true)}
         disabled={moving}
       >
-        {moving ? 'Переносим…' : 'Перенести'}
+        {moving ? "Переносим…" : "Перенести"}
       </button>
       <ProjectPickerDialog
         orgId={orgId}

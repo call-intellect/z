@@ -18,31 +18,6 @@ import {
   PROBE_RESPONSE_CLASSIFY_USER_TEMPLATE,
 } from './prompts/probe-response-classify.prompt';
 
-/**
- * SBA β-5 — обработчик `notification.responded`.
- *
- * Слушает события `notification.responded`, эмиттированные
- * `ConversationalService.respondToProbe`. Если eventType начинается с
- * 'probe.' — обновляет соответствующий `ProbeEvent.dispatchedAt` /
- * responded-state (через метрики) и эмитит business-метрики
- * `probe_response_total`, `probe_response_time_seconds`.
- *
- * SBA β-5 closing-loop (sub-TZ 2026-05-23) — дополнительно создаёт
- * `RawEvent(kind='notification_response')` через `ConversationalIngestAdapter`,
- * чтобы ответ пользователя попал обратно в knowledge-core pipeline.
- * Связь с исходной `Notification` — через `payload.respondsToNotificationId`.
- *
- * Agents v2 Фаза 0.1 (2026-05-30) — Probe-Response-Classify:
- *   - Если `PROBE_RESPONSE_CLASSIFY_ENABLED=true` (default) и в payload
- *     есть свободный текст ответа — зовём LLM-классификатор
- *     `probe-response-classify` (см. `prompts/probe-response-classify.prompt.ts`).
- *   - При `confidence >= cfg.probe.responseClassifyMinConfidence` — пишем
- *     `parsedAnswer`/`parsedConfidence` в payload ingest'а.
- *   - При confidence ниже порога — помечаем `notification_response_unclear:true`,
- *     эмитим `probe_response_unclear_total` + bucket=low. Closing-loop
- *     ВСЁ РАВНО выполняется (не теряем сырой ответ).
- *   - LLM-провал — пропускаем шаг классификации (старое поведение).
- */
 @Injectable()
 export class ProbeResponseHandler {
   private readonly logger = new Logger(ProbeResponseHandler.name);
@@ -63,7 +38,6 @@ export class ProbeResponseHandler {
   async handle(event: NotificationRespondedPayload): Promise<void> {
     try {
       if (!event.eventType.startsWith('probe.')) return;
-      // Найдём probe.id по dispatchedNotificationId.
       const probe = await this.prisma.probeEvent.findFirst({
         where: {
           tenantId: event.tenantId,
@@ -86,9 +60,6 @@ export class ProbeResponseHandler {
         });
       }
 
-      // ── Agents v2 Фаза 0.1 — классификация свободного ответа ─────
-      // Сначала пробуем разобрать свободный текст ответа из payload.
-      // Если есть question + response — зовём LLM. Иначе пропускаем.
       const probePayload = (probe.payload ?? {}) as Record<string, unknown>;
       const classification = await this.tryClassifyResponse({
         eventPayload: event.payload,
@@ -98,8 +69,6 @@ export class ProbeResponseHandler {
         probeReason: probe.reason,
       });
 
-      // ── closing-loop: RawEvent + probe_closed_total ──────────────
-      // Если классификация прошла — расширяем payload, не подменяя его.
       const ingestPayload: Record<string, unknown> = { ...event.payload };
       if (classification) {
         ingestPayload.parsedAnswer = classification.answer;
@@ -109,10 +78,6 @@ export class ProbeResponseHandler {
         }
       }
 
-      // TZ clone-method Э3.1 — вопрос, который реально задали человеку
-      // (каскад как у классификатора), и маркер high-priority reasoning:
-      // ответ на CDM-интервью — это рассказ носителя «как я решал», ему
-      // детерминированно ставится signalType='reasoning' в block-ingest.
       await this.ingestResponseAsRawEvent({
         tenantId: event.tenantId,
         userId: event.recipientUserId,
@@ -123,20 +88,14 @@ export class ProbeResponseHandler {
         contextBlockId: event.contextBlockId,
         contextCardId: event.contextCardId,
         questionText: this.extractQuestionText(probePayload),
-        signalTypeHint:
-          probe.reason === 'skill.cdm_interview' ? 'reasoning' : undefined,
+        signalTypeHint: probe.reason === 'skill.cdm_interview' ? 'reasoning' : undefined,
       });
       this.metrics.incProbeClosed({
         tenantTop: this.normalizeTenantTop(event.tenantId),
         source: kind ?? 'unknown',
       });
-      // Probe Фаза 5 (R10): человек ответил = исход «answered» (калибровочный
-      // сигнал для Фазы 2, парный к «ignored» из priority-cron).
       this.metrics.incProbeOutcome({ outcome: 'answered', reason: probe.reason });
 
-      // Probe Фаза 6 (R11): видимое следствие — подтверждение «ответ записан»
-      // (+ название объекта). Не голосом (только текст). Best-effort: ошибка
-      // подтверждения не валит уже завершённый closing-loop.
       await this.sendAnswerAck({
         tenantId: event.tenantId,
         recipientUserId: event.recipientUserId,
@@ -158,12 +117,6 @@ export class ProbeResponseHandler {
     }
   }
 
-  /**
-   * Probe Фаза 6 (R11) — видимое следствие ответа: отправить получателю
-   * подтверждение «ваш ответ записан в память компании» + название объекта
-   * (`contextCardTitle`). Только текст (НЕ голос). Best-effort: ошибка
-   * подтверждения не валит уже завершённый closing-loop.
-   */
   private async sendAnswerAck(args: {
     tenantId: string;
     recipientUserId: string;
@@ -181,7 +134,6 @@ export class ProbeResponseHandler {
         eventType: 'probe.answer_acknowledged',
         payload: {
           text,
-          // summary — для рендера в кабинете (NotificationsClient) и каналах.
           summary: text,
           ...(title ? { objectTitle: title } : {}),
           probeEventId: args.probeId,
@@ -199,32 +151,14 @@ export class ProbeResponseHandler {
     }
   }
 
-  /** dataClass из payload probe (как в dispatcher), дефолт internal. */
   private extractDataClass(payload: Record<string, unknown>): DataClass {
     const dc = payload.dataClass;
-    if (
-      dc === 'public' ||
-      dc === 'internal' ||
-      dc === 'sensitive' ||
-      dc === 'private'
-    ) {
+    if (dc === 'public' || dc === 'internal' || dc === 'sensitive' || dc === 'private') {
       return dc;
     }
     return 'internal';
   }
 
-  /**
-   * Agents v2 Фаза 0.1 — классифицирует свободный ответ через
-   * `probe-response-classify`. Возвращает `null`, если:
-   *   - feature-flag выключен (`PROBE_RESPONSE_CLASSIFY_ENABLED=false`);
-   *   - в payload нет ни текста ответа, ни вопроса (нечего классифицировать);
-   *   - LLM упал (мы не блокируем closing-loop из-за этого).
-   *
-   * При `confidence < min` возвращает `{unclear: true}` и эмитит метрики
-   * `probe_response_unclear_total` + `probe_response_classified_total{low}`.
-   * При `confidence >= min` возвращает `{unclear: false}` и эмитит
-   * `probe_response_classified_total{high|medium}`.
-   */
   private async tryClassifyResponse(args: {
     eventPayload: Record<string, unknown>;
     probePayload: Record<string, unknown>;
@@ -241,14 +175,8 @@ export class ProbeResponseHandler {
     const response = this.extractResponseText(args.eventPayload);
     if (!response) return null;
 
-    // question — то, что задал probe-formulate (каскад extractQuestionText);
-    // последний fallback — probe.reason (машинный код, плохо классифицируется).
-    const question =
-      this.extractQuestionText(args.probePayload) ?? args.probeReason;
+    const question = this.extractQuestionText(args.probePayload) ?? args.probeReason;
 
-    // A2: оборачиваем сырой пользовательский ввод (свободный ответ сотрудника
-    // на probe + текст вопроса) в анти-инъекционные маркеры. asr не нужен
-    // (это не транскрипт). Kill-switch — общий aiFeatures.promptInjectionGuardEnabled.
     const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
     const guarded = applyInputGuards(
       PROBE_RESPONSE_CLASSIFY_SYSTEM_PROMPT,
@@ -282,8 +210,7 @@ export class ProbeResponseHandler {
       };
       const answer = typeof parsed.answer === 'string' ? parsed.answer : '';
       const confidence =
-        typeof parsed.confidence === 'number' &&
-        Number.isFinite(parsed.confidence)
+        typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)
           ? Math.max(0, Math.min(1, parsed.confidence))
           : 0;
 
@@ -294,7 +221,6 @@ export class ProbeResponseHandler {
         return { answer, confidence, unclear: false };
       }
 
-      // Низкая уверенность — помечаем unclear, но closing-loop не блокируем.
       this.metrics.incProbeResponseUnclear({
         originalReason: args.probeReason,
       });
@@ -312,14 +238,7 @@ export class ProbeResponseHandler {
     }
   }
 
-  /**
-   * Извлекает текст свободного ответа из payload события. Поддерживаются
-   * популярные ключи: `text`, `response`, `body`, `answer`. Если payload
-   * целиком строка — берём её. Если ничего не нашли — `undefined`.
-   */
-  private extractResponseText(
-    payload: Record<string, unknown>,
-  ): string | undefined {
+  private extractResponseText(payload: Record<string, unknown>): string | undefined {
     if (typeof payload === 'string') return payload;
     for (const key of ['text', 'response', 'body', 'answer'] as const) {
       const v = payload[key];
@@ -332,19 +251,7 @@ export class ProbeResponseHandler {
     return typeof v === 'string' && v.length > 0 ? v : undefined;
   }
 
-  /**
-   * Вопрос, который реально задали человеку. Приоритет:
-   *   1. payload.formulatedQuestion — реально отправленный пользователю вопрос
-   *      (его пишет ProbeDispatcherWorker после LLM probe-formulate; Agents v2 Фаза 0.2).
-   *   2. payload.question — legacy ключ (на случай старых записей).
-   *   3. payload.suggestedQuestion — fallback specialist'a (если LLM упал в dispatcher'е).
-   *   4. payload.message — исходный текст от specialist'a.
-   * Используется классификатором (`tryClassifyResponse`) и closing-loop'ом
-   * (`ingestResponseAsRawEvent` → SegmentBuilder, TZ clone-method Э3.1).
-   */
-  private extractQuestionText(
-    probePayload: Record<string, unknown>,
-  ): string | undefined {
+  private extractQuestionText(probePayload: Record<string, unknown>): string | undefined {
     return (
       this.toStringOrUndef(probePayload.formulatedQuestion) ??
       this.toStringOrUndef(probePayload.question) ??
@@ -353,11 +260,6 @@ export class ProbeResponseHandler {
     );
   }
 
-  /**
-   * Записывает ответ как `RawEvent` через ConversationalIngestAdapter.
-   * Ошибки логируем, но не пробрасываем — основной flow ответа
-   * (Notification.respondedAt) уже завершён, дублировать его не нужно.
-   */
   private async ingestResponseAsRawEvent(args: {
     tenantId: string;
     userId: string;
@@ -367,9 +269,7 @@ export class ProbeResponseHandler {
     sourceChannelKind: string | null;
     contextBlockId: string | null;
     contextCardId: string | null;
-    /** Э3.1 — вопрос, который реально задали (для SegmentBuilder). */
     questionText?: string;
-    /** Э3.1 — детерминированный signalType ответа (CDM → 'reasoning'). */
     signalTypeHint?: string;
   }): Promise<void> {
     try {
@@ -396,20 +296,12 @@ export class ProbeResponseHandler {
     }
   }
 
-  /**
-   * Нормализация tenant-id для метрики (контроль cardinality).
-   * Сейчас используем первые 8 символов tenantId — этого достаточно, чтобы
-   * различать ~top-100 тенантов. Полноценная top-100 нормализация — γ+.
-   */
   private normalizeTenantTop(tenantId: string): string {
     if (!tenantId) return 'other';
     return tenantId.slice(0, 8);
   }
 
-  /** Берём kind первого NotificationDelivery, у которого есть channel. */
-  private async lookupDeliveryKind(
-    notificationId: string,
-  ): Promise<string | null> {
+  private async lookupDeliveryKind(notificationId: string): Promise<string | null> {
     const d = await this.prisma.notificationDelivery.findFirst({
       where: { notificationId },
       include: { channelBinding: { include: { channel: true } } },

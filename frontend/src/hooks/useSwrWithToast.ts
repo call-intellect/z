@@ -1,24 +1,14 @@
-'use client';
+"use client";
 
-/**
- * useSwrWithToast — обёртка над useSWR, которая при ошибке загрузки
- * автоматически показывает sonner-toast. Шов для унификации UX:
- * страница больше не дублирует `if (error) toast(...)` руками.
- *
- * Сигнатура совпадает с useSWR — возвращаемое значение прозрачно проброшено.
- */
-
-import { useEffect, useRef } from 'react';
-import useSWR, { type Key, type SWRConfiguration, type SWRResponse } from 'swr';
-import { toast } from '@/ui/shadcn/toast';
-import { humanizeApiError } from '@/api/api-error';
+import { useEffect, useRef } from "react";
+import useSWR, { type Key, type SWRConfiguration, type SWRResponse } from "swr";
+import { toast } from "@/ui/shadcn/toast";
+import { humanizeApiError } from "@/api/api-error";
 
 type Fetcher<Data> = (...args: unknown[]) => Promise<Data> | Data;
 
 export type UseSwrWithToastOptions<Data, Err> = SWRConfiguration<Data, Err> & {
-  /** Текст ошибки. По умолчанию — «Не удалось загрузить данные». */
   errorTitle?: string;
-  /** Если true — ошибка молча проглатывается (для фоновых запросов). */
   silent?: boolean;
 };
 
@@ -39,9 +29,8 @@ export function useSwrWithToast<Data = unknown, Err = unknown>(
     if (silent) return;
     if (lastErrorRef.current === result.error) return;
     lastErrorRef.current = result.error;
-    const title = errorTitle ?? 'Не удалось загрузить данные';
-    // Человеческое сообщение; пустую строку (технический код/HTTP) не показываем.
-    const description = humanizeApiError(result.error, '');
+    const title = errorTitle ?? "Не удалось загрузить данные";
+    const description = humanizeApiError(result.error, "");
     toast.error(title, description ? { description } : undefined);
   }, [result.error, errorTitle, silent]);
 

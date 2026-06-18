@@ -18,26 +18,6 @@ LiveKit для локальной разработки — `bun run livekit` (п
 
 ## Production
 
-### Топология (см. `second-brain/02_architecture/`)
-
-| VM             | Сервисы                                                    |
-|----------------|------------------------------------------------------------|
-| vm-backend     | NestJS HTTP, NestJS Workers (BullMQ), nginx upstream       |
-| vm-livekit     | LiveKit Server                                             |
-| vm-egress      | LiveKit Egress                                             |
-| vm-turn        | coturn (TURN/STUN fallback)                                |
-| vm-postgres    | PostgreSQL 16                                              |
-| vm-redis       | Redis 7                                                    |
-| vm-system-b    | cron (бэкапы), мониторинг (Prometheus + Grafana + Alertmanager) |
-
-### Деплой (Ansible — TBD, для MVP — вручную)
-
-Каждая VM получает:
-- Docker / Bun / Node 20 (там, где нужно).
-- systemd-юнит для своего сервиса.
-- nginx-конфиг для TLS-терминации (certbot autorenew).
-- ENV-файл `/etc/z/<service>.env` (mode 0600).
-
 ### Docker Compose деплой (актуальный путь)
 
 Полная инструкция — корневой [`README.md`](../../README.md) → «Деплой на сервер».
@@ -65,15 +45,13 @@ nginx-конфиги — [`deploy/README.md`](../../deploy/README.md). Крат�
 
 ## Бэкапы
 
-Cron на vm-system-b: см. `infra/scripts/README.md` и
+Cron бэкапов — см. `infra/scripts/README.md` и
 `docs/runbook/restore-from-backup.md`.
 
 ## Мониторинг
 
-- Prometheus scrape конфиг: `infra/prometheus/prometheus.yml`.
-- Grafana дашборды: `infra/grafana/dashboards/*.json`.
-- Алерты: `infra/grafana/alerts/*.yml`.
-- Alertmanager → Slack `#z-alerts` (TBD).
+- Backend экспортит метрики Prometheus на `/metrics` (`@willsoto/nestjs-prometheus`, в коде).
+- In-repo конфиг внешней мониторинг-VM (`infra/prometheus/`, `infra/grafana/`) удалён 2026-06-17 (не деплоился; scrape-конфиг, дашборды и alert-rules восстановимы из git-истории при поднятии мониторинга).
 
 ## Smoke-тест после деплоя
 

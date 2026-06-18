@@ -126,12 +126,6 @@ export const CORE_QUEUE_NAMES = {
    */
   PROBE_EVENTS: 'core.probe-events',
   /**
-   * SBA β-5 — Specialist 3.6 (Ideas Collector). Consumer — `IdeaClustererCron`-
-   * style worker (или прямо cron вызывает). Очередь нужна, чтобы кластеризация
-   * не делалась синхронно при создании каждой идеи. jobId = `idea_cluster_<orgId>`.
-   */
-  IDEA_CLUSTERER: 'core.idea-clusterer',
-  /**
    * SBA γ-1 — Specialist 3.7 (SkillProfile) rebuild. Consumer —
    * `SkillProfileRebuildWorker`. Дебаунс через jobId
    * `skill-profile-rebuild_<profileId>` + delay (`cfg.skill.rebuildDebounceMs`,
@@ -188,6 +182,18 @@ export const CORE_QUEUE_NAMES = {
    * Идемпотентность: `jobId = specialists_combined_<meetingId>`.
    */
   SPECIALISTS_COMBINED: 'core.specialists-combined',
+  /**
+   * Ф5 (TZ 2026-06-16 task-dedup) — пересчёт pgvector-embedding'а для Goal.
+   * Consumer — `GoalEmbedWorker`. Аналог `core.issue-embed`: на job {tenantId,
+   * goalId} считает sha256(name+description), при совпадении с `embeddingHash`
+   * — skip; иначе embed (text-embedding-3-small, 1536) + raw UPDATE
+   * `Goal.embedding/embeddingHash`. Нужен для семантического дедупа целей
+   * (specialist-3-14 KNN по `Goal.embedding` вместо ILIKE по 2 словам).
+   *
+   * Идемпотентность: `jobId = goal_embed_<goalId>` (повторный enqueue в окне
+   * BullMQ не создаёт дубль) + hash-skip внутри воркера.
+   */
+  GOAL_EMBED: 'core.goal-embed',
 } as const;
 
 export type CoreQueueName = (typeof CORE_QUEUE_NAMES)[keyof typeof CORE_QUEUE_NAMES];
@@ -199,13 +205,22 @@ export type CoreQueueName = (typeof CORE_QUEUE_NAMES)[keyof typeof CORE_QUEUE_NA
  *
  *   attempts: 5                               — итого до 5 попыток.
  *   backoff: exponential delay 5000           — 5s, 10s, 20s, 40s.
- *   removeOnComplete: { age: 24h, count:1000} — успешные jobs не висят.
+ *   removeOnComplete: { age: 24h, count:20000} — успешные jobs не висят.
  *   removeOnFail: false                       — failed остаются для разбора.
+ *
+ * Б33 [K6]: count поднят 1000→20000. Дедуп по jobId (block-distill,
+ * meeting-report-fast, card-rollup-v2 и пр.) опирается на то, что completed-job
+ * с тем же jobId ещё в Redis. При count:1000 на нагруженной очереди completed
+ * вытеснялся раньше age=24h → повторный enqueue не дедуплицировался → дорогая
+ * повторная обработка. 20000 делает связывающим ограничением age (24ч), а не
+ * count, при копеечной памяти на Z-масштабе. Доп. защита — идемпотентность
+ * самих воркеров (distill skip not-draft; meeting-report-fast remove-on-
+ * regenerate Б35; rollup детерминирован).
  */
 export const CORE_DEFAULT_JOB_OPTIONS: JobsOptions = {
   attempts: 5,
   backoff: { type: 'exponential', delay: 5000 },
-  removeOnComplete: { age: 86400, count: 1000 },
+  removeOnComplete: { age: 86400, count: 20000 },
   removeOnFail: false,
 };
 
@@ -408,16 +423,6 @@ export interface ProbeEventJobData {
 }
 
 /**
- * Payload для `core.idea-clusterer` (SBA β-5). Воркер запускает один проход
- * группировки Idea → IdeaCluster в указанной Org.
- */
-export interface IdeaClustererJobData {
-  tenantId: string;
-  /** Проброс traceId цепочки (для сшивки логов со встречей-источником). */
-  traceId?: string;
-}
-
-/**
  * Payload для `core.skill-profile-rebuild` (SBA γ-1). Воркер по profileId
  * запустит `Specialist37Service.rebuildProfile`. `reason` — для логов
  * (откуда пришёл rebuild: dispatch специалиста / cron / manual).
@@ -479,6 +484,21 @@ export interface PushSendJobData {
  */
 export interface EventReminderJobData {
   reminderId: string;
+}
+
+/**
+ * Ф5 (TZ 2026-06-16) — payload `core.goal-embed`. Consumer — `GoalEmbedWorker`.
+ *
+ *  - `tenantId` — для cross-tenant защиты в UPDATE (WHERE tenantId=$).
+ *  - `goalId` — какую цель пересчитать.
+ *
+ * Текст и hash считаются ВНУТРИ воркера (БД — единственный источник правды).
+ * Idempotent jobId формируется в `CoreQueueService.enqueueGoalEmbed`:
+ * `goal_embed_<goalId>`.
+ */
+export interface GoalEmbedJobData {
+  tenantId: string;
+  goalId: string;
 }
 
 export interface RecognitionFormulateJobData {

@@ -12,12 +12,6 @@ import { RecordingsService } from '../recordings/recordings.service';
 
 import { MeetingFinalizationService } from './meeting-finalization.service';
 
-/**
- * Маппинг числовых значений `ParticipantInfo.Kind` (proto enum) к именам.
- * Значения по @livekit/protocol: STANDARD=0, INGRESS=1, EGRESS=2, SIP=3,
- * AGENT=4, CONNECTOR=7, BRIDGE=8. Используется, когда protojson сериализует
- * kind числом, а не строкой.
- */
 const KIND_BY_NUMBER: Record<number, string> = {
   0: 'STANDARD',
   1: 'INGRESS',
@@ -28,34 +22,10 @@ const KIND_BY_NUMBER: Record<number, string> = {
   8: 'BRIDGE',
 };
 
-/**
- * Маршрутизация LiveKit-вебхуков по типу события.
- *
- *   room_started       → Meeting: scheduled → active, startedAt = now.
- *   room_finished      → Meeting: active → completed, endedAt = now,
- *                         + business-метрика finished{type}.
- *   participant_joined → upsert Participant.joinedAt; на отсутствие — создаём
- *                         guest Participant'а (отказоустойчивость).
- *   participant_left   → Participant.leftAt = now (статус meeting не трогаем).
- *   track_published (audio) → Recordings.ensureTrackEgress (если запись активна).
- *   track_unpublished  → no-op (MeetingEvent уже пишет LivekitWebhooksService).
- *   egress_started     → Recording.status: requested → recording (composite)
- *                          либо AudioTrack.startedAt (track).
- *   egress_ended       → mainVideoUrl/bytes/duration (composite) или AudioTrack
- *                          (track). Если всё готово — Meeting → recording_ready.
- *   egress_updated     → no-op (статус-апдейты не нужны для FSM).
- *   egress_failed      → Recording.status = 'failed', при необходимости
- *                          Meeting → failed.
- *
- * Все мутации статуса встречи — через `MeetingsService.transitionStatus`,
- * который сам проверяет FSM и пишет `MeetingEvent`.
- */
 @Injectable()
 export class LivekitEventsHandler {
   private readonly logger = new Logger(LivekitEventsHandler.name);
 
-  // Property-injection: не ломает позиционные конструкторы в юнит-тестах
-  // (там `pipe` остаётся undefined — диспетчер вызывается без обёртки).
   @Optional()
   @Inject(PipelineRunner)
   private readonly pipe: PipelineRunner | null = null;
@@ -64,34 +34,14 @@ export class LivekitEventsHandler {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(MeetingsService) private readonly meetings: MeetingsService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
-    /**
-     * `RecordingsService` — `forwardRef` для подстраховки от циклов
-     * (Recordings ←→ Webhooks, если в будущем расширим).
-     * Также может быть `null` в юнит-тестах (LivekitEventsHandler без
-     * recordings-зависимости — уже существующие тесты Фазы 3.3).
-     */
     @Inject(forwardRef(() => RecordingsService))
     private readonly recordings: RecordingsService | null = null,
-    /**
-     * `AiQueueService` — глобальный (`AiModule`). В юнит-тестах Фазы 3 его нет,
-     * поэтому делаем `@Optional()`: дефолтное `null`, проверка перед вызовом.
-     */
     @Optional()
     @Inject(AiQueueService)
     private readonly aiQueue: AiQueueService | null = null,
-    /**
-     * `TypedConfigService` — для гейтинга faststart-постобработки видео
-     * (`RECORDING_FASTSTART_ENABLED`). `@Optional()`: в юнит-тестах Фазы 3 его
-     * нет, тогда faststart просто не ставится (дефолт-поведение «выключено»).
-     */
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg: TypedConfigService | null = null,
-    /**
-     * `MeetingFinalizationService` — тот же модуль (Webhooks). Содержит
-     * вынесенную промоут-логику (FSM `completed → recording_ready` +
-     * enqueueTranscribe + faststart-enqueue), которую затем переиспользует крон.
-     */
     @Inject(MeetingFinalizationService)
     private readonly finalization: MeetingFinalizationService,
   ) {}
@@ -100,12 +50,8 @@ export class LivekitEventsHandler {
     const eventType = event.event ?? '';
     const meetingId = this.extractMeetingId(event);
 
-    // Бизнес-метрика — для всех событий, даже если meetingId не нашёлся.
     this.metrics.incLivekitWebhookEvent(eventType);
 
-    // Процессный контур: egress_* — это контур RECORDING, остальное —
-    // MEETING_LIFECYCLE. traceId = mtg_<id> объединяет с дальнейшей цепочкой
-    // (транскрипция/AI/граф) в один просмотр в админке.
     const run = (): Promise<void> => this.route(eventType, meetingId, event);
     if (this.pipe && meetingId) {
       const pipeline = eventType.startsWith('egress')
@@ -119,7 +65,6 @@ export class LivekitEventsHandler {
     return run();
   }
 
-  /** Маршрутизация события по типу (выполняется внутри pipeline-контекста). */
   private async route(
     eventType: string,
     meetingId: string | null,
@@ -142,7 +87,6 @@ export class LivekitEventsHandler {
         if (meetingId) await this.onTrackPublished(meetingId, event);
         return;
       case 'track_unpublished':
-        // MeetingEvent уже пишется в LivekitWebhooksService — здесь no-op.
         return;
       case 'egress_started':
         if (meetingId) await this.onEgressStarted(meetingId, event);
@@ -152,8 +96,6 @@ export class LivekitEventsHandler {
         return;
       case 'egress_updated':
         return;
-      // 'egress_failed' — нет в WebhookEventNames v2 как литерала, но LiveKit
-      // присылает строку именно так в payload. Сохраняем для совместимости.
       case 'egress_failed' as never:
         if (meetingId) await this.onEgressFailed(meetingId, event);
         return;
@@ -166,8 +108,6 @@ export class LivekitEventsHandler {
     }
   }
 
-  // ─────────────────────────── room_started ──────────────────────────────
-
   private async onRoomStarted(meetingId: string): Promise<void> {
     const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
     if (!meeting) {
@@ -175,7 +115,6 @@ export class LivekitEventsHandler {
       return;
     }
     if (meeting.status === 'active') {
-      // Идемпотентно: дубль room_started — норма (LiveKit может прислать ретраем).
       this.logger.debug({ meetingId }, 'room_started: уже active, no-op');
       return;
     }
@@ -192,7 +131,6 @@ export class LivekitEventsHandler {
     });
     this.logger.log({ meetingId }, 'room_started → meeting.active');
 
-    // Авто-запись: если recordByDefault — стартуем composite egress сразу.
     if (meeting.recordByDefault && this.recordings) {
       try {
         await this.recordings.start(meetingId, meeting.ownerId);
@@ -205,8 +143,6 @@ export class LivekitEventsHandler {
       }
     }
   }
-
-  // ─────────────────────────── room_finished ─────────────────────────────
 
   private async onRoomFinished(meetingId: string): Promise<void> {
     const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
@@ -229,21 +165,10 @@ export class LivekitEventsHandler {
     this.logger.log({ meetingId }, 'room_finished → meeting.completed');
   }
 
-  // ─────────────────────────── participant_joined ────────────────────────
-
-  private async onParticipantJoined(
-    meetingId: string,
-    event: WebhookEvent,
-  ): Promise<void> {
+  private async onParticipantJoined(meetingId: string, event: WebhookEvent): Promise<void> {
     const participantInfo = this.extractParticipant(event);
     if (!participantInfo?.identity) return;
 
-    // Семантический фильтр (whitelist от LiveKit). `ParticipantInfo.Kind`
-    // отличает конечного пользователя (STANDARD) от сервисных процессов:
-    // EGRESS (server-side recording), INGRESS, SIP (телефония), AGENT
-    // (AI-ассистент), CONNECTOR, BRIDGE. Создаём `Participant` ТОЛЬКО для
-    // STANDARD — это надёжнее, чем строковый префикс identity (PR #17): не
-    // ломается на новых типах (AGENT/SIP) и не зависит от нашей конвенции.
     const kind = this.extractParticipantKind(event);
     if (kind !== null) {
       if (kind !== 'STANDARD') {
@@ -253,14 +178,7 @@ export class LivekitEventsHandler {
         );
         return;
       }
-      // kind === STANDARD → доверяем семантике LiveKit, создаём без префикс-проверки.
     } else {
-      // Fallback (PR #17): kind отсутствует в payload (proto3 опускает дефолт
-      // STANDARD=0, а наш приёмник парсит сырой protojson). Полагаемся на
-      // конвенцию identity: реальные участники всегда `host:<userId>` /
-      // `guest:<nanoid>` / `invitee:<token>` (приглашённый по личной ссылке —
-      // см. ParticipantsService + генерация LiveKit-токенов); egress-рекордеры
-      // приходят как `EG_...` без префикса — отсекаем.
       if (
         !participantInfo.identity.startsWith('host:') &&
         !participantInfo.identity.startsWith('guest:') &&
@@ -291,11 +209,7 @@ export class LivekitEventsHandler {
       return;
     }
 
-    // Отказоустойчивость: участник в room без Participant записи в БД.
-    // Теоретически невозможно (без токена не зайдёшь), но фиксируем фактический мир.
-    const role: 'host' | 'guest' = participantInfo.identity.startsWith('host:')
-      ? 'host'
-      : 'guest';
+    const role: 'host' | 'guest' = participantInfo.identity.startsWith('host:') ? 'host' : 'guest';
     try {
       await this.prisma.participant.create({
         data: {
@@ -308,23 +222,14 @@ export class LivekitEventsHandler {
         },
       });
     } catch (err) {
-      // На race с join'ом — игнор, апдейтнем joinedAt в следующий раз.
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         return;
       }
       throw err;
     }
   }
 
-  // ─────────────────────────── participant_left ──────────────────────────
-
-  private async onParticipantLeft(
-    meetingId: string,
-    event: WebhookEvent,
-  ): Promise<void> {
+  private async onParticipantLeft(meetingId: string, event: WebhookEvent): Promise<void> {
     const participantInfo = this.extractParticipant(event);
     if (!participantInfo?.identity) return;
 
@@ -333,8 +238,6 @@ export class LivekitEventsHandler {
       data: { leftAt: new Date() },
     });
   }
-
-  // ─────────────────────────── track_published ───────────────────────────
 
   private async onTrackPublished(meetingId: string, event: WebhookEvent): Promise<void> {
     if (!this.recordings) return;
@@ -351,14 +254,8 @@ export class LivekitEventsHandler {
       this.logger.warn({ meetingId, trackId: track.sid }, 'track_published: нет participant');
       return;
     }
-    await this.recordings.ensureTrackEgress(
-      { id: meetingId },
-      participant,
-      { sid: track.sid },
-    );
+    await this.recordings.ensureTrackEgress({ id: meetingId }, participant, { sid: track.sid });
   }
-
-  // ─────────────────────────── egress_started ────────────────────────────
 
   private async onEgressStarted(meetingId: string, event: WebhookEvent): Promise<void> {
     if (!this.recordings) return;
@@ -371,9 +268,6 @@ export class LivekitEventsHandler {
       return;
     }
     if (info.requestType === 'track') {
-      // Старт track egress'а — отметим РЕАЛЬНОЕ время старта записи из LiveKit
-      // (если есть) вместо времени бэкенда на вебхуке — иначе тайм-выравнивание
-      // реплик «уезжает». Graceful fallback на new Date(), если LiveKit не отдал.
       await this.prisma.audioTrack.updateMany({
         where: { trackEgressId: info.egressId },
         data: { startedAt: info.startedAt ?? new Date() },
@@ -385,14 +279,11 @@ export class LivekitEventsHandler {
     }
   }
 
-  // ─────────────────────────── egress_ended ──────────────────────────────
-
   private async onEgressEnded(meetingId: string, event: WebhookEvent): Promise<void> {
     if (!this.recordings) return;
     const info = this.extractEgressInfo(event);
     if (!info) return;
 
-    // Метрика доставки egress-вебхука: gap room_finished→egress_ended.
     try {
       const m = await this.prisma.meeting.findUnique({
         where: { id: meetingId },
@@ -404,9 +295,7 @@ export class LivekitEventsHandler {
           (Date.now() - m.endedAt.getTime()) / 1000,
         );
       }
-    } catch {
-      /* метрика не критична */
-    }
+    } catch {}
 
     if (info.requestType === 'room_composite' || info.requestType === 'roomComposite') {
       const file = info.fileResults[0] ?? null;
@@ -415,11 +304,9 @@ export class LivekitEventsHandler {
         bytes: file?.size ?? null,
         durationSeconds:
           file?.duration !== null && file?.duration !== undefined
-            ? Math.round(file.duration / 1_000_000_000) // ns → s
+            ? Math.round(file.duration / 1_000_000_000)
             : null,
       });
-      // Faststart-постобработка composite MP4 + промоут FSM — вынесены в
-      // MeetingFinalizationService (общий код для вебхука и крона).
       await this.finalization.enqueueFaststartIfNeeded(meetingId, file?.size ?? null);
       await this.finalization.promoteMeetingToReady(meetingId, result.allReady);
       return;
@@ -440,28 +327,20 @@ export class LivekitEventsHandler {
     }
   }
 
-  // ─────────────────────────── egress_failed ─────────────────────────────
-
   private async onEgressFailed(meetingId: string, event: WebhookEvent): Promise<void> {
     if (!this.recordings) return;
     const info = this.extractEgressInfo(event);
     const reason = info?.error || 'egress_failed';
     await this.recordings.markFailed(meetingId, reason);
 
-    // Если запись фатально упала — переводим встречу в failed (если ещё не там).
     const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
-    if (
-      meeting &&
-      meeting.status !== 'failed' &&
-      meeting.status !== 'ai_ready'
-    ) {
+    if (meeting && meeting.status !== 'failed' && meeting.status !== 'ai_ready') {
       try {
         await this.meetings.transitionStatus(meetingId, 'failed', {
           failureReason: 'recording_failed',
           reason: 'livekit:egress_failed',
         });
       } catch (err) {
-        // FSM может отказать (уже terminal) — это норма, логируем.
         this.logger.debug(
           { meetingId, err: err instanceof Error ? err.message : String(err) },
           'egress_failed: переход в failed не выполнен',
@@ -470,8 +349,6 @@ export class LivekitEventsHandler {
     }
   }
 
-  // ─────────────────────────── helpers ───────────────────────────────────
-
   private extractMeetingId(event: WebhookEvent): string | null {
     const ev = event as unknown as {
       room?: { name?: unknown };
@@ -479,15 +356,12 @@ export class LivekitEventsHandler {
     };
     const fromRoom = ev.room?.name;
     if (typeof fromRoom === 'string' && fromRoom.length > 0) return fromRoom;
-    // Egress webhooks don't always include `room` — fall back to egressInfo.roomName.
     const fromEgress = ev.egressInfo?.roomName;
     if (typeof fromEgress === 'string' && fromEgress.length > 0) return fromEgress;
     return null;
   }
 
-  private extractParticipant(
-    event: WebhookEvent,
-  ): { identity: string; name: string } | null {
+  private extractParticipant(event: WebhookEvent): { identity: string; name: string } | null {
     const p = (event as unknown as { participant?: { identity?: unknown; name?: unknown } })
       .participant;
     if (!p) return null;
@@ -497,18 +371,6 @@ export class LivekitEventsHandler {
     return { identity, name };
   }
 
-  /**
-   * Нормализует `participant.kind` из webhook-payload к каноничному имени
-   * (`STANDARD` | `EGRESS` | `INGRESS` | `SIP` | `AGENT` | `CONNECTOR` |
-   * `BRIDGE`) или `null`, если поле отсутствует / нераспознано.
-   *
-   * Приёмник вебхуков парсит сырой protojson (`JSON.parse`, не
-   * `WebhookReceiver.receive`), поэтому `kind` может прийти:
-   *   - строкой `"EGRESS"` (protojson сериализует enum именем);
-   *   - числом `2` (если сериализован как int);
-   *   - отсутствовать вовсе (proto3 опускает дефолтное значение STANDARD=0).
-   * `null` (отсутствие) трактуется вызывающим как «нужен fallback по префиксу».
-   */
   private extractParticipantKind(event: WebhookEvent): string | null {
     const p = (event as unknown as { participant?: { kind?: unknown } }).participant;
     if (!p) return null;
@@ -523,54 +385,29 @@ export class LivekitEventsHandler {
     return null;
   }
 
-  /**
-   * Извлекает audio/video kind из payload'а. LiveKit может прислать `track.type`
-   * как enum (`AUDIO`/`VIDEO`/`DATA`) либо строку — нормализуем к 'audio' |
-   * 'video' | 'data' | null.
-   */
   private extractTrack(event: WebhookEvent): { sid: string; kind: string } | null {
-    const t = (event as unknown as {
-      track?: { sid?: unknown; type?: unknown; kind?: unknown };
-    }).track;
+    const t = (
+      event as unknown as {
+        track?: { sid?: unknown; type?: unknown; kind?: unknown };
+      }
+    ).track;
     if (!t) return null;
     const sid = typeof t.sid === 'string' ? t.sid : '';
     if (!sid) return null;
 
-    // Нормализация kind: TrackType enum или строка.
     let kind = '';
     if (typeof t.kind === 'string') {
       kind = t.kind.toLowerCase();
     } else if (typeof t.type === 'string') {
       kind = t.type.toLowerCase();
     } else if (typeof t.type === 'number') {
-      // proto3: 0 = AUDIO, 1 = VIDEO, 2 = DATA.
       kind = t.type === 0 ? 'audio' : t.type === 1 ? 'video' : t.type === 2 ? 'data' : '';
     }
-    // proto3 сериализует AUDIO (= 0, дефолт) без поля — kind останется ''.
-    // VIDEO = 1 и DATA = 2 всегда присутствуют в JSON, поэтому '' = audio.
     if (!kind) kind = 'audio';
     return { sid, kind };
   }
 
-  /**
-   * Достаёт `egressInfo` из webhook'а, нормализуя к простому DTO.
-   * `requestType` — что именно: composite/track. У SDK это `request.case`
-   * (`'roomComposite'` | `'track'` | ...).
-   */
-  /**
-   * Конвертирует время старта egress'а в `Date`.
-   *
-   * LiveKit отдаёт `started_at` / `startedAt` в Unix-наносекундах (proto int64,
-   * который при protojson-сериализации приходит строкой/числом/bigint). Делим
-   * на 1e6 → миллисекунды. Доп. fallback — `createdAtSec` (Unix-секунды самого
-   * webhook-события). Устойчиво к 0/undefined/мусору → `null`.
-   *
-   * Чистая функция (static) — тестируется без вебхука.
-   */
-  static parseEgressStartedAt(
-    startedAtNs: unknown,
-    createdAtSec?: unknown,
-  ): Date | null {
+  static parseEgressStartedAt(startedAtNs: unknown, createdAtSec?: unknown): Date | null {
     const fromNs = (raw: unknown): Date | null => {
       let n: number | null = null;
       if (typeof raw === 'bigint') n = Number(raw);
@@ -599,9 +436,7 @@ export class LivekitEventsHandler {
     return fromNs(startedAtNs) ?? fromSec(createdAtSec);
   }
 
-  private extractEgressInfo(
-    event: WebhookEvent,
-  ): {
+  private extractEgressInfo(event: WebhookEvent): {
     egressId: string;
     requestType: string;
     fileResults: Array<{
@@ -613,33 +448,32 @@ export class LivekitEventsHandler {
     startedAt: Date | null;
     error: string | null;
   } | null {
-    const info = (event as unknown as {
-      egressInfo?: {
-        egressId?: unknown;
-        request?: { case?: unknown };
-        // На webhook'ах LiveKit часто приходит уже сериализованным JSON'ом —
-        // тогда поле `request` ожидаемо отсутствует, а есть `request_type` /
-        // `requestType` или поля в самом info. Парсим максимально лояльно.
-        requestType?: unknown;
-        request_type?: unknown;
-        roomComposite?: unknown;
-        room_composite?: unknown;
-        track?: unknown;
-        fileResults?: unknown;
-        file_results?: unknown;
-        startedAt?: unknown;
-        started_at?: unknown;
-        error?: unknown;
-      };
-      egress_info?: unknown; // snake_case вариант
-    }).egressInfo ?? (event as unknown as { egress_info?: unknown }).egress_info;
+    const info =
+      (
+        event as unknown as {
+          egressInfo?: {
+            egressId?: unknown;
+            request?: { case?: unknown };
+            requestType?: unknown;
+            request_type?: unknown;
+            roomComposite?: unknown;
+            room_composite?: unknown;
+            track?: unknown;
+            fileResults?: unknown;
+            file_results?: unknown;
+            startedAt?: unknown;
+            started_at?: unknown;
+            error?: unknown;
+          };
+          egress_info?: unknown;
+        }
+      ).egressInfo ?? (event as unknown as { egress_info?: unknown }).egress_info;
     if (!info || typeof info !== 'object') return null;
 
     const obj = info as Record<string, unknown>;
     const egressId = String(obj.egressId ?? obj.egress_id ?? '');
     if (!egressId) return null;
 
-    // Тип запроса — несколько возможных мест.
     let requestType = '';
     const req = obj.request as { case?: unknown } | undefined;
     if (req && typeof req.case === 'string') {
@@ -663,8 +497,7 @@ export class LivekitEventsHandler {
       const sizeRaw = fo.size;
       const durationRaw = fo.duration;
       return {
-        filename:
-          typeof fo.filename === 'string' ? fo.filename : null,
+        filename: typeof fo.filename === 'string' ? fo.filename : null,
         location: typeof fo.location === 'string' ? fo.location : null,
         size:
           typeof sizeRaw === 'number'
@@ -687,8 +520,6 @@ export class LivekitEventsHandler {
 
     const error = typeof obj.error === 'string' ? obj.error : null;
 
-    // Реальное время старта записи. LiveKit отдаёт `started_at`/`startedAt` в
-    // Unix-наносекундах. Fallback — `createdAt` самого webhook-события (сек).
     const createdAtSec =
       (event as unknown as { createdAt?: unknown }).createdAt ??
       (event as unknown as { created_at?: unknown }).created_at;

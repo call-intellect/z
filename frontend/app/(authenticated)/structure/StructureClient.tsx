@@ -1,25 +1,25 @@
-'use client';
+"use client";
 
-import { useSearchParams, useRouter, usePathname } from 'next/navigation';
-import { useCallback } from 'react';
-import { Building2, IdCard, Users } from 'lucide-react';
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useCallback } from "react";
+import { Building2, IdCard, Users } from "lucide-react";
 
-import { useAuth } from '@/contexts/auth-context';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
+import { useAuth } from "@/contexts/auth-context";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/shadcn/tabs";
 
-import { AdminForbidden } from '@app/(admin)/admin/AdminStateViews';
-import { DepartmentsTab } from './DepartmentsTab';
-import { RolesTab } from './RolesTab';
-import { PersonsTab } from './PersonsTab';
-import { StructureWidgets } from './StructureWidgets';
+import { AdminForbidden } from "@app/(admin)/admin/AdminStateViews";
+import { DepartmentsTab } from "./DepartmentsTab";
+import { RolesTab } from "./RolesTab";
+import { PersonsTab } from "./PersonsTab";
+import { StructureWidgets } from "./StructureWidgets";
 
-type TabKey = 'departments' | 'roles' | 'persons';
+type TabKey = "departments" | "roles" | "persons";
 
-const TAB_KEYS: TabKey[] = ['persons', 'departments', 'roles'];
+const TAB_KEYS: TabKey[] = ["persons", "departments", "roles"];
 
 function readTab(sp: URLSearchParams | null): TabKey {
-  const t = sp?.get('tab');
-  return t && (TAB_KEYS as string[]).includes(t) ? (t as TabKey) : 'persons';
+  const t = sp?.get("tab");
+  return t && (TAB_KEYS as string[]).includes(t) ? (t as TabKey) : "persons";
 }
 
 export function StructureClient() {
@@ -29,18 +29,16 @@ export function StructureClient() {
   const { currentOrgId, currentOrgRole, isLoading } = useAuth();
 
   const tab = readTab(sp);
-  const canEdit = currentOrgRole === 'owner' || currentOrgRole === 'admin';
-  // Виджеты «здоровье/пульс» — только руководителю (как dashboard-эндпоинты:
-  // team-health / people-at-risk отдают 403 для manager).
+  const canEdit = currentOrgRole === "owner" || currentOrgRole === "admin";
   const canViewWidgets =
-    currentOrgRole === 'owner' ||
-    currentOrgRole === 'admin' ||
-    currentOrgRole === 'coo';
+    currentOrgRole === "owner" ||
+    currentOrgRole === "admin" ||
+    currentOrgRole === "coo";
 
   const setTab = useCallback(
     (next: string) => {
-      const params = new URLSearchParams(sp?.toString() ?? '');
-      params.set('tab', next);
+      const params = new URLSearchParams(sp?.toString() ?? "");
+      params.set("tab", next);
       router.replace(`${pathname}?${params.toString()}`);
     },
     [router, pathname, sp],
@@ -63,7 +61,7 @@ export function StructureClient() {
           Команда
         </h1>
         <p className="mt-1 text-sm text-fg-secondary">
-          Сотрудники, отделы и должности компании. {canEdit ? '' : 'Просмотр.'}
+          Сотрудники, отделы и должности компании. {canEdit ? "" : "Просмотр."}
         </p>
       </header>
 

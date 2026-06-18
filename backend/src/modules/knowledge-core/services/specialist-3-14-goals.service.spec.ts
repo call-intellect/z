@@ -2,18 +2,6 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { Specialist314GoalsService } from './specialist-3-14-goals.service';
 
-/**
- * Goals OKR v2 (2026-06-02, Фаза 2) — unit-тесты Specialist314GoalsService.
- *
- * Мокаем prisma / llm / embedder / metrics. Покрываем:
- *   - extract → null когда isGoal=false / confidence < MIN (создания нет);
- *   - dedup: verdict='duplicate' к suggested-цели → existing промоутится active,
- *     новой не создаётся;
- *   - hierarchy: verdict='child_of' → goal.create с parentGoalId;
- *   - standalone: нет KNN-кандидатов → goal.create без parentGoalId (и без LLM-арбитра);
- *   - cap: >=7 активных целей горизонта → создания нет.
- */
-
 const TENANT = 'org-1';
 const BLOCK_ID = 'block-1';
 
@@ -66,6 +54,7 @@ interface Mocks {
     };
     goalKeyResult: { create: ReturnType<typeof vi.fn> };
     membership: { findFirst: ReturnType<typeof vi.fn> };
+    $queryRawUnsafe: ReturnType<typeof vi.fn>;
   };
   llm: { call: ReturnType<typeof vi.fn> };
   embedder: { embedQuery: ReturnType<typeof vi.fn> };
@@ -84,7 +73,9 @@ function buildService(): { svc: Specialist314GoalsService; m: Mocks } {
       ideaBlock: { findUnique: vi.fn() },
       goal: {
         findMany: vi.fn().mockResolvedValue([]),
-        findFirst: vi.fn(),
+        // По умолчанию source-block guard (Ф5/Б34) не находит цель из блока →
+        // обычный поток дедупа. Отдельные тесты переопределяют per-call.
+        findFirst: vi.fn().mockResolvedValue(null),
         count: vi.fn().mockResolvedValue(0),
         create: vi.fn().mockResolvedValue({ id: 'goal-new' }),
         update: vi.fn().mockResolvedValue({ id: 'goal-existing' }),
@@ -93,6 +84,9 @@ function buildService(): { svc: Specialist314GoalsService; m: Mocks } {
       membership: {
         findFirst: vi.fn().mockResolvedValue({ userId: 'owner-1' }),
       },
+      // По умолчанию pgvector KNN возвращает пусто — тесты с вектором
+      // переопределяют. ILIKE-fallback идёт через goal.findMany.
+      $queryRawUnsafe: vi.fn().mockResolvedValue([]),
     },
     llm: { call: vi.fn() },
     embedder: { embedQuery: vi.fn().mockResolvedValue(null) },
@@ -106,13 +100,13 @@ function buildService(): { svc: Specialist314GoalsService; m: Mocks } {
   };
 
   const svc = new Specialist314GoalsService(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     m.prisma as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     m.llm as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     m.embedder as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     m.metrics as any,
     m.logs as any,
     undefined,
@@ -144,7 +138,6 @@ describe('Specialist314GoalsService.processBlock', () => {
     await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
 
     expect(m.prisma.goal.create).not.toHaveBeenCalled();
-    // Один LLM-вызов (extract), арбитра нет.
     expect(m.llm.call).toHaveBeenCalledTimes(1);
   });
 
@@ -176,11 +169,10 @@ describe('Specialist314GoalsService.processBlock', () => {
         confidence: 0.6,
       }),
     );
-    m.prisma.goal.findMany.mockResolvedValue([]); // нет кандидатов
+    m.prisma.goal.findMany.mockResolvedValue([]);
 
     await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
 
-    // Только extract — арбитра НЕ зовём при пустых кандидатах.
     expect(m.llm.call).toHaveBeenCalledTimes(1);
     expect(m.prisma.goal.create).toHaveBeenCalledTimes(1);
     expect(m.prisma.goal.create).toHaveBeenCalledWith(
@@ -188,7 +180,7 @@ describe('Specialist314GoalsService.processBlock', () => {
         data: expect.objectContaining({
           parentGoalId: null,
           source: 'ai',
-          promotionState: 'suggested', // confidence 0.6 < 0.8
+          promotionState: 'suggested',
           createdById: 'owner-1',
         }),
       }),
@@ -247,16 +239,15 @@ describe('Specialist314GoalsService.processBlock', () => {
         promotionState: 'suggested',
       },
     ]);
-    m.prisma.goal.findFirst.mockResolvedValue({
-      id: 'goal-existing',
-      promotionState: 'suggested',
-    });
+    // 1-й findFirst — source-block guard (Ф5/Б34): нет цели из блока → проходим.
+    // 2-й findFirst — внутри handleDuplicate: existing suggested-цель.
+    m.prisma.goal.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'goal-existing', promotionState: 'suggested' });
 
     await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
 
-    // Новой цели НЕ создаём.
     expect(m.prisma.goal.create).not.toHaveBeenCalled();
-    // Existing suggested → active.
     expect(m.prisma.goal.update).toHaveBeenCalledTimes(1);
     expect(m.prisma.goal.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -264,7 +255,6 @@ describe('Specialist314GoalsService.processBlock', () => {
         data: { promotionState: 'active' },
       }),
     );
-    // dedup-метрика.
     expect(m.metrics.incCoreSpecialistExtractionFailure).toHaveBeenCalledWith({
       type: 'goal',
       reason: 'dedup',
@@ -323,8 +313,8 @@ describe('Specialist314GoalsService.processBlock', () => {
         confidence: 0.6,
       }),
     );
-    m.prisma.goal.findMany.mockResolvedValue([]); // standalone
-    m.prisma.goal.count.mockResolvedValue(7); // cap достигнут
+    m.prisma.goal.findMany.mockResolvedValue([]);
+    m.prisma.goal.count.mockResolvedValue(7);
 
     await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
 
@@ -365,6 +355,79 @@ describe('Specialist314GoalsService.processBlock', () => {
         }),
       }),
     );
+  });
+
+  it('Ф5 KNN по вектору: две формулировки одной цели → дубль-кандидат найден, новой цели нет', async () => {
+    // Семантический путь: embedder вернул вектор → pgvector KNN находит
+    // существующую цель, LLM-арбитр выносит verdict=duplicate → дубль не создаём.
+    m.embedder.embedQuery.mockResolvedValue([0.1, 0.2, 0.3]);
+    m.prisma.$queryRawUnsafe.mockResolvedValue([
+      {
+        id: 'goal-existing',
+        name: 'Провести сто встреч за квартал',
+        description: null,
+        horizon: 'quarterly',
+        promotionState: 'active',
+      },
+    ]);
+    m.llm.call
+      .mockResolvedValueOnce(
+        llmResult({
+          isGoal: true,
+          statement: '100 встреч в этом квартале',
+          description: null,
+          horizon: 'quarterly',
+          measurable: null,
+          confidence: 0.6,
+        }),
+      )
+      .mockResolvedValueOnce(
+        llmResult({
+          verdict: 'duplicate',
+          targetId: 'goal-existing',
+          parentId: null,
+          confidence: 0.95,
+          reasoning: 'та же цель, иная формулировка',
+        }),
+      );
+    // handleDuplicate.findFirst (2-й вызов; 1-й — source-block guard → null).
+    m.prisma.goal.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'goal-existing', promotionState: 'active' });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    // KNN-кандидаты искались по вектору, не по ILIKE.
+    expect(m.prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(m.prisma.goal.findMany).not.toHaveBeenCalled();
+    // Дубль-цель НЕ создана.
+    expect(m.prisma.goal.create).not.toHaveBeenCalled();
+  });
+
+  it('Ф5/Б34 source-block guard: цель из ЭТОГО блока уже есть → дубль не создаётся', async () => {
+    m.llm.call.mockResolvedValueOnce(
+      llmResult({
+        isGoal: true,
+        statement: 'Провести 100 встреч за квартал',
+        description: null,
+        horizon: 'quarterly',
+        measurable: null,
+        confidence: 0.6,
+      }),
+    );
+    // source-block guard находит цель, материализованную из этого блока.
+    m.prisma.goal.findFirst.mockResolvedValueOnce({
+      id: 'goal-from-block',
+      promotionState: 'active',
+    });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    // Дубль по blockId не создаётся; KNN даже не запускается.
+    expect(m.prisma.goal.create).not.toHaveBeenCalled();
+    expect(m.prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+    // Только extract-вызов LLM, арбитра нет.
+    expect(m.llm.call).toHaveBeenCalledTimes(1);
   });
 
   it('owner Org не найден → цель не создаётся (не падает)', async () => {

@@ -1,21 +1,8 @@
-/**
- * Доменная модель `ProjectDocument` (2026-05-27).
- *
- * Контракт: `backend/src/modules/tracker/dto/project-documents/project-document.dto.ts`
- * + `backend/src/modules/tracker/services/project-documents.service.ts`.
- */
-
-// ─── ApiDto ─────────────────────────────────────────────────────────────────
-
-/**
- * Полный документ с контентом (`GET /project-documents/:id`).
- */
 export interface ProjectDocumentApi {
   id: string;
   tenantId: string;
   projectId: string;
   title: string;
-  /** TipTap JSON. */
   content: unknown;
   contentHtml: string | null;
   contentStripped: string | null;
@@ -30,10 +17,6 @@ export interface ProjectDocumentApi {
   deletedAt: string | null;
 }
 
-/**
- * Сводный вариант для списка (`GET /projects/:id/documents` + WS events).
- * `preview` — первые ~240 символов plain-text, сформированный сервером.
- */
 export interface ProjectDocumentSummaryApi {
   id: string;
   tenantId: string;
@@ -50,9 +33,6 @@ export interface ProjectDocumentSummaryApi {
   updatedAt: string;
 }
 
-/**
- * Связанная CRM-карточка (`GET /projects/:id/linked-cards`).
- */
 export interface LinkedCardApi {
   id: string;
   name: string;
@@ -62,8 +42,6 @@ export interface LinkedCardApi {
   lastMeetingAt: string | null;
   contactName: string | null;
 }
-
-// ─── Domain ─────────────────────────────────────────────────────────────────
 
 export interface ProjectDocument {
   id: string;
@@ -109,8 +87,6 @@ export interface LinkedCard {
   lastMeetingAt: Date | null;
   contactName: string | null;
 }
-
-// ─── Mappers ────────────────────────────────────────────────────────────────
 
 const parseDate = (s: string | null | undefined): Date | null =>
   s ? new Date(s) : null;
@@ -170,47 +146,21 @@ export function linkedCardFromApi(api: LinkedCardApi): LinkedCard {
   };
 }
 
-// ─── UI helpers ─────────────────────────────────────────────────────────────
-
-/**
- * Извлечь plain-text из TipTap JSON. Используется при локальном редактировании
- * (до auto-save сервер ещё не получил contentStripped). Простой обход:
- * рекурсивно собирает `text`-ноды.
- */
-export function extractPlainTextFromTiptapJson(content: unknown): string {
-  if (content === null || content === undefined) return '';
-  const parts: string[] = [];
-  const visit = (node: unknown): void => {
-    if (!node || typeof node !== 'object') return;
-    const obj = node as Record<string, unknown>;
-    if (typeof obj.text === 'string') parts.push(obj.text);
-    const children = obj.content;
-    if (Array.isArray(children)) {
-      for (const c of children) visit(c);
-    }
-  };
-  visit(content);
-  return parts.join(' ').replace(/\s+/g, ' ').trim();
-}
-
-/**
- * Человекочитаемый kind карточки для UI «Связанные карточки».
- */
 export function linkedCardKindLabel(kind: string): string {
   switch (kind) {
-    case 'client':
-      return 'Клиент';
-    case 'deal':
-      return 'Сделка';
-    case 'project':
-      return 'Проект';
-    case 'topic':
-      return 'Тема';
-    case 'vendor':
-      return 'Поставщик';
-    case 'custom':
-      return 'Карточка';
+    case "client":
+      return "Клиент";
+    case "deal":
+      return "Сделка";
+    case "project":
+      return "Проект";
+    case "topic":
+      return "Тема";
+    case "vendor":
+      return "Поставщик";
+    case "custom":
+      return "Карточка";
     default:
-      return 'Карточка';
+      return "Карточка";
   }
 }

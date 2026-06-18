@@ -228,20 +228,17 @@ export class RoleClonePersonaVersioningHandler {
     // следующий cron-проход доберёт.
     if (event.newPersonId) {
       try {
-        const built = await this.builder.buildForRole({
+        // Б47 — buildForRole (через createRolePersonaWithRetry) уже внутри своей
+        // транзакции переводит ВСЕ active/pending_rebuild этой роли в superseded
+        // (фикс Б24), включая наш только что созданный pending_rebuild. Поэтому
+        // отдельный post-build updateMany по newPersona.id был холостым (0 affected)
+        // и его лог вводил в заблуждение — убран. Достаточно просто пересобрать.
+        await this.builder.buildForRole({
           tenantId: event.tenantId,
           roleId: event.roleId,
           triggerReason: 'on_demand',
           triggerEventAt: event.changedAt,
         });
-        if (built && built.status === 'active') {
-          // builder уже сам пометил предыдущие active как superseded — наш
-          // pending_rebuild тоже должен стать superseded (он промежуточный).
-          await this.prisma.executablePersona.updateMany({
-            where: { id: newPersona.id, status: 'pending_rebuild' },
-            data: { status: 'superseded' },
-          });
-        }
       } catch (err) {
         this.logger.warn(
           {

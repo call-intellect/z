@@ -1,13 +1,5 @@
 import { z } from 'zod';
 
-/**
- * DTO модуля бизнес-должностей (Role).
- *
- * Внимание: модель Prisma `Role` — это «бизнес-должность» компании клиента,
- * НЕ путать с `MembershipRole` (owner/admin/manager — права доступа в Z).
- * Поэтому модуль называется `roles-domain`, URL — `/api/v1/roles`.
- */
-
 const NameSchema = z
   .string({ error: 'Название должности обязательно' })
   .trim()
@@ -18,8 +10,6 @@ const TagsSchema = z
   .array(z.string().trim().min(1).max(50))
   .max(20, 'Не более 20 тегов на должность');
 
-// ─────────────────────────── Query / Filters ─────────────────────────
-
 export const ListRolesQuerySchema = z.object({
   q: z.string().trim().min(1).max(200).optional(),
   departmentId: z.string().min(1).optional(),
@@ -27,8 +17,6 @@ export const ListRolesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(200),
 });
 export type ListRolesQuery = z.infer<typeof ListRolesQuerySchema>;
-
-// ─────────────────────────── Body ────────────────────────────────────
 
 export const CreateRoleSchema = z.object({
   name: NameSchema,
@@ -43,10 +31,9 @@ export const UpdateRoleSchema = z
     departmentId: z.string().min(1).nullable().optional(),
     tags: TagsSchema.optional(),
   })
-  .refine(
-    (data) => Object.values(data).some((v) => v !== undefined),
-    { message: 'Хотя бы одно поле должно быть указано' },
-  );
+  .refine((data) => Object.values(data).some((v) => v !== undefined), {
+    message: 'Хотя бы одно поле должно быть указано',
+  });
 export type UpdateRoleDto = z.infer<typeof UpdateRoleSchema>;
 
 export const BatchCreateRolesSchema = z.object({
@@ -56,8 +43,6 @@ export const BatchCreateRolesSchema = z.object({
     .max(200, 'За один запрос можно создать не более 200 должностей'),
 });
 export type BatchCreateRolesDto = z.infer<typeof BatchCreateRolesSchema>;
-
-// ─────────────────────────── Response DTO ────────────────────────────
 
 export interface RoleListItemDto {
   id: string;

@@ -1,6 +1,3 @@
-/**
- * SBA α-10 wave 3 — DomainModel для Unit Economics dashboards.
- */
 export type AdminEconomicsGlobalApi = {
   period: { fromIso: string; toIso: string; days: number };
   totals: { costUsd: number; costRub: number; callsCount: number };
@@ -51,6 +48,6 @@ export type AdminOrgBudgetApi = {
 
 export type UpdateOrgBudgetRequest = {
   monthlyCapRub: number | null;
-  capKind: 'soft' | 'hard';
+  capKind: "soft" | "hard";
   alertThresholds: number[];
 };

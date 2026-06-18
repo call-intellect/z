@@ -1,22 +1,22 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   Bell,
   Building2,
+  Compass,
   Download,
   Palette,
-  Plug,
   ShieldCheck,
   Tag,
   User,
   Wallet,
   type LucideIcon,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { useAuth } from '@/contexts/auth-context';
-import { cn } from '@/ui/shadcn/lib/utils';
+import { useAuth } from "@/contexts/auth-context";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 type Item = {
   href: string;
@@ -27,64 +27,50 @@ type Item = {
 };
 
 const ITEMS: Item[] = [
-  { href: '/settings', label: 'Профиль', icon: User, matchExact: true },
-  { href: '/settings', tab: 'security', label: 'Безопасность', icon: ShieldCheck },
-  { href: '/settings', tab: 'appearance', label: 'Внешний вид', icon: Palette },
-  { href: '/settings/organization', label: 'Организация', icon: Building2 },
-  { href: '/settings/tags', label: 'Теги', icon: Tag },
-  { href: '/settings/integrations', label: 'Интеграции', icon: Plug },
-  { href: '/settings/notifications', label: 'Уведомления', icon: Bell },
-  { href: '/settings/exports', label: 'Экспорты', icon: Download },
+  { href: "/settings", label: "Профиль", icon: User, matchExact: true },
+  {
+    href: "/settings",
+    tab: "security",
+    label: "Безопасность",
+    icon: ShieldCheck,
+  },
+  { href: "/settings", tab: "appearance", label: "Внешний вид", icon: Palette },
+  { href: "/settings", tab: "tours", label: "Знакомство", icon: Compass },
+  { href: "/settings/organization", label: "Организация", icon: Building2 },
+  { href: "/settings/tags", label: "Теги", icon: Tag },
+  { href: "/settings/notifications", label: "Уведомления", icon: Bell },
+  { href: "/settings/exports", label: "Экспорты", icon: Download },
 ];
 
 const OWNER_ITEMS: Item[] = [
-  { href: '/settings/subscription', label: 'Подписка и оплата', icon: Wallet },
-  { href: '/settings/billing', label: 'Тариф и лимиты', icon: Wallet },
+  { href: "/settings/subscription", label: "Подписка и оплата", icon: Wallet },
+  { href: "/settings/billing", label: "Тариф и лимиты", icon: Wallet },
 ];
 
 export function SettingsSidebar() {
-  const pathname = usePathname() ?? '';
+  const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
-  const tabParam = searchParams?.get('tab') ?? null;
+  const tabParam = searchParams?.get("tab") ?? null;
   const { currentOrgRole } = useAuth();
-  const showOwner = currentOrgRole === 'owner';
+  const showOwner = currentOrgRole === "owner";
+
+  const items = showOwner ? [...ITEMS, ...OWNER_ITEMS] : ITEMS;
 
   return (
-    <aside className="md:w-56 md:shrink-0">
-      <nav className="rounded-lg border border-border-subtle bg-bg-card p-2">
-        <ul className="flex flex-col gap-0.5">
-          {ITEMS.map((item) => (
-            <SidebarLink
-              key={`${item.href}-${item.tab ?? 'default'}`}
-              item={item}
-              pathname={pathname}
-              tabParam={tabParam}
-            />
-          ))}
-        </ul>
-        {showOwner && (
-          <>
-            <div className="mt-3 px-3 text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
-              Владелец компании
-            </div>
-            <ul className="flex flex-col gap-0.5 pt-1">
-              {OWNER_ITEMS.map((item) => (
-                <SidebarLink
-                  key={`${item.href}-${item.tab ?? 'default'}`}
-                  item={item}
-                  pathname={pathname}
-                  tabParam={tabParam}
-                />
-              ))}
-            </ul>
-          </>
-        )}
-      </nav>
-    </aside>
+    <nav className="flex gap-1 overflow-x-auto border-b border-border-subtle">
+      {items.map((item) => (
+        <TabLink
+          key={`${item.href}-${item.tab ?? "default"}`}
+          item={item}
+          pathname={pathname}
+          tabParam={tabParam}
+        />
+      ))}
+    </nav>
   );
 }
 
-function SidebarLink({
+function TabLink({
   item,
   pathname,
   tabParam,
@@ -97,31 +83,33 @@ function SidebarLink({
   const isActive = computeActive(item, pathname, tabParam);
   const Icon = item.icon;
   return (
-    <li>
-      <Link
-        href={linkHref}
-        className={cn(
-          'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
-          isActive
-            ? 'bg-accent-muted font-medium text-accent-fg'
-            : 'text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary',
-        )}
-      >
-        <Icon size={15} strokeWidth={1.75} />
-        {item.label}
-      </Link>
-    </li>
+    <Link
+      href={linkHref}
+      className={cn(
+        "-mb-px flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm transition-colors",
+        isActive
+          ? "border-accent font-medium text-fg-primary"
+          : "border-transparent text-fg-secondary hover:text-fg-primary",
+      )}
+    >
+      <Icon size={15} strokeWidth={1.75} />
+      {item.label}
+    </Link>
   );
 }
 
-function computeActive(item: Item, pathname: string, tab: string | null): boolean {
-  if (item.href === '/settings' && pathname === '/settings') {
+function computeActive(
+  item: Item,
+  pathname: string,
+  tab: string | null,
+): boolean {
+  if (item.href === "/settings" && pathname === "/settings") {
     if (item.matchExact) {
-      return tab === null || tab === 'profile';
+      return tab === null || tab === "profile";
     }
     return tab === item.tab;
   }
-  if (item.href !== '/settings') {
+  if (item.href !== "/settings") {
     return pathname === item.href || pathname.startsWith(`${item.href}/`);
   }
   return false;

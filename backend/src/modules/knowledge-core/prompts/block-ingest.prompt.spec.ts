@@ -20,27 +20,33 @@ import { buildBlockIngestPrompt } from './block-ingest.prompt';
 describe('block-ingest prompt — signalType recall (Ф1)', () => {
   const { system } = buildBlockIngestPrompt({ segments: [] });
 
-  it('decision имеет явные русские маркеры', () => {
-    expect(system).toContain('решили что');
-    expect(system).toContain('остановились на');
-    expect(system).toContain('договорились делать');
+  // ТЗ 2026-06-16 (Прил. A1) — SYSTEM переписан по методологии (7 блоков).
+  // Различение классов перенесено в блок «Главные различия классов» с
+  // примерами-маркерами, дублируемыми в few-shot. Ассерты обновлены под него.
+  it('decision имеет явный маркер-различие', () => {
+    expect(system).toContain('решили остановиться на варианте Б');
   });
 
-  it('idea имеет явные русские маркеры', () => {
-    expect(system).toContain('а что если');
-    expect(system).toContain('давайте попробуем');
-    expect(system).toContain('предлагаю сделать');
+  it('idea имеет явный маркер-различие', () => {
+    expect(system).toContain('а давайте попробуем Б');
   });
 
   it('дизамбигуация защищает commitment/plan_item от каннибализации decision', () => {
-    // decision-описание явно отделяет себя от commitment/plan_item.
-    expect(system).toContain('commitment — обязательство КОНКРЕТНОГО человека');
-    expect(system).toContain('plan_item — пункт плана на период');
+    // Решение явно отделено от обязательства и пункта плана.
+    expect(system).toContain('Обязательство — кто-то лично обещает сделать');
+    expect(system).toContain('и не пункт плана');
   });
 
   it('idea-описание отделяет себя от suggestion/feature_request', () => {
-    expect(system).toContain('suggestion — общий совет без новизны');
-    expect(system).toContain('feature_request — запрос конкретной фичи');
+    expect(system).toContain('Совет (suggestion) — общая рекомендация без новизны');
+    expect(system).toContain('Запрос фичи (feature_request) — просьба сделать конкретную функцию');
+  });
+
+  // Маркеры методологии (acceptance Ф1) — блок различий, self-check, запрет кодов.
+  it('содержит блок различий классов, самопроверку и запрет кодов', () => {
+    expect(system).toContain('Главные различия классов');
+    expect(system).toContain('самопроверка');
+    expect(system).toContain('Чистый русский на выходе');
   });
 
   // C1 agent-chain-overhaul (2026-06-07) — ASR-нота применена ко ВСЕМ
@@ -54,7 +60,7 @@ describe('block-ingest prompt — signalType recall (Ф1)', () => {
   // из реплик/спикеров; если имя не звучало — null, не выдумываем.
   it('содержит правило анти-галлюцинации имён (C6)', () => {
     expect(system).toContain(
-      'Имена людей (поля *NameGuess, recipient, decidedBy и т.п.) бери ТОЛЬКО из реплик/спикеров',
+      'бери ТОЛЬКО из реплик и из имён спикеров',
     );
   });
 });

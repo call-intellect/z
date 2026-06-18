@@ -1,17 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  BASE_FUNCTIONAL_DOMAINS,
-  INDUSTRY_DOMAIN_TEMPLATES,
-} from './functional-domain.seeds';
-
-/**
- * SBA α-9 wave 3 — sanity checks для seed-данных и общих инвариантов
- * FunctionalDomain.
- *
- * Глубокие integration-проверки tree traversal / cycle detection — отдельный
- * integration spec поверх вживую запущенной БД.
- */
+import { BASE_FUNCTIONAL_DOMAINS, INDUSTRY_DOMAIN_TEMPLATES } from './functional-domain.seeds';
 
 describe('FunctionalDomainSeeds', () => {
   it('включает ровно 8 базовых доменов', () => {
@@ -40,8 +29,9 @@ describe('FunctionalDomainSeeds', () => {
   it('все 5 индустрий присутствуют', () => {
     const expected = ['saas', 'developer', 'retail', 'manufacturing', 'b2b_services'];
     for (const slug of expected) {
-      expect(INDUSTRY_DOMAIN_TEMPLATES[slug as keyof typeof INDUSTRY_DOMAIN_TEMPLATES])
-        .toBeDefined();
+      expect(
+        INDUSTRY_DOMAIN_TEMPLATES[slug as keyof typeof INDUSTRY_DOMAIN_TEMPLATES],
+      ).toBeDefined();
     }
   });
 

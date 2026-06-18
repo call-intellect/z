@@ -1,16 +1,3 @@
-/**
- * Тесты для интеграции `participants` в tasks-промпты
- * (ТЗ 2026-05-25 hard-participant-identification, Фаза 3).
- *
- * Проверяем:
- *   1. `buildTasksPromptUnified` с непустым `participants` → system содержит
- *      инструкцию про assigneeUserId, user — блок со списком участников.
- *   2. Без participants → ни system, ни user не содержат блок (legacy-режим).
- *   3. `buildTaskItemSchemaUnified` с participants → схема включает
- *      `assigneeUserId`.
- *   4. `buildTasksToolUnified` с participants → JSON Schema содержит
- *      `assigneeUserId: ['string','null']`.
- */
 import { describe, expect, it } from 'vitest';
 
 import type { DialogTurn, PromptInput } from './common';
@@ -101,7 +88,7 @@ describe('buildTaskItemSchemaUnified — assigneeUserId', () => {
     const res = schema.safeParse({
       title: 't',
       assigneeRaw: 'Анна',
-      assigneeUserId: 'user_anna', // лишнее поле в strict
+      assigneeUserId: 'user_anna',
       sourceStartMs: 0,
       sourceEndMs: 100,
       sourceQuote: 'отчёт',
@@ -138,10 +125,11 @@ describe('buildTasksToolUnified — JSON Schema', () => {
       withConfidence: true,
       participants: PARTICIPANTS,
     });
-    const tasksProp =
-      (tool.input_schema as unknown as {
+    const tasksProp = (
+      tool.input_schema as unknown as {
         properties: { tasks: { items: { properties: Record<string, unknown> } } };
-      }).properties.tasks.items.properties;
+      }
+    ).properties.tasks.items.properties;
     expect(tasksProp).toHaveProperty('assigneeUserId');
   });
 
@@ -150,10 +138,11 @@ describe('buildTasksToolUnified — JSON Schema', () => {
       useAssigneeRaw: true,
       withConfidence: true,
     });
-    const tasksProp =
-      (tool.input_schema as unknown as {
+    const tasksProp = (
+      tool.input_schema as unknown as {
         properties: { tasks: { items: { properties: Record<string, unknown> } } };
-      }).properties.tasks.items.properties;
+      }
+    ).properties.tasks.items.properties;
     expect(tasksProp).not.toHaveProperty('assigneeUserId');
   });
 });

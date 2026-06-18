@@ -29,16 +29,6 @@ import {
   type UpdateRetentionDto,
 } from './dto/admin-retention.dto';
 
-/**
- * Admin-redesign Фаза 7 — `AdminRetentionController`.
- *
- * UI Z-Admin `/admin/media/retention` — управление таблицей `RetentionPolicy`.
- * Все retention-настройки — severity='high', reason обязателен (≥10 символов).
- *
- * Все эндпоинты под `CookieAuthGuard + SuperAdminGuard` и
- * `SuperAdminAuditInterceptor` (audit фиксирует все правки, включая просмотр
- * preview — это compliance-чувствительные действия).
- */
 @ApiTags('admin-media-retention')
 @Controller('api/v1/admin/media/retention')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -51,8 +41,7 @@ export class AdminRetentionController {
 
   @Get()
   @ApiOperation({
-    summary:
-      'Список всех retention-политик (sorted by type). При пустой БД — sync с ENV.',
+    summary: 'Список всех retention-политик (sorted by type). При пустой БД — sync с ENV.',
   })
   async list() {
     return this.svc.list();

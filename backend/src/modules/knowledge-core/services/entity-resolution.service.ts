@@ -250,6 +250,16 @@ export class EntityResolutionService {
         where: { id: knnHit.id },
         data: {
           mentionsCount: { increment: 1 },
+          // Б44 [K4] W3.4 backfill: если caller передал strong-ID, которого
+          // нет у найденной по KNN сущности — записываем его. Симметрично
+          // strong-ID и exact-name веткам выше. Без этого KNN-reuse оставлял
+          // ИНН/домен пустыми → следующий вызов с тем же ИНН не находил по
+          // strong-ID и плодил дубль.
+          ...(strong.inn && !knnHit.inn ? { inn: strong.inn } : {}),
+          ...(strong.ogrn && !knnHit.ogrn ? { ogrn: strong.ogrn } : {}),
+          ...(strong.email && !knnHit.email ? { email: strong.email } : {}),
+          ...(strong.phone && !knnHit.phone ? { phone: strong.phone } : {}),
+          ...(strong.domain && !knnHit.domain ? { domain: strong.domain } : {}),
           ...(merged !== undefined ? { metadata: merged } : {}),
         },
       });
@@ -601,6 +611,75 @@ export class EntityResolutionService {
     }
   }
 
+  // ─────────────────────────── Б29 [K6]: negative-cache пар ────────────────
+  //
+  // entity-resolver-cron каждые 5 минут находит пары-кандидаты (cosine >
+  // threshold) и шлёт их LLM-арбитру. Без негативного маркера арбитр-вердикт
+  // `distinct` НЕ персистится → одна и та же пара перепроверяется каждые 5
+  // минут навсегда (раннавей-расход LLM). Фикс: после вердикта `distinct`
+  // worker пишет negative-cache по упорядоченной паре (minId, maxId), а cron
+  // исключает уже-судёные distinct-пары из выборки кандидатов.
+  //
+  // Хранилище — Redis (без миграции): TTL ограничивает «вечную» память (если
+  // сущности реально изменятся, эмбеддинг сдвинется — после TTL пара снова
+  // попадёт под суд). Ключ симметричен по паре (порядок id не важен).
+
+  /** Redis-ключ negative-cache для пары сущностей (упорядоченная пара). */
+  private buildPairNegativeKey(idA: string, idB: string): string {
+    const [lo, hi] = idA < idB ? [idA, idB] : [idB, idA];
+    return `entity-merge:distinct:${lo}:${hi}`;
+  }
+
+  /**
+   * TTL negative-cache распознанных distinct-пар. Переиспользуем
+   * `ENTITY_INGEST_RESOLVE_CACHE_TTL_S`, но не меньше суток — пара признана
+   * РАЗНЫМИ, перепроверять её каждый час смысла нет (эмбеддинги имён почти
+   * статичны). Дефолт 7 дней.
+   */
+  private pairNegativeTtlSeconds(): number {
+    const base = this.cfg?.entityIngest.cacheTtlSeconds ?? 3600;
+    const week = 7 * 24 * 3600;
+    return Math.max(base, week);
+  }
+
+  /**
+   * Помечает пару сущностей как «арбитр решил: РАЗНЫЕ» (verdict='distinct').
+   * Вызывается worker'ом после LLM-вердикта distinct. Best-effort: при
+   * отсутствии Redis или ошибке — no-op (хуже-случай = повторный суд, как до
+   * фикса, не падение).
+   */
+  async markEntityPairDistinct(idA: string, idB: string): Promise<void> {
+    if (!this.redis) return;
+    if (idA === idB) return;
+    try {
+      await this.redis.client.set(
+        this.buildPairNegativeKey(idA, idB),
+        '1',
+        'EX',
+        this.pairNegativeTtlSeconds(),
+      );
+    } catch {
+      // fail-open: negative-cache недоступен — не ломаем merge-flow.
+    }
+  }
+
+  /**
+   * Возвращает true, если пара уже судилась и признана distinct (есть в
+   * negative-cache). Используется cron'ом для исключения уже-судёных пар.
+   * Best-effort: при отсутствии Redis / ошибке — false (= не исключаем,
+   * безопасный дефолт «пусть пересудят»).
+   */
+  async isEntityPairDistinct(idA: string, idB: string): Promise<boolean> {
+    if (!this.redis) return false;
+    if (idA === idB) return false;
+    try {
+      const v = await this.redis.client.get(this.buildPairNegativeKey(idA, idB));
+      return v != null;
+    } catch {
+      return false;
+    }
+  }
+
   // ─────────────────────────── Фаза 0b: hint resolvers ─────────────────────
 
   /**
@@ -781,21 +860,35 @@ export class EntityResolutionService {
     // Берём ВСЕ person-Entity Org и ищем по нормализованному имени (как в
     // linkEntityPerson). Прежний findFirst без фильтра по имени брал первый
     // person-Entity и при >1 сущности не находил нужный.
+    //
+    // Б15/Б20 [K3]: детерминированный orderBy (id ASC) + при >1 совпадении
+    // по имени НЕ линкуем (тёзки → неоднозначность, как в resolveRoleByHint /
+    // resolvePersonByHint). Без orderBy `findMany` отдавал произвольный порядок
+    // строк, и `.find` приклеивал «первого попавшегося» тёзку.
     const entities = await this.prisma.entity.findMany({
       where: {
         tenantId: args.tenantId,
         type: 'person',
         mergedIntoId: null,
       },
+      orderBy: { id: 'asc' },
       select: { id: true, canonicalName: true },
     });
-    const entity = entities.find(
+    const matches = entities.filter(
       (e) => this.normalizeName(e.canonicalName).toLowerCase() === lowered,
     );
-    if (!entity) {
+    if (matches.length === 0) {
       // Точного совпадения нет — fuzzy/cosine — TODO.
       return;
     }
+    if (matches.length > 1) {
+      this.logger.debug(
+        { personId: args.personId, candidates: matches.length },
+        'linkPersonEntity: >1 person-Entity-тёзка — пропуск (неоднозначность)',
+      );
+      return;
+    }
+    const entity = matches[0]!;
 
     await this.prisma.person.update({
       where: { id: args.personId },
@@ -832,18 +925,31 @@ export class EntityResolutionService {
     if (lowered.length === 0) return;
 
     // Ищем Person, у кого ещё нет entityId, в той же Org.
+    //
+    // Б15/Б20 [K3]: детерминированный orderBy (id ASC) + при >1 совпадении по
+    // имени НЕ линкуем (тёзки → неоднозначная атрибуция). Прежний `.find` без
+    // orderBy брал произвольного первого тёзку.
     const persons = await this.prisma.person.findMany({
       where: {
         tenantId: args.tenantId,
         deletedAt: null,
         entityId: null,
       },
+      orderBy: { id: 'asc' },
       select: { id: true, name: true },
     });
-    const match = persons.find(
+    const matches = persons.filter(
       (p) => this.normalizeName(p.name).toLowerCase() === lowered,
     );
-    if (!match) return;
+    if (matches.length === 0) return;
+    if (matches.length > 1) {
+      this.logger.debug(
+        { entityId: args.entityId, candidates: matches.length },
+        'linkEntityPerson: >1 Person-тёзка — пропуск (неоднозначность)',
+      );
+      return;
+    }
+    const match = matches[0]!;
     await this.prisma.person.update({
       where: { id: match.id },
       data: { entityId: args.entityId },

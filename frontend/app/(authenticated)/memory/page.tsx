@@ -1,5 +1,5 @@
-import type { Metadata } from 'next';
-import Link from 'next/link';
+import type { Metadata } from "next";
+import Link from "next/link";
 import {
   MessageCircle,
   ClipboardList,
@@ -8,22 +8,13 @@ import {
   Network,
   Sparkles,
   Table2,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { MemorySearch } from '@/ui/components/memory/MemorySearch';
+import { MemorySearch } from "@/ui/components/memory/MemorySearch";
 
 export const metadata: Metadata = {
-  title: 'Память',
+  title: "Память",
 };
-
-/**
- * ПАМЯТЬ — `/memory` (ТЗ 2026-06-13 «Редизайн кабинета», Ф0/Ф5б).
- *
- * Хаб «3 входа вместо 8 пунктов»: Спросить · Лента Коры · Реестры. На Ф0 —
- * каркас-навигатор по существующим разделам памяти; полноценная «Лента Коры»
- * (переключатель типов + контроль вопросов) и UI поиска по памяти строятся в
- * Ф8.6 / Ф5б.
- */
 
 interface Entry {
   href: string;
@@ -33,30 +24,73 @@ interface Entry {
 }
 
 const ENTRIES: Entry[] = [
-  { href: '/chat', label: 'Спросить', desc: 'Задайте вопрос — Кора ответит из памяти компании со ссылками на источники.', icon: MessageCircle },
+  {
+    href: "/chat",
+    label: "Спросить",
+    desc: "Задайте вопрос — Кора ответит из памяти компании со ссылками на источники.",
+    icon: MessageCircle,
+  },
 ];
 
 const REGISTRIES: Entry[] = [
-  { href: '/decisions', label: 'Решения', desc: 'Журнал ключевых решений', icon: ClipboardList },
-  { href: '/regulations', label: 'Оцифровано', desc: 'Регламенты, процессы, инструкции и политики из встреч', icon: ClipboardList },
-  { href: '/themes', label: 'Темы', desc: 'Кластеры обсуждений', icon: Sparkles },
-  { href: '/entities', label: 'Сущности', desc: 'Реестр сущностей графа', icon: Network },
-  { href: '/tables', label: 'Таблицы', desc: 'Извлечённые данные', icon: Table2 },
-  { href: '/ideas', label: 'Идеи', desc: 'Копилка идей команды', icon: Lightbulb },
-  { href: '/insights', label: 'Сигналы', desc: 'Закономерности и риски', icon: AlertTriangle },
+  {
+    href: "/decisions",
+    label: "Решения",
+    desc: "Журнал ключевых решений",
+    icon: ClipboardList,
+  },
+  {
+    href: "/regulations",
+    label: "Оцифровано",
+    desc: "Регламенты, процессы, инструкции и политики из встреч",
+    icon: ClipboardList,
+  },
+  {
+    href: "/themes",
+    label: "Темы",
+    desc: "Кластеры обсуждений",
+    icon: Sparkles,
+  },
+  {
+    href: "/entities",
+    label: "Сущности",
+    desc: "Реестр сущностей графа",
+    icon: Network,
+  },
+  {
+    href: "/tables",
+    label: "Таблицы",
+    desc: "Извлечённые данные",
+    icon: Table2,
+  },
+  {
+    href: "/ideas",
+    label: "Идеи",
+    desc: "Копилка идей команды",
+    icon: Lightbulb,
+  },
+  {
+    href: "/insights",
+    label: "Сигналы",
+    desc: "Закономерности и риски",
+    icon: AlertTriangle,
+  },
 ];
 
 export default function MemoryHubPage() {
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-8">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">Память</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
+          Память
+        </h1>
         <p className="mt-1 text-sm text-fg-secondary">
-          Всё, что Кора извлекла из встреч и разговоров. Спросите, читайте ленту или откройте реестры.
+          Всё, что Кора извлекла из встреч и разговоров. Спросите, читайте ленту
+          или откройте реестры.
         </p>
       </header>
 
-      {/* Поиск по памяти — поверх POST /api/v1/knowledge/search (Ф5б). */}
+      {}
       <div className="mb-8">
         <MemorySearch />
       </div>
@@ -97,8 +131,12 @@ export default function MemoryHubPage() {
             >
               <Icon size={16} className="shrink-0 text-fg-tertiary" />
               <span className="min-w-0">
-                <span className="block truncate text-sm font-medium text-fg-primary">{e.label}</span>
-                <span className="block truncate text-xs text-fg-tertiary">{e.desc}</span>
+                <span className="block truncate text-sm font-medium text-fg-primary">
+                  {e.label}
+                </span>
+                <span className="block truncate text-xs text-fg-tertiary">
+                  {e.desc}
+                </span>
               </span>
             </Link>
           );

@@ -10,26 +10,6 @@ import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
 import { yesterdayInMoscow } from './operations-daily-digest.cron';
 
-/**
- * TZ-1 Фаза 1 (daily-value-engine) — CustomerRiskRadarCron.
- *
- * Глобальный `@Cron('0 21 * * *')` (как daily-digest, НЕ per-Org timezone):
- * раз в день обходит активные Org → `computeForTenant` → для критических/
- * повышенных снимков с ответственным менеджером шлёт ему push (через дневной
- * бюджет Ф0, priorityTier=1 — клиент под риском важнее лимита). Агрегат — в
- * COO-дайджест (отдельный мост в `daily-digest.service`).
- *
- * Master-flag `operations.customer_risk_radar.enabled` (kill-switch, ON по
- * умолчанию). False → cron тикает, но сразу выходит (без рестарта).
- *
- * Идемпотентность:
- *   - снимки upsert'ятся по (tenantId, customerEntityId, dateLocal);
- *   - push менеджеру шлём только если `deliveredManagerAt IS NULL` за этот
- *     снимок (повторный прогон того же дня не задвоит).
- *
- * Метрики: `customer_risk_snapshots_total{level}` (в сервисе),
- * `customer_risk_radar_failed_total{reason}`, `customer_risk_manager_notified_total`.
- */
 @Injectable()
 export class CustomerRiskRadarCron {
   private readonly logger = new Logger(CustomerRiskRadarCron.name);
@@ -61,7 +41,7 @@ export class CustomerRiskRadarCron {
     const now = new Date();
     try {
       const stats = await this.runOnce(now);
-      this.logger.log(stats, 'customer-risk-radar.cron: проход завершён');
+      this.logger.debug(stats, 'customer-risk-radar.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -70,7 +50,6 @@ export class CustomerRiskRadarCron {
     }
   }
 
-  /** Выделен для unit-тестов: можно передать произвольный `now`. */
   async runOnce(now: Date): Promise<{
     orgsProcessed: number;
     snapshotsBuilt: number;
@@ -112,7 +91,6 @@ export class CustomerRiskRadarCron {
         continue;
       }
 
-      // Push ответственным менеджерам по critical/warning снимкам.
       for (const snap of computed.snapshots) {
         if (snap.riskLevel === 'ok') continue;
         if (!snap.responsiblePersonId) continue;
@@ -149,10 +127,6 @@ export class CustomerRiskRadarCron {
     };
   }
 
-  /**
-   * Push ответственному менеджеру по конкретному снимку. Идемпотентно по
-   * `deliveredManagerAt`. Возвращает true если push отправлен.
-   */
   private async notifyManager(args: {
     tenantId: string;
     snapshotId: string;
@@ -161,7 +135,6 @@ export class CustomerRiskRadarCron {
     riskLevel: 'critical' | 'warning';
     dateLocal: string;
   }): Promise<boolean> {
-    // Идемпотентность + резолв userId менеджера + данные снимка.
     const snapshot = await this.prisma.customerRiskSnapshot.findUnique({
       where: { id: args.snapshotId },
       select: {
@@ -173,9 +146,9 @@ export class CustomerRiskRadarCron {
       },
     });
     if (!snapshot) return false;
-    if (snapshot.deliveredManagerAt) return false; // уже отправляли
+    if (snapshot.deliveredManagerAt) return false;
     const recipientUserId = snapshot.responsible?.userId;
-    if (!recipientUserId) return false; // менеджер не привязан к User
+    if (!recipientUserId) return false;
 
     const customerName = snapshot.customerEntity?.canonicalName ?? 'Клиент';
     const counts = parseCounts(snapshot.signalCounts);
@@ -185,10 +158,7 @@ export class CustomerRiskRadarCron {
       dateLocal: args.dateLocal,
       todayCounts: counts,
     });
-    const excerpts = await this.resolveExcerpts(
-      args.tenantId,
-      snapshot.topBlockIdsJson,
-    );
+    const excerpts = await this.resolveExcerpts(args.tenantId, snapshot.topBlockIdsJson);
 
     const hint = await this.radar.buildHint({
       tenantId: args.tenantId,
@@ -203,10 +173,8 @@ export class CustomerRiskRadarCron {
       tenantId: args.tenantId,
       recipientUserId,
       eventType: 'proactive.notification',
-      // priorityTier=1 → обходит дневной бюджет (клиент под риском — деньги).
       priorityTier: 1,
       payload: {
-        // Схема proactive.notification (.strict) требует эти поля.
         proactiveNotificationId: args.snapshotId,
         ruleType: 'customer_risk',
         severity: args.riskLevel === 'critical' ? 'high' : 'medium',
@@ -227,7 +195,7 @@ export class CustomerRiskRadarCron {
     dateLocal: string;
     todayCounts: ReturnType<typeof parseCounts>;
   }): Promise<number> {
-    const todayScore = 0; // дельта по сигналам не зависит от score
+    const todayScore = 0;
     const delta = await this.radar.computeDelta({
       tenantId: args.tenantId,
       customerEntityId: args.customerEntityId,
@@ -238,14 +206,9 @@ export class CustomerRiskRadarCron {
     return delta.signalDelta;
   }
 
-  private async resolveExcerpts(
-    tenantId: string,
-    topBlockIdsJson: unknown,
-  ): Promise<string[]> {
+  private async resolveExcerpts(tenantId: string, topBlockIdsJson: unknown): Promise<string[]> {
     const ids = Array.isArray(topBlockIdsJson)
-      ? (topBlockIdsJson as unknown[])
-          .filter((v): v is string => typeof v === 'string')
-          .slice(0, 3)
+      ? (topBlockIdsJson as unknown[]).filter((v): v is string => typeof v === 'string').slice(0, 3)
       : [];
     if (ids.length === 0) return [];
     const blocks = await this.prisma.ideaBlock.findMany({

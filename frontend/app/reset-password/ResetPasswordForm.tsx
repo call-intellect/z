@@ -1,38 +1,29 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useMemo, useState, type FormEvent } from 'react';
-import { toast } from 'sonner';
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useMemo, useState, type FormEvent } from "react";
+import { toast } from "sonner";
 
-import { accountsApi } from '@/api/accounts.api';
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { accountsApi } from "@/api/accounts.api";
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   PASSWORD_RULE_HINT,
   passwordsMatch,
   validatePassword,
-} from '@/lib/password-validation';
-import { AuthShell } from '@/ui/components/auth-shell/AuthShell';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/lib/password-validation";
+import { AuthShell } from "@/ui/components/auth-shell/AuthShell";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
-/**
- * Сброс пароля по token из письма.
- *
- * Поведение:
- *   - Если `?token=` нет — error-state, ссылка обратно на /forgot.
- *   - Валидация на клиенте (length, буква+цифра, совпадение).
- *   - На success — toast + push на `/login`.
- *   - На 410 (`reset_token_invalid`) — отдельный текст: токен недействителен.
- */
 export function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const token = searchParams?.get('token') ?? null;
+  const token = searchParams?.get("token") ?? null;
 
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const passwordCheck = useMemo(() => validatePassword(password), [password]);
@@ -64,11 +55,11 @@ export function ResetPasswordForm() {
     e.preventDefault();
     if (submitting) return;
     if (!passwordCheck.valid) {
-      toast.error(passwordCheck.message ?? 'Пароль не подходит.');
+      toast.error(passwordCheck.message ?? "Пароль не подходит.");
       return;
     }
     if (!confirmOk) {
-      toast.error('Пароли не совпадают.');
+      toast.error("Пароли не совпадают.");
       return;
     }
 
@@ -78,19 +69,19 @@ export function ResetPasswordForm() {
         token: token!,
         newPassword: password,
       });
-      toast.success('Пароль обновлён. Войдите с новым паролем.');
-      router.replace('/login');
+      toast.success("Пароль обновлён. Войдите с новым паролем.");
+      router.replace("/login");
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.code === 'reset_token_invalid') {
-          toast.error('Ссылка недействительна или истекла. Запросите заново.');
-        } else if (err.code === 'password_too_weak') {
+        if (err.code === "reset_token_invalid") {
+          toast.error("Ссылка недействительна или истекла. Запросите заново.");
+        } else if (err.code === "password_too_weak") {
           toast.error(`Пароль слишком простой. ${PASSWORD_RULE_HINT}`);
         } else {
           toast.error(humanizeApiError(err));
         }
       } else {
-        toast.error('Не удалось сбросить пароль. Попробуйте ещё раз.');
+        toast.error("Не удалось сбросить пароль. Попробуйте ещё раз.");
       }
       setSubmitting(false);
     }
@@ -147,7 +138,7 @@ export function ResetPasswordForm() {
           size="lg"
           disabled={submitting || !passwordCheck.valid || !confirmOk}
         >
-          {submitting ? 'Сохраняем…' : 'Установить пароль'}
+          {submitting ? "Сохраняем…" : "Установить пароль"}
         </Button>
       </form>
     </AuthShell>

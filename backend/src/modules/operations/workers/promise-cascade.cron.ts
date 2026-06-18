@@ -8,18 +8,6 @@ import { ConversationalService } from '../../conversational/conversational.servi
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 import { PromiseCascadeService } from '../services/promise-cascade.service';
 
-/**
- * TZ-1 Фаза 3.C (daily-value-engine) — PromiseCascadeCron.
- *
- * Глобальный `@Cron('0 8 * * *')`: раз в день обходит активные Org →
- * `PromiseCascadeService.findCascadesForTenant` (просроченные обещания с
- * исходящей зависимостью). Для каждого:
- *   - алерт автору («твоё обещание держит работу коллеги»),
- *   - алерт руководителю owner/coo («срыв обещания X каскадит в цель Y»).
- * Через бюджет Ф0 (priorityTier 1). Метрика `promise_cascade_alert_total`.
- *
- * Master-flag `operations.promise_cascade.enabled` (kill-switch, ON). БЕЗ LLM.
- */
 @Injectable()
 export class PromiseCascadeCron {
   private readonly logger = new Logger(PromiseCascadeCron.name);
@@ -43,14 +31,12 @@ export class PromiseCascadeCron {
       true,
     );
     if (!enabled) {
-      this.logger.debug(
-        'promise-cascade.cron: operations.promise_cascade.enabled=false, skip',
-      );
+      this.logger.debug('promise-cascade.cron: operations.promise_cascade.enabled=false, skip');
       return;
     }
     try {
       const stats = await this.runOnce(new Date());
-      this.logger.log(stats, 'promise-cascade.cron: проход завершён');
+      this.logger.debug(stats, 'promise-cascade.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -59,7 +45,6 @@ export class PromiseCascadeCron {
     }
   }
 
-  /** Выделен для unit-тестов: можно передать произвольный `now`. */
   async runOnce(now: Date): Promise<{
     orgsProcessed: number;
     cascades: number;
@@ -87,7 +72,6 @@ export class PromiseCascadeCron {
         cascades += found.length;
         if (found.length === 0) continue;
 
-        // Руководители org (owner/coo) — резолвим один раз на Org.
         const managers = await this.prisma.membership.findMany({
           where: { orgId: org.id, role: { in: ['owner', 'coo'] } },
           select: { userId: true },
@@ -95,10 +79,8 @@ export class PromiseCascadeCron {
         const managerUserIds = managers.map((m) => m.userId);
 
         for (const c of found) {
-          // 1. Алерт автору.
           const authorUserId = await this.resolveUserId(org.id, c.authorPersonId);
-          const blocked =
-            c.blockedGoalName ?? c.blockedIssueTitle ?? 'работу коллеги';
+          const blocked = c.blockedGoalName ?? c.blockedIssueTitle ?? 'работу коллеги';
           if (authorUserId) {
             const sentA = await this.send({
               tenantId: org.id,
@@ -113,9 +95,8 @@ export class PromiseCascadeCron {
             }
           }
 
-          // 2. Алерт руководителям.
           for (const mUserId of managerUserIds) {
-            if (mUserId === authorUserId) continue; // не дублируем автору
+            if (mUserId === authorUserId) continue;
             const sentM = await this.send({
               tenantId: org.id,
               recipientUserId: mUserId,
@@ -145,10 +126,7 @@ export class PromiseCascadeCron {
     return { orgsProcessed: orgs.length, cascades, alertsSent, errors };
   }
 
-  private async resolveUserId(
-    tenantId: string,
-    personId: string,
-  ): Promise<string | null> {
+  private async resolveUserId(tenantId: string, personId: string): Promise<string | null> {
     const person = await this.prisma.person.findFirst({
       where: { tenantId, id: personId, deletedAt: null, userId: { not: null } },
       select: { userId: true },

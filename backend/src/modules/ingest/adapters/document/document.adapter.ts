@@ -11,10 +11,7 @@ import { type Job, Worker } from 'bullmq';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 import { RedisService } from '../../../../common/redis/redis.service';
 import { CoreQueueService } from '../../../core-queue/core-queue.service';
-import {
-  CORE_QUEUE_NAMES,
-  type DocumentUploadedJobData,
-} from '../../../core-queue/queues';
+import { CORE_QUEUE_NAMES, type DocumentUploadedJobData } from '../../../core-queue/queues';
 import { DocumentAttributionService } from '../../../documents/document-attribution.service';
 import { SIGNAL_TYPE_VALUES } from '../../../knowledge-core/prompts/block-ingest.prompt';
 import { S3Service } from '../../../recordings/s3.service';
@@ -101,7 +98,6 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DocumentIngestAdapter.name);
   private worker: Worker<DocumentUploadedJobData> | null = null;
 
-  /** Канонический name дефолтного external-Source для документов в Org. */
   static readonly DEFAULT_SOURCE_NAME = 'Документы';
 
   constructor(
@@ -112,8 +108,6 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
     private readonly parser: DocumentParserService,
     @Inject(IngestService) private readonly ingest: IngestService,
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
-    // ТЗ-4 Ф10 — подсказка атрибуции (docType + тема) после парсинга, если
-    // документ загружен без явной атрибуции. Best-effort, гейтится kill-switch'ем.
     @Inject(DocumentAttributionService)
     private readonly attribution: DocumentAttributionService,
   ) {}
@@ -124,8 +118,6 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
       async (job) => this.process(job),
       {
         connection: this.redis.client,
-        // Парсинг — IO-bound (S3) + CPU-bound (pdf-parse). 2 одновременно
-        // достаточно, чтобы не упереться в pdf-parse single-thread.
         concurrency: 2,
       },
     );
@@ -139,9 +131,7 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
         'document-uploaded: job failed',
       );
     });
-    this.logger.log(
-      `DocumentIngestAdapter worker started (${CORE_QUEUE_NAMES.DOCUMENT_UPLOADED})`,
-    );
+    this.logger.log(`DocumentIngestAdapter worker started (${CORE_QUEUE_NAMES.DOCUMENT_UPLOADED})`);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -150,8 +140,6 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
       this.worker = null;
     }
   }
-
-  // ─────────────────────────── job handler ───────────────────────────────
 
   async process(job: Job<DocumentUploadedJobData>): Promise<void> {
     const { documentId, tenantId } = job.data;
@@ -166,7 +154,6 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
       return;
     }
     if (doc.tenantId !== tenantId) {
-      // Подделанный job или баг — не трогаем чужой документ.
       this.logger.warn(
         { documentId, jobTenantId: tenantId, docTenantId: doc.tenantId },
         'document-uploaded: tenant mismatch — skip',
@@ -181,18 +168,12 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Атомарный переход uploaded → parsing. updateMany с условием по status —
-    // защита от двойного процесса (если два воркера случайно подхватили один
-    // jobId до BullMQ-дедупа).
     const fence = await this.prisma.document.updateMany({
       where: { id: documentId, status: 'uploaded' },
       data: { status: 'parsing' },
     });
     if (fence.count === 0) {
-      this.logger.debug(
-        { documentId },
-        'document-uploaded: lost status race — skip',
-      );
+      this.logger.debug({ documentId }, 'document-uploaded: lost status race — skip');
       return;
     }
 
@@ -204,7 +185,6 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
         mimeType: doc.mimeType,
       });
 
-      // 1. Обновляем Document.
       await this.prisma.document.update({
         where: { id: documentId },
         data: {
@@ -213,11 +193,8 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
         },
       });
 
-      // 2. lazy-upsert дефолтного Source для документов в Org.
       const source = await this.upsertDocumentSource(tenantId);
 
-      // 3. Создаём RawEvent (IngestService сам публикует core.raw-events).
-      // Ф6 — детерминированная подсказка типа сигнала из ручного docType.
       const signalTypeHint = docTypeToSignalTypeHint(doc.docType);
       const result = await this.ingest.ingest({
         tenantId,
@@ -231,9 +208,6 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
           mimeType: doc.mimeType,
           uploaderId: doc.uploaderId,
           attachedRoleId: doc.attachedRoleId,
-          // ТЗ-4 Ф4 — явная привязка документа в граф: тема (attachedThemeId)
-          // и смысловой тип (docType). block-ingest применяет их детерминированно
-          // ПОСЛЕ создания блоков (перебивает LLM-роль, линкует блоки к теме).
           attachedThemeId: doc.attachedThemeId,
           docType: doc.docType,
           // Ф6 — block-ingest применит override типа карточки, если задано.
@@ -254,9 +228,6 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
         'document-uploaded: успешно распарсили и создали RawEvent',
       );
 
-      // ТЗ-4 Ф10 — подсказка атрибуции (docType + тема) ТОЛЬКО для документов
-      // без явной атрибуции. Best-effort: сервис сам гейтится kill-switch'ем,
-      // идемпотентен и никогда не бросает — он не должен ломать ingest.
       if (doc.docType === null && doc.attachedThemeId === null) {
         await this.attribution.suggestForDocument({ documentId, tenantId });
       }
@@ -270,8 +241,6 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
         where: { id: documentId },
         data: {
           status: 'failed',
-          // Не раскрываем internal stacktrace пользователю — храним
-          // только human-readable message парсера. Stack — в логах.
           parseError: isUserVisible
             ? message
             : 'Внутренняя ошибка при разборе документа. Обратитесь к админу.',
@@ -286,40 +255,20 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
         },
         'document-uploaded: парсинг провалился',
       );
-      // BullMQ retry имеет смысл только для transient'ов (S3 down). Для
-      // ParseSize/ParseTimeout/Failed — повтор бесполезен. На фазе 0b.1
-      // оставляем дефолтный retry (5 попыток); следующие фазы могут
-      // прокинуть `removeOnFail`/`attempts: 1` для подкласса ошибок.
       throw err;
     }
   }
 
-  // ─────────────────────────── private helpers ───────────────────────────
-
-  /**
-   * Достаёт байты документа: inline (если есть) или из S3 (по `s3Key`).
-   * Если оба пустые — бросаем `DocumentParseFailedError`.
-   */
   private async loadContent(doc: Document): Promise<Buffer> {
     if (doc.inlineContent) {
-      // Prisma возвращает `Buffer` для Bytes-поля.
       return Buffer.from(doc.inlineContent);
     }
     if (doc.s3Key) {
       return this.s3.getObject(doc.s3Key);
     }
-    throw new DocumentParseFailedError(
-      'Document не содержит ни inlineContent, ни s3Key',
-    );
+    throw new DocumentParseFailedError('Document не содержит ни inlineContent, ни s3Key');
   }
 
-  /**
-   * Создаёт (если нет) или возвращает дефолтный Source для документов в Org.
-   *
-   * Тип — `external`: семантически «внешний материал, загруженный в Z».
-   * `SourceType` пока не содержит `document`; при добавлении значения в enum
-   * (Фаза γ) нужно мигрировать существующие записи. См. отчёт по 0b.1.
-   */
   private async upsertDocumentSource(tenantId: string): Promise<Source> {
     const existing = await this.prisma.source.findUnique({
       where: {
@@ -352,9 +301,7 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
         },
       });
       if (retry) return retry;
-      throw new Error(
-        'DocumentIngestAdapter: не удалось upsert Source для документов',
-      );
+      throw new Error('DocumentIngestAdapter: не удалось upsert Source для документов');
     }
   }
 }

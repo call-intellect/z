@@ -1,14 +1,3 @@
-/**
- * Domain-модель биллинга. Конвертирует ApiDto → DomainModel и обратно.
- *
- * Ключевые конверсии:
- *   - Денежные суммы: API → копейки (Int), Domain → рубли (number), UI →
- *     отформатированная строка через `formatRubles`.
- *   - Даты: API → ISO string, Domain → Date.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §13.
- */
-
 import type {
   BillingPaymentMethodApi,
   BillingPeriodApi,
@@ -19,9 +8,7 @@ import type {
   QuoteApi,
   SubscriptionStatusApi,
   SubscriptionViewApi,
-} from '@/api/types/billing';
-
-// ────────────────────────── Types ──────────────────────────
+} from "@/api/types/billing";
 
 export type SubscriptionStatus = SubscriptionStatusApi;
 export type PaymentMode = PaymentModeApi;
@@ -38,9 +25,7 @@ export interface SubscriptionDomain {
   currentPeriodEnd: Date | null;
   seatsBase: number;
   seatsExtra: number;
-  /** Месячная цена в копейках. */
   monthlyPriceKopecks: number;
-  /** Сколько всего оплачено за время жизни подписки (копейки). */
   totalPaidKopecks: number;
   autoRenew: boolean;
 }
@@ -75,8 +60,6 @@ export interface MeetingsBalanceDomain {
   totalConsumed: number;
   lastGrantedAt: Date | null;
 }
-
-// ────────────────────────── Mappers ──────────────────────────
 
 export function subscriptionFromApi(
   api: SubscriptionViewApi,
@@ -116,10 +99,6 @@ export function invoiceFromApi(api: InvoiceViewApi): InvoiceDomain {
   };
 }
 
-export function quoteFromApi(api: QuoteApi): QuoteDomain {
-  return { ...api };
-}
-
 export function meetingsBalanceFromApi(
   api: MeetingsBalanceApi,
 ): MeetingsBalanceDomain {
@@ -131,162 +110,133 @@ export function meetingsBalanceFromApi(
   };
 }
 
-// ────────────────────────── Formatters ──────────────────────────
-
-/** Форматирует копейки в рубли: `123_45` → `"1 234,56 ₽"`. */
 export function formatRubles(kopecks: number): string {
   const rubles = kopecks / 100;
-  return rubles.toLocaleString('ru-RU', {
-    style: 'currency',
-    currency: 'RUB',
+  return rubles.toLocaleString("ru-RU", {
+    style: "currency",
+    currency: "RUB",
     minimumFractionDigits: rubles % 1 === 0 ? 0 : 2,
     maximumFractionDigits: 2,
   });
 }
 
-/** Лейбл периода для UI. */
 export function billingPeriodLabel(p: BillingPeriod | null): string {
-  if (!p) return '—';
-  return p === 'yearly' ? 'Годовая' : 'Месячная';
+  if (!p) return "—";
+  return p === "yearly" ? "Годовая" : "Месячная";
 }
 
-/** Лейбл статуса подписки. */
 export function subscriptionStatusLabel(s: SubscriptionStatus): string {
   const map: Record<SubscriptionStatus, string> = {
-    DEMO: 'Демо',
-    ACTIVE: 'Активна',
-    PAST_DUE: 'Просрочка',
-    SUSPENDED: 'Приостановлена',
-    CANCELED: 'Отменена',
-    EXPIRED: 'Истекла',
+    DEMO: "Демо",
+    ACTIVE: "Активна",
+    PAST_DUE: "Просрочка",
+    SUSPENDED: "Приостановлена",
+    CANCELED: "Отменена",
+    EXPIRED: "Истекла",
   };
   return map[s];
 }
 
-/** Цвет badge для статуса (для Tailwind). */
 export function subscriptionStatusColor(
   s: SubscriptionStatus,
-): 'green' | 'amber' | 'red' | 'slate' {
+): "green" | "amber" | "red" | "slate" {
   switch (s) {
-    case 'ACTIVE':
-      return 'green';
-    case 'PAST_DUE':
-      return 'amber';
-    case 'SUSPENDED':
-    case 'EXPIRED':
-      return 'red';
-    case 'CANCELED':
-    case 'DEMO':
+    case "ACTIVE":
+      return "green";
+    case "PAST_DUE":
+      return "amber";
+    case "SUSPENDED":
+    case "EXPIRED":
+      return "red";
+    case "CANCELED":
+    case "DEMO":
     default:
-      return 'slate';
+      return "slate";
   }
 }
 
-/** Лейбл способа оплаты. */
 export function paymentMethodLabel(m: BillingPaymentMethod | null): string {
-  if (!m) return '—';
+  if (!m) return "—";
   const map: Record<BillingPaymentMethod, string> = {
-    card_recurring: 'Карта (автопродление)',
-    bank_invoice: 'Безналичная оплата',
-    manual_admin: 'Ручная активация',
-    bonus: 'Бонус',
+    card_recurring: "Карта (автопродление)",
+    bank_invoice: "Безналичная оплата",
+    manual_admin: "Ручная активация",
+    bonus: "Бонус",
   };
   return map[m];
 }
 
-/** Лейбл статуса инвойса. */
 export function invoiceStatusLabel(s: InvoiceStatus): string {
   const map: Record<InvoiceStatus, string> = {
-    draft: 'Черновик',
-    issued: 'Выставлен',
-    paid: 'Оплачен',
-    bonus: 'Бонус',
-    void: 'Отменён',
+    draft: "Черновик",
+    issued: "Выставлен",
+    paid: "Оплачен",
+    bonus: "Бонус",
+    void: "Отменён",
   };
   return map[s];
 }
 
-/** Лейбл режима оплаты (paid/bonus). */
-export function paymentModeLabel(m: PaymentMode | null): string {
-  if (!m) return '—';
-  return m === 'paid' ? 'Оплачено' : 'Бонус';
-}
-
-// ────────────────────────── SubscriptionEvent ──────────────────────────
-
-/**
- * Перечень типов `SubscriptionEvent.eventType` (см. backend
- * billing.types.ts → `SubscriptionEventType`). На фронте — известная
- * строковая литералка; неизвестные типы попадают в fallback-label.
- */
 export type SubscriptionEventType =
-  | 'created'
-  | 'activated_paid'
-  | 'activated_bonus'
-  | 'renewed'
-  | 'past_due'
-  | 'suspended'
-  | 'canceled'
-  | 'expired'
-  | 'seats_changed'
-  | 'status_forced'
-  | 'provider_recurring_canceled';
+  | "created"
+  | "activated_paid"
+  | "activated_bonus"
+  | "renewed"
+  | "past_due"
+  | "suspended"
+  | "canceled"
+  | "expired"
+  | "seats_changed"
+  | "status_forced"
+  | "provider_recurring_canceled";
 
 const SUBSCRIPTION_EVENT_LABELS: Record<SubscriptionEventType, string> = {
-  created: 'Создана',
-  activated_paid: 'Активирована (paid)',
-  activated_bonus: 'Активирована (bonus)',
-  renewed: 'Продлено',
-  past_due: 'Просрочка',
-  suspended: 'Приостановлена',
-  canceled: 'Отменена',
-  expired: 'Истекла',
-  seats_changed: 'Изменены места',
-  status_forced: 'Принудительная смена статуса',
-  provider_recurring_canceled: 'Авто-продление отменено провайдером',
+  created: "Создана",
+  activated_paid: "Активирована (paid)",
+  activated_bonus: "Активирована (bonus)",
+  renewed: "Продлено",
+  past_due: "Просрочка",
+  suspended: "Приостановлена",
+  canceled: "Отменена",
+  expired: "Истекла",
+  seats_changed: "Изменены места",
+  status_forced: "Принудительная смена статуса",
+  provider_recurring_canceled: "Авто-продление отменено провайдером",
 };
 
-/**
- * Лейбл события подписки. Для неизвестных типов возвращает сырое значение —
- * чтобы саппорт не терял информацию из БД даже если бэкенд начал писать
- * новый тип, для которого фронт ещё не обновили.
- */
 export function subscriptionEventLabel(eventType: string): string {
   return (
     SUBSCRIPTION_EVENT_LABELS[eventType as SubscriptionEventType] ?? eventType
   );
 }
 
-export type SubscriptionEventColor = 'green' | 'amber' | 'red' | 'slate' | 'blue';
+export type SubscriptionEventColor =
+  | "green"
+  | "amber"
+  | "red"
+  | "slate"
+  | "blue";
 
-/**
- * Цвет бейджа события. Группировка:
- *   - green — позитивные (создано, активировано, продлено).
- *   - amber — переход в просрочку, изменения мест.
- *   - red — suspended / canceled / expired / forced (опасные/негативные).
- *   - blue — провайдерская техническая отмена авто-продления.
- *   - slate — fallback для неизвестных.
- */
 export function subscriptionEventColor(
   eventType: string,
 ): SubscriptionEventColor {
   switch (eventType as SubscriptionEventType) {
-    case 'created':
-    case 'activated_paid':
-    case 'activated_bonus':
-    case 'renewed':
-      return 'green';
-    case 'past_due':
-    case 'seats_changed':
-      return 'amber';
-    case 'suspended':
-    case 'canceled':
-    case 'expired':
-    case 'status_forced':
-      return 'red';
-    case 'provider_recurring_canceled':
-      return 'blue';
+    case "created":
+    case "activated_paid":
+    case "activated_bonus":
+    case "renewed":
+      return "green";
+    case "past_due":
+    case "seats_changed":
+      return "amber";
+    case "suspended":
+    case "canceled":
+    case "expired":
+    case "status_forced":
+      return "red";
+    case "provider_recurring_canceled":
+      return "blue";
     default:
-      return 'slate';
+      return "slate";
   }
 }

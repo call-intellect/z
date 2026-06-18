@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { SkillTraitConcept } from '@prisma/client';
+import { Prisma, type SkillTraitConcept } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -7,26 +7,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
 
-/**
- * ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — SkillTraitConceptService.
- *
- * Автоматически нормализует «смысловые блоки навыка» — категории SkillTrait,
- * которые LLM придумывает эмерджентно. У разных сотрудников одна и та же
- * черта называется по-разному («осторожен с оценками сроков», «не любит
- * давать сроки без данных», «откладывает оценку») — каноничный концепт
- * должен быть один.
- *
- * Принятые решения (ОВ2):
- *   - Порог совпадения с существующим (`cfg.skill.conceptMatchThreshold`) = 0.85.
- *     similarity >= 0.85 → берём существующий, иначе создаём новый.
- *   - Порог слияния в cron-нормализаторе (`cfg.skill.conceptMergeThreshold`) = 0.92,
- *     выше потому что слияние деструктивно.
- *
- * Точка входа `findOrCreateConcept` вызывается из Specialist37Service.createNewTraitRaw
- * (синхронно после insert'а trait'а). Сервис best-effort — если embedding-сервис
- * упал, концепт всё равно создаётся (без embedding), а cron-нормализатор позже
- * его подхватит.
- */
 @Injectable()
 export class SkillTraitConceptService {
   private readonly logger = new Logger(SkillTraitConceptService.name);
@@ -40,18 +20,6 @@ export class SkillTraitConceptService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Главная точка входа. Возвращает существующий или новый концепт для черты.
-   *
-   * Логика:
-   *   1. Посчитать embedding строки `category. statement`.
-   *   2. Top-1 концепт того же tenantId со status='active' по cosine.
-   *   3. Если similarity >= cfg.skill.conceptMatchThreshold — вернуть найденный
-   *      (+ добавить category в variants, обновить lastSeenAt, инкремент traitCount).
-   *   4. Иначе — создать новый с canonicalName=category, embedding, variants=[category],
-   *      traitCount=1.
-   *   5. Best-effort: если embedding-сервис упал — создаём концепт без embedding.
-   */
   async findOrCreateConcept(args: {
     tenantId: string;
     category: string;
@@ -74,7 +42,6 @@ export class SkillTraitConceptService {
       );
     }
 
-    // 1) Если embedding есть — ищем top-1 концепт по cosine.
     if (embedding) {
       try {
         const matched = await this.findClosestActiveConcept({
@@ -98,8 +65,6 @@ export class SkillTraitConceptService {
       }
     }
 
-    // 2) Fallback / эмбеддинг отсутствует — ищем точное совпадение по canonicalName
-    //    (избежать дубля по unique-индексу).
     const exact = await this.prisma.skillTraitConcept.findUnique({
       where: {
         tenantId_canonicalName: { tenantId: args.tenantId, canonicalName: category },
@@ -109,7 +74,6 @@ export class SkillTraitConceptService {
       return this.attachTraitToConcept({ concept: exact, category });
     }
 
-    // 3) Создаём новый концепт.
     try {
       const created = await this.prisma.skillTraitConcept.create({
         data: {
@@ -117,7 +81,7 @@ export class SkillTraitConceptService {
           canonicalName: category,
           variants: [category],
           status: 'active',
-          traitCount: 1,
+          traitCount: 0,
         },
       });
       if (embedding) {
@@ -140,7 +104,6 @@ export class SkillTraitConceptService {
       }
       return created;
     } catch (err) {
-      // Гонка по unique([tenantId, canonicalName]) — повторно читаем существующий.
       this.logger.debug(
         {
           tenantId: args.tenantId,
@@ -160,10 +123,6 @@ export class SkillTraitConceptService {
     }
   }
 
-  /**
-   * Пересчёт concept'а для одного trait'а. Используется бэкфилл-скриптом и
-   * ручной правкой в админке.
-   */
   async recomputeConceptForTrait(traitId: string): Promise<SkillTraitConcept | null> {
     const trait = await this.prisma.skillTrait.findUnique({
       where: { id: traitId },
@@ -199,20 +158,15 @@ export class SkillTraitConceptService {
     return concept;
   }
 
-  /**
-   * Используется cron-нормализатором и админ-API для ручного слияния.
-   * Перепривязывает все SkillTrait слитых концептов к опорному, объединяет
-   * variants и помечает источники как `merged_into`.
-   */
   async mergeConcepts(args: {
     tenantId: string;
-    sourceIds: string[]; // что сливаем (>= 1)
-    targetId: string;     // куда сливаем
-    newCanonicalName?: string; // от агента skill-trait-concept-name
+    sourceIds: string[];
+    targetId: string;
+    newCanonicalName?: string;
     newDescription?: string;
-  }): Promise<void> {
+  }): Promise<boolean> {
     const sourceIds = args.sourceIds.filter((id) => id !== args.targetId);
-    if (sourceIds.length === 0) return;
+    if (sourceIds.length === 0) return false;
     const target = await this.prisma.skillTraitConcept.findUnique({
       where: { id: args.targetId },
     });
@@ -221,15 +175,14 @@ export class SkillTraitConceptService {
         { tenantId: args.tenantId, targetId: args.targetId },
         'skill-trait-concept.mergeConcepts: target отсутствует/не-active/чужой tenant — skip',
       );
-      return;
+      return false;
     }
 
     const sources = await this.prisma.skillTraitConcept.findMany({
       where: { id: { in: sourceIds }, tenantId: args.tenantId },
     });
-    if (sources.length === 0) return;
+    if (sources.length === 0) return false;
 
-    // Объединяем variants (целевой + все источники + опц. старое canonical).
     const variantSet = new Set<string>(target.variants);
     for (const v of target.variants) variantSet.add(v);
     for (const s of sources) {
@@ -238,20 +191,38 @@ export class SkillTraitConceptService {
     }
     const mergedVariants = [...variantSet].slice(0, 200);
 
-    // Транзакция: перепривязка traits + апдейт target + пометка sources.
-    try {
+    const desiredName = args.newCanonicalName?.slice(0, 200);
+    const mergeIds = new Set<string>([target.id, ...sources.map((s) => s.id)]);
+    let canonicalName = desiredName;
+    if (desiredName && desiredName !== target.canonicalName) {
+      const collision = await this.prisma.skillTraitConcept.findFirst({
+        where: { tenantId: args.tenantId, canonicalName: desiredName },
+        select: { id: true },
+      });
+      if (collision && !mergeIds.has(collision.id)) {
+        this.logger.debug(
+          {
+            tenantId: args.tenantId,
+            targetId: target.id,
+            desiredName,
+            collisionId: collision.id,
+          },
+          'skill-trait-concept.mergeConcepts: новое имя занято другим концептом — оставляю опорное',
+        );
+        canonicalName = undefined;
+      }
+    }
+
+    const runMerge = async (useName: string | undefined): Promise<void> => {
       await this.prisma.$transaction(async (tx) => {
-        // Перепривязываем traits на target.
         await tx.skillTrait.updateMany({
           where: { conceptId: { in: sources.map((s) => s.id) } },
           data: { conceptId: target.id },
         });
-        // Помечаем sources как merged_into.
         await tx.skillTraitConcept.updateMany({
           where: { id: { in: sources.map((s) => s.id) } },
           data: { status: 'merged_into', mergedIntoId: target.id, traitCount: 0 },
         });
-        // Пересчитываем traitCount у target.
         const newCount = await tx.skillTrait.count({
           where: { conceptId: target.id, status: 'active' },
         });
@@ -260,9 +231,7 @@ export class SkillTraitConceptService {
           data: {
             variants: mergedVariants,
             traitCount: newCount,
-            ...(args.newCanonicalName
-              ? { canonicalName: args.newCanonicalName.slice(0, 200) }
-              : {}),
+            ...(useName ? { canonicalName: useName } : {}),
             ...(args.newDescription !== undefined
               ? { description: args.newDescription.slice(0, 2_000) }
               : {}),
@@ -270,7 +239,31 @@ export class SkillTraitConceptService {
           },
         });
       });
+    };
+
+    try {
+      try {
+        await runMerge(canonicalName);
+      } catch (err) {
+        if (
+          canonicalName &&
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          this.logger.warn(
+            {
+              targetId: target.id,
+              desiredName: canonicalName,
+            },
+            'skill-trait-concept.mergeConcepts: P2002 на имени — retry без смены имени',
+          );
+          await runMerge(undefined);
+        } else {
+          throw err;
+        }
+      }
       this.metrics.incSkillTraitConceptsMerged();
+      return true;
     } catch (err) {
       this.logger.warn(
         {
@@ -280,29 +273,44 @@ export class SkillTraitConceptService {
         },
         'skill-trait-concept.mergeConcepts: транзакция упала',
       );
+      return false;
     }
   }
 
-  // ─────────────────────────── private ───────────────────────────
+  async recomputeTraitCount(conceptId: string): Promise<number | null> {
+    try {
+      const count = await this.countActiveTraits(conceptId);
+      await this.prisma.skillTraitConcept.update({
+        where: { id: conceptId },
+        data: { traitCount: count },
+      });
+      return count;
+    } catch (err) {
+      this.logger.debug(
+        {
+          conceptId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'skill-trait-concept.recomputeTraitCount: update упал — skip',
+      );
+      return null;
+    }
+  }
 
-  /**
-   * Top-1 активный концепт по cosine-расстоянию embedding-а.
-   * Возвращает null если ничего нет или ничего не прошло порог
-   * `cfg.skill.conceptMatchThreshold`.
-   */
+  private async countActiveTraits(conceptId: string): Promise<number> {
+    return this.prisma.skillTrait.count({
+      where: { conceptId, status: 'active' },
+    });
+  }
+
   private async findClosestActiveConcept(args: {
     tenantId: string;
     embedding: number[];
   }): Promise<SkillTraitConcept | null> {
     const vec = `[${args.embedding.join(',')}]`;
     const threshold = this.cfg.skill.conceptMatchThreshold;
-    // cosine_distance = 1 - similarity ⇒ similarity >= threshold
-    // ⇔ distance <= 1 - threshold.
     const maxDistance = 1 - threshold;
-    // pgvector cosine operator `<=>`. Limit 1.
-    const rows = await this.prisma.$queryRawUnsafe<
-      Array<{ id: string; distance: number }>
-    >(
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string; distance: number }>>(
       `SELECT id, ("embedding" <=> $1::vector) AS distance
          FROM "skill_trait_concepts"
         WHERE "tenantId" = $2
@@ -321,10 +329,6 @@ export class SkillTraitConceptService {
     return this.prisma.skillTraitConcept.findUnique({ where: { id: top.id } });
   }
 
-  /**
-   * Привязка нового trait'а к существующему концепту:
-   * +1 traitCount, добавить category в variants (если новая), lastSeenAt=now().
-   */
   private async attachTraitToConcept(args: {
     concept: SkillTraitConcept;
     category: string;
@@ -332,12 +336,13 @@ export class SkillTraitConceptService {
     const nextVariants = args.concept.variants.includes(args.category)
       ? args.concept.variants
       : [...args.concept.variants, args.category].slice(0, 200);
+    const activeCount = await this.countActiveTraits(args.concept.id);
     try {
       const updated = await this.prisma.skillTraitConcept.update({
         where: { id: args.concept.id },
         data: {
           variants: nextVariants,
-          traitCount: args.concept.traitCount + 1,
+          traitCount: activeCount,
           lastSeenAt: new Date(),
         },
       });

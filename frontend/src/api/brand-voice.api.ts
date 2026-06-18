@@ -1,11 +1,5 @@
-/**
- * SBA β-7 — API-клиент для /api/v1/brand-voice.
- *
- * Слой ApiDto (frontend-rules): сырые ответы backend'а как есть.
- */
-
-import { apiClient } from './api-client';
-import { orgHeaders } from './admin-helpers';
+import { apiClient } from "./api-client";
+import { orgHeaders } from "./admin-helpers";
 
 export interface BrandVoiceToneApi {
   formal?: number;
@@ -74,25 +68,25 @@ export interface BrandVoiceArtifactApi {
 
 export const brandVoiceApi = {
   get: (orgId: string) =>
-    apiClient.get<BrandVoiceProfileApi>('/api/v1/brand-voice', {
+    apiClient.get<BrandVoiceProfileApi>("/api/v1/brand-voice", {
       headers: orgHeaders(orgId),
     }),
 
   update: (orgId: string, body: UpdateBrandVoiceProfileRequest) =>
-    apiClient.patch<BrandVoiceProfileApi>('/api/v1/brand-voice', body, {
+    apiClient.patch<BrandVoiceProfileApi>("/api/v1/brand-voice", body, {
       headers: orgHeaders(orgId),
     }),
 
   rebuild: (orgId: string) =>
     apiClient.post<RebuildBrandVoiceResponseApi>(
-      '/api/v1/brand-voice/rebuild',
+      "/api/v1/brand-voice/rebuild",
       undefined,
       { headers: orgHeaders(orgId) },
     ),
 
   artifacts: (orgId: string) =>
     apiClient.get<{ items: BrandVoiceArtifactApi[] }>(
-      '/api/v1/brand-voice/artifacts',
+      "/api/v1/brand-voice/artifacts",
       {
         headers: orgHeaders(orgId),
       },

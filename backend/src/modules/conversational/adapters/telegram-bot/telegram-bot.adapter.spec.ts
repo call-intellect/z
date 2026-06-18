@@ -13,31 +13,14 @@ import type { DocumentsService } from '../../../documents/documents.service';
 import type { ChannelRegistry } from '../../channel-registry';
 import type { ConversationalLinkCodeService } from '../../link-code.service';
 
-
 import type { TelegramApiClient } from './telegram-api-client';
 import type { TelegramBotMessageHandler } from './telegram-bot-message.handler';
 import { TelegramBotChannelAdapter } from './telegram-bot.adapter';
 import type { TelegramUpdate } from './telegram.types';
 
-/**
- * Unit-тесты zero-button `TelegramBotChannelAdapter.ingestUpdate`
- * (SBA β-1 rip-out, 2026-05-23). Покрывают:
- *   - `/start <token>` deep-link (валидный/невалидный код),
- *   - голый код привязки регексом (12-hex),
- *   - voice → ASR → intent classify → free_note|chat_query,
- *   - document → DocumentsService.upload,
- *   - свободный текст с классификацией (chat_query vs free_note),
- *   - анти-spam voice rate-limit,
- *   - незалинкованный юзер.
- *
- * Все зависимости мокаются через `vi.fn()` и cast to type — паттерн,
- * принятый в проекте.
- */
-
 function makeChannel(opts: { global?: boolean } = {}): Channel {
   return {
     id: opts.global ? 'global-channel' : 'channel-1',
-    // β-9: глобальный канал имеет tenantId=null.
     tenantId: opts.global ? null : 'org-1',
     kind: 'telegram_bot',
     direction: 'bidirectional',
@@ -58,8 +41,6 @@ function makeAdapter(opts: {
   voiceEnabled?: boolean;
   documentEnabled?: boolean;
   intentClassifierEnabled?: boolean;
-  // Ф5 assistant-channels (2026-06-11): kill-switch ASSISTANT_CHANNEL_ROUTING_ENABLED.
-  // В моке default false — существующие тесты проверяют прежний узкий роутер.
   assistantChannelRoutingEnabled?: boolean;
   classifyIntent?:
     | 'factual'
@@ -71,14 +52,10 @@ function makeAdapter(opts: {
     | 'note'
     | 'probe_reply';
   classifyConfidence?: number;
-  // ТЗ 2026-06-17 probe-phase2 Ф1 — порог probe.replyClassifyMinConfidence.
   probeReplyMinConfidence?: number;
   withTaskHandler?: boolean;
   classifyThrows?: boolean;
   rateLimitCount?: number;
-  // β-9 / Phase 6 — если undefined, AccountsService инжектится как @Optional
-  // отсутствующий → /login деградирует с сообщением «временно недоступно».
-  // Если задан, эмулирует прод-сборку.
   accountsRequestThrows?: boolean;
   withAccounts?: boolean;
 } = {}) {
@@ -92,7 +69,6 @@ function makeAdapter(opts: {
     notificationDelivery: { findFirst: vi.fn() },
     channel: { findMany: vi.fn().mockResolvedValue([]) },
     person: { findFirst: vi.fn() },
-    // β-9: резолв tenantId из Membership при глобальном канале.
     membership: {
       findFirst: vi.fn().mockResolvedValue({ orgId: 'org-1' }),
     },
@@ -112,9 +88,7 @@ function makeAdapter(opts: {
   const api = {
     sendMessage: vi.fn().mockResolvedValue({ messageId: 999, chatId: 100 }),
     setMyCommands: vi.fn().mockResolvedValue(undefined),
-    getFile: vi
-      .fn()
-      .mockResolvedValue({ file_id: 'f1', file_path: 'voice/file.ogg' }),
+    getFile: vi.fn().mockResolvedValue({ file_id: 'f1', file_path: 'voice/file.ogg' }),
     downloadFile: vi.fn().mockResolvedValue(Buffer.from('audio-bytes')),
   } as unknown as TelegramApiClient;
 
@@ -126,12 +100,8 @@ function makeAdapter(opts: {
     incBotInbound: vi.fn(),
     observeBotVoiceAsrDuration: vi.fn(),
     incBotIntentClassified: vi.fn(),
-    // ТЗ 2026-05-29 checkins / Ф5: distinct-метрика plan/report — нужна,
-    // когда classifyIntent возвращает daily_plan_morning/daily_report_evening.
     incBotCheckinIntentClassifier: vi.fn(),
-    // β-9: метрики «незнакомый отправитель».
     incTelegramBotUnknownSender: vi.fn(),
-    // β-9 / Phase 6: метрика команды `/login` в боте.
     incBotLoginCommand: vi.fn(),
   } as unknown as BusinessMetricsService;
 
@@ -164,35 +134,33 @@ function makeAdapter(opts: {
       voiceEnabled: opts.voiceEnabled ?? true,
       documentEnabled: opts.documentEnabled ?? true,
       intentClassifierEnabled: opts.intentClassifierEnabled ?? true,
-      assistantChannelRoutingEnabled:
-        opts.assistantChannelRoutingEnabled ?? false,
+      assistantChannelRoutingEnabled: opts.assistantChannelRoutingEnabled ?? false,
     },
-    // ТЗ 2026-06-17 probe-phase2 Ф1 — порог probe.replyClassifyMinConfidence.
     getDynamic: vi
       .fn()
       .mockResolvedValue(opts.probeReplyMinConfidence ?? 0.6),
   } as unknown as TypedConfigService;
 
-  const accounts = (opts.withAccounts || opts.accountsRequestThrows
-    ? {
-        requestMagicLinkForBot: opts.accountsRequestThrows
-          ? vi.fn().mockRejectedValue(new Error('user u-42 не найден'))
-          : vi.fn().mockResolvedValue({
-              url: 'https://z.app/accounts/magic-link/consume?token=raw-token-123',
-              ttlMinutes: 15,
-            }),
-      }
-    : undefined) as AccountsService | undefined;
-
-  const taskHandler = (
-    opts.withTaskHandler
+  const accounts = (
+    opts.withAccounts || opts.accountsRequestThrows
       ? {
-          tryHandleStructural: vi.fn().mockResolvedValue(false),
-          handleCreateTask: vi.fn().mockResolvedValue(undefined),
-          handleShowTasks: vi.fn().mockResolvedValue(undefined),
+          requestMagicLinkForBot: opts.accountsRequestThrows
+            ? vi.fn().mockRejectedValue(new Error('user u-42 не найден'))
+            : vi.fn().mockResolvedValue({
+                url: 'https://z.app/accounts/magic-link/consume?token=raw-token-123',
+                ttlMinutes: 15,
+              }),
         }
       : undefined
-  ) as unknown as TelegramBotMessageHandler | undefined;
+  ) as AccountsService | undefined;
+
+  const taskHandler = (opts.withTaskHandler
+    ? {
+        tryHandleStructural: vi.fn().mockResolvedValue(false),
+        handleCreateTask: vi.fn().mockResolvedValue(undefined),
+        handleShowTasks: vi.fn().mockResolvedValue(undefined),
+      }
+    : undefined) as unknown as TelegramBotMessageHandler | undefined;
 
   const adapter = new TelegramBotChannelAdapter(
     registry,
@@ -245,13 +213,9 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
     channel = makeChannel();
   });
 
-  // ─────────── /start <token> ───────────
-
   it('/start <token>: при валидном коде создаёт binding и шлёт приветствие', async () => {
     vi.mocked(mocks.linkCode.consume).mockResolvedValue('user-42');
-    vi.mocked(mocks.prisma.channelBinding.upsert).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.upsert).mockResolvedValue(verifiedBinding());
 
     const update: TelegramUpdate = {
       update_id: 1,
@@ -275,9 +239,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
     });
     expect(mocks.prisma.channelBinding.upsert).toHaveBeenCalled();
     expect(mocks.api.sendMessage).toHaveBeenCalled();
-    expect(
-      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
-    ).toContain('привязан');
+    expect(vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text).toContain('привязан');
   });
 
   it('/start без аргумента: шлёт приветствие, binding не создаёт', async () => {
@@ -299,19 +261,15 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
     expect(result).toBeNull();
     expect(mocks.linkCode.consume).not.toHaveBeenCalled();
     expect(mocks.api.sendMessage).toHaveBeenCalled();
-    expect(
-      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
-    ).toMatch(/Добро пожаловать|код|канал/i);
+    expect(vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text).toMatch(
+      /Добро пожаловать|код|канал/i,
+    );
   });
-
-  // ─────────── голый код привязки ───────────
 
   it('голый 12-hex код: для незалинкованного юзера прожигает код и создаёт binding', async () => {
     vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(null);
     vi.mocked(mocks.linkCode.consume).mockResolvedValue('user-42');
-    vi.mocked(mocks.prisma.channelBinding.upsert).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.upsert).mockResolvedValue(verifiedBinding());
 
     const update: TelegramUpdate = {
       update_id: 3,
@@ -338,9 +296,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
   it('голый 6-digit код: для незалинкованного юзера тоже прожигает', async () => {
     vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(null);
     vi.mocked(mocks.linkCode.consume).mockResolvedValue('user-42');
-    vi.mocked(mocks.prisma.channelBinding.upsert).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.upsert).mockResolvedValue(verifiedBinding());
 
     const update: TelegramUpdate = {
       update_id: 4,
@@ -363,13 +319,9 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
     });
   });
 
-  // ─────────── свободный текст с классификацией ───────────
-
   it('свободный текст (factual через LLM): возвращает chat_query', async () => {
     mocks = makeAdapter({ classifyIntent: 'factual' });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
 
     const update: TelegramUpdate = {
       update_id: 5,
@@ -397,9 +349,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
 
   it('свободный текст (LLM throw → эвристика): возвращает free_note для утверждения', async () => {
     mocks = makeAdapter({ classifyThrows: true });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
 
     const update: TelegramUpdate = {
       update_id: 6,
@@ -425,21 +375,13 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
     });
   });
 
-  // ─────────── §2 ТЗ 2026-06-14 channels-sync: интенты task/show_tasks убраны ─────
-
-  // Интентов task/show_tasks больше нет в классификаторе. При routing OFF
-  // task-/show_tasks-подобные сообщения классифицируются как обычная заметка
-  // или вопрос — task-handler НЕ вызывается из ветки намерения (его методы
-  // остаются для структурного task-flow: reply/forward в tryHandleStructural).
   it('OFF: task-подобный текст (классиф. note) → free_note, task-handler НЕ зовётся', async () => {
     mocks = makeAdapter({
       classifyIntent: 'note',
       classifyConfidence: 0.9,
       withTaskHandler: true,
     });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
     const update: TelegramUpdate = {
       update_id: 50,
       message: {
@@ -456,9 +398,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
       channel,
     });
     expect(result).toMatchObject({ type: 'free_note' });
-    expect(
-      vi.mocked(mocks.taskHandler!.handleCreateTask),
-    ).not.toHaveBeenCalled();
+    expect(vi.mocked(mocks.taskHandler!.handleCreateTask)).not.toHaveBeenCalled();
     expect(vi.mocked(mocks.taskHandler!.handleShowTasks)).not.toHaveBeenCalled();
   });
 
@@ -468,9 +408,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
       classifyConfidence: 0.9,
       withTaskHandler: true,
     });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
     const update: TelegramUpdate = {
       update_id: 51,
       message: {
@@ -488,17 +426,13 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
     });
     expect(result).toMatchObject({ type: 'chat_query' });
     expect(vi.mocked(mocks.taskHandler!.handleShowTasks)).not.toHaveBeenCalled();
-    expect(
-      vi.mocked(mocks.taskHandler!.handleCreateTask),
-    ).not.toHaveBeenCalled();
+    expect(vi.mocked(mocks.taskHandler!.handleCreateTask)).not.toHaveBeenCalled();
   });
 
   it('структурный спецслучай (tryHandleStructural=true): адаптер выходит, classify не зовётся', async () => {
     mocks = makeAdapter({ withTaskHandler: true });
     vi.mocked(mocks.taskHandler!.tryHandleStructural).mockResolvedValue(true);
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
     const update: TelegramUpdate = {
       update_id: 54,
       message: {
@@ -518,13 +452,9 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
     expect(vi.mocked(mocks.classifier.classify)).not.toHaveBeenCalled();
   });
 
-  // ─────────── voice ───────────
-
   it('voice: getFile → ASR → classify → chat_query', async () => {
     mocks = makeAdapter({ classifyIntent: 'factual' });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
 
     const update: TelegramUpdate = {
       update_id: 7,
@@ -558,9 +488,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
 
   it('voice: при rate-limit (>10 за час) — null + reply', async () => {
     mocks = makeAdapter({ rateLimitCount: 11 });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
 
     const update: TelegramUpdate = {
       update_id: 8,
@@ -580,16 +508,14 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
     expect(result).toBeNull();
     expect(mocks.vox.submit).not.toHaveBeenCalled();
     expect(mocks.api.sendMessage).toHaveBeenCalled();
-    expect(
-      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
-    ).toMatch(/много голосовых|позже/i);
+    expect(vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text).toMatch(
+      /много голосовых|позже/i,
+    );
   });
 
   it('voice: при BOT_VOICE_ENABLED=false — null + reply «недоступны»', async () => {
     mocks = makeAdapter({ voiceEnabled: false });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
 
     const update: TelegramUpdate = {
       update_id: 9,
@@ -608,23 +534,15 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
     });
     expect(result).toBeNull();
     expect(mocks.vox.submit).not.toHaveBeenCalled();
-    expect(
-      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
-    ).toMatch(/недоступны/i);
+    expect(vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text).toMatch(/недоступны/i);
   });
-
-  // ─────────── document ───────────
 
   it('document: getFile → DocumentsService.upload', async () => {
     mocks = makeAdapter();
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
     vi.mocked(mocks.prisma.person.findFirst).mockResolvedValue({
       id: 'person-1',
-    } as unknown as Awaited<
-      ReturnType<typeof mocks.prisma.person.findFirst>
-    >);
+    } as unknown as Awaited<ReturnType<typeof mocks.prisma.person.findFirst>>);
 
     const update: TelegramUpdate = {
       update_id: 10,
@@ -661,16 +579,12 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
         }),
       }),
     );
-    expect(
-      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
-    ).toMatch(/принят/i);
+    expect(vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text).toMatch(/принят/i);
   });
 
   it('document: больше 20 МБ — reply «слишком большой», upload не вызывается', async () => {
     mocks = makeAdapter();
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
 
     const update: TelegramUpdate = {
       update_id: 11,
@@ -694,12 +608,10 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
     });
     expect(result).toBeNull();
     expect(mocks.documents.upload).not.toHaveBeenCalled();
-    expect(
-      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
-    ).toMatch(/слишком большой|20\s*МБ/i);
+    expect(vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text).toMatch(
+      /слишком большой|20\s*МБ/i,
+    );
   });
-
-  // ─────────── незалинкованный юзер ───────────
 
   it('текст от незалинкованного юзера (не похожий на код): возвращает null и шлёт «привяжите»', async () => {
     vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(null);
@@ -721,17 +633,14 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
     });
     expect(result).toBeNull();
     expect(mocks.api.sendMessage).toHaveBeenCalled();
-    expect(
-      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
-    ).toMatch(/Аккаунт не привязан|код|канал/i);
-    // β-9: метрика «незнакомый отправитель / no_binding».
-    expect(
-      vi.mocked(mocks.metrics.incTelegramBotUnknownSender),
-    ).toHaveBeenCalledWith({ reason: 'no_binding' });
+    expect(vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text).toMatch(
+      /Аккаунт не привязан|код|канал/i,
+    );
+    expect(vi.mocked(mocks.metrics.incTelegramBotUnknownSender)).toHaveBeenCalledWith({
+      reason: 'no_binding',
+    });
   });
 });
-
-// ────────── ТЗ 2026-06-17 probe-phase2 Ф1: свободный ответ на probe ──────────
 
 describe('TelegramBotChannelAdapter.ingestUpdate (probe_reply без reply)', () => {
   const pendingProbe = {
@@ -776,7 +685,6 @@ describe('TelegramBotChannelAdapter.ingestUpdate (probe_reply без reply)', ()
       payload: { text: 'Да, отвечает Иванов', kind: 'implicit_response' },
       originChannelBindingId: 'binding-1',
     });
-    // openProbeQuestion проброшен в классификатор.
     const classifyArg = vi.mocked(mocks.classifier.classify).mock
       .calls[0]?.[0] as { openProbeQuestion?: string };
     expect(classifyArg.openProbeQuestion).toBe('Кто отвечает за это решение?');
@@ -830,8 +738,6 @@ describe('TelegramBotChannelAdapter.ingestUpdate (probe_reply без reply)', ()
   });
 });
 
-// ──────────────── Ф5 assistant-channels: единый помощник ────────────────
-
 describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', () => {
   const textUpdate = (text: string, updateId = 300): TelegramUpdate => ({
     update_id: updateId,
@@ -845,18 +751,13 @@ describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', 
   });
 
   it('ON: task-сообщение → assistant_turn (помощник вызовет create_task), handleCreateTask НЕ вызван — ТЗ 2026-06-14 channels-sync', async () => {
-    // task/show_tasks как интентов больше нет: классификатор отдаёт обычную
-    // категорию (например note), которая при ON уходит в assistant_turn.
-    // Постановку задачи делает уже помощник (create_task), не task-handler.
     const mocks = makeAdapter({
       assistantChannelRoutingEnabled: true,
       classifyIntent: 'note',
       classifyConfidence: 0.9,
       withTaskHandler: true,
     });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
 
     const result = await mocks.adapter.ingestUpdate({
       update: textUpdate('Поставь задачу: подготовить КП к пятнице'),
@@ -864,8 +765,6 @@ describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', 
       channel: makeChannel(),
     });
 
-    // Раньше тут вызывался handleCreateTask; теперь сообщение целиком уходит
-    // единому помощнику через assistant_turn.
     expect(result).toMatchObject({
       type: 'assistant_turn',
       userId: 'user-42',
@@ -873,9 +772,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', 
       text: 'Поставь задачу: подготовить КП к пятнице',
       originChannelBindingId: 'binding-1',
     });
-    expect(
-      vi.mocked(mocks.taskHandler!.handleCreateTask),
-    ).not.toHaveBeenCalled();
+    expect(vi.mocked(mocks.taskHandler!.handleCreateTask)).not.toHaveBeenCalled();
     expect(vi.mocked(mocks.taskHandler!.handleShowTasks)).not.toHaveBeenCalled();
   });
 
@@ -886,9 +783,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', 
       classifyConfidence: 0.9,
       withTaskHandler: true,
     });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
 
     const result = await mocks.adapter.ingestUpdate({
       update: textUpdate('Какие у меня задачи?', 306),
@@ -912,9 +807,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', 
       assistantChannelRoutingEnabled: true,
       classifyIntent: 'factual',
     });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
 
     const result = await mocks.adapter.ingestUpdate({
       update: textUpdate('Какой бюджет на Q4?', 301),
@@ -937,9 +830,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', 
       classifyIntent: 'daily_plan_morning',
       classifyConfidence: 0.85,
     });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
 
     const result = await mocks.adapter.ingestUpdate({
       update: textUpdate('План на день: А, Б, В', 302),
@@ -962,9 +853,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', 
       assistantChannelRoutingEnabled: false,
       classifyIntent: 'factual',
     });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
 
     const result = await mocks.adapter.ingestUpdate({
       update: textUpdate('Какой бюджет на Q4?', 303),
@@ -986,9 +875,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', 
       assistantChannelRoutingEnabled: true,
       classifyIntent: 'factual',
     });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
 
     const update: TelegramUpdate = {
       update_id: 304,
@@ -1026,9 +913,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', 
       classifyIntent: 'daily_report_evening',
       classifyConfidence: 0.8,
     });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
 
     const update: TelegramUpdate = {
       update_id: 305,
@@ -1054,15 +939,11 @@ describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', 
   });
 });
 
-// ───────────────────────────── β-9: глобальный канал ─────────────────────
-
 describe('TelegramBotChannelAdapter.ingestUpdate (β-9 глобальный канал)', () => {
   it('свободный текст: резолвит tenantId через Membership.findFirst по userId', async () => {
     const mocks = makeAdapter({ classifyIntent: 'factual' });
     const channel = makeChannel({ global: true });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
     vi.mocked(mocks.prisma.membership.findFirst).mockResolvedValue({
       orgId: 'org-resolved-via-membership',
     } as never);
@@ -1079,7 +960,6 @@ describe('TelegramBotChannelAdapter.ingestUpdate (β-9 глобальный ка
     };
     const result = await mocks.adapter.ingestUpdate({
       update,
-      // β-9: tenantId не передаётся — резолвится из binding.
       channel,
     });
     expect(result).toEqual({
@@ -1097,9 +977,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (β-9 глобальный ка
   it('если binding есть, но Membership нет — отвечает «не привязаны к компании» + метрика no_membership', async () => {
     const mocks = makeAdapter();
     const channel = makeChannel({ global: true });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
     vi.mocked(mocks.prisma.membership.findFirst).mockResolvedValue(null);
 
     const update: TelegramUpdate = {
@@ -1117,22 +995,18 @@ describe('TelegramBotChannelAdapter.ingestUpdate (β-9 глобальный ка
       channel,
     });
     expect(result).toBeNull();
-    expect(
-      vi.mocked(mocks.metrics.incTelegramBotUnknownSender),
-    ).toHaveBeenCalledWith({ reason: 'no_membership' });
-    expect(
-      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
-    ).toMatch(/не привязаны к компании|руководителя|приглашени/i);
+    expect(vi.mocked(mocks.metrics.incTelegramBotUnknownSender)).toHaveBeenCalledWith({
+      reason: 'no_membership',
+    });
+    expect(vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text).toMatch(
+      /не привязаны к компании|руководителя|приглашени/i,
+    );
   });
-
-  // ─── /login (β-9 / Phase 6) ─────────────────────────────────────────
 
   it('/login: verified binding + AccountsService → magic-link отправляется в чат + metric ok', async () => {
     const mocks = makeAdapter({ withAccounts: true });
     const channel = makeChannel({ global: true });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
 
     const update: TelegramUpdate = {
       update_id: 200,
@@ -1153,11 +1027,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (β-9 глобальный ка
     expect(mocks.api.sendMessage).toHaveBeenCalled();
     const sentText = vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text;
     expect(sentText).toMatch(/15 минут/);
-    expect(sentText).toContain(
-      'https://z.app/accounts/magic-link/consume?token=raw-token-123',
-    );
-    // Метрика ok пишется внутри AccountsService.requestMagicLinkForBot —
-    // у адаптера остаётся только incBotInbound для трекинга трафика.
+    expect(sentText).toContain('https://z.app/accounts/magic-link/consume?token=raw-token-123');
     expect(mocks.metrics.incBotInbound).toHaveBeenCalledWith({
       channel: 'telegram_bot',
       kind: 'other',
@@ -1167,9 +1037,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (β-9 глобальный ка
   it('/login@kora_bot: суффикс username тоже распознаётся как команда', async () => {
     const mocks = makeAdapter({ withAccounts: true });
     const channel = makeChannel({ global: true });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
 
     const update: TelegramUpdate = {
       update_id: 201,
@@ -1205,12 +1073,12 @@ describe('TelegramBotChannelAdapter.ingestUpdate (β-9 глобальный ка
 
     expect(result).toBeNull();
     expect(mocks.accounts!.requestMagicLinkForBot).not.toHaveBeenCalled();
-    expect(
-      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
-    ).toMatch(/привяжите бот|ссылке от руководителя/i);
-    expect(
-      vi.mocked(mocks.metrics.incBotLoginCommand),
-    ).toHaveBeenCalledWith({ outcome: 'not_linked' });
+    expect(vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text).toMatch(
+      /привяжите бот|ссылке от руководителя/i,
+    );
+    expect(vi.mocked(mocks.metrics.incBotLoginCommand)).toHaveBeenCalledWith({
+      outcome: 'not_linked',
+    });
   });
 
   it('/login с binding но без verifiedAt → reply «привяжите бот» + metric not_linked', async () => {
@@ -1234,17 +1102,15 @@ describe('TelegramBotChannelAdapter.ingestUpdate (β-9 глобальный ка
     await mocks.adapter.ingestUpdate({ update, channel });
 
     expect(mocks.accounts!.requestMagicLinkForBot).not.toHaveBeenCalled();
-    expect(
-      vi.mocked(mocks.metrics.incBotLoginCommand),
-    ).toHaveBeenCalledWith({ outcome: 'not_linked' });
+    expect(vi.mocked(mocks.metrics.incBotLoginCommand)).toHaveBeenCalledWith({
+      outcome: 'not_linked',
+    });
   });
 
   it('/login: AccountsService.requestMagicLinkForBot бросает → reply «не удалось» (graceful)', async () => {
     const mocks = makeAdapter({ accountsRequestThrows: true });
     const channel = makeChannel({ global: true });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(verifiedBinding());
 
     const update: TelegramUpdate = {
       update_id: 204,
@@ -1259,14 +1125,12 @@ describe('TelegramBotChannelAdapter.ingestUpdate (β-9 глобальный ка
     const result = await mocks.adapter.ingestUpdate({ update, channel });
 
     expect(result).toBeNull();
-    expect(
-      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
-    ).toMatch(/Не удалось выпустить ссылку|перепривязать|поддержку/i);
+    expect(vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text).toMatch(
+      /Не удалось выпустить ссылку|перепривязать|поддержку/i,
+    );
   });
 
   it('/login: AccountsService отсутствует в DI (legacy) → reply «временно недоступно», не падаем', async () => {
-    // По умолчанию makeAdapter без withAccounts/accountsRequestThrows
-    // не передаёт accounts, эмулируя старую DI-сборку.
     const mocks = makeAdapter();
     const channel = makeChannel({ global: true });
 
@@ -1283,18 +1147,14 @@ describe('TelegramBotChannelAdapter.ingestUpdate (β-9 глобальный ка
     const result = await mocks.adapter.ingestUpdate({ update, channel });
 
     expect(result).toBeNull();
-    expect(
-      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
-    ).toMatch(/временно недоступна/i);
+    expect(vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text).toMatch(/временно недоступна/i);
   });
 
   it('/start <code> на глобальном канале — линковка работает без tenantId', async () => {
     const mocks = makeAdapter();
     const channel = makeChannel({ global: true });
     vi.mocked(mocks.linkCode.consume).mockResolvedValue('user-42');
-    vi.mocked(mocks.prisma.channelBinding.upsert).mockResolvedValue(
-      verifiedBinding(),
-    );
+    vi.mocked(mocks.prisma.channelBinding.upsert).mockResolvedValue(verifiedBinding());
 
     const update: TelegramUpdate = {
       update_id: 102,
@@ -1313,22 +1173,16 @@ describe('TelegramBotChannelAdapter.ingestUpdate (β-9 глобальный ка
       code: 'ABCDEF123456',
     });
     expect(mocks.prisma.channelBinding.upsert).toHaveBeenCalled();
-    expect(
-      vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text,
-    ).toContain('привязан');
+    expect(vi.mocked(mocks.api.sendMessage).mock.calls[0]![0].text).toContain('привязан');
   });
 });
 
 describe('TelegramBotChannelAdapter.renderText — meeting.invite (Фаза 3.3)', () => {
   it('рендерит человекочитаемый текст с названием, хостом и ссылкой (не default-ветка)', () => {
     const { adapter } = makeAdapter();
-    // renderText private — обращаемся через cast (мини-e2e шаблона).
     const text = (
       adapter as unknown as {
-        renderText: (n: {
-          eventType: string;
-          payload: Record<string, unknown>;
-        }) => string;
+        renderText: (n: { eventType: string; payload: Record<string, unknown> }) => string;
       }
     ).renderText({
       eventType: 'meeting.invite',
@@ -1342,7 +1196,6 @@ describe('TelegramBotChannelAdapter.renderText — meeting.invite (Фаза 3.3)
     expect(text).toContain('Сергей');
     expect(text).toContain('Планёрка');
     expect(text).toContain('https://app.kora.test/m/m-1?inv=tok123');
-    // НЕ ушло в generic-fallback default-ветки.
     expect(text).not.toBe('Уведомление: meeting.invite');
   });
 
@@ -1350,10 +1203,7 @@ describe('TelegramBotChannelAdapter.renderText — meeting.invite (Фаза 3.3)
     const { adapter } = makeAdapter();
     const text = (
       adapter as unknown as {
-        renderText: (n: {
-          eventType: string;
-          payload: Record<string, unknown>;
-        }) => string;
+        renderText: (n: { eventType: string; payload: Record<string, unknown> }) => string;
       }
     ).renderText({ eventType: 'meeting.invite', payload: {} });
     expect(typeof text).toBe('string');
@@ -1362,17 +1212,11 @@ describe('TelegramBotChannelAdapter.renderText — meeting.invite (Фаза 3.3)
 });
 
 describe('TelegramBotChannelAdapter.renderText — видимые брифы (Ф2 assistant-channels)', () => {
-  const render = (
-    eventType: string,
-    payload: Record<string, unknown>,
-  ): string => {
+  const render = (eventType: string, payload: Record<string, unknown>): string => {
     const { adapter } = makeAdapter();
     return (
       adapter as unknown as {
-        renderText: (n: {
-          eventType: string;
-          payload: Record<string, unknown>;
-        }) => string;
+        renderText: (n: { eventType: string; payload: Record<string, unknown> }) => string;
       }
     ).renderText({ eventType, payload });
   };
@@ -1387,10 +1231,7 @@ describe('TelegramBotChannelAdapter.renderText — видимые брифы (Ф
         dateLocal: '2026-06-12',
         question: 'Какие 1-3 задачи у вас в фокусе сегодня?',
       },
-      [
-        'Какие 1-3 задачи у вас в фокусе сегодня?',
-        'Ответьте текстом или голосом — Кора запишет.',
-      ],
+      ['Какие 1-3 задачи у вас в фокусе сегодня?', 'Ответьте текстом или голосом — Кора запишет.'],
     ],
     [
       'operations.weekly_digest',
@@ -1402,11 +1243,7 @@ describe('TelegramBotChannelAdapter.renderText — видимые брифы (Ф
         body: 'Закрыто 12 задач, 3 риска требуют внимания.',
         actionUrl: 'https://app.kora.test/digest/d-1',
       },
-      [
-        'Итоги недели',
-        'Закрыто 12 задач',
-        'https://app.kora.test/digest/d-1',
-      ],
+      ['Итоги недели', 'Закрыто 12 задач', 'https://app.kora.test/digest/d-1'],
     ],
     [
       'goals.pulse',

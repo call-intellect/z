@@ -1,39 +1,29 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useState } from 'react';
+import Link from "next/link";
+import { useState } from "react";
 
-import { adminEconomicsApi } from '@/api/admin-economics.api';
-import type { AdminEconomicsGlobalApi } from '@/domain/admin-economics';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminCsvDownloadButton } from '@/ui/components/admin/AdminCsvDownloadButton';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/ui/shadcn/card';
+import { adminEconomicsApi } from "@/api/admin-economics.api";
+import type { AdminEconomicsGlobalApi } from "@/domain/admin-economics";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminCsvDownloadButton } from "@/ui/components/admin/AdminCsvDownloadButton";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
 
-/**
- * Юнит-экономика — глобальный дашборд расходов AI. Переехала с
- * `/admin/economics`. Drill-down на конкретный Org остался на старом URL
- * `/admin/economics/orgs/[id]` — это операционная карточка, не аналитика.
- */
 export function EconomicsAnalyticsClient() {
   const [days, setDays] = useState(30);
   const q = useAdminQuery(
@@ -47,10 +37,7 @@ export function EconomicsAnalyticsClient() {
       title="Юнит-экономика"
       description="Глобальные затраты AI за период, топ организаций, разрез по типу задачи."
       actions={
-        <Select
-          value={String(days)}
-          onValueChange={(v) => setDays(Number(v))}
-        >
+        <Select value={String(days)} onValueChange={(v) => setDays(Number(v))}>
           <SelectTrigger className="w-[160px]">
             <SelectValue />
           </SelectTrigger>
@@ -116,11 +103,11 @@ function EconomicsDashboard({
         />
         <SummaryCard
           title="Стоимость, RUB"
-          value={`${data.totals.costRub.toLocaleString('ru-RU')} ₽`}
+          value={`${data.totals.costRub.toLocaleString("ru-RU")} ₽`}
         />
         <SummaryCard
           title="Вызовов"
-          value={data.totals.callsCount.toLocaleString('ru-RU')}
+          value={data.totals.callsCount.toLocaleString("ru-RU")}
         />
       </div>
 
@@ -130,10 +117,10 @@ function EconomicsDashboard({
           <AdminCsvDownloadButton
             rows={topOrgsRows}
             columns={[
-              { key: 'orgName', label: 'Org' },
-              { key: 'tenantId', label: 'tenantId' },
-              { key: 'costRub', label: 'Стоимость, ₽' },
-              { key: 'calls', label: 'Вызовов' },
+              { key: "orgName", label: "Org" },
+              { key: "tenantId", label: "tenantId" },
+              { key: "costRub", label: "Стоимость, ₽" },
+              { key: "calls", label: "Вызовов" },
             ]}
             filename={`admin-economics-top-orgs-${days}d.csv`}
           />
@@ -157,10 +144,10 @@ function EconomicsDashboard({
                   >
                     <td className="px-3 py-2">{o.orgName}</td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {o.costRub.toLocaleString('ru-RU')}
+                      {o.costRub.toLocaleString("ru-RU")}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {o.calls.toLocaleString('ru-RU')}
+                      {o.calls.toLocaleString("ru-RU")}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <Link
@@ -184,9 +171,9 @@ function EconomicsDashboard({
           <AdminCsvDownloadButton
             rows={taskTypeRows}
             columns={[
-              { key: 'taskType', label: 'Тип задачи' },
-              { key: 'costRub', label: 'Стоимость, ₽' },
-              { key: 'calls', label: 'Вызовов' },
+              { key: "taskType", label: "Тип задачи" },
+              { key: "costRub", label: "Стоимость, ₽" },
+              { key: "calls", label: "Вызовов" },
             ]}
             filename={`admin-economics-by-task-${days}d.csv`}
           />
@@ -203,15 +190,18 @@ function EconomicsDashboard({
               </thead>
               <tbody>
                 {data.byTaskType.map((t) => (
-                  <tr key={t.taskType} className="border-t border-border-subtle">
+                  <tr
+                    key={t.taskType}
+                    className="border-t border-border-subtle"
+                  >
                     <td className="px-3 py-2 font-mono text-xs">
                       {t.taskType}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {t.costRub.toLocaleString('ru-RU')}
+                      {t.costRub.toLocaleString("ru-RU")}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {t.calls.toLocaleString('ru-RU')}
+                      {t.calls.toLocaleString("ru-RU")}
                     </td>
                   </tr>
                 ))}

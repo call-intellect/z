@@ -1,19 +1,4 @@
-/**
- * Integration spec для KnowledgeThemesController (Phase F.2).
- *
- * Использует РЕАЛЬНЫЙ Postgres из docker-compose.dev.yml.
- *
- * Покрытие:
- *   - GET /themes — список тем Org с фильтрами.
- *   - GET /themes/:id — деталка темы с блоками + сущностями.
- *   - POST /themes/:id/save-as-card — конвертация темы → Card.
- *   - 403 cross-tenant, 403 forbidden, 404 not_found, Zod 400.
- */
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
@@ -32,10 +17,7 @@ import type {
 } from '../../rbac/knowledge-access-resolver.service';
 import type { RbacService } from '../../rbac/rbac.service';
 
-import {
-  ListThemesQuerySchema,
-  SaveThemeAsCardSchema,
-} from './dto/theme.dto';
+import { ListThemesQuerySchema, SaveThemeAsCardSchema } from './dto/theme.dto';
 import { KnowledgeThemesController } from './themes.controller';
 
 const PREFIX = 'kc-themes-spec';
@@ -109,7 +91,6 @@ describe('KnowledgeThemesController (integration)', () => {
 
     const q = ListThemesQuerySchema.parse({});
     const res = await ctrl.list(q, userB, f.orgBId);
-    // Тема создавалась только для OrgA — для OrgB её быть не должно.
     expect(res.items.find((t) => t.id === f.themeAId)).toBeUndefined();
   });
 
@@ -131,9 +112,7 @@ describe('KnowledgeThemesController (integration)', () => {
     const f = ctx.fixture!;
     const ctrl = new KnowledgeThemesController(prisma, makeRbac(true));
 
-    await expect(ctrl.byId(f.themeAId, userB, f.orgBId)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(ctrl.byId(f.themeAId, userB, f.orgBId)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('403 forbidden если canRead=false', async (testCtx) => {
@@ -142,9 +121,7 @@ describe('KnowledgeThemesController (integration)', () => {
     const f = ctx.fixture!;
     const ctrl = new KnowledgeThemesController(prisma, makeRbac(false));
 
-    await expect(ctrl.byId(f.themeAId, userA, f.orgAId)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(ctrl.byId(f.themeAId, userA, f.orgAId)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('403 tenant_required (X-Org-Id не передан)', async (testCtx) => {
@@ -164,9 +141,9 @@ describe('KnowledgeThemesController (integration)', () => {
     const f = ctx.fixture!;
     const ctrl = new KnowledgeThemesController(prisma, makeRbac(true));
 
-    await expect(
-      ctrl.byId(`${PREFIX}-no-theme`, userA, f.orgAId),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(ctrl.byId(`${PREFIX}-no-theme`, userA, f.orgAId)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('Zod-400 на невалидный list-query (limit > 100)', () => {
@@ -188,7 +165,6 @@ describe('KnowledgeThemesController (integration)', () => {
     expect(res.bornFromThemeId).toBe(f.themeAId);
     expect(res.cardId).toBeDefined();
 
-    // Подчищаем — иначе при повторном запуске будет ConflictException.
     await prisma.card.delete({ where: { id: res.cardId } }).catch(() => undefined);
   });
 
@@ -199,26 +175,14 @@ describe('KnowledgeThemesController (integration)', () => {
     const ctrl = new KnowledgeThemesController(prisma, makeRbac(true, true));
 
     await expect(
-      ctrl.saveAsCard(
-        f.themeAId,
-        { name: `${PREFIX}-no` },
-        userB,
-        f.orgBId,
-      ),
+      ctrl.saveAsCard(f.themeAId, { name: `${PREFIX}-no` }, userB, f.orgBId),
     ).rejects.toBeInstanceOf(NotFoundException);
 
-    // Заодно — BadRequest на попытку safeParse с пустой строкой:
     expect(SaveThemeAsCardSchema.safeParse({ name: '' }).success).toBe(false);
 
-    // BadRequestException не выбрасывается т.к. wrapper в zod — лишний sanity-check.
     expect(BadRequestException).toBeDefined();
   });
 });
-
-// ─────────────────── Ф4 knowledge-access — гейт деталки темы ────────────────
-//
-// Юнит-тесты (без БД): мокаем prisma/resolver/cfg/metrics. Проверяем
-// гейт-семантику off/enforce/bypass/shadow на GET /themes/:id.
 
 const GATE_USER: CurrentUserPayload = {
   id: 'theme-gate-user',
@@ -287,9 +251,7 @@ function buildGateThemes(opts: {
   const rbac = { canRead: async () => true } as unknown as RbacService;
 
   const resolveSpy = vi.fn(async () => opts.ctx);
-  const partitionSpy = vi.fn(
-    async () => opts.partition ?? { accessible: [], denied: 0 },
-  );
+  const partitionSpy = vi.fn(async () => opts.partition ?? { accessible: [], denied: 0 });
   const accessResolver = {
     resolveAccessibleGroups: resolveSpy,
     partitionBlockIdsByAccess: partitionSpy,
@@ -306,13 +268,7 @@ function buildGateThemes(opts: {
     incAccessShadowDiff: incShadow,
   } as unknown as BusinessMetricsService;
 
-  const ctrl = new KnowledgeThemesController(
-    prisma,
-    rbac,
-    accessResolver,
-    cfg,
-    metrics,
-  );
+  const ctrl = new KnowledgeThemesController(prisma, rbac, accessResolver, cfg, metrics);
   return { ctrl, resolveSpy, partitionSpy, incDenied, incShadow };
 }
 

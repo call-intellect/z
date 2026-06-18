@@ -1,13 +1,3 @@
-/**
- * Гипотеза 2, Variant A — текущая архитектура: 1 чек-ин = 1 вызов.
- * Реалистичная нагрузка: 25 чек-инов через event-loop = 25 параллельных вызовов.
- *
- * Источник промпта: backend/src/modules/operations/prompts/checkin-sentiment.prompt.ts
- *
- * Метрики: цена за чек-ин, время на батч (параллельно), точность vs expectedSentiment.
- *
- * Запуск: cd backend && bun run scripts/eval/run-checkin-single.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -16,15 +6,18 @@ const MODEL = 'deepseek-v4-pro';
 const PRICE_IN = 0.435 / 1_000_000;
 const PRICE_CACHED_IN = 0.003625 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
-// ВАЖНО: на DeepSeek-Pro thinking-токены входят в output. Текущий код в
-// checkin-sentiment-analyzer.worker.ts ставит 300 — этого МАЛО (~56% ответов
-// пустые). Поднимаем до 2000 для корректного сравнения с batch.
 const MAX_TOKENS = 2000;
-const PARALLEL = 5; // лимит одновременных запросов чтобы не схватить 429
+const PARALLEL = 5;
 
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
-const CHECKINS_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/fixtures/checkins-week.json');
-const REPORT_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/reports/variant-a-checkin-single.json');
+const CHECKINS_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/fixtures/checkins-week.json',
+);
+const REPORT_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/reports/variant-a-checkin-single.json',
+);
 
 if (!process.env.DEEPSEEK_API_KEY) {
   console.error('✗ DEEPSEEK_API_KEY не задан');
@@ -35,7 +28,6 @@ const client = new OpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
 });
 
-// ── system-промпт (копия из checkin-sentiment.prompt.ts) ─────────────────────
 const SYSTEM_PROMPT = [
   'Ты — внимательный читатель ежедневных вечерних чек-инов сотрудников.',
   'Тебе дают короткий свободный текст (что человек сделал за день, что мешает, как ощущения).',
@@ -51,14 +43,10 @@ const SYSTEM_PROMPT = [
 
 function buildUserMessage(kind: 'morning' | 'evening', rawText: string): string {
   const kindLabel =
-    kind === 'evening'
-      ? 'вечерний (что сделано + блокеры + ощущения)'
-      : 'утренний (план на день)';
-  return [
-    `Тип чек-ина: ${kindLabel}.`,
-    'Текст сотрудника:',
-    (rawText ?? '').slice(0, 4_000),
-  ].join('\n');
+    kind === 'evening' ? 'вечерний (что сделано + блокеры + ощущения)' : 'утренний (план на день)';
+  return [`Тип чек-ина: ${kindLabel}.`, 'Текст сотрудника:', (rawText ?? '').slice(0, 4_000)].join(
+    '\n',
+  );
 }
 
 interface CheckIn {
@@ -204,7 +192,6 @@ async function main(): Promise<void> {
   const reports = await runWithConcurrency(checkins, callOne, PARALLEL);
   const totalMs = Date.now() - totalStart;
 
-  // Сводка
   const ok = reports.filter((r) => r.predicted !== null);
   const fails = reports.filter((r) => r.error);
   const correct = reports.filter((r) => r.correct).length;
@@ -221,10 +208,11 @@ async function main(): Promise<void> {
   console.log(`  токены: вход=${totalIn} (кэш=${totalCached}) выход=${totalOut}`);
   console.log(`  стоимость суммарно:             $${totalCost.toFixed(4)}`);
   console.log(`  стоимость за чек-ин:            $${(totalCost / checkins.length).toFixed(4)}`);
-  console.log(`  точность:                       ${correct}/${reports.length} (${(accuracy * 100).toFixed(0)}%)`);
+  console.log(
+    `  точность:                       ${correct}/${reports.length} (${(accuracy * 100).toFixed(0)}%)`,
+  );
   if (fails.length > 0) console.log(`  ошибок: ${fails.length}`);
 
-  // Confusion-таблица
   console.log('\n=== Confusion (expected → predicted) ===');
   const cf: Record<string, Record<string, number>> = { green: {}, yellow: {}, red: {} };
   for (const r of reports) {

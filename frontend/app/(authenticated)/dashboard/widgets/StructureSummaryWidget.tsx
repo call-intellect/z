@@ -1,32 +1,19 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import {
-  Building2,
-  FileText,
-  IdCard,
-  Sparkles,
-  Users,
-} from 'lucide-react';
-import useSWR from 'swr';
+import Link from "next/link";
+import { Building2, FileText, IdCard, Sparkles, Users } from "lucide-react";
+import useSWR from "swr";
 
-import { ApiError } from '@/api/api-error';
-import { structureApi } from '@/api/structure.api';
-import { useAuth } from '@/contexts/auth-context';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+import { ApiError } from "@/api/api-error";
+import { structureApi } from "@/api/structure.api";
+import { useAuth } from "@/contexts/auth-context";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-/**
- * Виджет «Структура компании» — карточки-счётчики (отделов / должностей /
- * сотрудников / документов / карт должностей). Каждая кликабельна.
- *
- * Если API `/api/v1/structure/summary` ещё не готов — виджет тихо
- * сворачивается до плэйсхолдера «Раздел в разработке».
- */
 export function StructureSummaryWidget() {
   const { currentOrgId } = useAuth();
   const swr = useSWR(
-    currentOrgId ? ['dashboard-structure-summary', currentOrgId] : null,
+    currentOrgId ? ["dashboard-structure-summary", currentOrgId] : null,
     () => structureApi.summary(currentOrgId!),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
@@ -48,9 +35,9 @@ export function StructureSummaryWidget() {
           </div>
         ) : swr.error ? (
           <p className="text-sm text-fg-tertiary">
-            {swr.error instanceof ApiError && swr.error.code === 'http_404'
-              ? 'Сводка появится после готовности backend.'
-              : 'Не удалось загрузить сводку.'}
+            {swr.error instanceof ApiError && swr.error.code === "http_404"
+              ? "Сводка появится после готовности backend."
+              : "Не удалось загрузить сводку."}
           </p>
         ) : swr.data ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">

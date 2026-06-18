@@ -2,9 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { GoalThemeLinkerCron } from './goal-theme-linker.cron';
 
-/**
- * Agent-chain overhaul Фаза 4.2 — минимальный smoke cron'а догоночной привязки.
- */
 function buildCron() {
   const prisma = {
     org: { findMany: vi.fn().mockResolvedValue([]) },
@@ -12,11 +9,7 @@ function buildCron() {
   };
   const linker = { linkGoalThemes: vi.fn().mockResolvedValue({ linked: 0 }) };
   const gate = { checkOrThrow: vi.fn().mockResolvedValue(undefined) };
-  const cron = new GoalThemeLinkerCron(
-    prisma as never,
-    linker as never,
-    gate as never,
-  );
+  const cron = new GoalThemeLinkerCron(prisma as never, linker as never, gate as never);
   return { cron, prisma, linker, gate };
 }
 
@@ -44,9 +37,7 @@ describe('GoalThemeLinkerCron', () => {
     const { cron, prisma, linker } = buildCron();
     prisma.org.findMany.mockResolvedValue([{ id: 'org-1' }]);
     prisma.goal.findMany.mockResolvedValue([{ id: 'g1' }, { id: 'g2' }]);
-    linker.linkGoalThemes
-      .mockResolvedValueOnce({ linked: 2 })
-      .mockResolvedValueOnce({ linked: 0 });
+    linker.linkGoalThemes.mockResolvedValueOnce({ linked: 2 }).mockResolvedValueOnce({ linked: 0 });
 
     const summary = await cron.scanAllOrgs();
 

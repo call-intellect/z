@@ -30,12 +30,7 @@ function mkService(opts?: {
   llmText?: string;
   llmReject?: boolean;
   existingIntake?: boolean;
-  /** Участники встречи, которых вернёт participantContext.loadForMeeting. */
   participants?: AiParticipantContext[];
-  /**
-   * Детерминированный возврат assigneeResolver.resolve — массив того же
-   * порядка, что и входные задачи. Если не задан — все null (нет матча).
-   */
   resolveResult?: ResolvedTaskAssignee[];
 }): {
   service: MeetingExtractActionsService;
@@ -74,33 +69,21 @@ function mkService(opts?: {
       }),
     },
     project: {
-      findMany: vi.fn().mockResolvedValue([
-        { identifier: 'DEV', name: 'Команда разработки' },
-      ]),
-      findFirst: vi
-        .fn()
-        .mockResolvedValue({ id: 'proj-dev' }),
+      findMany: vi.fn().mockResolvedValue([{ identifier: 'DEV', name: 'Команда разработки' }]),
+      findFirst: vi.fn().mockResolvedValue({ id: 'proj-dev' }),
     },
     goal: {
       findMany: vi.fn().mockResolvedValue([{ name: 'Запуск v2' }]),
     },
     person: {
-      // loadOrgContext — общий список сотрудников для промпта.
-      findMany: vi.fn().mockResolvedValue([
-        { name: 'Иванов Сергей' },
-        { name: 'Петров Олег' },
-      ]),
+      findMany: vi.fn().mockResolvedValue([{ name: 'Иванов Сергей' }, { name: 'Петров Олег' }]),
     },
     intakeIssue: {
-      findFirst: vi
-        .fn()
-        .mockResolvedValue(opts?.existingIntake ? { id: 'existing-1' } : null),
-      create: vi
-        .fn()
-        .mockImplementation(async ({ data }) => ({
-          id: `intake-${Math.random().toString(36).slice(2, 8)}`,
-          ...data,
-        })),
+      findFirst: vi.fn().mockResolvedValue(opts?.existingIntake ? { id: 'existing-1' } : null),
+      create: vi.fn().mockImplementation(async ({ data }) => ({
+        id: `intake-${Math.random().toString(36).slice(2, 8)}`,
+        ...data,
+      })),
     },
   };
 
@@ -135,15 +118,9 @@ function mkService(opts?: {
   };
 
   const participantContext = {
-    loadForMeeting: vi
-      .fn()
-      .mockResolvedValue(opts?.participants ?? []),
+    loadForMeeting: vi.fn().mockResolvedValue(opts?.participants ?? []),
   };
 
-  // ТЗ-4 Ф3 — общий загрузчик org-контекста (вынесен из приватного
-  // loadOrgContext). Возвращает ту же форму, что исторический метод:
-  // те же проекты/цели/сотрудники + meetingDateIso от даты встречи (мок
-  // meeting.startedAt = 2026-05-24).
   const orgContext = {
     load: vi.fn().mockResolvedValue({
       projects: [{ identifier: 'DEV', name: 'Команда разработки' }],
@@ -156,9 +133,6 @@ function mkService(opts?: {
     }),
   };
 
-  // Резолвер детерминирован: возвращает заданный массив, иначе для каждой
-  // входной задачи — null (нет матча среди участников). Сохраняем
-  // assigneeRaw из входа, чтобы форма совпадала с реальным сервисом.
   const assigneeResolver = {
     resolve: vi.fn(
       (
@@ -204,7 +178,6 @@ function mkService(opts?: {
   };
 }
 
-/** Хелпер: участник встречи с identity. */
 function participant(
   over: Partial<AiParticipantContext> & { displayName: string },
 ): AiParticipantContext {
@@ -224,13 +197,10 @@ describe('MeetingExtractActionsService', () => {
 
   it('извлекает задачу из встречи и создаёт IntakeIssue с suggested* + enqueue auto-triage', async () => {
     const { service, prisma, llm, metrics, queue, orgContext } = mkService({
-      // Резолвер находит Иванова среди участников встречи.
       resolveResult: [
         { assigneeRaw: 'Иванов Сергей', assigneeUserId: 'user-ivanov', ambiguous: false },
       ],
-      participants: [
-        participant({ displayName: 'Иванов Сергей', userId: 'user-ivanov' }),
-      ],
+      participants: [participant({ displayName: 'Иванов Сергей', userId: 'user-ivanov' })],
     });
     const created = await service.extract({
       tenantId: 'org-1',
@@ -240,13 +210,7 @@ describe('MeetingExtractActionsService', () => {
     const callArgs = llm.call.mock.calls[0]?.[0] as { taskType: string };
     expect(callArgs.taskType).toBe('meeting-extract-actions');
 
-    // ТЗ-4 Ф3 — org-контекст грузится через общий OrgContextService.load
-    // (реюз), с tenantId и датой начала встречи. Приватного loadOrgContext
-    // больше нет.
-    expect(orgContext.load).toHaveBeenCalledWith(
-      'org-1',
-      new Date('2026-05-24T10:00:00Z'),
-    );
+    expect(orgContext.load).toHaveBeenCalledWith('org-1', new Date('2026-05-24T10:00:00Z'));
 
     expect(prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
     const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
@@ -327,7 +291,6 @@ describe('MeetingExtractActionsService', () => {
     });
     expect(created).toEqual([]);
     expect(llm.call).not.toHaveBeenCalled();
-    // Метрика не должна быть инкрементирована — это просто отсутствие встречи
     expect(metrics.incAiMeetingActionsExtracted).not.toHaveBeenCalled();
   });
 
@@ -336,9 +299,12 @@ describe('MeetingExtractActionsService', () => {
       llmText: JSON.stringify({
         tasks: [
           {
+            // Ф0 (ТЗ 2026-06-16) — у задачи есть срок, чтобы пройти гейт
+            // качества: проверяем именно clampConfidence, а не гейт.
             title: 'Задача с confidence > 1',
             assignee: null,
-            dueDate: null,
+            dueDate: '2026-05-30',
+            suggestedDueDate: '2026-05-30',
             confidence: 1.5,
             sourceQuote: 'некая цитата',
           },
@@ -349,11 +315,8 @@ describe('MeetingExtractActionsService', () => {
     const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
       data: { confidence: unknown };
     };
-    // confidence хранится как Prisma.Decimal — у него есть .toString()
     expect(String(createArg.data.confidence)).toBe('1');
   });
-
-  // ───────────────────── Acceptance 5.1 (identity-резолвер) ────────────────
 
   it('Acceptance 5.1 (a): hint="Настя" + участник Настя c userId → suggestedAssigneeId=userId по identity', async () => {
     const nastya = participant({
@@ -363,10 +326,7 @@ describe('MeetingExtractActionsService', () => {
     });
     const { service, prisma, participantContext, assigneeResolver } = mkService({
       participants: [nastya],
-      // Резолвер матчит "Настя" среди участников встречи → userId.
-      resolveResult: [
-        { assigneeRaw: 'Настя', assigneeUserId: 'u-nastya', ambiguous: false },
-      ],
+      resolveResult: [{ assigneeRaw: 'Настя', assigneeUserId: 'u-nastya', ambiguous: false }],
       llmText: JSON.stringify({
         tasks: [
           {
@@ -383,7 +343,6 @@ describe('MeetingExtractActionsService', () => {
 
     await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
 
-    // Резолв шёл против УЧАСТНИКОВ встречи, а не Person по всему тенанту.
     expect(participantContext.loadForMeeting).toHaveBeenCalledWith('m-1');
     expect(assigneeResolver.resolve).toHaveBeenCalledWith(
       [{ assigneeRaw: 'Настя', assigneeUserId: null }],
@@ -397,15 +356,10 @@ describe('MeetingExtractActionsService', () => {
   });
 
   it('Acceptance 5.1 (b): тёзка НЕ из встречи с тем же именем НЕ выбирается (resolver → null)', async () => {
-    // Участник встречи — Олег (userId=u-oleg), а в речи звучит "Настя".
-    // Резолвер не находит "Настя" среди участников → null. Тёзка Настя из
-    // другого отдела (есть в Person по всему тенанту) НЕ выбирается.
     const oleg = participant({ displayName: 'Олег', userId: 'u-oleg' });
     const { service, prisma, assigneeResolver } = mkService({
       participants: [oleg],
-      resolveResult: [
-        { assigneeRaw: 'Настя', assigneeUserId: null, ambiguous: false },
-      ],
+      resolveResult: [{ assigneeRaw: 'Настя', assigneeUserId: null, ambiguous: false }],
       llmText: JSON.stringify({
         tasks: [
           {
@@ -427,7 +381,6 @@ describe('MeetingExtractActionsService', () => {
       [oleg],
       'org-1',
     );
-    // person.findMany по name НЕ вызывается (substring-резолв удалён).
     const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
       data: { suggestedAssigneeId: string | null };
     };
@@ -436,7 +389,6 @@ describe('MeetingExtractActionsService', () => {
 
   it('Acceptance 5.1 (c): hint без совпадения → suggestedAssigneeId=null, IntakeIssue всё равно создаётся', async () => {
     const { service, prisma, metrics } = mkService({
-      // Без участников и без матча — резолвер вернёт null (дефолтный мок).
       participants: [],
       llmText: JSON.stringify({
         tasks: [

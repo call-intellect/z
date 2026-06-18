@@ -1,11 +1,3 @@
-/**
- * Доменная модель цикла (Cycle / спринт / неделя) трекера.
- *
- * Контракт: `backend/src/modules/tracker/dto/cycles/cycle-response.dto.ts`.
- */
-
-// ─── ApiDto ─────────────────────────────────────────────────────────────────
-
 export interface CycleApi {
   id: string;
   tenantId: string;
@@ -21,7 +13,6 @@ export interface CycleApi {
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  /** Goals OKR v2 — цель, которую продвигает спринт (null = не задана). */
   primaryGoalId: string | null;
 }
 
@@ -36,8 +27,6 @@ export interface CompleteCycleResultApi {
   rolledOverTo: string | null;
 }
 
-// ─── Domain ─────────────────────────────────────────────────────────────────
-
 export interface Cycle {
   id: string;
   tenantId: string;
@@ -47,21 +36,16 @@ export interface Cycle {
   endDate: Date;
   ownedById: string | null;
   description: string | null;
-  /** Снимок прогресса от backend — `{ done, total, doneRate }` (форма уточняется). */
   progressSnapshot: unknown;
   version: number;
   timezone: string;
   completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
-  /** Goals OKR v2 — цель, которую продвигает спринт (null = не задана). */
   primaryGoalId: string | null;
-  // ─ computed ─
   isActive: boolean;
   isCompleted: boolean;
 }
-
-// ─── Mappers ────────────────────────────────────────────────────────────────
 
 const parseDate = (s: string | null | undefined): Date | null =>
   s ? new Date(s) : null;
@@ -96,19 +80,12 @@ export function cycleFromApi(api: CycleApi): Cycle {
   };
 }
 
-// ─── UI helpers ─────────────────────────────────────────────────────────────
-
-/** Подпись «12 апр – 18 апр». */
 export function cycleDateRangeLabel(cycle: Cycle): string {
   const fmt = (d: Date) =>
-    d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+    d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
   return `${fmt(cycle.startDate)} – ${fmt(cycle.endDate)}`;
 }
 
-/**
- * Извлекает done/total/doneRate из `progressSnapshot`, если совпадает форма
- * (backend ещё в development).
- */
 export interface CycleProgressView {
   done: number;
   total: number;
@@ -116,16 +93,12 @@ export interface CycleProgressView {
 }
 
 export function readCycleProgress(snapshot: unknown): CycleProgressView | null {
-  if (!snapshot || typeof snapshot !== 'object') return null;
+  if (!snapshot || typeof snapshot !== "object") return null;
   const s = snapshot as Record<string, unknown>;
-  const done = typeof s.done === 'number' ? s.done : null;
-  const total = typeof s.total === 'number' ? s.total : null;
+  const done = typeof s.done === "number" ? s.done : null;
+  const total = typeof s.total === "number" ? s.total : null;
   if (done === null || total === null) return null;
   const doneRate =
-    typeof s.doneRate === 'number'
-      ? s.doneRate
-      : total > 0
-        ? done / total
-        : 0;
+    typeof s.doneRate === "number" ? s.doneRate : total > 0 ? done / total : 0;
   return { done, total, doneRate };
 }

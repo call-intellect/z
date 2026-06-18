@@ -1,16 +1,3 @@
-/**
- * Patch (SBA α-3) — backfill Document.entityId.
- *
- * Для каждого Document без entityId — найти или создать
- * Entity{type='document', canonicalName=Document.name, tenantId}.
- *
- * Запуск:
- *   bun run scripts/patch-backfill-entity-id-document.ts          — реальный backfill
- *   bun run scripts/patch-backfill-entity-id-document.ts --dry-run — только подсчёт
- *
- * Идемпотентно (`entityId IS NULL`). Батч 1000.
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 import { isColumnNullable } from './_lib/schema-guards';
@@ -40,8 +27,6 @@ async function main(): Promise<void> {
       `=== patch-backfill-entity-id-document START (${DRY_RUN ? 'DRY-RUN' : 'REAL'}) ===`,
     );
 
-    // Guard: если Document.entityId уже NOT NULL (cleanup-миграция применена) —
-    // типизированный where:{entityId:null} упал бы Prisma 7-валидацией.
     if (!(await isColumnNullable(prisma, 'Document', 'entityId'))) {
       console.log(
         'Document.entityId уже NOT NULL — backfill применён ранее, обновление не требуется.',
@@ -79,9 +64,7 @@ async function main(): Promise<void> {
           select: { id: true, canonicalName: true },
           take: 200,
         });
-        const matched = candidates.find(
-          (c) => c.canonicalName.trim().toLowerCase() === lowered,
-        );
+        const matched = candidates.find((c) => c.canonicalName.trim().toLowerCase() === lowered);
 
         let entityId: string;
         if (matched) {
@@ -114,9 +97,7 @@ async function main(): Promise<void> {
       }
 
       cursorId = batch[batch.length - 1]?.id;
-      console.log(
-        `  ...обработан батч до id=${cursorId}, всего отсканировано=${counters.scanned}`,
-      );
+      console.log(`  ...обработан батч до id=${cursorId}, всего отсканировано=${counters.scanned}`);
       if (batch.length < BATCH_SIZE) break;
     }
 

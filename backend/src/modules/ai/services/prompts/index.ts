@@ -16,20 +16,8 @@ import * as sales from './type-sales';
 import * as standup from './type-standup';
 import * as team from './type-team';
 
-export type {
-  DialogTurn,
-  PromptInput,
-  PromptOutput,
-} from './common';
+export type { DialogTurn, PromptInput, PromptOutput } from './common';
 
-/**
- * Дескриптор промпта по типу встречи. Возвращается из `getPromptForType`.
- *
- *   buildPrompt(input)  — собирает {system,user} с диалогом.
- *   tool                — Anthropic tool с JSON-Schema для extract.
- *   toolName            — для парсинга `toolCalls[].name`.
- *   schema              — Zod-схема для валидации `toolCalls[0].input`.
- */
 export interface PromptDescriptor {
   buildPrompt: (input: PromptInput) => PromptOutput;
   tool: LlmTool;
@@ -38,7 +26,12 @@ export interface PromptDescriptor {
 }
 
 const REGISTRY: Record<MeetingType, PromptDescriptor> = {
-  team: { buildPrompt: team.buildPrompt, tool: team.TOOL, toolName: team.TOOL_NAME, schema: team.SCHEMA },
+  team: {
+    buildPrompt: team.buildPrompt,
+    tool: team.TOOL,
+    toolName: team.TOOL_NAME,
+    schema: team.SCHEMA,
+  },
   standup: {
     buildPrompt: standup.buildPrompt,
     tool: standup.TOOL,
@@ -87,10 +80,6 @@ const REGISTRY: Record<MeetingType, PromptDescriptor> = {
     toolName: customerSuccess.TOOL_NAME,
     schema: customerSuccess.SCHEMA,
   },
-  // CRIT-2 fix 2026-05-24 (Sprint 1, тикет B2-1.3): review/retrospective
-  // получили собственные промпты, отвечающие смыслу типа встречи. До этого
-  // оба fallback'ились на `team.buildPrompt`, что искажало AI-отчёт.
-  // См. plans/analysis/2026-05-22-code-reality-deltas.md §CRIT-2.
   review: {
     buildPrompt: review.buildPrompt,
     tool: review.TOOL,
@@ -103,23 +92,12 @@ const REGISTRY: Record<MeetingType, PromptDescriptor> = {
     toolName: retrospective.TOOL_NAME,
     schema: retrospective.SCHEMA,
   },
-  // Tracker Phase 1 (2026-05-24): встреча, запущенная из задачи трекера
-  // (`POST /issues/:id/start-meeting`). До отдельного «task_discussion»
-  // промпта (план Sprint 3) — переиспользуем team-формат: задачи / решения /
-  // блокеры / next step. Это близко по смыслу к обсуждению задачи.
   task_discussion: {
     buildPrompt: team.buildPrompt,
     tool: team.TOOL,
     toolName: team.TOOL_NAME,
     schema: team.SCHEMA,
   },
-  // Sprints (2026-05-27): «Итоги спринта», запускается из дашборда спринта
-  // (`POST /cycles/:id/start-meeting`). По смыслу — ретроспектива (что было
-  // запланировано, что выполнено, что не выполнено, причины, переносы) +
-  // план следующего спринта. Используем retrospective-формат: он уже даёт
-  // wentWell/needsImprovement/actions; полный сводный отчёт спринта
-  // (нарратив + план/факт + кандидаты следующего) генерируется отдельным
-  // LLM-таском `sprint-review-summary` после завершения встречи.
   sprint_review: {
     buildPrompt: retrospective.buildPrompt,
     tool: retrospective.TOOL,
@@ -131,27 +109,15 @@ const REGISTRY: Record<MeetingType, PromptDescriptor> = {
 export function getPromptForType(type: MeetingType): PromptDescriptor {
   const descriptor = REGISTRY[type];
   if (!descriptor) {
-    // noUncheckedIndexedAccess делает это полезной защитой.
     throw new Error(`Нет промпта для типа встречи: ${type}`);
   }
   return descriptor;
 }
 
-/**
- * Тип имеет потребность в follow-up email?
- */
 export function typeNeedsFollowUp(type: MeetingType): boolean {
   return type === 'sales' || type === 'customer_success';
 }
 
-/**
- * Тип имеет потребность в извлечении задач?
- */
 export function typeNeedsTasks(type: MeetingType): boolean {
-  return (
-    type === 'team' ||
-    type === 'standup' ||
-    type === 'plan_fact' ||
-    type === 'project'
-  );
+  return type === 'team' || type === 'standup' || type === 'plan_fact' || type === 'project';
 }

@@ -1,18 +1,10 @@
-'use client';
+"use client";
 
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 
-import { CardTitle } from './CardTitle';
-import { CHART, glass } from './tokens';
+import { CardTitle } from "./CardTitle";
+import { CHART, glass } from "./tokens";
 
-/**
- * Тепловая карта на стеклянной карточке: сетка `rows × cols`, прозрачность ячейки
- * пропорциональна интенсивности (0..1), пиковые ячейки (>0.85) подсвечиваются
- * свечением. Разметка из витрины.
- *
- * `hue` — базовая тройка oklch (`L C H`), которую раскрашивают ячейки;
- * по умолчанию мятная `'0.85 0.15 165'` (как в витрине).
- */
 export function Heatmap({
   title,
   icon,
@@ -20,7 +12,7 @@ export function Heatmap({
   rows,
   cols,
   grid,
-  hue = '0.85 0.15 165',
+  hue = "0.85 0.15 165",
 }: {
   title: string;
   icon: ReactNode;
@@ -48,7 +40,10 @@ export function Heatmap({
                   className="aspect-square flex-1 rounded-lg"
                   style={{
                     background: `oklch(${hue} / ${0.12 + cell * 0.78})`,
-                    boxShadow: cell > 0.85 ? `0 0 16px -2px oklch(${hue} / 0.7)` : 'none',
+                    boxShadow:
+                      cell > 0.85
+                        ? `0 0 16px -2px oklch(${hue} / 0.7)`
+                        : "none",
                   }}
                   title={`${rows[ri]} · ${cols[ci]}`}
                 />
@@ -58,7 +53,11 @@ export function Heatmap({
         ))}
         <div className="flex gap-2 pl-12 pt-1">
           {cols.map((c) => (
-            <span key={c} className="flex-1 text-center text-[11px]" style={{ color: CHART.faint }}>
+            <span
+              key={c}
+              className="flex-1 text-center text-[11px]"
+              style={{ color: CHART.faint }}
+            >
               {c}
             </span>
           ))}

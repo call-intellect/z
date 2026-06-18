@@ -1,17 +1,3 @@
-/**
- * Commercial-reliability pack (2026-05-29) — unit-тесты для
- * `ConversationalFreeNoteBridge`.
- *
- * Покрывает:
- *   - подписка на 'free_note' в `onModuleInit`,
- *   - корректный вызов `ingestFreeNote` с tenantId/userId/text/metadata,
- *   - игнор сообщений другого type (defensive guard),
- *   - подавление exception'а из `ingestFreeNote` (не валим pipeline),
- *   - Ф1 «Стоп-молчание» (ТЗ 2026-06-11 assistant-channels): best-effort
- *     ack `note.ack` после успешного ingest (адресно в канал-источник;
- *     ack не шлётся при упавшем ingest; ошибка ack проглатывается).
- */
-
 import type { RawEvent } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -44,14 +30,11 @@ function makeRawEvent(): RawEvent {
 
 function makeBridge() {
   const registered = new Map<InboundMessage['type'], InboundHandler[]>();
-  const subscribeInbound = vi.fn(
-    (type: InboundMessage['type'], handler: InboundHandler) => {
-      const list = registered.get(type) ?? [];
-      list.push(handler);
-      registered.set(type, list);
-    },
-  );
-  // Ф1 «Стоп-молчание» — мост резолвит канал-источник и шлёт note.ack.
+  const subscribeInbound = vi.fn((type: InboundMessage['type'], handler: InboundHandler) => {
+    const list = registered.get(type) ?? [];
+    list.push(handler);
+    registered.set(type, list);
+  });
   const resolveOriginChannelKinds = vi.fn().mockResolvedValue([]);
   const sendNotification = vi.fn().mockResolvedValue({ id: 'notif-1' });
   const conversational = {
@@ -102,9 +85,8 @@ describe('ConversationalFreeNoteBridge', () => {
     });
 
     expect(ingest.ingestFreeNote).toHaveBeenCalledTimes(1);
-    const call = (
-      ingest.ingestFreeNote as unknown as { mock: { calls: unknown[][] } }
-    ).mock.calls[0]![0] as {
+    const call = (ingest.ingestFreeNote as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0]![0] as {
       tenantId: string;
       userId: string;
       text: string;
@@ -121,7 +103,6 @@ describe('ConversationalFreeNoteBridge', () => {
     bridge.onModuleInit();
 
     const handler = registered.get('free_note')![0]!;
-    // Подаём msg другого type (могло бы случиться, если бы registry'ы перепутались).
     await handler({
       type: 'chat_query',
       userId: 'user-1',
@@ -143,8 +124,6 @@ describe('ConversationalFreeNoteBridge', () => {
     ).mockRejectedValue(new Error('DB down'));
 
     const handler = registered.get('free_note')![0]!;
-    // Не должно бросать наружу — ConversationalService.dispatchInbound сам ловит
-    // exceptions, но bridge тоже не пускает их выше для чистого лога.
     await expect(
       handler({
         type: 'free_note',
@@ -154,8 +133,6 @@ describe('ConversationalFreeNoteBridge', () => {
       }),
     ).resolves.toBeUndefined();
   });
-
-  // ── Ф1 «Стоп-молчание» (ТЗ 2026-06-11 assistant-channels): note.ack ──
 
   it('happy-path: после успешного ingest шлёт note.ack с непустым text', async () => {
     const { bridge, ingest, registered, resolveOriginChannelKinds, sendNotification } =
@@ -191,8 +168,7 @@ describe('ConversationalFreeNoteBridge', () => {
   });
 
   it('без originChannelBindingId: ack уходит без preferredChannelKinds (policy in_app)', async () => {
-    const { bridge, registered, resolveOriginChannelKinds, sendNotification } =
-      makeBridge();
+    const { bridge, registered, resolveOriginChannelKinds, sendNotification } = makeBridge();
     bridge.onModuleInit();
     resolveOriginChannelKinds.mockResolvedValue([]);
 
@@ -248,7 +224,6 @@ describe('ConversationalFreeNoteBridge', () => {
         originChannelBindingId: 'binding-tg-1',
       }),
     ).resolves.toBeUndefined();
-    // Ingest прошёл до падения ack.
     expect(ingest.ingestFreeNote).toHaveBeenCalledTimes(1);
     expect(sendNotification).toHaveBeenCalledTimes(1);
   });

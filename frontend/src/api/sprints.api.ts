@@ -1,28 +1,11 @@
-/**
- * API-клиент модуля «Спринты» (master-detail список и quick-create).
- *
- * Контракт: `backend/src/modules/tracker/controllers/sprints.controller.ts`
- *   - GET  /api/v1/sprints              — список спринтов c фильтрами
- *   - POST /api/v1/sprints/quick-create — атомарное создание Project+Cycle
- *
- * Auth: `CookieAuthGuard + TenantGuard` (cookie + `X-Org-Id`).
- *
- * Сосуществует с `frontend/src/api/tracker/sprints.api.ts` (там — дашборд /
- * отчёт / стартовая встреча по конкретному cycleId). Здесь только endpoint'ы
- * списка и создания, поэтому экспортируем под другим именем `sprintsListApi`.
- */
-import { apiClient } from './api-client';
-import { buildQuery, orgHeaders } from './admin-helpers';
-import type { SprintScopeKindApi } from '@/domain/sprint';
+import { apiClient } from "./api-client";
+import { buildQuery, orgHeaders } from "./admin-helpers";
+import type { SprintScopeKindApi } from "@/domain/sprint";
 
-export type SprintStatusFilterApi =
-  | 'active'
-  | 'completed'
-  | 'upcoming'
-  | 'all';
+export type SprintStatusFilterApi = "active" | "completed" | "upcoming" | "all";
 
-export type SprintSortByApi = 'startDate' | 'progress' | 'hints';
-export type SprintSortDirApi = 'asc' | 'desc';
+export type SprintSortByApi = "startDate" | "progress" | "hints";
+export type SprintSortDirApi = "asc" | "desc";
 
 export interface ListSprintsRequest {
   status?: SprintStatusFilterApi;
@@ -47,7 +30,7 @@ export interface SprintListItemApi {
   };
   startDate: string;
   endDate: string;
-  status: 'active' | 'completed' | 'upcoming';
+  status: "active" | "completed" | "upcoming";
   progress: {
     total: number;
     completed: number;
@@ -103,7 +86,7 @@ export const sprintsListApi = {
 
   quickCreate: (orgId: string, body: QuickCreateSprintRequest) =>
     apiClient.post<QuickCreateSprintResponseApi>(
-      '/api/v1/sprints/quick-create',
+      "/api/v1/sprints/quick-create",
       body,
       { headers: orgHeaders(orgId) },
     ),

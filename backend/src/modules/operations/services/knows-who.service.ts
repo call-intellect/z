@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { buildVectorLiteral } from '../../embeddings/services/vector-literal.util';
 import { KnowledgeEmbeddingService } from '../../knowledge-core/services/embedding.service';
 
 import {
@@ -121,7 +122,26 @@ export class KnowsWhoService {
       }
 
       // 2. pgvector cosine KNN.
-      const vecLiteral = `[${queryVec.join(',')}]`;
+      // Класс G2 — guard pgvector-литерала query-вектора. Вся выборка здесь
+      // вектор-driven (BM25-fallback нет), поэтому graceful degrade при reject =
+      // вернуть [] (как при embed-failure выше), не валя оператор `<=>`
+      // 500-кой (смена модели → другая размерность; битый вектор → NaN/Infinity).
+      const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+      const guard = buildVectorLiteral(queryVec, expectedDim);
+      if (guard.literal === null) {
+        this.logger.warn(
+          {
+            tenantId: args.tenantId,
+            reason: guard.rejectReason,
+            actualDim: queryVec.length,
+            expectedDim,
+          },
+          'knows-who: query-вектор отвергнут guard-ом — возвращаю []',
+        );
+        this.metrics.incKnowsWhoMatch({ found: 'no' });
+        return [];
+      }
+      const vecLiteral = guard.literal;
       const sqlLimit = Math.max(topK * 3, 9);
       let rows: Array<{
         person_id: string;

@@ -1,6 +1,6 @@
 ---
 type: project
-status: in_progress
+status: done
 phase: 5
 ---
 
@@ -27,7 +27,7 @@ model MeetingType {
 ```
 
 UI:
-- Список 9 типов MVP с сортировкой (`sortOrder`).
+- Список 13 типов с сортировкой (`sortOrder`).
 - Карточка типа — `AdminTabs`:
   - **Основное** — name / description / icon / sortOrder / isActive.
   - **AI-отчёт** — выбор `PromptTemplate.key` (FK).

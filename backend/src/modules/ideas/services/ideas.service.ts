@@ -44,10 +44,6 @@ export class IdeasService {
     @Inject(Specialist36Service)
     private readonly specialist36: Specialist36Service,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
-    /**
-     * Ф6 knowledge-access (R12) — гейт проекций по группам спрашивающего.
-     * @Optional — spec-и конструируют сервис позиционно; null → гейт off.
-     */
     @Optional()
     @Inject(KnowledgeAccessResolver)
     private readonly accessResolver: KnowledgeAccessResolver | null = null,
@@ -59,14 +55,6 @@ export class IdeasService {
     private readonly metrics: BusinessMetricsService | null = null,
   ) {}
 
-  /**
-   * Ф6 knowledge-access — гейт проекций по доступу спрашивающего. Группы
-   * проекции выводятся ON-READ из sourceBlockIds (Ф3 материализовал
-   * IdeaBlockAccess блоков). off → выдача байт-в-байт; shadow → только метрика;
-   * enforce → отфильтровываем недоступные. ВАЖНО про пагинацию: при enforce
-   * страница может стать короче, total остаётся посчитанным до фильтра —
-   * лёгкий over-count; приемлемый трейд-офф on-read подхода.
-   */
   private async gateProjections<T extends { id: string; sourceBlockIds: string[] }>(
     items: T[],
     args: { tenantId: string; userId?: string; surface: string },
@@ -80,11 +68,10 @@ export class IdeasService {
       userId: args.userId,
     });
     if (accessCtx.isBypass) return items;
-    const { accessibleIds, denied } =
-      await this.accessResolver.partitionProjectionsByAccess(
-        accessCtx,
-        items.map((i) => ({ id: i.id, sourceBlockIds: i.sourceBlockIds ?? [] })),
-      );
+    const { accessibleIds, denied } = await this.accessResolver.partitionProjectionsByAccess(
+      accessCtx,
+      items.map((i) => ({ id: i.id, sourceBlockIds: i.sourceBlockIds ?? [] })),
+    );
     if (enf === 'enforce') {
       this.metrics?.incAccessDenied({ surface: args.surface }, denied);
       return items.filter((i) => accessibleIds.has(i.id));
@@ -121,7 +108,6 @@ export class IdeasService {
       }),
       this.prisma.idea.count({ where }),
     ]);
-    // Ф6 — гейт доступа по проекционным группам (наследование из sourceBlockIds).
     const visible = await this.gateProjections(items, {
       tenantId: args.tenantId,
       userId: args.userId,
@@ -135,15 +121,6 @@ export class IdeasService {
     };
   }
 
-  /**
-   * TZ-1 Фаза 4.A (daily-value-engine) — топ идей для виджета ленты идей.
-   * Ре-ранк: `weight` + свежесть (`lastDiscussedAt`) + связь с целью (`goalId`).
-   * Сделано ПО ОБРАЗЦУ `InsightsService.getTop` (топ-N виджета).
-   *
-   * Берём активные (не rejected/archived) идеи с запасом (limit×3 + l0), считаем
-   * скор чистой функцией `rerankIdeas`, гейтим доступ ДО slice (как в insights —
-   * иначе недоступные съели бы слоты топ-N), затем slice(limit).
-   */
   async getTop(args: {
     tenantId: string;
     userId?: string;
@@ -156,7 +133,6 @@ export class IdeasService {
         status: { notIn: ['rejected', 'archived'] },
       },
       orderBy: [{ weight: 'desc' }, { lastDiscussedAt: 'desc' }],
-      // Запас под ре-ранк + гейт доступа (как insights.getTop: limit*3).
       take: Math.max(limit * 3, limit),
     });
 
@@ -164,8 +140,6 @@ export class IdeasService {
       this.resolveRerankWeights(),
       this.resolveFreshnessDays(),
     ]);
-    // Ре-ранк чистой функцией. Считаем скор по id (weight — Decimal → Number),
-    // затем сортируем полные Idea-объекты (нужны для gateProjections/toListItem).
     const now = new Date();
     const scoreById = new Map(
       rerankIdeas(
@@ -184,7 +158,6 @@ export class IdeasService {
       (a, b) => (scoreById.get(b.id) ?? 0) - (scoreById.get(a.id) ?? 0),
     );
 
-    // Ф6 — гейт доступа ДО slice (недоступные не должны съедать слоты топ-N).
     const visible = await this.gateProjections(reranked, {
       tenantId: args.tenantId,
       userId: args.userId,
@@ -251,8 +224,6 @@ export class IdeasService {
     if (q.role === 'author') {
       where.createdByUserId = args.userId;
     } else {
-      // supporter: ищем по supporters JSON через text-contains (упрощение для β-5;
-      // нормальный путь — joined-таблица, γ+).
       const personEntityIds = await this.findPersonEntityIdsForUser({
         userId: args.userId,
         tenantId: args.tenantId,
@@ -271,7 +242,6 @@ export class IdeasService {
       }),
       this.prisma.idea.count({ where }),
     ]);
-    // Ф6 — гейт доступа (мои идеи тоже user-facing листинг проекций).
     const visible = await this.gateProjections(items, {
       tenantId: args.tenantId,
       userId: args.userId,
@@ -301,11 +271,6 @@ export class IdeasService {
     return { ok: true, status: updated.status };
   }
 
-  /**
-   * Goals OKR v2 (Фаза 5, мост к гипотезам) — привязать/отвязать идею к цели.
-   * `goalId = null` — отвязать. Специалист целей не создаёт идеи; здесь
-   * только ручная связь «эта гипотеза двигает цель X».
-   */
   async linkGoal(args: {
     tenantId: string;
     ideaId: string;
@@ -352,7 +317,6 @@ export class IdeasService {
     id: string;
     userId: string;
   }): Promise<{ ok: true; supporterCount: number }> {
-    // Найдём Person'а текущего user'а в этой Org.
     const person = await this.prisma.person.findFirst({
       where: { tenantId: args.tenantId, userId: args.userId, deletedAt: null },
       select: { entityId: true },
@@ -362,7 +326,7 @@ export class IdeasService {
         ok: false,
         error: {
           code: 'no_person',
-          message: 'У вас нет Person\'а в этой организации',
+          message: "У вас нет Person'а в этой организации",
         },
       });
     }
@@ -385,9 +349,7 @@ export class IdeasService {
       entityId: person.entityId,
       firstSupportedAt: new Date().toISOString(),
     });
-    const newSubjects = Array.from(
-      new Set([...idea.personSubjectIds, person.entityId]),
-    );
+    const newSubjects = Array.from(new Set([...idea.personSubjectIds, person.entityId]));
     const updated = await this.prisma.idea.update({
       where: { id: idea.id },
       data: {
@@ -400,11 +362,7 @@ export class IdeasService {
     return { ok: true, supporterCount: updated.supporterCount };
   }
 
-  async withdraw(args: {
-    tenantId: string;
-    id: string;
-    userId: string;
-  }): Promise<{ ok: true }> {
+  async withdraw(args: { tenantId: string; id: string; userId: string }): Promise<{ ok: true }> {
     const idea = await this.prisma.idea.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
     });
@@ -456,10 +414,7 @@ export class IdeasService {
     };
   }
 
-  async getClusterById(args: {
-    tenantId: string;
-    id: string;
-  }): Promise<IdeaClusterDto> {
+  async getClusterById(args: { tenantId: string; id: string }): Promise<IdeaClusterDto> {
     const cluster = await this.prisma.ideaCluster.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
     });
@@ -471,8 +426,6 @@ export class IdeasService {
     }
     return this.toClusterDto(cluster);
   }
-
-  // ─────────────────────────── mappers ────────────────────────────────
 
   private toListItem(i: Idea): IdeaListItemDto {
     return {
@@ -534,14 +487,11 @@ export class IdeasService {
       }
       const s = item as Record<string, Prisma.JsonValue>;
       const kindRaw = typeof s.kind === 'string' ? s.kind : 'person';
-      const kind: 'person' | 'customer' =
-        kindRaw === 'customer' ? 'customer' : 'person';
+      const kind: 'person' | 'customer' = kindRaw === 'customer' ? 'customer' : 'person';
       const entityId = typeof s.entityId === 'string' ? s.entityId : '';
       if (entityId.length === 0) continue;
       const firstSupportedAt =
-        typeof s.firstSupportedAt === 'string'
-          ? s.firstSupportedAt
-          : new Date().toISOString();
+        typeof s.firstSupportedAt === 'string' ? s.firstSupportedAt : new Date().toISOString();
       const dto: IdeaSupporterDto = { kind, entityId, firstSupportedAt };
       if (typeof s.blockId === 'string') dto.blockId = s.blockId;
       result.push(dto);
@@ -561,8 +511,6 @@ export class IdeasService {
       },
       select: { entityId: true },
     });
-    return persons
-      .map((p) => p.entityId)
-      .filter((id): id is string => !!id);
+    return persons.map((p) => p.entityId).filter((id): id is string => !!id);
   }
 }

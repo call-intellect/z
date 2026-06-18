@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useCallback, useState } from 'react';
+import Link from "next/link";
+import { useCallback, useState } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -11,53 +11,48 @@ import {
   Plus,
   Save,
   Trash2,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   adminLlmRoutesApi,
   LLM_PROVIDERS,
   type LlmProvider,
   type LlmRouteProvider,
-} from '@/api/admin-llm-routes.api';
-import { adminFunctionsApi } from '@/api/admin-experiments.api';
-import { adminUsageApi } from '@/api/admin-usage.api';
+} from "@/api/admin-llm-routes.api";
+import { adminFunctionsApi } from "@/api/admin-experiments.api";
+import { adminUsageApi } from "@/api/admin-usage.api";
 import {
   adminCallsLogFromApi,
   formatDurationMs,
   formatUsd,
-} from '@/domain/admin-usage';
+} from "@/domain/admin-usage";
 import {
   adminFunctionDetailFromApi,
   taskTypeLabel,
-} from '@/domain/admin-experiment';
-import { toast } from 'sonner';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/ui/shadcn/card';
-import { Input } from '@/ui/shadcn/input';
+} from "@/domain/admin-experiment";
+import { toast } from "sonner";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Input } from "@/ui/shadcn/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Switch } from '@/ui/shadcn/switch';
+} from "@/ui/shadcn/select";
+import { Switch } from "@/ui/shadcn/switch";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
   AdminLoadingInline,
-} from '../../../AdminStateViews';
-import { useAdminQuery } from '../../../useAdminQuery';
-import { ExperimentStartDialog } from '../../../experiments/ExperimentStartDialog';
+} from "../../../AdminStateViews";
+import { useAdminQuery } from "../../../useAdminQuery";
+import { ExperimentStartDialog } from "../../../experiments/ExperimentStartDialog";
 
 export function FunctionDetailClient({ taskType }: { taskType: string }) {
   const [providers, setProviders] = useState<LlmRouteProvider[] | null>(null);
@@ -84,7 +79,6 @@ export function FunctionDetailClient({ taskType }: { taskType: string }) {
     [taskType],
   );
 
-  // При загрузке detail — синхронизируем state редактирования.
   if (detailQ.data && providers === null) {
     setProviders(detailQ.data.providers as LlmRouteProvider[]);
     setIsActive(detailQ.data.isActive);
@@ -92,7 +86,7 @@ export function FunctionDetailClient({ taskType }: { taskType: string }) {
 
   const handleSave = useCallback(async () => {
     if (!providers || providers.length === 0) {
-      toast.error('Нужен хотя бы один provider');
+      toast.error("Нужен хотя бы один provider");
       return;
     }
     setSaving(true);
@@ -101,11 +95,11 @@ export function FunctionDetailClient({ taskType }: { taskType: string }) {
         providers,
         isActive,
       });
-      toast.success('Сохранено. Применится через ~60 секунд.');
+      toast.success("Сохранено. Применится через ~60 секунд.");
       setDirty(false);
       detailQ.refetch();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
+      toast.error(e instanceof ApiError ? e.message : "Не удалось сохранить");
     } finally {
       setSaving(false);
     }
@@ -120,9 +114,7 @@ export function FunctionDetailClient({ taskType }: { taskType: string }) {
       </Button>
 
       <header>
-        <h1 className="text-2xl font-semibold">
-          {taskTypeLabel(taskType)}
-        </h1>
+        <h1 className="text-2xl font-semibold">{taskTypeLabel(taskType)}</h1>
         <p className="text-sm text-fg-tertiary">
           <code className="rounded bg-bg-overlay px-1.5 py-0.5 font-mono text-xs">
             {taskType}
@@ -138,7 +130,7 @@ export function FunctionDetailClient({ taskType }: { taskType: string }) {
 
       {!detailQ.isLoading && detailQ.data && providers && (
         <>
-          {/* Experiment status (если активен) */}
+          {}
           {detailQ.data.experiment && (
             <Card className="border-accent/40 bg-accent-muted/20">
               <CardHeader>
@@ -149,16 +141,25 @@ export function FunctionDetailClient({ taskType }: { taskType: string }) {
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <div>
-                  Model A: <code className="font-mono">{detailQ.data.experiment.modelA}</code>
+                  Model A:{" "}
+                  <code className="font-mono">
+                    {detailQ.data.experiment.modelA}
+                  </code>
                 </div>
                 <div>
-                  Model B: <code className="font-mono">{detailQ.data.experiment.modelB}</code>
+                  Model B:{" "}
+                  <code className="font-mono">
+                    {detailQ.data.experiment.modelB}
+                  </code>
                 </div>
                 <div>
-                  Split: {detailQ.data.experiment.splitPercent}% / {100 - detailQ.data.experiment.splitPercent}%
+                  Split: {detailQ.data.experiment.splitPercent}% /{" "}
+                  {100 - detailQ.data.experiment.splitPercent}%
                 </div>
                 <Button asChild size="sm" variant="outline" className="mt-2">
-                  <Link href={`/admin/experiments/${encodeURIComponent(taskType)}`}>
+                  <Link
+                    href={`/admin/experiments/${encodeURIComponent(taskType)}`}
+                  >
                     Перейти к эксперименту
                   </Link>
                 </Button>
@@ -166,7 +167,7 @@ export function FunctionDetailClient({ taskType }: { taskType: string }) {
             </Card>
           )}
 
-          {/* Provider chain */}
+          {}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Цепочка провайдеров</CardTitle>
@@ -203,14 +204,18 @@ export function FunctionDetailClient({ taskType }: { taskType: string }) {
                   onClick={() => void handleSave()}
                   disabled={!dirty || saving}
                 >
-                  {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                  {saving ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <Save size={12} />
+                  )}
                   Сохранить
                 </Button>
               </div>
             </CardContent>
           </Card>
 
-          {/* Recent calls */}
+          {}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Последние 10 вызовов</CardTitle>
@@ -239,7 +244,7 @@ export function FunctionDetailClient({ taskType }: { taskType: string }) {
                           className="border-t border-border-subtle"
                         >
                           <td className="px-2 py-1 text-fg-tertiary">
-                            {c.createdAt.toLocaleString('ru-RU')}
+                            {c.createdAt.toLocaleString("ru-RU")}
                           </td>
                           <td className="px-2 py-1 font-mono">
                             {c.provider}:{c.model}
@@ -304,8 +309,8 @@ function ProviderEditor({
   providers: LlmRouteProvider[];
   onChange: (next: LlmRouteProvider[]) => void;
 }) {
-  const [newProvider, setNewProvider] = useState<LlmProvider>('anthropic');
-  const [newModel, setNewModel] = useState('');
+  const [newProvider, setNewProvider] = useState<LlmProvider>("anthropic");
+  const [newModel, setNewModel] = useState("");
 
   const move = (idx: number, dir: -1 | 1) => {
     const next = [...providers];
@@ -326,7 +331,7 @@ function ProviderEditor({
         ? { provider: newProvider, model: newModel }
         : { provider: newProvider },
     ]);
-    setNewModel('');
+    setNewModel("");
   };
 
   return (
@@ -347,7 +352,9 @@ function ProviderEditor({
             </Badge>
             <span className="font-mono text-xs">{p.provider}</span>
             {p.model && (
-              <span className="text-[11px] text-fg-tertiary">model: {p.model}</span>
+              <span className="text-[11px] text-fg-tertiary">
+                model: {p.model}
+              </span>
             )}
             <div className="ml-auto flex items-center gap-1">
               <button

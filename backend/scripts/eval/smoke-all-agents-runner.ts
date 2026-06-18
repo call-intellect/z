@@ -1,17 +1,3 @@
-/**
- * Универсальный smoke-runner для 7 LLM-агентов knowledge-core.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-all-agents-runner.ts <taskType>
- *
- * Цель — проверить «работают ли промпты вообще»: один вызов DeepSeek-Pro на
- * фикстуру, без ассертов корректности. Падение с 400/500 = провал, осмысленный
- * непустой ответ = успех.
- *
- * DeepSeek-Pro thinking НЕ поддерживает json_schema strict и tool_choice: 'required'.
- * Используем tools + tool_choice: 'auto' + явное «верни через инструмент submit_*»
- * для структурного выхода, либо response_format: { type: 'json_object' } для
- * простых случаев.
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -90,11 +76,9 @@ async function buildSpec(taskType: string, fixturePath: string): Promise<SmokeSp
             oldStatus: raw.oldStatus,
             newStatus: raw.newStatus,
             reason: raw.reason ?? null,
-          }) +
-          '\n\nВажно: верни ответ через вызов инструмента submit_idea_status_summary.',
+          }) + '\n\nВажно: верни ответ через вызов инструмента submit_idea_status_summary.',
         toolName: 'submit_idea_status_summary',
-        toolDescription:
-          'Отправить итоговый title + body нотификации supporter\'у идеи.',
+        toolDescription: "Отправить итоговый title + body нотификации supporter'у идеи.",
         toolSchema: IDEA_STATUS_SUMMARIZE_JSON_SCHEMA,
       };
     }
@@ -106,8 +90,7 @@ async function buildSpec(taskType: string, fixturePath: string): Promise<SmokeSp
           REGULATION_DEDUPE_USER_TEMPLATE({
             draft: raw.draft,
             candidates: raw.candidates,
-          }) +
-          '\n\nВажно: верни ответ через вызов инструмента submit_regulation_dedupe.',
+          }) + '\n\nВажно: верни ответ через вызов инструмента submit_regulation_dedupe.',
         toolName: 'submit_regulation_dedupe',
         toolDescription:
           'Отправить вердикт о черновике регламента: new / merge / extension / contradicts.',
@@ -122,8 +105,7 @@ async function buildSpec(taskType: string, fixturePath: string): Promise<SmokeSp
           PROCESS_STEPS_EXTRACT_USER_TEMPLATE({
             processName: raw.processName,
             blocks: raw.blocks,
-          }) +
-          '\n\nВажно: верни ответ через вызов инструмента submit_process_steps.',
+          }) + '\n\nВажно: верни ответ через вызов инструмента submit_process_steps.',
         toolName: 'submit_process_steps',
         toolDescription: 'Отправить упорядоченный список шагов процесса.',
         toolSchema: PROCESS_STEPS_EXTRACT_JSON_SCHEMA,
@@ -137,8 +119,7 @@ async function buildSpec(taskType: string, fixturePath: string): Promise<SmokeSp
           PROCESS_TEMPLATE_EXTRACT_USER_TEMPLATE({
             blocks: raw.blocks,
             existingTemplates: raw.existingTemplates ?? [],
-          }) +
-          '\n\nВажно: верни ответ через вызов инструмента submit_process_templates.',
+          }) + '\n\nВажно: верни ответ через вызов инструмента submit_process_templates.',
         toolName: 'submit_process_templates',
         toolDescription: 'Отправить кандидатов на шаблоны процессов.',
         toolSchema: PROCESS_TEMPLATE_EXTRACT_JSON_SCHEMA,
@@ -182,11 +163,9 @@ async function buildSpec(taskType: string, fixturePath: string): Promise<SmokeSp
           SKILL_TRAIT_MERGE_USER_TEMPLATE({
             draft: raw.draft,
             candidates: raw.candidates,
-          }) +
-          '\n\nВажно: верни ответ через вызов инструмента submit_skill_trait_merge.',
+          }) + '\n\nВажно: верни ответ через вызов инструмента submit_skill_trait_merge.',
         toolName: 'submit_skill_trait_merge',
-        toolDescription:
-          'Отправить вердикт по слиянию черты: merge / supersedes / new.',
+        toolDescription: 'Отправить вердикт по слиянию черты: merge / supersedes / new.',
         toolSchema: SKILL_TRAIT_MERGE_JSON_SCHEMA,
       };
     }
@@ -295,7 +274,6 @@ async function main(): Promise<void> {
     const call = msg?.tool_calls?.[0];
     if (call) {
       modelResponse = call.function.arguments.slice(0, 600);
-      // Парсим JSON для подтверждения, что это валидный структурный выход.
       try {
         JSON.parse(call.function.arguments);
         ranSuccessfully = true;
@@ -305,13 +283,11 @@ async function main(): Promise<void> {
     } else {
       const txt = msg?.content ?? '';
       modelResponse = txt.slice(0, 600);
-      // Попробуем распарсить как JSON — модель могла ответить текстом.
       try {
         JSON.parse(txt);
         ranSuccessfully = true;
         errorMsg = 'модель вернула JSON в content вместо tool_call (приемлемо для smoke)';
       } catch {
-        // не JSON — но если есть осмысленный текст, считаем что «не упало»
         if (txt.trim().length >= 20) {
           ranSuccessfully = true;
           errorMsg = 'модель вернула свободный текст вместо tool_call (приемлемо для smoke)';

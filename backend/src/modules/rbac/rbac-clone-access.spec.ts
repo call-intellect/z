@@ -1,21 +1,8 @@
-/**
- * ТЗ 2026-05-25 §9 (clone-respond эволюция, Фаза 7) — unit-тесты
- * `RbacService.canAccessPersonClone` / `canAccessRoleClone` в обоих режимах
- * (`cloneV2Enabled` true и false).
- *
- * Источник правды:
- *  - cloneV2Enabled=true → ТОЛЬКО CloneAccessGrant (галочка админа).
- *  - cloneV2Enabled=false → legacy логика (owner/admin Org, self, manager
- *    для person; rbac.check obj='role' act='read' для role).
- *
- * PrismaService мокаем — нас интересует поведение веток, а не I/O.
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../common/prisma/prisma.service';
 
 import { RbacService } from './rbac.service';
-
 
 interface BuildOpts {
   isSuperAdmin?: boolean;
@@ -23,19 +10,8 @@ interface BuildOpts {
     role: 'owner' | 'admin' | 'manager' | 'coo';
     org: { visibilityMode: 'open' | 'strict' };
   } | null;
-  /**
-   * ТЗ 2026-05-26 §3.5 — после фикса RbacService использует `findFirst` с
-   * фильтром активности (`revokedAt IS NULL AND (expiresAt IS NULL OR >now)`).
-   * Тест поддерживает оба варианта мока:
-   *  - `cloneAccessGrant` — простой объект, который возвращается при ЛЮБОМ where
-   *    (для существующих кейсов «грант есть/нет», где активность подразумевается);
-   *  - `cloneAccessGrantImpl(where)` — кастомный мок, эмулирует SQL-фильтр для
-   *    revoked/expired-кейсов.
-   */
   cloneAccessGrant?: { id: string } | null;
-  cloneAccessGrantImpl?: (
-    where: Record<string, unknown>,
-  ) => Promise<{ id: string } | null>;
+  cloneAccessGrantImpl?: (where: Record<string, unknown>) => Promise<{ id: string } | null>;
   target?: {
     id: string;
     userId: string | null;
@@ -47,24 +23,13 @@ interface BuildOpts {
     primaryDepartmentId: string | null;
   } | null;
   isRequesterManager?: boolean;
-  /**
-   * audit С14 (2026-05-29): defense-in-depth tenantId-check для role-клона.
-   * Если не задан — мок возвращает `{ tenantId: 't-1' }` (соответствует args.tenantId
-   * в большинстве тестов). Для негативных кейсов «role чужого tenant» — передайте null.
-   */
   roleTenantId?: string | null;
-  /**
-   * audit С14 (2026-05-29): defense-in-depth tenantId-check для person-клона.
-   * Если `target` не задан — мок возвращает `{ tenantId: personTenantId ?? 't-1' }`.
-   */
   personTenantId?: string | null;
 }
 
 function buildRbac(opts: BuildOpts): RbacService {
   const grantFindFirst = opts.cloneAccessGrantImpl
-    ? vi.fn((args: { where: Record<string, unknown> }) =>
-        opts.cloneAccessGrantImpl!(args.where),
-      )
+    ? vi.fn((args: { where: Record<string, unknown> }) => opts.cloneAccessGrantImpl!(args.where))
     : vi.fn(async () => opts.cloneAccessGrant ?? null);
 
   const prisma = {
@@ -75,28 +40,16 @@ function buildRbac(opts: BuildOpts): RbacService {
     },
     membership: {
       findUnique: vi.fn(async () => opts.membership ?? null),
-      findFirst: vi.fn(async () =>
-        opts.isRequesterManager ? { id: 'm-1' } : null,
-      ),
+      findFirst: vi.fn(async () => (opts.isRequesterManager ? { id: 'm-1' } : null)),
     },
     org: {
       findUnique: vi.fn(async () => ({ visibilityMode: 'open' })),
     },
     cloneAccessGrant: {
-      // Оставлено для обратной совместимости со старыми тестами / сторонним кодом.
       findUnique: vi.fn(async () => opts.cloneAccessGrant ?? null),
-      // После ТЗ 2026-05-26 §3.5 RbacService использует findFirst c активным
-      // фильтром. Для revoked/expired-кейсов передавайте `cloneAccessGrantImpl`.
       findFirst: grantFindFirst,
     },
     person: {
-      // audit С14 (2026-05-29): canAccessPersonClone проверяет Person.tenantId
-      // ДВАЖДЫ: сначала defense-in-depth (select: { tenantId }), потом legacy
-      // (select: { id, userId, primaryDepartmentId, tenantId }). Если `target`
-      // явно задан — возвращаем его. Если нет — отдаём stub с совпадающим
-      // tenantId, чтобы defense-in-depth пропустил и тесты v2-веток работали
-      // как раньше (когда явный target не нужен). Для негативных кейсов
-      // «person чужого tenant» — передайте `personTenantId: 'other'`.
       findUnique: vi.fn(async () => {
         if (opts.target !== undefined) return opts.target;
         const tenantId = opts.personTenantId ?? 't-1';
@@ -110,8 +63,6 @@ function buildRbac(opts: BuildOpts): RbacService {
       findFirst: vi.fn(async () => opts.requesterPerson ?? null),
     },
     role: {
-      // audit С14 (2026-05-29): canAccessRoleClone проверяет Role.tenantId
-      // (defense-in-depth). По умолчанию — совпадает с args.tenantId='t-1'.
       findUnique: vi.fn(async () => {
         if (opts.roleTenantId === null) return null;
         return { tenantId: opts.roleTenantId ?? 't-1' };
@@ -124,10 +75,6 @@ function buildRbac(opts: BuildOpts): RbacService {
   return rbac;
 }
 
-/**
- * Утилита: эмулирует SQL-фильтр активности гранта на уровне in-memory.
- * Возвращает { id: 'g-1' } если grant активен по правилам §3.5, иначе null.
- */
 function activeGrantImpl(grant: {
   revokedAt: Date | null;
   expiresAt: Date | null;
@@ -155,7 +102,6 @@ describe('RbacService.canAccessPersonClone — режим cloneV2Enabled=true (�
   });
 
   it('грант отсутствует → allowed=false, даже если super_admin', async () => {
-    // В режиме v2 super_admin сам должен выдать себе галочку — bypass нет.
     const rbac = buildRbac({
       isSuperAdmin: true,
       cloneAccessGrant: null,
@@ -319,11 +265,6 @@ describe('RbacService.canAccessRoleClone — оба режима', () => {
   });
 });
 
-/**
- * ТЗ 2026-05-26 §3.5 — фикс RBAC: revoked / expired гранты НЕ должны давать
- * доступ. До фикса `canAccess*Clone` делал `findUnique` и игнорировал
- * `revokedAt`/`expiresAt`.
- */
 describe('RbacService.canAccessRoleClone — режим v2: активность гранта (revoked/expired)', () => {
   it('Кейс 1: активный грант (revokedAt=null, expiresAt=null) → allowed=true', async () => {
     const rbac = buildRbac({
@@ -374,7 +315,7 @@ describe('RbacService.canAccessRoleClone — режим v2: активность
     const rbac = buildRbac({
       cloneAccessGrantImpl: activeGrantImpl({
         revokedAt: null,
-        expiresAt: new Date(Date.now() + 60 * 60 * 1000), // +1 час
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
       }),
     });
     const res = await rbac.canAccessRoleClone({
@@ -398,7 +339,6 @@ describe('RbacService.canAccessRoleClone — режим v2: активность
   });
 
   it('Sanity: findFirst вызывается с активным фильтром (revokedAt:null + OR expiresAt)', async () => {
-    // Проверяем, что в where передаются revokedAt:null и OR [{expiresAt:null},{expiresAt:{gt}}].
     const calls: Array<Record<string, unknown>> = [];
     const rbac = buildRbac({
       cloneAccessGrantImpl: async (where) => {
@@ -459,9 +399,7 @@ describe('RbacService.isGrantActive / buildActiveGrantWhere (helpers §3.5)', ()
   const now = new Date('2026-05-26T12:00:00Z');
 
   it('isGrantActive: revokedAt=null, expiresAt=null → true', () => {
-    expect(
-      RbacService.isGrantActive({ revokedAt: null, expiresAt: null }, now),
-    ).toBe(true);
+    expect(RbacService.isGrantActive({ revokedAt: null, expiresAt: null }, now)).toBe(true);
   });
 
   it('isGrantActive: revokedAt set → false', () => {
@@ -492,9 +430,7 @@ describe('RbacService.isGrantActive / buildActiveGrantWhere (helpers §3.5)', ()
   });
 
   it('isGrantActive: expiresAt === now → false (граница включительно)', () => {
-    expect(
-      RbacService.isGrantActive({ revokedAt: null, expiresAt: now }, now),
-    ).toBe(false);
+    expect(RbacService.isGrantActive({ revokedAt: null, expiresAt: now }, now)).toBe(false);
   });
 
   it('buildActiveGrantWhere: revokedAt:null + OR на expiresAt', () => {

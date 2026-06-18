@@ -3,20 +3,6 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 
-/**
- * SBA δ-1 — OrgKnowledgeIndexService.
- *
- * Высокоуровневый индекс «что вообще есть в графе компании»:
- *   - entities counts по типам,
- *   - top topics (Theme),
- *   - recent activity (последние N IdeaBlock'ов).
- *
- * Используется subagent-ами как cheap lookup перед полным retrieval'ом
- * (даёт понимание «есть ли там вообще что-то про X, прежде чем ходить в
- * embeddings и graph»).
- *
- * Кэш — Redis, TTL 24h. Real-time пересчитывает только при cache miss.
- */
 const CACHE_TTL_SECONDS = 24 * 60 * 60;
 const CACHE_KEY_PREFIX = 'orch:orgKnowledgeIndex:';
 
@@ -46,9 +32,6 @@ export class OrgKnowledgeIndexService {
     @Inject(RedisService) private readonly redis: RedisService,
   ) {}
 
-  /**
-   * Получить summary из cache или собрать на лету.
-   */
   async getSummary(tenantId: string): Promise<OrgKnowledgeSummary> {
     const key = `${CACHE_KEY_PREFIX}${tenantId}`;
     try {
@@ -56,9 +39,7 @@ export class OrgKnowledgeIndexService {
       if (cached) {
         try {
           return JSON.parse(cached) as OrgKnowledgeSummary;
-        } catch {
-          // poisoned — пересчитаем.
-        }
+        } catch {}
       }
     } catch (err) {
       this.logger.warn(
@@ -68,12 +49,7 @@ export class OrgKnowledgeIndexService {
     }
     const summary = await this.rebuild(tenantId);
     try {
-      await this.redis.client.set(
-        key,
-        JSON.stringify(summary),
-        'EX',
-        CACHE_TTL_SECONDS,
-      );
+      await this.redis.client.set(key, JSON.stringify(summary), 'EX', CACHE_TTL_SECONDS);
     } catch (err) {
       this.logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
@@ -83,9 +59,6 @@ export class OrgKnowledgeIndexService {
     return summary;
   }
 
-  /**
-   * Собрать summary с нуля (без cache). Используется cron'ом и при cache miss.
-   */
   async rebuild(tenantId: string): Promise<OrgKnowledgeSummary> {
     const [
       ideaBlocks,

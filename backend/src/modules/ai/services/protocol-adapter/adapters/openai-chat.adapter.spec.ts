@@ -4,23 +4,10 @@ import type { TypedConfigService } from '../../../../../common/config/index';
 import type { BusinessMetricsService } from '../../../../../common/metrics/business-metrics.service';
 import type { ProtocolAdapterProviderInfo } from '../protocol-adapter.types';
 
-/**
- * ТЗ 2026-05-25 Фаза 1 — OpenAiChatProtocolAdapter должен:
- *   1. flash + json_schema → response_format strict json_schema (как было).
- *   2. pro + json_schema (без tools) → автоконверт в submit_<name> tool +
- *      tool_choice='auto' + hint в user.
- *   3. pro + caller tools + json_schema → strict json_schema снят,
- *      guard.strict-stripped инкрементируется.
- *   4. pro + json_object → response_format: json_object (без конвертации).
- */
-
 interface FakeChatCompletions {
   create: ReturnType<typeof vi.fn>;
 }
 
-// SDK создаётся внутри метода complete(), поэтому используем `nextCreateImpl`
-// чтобы перед каждым вызовом подготовить mock-возврат, а затем уже создавать
-// fake-инстанс с такой реализацией.
 let nextCreateImpl: ((p: unknown) => Promise<unknown>) | null = null;
 let lastCallArgs: Record<string, unknown> | null = null;
 
@@ -42,7 +29,6 @@ vi.mock('openai', () => {
   };
 });
 
-// Импорт после vi.mock.
 import { OpenAiChatProtocolAdapter } from './openai-chat.adapter';
 
 function makeCfg(): TypedConfigService {
@@ -139,9 +125,7 @@ describe('OpenAiChatProtocolAdapter — thinking-models guard', () => {
     const adapter = new OpenAiChatProtocolAdapter(makeCfg(), metrics);
     nextCreateImpl = async () =>
       okResponse({
-        toolCalls: [
-          { name: 'submit_facts', arguments: '{"facts":["x","y"]}' },
-        ],
+        toolCalls: [{ name: 'submit_facts', arguments: '{"facts":["x","y"]}' }],
       });
 
     const out = await adapter.complete({
@@ -160,9 +144,7 @@ describe('OpenAiChatProtocolAdapter — thinking-models guard', () => {
     });
 
     expect(out.text).toBe('{"facts":["x","y"]}');
-    expect(out.toolCalls).toEqual([
-      { name: 'submit_facts', input: { facts: ['x', 'y'] } },
-    ]);
+    expect(out.toolCalls).toEqual([{ name: 'submit_facts', input: { facts: ['x', 'y'] } }]);
     expect(guard).toHaveBeenCalledWith({
       kind: 'schema-to-tool',
       model: 'deepseek-v4-pro',

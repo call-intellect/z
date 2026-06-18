@@ -8,20 +8,12 @@ import {
   QueryPlanExtractorService,
 } from './query-plan-extractor.service';
 
-/**
- * Query Understanding Волна 1 (ТЗ 2026-06-10 Tier 0) — spec
- * QueryPlanExtractorService.
- */
-
 const TODAY = '2026-06-10T09:00:00Z';
 
-function makeInput(
-  overrides: Partial<QueryPlanExtractInput> = {},
-): QueryPlanExtractInput {
+function makeInput(overrides: Partial<QueryPlanExtractInput> = {}): QueryPlanExtractInput {
   return {
     tenantId: 'org-1',
     userId: 'user-1',
-    // ТЗ 2026-06-14: вход — 3 самодостаточных формулировки одного запроса.
     questions: [
       'Что решали по маркетингу на этой неделе?',
       'Какие решения принимал отдел маркетинга на этой неделе?',
@@ -34,7 +26,6 @@ function makeInput(
   };
 }
 
-/** Минимальный LlmCallResult-подобный объект. */
 function llmResult(text: string) {
   return {
     text,
@@ -69,9 +60,7 @@ describe('QueryPlanExtractorService', () => {
       activeNow: false,
       confidence: 0.9,
     });
-    const { service, llm } = makeService(() =>
-      Promise.resolve(llmResult(json)),
-    );
+    const { service, llm } = makeService(() => Promise.resolve(llmResult(json)));
 
     const res = await service.extract(makeInput());
 
@@ -80,19 +69,14 @@ describe('QueryPlanExtractorService', () => {
     expect(res.filters.themeBranches).toEqual(['marketing']);
     expect(res.filters.dateFrom).toBeInstanceOf(Date);
     expect(res.filters.dateTo).toBeInstanceOf(Date);
-    // this_week @ today=2026-06-10 (МСК) → Пн 2026-06-08 00:00 МСК.
-    expect(res.filters.dateFrom?.toISOString()).toBe(
-      '2026-06-07T21:00:00.000Z',
-    );
+    expect(res.filters.dateFrom?.toISOString()).toBe('2026-06-07T21:00:00.000Z');
     expect(llm.call).toHaveBeenCalledWith(
       expect.objectContaining({ taskType: 'dialog-extract-plan' }),
     );
   });
 
   it('fail-open при невалидном JSON (applied=false, пустой план)', async () => {
-    const { service } = makeService(() =>
-      Promise.resolve(llmResult('not json')),
-    );
+    const { service } = makeService(() => Promise.resolve(llmResult('not json')));
 
     const res = await service.extract(makeInput());
 
@@ -106,9 +90,7 @@ describe('QueryPlanExtractorService', () => {
   });
 
   it('fail-open когда llm.call бросает исключение', async () => {
-    const { service } = makeService(() =>
-      Promise.reject(new Error('all providers failed')),
-    );
+    const { service } = makeService(() => Promise.reject(new Error('all providers failed')));
 
     const res = await service.extract(makeInput());
 
@@ -135,9 +117,7 @@ describe('QueryPlanExtractorService', () => {
     const res = await service.extract(makeInput());
 
     expect(res.applied).toBe(false);
-    // confidence сохраняется для наблюдаемости.
     expect(res.confidence).toBeCloseTo(0.4);
-    // но фильтры обнулены (downstream ничего случайно не отфильтрует).
     expect(res.filters.signalTypes).toEqual([]);
     expect(res.filters.dateFrom).toBeNull();
   });
@@ -180,15 +160,12 @@ describe('QueryPlanExtractorService', () => {
 
     const res = await service.extract(makeInput());
 
-    // activeNow=true сам по себе делает план применимым (hasAnyFilter).
     expect(res.applied).toBe(true);
     expect(res.filters.activeNow).toBe(true);
   });
 
   it('resolveSelfPersonId возвращает id без мутации', async () => {
-    const { service, prisma } = makeService(() =>
-      Promise.resolve(llmResult('{}')),
-    );
+    const { service, prisma } = makeService(() => Promise.resolve(llmResult('{}')));
 
     const id = await service.resolveSelfPersonId('org-1', 'user-1');
 

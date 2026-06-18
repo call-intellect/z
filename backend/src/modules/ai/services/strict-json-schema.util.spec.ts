@@ -4,14 +4,6 @@ import { toOpenAiStrictSchema } from './strict-json-schema.util';
 
 type JsonObj = Record<string, unknown>;
 
-/**
- * Реалистичная НЕ-strict схема (раньше тянулась из упразднённого
- * `prompts/chapters` как CHAPTERS_JSON_SCHEMA). Инлайн-копия достаточна:
- * тест проверяет нормализатор `toOpenAiStrictSchema`, а не сам промпт глав.
- * Содержит вложенный объект без additionalProperties:false и required,
- * который не перечисляет все properties (`summary` опционально) — то есть
- * заведомо требует приведения к strict.
- */
 const NON_STRICT_SAMPLE_SCHEMA = {
   type: 'object',
   properties: {
@@ -33,16 +25,9 @@ const NON_STRICT_SAMPLE_SCHEMA = {
   required: ['chapters'],
 } as const;
 
-/**
- * Рекурсивно проверяет, что КАЖДЫЙ объектный узел схемы strict-совместим:
- * additionalProperties === false и required перечисляет все ключи properties.
- * Возвращает список путей-нарушителей (пусто = всё ок).
- */
 function findStrictViolations(schema: unknown, path = '$'): string[] {
   if (Array.isArray(schema)) {
-    return schema.flatMap((item, i) =>
-      findStrictViolations(item, `${path}[${i}]`),
-    );
+    return schema.flatMap((item, i) => findStrictViolations(item, `${path}[${i}]`));
   }
   if (!schema || typeof schema !== 'object') return [];
   const node = schema as JsonObj;
@@ -76,7 +61,6 @@ function findStrictViolations(schema: unknown, path = '$'): string[] {
 
 describe('toOpenAiStrictSchema', () => {
   it('добавляет отсутствующее в required поле (.nullable().optional())', () => {
-    // Воспроизводит лог: chapters_response → Missing 'summary'.
     const raw = {
       type: 'object',
       properties: {
@@ -95,15 +79,12 @@ describe('toOpenAiStrictSchema', () => {
       required: ['chapters'],
     };
     const strict = toOpenAiStrictSchema(raw) as JsonObj;
-    const item = (
-      ((strict['properties'] as JsonObj)['chapters'] as JsonObj)['items'] as JsonObj
-    );
+    const item = ((strict['properties'] as JsonObj)['chapters'] as JsonObj)['items'] as JsonObj;
     expect(item['additionalProperties']).toBe(false);
     expect(item['required']).toEqual(['title', 'summary']);
   });
 
   it('закрывает free-form объект (metadata) additionalProperties:false', () => {
-    // Воспроизводит лог: IdeaBlocks → metadata 'additionalProperties' required false.
     const raw = {
       type: 'object',
       properties: { metadata: { type: 'object' } },
@@ -125,10 +106,7 @@ describe('toOpenAiStrictSchema', () => {
       properties: {
         list: { type: 'array', items: { type: 'object', properties: { b: { type: 'number' } } } },
         choice: {
-          anyOf: [
-            { type: 'object', properties: { c: { type: 'boolean' } } },
-            { type: 'null' },
-          ],
+          anyOf: [{ type: 'object', properties: { c: { type: 'boolean' } } }, { type: 'null' }],
         },
       },
     };

@@ -1,16 +1,12 @@
-'use client';
+"use client";
 
-/**
- * IssueRelations — список связей задачи (blocks/blocked_by/duplicates/relates_to).
- */
-
-import Link from 'next/link';
-import { ArrowRight, ArrowLeft, Link2 } from 'lucide-react';
-import { useIssueRelations } from '@/hooks/tracker/useIssueRelations';
+import Link from "next/link";
+import { ArrowRight, ArrowLeft, Link2 } from "lucide-react";
+import { useIssueRelations } from "@/hooks/tracker/useIssueRelations";
 import {
   ISSUE_RELATION_TYPE_LABELS,
   type IssueRelationType,
-} from '@/domain/tracker';
+} from "@/domain/tracker";
 
 export function IssueRelations({
   orgId,
@@ -28,7 +24,9 @@ export function IssueRelations({
   }
 
   if (error) {
-    return <div className="text-sm text-danger">Не удалось загрузить связи.</div>;
+    return (
+      <div className="text-sm text-danger">Не удалось загрузить связи.</div>
+    );
   }
 
   if (relations.length === 0) {
@@ -38,9 +36,9 @@ export function IssueRelations({
   return (
     <ul className="flex flex-col gap-1.5 text-sm">
       {relations.map((r) => {
-        const Arrow = r.direction === 'out' ? ArrowRight : ArrowLeft;
+        const Arrow = r.direction === "out" ? ArrowRight : ArrowLeft;
         const otherId =
-          r.direction === 'out' ? r.targetIssueId : r.sourceIssueId;
+          r.direction === "out" ? r.targetIssueId : r.sourceIssueId;
         const label =
           ISSUE_RELATION_TYPE_LABELS[r.relationType as IssueRelationType] ??
           r.relationType;

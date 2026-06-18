@@ -1,26 +1,7 @@
-'use client';
+"use client";
 
-/**
- * `/clones/[roleId]/chat/[conversationId]` (ТЗ §3.8) — чат с клоном.
- *
- * Архитектура:
- *   - Sidebar (диалоги): на desktop sticky слева, на mobile — Sheet drawer.
- *   - Main: sticky header (клон + бейдж режима) + лента сообщений + composer.
- *   - Optimistic update для user-сообщения, чтобы UX был мгновенным.
- *   - При refused=true рисуем карточку отказа с человеко-читаемой причиной.
- *
- * Stream сообщений берётся через `chatV2Api.getConversation(id)` — diалоги
- * клонов хранятся в той же ChatV2Conversation/ChatV2Message (scope='card').
- */
-
-import {
-  Loader2,
-  Menu,
-  Send,
-  ShieldAlert,
-  Sparkles,
-} from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { Loader2, Menu, Send, ShieldAlert, Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -28,53 +9,48 @@ import {
   useRef,
   useState,
   type FormEvent,
-} from 'react';
-import useSWR from 'swr';
+} from "react";
+import useSWR from "swr";
 
-import { ApiError } from '@/api/api-error';
-import { chatV2Api } from '@/api/chat-v2.api';
-import { clonesApi } from '@/api/clones.api';
-import { useAuth } from '@/contexts/auth-context';
+import { ApiError } from "@/api/api-error";
+import { chatV2Api } from "@/api/chat-v2.api";
+import { clonesApi } from "@/api/clones.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   cloneRefusalReasonRu,
   mapCloneAnswer,
   type CloneAnswer,
-} from '@/domain/clone';
+} from "@/domain/clone";
 import {
   stripContextMarkers,
   toChatV2ConversationWithMessages,
-} from '@/domain/chat-v2';
+} from "@/domain/chat-v2";
 import {
   useCloneByRoleId,
   useCloneConversations,
   useMyCloneAccess,
-} from '@/hooks/useClones';
-import { useIsMobile } from '@/hooks/useMediaQuery';
-import { CloneAvatar } from '@/ui/clones/CloneAvatar';
-import { CloneChatSidebar } from '@/ui/clones/CloneChatSidebar';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import {
-  Sheet,
-  SheetContent,
-  SheetTitle,
-} from '@/ui/shadcn/sheet';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { toast } from '@/ui/shadcn/toast';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/hooks/useClones";
+import { useIsMobile } from "@/hooks/useMediaQuery";
+import { CloneAvatar } from "@/ui/clones/CloneAvatar";
+import { CloneChatSidebar } from "@/ui/clones/CloneChatSidebar";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Sheet, SheetContent, SheetTitle } from "@/ui/shadcn/sheet";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { toast } from "@/ui/shadcn/toast";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-import { AdminForbidden } from '@app/(admin)/admin/AdminStateViews';
+import { AdminForbidden } from "@app/(admin)/admin/AdminStateViews";
 
 interface ChatMessageUi {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   text: string;
   createdAt: Date;
   refused: boolean;
   refusalReason: string | null;
-  citations: CloneAnswer['citations'];
-  /** true — это локальное optimistic-сообщение, ещё не подтверждённое сервером. */
+  citations: CloneAnswer["citations"];
   optimistic?: boolean;
 }
 
@@ -122,22 +98,20 @@ function Content({
   const { access, isLoading: accessLoading } = useMyCloneAccess(orgId);
   const conversations = useCloneConversations(orgId, roleId);
 
-  const hasGrant = access?.has('role', roleId) ?? false;
+  const hasGrant = access?.has("role", roleId) ?? false;
 
-  // Защита: нет grant'а → редирект на карточку клона.
   useEffect(() => {
     if (accessLoading) return;
     if (access && !hasGrant) {
-      toast.message('Доступ к клону отозван.', {
-        description: 'Запросите доступ заново у администратора.',
+      toast.message("Доступ к клону отозван.", {
+        description: "Запросите доступ заново у администратора.",
       });
       router.replace(`/clones/${encodeURIComponent(roleId)}`);
     }
   }, [accessLoading, access, hasGrant, roleId, router]);
 
-  // Лента сообщений из БД.
   const messagesSwr = useSWR(
-    ['clones:conversation', conversationId],
+    ["clones:conversation", conversationId],
     async () => {
       const dto = await chatV2Api.getConversation(conversationId);
       return toChatV2ConversationWithMessages(dto);
@@ -145,29 +119,26 @@ function Content({
     { revalidateOnFocus: false },
   );
 
-  // Если backend вернул 404 на conversation → редирект.
   useEffect(() => {
     if (!messagesSwr.error) return;
     const err = messagesSwr.error as unknown;
     const isNotFound =
       err instanceof ApiError &&
-      (err.code === 'not_found' ||
-        err.code === 'forbidden' ||
-        err.code === 'http_404');
+      (err.code === "not_found" ||
+        err.code === "forbidden" ||
+        err.code === "http_404");
     if (isNotFound) {
-      toast.message('Диалог не найден.');
+      toast.message("Диалог не найден.");
       router.replace(`/clones/${encodeURIComponent(roleId)}`);
     }
   }, [messagesSwr.error, roleId, router]);
 
-  // Локальные optimistic-сообщения (user + pending assistant placeholder).
   const [localMessages, setLocalMessages] = useState<ChatMessageUi[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [creatingConv, setCreatingConv] = useState(false);
 
-  // При смене conversationId — сбрасываем локалку.
   useEffect(() => {
     setLocalMessages([]);
   }, [conversationId]);
@@ -175,13 +146,11 @@ function Content({
   const serverMessages: ChatMessageUi[] = useMemo(() => {
     const msgs = messagesSwr.data?.messages ?? [];
     return msgs.map((m) => {
-      // refused/refusalReason приходят только из askRole-ответа;
-      // в ChatV2Message их нет, поэтому при загрузке истории всегда false.
       const llmMeta = (m.llmMeta ?? {}) as Record<string, unknown>;
-      const refused = Boolean(llmMeta['refused']);
+      const refused = Boolean(llmMeta["refused"]);
       const refusalReason =
-        typeof llmMeta['refusalReason'] === 'string'
-          ? (llmMeta['refusalReason'] as string)
+        typeof llmMeta["refusalReason"] === "string"
+          ? (llmMeta["refusalReason"] as string)
           : null;
       return {
         id: m.id,
@@ -191,7 +160,7 @@ function Content({
         refused,
         refusalReason,
         citations: (m.citations ?? []).map((c) => ({
-          blockId: '',
+          blockId: "",
           meetingId: c.meetingId,
           meetingTitle: c.meetingTitle,
           startMs: c.startMs,
@@ -202,7 +171,6 @@ function Content({
     });
   }, [messagesSwr.data]);
 
-  // Финальный список: серверные + локальные (без дублирования по id).
   const allMessages: ChatMessageUi[] = useMemo(() => {
     const seen = new Set(serverMessages.map((m) => m.id));
     const extras = localMessages.filter((m) => !seen.has(m.id));
@@ -211,7 +179,7 @@ function Content({
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [allMessages.length, sending]);
 
   const handleSubmit = useCallback(
@@ -220,7 +188,7 @@ function Content({
       const question = input.trim();
       if (!question || sending) return;
       if (question.length < 3) {
-        toast.error('Слишком короткий вопрос (минимум 3 символа).');
+        toast.error("Слишком короткий вопрос (минимум 3 символа).");
         return;
       }
       const optimisticId = `local-user-${Date.now()}`;
@@ -228,7 +196,7 @@ function Content({
         ...prev,
         {
           id: optimisticId,
-          role: 'user',
+          role: "user",
           text: question,
           createdAt: new Date(),
           refused: false,
@@ -237,7 +205,7 @@ function Content({
           optimistic: true,
         },
       ]);
-      setInput('');
+      setInput("");
       setSending(true);
       try {
         const apiRes = await clonesApi.askRole(orgId, roleId, {
@@ -245,12 +213,11 @@ function Content({
           conversationId,
         });
         const answer = mapCloneAnswer(apiRes);
-        // Дополняем ленту локально (потом refetch заберёт всё из БД).
         setLocalMessages((prev) => [
           ...prev,
           {
             id: answer.messageId,
-            role: 'assistant',
+            role: "assistant",
             text: answer.text,
             createdAt: new Date(),
             refused: answer.refused,
@@ -258,31 +225,20 @@ function Content({
             citations: answer.citations,
           },
         ]);
-        // Refetch ленту + список диалогов (обновится updatedAt).
         void messagesSwr.mutate();
         void conversations.mutate();
       } catch (err) {
-        // Откатим optimistic — пусть пользователь увидит ошибку и
-        // сможет перепечатать вопрос.
         setLocalMessages((prev) => prev.filter((m) => m.id !== optimisticId));
         const message =
           err instanceof ApiError
             ? err.message
-            : 'Не удалось получить ответ клона.';
+            : "Не удалось получить ответ клона.";
         toast.error(message);
       } finally {
         setSending(false);
       }
     },
-    [
-      input,
-      sending,
-      orgId,
-      roleId,
-      conversationId,
-      messagesSwr,
-      conversations,
-    ],
+    [input, sending, orgId, roleId, conversationId, messagesSwr, conversations],
   );
 
   const handleCreateConversation = useCallback(async () => {
@@ -297,16 +253,14 @@ function Content({
       );
     } catch (err) {
       const message =
-        err instanceof ApiError
-          ? err.message
-          : 'Не удалось создать диалог.';
+        err instanceof ApiError ? err.message : "Не удалось создать диалог.";
       toast.error(message);
     } finally {
       setCreatingConv(false);
     }
   }, [creatingConv, orgId, roleId, router]);
 
-  const publicName = cloneItem?.publicName ?? 'Клон должности';
+  const publicName = cloneItem?.publicName ?? "Клон должности";
   const departmentId = cloneItem?.departmentId ?? null;
 
   if (accessLoading || cloneLoading) return <ChatSkeleton />;
@@ -335,12 +289,12 @@ function Content({
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] md:h-screen">
-      {/* Desktop sidebar */}
+      {}
       <div className="hidden w-80 flex-none lg:block xl:w-[22rem]">
         {sidebar}
       </div>
 
-      {/* Mobile drawer */}
+      {}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <SheetContent side="left" className="w-[85%] max-w-sm p-0 sm:max-w-md">
           <SheetTitle className="sr-only">Диалоги с клоном</SheetTitle>
@@ -348,9 +302,9 @@ function Content({
         </SheetContent>
       </Sheet>
 
-      {/* Main */}
+      {}
       <main className="flex min-w-0 flex-1 flex-col">
-        {/* Header */}
+        {}
         <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-border-subtle bg-bg-base px-3 py-2 sm:px-4">
           <Button
             type="button"
@@ -370,16 +324,15 @@ function Content({
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-sm font-semibold">{publicName}</h1>
             <p className="truncate text-xs text-fg-tertiary">
-              {messagesSwr.data?.title ?? 'Без названия'}
+              {messagesSwr.data?.title ?? "Без названия"}
             </p>
           </div>
           <Badge variant="secondary" className="hidden gap-1 sm:inline-flex">
-            <Sparkles size={11} />
-            в стиле роли
+            <Sparkles size={11} />в стиле роли
           </Badge>
         </header>
 
-        {/* Messages */}
+        {}
         <div className="flex-1 space-y-3 overflow-y-auto bg-bg-base px-3 py-4 sm:px-6">
           {messagesSwr.isLoading ? (
             <MessageListSkeleton />
@@ -397,7 +350,7 @@ function Content({
           <div ref={bottomRef} />
         </div>
 
-        {/* Composer */}
+        {}
         <form
           onSubmit={(e) => void handleSubmit(e)}
           className="sticky bottom-0 border-t border-border-subtle bg-bg-card p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4"
@@ -410,9 +363,8 @@ function Content({
               placeholder="Задайте вопрос клону должности…"
               disabled={sending}
               onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
                   e.preventDefault();
-                  // Триггерим submit через replicating form submit:
                   const form = (e.target as HTMLTextAreaElement).form;
                   form?.requestSubmit();
                 }
@@ -437,10 +389,8 @@ function Content({
   );
 }
 
-// ─────────── small components ───────────
-
 function MessageBubble({ message }: { message: ChatMessageUi }) {
-  const isUser = message.role === 'user';
+  const isUser = message.role === "user";
 
   if (message.refused) {
     return (
@@ -459,13 +409,13 @@ function MessageBubble({ message }: { message: ChatMessageUi }) {
   }
 
   return (
-    <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
+    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          'max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap sm:max-w-[80%]',
+          "max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap sm:max-w-[80%]",
           isUser
-            ? 'bg-accent text-accent-fg'
-            : 'border border-border-subtle bg-bg-card text-fg-primary',
+            ? "bg-accent text-accent-fg"
+            : "border border-border-subtle bg-bg-card text-fg-primary",
         )}
       >
         {isUser ? message.text : stripContextMarkers(message.text)}
@@ -480,7 +430,7 @@ function MessageBubble({ message }: { message: ChatMessageUi }) {
                 className="rounded bg-bg-base px-2 py-1.5 text-xs"
               >
                 <div className="font-medium">
-                  {c.meetingTitle ?? 'Источник'}
+                  {c.meetingTitle ?? "Источник"}
                 </div>
                 {c.snippet ? (
                   <div className="mt-0.5 italic text-fg-secondary">

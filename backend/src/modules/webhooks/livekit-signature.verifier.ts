@@ -7,21 +7,6 @@ import { type WebhookEvent } from 'livekit-server-sdk';
 import { TypedConfigService } from '../../common/config/index';
 import { IntegrationKeyInvalidError } from '../../common/errors/domain-errors';
 
-/**
- * Верификатор LiveKit-вебхуков.
- *
- * Контракт LiveKit:
- *   - заголовок `Authorization: <jwt>` (без префикса `Bearer`);
- *   - JWT подписан `LIVEKIT_WEBHOOK_API_SECRET` (HS256);
- *   - в claim'ах `sha256` (base64) от тела запроса.
- *
- * Шаги:
- *   1. Парс JWT.
- *   2. Сравнить claim `sha256` с фактическим sha256(rawBody) (base64).
- *   3. Парсить тело как `WebhookEvent`.
- *
- * На любую ошибку — `IntegrationKeyInvalidError('webhook_signature_invalid')`.
- */
 @Injectable()
 export class LivekitSignatureVerifier {
   constructor(@Inject(TypedConfigService) private readonly cfg: TypedConfigService) {}
@@ -32,8 +17,6 @@ export class LivekitSignatureVerifier {
       throw new IntegrationKeyInvalidError('webhook_signature_invalid');
     }
 
-    // LiveKit шлёт JWT прямо в Authorization (без `Bearer`). На всякий случай
-    // снимем префикс, если когда-нибудь появится.
     const token = authHeader.startsWith('Bearer ')
       ? authHeader.slice('Bearer '.length).trim()
       : authHeader.trim();
@@ -64,8 +47,6 @@ export class LivekitSignatureVerifier {
       throw new IntegrationKeyInvalidError('webhook_signature_invalid');
     }
 
-    // Парсим тело как WebhookEvent. Сам тип `WebhookEvent` из livekit-server-sdk —
-    // discriminated union по полю `event`.
     let parsed: unknown;
     try {
       parsed = JSON.parse(rawBody.toString('utf8'));

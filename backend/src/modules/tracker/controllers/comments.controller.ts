@@ -15,32 +15,17 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
-import {
-  CreateCommentSchema,
-  type CreateCommentDto,
-} from '../dto/comments/create-comment.dto';
-import {
-  UpdateCommentSchema,
-  type UpdateCommentDto,
-} from '../dto/comments/update-comment.dto';
+import { CreateCommentSchema, type CreateCommentDto } from '../dto/comments/create-comment.dto';
+import { UpdateCommentSchema, type UpdateCommentDto } from '../dto/comments/update-comment.dto';
 import type { CommentResponseDto } from '../services/comments.service';
 import { CommentsService } from '../services/comments.service';
 
-/**
- * REST `/api/v1/issues/:id/comments` + `/api/v1/comments/:commentId`.
- * RBAC ResourceType='issue' (комментарий = логически дочерний ресурс).
- *
- * TODO Sprint 2: `Idempotency-Key` middleware на POST /comments.
- */
 @ApiTags('tracker / comments')
 @ApiBearerAuth()
 @Controller('api/v1')

@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Get,
-  Inject,
-  Query,
-  UseGuards,
-  UseInterceptors,
-} from '@nestjs/common';
+import { Controller, Get, Inject, Query, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
@@ -23,19 +16,6 @@ import {
 } from './dto/knowledge-analytics.dto';
 import { KnowledgeAnalyticsService } from './knowledge-analytics.service';
 
-/**
- * Admin-redesign Фаза 2 — `KnowledgeAnalyticsController`.
- *
- * Read-only GET-эндпоинты для UI Z-Admin раздела «Аналитика → Knowledge».
- * Аналитика knowledge-core: общий объём графа, рост по дням, разрез по Org.
- *
- * Все эндпоинты под `CookieAuthGuard + SuperAdminGuard` и
- * `SuperAdminAuditInterceptor` (compliance: записываем кто и когда смотрел
- * аналитику).
- *
- * Существующие `/admin/usage/*` остаются как были — Фаза 2 просто добавляет
- * новые разделы под `/admin/analytics/*` без перенаправлений.
- */
 @ApiTags('admin-analytics-knowledge')
 @Controller('api/v1/admin/analytics/knowledge')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -48,8 +28,7 @@ export class KnowledgeAnalyticsController {
 
   @Get('overview')
   @ApiOperation({
-    summary:
-      'Сводка по объёму knowledge-core: totals + 7d growth по 10 типам сущностей.',
+    summary: 'Сводка по объёму knowledge-core: totals + 7d growth по 10 типам сущностей.',
   })
   async overview(
     @Query(new ZodValidationPipe(KnowledgeOverviewQuerySchema))

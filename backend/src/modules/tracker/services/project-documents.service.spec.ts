@@ -10,21 +10,6 @@ import type { ProjectsService } from './projects.service';
 import type { TrackerEmitterService } from './tracker-emitter.service';
 import type { TrackerEventsService } from './tracker-events.service';
 
-/**
- * Unit-тесты `ProjectDocumentsService` (2026-05-27).
- *
- * Покрытие:
- *  1. listForProject — фильтрация по tenantId + deletedAt=null.
- *  2. create — sortOrder=max+1, metrics, WS-event, knowledge-core ingest emit.
- *  3. create — 409 на duplicate title (Prisma P2002).
- *  4. update — author может писать; non-author без admin → 403; admin → ok.
- *  5. update — emit ingest только при изменении content или title.
- *  6. delete — soft-delete (deletedAt) + WS deleted.
- *  7. listLinkedCards — вызывает $queryRaw с tenant+projectId, инкремент метрики.
- *
- * Тест работает с in-memory store, без реальной БД.
- */
-
 interface FakeDoc {
   id: string;
   tenantId: string;
@@ -99,13 +84,8 @@ function makeService(store: Store): {
         }) => {
           for (const d of store.docs.values()) {
             if (where.id !== undefined && d.id !== where.id) continue;
-            if (where.tenantId !== undefined && d.tenantId !== where.tenantId)
-              continue;
-            if (
-              where.projectId !== undefined &&
-              d.projectId !== where.projectId
-            )
-              continue;
+            if (where.tenantId !== undefined && d.tenantId !== where.tenantId) continue;
+            if (where.projectId !== undefined && d.projectId !== where.projectId) continue;
             if (where.title !== undefined && d.title !== where.title) continue;
             if (where.deletedAt === null && d.deletedAt !== null) continue;
             return d;
@@ -121,15 +101,12 @@ function makeService(store: Store): {
             projectId?: string;
             tenantId?: string;
             deletedAt?: null;
-            // audit С20: cascading soft-delete передаёт parentId: { in: [...] }.
             parentId?: { in: string[] };
           };
         }) => {
           let rows = Array.from(store.docs.values()).filter((d) => {
-            if (where.tenantId !== undefined && d.tenantId !== where.tenantId)
-              return false;
-            if (where.projectId !== undefined && d.projectId !== where.projectId)
-              return false;
+            if (where.tenantId !== undefined && d.tenantId !== where.tenantId) return false;
+            if (where.projectId !== undefined && d.projectId !== where.projectId) return false;
             if (where.deletedAt === null && d.deletedAt !== null) return false;
             if (
               where.parentId?.in !== undefined &&
@@ -138,7 +115,6 @@ function makeService(store: Store): {
               return false;
             return true;
           });
-          // orderBy для listForProject (pinned/sortOrder/createdAt).
           rows = rows.sort((a, b) => {
             if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
             if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
@@ -148,11 +124,7 @@ function makeService(store: Store): {
         },
       ),
       aggregate: vi.fn(
-        async ({
-          where,
-        }: {
-          where: { projectId: string; tenantId: string; deletedAt: null };
-        }) => {
+        async ({ where }: { where: { projectId: string; tenantId: string; deletedAt: null } }) => {
           const arr = Array.from(store.docs.values()).filter(
             (d) =>
               d.projectId === where.projectId &&
@@ -165,49 +137,43 @@ function makeService(store: Store): {
           };
         },
       ),
-      create: vi.fn(
-        async ({ data }: { data: Partial<FakeDoc> & { title: string } }) => {
-          // Эмуляция P2002 на уникальность (projectId, title).
-          for (const d of store.docs.values()) {
-            if (
-              d.projectId === data.projectId &&
-              d.tenantId === data.tenantId &&
-              d.title === data.title &&
-              d.deletedAt === null
-            ) {
-              throw new Prisma.PrismaClientKnownRequestError(
-                'Unique constraint failed',
-                {
-                  code: 'P2002',
-                  clientVersion: 'test',
-                },
-              );
-            }
+      create: vi.fn(async ({ data }: { data: Partial<FakeDoc> & { title: string } }) => {
+        for (const d of store.docs.values()) {
+          if (
+            d.projectId === data.projectId &&
+            d.tenantId === data.tenantId &&
+            d.title === data.title &&
+            d.deletedAt === null
+          ) {
+            throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+              code: 'P2002',
+              clientVersion: 'test',
+            });
           }
-          const id = nextId();
-          const now = new Date();
-          const doc: FakeDoc = {
-            id,
-            tenantId: data.tenantId ?? 'tenant-1',
-            projectId: data.projectId ?? 'project-1',
-            title: data.title,
-            content: data.content ?? { type: 'doc', content: [] },
-            contentHtml: data.contentHtml ?? null,
-            contentStripped: data.contentStripped ?? null,
-            parentId: data.parentId ?? null,
-            sortOrder: data.sortOrder ?? 0,
-            pinned: data.pinned ?? false,
-            entityId: data.entityId ?? null,
-            createdById: data.createdById ?? 'user-1',
-            updatedById: data.updatedById ?? data.createdById ?? 'user-1',
-            createdAt: now,
-            updatedAt: now,
-            deletedAt: null,
-          };
-          store.docs.set(id, doc);
-          return doc;
-        },
-      ),
+        }
+        const id = nextId();
+        const now = new Date();
+        const doc: FakeDoc = {
+          id,
+          tenantId: data.tenantId ?? 'tenant-1',
+          projectId: data.projectId ?? 'project-1',
+          title: data.title,
+          content: data.content ?? { type: 'doc', content: [] },
+          contentHtml: data.contentHtml ?? null,
+          contentStripped: data.contentStripped ?? null,
+          parentId: data.parentId ?? null,
+          sortOrder: data.sortOrder ?? 0,
+          pinned: data.pinned ?? false,
+          entityId: data.entityId ?? null,
+          createdById: data.createdById ?? 'user-1',
+          updatedById: data.updatedById ?? data.createdById ?? 'user-1',
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        };
+        store.docs.set(id, doc);
+        return doc;
+      }),
       update: vi.fn(
         async ({
           where,
@@ -220,7 +186,6 @@ function makeService(store: Store): {
         }) => {
           const existing = store.docs.get(where.id);
           if (!existing) throw new Error('not found');
-          // Эмуляция связи parent → parentId.
           let parentId = existing.parentId;
           if (data.parent) {
             if (data.parent.disconnect) parentId = null;
@@ -236,7 +201,6 @@ function makeService(store: Store): {
           return next;
         },
       ),
-      // audit С20 (2026-05-29): cascading soft-delete делает BFS+updateMany.
       updateMany: vi.fn(
         async ({
           where,
@@ -252,8 +216,7 @@ function makeService(store: Store): {
           let count = 0;
           for (const d of store.docs.values()) {
             if (where.id?.in && !where.id.in.includes(d.id)) continue;
-            if (where.tenantId !== undefined && d.tenantId !== where.tenantId)
-              continue;
+            if (where.tenantId !== undefined && d.tenantId !== where.tenantId) continue;
             if (where.deletedAt === null && d.deletedAt !== null) continue;
             if (data.deletedAt !== undefined) d.deletedAt = data.deletedAt;
             count += 1;
@@ -297,13 +260,7 @@ function makeService(store: Store): {
     incLinkedCardsView: ReturnType<typeof vi.fn>;
   };
 
-  const svc = new ProjectDocumentsService(
-    prisma,
-    projects,
-    events,
-    emitter,
-    metrics,
-  );
+  const svc = new ProjectDocumentsService(prisma, projects, events, emitter, metrics);
 
   return {
     svc,
@@ -348,29 +305,17 @@ describe('ProjectDocumentsService', () => {
     });
     expect(events.publishProjectDocumentCreated).toHaveBeenCalledTimes(1);
     expect(emitter.emitProjectDocumentChanged).toHaveBeenCalledTimes(1);
-    expect(emitter.emitProjectDocumentChanged.mock.calls[0]?.[0]).toMatchObject(
-      {
-        changeType: 'created',
-        documentId: doc.id,
-        fullText: 'Текст брифа',
-      },
-    );
+    expect(emitter.emitProjectDocumentChanged.mock.calls[0]?.[0]).toMatchObject({
+      changeType: 'created',
+      documentId: doc.id,
+      fullText: 'Текст брифа',
+    });
   });
 
   it('create: второй документ — sortOrder=max+1', async () => {
     const { svc } = makeService(store);
-    await svc.create(
-      'project-1',
-      { title: 'Бриф' },
-      'tenant-1',
-      'user-1',
-    );
-    const second = await svc.create(
-      'project-1',
-      { title: 'Спецификация' },
-      'tenant-1',
-      'user-1',
-    );
+    await svc.create('project-1', { title: 'Бриф' }, 'tenant-1', 'user-1');
+    const second = await svc.create('project-1', { title: 'Спецификация' }, 'tenant-1', 'user-1');
     expect(second.sortOrder).toBe(1);
   });
 
@@ -384,19 +329,8 @@ describe('ProjectDocumentsService', () => {
 
   it('listForProject: только активные документы, отсортированы pinned+sortOrder', async () => {
     const { svc } = makeService(store);
-    const a = await svc.create(
-      'project-1',
-      { title: 'A' },
-      'tenant-1',
-      'user-1',
-    );
-    const b = await svc.create(
-      'project-1',
-      { title: 'B' },
-      'tenant-1',
-      'user-1',
-    );
-    // pin B — должен подняться наверх.
+    const a = await svc.create('project-1', { title: 'A' }, 'tenant-1', 'user-1');
+    const b = await svc.create('project-1', { title: 'B' }, 'tenant-1', 'user-1');
     await svc.update(b.id, { pinned: true }, 'tenant-1', 'user-1');
 
     const list = await svc.listForProject('project-1', 'tenant-1');
@@ -414,7 +348,6 @@ describe('ProjectDocumentsService', () => {
     );
     emitter.emitProjectDocumentChanged.mockClear();
 
-    // author=user-1 пытается изменить content:
     const updated = await svc.update(
       doc.id,
       {
@@ -428,22 +361,15 @@ describe('ProjectDocumentsService', () => {
     expect(updated.contentStripped).toBe('v2-updated text');
     expect(metrics.incProjectDocumentUpdated).toHaveBeenCalledTimes(1);
     expect(emitter.emitProjectDocumentChanged).toHaveBeenCalledTimes(1);
-    expect(emitter.emitProjectDocumentChanged.mock.calls[0]?.[0]).toMatchObject(
-      {
-        changeType: 'updated',
-        fullText: 'v2-updated text',
-      },
-    );
+    expect(emitter.emitProjectDocumentChanged.mock.calls[0]?.[0]).toMatchObject({
+      changeType: 'updated',
+      fullText: 'v2-updated text',
+    });
   });
 
   it('update: только pinned — ingest emit НЕ срабатывает (content не менялся)', async () => {
     const { svc, emitter } = makeService(store);
-    const doc = await svc.create(
-      'project-1',
-      { title: 'A' },
-      'tenant-1',
-      'user-1',
-    );
+    const doc = await svc.create('project-1', { title: 'A' }, 'tenant-1', 'user-1');
     emitter.emitProjectDocumentChanged.mockClear();
 
     await svc.update(doc.id, { pinned: true }, 'tenant-1', 'user-1');
@@ -453,14 +379,8 @@ describe('ProjectDocumentsService', () => {
 
   it('requireWritable: автор — ок; чужой без admin — 403; admin — ок', async () => {
     const { svc } = makeService(store);
-    const doc = await svc.create(
-      'project-1',
-      { title: 'A' },
-      'tenant-1',
-      'user-author',
-    );
+    const doc = await svc.create('project-1', { title: 'A' }, 'tenant-1', 'user-author');
 
-    // автор:
     const okSelf = await svc.requireWritable({
       documentId: doc.id,
       tenantId: 'tenant-1',
@@ -469,7 +389,6 @@ describe('ProjectDocumentsService', () => {
     });
     expect(okSelf.id).toBe(doc.id);
 
-    // чужой без admin:
     await expect(
       svc.requireWritable({
         documentId: doc.id,
@@ -479,7 +398,6 @@ describe('ProjectDocumentsService', () => {
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
 
-    // admin:
     const okAdmin = await svc.requireWritable({
       documentId: doc.id,
       tenantId: 'tenant-1',
@@ -491,12 +409,7 @@ describe('ProjectDocumentsService', () => {
 
   it('delete: soft-delete (deletedAt становится Date) + WS deleted', async () => {
     const { svc, events } = makeService(store);
-    const doc = await svc.create(
-      'project-1',
-      { title: 'A' },
-      'tenant-1',
-      'user-1',
-    );
+    const doc = await svc.create('project-1', { title: 'A' }, 'tenant-1', 'user-1');
 
     await svc.delete(doc.id, 'tenant-1');
 
@@ -508,7 +421,6 @@ describe('ProjectDocumentsService', () => {
       documentId: doc.id,
     });
 
-    // listForProject — больше не показывает удалённый:
     const list = await svc.listForProject('project-1', 'tenant-1');
     expect(list).toEqual([]);
   });

@@ -1,10 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  Optional,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, type OnModuleInit } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -18,26 +12,6 @@ import { CheckinParserService } from './checkin-parser.service';
 import { DailyCheckInService } from './daily-checkin.service';
 import { OperationsDashboardService } from './operations-dashboard.service';
 
-/**
- * SBA β-8 — CheckinResponseHandler.
- *
- * Слушает `notification.responded`, эмиттированный
- * `ConversationalService.respondToProbe`. Если eventType='checkin.prompt' (или
- * payload.metaJson.kind='checkin'), считает это ответом на morning/evening
- * чек-ин и сохраняет в `DailyCheckIn`.
- *
- * Алгоритм:
- *   1. Найти исходный Notification, прочитать его payload (там лежит kind +
- *      dateLocal + personId — мы их кладём в `DailyCheckInPromptCron`).
- *   2. Извлечь rawText из responsePayload.text.
- *   3. Парсить через `CheckinParserService` (LLM). confidence < 0.6 →
- *      сохраняем raw + curatorReview=true.
- *   4. Upsert в `DailyCheckIn` (через DailyCheckInService.upsertFromParser).
- *   5. Инвалидируем кэш COO дашборда.
- *
- * Контракт: best-effort. Любая ошибка → warn, не throw (не ломаем основной
- * pipeline respond-to-probe).
- */
 @Injectable()
 export class CheckinResponseHandler implements OnModuleInit {
   private readonly logger = new Logger(CheckinResponseHandler.name);
@@ -51,10 +25,6 @@ export class CheckinResponseHandler implements OnModuleInit {
     private readonly dashboard: OperationsDashboardService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
-    // ТЗ 2026-05-29 telegram-self-initiated-checkins (Phase 4/5) —
-    // нужен для закрытия pending `checkin.prompt` notification и для
-    // отправки `checkin.ack` подтверждения. @Optional чтобы существующие
-    // unit-тесты handler'а не падали при отсутствии mock'а.
     @Optional()
     @Inject(ConversationalService)
     private readonly conversational?: ConversationalService,
@@ -63,12 +33,6 @@ export class CheckinResponseHandler implements OnModuleInit {
     private readonly eventEmitter?: EventEmitter2,
   ) {}
 
-  /**
-   * ТЗ 2026-05-29 telegram-self-initiated-checkins §Backend.7 — подписка
-   * на InboundMessage `daily_checkin_self`. Если ConversationalService
-   * недоступен (legacy unit-тесты handler'а без @Global модуля) — деградация
-   * молчаливая.
-   */
   onModuleInit(): void {
     if (!this.conversational) {
       this.logger.warn(
@@ -76,21 +40,18 @@ export class CheckinResponseHandler implements OnModuleInit {
       );
       return;
     }
-    this.conversational.subscribeInbound(
-      'daily_checkin_self',
-      async (msg: InboundMessage) => {
-        if (msg.type !== 'daily_checkin_self') return;
-        await this.processSelfInitiated({
-          tenantId: msg.tenantId,
-          userId: msg.userId,
-          kind: msg.kind,
-          rawText: msg.rawText,
-          ...(msg.originChannelBindingId
-            ? { originChannelBindingId: msg.originChannelBindingId }
-            : {}),
-        });
-      },
-    );
+    this.conversational.subscribeInbound('daily_checkin_self', async (msg: InboundMessage) => {
+      if (msg.type !== 'daily_checkin_self') return;
+      await this.processSelfInitiated({
+        tenantId: msg.tenantId,
+        userId: msg.userId,
+        kind: msg.kind,
+        rawText: msg.rawText,
+        ...(msg.originChannelBindingId
+          ? { originChannelBindingId: msg.originChannelBindingId }
+          : {}),
+      });
+    });
   }
 
   @OnEvent('notification.responded')
@@ -102,7 +63,6 @@ export class CheckinResponseHandler implements OnModuleInit {
     payload: Record<string, unknown>;
   }): Promise<void> {
     try {
-      // Фильтр: только checkin.prompt + payload.metaJson.kind='checkin'.
       const isCheckin =
         event.eventType === 'checkin.prompt' ||
         (event.payload &&
@@ -119,10 +79,8 @@ export class CheckinResponseHandler implements OnModuleInit {
       if (!origPayload) return;
 
       const kind = origPayload.checkInKind === 'evening' ? 'evening' : 'morning';
-      const dateLocal =
-        typeof origPayload.dateLocal === 'string' ? origPayload.dateLocal : null;
-      const personId =
-        typeof origPayload.personId === 'string' ? origPayload.personId : null;
+      const dateLocal = typeof origPayload.dateLocal === 'string' ? origPayload.dateLocal : null;
+      const personId = typeof origPayload.personId === 'string' ? origPayload.personId : null;
       if (!dateLocal || !personId) {
         this.logger.debug(
           { notificationId: event.notificationId },
@@ -166,9 +124,6 @@ export class CheckinResponseHandler implements OnModuleInit {
         });
       }
 
-      // SBA β-8.1 — после успешной сборки чек-ина эмитим событие, на которое
-      // подписан `CheckinSentimentAnalyzerWorker`. Best-effort: ошибки
-      // EventEmitter не ломают основной flow.
       try {
         this.eventEmitter?.emit('checkin.created', {
           tenantId: event.tenantId,
@@ -209,29 +164,6 @@ export class CheckinResponseHandler implements OnModuleInit {
     }
   }
 
-  /**
-   * ТЗ 2026-05-29 telegram-self-initiated-checkins §Backend.8 — handler
-   * для самоинициированных «план/отчёт» из бота. Зовётся из
-   * `ConversationalService.dispatchInbound({type:'daily_checkin_self'})`
-   * (см. Phase 5).
-   *
-   * Алгоритм:
-   *   1. Резолвим Person по (tenantId, userId). Нет — outcome='no_person', return.
-   *   2. Резолвим dateLocal по timezone Person'а.
-   *   3. Проверяем hasCompletedToday — для wasReplace в подтверждении.
-   *   4. Зовём CheckinParserService.parse(rawText).
-   *   5. upsertFromParser(source='self_initiated') — ВСЕГДА, даже при
-   *      parser confidence < 0.6 (симметрично cron-handler'у: curatorReview=true,
-   *      raw в rawResponseText).
-   *   6. Закрываем pending `checkin.prompt` notification(s) для (kind, dateLocal)
-   *      через `markAsAnsweredByCheckin` (без эмиссии event'а).
-   *   7. Эмитим `checkin.created` (для CheckinSentimentAnalyzerWorker).
-   *   8. Отправляем `checkin.ack` notification с preferredChannelKinds=
-   *      [resolveOriginChannelKind(originChannelBindingId)].
-   *
-   * Возвращает результат для метрик: outcome + low confidence flag.
-   * НЕ throw — best-effort.
-   */
   async processSelfInitiated(args: {
     tenantId: string;
     userId: string;
@@ -247,7 +179,6 @@ export class CheckinResponseHandler implements OnModuleInit {
       | 'error';
   }> {
     try {
-      // 1. Резолв Person.
       const person = await this.prisma.person.findFirst({
         where: {
           tenantId: args.tenantId,
@@ -264,11 +195,9 @@ export class CheckinResponseHandler implements OnModuleInit {
         return { outcome: 'no_person' };
       }
 
-      // 2. Локальная дата по TZ Person'а.
       const now = new Date();
       const dateLocal = getLocalDate(now, person.timezone);
 
-      // 3. hasCompletedToday — для wasReplace.
       const wasReplace = await this.checkinService.hasCompletedToday({
         tenantId: args.tenantId,
         personId: person.id,
@@ -276,7 +205,6 @@ export class CheckinResponseHandler implements OnModuleInit {
         dateLocal,
       });
 
-      // 4. Parse.
       const parsed = await this.parser.parse({
         tenantId: args.tenantId,
         kind: args.kind,
@@ -284,7 +212,6 @@ export class CheckinResponseHandler implements OnModuleInit {
       });
       const lowConfidence = parsed.confidence < 0.6;
 
-      // 5. Upsert — ВСЕГДА. Source='self_initiated'.
       const checkIn = await this.checkinService.upsertFromParser({
         tenantId: args.tenantId,
         personId: person.id,
@@ -299,7 +226,6 @@ export class CheckinResponseHandler implements OnModuleInit {
         source: 'self_initiated',
       });
 
-      // 6. Закрываем pending checkin.prompt notification(s).
       if (this.conversational) {
         try {
           const pending = await this.prisma.notification.findMany({
@@ -313,11 +239,7 @@ export class CheckinResponseHandler implements OnModuleInit {
           });
           for (const n of pending) {
             const p = n.payload as Record<string, unknown> | null;
-            if (
-              p &&
-              p.checkInKind === args.kind &&
-              p.dateLocal === dateLocal
-            ) {
+            if (p && p.checkInKind === args.kind && p.dateLocal === dateLocal) {
               await this.conversational.markAsAnsweredByCheckin({
                 notificationId: n.id,
                 userId: args.userId,
@@ -337,7 +259,6 @@ export class CheckinResponseHandler implements OnModuleInit {
         }
       }
 
-      // 7. checkin.created event (для CheckinSentimentAnalyzerWorker).
       try {
         this.eventEmitter?.emit('checkin.created', {
           tenantId: args.tenantId,
@@ -356,7 +277,6 @@ export class CheckinResponseHandler implements OnModuleInit {
         );
       }
 
-      // 8. checkin.ack notification (Phase 5).
       if (this.conversational) {
         try {
           const preferredKinds = await this.resolveOriginChannelKinds(
@@ -377,9 +297,7 @@ export class CheckinResponseHandler implements OnModuleInit {
               lowParserConfidence: lowConfidence,
             },
             dataClass: 'internal',
-            ...(preferredKinds.length > 0
-              ? { preferredChannelKinds: preferredKinds }
-              : {}),
+            ...(preferredKinds.length > 0 ? { preferredChannelKinds: preferredKinds } : {}),
           });
         } catch (err) {
           this.logger.warn(
@@ -394,8 +312,9 @@ export class CheckinResponseHandler implements OnModuleInit {
       }
 
       await this.dashboard.invalidateCache(args.tenantId);
-      const outcome: 'saved' | 'low_parser_confidence_curator_review' =
-        lowConfidence ? 'low_parser_confidence_curator_review' : 'saved';
+      const outcome: 'saved' | 'low_parser_confidence_curator_review' = lowConfidence
+        ? 'low_parser_confidence_curator_review'
+        : 'saved';
       this.metrics.incBotDailyCheckinSelf({
         channel: 'telegram_bot',
         kind: args.kind,
@@ -432,11 +351,6 @@ export class CheckinResponseHandler implements OnModuleInit {
     }
   }
 
-  /**
-   * Резолвит `kind` канала по `originChannelBindingId` (если задан и принадлежит
-   * recipient + tenant). Возвращает [kind] для preferredChannelKinds, либо
-   * пустой массив (тогда работает default-policy для checkin.ack).
-   */
   private async resolveOriginChannelKinds(
     originChannelBindingId: string | undefined,
     userId: string,
@@ -464,4 +378,3 @@ export class CheckinResponseHandler implements OnModuleInit {
     return [];
   }
 }
-

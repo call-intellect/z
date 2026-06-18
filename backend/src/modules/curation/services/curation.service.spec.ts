@@ -35,6 +35,12 @@ interface CardVersionRow {
 /** Собирает мок PrismaService + наблюдаемые буферы создания записей. */
 function buildPrisma(args?: {
   curationSettings?: Record<string, unknown> | null;
+  /** Б56 — если задано, curationItem.findFirst вернёт этот pending-item. */
+  existingPendingItem?: {
+    id: string;
+    level: string;
+    candidateCuratorIds: string[];
+  } | null;
 }) {
   const createdCardVersions: Array<{ trustTier: string; resourceType: string }> = [];
   const createdCurationItems: Array<{
@@ -62,6 +68,8 @@ function buildPrisma(args?: {
       }),
     },
     curationItem: {
+      // Б56 — idempotency-guard читает pending-item по (resourceType,resourceId).
+      findFirst: vi.fn(async () => args?.existingPendingItem ?? null),
       create: vi.fn(
         async ({
           data,
@@ -378,6 +386,49 @@ describe('CurationService — A1 «лестница доверия»', () => {
     expect(createdCardVersions).toHaveLength(0);
     expect(createdCurationItems[0]?.level).toBe('deep');
     expect(debate?.judge).not.toHaveBeenCalled();
+  });
+
+  // ─────────────────── Б56 (K4): идемпотентность triage ───────────────────
+
+  it('Б56: повторный triage по тому же ресурсу (есть pending CurationItem) → переиспользуем, второй create НЕ делаем', async () => {
+    const { prisma, createdCurationItems } = buildPrisma({
+      // aiVerifier выключен → критический тип идёт в deep-ветку (где create).
+      curationSettings: { aiVerifierEnabled: false, auditSampleRate: 0 },
+      existingPendingItem: {
+        id: 'ci-existing',
+        level: 'deep',
+        candidateCuratorIds: ['curator-9'],
+      },
+    });
+    const service = makeService({
+      prisma,
+      metrics,
+      routing,
+      debate: null,
+    });
+
+    const res = await service.triage(criticalInput);
+
+    // findFirst нашёл pending → возвращаем существующий, create не вызван.
+    expect((prisma.curationItem.findFirst as any)).toHaveBeenCalledTimes(1);
+    expect(createdCurationItems).toHaveLength(0);
+    expect(res.curationItemId).toBe('ci-existing');
+    expect(res.decision).toBe('deep');
+    expect(res.candidateCuratorIds).toEqual(['curator-9']);
+  });
+
+  it('Б56: нет pending CurationItem → triage создаёт новый (регрессия не сломана)', async () => {
+    const { prisma, createdCurationItems } = buildPrisma({
+      curationSettings: { aiVerifierEnabled: false, auditSampleRate: 0 },
+      existingPendingItem: null,
+    });
+    const service = makeService({ prisma, metrics, routing, debate: null });
+
+    const res = await service.triage(criticalInput);
+
+    expect(createdCurationItems).toHaveLength(1);
+    expect(res.curationItemId).toBe('ci-1');
+    expect(res.decision).toBe('deep');
   });
 });
 

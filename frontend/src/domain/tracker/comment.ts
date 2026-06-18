@@ -1,13 +1,4 @@
-/**
- * Доменная модель комментария задачи трекера.
- *
- * Контракт: `backend/src/modules/tracker/services/comments.service.ts`
- * (CommentResponseDto).
- */
-
-export type CommentAccess = 'internal' | 'external';
-
-// ─── ApiDto ─────────────────────────────────────────────────────────────────
+export type CommentAccess = "internal" | "external";
 
 export interface CommentApi {
   id: string;
@@ -27,8 +18,6 @@ export interface CommentApi {
   deletedAt: string | null;
 }
 
-// ─── Domain ─────────────────────────────────────────────────────────────────
-
 export interface Comment {
   id: string;
   issueId: string;
@@ -45,18 +34,15 @@ export interface Comment {
   createdAt: Date;
   editedAt: Date | null;
   deletedAt: Date | null;
-  // ─ computed ─
   isEdited: boolean;
   isDeleted: boolean;
 }
-
-// ─── Mappers ────────────────────────────────────────────────────────────────
 
 const parseDate = (s: string | null | undefined): Date | null =>
   s ? new Date(s) : null;
 
 const parseAccess = (raw: string): CommentAccess =>
-  raw === 'external' ? 'external' : 'internal';
+  raw === "external" ? "external" : "internal";
 
 export function commentFromApi(api: CommentApi): Comment {
   const editedAt = parseDate(api.editedAt);

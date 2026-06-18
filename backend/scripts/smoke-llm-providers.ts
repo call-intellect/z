@@ -1,54 +1,11 @@
-/**
- * Smoke-test всех LLM-провайдеров и моделей, доступных проекту Z.
- *
- * Цель — за один прогон проверить, какие модели/каналы рабочие именно сейчас
- * (ключи валидны, прокси доступен, IP-блок не сработал, прайс есть и т.п.),
- * чтобы команда понимала, что можно подключать в pipeline без сюрпризов.
- *
- * Что прогоняется (текст):
- *   • Anthropic (direct):       claude-sonnet-4-6, claude-haiku-4-5-20251001, claude-opus-4-7
- *   • MiniMax (Anthropic-compat): MiniMax-M2.5, MiniMax-M2.7
- *   • OpenAI via proxy.agent-lia.ru (Responses): gpt-5.5, gpt-5.4, gpt-5.4-mini,
- *     gpt-5.4-nano, gpt-5-mini, gpt-4o-mini, gpt-4.1-mini
- *   • DeepSeek (direct chat/completions):  deepseek-v4-flash, deepseek-v4-pro
- *   • Ollama self-hosted (OpenAI-compat):   qwen3:30b-a3b-instruct-2507
- *   • Gemini через grsai (через прокси):    gemini-3-pro, gemini-3.1-pro
- *   • Gemini через KIE (через прокси):      gemini-3-pro
- *
- * Что прогоняется (embeddings):
- *   • OpenAI text-embedding-3-small (через прокси)
- *   • Ollama bge-m3
- *
- * Один и тот же лёгкий промпт — «Является ли Москва столицей России? Ответь:
- * да или нет.» — позволяет глазами сравнить адекватность. Никаких json_schema,
- * tools, длинного контекста — это smoke, не бенчмарк. Бенчмарк — отдельно по
- * методике §15 `llm-models-playbook.md`.
- *
- * Запуск:
- *   cd backend && bun scripts/smoke-llm-providers.ts
- *
- * Опционально ограничить провайдеры:
- *   bun scripts/smoke-llm-providers.ts --only=deepseek,ollama
- *   bun scripts/smoke-llm-providers.ts --skip=anthropic
- *
- * Результат — таблица в консоли + JSON-отчёт в `tmp/llm-smoke-<timestamp>.json`.
- *
- * Никакой записи в БД, никакого `AiUsageLog` — это диагностика, не прод-вызов.
- */
-
 import 'reflect-metadata';
 import { config as loadEnv } from 'dotenv';
 import { resolve } from 'node:path';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 
-// .env в корне репо приоритетнее, потом backend/.env (как fallback).
-// override:true для корневого важен — bun автоматически грузит backend/.env из CWD
-// раньше, чем сюда доходит код; без override корневые реальные ключи проигрывают
-// плейсхолдерам из backend/.env.
 loadEnv({ path: resolve(__dirname, '..', '..', '.env'), override: true });
 loadEnv({ path: resolve(__dirname, '..', '.env'), override: false });
 
-// Дефолт для self-hosted Ollama из llm-models-playbook.md §10, если в .env не задан.
 if (!process.env.OLLAMA_API_KEY) {
   process.env.OLLAMA_API_KEY = 'sk-local-test-20260319';
 }
@@ -56,14 +13,9 @@ if (!process.env.OLLAMA_BASE_URL) {
   process.env.OLLAMA_BASE_URL = 'https://ollama.agent-lia.ru/v1';
 }
 
-// ─── Конфигурация ─────────────────────────────────────────────────────────
-
 const SYSTEM_PROMPT = 'Ты лаконичный ассистент. Отвечай строго одним словом без знаков препинания.';
 const USER_PROMPT = 'Является ли Москва столицей России? Ответь: да или нет.';
-const EXPECTED_KEYWORDS = ['да', 'yes']; // допускаем оба
-// 256 — компромисс: достаточно «бюджета» для reasoning-моделей (deepseek-v4-pro,
-// gpt-5*), которые поглощают часть бюджета на скрытые рассуждения, и при этом
-// не съедает слишком много токенов на простой smoke.
+const EXPECTED_KEYWORDS = ['да', 'yes'];
 const MAX_TOKENS = 256;
 const TIMEOUT_MS = 60_000;
 
@@ -74,9 +26,12 @@ const args = process.argv.slice(2);
 const onlyArg = args.find((a) => a.startsWith('--only='))?.slice(7);
 const skipArg = args.find((a) => a.startsWith('--skip='))?.slice(7);
 const onlyChannels = onlyArg ? new Set(onlyArg.split(',').map((s) => s.trim())) : null;
-const skipChannels = new Set((skipArg ?? '').split(',').map((s) => s.trim()).filter(Boolean));
-
-// ─── Типы отчёта ──────────────────────────────────────────────────────────
+const skipChannels = new Set(
+  (skipArg ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+);
 
 interface Result {
   channel: string;
@@ -95,12 +50,11 @@ const results: Result[] = [];
 
 function logResult(r: Result): void {
   results.push(r);
-  const status =
-    r.status === 'ok' ? '✓' : r.status === 'fail' ? '✗' : '-';
+  const status = r.status === 'ok' ? '✓' : r.status === 'fail' ? '✗' : '-';
   const lat = `${r.latencyMs}ms`.padStart(8);
   const tokens =
     r.inputTokens !== undefined
-      ? ` ${(r.inputTokens ?? 0)}/${r.outputTokens ?? 0}t`.padStart(11)
+      ? ` ${r.inputTokens ?? 0}/${r.outputTokens ?? 0}t`.padStart(11)
       : '            ';
   const head = `${status} ${r.channel.padEnd(18)} ${r.model.padEnd(36)} ${lat}${tokens}`;
   if (r.status === 'ok') {
@@ -137,8 +91,6 @@ function skip(channel: string, model: string, reason: string): void {
   if (!shouldRun(channel)) return;
   logResult({ channel, model, status: 'skip', latencyMs: 0, error: reason });
 }
-
-// ─── 1. Anthropic (direct) ────────────────────────────────────────────────
 
 async function testAnthropic(model: string): Promise<void> {
   const channel = 'anthropic';
@@ -190,8 +142,6 @@ async function testAnthropic(model: string): Promise<void> {
   }
 }
 
-// ─── 2. MiniMax (Anthropic-compat) ────────────────────────────────────────
-
 async function testMinimax(model: string): Promise<void> {
   const channel = 'minimax';
   if (!shouldRun(channel)) return;
@@ -239,8 +189,6 @@ async function testMinimax(model: string): Promise<void> {
   }
 }
 
-// ─── 3. OpenAI via proxy.agent-lia.ru (Responses API) ─────────────────────
-
 async function testOpenAiProxy(model: string): Promise<void> {
   const channel = 'openai-via-proxy';
   if (!shouldRun(channel)) return;
@@ -261,12 +209,10 @@ async function testOpenAiProxy(model: string): Promise<void> {
       stream: false,
       instructions: SYSTEM_PROMPT,
       input: [{ role: 'user', content: USER_PROMPT }],
-      max_output_tokens: 1024, // reasoning-моделям нужен «бюджет на мысли»
+      max_output_tokens: 1024,
     };
     if (isReasoning) {
-      // gpt-5.4-* / gpt-5.5 принимают только 'none'|'low'|'medium'|'high'.
-      // 'minimal' — только у старого gpt-5/5-mini/5-nano.
-      const isOldGpt5 = /^gpt-5(?!\.)/.test(model); // gpt-5, gpt-5-mini, gpt-5-nano
+      const isOldGpt5 = /^gpt-5(?!\.)/.test(model);
       params['reasoning'] = { effort: isOldGpt5 ? 'minimal' : 'low' };
     }
     const [response, latencyMs] = await timed(() =>
@@ -307,8 +253,6 @@ async function testOpenAiProxy(model: string): Promise<void> {
     });
   }
 }
-
-// ─── 4. DeepSeek (direct, OpenAI-compat) ──────────────────────────────────
 
 async function testDeepSeek(model: string): Promise<void> {
   const channel = 'deepseek';
@@ -355,12 +299,9 @@ async function testDeepSeek(model: string): Promise<void> {
   }
 }
 
-// ─── 5. Ollama (OpenAI-compat) ────────────────────────────────────────────
-
 async function testOllama(model: string): Promise<void> {
   const channel = 'ollama';
   if (!shouldRun(channel)) return;
-  // OLLAMA_BASE_URL может быть с /v1 или без — нормализуем
   let baseUrl = process.env.OLLAMA_BASE_URL ?? 'https://ollama.agent-lia.ru/v1';
   baseUrl = baseUrl.replace(/\/+$/, '');
   if (!baseUrl.endsWith('/v1')) baseUrl = `${baseUrl}/v1`;
@@ -401,8 +342,6 @@ async function testOllama(model: string): Promise<void> {
   }
 }
 
-// ─── 6. GRSAI (Gemini через прокси) ───────────────────────────────────────
-
 async function testGrsai(model: string): Promise<void> {
   const channel = 'grsai-gemini';
   if (!shouldRun(channel)) return;
@@ -411,13 +350,12 @@ async function testGrsai(model: string): Promise<void> {
     skip(channel, model, 'GRSAI_API_KEY не задан');
     return;
   }
-  // через наш прокси: proxy.agent-lia.ru/grsai/v1/chat/completions
   const baseRoot = PROXY_BASE.replace(/\/v1$/, '');
   const url = `${baseRoot}/grsai/v1/chat/completions`;
   try {
     const body = {
       model,
-      stream: true, // grsai отдаёт SSE
+      stream: true,
       max_tokens: MAX_TOKENS,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
@@ -491,9 +429,7 @@ async function collectSse(resp: Response): Promise<{
             inputTokens = data.usage.prompt_tokens ?? inputTokens;
             outputTokens = data.usage.completion_tokens ?? outputTokens;
           }
-        } catch {
-          /* skip malformed line */
-        }
+        } catch {}
       }
     }
   } finally {
@@ -502,13 +438,6 @@ async function collectSse(resp: Response): Promise<{
   }
   return { text: chunks.join(''), inputTokens, outputTokens };
 }
-
-// ─── 6.5. KIE Claude (Anthropic-compat, прямой вызов api.kie.ai) ──────────
-//
-// Эндпоинт `/claude/v1/messages` принимает Anthropic-формат запроса/ответа,
-// но авторизуется по Bearer (без `myFeedproxy3128:` префикса).
-// Модель указывается в поле `model`. Поток ответов отключаем явно — у KIE
-// в этой ручке `stream` по умолчанию `true`.
 
 async function testKieClaude(model: string): Promise<void> {
   const channel = 'kie-claude';
@@ -521,15 +450,11 @@ async function testKieClaude(model: string): Promise<void> {
   const base = (process.env.KIE_BASE_URL ?? 'https://api.kie.ai').replace(/\/$/, '');
   const url = `${base}/claude/v1/messages`;
   try {
-    // KIE-спека не документирует top-level `system`, поэтому склеиваем system+user
-    // в одно user-сообщение — гарантированно работает по присланной OpenAPI.
     const body = {
       model,
       max_tokens: MAX_TOKENS,
       stream: false,
-      messages: [
-        { role: 'user', content: `${SYSTEM_PROMPT}\n\n${USER_PROMPT}` },
-      ],
+      messages: [{ role: 'user', content: `${SYSTEM_PROMPT}\n\n${USER_PROMPT}` }],
     };
     const [{ text, inputTokens, outputTokens }, latencyMs] = await timed(async () => {
       const resp = await fetch(url, {
@@ -580,14 +505,6 @@ async function testKieClaude(model: string): Promise<void> {
   }
 }
 
-// ─── 6.6. KIE GPT (OpenAI Responses-style, прямой вызов api.kie.ai) ───────
-//
-// Эндпоинт `/codex/v1/responses` принимает OpenAI-Responses-формат: вход —
-// массив `input` с `content`-блоками (`input_text`/`input_image`/`input_file`),
-// `reasoning.effort` — `low|medium|high|xhigh`. Авторизация — Bearer.
-// Ответ — массив `output` с блоками `reasoning` и `message` (внутри
-// `content[].type === 'output_text'`).
-
 async function testKieGpt(model: string): Promise<void> {
   const channel = 'kie-gpt';
   if (!shouldRun(channel)) return;
@@ -605,9 +522,7 @@ async function testKieGpt(model: string): Promise<void> {
       input: [
         {
           role: 'user',
-          content: [
-            { type: 'input_text', text: `${SYSTEM_PROMPT}\n\n${USER_PROMPT}` },
-          ],
+          content: [{ type: 'input_text', text: `${SYSTEM_PROMPT}\n\n${USER_PROMPT}` }],
         },
       ],
       reasoning: { effort: 'low' },
@@ -666,13 +581,6 @@ async function testKieGpt(model: string): Promise<void> {
   }
 }
 
-// ─── 6.7. KIE Gemini (OpenAI chat/completions, прямой вызов api.kie.ai) ───
-//
-// Эндпоинт `/${modelSlug}/v1/chat/completions` (OpenAI-compat). Модель
-// закодирована в URL — в теле поле `model` НЕ передаётся. Bearer-auth.
-// Параметр `stream` по умолчанию `true` — обязательно явно `false`.
-// `reasoning_effort: 'low'|'high'`, `include_thoughts: boolean`.
-
 async function testKieGemini(modelSlug: string): Promise<void> {
   const channel = 'kie-gemini-direct';
   if (!shouldRun(channel)) return;
@@ -691,9 +599,7 @@ async function testKieGemini(modelSlug: string): Promise<void> {
       messages: [
         {
           role: 'user',
-          content: [
-            { type: 'text', text: `${SYSTEM_PROMPT}\n\n${USER_PROMPT}` },
-          ],
+          content: [{ type: 'text', text: `${SYSTEM_PROMPT}\n\n${USER_PROMPT}` }],
         },
       ],
     };
@@ -749,8 +655,6 @@ async function testKieGemini(modelSlug: string): Promise<void> {
   }
 }
 
-// ─── 7. KIE (Gemini через прокси) ─────────────────────────────────────────
-
 async function testKie(model: string): Promise<void> {
   const channel = 'kie-gemini';
   if (!shouldRun(channel)) return;
@@ -760,7 +664,6 @@ async function testKie(model: string): Promise<void> {
     return;
   }
   const baseRoot = PROXY_BASE.replace(/\/v1$/, '');
-  // KIE использует модель в пути URL
   const url = `${baseRoot}/kie/${model}/v1/chat/completions`;
   try {
     const body = {
@@ -796,10 +699,7 @@ async function testKie(model: string): Promise<void> {
       };
       const choice = data.choices?.[0];
       const raw =
-        choice?.message?.content ??
-        choice?.message?.reasoning_content ??
-        choice?.text ??
-        '';
+        choice?.message?.content ?? choice?.message?.reasoning_content ?? choice?.text ?? '';
       const t =
         typeof raw === 'string'
           ? raw
@@ -832,8 +732,6 @@ async function testKie(model: string): Promise<void> {
     });
   }
 }
-
-// ─── 8. Embeddings ────────────────────────────────────────────────────────
 
 async function testOpenAiEmbeddings(): Promise<void> {
   const channel = 'embeddings-openai';
@@ -917,8 +815,6 @@ async function testOllamaEmbeddings(): Promise<void> {
   }
 }
 
-// ─── helpers ──────────────────────────────────────────────────────────────
-
 function errMsg(err: unknown): string {
   if (err instanceof Error) {
     const status = (err as { status?: number }).status;
@@ -926,8 +822,6 @@ function errMsg(err: unknown): string {
   }
   return String(err);
 }
-
-// ─── main ─────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   // eslint-disable-next-line no-console
@@ -959,16 +853,13 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log('─'.repeat(140));
 
-  // 1. Anthropic
   await testAnthropic('claude-sonnet-4-6');
   await testAnthropic('claude-haiku-4-5-20251001');
   await testAnthropic('claude-opus-4-7');
 
-  // 2. MiniMax
   await testMinimax('MiniMax-M2.5');
   await testMinimax('MiniMax-M2.7');
 
-  // 3. OpenAI via proxy
   await testOpenAiProxy('gpt-5.5');
   await testOpenAiProxy('gpt-5.4');
   await testOpenAiProxy('gpt-5.4-mini');
@@ -977,37 +868,27 @@ async function main(): Promise<void> {
   await testOpenAiProxy('gpt-4.1-mini');
   await testOpenAiProxy('gpt-4o-mini');
 
-  // 4. DeepSeek
   await testDeepSeek('deepseek-v4-flash');
   await testDeepSeek('deepseek-v4-pro');
   await testDeepSeek('deepseek-chat');
 
-  // 5. Ollama — реально установленные модели (см. /v1/models нашего инстанса)
   await testOllama('qwen3.5:9b');
   await testOllama('kwangsuklee/Nanbeige4.1-3B.Q4_K_M:latest');
 
-  // 6. GRSAI Gemini
   await testGrsai('gemini-3-pro');
   await testGrsai('gemini-3.1-pro');
 
-  // 6.5. KIE Claude (Anthropic-compat через api.kie.ai)
   await testKieClaude('claude-opus-4-7');
 
-  // 6.6. KIE GPT (OpenAI Responses-style через api.kie.ai)
   await testKieGpt('gpt-5-4');
 
-  // 6.7. KIE Gemini direct (OpenAI chat/completions через api.kie.ai,
-  //      модель в URL-сегменте)
   await testKieGemini('gemini-3-flash');
 
-  // 7. KIE Gemini
   await testKie('gemini-3-pro');
 
-  // 8. Embeddings
   await testOpenAiEmbeddings();
   await testOllamaEmbeddings();
 
-  // ─── Summary ───
   // eslint-disable-next-line no-console
   console.log('');
   const ok = results.filter((r) => r.status === 'ok').length;
@@ -1016,7 +897,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`Итого: ok=${ok}, fail=${fail}, skip=${sk}, всего=${results.length}`);
 
-  // ─── Save JSON ───
   const tmpDir = resolve(__dirname, '..', 'tmp');
   if (!existsSync(tmpDir)) mkdirSync(tmpDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -1038,7 +918,7 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`Отчёт: ${file}`);
 
-  if (fail > 0) process.exitCode = 0; // smoke не должен валить CI; результаты в отчёте
+  if (fail > 0) process.exitCode = 0;
 }
 
 main().catch((err) => {

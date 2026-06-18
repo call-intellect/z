@@ -1,20 +1,15 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import useSWR from 'swr';
-import {
-  ChevronLeft,
-  Hash,
-  Plus,
-  Sparkles,
-  Users,
-} from 'lucide-react';
-import { toast } from 'sonner';
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import useSWR from "swr";
+import { ChevronLeft, Hash, Plus, Sparkles, Users } from "lucide-react";
+import { toast } from "sonner";
 
-import { themesApi } from '@/api/themes.api';
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { themesApi } from "@/api/themes.api";
+import { pluralRu } from "@/domain/contribution";
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   THEME_BRANCH_LABELS,
   THEME_DYNAMIC_LABELS,
@@ -23,29 +18,28 @@ import {
   type ThemeDetailDomain,
   type ThemeEntityDomain,
   themeDetailFromApi,
-} from '@/domain/theme';
-import { entityTypeLabel, signalTypeLabel } from '@/domain/entity';
-import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
-import { Button } from '@/ui/shadcn/button';
-import { Badge } from '@/ui/shadcn/badge';
+} from "@/domain/theme";
+import { entityTypeLabel, signalTypeLabel } from "@/domain/entity";
+import { Button } from "@/ui/shadcn/button";
+import { Badge } from "@/ui/shadcn/badge";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { cn } from "@/ui/shadcn/lib/utils";
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 
 export function ThemeDetailClient({ themeId }: { themeId: string }) {
-  const themeSwr = useSWR(['theme', themeId], async () => {
+  const themeSwr = useSWR(["theme", themeId], async () => {
     const api = await themesApi.get(themeId);
     return themeDetailFromApi(api);
   });
 
-  // Хлебные крошки: имя темы из уже загруженного объекта (без доп. запроса).
   useRegisterBreadcrumb(
     themeSwr.data?.theme ? { label: themeSwr.data.theme.name } : null,
   );
@@ -84,19 +78,24 @@ function ThemeDetail({ detail }: { detail: ThemeDetailDomain }) {
   const branchLabel = theme.branch ? THEME_BRANCH_LABELS[theme.branch] : null;
   const dynamicLabel = THEME_DYNAMIC_LABELS[theme.dynamic];
   const statusLabel = THEME_STATUS_LABELS[theme.status];
-  const isMerged = theme.status === 'merged_into' && mergedIntoId;
+  const isMerged = theme.status === "merged_into" && mergedIntoId;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-6">
       <div className="mb-4">
-        <Button asChild variant="ghost" size="sm" className="gap-1 text-fg-tertiary">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="gap-1 text-fg-tertiary"
+        >
           <Link href="/themes">
             <ChevronLeft size={16} /> Все темы
           </Link>
         </Button>
       </div>
 
-      {/* Header */}
+      {}
       <header className="mb-6 flex flex-wrap items-start gap-4">
         <div className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-accent/20 text-accent">
           <Sparkles size={22} />
@@ -107,12 +106,18 @@ function ThemeDetail({ detail }: { detail: ThemeDetailDomain }) {
             {branchLabel && <Badge variant="default">{branchLabel}</Badge>}
             <Badge variant="secondary">{dynamicLabel}</Badge>
             <Badge
-              variant={theme.status === 'active' ? 'success' : 'secondary'}
+              variant={theme.status === "active" ? "success" : "secondary"}
             >
               {statusLabel}
             </Badge>
             <span className="text-xs text-fg-tertiary">
-              {theme.blocksCount} блоков · {theme.entitiesCount} сущностей
+              {pluralRu(theme.blocksCount, "блок", "блока", "блоков")} ·{" "}
+              {pluralRu(
+                theme.entitiesCount,
+                "сущность",
+                "сущности",
+                "сущностей",
+              )}
             </span>
           </div>
           {theme.description && (
@@ -121,7 +126,7 @@ function ThemeDetail({ detail }: { detail: ThemeDetailDomain }) {
             </p>
           )}
         </div>
-        {!isMerged && theme.status === 'active' && (
+        {!isMerged && theme.status === "active" && (
           <div className="flex items-center gap-2">
             <Button
               type="button"
@@ -136,7 +141,7 @@ function ThemeDetail({ detail }: { detail: ThemeDetailDomain }) {
 
       {isMerged && mergedIntoId && (
         <div className="mb-6 rounded-xl border border-border-subtle bg-bg-overlay p-4 text-sm text-fg-secondary">
-          Эта тема была объединена с другой.{' '}
+          Эта тема была объединена с другой.{" "}
           <Link
             href={`/themes/${encodeURIComponent(mergedIntoId)}`}
             className="text-accent hover:underline"
@@ -147,7 +152,7 @@ function ThemeDetail({ detail }: { detail: ThemeDetailDomain }) {
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Blocks */}
+        {}
         <section className="lg:col-span-2">
           <h2 className="mb-3 text-sm font-medium text-fg-tertiary">
             Идеи в этой теме ({blocks.length})
@@ -165,7 +170,7 @@ function ThemeDetail({ detail }: { detail: ThemeDetailDomain }) {
           )}
         </section>
 
-        {/* Entities */}
+        {}
         <aside>
           <h2 className="mb-3 text-sm font-medium text-fg-tertiary">
             Упомянутые сущности ({entities.length})
@@ -260,7 +265,6 @@ function SaveAsCardDialog({
   const [name, setName] = useState(defaultName);
   const [submitting, setSubmitting] = useState(false);
 
-  // Сбрасываем имя на defaultName при каждом открытии диалога.
   function handleOpenChange(v: boolean) {
     if (v) setName(defaultName);
     onOpenChange(v);
@@ -270,7 +274,7 @@ function SaveAsCardDialog({
     e.preventDefault();
     if (submitting) return;
     if (!name.trim()) {
-      toast.error('Укажите название карточки');
+      toast.error("Укажите название карточки");
       return;
     }
     setSubmitting(true);
@@ -278,14 +282,14 @@ function SaveAsCardDialog({
       const res = await themesApi.saveAsCard(themeId, {
         name: name.trim(),
       });
-      toast.success('Карточка создана из темы');
+      toast.success("Карточка создана из темы");
       onOpenChange(false);
       router.push(`/cards/${encodeURIComponent(res.cardId)}`);
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'card_name_taken') {
-        toast.error('Карточка с таким названием уже существует');
+      if (err instanceof ApiError && err.code === "card_name_taken") {
+        toast.error("Карточка с таким названием уже существует");
       } else {
-        const msg = humanizeApiError(err, 'Не удалось сохранить');
+        const msg = humanizeApiError(err, "Не удалось сохранить");
         toast.error(msg);
       }
     } finally {
@@ -295,7 +299,7 @@ function SaveAsCardDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className={cn('sm:max-w-md')}>
+      <DialogContent className={cn("sm:max-w-md")}>
         <DialogHeader>
           <DialogTitle>Сохранить тему как карточку</DialogTitle>
         </DialogHeader>
@@ -325,7 +329,7 @@ function SaveAsCardDialog({
               Отмена
             </Button>
             <Button type="submit" disabled={submitting}>
-              {submitting ? 'Сохраняем…' : 'Создать карточку'}
+              {submitting ? "Сохраняем…" : "Создать карточку"}
             </Button>
           </DialogFooter>
         </form>

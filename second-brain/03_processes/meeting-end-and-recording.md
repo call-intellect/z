@@ -8,8 +8,8 @@ owners_human:
   - инженер media-stack
   - продакт встреч
 related_plans:
-  - plans/tz/2026-05-08-mvp-fullstack-tz.md
-  - plans/architecture/2026-05-08-z-architecture.md
+  - plans/archive/2026-05-08-mvp-fullstack-tz.md
+  - plans/archive/2026-05-08-z-architecture.md
 related_projects:
   - 01_projects/recording.md
   - 01_projects/meeting-report-pipeline.md

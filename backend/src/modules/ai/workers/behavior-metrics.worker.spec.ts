@@ -1,15 +1,3 @@
-/**
- * Integration-тест BehaviorMetricsWorker (Фаза B).
- *
- * Проверяем поток: process(job) с фикстурой merged.json + participants →
- * BehaviorMetricsCalculator считает → транзакция в Prisma сохраняет
- * MeetingBehaviorMetrics + MeetingParticipantBehavior + статус
- * Meeting.behaviorMetricsStatus.
- *
- * Не запускаем реальный BullMQ Worker — вызываем `process(job)` напрямую,
- * чтобы тест был синхронный и не требовал Redis.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -33,7 +21,10 @@ interface TxClient {
 
 function buildWorker(opts: {
   meeting: Record<string, unknown> | null;
-  merged: { meetingId: string; turns: Array<{ speaker: string; text: string; startSec: number; endSec: number }> };
+  merged: {
+    meetingId: string;
+    turns: Array<{ speaker: string; text: string; startSec: number; endSec: number }>;
+  };
 }): {
   worker: BehaviorMetricsWorker;
   meetingUpdate: ReturnType<typeof vi.fn>;
@@ -86,14 +77,7 @@ function buildWorker(opts: {
   } as unknown as BusinessMetricsService;
 
   const calculator = new BehaviorMetricsCalculator();
-  const worker = new BehaviorMetricsWorker(
-    redis,
-    prisma,
-    s3,
-    calculator,
-    llmRefine,
-    metrics,
-  );
+  const worker = new BehaviorMetricsWorker(redis, prisma, s3, calculator, llmRefine, metrics);
 
   return {
     worker,
@@ -109,19 +93,15 @@ describe('BehaviorMetricsWorker.process', () => {
   it('happy path: сохраняет метрики и помечает Meeting.behaviorMetricsStatus="ready"', async () => {
     const meetingId = 'mtg_test';
     const startedAt = new Date('2026-05-21T10:00:00Z');
-    const endedAt = new Date('2026-05-21T10:05:00Z'); // 300_000ms
+    const endedAt = new Date('2026-05-21T10:05:00Z');
     const meeting = {
       id: meetingId,
       tenantId: 'tenant_1',
       startedAt,
       endedAt,
-      // Нормальная встреча: у дорожек есть пословные тайминги → wordTimingsAvailable=true
-      // → метрики считаются с полной уверенностью (lowConfidence=false).
       transcript: {
         mergedS3Url: 'meetings/mtg_test/merged.json',
-        tracks: [
-          { words: [{ word: 'Привет', startMs: 0, endMs: 500 }] },
-        ],
+        tracks: [{ words: [{ word: 'Привет', startMs: 0, endMs: 500 }] }],
       },
       participants: [
         {
@@ -155,24 +135,22 @@ describe('BehaviorMetricsWorker.process', () => {
       BehaviorMetricsWorker['process']
     >[0]);
 
-    // Статус обновлён как минимум на pending → ready (две update'ы).
     expect(meetingUpdate).toHaveBeenCalled();
     const updateCalls = meetingUpdate.mock.calls.map(
-      (c: unknown[]) => ((c[0] as { data: { behaviorMetricsStatus?: string } }).data.behaviorMetricsStatus),
+      (c: unknown[]) =>
+        (c[0] as { data: { behaviorMetricsStatus?: string } }).data.behaviorMetricsStatus,
     );
     expect(updateCalls).toContain('pending');
     expect(updateCalls).toContain('ready');
 
-    // Транзакция вызвалась.
     expect(upsert).toHaveBeenCalledTimes(1);
     expect(createMany).toHaveBeenCalledTimes(1);
     const upsertArg = (upsert.mock.calls[0] as unknown[])[0] as {
       create: { totalDurationMs: number; totalSpeechMs: number };
     };
     expect(upsertArg.create.totalDurationMs).toBe(300_000);
-    expect(upsertArg.create.totalSpeechMs).toBe(90_000); // 30+60s
+    expect(upsertArg.create.totalSpeechMs).toBe(90_000);
 
-    // Метрики.
     expect(metricsRefs.computed).toHaveBeenCalled();
     expect(metricsRefs.duration).toHaveBeenCalled();
     expect(metricsRefs.lowConfidence).not.toHaveBeenCalled();
@@ -185,11 +163,9 @@ describe('BehaviorMetricsWorker.process', () => {
       id: meetingId,
       tenantId: 'tenant_1',
       startedAt: new Date('2026-05-21T10:00:00Z'),
-      endedAt: new Date('2026-05-21T10:00:30Z'), // 30s < 60s
+      endedAt: new Date('2026-05-21T10:00:30Z'),
       transcript: { mergedS3Url: 'short.json' },
-      participants: [
-        { id: 'p_alice', livekitIdentity: 'alice', name: 'Алиса', role: 'host' },
-      ],
+      participants: [{ id: 'p_alice', livekitIdentity: 'alice', name: 'Алиса', role: 'host' }],
     };
     const merged = {
       meetingId,
@@ -202,7 +178,8 @@ describe('BehaviorMetricsWorker.process', () => {
     >[0]);
 
     const updateCalls = meetingUpdate.mock.calls.map(
-      (c: unknown[]) => ((c[0] as { data: { behaviorMetricsStatus?: string } }).data.behaviorMetricsStatus),
+      (c: unknown[]) =>
+        (c[0] as { data: { behaviorMetricsStatus?: string } }).data.behaviorMetricsStatus,
     );
     expect(updateCalls).toContain('low_confidence');
     expect(metricsRefs.lowConfidence).toHaveBeenCalled();
@@ -236,8 +213,7 @@ describe('BehaviorMetricsWorker.process', () => {
       id: meetingId,
       tenantId: 'tenant_1',
       startedAt: new Date('2026-05-21T10:00:00Z'),
-      endedAt: new Date('2026-05-21T10:05:00Z'), // 300s ≥ 60s
-      // words пустые, но есть segments → wordTimingsAvailable=true (Б5).
+      endedAt: new Date('2026-05-21T10:05:00Z'),
       transcript: {
         mergedS3Url: 'meetings/mtg_seg/merged.json',
         tracks: [{ words: [], segments: [{ startSec: 0, endSec: 30, text: 'Привет' }] }],
@@ -261,7 +237,8 @@ describe('BehaviorMetricsWorker.process', () => {
     >[0]);
 
     const updateCalls = meetingUpdate.mock.calls.map(
-      (c: unknown[]) => (c[0] as { data: { behaviorMetricsStatus?: string } }).data.behaviorMetricsStatus,
+      (c: unknown[]) =>
+        (c[0] as { data: { behaviorMetricsStatus?: string } }).data.behaviorMetricsStatus,
     );
     expect(updateCalls).toContain('ready');
     expect(updateCalls).not.toContain('low_confidence');
@@ -274,7 +251,7 @@ describe('BehaviorMetricsWorker.process', () => {
       id: meetingId,
       tenantId: 'tenant_1',
       startedAt: new Date('2026-05-21T10:00:00Z'),
-      endedAt: new Date('2026-05-21T10:05:00Z'), // 300s ≥ 60s → low_confidence только из-за таймингов
+      endedAt: new Date('2026-05-21T10:05:00Z'),
       transcript: {
         mergedS3Url: 'meetings/mtg_noseg/merged.json',
         tracks: [{ words: [], segments: [] }],
@@ -298,7 +275,8 @@ describe('BehaviorMetricsWorker.process', () => {
     >[0]);
 
     const updateCalls = meetingUpdate.mock.calls.map(
-      (c: unknown[]) => (c[0] as { data: { behaviorMetricsStatus?: string } }).data.behaviorMetricsStatus,
+      (c: unknown[]) =>
+        (c[0] as { data: { behaviorMetricsStatus?: string } }).data.behaviorMetricsStatus,
     );
     expect(updateCalls).toContain('low_confidence');
     expect(metricsRefs.lowConfidence).toHaveBeenCalled();

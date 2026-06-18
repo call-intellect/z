@@ -3,25 +3,8 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AuditLogService } from '../../audit/audit-log.service';
-import type {
-  CreateKeyResultDto,
-  GoalKeyResultDto,
-  UpdateKeyResultDto,
-} from '../dto/goals.dto';
+import type { CreateKeyResultDto, GoalKeyResultDto, UpdateKeyResultDto } from '../dto/goals.dto';
 
-/**
- * Goals OKR v2 (Фаза 1, M0) — CRUD для измеримых ориентиров `GoalKeyResult`.
- *
- * Вынесен из `GoalsService`, чтобы не раздувать его (KR — отдельная сущность
- * с собственной историей `GoalKeyResultCheckpoint`).
- *
- * Бизнес-правила M0:
- *   - KR всегда принадлежит цели того же tenant'а (проверка krId→goalId→tenantId).
- *   - Ручной апдейт `currentValue` пишет checkpoint (recordedBy='manual') в
- *     одной транзакции с апдейтом KR — для тренда пульса.
- *   - `manualOverride` — набор имён «прибитых» руками полей; AI их не перетирает.
- *   - Decimal-поля (precision 18,4) пишутся через `new Prisma.Decimal(x.toFixed(4))`.
- */
 @Injectable()
 export class GoalKeyResultsService {
   private readonly logger = new Logger(GoalKeyResultsService.name);
@@ -30,8 +13,6 @@ export class GoalKeyResultsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
   ) {}
-
-  // ─────────────────────────── create ───────────────────────────────
 
   async create(args: {
     tenantId: string;
@@ -52,8 +33,7 @@ export class GoalKeyResultsService {
       });
     }
 
-    const currentValue =
-      body.currentValue !== undefined ? body.currentValue : body.startValue;
+    const currentValue = body.currentValue !== undefined ? body.currentValue : body.startValue;
 
     const created = await this.prisma.goalKeyResult.create({
       data: {
@@ -81,8 +61,6 @@ export class GoalKeyResultsService {
     return GoalKeyResultsService.map(created);
   }
 
-  // ─────────────────────────── update ───────────────────────────────
-
   async update(args: {
     tenantId: string;
     userId: string;
@@ -96,11 +74,7 @@ export class GoalKeyResultsService {
       where: { id: krId },
       select: { id: true, tenantId: true, goalId: true, manualOverride: true },
     });
-    if (
-      !existing ||
-      existing.tenantId !== tenantId ||
-      existing.goalId !== goalId
-    ) {
+    if (!existing || existing.tenantId !== tenantId || existing.goalId !== goalId) {
       throw new NotFoundException({
         ok: false,
         error: { code: 'goal_kr_not_found', message: 'Ключевой результат не найден' },
@@ -124,7 +98,6 @@ export class GoalKeyResultsService {
       data.sourceConfig = body.sourceConfig as Prisma.InputJsonValue;
     }
 
-    // M0: имена всех переданных полей «прибиваются» руками — AI их не перетрёт.
     const changedFields = Object.keys(body);
     data.manualOverride = GoalKeyResultsService.mergeOverride(
       existing.manualOverride,
@@ -164,8 +137,6 @@ export class GoalKeyResultsService {
     return GoalKeyResultsService.map(updated);
   }
 
-  // ─────────────────────────── delete ───────────────────────────────
-
   async remove(args: {
     tenantId: string;
     userId: string;
@@ -178,18 +149,13 @@ export class GoalKeyResultsService {
       where: { id: krId },
       select: { id: true, tenantId: true, goalId: true },
     });
-    if (
-      !existing ||
-      existing.tenantId !== tenantId ||
-      existing.goalId !== goalId
-    ) {
+    if (!existing || existing.tenantId !== tenantId || existing.goalId !== goalId) {
       throw new NotFoundException({
         ok: false,
         error: { code: 'goal_kr_not_found', message: 'Ключевой результат не найден' },
       });
     }
 
-    // Hard delete; cascade снимет checkpoints (onDelete: Cascade).
     await this.prisma.goalKeyResult.delete({ where: { id: krId } });
 
     void this.audit.log({
@@ -202,22 +168,11 @@ export class GoalKeyResultsService {
     return { removed: true };
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  /** Decimal(18,4) для KR-значений. */
   private static dec(value: number): Prisma.Decimal {
     return new Prisma.Decimal(value.toFixed(4));
   }
 
-  /**
-   * Прогресс KR в %: clamp 0..100 от (current-start)/(target-start)*100.
-   * Защита от деления на 0: target==start → 0.
-   */
-  static progressPercent(
-    start: number,
-    target: number,
-    current: number,
-  ): number {
+  static progressPercent(start: number, target: number, current: number): number {
     const span = target - start;
     if (span === 0) return 0;
     const pct = ((current - start) / span) * 100;
@@ -225,14 +180,7 @@ export class GoalKeyResultsService {
     return Math.max(0, Math.min(100, Math.round(pct * 100) / 100));
   }
 
-  /**
-   * Смердж имён изменённых полей в существующий manualOverride
-   * (Record<string, true>). Возвращает обновлённый Record.
-   */
-  private static mergeOverride(
-    existing: unknown,
-    fields: string[],
-  ): Record<string, true> {
+  private static mergeOverride(existing: unknown, fields: string[]): Record<string, true> {
     const out: Record<string, true> = {};
     if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
       for (const key of Object.keys(existing as Record<string, unknown>)) {
@@ -243,7 +191,6 @@ export class GoalKeyResultsService {
     return out;
   }
 
-  /** Ключи manualOverride-объекта → string[]. */
   private static overrideKeys(raw: unknown): string[] {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
     return Object.keys(raw as Record<string, unknown>);
@@ -260,9 +207,7 @@ export class GoalKeyResultsService {
     if (typeof obj.toNumber === 'function') {
       try {
         return obj.toNumber();
-      } catch {
-        // fallback ниже
-      }
+      } catch {}
     }
     if (typeof obj.toString === 'function') {
       const n = Number.parseFloat(obj.toString());
@@ -271,7 +216,6 @@ export class GoalKeyResultsService {
     return 0;
   }
 
-  /** Маппер строки `GoalKeyResult` → DTO (используется и в GoalsService.get). */
   static map(kr: {
     id: string;
     goalId: string;
@@ -297,11 +241,7 @@ export class GoalKeyResultsService {
       startValue: start,
       targetValue: target,
       currentValue: current,
-      progressPercent: GoalKeyResultsService.progressPercent(
-        start,
-        target,
-        current,
-      ),
+      progressPercent: GoalKeyResultsService.progressPercent(start, target, current),
       sourceKind: kr.sourceKind,
       source: kr.source,
       manualOverride: GoalKeyResultsService.overrideKeys(kr.manualOverride),

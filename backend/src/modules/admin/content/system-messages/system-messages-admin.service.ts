@@ -1,23 +1,7 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../../common/prisma/prisma.service';
-
-/**
- * Admin-redesign Фаза 5 — `SystemMessagesAdminService`.
- *
- * CRUD `SystemMessage` (баннеры/maintenance/alerts). Жёсткое удаление
- * допустимо — записи не имеют внешних ссылок и истекают по `endsAt`.
- *
- * `getActive()` возвращает короткий список «сейчас активных» сообщений,
- * чтобы фронтенд каждой страницы умел показывать баннер. Сам publish endpoint
- * (без auth) появится в Фазе 9; здесь сервис уже готов к нему.
- */
 
 export interface SystemMessageItem {
   id: string;
@@ -150,8 +134,6 @@ export class SystemMessagesAdminService {
     await this.prisma.systemMessage.delete({ where: { id } });
     return { ok: true };
   }
-
-  // ─────────────────────────── private ─────────────────────────────────
 
   private toItem(row: {
     id: string;

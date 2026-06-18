@@ -182,7 +182,7 @@ export default function ChatPage(): never {
 - Шаг 1 — локализация (выполнить ВСЕ):
   - `rg -i "goal.?align|aligned|alignment" frontend/src --type ts --type tsx`
   - `rg -i "goalAlignment|isAligned|alignedToGoal" backend/src`
-  - проверить ранжирование карточек/сигналов на предмет компонента `goal_alignment`, захардкоженного в `false`/`0` (формула в [delivery/03-modules-catalog.md:508](../../delivery/03-modules-catalog.md#L508) — ориентир, не источник правды).
+  - проверить ранжирование карточек/сигналов на предмет компонента `goal_alignment`, захардкоженного в `false`/`0` (формула в [second-brain/02_architecture/module-map.md:508](../../second-brain/02_architecture/module-map.md#L508) — ориентир, не источник правды).
 - Шаг 2 — развилка:
   - **Если найден** хардкод `false`/всегда-falsy бейдж: подключить к реальному значению — `Goal.cachedAlignment` (0..100) / `overview.alignmentScore` ([overview-response.dto.ts:58](../../backend/src/modules/tracker/dto/overview/overview-response.dto.ts#L58)); если данных на нужном уровне нет — скрыть бейдж (не показывать неинформативный «false»), а не оставлять заведомо ложный.
   - **Если НЕ найден**: задокументировать в `Итог` ТЗ «находка `goal_alignment badge` не воспроизведена на 2026-06-05 — вероятно устаревший пункт аудита; alignment считается через strategic-alignment.worker», и снять из scope. Поправить строку аудита 432 пометкой `[не воспроизведено]`.

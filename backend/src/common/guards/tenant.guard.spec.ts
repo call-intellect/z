@@ -1,18 +1,4 @@
-/**
- * Spec для TenantGuard (Phase F.3).
- *
- * Проверяем основные пути извлечения tenantId:
- *   1. Header X-Org-Id (приоритет).
- *   2. URL-параметр :orgId.
- *   3. Body tenantId / orgId.
- *   4. Единственный membership пользователя.
- *
- * И отказы:
- *   - Нет user (CookieAuthGuard не отработал) → ForbiddenException.
- *   - tenantId не определён → ForbiddenException.
- *   - Пользователь без membership в указанной Org → ForbiddenException.
- */
-import type { ExecutionContext} from '@nestjs/common';
+import type { ExecutionContext } from '@nestjs/common';
 import { ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -47,10 +33,11 @@ function buildExecCtx(req: ReqShape): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
-function buildGuard(opts: {
-  hasMembership?: boolean;
-  manyMemberships?: number;
-}): { guard: TenantGuard; prisma: PrismaService; rbac: RbacService } {
+function buildGuard(opts: { hasMembership?: boolean; manyMemberships?: number }): {
+  guard: TenantGuard;
+  prisma: PrismaService;
+  rbac: RbacService;
+} {
   const rbac = {
     loadContext: vi.fn(async () => {
       if (opts.hasMembership === false) return null;
@@ -74,8 +61,6 @@ function buildGuard(opts: {
     },
   } as unknown as PrismaService;
 
-  // Ф2 knowledge-access — gate выключен (off) → резолвер не вызывается,
-  // поведение TenantGuard байт-в-байт прежнее.
   const cfg = {
     knowledgeAccess: { enforcement: 'off' as const },
   } as unknown as TypedConfigService;
@@ -91,11 +76,6 @@ function buildGuard(opts: {
 }
 
 describe('TenantGuard', () => {
-  // ВАЖНО: TenantGuard НЕ парсит сам headers/URL/body — это делает
-  // `TenantMiddleware` ДО guard'а и выставляет `req.tenantId`. Guard
-  // только проверяет membership и доделывает single-org fallback.
-  // Соответствующие тесты на парсинг — в `tenant.middleware.spec.ts`.
-
   it('использует уже-выставленный req.tenantId (из middleware с X-Org-Id)', async () => {
     const { guard } = buildGuard({ hasMembership: true });
     const req: ReqShape = {
@@ -156,17 +136,13 @@ describe('TenantGuard', () => {
       user: { id: 'u-1' },
       headers: {},
     };
-    await expect(guard.canActivate(buildExecCtx(req))).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(guard.canActivate(buildExecCtx(req))).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('Нет user (CookieAuthGuard не отработал) → ForbiddenException no_user', async () => {
     const { guard } = buildGuard({ hasMembership: true });
     const req: ReqShape = { headers: {} };
-    await expect(guard.canActivate(buildExecCtx(req))).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(guard.canActivate(buildExecCtx(req))).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('user без membership → ForbiddenException no_membership', async () => {
@@ -175,16 +151,14 @@ describe('TenantGuard', () => {
       user: { id: 'u-1' },
       headers: { 'x-org-id': 't-no-access' },
     };
-    await expect(guard.canActivate(buildExecCtx(req))).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(guard.canActivate(buildExecCtx(req))).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('Пустой X-Org-Id → fallback на URL/body/единственный membership', async () => {
     const { guard } = buildGuard({ hasMembership: true, manyMemberships: 1 });
     const req: ReqShape = {
       user: { id: 'u-1' },
-      headers: { 'x-org-id': '   ' }, // пустая строка → игнорируется
+      headers: { 'x-org-id': '   ' },
     };
     await guard.canActivate(buildExecCtx(req));
     expect(req.tenantId).toBe('t-default');
@@ -196,8 +170,6 @@ describe('TenantGuard', () => {
       user: { id: 'u-1' },
       headers: {},
     };
-    await expect(guard.canActivate(buildExecCtx(req))).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(guard.canActivate(buildExecCtx(req))).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

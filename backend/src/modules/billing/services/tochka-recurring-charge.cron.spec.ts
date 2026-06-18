@@ -8,19 +8,6 @@ import type { BillingProviderPort } from '../providers/billing-provider.port';
 import type { InvoiceService } from './invoice.service';
 import { TochkaRecurringChargeCron } from './tochka-recurring-charge.cron';
 
-/**
- * Unit-тесты TochkaRecurringChargeCron (audit-fixes §Б15).
- *
- * Покрытие:
- *  1. Cron создаёт локальный Invoice ДО chargeRecurringSubscription.
- *  2. После charge — Invoice.providerInvoiceId = result.providerInvoiceId
- *     (operationId от Точки), а не синтетический `${subId}:${Date.now()}`.
- *  3. providerName='tochka', status='issued' проставляются.
- *  4. lastRenewalAttemptAt обновляется даже при ошибке charge.
- *  5. Subscription без currentPeriodEnd пропускается.
- *  6. Если Invoice.create упал — charge НЕ вызывается.
- */
-
 interface FakeSub {
   id: string;
   tenantId: string;
@@ -92,13 +79,7 @@ function makeCron(opts: {
     },
     invoice: {
       update: vi.fn(
-        async ({
-          where,
-          data,
-        }: {
-          where: { id: string };
-          data: Partial<FakeInvoice>;
-        }) => {
+        async ({ where, data }: { where: { id: string }; data: Partial<FakeInvoice> }) => {
           const inv = store.invoices.get(where.id);
           if (!inv) throw new Error('invoice not found');
           Object.assign(inv, data);
@@ -264,8 +245,6 @@ describe('TochkaRecurringChargeCron (Б15)', () => {
     });
     const { cron, providerCalls } = makeCron({ store });
     await cron.run();
-    expect(providerCalls[0]?.amountKopecks).toBe(
-      Math.round(100_000 * 12 * 0.8),
-    );
+    expect(providerCalls[0]?.amountKopecks).toBe(Math.round(100_000 * 12 * 0.8));
   });
 });

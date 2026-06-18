@@ -9,16 +9,6 @@ import type { IssuesService } from '../../tracker/services/issues.service';
 
 import { ProjectInboxService } from './project-inbox.service';
 
-/**
- * Unit-тесты ProjectInboxService (Tracker Phase 4, T5).
- *
- * Покрытые сценарии:
- *  1. Парсинг To-alias → Project lookup → IssuesService.create() ОК.
- *  2. Attachment → S3Service.putObject + IssueAttachment.create.
- *  3. Bounce (alias не найден) → MailInboundLog status='bounced'.
- *  4. Идемпотентность: повторная обработка того же Message-ID → skip.
- *  5. Bounce при `emailInboxEnabled=false`.
- */
 describe('ProjectInboxService', () => {
   let prisma: PrismaService;
   let cfg: TypedConfigService;
@@ -78,10 +68,6 @@ describe('ProjectInboxService', () => {
     service = new ProjectInboxService(prisma, cfg, issues, s3, metrics);
   });
 
-  /**
-   * Helper: собирает минимальный ParsedMail c заданными полями.
-   * mailparser-овский ParsedMail — большой тип, мы шепим только нужное.
-   */
   function buildParsed(opts: {
     messageId?: string | null;
     subject?: string;
@@ -101,10 +87,7 @@ describe('ProjectInboxService', () => {
       headers.set('delivered-to', opts.deliveredTo);
     }
     return {
-      messageId:
-        opts.messageId === null
-          ? undefined
-          : (opts.messageId ?? '<msg-001@example.com>'),
+      messageId: opts.messageId === null ? undefined : (opts.messageId ?? '<msg-001@example.com>'),
       subject: opts.subject ?? 'Test subject',
       text: opts.text ?? 'Hello world',
       html: undefined,
@@ -164,7 +147,6 @@ describe('ProjectInboxService', () => {
     expect(dto.externalSource).toBe('email');
     expect(dto.externalId).toBe('msg-create@x');
 
-    // Создался успешный лог created с issueId.
     expect(mailInboundCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
         tenantId: 'org_1',
@@ -208,9 +190,7 @@ describe('ProjectInboxService', () => {
 
     expect(s3PutObject).toHaveBeenCalledTimes(1);
     const s3Args = (s3PutObject.mock.calls[0] ?? [])[0];
-    expect(s3Args.key).toMatch(
-      /^mail-inbound\/org_2\/p_2\/msg-att_x\/document\.pdf$/,
-    );
+    expect(s3Args.key).toMatch(/^mail-inbound\/org_2\/p_2\/msg-att_x\/document\.pdf$/);
     expect(s3Args.contentType).toBe('application/pdf');
     expect(s3Args.body).toBe(attachContent);
 
@@ -282,7 +262,6 @@ describe('ProjectInboxService', () => {
   });
 
   it('идемпотентность: повторная обработка того же Message-ID → duplicate, без create', async () => {
-    // mailInboundLog.findUnique вернёт существующую запись.
     mailInboundFindUnique.mockResolvedValueOnce({ id: 'old', status: 'created' });
 
     const parsed = buildParsed({

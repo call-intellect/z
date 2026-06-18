@@ -1,27 +1,20 @@
-/**
- * API-клиент для `/admin/content/global-channels` — Z-Admin Фаза 5.
- *
- * Контракт сервера: `backend/src/modules/admin/content/global-channels/...`
- * (префикс `/api/v1/admin/content/global-channels`).
- */
-
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 import type {
   CreateGlobalChannelRequest,
   GlobalChannelItemApi,
   GlobalChannelListApi,
   UpdateGlobalChannelRequest,
-} from '@/domain/admin-global-channel';
+} from "@/domain/admin-global-channel";
 
 export const adminGlobalChannelsApi = {
   list: () =>
     apiClient.get<GlobalChannelListApi>(
-      '/api/v1/admin/content/global-channels',
+      "/api/v1/admin/content/global-channels",
     ),
 
   create: (body: CreateGlobalChannelRequest) =>
     apiClient.post<GlobalChannelItemApi>(
-      '/api/v1/admin/content/global-channels',
+      "/api/v1/admin/content/global-channels",
       body,
     ),
 

@@ -1,14 +1,3 @@
-/**
- * Snapshot-тест промта `reframing.prompt.ts`.
- *
- * Фиксирует:
- *   - `REFRAMING_BLOCKS_SYSTEM_PROMPT` + `REFRAMING_BLOCKS_JSON_SCHEMA`
- *     (ночной анализ свежих блоков);
- *   - `REFRAMING_THEMES_SYSTEM_PROMPT` + `REFRAMING_THEMES_JSON_SCHEMA`
- *     (рефлексия над Theme'ами).
- *
- * Обновлять только при осознанном изменении: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import {

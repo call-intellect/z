@@ -16,10 +16,7 @@ import {
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -43,13 +40,6 @@ import {
   RespondNotificationSchema,
 } from './dto/notification.dto';
 
-/**
- * REST API ConversationalModule. Все эндпоинты — только для собственного
- * пользователя (`/me/...`), tenant-scope через `X-Org-Id`.
- *
- * Каналы Org-уровня (`/admin/channels` — настройка SMTP/Telegram/etc для
- * всей Org) — это отдельный sub-TZ в admin-разделе (не часть α-1).
- */
 @ApiTags('conversational')
 @Controller('api/v1/me')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -60,8 +50,6 @@ export class ConversationalController {
     @Inject(ConversationalIngestAdapter)
     private readonly ingestAdapter: ConversationalIngestAdapter,
   ) {}
-
-  // ──────────────────────────── /me/channels ─────────────────────────
 
   @Get('channels')
   @ApiOperation({ summary: 'Список настроенных каналов Org и привязка пользователя' })
@@ -79,15 +67,13 @@ export class ConversationalController {
           direction: channel.direction,
           status: channel.status,
           maxDataClass: channel.maxDataClass,
-          // Б2 — только для бот-каналов; botToken НЕ отдаём, лишь факт его наличия.
           ...(channel.kind === 'telegram_bot' || channel.kind === 'max_bot'
             ? {
-                configured: Boolean(
-                  (channel.config as Record<string, unknown> | null)?.botToken,
-                ),
+                configured: Boolean((channel.config as Record<string, unknown> | null)?.botToken),
                 botUsername:
-                  ((channel.config as Record<string, unknown> | null)
-                    ?.botUsername as string | undefined) ?? null,
+                  ((channel.config as Record<string, unknown> | null)?.botUsername as
+                    | string
+                    | undefined) ?? null,
               }
             : {}),
         },
@@ -97,7 +83,6 @@ export class ConversationalController {
               externalId: binding.externalId,
               verifiedAt: binding.verifiedAt?.toISOString() ?? null,
               preferences: binding.preferences,
-              // W4.3 — per-binding потолок чувствительности (radio в /me/channels).
               maxDataClass: binding.maxDataClass,
             }
           : null,
@@ -139,8 +124,7 @@ export class ConversationalController {
 
   @Patch('channels/bindings/:bindingId/max-data-class')
   @ApiOperation({
-    summary:
-      'W4.3 — обновить потолок чувствительности канала (public/internal/sensitive)',
+    summary: 'W4.3 — обновить потолок чувствительности канала (public/internal/sensitive)',
   })
   async updateMaxDataClass(
     @CurrentUser() user: CurrentUserPayload,
@@ -168,8 +152,6 @@ export class ConversationalController {
   ): Promise<void> {
     await this.svc.unlinkChannel({ userId: user.id, bindingId });
   }
-
-  // ──────────────────────────── /me/notifications ────────────────────
 
   @Get('notifications')
   @ApiOperation({ summary: 'Список уведомлений текущего пользователя' })
@@ -239,10 +221,7 @@ export class ConversationalController {
 
   @Post('notifications/:id/dismiss')
   @ApiOperation({ summary: 'Закрыть probe-уведомление без ответа' })
-  async dismiss(
-    @CurrentUser() user: CurrentUserPayload,
-    @Param('id') id: string,
-  ) {
+  async dismiss(@CurrentUser() user: CurrentUserPayload, @Param('id') id: string) {
     const n = await this.svc.dismissProbe({
       notificationId: id,
       userId: user.id,
@@ -253,10 +232,7 @@ export class ConversationalController {
   @Post('notifications/:id/read')
   @ApiOperation({ summary: 'Пометить уведомление как прочитанное' })
   @HttpCode(HttpStatus.NO_CONTENT)
-  async markRead(
-    @CurrentUser() user: CurrentUserPayload,
-    @Param('id') id: string,
-  ): Promise<void> {
+  async markRead(@CurrentUser() user: CurrentUserPayload, @Param('id') id: string): Promise<void> {
     await this.svc.markRead({ notificationId: id, userId: user.id });
   }
 
@@ -284,8 +260,6 @@ export class ConversationalController {
       occurredAt: rawEvent.occurredAt.toISOString(),
     };
   }
-
-  // ──────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): void {
     if (!tenantId) {

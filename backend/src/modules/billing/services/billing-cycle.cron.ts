@@ -1,22 +1,3 @@
-/**
- * BillingCycleCron — ежедневная обработка переходов жизненного цикла подписки.
- *
- * Расписание: `0 3 * * *` (03:00 Europe/Moscow).
- *
- * Переходы:
- *   1. PAST_DUE → SUSPENDED          (grace-период истёк)
- *   2. CANCELED → EXPIRED            (currentPeriodEnd < now)
- *   3. ACTIVE bonus → EXPIRED        (period bonus истёк)
- *   4. ACTIVE paid+autoRenew → PAST_DUE (period истёк, рекуррент не задан)
- *      В Фазе 5 здесь должна быть попытка `TochkaRecurringChargeCron` —
- *      пока на manual-провайдере просто переводим в PAST_DUE сразу.
- *
- * Идемпотентность: каждый шаг работает по `where: {status, ...}`, повторный
- * запуск ничего не меняет. Redis-лок снизу — анти-параллельный запуск.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §7.1 + §14 Фаза 4.6.
- */
-
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { SubscriptionStatus } from '@prisma/client';
@@ -27,7 +8,7 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { SubscriptionService } from './subscription.service';
 
 const LOCK_KEY = 'billing:cycle-cron:lock';
-const LOCK_TTL_SECONDS = 600; // 10 минут — лок снимается раньше при штатном завершении
+const LOCK_TTL_SECONDS = 600;
 const SYSTEM_USER_ID = 'system:billing-cycle';
 
 interface CronCounters {
@@ -47,12 +28,6 @@ export class BillingCycleCron {
     @Inject(SubscriptionService) private readonly subscriptions: SubscriptionService,
   ) {}
 
-  /**
-   * Главный cron. По умолчанию 03:00 Europe/Moscow.
-   *
-   * Использует `CronExpression.EVERY_DAY_AT_3AM` (это UTC). Для МСК = 06:00 UTC
-   * нет точной константы — указываем явный pattern.
-   */
   @Cron('0 3 * * *', { timeZone: 'Europe/Moscow' })
   async run(): Promise<void> {
     const acquired = await this.redis.client.set(
@@ -63,9 +38,7 @@ export class BillingCycleCron {
       'NX',
     );
     if (acquired !== 'OK') {
-      this.logger.warn(
-        `BillingCycleCron: лок ${LOCK_KEY} занят — пропускаем запуск`,
-      );
+      this.logger.warn(`BillingCycleCron: лок ${LOCK_KEY} занят — пропускаем запуск`);
       return;
     }
 
@@ -83,9 +56,7 @@ export class BillingCycleCron {
       counters.activeBonusToExpired = await this.processActiveBonusToExpired(now);
       counters.activePaidToPastDue = await this.processActivePaidToPastDue(now);
 
-      this.logger.log(
-        `BillingCycleCron OK: ${JSON.stringify(counters)}`,
-      );
+      this.logger.debug(`BillingCycleCron OK: ${JSON.stringify(counters)}`);
     } catch (err) {
       this.logger.error(
         `BillingCycleCron failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -95,8 +66,6 @@ export class BillingCycleCron {
       await this.redis.client.del(LOCK_KEY).catch(() => {});
     }
   }
-
-  // ──────────────────── private steps ────────────────────
 
   private async processPastDueToSuspended(now: Date): Promise<number> {
     const candidates = await this.prisma.subscription.findMany({
@@ -153,11 +122,6 @@ export class BillingCycleCron {
     return candidates.length;
   }
 
-  /**
-   * paid + autoRenew, период истёк → PAST_DUE. На manual-провайдере ничего
-   * не списываем (это сделает TochkaRecurringChargeCron в Фазе 5). Здесь
-   * фиксируем переход и ставим `pastDueUntil = now + 7 дней` (grace).
-   */
   private async processActivePaidToPastDue(now: Date): Promise<number> {
     const candidates = await this.prisma.subscription.findMany({
       where: {

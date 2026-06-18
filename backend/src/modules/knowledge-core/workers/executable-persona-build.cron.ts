@@ -6,15 +6,6 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ExecutablePersonaBuildService } from '../services/executable-persona-build.service';
 
-/**
- * SBA γ-1 — ExecutablePersonaBuildCron.
- *
- * Раз в неделю (default '0 6 * * SUN') собирает snapshots ExecutablePersona:
- *   - scope='person' для каждого active SkillProfile с >= PERSONA_MIN_TRAITS.
- *   - scope='role' для каждой Role с >= PERSONA_ROLE_AGG_MIN_PERSONS employee'ев.
- *
- * NB: `@Cron` принимает литерал; cfg.persona.buildCron — read-only при старте.
- */
 @Injectable()
 export class ExecutablePersonaBuildCron {
   private readonly logger = new Logger(ExecutablePersonaBuildCron.name);
@@ -32,19 +23,13 @@ export class ExecutablePersonaBuildCron {
 
   @Cron('0 6 * * SUN')
   async sweep(): Promise<void> {
-    // SBA γ-1 доделки — мастер-тумблер weekly snapshot.
     if (!this.cfg.persona.scheduledRebuildEnabled) {
-      this.logger.debug(
-        'executable-persona-build.cron: scheduledRebuildEnabled=false — skip',
-      );
+      this.logger.debug('executable-persona-build.cron: scheduledRebuildEnabled=false — skip');
       return;
     }
     try {
       const summary = await this.runOnce();
-      this.logger.log(
-        summary,
-        'executable-persona-build.cron: проход завершён',
-      );
+      this.logger.debug(summary, 'executable-persona-build.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -53,7 +38,6 @@ export class ExecutablePersonaBuildCron {
     }
   }
 
-  /** Public — для возможного админ-эндпоинта / ручного запуска. */
   async runOnce(): Promise<{
     profilesBuilt: number;
     profilesSkipped: number;
@@ -65,70 +49,85 @@ export class ExecutablePersonaBuildCron {
     let rolesBuilt = 0;
     let rolesSkipped = 0;
 
-    // 1. Person-level personas — все active SkillProfile с >= minTraits.
-    const profileCandidates = await this.prisma.skillProfile.findMany({
-      where: { status: 'active' },
-      select: {
-        id: true,
-        traits: {
-          where: { status: 'active' },
-          select: { id: true },
+    let profileCursor: string | undefined;
+    for (;;) {
+      const profileCandidates = await this.prisma.skillProfile.findMany({
+        where: { status: 'active' },
+        select: {
+          id: true,
+          traits: {
+            where: { status: 'active', layer: 'skill' },
+            select: { id: true },
+          },
         },
-      },
-      take: ExecutablePersonaBuildCron.MAX_PROFILES_PER_SWEEP,
-    });
-    for (const profile of profileCandidates) {
-      if (profile.traits.length < this.cfg.persona.minTraits) {
-        profilesSkipped++;
-        continue;
-      }
-      try {
-        const persona = await this.builder.buildForProfile({
-          profileId: profile.id,
-          triggerReason: 'scheduled',
-        });
-        if (persona) profilesBuilt++;
-        else profilesSkipped++;
-      } catch (err) {
-        profilesSkipped++;
-        this.logger.warn(
-          {
+        orderBy: [{ lastBuildAt: { sort: 'asc', nulls: 'first' } }, { id: 'asc' }],
+        take: ExecutablePersonaBuildCron.MAX_PROFILES_PER_SWEEP,
+        ...(profileCursor ? { cursor: { id: profileCursor }, skip: 1 } : {}),
+      });
+      if (profileCandidates.length === 0) break;
+      for (const profile of profileCandidates) {
+        if (profile.traits.length < this.cfg.persona.minTraits) {
+          profilesSkipped++;
+          continue;
+        }
+        try {
+          const persona = await this.builder.buildForProfile({
             profileId: profile.id,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          'executable-persona-build.cron: buildForProfile упал',
-        );
+            triggerReason: 'scheduled',
+          });
+          if (persona) profilesBuilt++;
+          else profilesSkipped++;
+        } catch (err) {
+          profilesSkipped++;
+          this.logger.warn(
+            {
+              profileId: profile.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'executable-persona-build.cron: buildForProfile упал',
+          );
+        }
       }
+      if (profileCandidates.length < ExecutablePersonaBuildCron.MAX_PROFILES_PER_SWEEP) {
+        break;
+      }
+      profileCursor = profileCandidates[profileCandidates.length - 1]!.id;
     }
 
-    // 2. Role-level personas — Role с >= roleAggMinPersons.
-    const roles = await this.prisma.role.findMany({
-      where: { deletedAt: null },
-      select: { id: true, tenantId: true },
-      take: ExecutablePersonaBuildCron.MAX_ROLES_PER_SWEEP,
-    });
-    for (const role of roles) {
-      try {
-        const persona = await this.builder.buildForRole({
-          tenantId: role.tenantId,
-          roleId: role.id,
-          triggerReason: 'scheduled',
-        });
-        if (persona) rolesBuilt++;
-        else rolesSkipped++;
-      } catch (err) {
-        rolesSkipped++;
-        this.logger.warn(
-          {
+    let roleCursor: string | undefined;
+    for (;;) {
+      const roles = await this.prisma.role.findMany({
+        where: { deletedAt: null },
+        select: { id: true, tenantId: true },
+        orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+        take: ExecutablePersonaBuildCron.MAX_ROLES_PER_SWEEP,
+        ...(roleCursor ? { cursor: { id: roleCursor }, skip: 1 } : {}),
+      });
+      if (roles.length === 0) break;
+      for (const role of roles) {
+        try {
+          const persona = await this.builder.buildForRole({
+            tenantId: role.tenantId,
             roleId: role.id,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          'executable-persona-build.cron: buildForRole упал',
-        );
+            triggerReason: 'scheduled',
+          });
+          if (persona) rolesBuilt++;
+          else rolesSkipped++;
+        } catch (err) {
+          rolesSkipped++;
+          this.logger.warn(
+            {
+              roleId: role.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'executable-persona-build.cron: buildForRole упал',
+          );
+        }
       }
+      if (roles.length < ExecutablePersonaBuildCron.MAX_ROLES_PER_SWEEP) break;
+      roleCursor = roles[roles.length - 1]!.id;
     }
 
-    // Обновить gauge активных персон.
     const activePersonByPerson = await this.prisma.executablePersona.count({
       where: { status: 'active', scope: 'person' },
     });

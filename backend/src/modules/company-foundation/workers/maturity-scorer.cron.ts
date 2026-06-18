@@ -4,14 +4,6 @@ import { Cron } from '@nestjs/schedule';
 import { TypedConfigService } from '../../../common/config/index';
 import { MaturityScorerService } from '../services/maturity-scorer.service';
 
-/**
- * SBA α-9 wave 3 — MaturityScorerCron.
- *
- * Раз в день (05:00 UTC) пересчитываем maturityScore для всех Role / Department
- * / CompanyProfile во всех Org.
- *
- * Тумблер: `MATURITY_SCORER_ENABLED` (default true).
- */
 @Injectable()
 export class MaturityScorerCron {
   private readonly logger = new Logger(MaturityScorerCron.name);
@@ -31,7 +23,7 @@ export class MaturityScorerCron {
     try {
       const startedAt = Date.now();
       const r = await this.svc.rebuildAllOrgs();
-      this.logger.log(
+      this.logger.debug(
         { ...r, durationMs: Date.now() - startedAt },
         'maturity-scorer.cron: проход завершён',
       );

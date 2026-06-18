@@ -20,7 +20,6 @@ import {
   withInjectionGuard,
   wrapUserData,
 } from '../../ai/services/prompts/common';
-import { CoreQueueService } from '../../core-queue/core-queue.service';
 import { CurationService } from '../../curation/services/curation.service';
 import { SystemLogPipeline } from '../../logging/log-pipeline';
 import { LogService } from '../../logging/log.service';
@@ -78,7 +77,6 @@ export class Specialist36Service {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-    @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(EventEmitter2) private readonly events: EventEmitter2,
     @Inject(LogService) private readonly logs: LogService,
     // W4.1 — DataClassPolicyService для shadow-compare.
@@ -151,6 +149,13 @@ export class Specialist36Service {
           'specialist-3-6: обогащение уже-материализованной идеи упало — пропуск',
         );
       }
+      // Б37 [K4] — выравнивание инварианта direct-path ↔ Specialist 3.6.
+      // direct-path block-ingest материализует Idea БЕЗ triage/curation (нет
+      // CurationService в воркере). Здесь — единственная точка, где у обоих путей
+      // совпадает контракт видимости: идемпотентно прогоняем тот же triageProposed,
+      // если у этой Idea ещё нет CurationItem (без дубля). Так direct-path-идея
+      // получает ту же curation-видимость, что и созданная Specialist 3.6.
+      await this.ensureTriaged(alreadyMaterialized);
       this.logs.write({
         level: 'INFO',
         pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
@@ -315,12 +320,9 @@ export class Specialist36Service {
         // graceful
       }
 
-      // Постановка в очередь idea-clusterer (1 job в минуту на Org).
-      try {
-        await this.coreQueue.enqueueIdeaClusterer({ tenantId: block.tenantId });
-      } catch {
-        // graceful
-      }
+      // Б9 [K10] — enqueueIdeaClusterer убран: очередь core.idea-clusterer
+      // удалена (у неё не было consumer'а). Кластеризация Idea → IdeaCluster
+      // идёт асинхронно по расписанию в IdeaClustererCron (@Cron).
     } catch (err) {
       this.metrics.incCoreSpecialistExtractionFailure({
         type: 'idea',
@@ -357,14 +359,31 @@ export class Specialist36Service {
     const oldStatus = existing.status;
     if (oldStatus === args.newStatus) return existing;
 
-    const updated = await this.prisma.idea.update({
-      where: { id: existing.id },
+    // G6 condition-UPDATE (эталон fact-supersede.service.ts:456-471): меняем
+    // статус ТОЛЬКО если он всё ещё равен прочитанному (oldStatus). Защита от
+    // гонки авто-продвижения (IdeaStatusAutoAdvanceService) ↔ ручного изменения
+    // человеком: между findFirst и update человек мог сменить статус — тогда
+    // count===0, авто-переход устарел → no-op (не перетираем ручное решение,
+    // не эмитим повторный idea.status_changed).
+    const res = await this.prisma.idea.updateMany({
+      where: { id: existing.id, status: oldStatus },
       data: {
         status: args.newStatus,
         statusChangedAt: new Date(),
         statusChangedByUserId: args.changedByUserId,
         statusReason: args.reason,
       },
+    });
+    if (res.count === 0) {
+      // Статус уже изменён другим путём (человеком/параллельно) — возвращаем
+      // актуальное состояние без события.
+      const current = await this.prisma.idea.findFirst({
+        where: { id: existing.id, tenantId: args.tenantId },
+      });
+      return current ?? existing;
+    }
+    const updated = await this.prisma.idea.findFirst({
+      where: { id: existing.id, tenantId: args.tenantId },
     });
 
     // EventEmitter — для closing-loop handler'а.
@@ -381,7 +400,7 @@ export class Specialist36Service {
       // graceful
     }
 
-    return updated;
+    return updated ?? { ...existing, status: args.newStatus };
   }
 
   // ─────────────────────────── KNN / update ─────────────────────────────
@@ -714,6 +733,46 @@ export class Specialist36Service {
           err: err instanceof Error ? err.message : String(err),
         },
         'specialist-3-6.triage: упал — карточка без CurationItem',
+      );
+    }
+  }
+
+  /**
+   * Б37 [K4] — идемпотентно гарантирует, что у Idea (материализованной
+   * direct-path'ом block-ingest) есть CurationItem, как если бы её создал
+   * Specialist 3.6 «с нуля». Если CurationItem по (resourceType='idea',
+   * resourceId) уже есть — НЕ создаём дубль. confidence берём из самой Idea
+   * (direct-path сохраняет его в `Idea.confidence`).
+   */
+  private async ensureTriaged(idea: Idea): Promise<void> {
+    try {
+      const existingItem = await this.prisma.curationItem.findFirst({
+        where: { resourceType: 'idea', resourceId: idea.id },
+        select: { id: true },
+      });
+      if (existingItem) return;
+      const confidence = Math.min(1, Math.max(0, Number(idea.confidence)));
+      await this.triageProposed({
+        tenantId: idea.tenantId,
+        resourceId: idea.id,
+        confidence,
+        proposedPayload: {
+          kind: idea.kind,
+          statement: idea.statement,
+          rationale: idea.rationale,
+          supporters: idea.supporters,
+          weight: Number(idea.weight),
+          sourceBlockIds: idea.sourceBlockIds,
+        },
+        dataClass: idea.dataClass,
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          ideaId: idea.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-6.ensureTriaged: не удалось гарантировать CurationItem — пропуск',
       );
     }
   }

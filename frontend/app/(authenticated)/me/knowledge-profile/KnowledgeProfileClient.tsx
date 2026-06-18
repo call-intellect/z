@@ -1,57 +1,40 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Link from 'next/link';
-import useSWR, { mutate } from 'swr';
-import { AlertCircle, Calendar, Loader2, ShieldCheck } from 'lucide-react';
+import { useState } from "react";
+import Link from "next/link";
+import useSWR, { mutate } from "swr";
+import { AlertCircle, Calendar, Loader2, ShieldCheck } from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { knowledgeCloneApi } from '@/api/knowledge-clone.api';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
+import { ApiError } from "@/api/api-error";
+import { knowledgeCloneApi } from "@/api/knowledge-clone.api";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
 import {
   mapKnowledgeProfile,
   type KnowledgeProfile,
   type KnowledgeProfileCategory,
-} from '@/domain/knowledge-profile';
-import { Button } from '@/ui/shadcn/button';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { SkillsTable } from '@/ui/components/knowledge-profile/SkillsTable';
+} from "@/domain/knowledge-profile";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { SkillsTable } from "@/ui/components/knowledge-profile/SkillsTable";
 
-/**
- * `/me/knowledge-profile` (SBA β-2) — Read-only UI «Что Кора знает обо мне».
- *
- * ТЗ 2026-05-26 §4: вместо списка карточек — компактная таблица скиллов
- * с раскрывающимися строками (SkillsTable). Аккордеон показывает цитаты.
- *
- * Поведение:
- *   - SWR грузит `/api/v1/me/knowledge-profile` в контексте текущей Org.
- *   - Таблица сортируется high → medium → low, внутри уровня по observationCount.
- *   - Кнопка «Неверно» в строке → MarkWrongDialog → POST mark-wrong → toast.
- *   - Кнопка «попробовать своего клона» ведёт на /clones (ТЗ §4: исправили
- *     старый битый /me/clone → /clones).
- */
 export function KnowledgeProfileClient() {
   const { currentOrgId, isLoading } = useAuth();
 
-  const swrKey = currentOrgId ? ['my-knowledge-profile', currentOrgId] : null;
-  const { data, error, isLoading: loadingProfile } = useSWR(
-    swrKey,
-    async () => {
-      const res = await knowledgeCloneApi.getMine(currentOrgId!);
-      return mapKnowledgeProfile(res);
-    },
-  );
+  const swrKey = currentOrgId ? ["my-knowledge-profile", currentOrgId] : null;
+  const {
+    data,
+    error,
+    isLoading: loadingProfile,
+  } = useSWR(swrKey, async () => {
+    const res = await knowledgeCloneApi.getMine(currentOrgId!);
+    return mapKnowledgeProfile(res);
+  });
 
   const [activeMarkCategory, setActiveMarkCategory] =
     useState<KnowledgeProfileCategory | null>(null);
-  const [markReason, setMarkReason] = useState('');
+  const [markReason, setMarkReason] = useState("");
   const [markBusy, setMarkBusy] = useState(false);
 
   const profile: KnowledgeProfile | undefined = data ?? undefined;
@@ -60,7 +43,7 @@ export function KnowledgeProfileClient() {
     if (!activeMarkCategory || !currentOrgId) return;
     const reason = markReason.trim();
     if (reason.length < 5) {
-      toast.error('Опишите, почему область неверна (минимум 5 символов).');
+      toast.error("Опишите, почему область неверна (минимум 5 символов).");
       return;
     }
     setMarkBusy(true);
@@ -69,15 +52,15 @@ export function KnowledgeProfileClient() {
         categoryName: activeMarkCategory.name,
         reason,
       });
-      toast.success('Отправлено на проверку администратору.');
+      toast.success("Отправлено на проверку администратору.");
       setActiveMarkCategory(null);
-      setMarkReason('');
+      setMarkReason("");
       void mutate(swrKey);
     } catch (e) {
       const message =
         e instanceof ApiError
           ? e.message
-          : 'Не удалось отправить заявку — попробуйте ещё раз.';
+          : "Не удалось отправить заявку — попробуйте ещё раз.";
       toast.error(message);
     } finally {
       setMarkBusy(false);
@@ -138,7 +121,7 @@ export function KnowledgeProfileClient() {
             categories={profile.categories}
             onMarkWrong={(cat) => {
               setActiveMarkCategory(cat);
-              setMarkReason('');
+              setMarkReason("");
             }}
           />
 
@@ -182,7 +165,7 @@ export function KnowledgeProfileClient() {
           onCancel={() => {
             if (markBusy) return;
             setActiveMarkCategory(null);
-            setMarkReason('');
+            setMarkReason("");
           }}
           onSubmit={() => void handleSubmitMark()}
         />
@@ -193,8 +176,8 @@ export function KnowledgeProfileClient() {
 
 function ProfileMeta({ profile }: { profile: KnowledgeProfile }) {
   const builtAt = profile.builtAt
-    ? profile.builtAt.toLocaleString('ru-RU')
-    : '—';
+    ? profile.builtAt.toLocaleString("ru-RU")
+    : "—";
   return (
     <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
       <span className="inline-flex items-center gap-1.5">

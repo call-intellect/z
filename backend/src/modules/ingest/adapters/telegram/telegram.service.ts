@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Source } from '@prisma/client';
 
 import { TypedConfigService } from '../../../../common/config/index';
@@ -15,27 +9,6 @@ import type { SourceTestResultDto } from '../../../sources/dto/source.dto';
 
 import { parseTelegramConfig } from './telegram-config.schema';
 
-/**
- * Сервис Telegram-адаптера (Фаза 10 knowledge-core).
- *
- *   - `registerWebhook(sourceId)`   — `setWebhook` Bot API при создании/активации.
- *   - `unregisterWebhook(sourceId)` — `deleteWebhook` при отключении.
- *   - `test(source)`                — `getMe` для smoke-теста.
- *   - `getDecryptedToken(source)`   — расшифровывает botToken для контроллера.
- *
- * 2026-05-26 (ТЗ plans/tz/2026-05-26-telegram-via-crossmark-proxy.md §3 п.10):
- * транспорт идёт через единый `TelegramApiClient` — он сам выбирает между
- * прокси `telegram.crossmark.ru` и `api.telegram.org`. Дублирующая
- * реализация `callBotApi` удалена.
- *
- * ⚠ Известное ограничение в прокси-режиме: per-source `setWebhook`/
- * `deleteWebhook` будет отвергнут прокси, т.к. прокси пропускает только
- * заранее зарегистрированных в нём ботов (см. /guide). Этот ingest-flow
- * нужно либо отключить (`TELEGRAM_PROXY_ENABLED=false`), либо
- * зарегистрировать бота в админке прокси отдельно. В основном
- * conversational-flow (один глобальный `@kora_bot`) проблемы нет —
- * `setWebhook` дёргает сам прокси при `upsertBot`.
- */
 @Injectable()
 export class TelegramAdapterService {
   private readonly logger = new Logger(TelegramAdapterService.name);
@@ -47,10 +20,6 @@ export class TelegramAdapterService {
     @Inject(TelegramApiClient) private readonly tgApi: TelegramApiClient,
   ) {}
 
-  /**
-   * Полный URL webhook'а для регистрации в Telegram.
-   * `https://<host>/api/v1/ingest/telegram/<sourceId>`
-   */
   buildWebhookUrl(sourceId: string): string {
     return this.buildHostUrl(`/api/v1/ingest/telegram/${sourceId}`);
   }
@@ -60,10 +29,6 @@ export class TelegramAdapterService {
     return `${host}${path.startsWith('/') ? '' : '/'}${path}`;
   }
 
-  /**
-   * Регистрирует webhook у Telegram. Не бросает, только логирует — caller
-   * (`SourcesService.afterCreate`) получит fire-and-forget.
-   */
   async registerWebhook(sourceId: string): Promise<void> {
     const source = await this.prisma.source.findUnique({ where: { id: sourceId } });
     if (!source) {
@@ -110,9 +75,6 @@ export class TelegramAdapterService {
     }
   }
 
-  /**
-   * Smoke-test: getMe.
-   */
   async test(source: Source): Promise<SourceTestResultDto> {
     if (source.type !== 'bot') {
       throw new BadRequestException({
@@ -139,10 +101,6 @@ export class TelegramAdapterService {
     }
   }
 
-  /**
-   * Резолв Source по id с проверкой type=bot, isActive=true, парсингом config.
-   * Бросает 404/400, если не подходит.
-   */
   async loadActiveBotSource(sourceId: string): Promise<{
     source: Source;
     config: ReturnType<typeof parseTelegramConfig>;

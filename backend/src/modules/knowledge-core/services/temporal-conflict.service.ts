@@ -9,6 +9,8 @@ import {
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
+import { ACTIVE_LINK_FILTER } from './link-read-filter';
+
 /**
  * Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges.
  *
@@ -55,10 +57,15 @@ export class TemporalConflictService {
     const existing = await this.prisma.ideaBlockLink.findMany({
       where: {
         tenantId: link.tenantId,
-        fromBlockId: link.fromBlockId,
-        toBlockId: link.toBlockId,
+        // Б53 — противоречие не зависит от направления связи: ищем existing
+        // как в той же ориентации (from,to), так и в инвертированной (to,from),
+        // иначе зеркальный old-link не закрывается.
+        OR: [
+          { fromBlockId: link.fromBlockId, toBlockId: link.toBlockId },
+          { fromBlockId: link.toBlockId, toBlockId: link.fromBlockId },
+        ],
         relationType: { in: conflicting },
-        status: 'active',
+        ...ACTIVE_LINK_FILTER,
         validUntil: null,
         // Исключаем сам новый link — на случай если по какой-то причине
         // relationType совпал (теоретически не должно: пары disjoint).
@@ -116,12 +123,25 @@ export class TemporalConflictService {
     const existing = await this.prisma.entityLink.findMany({
       where: {
         tenantId: link.tenantId,
-        fromEntityId: link.fromEntityId,
-        toEntityId: link.toEntityId,
-        fromType: link.fromType,
-        toType: link.toType,
+        // Б53 — ищем противоречащий existing в ОБЕ стороны: прямая ориентация
+        // (from,to)+(fromType,toType) и инвертированная (to,from)+(toType,fromType).
+        // Иначе зеркальная связь (LLM поставил A→B вместо B→A) не закрывается.
+        OR: [
+          {
+            fromEntityId: link.fromEntityId,
+            toEntityId: link.toEntityId,
+            fromType: link.fromType,
+            toType: link.toType,
+          },
+          {
+            fromEntityId: link.toEntityId,
+            toEntityId: link.fromEntityId,
+            fromType: link.toType,
+            toType: link.fromType,
+          },
+        ],
         relationType: { in: conflicting },
-        status: 'active',
+        ...ACTIVE_LINK_FILTER,
         validUntil: null,
         NOT: { id: link.id },
       },
@@ -210,12 +230,9 @@ const CONTRADICTING_BLOCK_LINK_PAIRS = new Map<
  *
  * NB: legacy enum EntityLinkType НЕ содержит `left_company` (ТЗ привёл его
  * как иллюстрацию — в проекте такого типа нет). Реальные противопоставления
- * сейчас:
+ * сейчас (ровно то, что есть в Map ниже):
  *   - works_at ↔ opposes  (вышел из компании / стал конкурентом).
  *   - mentors ↔ conflicted_with (наставничество vs зафиксированный конфликт).
- *   - manages ↔ reports_to (направление не должно одновременно быть и
- *     управлением и подчинением — обычно это одна и та же связь, инвертированная,
- *     но если LLM ошибся — старая закрывается).
  *
  * Расширять только после явного решения в second-brain/02_architecture/.
  */

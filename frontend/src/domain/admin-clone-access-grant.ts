@@ -1,35 +1,21 @@
-/**
- * Domain-слой для admin-страницы «Управление доступом к клонам».
- *
- * ApiDto → DomainModel:
- *   - ISO-строки → Date;
- *   - вычисляемый `status: 'active' | 'revoked' | 'expired'` для удобства UI
- *     (бэк уже возвращает `isActive + inactiveReason`, но в одном поле UI
- *     проще ветвить).
- *
- * Контракт API: `frontend/src/api/admin-clones.api.ts`.
- */
-
 import type {
   AccessGrantApi,
   AccessGrantListResponseApi,
   AccessGrantUserSummaryApi,
   CloneTypeApi,
-} from '@/api/admin-clones.api';
+} from "@/api/admin-clones.api";
 
-// ─────────────── domain-типы ───────────────
-
-export type AccessGrantStatus = 'active' | 'revoked' | 'expired';
+export type AccessGrantStatus = "active" | "revoked" | "expired";
 
 export const ACCESS_GRANT_STATUS_LABELS: Record<AccessGrantStatus, string> = {
-  active: 'Активен',
-  revoked: 'Отозван',
-  expired: 'Истёк',
+  active: "Активен",
+  revoked: "Отозван",
+  expired: "Истёк",
 };
 
 export const CLONE_TYPE_LABELS: Record<CloneTypeApi, string> = {
-  role: 'Должность',
-  person: 'Сотрудник',
+  role: "Должность",
+  person: "Сотрудник",
 };
 
 export interface AccessGrantUserSummary {
@@ -50,8 +36,7 @@ export interface AccessGrant {
   revokedAt: Date | null;
   revokedBy: AccessGrantUserSummary | null;
   isActive: boolean;
-  inactiveReason: 'revoked' | 'expired' | null;
-  /** Производное от `isActive` + `inactiveReason` для прямой ветви UI. */
+  inactiveReason: "revoked" | "expired" | null;
   status: AccessGrantStatus;
 }
 
@@ -61,8 +46,6 @@ export interface AccessGrantListDomain {
   page: number;
   pageSize: number;
 }
-
-// ─────────────── мапперы ───────────────
 
 export function accessGrantUserFromApi(
   api: AccessGrantUserSummaryApi,
@@ -76,10 +59,10 @@ export function accessGrantUserFromApi(
 
 export function accessGrantFromApi(api: AccessGrantApi): AccessGrant {
   const status: AccessGrantStatus = api.isActive
-    ? 'active'
-    : api.inactiveReason === 'revoked'
-      ? 'revoked'
-      : 'expired';
+    ? "active"
+    : api.inactiveReason === "revoked"
+      ? "revoked"
+      : "expired";
 
   return {
     id: api.id,

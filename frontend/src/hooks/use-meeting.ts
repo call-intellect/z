@@ -1,22 +1,17 @@
-'use client';
+"use client";
 
-import useSWR from 'swr';
-import { useMemo } from 'react';
-import { meetingsApi } from '@/api/meetings.api';
-import { meetingFromApi } from '@/domain/meeting';
+import useSWR from "swr";
+import { useMemo } from "react";
+import { meetingsApi } from "@/api/meetings.api";
+import { meetingFromApi } from "@/domain/meeting";
 
-const PROCESSING_STATES = new Set(['queued', 'processing']);
+const PROCESSING_STATES = new Set(["queued", "processing"]);
 
-/**
- * Хук получения встречи с её детальной частью.
- * Если хотя бы один из под-этапов AI-pipeline ещё в работе, делаем
- * polling каждые 60 секунд, чтобы UI обновлялся без F5.
- */
 export function useMeeting(meetingId: string | null | undefined) {
   const swr = useSWR(
-    meetingId ? ['meeting', meetingId] : null,
+    meetingId ? ["meeting", meetingId] : null,
     async () => {
-      if (!meetingId) throw new Error('meetingId is required');
+      if (!meetingId) throw new Error("meetingId is required");
       const data = await meetingsApi.get(meetingId);
       return data;
     },
@@ -30,7 +25,7 @@ export function useMeeting(meetingId: string | null | undefined) {
           latest.embeddingsStatus,
         ];
         return candidates.some(
-          (s) => typeof s === 'string' && PROCESSING_STATES.has(s),
+          (s) => typeof s === "string" && PROCESSING_STATES.has(s),
         )
           ? 60_000
           : 0;
@@ -44,9 +39,7 @@ export function useMeeting(meetingId: string | null | undefined) {
   );
 
   return {
-    /** Доменная модель meeting (camelCase, Date). */
     meeting,
-    /** Сырой ответ API (с participants и т.д.). */
     raw: swr.data,
     error: swr.error,
     isLoading: swr.isLoading,

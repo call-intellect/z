@@ -105,15 +105,7 @@ export class ConflictService {
     }
 
     // Идемпотентность: если уже есть открытый конфликт на ту же пару — вернём его.
-    const existing = await this.prisma.conflictItem.findFirst({
-      where: {
-        tenantId: input.tenantId,
-        resourceType: input.resourceType,
-        existingId: input.existingId,
-        newId: input.newId,
-        status: 'open',
-      },
-    });
+    const existing = await this.findOpenConflict(input);
     if (existing) {
       this.logger.log(
         { tenantId: input.tenantId, conflictId: existing.id },
@@ -122,22 +114,46 @@ export class ConflictService {
       return existing;
     }
 
-    const created = await this.prisma.conflictItem.create({
-      data: {
-        tenantId: input.tenantId,
-        resourceType: input.resourceType,
-        existingId: input.existingId,
-        newId: input.newId,
-        evidence: input.evidence as Prisma.InputJsonValue,
-        relationType: input.relationType,
-        detectedBy: input.detectedBy,
-        // Редизайн Ф4 (2026-06-13) — авто-протухание: sweep-крон закроет
-        // открытый конфликт после TTL (cfg.pendingActions.conflictTtlDays).
-        // TODO: крутилка живёт в TypedConfigService.pendingActions, позже
-        // уедет в AdminSetting UI (наравне с urgentAgeDays).
-        expiresAt: computeExpiresAt(this.cfg.pendingActions.conflictTtlDays),
-      },
-    });
+    // K1 (гонка дублей): findFirst выше не защищает от двух конкурентов (cron +
+    // handler в одном процессе), создающих ConflictItem на одну пару
+    // одновременно. Полагаемся на partial-unique `uq_conflict_open`
+    // (postgres-init.sql: (tenantId, resourceType, existingId, newId) WHERE
+    // status='open'). При гонке проигравший ловит P2002 → re-find открытого и
+    // возвращает его (идемпотентно, без дубля).
+    let created: ConflictItem;
+    try {
+      created = await this.prisma.conflictItem.create({
+        data: {
+          tenantId: input.tenantId,
+          resourceType: input.resourceType,
+          existingId: input.existingId,
+          newId: input.newId,
+          evidence: input.evidence as Prisma.InputJsonValue,
+          relationType: input.relationType,
+          detectedBy: input.detectedBy,
+          // Редизайн Ф4 (2026-06-13) — авто-протухание: sweep-крон закроет
+          // открытый конфликт после TTL (cfg.pendingActions.conflictTtlDays).
+          // TODO: крутилка живёт в TypedConfigService.pendingActions, позже
+          // уедет в AdminSetting UI (наравне с urgentAgeDays).
+          expiresAt: computeExpiresAt(this.cfg.pendingActions.conflictTtlDays),
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        const raced = await this.findOpenConflict(input);
+        if (raced) {
+          this.logger.log(
+            { tenantId: input.tenantId, conflictId: raced.id },
+            'conflict.report: гонка дублей (P2002) — возвращаю существующий открытый',
+          );
+          return raced;
+        }
+      }
+      throw err;
+    }
 
     this.metrics.incCurationConflict({
       relationType: input.relationType,
@@ -325,6 +341,21 @@ export class ConflictService {
   }
 
   // ──────────────────────────── helpers ─────────────────────────
+
+  /** Открытый ConflictItem на ту же пару (идемпотентность report + re-find P2002). */
+  private findOpenConflict(
+    input: ConflictReportInput,
+  ): Promise<ConflictItem | null> {
+    return this.prisma.conflictItem.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        resourceType: input.resourceType,
+        existingId: input.existingId,
+        newId: input.newId,
+        status: 'open',
+      },
+    });
+  }
 
   /**
    * Нотификация всех candidateCuratorIds из связанных CurationItem'ов

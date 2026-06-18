@@ -2,27 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { CheckinSentimentBatchCron } from './checkin-sentiment-batch.cron';
 
-/**
- * Unit-тесты для CheckinSentimentBatchCron.
- *
- * Источник:
- *   - plans/tz/2026-05-26-checkin-batch-cron-tests.md §2.1 (6-7 кейсов).
- *   - plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md §6
- *     (миграция operations на batch-cron).
- *   - Коммит 3cba11d (Фаза 2 миграции LLM на DeepSeek-V4-Pro).
- *
- * Покрываем:
- *   1. 25 чек-инов одного tenant → 3 батча (10+10+5), все классифицированы.
- *   2. `toolCalls` отсутствует у первого батча → метрика failed на каждый
- *      элемент, второй батч обработан корректно (best-effort).
- *   3. Невалидный элемент в результате (битый enum) → silent-skip парсером
- *      + метрика `incCooSentimentFailed{reason: 'invalid_element'}`.
- *   4. `cfg.betaOps.sentimentEnabled = false` → ранний return, никаких
- *      обращений к БД и LLM.
- *   5. Окно 60 минут — `findMany` получает правильный `where.completedAt.gte`.
- *   6. Группировка по `tenantId` — 2 tenant в одной выборке → 2 LLM-вызова.
- *   7. Дубликат checkInId в результате батча → throw парсера → весь батч failed.
- */
 describe('CheckinSentimentBatchCron', () => {
   const baseCfg = {
     betaOps: { sentimentEnabled: true },
@@ -51,7 +30,6 @@ describe('CheckinSentimentBatchCron', () => {
           : vi.fn().mockResolvedValue({ id: 'ok' }),
       },
     };
-    // llm.call — последовательные результаты по очереди вызовов.
     const llmCallStub = vi.fn();
     if (overrides.llmResults) {
       for (const r of overrides.llmResults) {
@@ -76,10 +54,6 @@ describe('CheckinSentimentBatchCron', () => {
     return { cron, prisma, llm, metrics };
   }
 
-  /**
-   * Helper: построить успешный llm-результат `submit_batch_sentiments`
-   * с переданными элементами (id + sentiment).
-   */
   function llmOk(
     items: Array<{
       checkInId: string;
@@ -106,11 +80,7 @@ describe('CheckinSentimentBatchCron', () => {
     };
   }
 
-  function pendingRows(
-    count: number,
-    tenantId = 't1',
-    prefix = 'cin',
-  ): PendingRow[] {
+  function pendingRows(count: number, tenantId = 't1', prefix = 'cin'): PendingRow[] {
     return Array.from({ length: count }, (_, i) => ({
       id: `${prefix}-${i + 1}`,
       tenantId,
@@ -118,7 +88,6 @@ describe('CheckinSentimentBatchCron', () => {
     }));
   }
 
-  // ───────────────────────────────────────────────────────────── Кейс 1 ─
   it('25 чек-инов одного tenant → 3 батча (10+10+5), все классифицированы', async () => {
     const rows = pendingRows(25, 't1');
     const batch1 = rows.slice(0, 10).map((r) => ({
@@ -150,7 +119,6 @@ describe('CheckinSentimentBatchCron', () => {
     });
   });
 
-  // ───────────────────────────────────────────────────────────── Кейс 2 ─
   it('toolCalls отсутствует у первого батча → failed на все 10, второй батч ok', async () => {
     const rows = pendingRows(12, 't1');
     const batch2Items = rows.slice(10, 12).map((r) => ({
@@ -160,7 +128,11 @@ describe('CheckinSentimentBatchCron', () => {
     const { cron, prisma, llm, metrics } = buildCron({
       pending: rows,
       llmResults: [
-        { text: 'свободный текст без tool_call', modelUsed: 'deepseek:deepseek-v4-pro', toolCalls: [] },
+        {
+          text: 'свободный текст без tool_call',
+          modelUsed: 'deepseek:deepseek-v4-pro',
+          toolCalls: [],
+        },
         llmOk(batch2Items),
       ],
     });
@@ -177,13 +149,11 @@ describe('CheckinSentimentBatchCron', () => {
     });
   });
 
-  // ───────────────────────────────────────────────────────────── Кейс 3 ─
   it('невалидный элемент batch → парсер silent-skip + invalid_element метрика, валидный классифицирован', async () => {
     const rows: PendingRow[] = [
       { id: 'cin-a', tenantId: 't1', rawResponseText: 'A' },
       { id: 'cin-b', tenantId: 't1', rawResponseText: 'B' },
     ];
-    // битый sentiment для cin-b ('PURPLE') — парсер выкинет молча.
     const { cron, prisma, llm, metrics } = buildCron({
       pending: rows,
       llmResults: [
@@ -223,11 +193,9 @@ describe('CheckinSentimentBatchCron', () => {
     expect(stats.failed).toBe(1);
   });
 
-  // ───────────────────────────────────────────────────────────── Кейс 4 ─
   it('cfg.betaOps.sentimentEnabled = false → ранний return через run(), никаких обращений', async () => {
     const { cron, prisma, llm, metrics } = buildCron({
       cfg: { betaOps: { sentimentEnabled: false } },
-      // даже если бы были данные — не должно дойти до findMany
       pending: pendingRows(3, 't1'),
     });
     await cron.run();
@@ -238,7 +206,6 @@ describe('CheckinSentimentBatchCron', () => {
     expect(metrics.incCooSentimentFailed).not.toHaveBeenCalled();
   });
 
-  // ───────────────────────────────────────────────────────────── Кейс 5 ─
   it('окно 60 минут — findMany получает корректный where + orderBy + take', async () => {
     const now = new Date('2026-05-26T12:00:00Z');
     const expectedSince = new Date('2026-05-26T11:00:00Z');
@@ -257,15 +224,12 @@ describe('CheckinSentimentBatchCron', () => {
     };
     expect(arg.where.kind).toBe('evening');
     expect(arg.where.sentiment).toBeNull();
-    expect(arg.where.completedAt.gte.toISOString()).toBe(
-      expectedSince.toISOString(),
-    );
+    expect(arg.where.completedAt.gte.toISOString()).toBe(expectedSince.toISOString());
     expect(arg.where.rawResponseText).toEqual({ not: null });
     expect(arg.orderBy.completedAt).toBe('asc');
     expect(arg.take).toBe(100);
   });
 
-  // ───────────────────────────────────────────────────────────── Кейс 6 ─
   it('два tenant в одной выборке → два независимых LLM-вызова', async () => {
     const rows: PendingRow[] = [
       ...pendingRows(3, 't1', 'cin-t1'),
@@ -279,14 +243,11 @@ describe('CheckinSentimentBatchCron', () => {
       .map((r) => ({ checkInId: r.id, sentiment: 'yellow' as const }));
     const { cron, prisma, llm, metrics } = buildCron({
       pending: rows,
-      // Порядок вызовов соответствует порядку появления tenantId в Map'е,
-      // что соответствует порядку первой встречи в `pending` (t1 → t2).
       llmResults: [llmOk(t1Items), llmOk(t2Items)],
     });
     const stats = await cron.runOnce(new Date('2026-05-26T12:00:00Z'));
     expect(llm.call).toHaveBeenCalledTimes(2);
     expect(prisma.dailyCheckIn.update).toHaveBeenCalledTimes(6);
-    // Проверим, что аргументы вызовов содержат правильные tenantId
     const callTenantIds = llm.call.mock.calls.map(
       (c: unknown[]) => (c[0] as { tenantId: string }).tenantId,
     );
@@ -300,7 +261,6 @@ describe('CheckinSentimentBatchCron', () => {
     });
   });
 
-  // ───────────────────────────────────────────────────────────── Кейс 7 ─
   it('дубликат checkInId в результате батча → throw парсера → весь батч failed (update НЕ вызван)', async () => {
     const rows: PendingRow[] = [
       { id: 'cin-a', tenantId: 't1', rawResponseText: 'A' },
@@ -319,7 +279,6 @@ describe('CheckinSentimentBatchCron', () => {
               input: {
                 results: [
                   { checkInId: 'cin-a', sentiment: 'green', rationale: '!' },
-                  // дубликат cin-a — парсер throw'нет
                   { checkInId: 'cin-a', sentiment: 'red', rationale: '!' },
                   { checkInId: 'cin-c', sentiment: 'yellow', rationale: '!' },
                 ],
@@ -333,7 +292,6 @@ describe('CheckinSentimentBatchCron', () => {
     expect(llm.call).toHaveBeenCalledTimes(1);
     expect(prisma.dailyCheckIn.update).not.toHaveBeenCalled();
     expect(metrics.incCooSentimentAnalyzed).not.toHaveBeenCalled();
-    // 3 элемента батча → 3 incCooSentimentFailed
     expect(metrics.incCooSentimentFailed).toHaveBeenCalledTimes(3);
     expect(stats).toEqual({
       totalCheckIns: 3,
@@ -343,7 +301,6 @@ describe('CheckinSentimentBatchCron', () => {
     });
   });
 
-  // ─────────────────────────────────────────────── Кейс 7-доп (пустой) ─
   it('пустой findMany → totalCheckIns=0, никаких LLM-вызовов', async () => {
     const { cron, llm, metrics } = buildCron({ pending: [] });
     const stats = await cron.runOnce(new Date('2026-05-26T12:00:00Z'));

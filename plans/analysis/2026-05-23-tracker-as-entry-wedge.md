@@ -8,7 +8,7 @@ decision: Сценарий C — расширить собственный `task
 related:
   - plans/analysis/2026-05-23-ai-coo-readiness-analysis.md
   - plans/analysis/2026-05-23-positioning-research-v2.md
-  - plans/tz/2026-05-22-final-roadmap.md
+  - plans/archive/2026-05-22-final-roadmap.md
   - plans/analysis/2026-05-22-code-reality-deltas.md
   - second-brain/06_marketing/positioning.md
   - second-brain/06_marketing/messaging.md

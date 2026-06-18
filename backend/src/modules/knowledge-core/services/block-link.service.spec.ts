@@ -2,32 +2,17 @@ import type { IdeaBlock } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
-import type {
-  LlmCallParams,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
+import type { LlmCallParams, LlmRouterService } from '../../ai/services/llm-router.service';
 
 import { BlockLinkService } from './block-link.service';
 
-/**
- * Agents v2 Фаза A1 (2026-05-30) — unit-тест парсинга bi-temporal hint'ов
- * в LLM-vердикте `block-linker`.
- *
- * Покрывает: judge LLM возвращает `{relationType, confidence, explanation,
- * validFrom, validUntil}` → BlockLinkService.judgeLink парсит и
- * возвращает LinkVerdict.validFromHint / validUntilHint.
- */
 describe('BlockLinkService.judgeLink — bi-temporal hints (A1)', () => {
   let llmStub: { call: ReturnType<typeof vi.fn> };
   let svc: BlockLinkService;
 
   beforeEach(() => {
     llmStub = { call: vi.fn() };
-    svc = new BlockLinkService(
-      {} as never, // prisma — не нужен для judgeLink
-      llmStub as unknown as never,
-      undefined,
-    );
+    svc = new BlockLinkService({} as never, llmStub as unknown as never, undefined);
   });
 
   it('LLM вернул validFrom/validUntil ISO-даты — попадают в verdict.*Hint', async () => {
@@ -43,8 +28,24 @@ describe('BlockLinkService.judgeLink — bi-temporal hints (A1)', () => {
 
     const verdict = await svc.judgeLink({
       tenantId: 't',
-      fromBlock: { id: 'a', name: '', criticalQuestion: '', trustedAnswer: '', signalType: 'fact', tags: [], dataClass: 'public' } as never,
-      toBlock: { id: 'b', name: '', criticalQuestion: '', trustedAnswer: '', signalType: 'fact', tags: [], dataClass: 'public' } as never,
+      fromBlock: {
+        id: 'a',
+        name: '',
+        criticalQuestion: '',
+        trustedAnswer: '',
+        signalType: 'fact',
+        tags: [],
+        dataClass: 'public',
+      } as never,
+      toBlock: {
+        id: 'b',
+        name: '',
+        criticalQuestion: '',
+        trustedAnswer: '',
+        signalType: 'fact',
+        tags: [],
+        dataClass: 'public',
+      } as never,
     });
 
     expect(verdict.relationType).toBe('develops');
@@ -58,14 +59,29 @@ describe('BlockLinkService.judgeLink — bi-temporal hints (A1)', () => {
         relationType: 'develops',
         confidence: 0.85,
         explanation: 'без временных указателей',
-        // validFrom/validUntil отсутствуют → backward-compat
       }),
     });
 
     const verdict = await svc.judgeLink({
       tenantId: 't',
-      fromBlock: { id: 'a', name: '', criticalQuestion: '', trustedAnswer: '', signalType: 'fact', tags: [], dataClass: 'public' } as never,
-      toBlock: { id: 'b', name: '', criticalQuestion: '', trustedAnswer: '', signalType: 'fact', tags: [], dataClass: 'public' } as never,
+      fromBlock: {
+        id: 'a',
+        name: '',
+        criticalQuestion: '',
+        trustedAnswer: '',
+        signalType: 'fact',
+        tags: [],
+        dataClass: 'public',
+      } as never,
+      toBlock: {
+        id: 'b',
+        name: '',
+        criticalQuestion: '',
+        trustedAnswer: '',
+        signalType: 'fact',
+        tags: [],
+        dataClass: 'public',
+      } as never,
     });
 
     expect(verdict.relationType).toBe('develops');
@@ -86,30 +102,32 @@ describe('BlockLinkService.judgeLink — bi-temporal hints (A1)', () => {
 
     const verdict = await svc.judgeLink({
       tenantId: 't',
-      fromBlock: { id: 'a', name: '', criticalQuestion: '', trustedAnswer: '', signalType: 'fact', tags: [], dataClass: 'public' } as never,
-      toBlock: { id: 'b', name: '', criticalQuestion: '', trustedAnswer: '', signalType: 'fact', tags: [], dataClass: 'public' } as never,
+      fromBlock: {
+        id: 'a',
+        name: '',
+        criticalQuestion: '',
+        trustedAnswer: '',
+        signalType: 'fact',
+        tags: [],
+        dataClass: 'public',
+      } as never,
+      toBlock: {
+        id: 'b',
+        name: '',
+        criticalQuestion: '',
+        trustedAnswer: '',
+        signalType: 'fact',
+        tags: [],
+        dataClass: 'public',
+      } as never,
     });
 
     expect(verdict.relationType).toBeNull();
-    // Для 'none' hint'ы не нужны (ребро не создаём).
     expect(verdict.validFromHint).toBeUndefined();
     expect(verdict.validUntilHint).toBeUndefined();
   });
 });
 
-/**
- * Фаза 4 (устойчивый парсинг JSON в графе): block-linker не должен молча
- * терять связь на невалидном/обёрнутом JSON арбитра — lenient-парсер
- * (tryParseJson) + retry (2 попытки, зеркало block-ingest) + метрика
- * молчаливой деградации.
- *
- * Покрываем:
- *   1. Валидный JSON-вердикт (конкретный relationType) → корректный verdict.
- *   2. Fenced ```json{...}``` валидный → парсится через tryParseJson (НЕ none).
- *   3. Оба ответа — мусор → 2 попытки → fallback {relationType:null} +
- *      incKcBlockLinkerFallbackNone({reason:'exhausted'}).
- *   4. llm.call бросает оба раза → fallback none + метрика.
- */
 describe('BlockLinkService.judgeLink (Фаза 4 — устойчивый парсинг)', () => {
   function makeMetrics(): BusinessMetricsService {
     return {
@@ -118,9 +136,7 @@ describe('BlockLinkService.judgeLink (Фаза 4 — устойчивый пар
     } as unknown as BusinessMetricsService;
   }
 
-  function makeRouterReturning(
-    responses: Array<{ text: string } | Error>,
-  ): LlmRouterService {
+  function makeRouterReturning(responses: Array<{ text: string } | Error>): LlmRouterService {
     let i = 0;
     return {
       call: vi.fn(async (_params: LlmCallParams) => {
@@ -226,10 +242,7 @@ describe('BlockLinkService.judgeLink (Фаза 4 — устойчивый пар
   });
 
   it('llm.call бросает оба раза → fallback none + метрика', async () => {
-    const router = makeRouterReturning([
-      new Error('boom-1'),
-      new Error('boom-2'),
-    ]);
+    const router = makeRouterReturning([new Error('boom-1'), new Error('boom-2')]);
     const metrics = makeMetrics();
     const svc = new BlockLinkService({} as never, router, undefined, metrics);
     const verdict = await svc.judgeLink(linkArgs);
@@ -258,16 +271,13 @@ describe('BlockLinkService.judgeLink (Фаза 4 — устойчивый пар
     const svc = new BlockLinkService({} as never, router, undefined, metrics);
     const verdict = await svc.judgeLink(linkArgs);
 
-    // Связь НЕ потеряна — ретрай восстановил.
     expect(verdict.relationType).toBe('develops');
     expect(verdict.confidence).toBe(0.77);
     expect(router.call).toHaveBeenCalledTimes(2);
-    // Метрика невалидного JSON инкрементирована ровно один раз (1-я попытка).
     expect(metrics.incKcBlockLinkerInvalidJson).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'parse' }),
     );
     expect(metrics.incKcBlockLinkerInvalidJson).toHaveBeenCalledTimes(1);
-    // Терминального fallback НЕ было.
     expect(metrics.incKcBlockLinkerFallbackNone).not.toHaveBeenCalled();
   });
 });

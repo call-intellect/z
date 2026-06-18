@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -16,13 +11,6 @@ import type {
 
 import { mergeSourceBlocks } from './responsibility-element.service';
 
-/**
- * SBA α-8 wave 4 — CRUD-сервис DecisionPolicy.
- *
- * Правила принятия решения, привязанные к роли. При фиксации Decision
- * (β-3 Specialist Decisions) можно указать `Decision.appliedPolicyId` для
- * аудита соответствия.
- */
 @Injectable()
 export class DecisionPolicyService {
   constructor(
@@ -30,10 +18,7 @@ export class DecisionPolicyService {
     @Inject(AuditLogService) private readonly audit: AuditLogService,
   ) {}
 
-  async listByRole(args: {
-    tenantId: string;
-    roleId: string;
-  }): Promise<DecisionPolicyDto[]> {
+  async listByRole(args: { tenantId: string; roleId: string }): Promise<DecisionPolicyDto[]> {
     await this.assertRoleExists(args.tenantId, args.roleId);
     const rows = await this.prisma.decisionPolicy.findMany({
       where: {
@@ -46,10 +31,7 @@ export class DecisionPolicyService {
     return rows.map((r) => this.toDto(r));
   }
 
-  async get(args: {
-    tenantId: string;
-    id: string;
-  }): Promise<DecisionPolicyDto> {
+  async get(args: { tenantId: string; id: string }): Promise<DecisionPolicyDto> {
     const row = await this.prisma.decisionPolicy.findUnique({
       where: { id: args.id },
     });
@@ -85,9 +67,7 @@ export class DecisionPolicyService {
         regulationId: args.body.regulationId ?? null,
         sourceBlockIds: args.body.sourceBlockIds ?? [],
         confidence:
-          args.body.confidence !== undefined
-            ? new Prisma.Decimal(args.body.confidence)
-            : null,
+          args.body.confidence !== undefined ? new Prisma.Decimal(args.body.confidence) : null,
       },
     });
     void this.audit.log({
@@ -157,11 +137,7 @@ export class DecisionPolicyService {
     return this.toDto(updated);
   }
 
-  async softDelete(args: {
-    tenantId: string;
-    userId: string;
-    id: string;
-  }): Promise<{ ok: true }> {
+  async softDelete(args: { tenantId: string; userId: string; id: string }): Promise<{ ok: true }> {
     const existing = await this.prisma.decisionPolicy.findUnique({
       where: { id: args.id },
     });
@@ -213,10 +189,7 @@ export class DecisionPolicyService {
             args.conditionDescription !== undefined
               ? args.conditionDescription
               : existing.conditionDescription,
-          sourceBlockIds: mergeSourceBlocks(
-            existing.sourceBlockIds,
-            args.sourceBlockIds,
-          ),
+          sourceBlockIds: mergeSourceBlocks(existing.sourceBlockIds, args.sourceBlockIds),
           confidence:
             args.confidence !== undefined && args.confidence !== null
               ? new Prisma.Decimal(args.confidence)
@@ -242,12 +215,7 @@ export class DecisionPolicyService {
     return this.toDto(created);
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  private async assertRoleExists(
-    tenantId: string,
-    roleId: string,
-  ): Promise<void> {
+  private async assertRoleExists(tenantId: string, roleId: string): Promise<void> {
     const role = await this.prisma.role.findUnique({
       where: { id: roleId },
       select: { tenantId: true, deletedAt: true },
@@ -263,10 +231,7 @@ export class DecisionPolicyService {
     }
   }
 
-  private async assertRegulationExists(
-    tenantId: string,
-    regulationId: string,
-  ): Promise<void> {
+  private async assertRegulationExists(tenantId: string, regulationId: string): Promise<void> {
     const reg = await this.prisma.regulation.findUnique({
       where: { id: regulationId },
       select: { tenantId: true, deletedAt: true },

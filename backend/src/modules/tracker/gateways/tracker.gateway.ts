@@ -18,52 +18,23 @@ import { RbacService } from '../../rbac/rbac.service';
 interface SocketContext {
   userId: string;
   email: string;
-  /** Текущий выбранный tenantId. Per-tenant room — главная подписка. */
   tenantId: string;
-  /**
-   * T8 (2026-05-24). Для отображения «N онлайн» в чате задачи нужно
-   * человекочитаемое имя. Сохраняем при handshake, чтобы не дёргать БД на
-   * каждый presence-event.
-   */
   displayName: string;
-  /**
-   * T8. Set issueId'ов, в чьи presence-rooms сокет вступил.
-   * Нужен для авточистки на disconnect и для presence query.
-   */
   presenceIssueIds: Set<string>;
 }
 
-/**
- * TrackerGateway — live-канал для UI трекера. Один tenant = одна основная
- * подписка-room `tenant:${tenantId}`. Опционально клиент подписывается на
- * более узкие rooms — `project:${id}`, `issue:${id}` (для kanban-доски
- * конкретного проекта или ленты конкретной задачи).
- *
- * Аутентификация — тот же session JWT, что REST: cookie `z_session` или
- * заголовок `Authorization: Bearer …` (для тестов). После verify юзер
- * должен иметь membership в указанном `X-Org-Id` / handshake.auth.tenantId
- * (иначе — disconnect).
- *
- * Heartbeat / ping-pong — built-in socket.io (default 25s ping interval).
- */
 @Injectable()
 @WebSocketGateway({
   namespace: '/ws/tracker',
-  // CORS закрывается в `afterInit` через значения из TypedConfig'а (см. ниже) —
-  // в декораторе нельзя обращаться к DI, поэтому ставим разрешающий шаблон,
-  // а fail-fast делается в `handleConnection`.
   cors: { origin: true, credentials: true },
-  // Транспорты: websocket в приоритете, fallback на polling.
   transports: ['websocket', 'polling'],
 })
 export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(TrackerGateway.name);
 
-  /** Заполняется самим nest'ом после bootstrap. */
   @WebSocketServer()
   server!: Server;
 
-  /** Set'ы коннектов на tenant для observability и быстрого emit. */
   private readonly socketContext = new Map<string, SocketContext>();
 
   constructor(
@@ -73,8 +44,6 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
-  // ── lifecycle ────────────────────────────────────────────────────────
-
   async handleConnection(client: Socket): Promise<void> {
     try {
       const ctx = await this.authenticate(client);
@@ -82,12 +51,10 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
         client.disconnect(true);
         return;
       }
-      // Гарантируем валидный presenceIssueIds (если authenticate не задал —
-      // подстраховка от рассинхрона типов).
       if (!ctx.presenceIssueIds) ctx.presenceIssueIds = new Set();
       this.socketContext.set(client.id, ctx);
       await client.join(this.tenantRoom(ctx.tenantId));
-      this.logger.log(
+      this.logger.debug(
         { socketId: client.id, userId: ctx.userId, tenantId: ctx.tenantId },
         'tracker WS: client connected',
       );
@@ -107,28 +74,18 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
   handleDisconnect(client: Socket): void {
     const ctx = this.socketContext.get(client.id);
-    // T8: при дисконнекте — broadcast presence:user_left во все presence rooms,
-    // в которых сокет состоял. socket.io сам уберёт сокет из rooms, но другие
-    // клиенты должны узнать, что человек ушёл.
     if (ctx) {
       for (const issueId of ctx.presenceIssueIds) {
         this.broadcastPresenceLeave(client, issueId, ctx);
       }
     }
     this.socketContext.delete(client.id);
-    this.logger.log(
+    this.logger.debug(
       { socketId: client.id, userId: ctx?.userId, tenantId: ctx?.tenantId },
       'tracker WS: client disconnected',
     );
   }
 
-  // ── client-side messages ─────────────────────────────────────────────
-
-  /**
-   * Подписка на дополнительный room проекта. Возвращает ack клиенту.
-   * Защита от чужого projectId — проверяем, что Project принадлежит
-   * tenant'у подключения.
-   */
   @SubscribeMessage('subscribe.project')
   async onSubscribeProject(
     @ConnectedSocket() client: Socket,
@@ -144,10 +101,6 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
       select: { id: true, ownerId: true },
     });
     if (!project) return { ok: false, error: 'project_not_found' };
-    // audit В12 (2026-05-29): RBAC-чек на read project. Без него любой
-    // авторизованный member тенанта мог join'нуть room и читать live-events
-    // чужого проекта. canRead резолвит роль из membership + visibility-mode
-    // policy.csv (manager strict — self-only по ownerId).
     const allowed = await this.rbac.canRead(
       ctx.userId,
       ctx.tenantId,
@@ -183,8 +136,6 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
       select: { id: true, createdById: true },
     });
     if (!issue) return { ok: false, error: 'issue_not_found' };
-    // audit В12 (2026-05-29): RBAC-чек на read issue. См. subscribe.project
-    // — тот же риск утечки live-events чужой задачи member'у тенанта.
     const allowed = await this.rbac.canRead(
       ctx.userId,
       ctx.tenantId,
@@ -207,24 +158,11 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     return { ok: true };
   }
 
-  /** Простой ping для отладочного клиента (socket.io уже шлёт свой heartbeat). */
   @SubscribeMessage('ping')
   onPing(): { ok: true; t: number } {
     return { ok: true, t: Date.now() };
   }
 
-  // ── T8: presence/typing для multi-user чата задачи ───────────────────
-
-  /**
-   * Подписаться на presence-room задачи. Возвращает текущий список online
-   * пользователей в room (включая запрашивающего, без дублей по userId).
-   *
-   * Отличается от `subscribe.issue` тем, что:
-   *   - room другой (`presence:issue:${issueId}`) — узкая шина только для
-   *     присутствия/typing, не зашумляет основной канал событиями;
-   *   - после join'а — broadcast другим членам room'а `presence:user_joined`;
-   *   - отслеживается в SocketContext.presenceIssueIds для авточистки.
-   */
   @SubscribeMessage('issue.chat.join')
   async onChatJoin(
     @ConnectedSocket() client: Socket,
@@ -250,8 +188,6 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     await client.join(room);
     ctx.presenceIssueIds.add(body.issueId);
 
-    // Broadcast только если действительно зашли впервые (защита от
-    // повторных join'ов с того же сокета).
     if (!wasAlreadyIn) {
       client.to(room).emit('presence:user_joined', {
         issueId: body.issueId,
@@ -278,10 +214,6 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     return { ok: true };
   }
 
-  /**
-   * Typing-indicator. Server — простой relay, дебаунс — на клиенте. Не пишем
-   * в БД, не валидируем повторение: «потерянное» событие безболезненно.
-   */
   @SubscribeMessage('issue.chat.typing')
   onChatTyping(
     @ConnectedSocket() client: Socket,
@@ -290,8 +222,6 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     const ctx = this.socketContext.get(client.id);
     if (!ctx || !body?.issueId) return { ok: false };
     if (!ctx.presenceIssueIds.has(body.issueId)) {
-      // Не подписан на presence-room — игнорируем, чтобы не было утечки
-      // typing-сигналов между задачами.
       return { ok: false };
     }
     const room = this.presenceRoom(body.issueId);
@@ -304,7 +234,6 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     return { ok: true };
   }
 
-  /** Снимок текущего онлайн-состава presence-room (для UI после переподключения). */
   @SubscribeMessage('issue.chat.presence')
   onChatPresence(
     @ConnectedSocket() client: Socket,
@@ -315,9 +244,6 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     return { ok: true, onlineUsers: this.collectPresence(body.issueId) };
   }
 
-  // ── server-side helpers (используются TrackerEventsService) ──────────
-
-  /** Имя room для tenant'а. */
   tenantRoom(tenantId: string): string {
     return `tenant:${tenantId}`;
   }
@@ -330,19 +256,11 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     return `issue:${issueId}`;
   }
 
-  /** T8: room для presence/typing в чате задачи. Не пересекается с issueRoom. */
   presenceRoom(issueId: string): string {
     return `presence:issue:${issueId}`;
   }
 
-  /**
-   * Собрать unique online-юзеров (по userId), которые сейчас в presence-room
-   * указанной задачи. Источник истины — наш socketContext, а не socket.io
-   * adapter.rooms (тот не различает userId, только socketId).
-   */
-  private collectPresence(
-    issueId: string,
-  ): Array<{ userId: string; displayName: string }> {
+  private collectPresence(issueId: string): Array<{ userId: string; displayName: string }> {
     const seen = new Map<string, string>();
     for (const ctx of this.socketContext.values()) {
       if (ctx.presenceIssueIds.has(issueId)) {
@@ -355,16 +273,7 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     }));
   }
 
-  /**
-   * Broadcast `presence:user_left` в presence-room. Эмитим только если это
-   * был ПОСЛЕДНИЙ сокет этого юзера в room'е (у юзера могло быть открыто
-   * несколько вкладок — он не «ушёл», пока остаётся хоть один коннект).
-   */
-  private broadcastPresenceLeave(
-    client: Socket,
-    issueId: string,
-    ctx: SocketContext,
-  ): void {
+  private broadcastPresenceLeave(client: Socket, issueId: string, ctx: SocketContext): void {
     let remaining = 0;
     for (const [socketId, c] of this.socketContext.entries()) {
       if (socketId === client.id) continue;
@@ -381,14 +290,8 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     });
   }
 
-  /**
-   * Опубликовать событие в один или несколько rooms. Безопасный no-op если
-   * `server` не инициализирован (актуально для unit-тестов, где gateway
-   * мокируется без NestJS lifecycle).
-   */
   emitToRooms(rooms: string[], eventName: string, payload: unknown): void {
     if (!this.server) {
-      // На случай, если событие летит до bootstrap'а — лог + skip.
       this.logger.debug({ eventName, rooms }, 'WS server not ready, event dropped');
       return;
     }
@@ -396,11 +299,7 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     this.server.to(rooms).emit(eventName, payload);
   }
 
-  // ── internals ────────────────────────────────────────────────────────
-
   private async authenticate(client: Socket): Promise<SocketContext | null> {
-    // Проверка allowed origin (CORS) — strict, чтобы декларация cors:{origin:true}
-    // в декораторе не открывала браузерные коннекты с любого URL.
     const origin = (client.handshake.headers.origin ?? '').toString();
     const allowedList = this.cfg.cors.allowed;
     if (origin && !allowedList.includes(origin)) {
@@ -428,20 +327,13 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
       return null;
     }
 
-    // Если в JWT есть jti — проверим, что сессия не отозвана.
     if (session.jti) {
       const us = await this.prisma.userSession.findUnique({
         where: { jti: session.jti },
       });
-      const valid =
-        us !== null &&
-        us.revokedAt === null &&
-        us.expiresAt.getTime() > Date.now();
+      const valid = us !== null && us.revokedAt === null && us.expiresAt.getTime() > Date.now();
       if (!valid) {
-        this.logger.warn(
-          { socketId: client.id, jti: session.jti },
-          'tracker WS: session revoked',
-        );
+        this.logger.warn({ socketId: client.id, jti: session.jti }, 'tracker WS: session revoked');
         return null;
       }
     }
@@ -449,7 +341,6 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     const tenantId = await this.resolveTenantId(client, session.sub);
     if (!tenantId) return null;
 
-    // Проверим membership пользователя в tenant'е.
     const membership = await this.prisma.membership.findFirst({
       where: { userId: session.sub, orgId: tenantId },
       select: { id: true },
@@ -462,17 +353,12 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
       return null;
     }
 
-    // T8 (2026-05-24): подтянем displayName для presence/typing. Берём User.name,
-    // fallback — email (или хвост userId, если ничего нет).
     const user = await this.prisma.user.findUnique({
       where: { id: session.sub },
       select: { name: true, email: true },
     });
     const displayName =
-      user?.name?.trim() ||
-      user?.email?.trim() ||
-      session.email ||
-      session.sub.slice(0, 8);
+      user?.name?.trim() || user?.email?.trim() || session.email || session.sub.slice(0, 8);
 
     return {
       userId: session.sub,
@@ -483,16 +369,8 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     };
   }
 
-  /**
-   * Извлекает session JWT из:
-   *   1. handshake.auth.token (явная передача от клиента)
-   *   2. cookie `z_session` (HTTP-only из браузера)
-   *   3. заголовок Authorization: Bearer <token>
-   */
   private extractToken(client: Socket): string | null {
-    const auth = client.handshake.auth as
-      | { token?: string }
-      | undefined;
+    const auth = client.handshake.auth as { token?: string } | undefined;
     if (auth?.token && typeof auth.token === 'string') return auth.token;
 
     const cookieHeader = client.handshake.headers.cookie ?? '';
@@ -513,20 +391,8 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     return null;
   }
 
-  /**
-   * tenantId извлекается из:
-   *   1. handshake.auth.tenantId (предпочтительно — client knows what он
-   *      смотрит);
-   *   2. handshake.query.tenantId (для отладки);
-   *   3. дефолтная Org user'а — если ровно одна.
-   */
-  private async resolveTenantId(
-    client: Socket,
-    userId: string,
-  ): Promise<string | null> {
-    const auth = client.handshake.auth as
-      | { tenantId?: string }
-      | undefined;
+  private async resolveTenantId(client: Socket, userId: string): Promise<string | null> {
+    const auth = client.handshake.auth as { tenantId?: string } | undefined;
     if (auth?.tenantId && typeof auth.tenantId === 'string') return auth.tenantId;
 
     const q = client.handshake.query?.tenantId;

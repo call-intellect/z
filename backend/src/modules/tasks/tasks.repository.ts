@@ -3,11 +3,6 @@ import { type Prisma, type Task, type TaskStatus } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-/**
- * Тонкий слой над Prisma для модели `Task`. Все запросы списка фильтруют
- * по `userId` — кросс-юзерский доступ должен быть невозможен на уровне
- * репозитория.
- */
 export interface TaskListFilters {
   userId: string;
   page: number;
@@ -29,14 +24,10 @@ export class TasksRepository {
   async list(filters: TaskListFilters): Promise<{ items: Task[]; total: number }> {
     const where: Prisma.TaskWhereInput = {
       userId: filters.userId,
-      ...(filters.status && filters.status.length > 0
-        ? { status: { in: filters.status } }
-        : {}),
+      ...(filters.status && filters.status.length > 0 ? { status: { in: filters.status } } : {}),
       ...(filters.meetingId ? { meetingId: filters.meetingId } : {}),
       ...(filters.dueBefore ? { dueDate: { lte: filters.dueBefore } } : {}),
-      ...(filters.q
-        ? { title: { contains: filters.q, mode: 'insensitive' } }
-        : {}),
+      ...(filters.q ? { title: { contains: filters.q, mode: 'insensitive' } } : {}),
     };
     const skip = (filters.page - 1) * filters.limit;
 
@@ -81,11 +72,7 @@ export class TasksRepository {
     });
   }
 
-  update(
-    id: string,
-    data: Prisma.TaskUpdateInput,
-    tx?: Prisma.TransactionClient,
-  ): Promise<Task> {
+  update(id: string, data: Prisma.TaskUpdateInput, tx?: Prisma.TransactionClient): Promise<Task> {
     const client = tx ?? this.prisma;
     return client.task.update({ where: { id }, data });
   }
@@ -94,11 +81,7 @@ export class TasksRepository {
     return this.prisma.task.delete({ where: { id } });
   }
 
-  async bulkUpdateStatus(
-    ids: string[],
-    userId: string,
-    status: TaskStatus,
-  ): Promise<number> {
+  async bulkUpdateStatus(ids: string[], userId: string, status: TaskStatus): Promise<number> {
     const result = await this.prisma.task.updateMany({
       where: { id: { in: ids }, userId },
       data: { status },

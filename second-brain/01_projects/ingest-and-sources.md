@@ -6,7 +6,7 @@ updated: 2026-05-10
 
 # Ingest и Sources
 
-Введено в Фазе 1 ТЗ knowledge-core ([plans/tz/2026-05-10-knowledge-core-tz.md](../../plans/tz/2026-05-10-knowledge-core-tz.md), §«Фаза 1 — Универсальный ingest + Raw Memory + meeting-adapter»).
+Введено в Фазе 1 ТЗ knowledge-core ([plans/archive/2026-05-10-knowledge-core-tz.md](../../plans/archive/2026-05-10-knowledge-core-tz.md), §«Фаза 1 — Универсальный ingest + Raw Memory + meeting-adapter»).
 
 ## Зачем
 

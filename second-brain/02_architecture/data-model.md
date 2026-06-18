@@ -233,7 +233,7 @@ ended_at
 
 ## Org / Membership / OrgInvitation / LlmModelPrice (Фаза 0 knowledge-core, 2026-05-10)
 
-Подробнее: [[../01_projects/orgs-and-rbac|orgs-and-rbac]] и [[../01_projects/llm-router|llm-router]].
+Подробнее: [[../01_projects/rbac-access-control|rbac-access-control]] и [[../01_projects/llm-router|llm-router]].
 
 ### Org
 
@@ -704,7 +704,7 @@ erDiagram
 - `MeetingType` enum + `review`, `retrospective`.
 - `IdeaBlock.roleRelevant Boolean`, `IdeaBlock.roleId?`.
 - `EntityLink` полиморфизована: `fromType?`, `toType?`, `validFrom`, `validTo?`, `properties Json`. Composite unique включает fromType/toType. FK на Entity убраны.
-- `EntityLinkType` enum +17 типов рёбер (см. `plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md` §4.4).
+- `EntityLinkType` enum +17 типов рёбер (см. `plans/archive/2026-05-21-phase-0a-data-model-and-graph-infra.md` §4.4).
 - `Membership.personId?`, `OrgInvitation.personId?`, `User.persons[]`.
 
 ### Графовая инфраструктура
@@ -769,6 +769,7 @@ erDiagram
 - AI metadata: `sourceBlockIds String[]`, `confidence Decimal(4,3)?`, `createdManually @default(true)`.
 - Внешний источник: `externalSource?` (email/telegram/checkin/meeting/api/manual), `externalId?`.
 - `entityId?` для графа, `createdById String`, soft-delete `deletedAt?`.
+- **task-dedup Ф4 (knowledge-core MASTER, 2026-06-16, миграция `20260617002427_issue_closure_review`):** `closureReviewState String? @db.VarChar(24)` (null | `superseded_decision`), `closureReviewReason? @db.Text`, `closureReviewAt DateTime?` — задача попадает «под вопрос», когда supersede связанного решения (`specialist-3-3-decisions`) ставит её на пересмотр. Индекс `@@index([tenantId, closureReviewState])`. Поднимается в Action Center провайдером `TaskReviewPendingProvider` («задача под вопросом»).
 
 ### IssueAssignee (M2M), IssueSubscriber, IssueMention (с commentId? FK), Label (per-project или global), IssueLabel
 - Стандартные M2M структуры, см. schema.prisma.
@@ -807,6 +808,15 @@ erDiagram
 - Триаж: `triagedByUserId?, triagedAt?, rejectedReason?, snoozedUntil?`.
 - Если accept — создаётся Issue, ссылка в `createdIssueId?`.
 - `meetingId String?` (миграция `add_intake_issue_meeting_id`, 2026-06-18, ТЗ [`intake-issue-linked-meeting-ids-fix`](../../plans/tz/2026-06-16-intake-issue-linked-meeting-ids-fix.md)) — встреча-источник кандидата в задачу. При accept протягивается в `Issue.linkedMeetingIds`, чтобы задача была видна в карточке встречи (раньше связь терялась). Backfill существующих — `scripts/backfill-meeting-linked-ids.ts` (только `meeting:`-формат `externalId`).
+- **task-dedup Ф1 (knowledge-core MASTER, 2026-06-16, миграция `20260616233329_task_dedup_intake_suggested_duplicate`):** `suggestedDuplicateOfIssueId String?` — кандидат-дубль, найденный дедупом (`TaskDedupService`: embedding-KNN-кандидаты + LLM-арбитр `task-dedup-arbiter` в серой зоне) ещё на входе в трекер.
+
+### TaskClosureCandidate (task-dedup Ф2 — петля разговор→кандидат закрытия)
+**knowledge-core MASTER, 2026-06-16, миграция `20260617000614_task_closure_candidate`, `@map`-имя по умолчанию.**
+- `tenantId, issueId, sourceBlockId` — задача и блок графа, который предположительно её закрывает.
+- `status @db.VarChar(16) @default("pending")`, `matchSimilarity Decimal(4,3)?`, `confidence Decimal(4,3)?`, `rationale? @db.Text`, `evidenceQuote? @db.Text`.
+- Решение: `decidedByUserId?`, `decidedAt?`, `expiresAt?` + `createdAt/updatedAt`.
+- Индексы: `@@unique([tenantId, issueId, sourceBlockId])` (идемпотентность кандидата), `@@index([tenantId, status])`, `@@index([issueId])`.
+- Создаётся `TaskCompletionHandler` (`@OnEvent('task.completion_signalled')`, эмитит `RouterService` на блоках `signalType='task_completed'`/ручном закрытии) после верификации taskType `task-closure-verify`. Поднимается в Action Center провайдером `TaskClosurePendingProvider` («задача к закрытию»).
 
 ### IssueWebhook (исходящие webhooks для внешних интеграций)
 - `tenantId, name, url, secretKey String` (с префиксом `kora_wh_` + 32 байта random).
@@ -912,7 +922,7 @@ enum MailInboundStatus {
 
 ### SBA β-8.1 — DailyCheckIn.sentiment + WeeklyOperationsDigest (2026-05-25)
 
-**Источник:** [`plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md`](../../plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md).
+**Источник:** [`plans/archive/2026-05-24-sba-beta-8-1-coo-dobivka.md`](../../plans/archive/2026-05-24-sba-beta-8-1-coo-dobivka.md).
 
 **`DailyCheckIn` (расширение, β-8 + β-8.1):**
 
@@ -948,7 +958,7 @@ model WeeklyOperationsDigest {
 
 ### SBA β-8.3 — DailyOperationsDigest (2026-05-25)
 
-**Источник:** [`plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md`](../../plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md).
+**Источник:** [`plans/archive/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md`](../../plans/archive/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md).
 
 **`DailyOperationsDigest` (новая, зеркало `WeeklyOperationsDigest` в окне 1 день МСК):**
 
@@ -973,7 +983,7 @@ model DailyOperationsDigest {
 
 ### SBA β-8.2 — IdeaBlock.commitment* + ребро `resolves` (2026-05-25)
 
-**Источник:** [`plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md`](../../plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md), [`plans/analysis/2026-05-24-zamykanie-obeschanij.md`](../../plans/analysis/2026-05-24-zamykanie-obeschanij.md).
+**Источник:** [`plans/archive/2026-05-24-sba-beta-8-2-promise-keeper.md`](../../plans/archive/2026-05-24-sba-beta-8-2-promise-keeper.md), [`plans/analysis/2026-05-24-zamykanie-obeschanij.md`](../../plans/analysis/2026-05-24-zamykanie-obeschanij.md).
 
 **`IdeaBlock` (расширение для `signalType='commitment'`):**
 
@@ -1010,7 +1020,7 @@ Autonomy W2 (2026-06-12) добавила **ещё два значения** (м
 
 ## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
 
-**Источник:** [`plans/tz/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/tz/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[../01_projects/feedback]].
+**Источник:** [`plans/archive/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/archive/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[../01_projects/feedback]].
 
 Фича **глобальная (не tenant-bound)** — фидбэк адресован команде Z, а не конкретной `Org`. Поля `tenantId` в моделях нет.
 
@@ -1083,7 +1093,7 @@ model FeedbackItem {
 
 ## Clones v2 — CloneAccessGrant (Фаза 7 §9, 2026-05-26)
 
-**Источник:** [`plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md) — Фаза 7 §9 (clone-respond v2) + расширение из [`plans/tz/2026-05-26-clone-access-grant-admin-api.md`](../../plans/tz/2026-05-26-clone-access-grant-admin-api.md) (admin CRUD + soft-revoke + срок действия). Связь с UI/политикой ролевых клонов — [[../01_projects/skill-and-clone]] §«Доработки 2026-05-26».
+**Источник:** [`plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md) — Фаза 7 §9 (clone-respond v2) + расширение из [`plans/archive/2026-05-26-clone-access-grant-admin-api.md`](../../plans/archive/2026-05-26-clone-access-grant-admin-api.md) (admin CRUD + soft-revoke + срок действия). Связь с UI/политикой ролевых клонов — [[../01_projects/skill-and-clone]] §«Доработки 2026-05-26».
 
 Многотуровый чат с клоном (persona или role) теперь требует явного гранта доступа — раньше доступ резолвился чисто RBAC-правилом owner/admin/self/manager, теперь добавляется per-pair (grantee × clone) ACL для коллабораций «дай мне поговорить с твоим клоном».
 
@@ -1201,7 +1211,7 @@ GIN-индекс `table_row_cells_gin ON "TableRow" USING GIN (cells jsonb_path_
 
 ## Goals OKR v2 — Граф целей (2026-06-02)
 
-**Источник:** [`plans/tz/2026-06-02-goals-okr-v2.md`](../../plans/tz/2026-06-02-goals-okr-v2.md) §2. Профильная заметка — [[../01_projects/goals-and-strategic-alignment]] §«Goals OKR v2». Достройка модуля `goals` (НЕ переписывание) — расширение `Goal`, две новые модели измеримых ориентиров, тонкие FK слоёв, 4 enum'а. Применяется через `bun run prisma:push` (не migrate).
+**Источник:** [`plans/archive/2026-06-02-goals-okr-v2.md`](../../plans/archive/2026-06-02-goals-okr-v2.md) §2. Профильная заметка — [[../01_projects/goals-and-strategic-alignment]] §«Goals OKR v2». Достройка модуля `goals` (НЕ переписывание) — расширение `Goal`, две новые модели измеримых ориентиров, тонкие FK слоёв, 4 enum'а. Применяется через `bun run prisma:push` (не migrate).
 
 ### Расширение `model Goal`
 
@@ -1236,6 +1246,8 @@ cachedBlocksCount Int?                                  // кэш числа б�
 > `progressStatus` — самостоятельная ось «движение для пульса», `status` (GoalStatus) остаётся жизненным циклом. Их не путать.
 >
 > **ТЗ-F 2026-06-05** ([`plans/tz/2026-06-05-goals-improvements.md`](../../plans/tz/2026-06-05-goals-improvements.md), ветка `feature/goals-improvements`): `ownerPersonId` — relation `GoalOwnerPerson` на `Person` с `onDelete: SetNull` и индексом `[tenantId, ownerPersonId]`; back-relation `Person.ownedGoals Goal[] @relation("GoalOwnerPerson")` (рядом с `ownedProcesses`/`ownedRegulations`). `cachedBlocksCount Int?` — кэш числа блоков последнего snapshot, чтобы «светофор уверенности» в списке считался без JOIN; обновляется `strategic-alignment.worker` тем же `tx.goal.update`. Поля `cachedAlignment`/`progressStatus` НЕ менялись.
+>
+> **task-dedup Ф5 (knowledge-core MASTER, 2026-06-16, миграция `20260617005105_goal_embedding`):** `embedding Unsupported("vector(1536)")?` (text-embedding-3-small по `name + description`) + `embeddingHash String?` (чтобы не пересчитывать без изменений). Считается воркером `GoalEmbedWorker` (очередь `core.goal-embed`); backfill `backfill-goal-embeddings.ts`. Питает KNN-дедуп целей в специалисте `3-14-goals`. **HNSW-индекс** на `Goal.embedding` (`vector_cosine_ops`, `WHERE embedding IS NOT NULL`) — в `backend/scripts/postgres-init.sql` (Prisma не умеет HNSW).
 
 ### `model GoalKeyResult` (новая) — измеримый ориентир, 0..N на цель
 
@@ -1513,6 +1525,13 @@ enum MeetingStatus { ... ai_ready  ai_failed }   // новое значение
 
 Влияние на FSM-блок выше (§«Статусы встречи»): ветка `ai_processing` теперь ветвится на `ai_ready | ai_failed`, общий `failed` — только для отсутствия записи/аудио.
 
+## Bitrix24-интеграция (2026-06-09)
+
+**Источник:** [`plans/archive/2026-06-09-bitrix24-integration-install.md`](../../plans/archive/2026-06-09-bitrix24-integration-install.md). Ветка `bitrix`. Модули — [[module-map]] §«Bitrix24-интеграция». Миграция `20260609112355_bitrix_integration` (1 таблица + 1 enum), применяется авто через `migrate deploy`.
+
+- **`BitrixIntegration`** — конфиг портала Bitrix24 ↔ org. Натуральный ключ `memberId @unique` (портал); `tenantId String?` (null пока `pending` — установка из Маркета до claim), `@@index([tenantId])`, `@@index([status])`. Поля: `portalDomain`, `clientEndpoint`/`serverEndpoint`, `scope`, `accessTokenEnc`/`refreshTokenEnc`/`applicationTokenEnc` (AES-256-GCM, никогда не plain), `accessExpiresAt`, `status` (enum), `lastError`, `lastConnectedAt`. Relation `org → Org?` (Cascade). Уникальность «одна connected на org» — на уровне сервиса.
+- **`enum BitrixIntegrationStatus`** — `pending | connected | error | disconnected`.
+
 ## ChatBox-интеграция (2026-06-05)
 
 **Источник:** [`plans/tz/2026-06-05-chatbox-integration.md`](../../plans/tz/2026-06-05-chatbox-integration.md). Ветка `feature/chatbox-integration`. Профильная заметка — [[../01_projects/chatbox-integration]], модули — [[module-map]] §«ChatBox-интеграция». Миграция `20260605120000_chatbox_integration` (8 таблиц + 7 enum + `SourceType.chatbox`), применяется авто через `migrate deploy`.
@@ -1635,7 +1654,7 @@ enum SkillTraitStatus {
 
 ## Батч 5 — дашборды + загрузка/импорт документов + загрузка встречи (2026-06-09)
 
-**Источник:** ТЗ-2 [`plans/tz/2026-06-08-dashboards-info-rework.md`](../../plans/tz/2026-06-08-dashboards-info-rework.md) ⊕ ТЗ-3 [`plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md`](../../plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md), ТЗ-4 [`plans/tz/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/tz/2026-06-08-manual-document-upload-and-import-tz.md), ТЗ-5 [`plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md`](../../plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модули — [[module-map]] §«Батч 5»; рефлексия [[../05_история/2026-06-09-batch5-stage2-stage3]].
+**Источник:** ТЗ-2 [`plans/tz/2026-06-08-dashboards-info-rework.md`](../../plans/tz/2026-06-08-dashboards-info-rework.md) ⊕ ТЗ-3 [`plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md`](../../plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md), ТЗ-4 [`plans/archive/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/archive/2026-06-08-manual-document-upload-and-import-tz.md), ТЗ-5 [`plans/archive/2026-06-08-meeting-upload-diarized-speaker-mapping.md`](../../plans/archive/2026-06-08-meeting-upload-diarized-speaker-mapping.md). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модули — [[module-map]] §«Батч 5»; рефлексия [[../05_история/2026-06-09-batch5-stage2-stage3]].
 
 ### Здоровье портфеля целей (S2.6 / ТЗ-2 Ф6, миграция `20260608190000_goal_priority_moscow`)
 
@@ -1684,7 +1703,7 @@ enum SkillTraitStatus {
 
 ## Служба поддержки — деск + закрытый контур + клон (2026-06-09)
 
-**Источник:** ТЗ [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф1–Ф4). Модуль — [[module-map]] §«support»; профильная заметка — [[../01_projects/support-desk]]. 3 миграции: `20260609120000_support_desk_phase1`, `20260609130000_support_draft_outcome`, `20260609140000_support_curator_action`. Все изменения аддитивны (ADD COLUMN / CREATE TABLE / ADD enum value).
+**Источник:** ТЗ [`plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф1–Ф4). Модуль — [[module-map]] §«support»; профильная заметка — [[../01_projects/support-desk]]. 3 миграции: `20260609120000_support_desk_phase1`, `20260609130000_support_draft_outcome`, `20260609140000_support_curator_action`. Все изменения аддитивны (ADD COLUMN / CREATE TABLE / ADD enum value).
 
 ### Расширение существующих сущностей (миграция `_phase1`)
 
@@ -1707,7 +1726,7 @@ enum SkillTraitStatus {
 
 ## Слой метода клона — RolePrinciple + SkillTrait.layer + CloneQueryLog (2026-06-12)
 
-**Источник:** ТЗ [`plans/tz/2026-06-11-clone-persona-method-layer.md`](../../plans/tz/2026-06-11-clone-persona-method-layer.md) (Э0.1/Э1.1). Ветка `feature/clone-persona-method-layer`. Миграция **`20260612000000_clone_method_layer`** (аддитивная: 2 новые таблицы + enum + колонка с default). Полная карта фичи — [[../01_projects/skill-and-clone]] §«Доработки 2026-06-12»; cron'ы — [[../01_projects/workers-queues]]; taskType — [[../01_projects/ai-jobs]].
+**Источник:** ТЗ [`plans/archive/2026-06-11-clone-persona-method-layer.md`](../../plans/archive/2026-06-11-clone-persona-method-layer.md) (Э0.1/Э1.1). Ветка `feature/clone-persona-method-layer`. Миграция **`20260612000000_clone_method_layer`** (аддитивная: 2 новые таблицы + enum + колонка с default). Полная карта фичи — [[../01_projects/skill-and-clone]] §«Доработки 2026-06-12»; cron'ы — [[../01_projects/workers-queues]]; taskType — [[../01_projects/ai-jobs]].
 
 ### `RolePrinciple` (новая, `@@map("role_principles")`) — Reflection-слой принципов роли
 
@@ -1761,5 +1780,46 @@ enum SkillTraitLayer {
 
 - **`online Boolean @default(false)`** — формат события: `true` → создаётся видеокомната LiveKit (привязка `relatedMeetingId` через `attachLivekitRoom`). **Развязан с `kind`** — раньше комната создавалась по `kind==='meeting'`, теперь именно по `online===true`. Идемпотентный перевод офлайн→онлайн: `POST /api/v1/events/:id/make-online` (`EventsService.makeEventOnline`) + tool `make_event_online`.
 - **`counterparty String? @db.VarChar(300)`** — контрагент/клиент встречи (с кем / какая компания), **отдельно от `location`** (место). Правило закреплено в описании инструмента `create_event` помощника.
+
+## `PersonaStatus += frozen` — модель «один человек = один клон должности» (Раздел 7, 2026-06-16)
+
+**Источник:** ТЗ [`plans/tz/2026-06-16-clone-agents-prompt-revision.md`](../../plans/tz/2026-06-16-clone-agents-prompt-revision.md) Раздел 7 (решение владельца). Ветка `devsv`. Миграция **`20260616160000_add_frozen_persona_status`**. Полная карта фичи — [[../01_projects/skill-and-clone]] §«Доработки 2026-06-16», карта эндпоинтов — [[module-map]] §«Один человек = один клон должности».
+
+Семантика клона роли пересмотрена: `ExecutablePersona.scope='role'` теперь — **снимок ОДНОГО текущего носителя должности** (без агрегации черт нескольких людей), а не усреднённый агрегат. Каждый, кто занимал должность, остаётся отдельным читаемым клоном «Клон <Должность> v<N>» (без ФИО). **И8: это НЕ персональные данные** — ФИО носителя не хранится в выводе клона и в истории; 152-ФЗ к этой модели НЕ применяем (решение владельца).
+
+### Enum `PersonaStatus` (`schema.prisma`)
+
+```prisma
+enum PersonaStatus {
+  active           // текущий носитель должности — ровно один на роль
+  superseded       // (legacy-путь версионирования; не используется новым freeze-путём)
+  pending_rebuild  // (legacy; промежуточный стаб больше НЕ создаётся — Раздел 7)
+  frozen           // новое: read-only снимок БЫВШЕГО носителя; доступен навсегда, не активен, не дообучается, не декеится (И5/И6)
+}
+```
+
+- При смене носителя прошлая `active` атомарно переводится в **`frozen`** (а не `superseded`/удаление) — ТОЛЬКО вместе с подтверждённой новой `active` (закрывает корень Б17 «пропажа клона»). Frozen остаётся читаемым: у него можно спросить «как ты работал / как бы решил».
+- **`ALTER TYPE ... ADD VALUE 'frozen'`** вынесен ОТДЕЛЬНОЙ миграцией от любого использования значения (Postgres запрещает использовать новое enum-значение в той же транзакции, где оно добавлено).
+
+### Partial-unique индекс «ровно одна active на роль» (`postgres-init.sql`, НЕ Prisma-схема)
+
+`executable_personas_one_active_per_role` — `UNIQUE (scopeRefId) WHERE scope='role' AND status='active'`. Гарантирует один активный клон на должность (закрывает гонку Б13: для `scope='role'` `profileId=NULL`, поэтому составной Prisma-`@@unique` не конфликтует — NULL≠NULL в Postgres). Прошлые версии не удаляются, а переходят в `frozen` — индекс навешивается только на `status='active'`. **Self-skip** (образец `persons_tenant_email_active_uniq`): если на момент прогона есть роли с >1 active-клоном — блок делает `RAISE NOTICE` и пропускает создание; индекс встанет на следующем прогоне `postgres-init` **после** backfill §7.6 (`backfill-role-clone-single-bearer.ts`), который заморозит лишние.
+
+### Версионные поля `ExecutablePersona` (для `scope='role'`)
+
+`buildForRole` теперь ВСЕГДА проставляет их по построению (закрывает Б12/Б16 — раньше rebuild стирал версионную идентичность):
+
+- `roleVersion Int? @default(1)` — номер версии клона должности (`prevActive.roleVersion + 1` при смене носителя).
+- `currentBearerPersonId String?` — `Person.id` текущего носителя роли (для `scope='role'`); раз заполнен — `maybeEmitBearerChanged` не видит расхождения, runaway-реэмит `role.bearer_changed` устранён.
+- `publicName String?` — ярлык `«Клон <Должность> v<N>»` (без ФИО) — попадает в ответ `clone-respond` и в историю (Р7/Р8).
+- `succeedsPersonaId String?` — ссылка на предыдущую (frozen) версию: цепочка версий для экрана должности и «совета бывших».
+
+## knowledge-core MASTER — схема: partial-unique против гонки дублей (K1, 2026-06-16)
+
+**Источник:** [`plans/tz/2026-06-16-knowledge-core-MASTER.md`](../../plans/tz/2026-06-16-knowledge-core-MASTER.md) (Волна 3, K1+K11). Все три индекса — **partial-unique вне `schema.prisma`** (`@@unique` не умеет `WHERE`-условие), в `backend/scripts/postgres-init.sql`, ставятся `bun run apply-postgres-init` (идемпотентно, `CREATE UNIQUE INDEX IF NOT EXISTS`). Закрывают гонку, при которой два параллельных воркера создавали дубль на одну пару/синглтон/версию.
+
+- **`ConflictItem`** (Б7) — `uq_conflict_open ON "ConflictItem"("tenantId","resourceType","existingId","newId") WHERE status='open'` — один открытый конфликт на пару (full-unique со `status` запретил бы повторное открытие той же пары после закрытия).
+- **`KnowledgeGroup`** (Б18) — `uq_knowledge_group_singleton ON "KnowledgeGroup"("tenantId","kind") WHERE "refId" IS NULL` — один синглтон-singleton группы (leadership/council) на Org для `refId IS NULL` (department/personal с непустым refId проходят как раньше).
+- **`ExecutablePersona`** (Б... K11) — два partial-unique по версионированию персоны роли: `uq_executable_persona_role_version` (уникальность версии) + `uq_executable_persona_role_active` (одна активная персона на роль) — против гонки `nextVersion`, плодившей две active.
 
 [[../index|← index]]

@@ -1,23 +1,7 @@
-/**
- * SBA β-4 — Specialist 3.5 (Insights Radar).
- *
- * LLM-промпт `insight-link-to-decisions` — арбитр на пары (Insight, Decision):
- * получает суть сигнала (Insight: проблема / риск / блокер / неэффективность) и
- * до 10 candidate-Decision'ов того же tenant'а, возвращает массив id тех
- * Decision'ов, которые своим внедрением МОГЛИ ПОРОДИТЬ этот сигнал
- * (relatedDecisionIds для Insight).
- *
- * Возвращаемый JSON Schema strict — см. `INSIGHT_LINK_TO_DECISIONS_JSON_SCHEMA`.
- * Поле-решение `linkedDecisionIds` — это id-кандидатов, КОПИРУЕМЫЕ слово-в-слово
- * из переданного списка (не enum, не выдумка); сервис отбрасывает любой id,
- * которого не было в кандидатах. Поле пояснения `reasoning` — человеческий
- * русский текст. Поля `confidence` в схеме нет.
- *
- * Главное правило (асимметрия цены ошибки): ложная связь «решение породило
- * боль» вешает на здоровое решение чужую вину и засоряет граф причинности —
- * это дороже, чем пропустить настоящую связь. Поэтому при сомнении выбирай
- * пустой массив, а не натянутую связь.
- */
+import {
+  decisionStatusLabelRu,
+  insightKindLabelRu,
+} from './signal-type-label';
 
 export const INSIGHT_LINK_TO_DECISIONS_SYSTEM_PROMPT = [
   '# Кто ты',
@@ -73,25 +57,6 @@ export const INSIGHT_LINK_TO_DECISIONS_SYSTEM_PROMPT = [
   '- reasoning — короткое пояснение на русском (механизм связи или причина пустого ответа).',
 ].join('\n');
 
-/** Человеческие ярлыки типа сигнала (Insight) для подстановки вместо кода в USER. */
-const INSIGHT_KIND_LABEL_RU: Record<string, string> = {
-  problem: 'проблема',
-  risk: 'риск',
-  blocker: 'блокер',
-  inefficiency: 'неэффективность',
-};
-
-/** Человеческие ярлыки статуса решения (Decision) для подстановки вместо кода в USER. */
-const DECISION_STATUS_LABEL_RU: Record<string, string> = {
-  proposed: 'предложено',
-  active: 'действует',
-  in_progress: 'внедряется',
-  implemented: 'внедрено',
-  superseded: 'заменено',
-  rejected: 'отклонено',
-  cancelled: 'отменено',
-};
-
 export const INSIGHT_LINK_TO_DECISIONS_USER_TEMPLATE = (args: {
   insightKind: string;
   insightStatement: string;
@@ -102,18 +67,18 @@ export const INSIGHT_LINK_TO_DECISIONS_USER_TEMPLATE = (args: {
     status: string;
   }[];
 }): string => {
-  const kindLabel = INSIGHT_KIND_LABEL_RU[args.insightKind] ?? args.insightKind;
   const candidates = args.candidates.length
     ? args.candidates
         .map((c, i) => {
-          const statusLabel = DECISION_STATUS_LABEL_RU[c.status] ?? c.status;
-          const when = c.decidedAt ? `принято ${c.decidedAt}` : 'дата решения неизвестна';
-          return `  ${i + 1}. id=${c.id} | статус: ${statusLabel} | ${when} | «${c.statement.slice(0, 300)}»`;
+          const when = c.decidedAt
+            ? `принято ${c.decidedAt}`
+            : 'дата решения неизвестна';
+          return `  ${i + 1}. id=${c.id} | статус: ${decisionStatusLabelRu(c.status)} | ${when} | «${c.statement.slice(0, 300)}»`;
         })
         .join('\n')
     : '  (кандидатов нет)';
   return [
-    `Сигнал (${kindLabel}): «${args.insightStatement}».`,
+    `Сигнал (${insightKindLabelRu(args.insightKind)}): «${args.insightStatement}».`,
     '',
     'Кандидаты-решения (поле id — копируй слово-в-слово, если связываешь):',
     candidates,
@@ -122,13 +87,6 @@ export const INSIGHT_LINK_TO_DECISIONS_USER_TEMPLATE = (args: {
   ].join('\n');
 };
 
-/**
- * JSON Schema strict для `insight-link-to-decisions`.
- *
- * Поле-решение — `linkedDecisionIds`: массив id Decision'ов, СКОПИРОВАННЫХ из
- * списка кандидатов (это не enum-вердикт). Пустой массив = «связи нет».
- * Поля `confidence` намеренно нет — связь определяется самим фактом наличия id.
- */
 export const INSIGHT_LINK_TO_DECISIONS_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,

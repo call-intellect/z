@@ -1,26 +1,7 @@
-'use client';
+"use client";
 
-/**
- * Pulse §5.2 (2026-05-30) — Weekly-таб дашборда спринта.
- *
- * Источник: `GET /api/v1/cycles/:id/dashboard/weekly`. SWR refresh 5 минут.
- *
- * Секции (v3-expanded §3.8):
- *   1. Recap гипотезы + статус (подтверждается / нет / в процессе).
- *   2. AI Weekly Sprint Summary (markdown).
- *   3. Velocity + throughput trend.
- *   4. Health команды спринта (mini-grid).
- *   5. Outcome метрика недели.
- *   6. Что узнали за неделю.
- *   7. Action items для retro.
- *   8. Прогноз закрытия (ForecastSnapshot).
- *   9. Retro link.
- *
- * Дизайн §1.4: skeleton, character empty, токены chip-*.
- */
-
-import useSWR from 'swr';
-import Link from 'next/link';
+import useSWR from "swr";
+import Link from "next/link";
 import {
   ArrowDownRight,
   ArrowRight,
@@ -33,13 +14,13 @@ import {
   TrendingUp,
   Users,
   XCircle,
-} from 'lucide-react';
-import { sprintsApi } from '@/api/tracker/sprints.api';
+} from "lucide-react";
+import { sprintsApi } from "@/api/tracker/sprints.api";
 import type {
   SprintWeeklyDigestApi,
   SprintWeeklyTeamHealthRowApi,
-} from '@/domain/sprint';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/domain/sprint";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 export function SprintWeeklyPanel({
   orgId,
@@ -49,9 +30,7 @@ export function SprintWeeklyPanel({
   cycleId: string;
 }) {
   const swr = useSWR<SprintWeeklyDigestApi>(
-    orgId && cycleId
-      ? ['tracker.sprint.weekly', orgId, cycleId]
-      : null,
+    orgId && cycleId ? ["tracker.sprint.weekly", orgId, cycleId] : null,
     async () => sprintsApi.weekly(orgId, cycleId),
     { refreshInterval: 5 * 60_000, revalidateOnFocus: false },
   );
@@ -81,15 +60,10 @@ export function SprintWeeklyPanel({
 
       <LearningsSection learnings={w.learnings} />
 
-      <ActionItemsSection
-        items={w.actionItems}
-        cycleId={w.cycleId}
-      />
+      <ActionItemsSection items={w.actionItems} cycleId={w.cycleId} />
     </div>
   );
 }
-
-// ─────────────────────── Hypothesis recap ──────────────────────────────
 
 function HypothesisRecap({
   hypothesisText,
@@ -137,8 +111,6 @@ function HypothesisRecap({
   );
 }
 
-// ─────────────────────── AI Weekly narrative ──────────────────────────────
-
 function AiNarrative({ narrative }: { narrative: string | null }) {
   return (
     <section className="rounded-2xl border border-accent/20 bg-bg-card p-5 shadow-lg shadow-accent/15">
@@ -170,12 +142,10 @@ function AiNarrative({ narrative }: { narrative: string | null }) {
   );
 }
 
-// ─────────────────────── Outcome / Velocity / Forecast ─────────────────
-
 function OutcomeCard({
   outcome,
 }: {
-  outcome: SprintWeeklyDigestApi['outcomeMetric'];
+  outcome: SprintWeeklyDigestApi["outcomeMetric"];
 }) {
   return (
     <div className="rounded-xl border border-border-subtle bg-bg-elevated p-5 shadow-card-soft">
@@ -198,20 +168,20 @@ function OutcomeCard({
 function VelocityCard({
   velocity,
 }: {
-  velocity: SprintWeeklyDigestApi['velocity'];
+  velocity: SprintWeeklyDigestApi["velocity"];
 }) {
   const TrendIcon =
-    velocity.trend === 'up'
+    velocity.trend === "up"
       ? ArrowUpRight
-      : velocity.trend === 'down'
+      : velocity.trend === "down"
         ? ArrowDownRight
         : ArrowRight;
   const trendTone =
-    velocity.trend === 'up'
-      ? 'bg-chip-success-bg text-chip-success-fg'
-      : velocity.trend === 'down'
-        ? 'bg-chip-danger-bg text-chip-danger-fg'
-        : 'bg-chip-info-bg text-chip-info-fg';
+    velocity.trend === "up"
+      ? "bg-chip-success-bg text-chip-success-fg"
+      : velocity.trend === "down"
+        ? "bg-chip-danger-bg text-chip-danger-fg"
+        : "bg-chip-info-bg text-chip-info-fg";
   return (
     <div className="rounded-xl border border-border-subtle bg-bg-elevated p-5 shadow-card-soft">
       <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-tertiary">
@@ -223,16 +193,16 @@ function VelocityCard({
         </span>
         <span
           className={cn(
-            'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
+            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
             trendTone,
           )}
         >
           <TrendIcon size={11} />
-          {velocity.trend === 'up'
-            ? 'выше'
-            : velocity.trend === 'down'
-              ? 'ниже'
-              : 'на уровне'}
+          {velocity.trend === "up"
+            ? "выше"
+            : velocity.trend === "down"
+              ? "ниже"
+              : "на уровне"}
         </span>
       </div>
       <div className="mt-2 text-xs text-fg-tertiary">
@@ -245,22 +215,22 @@ function VelocityCard({
 function ForecastCard({
   forecast,
 }: {
-  forecast: SprintWeeklyDigestApi['forecast'];
+  forecast: SprintWeeklyDigestApi["forecast"];
 }) {
   const label =
-    forecast.trend === 'improving'
-      ? 'Улучшается'
-      : forecast.trend === 'declining'
-        ? 'Снижается'
-        : forecast.trend === 'stable'
-          ? 'Стабильно'
-          : '—';
+    forecast.trend === "improving"
+      ? "Улучшается"
+      : forecast.trend === "declining"
+        ? "Снижается"
+        : forecast.trend === "stable"
+          ? "Стабильно"
+          : "—";
   const tone =
-    forecast.trend === 'improving'
-      ? 'bg-chip-success-bg text-chip-success-fg'
-      : forecast.trend === 'declining'
-        ? 'bg-chip-danger-bg text-chip-danger-fg'
-        : 'bg-chip-info-bg text-chip-info-fg';
+    forecast.trend === "improving"
+      ? "bg-chip-success-bg text-chip-success-fg"
+      : forecast.trend === "declining"
+        ? "bg-chip-danger-bg text-chip-danger-fg"
+        : "bg-chip-info-bg text-chip-info-fg";
   return (
     <div className="rounded-xl border border-border-subtle bg-bg-elevated p-5 shadow-card-soft">
       <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-tertiary">
@@ -278,7 +248,7 @@ function ForecastCard({
             </span>
             <span
               className={cn(
-                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
+                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
                 tone,
               )}
             >
@@ -297,13 +267,7 @@ function ForecastCard({
   );
 }
 
-// ─────────────────────── Team health mini-grid ─────────────────────────
-
-function TeamHealthSection({
-  rows,
-}: {
-  rows: SprintWeeklyTeamHealthRowApi[];
-}) {
+function TeamHealthSection({ rows }: { rows: SprintWeeklyTeamHealthRowApi[] }) {
   if (rows.length === 0) return null;
   return (
     <section className="rounded-xl border border-border-subtle bg-bg-elevated p-5 shadow-card-soft">
@@ -324,7 +288,7 @@ function TeamHealthSection({
                 {r.departmentName}
               </div>
               <div className="text-[11px] text-fg-tertiary">
-                {r.size} {pluralRu(r.size, ['человек', 'человека', 'человек'])}
+                {r.size} {pluralRu(r.size, ["человек", "человека", "человек"])}
               </div>
             </div>
             {r.belowCohort ? (
@@ -343,12 +307,10 @@ function TeamHealthSection({
   );
 }
 
-// ─────────────────────── Что узнали ────────────────────────────────────
-
 function LearningsSection({
   learnings,
 }: {
-  learnings: SprintWeeklyDigestApi['learnings'];
+  learnings: SprintWeeklyDigestApi["learnings"];
 }) {
   if (learnings.length === 0) {
     return (
@@ -360,8 +322,8 @@ function LearningsSection({
           Пока нет зафиксированных инсайтов
         </div>
         <p className="mt-1 text-xs text-fg-tertiary">
-          Когда из встреч и обсуждений выделится новый факт или вопрос
-          — он появится здесь.
+          Когда из встреч и обсуждений выделится новый факт или вопрос — он
+          появится здесь.
         </p>
       </section>
     );
@@ -388,8 +350,6 @@ function LearningsSection({
     </section>
   );
 }
-
-// ─────────────────────── Action items + retro link ────────────────────
 
 function ActionItemsSection({
   items,
@@ -422,7 +382,10 @@ function ActionItemsSection({
       ) : (
         <ul className="flex flex-col gap-1.5">
           {items.map((t, i) => (
-            <li key={`${i}-${t.slice(0, 24)}`} className="text-sm text-fg-primary">
+            <li
+              key={`${i}-${t.slice(0, 24)}`}
+              className="text-sm text-fg-primary"
+            >
               · {t}
             </li>
           ))}
@@ -431,8 +394,6 @@ function ActionItemsSection({
     </section>
   );
 }
-
-// ─────────────────────── Skeleton ─────────────────────────────────────
 
 function WeeklySkeleton() {
   return (
@@ -449,8 +410,6 @@ function WeeklySkeleton() {
     </div>
   );
 }
-
-// ─────────────────────── helpers ──────────────────────────────────────
 
 function pluralRu(n: number, forms: [string, string, string]): string {
   const mod10 = n % 10;

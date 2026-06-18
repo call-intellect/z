@@ -5,8 +5,8 @@ date: 2026-06-02
 owner: sergrv80@gmail.com
 relates_to:
   - plans/archive/2026-05-22-second-brain-visualization.md (архив — заменён этим ТЗ)
-  - plans/tz/2026-06-02-smart-tables-auto-creation.md
-  - plans/tz/2026-06-01-main-screen-umbrella.md
+  - plans/archive/2026-06-02-smart-tables-auto-creation.md
+  - plans/archive/2026-06-01-main-screen-umbrella.md
   - second-brain/02_architecture/knowledge-core.md
   - second-brain/01_projects/clones.md
 phases:
@@ -342,8 +342,8 @@ research_basis:
 
 ## Связи с другими ТЗ
 - **[plans/archive/2026-05-22-second-brain-visualization.md](../archive/2026-05-22-second-brain-visualization.md)** *(архив, заменён этим ТЗ)* — исходный тезис «один граф — два представления»; перенесён и переосмыслен здесь целиком.
-- **[plans/tz/2026-06-02-smart-tables-auto-creation.md](2026-06-02-smart-tables-auto-creation.md)** — третье представление того же графа (таблицы как live-view); общий принцип «данные одни, форм много».
-- **[plans/tz/2026-06-01-main-screen-umbrella.md](2026-06-01-main-screen-umbrella.md)** — куда встаёт `/brain` в навигации главного экрана.
+- **[plans/archive/2026-06-02-smart-tables-auto-creation.md](2026-06-02-smart-tables-auto-creation.md)** — третье представление того же графа (таблицы как live-view); общий принцип «данные одни, форм много».
+- **[plans/archive/2026-06-01-main-screen-umbrella.md](2026-06-01-main-screen-umbrella.md)** — куда встаёт `/brain` в навигации главного экрана.
 - **`MaturityScorerService`** (`company-foundation`) — источник «налитости», расширяется scope `person`.
 - **`proactive`** — канал nudge.
 

@@ -1,6 +1,5 @@
 import { z } from 'zod';
 
-/** ТЗ 2026-06-10 meeting-visibility Ф4 — тело PATCH /meetings/:id/visibility. */
 export const SetVisibilitySchema = z.object({
   scope: z.enum(['owner_only', 'participants', 'custom', 'org']),
   grants: z

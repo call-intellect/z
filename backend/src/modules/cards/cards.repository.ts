@@ -3,21 +3,12 @@ import { type Card, type Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-/**
- * Тонкий слой над Prisma для модели `Card`. Все запросы фильтруют по
- * `ownerId` — кросс-юзерский доступ не должен быть возможен на уровне
- * репозитория.
- *
- * Soft-delete: запросы по умолчанию исключают `deletedAt != null`.
- * Жёсткое удаление — только из retention-cron.
- */
 export interface CardListFilters {
   ownerId: string;
   page: number;
   limit: number;
   kind?: string;
   pinned?: boolean;
-  /** false — без архивных, true — только архивные, undefined — все. */
   archived?: boolean;
   q?: string;
   sort: 'lastMeetingAt' | 'createdAt' | 'name';
@@ -84,7 +75,6 @@ export class CardsRepository {
     return { items, total };
   }
 
-  /** Топ-N последних активных карточек (для sidebar Recent). */
   listRecent(ownerId: string, limit: number): Promise<Card[]> {
     return this.prisma.card.findMany({
       where: {
@@ -105,7 +95,6 @@ export class CardsRepository {
     });
   }
 
-  /** Поиск по имени и контактным полям — для `⌘K` командной палитры. */
   search(ownerId: string, q: string, limit: number): Promise<Card[]> {
     return this.prisma.card.findMany({
       where: {
@@ -172,10 +161,6 @@ export class CardsRepository {
     });
   }
 
-  /**
-   * Пересчитывает денормализованные `meetingCount` и `lastMeetingAt`
-   * по реальным связям. Вызывается после link/unlink.
-   */
   async recountMeetings(id: string): Promise<void> {
     const agg = await this.prisma.meeting.aggregate({
       where: { cardId: id, deletedAt: null },

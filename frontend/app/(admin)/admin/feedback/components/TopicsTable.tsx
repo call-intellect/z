@@ -1,31 +1,23 @@
-'use client';
+"use client";
 
-/**
- * TopicsTable — таблица смысловых блоков обратной связи. Сортируемые колонки
- * (клик по заголовку меняет sort=percent|users|recent), архивные подсвечены
- * серым с пометкой «архив», клик по строке ведёт на `/admin/feedback/[id]`.
- *
- * Действия rename / merge / archive — заглушка (Phase 8) через onAction.
- */
-
-import { useRouter } from 'next/navigation';
-import { Archive, ArrowDown, ArrowUp, MoreHorizontal } from 'lucide-react';
+import { useRouter } from "next/navigation";
+import { Archive, ArrowDown, ArrowUp, MoreHorizontal } from "lucide-react";
 
 import {
   FEEDBACK_TOPIC_STATUS_LABEL,
   type FeedbackSort,
   type FeedbackTopicSummary,
-} from '@/domain/admin-feedback';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-feedback";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/ui/shadcn/dropdown-menu';
+} from "@/ui/shadcn/dropdown-menu";
 
-export type TopicAction = 'rename' | 'merge' | 'archive';
+export type TopicAction = "rename" | "merge" | "archive";
 
 interface TopicsTableProps {
   topics: FeedbackTopicSummary[];
@@ -54,33 +46,29 @@ export function TopicsTable({
             <th className="px-3 py-2 text-left font-medium">Тема</th>
             <th className="px-3 py-2 text-left font-medium">Описание</th>
             <th className="w-20 px-3 py-2 text-right font-medium">
-              <SortHeader
-                label="Items"
-                active={false}
-                ariaLabel="Items"
-              />
+              <SortHeader label="Items" active={false} ariaLabel="Items" />
             </th>
             <th className="w-24 px-3 py-2 text-right font-medium">
               <SortHeader
                 label="Юзеров"
-                active={sort === 'users'}
-                onClick={() => onSortChange('users')}
+                active={sort === "users"}
+                onClick={() => onSortChange("users")}
                 ariaLabel="Сортировать по числу юзеров"
               />
             </th>
             <th className="w-20 px-3 py-2 text-right font-medium">
               <SortHeader
                 label="%"
-                active={sort === 'percent'}
-                onClick={() => onSortChange('percent')}
+                active={sort === "percent"}
+                onClick={() => onSortChange("percent")}
                 ariaLabel="Сортировать по доле"
               />
             </th>
             <th className="w-36 px-3 py-2 text-left font-medium">
               <SortHeader
                 label="Последнее"
-                active={sort === 'recent'}
-                onClick={() => onSortChange('recent')}
+                active={sort === "recent"}
+                onClick={() => onSortChange("recent")}
                 ariaLabel="Сортировать по свежести"
               />
             </th>
@@ -123,11 +111,15 @@ function SortHeader({
       onClick={onClick}
       aria-label={ariaLabel}
       className={`inline-flex items-center gap-1 hover:text-fg-primary ${
-        active ? 'text-fg-primary' : ''
+        active ? "text-fg-primary" : ""
       }`}
     >
       {label}
-      {active ? <ArrowDown size={12} /> : <ArrowUp size={12} className="opacity-30" />}
+      {active ? (
+        <ArrowDown size={12} />
+      ) : (
+        <ArrowUp size={12} className="opacity-30" />
+      )}
     </button>
   );
 }
@@ -141,17 +133,21 @@ function TopicRow({
   onOpen: () => void;
   onAction: (action: TopicAction, id: string) => void;
 }) {
-  const isArchived = topic.status === 'archived';
+  const isArchived = topic.status === "archived";
   const rowClass = isArchived
-    ? 'border-t border-border-subtle bg-bg-subtle text-fg-tertiary'
-    : 'border-t border-border-subtle hover:bg-bg-subtle';
+    ? "border-t border-border-subtle bg-bg-subtle text-fg-tertiary"
+    : "border-t border-border-subtle hover:bg-bg-subtle";
 
   return (
     <tr className={`${rowClass} cursor-pointer`} onClick={onOpen}>
       <td className="px-3 py-2 align-top">
         <div className="flex items-center gap-2">
           {isArchived && <Archive size={12} className="text-fg-tertiary" />}
-          <span className={isArchived ? 'line-through' : 'font-medium text-fg-primary'}>
+          <span
+            className={
+              isArchived ? "line-through" : "font-medium text-fg-primary"
+            }
+          >
             {topic.title}
           </span>
         </div>
@@ -171,17 +167,15 @@ function TopicRow({
         {topic.percentOfWindow.toFixed(1)}%
       </td>
       <td className="px-3 py-2 align-top text-xs text-fg-secondary">
-        {topic.lastItemAt
-          ? topic.lastItemAt.toLocaleDateString('ru-RU')
-          : '—'}
+        {topic.lastItemAt ? topic.lastItemAt.toLocaleDateString("ru-RU") : "—"}
       </td>
       <td className="px-3 py-2 align-top">
         <Badge
           variant="outline"
           className={
-            topic.status === 'active'
-              ? 'border-chip-success-bg bg-chip-success-bg text-chip-success-fg'
-              : 'border-border-subtle bg-bg-subtle text-fg-secondary'
+            topic.status === "active"
+              ? "border-chip-success-bg bg-chip-success-bg text-chip-success-fg"
+              : "border-border-subtle bg-bg-subtle text-fg-secondary"
           }
         >
           {FEEDBACK_TOPIC_STATUS_LABEL[topic.status]}
@@ -201,14 +195,14 @@ function TopicRow({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onAction('rename', topic.id)}>
+              <DropdownMenuItem onClick={() => onAction("rename", topic.id)}>
                 Переименовать
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onAction('merge', topic.id)}>
+              <DropdownMenuItem onClick={() => onAction("merge", topic.id)}>
                 Объединить
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onAction('archive', topic.id)}>
-                {isArchived ? 'Восстановить' : 'В архив'}
+              <DropdownMenuItem onClick={() => onAction("archive", topic.id)}>
+                {isArchived ? "Восстановить" : "В архив"}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

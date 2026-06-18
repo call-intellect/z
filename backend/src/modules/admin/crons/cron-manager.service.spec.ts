@@ -1,14 +1,3 @@
-/**
- * Admin-redesign Фаза 0 — unit-тесты `CronManagerService`.
- *
- * Покрываем:
- *   1) onModuleInit — мягко падает, если БД недоступна (warn, не throw).
- *   2) updateSchedule — UPSERT + audit + переподписка + pub/sub publish.
- *   3) triggerNow — успешный запуск: история success + lastRunAt обновлён.
- *   4) triggerNow — ошибочный запуск: история failed + ошибка в lastRunError.
- *   5) list — отдаёт объединённый результат БД + handler-mapping'а.
- */
-
 import type { DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
 import type { SchedulerRegistry } from '@nestjs/schedule';
 import { describe, expect, it, vi } from 'vitest';
@@ -82,35 +71,29 @@ function buildService(opts: { dbAvailable: boolean } = { dbAvailable: true }): {
       });
       return store.schedules.get(name);
     }),
-    update: vi.fn(
-      async (args: { where: { name: string }; data: Record<string, unknown> }) => {
-        const cur = store.schedules.get(args.where.name);
-        if (!cur) throw new Error('not found');
-        const next = { ...cur, ...args.data };
-        store.schedules.set(args.where.name, next as typeof cur);
-        return next;
-      },
-    ),
-    updateMany: vi.fn(
-      async (args: { where: { name: string }; data: Record<string, unknown> }) => {
-        const cur = store.schedules.get(args.where.name);
-        if (cur) {
-          store.schedules.set(args.where.name, { ...cur, ...args.data } as typeof cur);
-        }
-        return { count: cur ? 1 : 0 };
-      },
-    ),
+    update: vi.fn(async (args: { where: { name: string }; data: Record<string, unknown> }) => {
+      const cur = store.schedules.get(args.where.name);
+      if (!cur) throw new Error('not found');
+      const next = { ...cur, ...args.data };
+      store.schedules.set(args.where.name, next as typeof cur);
+      return next;
+    }),
+    updateMany: vi.fn(async (args: { where: { name: string }; data: Record<string, unknown> }) => {
+      const cur = store.schedules.get(args.where.name);
+      if (cur) {
+        store.schedules.set(args.where.name, { ...cur, ...args.data } as typeof cur);
+      }
+      return { count: cur ? 1 : 0 };
+    }),
   };
 
   const cronRunHistory = {
     findMany: vi.fn(
-      async (
-        args?: {
-          where?: { cronName?: string | { in: string[] } };
-          orderBy?: { startedAt?: 'asc' | 'desc' };
-          take?: number;
-        },
-      ) => {
+      async (args?: {
+        where?: { cronName?: string | { in: string[] } };
+        orderBy?: { startedAt?: 'asc' | 'desc' };
+        take?: number;
+      }) => {
         let rows = store.runs.slice();
         const where = args?.where?.cronName;
         if (typeof where === 'string') {
@@ -144,15 +127,13 @@ function buildService(opts: { dbAvailable: boolean } = { dbAvailable: true }): {
       store.runs.push(row);
       return row;
     }),
-    update: vi.fn(
-      async (args: { where: { id: string }; data: Record<string, unknown> }) => {
-        const idx = store.runs.findIndex((r) => r.id === args.where.id);
-        if (idx >= 0) {
-          store.runs[idx] = { ...store.runs[idx], ...args.data } as (typeof store.runs)[number];
-        }
-        return store.runs[idx];
-      },
-    ),
+    update: vi.fn(async (args: { where: { id: string }; data: Record<string, unknown> }) => {
+      const idx = store.runs.findIndex((r) => r.id === args.where.id);
+      if (idx >= 0) {
+        store.runs[idx] = { ...store.runs[idx], ...args.data } as (typeof store.runs)[number];
+      }
+      return store.runs[idx];
+    }),
   };
 
   const superAdminAccessLog = {
@@ -167,11 +148,7 @@ function buildService(opts: { dbAvailable: boolean } = { dbAvailable: true }): {
     cronRunHistory,
     superAdminAccessLog,
     $transaction: vi.fn(
-      async (
-        input:
-          | ((tx: unknown) => Promise<unknown>)
-          | Array<Promise<unknown>>,
-      ) => {
+      async (input: ((tx: unknown) => Promise<unknown>) | Array<Promise<unknown>>) => {
         if (typeof input === 'function') {
           return input({ cronSchedule, cronRunHistory, superAdminAccessLog });
         }
@@ -204,15 +181,7 @@ function buildService(opts: { dbAvailable: boolean } = { dbAvailable: true }): {
     getCronJobs: vi.fn(() => new Map()),
   } as unknown as SchedulerRegistry;
 
-  const svc = new CronManagerService(
-    prisma,
-    redis,
-    cfg,
-    discovery,
-    scanner,
-    reflector,
-    scheduler,
-  );
+  const svc = new CronManagerService(prisma, redis, cfg, discovery, scanner, reflector, scheduler);
   return { svc, store };
 }
 
@@ -244,7 +213,6 @@ describe('CronManagerService', () => {
     const { svc, store } = buildService();
     const handler = vi.fn(async () => undefined);
     svc.registerHandlerForTest('manual-cron', handler, '0 * * * *');
-    // создадим запись расписания, чтобы updateMany нашёл её
     store.schedules.set('manual-cron', {
       name: 'manual-cron',
       expression: '0 * * * *',
@@ -311,8 +279,6 @@ describe('CronManagerService', () => {
 
   it('onModuleInit(): без падения, если БД недоступна', async () => {
     const { svc } = buildService({ dbAvailable: false });
-    // Не подключаем subscriber (Redis тоже мокируем) — onModuleInit
-    // должен мягко проглотить и БД-сбой, и pub/sub-сбой.
     await expect(svc.onModuleInit()).resolves.not.toThrow();
   });
 
@@ -330,7 +296,6 @@ describe('CronManagerService', () => {
       lastRunError: null,
       updatedBy: null,
     });
-    // Накидаем 12 записей истории для with-runs — должно быть отсечено до 10.
     for (let i = 0; i < 12; i += 1) {
       store.runs.push({
         id: `h-${i}`,
@@ -342,11 +307,9 @@ describe('CronManagerService', () => {
         startedAt: new Date(Date.now() - i * 60_000),
       });
     }
-    // findMany нашего мока вернёт ВСЁ; сервис сам должен отсечь до 10 на крон.
-    // Чтобы порядок DESC по startedAt — переопределим findMany сортировкой.
-    (
-      store.runs as Array<{ startedAt: Date }>
-    ).sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+    (store.runs as Array<{ startedAt: Date }>).sort(
+      (a, b) => b.startedAt.getTime() - a.startedAt.getTime(),
+    );
 
     const items = await svc.listWithHistory();
     const withRuns = items.find((i) => i.name === 'with-runs');

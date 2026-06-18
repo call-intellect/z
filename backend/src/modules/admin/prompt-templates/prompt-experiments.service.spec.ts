@@ -1,22 +1,9 @@
-/**
- * Фаза A.3 — unit-тесты для PromptExperimentsService.
- *
- * Покрываем (≥3 сценария из DoD):
- *   1) stickyAllocate() — детерминированный hash, сохраняет группу при retry.
- *   2) create() — Free-тариф (нет feature.prompt_experiments) → ForbiddenException.
- *   3) create() — несовпадение taskType между templateAId и templateBId → BadRequest.
- *   4) start() — лимит одновременных экспериментов (3) enforced.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { EntitlementService } from '../../entitlements/entitlement.service';
 
-import {
-  PromptExperimentsService,
-  stickyAllocate,
-} from './prompt-experiments.service';
+import { PromptExperimentsService, stickyAllocate } from './prompt-experiments.service';
 
 function inHours(h: number): string {
   return new Date(Date.now() + h * 3600 * 1000).toISOString();
@@ -51,7 +38,6 @@ describe('stickyAllocate', () => {
       if (g === 'A') countA++;
       else countB++;
     }
-    // Допускаем разброс ±10% (диапазон 400..600).
     expect(countA).toBeGreaterThan(400);
     expect(countA).toBeLessThan(600);
     expect(countB).toBeGreaterThan(400);
@@ -59,11 +45,7 @@ describe('stickyAllocate', () => {
   });
 });
 
-function buildService(args: {
-  hasFeature?: boolean;
-  quota?: number;
-  runningCount?: number;
-}): {
+function buildService(args: { hasFeature?: boolean; quota?: number; runningCount?: number }): {
   svc: PromptExperimentsService;
   prismaMock: ReturnType<typeof buildPrismaMock>;
   entMock: { hasFeature: ReturnType<typeof vi.fn>; getQuota: ReturnType<typeof vi.fn> };
@@ -161,7 +143,9 @@ describe('PromptExperimentsService.create', () => {
   it('taskType mismatch → BadRequest', async () => {
     const { svc, prismaMock } = buildService({ hasFeature: true });
     (
-      prismaMock.promptTemplateVersion.findUnique as unknown as { mockImplementation: (fn: unknown) => void }
+      prismaMock.promptTemplateVersion.findUnique as unknown as {
+        mockImplementation: (fn: unknown) => void;
+      }
     ).mockImplementation(async ({ where }: { where: { id: string } }) => {
       if (where.id === 'v-1') {
         return {
@@ -220,7 +204,7 @@ describe('PromptExperimentsService.create', () => {
           templateAId: 'v-1',
           templateBId: 'v-2',
           splitPercent: 50,
-          endsAt: new Date(Date.now() + 60 * 1000).toISOString(), // через минуту
+          endsAt: new Date(Date.now() + 60 * 1000).toISOString(),
         },
         { userId: 'u-1', isSuperAdmin: false, ownedOrgIds: ['org-1'] },
       ),
@@ -254,7 +238,9 @@ describe('PromptExperimentsService.start', () => {
       runningCount: 3,
     });
     (
-      prismaMock.promptExperiment.findUnique as unknown as { mockImplementation: (fn: unknown) => void }
+      prismaMock.promptExperiment.findUnique as unknown as {
+        mockImplementation: (fn: unknown) => void;
+      }
     ).mockImplementation(
       async () =>
         ({

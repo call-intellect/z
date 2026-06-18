@@ -1,21 +1,17 @@
-'use client';
+"use client";
 
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 import {
   PolarAngleAxis,
   PolarGrid,
   Radar,
   RadarChart,
   ResponsiveContainer,
-} from 'recharts';
+} from "recharts";
 
-import { CardTitle } from './CardTitle';
-import { CHART, glass } from './tokens';
+import { CardTitle } from "./CardTitle";
+import { CHART, glass } from "./tokens";
 
-/**
- * Лепестковая (radar) диаграмма на стеклянной карточке. Разметка из витрины:
- * градиентная заливка violet→cyan, тонкая сетка.
- */
 export function RadarCard({
   title,
   icon,
@@ -42,7 +38,10 @@ export function RadarCard({
               </linearGradient>
             </defs>
             <PolarGrid stroke="var(--border-inset)" />
-            <PolarAngleAxis dataKey="k" tick={{ fill: CHART.dim, fontSize: 11 }} />
+            <PolarAngleAxis
+              dataKey="k"
+              tick={{ fill: CHART.dim, fontSize: 11 }}
+            />
             <Radar
               dataKey="v"
               stroke={CHART.violet}

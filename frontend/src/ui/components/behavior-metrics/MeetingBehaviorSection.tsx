@@ -1,35 +1,18 @@
-'use client';
+"use client";
 
-/**
- * Секция «Поведение участников» на странице результата встречи (Фаза B §9.1).
- *
- * Состояния (ТЗ B §9.1):
- *   - pending → skeleton с подписью «Метрики считаются…».
- *   - failed → empty-state «Не удалось рассчитать» + кнопка обновить.
- *   - low_confidence → готовые метрики + badge о низкой точности.
- *   - ready → готовые метрики.
- *
- * Все строки на русском (memory `feedback_admin_ui_russian_only`).
- */
+import type { JSX } from "react";
 
-import type { JSX } from 'react';
-
-import { useMeetingBehaviorMetrics } from '@/hooks/use-meeting-behavior-metrics';
+import { useMeetingBehaviorMetrics } from "@/hooks/use-meeting-behavior-metrics";
 import {
   isDiarizationDegenerate,
   type BehaviorMetricsDomain,
   type BehaviorParticipantDomain,
-} from '@/domain/behavior-metrics';
+} from "@/domain/behavior-metrics";
 
 export interface MeetingBehaviorSectionProps {
   meetingId: string;
 }
 
-/**
- * S5-02-UX (Фаза 4): есть ли в метриках реальный сигнал речи. При нулевой речи
- * (ASR не дал таймингов) метрики вырождаются в «Тишина 100 % / 0 с / нули» —
- * такую секцию честнее скрыть, чем показывать таблицу нулей как факт.
- */
 export function hasBehaviorSignal(data: BehaviorMetricsDomain): boolean {
   return (
     !!data.meeting &&
@@ -38,29 +21,32 @@ export function hasBehaviorSignal(data: BehaviorMetricsDomain): boolean {
   );
 }
 
-export function MeetingBehaviorSection({ meetingId }: MeetingBehaviorSectionProps): JSX.Element {
-  const { data, error, isLoading, mutate } = useMeetingBehaviorMetrics(meetingId);
+export function MeetingBehaviorSection({
+  meetingId,
+}: MeetingBehaviorSectionProps): JSX.Element {
+  const { data, error, isLoading, mutate } =
+    useMeetingBehaviorMetrics(meetingId);
 
   if (isLoading && !data) return <PendingSkeleton />;
   if (error) return <ErrorBox onRetry={mutate} />;
   if (!data) return <PendingSkeleton />;
 
-  if (data.status === 'pending') return <PendingSkeleton />;
-  if (data.status === 'failed') return <FailedBox onRetry={mutate} />;
-  // ready или low_confidence — рендерим метрики.
+  if (data.status === "pending") return <PendingSkeleton />;
+  if (data.status === "failed") return <FailedBox onRetry={mutate} />;
   if (!hasBehaviorSignal(data)) return <UnavailableBox />;
-  // #26 — вырожденная диаризация (нет таймкодов → псевдо-turn на дорожку): тоталы
-  // абсурдны («Всего речи 130 мин» / «перекрёстная 128 мин»). Не показываем цифры.
   if (isDiarizationDegenerate(data.meeting)) return <DiarizationDegradedBox />;
 
-  const lowConfidence = data.status === 'low_confidence' || data.meeting?.lowConfidence === true;
+  const lowConfidence =
+    data.status === "low_confidence" || data.meeting?.lowConfidence === true;
   return (
     <section
       data-testid="meeting-behavior-section"
       className="rounded-2xl border border-border-subtle bg-bg-card p-6 space-y-4"
     >
       <header className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-fg-primary">Поведение участников</h2>
+        <h2 className="text-lg font-semibold text-fg-primary">
+          Поведение участников
+        </h2>
         {lowConfidence ? (
           <span className="rounded-full bg-chip-warning-bg px-3 py-1 text-xs text-chip-warning-fg">
             Метрики ориентировочные: качество диаризации низкое
@@ -75,16 +61,18 @@ export function MeetingBehaviorSection({ meetingId }: MeetingBehaviorSectionProp
   );
 }
 
-// ───────────────────────── states ─────────────────────────
-
 function PendingSkeleton(): JSX.Element {
   return (
     <section
       data-testid="meeting-behavior-section-loading"
       className="rounded-2xl border border-border-subtle bg-bg-card p-6 space-y-3"
     >
-      <h2 className="text-lg font-semibold text-fg-primary">Поведение участников</h2>
-      <p className="text-sm text-fg-secondary">Метрики считаются. Это занимает обычно 1–2 минуты.</p>
+      <h2 className="text-lg font-semibold text-fg-primary">
+        Поведение участников
+      </h2>
+      <p className="text-sm text-fg-secondary">
+        Метрики считаются. Это занимает обычно 1–2 минуты.
+      </p>
       <div className="h-24 animate-pulse rounded-lg bg-bg-subtle" />
     </section>
   );
@@ -96,8 +84,12 @@ function FailedBox({ onRetry }: { onRetry: () => void }): JSX.Element {
       data-testid="meeting-behavior-section-failed"
       className="rounded-2xl border border-chip-danger-bg bg-chip-danger-bg p-6 space-y-3"
     >
-      <h2 className="text-lg font-semibold text-chip-danger-fg">Поведение участников</h2>
-      <p className="text-sm text-chip-danger-fg">Метрики не удалось рассчитать.</p>
+      <h2 className="text-lg font-semibold text-chip-danger-fg">
+        Поведение участников
+      </h2>
+      <p className="text-sm text-chip-danger-fg">
+        Метрики не удалось рассчитать.
+      </p>
       <button
         type="button"
         onClick={onRetry}
@@ -115,7 +107,9 @@ function UnavailableBox(): JSX.Element {
       data-testid="meeting-behavior-section-unavailable"
       className="rounded-2xl border border-border-subtle bg-bg-card p-6 space-y-2"
     >
-      <h2 className="text-lg font-semibold text-fg-primary">Поведение участников</h2>
+      <h2 className="text-lg font-semibold text-fg-primary">
+        Поведение участников
+      </h2>
       <p className="text-sm text-fg-secondary">
         Поведенческая аналитика недоступна для этой записи.
       </p>
@@ -129,11 +123,13 @@ function DiarizationDegradedBox(): JSX.Element {
       data-testid="meeting-behavior-section-degraded"
       className="rounded-2xl border border-border-subtle bg-bg-card p-6 space-y-2"
     >
-      <h2 className="text-lg font-semibold text-fg-primary">Поведение участников</h2>
+      <h2 className="text-lg font-semibold text-fg-primary">
+        Поведение участников
+      </h2>
       <p className="text-sm text-fg-secondary">
         Метрики недоступны: не удалось разделить речь по ролям и времени —
-        распознавание не дало таймкодов внутри реплик. Доли говорения, монологи и
-        перекрёстная речь появятся, когда диаризация улучшится.
+        распознавание не дало таймкодов внутри реплик. Доли говорения, монологи
+        и перекрёстная речь появятся, когда диаризация улучшится.
       </p>
     </section>
   );
@@ -145,8 +141,12 @@ function ErrorBox({ onRetry }: { onRetry: () => void }): JSX.Element {
       data-testid="meeting-behavior-section-error"
       className="rounded-2xl border border-chip-warning-bg bg-chip-warning-bg p-6 space-y-3"
     >
-      <h2 className="text-lg font-semibold text-chip-warning-fg">Поведение участников</h2>
-      <p className="text-sm text-chip-warning-fg">Ошибка загрузки метрик. Попробуйте обновить.</p>
+      <h2 className="text-lg font-semibold text-chip-warning-fg">
+        Поведение участников
+      </h2>
+      <p className="text-sm text-chip-warning-fg">
+        Ошибка загрузки метрик. Попробуйте обновить.
+      </p>
       <button
         type="button"
         onClick={onRetry}
@@ -158,25 +158,39 @@ function ErrorBox({ onRetry }: { onRetry: () => void }): JSX.Element {
   );
 }
 
-// ───────────────────────── inner views ─────────────────────────
-
-function MeetingMetricsCards({ data }: { data: BehaviorMetricsDomain }): JSX.Element {
+function MeetingMetricsCards({
+  data,
+}: {
+  data: BehaviorMetricsDomain;
+}): JSX.Element {
   if (!data.meeting) return <></>;
   const m = data.meeting;
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-      <MetricCard title="Всего речи" value={formatMsToMinutes(m.totalSpeechMs)} />
+      <MetricCard
+        title="Всего речи"
+        value={formatMsToMinutes(m.totalSpeechMs)}
+      />
       <MetricCard title="Тишина" value={`${m.silencePercent.toFixed(0)} %`} />
-      <MetricCard title="Перекрёстная речь" value={formatMsToMinutes(m.crossTalkMs)} />
+      <MetricCard
+        title="Перекрёстная речь"
+        value={formatMsToMinutes(m.crossTalkMs)}
+      />
       <MetricCard
         title="Индекс доминирования"
-        value={m.dominanceIndex >= 999 ? '—' : m.dominanceIndex.toFixed(1)}
+        value={m.dominanceIndex >= 999 ? "—" : m.dominanceIndex.toFixed(1)}
       />
     </div>
   );
 }
 
-function MetricCard({ title, value }: { title: string; value: string }): JSX.Element {
+function MetricCard({
+  title,
+  value,
+}: {
+  title: string;
+  value: string;
+}): JSX.Element {
   return (
     <div className="rounded-xl border border-border-subtle bg-bg-subtle p-3">
       <div className="text-xs text-fg-secondary">{title}</div>
@@ -195,7 +209,9 @@ function ParticipantsBar({
     participants.reduce((sum, p) => sum + p.speakingTimePercent, 0) || 1;
   return (
     <div data-testid="participants-bar" className="space-y-1">
-      <div className="text-sm font-medium text-fg-primary">Доля времени говорения</div>
+      <div className="text-sm font-medium text-fg-primary">
+        Доля времени говорения
+      </div>
       <div className="flex h-3 w-full overflow-hidden rounded-full bg-bg-subtle">
         {participants.map((p, idx) => (
           <div
@@ -236,7 +252,10 @@ function ParticipantsTable({
         </thead>
         <tbody>
           {participants.map((p, idx) => (
-            <tr key={p.participantId ?? `g-${idx}`} className="border-t border-border-subtle">
+            <tr
+              key={p.participantId ?? `g-${idx}`}
+              className="border-t border-border-subtle"
+            >
               <td className="px-2 py-2 font-medium text-fg-primary">
                 {p.displayName}
                 {p.isGuest ? (
@@ -245,11 +264,17 @@ function ParticipantsTable({
                   </span>
                 ) : null}
               </td>
-              <td className="px-2 py-2">{formatMsToMinutes(p.speakingTimeMs)}</td>
-              <td className="px-2 py-2">{p.speakingTimePercent.toFixed(1)} %</td>
+              <td className="px-2 py-2">
+                {formatMsToMinutes(p.speakingTimeMs)}
+              </td>
+              <td className="px-2 py-2">
+                {p.speakingTimePercent.toFixed(1)} %
+              </td>
               <td className="px-2 py-2">{p.turnsCount}</td>
               <td className="px-2 py-2">{p.monologueCount}</td>
-              <td className="px-2 py-2">{formatMsToMinutes(p.longestMonologueMs)}</td>
+              <td className="px-2 py-2">
+                {formatMsToMinutes(p.longestMonologueMs)}
+              </td>
               <td className="px-2 py-2">{p.questionCount}</td>
               <td className="px-2 py-2">{p.fillerWordsCount}</td>
               <td className="px-2 py-2">
@@ -263,10 +288,8 @@ function ParticipantsTable({
   );
 }
 
-// ───────────────────────── utils ─────────────────────────
-
 function formatMsToMinutes(ms: number): string {
-  if (ms <= 0) return '0 с';
+  if (ms <= 0) return "0 с";
   const totalSec = Math.round(ms / 1000);
   if (totalSec < 60) return `${totalSec} с`;
   const m = Math.floor(totalSec / 60);
@@ -274,7 +297,14 @@ function formatMsToMinutes(ms: number): string {
   return s === 0 ? `${m} мин` : `${m} мин ${s} с`;
 }
 
-const COLOURS = ['#6366F1', '#10B981', '#F59E0B', '#EC4899', '#0EA5E9', '#8B5CF6'];
+const COLOURS = [
+  "#6366F1",
+  "#10B981",
+  "#F59E0B",
+  "#EC4899",
+  "#0EA5E9",
+  "#8B5CF6",
+];
 function colourForIndex(i: number): string {
-  return COLOURS[i % COLOURS.length] ?? '#6366F1';
+  return COLOURS[i % COLOURS.length] ?? "#6366F1";
 }

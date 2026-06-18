@@ -1,31 +1,16 @@
-/**
- * API-клиент модуля experiments (SBA β-6).
- * Контракт: `backend/src/modules/experiments/`.
- *
- * Эндпоинты:
- *   - GET    /api/v1/experiments?status=&owner_entity_id=&q=&page=&limit=
- *   - GET    /api/v1/experiments/:id
- *   - POST   /api/v1/experiments
- *   - PATCH  /api/v1/experiments/:id
- *   - POST   /api/v1/experiments/:id/transition
- *   - DELETE /api/v1/experiments/:id          (soft → status='dropped')
- *
- * Защита: `CookieAuthGuard + TenantGuard`, RBAC `experiment:read|write|delete`.
- */
-
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
 export type ExperimentStatusApi =
-  | 'hypothesis'
-  | 'running'
-  | 'completed'
-  | 'dropped'
-  | 'paused';
+  | "hypothesis"
+  | "running"
+  | "completed"
+  | "dropped"
+  | "paused";
 
 export type ExperimentLessonTypeApi =
-  | 'what_worked'
-  | 'what_failed'
-  | 'next_time';
+  | "what_worked"
+  | "what_failed"
+  | "next_time";
 
 export interface ExperimentLessonApi {
   text: string;
@@ -95,21 +80,21 @@ export interface UpdateExperimentRequestApi {
 }
 
 export interface TransitionExperimentRequestApi {
-  to: 'running' | 'completed' | 'dropped' | 'paused';
+  to: "running" | "completed" | "dropped" | "paused";
   reason?: string;
 }
 
 function buildQuery(
   filters?: Record<string, string | number | undefined>,
 ): string {
-  if (!filters) return '';
+  if (!filters) return "";
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(filters)) {
-    if (v === undefined || v === null || v === '') continue;
+    if (v === undefined || v === null || v === "") continue;
     p.set(k, String(v));
   }
   const qs = p.toString();
-  return qs ? `?${qs}` : '';
+  return qs ? `?${qs}` : "";
 }
 
 export const experimentsApi = {
@@ -124,7 +109,7 @@ export const experimentsApi = {
     ),
 
   create: (body: CreateExperimentRequestApi) =>
-    apiClient.post<ExperimentDetailApi>('/api/v1/experiments', body),
+    apiClient.post<ExperimentDetailApi>("/api/v1/experiments", body),
 
   update: (id: string, body: UpdateExperimentRequestApi) =>
     apiClient.patch<ExperimentDetailApi>(

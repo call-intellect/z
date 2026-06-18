@@ -1,9 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  IdeaBlockStatus,
-  InsightDynamic,
-  InsightSeverity,
-} from '@prisma/client';
+import type { IdeaBlockStatus, InsightDynamic, InsightSeverity } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
@@ -18,59 +14,13 @@ import {
 
 type ConcreteType = Exclude<CoraFeedTypeDto, 'all'>;
 
-/**
- * Сколько РАБОЧИХ дней вопрос (IdeaBlock signalType='question') должен висеть
- * без ответа, чтобы попасть в дорожку `open_question` «Ленты Коры».
- *
- * Детектор работает НА ЧТЕНИИ (без cron/persist): для каждого вопроса
- * считаем число рабочих дней между его `createdAt` и `now`. «Рабочий день» —
- * пн–пт (Sat/Sun исключаются); государственные праздники НЕ учитываются
- * (это упрощение — полноценный календарь живёт в HolidayService и требует
- * запроса в БД на каждую дату, что для чтения ленты неоправданно тяжело).
- */
 const OPEN_QUESTION_MIN_BUSINESS_DAYS = 3;
 
-/**
- * Статусы IdeaBlock, при которых вопрос считается «закрытым» (resolved /
- * устаревшим) и НЕ попадает в open_question.
- */
-const QUESTION_CLOSED_STATUSES: IdeaBlockStatus[] = [
-  'merged_into',
-  'archived',
-];
+const QUESTION_CLOSED_STATUSES: IdeaBlockStatus[] = ['merged_into', 'archived'];
 
-/**
- * CoraFeedService — движок единой «Ленты Коры» (Редизайн Ф8.6, 2026-06-13).
- *
- * Гибрид (Р10):
- *   - Реестровые типы читаются ВИРТУАЛЬНО из source-таблиц (без backfill,
- *     без отдельных ActivityFeedItem):
- *       idea          ← IdeaBlock (signalType='idea', canonical)
- *       insight       ← Insight
- *       decision      ← Decision
- *       conflict      ← ConflictItem (status='open')
- *       blocker       ← BlockerSynthesis (status in new|recurring)
- *       open_question ← IdeaBlock (signalType='question'), детектор «≥3 раб.дня
- *                       без ответа» на чтении.
- *   - Событийные типы читаются из ActivityFeedItem:
- *       activity       ← ActivityFeedItem (feedType in recognition|task)
- *       probe_question ← ActivityFeedItem (feedType='probe_question')
- *
- * Карточка несёт АНАЛИЗ (severity → цвет/сортировка), не сырой факт.
- *
- * «Непрочитанное» — per-user курсор FeedReadCursor.lastSeenAt: запись unread,
- * если её createdAt > курсора. POST /feed/cora/seen двигает курсор на now().
- *
- * Multi-tenancy: все запросы scoped по tenantId. RBAC/visibility проверяет
- * контроллер (лента Коры — обзорная, для members tenant'а).
- */
 @Injectable()
 export class CoraFeedService {
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-  ) {}
-
-  // ─────────────────────────── публичный API ─────────────────────────────
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async getFeed(args: {
     tenantId: string;
@@ -81,22 +31,14 @@ export class CoraFeedService {
     const since = this.windowStart(query.window);
     const cursorAt = await this.loadCursor(tenantId, userId);
 
-    // Какие типы реально собирать: при type='all' — все; иначе один тип.
-    const wanted: ConcreteType[] =
-      query.type === 'all' ? [...CORA_FEED_TYPES] : [query.type];
+    const wanted: ConcreteType[] = query.type === 'all' ? [...CORA_FEED_TYPES] : [query.type];
 
-    // Собираем по каждому типу параллельно. Каждый сборщик возвращает уже
-    // отмапленные CoraFeedItemDto (с unread, посчитанным от курсора).
     const perType = await Promise.all(
       wanted.map((t) => this.collect(t, { tenantId, since, cursorAt, limit: query.limit })),
     );
 
-    // counters считаем всегда по ВСЕМ типам (для бейджей переключателя),
-    // независимо от выбранного фильтра.
     const counters = await this.countAll(tenantId, since);
 
-    // Сводим все собранные элементы, сортируем (risk → warn → info, затем по
-    // дате убыв.), режем по limit.
     const merged = perType
       .flat()
       .sort((a, b) => {
@@ -111,7 +53,6 @@ export class CoraFeedService {
     return { items: merged, counters, unreadCount };
   }
 
-  /** POST /feed/cora/seen — двигает per-user курсор на now(). */
   async markCoraSeen(args: {
     tenantId: string;
     userId: string;
@@ -125,8 +66,6 @@ export class CoraFeedService {
     });
     return { ok: true, lastSeenAt: row.lastSeenAt.toISOString() };
   }
-
-  // ─────────────────────────── сборщики типов ────────────────────────────
 
   private async collect(
     type: ConcreteType,
@@ -156,7 +95,6 @@ export class CoraFeedService {
     }
   }
 
-  // idea ← IdeaBlock(signalType='idea', canonical) — N упоминаний + связи.
   private async collectIdeas(ctx: {
     tenantId: string;
     since: Date | null;
@@ -176,7 +114,6 @@ export class CoraFeedService {
     });
     if (blocks.length === 0) return [];
 
-    // Один groupBy на все блоки — число активных связей (как from, так и to).
     const ids = blocks.map((b) => b.id);
     const linkCounts = await this.countBlockLinks(ctx.tenantId, ids);
 
@@ -197,7 +134,6 @@ export class CoraFeedService {
     });
   }
 
-  // insight ← Insight — острота→severity, тренд, N за неделю.
   private async collectInsights(ctx: {
     tenantId: string;
     since: Date | null;
@@ -250,7 +186,6 @@ export class CoraFeedService {
     });
   }
 
-  // decision ← Decision — % доведения / статус внедрения.
   private async collectDecisions(ctx: {
     tenantId: string;
     since: Date | null;
@@ -283,12 +218,8 @@ export class CoraFeedService {
       const impl = r.implementationStatus ?? 'not_started';
       const parts: string[] = [`статус: ${this.implLabel(impl)}`];
       parts.push(`связанных задач: ${r.linkedTaskCount}`);
-      // severity: просроченное невнедрённое или stalled — risk; in_progress — warn; done — info.
       let severity: CoraSeverityDto = 'info';
-      const overdue =
-        r.deadline != null &&
-        r.deadline.getTime() < now &&
-        impl !== 'done';
+      const overdue = r.deadline != null && r.deadline.getTime() < now && impl !== 'done';
       if (impl === 'stalled' || overdue) {
         severity = 'risk';
         if (overdue) parts.push('срок истёк');
@@ -314,7 +245,6 @@ export class CoraFeedService {
     });
   }
 
-  // conflict ← ConflictItem(status='open') — две версии в payload.
   private async collectConflicts(ctx: {
     tenantId: string;
     since: Date | null;
@@ -361,7 +291,6 @@ export class CoraFeedService {
     });
   }
 
-  // blocker ← BlockerSynthesis(status in new|recurring) — title + daysOpen.
   private async collectBlockers(ctx: {
     tenantId: string;
     since: Date | null;
@@ -408,14 +337,12 @@ export class CoraFeedService {
     });
   }
 
-  // open_question ← IdeaBlock(signalType='question') без ответа ≥3 раб.дня.
   private async collectOpenQuestions(ctx: {
     tenantId: string;
     since: Date | null;
     cursorAt: Date | null;
     limit: number;
   }): Promise<CoraFeedItemDto[]> {
-    // Берём с запасом (×3), т.к. часть отсеется детектором «≥3 раб.дня».
     const rows = await this.prisma.ideaBlock.findMany({
       where: {
         tenantId: ctx.tenantId,
@@ -424,7 +351,7 @@ export class CoraFeedService {
         supersededById: null,
         ...(ctx.since ? { createdAt: { gte: ctx.since } } : {}),
       },
-      orderBy: { createdAt: 'asc' }, // самые старые «висящие» — первыми
+      orderBy: { createdAt: 'asc' },
       take: ctx.limit * 3,
       select: {
         id: true,
@@ -434,8 +361,6 @@ export class CoraFeedService {
       },
     });
     const now = new Date();
-    // Сначала отбираем «висящие» вопросы детектором, затем ОДНИМ батчем
-    // резолвим их авторов и считаем askedByManager (без N+1).
     const surviving = rows
       .map((r) => ({
         r,
@@ -444,11 +369,6 @@ export class CoraFeedService {
       .filter((x) => x.businessDays >= OPEN_QUESTION_MIN_BUSINESS_DAYS)
       .slice(0, ctx.limit);
 
-    // R9: подсветка «спросил руководитель». Авторство ВОПРОСА не
-    // материализовано на IdeaBlock (commitmentAuthorPersonId заполнен только
-    // для commitment). Используем сигнал `IdeaBlockEntity(role='subject')`,
-    // который block-ingest.attributeSubject пишет для ВСЕХ блоков-рассуждений
-    // (включая вопросы): subject-Entity(type=person) → Person → «руководитель».
     const askedByManagerByBlock = await this.resolveAskedByManager(
       ctx.tenantId,
       surviving.map((x) => x.r.id),
@@ -476,21 +396,6 @@ export class CoraFeedService {
     return out;
   }
 
-  /**
-   * R9 — для пачки вопросов-блоков определяет, является ли АВТОР вопроса
-   * «руководителем». Батч-эффективно (4 запроса на всю пачку, без N+1).
-   *
-   * Цепочка резолва авторства (всё — на материализованных связях, без LLM):
-   *   IdeaBlockEntity(role='subject') → Entity(type=person) → Person.
-   * Источник subject-связи — block-ingest `attributeSubject` (Фаза 1.2),
-   * который пишет автора рассуждения по speakerParticipantId/authorPersonId
-   * сегмента-источника. Для вопросов без резолва автора (нет subject-Entity
-   * или Entity не привязан к Person) → false (бейдж не показываем, не падаем).
-   *
-   * «Руководитель» (поля «менеджер» в схеме нет): Person является главой
-   * какого-либо отдела (Department.headPersonId == person.id) ИЛИ имеет
-   * Membership с ролью owner/admin/coo.
-   */
   private async resolveAskedByManager(
     tenantId: string,
     blockIds: string[],
@@ -498,7 +403,6 @@ export class CoraFeedService {
     const result = new Map<string, boolean>();
     if (blockIds.length === 0) return result;
 
-    // 1. blockId → subject-Entity.id (одна связь role='subject' на блок).
     const subjects = await this.prisma.ideaBlockEntity.findMany({
       where: { blockId: { in: blockIds }, role: 'subject' },
       select: { blockId: true, entityId: true },
@@ -510,7 +414,6 @@ export class CoraFeedService {
     }
     const entityIds = [...new Set(blockToEntity.values())];
 
-    // 2. Entity.id → Person.id (subject-Entity линкуется с Person через entityId).
     const persons = await this.prisma.person.findMany({
       where: { tenantId, entityId: { in: entityIds }, deletedAt: null },
       select: { id: true, entityId: true },
@@ -524,7 +427,6 @@ export class CoraFeedService {
     }
     const personIds = [...new Set(entityToPerson.values())];
 
-    // 3+4. «Руководитель»: глава какого-либо отдела ИЛИ owner/admin/coo.
     const [heads, admins] = await Promise.all([
       this.prisma.department.findMany({
         where: { tenantId, headPersonId: { in: personIds }, deletedAt: null },
@@ -543,7 +445,6 @@ export class CoraFeedService {
     for (const h of heads) if (h.headPersonId) managerPersonIds.add(h.headPersonId);
     for (const a of admins) if (a.personId) managerPersonIds.add(a.personId);
 
-    // Сводим обратно: blockId → askedByManager.
     for (const [blockId, entityId] of blockToEntity) {
       const personId = entityToPerson.get(entityId);
       if (personId && managerPersonIds.has(personId)) {
@@ -553,7 +454,6 @@ export class CoraFeedService {
     return result;
   }
 
-  // activity ← ActivityFeedItem(feedType in recognition|task) — «кто что сделал».
   private async collectActivity(ctx: {
     tenantId: string;
     since: Date | null;
@@ -599,7 +499,6 @@ export class CoraFeedService {
     );
   }
 
-  // probe_question ← ActivityFeedItem(feedType='probe_question').
   private async collectProbeQuestions(ctx: {
     tenantId: string;
     since: Date | null;
@@ -651,94 +550,79 @@ export class CoraFeedService {
     );
   }
 
-  // ─────────────────────────── counters ──────────────────────────────────
-
-  /** counters по всем типам за окно (для бейджей). */
   private async countAll(
     tenantId: string,
     since: Date | null,
   ): Promise<Record<ConcreteType, number>> {
     const sinceWhere = since ? { gte: since } : undefined;
 
-    const [
-      idea,
-      insight,
-      decision,
-      conflict,
-      blocker,
-      activity,
-      probe,
-      openQuestion,
-    ] = await Promise.all([
-      this.prisma.ideaBlock.count({
-        where: {
-          tenantId,
-          signalType: 'idea',
-          status: 'canonical',
-          ...(sinceWhere ? { createdAt: sinceWhere } : {}),
-        },
-      }),
-      this.prisma.insight.count({
-        where: {
-          tenantId,
-          status: 'active',
-          ...(sinceWhere ? { lastObservedAt: sinceWhere } : {}),
-        },
-      }),
-      this.prisma.decision.count({
-        where: {
-          tenantId,
-          status: { notIn: ['rejected', 'cancelled', 'rolled_back', 'superseded'] },
-          ...(sinceWhere ? { createdAt: sinceWhere } : {}),
-        },
-      }),
-      this.prisma.conflictItem.count({
-        where: {
-          tenantId,
-          status: 'open',
-          ...(sinceWhere ? { createdAt: sinceWhere } : {}),
-        },
-      }),
-      this.prisma.blockerSynthesis.count({
-        where: {
-          tenantId,
-          status: { in: ['new', 'recurring'] },
-          ...(sinceWhere ? { updatedAt: sinceWhere } : {}),
-        },
-      }),
-      this.prisma.activityFeedItem.count({
-        where: {
-          tenantId,
-          feedType: { in: ['recognition', 'task'] },
-          status: { not: 'dismissed' },
-          ...(sinceWhere ? { emittedAt: sinceWhere } : {}),
-        },
-      }),
-      this.prisma.activityFeedItem.count({
-        where: {
-          tenantId,
-          feedType: 'probe_question',
-          status: { notIn: ['dismissed', 'expired'] },
-          ...(sinceWhere ? { emittedAt: sinceWhere } : {}),
-        },
-      }),
-      // open_question — точный счёт требует детектора по каждой записи; для
-      // counters берём дешёвую верхнюю оценку: все висящие вопросы старше
-      // OPEN_QUESTION_MIN_BUSINESS_DAYS календарных дней (раб.дней ≥ кал.дней
-      // НЕ бывает, поэтому это нижняя граница; для бейджа достаточно).
-      this.prisma.ideaBlock.count({
-        where: {
-          tenantId,
-          signalType: 'question',
-          status: { notIn: QUESTION_CLOSED_STATUSES },
-          supersededById: null,
-          createdAt: {
-            lte: CoraFeedService.minusCalendarDays(new Date(), OPEN_QUESTION_MIN_BUSINESS_DAYS),
-            ...(sinceWhere ?? {}),
+    const [idea, insight, decision, conflict, blocker, activity, probe, openQuestion] =
+      await Promise.all([
+        this.prisma.ideaBlock.count({
+          where: {
+            tenantId,
+            signalType: 'idea',
+            status: 'canonical',
+            ...(sinceWhere ? { createdAt: sinceWhere } : {}),
           },
-        },
-      }),
-    ]);
+        }),
+        this.prisma.insight.count({
+          where: {
+            tenantId,
+            status: 'active',
+            ...(sinceWhere ? { lastObservedAt: sinceWhere } : {}),
+          },
+        }),
+        this.prisma.decision.count({
+          where: {
+            tenantId,
+            status: { notIn: ['rejected', 'cancelled', 'rolled_back', 'superseded'] },
+            ...(sinceWhere ? { createdAt: sinceWhere } : {}),
+          },
+        }),
+        this.prisma.conflictItem.count({
+          where: {
+            tenantId,
+            status: 'open',
+            ...(sinceWhere ? { createdAt: sinceWhere } : {}),
+          },
+        }),
+        this.prisma.blockerSynthesis.count({
+          where: {
+            tenantId,
+            status: { in: ['new', 'recurring'] },
+            ...(sinceWhere ? { updatedAt: sinceWhere } : {}),
+          },
+        }),
+        this.prisma.activityFeedItem.count({
+          where: {
+            tenantId,
+            feedType: { in: ['recognition', 'task'] },
+            status: { not: 'dismissed' },
+            ...(sinceWhere ? { emittedAt: sinceWhere } : {}),
+          },
+        }),
+        this.prisma.activityFeedItem.count({
+          where: {
+            tenantId,
+            feedType: 'probe_question',
+            status: { notIn: ['dismissed', 'expired'] },
+            ...(sinceWhere ? { emittedAt: sinceWhere } : {}),
+          },
+        }),
+        this.prisma.ideaBlock.count({
+          where: {
+            tenantId,
+            signalType: 'question',
+            status: { notIn: QUESTION_CLOSED_STATUSES },
+            supersededById: null,
+            createdAt: {
+              lte: CoraFeedService.minusCalendarDays(new Date(), OPEN_QUESTION_MIN_BUSINESS_DAYS),
+              ...(sinceWhere ?? {}),
+            },
+          },
+        }),
+      ]);
 
     return {
       idea,
@@ -752,12 +636,7 @@ export class CoraFeedService {
     };
   }
 
-  // ─────────────────────────── helpers ───────────────────────────────────
-
-  private async loadCursor(
-    tenantId: string,
-    userId: string,
-  ): Promise<Date | null> {
+  private async loadCursor(tenantId: string, userId: string): Promise<Date | null> {
     const row = await this.prisma.feedReadCursor.findUnique({
       where: { tenantId_userId: { tenantId, userId } },
       select: { lastSeenAt: true },
@@ -803,8 +682,7 @@ export class CoraFeedService {
     sourceRef?: { meetingId?: string; cite?: string };
     payload?: Record<string, unknown>;
   }): CoraFeedItemDto {
-    const unread =
-      args.cursorAt == null || args.createdAt.getTime() > args.cursorAt.getTime();
+    const unread = args.cursorAt == null || args.createdAt.getTime() > args.cursorAt.getTime();
     return {
       id: args.id,
       type: args.type,
@@ -842,9 +720,7 @@ export class CoraFeedService {
 
   private insightSeverityLabel(s: InsightSeverity): string {
     return (
-      { critical: 'критичная', high: 'высокая', medium: 'средняя', low: 'низкая' }[
-        s
-      ] ?? String(s)
+      { critical: 'критичная', high: 'высокая', medium: 'средняя', low: 'низкая' }[s] ?? String(s)
     );
   }
 
@@ -880,11 +756,6 @@ export class CoraFeedService {
     );
   }
 
-  /**
-   * Достаёт две версии конфликта из JSON-поля evidence. Формат не
-   * стандартизирован между источниками — best-effort: ищем поля
-   * existing/new, before/after, a/b, old/new или массив [a, b].
-   */
   private extractConflictVersions(evidence: unknown): {
     a: string | null;
     b: string | null;
@@ -923,35 +794,20 @@ export class CoraFeedService {
     return { a: toText(evidence), b: null };
   }
 
-  // ── чистые date-утилиты ──
-
-  /** Date минус N календарных дней (UTC), нормализованный к началу суток. */
   static minusCalendarDays(from: Date, days: number): Date {
     const d = new Date(from.getTime());
     d.setUTCDate(d.getUTCDate() - days);
     return d;
   }
 
-  /**
-   * Число ПОЛНЫХ рабочих дней (пн–пт) между `from` и `to`, исключая выходные.
-   * Считает по календарным суткам UTC: для каждого дня СТРОГО после дня `from`
-   * и не позже дня `to`, если это будний день — +1. Праздники не учитываются.
-   *
-   * Пример: вопрос задан в пятницу, «сейчас» — следующая пятница → суббота и
-   * воскресенье не считаются, получаем 5 рабочих дней.
-   */
   static businessDaysBetween(from: Date, to: Date): number {
     if (to.getTime() <= from.getTime()) return 0;
-    const startDay = Date.UTC(
-      from.getUTCFullYear(),
-      from.getUTCMonth(),
-      from.getUTCDate(),
-    );
+    const startDay = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
     const endDay = Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate());
     let count = 0;
     const DAY_MS = 24 * 60 * 60 * 1000;
     for (let t = startDay + DAY_MS; t <= endDay; t += DAY_MS) {
-      const dow = new Date(t).getUTCDay(); // 0=Sun, 6=Sat
+      const dow = new Date(t).getUTCDay();
       if (dow !== 0 && dow !== 6) count += 1;
     }
     return count;

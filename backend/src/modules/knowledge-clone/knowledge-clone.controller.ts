@@ -12,10 +12,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -29,18 +26,6 @@ import {
 } from './dto/knowledge-clone.dto';
 import { KnowledgeCloneService } from './services/knowledge-clone.service';
 
-/**
- * SBA β-2 — REST API «Профиля знаний» (Knowledge Clone).
- *
- *   GET  /api/v1/me/knowledge-profile               — свой профиль
- *   GET  /api/v1/persons/:id/knowledge-profile      — профиль другого Person
- *   POST /api/v1/me/knowledge-profile/mark-wrong    — пометить область неверной
- *
- * RBAC ресурс — `knowledge_profile`. owner/admin/manager — r на весь Org;
- * member видит только сводку без цитат (см. KnowledgeCloneService.serialize).
- *
- * Все user-facing ошибки — на русском.
- */
 @ApiTags('knowledge-clone')
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -83,15 +68,13 @@ export class KnowledgeCloneController {
         },
       });
     }
-    // На уровне DTO применяется фильтрация цитат: owner/admin/self видят
-    // sampleStatements, member — только сводку.
     const role = ctx.isSuperAdmin ? 'owner' : ctx.role;
     return this.clones.getPersonProfile({
       tenantId: t,
       requesterUserId: user.id,
-      requesterRole: (['owner', 'admin', 'manager'].includes(role)
+      requesterRole: ['owner', 'admin', 'manager'].includes(role)
         ? (role as 'owner' | 'admin' | 'manager')
-        : 'unknown'),
+        : 'unknown',
       personId: id,
     });
   }
@@ -108,8 +91,6 @@ export class KnowledgeCloneController {
     const t = this.requireTenant(tenantId);
     return this.clones.markWrong({ tenantId: t, userId: user.id, body });
   }
-
-  // ─────────────────────────── helpers ───────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

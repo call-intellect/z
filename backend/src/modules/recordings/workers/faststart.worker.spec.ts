@@ -9,11 +9,6 @@ import type { S3Service } from '../s3.service';
 
 import { FaststartWorker } from './faststart.worker';
 
-/**
- * Тестовый подкласс: переопределяет `runFfmpeg`, чтобы не звать реальный ffmpeg —
- * вместо этого «эмулирует» его, записывая out-файл (последний аргумент) копией
- * src. Так `readFile(outPath)` в `processMeeting` отрабатывает на реальном fs.
- */
 class TestFaststartWorker extends FaststartWorker {
   public ffmpegCalls: string[][] = [];
 
@@ -99,7 +94,7 @@ describe('FaststartWorker', () => {
     const { worker, s3 } = make({
       recording: {
         mainVideoUrl: 'https://s3.local/z-records/meetings/m-1/composite.mp4',
-        bytesTotal: 1_000_000, // 1 МБ < 50 МиБ
+        bytesTotal: 1_000_000,
       },
     });
 
@@ -113,20 +108,17 @@ describe('FaststartWorker', () => {
     const { worker, s3 } = make({
       recording: {
         mainVideoUrl: 'https://s3.local/z-records/meetings/m-1/composite.mp4',
-        bytesTotal: 400 * 1024 * 1024, // 400 МБ > порога
+        bytesTotal: 400 * 1024 * 1024,
       },
     });
 
     await worker.processMeeting('m-1');
 
-    // Ключ извлечён из полного URL.
     expect((s3 as any).getObject).toHaveBeenCalledWith('meetings/m-1/composite.mp4');
-    // ffmpeg вызван с -movflags +faststart и -c copy.
     expect(worker.ffmpegCalls).toHaveLength(1);
     expect(worker.ffmpegCalls[0]).toEqual(
       expect.arrayContaining(['-c', 'copy', '-movflags', '+faststart']),
     );
-    // Перезалив по тому же ключу как video/mp4.
     expect((s3 as any).putObject).toHaveBeenCalledWith(
       expect.objectContaining({
         key: 'meetings/m-1/composite.mp4',

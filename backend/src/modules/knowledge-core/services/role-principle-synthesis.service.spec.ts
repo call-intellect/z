@@ -1,24 +1,3 @@
-/**
- * TZ clone-method Э1.2 (2026-06-12) — RolePrincipleSynthesisService
- * (Reflection-слой принципов роли).
- *
- * Паттерн моков — фабрика как в `clones-query-log.spec.ts`: prisma / llm /
- * embedder / metrics / cfg подменяются vi.fn-заглушками, сервис собирается
- * напрямую через `new`.
- *
- * Кейсы:
- *   1. ≥ порога блоков → LLM вызван, принцип создан, sourceBlockIds ⊆
- *      входных, embedding записан raw-апдейтом;
- *   2. < порога → skipped='below_threshold', LLM НЕ вызван;
- *   3. повторный прогон: ближайший existing с cosine ≥ 0.85 → merge
- *      (UPDATE в транзакции), create НЕ вызван — «второй прогон = no-op
- *      по количеству»;
- *   4. principle с sourceBlockIds вне входа → отброшен;
- *   5. principle с диагностической лексикой («избегает решений») →
- *      отброшен + warn + метрика rejected_guard;
- *   6. ошибка LLM → skipped='llm_error', не throw.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config';
@@ -41,20 +20,23 @@ const VALID_PRINCIPLE = {
   confidence: 'medium',
 };
 
-/**
- * Собирает RolePrincipleSynthesisService с управляемыми: числом блоков,
- * текстом/ошибкой LLM и результатом KNN-поиска ближайшего принципа.
- */
 function buildService(opts?: {
-  /** Сколько subject-reasoning блоков вернёт ideaBlockEntity (default 6). */
   blockCount?: number;
   llmText?: string;
   llmThrows?: boolean;
-  /** Строки top-1 KNN ($queryRawUnsafe). Default [] → путь create. */
   closestRows?: Array<{ id: string; distance: number }>;
+  distinctDays?: number;
+  embeddingWriteThrows?: boolean;
+  deleteThrows?: boolean;
 }) {
   const blockCount = opts?.blockCount ?? 6;
   const blockIds = Array.from({ length: blockCount }, (_, i) => `b${i + 1}`);
+  const distinctDays = opts?.distinctDays ?? blockCount;
+  const dateFor = (i: number) => new Date(Date.UTC(2026, 4, 1 + (i < distinctDays ? i : 0)));
+  const createdAtById = new Map<string, Date>();
+  for (let i = 0; i < blockCount; i++) {
+    createdAtById.set(`b${i + 1}`, dateFor(i));
+  }
 
   const txUpdate = vi.fn(async () => ({ id: 'rp-old' }));
   const txExecuteRawUnsafe = vi.fn(async () => 1);
@@ -71,9 +53,16 @@ function buildService(opts?: {
     id: 'rp-old',
     sourceBlockIds: ['b1', 'b9'],
     observationCount: 2,
-    confidence: 'low' as const,
+    confidence: 'low' as 'low' | 'medium' | 'high',
   }));
-  const executeRawUnsafe = vi.fn(async () => 1);
+  const rolePrincipleDelete = vi.fn(async () => {
+    if (opts?.deleteThrows) throw new Error('delete failed');
+    return { id: 'rp-new' };
+  });
+  const executeRawUnsafe = vi.fn(async () => {
+    if (opts?.embeddingWriteThrows) throw new Error('vector write failed');
+    return 1;
+  });
   const queryRawUnsafe = vi.fn(async () => opts?.closestRows ?? []);
 
   const prisma = {
@@ -98,31 +87,29 @@ function buildService(opts?: {
       findMany: vi.fn(async () => blockIds.map((id) => ({ blockId: id }))),
     },
     ideaBlock: {
-      findMany: vi.fn(async () =>
-        blockIds.map((id, i) => ({
+      findMany: vi.fn(async (args?: { where?: { id?: { in?: string[] } } }) => {
+        const requested = args?.where?.id?.in ?? blockIds;
+        return requested.map((id) => ({
           id,
           name: `блок ${id}`,
           trustedAnswer: `ответ ${id}`,
-          createdAt: new Date(Date.UTC(2026, 4, 1 + i)),
+          createdAt: createdAtById.get(id) ?? new Date(Date.UTC(2026, 4, 1)),
           evidence: [{ quote: `цитата про срыв срока ${id}` }],
-        })),
-      ),
+        }));
+      }),
     },
     rolePrinciple: {
       create: rolePrincipleCreate,
       findUnique: rolePrincipleFindUnique,
+      delete: rolePrincipleDelete,
     },
-    // Embeddings блоков (tagged template $queryRaw): все блоки в одной
-    // группе (cosine=1 ≥ 0.78) — гарантирует eligible-группу size ≥ 2.
     $queryRaw: vi.fn(async () => blockIds.map((id) => ({ id, emb: '[1,0,0]' }))),
     $queryRawUnsafe: queryRawUnsafe,
     $executeRawUnsafe: executeRawUnsafe,
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
   } as unknown as PrismaService;
 
-  const getDynamic = vi.fn(
-    async (_key: string, _env?: string, def?: unknown) => def,
-  );
+  const getDynamic = vi.fn(async (_key: string, _env?: string, def?: unknown) => def);
   const cfg = {
     skill: { lookbackMonths: 12 },
     getDynamic,
@@ -133,8 +120,7 @@ function buildService(opts?: {
         throw new Error('all providers failed');
       })
     : vi.fn(async () => ({
-        text:
-          opts?.llmText ?? JSON.stringify({ principles: [VALID_PRINCIPLE] }),
+        text: opts?.llmText ?? JSON.stringify({ principles: [VALID_PRINCIPLE] }),
         modelUsed: 'deepseek:deepseek-v4-pro',
         tier: 'primary' as const,
         inputTokens: 100,
@@ -152,16 +138,8 @@ function buildService(opts?: {
     incCoreSpecialistLlmTokens,
   } as unknown as BusinessMetricsService;
 
-  const svc = new RolePrincipleSynthesisService(
-    prisma,
-    cfg,
-    llm,
-    embedder,
-    metrics,
-  );
+  const svc = new RolePrincipleSynthesisService(prisma, cfg, llm, embedder, metrics);
 
-  // Приватный logger — подменяем для assert'ов warn (runtime-присвоение,
-  // readonly только compile-time; паттерн any-cast соседних спеков).
   const warnSpy = vi.fn();
   (svc as unknown as { logger: unknown }).logger = {
     warn: warnSpy,
@@ -177,6 +155,7 @@ function buildService(opts?: {
       embedQuery,
       rolePrincipleCreate,
       rolePrincipleFindUnique,
+      rolePrincipleDelete,
       executeRawUnsafe,
       queryRawUnsafe,
       txUpdate,
@@ -215,7 +194,6 @@ describe('RolePrincipleSynthesisService Э1.2 — синтез принципо�
         }),
       }),
     );
-    // Создан принцип с sourceBlockIds ⊆ входных (b1..b6).
     expect(mocks.rolePrincipleCreate).toHaveBeenCalledTimes(1);
     const createArgs = mocks.rolePrincipleCreate.mock.calls[0]?.[0] as {
       data: { sourceBlockIds: string[]; situation: string; status: string };
@@ -225,13 +203,11 @@ describe('RolePrincipleSynthesisService Э1.2 — синтез принципо�
     for (const id of createArgs.data.sourceBlockIds) {
       expect(['b1', 'b2', 'b3', 'b4', 'b5', 'b6']).toContain(id);
     }
-    // Вектор записан raw-апдейтом в role_principles.
     expect(mocks.executeRawUnsafe).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE "role_principles" SET "embedding"'),
       '[0.5,0.5,0]',
       'rp-new',
     );
-    // Учёт токенов метрикой специалиста + outcome=created.
     expect(mocks.incCoreSpecialistLlmTokens).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'role_principle', tokens: 150 }),
     );
@@ -248,7 +224,6 @@ describe('RolePrincipleSynthesisService Э1.2 — синтез принципо�
     expect(res).toEqual({ created: 0, merged: 0, skipped: 'below_threshold' });
     expect(mocks.llmCall).not.toHaveBeenCalled();
     expect(mocks.rolePrincipleCreate).not.toHaveBeenCalled();
-    // Порог читался из AdminSetting-крутилки.
     expect(mocks.getDynamic).toHaveBeenCalledWith(
       'knowledge.rolePrincipleMinObservations',
       undefined,
@@ -257,7 +232,6 @@ describe('RolePrincipleSynthesisService Э1.2 — синтез принципо�
   });
 
   it('повторный прогон: existing с cosine ≥ 0.85 → UPDATE (merged), НЕ create — второй прогон = no-op по количеству', async () => {
-    // distance 0.1 → similarity 0.9 ≥ 0.85 (maxDistance 0.15).
     const { svc, mocks } = buildService({
       closestRows: [{ id: 'rp-old', distance: 0.1 }],
     });
@@ -266,8 +240,6 @@ describe('RolePrincipleSynthesisService Э1.2 — синтез принципо�
 
     expect(res).toEqual({ created: 0, merged: 1, skipped: null });
     expect(mocks.rolePrincipleCreate).not.toHaveBeenCalled();
-    // UPDATE существующего: union sourceBlockIds + max-confidence + новый
-    // statement + lastSynthesizedAt (в транзакции с raw-апдейтом вектора).
     expect(mocks.txUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'rp-old' },
@@ -343,5 +315,94 @@ describe('RolePrincipleSynthesisService Э1.2 — синтез принципо�
     expect(res).toEqual({ created: 0, merged: 0, skipped: 'llm_error' });
     expect(mocks.rolePrincipleCreate).not.toHaveBeenCalled();
     expect(mocks.warnSpy).toHaveBeenCalled();
+  });
+
+  it('Б9 create: 6 блоков ОДНОЙ даты → confidence=low, НЕ сырой high от LLM', async () => {
+    const { svc, mocks } = buildService({
+      distinctDays: 1,
+      llmText: JSON.stringify({
+        principles: [{ ...VALID_PRINCIPLE, confidence: 'high' }],
+      }),
+    });
+
+    const res = await run(svc);
+
+    expect(res).toEqual({ created: 1, merged: 0, skipped: null });
+    const createArgs = mocks.rolePrincipleCreate.mock.calls[0]?.[0] as {
+      data: { confidence: string };
+    };
+    expect(createArgs.data.confidence).toBe('low');
+  });
+
+  it('Б9 create: блоки за ≥4 разных дня → confidence=high (из дат, не из числа блоков)', async () => {
+    const { svc, mocks } = buildService({
+      blockCount: 5,
+      distinctDays: 4,
+      llmText: JSON.stringify({
+        principles: [
+          {
+            ...VALID_PRINCIPLE,
+            sourceBlockIds: ['b1', 'b2', 'b3', 'b4'],
+            confidence: 'low',
+          },
+        ],
+      }),
+    });
+
+    const res = await run(svc);
+
+    expect(res).toEqual({ created: 1, merged: 0, skipped: null });
+    const createArgs = mocks.rolePrincipleCreate.mock.calls[0]?.[0] as {
+      data: { confidence: string };
+    };
+    expect(createArgs.data.confidence).toBe('high');
+  });
+
+  it('Б9 merge: union за 2 разных дня → medium, но existing уже high → НЕ понижаем (floor)', async () => {
+    const { svc, mocks } = buildService({
+      blockCount: 6,
+      distinctDays: 2,
+      closestRows: [{ id: 'rp-old', distance: 0.1 }],
+    });
+    mocks.rolePrincipleFindUnique.mockResolvedValueOnce({
+      id: 'rp-old',
+      sourceBlockIds: ['b1', 'b9'],
+      observationCount: 2,
+      confidence: 'high' as const,
+    });
+
+    const res = await run(svc);
+
+    expect(res).toEqual({ created: 0, merged: 1, skipped: null });
+    expect(mocks.txUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ confidence: 'high' }),
+      }),
+    );
+  });
+
+  it('Б10 create: сбой записи вектора → принцип откатывается (delete), не остаётся active с NULL-вектором (невидимый дедупу)', async () => {
+    const { svc, mocks } = buildService({ embeddingWriteThrows: true });
+
+    const res = await run(svc);
+
+    expect(mocks.rolePrincipleCreate).toHaveBeenCalledTimes(1);
+    expect(mocks.rolePrincipleDelete).toHaveBeenCalledWith({
+      where: { id: 'rp-new' },
+    });
+    expect(mocks.warnSpy).toHaveBeenCalled();
+    expect(res.skipped).toBeNull();
+  });
+
+  it('Б10 create: сбой вектора И сбой delete → не throw (best-effort), остальной прогон жив', async () => {
+    const { svc, mocks } = buildService({
+      embeddingWriteThrows: true,
+      deleteThrows: true,
+    });
+
+    const res = await run(svc);
+
+    expect(mocks.rolePrincipleDelete).toHaveBeenCalled();
+    expect(res).toEqual({ created: 1, merged: 0, skipped: null });
   });
 });

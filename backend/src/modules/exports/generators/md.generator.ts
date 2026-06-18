@@ -1,26 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import type {
-  AiResult,
-  Meeting,
-  MeetingChapter,
-  Transcript,
-} from '@prisma/client';
+import type { AiResult, Meeting, MeetingChapter, Transcript } from '@prisma/client';
 
 import { pickPrimarySummary } from '../../ai/utils/pick-primary-summary';
 
-/**
- * Минимальная форма задачи для рендера (ТЗ Ф5.2): берём только используемые
- * поля, чтобы подходили и Prisma `Task`, и нормализованный `MeetingActionItem`.
- */
 export interface ExportTaskLike {
   title: string;
   assigneeRaw: string | null;
   dueDate: Date | null;
 }
 
-/**
- * Генератор Markdown-экспорта одной встречи. Без I/O — pure-функция.
- */
 @Injectable()
 export class MdGenerator {
   build(input: {

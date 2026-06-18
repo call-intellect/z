@@ -3,15 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { MyDailyValueController } from './my-daily-value.controller';
 
-/**
- * ТЗ-2 Ф5 (daily-value-dashboards) — unit-тесты `/me/ideas` + `/me/recognitions`.
- *
- * Главный инвариант — self-scope:
- *   - идеи: `IdeasService.listMine` вызывается с `role: 'author'` + resolved
- *     userId из cookie-сессии (фильтр `createdByUserId = userId`), не из query;
- *   - признания: `recognition.findMany` фильтруется по `toUserId = userId`.
- * Флаг `me.daily_value_widgets.enabled` OFF → оба эндпоинта отдают пустой ответ.
- */
 describe('MyDailyValueController', () => {
   const req = { user: { id: 'user-1' } } as unknown as Request;
 
@@ -116,7 +107,7 @@ describe('MyDailyValueController', () => {
         id: 'r2',
         type: 'expert',
         message: null,
-        fromPersonName: null, // от AI/системы (fromUserId=null)
+        fromPersonName: null,
         visibility: 'private',
         createdAt: '2026-05-30T08:00:00.000Z',
       },

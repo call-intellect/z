@@ -30,9 +30,7 @@ export class AdminPricesController {
   constructor(@Inject(AdminPricesService) private readonly svc: AdminPricesService) {}
 
   @Get()
-  list(
-    @Query(new ZodValidationPipe(ListPricesQuerySchema)) q: ListPricesQuery,
-  ) {
+  list(@Query(new ZodValidationPipe(ListPricesQuerySchema)) q: ListPricesQuery) {
     return this.svc.listPrices({
       activeOnly: q.activeOnly,
       ...(q.modelId ? { modelId: q.modelId } : {}),
@@ -42,14 +40,8 @@ export class AdminPricesController {
     });
   }
 
-  /**
-   * SBA α-10 wave 3 — отдельный history endpoint (по факту дублирует
-   * `GET /` с activeOnly=false, но имеет более «explicit» имя для UI).
-   */
   @Get('history')
-  history(
-    @Query(new ZodValidationPipe(ListPricesQuerySchema)) q: ListPricesQuery,
-  ) {
+  history(@Query(new ZodValidationPipe(ListPricesQuerySchema)) q: ListPricesQuery) {
     return this.svc.listPrices({
       activeOnly: false,
       ...(q.modelId ? { modelId: q.modelId } : {}),

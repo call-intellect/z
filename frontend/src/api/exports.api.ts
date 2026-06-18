@@ -1,24 +1,17 @@
-import { apiClient } from './api-client';
-
-/**
- * API DTO для модуля exports. Контракт — `backend/src/modules/exports/`.
- *
- * Создание: POST `/exports/meeting/:id/md|docx`, `/exports/bulk`.
- * Скачивание готового: GET `/exports/:id/download` → `{ url, expiresAt }`.
- */
+import { apiClient } from "./api-client";
 
 export type ExportType =
-  | 'meeting_md'
-  | 'meeting_pdf'
-  | 'meeting_docx'
-  | 'bulk_zip';
+  | "meeting_md"
+  | "meeting_pdf"
+  | "meeting_docx"
+  | "bulk_zip";
 
 export type ExportStatus =
-  | 'queued'
-  | 'processing'
-  | 'ready'
-  | 'failed'
-  | 'expired';
+  | "queued"
+  | "processing"
+  | "ready"
+  | "failed"
+  | "expired";
 
 export type ExportApi = {
   id: string;
@@ -46,7 +39,7 @@ export type BulkExportRequest = {
 };
 
 export const exportsApi = {
-  list: () => apiClient.get<ExportsListApiResponse>('/api/v1/exports'),
+  list: () => apiClient.get<ExportsListApiResponse>("/api/v1/exports"),
 
   meetingMd: (meetingId: string) =>
     apiClient.post<{ exportId: string }>(
@@ -59,7 +52,7 @@ export const exportsApi = {
     ),
 
   bulk: (body: BulkExportRequest) =>
-    apiClient.post<{ exportId: string }>('/api/v1/exports/bulk', body),
+    apiClient.post<{ exportId: string }>("/api/v1/exports/bulk", body),
 
   download: (exportId: string) =>
     apiClient.get<ExportDownloadApi>(

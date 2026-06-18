@@ -59,7 +59,7 @@ describe('specialists-combined — system prompt snapshot', () => {
     expect(prompt).toContain('submit_all_8_entities');
     expect(prompt).toContain('decisions[]');
     expect(prompt).toContain('helpfulness_traits[]');
-    expect(prompt).toContain('Все строки на русском');
+    expect(prompt).toContain('на чистом русском');
   });
 });
 
@@ -78,10 +78,10 @@ describe('specialists-combined — formatBlockForCombined', () => {
       },
     });
     expect(result).toMatchSnapshot('block');
-    // структурные проверки:
+    // структурные проверки (методология №3 — человеческий ярлык сигнала):
     expect(result).toContain('[BLOCK:blk_006]');
-    expect(result).toContain('signalType=decision');
-    expect(result).toContain('persons=Иван Соколов,Анна Мехова');
+    expect(result).toContain('тип сигнала: принятое решение');
+    expect(result).toContain('участники: Иван Соколов,Анна Мехова');
     expect(result).toContain('В: Какой провайдер SMS');
     expect(result).toContain('О: Выбран SMS Aero');
   });
@@ -96,7 +96,7 @@ describe('specialists-combined — formatBlockForCombined', () => {
       personNames: [],
       evidence: { quote: '...', speaker: '—' },
     });
-    expect(result).toContain('persons=-');
+    expect(result).toContain('участники: -');
   });
 });
 

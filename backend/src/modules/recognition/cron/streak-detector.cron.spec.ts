@@ -21,10 +21,7 @@ function mkCron(opts: {
     tenantId: string;
   }>;
   checkinExists: (personId: string) => boolean;
-  prevSnapshots?: Record<
-    string,
-    { currentCheckinStreak: number; longestCheckinStreak: number }
-  >;
+  prevSnapshots?: Record<string, { currentCheckinStreak: number; longestCheckinStreak: number }>;
 }): {
   cron: StreakDetectorCron;
   prisma: MockPrisma;
@@ -42,8 +39,9 @@ function mkCron(opts: {
     contributionSnapshot: {
       findUnique: vi
         .fn()
-        .mockImplementation(async ({ where }: { where: { userId: string } }) =>
-          opts.prevSnapshots?.[where.userId] ?? null,
+        .mockImplementation(
+          async ({ where }: { where: { userId: string } }) =>
+            opts.prevSnapshots?.[where.userId] ?? null,
         ),
       upsert: vi.fn().mockResolvedValue({}),
     },
@@ -153,11 +151,9 @@ describe('StreakDetectorCron', () => {
       throw new Error('db down');
     });
     await cron.run();
-    // 'u-ok' должен быть обработан.
     const upsertCalls = prisma.contributionSnapshot.upsert.mock.calls;
     const userIds = upsertCalls.map((c) => (c[0] as { where: { userId: string } }).where.userId);
     expect(userIds).toContain('u-ok');
-    // milestone для u-ok не сработал (prev = 0), но streak обновился.
     expect(recognition.enqueueFormulate).not.toHaveBeenCalled();
   });
 });

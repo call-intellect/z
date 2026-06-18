@@ -2,8 +2,8 @@
 type: feature
 status: in_progress
 phase: alpha-1
-related_tz: plans/tz/2026-05-21-sba-alpha-1-channels-foundation.md
-parent_tz: plans/tz/2026-05-21-second-brain-agents-umbrella.md
+related_tz: plans/archive/2026-05-21-sba-alpha-1-channels-foundation.md
+parent_tz: plans/archive/2026-05-21-second-brain-agents-umbrella.md
 implemented_at: 2026-05-21
 ---
 
@@ -160,7 +160,7 @@ Per-event-type defaults в α-1:
 `/me/channels` — список каналов + моя привязка, генерация кода привязки, отвязка.
 `/me/notifications` — master-detail список с фильтрами (Непрочитанные / Ждут ответа / Все), inline-кнопки «Ответить»/«Пропустить», форма «Свободная заметка» → `RawEvent`.
 
-Глоссарий русских терминов: `delivery/13-glossary.md` (раздел SBA α-1) и `delivery/ui/copy-strings.ru.md`.
+Глоссарий русских терминов: [`13_glossary/ui-glossary.md`](../13_glossary/ui-glossary.md) (раздел SBA α-1) и [`13_glossary/copy-strings.ru.md`](../13_glossary/copy-strings.ru.md).
 
 ## Что не входит в α-1
 
@@ -182,7 +182,7 @@ Per-event-type defaults в α-1:
 
 # Conversational Channels β-1 — Telegram + MAX adapters (zero-button)
 
-> **Дата:** 2026-05-23. **ТЗ:** `plans/tz/2026-05-23-sba-beta-1-telegram-max-zero-button-ripout.md`.
+> **Дата:** 2026-05-23. **ТЗ:** `plans/archive/2026-05-23-sba-beta-1-telegram-max-zero-button-ripout.md`.
 > Предыдущая версия (β-1 с slash-командами и inline-кнопками) — `plans/archive/2026-05-21-sba-beta-1-channels-telegram-max.md` (deprecated 2026-05-23).
 >
 > **Что это.** Первые два внешних канала: Telegram-бот и MAX-бот (mssgr.ru). Бот — **zero-button**: никаких inline-кнопок, никаких slash-команд (кроме hard-coded `/start <token>` для deep-link). Покрывают outbound (`Notification → sendMessage`), inbound (свободный текст + voice через ASR + документы через DocumentsService), `/start <token>` и голый код linking flow.
@@ -450,7 +450,7 @@ Idempotent — upsert по `(tenantId, kind)`. Шифруют секреты с�
 
 # Единый мозг помощника — Telegram/MAX как окна к ConciergeService (реализовано 2026-06-12)
 
-> **ТЗ:** [plans/tz/2026-06-11-assistant-channels-telegram-max.md](../../plans/tz/2026-06-11-assistant-channels-telegram-max.md) (Ф1–Ф6, ветка `feature/assistant-channels-and-autonomy`). Анализ: `plans/analysis/2026-06-11-telegram-agentic-interface.md` + PLAIN-документ Точка А→Б.
+> **ТЗ:** [plans/archive/2026-06-11-assistant-channels-telegram-max.md](../../plans/archive/2026-06-11-assistant-channels-telegram-max.md) (Ф1–Ф6, ветка `feature/assistant-channels-and-autonomy`). Анализ: `plans/analysis/2026-06-11-telegram-agentic-interface.md` + PLAIN-документ Точка А→Б.
 
 **Решение владельца:** один помощник-мозг (ConciergeService), Telegram и кабинет — окна к нему. Отдельные интенты-«второй мозг» в Telegram отвергнуты.
 
@@ -474,7 +474,7 @@ Idempotent — upsert по `(tenantId, kind)`. Шифруют секреты с�
 
 # Помощник = единый мозг каналов: дедуп понимания/синтеза + руки + уточнитель (реализовано 2026-06-15)
 
-> **Цепочка из 5 ТЗ, один релиз** (ветка `feature/dialog-chat-assistant-chain`): dialog-layer (слитый «модуль понимания запроса») → chat-v2 (единый промпт-ответчик + таблицы как источник) → concierge (развилка + руки + уточнитель) → channels-sync (whitelist + интенты) → cabinet (селектор клона). ТЗ: [`2026-06-14-dialog-layer-unified-query-understanding`](../../plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md), [`2026-06-15-chat-v2-unified-answer-prompt`](../../plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md), [`2026-06-14-assistant-router-dedup-and-prompt`](../../plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md), [`2026-06-11-assistant-channels-telegram-max`](../../plans/tz/2026-06-11-assistant-channels-telegram-max.md) (Ф-синхронизация каналов), [`2026-06-15-cabinet-assistant-clone-selector`](../../plans/tz/2026-06-15-cabinet-assistant-clone-selector.md).
+> **Цепочка из 5 ТЗ, один релиз** (ветка `feature/dialog-chat-assistant-chain`): dialog-layer (слитый «модуль понимания запроса») → chat-v2 (единый промпт-ответчик + таблицы как источник) → concierge (развилка + руки + уточнитель) → channels-sync (whitelist + интенты) → cabinet (селектор клона). ТЗ: [`2026-06-14-dialog-layer-unified-query-understanding`](../../plans/archive/2026-06-14-dialog-layer-unified-query-understanding.md), [`2026-06-15-chat-v2-unified-answer-prompt`](../../plans/archive/2026-06-15-chat-v2-unified-answer-prompt.md), [`2026-06-14-assistant-router-dedup-and-prompt`](../../plans/archive/2026-06-14-assistant-router-dedup-and-prompt.md), [`2026-06-11-assistant-channels-telegram-max`](../../plans/archive/2026-06-11-assistant-channels-telegram-max.md) (Ф-синхронизация каналов), [`2026-06-15-cabinet-assistant-clone-selector`](../../plans/archive/2026-06-15-cabinet-assistant-clone-selector.md).
 
 **Решение владельца 2026-06-14/15:** помощник — это **развилка + руки**, а не второй мозг. Понимание запроса (контекстуализация + 3 формулировки + фильтры) и умный синтез ответа считаются **ОДИН раз — внутри chat-v2**. Это устраняет дубль «помощник понимает + chat-v2 понимает» и «двойной синтез».
 

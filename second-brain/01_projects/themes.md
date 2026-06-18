@@ -6,7 +6,7 @@ updated: 2026-05-10
 
 # Themes (AI-кластеры IdeaBlock'ов)
 
-Реализовано 2026-05-10 по [plans/tz/2026-05-10-knowledge-core-tz.md](../../plans/tz/2026-05-10-knowledge-core-tz.md) §Фаза 4.
+Реализовано 2026-05-10 по [plans/archive/2026-05-10-knowledge-core-tz.md](../../plans/archive/2026-05-10-knowledge-core-tz.md) §Фаза 4.
 
 ## Главная идея
 
@@ -32,7 +32,7 @@ Theme {
   confidence   Decimal(4,3)  default 0.5    // уверенность LLM-классификатора
   status       enum active|archived|merged_into
   mergedIntoId Theme?
-  branch       enum?       // одна из 12 веток delivery (см. ниже) или null
+  branch       enum?       // одна из 12 веток компании (см. ниже) или null
   embedding    vector(1536)
   lastSignalAt DateTime?
   ...
@@ -124,7 +124,6 @@ Seed: `backend/scripts/seed-llm-task-routes-knowledge-core.ts --update-existing`
   риск разрезать неудачно.
 - **HDBSCAN** — пока KNN-greedy. На больших Org (>5–10k блоков без темы)
   заменим на pgvector-side query (нативный KNN с HNSW).
-- **Frontend `/themes`** — отложен на следующую сессию.
 
 ## Связи
 
@@ -134,5 +133,5 @@ Seed: `backend/scripts/seed-llm-task-routes-knowledge-core.ts --update-existing`
 
 ## Источники
 
-- ТЗ: [plans/tz/2026-05-10-knowledge-core-tz.md §Фаза 4](../../plans/tz/2026-05-10-knowledge-core-tz.md)
-- Концепция веток компании: `delivery/` (M-07).
+- ТЗ: [plans/archive/2026-05-10-knowledge-core-tz.md §Фаза 4](../../plans/archive/2026-05-10-knowledge-core-tz.md)
+- Концепция веток компании: [[../02_architecture/knowledge-core]] (enum `ThemeBranch`).

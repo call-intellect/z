@@ -1,19 +1,19 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { Save } from 'lucide-react';
-import { toast } from 'sonner';
+import { useEffect, useMemo, useState } from "react";
+import { Save } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import { billingApi } from '@/api/billing.api';
-import { entitlementsApi } from '@/api/entitlements.api';
+import { ApiError } from "@/api/api-error";
+import { billingApi } from "@/api/billing.api";
+import { entitlementsApi } from "@/api/entitlements.api";
 import type {
   AdminActivateBody,
   BillingPeriodApi,
   PaymentModeApi,
   SubscriptionStatusApi,
   SubscriptionViewApi,
-} from '@/api/types/billing';
+} from "@/api/types/billing";
 import {
   ALL_FEATURES,
   ALL_QUOTAS,
@@ -27,55 +27,36 @@ import {
   type FeatureKey,
   type QuotaKey,
   type TierKey,
-} from '@/domain/entitlement';
-import { useAuth } from '@/contexts/auth-context';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/domain/entitlement";
+import { useAuth } from "@/contexts/auth-context";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/ui/shadcn/select";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../../AdminStateViews';
+} from "../../../AdminStateViews";
 
-/**
- * `/admin/orgs/[id]/billing` — Z-Admin страница управления тарифом одной Org
- * (Фаза 12 шаг 12).
- *
- * Доступ: super_admin only. Backend защищает API (403 forbidden); фронт
- * показывает «Нет прав» empty-state.
- *
- * Что можно менять:
- *   - tier (Select из 3 опций).
- *   - featureOverrides (checkbox per feature; отдельный «inherit» режим).
- *   - quotaOverrides (numeric input per quota).
- *   - notes (textarea, макс 2000).
- *   - reason (обязательное, ≥3 символов — backend требует).
- *
- * Все эти поля отправляются в одном PATCH-запросе. Backend разруливает
- * каждое изменение отдельным AuditLog-эвентом.
- *
- * TODO: lazy-load AuditLog entries TIER_CHANGED / ENTITLEMENT_OVERRIDE_SET
- * для этой Org — ждёт общий auditLogApi (см. plans/decisions-log.md).
- */
-
-type FeatureOverrideForm = Partial<Record<FeatureKey, boolean | 'inherit'>>;
+type FeatureOverrideForm = Partial<Record<FeatureKey, boolean | "inherit">>;
 type QuotaOverrideForm = Partial<Record<QuotaKey, string>>;
 
 export function BillingAdminClient({ tenantId }: { tenantId: string }) {
   const { isSuperAdmin, isLoading: authLoading } = useAuth();
-  const [entitlement, setEntitlement] = useState<EntitlementDomain | null>(null);
+  const [entitlement, setEntitlement] = useState<EntitlementDomain | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,19 +66,19 @@ export function BillingAdminClient({ tenantId }: { tenantId: string }) {
     {},
   );
   const [quotaOverrides, setQuotaOverrides] = useState<QuotaOverrideForm>({});
-  const [notes, setNotes] = useState<string>('');
-  const [reason, setReason] = useState<string>('');
+  const [notes, setNotes] = useState<string>("");
+  const [reason, setReason] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
   const [subscription, setSubscription] = useState<SubscriptionViewApi | null>(
     null,
   );
-  const [activateMode, setActivateMode] = useState<PaymentModeApi>('bonus');
+  const [activateMode, setActivateMode] = useState<PaymentModeApi>("bonus");
   const [activatePeriod, setActivatePeriod] =
-    useState<BillingPeriodApi>('monthly');
-  const [activateSeatsExtra, setActivateSeatsExtra] = useState<string>('0');
-  const [activateReason, setActivateReason] = useState<string>('');
-  const [activateExternalRef, setActivateExternalRef] = useState<string>('');
+    useState<BillingPeriodApi>("monthly");
+  const [activateSeatsExtra, setActivateSeatsExtra] = useState<string>("0");
+  const [activateReason, setActivateReason] = useState<string>("");
+  const [activateExternalRef, setActivateExternalRef] = useState<string>("");
   const [activating, setActivating] = useState(false);
 
   const reload = useMemo(
@@ -115,13 +96,13 @@ export function BillingAdminClient({ tenantId }: { tenantId: string }) {
         setTier(ent.tier);
         setFeatureOverrides(featureOverridesToForm(ent));
         setQuotaOverrides(quotaOverridesToForm(ent));
-        setNotes(ent.notes ?? '');
+        setNotes(ent.notes ?? "");
         setSubscription(billing?.subscription ?? null);
       } catch (e) {
-        if (e instanceof ApiError && e.code === 'forbidden') {
+        if (e instanceof ApiError && e.code === "forbidden") {
           setForbidden(true);
         } else {
-          setError(e instanceof ApiError ? e.message : 'Ошибка загрузки');
+          setError(e instanceof ApiError ? e.message : "Ошибка загрузки");
         }
       } finally {
         setLoading(false);
@@ -143,7 +124,7 @@ export function BillingAdminClient({ tenantId }: { tenantId: string }) {
   const save = async () => {
     if (!entitlement || !tier) return;
     if (reason.trim().length < 3) {
-      toast.error('Укажите причину изменений (минимум 3 символа).');
+      toast.error("Укажите причину изменений (минимум 3 символа).");
       return;
     }
     setSaving(true);
@@ -162,11 +143,11 @@ export function BillingAdminClient({ tenantId }: { tenantId: string }) {
       setTier(ent.tier);
       setFeatureOverrides(featureOverridesToForm(ent));
       setQuotaOverrides(quotaOverridesToForm(ent));
-      setNotes(ent.notes ?? '');
-      setReason('');
-      toast.success('Тариф обновлён');
+      setNotes(ent.notes ?? "");
+      setReason("");
+      toast.success("Тариф обновлён");
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось сохранить';
+      const msg = e instanceof ApiError ? e.message : "Не удалось сохранить";
       toast.error(msg);
     } finally {
       setSaving(false);
@@ -175,7 +156,7 @@ export function BillingAdminClient({ tenantId }: { tenantId: string }) {
 
   const activate = async () => {
     if (activateReason.trim().length < 3) {
-      toast.error('Укажите причину выдачи доступа (минимум 3 символа).');
+      toast.error("Укажите причину выдачи доступа (минимум 3 символа).");
       return;
     }
     setActivating(true);
@@ -195,15 +176,17 @@ export function BillingAdminClient({ tenantId }: { tenantId: string }) {
       };
       await billingApi.adminActivate(tenantId, body);
       toast.success(
-        activateMode === 'bonus'
-          ? 'Бонусный доступ выдан — компания активирована'
-          : 'Платный доступ выдан — компания активирована',
+        activateMode === "bonus"
+          ? "Бонусный доступ выдан — компания активирована"
+          : "Платный доступ выдан — компания активирована",
       );
-      setActivateReason('');
-      setActivateExternalRef('');
+      setActivateReason("");
+      setActivateExternalRef("");
       await reload();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось выдать доступ');
+      toast.error(
+        e instanceof ApiError ? e.message : "Не удалось выдать доступ",
+      );
     } finally {
       setActivating(false);
     }
@@ -314,8 +297,8 @@ export function BillingAdminClient({ tenantId }: { tenantId: string }) {
           Причина изменения <span className="text-danger">*</span>
         </Label>
         <p className="text-xs text-fg-tertiary">
-          Обязательное поле. Записывается в AuditLog для compliance.
-          Минимум 3 символа.
+          Обязательное поле. Записывается в AuditLog для compliance. Минимум 3
+          символа.
         </p>
         <Textarea
           id="reason"
@@ -334,7 +317,7 @@ export function BillingAdminClient({ tenantId }: { tenantId: string }) {
           disabled={saving || reason.trim().length < 3}
         >
           <Save size={14} />
-          {saving ? 'Сохраняем…' : 'Применить'}
+          {saving ? "Сохраняем…" : "Применить"}
         </Button>
         <Button
           variant="outline"
@@ -348,15 +331,13 @@ export function BillingAdminClient({ tenantId }: { tenantId: string }) {
   );
 }
 
-// ─── Sections ───────────────────────────────────────────────────────────────
-
 const STATUS_LABELS: Record<SubscriptionStatusApi, string> = {
-  DEMO: 'Демо (доступ не активирован)',
-  ACTIVE: 'Активна',
-  PAST_DUE: 'Просрочен платёж',
-  SUSPENDED: 'Приостановлена',
-  CANCELED: 'Отменена',
-  EXPIRED: 'Истекла',
+  DEMO: "Демо (доступ не активирован)",
+  ACTIVE: "Активна",
+  PAST_DUE: "Просрочен платёж",
+  SUSPENDED: "Приостановлена",
+  CANCELED: "Отменена",
+  EXPIRED: "Истекла",
 };
 
 function AccessSection({
@@ -388,22 +369,22 @@ function AccessSection({
   activating: boolean;
   onActivate: () => void;
 }) {
-  const isDemo = subscription === null || subscription.status === 'DEMO';
+  const isDemo = subscription === null || subscription.status === "DEMO";
   const statusLabel =
     subscription === null
-      ? 'Подписки нет (демо)'
+      ? "Подписки нет (демо)"
       : STATUS_LABELS[subscription.status];
-  const isActive = subscription?.status === 'ACTIVE';
-  const statusColor = isActive ? 'text-success' : 'text-warning';
+  const isActive = subscription?.status === "ACTIVE";
+  const statusColor = isActive ? "text-success" : "text-warning";
   const bonusSuffix =
-    isActive && subscription?.paymentMode === 'bonus' ? ' (бонусный)' : '';
+    isActive && subscription?.paymentMode === "bonus" ? " (бонусный)" : "";
 
   return (
     <section className="space-y-4 rounded-lg border border-border-subtle bg-bg-card p-5">
       <h2 className="text-base font-medium">Доступ к продукту</h2>
 
       <p className="text-sm">
-        Текущий статус подписки:{' '}
+        Текущий статус подписки:{" "}
         <span className={`font-medium ${statusColor}`}>
           {statusLabel}
           {bonusSuffix}
@@ -499,7 +480,7 @@ function AccessSection({
           onClick={onActivate}
           disabled={activating || activateReason.trim().length < 3}
         >
-          {activating ? 'Выдаём…' : 'Выдать доступ'}
+          {activating ? "Выдаём…" : "Выдать доступ"}
         </Button>
       </div>
     </section>
@@ -523,8 +504,8 @@ function FeatureOverridesSection({
         <h2 className="text-base font-medium">Переопределения фич</h2>
         <p className="text-xs text-fg-tertiary">
           По умолчанию используются значения тарифа {tierLabel(currentTier)}.
-          Можно явно включить или выключить отдельную фичу для этой Org —
-          такое значение перебьёт тарифное.
+          Можно явно включить или выключить отдельную фичу для этой Org — такое
+          значение перебьёт тарифное.
         </p>
       </div>
       <div className="overflow-hidden rounded-md border border-border-subtle">
@@ -532,9 +513,7 @@ function FeatureOverridesSection({
           <thead className="bg-bg-elevated text-xs uppercase tracking-wider text-fg-tertiary">
             <tr>
               <th className="px-3 py-2 text-left font-normal">Фича</th>
-              <th className="px-3 py-2 text-center font-normal">
-                По тарифу
-              </th>
+              <th className="px-3 py-2 text-center font-normal">По тарифу</th>
               <th className="px-3 py-2 text-left font-normal">
                 Override для Org
               </th>
@@ -542,17 +521,11 @@ function FeatureOverridesSection({
           </thead>
           <tbody>
             {ALL_FEATURES.map((f) => {
-              // resolved (`features[f]`) уже содержит merge tier + override.
-              // Чтобы показать «по тарифу» отдельно — снимаем эффект override.
               const overrideValue = overrides[f];
               const tierValue =
                 entitlement.featureOverrides[f] === undefined
                   ? entitlement.features[f] === true
-                  : // если в БД был override — значит resolved=override, тарифное прячется.
-                    // Достаём «по тарифу» из публичного API: features без overrides.
-                    // Backend нам этого не отдаёт, поэтому показываем resolved
-                    // как «по тарифу» когда override снят (inherit).
-                    entitlement.features[f] === true;
+                  : entitlement.features[f] === true;
               return (
                 <tr
                   key={f}
@@ -560,16 +533,16 @@ function FeatureOverridesSection({
                 >
                   <td className="px-3 py-2.5">{featureLabel(f)}</td>
                   <td className="px-3 py-2.5 text-center text-xs text-fg-tertiary">
-                    {tierValue ? 'включено' : 'выключено'}
+                    {tierValue ? "включено" : "выключено"}
                   </td>
                   <td className="px-3 py-2.5">
                     <FeatureOverrideControl
                       feature={f}
-                      value={overrideValue ?? 'inherit'}
+                      value={overrideValue ?? "inherit"}
                       onChange={(v) =>
                         setOverrides((prev) => {
                           const next: FeatureOverrideForm = { ...prev };
-                          if (v === 'inherit') {
+                          if (v === "inherit") {
                             delete next[f];
                           } else {
                             next[f] = v;
@@ -586,7 +559,8 @@ function FeatureOverridesSection({
         </table>
       </div>
       <p className="text-[10px] text-fg-tertiary">
-        Подсказка: «inherit» → значение возьмётся из тарифа. Любое явное «включено» / «выключено» сохранится в БД как override.
+        Подсказка: «inherit» → значение возьмётся из тарифа. Любое явное
+        «включено» / «выключено» сохранится в БД как override.
       </p>
     </section>
   );
@@ -598,16 +572,16 @@ function FeatureOverrideControl({
   onChange,
 }: {
   feature: FeatureKey;
-  value: 'inherit' | true | false;
-  onChange: (next: 'inherit' | true | false) => void;
+  value: "inherit" | true | false;
+  onChange: (next: "inherit" | true | false) => void;
 }) {
-  const stringValue = value === 'inherit' ? 'inherit' : value ? 'on' : 'off';
+  const stringValue = value === "inherit" ? "inherit" : value ? "on" : "off";
   return (
     <Select
       value={stringValue}
       onValueChange={(v) => {
-        if (v === 'inherit') onChange('inherit');
-        else if (v === 'on') onChange(true);
+        if (v === "inherit") onChange("inherit");
+        else if (v === "on") onChange(true);
         else onChange(false);
       }}
     >
@@ -676,12 +650,12 @@ function QuotaOverridesSection({
                       step={1}
                       className="h-8 w-[200px]"
                       placeholder="из тарифа"
-                      value={overrides[q] ?? ''}
+                      value={overrides[q] ?? ""}
                       onChange={(e) => {
                         const v = e.target.value;
                         setOverrides((prev) => {
                           const next: QuotaOverrideForm = { ...prev };
-                          if (v === '') {
+                          if (v === "") {
                             delete next[q];
                           } else {
                             next[q] = v;
@@ -700,8 +674,6 @@ function QuotaOverridesSection({
     </section>
   );
 }
-
-// ─── Form helpers ───────────────────────────────────────────────────────────
 
 function featureOverridesToForm(ent: EntitlementDomain): FeatureOverrideForm {
   const result: FeatureOverrideForm = {};
@@ -723,16 +695,6 @@ function quotaOverridesToForm(ent: EntitlementDomain): QuotaOverrideForm {
   return result;
 }
 
-/**
- * Собирает PATCH-body. Шлём только diff'ы относительно текущего состояния:
- *   - tier — если поменялся.
- *   - featureOverrides — все ключи, где явно задан bool (без inherit).
- *   - quotaOverrides — все ключи, где задано валидное число.
- *   - notes — если изменилось.
- *
- * Backend сам решает, что записать в OrgEntitlement — мы только декларируем
- * желаемое состояние.
- */
 function buildPatchBody(
   tier: TierKey,
   featureOverrides: FeatureOverrideForm,
@@ -758,7 +720,7 @@ function buildPatchBody(
     [FeatureKey, FeatureOverrideForm[FeatureKey]]
   >) {
     if (v === undefined) continue;
-    if (v === 'inherit') continue;
+    if (v === "inherit") continue;
     fo[k] = v;
   }
   if (Object.keys(fo).length > 0) {
@@ -769,7 +731,7 @@ function buildPatchBody(
   for (const [k, raw] of Object.entries(quotaOverrides) as Array<
     [QuotaKey, string | undefined]
   >) {
-    if (raw === undefined || raw === '') continue;
+    if (raw === undefined || raw === "") continue;
     const n = Number(raw);
     if (!Number.isFinite(n) || n < 0) continue;
     qo[k] = Math.floor(n);
@@ -778,10 +740,10 @@ function buildPatchBody(
     body.quotaOverrides = qo;
   }
 
-  const currentNotes = current.notes ?? '';
-  const newNotes = notes ?? '';
+  const currentNotes = current.notes ?? "";
+  const newNotes = notes ?? "";
   if (currentNotes !== newNotes) {
-    body.notes = newNotes === '' ? null : newNotes;
+    body.notes = newNotes === "" ? null : newNotes;
   }
 
   return body;

@@ -1,18 +1,12 @@
-/**
- * Тесты PaywallGuardButton — обёртка create-кнопки с visual indicator
- * и поведенческой блокировкой (showPaywall вместо onClick) в read-only.
- *
- * ТЗ: plans/tz/2026-05-28-paywall-no-trial.md §4.2.
- */
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 
-vi.mock('@/hooks/useSubscription', () => ({
+vi.mock("@/hooks/useSubscription", () => ({
   useSubscription: vi.fn(),
 }));
 
-import { PaywallGuardButton } from './PaywallGuardButton';
-import { useSubscription } from '@/hooks/useSubscription';
+import { PaywallGuardButton } from "./PaywallGuardButton";
+import { useSubscription } from "@/hooks/useSubscription";
 
 const mockUseSubscription = vi.mocked(useSubscription);
 
@@ -27,19 +21,19 @@ function setMock(opts: { status: string | null; loading?: boolean }) {
   });
 }
 
-describe('PaywallGuardButton', () => {
-  it('ACTIVE: вызывает onClick как обычная кнопка', () => {
-    setMock({ status: 'ACTIVE' });
+describe("PaywallGuardButton", () => {
+  it("ACTIVE: вызывает onClick как обычная кнопка", () => {
+    setMock({ status: "ACTIVE" });
     const onClick = vi.fn();
     render(<PaywallGuardButton onClick={onClick}>Создать</PaywallGuardButton>);
-    fireEvent.click(screen.getByText('Создать'));
+    fireEvent.click(screen.getByText("Создать"));
     expect(onClick).toHaveBeenCalledOnce();
   });
 
-  it('DEMO: открывает PaywallModal вместо onClick', () => {
+  it("DEMO: открывает PaywallModal вместо onClick", () => {
     const showPaywallModal = vi.fn();
     mockUseSubscription.mockReturnValue({
-      status: 'DEMO' as never,
+      status: "DEMO" as never,
       loading: false,
       refetch: vi.fn(),
       showPaywallModal,
@@ -48,15 +42,15 @@ describe('PaywallGuardButton', () => {
     });
     const onClick = vi.fn();
     render(<PaywallGuardButton onClick={onClick}>Создать</PaywallGuardButton>);
-    fireEvent.click(screen.getByText('Создать'));
+    fireEvent.click(screen.getByText("Создать"));
     expect(onClick).not.toHaveBeenCalled();
     expect(showPaywallModal).toHaveBeenCalledOnce();
   });
 
-  it('SUSPENDED: открывает PaywallModal вместо onClick', () => {
+  it("SUSPENDED: открывает PaywallModal вместо onClick", () => {
     const showPaywallModal = vi.fn();
     mockUseSubscription.mockReturnValue({
-      status: 'SUSPENDED' as never,
+      status: "SUSPENDED" as never,
       loading: false,
       refetch: vi.fn(),
       showPaywallModal,
@@ -65,33 +59,33 @@ describe('PaywallGuardButton', () => {
     });
     const onClick = vi.fn();
     render(<PaywallGuardButton onClick={onClick}>Создать</PaywallGuardButton>);
-    fireEvent.click(screen.getByText('Создать'));
+    fireEvent.click(screen.getByText("Создать"));
     expect(onClick).not.toHaveBeenCalled();
     expect(showPaywallModal).toHaveBeenCalledOnce();
   });
 
-  it('DEMO: ставит data-paywall-readonly + tooltip с reason', () => {
-    setMock({ status: 'DEMO' });
+  it("DEMO: ставит data-paywall-readonly + tooltip с reason", () => {
+    setMock({ status: "DEMO" });
     render(<PaywallGuardButton>Создать</PaywallGuardButton>);
-    const btn = screen.getByText('Создать');
-    expect(btn).toHaveAttribute('data-paywall-readonly', 'true');
+    const btn = screen.getByText("Создать");
+    expect(btn).toHaveAttribute("data-paywall-readonly", "true");
     expect(btn).toHaveAttribute(
-      'title',
-      'Демо-режим: оплатите подписку, чтобы создавать данные',
+      "title",
+      "Демо-режим: оплатите подписку, чтобы создавать данные",
     );
   });
 
-  it('ACTIVE: не ставит data-paywall-readonly', () => {
-    setMock({ status: 'ACTIVE' });
+  it("ACTIVE: не ставит data-paywall-readonly", () => {
+    setMock({ status: "ACTIVE" });
     render(<PaywallGuardButton>Создать</PaywallGuardButton>);
-    expect(screen.getByText('Создать')).not.toHaveAttribute(
-      'data-paywall-readonly',
+    expect(screen.getByText("Создать")).not.toHaveAttribute(
+      "data-paywall-readonly",
     );
   });
 
-  it('loading: disabled', () => {
+  it("loading: disabled", () => {
     setMock({ status: null, loading: true });
     render(<PaywallGuardButton>Создать</PaywallGuardButton>);
-    expect(screen.getByText('Создать')).toBeDisabled();
+    expect(screen.getByText("Создать")).toBeDisabled();
   });
 });

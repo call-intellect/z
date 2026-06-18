@@ -125,10 +125,10 @@ chat-v2), и канальный классификатор, и разбор че
 6. **Каналы не получают своей бизнес-логики** — вносим в помощника один раз, работает везде.
 
 ### ТЗ переработки (2026-06) и тесты
-- [dialog-layer](../../plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md) — понимание (3 формулировки + план).
-- [chat-v2](../../plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md) — единый ответ + таблицы.
-- [помощник](../../plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md) — дедуп + ingest_note + уточнение.
-- [channels](../../plans/tz/2026-06-11-assistant-channels-telegram-max.md) — труба Telegram→помощник.
+- [dialog-layer](../../plans/archive/2026-06-14-dialog-layer-unified-query-understanding.md) — понимание (3 формулировки + план).
+- [chat-v2](../../plans/archive/2026-06-15-chat-v2-unified-answer-prompt.md) — единый ответ + таблицы.
+- [помощник](../../plans/archive/2026-06-14-assistant-router-dedup-and-prompt.md) — дедуп + ingest_note + уточнение.
+- [channels](../../plans/archive/2026-06-11-assistant-channels-telegram-max.md) — труба Telegram→помощник.
 - Порядок реализации: dialog-layer → chat-v2 → помощник → channels.
 - Полевые тесты (реальная модель): `backend/scripts/eval/smoke-{dialog-classify,concierge-routing,query-understanding}-battery.ts`.
 
@@ -233,7 +233,11 @@ chat-v2), и канальный классификатор, и разбор че
 
 ### Инварианты модуля
 1. **Клон ролевой, не персональный** — `scope='role'`, `publicName='Клон <Role> vN'`;
-   персональные доступы открываются через `CloneAccessGrant`.
+   персональные доступы открываются через `CloneAccessGrant`. **С 2026-06-16 (Раздел 7):
+   один человек = один клон должности** — клон роли = снимок ОДНОГО текущего носителя
+   (без агрегации нескольких людей). Прошлый носитель замораживается
+   (`PersonaStatus.frozen`, read-only, доступен навсегда), не удаляется. ФИО в выводе
+   клона и истории НЕ хранится — только ярлык «должность + версия».
 2. **Только наблюдаемый МЕТОД, не психотип** (Personality Illusion): каждый слой —
    правило процесса с якорем-цитатой, никогда ярлык. MBTI/DISC/OCEAN — анти-scope.
 3. **Ценность — только из выбора-в-ущерб** (revealed preference), не из деклараций.
@@ -243,18 +247,19 @@ chat-v2), и канальный классификатор, и разбор че
    при сбое LLM — fail-open (не блокируем профиль из-за сбоя).
 6. **Auto-canonical без human-approval** — только kill-switch + `mark_as_misleading`
    постфактум (memory `feedback_no_human_in_loop_for_clone_learning`).
-7. 🔴 **Single-incumbent роль = риск 152-ФЗ** — ролевой клон должности с одним
-   носителем фактически = персональные данные этого человека.
+7. **152-ФЗ к модели клона НЕ применяем (решение владельца 2026-06-16, И8)** — клон —
+   артефакт памяти компании, а не персональные данные носителя: ФИО не хранится в выводе,
+   владелец Org не управляет хранением/удалением клонов бывших. (Прежняя оговорка
+   «single-incumbent = риск 152-ФЗ» снята явным решением.)
 
 ### ТЗ/статус
 - База γ-1: [[../01_projects/skill-and-clone]], [[../01_projects/knowledge-clone]].
-- [clone-reliability-hardening](../../plans/tz/2026-05-25-clone-reliability-hardening.md) (2026-05-25).
+- [clone-reliability-hardening](../../plans/archive/2026-05-25-clone-reliability-hardening.md) (2026-05-25).
 - [clone-quality-improvements](../../plans/tz/2026-06-08-clone-quality-improvements.md) (2026-06-08, 8 фаз).
-- [clone-persona-method-layer](../../plans/tz/2026-06-11-clone-persona-method-layer.md) (2026-06-12, метод-слой, +5 `taskType`).
-- **Ревизия промптов по методологии** — [ТЗ 2026-06-16](../../plans/tz/2026-06-16-clone-agents-prompt-revision.md)
-  (пачка 1: skill-trait-detect/merge/verify, приложения A1–A3 «было→стало»), трекер
-  [upgrade-progress.md](../../docs/methodology/prompts/upgrade-progress.md). Идём пачками по 3
-  (только 🟣 clone-only); общие 🔵-агенты — в сессии по общей памяти.
+- [clone-persona-method-layer](../../plans/archive/2026-06-11-clone-persona-method-layer.md) (2026-06-12, метод-слой, +5 `taskType`).
+- [clone-agents-prompt-revision](../../plans/tz/2026-06-16-clone-agents-prompt-revision.md) (2026-06-16, ветка `devsv`): Раздел 7 «один человек = один клон должности» (`PersonaStatus += frozen`, snapshot одного носителя, freeze бывших, ask-all-formers, анонимизация) + Раздел 8 (21 баг конвейера) + Приложения A–D (ревизия 12 промптов клона: якорь смысла + few-shot + self-check). См. [[../01_projects/skill-and-clone]] §«Доработки 2026-06-16».
+- **Ревизия промптов по методологии** — [docs/methodology/prompts/upgrade-progress.md](../../docs/methodology/prompts/upgrade-progress.md),
+  группа «Клоны/персоны». 12/12 🟣 clone-only промптов закрыты (пачки 1–4, 2026-06-16); общие 🔵-агенты — в сессии по общей памяти.
 
 ### Открытое / на тюнинг
 - `skill-trait-merge`/`-verify` работают на дешёвой модели (flash) и являются

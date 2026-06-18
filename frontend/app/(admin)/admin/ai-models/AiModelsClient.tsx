@@ -1,54 +1,40 @@
-'use client';
+"use client";
 
-/**
- * Фаза A.4 — `/admin/ai-models` главная страница.
- *
- * Таблица всех `taskType`-ов с цепочкой primary/secondary/tertiary.
- * Группировка по: AI-конвейер встреч / База знаний / Паритет с конкурентами.
- * Источник данных — `adminAiModelsApi.list()` (новый API).
- *
- * Все строки на русском (memory `feedback_admin_ui_russian_only`).
- *
- * Фаза 9 редизайна: переведён с `useEffect + useState + fetchData` на
- * `useAdminQuery` — единый хук с поддержкой 403/forbidden и refetch.
- *
- * Связанные страницы:
- *   - `/admin/ai-models/[taskType]` — детальная карточка с метриками и audit.
- *   - `/admin/ai-models/experiments` — A/B-эксперименты на моделях.
- */
-
-import { useMemo, useState } from 'react';
-import Link from 'next/link';
-import { ExternalLink, Loader2, Search } from 'lucide-react';
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { ExternalLink, Loader2, Search } from "lucide-react";
 
 import {
   AI_MODELS_GROUPS,
   adminAiModelsApi,
   type AiModelGroup,
-} from '@/api/admin-ai-models.api';
-import { mapTaskTypeRoute, type TaskTypeRouteUi } from '@/domain/admin-ai-model';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/api/admin-ai-models.api";
+import {
+  mapTaskTypeRoute,
+  type TaskTypeRouteUi,
+} from "@/domain/admin-ai-model";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
-import { AdminForbidden } from '../AdminStateViews';
-import { useAdminQuery } from '../useAdminQuery';
+import { AdminForbidden } from "../AdminStateViews";
+import { useAdminQuery } from "../useAdminQuery";
 
 export function AiModelsClient() {
-  const [groupFilter, setGroupFilter] = useState<'all' | AiModelGroup>('all');
-  const [search, setSearch] = useState('');
+  const [groupFilter, setGroupFilter] = useState<"all" | AiModelGroup>("all");
+  const [search, setSearch] = useState("");
 
   const q = useAdminQuery<TaskTypeRouteUi[]>(
     `ai-models:${groupFilter}:${search}`,
     async () => {
       const res = await adminAiModelsApi.list({
-        ...(groupFilter !== 'all' ? { group: groupFilter } : {}),
+        ...(groupFilter !== "all" ? { group: groupFilter } : {}),
         ...(search ? { search } : {}),
       });
       return res.items.map(mapTaskTypeRoute);
@@ -56,8 +42,6 @@ export function AiModelsClient() {
     [groupFilter, search],
   );
 
-  // q.data — стабильная ссылка от useAdminQuery (меняется только при перезапросе),
-  // в отличие от `q.data ?? []`, который создаёт новый массив на каждый рендер.
   const items: TaskTypeRouteUi[] = useMemo(() => q.data ?? [], [q.data]);
   const loading = q.isLoading;
   const error = q.error;
@@ -80,8 +64,8 @@ export function AiModelsClient() {
             Модели агентов
           </h1>
           <p className="text-sm text-fg-secondary">
-            Цепочка моделей primary → secondary → tertiary для каждого AI-агента.
-            Источник дефолтов — playbook §2.1.
+            Цепочка моделей primary → secondary → tertiary для каждого
+            AI-агента. Источник дефолтов — playbook §2.1.
           </p>
         </div>
         <Link href="/admin/ai-models/experiments">
@@ -93,7 +77,10 @@ export function AiModelsClient() {
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative">
-          <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-fg-tertiary" />
+          <Search
+            size={14}
+            className="absolute left-2 top-1/2 -translate-y-1/2 text-fg-tertiary"
+          />
           <input
             type="text"
             placeholder="Поиск по taskType"
@@ -104,7 +91,7 @@ export function AiModelsClient() {
         </div>
         <Select
           value={groupFilter}
-          onValueChange={(v) => setGroupFilter(v as 'all' | AiModelGroup)}
+          onValueChange={(v) => setGroupFilter(v as "all" | AiModelGroup)}
         >
           <SelectTrigger className="h-9 w-56 bg-bg-card text-sm">
             <SelectValue />
@@ -113,11 +100,11 @@ export function AiModelsClient() {
             <SelectItem value="all">Все группы</SelectItem>
             {AI_MODELS_GROUPS.map((g) => (
               <SelectItem key={g} value={g}>
-                {g === 'ai-pipeline'
-                  ? 'AI-конвейер встреч'
-                  : g === 'knowledge-core'
-                    ? 'База знаний'
-                    : 'Паритет с конкурентами'}
+                {g === "ai-pipeline"
+                  ? "AI-конвейер встреч"
+                  : g === "knowledge-core"
+                    ? "База знаний"
+                    : "Паритет с конкурентами"}
               </SelectItem>
             ))}
           </SelectContent>
@@ -140,10 +127,10 @@ export function AiModelsClient() {
 
       {!loading && !q.isForbidden && !error && items.length === 0 && (
         <div className="rounded-md border border-dashed border-border-subtle p-8 text-center text-sm text-fg-secondary">
-          Пока нет ни одной записи. Запустите{' '}
+          Пока нет ни одной записи. Запустите{" "}
           <code className="rounded bg-bg-subtle px-1 py-0.5 font-mono">
             bun run scripts/seed-llm-task-routes-default.ts
-          </code>{' '}
+          </code>{" "}
           на проде, чтобы применить дефолтные цепочки из playbook §2.1.
         </div>
       )}
@@ -169,18 +156,35 @@ export function AiModelsClient() {
               </thead>
               <tbody>
                 {list.map((row) => (
-                  <tr key={row.taskType} className="border-t border-border-subtle">
+                  <tr
+                    key={row.taskType}
+                    className="border-t border-border-subtle"
+                  >
                     <td className="px-3 py-2">
-                      <code className="font-mono text-xs text-fg-secondary">{row.taskType}</code>
+                      <code className="font-mono text-xs text-fg-secondary">
+                        {row.taskType}
+                      </code>
                     </td>
                     <td className="px-3 py-2">
-                      <TierBadge color="green" label="primary" entry={row.primary} />
+                      <TierBadge
+                        color="green"
+                        label="primary"
+                        entry={row.primary}
+                      />
                     </td>
                     <td className="px-3 py-2">
-                      <TierBadge color="orange" label="secondary" entry={row.secondary} />
+                      <TierBadge
+                        color="orange"
+                        label="secondary"
+                        entry={row.secondary}
+                      />
                     </td>
                     <td className="px-3 py-2">
-                      <TierBadge color="gray" label="tertiary" entry={row.tertiary} />
+                      <TierBadge
+                        color="gray"
+                        label="tertiary"
+                        entry={row.tertiary}
+                      />
                     </td>
                     <td className="px-3 py-2 text-right">
                       <Link
@@ -206,28 +210,31 @@ function TierBadge({
   label,
   entry,
 }: {
-  color: 'green' | 'orange' | 'gray';
+  color: "green" | "orange" | "gray";
   label: string;
-  entry: TaskTypeRouteUi['primary'];
+  entry: TaskTypeRouteUi["primary"];
 }) {
   if (!entry) {
-    return (
-      <span className="text-xs text-fg-tertiary">— не задана —</span>
-    );
+    return <span className="text-xs text-fg-tertiary">— не задана —</span>;
   }
   const colorClass =
-    color === 'green'
-      ? 'bg-chip-success-bg text-chip-success-fg border-chip-success-bg'
-      : color === 'orange'
-        ? 'bg-chip-warning-bg text-chip-warning-fg border-chip-warning-bg'
-        : 'bg-bg-subtle text-fg-secondary border-border-subtle';
+    color === "green"
+      ? "bg-chip-success-bg text-chip-success-fg border-chip-success-bg"
+      : color === "orange"
+        ? "bg-chip-warning-bg text-chip-warning-fg border-chip-warning-bg"
+        : "bg-bg-subtle text-fg-secondary border-border-subtle";
   return (
     <div className="flex flex-col gap-1">
-      <Badge variant="outline" className={`w-fit border ${colorClass} text-[10px]`}>
+      <Badge
+        variant="outline"
+        className={`w-fit border ${colorClass} text-[10px]`}
+      >
         {label}
       </Badge>
       <div className="text-xs">
-        <span className="font-medium text-fg-primary">{entry.providerLabel}</span>
+        <span className="font-medium text-fg-primary">
+          {entry.providerLabel}
+        </span>
         {entry.model && (
           <span className="ml-1 text-fg-secondary">/ {entry.model}</span>
         )}

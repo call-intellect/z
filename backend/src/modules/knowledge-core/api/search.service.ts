@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { buildVectorLiteral } from '../../embeddings/services/vector-literal.util';
 import {
   KnowledgeAccessResolver,
   type KnowledgeAccessContext,
@@ -19,10 +20,6 @@ import type {
   SearchResultsDto,
 } from './dto/search.dto';
 
-/**
- * Сырая запись из гибридного $queryRawUnsafe — все нужные поля IdeaBlock
- * + три скоринг-колонки.
- */
 interface RawSearchRow {
   id: string;
   tenantId: string;
@@ -41,19 +38,6 @@ interface RawSearchRow {
   combined_score: string | number;
 }
 
-/**
- * SearchService — гибридный поиск IdeaBlock'ов: pgvector cosine + ts_vector BM25.
- *
- * Алгоритм:
- *   1. Embed query (1536-dim) через KnowledgeEmbeddingService.embedQuery.
- *      Если provider'ы упали — продолжаем без cosine (только BM25).
- *   2. WITH q (qvec, qtsq) → SELECT с двумя скорингами.
- *   3. Пагинация: LIMIT (default 10, max 50).
- *   4. Догружаем evidence (top-3 на блок) + entities (через IdeaBlockEntity).
- *
- * Веса: `cfg.knowledgeCore.searchCosineWeight` (=0.7),
- * `searchBm25Weight` (=0.3).
- */
 @Injectable()
 export class SearchService {
   private readonly logger = new Logger(SearchService.name);
@@ -63,7 +47,6 @@ export class SearchService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(KnowledgeEmbeddingService)
     private readonly embeddings: KnowledgeEmbeddingService,
-    // Ф4 (knowledge-access) — гейт доступа в /search. RbacModule @Global.
     @Inject(KnowledgeAccessResolver)
     private readonly accessResolver: KnowledgeAccessResolver,
     @Inject(BusinessMetricsService)
@@ -75,9 +58,6 @@ export class SearchService {
   ): Promise<SearchResultsDto> {
     const startedAt = Date.now();
 
-    // Ф4 knowledge-access — режим гейта. off → ctx=null (поведение неизменно).
-    // userId опционален для обратной совместимости тестов — без него гейт не
-    // активируется (нельзя резолвить группы анонимного запроса).
     const enf = this.cfg.knowledgeAccess.enforcement;
     const accessCtx =
       enf !== 'off' && args.userId
@@ -99,10 +79,6 @@ export class SearchService {
 
     const cosineWeight = this.cfg.knowledgeCore.searchCosineWeight;
     const bm25Weight = this.cfg.knowledgeCore.searchBm25Weight;
-    // KC-Temporal W1.1: при включённом флаге фильтруем активные на сейчас
-    // блоки (validUntil IS NULL). Поведение по умолчанию идентично legacy,
-    // когда флаг выключен. Snapshot-API (W1.3) пробросит явный `at`, на
-    // котором фильтр будет: validFrom <= at AND (validUntil IS NULL OR > at).
     const bitemporalActiveOnly = this.cfg.bitemporal.enabled;
 
     const rows = await this.runHybridQuery({
@@ -127,14 +103,8 @@ export class SearchService {
 
     const blockIds = rows.map((r) => r.id);
 
-    // Ф4 knowledge-access — shadow: считаем, сколько блоков было бы
-    // отфильтровано (выдачу НЕ меняем). enforce фильтрует уже на уровне SQL
-    // (runHybridQuery), bypass → ничего не считаем.
     if (enf === 'shadow' && accessCtx && !accessCtx.isBypass) {
-      const { denied } = await this.accessResolver.partitionBlockIdsByAccess(
-        accessCtx,
-        blockIds,
-      );
+      const { denied } = await this.accessResolver.partitionBlockIdsByAccess(accessCtx, blockIds);
       this.metrics.incAccessShadowDiff({ surface: 'search' }, denied);
     }
     const [evidenceMap, entitiesMap] = await Promise.all([
@@ -156,13 +126,6 @@ export class SearchService {
     return { results, tookMs: Date.now() - startedAt };
   }
 
-  // ─────────────────────────── private ────────────────────────────────────
-
-  /**
-   * Гибридный SELECT. Параметры передаём через массив: первые 5 фиксированы
-   * ($1..$5), далее — динамические фильтры. Ручное построение чувствительно
-   * к порядку — все добавления делаем через `pushParam`.
-   */
   private async runHybridQuery(args: {
     tenantId: string;
     query: string;
@@ -174,11 +137,8 @@ export class SearchService {
     dateFrom: Date | null;
     dateTo: Date | null;
     limit: number;
-    /** KC-Temporal W1.1 — отфильтровать активные на «сейчас» (validUntil IS NULL). */
     bitemporalActiveOnly?: boolean;
-    /** Ф4 (knowledge-access) — контекст групп пользователя (null при off / нет userId). */
     accessCtx: KnowledgeAccessContext | null;
-    /** Ф4 (knowledge-access) — режим гейта. */
     enforcement: 'off' | 'shadow' | 'enforce';
   }): Promise<RawSearchRow[]> {
     const params: unknown[] = [];
@@ -187,41 +147,47 @@ export class SearchService {
       return `$${params.length}`;
     };
 
-    // Фиксированные параметры в порядке использования в SQL: tenant, qtext,
-    // wCos, wBM, lim. Если qvec есть — он вставляется как литерал-вектор
-    // напрямую (через приведение `::vector(1536)` от строки) — иначе пустая
-    // ветка с cosine_score=0.
     const pTenant = pushParam(args.tenantId);
     const pQtext = pushParam(args.query);
     const pWcos = pushParam(args.cosineWeight);
     const pWbm = pushParam(args.bm25Weight);
 
-    const cosineSelect = args.qvec
-      ? `(1 - (b.embedding <=> ${pushParam(this.toVectorLiteral(args.qvec))}::vector(1536)))`
+    // G2 guard: пускаем cosine в SQL только если литерал прошёл проверку
+    // размерности (== EMBEDDING_DIMENSIONS) и финитности элементов. Иначе —
+    // graceful degrade: WARN + ветка без cosine (BM25/пустой recall), чтобы
+    // pgvector-оператор `<=>` не валил `/search` 500-кой (смена модели → другая
+    // размерность; битый вектор → NaN/Infinity).
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    const vecLiteral = args.qvec
+      ? buildVectorLiteral(args.qvec, expectedDim)
+      : { literal: null, rejectReason: null as null | string };
+    if (args.qvec && vecLiteral.literal === null) {
+      this.logger.warn(
+        {
+          reason: vecLiteral.rejectReason,
+          actualDim: args.qvec.length,
+          expectedDim,
+        },
+        'search: query-вектор отвергнут guard-ом — поиск только по BM25 (cosine пропущен)',
+      );
+    }
+    const cosineSelect = vecLiteral.literal
+      ? `(1 - (b.embedding <=> ${pushParam(vecLiteral.literal)}::vector(1536)))`
       : '0::float';
 
-    const filters: string[] = [
-      `b."tenantId" = ${pTenant}`,
-      `b.status = 'canonical'`,
-    ];
-    // KC-Temporal W1.1 — фильтр «активные сейчас». Учитывает legacy блоки,
-    // у которых validUntil ещё не выставлен (NULL = действующий факт).
+    const filters: string[] = [`b."tenantId" = ${pTenant}`, `b.status = 'canonical'`];
     if (args.bitemporalActiveOnly) {
       filters.push('b."validUntil" IS NULL');
     }
-    if (args.qvec) {
+    if (vecLiteral.literal) {
       filters.push('b.embedding IS NOT NULL');
     }
     if (args.signalTypes && args.signalTypes.length > 0) {
-      const placeholders = args.signalTypes
-        .map((s) => `${pushParam(s)}`)
-        .join(',');
+      const placeholders = args.signalTypes.map((s) => `${pushParam(s)}`).join(',');
       filters.push(`b."signalType"::text IN (${placeholders})`);
     }
     if (args.entityIds && args.entityIds.length > 0) {
-      const placeholders = args.entityIds
-        .map((e) => `${pushParam(e)}`)
-        .join(',');
+      const placeholders = args.entityIds.map((e) => `${pushParam(e)}`).join(',');
       filters.push(
         `EXISTS (SELECT 1 FROM "IdeaBlockEntity" be WHERE be."blockId" = b.id AND be."entityId" IN (${placeholders}))`,
       );
@@ -239,20 +205,8 @@ export class SearchService {
       );
     }
 
-    // Ф4 (knowledge-access) — enforce: добавляем SQL-предикат доступа (алиас
-    // блока в этом запросе — `b`, как требует buildAccessSqlPredicate). pred
-    // начинается с " AND ..."; оборачиваем `(1=1 ${pred})`, чтобы корректно
-    // встать в общий join(' AND ') как одно условие. Полный скан (ORDER BY
-    // combined_score) → точный фильтр НЕ роняет recall (iterative_scan не нужен).
-    if (
-      args.enforcement === 'enforce' &&
-      args.accessCtx &&
-      !args.accessCtx.isBypass
-    ) {
-      const pred = this.accessResolver.buildAccessSqlPredicate(
-        args.accessCtx,
-        pushParam,
-      );
+    if (args.enforcement === 'enforce' && args.accessCtx && !args.accessCtx.isBypass) {
+      const pred = this.accessResolver.buildAccessSqlPredicate(args.accessCtx, pushParam);
       if (pred) filters.push(`(1=1 ${pred})`);
     }
 
@@ -280,15 +234,12 @@ export class SearchService {
     return this.prisma.$queryRawUnsafe<RawSearchRow[]>(sql, ...params);
   }
 
-  private async loadEvidence(
-    blockIds: string[],
-  ): Promise<Map<string, EvidenceItemDto[]>> {
+  private async loadEvidence(blockIds: string[]): Promise<Map<string, EvidenceItemDto[]>> {
     if (blockIds.length === 0) return new Map();
     const rows = await this.prisma.ideaBlockEvidence.findMany({
       where: { blockId: { in: blockIds } },
       orderBy: { createdAt: 'asc' },
     });
-    // group + take 3
     const map = new Map<string, EvidenceItemDto[]>();
     for (const r of rows) {
       const list = map.get(r.blockId) ?? [];
@@ -308,9 +259,7 @@ export class SearchService {
     return map;
   }
 
-  private async loadEntities(
-    blockIds: string[],
-  ): Promise<Map<string, EntityItemDto[]>> {
+  private async loadEntities(blockIds: string[]): Promise<Map<string, EntityItemDto[]>> {
     if (blockIds.length === 0) return new Map();
     const rows = await this.prisma.ideaBlockEntity.findMany({
       where: { blockId: { in: blockIds } },
@@ -349,10 +298,6 @@ export class SearchService {
     };
   }
 
-  private toVectorLiteral(vec: number[]): string {
-    return `[${vec.join(',')}]`;
-  }
-
   private toFiniteNumber(v: unknown): number | null {
     if (typeof v === 'number') return Number.isFinite(v) ? v : null;
     if (typeof v === 'string') {
@@ -366,9 +311,7 @@ export class SearchService {
     return null;
   }
 
-  private jsonToPlainObject(
-    v: Prisma.JsonValue | null,
-  ): Record<string, unknown> | null {
+  private jsonToPlainObject(v: Prisma.JsonValue | null): Record<string, unknown> | null {
     if (v === null || typeof v !== 'object' || Array.isArray(v)) return null;
     return v as Record<string, unknown>;
   }

@@ -14,7 +14,6 @@ import type { LivekitService } from '../livekit/livekit.service';
 import type { MeetingVisibilityService } from '../meetings/meeting-visibility.service';
 import type { MeetingsService } from '../meetings/meetings.service';
 
-
 import type { LivekitEgressClient } from './livekit-egress.client';
 import { RecordingsService } from './recordings.service';
 import type { S3Service } from './s3.service';
@@ -43,17 +42,14 @@ function makeService(setup: {
   audioTrack?: { id: string; trackEgressId: string | null } | null;
   egressStartId?: string;
   egressTrackStartId?: string;
-  /** Что вернёт `livekit.listParticipants` (для reconcile-сверки). */
   livekitParticipants?: Array<{
     identity: string;
     name?: string;
     kind?: number;
     tracks?: Array<{ sid: string; type: number }>;
   }>;
-  /** Если задан — `audioTrack.findFirst` вернёт его (имитация уже собранной дорожки). */
   existingAudioTrack?: { id: string } | null;
   recordingsForReconcile?: Array<{ meetingId: string }>;
-  /** Что вернёт `egress.listCompositeEgress` (для composite-reconcile). */
   compositeEgressState?: {
     egressId: string;
     status: 'complete' | 'failed' | 'active';
@@ -106,7 +102,6 @@ function makeService(setup: {
     },
     participant: { findUnique: participantFindUnique },
     $transaction: async (fn: (tx: unknown) => Promise<void>) => {
-      // Mini-transaction: даём те же объекты как tx.
       await fn(prisma);
     },
   } as unknown as PrismaService;
@@ -144,8 +139,6 @@ function makeService(setup: {
     listParticipants: vi.fn(async () => setup.livekitParticipants ?? []),
   } as unknown as LivekitService;
 
-  // ТЗ meeting-visibility Ф3 — READ-доступ к записи решает assertCanView.
-  // Дефолт — резолвится (доступ есть); тесты «нет доступа» делают mockRejectedValueOnce.
   const visibility = {
     assertCanView: vi.fn(async () => ({})),
   } as unknown as MeetingVisibilityService;
@@ -162,7 +155,16 @@ function makeService(setup: {
     },
   } as unknown as TypedConfigService;
 
-  const svc = new RecordingsService(prisma, egress, s3, meetings, metrics, cfg, livekit, visibility);
+  const svc = new RecordingsService(
+    prisma,
+    egress,
+    s3,
+    meetings,
+    metrics,
+    cfg,
+    livekit,
+    visibility,
+  );
   return { svc, prisma, egress, s3, metrics, cfg, livekit, visibility };
 }
 
@@ -170,8 +172,6 @@ describe('RecordingsService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
-
-  // ─────────────────────────── start ────────────────────────────────────
 
   it('start: meeting не найден → MeetingNotFoundError', async () => {
     const { svc } = makeService({ meeting: null });
@@ -227,8 +227,6 @@ describe('RecordingsService', () => {
     );
   });
 
-  // ─────────────────────────── stop ─────────────────────────────────────
-
   it('stop: чужой owner → NotAuthorizedError', async () => {
     const { svc } = makeService({
       meeting: { id: 'm-1', ownerId: 'u-other', status: 'active' },
@@ -244,7 +242,7 @@ describe('RecordingsService', () => {
     await expect(svc.stop('m-1', 'u-1')).rejects.toBeInstanceOf(RecordingNotFoundError);
   });
 
-  it('stop: останавливает composite + всех track egress\'ов и переводит в finalizing', async () => {
+  it("stop: останавливает composite + всех track egress'ов и переводит в finalizing", async () => {
     const { svc, egress, prisma } = makeService({
       meeting: { id: 'm-1', ownerId: 'u-1', status: 'active' },
       recording: {
@@ -279,8 +277,6 @@ describe('RecordingsService', () => {
     );
   });
 
-  // ─────────────────────────── ensureTrackEgress ─────────────────────────
-
   it('ensureTrackEgress: recording не активна → no-op', async () => {
     const { svc, egress } = makeService({
       meeting: { id: 'm-1', ownerId: 'u-1', status: 'active' },
@@ -296,11 +292,7 @@ describe('RecordingsService', () => {
       },
     });
 
-    await svc.ensureTrackEgress(
-      { id: 'm-1' },
-      { identity: 'guest:1', name: 'G' },
-      { sid: 'TR_1' },
-    );
+    await svc.ensureTrackEgress({ id: 'm-1' }, { identity: 'guest:1', name: 'G' }, { sid: 'TR_1' });
 
     expect((egress as any).startTrackEgress).not.toHaveBeenCalled();
   });
@@ -377,8 +369,6 @@ describe('RecordingsService', () => {
     expect((prisma as any).audioTrack.create).not.toHaveBeenCalled();
   });
 
-  // ─────────────────────────── reconcileTrackEgress ──────────────────────
-
   const activeRecording = (): Recording => ({
     id: 'r-1',
     meetingId: 'm-1',
@@ -422,9 +412,7 @@ describe('RecordingsService', () => {
       recording: activeRecording(),
       participant: { id: 'p-1' },
       livekitParticipants: [
-        // egress-рекордер — kind=EGRESS(2): пропустить целиком.
         { identity: 'EG_xyz', kind: 2, tracks: [{ sid: 'TR_E', type: 0 }] },
-        // реальный участник, но трек видео (type=VIDEO=1): пропустить трек.
         { identity: 'host:u-1', name: 'Хост', kind: 0, tracks: [{ sid: 'TR_V', type: 1 }] },
       ],
     });
@@ -453,9 +441,7 @@ describe('RecordingsService', () => {
     const { svc, livekit } = makeService({
       meeting: { id: 'm-1', ownerId: 'u-1', status: 'active' },
       recording: { ...activeRecording(), status: 'finalizing' },
-      livekitParticipants: [
-        { identity: 'host:u-1', kind: 0, tracks: [{ sid: 'TR_A', type: 0 }] },
-      ],
+      livekitParticipants: [{ identity: 'host:u-1', kind: 0, tracks: [{ sid: 'TR_A', type: 0 }] }],
     });
 
     await svc.reconcileTrackEgress('m-1');
@@ -474,8 +460,6 @@ describe('RecordingsService', () => {
     expect((livekit as any).listParticipants).not.toHaveBeenCalled();
   });
 
-  // ─────────────────────────── getDownloadUrl ────────────────────────────
-
   it('getDownloadUrl: нет доступа (visibility отказала) → NotAuthorizedError', async () => {
     const { svc, visibility } = makeService({
       meeting: { id: 'm-1', ownerId: 'u-other', status: 'completed' },
@@ -483,9 +467,7 @@ describe('RecordingsService', () => {
     (visibility as any).assertCanView.mockRejectedValueOnce(
       new NotAuthorizedError('meeting_not_visible'),
     );
-    await expect(svc.getDownloadUrl('m-1', 'u-1')).rejects.toBeInstanceOf(
-      NotAuthorizedError,
-    );
+    await expect(svc.getDownloadUrl('m-1', 'u-1')).rejects.toBeInstanceOf(NotAuthorizedError);
   });
 
   it('getAudioTracks: нет доступа (visibility отказала) → NotAuthorizedError', async () => {
@@ -495,9 +477,7 @@ describe('RecordingsService', () => {
     (visibility as any).assertCanView.mockRejectedValueOnce(
       new NotAuthorizedError('meeting_not_visible'),
     );
-    await expect(svc.getAudioTracks('m-1', 'u-1')).rejects.toBeInstanceOf(
-      NotAuthorizedError,
-    );
+    await expect(svc.getAudioTracks('m-1', 'u-1')).rejects.toBeInstanceOf(NotAuthorizedError);
   });
 
   it('getDownloadUrl: recording не ready → RecordingNotReadyError', async () => {
@@ -514,9 +494,7 @@ describe('RecordingsService', () => {
         audioTracks: [],
       },
     });
-    await expect(svc.getDownloadUrl('m-1', 'u-1')).rejects.toBeInstanceOf(
-      RecordingNotReadyError,
-    );
+    await expect(svc.getDownloadUrl('m-1', 'u-1')).rejects.toBeInstanceOf(RecordingNotReadyError);
   });
 
   it('getDownloadUrl: отдаёт presigned URL', async () => {
@@ -529,8 +507,7 @@ describe('RecordingsService', () => {
         retentionDays: 30,
         expiresAt: new Date(),
         compositeEgressId: null,
-        mainVideoUrl:
-          'https://s3.local/z-records/meetings/m-1/composite.mp4',
+        mainVideoUrl: 'https://s3.local/z-records/meetings/m-1/composite.mp4',
         audioTracks: [],
       },
     });
@@ -538,15 +515,11 @@ describe('RecordingsService', () => {
     const result = await svc.getDownloadUrl('m-1', 'u-1');
 
     expect(result.url).toBe('https://signed.local/url');
-    // Composite отдаётся как inline video/mp4 (иначе octet-stream ломает плеер).
-    expect((s3 as any).presignGet).toHaveBeenCalledWith(
-      'meetings/m-1/composite.mp4',
-      undefined,
-      { responseContentType: 'video/mp4', responseContentDisposition: 'inline' },
-    );
+    expect((s3 as any).presignGet).toHaveBeenCalledWith('meetings/m-1/composite.mp4', undefined, {
+      responseContentType: 'video/mp4',
+      responseContentDisposition: 'inline',
+    });
   });
-
-  // ─────────────────────────── deleteEarly ───────────────────────────────
 
   it('deleteEarly: удаляет S3-объекты и помечает recording как deleted', async () => {
     const { svc, s3, prisma, metrics } = makeService({
@@ -586,8 +559,6 @@ describe('RecordingsService', () => {
       reason: 'user_request',
     });
   });
-
-  // ─────────────────────────── extendRetention ───────────────────────────
 
   it('extendRetention: addDays добавляется к expiresAt', async () => {
     const expiresAt = new Date('2026-06-01T00:00:00Z');
@@ -637,8 +608,6 @@ describe('RecordingsService', () => {
     );
   });
 
-  // ─────────────────────────── reconcileCompositeEgress ──────────────────
-
   const finalizingRecording = (over?: Partial<Recording>): Recording => ({
     id: 'r-1',
     meetingId: 'm-1',
@@ -662,7 +631,6 @@ describe('RecordingsService', () => {
         durationSeconds: 600,
       },
     });
-    // Изолируем от внутренней логики onCompositeEnded — проверяем сам reconcile-контракт.
     const onCompositeEnded = vi
       .spyOn(svc, 'onCompositeEnded')
       .mockResolvedValue({ status: 'ready', allReady: true });
@@ -703,9 +671,7 @@ describe('RecordingsService', () => {
 
     expect((egress as any).listCompositeEgress).not.toHaveBeenCalled();
     expect(onCompositeEnded).not.toHaveBeenCalled();
-    expect(res).toEqual(
-      expect.objectContaining({ becameComplete: false, compositeBytes: null }),
-    );
+    expect(res).toEqual(expect.objectContaining({ becameComplete: false, compositeBytes: null }));
   });
 
   it('reconcileCompositeEgress: LiveKit FAILED → markFailed(egress_failed:reconcile)', async () => {
@@ -724,9 +690,7 @@ describe('RecordingsService', () => {
     const res = await svc.reconcileCompositeEgress('m-1');
 
     expect(markFailed).toHaveBeenCalledWith('m-1', 'egress_failed:reconcile');
-    expect(res).toEqual(
-      expect.objectContaining({ becameComplete: false, allReady: false }),
-    );
+    expect(res).toEqual(expect.objectContaining({ becameComplete: false, allReady: false }));
   });
 
   it('reconcileCompositeEgress: composite ещё active → no-op (becameComplete:false)', async () => {

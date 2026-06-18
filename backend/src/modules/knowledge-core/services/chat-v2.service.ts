@@ -26,6 +26,7 @@ import {
 } from './chat-v2-retrieval.service';
 import { ChatV2TableContextService } from './chat-v2-table-context.service';
 import { DataClassPolicyService } from './dataclass-policy.service';
+import { ACTIVE_LINK_FILTER } from './link-read-filter';
 import { ReasoningChainService } from './reasoning-chain.service';
 
 /**
@@ -735,6 +736,9 @@ export class ChatV2Service {
       contextBlocks,
       accessCtx,
       kaEnforcement,
+      // Б25 [K8] — темпоральный вопрос «что знали тогда»: counter-evidence не
+      // должен подмешивать «факты из будущего» относительно момента запроса.
+      input.validAt ?? null,
     );
 
     // 4) Готовим prompt.
@@ -1500,6 +1504,9 @@ export class ChatV2Service {
     blocks: ReadonlyArray<ContextBlock>,
     accessCtx: KnowledgeAccessContext | null,
     enforcement: 'off' | 'shadow' | 'enforce',
+    // Б25 [K8] — момент темпорального вопроса. null/undefined = `now()` → без
+    // отсечения будущего (поведение byte-identical для нетемпоральных вопросов).
+    validAt?: Date | null,
   ): Promise<RenderedContradictingBlock[]> {
     if (blocks.length === 0) {
       this.metrics.observeChatV2ContradictingBlocksInContext(0);
@@ -1510,7 +1517,7 @@ export class ChatV2Service {
     const links = await this.prisma.ideaBlockLink.findMany({
       where: {
         tenantId,
-        status: 'active',
+        ...ACTIVE_LINK_FILTER,
         relationType: 'contradicts',
         OR: [
           { fromBlockId: { in: blockIds } },
@@ -1581,12 +1588,29 @@ export class ChatV2Service {
       return [];
     }
 
+    // Б25 [K8] — темпоральный фильтр: для вопроса «что знали на момент X»
+    // counter-evidence не должен подмешивать факты, ставшие верными ПОЗЖЕ X
+    // (validFrom > X) или уже устаревшие на момент X не отсекаем — нас интересует
+    // знание, действовавшее в точке X: validFrom <= X AND (validUntil IS NULL OR
+    // validUntil > X). NULL validFrom (legacy-блоки без bitemporal-backfill)
+    // трактуем как «существовал всегда» (не отсекаем). validAt null/undefined →
+    // фрагмент пуст (без отсечения, поведение для нетемпоральных вопросов).
+    const temporalWhere: Record<string, unknown> = validAt
+      ? {
+          AND: [
+            { OR: [{ validFrom: null }, { validFrom: { lte: validAt } }] },
+            { OR: [{ validUntil: null }, { validUntil: { gt: validAt } }] },
+          ],
+        }
+      : {};
+
     // Подгружаем сами contradicting blocks (canonical, того же tenant'а).
     const fetched = await this.prisma.ideaBlock.findMany({
       where: {
         id: { in: effectivePairs.map((p) => p.otherId) },
         tenantId,
         status: 'canonical',
+        ...temporalWhere,
       },
       select: {
         id: true,

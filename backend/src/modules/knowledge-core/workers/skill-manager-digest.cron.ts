@@ -5,18 +5,6 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
 
-/**
- * SBA γ-1 — SkillManagerDigestCron.
- *
- * Раз в неделю (default '0 9 * * MON') обходит всех direct manager'ов (Person
- * с Membership.role='manager') и считает, сколько новых SkillTrait'ов появилось
- * у их подчинённых (Person.primaryDepartmentId совпадает) за прошлую неделю.
- * Если > 0 — отправляет уведомление через ConversationalService с eventType
- * 'system.message' и actionUrl на curation page с фильтром skill_misleading_candidates.
- *
- * NB: `@Cron` принимает только литерал; cfg.skill.managerDigestCron используется
- * лишь для документации (схема ENV).
- */
 @Injectable()
 export class SkillManagerDigestCron {
   private readonly logger = new Logger(SkillManagerDigestCron.name);
@@ -35,10 +23,7 @@ export class SkillManagerDigestCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runOnce();
-      this.logger.log(
-        summary,
-        'skill-manager-digest.cron: проход завершён',
-      );
+      this.logger.debug(summary, 'skill-manager-digest.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -47,7 +32,6 @@ export class SkillManagerDigestCron {
     }
   }
 
-  /** Public — для возможного админ-эндпоинта / ручного запуска. */
   async runOnce(): Promise<{
     managersScanned: number;
     digestsSent: number;
@@ -63,7 +47,6 @@ export class SkillManagerDigestCron {
     let digestsSent = 0;
 
     for (const org of orgs) {
-      // Direct managers (Membership.role='manager').
       const managerMemberships = await this.prisma.membership.findMany({
         where: { orgId: org.id, role: 'manager' },
         select: {
@@ -81,14 +64,12 @@ export class SkillManagerDigestCron {
         });
         if (!manager?.primaryDepartmentId) continue;
 
-        // Subordinates — employee в том же отделе.
         const subordinates = await this.prisma.person.findMany({
           where: {
             tenantId: org.id,
             primaryDepartmentId: manager.primaryDepartmentId,
             relationship: 'employee',
             deletedAt: null,
-            // Исключаем самого менеджера.
             id: { not: m.personId },
           },
           select: { id: true },

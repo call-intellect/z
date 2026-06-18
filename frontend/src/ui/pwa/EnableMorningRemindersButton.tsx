@@ -1,54 +1,33 @@
-'use client';
+"use client";
 
-/**
- * Кнопка «Включить утренние напоминания» + установка PWA.
- *
- * ТЗ 2026-06-11 mobile-cora-exec-manager, Ф0. Вызывает `subscribeToPush`
- * (`src/lib/pwa/push.ts`). Разделяет три платформенных пути:
- *   - iOS Safari: нет `beforeinstallprompt` → инструкция «Поделиться → На
- *     экран Домой» (push работает только из установленного PWA на iOS 16.4+).
- *   - Android/Chrome: ловим `beforeinstallprompt`, показываем плашку установки.
- *   - Остальное (десктоп-браузеры): просто запрос разрешения на уведомления.
- *
- * VAPID-ключи — prod-ENV (не наша забота: при отсутствии `subscribeToPush`
- * кинет понятную русскую ошибку, ловим в toast). Голосового/звукового вывода
- * нет — только текст.
- */
+import { useEffect, useState } from "react";
+import { Bell, Share, CheckCircle2 } from "lucide-react";
+import { toast } from "sonner";
 
-import { useEffect, useState } from 'react';
-import { Bell, Share, CheckCircle2 } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { Button } from '@/ui/shadcn/button';
+import { Button } from "@/ui/shadcn/button";
 import {
   getPermission,
   isPushSupported,
   subscribeToPush,
-} from '@/lib/pwa/push';
+} from "@/lib/pwa/push";
 
-/**
- * Минимальный тип события установки PWA (Chrome/Android). В lib.dom его нет,
- * объявляем локально — не трогаем глобальные типы.
- */
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
 function isIos(): boolean {
-  if (typeof navigator === 'undefined') return false;
+  if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent;
-  // iPad на iPadOS 13+ выдаёт себя за Mac — добавляем проверку touch.
   const iOsUa = /iPad|iPhone|iPod/.test(ua);
-  const iPadOs = ua.includes('Macintosh') && navigator.maxTouchPoints > 1;
+  const iPadOs = ua.includes("Macintosh") && navigator.maxTouchPoints > 1;
   return iOsUa || iPadOs;
 }
 
 function isStandalone(): boolean {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === "undefined") return false;
   return (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    // iOS Safari-специфичный флаг
+    window.matchMedia("(display-mode: standalone)").matches ||
     (navigator as unknown as { standalone?: boolean }).standalone === true
   );
 }
@@ -61,25 +40,24 @@ export function EnableMorningRemindersButton() {
   const [showIosHint, setShowIosHint] = useState(false);
 
   useEffect(() => {
-    setGranted(getPermission() === 'granted');
+    setGranted(getPermission() === "granted");
 
     const onBeforeInstall = (e: Event) => {
       e.preventDefault();
       setInstallEvent(e as BeforeInstallPromptEvent);
     };
-    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener("beforeinstallprompt", onBeforeInstall);
     return () =>
-      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
   }, []);
 
   async function handleEnable() {
     if (!isPushSupported()) {
-      // На iOS web-push доступен только из установленного на экран «Домой» PWA.
       if (isIos() && !isStandalone()) {
         setShowIosHint(true);
         return;
       }
-      toast.error('Уведомления не поддерживаются этим браузером.');
+      toast.error("Уведомления не поддерживаются этим браузером.");
       return;
     }
 
@@ -87,12 +65,10 @@ export function EnableMorningRemindersButton() {
     try {
       await subscribeToPush();
       setGranted(true);
-      toast.success('Утренние напоминания включены.');
+      toast.success("Утренние напоминания включены.");
     } catch (err) {
       const message =
-        err instanceof Error
-          ? err.message
-          : 'Не удалось включить напоминания.';
+        err instanceof Error ? err.message : "Не удалось включить напоминания.";
       toast.error(message);
     } finally {
       setBusy(false);
@@ -123,7 +99,7 @@ export function EnableMorningRemindersButton() {
       <div className="flex flex-wrap gap-2">
         <Button type="button" onClick={handleEnable} disabled={busy} size="sm">
           <Bell size={16} aria-hidden />
-          {busy ? 'Включаем…' : 'Включить утренние напоминания'}
+          {busy ? "Включаем…" : "Включить утренние напоминания"}
         </Button>
         {installEvent ? (
           <Button

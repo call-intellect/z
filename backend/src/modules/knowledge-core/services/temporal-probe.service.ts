@@ -113,6 +113,10 @@ export class TemporalProbeService {
           select: { entityId: true },
         },
       },
+      // Б51 — детерминированная выборка: без orderBy `take` отдаёт произвольный
+      // срез, и при > limit*2 кандидатах одни и те же блоки могут никогда не
+      // попасть на проверку. Самые древние (validFrom asc) — приоритет.
+      orderBy: { validFrom: 'asc' },
       take: limit * 2, // запас, чтобы после фильтрации хватило до limit'а.
     });
 
@@ -191,7 +195,18 @@ export class TemporalProbeService {
    */
   async escalateUnanswered(): Promise<{ escalated: number }> {
     const weeks = Math.max(1, this.cfg.temporalProbe.escalateAfterWeeks);
-    const cutoff = daysAgo(new Date(), weeks * 7);
+    // Б28 — раньше порог эскалации (weeks*7) совпадал с PROBE_EXPIRY_DAYS
+    // (оба = 14 по дефолту): probe становился эскалируемым (createdAt < cutoff)
+    // ровно в тот момент, когда probe-dispatcher помечал его status='expired'.
+    // Но эскалация ищет ТОЛЬКО status='pending', поэтому почти никогда не
+    // срабатывала (probe уже не pending). Разводим пороги: порог эскалации
+    // строго МЕНЬШЕ expiryDays — probe эскалируется, пока ещё pending.
+    const expiryDays = Math.max(1, this.cfg.probe.expiryDays);
+    const escalateAfterDays = Math.max(
+      1,
+      Math.min(weeks * 7, expiryDays - 1),
+    );
+    const cutoff = daysAgo(new Date(), escalateAfterDays);
     const stuck = await this.prisma.probeEvent.findMany({
       where: {
         reason: 'temporal.fact_stale_contradiction',

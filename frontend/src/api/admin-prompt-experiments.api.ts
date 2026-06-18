@@ -1,16 +1,10 @@
-/**
- * Фаза A.3 — API-клиент для `/api/v1/admin/prompt-experiments`.
- *
- * Источник: ТЗ A §7.2.
- */
-
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
 export const EXPERIMENT_STATUSES = [
-  'draft',
-  'running',
-  'stopped',
-  'completed',
+  "draft",
+  "running",
+  "stopped",
+  "completed",
 ] as const;
 export type ExperimentStatusApi = (typeof EXPERIMENT_STATUSES)[number];
 
@@ -42,7 +36,7 @@ export interface CreateExperimentPayload {
 }
 
 export interface AnalyticsGroupApi {
-  group: 'A' | 'B';
+  group: "A" | "B";
   versionId: string;
   meetingsCount: number;
   positiveFeedback: number;
@@ -60,11 +54,12 @@ export const adminPromptExperimentsApi = {
     orgId?: string | null;
   }): Promise<ListExperimentsResponseApi> {
     const query: string[] = [];
-    if (filters?.status) query.push(`status=${encodeURIComponent(filters.status)}`);
+    if (filters?.status)
+      query.push(`status=${encodeURIComponent(filters.status)}`);
     if (filters?.orgId !== undefined && filters.orgId !== null) {
       query.push(`orgId=${encodeURIComponent(filters.orgId)}`);
     }
-    const suffix = query.length ? `?${query.join('&')}` : '';
+    const suffix = query.length ? `?${query.join("&")}` : "";
     return apiClient.get<ListExperimentsResponseApi>(
       `/api/v1/admin/prompt-experiments${suffix}`,
     );
@@ -104,7 +99,7 @@ export const adminPromptExperimentsApi = {
     const query: string[] = [];
     if (range?.from) query.push(`from=${encodeURIComponent(range.from)}`);
     if (range?.to) query.push(`to=${encodeURIComponent(range.to)}`);
-    const suffix = query.length ? `?${query.join('&')}` : '';
+    const suffix = query.length ? `?${query.join("&")}` : "";
     return apiClient.get<ExperimentAnalyticsApi>(
       `/api/v1/admin/prompt-experiments/${id}/analytics${suffix}`,
     );

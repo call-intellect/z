@@ -24,25 +24,10 @@ import { TenantGuard } from '../../../rbac/guards/tenant.guard';
 
 import { DumpService } from './dump.service';
 
-/**
- * Web-form адаптер (Фаза 10 knowledge-core, Шаг 7).
- *
- *   - `POST /api/v1/ingest/dump` — приём короткой «мысли» от пользователя
- *     (страница `/dump`). Под `CookieAuthGuard + TenantGuard` (НЕ shared-secret,
- *     НЕ ApiKey). Квота `dump_per_day_per_user` (default 30/день) — 429.
- *
- *   - body: `{ text: string, occurredAt?: ISO, dataClass?: DataClass, nonce?: string }`.
- *
- * Phase 12 knowledge-core: gating по `feature.adapter_web_form`. Фича включена
- * на всех тарифах (basic/pro/enterprise), но декоратор стоит — это явная
- * фиксация adapter-ограничений. Для basic-Org у нас `sources_other = 0`,
- * но web-form гасится через `feature` (не через quota).
- */
 const DumpCreateSchema = z.object({
   text: z.string().trim().min(1).max(50_000),
   occurredAt: z.string().datetime({ offset: true }).optional(),
   dataClass: z.nativeEnum(DataClass).optional(),
-  /** UUID, генерируемый фронтом для идемпотентности повторных submit'ов. */
   nonce: z.string().min(8).max(64).optional(),
 });
 type DumpCreateDto = z.infer<typeof DumpCreateSchema>;

@@ -1,11 +1,3 @@
-/**
- * Smoke-тест агента `dashboard-summary` на DeepSeek-V4-Pro.
- * Промпт из backend/src/modules/dashboard/prompts/dashboard-summary.prompt.ts.
- *
- * Ответ — plain text (200-400 символов), без tool/JSON.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-dashboard-summary.ts
- */
 import {
   client,
   computeCost,

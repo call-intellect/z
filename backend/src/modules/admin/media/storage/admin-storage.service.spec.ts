@@ -1,12 +1,3 @@
-/**
- * Admin-redesign Фаза 7 — unit-тесты `AdminStorageService`.
- *
- * Покрываем:
- *   1) listBuckets() — мок ListObjectsV2 → objectsCount + bytesTotal + truncated.
- *   2) getStats() — суммирует поля по всем бакетам.
- *   3) switchProvider() — вызывает AdminSettings.set('storage.provider', ...) с reason.
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../../common/config/index';
@@ -14,7 +5,6 @@ import type { AdminSettingsService } from '../../settings/admin-settings.service
 
 import { AdminStorageService } from './admin-storage.service';
 
-// Глобальный store ответов для мока S3Client (ключ — Bucket).
 type ListResponse = {
   Contents?: Array<{ Key?: string; Size?: number }>;
   IsTruncated?: boolean;
@@ -43,10 +33,12 @@ vi.mock('@aws-sdk/client-s3', () => {
   };
 });
 
-function buildService(opts: {
-  bucketName?: string;
-  setMock?: ReturnType<typeof vi.fn>;
-} = {}) {
+function buildService(
+  opts: {
+    bucketName?: string;
+    setMock?: ReturnType<typeof vi.fn>;
+  } = {},
+) {
   const cfg = {
     s3: {
       endpointUrl: 'https://s3.test',
@@ -57,8 +49,7 @@ function buildService(opts: {
     },
   } as unknown as TypedConfigService;
 
-  const setMock =
-    opts.setMock ?? vi.fn(async () => undefined);
+  const setMock = opts.setMock ?? vi.fn(async () => undefined);
   const settings = {
     set: setMock,
   } as unknown as AdminSettingsService;

@@ -5,17 +5,16 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 
 import { RbacService } from './rbac.service';
 
-/** Контекст доступа пользователя к знаниям (группы). */
 export interface KnowledgeAccessContext {
-  /** Доступные department-группы: свои ∪ видимые через матрицу. */
   deptGroupIds: string[];
-  /** Закрытые группы (leadership/council/personal), где user — член. */
   closedGroupIds: string[];
-  /** owner/admin/super_admin — обходят фильтр целиком. */
   isBypass: boolean;
 }
 
-interface CacheEntry { ctx: KnowledgeAccessContext; fetchedAt: number; }
+interface CacheEntry {
+  ctx: KnowledgeAccessContext;
+  fetchedAt: number;
+}
 const CACHE_TTL_MS = 60_000;
 const CACHE_MAX_SIZE = 10_000;
 
@@ -33,14 +32,6 @@ export class KnowledgeAccessResolver {
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
-  /**
-   * Резолвит группы пользователя. Алгоритм (ТЗ §«Правило доступа»):
-   *   isBypass = super_admin | owner | admin (через RbacService.loadContext).
-   *   department-группы: из Person.primaryDepartmentId ∪ активных PersonRole.role.departmentId
-   *     ∪ активных Appointment.departmentId ∪ headOfDepartments ∪ ручных KnowledgeGroupMember(dept).
-   *   deptGroupIds = свои ∪ {visibleGroupId | GroupVisibilityPolicy.subjectGroupId ∈ свои}.
-   *   closedGroupIds = KnowledgeGroupMember(personId, group.isClosed=true).
-   */
   async resolveAccessibleGroups(args: {
     tenantId: string;
     userId: string;
@@ -51,15 +42,13 @@ export class KnowledgeAccessResolver {
 
     const rbacCtx = await this.rbac.loadContext(args.userId, args.tenantId);
     const isBypass =
-      !!rbacCtx &&
-      (rbacCtx.isSuperAdmin || rbacCtx.role === 'owner' || rbacCtx.role === 'admin');
+      !!rbacCtx && (rbacCtx.isSuperAdmin || rbacCtx.role === 'owner' || rbacCtx.role === 'admin');
     if (isBypass) {
       const ctx = { deptGroupIds: [], closedGroupIds: [], isBypass: true };
       this.cacheSet(key, ctx);
       return ctx;
     }
 
-    // Person пользователя в этой Org.
     const person = await this.prisma.person.findFirst({
       where: { tenantId: args.tenantId, userId: args.userId, deletedAt: null },
       select: { id: true, primaryDepartmentId: true },
@@ -70,7 +59,6 @@ export class KnowledgeAccessResolver {
       return ctx;
     }
 
-    // departmentId-ы пользователя.
     const deptIds = new Set<string>();
     if (person.primaryDepartmentId) deptIds.add(person.primaryDepartmentId);
     const [personRoles, appointments, headOf] = await Promise.all([
@@ -91,7 +79,6 @@ export class KnowledgeAccessResolver {
     for (const ap of appointments) if (ap.departmentId) deptIds.add(ap.departmentId);
     for (const d of headOf) deptIds.add(d.id);
 
-    // Группы пользователя: department-группы по deptIds + членство (любые группы).
     const [deptGroups, memberships] = await Promise.all([
       deptIds.size > 0
         ? this.prisma.knowledgeGroup.findMany({
@@ -101,19 +88,21 @@ export class KnowledgeAccessResolver {
         : Promise.resolve([] as { id: string }[]),
       this.prisma.knowledgeGroupMember.findMany({
         where: { personId: person.id },
-        select: { groupId: true, group: { select: { kind: true, isClosed: true, tenantId: true } } },
+        select: {
+          groupId: true,
+          group: { select: { kind: true, isClosed: true, tenantId: true } },
+        },
       }),
     ]);
 
     const ownDeptGroupIds = new Set<string>(deptGroups.map((g) => g.id));
     const closedGroupIds = new Set<string>();
     for (const m of memberships) {
-      if (m.group.tenantId !== args.tenantId) continue; // tenant-guard
+      if (m.group.tenantId !== args.tenantId) continue;
       if (m.group.isClosed) closedGroupIds.add(m.groupId);
-      else if (m.group.kind === 'department') ownDeptGroupIds.add(m.groupId); // ручной dept-override
+      else if (m.group.kind === 'department') ownDeptGroupIds.add(m.groupId);
     }
 
-    // Матрица: subjectGroup ∈ свои → +visibleGroup.
     const deptGroupIds = new Set<string>(ownDeptGroupIds);
     if (ownDeptGroupIds.size > 0) {
       const policies = await this.prisma.groupVisibilityPolicy.findMany({
@@ -132,14 +121,6 @@ export class KnowledgeAccessResolver {
     return ctx;
   }
 
-  /**
-   * ТЗ 2026-06-10 meeting-visibility — ПРЯМЫЕ группы пользователя БЕЗ матрицы
-   * видимости отделов (в отличие от resolveAccessibleGroups). Грант группе в
-   * видео-видимости видит ТОЛЬКО прямой член, а не «кто видит группу по матрице».
-   * Additive: НЕ меняет существующие методы. Своя кэш-карта, тот же TTL.
-   * Возвращает { personId, isBypass, groupIds } где groupIds = ownDeptGroups ∪ closedGroups
-   * (состояние ДО матрицы — строки 112-120 resolveAccessibleGroups НЕ применяются).
-   */
   async resolveDirectGroupIds(args: { tenantId: string; userId: string }): Promise<{
     personId: string | null;
     isBypass: boolean;
@@ -151,8 +132,7 @@ export class KnowledgeAccessResolver {
 
     const rbacCtx = await this.rbac.loadContext(args.userId, args.tenantId);
     const isBypass =
-      !!rbacCtx &&
-      (rbacCtx.isSuperAdmin || rbacCtx.role === 'owner' || rbacCtx.role === 'admin');
+      !!rbacCtx && (rbacCtx.isSuperAdmin || rbacCtx.role === 'owner' || rbacCtx.role === 'admin');
     if (isBypass) {
       const value = { personId: null, isBypass: true, groupIds: [] as string[] };
       this.directCacheSet(key, value);
@@ -198,17 +178,19 @@ export class KnowledgeAccessResolver {
         : Promise.resolve([] as { id: string }[]),
       this.prisma.knowledgeGroupMember.findMany({
         where: { personId: person.id },
-        select: { groupId: true, group: { select: { kind: true, isClosed: true, tenantId: true } } },
+        select: {
+          groupId: true,
+          group: { select: { kind: true, isClosed: true, tenantId: true } },
+        },
       }),
     ]);
 
     const groupIds = new Set<string>(deptGroups.map((g) => g.id));
     for (const m of memberships) {
-      if (m.group.tenantId !== args.tenantId) continue; // tenant-guard
+      if (m.group.tenantId !== args.tenantId) continue;
       if (m.group.isClosed) groupIds.add(m.groupId);
-      else if (m.group.kind === 'department') groupIds.add(m.groupId); // ручной dept-override
+      else if (m.group.kind === 'department') groupIds.add(m.groupId);
     }
-    // МАТРИЦУ НЕ применяем (в этом и смысл «прямых» групп).
 
     const value = { personId: person.id, isBypass: false, groupIds: [...groupIds] };
     this.directCacheSet(key, value);
@@ -226,12 +208,6 @@ export class KnowledgeAccessResolver {
     this.directCache.set(key, { value, fetchedAt: Date.now() });
   }
 
-  /**
-   * Prisma where-фрагмент для IdeaBlock.findMany при enforce. Каноничное правило:
-   *   - НЕ нарушает закрытость: нет blockAccess-строки (closed-группа НЕ из моих closed).
-   *   - dept: нет dept-группы на блоке ИЛИ есть dept-группа из моих доступных.
-   * Для isBypass — пустой фильтр {} (видит всё).
-   */
   buildAccessWhere(ctx: KnowledgeAccessContext): Prisma.IdeaBlockWhereInput {
     if (ctx.isBypass) return {};
     return {
@@ -251,16 +227,7 @@ export class KnowledgeAccessResolver {
     };
   }
 
-  /**
-   * Ф4 — SQL-предикат доступа для raw-SQL поверхностей (search/cosine).
-   * Алиас таблицы IdeaBlock в внешнем запросе ДОЛЖЕН быть `b`. pushParam —
-   * функция surface'а, добавляющая параметр и возвращающая `$N`. Возвращает
-   * AND-фрагмент (начинается с пробела+AND) или '' для bypass.
-   */
-  buildAccessSqlPredicate(
-    ctx: KnowledgeAccessContext,
-    pushParam: (v: unknown) => string,
-  ): string {
+  buildAccessSqlPredicate(ctx: KnowledgeAccessContext, pushParam: (v: unknown) => string): string {
     if (ctx.isBypass) return '';
     const pClosed = pushParam(ctx.closedGroupIds);
     const pDept = pushParam(ctx.deptGroupIds);
@@ -281,7 +248,6 @@ export class KnowledgeAccessResolver {
       )`;
   }
 
-  /** Группы доступа набора блоков: blockId → [{groupId,isClosed,kind}]. */
   async loadBlockAccessGroups(
     blockIds: string[],
   ): Promise<Map<string, Array<{ groupId: string; isClosed: boolean; kind: string }>>> {
@@ -299,11 +265,6 @@ export class KnowledgeAccessResolver {
     return map;
   }
 
-  /**
-   * Партиционирует blockIds на доступные/недоступные по ctx. bypass → все
-   * доступны. Используется выходным шлюзом chat-v2 (enforce — фильтр, shadow —
-   * счёт denied). Работает на МАЛЫХ наборах (topK) — post-filter, не для пула.
-   */
   async partitionBlockIdsByAccess(
     ctx: KnowledgeAccessContext,
     blockIds: string[],
@@ -322,12 +283,6 @@ export class KnowledgeAccessResolver {
     return { accessible, denied };
   }
 
-  /**
-   * Ф6 — партиция ПРОЕКЦИЙ по доступу спрашивающего. Группы проекции выводятся
-   * ON-READ из её sourceBlockIds (union групп блоков-источников; строжайшее).
-   * Проекция без sourceBlockIds или с блоками без групп → открыта всем.
-   * bypass → все доступны. Один DB-запрос на страницу.
-   */
   async partitionProjectionsByAccess(
     ctx: KnowledgeAccessContext,
     items: Array<{ id: string; sourceBlockIds: string[] }>,
@@ -340,12 +295,14 @@ export class KnowledgeAccessResolver {
     const accessibleIds = new Set<string>();
     let denied = 0;
     for (const item of items) {
-      // union групп всех блоков-источников проекции
       const projGroups: Array<{ groupId: string; isClosed: boolean; kind: string }> = [];
       const seen = new Set<string>();
       for (const bId of item.sourceBlockIds ?? []) {
         for (const g of groupsMap.get(bId) ?? []) {
-          if (!seen.has(g.groupId)) { seen.add(g.groupId); projGroups.push(g); }
+          if (!seen.has(g.groupId)) {
+            seen.add(g.groupId);
+            projGroups.push(g);
+          }
         }
       }
       if (this.rbac.canAccessKnowledgeGroup(ctx, projGroups)) accessibleIds.add(item.id);
@@ -357,7 +314,9 @@ export class KnowledgeAccessResolver {
   invalidate(userId: string, tenantId: string): void {
     this.cache.delete(`${userId}:${tenantId}`);
   }
-  invalidateAll(): void { this.cache.clear(); }
+  invalidateAll(): void {
+    this.cache.clear();
+  }
 
   private cacheSet(key: string, ctx: KnowledgeAccessContext): void {
     if (this.cache.size >= CACHE_MAX_SIZE) {

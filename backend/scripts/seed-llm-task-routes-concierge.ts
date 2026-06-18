@@ -1,26 +1,3 @@
-/**
- * SBA γ-2 — Seed маршрутов LLM для Concierge Agent.
- *
- *   - concierge-respond: главный tool-use loop. Primary = openai-via-proxy/
- *     gpt-4o (best tool-use). Secondary = deepseek/deepseek-chat (рабочая
- *     поддержка structured output). Tertiary = ollama/qwen3.5:9b (offline
- *     fallback, tool-use ограниченный — но базовый текстовый JSON-формат
- *     парсится).
- *   - concierge-toolcall-validate: лёгкая валидация params. Primary =
- *     ollama (быстро + дёшево). Secondary = deepseek. Tertiary = openai/gpt-4o-mini.
- *
- * maxDataClass: 'internal' (запросы пользователя через UI — обычно internal).
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-concierge.ts
- *   bun run scripts/seed-llm-task-routes-concierge.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - editedByAdmin=true → не перезаписываем.
- *   - без --update-existing → пропускаем существующие.
- *   - с --update-existing → обновляем model/priority/isActive.
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -51,18 +28,13 @@ const SEEDS: TaskRouteSeed[] = [
   },
   {
     taskType: 'concierge-toolcall-validate',
-    playbookSection:
-      '§γ-2 — лёгкая валидация params, primary ollama (быстро+дёшево).',
+    playbookSection: '§γ-2 — лёгкая валидация params, primary ollama (быстро+дёшево).',
     chain: [
       { tier: 'primary', providerName: 'ollama', model: 'qwen3.5:9b' },
       { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'tertiary', providerName: 'openai-via-proxy', model: 'gpt-4o-mini' },
     ],
   },
-  // Ф6 assistant-channels (2026-06-11) — текстовое подтверждение мутаций в
-  // каналах: классификация ответа пользователя (confirm|reject|unclear).
-  // Дёшевый частый вызов — primary deepseek-v4-flash (правило проекта:
-  // ollama qwen3.5:9b — только safety-net, не primary).
   {
     taskType: 'assistant-confirm-classify',
     playbookSection:
@@ -115,17 +87,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -150,18 +118,14 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 
 async function main(): Promise<void> {
   const updateExisting = process.argv.includes('--update-existing');
   // eslint-disable-next-line no-console
-  console.log(
-    `=== seed-llm-task-routes-concierge START (updateExisting=${updateExisting}) ===`,
-  );
+  console.log(`=== seed-llm-task-routes-concierge START (updateExisting=${updateExisting}) ===`);
   // eslint-disable-next-line no-console
   console.log(`TaskTypes: ${SEEDS.map((s) => s.taskType).join(', ')}`);
 

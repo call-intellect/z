@@ -8,16 +8,6 @@ import type { MeetingsService } from '../meetings/meetings.service';
 import { LivekitEventsHandler } from './livekit-events.handler';
 import { MeetingFinalizationService } from './meeting-finalization.service';
 
-/**
- * Тестируем LivekitEventsHandler как чистую функцию.
- * `prisma`, `meetings`, `metrics` — мокаем, проверяем что:
- *   - room_started: scheduled → active.
- *   - room_started повторно: no-op.
- *   - room_finished: active → completed (+ metric).
- *   - participant_joined: обновляет joinedAt.
- *   - неизвестный тип события: не падает.
- */
-
 interface MockMeetingState {
   status: string;
   type: string;
@@ -142,10 +132,7 @@ describe('LivekitEventsHandler', () => {
   });
 
   it('participant_joined: existing participant — обновляет joinedAt', async () => {
-    const { handler, prisma } = makeHandler(
-      { status: 'active', type: 'sales' },
-      { id: 'p-1' },
-    );
+    const { handler, prisma } = makeHandler({ status: 'active', type: 'sales' }, { id: 'p-1' });
 
     await handler.handle(
       evt('participant_joined', 'm-1', { identity: 'guest:abc', name: 'Гость' }),
@@ -179,9 +166,7 @@ describe('LivekitEventsHandler', () => {
 
   it('participant_joined: egress-рекордер (identity не host:/guest:, нет kind) → no-op, не создаёт фантома', async () => {
     const { handler, prisma } = makeHandler({ status: 'active', type: 'sales' }, null);
-    await handler.handle(
-      evt('participant_joined', 'm-1', { identity: 'EG_cxZHYyvp3SGD' }),
-    );
+    await handler.handle(evt('participant_joined', 'm-1', { identity: 'EG_cxZHYyvp3SGD' }));
 
     expect((prisma as any).participant.findUnique).not.toHaveBeenCalled();
     expect((prisma as any).participant.create).not.toHaveBeenCalled();
@@ -189,16 +174,12 @@ describe('LivekitEventsHandler', () => {
   });
 
   it('participant_joined: invitee: (личная ссылка, нет kind), existing → обновляет joinedAt, не no-op', async () => {
-    const { handler, prisma } = makeHandler(
-      { status: 'active', type: 'sales' },
-      { id: 'p-inv' },
-    );
+    const { handler, prisma } = makeHandler({ status: 'active', type: 'sales' }, { id: 'p-inv' });
 
     await handler.handle(
       evt('participant_joined', 'm-1', { identity: 'invitee:tok', name: 'Сотрудник' }),
     );
 
-    // Приглашённый по личной ссылке — реальный участник, не отсекается.
     expect((prisma as any).participant.findUnique).toHaveBeenCalled();
     expect((prisma as any).participant.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -215,16 +196,13 @@ describe('LivekitEventsHandler', () => {
       evt('participant_joined', 'm-1', { identity: 'guest:fake', kind: 'EGRESS' }),
     );
 
-    // Семантический фильтр приоритетнее строкового префикса.
     expect((prisma as any).participant.findUnique).not.toHaveBeenCalled();
     expect((prisma as any).participant.create).not.toHaveBeenCalled();
   });
 
   it('participant_joined: kind=2 (число EGRESS) → no-op', async () => {
     const { handler, prisma } = makeHandler({ status: 'active', type: 'sales' }, null);
-    await handler.handle(
-      evt('participant_joined', 'm-1', { identity: 'EG_x', kind: 2 }),
-    );
+    await handler.handle(evt('participant_joined', 'm-1', { identity: 'EG_x', kind: 2 }));
 
     expect((prisma as any).participant.create).not.toHaveBeenCalled();
   });
@@ -257,9 +235,7 @@ describe('LivekitEventsHandler', () => {
 
   it('participant_left обновляет leftAt', async () => {
     const { handler, prisma } = makeHandler({ status: 'active', type: 'sales' });
-    await handler.handle(
-      evt('participant_left', 'm-1', { identity: 'guest:abc' }),
-    );
+    await handler.handle(evt('participant_left', 'm-1', { identity: 'guest:abc' }));
 
     expect((prisma as any).participant.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -283,8 +259,6 @@ describe('LivekitEventsHandler', () => {
     expect(meetings.transitionStatus).not.toHaveBeenCalled();
   });
 
-  // ───────────────────── faststart enqueue (Фаза 3) ──────────────────────
-
   function egressEndedEvt(meetingId: string, size: number): WebhookEvent {
     return {
       event: 'egress_ended',
@@ -293,7 +267,11 @@ describe('LivekitEventsHandler', () => {
         roomName: meetingId,
         requestType: 'room_composite',
         fileResults: [
-          { location: `https://s3.local/z-records/meetings/${meetingId}/composite.mp4`, size, duration: 1_000_000_000 },
+          {
+            location: `https://s3.local/z-records/meetings/${meetingId}/composite.mp4`,
+            size,
+            duration: 1_000_000_000,
+          },
         ],
       },
     } as unknown as WebhookEvent;
@@ -312,7 +290,9 @@ describe('LivekitEventsHandler', () => {
         findUnique: vi.fn(async () => ({ id: 'm-1', status: 'completed', endedAt })),
       },
     } as unknown as PrismaService;
-    const meetings = { transitionStatus: vi.fn(async () => undefined) } as unknown as MeetingsService;
+    const meetings = {
+      transitionStatus: vi.fn(async () => undefined),
+    } as unknown as MeetingsService;
     const metrics = {
       incLivekitWebhookEvent: vi.fn(),
       observeEgressEndedGap: vi.fn(),
@@ -346,7 +326,7 @@ describe('LivekitEventsHandler', () => {
 
   it('egress_ended(composite): размер ниже порога → faststart НЕ ставится', async () => {
     const { handler, aiQueue } = makeEgressHandler(true);
-    await handler.handle(egressEndedEvt('m-1', 1_000_000)); // 1 МБ < 50 МиБ
+    await handler.handle(egressEndedEvt('m-1', 1_000_000));
     expect(aiQueue.enqueueRecordingFaststart).not.toHaveBeenCalled();
   });
 
@@ -357,7 +337,7 @@ describe('LivekitEventsHandler', () => {
   });
 
   it('egress_ended: при наличии meeting.endedAt — пишет gap-метрику', async () => {
-    const endedAt = new Date(Date.now() - 30_000); // 30 секунд назад
+    const endedAt = new Date(Date.now() - 30_000);
     const { handler, metrics } = makeEgressHandler(true, endedAt);
     await handler.handle(egressEndedEvt('m-1', 400 * 1024 * 1024));
     expect(metrics.observeEgressEndedGap).toHaveBeenCalledTimes(1);

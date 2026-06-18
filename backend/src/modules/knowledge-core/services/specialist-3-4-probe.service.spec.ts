@@ -1,15 +1,3 @@
-/**
- * M-2 (2026-06-12) — Specialist34ProbeService × «лестница владельца» для
- * `card.missing_owner`: АВТО-записи владельца у Card НЕТ.
- *
- * Card.ownerId — namespace/creator-ключ (@@unique([ownerId,name]) + cascade):
- * его авто-перезапись опасна. resolved-исход лестницы трактуется как
- * ambiguous с единственным кандидатом → probe-вопрос «Назначить владельцем
- * X? Ответьте, кого назначить.» (текст, без кнопок). Метрика
- * incOwnerResolution для card — только ambiguous | none.
- *
- * Все зависимости мокированы.
- */
 import type { Card } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -27,21 +15,22 @@ function makeCard(): Card {
     tenantId: 'org-1',
     kind: 'project',
     name: 'Проект Альфа',
-    ownerId: 'user-fired', // creator без активного Membership
+    ownerId: 'user-fired',
     entityId: null,
     relatedEntityIds: [],
     personSubjectIds: ['person-1'],
-    summaryCache: 'дедлайн 01.07', // missing_deadline не срабатывает
-    lastConfirmedAt: null, // outdated_summary не срабатывает
+    summaryCache: 'дедлайн 01.07',
+    lastConfirmedAt: null,
     deletedAt: null,
     createdAt: new Date(),
   } as unknown as Card;
 }
 
-function makeEnv(resolution:
-  | { kind: 'resolved'; userId: string }
-  | { kind: 'ambiguous'; candidates: string[] }
-  | { kind: 'none' },
+function makeEnv(
+  resolution:
+    | { kind: 'resolved'; userId: string }
+    | { kind: 'ambiguous'; candidates: string[] }
+    | { kind: 'none' },
 ): {
   service: Specialist34ProbeService;
   suggest: ReturnType<typeof vi.fn>;
@@ -52,19 +41,13 @@ function makeEnv(resolution:
   const prisma = {
     card: { updateMany: cardUpdateMany },
     membership: {
-      // owner-creator не имеет Membership (триггер missing_owner)…
       findUnique: vi.fn().mockResolvedValue(null),
-      // …admin'ы и активные кандидаты есть.
-      findMany: vi
-        .fn()
-        .mockResolvedValue([{ userId: 'admin-1' }, { userId: 'user-cand' }]),
+      findMany: vi.fn().mockResolvedValue([{ userId: 'admin-1' }, { userId: 'user-cand' }]),
     },
     person: {
       findMany: vi
         .fn()
-        .mockResolvedValue([
-          { id: 'person-1', name: 'Иван Иванов', userId: 'user-cand' },
-        ]),
+        .mockResolvedValue([{ id: 'person-1', name: 'Иван Иванов', userId: 'user-cand' }]),
     },
   } as unknown as PrismaService;
 
@@ -106,7 +89,6 @@ describe('Specialist34ProbeService × OwnerResolver (card.missing_owner) — M-2
 
     await env.service.checkAndEmitProbes(makeCard());
 
-    // Главный инвариант M-2: никакой записи владельца карточки.
     expect(env.cardUpdateMany).not.toHaveBeenCalled();
 
     expect(env.suggest).toHaveBeenCalledTimes(1);
@@ -118,7 +100,6 @@ describe('Specialist34ProbeService × OwnerResolver (card.missing_owner) — M-2
     expect(call.payload.message).toContain('Назначить владельцем Иван Иванов?');
     expect(call.payload.message).toContain('Ответьте, кого назначить');
 
-    // Метрика для card: resolved → ambiguous (не auto).
     expect(env.incOwnerResolution).toHaveBeenCalledWith({
       outcome: 'ambiguous',
     });

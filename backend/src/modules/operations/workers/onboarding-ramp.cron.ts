@@ -8,20 +8,6 @@ import { ConversationalService } from '../../conversational/conversational.servi
 import { OnboardingRampService } from '../services/onboarding-ramp.service';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
-/**
- * TZ-1 Фаза 4.E (daily-value-engine) — OnboardingRampCron.
- *
- * Ежедневный `@Cron('0 7 * * *')`: обходит активные Org →
- * `OnboardingRampService.listForTenant` → для заглохших новичков (0 активности
- * за окно `onboarding.silent_days`) шлёт:
- *   - push РУКОВОДИТЕЛЮ (глава отдела / fallback owner-admin): «новичок не
- *     активировался — подскажи бадди»;
- *   - push НОВИЧКУ: «спроси у памяти про <отдел/команду>».
- *
- * Через дневной бюджет Ф0 (priorityTier=2). Идемпотентность — дедуп по
- * proactiveNotificationId (personId + dateLocal). Master-flag
- * `operations.onboarding_ramp.enabled` (kill-switch, ON по умолчанию). БЕЗ LLM.
- */
 @Injectable()
 export class OnboardingRampCron {
   private readonly logger = new Logger(OnboardingRampCron.name);
@@ -45,14 +31,12 @@ export class OnboardingRampCron {
       true,
     );
     if (!enabled) {
-      this.logger.debug(
-        'onboarding-ramp.cron: operations.onboarding_ramp.enabled=false, skip',
-      );
+      this.logger.debug('onboarding-ramp.cron: operations.onboarding_ramp.enabled=false, skip');
       return;
     }
     try {
       const stats = await this.runOnce(new Date());
-      this.logger.log(stats, 'onboarding-ramp.cron: проход завершён');
+      this.logger.debug(stats, 'onboarding-ramp.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -61,7 +45,6 @@ export class OnboardingRampCron {
     }
   }
 
-  /** Выделен для unit-тестов: произвольный `now`. */
   async runOnce(now: Date): Promise<{
     orgsProcessed: number;
     stalled: number;
@@ -114,10 +97,6 @@ export class OnboardingRampCron {
     return { orgsProcessed: orgs.length, stalled, notified, errors };
   }
 
-  /**
-   * Push руководителю новичка + push самому новичку. priorityTier=2.
-   * Возвращает число отправленных пушей.
-   */
   private async notifyStalled(args: {
     tenantId: string;
     personId: string;
@@ -127,7 +106,6 @@ export class OnboardingRampCron {
   }): Promise<number> {
     let sent = 0;
 
-    // 1) Руководителю — «новичок не активировался».
     const managerUserIds = await this.resolveManagerUserIds({
       tenantId: args.tenantId,
       personId: args.personId,
@@ -162,7 +140,6 @@ export class OnboardingRampCron {
       }
     }
 
-    // 2) Новичку — «спроси у памяти».
     if (args.newcomerUserId) {
       try {
         await this.conversational.sendNotification({
@@ -196,10 +173,6 @@ export class OnboardingRampCron {
     return sent;
   }
 
-  /**
-   * Руководитель новичка: глава его primary-отдела (≠ сам новичок). Fallback —
-   * owner/admin Org (но НЕ сам новичок). Возвращает уникальные User.id.
-   */
   private async resolveManagerUserIds(args: {
     tenantId: string;
     personId: string;

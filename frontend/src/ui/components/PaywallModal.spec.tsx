@@ -1,30 +1,18 @@
-/**
- * Тесты PaywallModal — модальное окно оплаты подписки.
- *
- * Проверяется:
- *  (1) Рендерится при isPaywallModalOpen=true.
- *  (2) Скрывается при isPaywallModalOpen=false.
- *  (3) Содержит список возможностей.
- *  (4) Обе кнопки ведут на /settings/subscription.
- *  (5) Вызывает hidePaywallModal при закрытии.
- *
- * ТЗ: plans/tz/2026-05-28-paywall-no-trial.md §4.2.
- */
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
 
-vi.mock('next/link', () => ({
+vi.mock("next/link", () => ({
   default: ({ children, ...props }: Record<string, unknown>) => (
     <a {...props}>{children as string}</a>
   ),
 }));
 
-vi.mock('@/hooks/useSubscription', () => ({
+vi.mock("@/hooks/useSubscription", () => ({
   useSubscription: vi.fn(),
 }));
 
-import { PaywallModal } from './PaywallModal';
-import { useSubscription } from '@/hooks/useSubscription';
+import { PaywallModal } from "./PaywallModal";
+import { useSubscription } from "@/hooks/useSubscription";
 
 const mockUseSubscription = vi.mocked(useSubscription);
 
@@ -41,43 +29,53 @@ function setMock(opts: { open: boolean; onHide?: () => void }) {
   return hide;
 }
 
-describe('PaywallModal', () => {
-  it('рендерится при isPaywallModalOpen=true', () => {
+describe("PaywallModal", () => {
+  it("рендерится при isPaywallModalOpen=true", () => {
     setMock({ open: true });
     render(<PaywallModal />);
-    expect(screen.getByText('Оплатите подписку')).toBeInTheDocument();
+    expect(screen.getByText("Оплатите подписку")).toBeInTheDocument();
   });
 
-  it('скрывается при isPaywallModalOpen=false', () => {
+  it("скрывается при isPaywallModalOpen=false", () => {
     setMock({ open: false });
     render(<PaywallModal />);
-    expect(screen.queryByText('Оплатите подписку')).not.toBeInTheDocument();
+    expect(screen.queryByText("Оплатите подписку")).not.toBeInTheDocument();
   });
 
-  it('содержит список возможностей', () => {
+  it("содержит список возможностей", () => {
     setMock({ open: true });
     render(<PaywallModal />);
-    expect(screen.getByText('150 видеовстреч в месяц')).toBeInTheDocument();
-    expect(screen.getByText('31 место для пользователей')).toBeInTheDocument();
-    expect(screen.getByText('Отчёты Коры и граф знаний')).toBeInTheDocument();
+    expect(screen.getByText("150 видеовстреч в месяц")).toBeInTheDocument();
+    expect(screen.getByText("31 место для пользователей")).toBeInTheDocument();
+    expect(screen.getByText("Отчёты Коры и граф знаний")).toBeInTheDocument();
   });
 
-  it('обе кнопки ведут на /settings/subscription', () => {
+  it("обе кнопки ведут на /settings/subscription", () => {
     setMock({ open: true });
     render(<PaywallModal />);
-    const cardBtn = screen.getByTestId('paywall-card-btn');
-    const invoiceBtn = screen.getByTestId('paywall-invoice-btn');
-    expect(cardBtn.closest('a')).toHaveAttribute('href', '/settings/subscription');
-    expect(invoiceBtn.closest('a')).toHaveAttribute('href', '/settings/subscription');
+    const cardBtn = screen.getByTestId("paywall-card-btn");
+    const invoiceBtn = screen.getByTestId("paywall-invoice-btn");
+    expect(cardBtn.closest("a")).toHaveAttribute(
+      "href",
+      "/settings/subscription",
+    );
+    expect(invoiceBtn.closest("a")).toHaveAttribute(
+      "href",
+      "/settings/subscription",
+    );
   });
 
-  it('показывает цену и подпись про доп. места', () => {
+  it("показывает цену и подпись про доп. места", () => {
     setMock({ open: true });
     render(<PaywallModal />);
-    expect(screen.getByText('60 000 ₽/мес')).toBeInTheDocument();
-    expect(screen.getByText('или 576 000 ₽/год (скидка 20%)')).toBeInTheDocument();
+    expect(screen.getByText("60 000 ₽/мес")).toBeInTheDocument();
     expect(
-      screen.getByText('Доп. места: +1 000 ₽/мес за каждого пользователя сверх 31'),
+      screen.getByText("или 576 000 ₽/год (скидка 20%)"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Доп. места: +1 000 ₽/мес за каждого пользователя сверх 31",
+      ),
     ).toBeInTheDocument();
   });
 });

@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import * as TabsPrimitive from '@radix-ui/react-tabs';
-import { motion } from 'motion/react';
-import { cn } from './lib/utils';
+import * as React from "react";
+import * as TabsPrimitive from "@radix-ui/react-tabs";
+import { motion } from "motion/react";
+import { cn } from "./lib/utils";
 
 export const Tabs = TabsPrimitive.Root;
 
@@ -14,7 +14,7 @@ export const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      'inline-flex items-center gap-1 border-b border-border-subtle',
+      "inline-flex items-center gap-1 border-b border-border-subtle",
       className,
     )}
     {...props}
@@ -22,12 +22,6 @@ export const TabsList = React.forwardRef<
 ));
 TabsList.displayName = TabsPrimitive.List.displayName;
 
-/**
- * TabsTrigger — каждый рендерит motion.span с одним и тем же `layoutId`,
- * но видимым делается только активный (через `data-[state=active]:block`).
- * Framer Motion ловит, что один из элементов "пропал", а другой "появился"
- * с тем же layoutId — и перелетает между ними.
- */
 export const TabsTrigger = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
@@ -35,9 +29,9 @@ export const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      'group/trigger relative inline-flex items-center gap-2 px-3 py-2.5 text-sm font-medium text-fg-secondary',
-      'transition-colors hover:text-fg-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-t-md',
-      'data-[state=active]:text-fg-primary',
+      "group/trigger relative inline-flex items-center gap-2 px-3 py-2.5 text-sm font-medium text-fg-secondary",
+      "transition-colors hover:text-fg-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-t-md",
+      "data-[state=active]:text-fg-primary",
       className,
     )}
     {...props}
@@ -47,7 +41,7 @@ export const TabsTrigger = React.forwardRef<
       aria-hidden
       layoutId="z-tab-indicator"
       className="pointer-events-none absolute inset-x-0 -bottom-px hidden h-0.5 rounded-full bg-accent group-data-[state=active]/trigger:block"
-      transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+      transition={{ type: "spring", stiffness: 400, damping: 32 }}
     />
   </TabsPrimitive.Trigger>
 ));
@@ -60,7 +54,7 @@ export const TabsContent = React.forwardRef<
   <TabsPrimitive.Content
     ref={ref}
     className={cn(
-      'mt-4 ring-offset-bg-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+      "mt-4 ring-offset-bg-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
       className,
     )}
     {...props}

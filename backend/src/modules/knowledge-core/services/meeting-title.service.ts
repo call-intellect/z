@@ -1,27 +1,9 @@
-/**
- * Редизайн кабинета Ф5а (2026-06-13) — авто-название встречи.
- *
- * `MeetingTitleService.generateMeetingTitle` — best-effort генерация короткого
- * названия встречи из типа + первых реплик транскрипта через taskType
- * `meeting-title`. Перезаписывает `Meeting.title` ТОЛЬКО если текущий title —
- * плейсхолдер (см. `isPlaceholderMeetingTitle`). Идемпотентно: повторный вызов
- * на уже осмысленном title — no-op.
- *
- * Живёт в knowledge-core (а не в @Global MeetingsService), чтобы избежать
- * цикла meetings ↔ ai и тащить LlmRouterService только туда, где он уже есть
- * (worker-процесс). Вызывается из `MeetingReportFastWorker` после готовности
- * транскрипта.
- */
-
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import type { DialogTurn } from '../../ai/services/prompts/common';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { isPlaceholderMeetingTitle } from '../../meetings/meeting-title.util';
 import {
   MEETING_TITLE_MAX_CHARS,
@@ -31,7 +13,6 @@ import {
   MEETING_TITLE_USER_PROMPT,
 } from '../../meetings/prompts/meeting-title.prompt';
 
-/** Жёсткий потолок на длину сохраняемого title (страховка). */
 const MEETING_TITLE_PERSIST_MAX_LEN = 120;
 
 @Injectable()
@@ -43,13 +24,6 @@ export class MeetingTitleService {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
   ) {}
 
-  /**
-   * Сгенерировать и сохранить авто-название встречи. Best-effort: любая ошибка
-   * (LLM упал, пустой ответ) логируется warn'ом и НЕ роняет вызывающий поток.
-   *
-   * @returns сохранённый title, либо null если перезапись не выполнена
-   *   (placeholder-гейт не прошёл / пустой транскрипт / LLM не дал ответа).
-   */
   async generateMeetingTitle(args: {
     tenantId: string;
     meetingId: string;
@@ -71,7 +45,6 @@ export class MeetingTitleService {
         return null;
       }
 
-      // Гейт перезаписи: осмысленный пользовательский title не трогаем.
       if (!isPlaceholderMeetingTitle(meeting.title)) {
         this.logger.debug(
           { meetingId, title: meeting.title },
@@ -111,8 +84,6 @@ export class MeetingTitleService {
         return null;
       }
 
-      // Повторно проверяем гейт под обновление (защита от гонки: title мог
-      // быть задан осмысленно между чтением и записью).
       const updateResult = await this.prisma.meeting.updateMany({
         where: { id: meetingId, tenantId },
         data: { title: cleaned },
@@ -122,7 +93,10 @@ export class MeetingTitleService {
         return null;
       }
 
-      this.logger.log({ meetingId, tenantId, title: cleaned }, 'meeting-title: авто-название сохранено');
+      this.logger.log(
+        { meetingId, tenantId, title: cleaned },
+        'meeting-title: авто-название сохранено',
+      );
       return cleaned;
     } catch (err) {
       this.logger.warn(
@@ -134,9 +108,6 @@ export class MeetingTitleService {
   }
 }
 
-// ─────────────────────────── helpers ───────────────────────────────────────
-
-/** Безопасно достаёт `DialogTurn[]` из `Transcript.turns` (Json). */
 function extractTurns(raw: unknown): DialogTurn[] {
   if (!Array.isArray(raw)) return [];
   const out: DialogTurn[] = [];
@@ -153,31 +124,20 @@ function extractTurns(raw: unknown): DialogTurn[] {
   return out;
 }
 
-/**
- * Склеивает первые `MEETING_TITLE_MAX_TURNS` реплик в текст `Speaker: text`,
- * обрезая по `MEETING_TITLE_MAX_CHARS`.
- */
 function buildExcerpt(turns: DialogTurn[]): string {
   const head = turns.slice(0, MEETING_TITLE_MAX_TURNS);
-  const joined = head
-    .map((t) => (t.speaker ? `${t.speaker}: ${t.text}` : t.text))
-    .join('\n');
+  const joined = head.map((t) => (t.speaker ? `${t.speaker}: ${t.text}` : t.text)).join('\n');
   return joined.slice(0, MEETING_TITLE_MAX_CHARS).trim();
 }
 
-/**
- * Чистит сырой ответ LLM: убирает кавычки/код-фенсы/префиксы, берёт первую
- * строку, обрезает точку в конце и потолок длины.
- */
 function cleanTitle(raw: string): string {
   let s = (raw ?? '').trim();
-  // Снимаем обрамляющие тройные бэктики (на случай code-fence).
   s = s.replace(/```[a-z]*/giu, '').trim();
-  // Первая непустая строка.
-  const firstLine = s.split(/\r?\n/u).map((l) => l.trim()).find((l) => l.length > 0);
+  const firstLine = s
+    .split(/\r?\n/u)
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
   s = firstLine ?? '';
-  // Снимаем обрамляющие кавычки/точки/пробелы циклом — устойчиво к любому
-  // порядку (например `«…».` — точка ПОСЛЕ кавычки).
   let prev: string;
   do {
     prev = s;

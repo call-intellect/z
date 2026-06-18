@@ -14,10 +14,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -39,25 +36,6 @@ import {
 import { ActivityFeedService } from '../services/activity-feed.service';
 import { CoraFeedService } from '../services/cora-feed.service';
 
-/**
- * Feed REST API (Wave 2 Поток D, 2026-05-24).
- *
- * Sub-ТЗ: plans/tz/2026-05-23-activity-feeds.md §"REST API".
- *
- *   GET  /api/v1/feed                — единая лента (агрегат по подпискам).
- *   GET  /api/v1/feed/:type          — лента конкретного типа.
- *   POST /api/v1/feed/:id/react      — реакция (thanks / vote).
- *   POST /api/v1/feed/:id/seen       — пометить просмотренной.
- *   POST /api/v1/feed/:id/respond    — пометить отвеченной.
- *   POST /api/v1/feed/:id/dismiss    — скрыть из своей ленты.
- *
- * RBAC: `activity_feed_item` ResourceType.
- *   - read   — все members tenant'а (фильтрация по visibility — в сервисе).
- *   - write  — все members (react / seen / respond / dismiss — пользовательские
- *              действия; system/agent публикации идут через сервис, не через REST).
- *
- * Multi-tenancy: TenantGuard. Все user-facing строки на русском.
- */
 @ApiTags('activity-feed')
 @Controller('api/v1/feed')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -88,9 +66,6 @@ export class FeedController {
       query: q,
     });
   }
-
-  // ВАЖНО: статические роуты `/feed/cora*` объявлены ДО динамического
-  // `@Get(':type')`, иначе `:type` перехватит сегмент `cora`.
 
   @Get('cora')
   @ApiOperation({
@@ -183,8 +158,7 @@ export class FeedController {
 
   @Post(':id/respond')
   @ApiOperation({
-    summary:
-      'Пометить probe-вопрос как отвеченный (фактический ответ — отдельным каналом)',
+    summary: 'Пометить probe-вопрос как отвеченный (фактический ответ — отдельным каналом)',
   })
   async respond(
     @Param('id') id: string,
@@ -217,8 +191,6 @@ export class FeedController {
     });
     return { ok: true, item };
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
@@ -257,18 +229,6 @@ export class FeedController {
     return parsed.data;
   }
 
-  /**
-   * Загружает teamIds / roleIds пользователя в данном tenant'е для
-   * visibility-фильтра ленты. Источники:
-   *   - Membership.role → roleIds (одна роль на membership).
-   *   - Appointment.departmentId (где status='active') → teamIds.
-   *     Команда в Z = Department + Project; для MVP берём только Department,
-   *     projectId фильтруется отдельно через query-фильтр.
-   *
-   * Если что-то из этого недоступно (нет Appointment-ов) — возвращаем
-   * пустые массивы. Это означает, что пользователь видит только
-   * `public_org` + `private`-к-себе записи, что соответствует sub-ТЗ.
-   */
   private async loadUserScope(
     userId: string,
     tenantId: string,
@@ -278,8 +238,6 @@ export class FeedController {
         where: { userId, orgId: tenantId },
         select: { role: true },
       }),
-      // Appointment связан с Person, который связан с User через User.personId.
-      // На MVP считаем, что departmentId — это «team» в контексте feed'а.
       this.prisma.appointment
         .findMany({
           where: {
@@ -291,9 +249,7 @@ export class FeedController {
         })
         .catch(() => [] as { departmentId: string | null }[]),
     ]);
-    const roleIds = memberships
-      .map((m) => String(m.role))
-      .filter((r) => r.length > 0);
+    const roleIds = memberships.map((m) => String(m.role)).filter((r) => r.length > 0);
     const teamIds = appointments
       .map((a) => a.departmentId)
       .filter((d): d is string => typeof d === 'string' && d.length > 0);

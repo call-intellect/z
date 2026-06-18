@@ -1,31 +1,3 @@
-/**
- * Support desk Ф3 (TZ 2026-06-09 support-desk-clone-and-closed-contour) —
- * Seed AdminSetting для порога critic-проверки черновика клона.
- *
- * Регистрирует ключи:
- *   - `support_critic_min_groundedness` (number, default 0.6) — минимальная
- *     обоснованность (groundedness = подтверждённые блоками утверждения /
- *     всего утверждений) черновика клона, ниже которой исход критика —
- *     `clarify`/`escalate`, а не `answer` (R-INV-5).
- *   - `support_promote_min_csat` (number, default 4) — минимальная оценка
- *     клиента (CSAT 1..5), при которой принятые/исправленные ответы клона
- *     промоутятся в закрытый контур памяти (гейт качества обучающей петли,
- *     R-INV-2).
- *
- * Крутилка идёт в AdminSetting, не в ENV и не в код
- * (feedback_admin_settings_not_env_or_code) — super_admin правит через UI.
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-support.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем только
- *     метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- *   - Двойной запуск = no-op.
- */
-
 import { type Prisma } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -69,10 +41,7 @@ interface Counters {
   skippedAdminEdited: number;
 }
 
-async function upsertSetting(
-  seed: SettingSeed,
-  counters: Counters,
-): Promise<void> {
+async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<void> {
   const existing = await prisma.adminSetting.findUnique({
     where: { key: seed.key },
     select: { updatedBy: true },
@@ -96,7 +65,6 @@ async function upsertSetting(
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },

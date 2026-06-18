@@ -1,20 +1,8 @@
-/**
- * Демо-данные «ТехноСтрим» — финальная полировка.
- *
- * Создаёт: Recognition (5), HelpfulnessSpotlight (2), UserBadge (3),
- * Card (5), Process (3) + ProcessStep (19), Subscription (upsert),
- * MeetingsBalance (upsert).
- *
- * MeetingQualityScore, MeetingBehaviorMetrics, MeetingParticipantBehavior
- * уже создаются в meetings.ts — здесь не дублируем.
- */
 import type { SeedFn } from './types';
 import { daysAgo } from './types';
 
 export const seedPolish: SeedFn = async (ctx, ids) => {
   const { prisma, tenantId, ownerUserId } = ctx;
-
-  // ── 1. Recognition (5) ────────────────────────────────────────────────
 
   console.log('[demo/polish] Создание Recognition...');
 
@@ -60,8 +48,6 @@ export const seedPolish: SeedFn = async (ctx, ids) => {
     });
   }
 
-  // ── 2. HelpfulnessSpotlight (2) ───────────────────────────────────────
-
   console.log('[demo/polish] Создание HelpfulnessSpotlight...');
 
   const spotlightDefs = [
@@ -93,8 +79,6 @@ export const seedPolish: SeedFn = async (ctx, ids) => {
       },
     });
   }
-
-  // ── 3. Badge + UserBadge ──────────────────────────────────────────────
 
   console.log('[demo/polish] Привязка бейджей...');
 
@@ -131,7 +115,6 @@ export const seedPolish: SeedFn = async (ctx, ids) => {
       },
     });
 
-    // UserBadge — upsert to handle re-runs
     await prisma.userBadge.upsert({
       where: {
         userId_badgeId: {
@@ -146,8 +129,6 @@ export const seedPolish: SeedFn = async (ctx, ids) => {
       },
     });
   }
-
-  // ── 4. Cards (5) ──────────────────────────────────────────────────────
 
   console.log('[demo/polish] Создание карточек...');
 
@@ -181,7 +162,8 @@ export const seedPolish: SeedFn = async (ctx, ids) => {
       name: 'Zoom',
       kind: 'competitor',
       entityKey: 'e_zoom',
-      description: 'Основной конкурент. Демпингует цены на 20%. Наша стратегия — value-sell через AI.',
+      description:
+        'Основной конкурент. Демпингует цены на 20%. Наша стратегия — value-sell через AI.',
       meetingCount: 1,
     },
     {
@@ -189,7 +171,8 @@ export const seedPolish: SeedFn = async (ctx, ids) => {
       name: 'Рынок B2B VC',
       kind: 'market',
       entityKey: 'e_market',
-      description: 'Рынок B2B видеоконференций. Растёт +15% YoY. AI-фичи — ключевой дифференциатор.',
+      description:
+        'Рынок B2B видеоконференций. Растёт +15% YoY. AI-фичи — ключевой дифференциатор.',
       meetingCount: 1,
     },
   ];
@@ -209,15 +192,14 @@ export const seedPolish: SeedFn = async (ctx, ids) => {
     ids.cards[c.key] = card.id;
   }
 
-  // ── 5. Processes (3) + ProcessStep (19) ───────────────────────────────
-
   console.log('[demo/polish] Создание процессов...');
 
   const processDefs = [
     {
       key: 'process_code_review',
       name: 'Code Review',
-      description: 'Процесс ревью кода в команде. SLA: 24 часа. Эскалация к Tech Lead при нарушении.',
+      description:
+        'Процесс ревью кода в команде. SLA: 24 часа. Эскалация к Tech Lead при нарушении.',
       ownerPersonKey: 'kozlov',
       steps: [
         'Создание PR',
@@ -283,8 +265,6 @@ export const seedPolish: SeedFn = async (ctx, ids) => {
     }
   }
 
-  // ── 6. Subscription (upsert) ──────────────────────────────────────────
-
   console.log('[demo/polish] Обновление подписки...');
 
   await prisma.subscription.upsert({
@@ -301,8 +281,6 @@ export const seedPolish: SeedFn = async (ctx, ids) => {
       autoRenew: false,
     },
   });
-
-  // ── 7. MeetingsBalance (upsert) ───────────────────────────────────────
 
   console.log('[demo/polish] Обновление баланса встреч...');
 
@@ -324,10 +302,10 @@ export const seedPolish: SeedFn = async (ctx, ids) => {
 
   console.log(
     `[demo/polish] Создано: ${recognitionDefs.length} Recognition, ` +
-    `${spotlightDefs.length} HelpfulnessSpotlight, ` +
-    `${badgeSlugs.length} UserBadge, ` +
-    `${cardDefs.length} Cards, ` +
-    `${processDefs.length} процессов (${processDefs.reduce((s, p) => s + p.steps.length, 0)} шагов), ` +
-    `Subscription, MeetingsBalance.`,
+      `${spotlightDefs.length} HelpfulnessSpotlight, ` +
+      `${badgeSlugs.length} UserBadge, ` +
+      `${cardDefs.length} Cards, ` +
+      `${processDefs.length} процессов (${processDefs.reduce((s, p) => s + p.steps.length, 0)} шагов), ` +
+      `Subscription, MeetingsBalance.`,
   );
 };

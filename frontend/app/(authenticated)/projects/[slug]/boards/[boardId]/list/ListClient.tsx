@@ -1,16 +1,9 @@
-'use client';
+"use client";
 
-/**
- * ListClient — список задач выбранной доски (Tracker Boards, 2026-05-27).
- * Маршрут: `/projects/[slug]/boards/[boardId]/list`.
- *
- * Отличается от legacy `[slug]/list/ListClient` фильтром `boardId`.
- */
-
-import { useAuth } from '@/contexts/auth-context';
-import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
-import { useIssues } from '@/hooks/tracker/useIssues';
-import { IssueList } from '@/ui/tracker';
+import { useAuth } from "@/contexts/auth-context";
+import { useProjectBySlug } from "@/hooks/tracker/useProjectBySlug";
+import { useIssues } from "@/hooks/tracker/useIssues";
+import { IssueList } from "@/ui/tracker";
 
 export function ListClient({
   slug,
@@ -55,10 +48,6 @@ export function ListClient({
   }
 
   return (
-    <IssueList
-      issues={issues}
-      group
-      emptyText="На этой доске пока нет задач"
-    />
+    <IssueList issues={issues} group emptyText="На этой доске пока нет задач" />
   );
 }

@@ -10,9 +10,6 @@ import type { IssueEmbedJobData } from '../queues';
 
 import { IssueEmbedWorker } from './issue-embed.worker';
 
-/**
- * Юнит-тест IssueEmbedWorker — вызываем `process()` напрямую (минуем BullMQ).
- */
 describe('IssueEmbedWorker.process', () => {
   let prisma: PrismaService;
   let redis: RedisService;
@@ -60,9 +57,7 @@ describe('IssueEmbedWorker.process', () => {
     embedMock.mockResolvedValueOnce([vec]);
 
     await worker.process(
-      makeJob({ tenantId: 't1', issueId: 'iss1' }) as Parameters<
-        typeof worker.process
-      >[0],
+      makeJob({ tenantId: 't1', issueId: 'iss1' }) as Parameters<typeof worker.process>[0],
     );
 
     expect(embedMock).toHaveBeenCalledTimes(1);
@@ -70,7 +65,6 @@ describe('IssueEmbedWorker.process', () => {
       'Crash on login\n\nAuth flow breaks for new users',
     ]);
     expect(executeRawMock).toHaveBeenCalledTimes(1);
-    // Аргументы: sql, vectorLiteral, newHash, issueId, tenantId.
     const call = executeRawMock.mock.calls[0];
     expect(call).toBeDefined();
     if (!call) throw new Error('unreachable');
@@ -98,9 +92,7 @@ describe('IssueEmbedWorker.process', () => {
     });
 
     await worker.process(
-      makeJob({ tenantId: 't1', issueId: 'iss2' }) as Parameters<
-        typeof worker.process
-      >[0],
+      makeJob({ tenantId: 't1', issueId: 'iss2' }) as Parameters<typeof worker.process>[0],
     );
 
     expect(embedMock).not.toHaveBeenCalled();
@@ -115,9 +107,7 @@ describe('IssueEmbedWorker.process', () => {
     findFirstMock.mockResolvedValueOnce(null);
 
     await worker.process(
-      makeJob({ tenantId: 't1', issueId: 'lost' }) as Parameters<
-        typeof worker.process
-      >[0],
+      makeJob({ tenantId: 't1', issueId: 'lost' }) as Parameters<typeof worker.process>[0],
     );
 
     expect(embedMock).not.toHaveBeenCalled();
@@ -139,9 +129,7 @@ describe('IssueEmbedWorker.process', () => {
     });
 
     await worker.process(
-      makeJob({ tenantId: 't1', issueId: 'iss3' }) as Parameters<
-        typeof worker.process
-      >[0],
+      makeJob({ tenantId: 't1', issueId: 'iss3' }) as Parameters<typeof worker.process>[0],
     );
 
     expect(embedMock).not.toHaveBeenCalled();
@@ -164,14 +152,10 @@ describe('IssueEmbedWorker.process', () => {
 
     await expect(
       worker.process(
-        makeJob({ tenantId: 't1', issueId: 'iss4' }) as Parameters<
-          typeof worker.process
-        >[0],
+        makeJob({ tenantId: 't1', issueId: 'iss4' }) as Parameters<typeof worker.process>[0],
       ),
     ).rejects.toThrow(/пустой embedding/);
     expect(executeRawMock).not.toHaveBeenCalled();
-    // Метрика failed эмитится из listener'а `failed` (не из process), здесь
-    // не должна вызываться.
     expect(incEmbedMock).not.toHaveBeenCalled();
   });
 
@@ -187,9 +171,7 @@ describe('IssueEmbedWorker.process', () => {
     });
 
     await noEmbWorker.process(
-      makeJob({ tenantId: 't1', issueId: 'iss5' }) as Parameters<
-        typeof noEmbWorker.process
-      >[0],
+      makeJob({ tenantId: 't1', issueId: 'iss5' }) as Parameters<typeof noEmbWorker.process>[0],
     );
 
     expect(executeRawMock).not.toHaveBeenCalled();

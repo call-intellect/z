@@ -6,31 +6,6 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { Specialist38HelpfulnessService } from '../services/specialist-3-8-helpfulness.service';
 
-/**
- * SBA Wave 2 — SocialContributionProfileCron.
- *
- * Каждый день в 05:00 UTC пересчитывает агрегаты `SocialContributionProfile`
- * для всех помощников, у которых были active HelpfulnessTrait за последние
- * 30 дней (lastObservedAt >= now-30d).
- *
- * Этическая защита: считаем только public-friendly trait'ы (первые 5).
- * Restricted-типы (question_unanswered, question_acknowledged_no_action)
- * НЕ попадают в публичные счётчики SocialContributionProfile.
- *
- * Логика:
- *   1. Сгруппировать HelpfulnessTrait по (tenantId, helperUserId).
- *   2. Для каждого helper'а посчитать счётчики:
- *      - helpProvidedCount, proactiveHintCount, mentoringCount,
- *        emotionalSupportCount;
- *      - lastWeekHelpCount, lastMonthHelpCount (по lastObservedAt);
- *      - topicHint→expertiseTopics (топ-5 по частоте);
- *      - socialRoles (mentor / connector / problem_solver / mood_keeper / trainer)
- *        по эвристикам.
- *   3. upsert в SocialContributionProfile.
- *   4. metrics: social_contribution_profiles_built_total.
- *
- * Idempotent: повторный запуск даёт тот же результат (счётчики из БД).
- */
 @Injectable()
 export class SocialContributionProfileCron {
   private readonly logger = new Logger(SocialContributionProfileCron.name);
@@ -46,10 +21,7 @@ export class SocialContributionProfileCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runOnce();
-      this.logger.log(
-        summary,
-        'social-contribution-profile.cron: проход завершён',
-      );
+      this.logger.debug(summary, 'social-contribution-profile.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -58,7 +30,6 @@ export class SocialContributionProfileCron {
     }
   }
 
-  /** Public — для ручного запуска / интеграционных тестов. */
   async runOnce(): Promise<{ profilesBuilt: number; profilesSkipped: number }> {
     let profilesBuilt = 0;
     let profilesSkipped = 0;
@@ -67,11 +38,7 @@ export class SocialContributionProfileCron {
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400 * 1000);
     const sevenDaysAgo = new Date(now.getTime() - 7 * 86400 * 1000);
 
-    // 1. Активные helper'ы за последние 30 дней. Используем raw query
-    // (groupBy в Prisma требует orderBy при take, что усложняет SQL).
-    const helpers = await this.prisma.$queryRaw<
-      Array<{ tenantId: string; helperUserId: string }>
-    >`
+    const helpers = await this.prisma.$queryRaw<Array<{ tenantId: string; helperUserId: string }>>`
       SELECT DISTINCT "tenantId", "helperUserId"
       FROM "HelpfulnessTrait"
       WHERE "status" = 'active'
@@ -150,7 +117,6 @@ export class SocialContributionProfileCron {
           emotionalSupportCount += 1;
           break;
         default:
-          // constructive_feedback и др. — не отображаем в публичных счётчиках.
           break;
       }
       if (t.lastObservedAt >= args.sevenDaysAgo) {
@@ -175,8 +141,6 @@ export class SocialContributionProfileCron {
       uniqueTopics: topicCounts.size,
     });
 
-    // contributionScoreCached — простой weighted score (не публикуется как
-    // рейтинг, только в админ-дашборде руководителя).
     const score =
       helpProvidedCount * 1.0 +
       proactiveHintCount * 1.2 +
@@ -224,10 +188,6 @@ export class SocialContributionProfileCron {
     });
   }
 
-  /**
-   * Эвристика для socialRoles. Используется UI как метка («Иван — ментор»).
-   * Без сравнения между людьми (никаких «топ-10»).
-   */
   private deriveSocialRoles(args: {
     helpProvidedCount: number;
     proactiveHintCount: number;

@@ -1,37 +1,21 @@
-/**
- * RTL-тест мобильного экрана «Память» (ТЗ B5/Ф6).
- *
- * Покрытие:
- *   (а) с данными — тег «Решение», заголовок, статус, дата; список рендерится;
- *   (б) пусто без поиска — empty-state «Память пока пуста»;
- *   (в) ввод в поиск (+debounce) меняет аргумент запроса: `decisionsApi.list`
- *       вызывается с `q`, а в пустой выдаче по поиску — «Ничего не нашлось».
- *
- * Моки: auth-context (currentOrgId), decisions.api (list), swr — лёгкая
- * реализация, исполняющая переданный fetcher (чтобы проверить аргумент `q`).
- */
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { DecisionListItemApi } from "@/api/decisions.api";
+import { MobileMemoryClient } from "./MobileMemoryClient";
 
-import type { DecisionListItemApi } from '@/api/decisions.api';
-import { MobileMemoryClient } from './MobileMemoryClient';
-
-vi.mock('@/contexts/auth-context', () => ({
-  useAuth: () => ({ currentOrgId: 'org-test' }),
+vi.mock("@/contexts/auth-context", () => ({
+  useAuth: () => ({ currentOrgId: "org-test" }),
 }));
 
 const listMock = vi.fn();
-vi.mock('@/api/decisions.api', () => ({
+vi.mock("@/api/decisions.api", () => ({
   decisionsApi: { list: (...args: unknown[]) => listMock(...args) },
 }));
 
-// Лёгкий swr: исполняет fetcher по ключу, хранит результат в state. Достаточно
-// для рендера + проверки аргументов fetcher (а не реального кэша SWR). Имя
-// `useFakeSwr` (а не анонимный default) — чтобы eslint распознал его как хук.
-vi.mock('swr', () => {
-  const React = require('react') as typeof import('react');
+vi.mock("swr", () => {
+  const React = require("react") as typeof import("react");
   function useFakeSwr(key: unknown, fetcher: (k: unknown) => Promise<unknown>) {
     const [state, setState] = React.useState({
       data: undefined as unknown,
@@ -43,8 +27,10 @@ vi.mock('swr', () => {
       if (!key || !fetcher) return;
       let alive = true;
       Promise.resolve(fetcher(key)).then(
-        (data) => alive && setState({ data, error: undefined, isLoading: false }),
-        (error) => alive && setState({ data: undefined, error, isLoading: false }),
+        (data) =>
+          alive && setState({ data, error: undefined, isLoading: false }),
+        (error) =>
+          alive && setState({ data: undefined, error, isLoading: false }),
       );
       return () => {
         alive = false;
@@ -58,18 +44,18 @@ vi.mock('swr', () => {
 
 function apiItem(over: Partial<DecisionListItemApi> = {}): DecisionListItemApi {
   return {
-    id: 'd1',
-    statement: 'Переходим на недельные спринты',
-    status: 'approved',
+    id: "d1",
+    statement: "Переходим на недельные спринты",
+    status: "approved",
     decidedByPersonIds: [],
-    decidedAt: '2026-06-11T10:00:00Z',
+    decidedAt: "2026-06-11T10:00:00Z",
     deadline: null,
     supersedesId: null,
     affectsEntityIds: [],
     confidence: null,
-    trustTier: 'human',
-    updatedAt: '2026-06-11T10:00:00Z',
-    createdAt: '2026-05-01T08:00:00Z',
+    trustTier: "human",
+    updatedAt: "2026-06-11T10:00:00Z",
+    createdAt: "2026-05-01T08:00:00Z",
     ...over,
   };
 }
@@ -80,40 +66,59 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  listMock.mockResolvedValue({ items: [apiItem()], total: 1, page: 1, limit: 20, totalPages: 1 });
+  listMock.mockResolvedValue({
+    items: [apiItem()],
+    total: 1,
+    page: 1,
+    limit: 20,
+    totalPages: 1,
+  });
 });
 
-describe('MobileMemoryClient', () => {
-  it('рендерит ленту: тег «Решение», заголовок и статус', async () => {
+describe("MobileMemoryClient", () => {
+  it("рендерит ленту: тег «Решение», заголовок и статус", async () => {
     render(<MobileMemoryClient />);
 
-    expect(await screen.findByText('Переходим на недельные спринты')).toBeInTheDocument();
-    expect(screen.getByText('Решение')).toBeInTheDocument();
-    expect(screen.getByText('Принятое')).toBeInTheDocument();
-    // Первая загрузка — без q.
+    expect(
+      await screen.findByText("Переходим на недельные спринты"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Решение")).toBeInTheDocument();
+    expect(screen.getByText("Принятое")).toBeInTheDocument();
     expect(listMock).toHaveBeenCalledWith({ limit: 20 });
   });
 
-  it('пусто без поиска → «Память пока пуста»', async () => {
-    listMock.mockResolvedValue({ items: [], total: 0, page: 1, limit: 20, totalPages: 0 });
+  it("пусто без поиска → «Память пока пуста»", async () => {
+    listMock.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      limit: 20,
+      totalPages: 0,
+    });
     render(<MobileMemoryClient />);
 
-    expect(await screen.findByText('Память пока пуста')).toBeInTheDocument();
+    expect(await screen.findByText("Память пока пуста")).toBeInTheDocument();
   });
 
-  it('ввод в поиск меняет запрос (q) и показывает «Ничего не нашлось» при пустой выдаче', async () => {
+  it("ввод в поиск меняет запрос (q) и показывает «Ничего не нашлось» при пустой выдаче", async () => {
     const user = userEvent.setup();
     render(<MobileMemoryClient />);
-    await screen.findByText('Переходим на недельные спринты');
+    await screen.findByText("Переходим на недельные спринты");
 
-    listMock.mockResolvedValue({ items: [], total: 0, page: 1, limit: 20, totalPages: 0 });
+    listMock.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      limit: 20,
+      totalPages: 0,
+    });
 
-    const input = screen.getByLabelText('Поиск по решениям');
-    await user.type(input, 'спринт');
+    const input = screen.getByLabelText("Поиск по решениям");
+    await user.type(input, "спринт");
 
     await waitFor(() =>
-      expect(listMock).toHaveBeenCalledWith({ q: 'спринт', limit: 20 }),
+      expect(listMock).toHaveBeenCalledWith({ q: "спринт", limit: 20 }),
     );
-    expect(await screen.findByText('Ничего не нашлось')).toBeInTheDocument();
+    expect(await screen.findByText("Ничего не нашлось")).toBeInTheDocument();
   });
 });

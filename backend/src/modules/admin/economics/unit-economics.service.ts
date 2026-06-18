@@ -5,18 +5,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CurrencyRateService } from './currency-rate.service';
 import { OrgEconomicsCron } from './org-economics.cron';
 
-/**
- * SBA α-10 wave 3 — UnitEconomicsService.
- *
- * Чтение per-org / global экономики для admin/org дашбордов.
- *
- *   - getGlobal({days,topN}) — суммарный cost USD/RUB, top-N Org по cost,
- *     per task_type breakdown.
- *   - getOrg(tenantId, days) — расширенный per-org разбор (вызов OrgEconomicsCron).
- *
- * Использует AiCostDaily для быстрых агрегатов (когда есть данные за период);
- * fallback на AiUsageLog для актуальных дней (cron ещё не отработал).
- */
 @Injectable()
 export class UnitEconomicsService {
   constructor(
@@ -80,7 +68,12 @@ export class UnitEconomicsService {
     }
 
     const byTaskRows = await this.prisma.$queryRaw<
-      Array<{ task_type: string | null; cost_rub: string | null; cost_usd: string | null; calls: bigint }>
+      Array<{
+        task_type: string | null;
+        cost_rub: string | null;
+        cost_usd: string | null;
+        calls: bigint;
+      }>
     >`
       SELECT "taskType"                         AS task_type,
              COALESCE(SUM("costRub"), 0)::text  AS cost_rub,
@@ -145,7 +138,7 @@ export class UnitEconomicsService {
     const cap = await this.prisma.orgBudgetCap.findUnique({
       where: { tenantId },
     });
-    void days; // days сейчас вшит 30d через computeForOrg — параметр зарезервирован.
+    void days;
     return {
       tenantId,
       orgName: org.name,
@@ -184,19 +177,16 @@ export class UnitEconomicsService {
       where: { tenantId },
       create: {
         tenantId,
-        monthlyCapRub:
-          args.monthlyCapRub != null ? args.monthlyCapRub.toFixed(2) : null,
+        monthlyCapRub: args.monthlyCapRub != null ? args.monthlyCapRub.toFixed(2) : null,
         capKind: args.capKind,
         alertThresholds: args.alertThresholds,
         ...(args.setByUserId ? { setByUserId: args.setByUserId } : {}),
       },
       update: {
-        monthlyCapRub:
-          args.monthlyCapRub != null ? args.monthlyCapRub.toFixed(2) : null,
+        monthlyCapRub: args.monthlyCapRub != null ? args.monthlyCapRub.toFixed(2) : null,
         capKind: args.capKind,
         alertThresholds: args.alertThresholds,
         ...(args.setByUserId ? { setByUserId: args.setByUserId } : {}),
-        // Сбросим lastAlertThreshold, чтобы новая планка снова триггерила alert.
         lastAlertThreshold: null,
       },
     });

@@ -1,32 +1,22 @@
-'use client';
+"use client";
 
-/**
- * InviteDialog — переиспользуемый диалог «Пригласить участников» (Фаза B5).
- *
- * Открывается из деталей встречи (B1) и из тулбара комнаты (B3) кнопкой
- * «Пригласить». Самодостаточен: выбирает участников через общий
- * `ParticipantPicker` (с переключателями каналов доставки) и отправляет их на
- * `POST /meetings/:id/invitees`. Backend host-only и идемпотентен — повторно
- * приглашённые попадают в `skipped`.
- */
+import { useState, type JSX } from "react";
+import { toast } from "sonner";
 
-import { useState, type JSX } from 'react';
-import { toast } from 'sonner';
-
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { meetingsApi } from '@/api/meetings.api';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { meetingsApi } from "@/api/meetings.api";
 import {
   ParticipantPicker,
   type ParticipantPickerValue,
-} from '@/ui/shared/ParticipantPicker';
-import { Button } from '@/ui/shadcn/button';
+} from "@/ui/shared/ParticipantPicker";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
+} from "@/ui/shadcn/dialog";
 
 export interface InviteDialogProps {
   meetingId: string;
@@ -47,8 +37,8 @@ export function InviteDialog({
   const handleSend = async () => {
     if (invitees.length === 0) return;
     const payload = invitees.map((v) => ({
-      userId: v.type === 'user' ? v.userId : null,
-      personId: v.type === 'person' ? v.personId : null,
+      userId: v.type === "user" ? v.userId : null,
+      personId: v.type === "person" ? v.personId : null,
       email: v.email ?? null,
       sendVia: v.sendVia ?? [],
     }));
@@ -60,13 +50,12 @@ export function InviteDialog({
       toast.success(
         res.added > 0
           ? `Приглашения отправлены: ${res.added}`
-          : 'Все выбранные уже приглашены',
+          : "Все выбранные уже приглашены",
       );
       setInvitees([]);
       onClose();
     } catch (e) {
-      const msg =
-        humanizeApiError(e, 'Не удалось отправить приглашения');
+      const msg = humanizeApiError(e, "Не удалось отправить приглашения");
       toast.error(msg);
     } finally {
       setSending(false);
@@ -100,7 +89,7 @@ export function InviteDialog({
             onClick={() => void handleSend()}
             disabled={sending || invitees.length === 0}
           >
-            {sending ? 'Отправка…' : 'Отправить приглашение'}
+            {sending ? "Отправка…" : "Отправить приглашение"}
           </Button>
         </DialogFooter>
       </DialogContent>

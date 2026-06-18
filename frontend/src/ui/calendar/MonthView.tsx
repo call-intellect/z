@@ -1,23 +1,14 @@
-'use client';
+"use client";
 
-/**
- * MonthView — сетка 7×6 (Пн..Вс × 6 недель).
- * Отображает до 3 элементов на день + «+N ещё».
- *
- * Drag-and-drop: HTML5 native. Перетаскивание Event с одного дня на другой
- * вызывает onMoveEvent(eventId, targetDate, sourceDate).
- * Issue не перетаскиваются (это дедлайн задачи трекера).
- */
+import { useMemo, type JSX } from "react";
 
-import { useMemo, type JSX } from 'react';
-
-import { EVENT_KIND_STYLES } from '@/domain/calendar';
+import { EVENT_KIND_STYLES } from "@/domain/calendar";
 import type {
   CalendarEventDomain,
   CalendarIssueDomain,
   CalendarTimelineItem,
-} from '@/domain/calendar';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/domain/calendar";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 import {
   WEEKDAY_SHORT,
@@ -25,7 +16,7 @@ import {
   isSameDay,
   isSameMonth,
   monthGridStart,
-} from './dateHelpers';
+} from "./dateHelpers";
 
 interface MonthViewProps {
   cursorDate: Date;
@@ -41,7 +32,7 @@ interface DayBucket {
   issues: CalendarIssueDomain[];
 }
 
-const TOTAL_DAYS = 42; // 6 недель × 7
+const TOTAL_DAYS = 42;
 
 export function MonthView({
   cursorDate,
@@ -58,13 +49,12 @@ export function MonthView({
       issues: [],
     }));
     for (const it of items) {
-      const at = it.type === 'event' ? it.startAt : it.dueDate;
+      const at = it.type === "event" ? it.startAt : it.dueDate;
       const bucket = days.find((d) => isSameDay(d.date, at));
       if (!bucket) continue;
-      if (it.type === 'event') bucket.events.push(it);
+      if (it.type === "event") bucket.events.push(it);
       else bucket.issues.push(it);
     }
-    // Сортируем события внутри дня по startAt.
     for (const b of days) {
       b.events.sort((a, c) => a.startAt.getTime() - c.startAt.getTime());
     }
@@ -98,27 +88,27 @@ export function MonthView({
               key={idx}
               onDragOver={(e) => {
                 e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
+                e.dataTransfer.dropEffect = "move";
               }}
               onDrop={(e) => {
                 e.preventDefault();
-                const id = e.dataTransfer.getData('text/calendar-event-id');
+                const id = e.dataTransfer.getData("text/calendar-event-id");
                 if (id) onMoveEvent(id, b.date);
               }}
               className={cn(
-                'min-h-[110px] cursor-pointer border-b border-r border-border-subtle p-1.5 transition-colors hover:bg-bg-overlay',
-                !inMonth && 'bg-bg-base/30 text-fg-tertiary',
-                (idx + 1) % 7 === 0 && 'border-r-0',
+                "min-h-[110px] cursor-pointer border-b border-r border-border-subtle p-1.5 transition-colors hover:bg-bg-overlay",
+                !inMonth && "bg-bg-base/30 text-fg-tertiary",
+                (idx + 1) % 7 === 0 && "border-r-0",
               )}
               onClick={() => onSelectDay(b.date)}
             >
               <div className="mb-1 flex items-center justify-between">
                 <span
                   className={cn(
-                    'inline-flex h-6 w-6 items-center justify-center rounded-full text-xs',
+                    "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs",
                     isToday
-                      ? 'bg-accent text-accent-fg font-semibold'
-                      : 'text-fg-secondary',
+                      ? "bg-accent text-accent-fg font-semibold"
+                      : "text-fg-secondary",
                   )}
                 >
                   {b.date.getDate()}
@@ -126,7 +116,7 @@ export function MonthView({
               </div>
               <div className="space-y-0.5">
                 {visible.map((it) =>
-                  it.type === 'event' ? (
+                  it.type === "event" ? (
                     <MonthEventChip
                       key={`e-${it.id}`}
                       event={it}
@@ -165,12 +155,12 @@ function MonthEventChip({
     <div
       draggable
       onDragStart={(e) => {
-        e.dataTransfer.setData('text/calendar-event-id', event.id);
-        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData("text/calendar-event-id", event.id);
+        e.dataTransfer.effectAllowed = "move";
       }}
       onClick={onClick}
       className={cn(
-        'cursor-grab truncate rounded px-1 py-0.5 text-[11px] active:cursor-grabbing',
+        "cursor-grab truncate rounded px-1 py-0.5 text-[11px] active:cursor-grabbing",
         style.bg,
         style.text,
       )}
@@ -198,8 +188,8 @@ function MonthIssueChip({
 }
 
 function formatTimeShort(d: Date): string {
-  return d.toLocaleTimeString('ru-RU', {
-    hour: '2-digit',
-    minute: '2-digit',
+  return d.toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }

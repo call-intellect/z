@@ -1,24 +1,3 @@
-/**
- * SBA β-7 — one-off patch script.
- *
- * Для всех существующих `Document` (включая soft-deleted ради консистентности
- * данных в БД), у которых `useCases` пуст, проставляет `['reference']` —
- * нейтральная метка «справочный документ». После прохода `Document.useCases`
- * никогда не пуст для legacy-данных, новые документы могут создаваться без
- * useCases (UI/импорт), но сразу же тоже получают 'reference' при первом
- * сохранении (см. DocumentsService).
- *
- * Запуск:
- *   bun run scripts/patch-document-use-cases-default.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Записи с уже непустым useCases НЕ перезаписываются (in-place check).
- *   - Можно запускать многократно — итог один и тот же.
- *
- * После пуша на прод запустить ВРУЧНУЮ один раз:
- *   bun run scripts/patch-document-use-cases-default.ts
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -42,7 +21,6 @@ async function main(): Promise<void> {
     alreadySet: 0,
   };
 
-  // Сначала count для прогресс-логов.
   const total = await prisma.document.count();
   // eslint-disable-next-line no-console
   console.log(`Документов в БД (включая soft-deleted): ${total}`);

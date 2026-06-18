@@ -1,24 +1,19 @@
-'use client';
+"use client";
 
-import { useMemo } from 'react';
-import clsx from 'clsx';
-import { useParticipants } from '@livekit/components-react';
-import type { Participant } from 'livekit-client';
+import { useMemo } from "react";
+import clsx from "clsx";
+import { useParticipants } from "@livekit/components-react";
+import type { Participant } from "livekit-client";
 
-import { useHostControls } from '@/hooks/use-host-controls';
-import { readRaiseHand } from '@/hooks/use-raise-hand';
-import { t } from '@/lib/i18n';
+import { useHostControls } from "@/hooks/use-host-controls";
+import { readRaiseHand } from "@/hooks/use-raise-hand";
+import { t } from "@/lib/i18n";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   meetingId: string;
   isHost: boolean;
-  /**
-   * Карта `livekitIdentity → participantId` (нужна, чтобы host-actions могли
-   * слать `pid` на backend, который оперирует internal ID, а не LiveKit-identity).
-   * Если идентификатор отсутствует — host-actions для этого участника недоступны.
-   */
   identityToParticipantId: Record<string, string>;
 };
 
@@ -64,17 +59,17 @@ export function ParticipantsPanel({
   return (
     <aside
       className={clsx(
-        'flex h-full w-80 flex-col border-l border-border bg-bg-elevated text-fg-primary',
+        "flex h-full w-80 flex-col border-l border-border bg-bg-elevated text-fg-primary",
       )}
     >
       <header className="flex items-center justify-between border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide">
-          {t('room.participants_panel_title')} · {rows.length}
+          {t("room.participants_panel_title")} · {rows.length}
         </h2>
         <button
           type="button"
           onClick={onClose}
-          aria-label={t('common.close')}
+          aria-label={t("common.close")}
           className="rounded p-1 text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary"
         >
           ×
@@ -82,13 +77,15 @@ export function ParticipantsPanel({
       </header>
       <div className="flex-1 overflow-y-auto">
         {rows.length === 0 ? (
-          <p className="p-4 text-sm text-fg-tertiary">{t('room.no_participants')}</p>
+          <p className="p-4 text-sm text-fg-tertiary">
+            {t("room.no_participants")}
+          </p>
         ) : (
           <ul className="divide-y divide-border">
             {rows.map(({ participant, isRaised }) => {
               const internalId = identityToParticipantId[participant.identity];
               const isLocal = participant.isLocal;
-              const isHostRow = participant.identity.startsWith('host:');
+              const isHostRow = participant.identity.startsWith("host:");
               return (
                 <li
                   key={participant.sid || participant.identity}
@@ -96,11 +93,11 @@ export function ParticipantsPanel({
                 >
                   <div className="flex flex-1 items-center gap-2 truncate">
                     {isRaised ? (
-                      <span aria-label={t('room.controls.raise_hand')}>✋</span>
+                      <span aria-label={t("room.controls.raise_hand")}>✋</span>
                     ) : null}
                     <span className="truncate text-sm">
                       {participant.name || participant.identity}
-                      {isLocal ? ' (вы)' : ''}
+                      {isLocal ? " (вы)" : ""}
                     </span>
                     {isHostRow ? (
                       <span className="rounded bg-info/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-info">
@@ -117,7 +114,7 @@ export function ParticipantsPanel({
                         }}
                         className="rounded bg-bg-overlay px-2 py-1 text-xs hover:bg-bg-overlay/80"
                       >
-                        {t('room.host_actions.mute')}
+                        {t("room.host_actions.mute")}
                       </button>
                       {isRaised ? (
                         <button
@@ -127,7 +124,7 @@ export function ParticipantsPanel({
                           }}
                           className="rounded bg-bg-overlay px-2 py-1 text-xs hover:bg-bg-overlay/80"
                         >
-                          {t('room.host_actions.lower_hand')}
+                          {t("room.host_actions.lower_hand")}
                         </button>
                       ) : null}
                       <button
@@ -137,7 +134,7 @@ export function ParticipantsPanel({
                         }}
                         className="rounded bg-danger/80 px-2 py-1 text-xs text-danger-fg hover:opacity-90"
                       >
-                        {t('room.host_actions.kick')}
+                        {t("room.host_actions.kick")}
                       </button>
                     </div>
                   ) : null}

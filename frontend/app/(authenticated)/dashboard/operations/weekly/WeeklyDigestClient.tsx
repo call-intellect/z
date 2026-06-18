@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -9,16 +9,16 @@ import {
   Target,
   TrendingUp,
   Users,
-} from 'lucide-react';
-import Link from 'next/link';
-import { useSearchParams, useRouter } from 'next/navigation';
-import ReactMarkdown from 'react-markdown';
-import rehypeSanitize from 'rehype-sanitize';
-import useSWR from 'swr';
+} from "lucide-react";
+import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
+import useSWR from "swr";
 
-import { ApiError } from '@/api/api-error';
-import { IDEA_STATUS_LABEL, type IdeaStatus } from '@/domain/idea';
-import { INSIGHT_KIND_LABEL, type InsightKind } from '@/domain/insight';
+import { ApiError } from "@/api/api-error";
+import { IDEA_STATUS_LABEL, type IdeaStatus } from "@/domain/idea";
+import { INSIGHT_KIND_LABEL, type InsightKind } from "@/domain/insight";
 import {
   weeklyDigestApi,
   type WeeklyDeltaApi,
@@ -26,7 +26,7 @@ import {
   type WeeklyKpiDeltaApi,
   type WeeklyOperationsDigestApi,
   type WeeklyTeamDynamicsRowApi,
-} from '@/api/weekly-digest.api';
+} from "@/api/weekly-digest.api";
 import {
   AreaTrend,
   BarTrend,
@@ -39,51 +39,30 @@ import {
   ModernPageShell,
   StatCard,
   StatusPill,
-} from '@/ui/components/dashboard/modern';
-import { OperationsTabs } from '@/ui/components/dashboard/OperationsTabs';
+} from "@/ui/components/dashboard/modern";
+import { OperationsTabs } from "@/ui/components/dashboard/OperationsTabs";
 
-import { WeeklyPerPersonWidget } from './WeeklyPerPersonWidget';
+import { WeeklyPerPersonWidget } from "./WeeklyPerPersonWidget";
 
-/**
- * SBA β-8.1 — клиентский UI «Недельной сводки операционного директора».
- *
- * Показывает дайджест `WeeklyOperationsDigest` за указанную неделю.
- * `weekStart` берётся из query-параметра `?weekStart=YYYY-MM-DD`;
- * если не задан — используем понедельник прошедшей недели (по UTC).
- *
- * Навигация по неделям — кнопки «← Прошлая» / «Следующая →» (с проверкой
- * на будущее: следующую неделю не запрашиваем).
- *
- * Встроенный режим (`embedded`, ТЗ редизайн кабинета Ф2): на экране `/week`
- * клиент живёт внутри общего `ModernPageShell` + вкладок. В этом режиме:
- *   - не рендерим собственный `ModernPageShell` / `OperationsTabs`;
- *   - `weekStart` приходит пропом, навигацию проксируем в `onWeekChange`
- *     (родитель синхронизирует неделю между всеми вкладками и query);
- *   - не рендерим `WeeklyPerPersonWidget` — он переехал во вкладку
- *     «Кто держит слово».
- */
 export function WeeklyDigestClient({
   embedded = false,
   weekStart: weekStartProp,
   onWeekChange,
 }: {
   embedded?: boolean;
-  /** Неделя извне (только embedded). Управляет родитель `/week`. */
   weekStart?: string;
-  /** Колбэк смены недели (только embedded). */
   onWeekChange?: (nextWeek: string) => void;
 } = {}) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const initialWeek = searchParams?.get('weekStart') ?? defaultLastMondayUtc();
+  const initialWeek = searchParams?.get("weekStart") ?? defaultLastMondayUtc();
   const [internalWeek, setInternalWeek] = useState(initialWeek);
 
-  // В embedded неделя — внешняя (от `/week`); иначе — собственный state.
   const weekStart =
     embedded && weekStartProp !== undefined ? weekStartProp : internalWeek;
 
   const digestSwr = useSWR(
-    ['weekly-digest', weekStart],
+    ["weekly-digest", weekStart],
     () => weeklyDigestApi.get(weekStart),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
@@ -97,8 +76,8 @@ export function WeeklyDigestClient({
       return;
     }
     setInternalWeek(nextWeek);
-    const params = new URLSearchParams(searchParams?.toString() ?? '');
-    params.set('weekStart', nextWeek);
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    params.set("weekStart", nextWeek);
     router.replace(`/dashboard/operations/weekly?${params.toString()}`);
   };
 
@@ -109,18 +88,18 @@ export function WeeklyDigestClient({
 
   const body = (
     <>
-      {/* Week-picker — стеклянная панель навигации по неделям. */}
+      {}
       <div
         style={glass()}
         className={`flex flex-wrap items-center gap-3 p-3 ${
-          embedded ? 'mb-6' : 'mb-6 mt-4'
+          embedded ? "mb-6" : "mb-6 mt-4"
         }`}
       >
         <button
           type="button"
           onClick={() => goToWeek(prevWeek)}
           className="rounded-full px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
-          style={{ color: CHART.dim, border: '1px solid var(--border-inset)' }}
+          style={{ color: CHART.dim, border: "1px solid var(--border-inset)" }}
         >
           ← Прошлая неделя
         </button>
@@ -141,7 +120,7 @@ export function WeeklyDigestClient({
           onClick={() => goToWeek(nextWeek)}
           disabled={nextWeekDisabled}
           className="rounded-full px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)] disabled:opacity-40"
-          style={{ color: CHART.dim, border: '1px solid var(--border-inset)' }}
+          style={{ color: CHART.dim, border: "1px solid var(--border-inset)" }}
         >
           Следующая неделя →
         </button>
@@ -163,8 +142,7 @@ export function WeeklyDigestClient({
         <DigestView data={data} />
       ) : null}
 
-      {/* ТЗ-D Фаза 5 — недельный план-факт по людям. В embedded не рендерим:
-          на `/week` он переехал во вкладку «Кто держит слово». */}
+      {}
       {embedded ? null : (
         <div className="mt-6">
           <WeeklyPerPersonWidget weekStart={weekStart} />
@@ -182,7 +160,7 @@ export function WeeklyDigestClient({
       title="Недельная сводка"
       subtitle="Обзор для операционного директора: температура команды, повторяющиеся блокеры, сигналы, цели, висящие решения."
     >
-      {/* §5.1 — Общая навигация по операционному разделу. */}
+      {}
       <OperationsTabs />
       {body}
     </ModernPageShell>
@@ -191,18 +169,16 @@ export function WeeklyDigestClient({
 
 function DigestView(props: { data: WeeklyOperationsDigestApi }) {
   const { data } = props;
-  // Pulse Wave 2 §2.2 — default `?? []` страхует от старых ответов API.
   const kpiDeltas = data.kpiDeltas ?? [];
   const teamDynamics = data.teamDynamics ?? [];
   const forecast = data.forecast ?? [];
-  // ТЗ-2 Ф3 — идеи недели и дельты по разделам (страхуем от старых ответов).
   const topIdeas = data.metrics.topIdeas ?? [];
   const sectionDeltas = data.sectionDeltas;
   return (
     <div className="space-y-6">
-      {/* Ф6 — hero-тренды по неделям (исторический ряд из data.trend). */}
+      {}
       <HeroTrendSection trend={data.trend ?? []} />
-      {/* Pulse Wave 2 §2.2 — 4 KPI с дельтами наверху для быстрого «пульса». */}
+      {}
       <KpiDeltasSection items={kpiDeltas} />
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -242,18 +218,13 @@ function DigestView(props: { data: WeeklyOperationsDigestApi }) {
       </GlassCard>
 
       <p className="text-xs" style={{ color: CHART.faint }}>
-        Сгенерировано {new Date(data.createdAt).toLocaleString('ru-RU')}.
+        Сгенерировано {new Date(data.createdAt).toLocaleString("ru-RU")}.
       </p>
     </div>
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────
- * Ф6 — Hero-тренды по неделям. Читают исторический ряд `data.trend`
- * (old→new, до 12 точек). Меньше 2 точек — стеклянная заглушка.
- * ────────────────────────────────────────────────────────────────────── */
-
-type TrendPoint = WeeklyOperationsDigestApi['trend'][number];
+type TrendPoint = WeeklyOperationsDigestApi["trend"][number];
 
 function HeroTrendSection({ trend }: { trend: TrendPoint[] }) {
   if (trend.length < 2) {
@@ -269,7 +240,6 @@ function HeroTrendSection({ trend }: { trend: TrendPoint[] }) {
       </GlassCard>
     );
   }
-  // Графики читают доли как проценты (0..1 → 0..100) для наглядности оси.
   const moodData = trend.map((p) => ({
     weekStart: formatRuShort(p.weekStart),
     greenShare: Math.round(p.greenShare * 100),
@@ -294,8 +264,8 @@ function HeroTrendSection({ trend }: { trend: TrendPoint[] }) {
           data={moodData}
           xKey="weekStart"
           series={[
-            { key: 'greenShare', color: CHART.mint, label: 'Зелёные' },
-            { key: 'redShare', color: CHART.red, label: 'Красные' },
+            { key: "greenShare", color: CHART.mint, label: "Зелёные" },
+            { key: "redShare", color: CHART.red, label: "Красные" },
           ]}
           height={240}
         />
@@ -306,11 +276,15 @@ function HeroTrendSection({ trend }: { trend: TrendPoint[] }) {
           data={execData}
           xKey="weekStart"
           series={[
-            { key: 'goalsCompleted', color: CHART.mint, label: 'Закрытые цели' },
             {
-              key: 'hangingDecisions',
+              key: "goalsCompleted",
+              color: CHART.mint,
+              label: "Закрытые цели",
+            },
+            {
+              key: "hangingDecisions",
               color: CHART.red,
-              label: 'Висящие решения',
+              label: "Висящие решения",
             },
           ]}
           height={240}
@@ -329,16 +303,12 @@ function HeroTrendSection({ trend }: { trend: TrendPoint[] }) {
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────
- * Ф6 — Температура команды (пончик) и Цели за неделю (карточки).
- * ────────────────────────────────────────────────────────────────────── */
-
 function TeamTemperatureCard({ data }: { data: WeeklyOperationsDigestApi }) {
   const m = data.metrics;
   const donut = [
-    { name: 'Зелёные', value: Math.round(m.greenShare * 100), c: CHART.mint },
-    { name: 'Жёлтые', value: Math.round(m.yellowShare * 100), c: CHART.amber },
-    { name: 'Красные', value: Math.round(m.redShare * 100), c: CHART.red },
+    { name: "Зелёные", value: Math.round(m.greenShare * 100), c: CHART.mint },
+    { name: "Жёлтые", value: Math.round(m.yellowShare * 100), c: CHART.amber },
+    { name: "Красные", value: Math.round(m.redShare * 100), c: CHART.red },
   ];
   return (
     <DonutCard
@@ -396,7 +366,7 @@ function GoalStat({
   return (
     <div
       className="rounded-2xl p-3"
-      style={{ background: 'var(--surface-inset)' }}
+      style={{ background: "var(--surface-inset)" }}
     >
       <div
         className="text-2xl font-semibold leading-none tabular-nums"
@@ -419,14 +389,10 @@ function GoalStat({
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────
- * Ф6 — Списочные секции (блокеры / сигналы / висящие решения) на стекле.
- * ────────────────────────────────────────────────────────────────────── */
-
-type Blocker = WeeklyOperationsDigestApi['metrics']['topBlockers'][number];
-type Insight = WeeklyOperationsDigestApi['metrics']['topInsights'][number];
+type Blocker = WeeklyOperationsDigestApi["metrics"]["topBlockers"][number];
+type Insight = WeeklyOperationsDigestApi["metrics"]["topInsights"][number];
 type HangingDecision =
-  WeeklyOperationsDigestApi['metrics']['hangingDecisions'][number];
+  WeeklyOperationsDigestApi["metrics"]["hangingDecisions"][number];
 
 function BlockersSection({
   blockers,
@@ -492,7 +458,7 @@ function InsightsSection({
               <UrgencyDot tone={tone} title={URGENCY_TITLE[tone]} />
               <span
                 className="rounded px-2 py-0.5 text-xs"
-                style={{ background: 'var(--surface-inset)', color: CHART.dim }}
+                style={{ background: "var(--surface-inset)", color: CHART.dim }}
               >
                 {insightKindLabelRu(it.kind)}
               </span>
@@ -552,9 +518,7 @@ function HangingDecisionsSection({
 
 function defaultLastMondayUtc(): string {
   const d = new Date();
-  // 0 = воскресенье, 1 = понедельник, ..., 6 = суббота.
   const dow = d.getUTCDay();
-  // Вычисляем понедельник прошедшей недели (если сегодня пн, то -7 дней).
   const offset = dow === 0 ? -13 : -(dow - 1) - 7;
   const monday = new Date(d);
   monday.setUTCDate(monday.getUTCDate() + offset);
@@ -573,20 +537,18 @@ function todayUtcDate(): string {
 
 function toIso(d: Date): string {
   const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
 }
 
 function formatRu(dateLocal: string): string {
-  // YYYY-MM-DD → DD.MM.YYYY.
-  const [y, m, d] = dateLocal.split('-');
+  const [y, m, d] = dateLocal.split("-");
   return `${d}.${m}.${y}`;
 }
 
-/** Короткая дата для оси графика: YYYY-MM-DD → DD.MM. */
 function formatRuShort(dateLocal: string): string {
-  const [, m, d] = dateLocal.split('-');
+  const [, m, d] = dateLocal.split("-");
   return `${d}.${m}`;
 }
 
@@ -595,70 +557,54 @@ function signedRu(v: number): string {
   return String(v);
 }
 
-/**
- * Маппинг ошибки SWR в человеческое сообщение. Сохраняет спец-кейсы
- * `digest_not_found` (ещё не сгенерирован) и `forbidden_role` (нет доступа).
- */
 function weeklyDigestErrorMessage(err: unknown): string | null {
   if (!err) return null;
   if (err instanceof ApiError) {
-    if (err.code === 'digest_not_found') {
-      return 'Дайджест за выбранную неделю ещё не сгенерирован. Он появится в понедельник утром по локальному времени организации.';
+    if (err.code === "digest_not_found") {
+      return "Дайджест за выбранную неделю ещё не сгенерирован. Он появится в понедельник утром по локальному времени организации.";
     }
-    if (err.code === 'forbidden_role') {
-      return 'Нет доступа к недельной сводке (нужна роль coo / admin / owner).';
+    if (err.code === "forbidden_role") {
+      return "Нет доступа к недельной сводке (нужна роль coo / admin / owner).";
     }
     return err.message;
   }
-  return err instanceof Error ? err.message : 'Не удалось загрузить недельную сводку';
+  return err instanceof Error
+    ? err.message
+    : "Не удалось загрузить недельную сводку";
 }
 
-/* ──────────────────────────────────────────────────────────────────────
- * ТЗ-C Фаза 5 R13 — светофор срочности для блоков проблем.
- * Тон считаем по локальным визуальным порогам (это UI-логика, не данные).
- * Парные токены: точка — `text-chip-{tone}-fg`; нейтраль — `text-fg-tertiary`.
- * ────────────────────────────────────────────────────────────────────── */
+type UrgencyTone = "danger" | "warning" | "neutral";
 
-type UrgencyTone = 'danger' | 'warning' | 'neutral';
-
-// Висящие решения: чем старше — тем горячее.
 const HANGING_DANGER_DAYS = 14;
 const HANGING_WARNING_DAYS = 7;
-// Повторяющиеся блокеры: чем чаще упоминают — тем горячее.
 const BLOCKER_DANGER_COUNT = 5;
 const BLOCKER_WARNING_COUNT = 3;
 
 function hangingTone(ageDays: number): UrgencyTone {
-  if (ageDays >= HANGING_DANGER_DAYS) return 'danger';
-  if (ageDays >= HANGING_WARNING_DAYS) return 'warning';
-  return 'neutral';
+  if (ageDays >= HANGING_DANGER_DAYS) return "danger";
+  if (ageDays >= HANGING_WARNING_DAYS) return "warning";
+  return "neutral";
 }
 
 function blockerTone(count: number): UrgencyTone {
-  if (count >= BLOCKER_DANGER_COUNT) return 'danger';
-  if (count >= BLOCKER_WARNING_COUNT) return 'warning';
-  return 'neutral';
+  if (count >= BLOCKER_DANGER_COUNT) return "danger";
+  if (count >= BLOCKER_WARNING_COUNT) return "warning";
+  return "neutral";
 }
 
-/**
- * Тон по динамике сигнала. Канон API: growing | stable | declining | spike.
- * Внимания требуют только рост (`growing`) и всплеск (`spike`); остальное —
- * нейтрально (`declining` для проблемного сигнала — это хорошо).
- */
 function insightDynamicTone(dynamicLabel: string): UrgencyTone {
-  if (dynamicLabel === 'spike') return 'danger';
-  if (dynamicLabel === 'growing') return 'warning';
-  return 'neutral';
+  if (dynamicLabel === "spike") return "danger";
+  if (dynamicLabel === "growing") return "warning";
+  return "neutral";
 }
 
-/** Точка-индикатор срочности (тон из палитры CHART). */
 function UrgencyDot({ tone, title }: { tone: UrgencyTone; title: string }) {
   const color =
-    tone === 'danger'
+    tone === "danger"
       ? CHART.red
-      : tone === 'warning'
-      ? CHART.amber
-      : CHART.faint;
+      : tone === "warning"
+        ? CHART.amber
+        : CHART.faint;
   return (
     <span
       aria-hidden
@@ -672,30 +618,23 @@ function UrgencyDot({ tone, title }: { tone: UrgencyTone; title: string }) {
 }
 
 const URGENCY_TITLE: Record<UrgencyTone, string> = {
-  danger: 'горит',
-  warning: 'ждёт',
-  neutral: 'без срочности',
+  danger: "горит",
+  warning: "ждёт",
+  neutral: "без срочности",
 };
 
-/** Компактная кнопка-ссылка «Открыть» (стеклянные токены, ведёт на маршрут). */
 function OpenLink({ href }: { href: string }) {
   return (
     <Link
       href={href}
       className="rounded-full px-2 py-0.5 text-xs transition-colors hover:bg-[var(--surface-hover)]"
-      style={{ color: CHART.dim, border: '1px solid var(--border-inset)' }}
+      style={{ color: CHART.dim, border: "1px solid var(--border-inset)" }}
     >
       Открыть
     </Link>
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────
- * Pulse Wave 2 §2.2 — секции «KPI с дельтами / Динамика команд / Прогноз».
- * Цвета — парные токены `chip-{role}-bg` + `chip-{role}-fg`. Без hex.
- * ────────────────────────────────────────────────────────────────────── */
-
-// Ф6 — циклические градиент/тон/иконка для ряда StatCard главных показателей.
 const KPI_GRADS = [GRAD.violet, GRAD.teal, GRAD.amber, GRAD.blue] as const;
 const KPI_TONES = [CHART.violet, CHART.mint, CHART.amber, CHART.blue] as const;
 const KPI_ICONS = [
@@ -707,14 +646,9 @@ const KPI_ICONS = [
 
 function KpiDeltasSection({ items }: { items: WeeklyKpiDeltaApi[] }) {
   if (items.length === 0) return null;
-  // Ряд StatCard главных KPI. Временных рядов в weekly-digest API нет —
-  // spark не выдумываем (поле опционально, не передаём).
   return (
     <section>
-      <h2
-        className="mb-3 text-lg font-semibold"
-        style={{ color: CHART.text }}
-      >
+      <h2 className="mb-3 text-lg font-semibold" style={{ color: CHART.text }}>
         Главные показатели
       </h2>
       <p className="mb-3 text-xs" style={{ color: CHART.faint }}>
@@ -730,16 +664,13 @@ function KpiDeltasSection({ items }: { items: WeeklyKpiDeltaApi[] }) {
 }
 
 function KpiStatCard({ k, i }: { k: WeeklyKpiDeltaApi; i: number }) {
-  // Для висящих решений рост — это плохо, а падение хорошо. Для остальных —
-  // наоборот. `up` в StatCard управляет цветом дельты (мята vs янтарь).
-  const isInverse = k.label === 'Висящие решения';
+  const isInverse = k.label === "Висящие решения";
   const grad = KPI_GRADS[i % KPI_GRADS.length];
   const tone = KPI_TONES[i % KPI_TONES.length];
   const icon = KPI_ICONS[i % KPI_ICONS.length];
-  const unitSuffix = k.unit === '%' ? '%' : k.unit === 'pts' ? ' балл.' : ' шт';
+  const unitSuffix = k.unit === "%" ? "%" : k.unit === "pts" ? " балл." : " шт";
   const value = `${k.current}${unitSuffix}`;
   if (k.delta === null) {
-    // Сохраняем состояние «нет данных» (нет сравнения с прошлой неделей).
     return (
       <StatCard
         icon={icon}
@@ -750,7 +681,6 @@ function KpiStatCard({ k, i }: { k: WeeklyKpiDeltaApi; i: number }) {
       />
     );
   }
-  // «Хорошее» направление: для инверсных метрик — снижение, иначе — рост.
   const isGood = isInverse ? k.delta <= 0 : k.delta >= 0;
   return (
     <StatCard
@@ -759,17 +689,13 @@ function KpiStatCard({ k, i }: { k: WeeklyKpiDeltaApi; i: number }) {
       tone={tone}
       value={value}
       label={k.label}
-      delta={`${signedRu(k.delta)}${k.unit === '%' ? '%' : ''}`}
+      delta={`${signedRu(k.delta)}${k.unit === "%" ? "%" : ""}`}
       up={isGood}
     />
   );
 }
 
-function TeamDynamicsSection({
-  items,
-}: {
-  items: WeeklyTeamDynamicsRowApi[];
-}) {
+function TeamDynamicsSection({ items }: { items: WeeklyTeamDynamicsRowApi[] }) {
   if (items.length === 0) return null;
   return (
     <GlassCard>
@@ -782,8 +708,8 @@ function TeamDynamicsSection({
       <ul className="space-y-1">
         {items.map((row) => {
           const isImproved =
-            row.signal === 'sentiment_improved' ||
-            row.signal === 'promises_improved';
+            row.signal === "sentiment_improved" ||
+            row.signal === "promises_improved";
           const toneColor = isImproved ? CHART.mint : CHART.red;
           return (
             <li
@@ -791,7 +717,7 @@ function TeamDynamicsSection({
               className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm"
             >
               <span aria-hidden style={{ color: toneColor }}>
-                {isImproved ? '↑' : '↓'}
+                {isImproved ? "↑" : "↓"}
               </span>
               <span className="font-medium" style={{ color: CHART.text }}>
                 {row.departmentName}
@@ -801,8 +727,8 @@ function TeamDynamicsSection({
                 style={{
                   color: toneColor,
                   background: isImproved
-                    ? 'oklch(0.85 0.15 165 / 0.14)'
-                    : 'oklch(0.66 0.22 25 / 0.16)',
+                    ? "oklch(0.85 0.15 165 / 0.14)"
+                    : "oklch(0.66 0.22 25 / 0.16)",
                 }}
               >
                 {teamDynamicsLabel(row.signal)}
@@ -821,38 +747,39 @@ function TeamDynamicsSection({
   );
 }
 
-function teamDynamicsLabel(
-  signal: WeeklyTeamDynamicsRowApi['signal'],
-): string {
+function teamDynamicsLabel(signal: WeeklyTeamDynamicsRowApi["signal"]): string {
   switch (signal) {
-    case 'sentiment_improved':
-      return 'настроение улучшилось';
-    case 'sentiment_dropped':
-      return 'настроение упало';
-    case 'promises_improved':
-      return 'обещания выправились';
-    case 'promises_dropped':
-      return 'обещания просели';
+    case "sentiment_improved":
+      return "настроение улучшилось";
+    case "sentiment_dropped":
+      return "настроение упало";
+    case "promises_improved":
+      return "обещания выправились";
+    case "promises_dropped":
+      return "обещания просели";
     default:
       return signal;
   }
 }
 
 function ForecastSection({ items }: { items: WeeklyForecastItemApi[] }) {
-  // Б-6 — три состояния. Пустой прогноз ≠ «скрыть»: показываем явный
-  // empty-state «Пока недостаточно данных» (прототип part-week блок 8),
-  // чтобы пользователь понимал, что Коре нужно накопить историю.
   if (items.length === 0) {
     return (
       <GlassCard>
         <CardTitle icon={<TrendingUp size={16} />} grad={GRAD.blue}>
           Прогноз на следующую неделю
         </CardTitle>
-        <div className="mt-4 rounded-2xl p-6 text-center" style={{ background: 'var(--surface-inset)' }}>
+        <div
+          className="mt-4 rounded-2xl p-6 text-center"
+          style={{ background: "var(--surface-inset)" }}
+        >
           <p className="text-sm font-medium" style={{ color: CHART.dim }}>
             Пока недостаточно данных для прогноза
           </p>
-          <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed" style={{ color: CHART.faint }}>
+          <p
+            className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed"
+            style={{ color: CHART.faint }}
+          >
             Чтобы Кора строила прогноз, нужно несколько недель истории встреч и
             обещаний. Прогноз появится, когда накопится достаточно недель.
           </p>
@@ -872,32 +799,31 @@ function ForecastSection({ items }: { items: WeeklyForecastItemApi[] }) {
       </div>
       <ul className="mt-3 space-y-2">
         {items.map((f) => {
-          // medium — заметный тренд (уверенность средняя) → ok;
-          // low — слабый/нет данных (уверенность низкая) → warning.
-          const status: 'ok' | 'warning' =
-            f.confidence === 'medium' ? 'ok' : 'warning';
+          const status: "ok" | "warning" =
+            f.confidence === "medium" ? "ok" : "warning";
           return (
             <li
               key={f.metric}
               className="rounded-xl p-3 text-sm"
-              style={{ background: 'var(--surface-inset)' }}
+              style={{ background: "var(--surface-inset)" }}
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span
                   className="rounded px-2 py-0.5 text-[11px]"
-                  style={{ background: 'var(--surface-inset)', color: CHART.dim }}
+                  style={{
+                    background: "var(--surface-inset)",
+                    color: CHART.dim,
+                  }}
                 >
                   {forecastMetricLabel(f.metric)}
                 </span>
-                <span
-                  title="Уверенность прогноза: medium — заметный тренд (≥10), low — слабый или нет данных"
-                >
+                <span title="Уверенность прогноза: medium — заметный тренд (≥10), low — слабый или нет данных">
                   <StatusPill status={status} />
                 </span>
                 <span className="text-[11px]" style={{ color: CHART.faint }}>
-                  {f.confidence === 'medium'
-                    ? 'уверенность средняя'
-                    : 'уверенность низкая'}
+                  {f.confidence === "medium"
+                    ? "уверенность средняя"
+                    : "уверенность низкая"}
                 </span>
               </div>
               <p className="mt-1.5" style={{ color: CHART.text }}>
@@ -911,28 +837,21 @@ function ForecastSection({ items }: { items: WeeklyForecastItemApi[] }) {
   );
 }
 
-function forecastMetricLabel(
-  metric: WeeklyForecastItemApi['metric'],
-): string {
+function forecastMetricLabel(metric: WeeklyForecastItemApi["metric"]): string {
   switch (metric) {
-    case 'sentiment':
-      return 'Настроение';
-    case 'promises':
-      return 'Обещания';
-    case 'hanging_decisions':
-      return 'Висящие решения';
+    case "sentiment":
+      return "Настроение";
+    case "promises":
+      return "Обещания";
+    case "hanging_decisions":
+      return "Висящие решения";
     default:
       return metric;
   }
 }
 
-/* ──────────────────────────────────────────────────────────────────────
- * ТЗ-2 Ф3 — идеи за неделю + дельты по разделам (неделя к неделе).
- * Цвета — парные/современные токены. Без hex / text-white / slate.
- * ────────────────────────────────────────────────────────────────────── */
-
 type WeeklyIdea = NonNullable<
-  WeeklyOperationsDigestApi['metrics']['topIdeas']
+  WeeklyOperationsDigestApi["metrics"]["topIdeas"]
 >[number];
 
 function IdeasSection({
@@ -946,7 +865,9 @@ function IdeasSection({
   return (
     <GlassCard>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-semibold text-fg-primary">Идеи за неделю</h2>
+        <h2 className="text-lg font-semibold text-fg-primary">
+          Идеи за неделю
+        </h2>
         <DeltaLabel delta={delta} />
       </div>
       <ul className="mt-2 space-y-1 text-sm">
@@ -959,9 +880,7 @@ function IdeasSection({
               {ideaStatusLabel(idea.status)}
             </span>
             <span className="flex-1 text-fg-primary">{idea.statement}</span>
-            <span className="text-xs text-fg-secondary">
-              вес {idea.weight}
-            </span>
+            <span className="text-xs text-fg-secondary">вес {idea.weight}</span>
             <span className="text-xs text-fg-tertiary">
               сторонников: {idea.supporterCount}
             </span>
@@ -972,29 +891,14 @@ function IdeasSection({
   );
 }
 
-/**
- * ТЗ-2 Ф3 — русский лейбл статуса идеи. Переиспользуем единый словарь
- * `IDEA_STATUS_LABEL` (frontend/src/domain/idea.ts); типобезопасно страхуем
- * неизвестные значения (API отдаёт `status: string`).
- */
 function ideaStatusLabel(status: string): string {
   return IDEA_STATUS_LABEL[status as IdeaStatus] ?? status;
 }
 
-/**
- * Русский лейбл типа сигнала. Переиспользуем единый словарь
- * `INSIGHT_KIND_LABEL` (frontend/src/domain/insight.ts); API отдаёт
- * `kind: string`, поэтому страхуем неизвестные значения fallback'ом.
- */
 function insightKindLabelRu(kind: string): string {
   return INSIGHT_KIND_LABEL[kind as InsightKind] ?? kind;
 }
 
-/**
- * ТЗ-2 Ф3 — компактная дельта раздела «к прошлой неделе».
- * delta>0 → «↑ N» (мята), delta<0 → «↓ N» (янтарь/красный),
- * delta===0 → «без изменений», delta/blok===null → «—».
- */
 function DeltaLabel({ delta }: { delta: WeeklyDeltaApi | null }) {
   if (!delta || delta.delta === null) {
     return <span className="text-xs text-fg-tertiary">—</span>;
@@ -1003,9 +907,8 @@ function DeltaLabel({ delta }: { delta: WeeklyDeltaApi | null }) {
   if (d === 0) {
     return <span className="text-xs text-fg-tertiary">без изменений</span>;
   }
-  const tone =
-    d > 0 ? CHART.mint : CHART.amber;
-  const arrow = d > 0 ? '↑' : '↓';
+  const tone = d > 0 ? CHART.mint : CHART.amber;
+  const arrow = d > 0 ? "↑" : "↓";
   return (
     <span className="text-xs tabular-nums" style={{ color: tone }}>
       {arrow} {Math.abs(d)} к прошлой неделе
@@ -1013,20 +916,16 @@ function DeltaLabel({ delta }: { delta: WeeklyDeltaApi | null }) {
   );
 }
 
-/**
- * Русификация динамики сигнала. Канон API: growing | stable | declining |
- * spike. Лейблы согласованы с фильтрами на странице `/insights`.
- */
 function insightDynamicLabelRu(dynamicLabel: string): string {
   switch (dynamicLabel) {
-    case 'spike':
-      return 'всплеск';
-    case 'growing':
-      return 'растёт';
-    case 'stable':
-      return 'стабильно';
-    case 'declining':
-      return 'снижается';
+    case "spike":
+      return "всплеск";
+    case "growing":
+      return "растёт";
+    case "stable":
+      return "стабильно";
+    case "declining":
+      return "снижается";
     default:
       return dynamicLabel;
   }

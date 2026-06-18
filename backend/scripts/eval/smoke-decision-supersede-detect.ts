@@ -1,9 +1,3 @@
-/**
- * Smoke-тест агента `decision-supersede-detect` на DeepSeek-V4-Pro.
- * См. backend/src/modules/knowledge-core/prompts/decision-supersede-detect.prompt.ts.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-decision-supersede-detect.ts
- */
 import {
   client,
   computeCost,

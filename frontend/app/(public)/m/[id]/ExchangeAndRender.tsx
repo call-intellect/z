@@ -1,36 +1,24 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
-import { authApi } from '@/api/auth.api';
-import { ApiError } from '@/api/api-error';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
-import { Skeleton } from '@/ui/components/shared/Skeleton';
+import { authApi } from "@/api/auth.api";
+import { ApiError } from "@/api/api-error";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { Skeleton } from "@/ui/components/shared/Skeleton";
 
-import { MeetingPageShell } from './MeetingPageShell';
+import { MeetingPageShell } from "./MeetingPageShell";
 
 type Props = {
   meetingId: string;
   deepLinkToken: string | null;
-  /**
-   * Персональный токен приглашения (`?inv=`, Ф3.1). Пробрасывается в shell →
-   * `meetingsApi.join({ inviteToken })`, чтобы приглашённый вошёл под своей
-   * identity (а не как новый аноним).
-   */
   inviteToken?: string | null;
 };
 
-type ExchangeStage = 'pending' | 'done';
+type ExchangeStage = "pending" | "done";
 
-/**
- * Client-обёртка: если есть `?t`, делаем exchange (cookie → backend ставит её)
- * и убираем токен из URL. После — рендерим обычный shell.
- *
- * Если exchange упал с 401 — это значит токен битый/просрочен; рендерим
- * `<MeetingPageShell />` — он покажет либо guest-flow, либо «нет доступа».
- */
 export function ExchangeAndRender({
   meetingId,
   deepLinkToken,
@@ -39,7 +27,7 @@ export function ExchangeAndRender({
   const router = useRouter();
   const { refresh } = useAuth();
   const [stage, setStage] = useState<ExchangeStage>(
-    deepLinkToken ? 'pending' : 'done',
+    deepLinkToken ? "pending" : "done",
   );
 
   useEffect(() => {
@@ -51,17 +39,15 @@ export function ExchangeAndRender({
         await authApi.exchange(deepLinkToken, meetingId);
         await refresh();
       } catch (e) {
-        if (!(e instanceof ApiError) || e.code !== 'unauthorized') {
-          // 4xx, отличные от 401 — покажем тостом, но всё равно идём дальше.
-          const message = e instanceof Error ? e.message : 'Ошибка обмена токена.';
+        if (!(e instanceof ApiError) || e.code !== "unauthorized") {
+          const message =
+            e instanceof Error ? e.message : "Ошибка обмена токена.";
           toast.error(message);
         }
-        // 401 — нормальное состояние «токен просрочен, рендерим как гостя».
       } finally {
         if (!cancelled) {
-          // Убираем `?t=` из адреса; история заменяется (без stack-entry).
           router.replace(`/m/${meetingId}`);
-          setStage('done');
+          setStage("done");
         }
       }
     })();
@@ -72,7 +58,7 @@ export function ExchangeAndRender({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLinkToken, meetingId]);
 
-  if (stage === 'pending') {
+  if (stage === "pending") {
     return (
       <main className="flex min-h-screen items-center justify-center bg-bg-subtle p-6">
         <div className="w-full max-w-sm space-y-3">

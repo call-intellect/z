@@ -13,20 +13,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { OPTIONAL_AUTH_KEY } from '../decorators/optional-auth.decorator';
 import { JwtService } from '../services/jwt.service';
 
-
-/**
- * Guard для пользовательских endpoint'ов:
- *   - читает cookie `z_session`;
- *   - валидирует через `JwtService.verifySession`;
- *   - кладёт `req.user = { id, email, role }`.
- *
- * При отсутствии cookie:
- *   - если у роута есть `@OptionalAuth()` — пропускает с `req.user = null`;
- *   - иначе — `UnauthorizedException` (401).
- *
- * При невалидной/просроченной cookie — всегда 401 (даже с `@OptionalAuth()`,
- * чтобы фронт мог однозначно увидеть `auth:expired` и инициировать логин).
- */
 const COOKIE_NAME = 'z_session';
 
 @Injectable()
@@ -69,19 +55,13 @@ export class CookieAuthGuard implements CanActivate {
       });
     }
 
-    // Если в JWT присутствует jti — это standalone-сессия (Phase 2). Должна
-    // быть запись в `UserSession` и не отозвана. Иначе — отказ.
-    // Если jti отсутствует — legacy Crossmark deep-link или admin-логин: пропускаем
-    // без проверки UserSession (для backward-compat).
     if (payload.jti) {
       const session = await this.prisma.userSession.findUnique({
         where: { jti: payload.jti },
       });
       const now = Date.now();
       const valid =
-        session !== null &&
-        session.revokedAt === null &&
-        session.expiresAt.getTime() > now;
+        session !== null && session.revokedAt === null && session.expiresAt.getTime() > now;
       if (!valid) {
         throw new UnauthorizedException({
           ok: false,
@@ -105,8 +85,6 @@ export class CookieAuthGuard implements CanActivate {
   }
 
   private readCookie(req: Request, name: string): string | undefined {
-    // `cookie-parser` middleware заполняет `req.cookies`. Без него — fallback на
-    // парс заголовка, чтобы guard был самодостаточен в тестах.
     const fromParser = (req as Request & { cookies?: Record<string, string> }).cookies?.[name];
     if (fromParser) return fromParser;
 

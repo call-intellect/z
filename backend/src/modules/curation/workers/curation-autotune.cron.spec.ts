@@ -8,10 +8,6 @@ import type { CurationService } from '../services/curation.service';
 
 import { CurationAutotuneCron } from './curation-autotune.cron';
 
-/**
- * Action Center A2 «лестница доверия» (2026-06-02) — юнит-тесты
- * CurationAutotuneCron (kill-switch + авто-подстройка порогов).
- */
 describe('CurationAutotuneCron (A2)', () => {
   let prisma: PrismaService;
   let curation: CurationService;
@@ -27,7 +23,6 @@ describe('CurationAutotuneCron (A2)', () => {
   let incAdjustmentMock: ReturnType<typeof vi.fn>;
   let auditLogMock: ReturnType<typeof vi.fn>;
 
-  /** Полный снимок настроек с дефолтами A2 (override-able через partial). */
   function settings(over: Partial<CurationSettingsDto> = {}): CurationSettingsDto {
     return {
       autoThreshold: 0.85,
@@ -80,8 +75,6 @@ describe('CurationAutotuneCron (A2)', () => {
     cron = new CurationAutotuneCron(prisma, curation, metrics, audit);
   });
 
-  // ──────────────────────── kill-switch ────────────────────────
-
   it('kill-switch: высокий wrongRate + достаточно данных → provisionalThresholdByType=1.01 + audit', async () => {
     getSettingsMock.mockResolvedValue(settings());
     getProvisionalAuditStatsMock.mockResolvedValue({
@@ -90,7 +83,7 @@ describe('CurationAutotuneCron (A2)', () => {
           resourceType: 'regulation',
           auditDecided: 25,
           auditWrong: 10,
-          provisionalWrongRate: 0.4, // > 0.2
+          provisionalWrongRate: 0.4,
         },
       ],
     });
@@ -147,14 +140,10 @@ describe('CurationAutotuneCron (A2)', () => {
     expect(updateSettingsMock).not.toHaveBeenCalled();
   });
 
-  // ──────────────────── авто-подстройка ────────────────────
-
   it('autotuneEnabled=false → пороги НЕ двигаются (только kill-switch может)', async () => {
     getSettingsMock.mockResolvedValue(settings({ autotuneEnabled: false }));
     getOverrideStatsMock.mockResolvedValue({
-      items: [
-        { resourceType: 'fact', totalDecided: 50, overrideRate: 0.0 },
-      ],
+      items: [{ resourceType: 'fact', totalDecided: 50, overrideRate: 0.0 }],
     });
 
     const res = await cron.runForOrg('t-1');
@@ -166,15 +155,11 @@ describe('CurationAutotuneCron (A2)', () => {
   it('enabled + низкий override → опускает autoThresholdByType на step', async () => {
     getSettingsMock.mockResolvedValue(settings({ autotuneEnabled: true }));
     getOverrideStatsMock.mockResolvedValue({
-      items: [
-        // override 0.0 < 0.5*0.2=0.1 → down
-        { resourceType: 'fact', totalDecided: 50, overrideRate: 0.0 },
-      ],
+      items: [{ resourceType: 'fact', totalDecided: 50, overrideRate: 0.0 }],
     });
 
     const res = await cron.runForOrg('t-1');
     expect(res.thresholdsAdjusted).toBe(1);
-    // 0.85 - 0.02 = 0.83
     expect(updateSettingsMock).toHaveBeenCalledWith({
       tenantId: 't-1',
       patch: { autoThresholdByType: { fact: 0.83 } },
@@ -191,15 +176,11 @@ describe('CurationAutotuneCron (A2)', () => {
   it('enabled + высокий override → поднимает autoThresholdByType на step', async () => {
     getSettingsMock.mockResolvedValue(settings({ autotuneEnabled: true }));
     getOverrideStatsMock.mockResolvedValue({
-      items: [
-        // override 0.5 > 0.2 → up
-        { resourceType: 'fact', totalDecided: 50, overrideRate: 0.5 },
-      ],
+      items: [{ resourceType: 'fact', totalDecided: 50, overrideRate: 0.5 }],
     });
 
     const res = await cron.runForOrg('t-1');
     expect(res.thresholdsAdjusted).toBe(1);
-    // 0.85 + 0.02 = 0.87
     expect(updateSettingsMock).toHaveBeenCalledWith({
       tenantId: 't-1',
       patch: { autoThresholdByType: { fact: 0.87 } },
@@ -214,7 +195,7 @@ describe('CurationAutotuneCron (A2)', () => {
     getSettingsMock.mockResolvedValue(
       settings({
         autotuneEnabled: true,
-        autoThresholdByType: { fact: 0.97 }, // уже на max
+        autoThresholdByType: { fact: 0.97 },
       }),
     );
     getOverrideStatsMock.mockResolvedValue({
@@ -240,7 +221,6 @@ describe('CurationAutotuneCron (A2)', () => {
     });
 
     const res = await cron.runForOrg('t-1');
-    // 0.71 - 0.02 = 0.69, но lowerBound = max(0.5, deep 0.7) = 0.7 → clamp 0.7
     expect(res.thresholdsAdjusted).toBe(1);
     expect(updateSettingsMock).toHaveBeenCalledWith({
       tenantId: 't-1',
@@ -251,10 +231,7 @@ describe('CurationAutotuneCron (A2)', () => {
   it('мёртвая зона override (между 0.5*max и max) → no-op', async () => {
     getSettingsMock.mockResolvedValue(settings({ autotuneEnabled: true }));
     getOverrideStatsMock.mockResolvedValue({
-      items: [
-        // 0.15: 0.1 < 0.15 < 0.2 → null
-        { resourceType: 'fact', totalDecided: 50, overrideRate: 0.15 },
-      ],
+      items: [{ resourceType: 'fact', totalDecided: 50, overrideRate: 0.15 }],
     });
 
     const res = await cron.runForOrg('t-1');
@@ -295,7 +272,6 @@ describe('CurationAutotuneCron (A2)', () => {
 
     const res = await cron.runForAllOrgs();
     expect(res.scannedOrgs).toBe(2);
-    // t-1 отработал (kill-switch), t-2 упал но не уронил проход.
     expect(res.killSwitchTriggered).toBe(1);
   });
 });

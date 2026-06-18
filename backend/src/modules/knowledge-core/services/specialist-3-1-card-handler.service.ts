@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
@@ -12,28 +7,8 @@ import {
   CardSpecialistRegistry,
 } from '../../chat-v2/services/card-specialist-registry.service';
 
-/**
- * SBA α-7 — обработчик `CardSpecialistRegistry` для специалиста 3.1
- * (Regulations / Processes / Policies).
- *
- * Регистрируется в `CardSpecialistRegistry` через `onModuleInit`. Возвращает
- * карточки Regulation/Process/Policy, у которых `sourceBlockIds`
- * пересекаются с `candidateBlockIds` retrieval'а chat-v2.
- *
- * Контракт `CardSpecialistHandler`:
- *   - метод НЕ должен бросать — на любую ошибку возвращаем `[]` и логируем.
- *   - tenant isolation: запрос всегда фильтруется по `tenantId`.
- *   - `confidence` — берём из самой записи (если есть) или дефолт 0.7.
- *
- * Type-маркер результата:
- *   - 'regulation' для Regulation.category='regulation'/'standard'.
- *   - 'process' для Process.
- *   - 'policy' для Policy.
- */
 @Injectable()
-export class Specialist31CardHandler
-  implements OnModuleInit, CardSpecialistHandler
-{
+export class Specialist31CardHandler implements OnModuleInit, CardSpecialistHandler {
   private readonly logger = new Logger(Specialist31CardHandler.name);
   static readonly SPECIALIST_NAME = '3-1-regulations';
   private static readonly DEFAULT_CONFIDENCE = 0.7;
@@ -65,7 +40,6 @@ export class Specialist31CardHandler
       const blockIds = args.candidateBlockIds.slice(0, 200);
       const blockSet = new Set(blockIds);
 
-      // Regulation
       const regulations = await this.prisma.regulation.findMany({
         where: {
           tenantId,
@@ -84,7 +58,6 @@ export class Specialist31CardHandler
         take: Math.max(args.limit * 3, 30),
       });
 
-      // Process
       const processes = await this.prisma.process.findMany({
         where: {
           tenantId,
@@ -101,7 +74,6 @@ export class Specialist31CardHandler
         take: Math.max(args.limit * 3, 30),
       });
 
-      // Policy
       const policies = await this.prisma.policy.findMany({
         where: {
           tenantId,
@@ -118,7 +90,6 @@ export class Specialist31CardHandler
         take: Math.max(args.limit * 3, 30),
       });
 
-      // Instruction (A12, Волна 6) — пошаговое «как сделать X» для одной роли.
       const instructions = await this.prisma.instruction.findMany({
         where: {
           tenantId,
@@ -145,9 +116,7 @@ export class Specialist31CardHandler
       for (const r of regulations) {
         const overlap = r.sourceBlockIds.filter((b) => blockSet.has(b)).length;
         const baseConfidence =
-          r.confidence !== null
-            ? r.confidence
-            : Specialist31CardHandler.DEFAULT_CONFIDENCE;
+          r.confidence !== null ? r.confidence : Specialist31CardHandler.DEFAULT_CONFIDENCE;
         const finalConfidence = Math.min(1, baseConfidence + Math.min(0.1, overlap * 0.02));
         candidates.push({
           result: {
@@ -164,9 +133,7 @@ export class Specialist31CardHandler
       for (const p of processes) {
         const overlap = p.sourceBlockIds.filter((b) => blockSet.has(b)).length;
         const baseConfidence =
-          p.confidence !== null
-            ? p.confidence
-            : Specialist31CardHandler.DEFAULT_CONFIDENCE;
+          p.confidence !== null ? p.confidence : Specialist31CardHandler.DEFAULT_CONFIDENCE;
         const finalConfidence = Math.min(1, baseConfidence + Math.min(0.1, overlap * 0.02));
         candidates.push({
           result: {
@@ -183,9 +150,7 @@ export class Specialist31CardHandler
       for (const po of policies) {
         const overlap = po.sourceBlockIds.filter((b) => blockSet.has(b)).length;
         const baseConfidence =
-          po.confidence !== null
-            ? po.confidence
-            : Specialist31CardHandler.DEFAULT_CONFIDENCE;
+          po.confidence !== null ? po.confidence : Specialist31CardHandler.DEFAULT_CONFIDENCE;
         const finalConfidence = Math.min(1, baseConfidence + Math.min(0.1, overlap * 0.02));
         candidates.push({
           result: {
@@ -202,9 +167,7 @@ export class Specialist31CardHandler
       for (const ins of instructions) {
         const overlap = ins.sourceBlockIds.filter((b) => blockSet.has(b)).length;
         const baseConfidence =
-          ins.confidence !== null
-            ? ins.confidence
-            : Specialist31CardHandler.DEFAULT_CONFIDENCE;
+          ins.confidence !== null ? ins.confidence : Specialist31CardHandler.DEFAULT_CONFIDENCE;
         const finalConfidence = Math.min(1, baseConfidence + Math.min(0.1, overlap * 0.02));
         candidates.push({
           result: {

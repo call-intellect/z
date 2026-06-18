@@ -15,17 +15,6 @@ import { IntegrationKeyInvalidError } from '../../common/errors/domain-errors';
 
 import { LivekitWebhooksService } from './livekit-webhooks.service';
 
-/**
- * Контроллер вебхуков LiveKit.
- *
- * `POST /webhooks/livekit`:
- *   - читает raw body (`req.rawBody`, заполняется `RawBodyMiddleware`);
- *   - читает заголовок `Authorization`;
- *   - делегирует в `LivekitWebhooksService.handle(...)`.
- *
- * Контракт ответа: всегда 200 с пустым телом, кроме случая невалидной
- * подписи (401), чтобы LiveKit не ретраил вечно после нашей ошибки.
- */
 @ApiExcludeController()
 @Controller('webhooks')
 export class LivekitWebhooksController {
@@ -47,11 +36,9 @@ export class LivekitWebhooksController {
     try {
       await this.service.handle(rawBody, authHeader);
     } catch (err) {
-      // Невалидная подпись — пробрасываем (фильтр вернёт 401).
       if (err instanceof IntegrationKeyInvalidError) {
         throw err;
       }
-      // Остальные ошибки — лог и 200, иначе LiveKit будет ретраить вечно.
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
         'Ошибка обработки LiveKit-webhook (отдаём 200)',

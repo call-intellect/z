@@ -12,27 +12,10 @@ import { InteractionService } from './interaction.service';
 import { RequiredKnowledgeService } from './required-knowledge.service';
 import { ResponsibilityElementService } from './responsibility-element.service';
 
-/**
- * SBA α-8 wave 4 — `RoleMapBuilderService` — высокоуровневый агрегатор.
- *
- *   - `getMap(roleId)` — собирает все 5 wave-2 категорий + KPI + completeness +
- *     maturityScore в один IRoleMap для UI.
- *   - `getMaturity(roleId)` — детализация maturity (для drill-down).
- *   - `recomputeCompleteness({tenantId, roleId})` — пересчёт completeness и
- *     запись в `RoleProfile.completeness` (используется cron'ом и worker'ом).
- *
- * Бизнес-правила:
- *   - Completeness = взвешенное «есть/нет» по 5 нормализованным слотам +
- *     mission + at least 1 KPI metric + summaryCache + builtAt.
- *   - 9 слотов поровну (0.111 каждый). Округляем до 0.001.
- *   - Если RoleProfile.completeness уже выставлен билдером — используем его,
- *     иначе считаем эвристикой.
- */
 @Injectable()
 export class RoleMapBuilderService {
   private readonly logger = new Logger(RoleMapBuilderService.name);
 
-  /** 9 слотов Role Map (см. ТЗ §3.3). */
   static readonly SLOTS = [
     'mission',
     'responsibilities',
@@ -61,17 +44,7 @@ export class RoleMapBuilderService {
     private readonly interactions: InteractionService,
   ) {}
 
-  /**
-   * Главный метод: собирает RoleMapDto для UI.
-   *
-   * Намеренно делаем отдельные findUnique / findMany вместо одного include —
-   * на агрегированной схеме Prisma's `include`-narrowing порой триггерит
-   * каскадный TS2589 в этом проекте (см. env.schema.ts NB).
-   */
-  async getMap(args: {
-    tenantId: string;
-    roleId: string;
-  }): Promise<RoleMapDto> {
+  async getMap(args: { tenantId: string; roleId: string }): Promise<RoleMapDto> {
     const role = await this.prisma.role.findUnique({
       where: { id: args.roleId },
     });
@@ -181,20 +154,14 @@ export class RoleMapBuilderService {
         currentValue: m.currentValue === null ? null : Number(m.currentValue),
       })),
       completeness: Math.round(completeness * 1000) / 1000,
-      maturityScore:
-        role.maturityScore === null ? null : Number(role.maturityScore),
+      maturityScore: role.maturityScore === null ? null : Number(role.maturityScore),
       counts,
       summaryCache: roleProfile?.summaryCache ?? null,
-      builtAt: roleProfile?.builtAt
-        ? roleProfile.builtAt.toISOString()
-        : null,
+      builtAt: roleProfile?.builtAt ? roleProfile.builtAt.toISOString() : null,
       isForming: !roleProfile || roleProfile.status === 'forming',
     };
   }
 
-  /**
-   * Детализация maturity (для tooltip / drill-down).
-   */
   async getMaturity(args: {
     tenantId: string;
     roleId: string;
@@ -218,62 +185,55 @@ export class RoleMapBuilderService {
       });
     }
 
-    const [
-      respCount,
-      authCount,
-      knowCount,
-      decCount,
-      interCount,
-      metricCount,
-      profile,
-    ] = await Promise.all([
-      this.prisma.responsibilityElement.count({
-        where: {
-          tenantId: args.tenantId,
-          roleId: args.roleId,
-          deletedAt: null,
-        },
-      }),
-      this.prisma.authorityBoundary.count({
-        where: {
-          tenantId: args.tenantId,
-          roleId: args.roleId,
-          deletedAt: null,
-        },
-      }),
-      this.prisma.requiredKnowledge.count({
-        where: {
-          tenantId: args.tenantId,
-          roleId: args.roleId,
-          deletedAt: null,
-        },
-      }),
-      this.prisma.decisionPolicy.count({
-        where: {
-          tenantId: args.tenantId,
-          roleId: args.roleId,
-          deletedAt: null,
-        },
-      }),
-      this.prisma.interaction.count({
-        where: {
-          tenantId: args.tenantId,
-          roleId: args.roleId,
-          deletedAt: null,
-        },
-      }),
-      this.prisma.metric.count({
-        where: { tenantId: args.tenantId, attachedToRoleId: args.roleId },
-      }),
-      this.prisma.roleProfile.findUnique({
-        where: { roleId: args.roleId },
-        select: {
-          completeness: true,
-          summaryCache: true,
-          builtAt: true,
-        },
-      }),
-    ]);
+    const [respCount, authCount, knowCount, decCount, interCount, metricCount, profile] =
+      await Promise.all([
+        this.prisma.responsibilityElement.count({
+          where: {
+            tenantId: args.tenantId,
+            roleId: args.roleId,
+            deletedAt: null,
+          },
+        }),
+        this.prisma.authorityBoundary.count({
+          where: {
+            tenantId: args.tenantId,
+            roleId: args.roleId,
+            deletedAt: null,
+          },
+        }),
+        this.prisma.requiredKnowledge.count({
+          where: {
+            tenantId: args.tenantId,
+            roleId: args.roleId,
+            deletedAt: null,
+          },
+        }),
+        this.prisma.decisionPolicy.count({
+          where: {
+            tenantId: args.tenantId,
+            roleId: args.roleId,
+            deletedAt: null,
+          },
+        }),
+        this.prisma.interaction.count({
+          where: {
+            tenantId: args.tenantId,
+            roleId: args.roleId,
+            deletedAt: null,
+          },
+        }),
+        this.prisma.metric.count({
+          where: { tenantId: args.tenantId, attachedToRoleId: args.roleId },
+        }),
+        this.prisma.roleProfile.findUnique({
+          where: { roleId: args.roleId },
+          select: {
+            completeness: true,
+            summaryCache: true,
+            builtAt: true,
+          },
+        }),
+      ]);
 
     const counts = {
       responsibilities: respCount,
@@ -297,8 +257,7 @@ export class RoleMapBuilderService {
     return {
       roleId: role.id,
       roleName: role.name,
-      maturityScore:
-        role.maturityScore === null ? null : Number(role.maturityScore),
+      maturityScore: role.maturityScore === null ? null : Number(role.maturityScore),
       completeness: Math.round(completeness * 1000) / 1000,
       rationale: args.rationale ?? null,
       contributingFactors: [
@@ -324,10 +283,6 @@ export class RoleMapBuilderService {
     };
   }
 
-  /**
-   * Пересчёт completeness для одной роли. Записывает в RoleProfile.completeness.
-   * Не трогает Role.maturityScore (это делает MaturityScorerCron).
-   */
   async recomputeCompleteness(args: {
     tenantId: string;
     roleId: string;
@@ -358,8 +313,6 @@ export class RoleMapBuilderService {
       builtAt: profile?.builtAt ?? null,
     });
     if (!profile) {
-      // RoleProfile создаётся при создании Role (см. RolesDomainService);
-      // если нет — best-effort skip.
       return { completeness, written: false };
     }
     const prev = profile.completeness === null ? null : Number(profile.completeness);
@@ -373,13 +326,7 @@ export class RoleMapBuilderService {
     return { completeness, written: false };
   }
 
-  /**
-   * Полный проход по всем активным Role в Org. Используется cron'ом.
-   * Параллельно обновляет gauge `role_map_completeness_avg`.
-   */
-  async recomputeAllForTenant(args: {
-    tenantId: string;
-  }): Promise<{
+  async recomputeAllForTenant(args: { tenantId: string }): Promise<{
     rolesScanned: number;
     rolesUpdated: number;
     avgCompleteness: number | null;
@@ -415,8 +362,6 @@ export class RoleMapBuilderService {
       rolesWithNormalizedData: withData,
     };
   }
-
-  // ─────────────────────────── internal ─────────────────────────────
 
   private async countSlots(
     tenantId: string,

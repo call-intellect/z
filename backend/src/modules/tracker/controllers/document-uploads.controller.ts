@@ -9,19 +9,10 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import {
-  ApiBearerAuth,
-  ApiBody,
-  ApiConsumes,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { nanoid } from 'nanoid';
 
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
@@ -29,11 +20,6 @@ import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
 import { S3Service } from '../../recordings/s3.service';
 
-/**
- * Минимальный тип файла, который multer кладёт в req. Лежит локально —
- * чтобы не ломать сборку без `@types/multer` (он опциональный peer-dep).
- * Идентично attachments.controller.ts.
- */
 interface MulterFile {
   fieldname: string;
   originalname: string;
@@ -42,43 +28,19 @@ interface MulterFile {
   buffer: Buffer;
 }
 
-/** Лимит для картинки внутри документа — 10 MB. */
 const MAX_DOCUMENT_ASSET_SIZE = 10 * 1024 * 1024;
 
-/** Разрешённые MIME — только изображения. Для других файлов есть /attachments. */
 const ALLOWED_MIME_PREFIXES = ['image/'];
 
-/**
- * Ответ на upload документа: presigned URL для использования в TipTap-image.
- */
 interface DocumentAssetUploadResponse {
-  /** S3-key (для удаления / повторного presign). */
   key: string;
-  /** Готовый presigned URL (TTL ~1 час), который вставляется в редактор. */
   url: string;
-  /** ISO-время истечения URL. */
   expiresAt: string;
   fileName: string;
   fileSize: number;
   mimeType: string;
 }
 
-/**
- * REST `/api/v1/uploads/document-asset` — загрузка картинки для вставки в
- * редактор документа проекта.
- *
- * Файл кладётся в S3 (`document-assets/${tenantId}/${nanoid}-${name}`); в БД
- * запись НЕ создаётся — ссылка живёт только внутри content документа (TipTap
- * image node). Retention делается по orphan-cron'у (либо человек удаляет
- * вручную; обычно ассет «забывается» — это допустимо).
- *
- * RBAC: `project_document.write`. Любой пользователь с правом писать
- * документы может загрузить картинку (необязательно для конкретного
- * проекта — ассет глобален per tenant).
- *
- * ТЗ: plans/tz/2026-05-27-tracker-project-documents.md §"Загрузка файлов
- * внутри документа".
- */
 @ApiTags('tracker / uploads')
 @ApiBearerAuth()
 @Controller('api/v1/uploads')
@@ -133,9 +95,7 @@ export class DocumentUploadsController {
       });
     }
     const mime = (file.mimetype ?? '').toLowerCase();
-    const allowed = ALLOWED_MIME_PREFIXES.some((prefix) =>
-      mime.startsWith(prefix),
-    );
+    const allowed = ALLOWED_MIME_PREFIXES.some((prefix) => mime.startsWith(prefix));
     if (!allowed) {
       throw new BadRequestException({
         ok: false,
@@ -166,8 +126,6 @@ export class DocumentUploadsController {
       mimeType: file.mimetype,
     };
   }
-
-  // ── helpers ───────────────────────────────────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

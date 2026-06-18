@@ -21,7 +21,6 @@ export const SCHEMA = z
     upsell_opportunities: z.array(z.string()),
     actions_required: z.array(z.string()),
     next_contact: z.string().nullable(),
-    // A11-Волна2 (additive, опциональные — обратная совместимость):
     churn_risk_quote: z.string().nullable().optional(),
     competitors_mentioned: z.array(z.string()).optional(),
     data_quality: z.string().nullable().optional(),

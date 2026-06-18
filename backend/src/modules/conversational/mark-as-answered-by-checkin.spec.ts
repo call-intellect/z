@@ -1,8 +1,3 @@
-/**
- * ТЗ 2026-05-29 telegram-self-initiated-checkins Phase 4 / DoD:
- *   «markAsAnsweredByCheckin покрыт unit-тестом: помечает notification answered,
- *    не эмитит `notification.responded` (проверка через mock EventEmitter)».
- */
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
@@ -95,7 +90,6 @@ describe('ConversationalService.markAsAnsweredByCheckin (Phase 4)', () => {
       eventType: 'checkin.prompt',
       status: 'responded',
     });
-    // КЛЮЧЕВОЕ: НЕ эмитим notification.responded — иначе зациклимся.
     expect(m.eventEmitter.emit).not.toHaveBeenCalled();
   });
 

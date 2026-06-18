@@ -1,30 +1,26 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { CheckCircle2, XCircle, Zap } from 'lucide-react';
+import { useState } from "react";
+import { CheckCircle2, XCircle, Zap } from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { adminLlmProvidersApi } from '@/api/admin-llm-providers.api';
+import { ApiError } from "@/api/api-error";
+import { adminLlmProvidersApi } from "@/api/admin-llm-providers.api";
 import {
   adminLlmProviderFromApi,
   type AdminLlmProviderDomain,
-} from '@/domain/admin-llm-provider';
-import { toast } from 'sonner';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-llm-provider";
+import { toast } from "sonner";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
 
-/**
- * SBA α-10 wave 3 — /admin/llm/providers.
- * Список LlmProvider с возможностью запуска smoke-теста.
- */
 export function LlmProvidersClient() {
   const [includeInactive, setIncludeInactive] = useState(false);
 
@@ -40,12 +36,12 @@ export function LlmProvidersClient() {
   const handleSmokeTest = async (id: string, name: string) => {
     try {
       const r = await adminLlmProvidersApi.smokeTest(id);
-      const message = `${name}: ${r.success ? 'OK' : `провал — ${r.error ?? 'unknown'}`} (${r.durationSeconds.toFixed(2)}s)`;
+      const message = `${name}: ${r.success ? "OK" : `провал — ${r.error ?? "unknown"}`} (${r.durationSeconds.toFixed(2)}s)`;
       if (r.success) toast.success(message);
       else toast.error(message);
       q.refetch();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Ошибка smoke-теста');
+      toast.error(e instanceof ApiError ? e.message : "Ошибка smoke-теста");
     }
   };
 
@@ -132,7 +128,7 @@ function ProvidersTable({
                     ) : (
                       <XCircle size={12} className="text-danger" />
                     )}
-                    {p.lastSmokeAt.toLocaleString('ru-RU')}
+                    {p.lastSmokeAt.toLocaleString("ru-RU")}
                   </span>
                 ) : (
                   <span className="text-fg-tertiary">не запускался</span>

@@ -1,17 +1,3 @@
-/**
- * Unit-тесты для FeedbackRateLimitGuard.
- *
- * Покрытие:
- *   - <=5 INCR → пропускает
- *   - >5 INCR → 429 с русским сообщением про reset 00:00 UTC
- *   - проверяет, что ключ построен по UTC (формат feedback:ratelimit:{userId}:{YYYY-MM-DD})
- *   - EXPIRE 90000 (25 часов) проставлен на ключ
- *   - отсутствие req.user → 401
- *   - Redis-сбой (errors в pipeline.exec) → fail-open (true)
- *
- * Источник: plans/tz/2026-05-25-user-feedback-with-ai-clustering.md.
- */
-
 import {
   HttpException,
   HttpStatus,
@@ -85,9 +71,7 @@ function makeCtx(user: { id?: string } | null | undefined): ExecutionContext {
 
 describe('FeedbackRateLimitGuard', () => {
   beforeEach(() => {
-    // фиксируем «текущий день» в UTC, чтобы ключ был детерминирован
     vi.useFakeTimers();
-    // 2026-05-25 12:34:56 UTC
     vi.setSystemTime(new Date(Date.UTC(2026, 4, 25, 12, 34, 56)));
   });
 
@@ -108,12 +92,8 @@ describe('FeedbackRateLimitGuard', () => {
     });
     expect(stub.pipelineCalls[1]).toEqual({
       type: 'expire',
-      args: [
-        `${FEEDBACK_RATE_LIMIT_PREFIX}:u-1:2026-05-25`,
-        FEEDBACK_RATE_LIMIT_TTL_SECONDS,
-      ],
+      args: [`${FEEDBACK_RATE_LIMIT_PREFIX}:u-1:2026-05-25`, FEEDBACK_RATE_LIMIT_TTL_SECONDS],
     });
-    // sanity: 25 часов = 90000 секунд (как в ТЗ)
     expect(FEEDBACK_RATE_LIMIT_TTL_SECONDS).toBe(90000);
   });
 
@@ -148,12 +128,8 @@ describe('FeedbackRateLimitGuard', () => {
   it('отсутствует req.user — 401 Unauthorized', async () => {
     const stub = makeRedis(1);
     const guard = new FeedbackRateLimitGuard(stub.redis);
-    await expect(guard.canActivate(makeCtx(null))).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
-    await expect(guard.canActivate(makeCtx({}))).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(guard.canActivate(makeCtx(null))).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(guard.canActivate(makeCtx({}))).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('Redis INCR вернул error в pipeline.exec — fail-open (true)', async () => {

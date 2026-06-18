@@ -1,31 +1,3 @@
-/**
- * TochkaOAuthService — OAuth2 flow для Точки в production-режиме.
- *
- * Flow (см. port-brief §7 + ТЗ §7.3):
- *   1. `ensureOAuthReady()` при старте: проверяет сохранённые токены,
- *      рефрешит если близко к expires_at, либо генерирует authorize URL
- *      и пишет его в логи (админ должен открыть в браузере).
- *   2. `createAuthorizationUrl()`:
- *      a) client_credentials → service token
- *      b) POST /consents → consentId
- *      c) state = uuid + сохранить в BillingProviderConfig
- *      d) собрать URL https://enter.tochka.com/connect/authorize
- *   3. `handleOAuthCallback({code, state})`:
- *      a) проверить state (TTL 15мин)
- *      b) обмен code → access_token + refresh_token
- *      c) сохранить токены
- *   4. `getAccessToken()` — публичный метод для TochkaBillingProvider:
- *      возвращает свежий access_token, рефрешит если истёк.
- *
- * В sandbox-режиме (`TOCHKA_MODE=sandbox`) метод `getAccessToken()` возвращает
- * статичный bearer token из документации; OAuth не используется вообще.
- *
- * Хранилище: модель `BillingProviderConfig` (KV-таблица). Не используем
- * общий `PipelineConfig` — его в Z нет.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §7.3.
- */
-
 import { randomUUID } from 'node:crypto';
 
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
@@ -52,7 +24,6 @@ interface TochkaTokenResponse {
   user_id?: string;
 }
 
-/** Endpoint для OAuth-вызовов Точки. Хардкод по документации. */
 const TOCHKA_OAUTH_TOKEN_URL = 'https://enter.tochka.com/connect/token';
 const TOCHKA_OAUTH_AUTHORIZE_URL = 'https://enter.tochka.com/connect/authorize';
 const TOCHKA_OAUTH_CONSENT_URL = 'https://enter.tochka.com/uapi/v1.0/consents';
@@ -67,20 +38,12 @@ export class TochkaOAuthService {
     @Inject(CryptoService) private readonly crypto: CryptoService,
   ) {}
 
-  /**
-   * Вызывается при старте BillingModule. В sandbox — no-op. В production:
-   *   - если токены есть и не истекли → no-op
-   *   - если refresh_token есть → попытка refresh
-   *   - иначе → создаёт authorize URL и логирует его (админ открывает руками)
-   */
   async ensureOAuthReady(): Promise<void> {
     if (this.cfg.billing.tochka.isSandbox) return;
 
     const cfg = this.cfg.billing.tochka;
     if (!cfg.clientId || !cfg.clientSecret) {
-      this.logger.warn(
-        'TOCHKA_CLIENT_ID/SECRET не заданы — OAuth-инициализация пропущена',
-      );
+      this.logger.warn('TOCHKA_CLIENT_ID/SECRET не заданы — OAuth-инициализация пропущена');
       return;
     }
 
@@ -109,11 +72,6 @@ export class TochkaOAuthService {
 
     try {
       const url = await this.createAuthorizationUrl();
-      // audit С1 (2026-05-29): в authorize URL нет PII конечного пользователя
-      // (есть только client_id Z и random consent_id/state). Однако для
-      // defense-in-depth НЕ логируем секретные query-params полностью —
-      // печатаем базовый URL + маскированные параметры (длины + последние 4).
-      // Полный URL остаётся доступным через `createAuthorizationUrl()` для UI.
       this.logger.warn(
         `TOCHKA OAuth: откройте URL в браузере для подключения Точки:\n${TochkaOAuthService.redactAuthorizeUrlForLog(url)}`,
       );
@@ -124,12 +82,6 @@ export class TochkaOAuthService {
     }
   }
 
-  /**
-   * audit С1 (2026-05-29): маскирует чувствительные query-параметры authorize
-   * URL для лога. Оставляет origin/path + scope (полезно для дебага),
-   * маскирует client_id/consent_id/state как `***<last4>`.
-   * НЕ используется в createAuthorizationUrl() — UI получает полный URL.
-   */
   static redactAuthorizeUrlForLog(rawUrl: string): string {
     try {
       const u = new URL(rawUrl);
@@ -152,10 +104,6 @@ export class TochkaOAuthService {
     }
   }
 
-  /**
-   * Свежий access_token для подписи API-запросов. В sandbox — статика.
-   * В production — кэш + refresh при необходимости.
-   */
   async getAccessToken(): Promise<string | null> {
     if (this.cfg.billing.tochka.isSandbox) {
       return TOCHKA_SANDBOX_BEARER_TOKEN;
@@ -175,10 +123,6 @@ export class TochkaOAuthService {
     }
   }
 
-  /**
-   * Создать authorize URL для UI-подключения Точки (super_admin).
-   * Сохраняет state в БД для последующей проверки в callback'е.
-   */
   async createAuthorizationUrl(): Promise<string> {
     const cfg = this.cfg.billing.tochka;
     const clientId = this.requireConfig('TOCHKA_CLIENT_ID', cfg.clientId);
@@ -214,10 +158,6 @@ export class TochkaOAuthService {
     return url.toString();
   }
 
-  /**
-   * Callback после авторизации в браузере. Точка POST'ит сюда c кодом и
-   * state'ом — обмениваем код на токены, сохраняем.
-   */
   async handleOAuthCallback(params: {
     code?: string;
     state?: string;
@@ -269,8 +209,6 @@ export class TochkaOAuthService {
     };
   }
 
-  // ──────────────────────────── private ────────────────────────────
-
   private async requestServiceToken(
     clientId: string,
     clientSecret: string,
@@ -288,10 +226,7 @@ export class TochkaOAuthService {
     return r.access_token;
   }
 
-  private async createConsent(
-    serviceToken: string,
-    permissions: string[],
-  ): Promise<string> {
+  private async createConsent(serviceToken: string, permissions: string[]): Promise<string> {
     const expirationDateTime = this.cfg.billing.tochka.oauthConsentExpiresAt;
     const response = await fetch(TOCHKA_OAUTH_CONSENT_URL, {
       method: 'POST',
@@ -339,9 +274,7 @@ export class TochkaOAuthService {
     });
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      throw new BadRequestException(
-        `Tochka OAuth: HTTP ${response.status} ${text.slice(0, 200)}`,
-      );
+      throw new BadRequestException(`Tochka OAuth: HTTP ${response.status} ${text.slice(0, 200)}`);
     }
     return (await response.json()) as T;
   }
@@ -366,9 +299,6 @@ export class TochkaOAuthService {
       obtainedAt: obtainedAt.toISOString(),
       userId: r.user_id,
     };
-    // audit Б5 (2026-05-29): шифруем секреты перед записью в БД. Дамп БД
-    // больше не выдаёт plain access/refresh-token. CryptoService использует
-    // AES-256-GCM (CRYPTO_MASTER_KEY ENV).
     const encrypted = this.encryptTokens(stored);
     await this.prisma.billingProviderConfig.upsert({
       where: { key: TOCHKA_OAUTH_TOKENS_KEY },
@@ -386,10 +316,6 @@ export class TochkaOAuthService {
     return this.decryptTokensFromStorage(row.valueJson);
   }
 
-  /**
-   * audit Б5: формат хранения — `{ enc: 'gcm:v1:...' }` если зашифровано;
-   * либо raw-объект, если ещё не мигрирован (legacy fallback).
-   */
   private encryptTokens(stored: StoredOauthTokens): { enc: string } {
     const json = JSON.stringify(stored);
     return { enc: this.crypto.encrypt(json) };
@@ -399,7 +325,6 @@ export class TochkaOAuthService {
     if (!raw || typeof raw !== 'object') return null;
     const obj = raw as Record<string, unknown>;
     if (typeof obj['enc'] === 'string') {
-      // Зашифрованный конверт.
       try {
         const json = this.crypto.decrypt(obj['enc'] as string);
         return JSON.parse(json) as StoredOauthTokens;
@@ -410,12 +335,7 @@ export class TochkaOAuthService {
         return null;
       }
     }
-    // Legacy plain-формат — pre-Б5. Скрипт patch-encrypt-tochka-oauth.ts
-    // переведёт его на конверт. До этого мы продолжаем работать.
-    if (
-      typeof obj['accessToken'] === 'string' ||
-      typeof obj['refreshToken'] === 'string'
-    ) {
+    if (typeof obj['accessToken'] === 'string' || typeof obj['refreshToken'] === 'string') {
       this.logger.warn(
         'audit Б5: tochka-oauth tokens в plain-формате. ' +
           'Запустите scripts/patch-encrypt-tochka-oauth.ts',

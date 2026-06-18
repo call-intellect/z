@@ -4,11 +4,7 @@ import OpenAI from 'openai';
 import { TypedConfigService } from '../../../../../common/config/index';
 import { BusinessMetricsService } from '../../../../../common/metrics/business-metrics.service';
 import { isThinkingModel } from '../../llm-thinking-models';
-import type {
-  LlmCompleteInput,
-  LlmCompleteOutput,
-  LlmToolCall,
-} from '../../llm.types';
+import type { LlmCompleteInput, LlmCompleteOutput, LlmToolCall } from '../../llm.types';
 import { LlmError } from '../../llm.types';
 import { toOpenAiStrictSchema } from '../../strict-json-schema.util';
 import type {
@@ -17,19 +13,6 @@ import type {
   ProtocolKind,
 } from '../protocol-adapter.types';
 
-
-/**
- * SBA α-10 wave 3 — OpenAI Chat Completions API адаптер.
- *
- * Используется провайдерами: deepseek (deepseek-chat / deepseek-v4-flash),
- * любая internal-модель совместимая с OpenAI v1/chat/completions.
- *
- * Особенности:
- *   - Path: POST {baseUrl}/chat/completions.
- *   - Authorization: Bearer <apiKey>.
- *   - JSON Schema strict — пробрасываем через `response_format`.
- *   - Reasoning effort — не поддерживается (молчком игнорируем).
- */
 @Injectable()
 export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
   readonly protocolKind: ProtocolKind = 'openai-chat';
@@ -49,10 +32,7 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
     const { provider, input } = args;
     const apiKey = provider.apiKey ?? '';
     if (!apiKey) {
-      throw new LlmError(
-        `openai-chat: provider=${provider.name} требует apiKey`,
-        500,
-      );
+      throw new LlmError(`openai-chat: provider=${provider.name} требует apiKey`, 500);
     }
     const client = new OpenAI({
       baseURL: provider.baseUrl,
@@ -61,8 +41,6 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
     });
     const model = input.model ?? provider.defaultModel ?? 'gpt-4o-mini';
 
-    // T7-F3: LlmUserInput может быть string или {text, cacheControl?}.
-    // OpenAI-chat compat не имеет Anthropic-style cache_control; распаковываем.
     const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const messages: Array<{ role: 'system' | 'user'; content: string }> = [
       { role: 'system', content: input.system.text },
@@ -76,14 +54,10 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
     if (input.maxTokens !== undefined) body['max_tokens'] = input.maxTokens;
     if (input.temperature !== undefined) body['temperature'] = input.temperature;
 
-    // ТЗ 2026-05-25 §4 + Фаза 1 — детектор thinking-моделей. На *-pro /
-    // *-thinking strict json_schema и forced tool_choice = 400. См.
-    // backend/src/modules/ai/services/llm-thinking-models.ts.
     const isThinking = isThinkingModel(model);
     const callerHasTools = !!(input.tools && input.tools.length > 0);
     const fmt = input.responseFormat;
-    const autoConvert =
-      isThinking && fmt?.type === 'json_schema' && !callerHasTools;
+    const autoConvert = isThinking && fmt?.type === 'json_schema' && !callerHasTools;
 
     let autoConvertedToolName: string | undefined;
 
@@ -109,8 +83,7 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
         `openai-chat thinking: автоконвертация json_schema → tool model=${model} schemaName=${fmt.name}`,
       );
     } else if (fmt) {
-      const skipStrictOnThinking =
-        isThinking && fmt.type === 'json_schema' && callerHasTools;
+      const skipStrictOnThinking = isThinking && fmt.type === 'json_schema' && callerHasTools;
       if (skipStrictOnThinking) {
         this.metrics?.incLlmThinkingModelGuard({
           kind: 'strict-stripped',
@@ -127,9 +100,6 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
           json_schema: {
             name: fmt.name,
             strict: fmt.strict,
-            // OpenAI strict требует additionalProperties:false + required со
-            // всеми ключами на каждом объекте — нормализуем схему (см.
-            // strict-json-schema.util). Без strict — отдаём как есть.
             schema: fmt.strict ? toOpenAiStrictSchema(fmt.schema) : fmt.schema,
           },
         };
@@ -153,9 +123,7 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
         client as unknown as {
           chat: {
             completions: {
-              create: (
-                p: Record<string, unknown>,
-              ) => Promise<{
+              create: (p: Record<string, unknown>) => Promise<{
                 choices?: Array<{
                   message?: {
                     content?: string | null;
@@ -202,8 +170,6 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
         }
         if (name) toolCalls.push({ name, input: parsed });
       }
-      // ТЗ 2026-05-25 Фаза 1 — если был автоконверт, caller ждал JSON в `text`.
-      // Кладём args обратно в text стрингификацией (как DeepSeekService).
       if (autoConvertedToolName && !text) {
         const autoTc = toolCalls.find((tc) => tc.name === autoConvertedToolName);
         if (autoTc) {
@@ -227,14 +193,7 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
     }
   }
 
-  /**
-   * Маппинг slug провайдера на enum LlmCompleteOutput.provider — нужно для
-   * AiUsageLogService.AiProvider (типизированный union). Если slug нестандартный
-   * — fallback на 'deepseek' (наиболее частый openai-chat consumer).
-   */
-  private normalizeProviderName(
-    slug: string,
-  ): LlmCompleteOutput['provider'] {
+  private normalizeProviderName(slug: string): LlmCompleteOutput['provider'] {
     switch (slug) {
       case 'anthropic':
       case 'minimax':

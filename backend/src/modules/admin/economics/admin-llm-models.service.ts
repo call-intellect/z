@@ -1,29 +1,13 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-import type {
-  CreateLlmModelDto,
-  UpdateLlmModelDto,
-} from './dto/admin-llm-models.dto';
+import type { CreateLlmModelDto, UpdateLlmModelDto } from './dto/admin-llm-models.dto';
 
-/**
- * SBA α-10 wave 3 — AdminLlmModelsService.
- *
- * CRUD реестра LlmModel + price-history доступ для UI (через JOIN с
- * LlmModelPrice по modelId).
- */
 @Injectable()
 export class AdminLlmModelsService {
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-  ) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async list(args: {
     providerId?: string;
@@ -111,9 +95,7 @@ export class AdminLlmModelsService {
       where: { id },
       data: {
         ...(dto.displayName !== undefined ? { displayName: dto.displayName } : {}),
-        ...(dto.contextWindow !== undefined
-          ? { contextWindow: dto.contextWindow }
-          : {}),
+        ...(dto.contextWindow !== undefined ? { contextWindow: dto.contextWindow } : {}),
         ...(dto.capabilities !== undefined
           ? { capabilitiesJson: dto.capabilities as Prisma.InputJsonValue }
           : {}),
@@ -133,15 +115,11 @@ export class AdminLlmModelsService {
     return { ok: true as const };
   }
 
-  /** Price history по modelId (объединяем по modelId если связан, иначе по строке model). */
   async listPriceHistory(modelId: string) {
     const model = await this.getById(modelId);
     const items = await this.prisma.llmModelPrice.findMany({
       where: {
-        OR: [
-          { modelId },
-          { provider: model.provider.name, model: model.modelKey },
-        ],
+        OR: [{ modelId }, { provider: model.provider.name, model: model.modelKey }],
       },
       orderBy: { effectiveFrom: 'desc' },
     });

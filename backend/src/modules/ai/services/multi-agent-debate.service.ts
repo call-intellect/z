@@ -7,61 +7,10 @@ import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { type LlmCallResult, LlmRouterService } from './llm-router.service';
 import { calcCostUsd } from './model-prices';
 
-/**
- * Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate Service.
- *
- * Реализует трёх-голосовый debate-арбитр для критичных, nuanced-задач
- * (на старте — только `decision-supersede-detect`). Идея: три провайдера
- * с разными «характерами» оценивают одного кандидата и голосуют —
- * majority verdict идёт в production. Источник доказательств:
- * Du et al. Multi-Agent Debate (+5-15% accuracy на reasoning,
- * diverse providers > homogeneous).
- *
- * Round 1 — три параллельных LLM-вызова:
- *   - strict-critic       → debate-decision-supersede-critic
- *                           (primary deepseek-v4-pro, склонна к отказу)
- *   - empathetic-supporter → debate-decision-supersede-supporter
- *                           (primary openai-via-proxy/gpt-5.4, diverse провайдер)
- *   - neutral-judge       → debate-decision-supersede-neutral
- *                           (primary deepseek-v4-flash, дешёвый арбитр)
- *
- * Каждый stance — отдельный `LlmTaskType` со своим LlmTaskRoute,
- * чтобы админ мог тюнить модели каждого голоса отдельно через
- * /admin/llm-routes. Логически они входят в зонтичный
- * `debate-decision-supersede` (seed-запись для агрегатной аналитики).
- *
- * Round 2 (опц.) — если round 1 = split (1-1-1) AND
- * `cfg.debate.round2Enabled`: каждому stance передаются голоса других
- * с их reasoning, и они голосуют повторно. Метрика
- * `z_debate_round2_triggered_total`.
- *
- * Budget cap — если суммарный cost голосов превысил
- * `cfg.debate.costCapUsdPerRun` (default $0.05) — лог warn,
- * `fallbackUsed='cost_cap'`, majority-verdict из голосов, что успели прийти
- * (если их 0 — escalate как split_uncertain), метрика
- * `z_debate_fallback_to_single_total{reason='cost_cap'}`.
- *
- * Cost calculation: считаем через `calcCostUsd(model, in, out)` поверх
- * `LlmCallResult.modelUsed` (формат `provider:model`). Если провайдер/
- * модель не в `MODEL_PRICES` — cost = 0 (calcCostUsd возвращает 0 для
- * неизвестных моделей); это согласовано с `LlmRouterService.computeCostUsd`.
- *
- * См. plans/tz/2026-05-29-agents-v2-umbrella.md §A2 и feedback
- * `LLM-промпты — обязательно cache-friendly`: SYSTEM каждого stance
- * стабилен, переменные данные — в конце user.
- */
 @Injectable()
 export class MultiAgentDebateService {
   private readonly logger = new Logger(MultiAgentDebateService.name);
 
-  /**
-   * Stance-specific `LlmTaskType`'ы по семейству задачи (`taskFamily`).
-   * Каждый stance — отдельный route в БД, админ может тюнить модели голоса.
-   *
-   * A1 «лестница доверия» (2026-06-02) — добавлено семейство `curation-verify`
-   * (AI-судья канонизации критических карточек). Семейство `decision-supersede`
-   * — историческое (специалист 3-3), поведение НЕ меняется.
-   */
   private static readonly STANCE_TASK_TYPES_BY_FAMILY: Record<
     DebateTaskFamily,
     Record<DebateStance, string>
@@ -76,8 +25,6 @@ export class MultiAgentDebateService {
       'empathetic-supporter': 'debate-curation-verify-supporter',
       'neutral-judge': 'debate-curation-verify-neutral',
     },
-    // Autonomy W1 (2026-06-12) — Conflict-Arbiter: ночной LLM-арбитр
-    // конфликтов знаний (ConflictItem open → авто-резолв при консенсусе).
     'conflict-arbiter': {
       'strict-critic': 'debate-conflict-arbiter-critic',
       'empathetic-supporter': 'debate-conflict-arbiter-supporter',
@@ -85,28 +32,14 @@ export class MultiAgentDebateService {
     },
   };
 
-  /**
-   * Резолв stance + семейство задачи → конкретный `LlmTaskType` (route в БД).
-   * Default-семейство — `decision-supersede` (обратная совместимость).
-   */
-  private resolveStanceTaskType(
-    family: DebateTaskFamily,
-    stance: DebateStance,
-  ): string {
+  private resolveStanceTaskType(family: DebateTaskFamily, stance: DebateStance): string {
     const byStance =
       MultiAgentDebateService.STANCE_TASK_TYPES_BY_FAMILY[family] ??
       MultiAgentDebateService.STANCE_TASK_TYPES_BY_FAMILY['decision-supersede'];
     return byStance[stance];
   }
 
-  /**
-   * Резолв SYSTEM-промпта по семейству + stance. Каждый промпт стабилен
-   * (cache-friendly): переменные данные приходят в user-message.
-   */
-  private resolveStanceSystemPrompt(
-    family: DebateTaskFamily,
-    stance: DebateStance,
-  ): string {
+  private resolveStanceSystemPrompt(family: DebateTaskFamily, stance: DebateStance): string {
     const byStance =
       STANCE_SYSTEM_PROMPTS_BY_FAMILY[family] ??
       STANCE_SYSTEM_PROMPTS_BY_FAMILY['decision-supersede'];
@@ -123,20 +56,6 @@ export class MultiAgentDebateService {
     private readonly cfg?: TypedConfigService,
   ) {}
 
-  /**
-   * Главный публичный метод. Возвращает debate verdict.
-   *
-   * - На первой итерации (round 1) дёргает 3 голоса параллельно через
-   *   `Promise.allSettled` (rejected stances считаются failures, но не
-   *   ломают весь run — majority строится из тех, кто пришёл).
-   * - Если суммарный cost превысил `costCapUsdPerRun` — fallbackUsed='cost_cap'.
-   * - Если 2+ голоса вернули один verdict — consensus (unanimous/majority).
-   * - Если 1-1-1 (split) AND round2Enabled AND req.rounds>=2 — round 2.
-   *
-   * Метрики: `z_debate_judgments_total`, `z_debate_cost_usd_total`,
-   * `z_debate_provider_disagreement_total`, `z_debate_round2_triggered_total`,
-   * `z_debate_fallback_to_single_total`.
-   */
   async judge(req: DebateRequest): Promise<DebateVerdict> {
     const family: DebateTaskFamily = req.taskFamily ?? 'decision-supersede';
     const n = req.n ?? this.cfg?.debate.defaultN ?? 3;
@@ -145,12 +64,7 @@ export class MultiAgentDebateService {
     const round2Enabled = this.cfg?.debate.round2Enabled ?? false;
     const tenantTop = tenantTopOf(req.tenantId);
 
-    // Round 1 — параллельно дёргаем 3 голоса.
-    const stances: DebateStance[] = [
-      'strict-critic',
-      'empathetic-supporter',
-      'neutral-judge',
-    ];
+    const stances: DebateStance[] = ['strict-critic', 'empathetic-supporter', 'neutral-judge'];
     const targetStances = stances.slice(0, Math.max(1, n));
 
     const round1Settled = await Promise.allSettled(
@@ -177,17 +91,13 @@ export class MultiAgentDebateService {
       } else {
         round1Failures.push({
           stance,
-          error:
-            settled.reason instanceof Error
-              ? settled.reason.message
-              : String(settled.reason),
+          error: settled.reason instanceof Error ? settled.reason.message : String(settled.reason),
         });
       }
     }
 
     let totalCostUsd = round1Votes.reduce((sum, v) => sum + v.costUsd, 0);
 
-    // Cost cap check — если round 1 уже превысил cap, fallback.
     if (totalCostUsd > costCap) {
       this.logger.warn(
         {
@@ -210,7 +120,6 @@ export class MultiAgentDebateService {
       return verdict;
     }
 
-    // Все голоса упали? — fallback к provider_unavailable.
     if (round1Votes.length === 0) {
       this.logger.warn(
         {
@@ -236,7 +145,6 @@ export class MultiAgentDebateService {
       return verdict;
     }
 
-    // Учёт расхождений между провайдерами в round 1 (попарно).
     this.reportDisagreements({
       votes: round1Votes,
       taskType: req.taskType,
@@ -244,12 +152,7 @@ export class MultiAgentDebateService {
 
     const round1Consensus = this.computeConsensus(round1Votes);
 
-    // Round 2 — только при split + флаге + rounds>=2.
-    if (
-      round1Consensus.consensusType === 'split' &&
-      rounds >= 2 &&
-      round2Enabled
-    ) {
+    if (round1Consensus.consensusType === 'split' && rounds >= 2 && round2Enabled) {
       this.metrics?.incDebateRound2Triggered({ taskType: req.taskType });
       const round2Settled = await Promise.allSettled(
         targetStances.map((stance) =>
@@ -271,9 +174,7 @@ export class MultiAgentDebateService {
         }
       }
       totalCostUsd += round2Votes.reduce((sum, v) => sum + v.costUsd, 0);
-      // Если round 2 пустой — fallback к round 1 split.
       if (round2Votes.length > 0) {
-        // Учёт расхождений и в round 2.
         this.reportDisagreements({
           votes: round2Votes,
           taskType: req.taskType,
@@ -299,12 +200,6 @@ export class MultiAgentDebateService {
     });
   }
 
-  // ─────────────────────────── private ──────────────────────────────────
-
-  /**
-   * Один параллельный stance-вызов: stance-specific systemPrompt +
-   * stance-specific taskType (отдельный route в БД на провайдер).
-   */
   private async callOneStance(args: {
     stance: DebateStance;
     family: DebateTaskFamily;
@@ -324,9 +219,7 @@ export class MultiAgentDebateService {
     });
 
     const result: LlmCallResult = await this.llm.call({
-      taskType: taskType as Parameters<
-        LlmRouterService['call']
-      >[0]['taskType'],
+      taskType: taskType as Parameters<LlmRouterService['call']>[0]['taskType'],
       systemPrompt,
       userMessage,
       tenantId: args.tenantId,
@@ -358,12 +251,6 @@ export class MultiAgentDebateService {
     };
   }
 
-  /**
-   * Сборка user-message: задача + кандидаты + контекст + (опц.) голоса round 1.
-   *
-   * Переменные данные — в самом конце, SYSTEM стабилен → cache-friendly
-   * (см. feedback `LLM-промпты — обязательно cache-friendly`).
-   */
   private buildUserMessage(args: {
     task: string;
     candidates: unknown[];
@@ -377,7 +264,6 @@ export class MultiAgentDebateService {
       parts.push(`Контекст: ${JSON.stringify(args.contextBlocks)}`);
     }
     if (args.priorVotes && args.priorVotes.length > 0) {
-      // Round 2 — даём stance'у голоса коллег, чтобы он мог их учесть.
       const priorSummary = args.priorVotes
         .map(
           (v) =>
@@ -391,12 +277,6 @@ export class MultiAgentDebateService {
     return parts.join('\n\n');
   }
 
-  /**
-   * Сборка финального verdict'а из голосов: majority logic.
-   *
-   * Также эмитит итоговую метрику `z_debate_judgments_total` и
-   * `z_debate_cost_usd_total`.
-   */
   private buildVerdictFromVotes(args: {
     votes: DebateVote[];
     rounds: number;
@@ -429,13 +309,6 @@ export class MultiAgentDebateService {
     return verdict;
   }
 
-  /**
-   * Majority verdict.
-   *   - 3 одинаковых → unanimous.
-   *   - 2 одинаковых → majority (decision = majority verdict).
-   *   - все разные (1-1-1) → split, decision='split_uncertain'.
-   *   - 0 голосов → split, decision='split_uncertain'.
-   */
   private computeConsensus(votes: readonly DebateVote[]): {
     decision: string;
     consensusType: 'unanimous' | 'majority' | 'split';
@@ -461,20 +334,10 @@ export class MultiAgentDebateService {
     if (topCount >= 2) {
       return { decision: topVerdict, consensusType: 'majority' };
     }
-    // Все разные (1-1-1) — split.
     return { decision: 'split_uncertain', consensusType: 'split' };
   }
 
-  /**
-   * Попарный учёт расхождений между провайдерами. Эмитит метрику
-   * `z_debate_provider_disagreement_total{provider_a, provider_b, task_type}`,
-   * где провайдеры отсортированы лексикографически (нормализация
-   * cardinality: пара (A,B) и (B,A) считается одной).
-   */
-  private reportDisagreements(args: {
-    votes: DebateVote[];
-    taskType: string;
-  }): void {
+  private reportDisagreements(args: { votes: DebateVote[]; taskType: string }): void {
     const votes = args.votes;
     for (let i = 0; i < votes.length; i++) {
       const a = votes[i] as DebateVote;
@@ -492,42 +355,18 @@ export class MultiAgentDebateService {
   }
 }
 
-// ─────────────────────────── types ────────────────────────────────────
+export type DebateStance = 'strict-critic' | 'empathetic-supporter' | 'neutral-judge';
 
-export type DebateStance =
-  | 'strict-critic'
-  | 'empathetic-supporter'
-  | 'neutral-judge';
-
-/**
- * Семейство debate-задачи. Определяет, какие stance-specific `LlmTaskType`'ы
- * и SYSTEM-промпты использовать. Default — `decision-supersede` (специалист
- * 3-3, историческое поведение). `curation-verify` (A1) — AI-судья канонизации
- * критических карточек Слоя 4. `conflict-arbiter` (Autonomy W1, 2026-06-12) —
- * ночной арбитр конфликтов знаний (ConflictItem open → keep_old | accept_new |
- * merge | evolving | escalate).
- */
-export type DebateTaskFamily =
-  | 'decision-supersede'
-  | 'curation-verify'
-  | 'conflict-arbiter';
+export type DebateTaskFamily = 'decision-supersede' | 'curation-verify' | 'conflict-arbiter';
 
 export interface DebateRequest {
   task: string;
   candidates: unknown[];
   contextBlocks: unknown[];
-  /**
-   * Семейство задачи (определяет stance-taskType'ы и промпты). Default —
-   * `decision-supersede` (обратная совместимость со специалистом 3-3).
-   */
   taskFamily?: DebateTaskFamily;
-  /** Сколько голосов в round 1. Default из `cfg.debate.defaultN` (3). */
   n?: number;
-  /** Сколько round'ов. Default из `cfg.debate.defaultRounds` (1). */
   rounds?: number;
-  /** Зонтичный taskType (обычно `debate-decision-supersede`). */
   taskType: string;
-  /** Tenant — для cardinality-safe бакетирования cost-метрики. */
   tenantId: string;
 }
 
@@ -536,46 +375,19 @@ export interface DebateVote {
   verdict: string;
   reasoning: string;
   confidence: number;
-  /** Имя провайдера, который реально ответил (`deepseek` / `openai-via-proxy` / …). */
   provider: string;
   costUsd: number;
 }
 
 export interface DebateVerdict {
-  /**
-   * Финальное решение. Для consensus (`unanimous`|`majority`) —
-   * majority verdict; для `split` — литерал `'split_uncertain'`.
-   */
   decision: string;
   votes: DebateVote[];
   consensusType: 'unanimous' | 'majority' | 'split';
   rounds: number;
   totalCostUsd: number;
-  /**
-   * Если debate не сработал штатно — причина fallback'а. NULL = всё ок.
-   * Caller (специалист) должен учесть `fallbackUsed` и принять решение
-   * о следующем шаге (escalate в curation, fallback к single LLM и т.п.).
-   */
   fallbackUsed: 'cost_cap' | 'provider_unavailable' | null;
 }
 
-// ─────────────────────────── prompts ──────────────────────────────────
-
-/**
- * Stance-specific SYSTEM-промпты. Стабильные строки, без переменных —
- * cache-friendly (см. feedback `LLM-промпты — обязательно cache-friendly`,
- * second-brain/02_architecture/llm-cache-status.md).
- *
- * Промпты ≤200 слов reasoning хочется на выходе, но в SYSTEM мы говорим
- * только о роли и формате — переменные данные (задача, кандидаты,
- * голоса коллег) — в user.
- */
-/**
- * D1 supersession-правило (мастер-промпт-флот 2026-06-10, Кластер 7-B/A8) для
- * семейства `decision-supersede`: голосующий должен брать более позднее /
- * актуальное решение и не смешивать старую и новую редакцию. Стабильная строка
- * (cache-friendly), добавляется в SYSTEM каждого stance этого семейства.
- */
 const DECISION_SUPERSEDE_RULE =
   'При противоречии источников бери более позднее / актуальное решение; устаревшее считай заменённым, не смешивай старую и новую редакцию в одно.';
 
@@ -600,17 +412,6 @@ const STANCE_SYSTEM_PROMPTS: Record<DebateStance, string> = {
   ].join('\n'),
 };
 
-/**
- * A1 «лестница доверия» (2026-06-02) — stance-промпты семейства
- * `curation-verify`: AI-судья решает, должна ли критическая карточка
- * (regulation / process / decision) быть провизорно канонизирована в память
- * компании. Verdict строго `accept | reject`.
- *
- * Совместимость с prompt caching: SYSTEM каждого stance — стабильная строка
- * без переменных данных (resourceType / payload приходят в конце USER-message
- * через `buildUserMessage`). Это держит cache hit ≈99% (DeepSeek/OpenAI-proxy
- * кэшируют стабильный префикс). См. feedback `LLM-промпты — cache-friendly`.
- */
 const CURATION_VERIFY_SYSTEM_PROMPTS: Record<DebateStance, string> = {
   'strict-critic': [
     'Ты — строгий критик-аудитор знаний компании. Решаешь, должна ли карточка быть канонизирована в постоянную память компании.',
@@ -629,18 +430,6 @@ const CURATION_VERIFY_SYSTEM_PROMPTS: Record<DebateStance, string> = {
   ].join('\n'),
 };
 
-/**
- * Autonomy W1 (2026-06-12) — stance-промпты семейства `conflict-arbiter`:
- * два утверждения памяти компании конфликтуют (existing vs new) — арбитр
- * выбирает исход. Verdict строго `keep_old | accept_new | merge | evolving |
- * escalate`. Авто-резолвятся кроном ТОЛЬКО keep_old / accept_new / merge;
- * evolving и escalate оставляют конфликт open (см. ConflictArbiterCron).
- *
- * Совместимость с prompt caching: SYSTEM каждого stance — стабильная строка
- * без переменных данных (payload'ы карточек / relationType / evidence приходят
- * в конце USER-message через `buildUserMessage`). См. feedback
- * `LLM-промпты — обязательно cache-friendly`.
- */
 const CONFLICT_ARBITER_SYSTEM_PROMPTS: Record<DebateStance, string> = {
   'strict-critic': [
     'Ты — строгий критик-хранитель памяти компании. Два утверждения памяти компании конфликтуют: существующее (existing) и новое (new). Реши, какой исход верен.',
@@ -659,14 +448,7 @@ const CONFLICT_ARBITER_SYSTEM_PROMPTS: Record<DebateStance, string> = {
   ].join('\n'),
 };
 
-/**
- * Резолв SYSTEM-промптов по семейству задачи. Каждое семейство — свой набор
- * stance-промптов. Default-семейство — `decision-supersede`.
- */
-const STANCE_SYSTEM_PROMPTS_BY_FAMILY: Record<
-  DebateTaskFamily,
-  Record<DebateStance, string>
-> = {
+const STANCE_SYSTEM_PROMPTS_BY_FAMILY: Record<DebateTaskFamily, Record<DebateStance, string>> = {
   'decision-supersede': STANCE_SYSTEM_PROMPTS,
   'curation-verify': CURATION_VERIFY_SYSTEM_PROMPTS,
   'conflict-arbiter': CONFLICT_ARBITER_SYSTEM_PROMPTS,
@@ -702,12 +484,6 @@ export const DEBATE_VOTE_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-// ─────────────────────────── helpers ──────────────────────────────────
-
-/**
- * Парсит LLM-ответ (строго JSON через json_schema strict) в типизированный
- * vote. Если парсинг упал — fallback к default vote с confidence=0.
- */
 function parseDebateVoteResponse(text: string): {
   verdict: string;
   reasoning: string;
@@ -720,13 +496,9 @@ function parseDebateVoteResponse(text: string): {
       confidence?: unknown;
     };
     const verdict =
-      typeof raw.verdict === 'string' && raw.verdict.length > 0
-        ? raw.verdict
-        : 'unknown';
-    const reasoning =
-      typeof raw.reasoning === 'string' ? raw.reasoning : '';
-    const confidenceNum =
-      typeof raw.confidence === 'number' ? raw.confidence : 0;
+      typeof raw.verdict === 'string' && raw.verdict.length > 0 ? raw.verdict : 'unknown';
+    const reasoning = typeof raw.reasoning === 'string' ? raw.reasoning : '';
+    const confidenceNum = typeof raw.confidence === 'number' ? raw.confidence : 0;
     const confidence = Math.max(0, Math.min(1, confidenceNum));
     return { verdict, reasoning, confidence };
   } catch {
@@ -734,10 +506,6 @@ function parseDebateVoteResponse(text: string): {
   }
 }
 
-/**
- * `LlmCallResult.modelUsed` имеет формат `<provider>:<model>`. Парсим
- * на пару. Если формат сломан — возвращаем `{provider:'unknown', model:''}`.
- */
 function parseModelUsed(modelUsed: string): {
   provider: string;
   model: string;

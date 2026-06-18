@@ -6,29 +6,18 @@ import type { RedisService } from '../../../../common/redis/redis.service';
 
 import { TelegramApiClient, TelegramApiError } from './telegram-api-client';
 
-/**
- * Тесты `TelegramApiClient` Фазы 2 ТЗ
- * plans/tz/2026-05-26-telegram-via-crossmark-proxy.md:
- *
- *   - proxy enabled → URL строится через прокси-base.
- *   - proxy enabled → outcome=ok / proxy_5xx / telegram_4xx по характеру ответа.
- *   - proxy enabled → durationSec пишется в гистограмму.
- *   - proxy disabled → URL строится через direct base (legacy).
- *   - proxy disabled → метрики proxy не пишутся.
- *   - downloadFile использует fileBase (а не apiBase) когда они различаются.
- *   - timeout: AbortController срабатывает.
- */
-
 const ORIGINAL_FETCH = globalThis.fetch;
 
-function makeCfg(overrides: {
-  proxyEnabled?: boolean;
-  proxyApiBase?: string;
-  proxyFileBase?: string;
-  directApiBase?: string;
-  timeoutMs?: number;
-  globalRps?: number;
-} = {}): TypedConfigService {
+function makeCfg(
+  overrides: {
+    proxyEnabled?: boolean;
+    proxyApiBase?: string;
+    proxyFileBase?: string;
+    directApiBase?: string;
+    timeoutMs?: number;
+    globalRps?: number;
+  } = {},
+): TypedConfigService {
   return {
     telegramProxy: {
       enabled: overrides.proxyEnabled ?? true,
@@ -40,7 +29,7 @@ function makeCfg(overrides: {
     },
     telegramBot: {
       apiBase: overrides.directApiBase ?? 'https://api.telegram.org',
-      globalRps: overrides.globalRps ?? 0, // 0 → throttle no-op
+      globalRps: overrides.globalRps ?? 0,
     },
   } as unknown as TypedConfigService;
 }
@@ -71,7 +60,9 @@ function makeRedis(): RedisService {
   } as unknown as RedisService;
 }
 
-function mockFetch(handler: (url: string, init?: RequestInit) => Response | Promise<Response>): void {
+function mockFetch(
+  handler: (url: string, init?: RequestInit) => Response | Promise<Response>,
+): void {
   globalThis.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     return handler(url, init);
@@ -89,11 +80,12 @@ describe('TelegramApiClient (proxy mode)', () => {
   });
 
   it('строит URL с прокси-base при enabled=true', async () => {
-    const fetchSpy = vi.fn(async () =>
-      new Response(JSON.stringify({ ok: true, result: { message_id: 1, chat: { id: 42 } } }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ ok: true, result: { message_id: 1, chat: { id: 42 } } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
     );
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
@@ -103,7 +95,9 @@ describe('TelegramApiClient (proxy mode)', () => {
     await client.sendMessage({ token: 'TOK', chatId: 42, text: 'hi' });
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const firstCall = (fetchSpy.mock.calls as unknown as Array<[string, unknown?]>)[0]?.[0] as string;
+    const firstCall = (
+      fetchSpy.mock.calls as unknown as Array<[string, unknown?]>
+    )[0]?.[0] as string;
     expect(firstCall).toBe('https://proxy.test/botTOK/sendMessage');
     expect(proxyRequests).toEqual([{ apiMethod: 'sendMessage', outcome: 'ok' }]);
     expect(proxyDurations).toHaveLength(1);
@@ -111,35 +105,35 @@ describe('TelegramApiClient (proxy mode)', () => {
   });
 
   it('классифицирует Telegram 400 ответ (ok:false) как telegram_4xx', async () => {
-    mockFetch(async () =>
-      new Response(JSON.stringify({ ok: false, error_code: 400, description: 'Bad Request' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+    mockFetch(
+      async () =>
+        new Response(JSON.stringify({ ok: false, error_code: 400, description: 'Bad Request' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        }),
     );
     const { metrics, proxyRequests } = makeMetrics();
     const client = new TelegramApiClient(makeCfg(), makeRedis(), metrics);
 
-    await expect(
-      client.sendMessage({ token: 'TOK', chatId: 1, text: 'x' }),
-    ).rejects.toBeInstanceOf(TelegramApiError);
+    await expect(client.sendMessage({ token: 'TOK', chatId: 1, text: 'x' })).rejects.toBeInstanceOf(
+      TelegramApiError,
+    );
 
     expect(proxyRequests).toEqual([{ apiMethod: 'sendMessage', outcome: 'telegram_4xx' }]);
   });
 
   it('классифицирует non-JSON 502 (HTML/plain) как proxy_5xx', async () => {
-    mockFetch(async () =>
-      new Response('<html>Bad gateway</html>', {
-        status: 502,
-        headers: { 'Content-Type': 'text/html' },
-      }),
+    mockFetch(
+      async () =>
+        new Response('<html>Bad gateway</html>', {
+          status: 502,
+          headers: { 'Content-Type': 'text/html' },
+        }),
     );
     const { metrics, proxyRequests } = makeMetrics();
     const client = new TelegramApiClient(makeCfg(), makeRedis(), metrics);
 
-    const err = await client
-      .sendMessage({ token: 'TOK', chatId: 1, text: 'x' })
-      .catch((e) => e);
+    const err = await client.sendMessage({ token: 'TOK', chatId: 1, text: 'x' }).catch((e) => e);
     expect(err).toBeInstanceOf(TelegramApiError);
     expect((err as TelegramApiError).code).toBe(502);
     expect((err as TelegramApiError).transient).toBe(true);
@@ -153,9 +147,9 @@ describe('TelegramApiClient (proxy mode)', () => {
     const { metrics, proxyRequests } = makeMetrics();
     const client = new TelegramApiClient(makeCfg(), makeRedis(), metrics);
 
-    await expect(
-      client.sendMessage({ token: 'TOK', chatId: 1, text: 'x' }),
-    ).rejects.toBeInstanceOf(TelegramApiError);
+    await expect(client.sendMessage({ token: 'TOK', chatId: 1, text: 'x' })).rejects.toBeInstanceOf(
+      TelegramApiError,
+    );
 
     expect(proxyRequests).toEqual([{ apiMethod: 'sendMessage', outcome: 'network' }]);
   });
@@ -196,9 +190,9 @@ describe('TelegramApiClient (proxy mode)', () => {
     const { metrics, proxyRequests } = makeMetrics();
     const client = new TelegramApiClient(makeCfg({ timeoutMs: 30 }), makeRedis(), metrics);
 
-    await expect(
-      client.sendMessage({ token: 'TOK', chatId: 1, text: 'x' }),
-    ).rejects.toBeInstanceOf(TelegramApiError);
+    await expect(client.sendMessage({ token: 'TOK', chatId: 1, text: 'x' })).rejects.toBeInstanceOf(
+      TelegramApiError,
+    );
 
     expect(proxyRequests).toEqual([{ apiMethod: 'sendMessage', outcome: 'network' }]);
   });
@@ -206,11 +200,12 @@ describe('TelegramApiClient (proxy mode)', () => {
 
 describe('TelegramApiClient (direct mode, legacy)', () => {
   it('строит URL с direct apiBase при enabled=false', async () => {
-    const fetchSpy = vi.fn(async () =>
-      new Response(JSON.stringify({ ok: true, result: { message_id: 1, chat: { id: 1 } } }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ ok: true, result: { message_id: 1, chat: { id: 1 } } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
     );
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
@@ -223,8 +218,9 @@ describe('TelegramApiClient (direct mode, legacy)', () => {
 
     await client.sendMessage({ token: 'TOK', chatId: 1, text: 'x' });
 
-    expect((fetchSpy.mock.calls as unknown as Array<[string, unknown?]>)[0]?.[0]).toBe('https://api.telegram.org/botTOK/sendMessage');
-    // Прокси-метрики не пишутся в direct mode.
+    expect((fetchSpy.mock.calls as unknown as Array<[string, unknown?]>)[0]?.[0]).toBe(
+      'https://api.telegram.org/botTOK/sendMessage',
+    );
     expect(proxyRequests).toEqual([]);
   });
 
@@ -240,6 +236,8 @@ describe('TelegramApiClient (direct mode, legacy)', () => {
     );
 
     await client.downloadFile({ token: 'TOK', filePath: 'v/f.ogg' });
-    expect((fetchSpy.mock.calls as unknown as Array<[string, unknown?]>)[0]?.[0]).toBe('https://api.telegram.org/file/botTOK/v/f.ogg');
+    expect((fetchSpy.mock.calls as unknown as Array<[string, unknown?]>)[0]?.[0]).toBe(
+      'https://api.telegram.org/file/botTOK/v/f.ogg',
+    );
   });
 });

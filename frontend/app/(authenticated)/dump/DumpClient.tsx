@@ -1,33 +1,23 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { Brain, CheckCircle2, Loader2, Send } from 'lucide-react';
+import { useState } from "react";
+import Link from "next/link";
+import { Brain, CheckCircle2, Loader2, Send } from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { dumpApi } from '@/api/dump.api';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
-import { generateNonce } from '@/domain/source';
-import { Button } from '@/ui/shadcn/button';
-import { Textarea } from '@/ui/shadcn/textarea';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { dumpApi } from "@/api/dump.api";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { generateNonce } from "@/domain/source";
+import { Button } from "@/ui/shadcn/button";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 const MAX_LEN = 50_000;
 
-/**
- * Клиент страницы `/dump` — веб-форма «дамп мысли» (Шаг 10 Фазы 10).
- *
- * UX:
- *   - Большая monospace textarea с placeholder.
- *   - Счётчик символов (0 / 50 000), краснеет при > 90% лимита.
- *   - Submit генерирует `nonce` (uuid-v4) → `POST /api/v1/ingest/dump`.
- *   - На 429 `quota_exceeded` — toast «Лимит 30 мыслей в день…».
- *   - На успех — toast и очистка textarea.
- */
 export function DumpClient() {
   const { currentOrgId, isLoading: authLoading } = useAuth();
 
-  const [text, setText] = useState('');
+  const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -35,7 +25,8 @@ export function DumpClient() {
   const len = text.length;
   const overflow = len > MAX_LEN;
   const nearLimit = len > MAX_LEN * 0.9;
-  const canSubmit = !submitting && trimmed.length > 0 && !overflow && Boolean(currentOrgId);
+  const canSubmit =
+    !submitting && trimmed.length > 0 && !overflow && Boolean(currentOrgId);
 
   const handleSubmit = async () => {
     if (!canSubmit || !currentOrgId) return;
@@ -47,17 +38,17 @@ export function DumpClient() {
         nonce,
       });
       if (res.idempotent) {
-        toast('Эта мысль уже была сохранена ранее');
+        toast("Эта мысль уже была сохранена ранее");
       } else {
-        toast.success('✓ Записано в память компании');
+        toast.success("✓ Записано в память компании");
       }
-      setText('');
+      setText("");
       setSaved(true);
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'quota_exceeded') {
-        toast.error('Лимит 30 мыслей в день. Попробуйте позже.');
+      if (e instanceof ApiError && e.code === "quota_exceeded") {
+        toast.error("Лимит 30 мыслей в день. Попробуйте позже.");
       } else {
-        toast.error(humanizeApiError(e, 'Не удалось сохранить'));
+        toast.error(humanizeApiError(e, "Не удалось сохранить"));
       }
     } finally {
       setSubmitting(false);
@@ -76,7 +67,8 @@ export function DumpClient() {
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
         <div className="rounded-md border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
-          Эта страница доступна только в рамках организации. Создайте или присоединитесь к организации.
+          Эта страница доступна только в рамках организации. Создайте или
+          присоединитесь к организации.
         </div>
       </div>
     );
@@ -93,8 +85,8 @@ export function DumpClient() {
             Дамп мысли
           </h1>
           <p className="text-sm text-fg-secondary">
-            Любая мысль, замечание или идея. Через несколько минут она попадёт
-            в общую память компании и появится в поиске и помощнике.
+            Любая мысль, замечание или идея. Через несколько минут она попадёт в
+            общую память компании и появится в поиске и помощнике.
           </p>
         </div>
       </header>
@@ -102,10 +94,7 @@ export function DumpClient() {
       {saved && (
         <div className="rounded-md border border-success/30 bg-success/10 p-4 text-sm">
           <div className="flex items-start gap-2">
-            <CheckCircle2
-              size={18}
-              className="mt-0.5 shrink-0 text-success"
-            />
+            <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-success" />
             <div className="space-y-2">
               <p className="font-medium text-success">
                 Мысль сохранена в память компании
@@ -147,13 +136,13 @@ export function DumpClient() {
           <span
             className={
               overflow
-                ? 'text-danger'
+                ? "text-danger"
                 : nearLimit
-                  ? 'text-warning'
-                  : 'text-fg-tertiary'
+                  ? "text-warning"
+                  : "text-fg-tertiary"
             }
           >
-            {len.toLocaleString('ru')} / {MAX_LEN.toLocaleString('ru')}
+            {len.toLocaleString("ru")} / {MAX_LEN.toLocaleString("ru")}
           </span>
         </div>
       </div>

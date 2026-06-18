@@ -1,18 +1,3 @@
-/**
- * Unit-тесты ManualBillingService — admin-операции.
- *
- * Покрытие:
- *   - activate(paid)  → Subscription ACTIVE/paid, MeetingsBalance.grant(150), Invoice.paid
- *   - activate(bonus) → Subscription ACTIVE/bonus, MeetingsBalance.grant(150), Invoice.bonus
- *   - activate с reason < 3 → BadRequestException
- *   - activate с seatsExtra > 10000 → BadRequestException
- *   - activate второй раз с тем же paymentMode → ConflictException
- *   - adjustSeats: уменьшение → no Invoice, no grant
- *   - adjustSeats: увеличение → Invoice paid с pro-rata + grant=diff*5
- *   - adjustSeats: при не-ACTIVE → BadRequestException
- *   - forceStatus: обход FSM + AdminAuditLog
- */
-
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import {
   type BillingPeriod,
@@ -31,8 +16,6 @@ import type { InvoiceService } from './invoice.service';
 import { ManualBillingService } from './manual-billing.service';
 import { SeatService } from './seat.service';
 import type { SubscriptionService } from './subscription.service';
-
-// ────────────────────── Mock factories ──────────────────────
 
 function makeSubscription(over: Partial<Subscription> = {}): Subscription {
   return {
@@ -124,9 +107,6 @@ interface Mocks {
 }
 
 function makeMocks(): Mocks {
-  // tx.subscription.update должен по дефолту возвращать sub, чтобы цепочка
-  // adjustSeats увеличения мест не падала. Тесты могут переопределить через
-  // mockResolvedValueOnce.
   const txClient = {
     invoice: { create: vi.fn(), update: vi.fn() },
     subscription: { update: vi.fn().mockResolvedValue(makeSubscription({ seatsExtra: 5 })) },
@@ -157,9 +137,6 @@ function makeMocks(): Mocks {
     eventLog: { log: vi.fn().mockResolvedValue({ duplicate: false }) },
     balance: {
       grant: vi.fn(),
-      // SeatService.calculateMeetingsGrant + ManualBillingService.adjustSeats
-      // читают параметры гранта через MeetingsBalanceService (источник правды —
-      // AdminSetting, code-fallback дефолты 150 / 5). В spec'е мокаем константами.
       getBaseMeetingsGrant: vi.fn().mockResolvedValue(150),
       getPerExtraSeatMeetingsGrant: vi.fn().mockResolvedValue(5),
       calculateMeetingsGrant: vi
@@ -170,13 +147,8 @@ function makeMocks(): Mocks {
 }
 
 function makeSeatService(balance: Mocks['balance']): SeatService {
-  // SeatService требует TypedConfigService.getDynamic (для billing.*) +
-  // MeetingsBalanceService (для calculateMeetingsGrant делегации).
-  // В spec'е cfgMock всегда отдаёт code-fallback дефолты — этого хватает
-  // на расчёт цены `tier_standard` 60 000 ₽ / 100 000 ₽ / 0.8.
   const cfgMock = {
-    getDynamic: async <T,>(_key: string, _env: string | undefined, def: T): Promise<T> =>
-      def,
+    getDynamic: async <T>(_key: string, _env: string | undefined, def: T): Promise<T> => def,
   } as unknown as TypedConfigService;
   return new SeatService(cfgMock, balance as unknown as MeetingsBalanceService);
 }
@@ -192,8 +164,6 @@ function makeService(mocks: Mocks): ManualBillingService {
     mocks.balance as unknown as MeetingsBalanceService,
   );
 }
-
-// ────────────────────── activate ──────────────────────
 
 describe('ManualBillingService.activate', () => {
   let mocks: Mocks;
@@ -237,7 +207,6 @@ describe('ManualBillingService.activate', () => {
     expect(mocks.invoices.markPaid).toHaveBeenCalledOnce();
     expect(mocks.subscriptions.transition).toHaveBeenCalledOnce();
     expect(mocks.eventLog.log).toHaveBeenCalled();
-    // Эмит активации
     expect(mocks.events.emitAsync).toHaveBeenCalledWith(
       'billing.subscription.activated_paid',
       expect.objectContaining({ tenantId: 'org-1', paymentMode: 'paid' }),
@@ -265,19 +234,14 @@ describe('ManualBillingService.activate', () => {
       byUserId: 'user-admin',
     });
 
-    expect(result.grantedMeetings).toBe(150 + 10 * 5); // 200
+    expect(result.grantedMeetings).toBe(150 + 10 * 5);
     expect(mocks.invoices.markPaid).not.toHaveBeenCalled();
     expect(mocks.balance.grant).toHaveBeenCalledWith('org-1', 200);
     expect(mocks.events.emitAsync).toHaveBeenCalledWith(
       'billing.subscription.activated_bonus',
       expect.any(Object),
     );
-    // audit С8 (2026-05-29): bonus-режим НЕ должен эмитить billing.invoice.paid —
-    // иначе сработает реф-комиссия 20 000 ₽, что недопустимо для бесплатного
-    // bonus-периода. Эмит INVOICE_PAID — только из реальной оплаты Точкой.
-    const emittedEvents = mocks.events.emitAsync.mock.calls.map(
-      (c: unknown[]) => c[0],
-    );
+    const emittedEvents = mocks.events.emitAsync.mock.calls.map((c: unknown[]) => c[0]);
     expect(emittedEvents).not.toContain('billing.invoice.paid');
   });
 
@@ -329,8 +293,6 @@ describe('ManualBillingService.activate', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 });
-
-// ────────────────────── adjustSeats ──────────────────────
 
 describe('ManualBillingService.adjustSeats', () => {
   let mocks: Mocks;
@@ -403,7 +365,9 @@ describe('ManualBillingService.adjustSeats', () => {
       currentPeriodEnd: new Date('2026-06-01T00:00:00Z'),
     });
     mocks.subscriptions.getByTenantOrFail.mockResolvedValueOnce(sub);
-    mocks.invoices.create.mockResolvedValueOnce(makeInvoice({ status: 'draft', totalKopecks: 250_000 }));
+    mocks.invoices.create.mockResolvedValueOnce(
+      makeInvoice({ status: 'draft', totalKopecks: 250_000 }),
+    );
     mocks.invoices.markPaid.mockResolvedValueOnce(
       makeInvoice({ status: 'paid', totalKopecks: 250_000 }),
     );
@@ -417,7 +381,7 @@ describe('ManualBillingService.adjustSeats', () => {
     });
 
     expect(result.invoiceId).toBe('inv-1');
-    expect(result.grantedMeetings).toBe(25); // 5 × 5
+    expect(result.grantedMeetings).toBe(25);
     expect(mocks.balance.grant).toHaveBeenCalledWith('org-1', 25);
     expect(mocks.invoices.create).toHaveBeenCalled();
     expect(mocks.invoices.markPaid).toHaveBeenCalled();
@@ -437,8 +401,6 @@ describe('ManualBillingService.adjustSeats', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
-
-// ────────────────────── forceStatus ──────────────────────
 
 describe('ManualBillingService.forceStatus', () => {
   let mocks: Mocks;

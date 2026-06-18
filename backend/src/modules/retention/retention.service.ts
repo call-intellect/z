@@ -11,33 +11,10 @@ import { S3Service } from '../recordings/s3.service';
 
 import { RetentionPolicyService } from './retention-policy.service';
 
-/**
- * Сервис retention.
- *
- * Исходно (Фаза 4 recording): processExpired() — удаление просроченных
- * Recording. Алгоритм:
- *   1. Recording.expiresAt < NOW и status НЕ deleted/archived.
- *   2. Собираем S3 keys (composite + per-track audio), массовое delete.
- *   3. Recording.status='deleted', deletedAt=now, RecordingAction.
- *   4. Метрика recordings_deleted_total{reason='tariff_expired'}.
- *
- * Фаза 11 knowledge-core добавляет per-Org sweeps:
- *   - processExpiredRawEvents     — RawEvent + S3 payload + cascade evidence
- *                                   + auto-archive блоков с evidenceCount=0.
- *   - processExpiredArchivedBlocks — hard-delete IdeaBlock(status='archived')
- *                                    + AuditLog BLOCK_DELETED_BY_RETENTION.
- *   - processExpiredChatMessages   — MeetingChatMessage по chatMessageDays.
- *   - processExpiredAuditLogs      — AuditLog по auditLogDays.
- *
- * `processAll()` — оркестратор, собирающий все sweep'ы (recordings + новые).
- * ENV-флаги (`cfg.retention.{rawEventsEnabled,auditEnabled,chatEnabled,blocksEnabled}`)
- * управляют каждым sweep'ом независимо.
- */
 @Injectable()
 export class RetentionService {
   private readonly logger = new Logger(RetentionService.name);
 
-  /** Сколько Recording обрабатывать за один проход (старый sweep). */
   private static readonly BATCH_SIZE = 100;
 
   constructor(
@@ -49,10 +26,6 @@ export class RetentionService {
     private readonly policySvc: RetentionPolicyService,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
   ) {}
-
-  // ─────────────────────────────────────────────────────────────────────
-  // Recordings (Фаза 4 / M2)
-  // ─────────────────────────────────────────────────────────────────────
 
   async processExpired(): Promise<{ processed: number; failed: number }> {
     const now = new Date();
@@ -133,22 +106,6 @@ export class RetentionService {
     this.metrics.incCoreRetentionDeleted({ kind: 'recording' });
   }
 
-  // ─────────────────────────────────────────────────────────────────────
-  // Knowledge-core sweeps (Фаза 11)
-  // ─────────────────────────────────────────────────────────────────────
-
-  /**
-   * Главный оркестратор. Запускается RetentionCron'ом.
-   *
-   * Порядок:
-   *   1. Recordings — всегда (тут нет per-Org политики).
-   *   2. RawEvent / Blocks / Chat / Audit — управляются ENV-флагами.
-   *   3. После всего — пометка `lastSweepAt` для каждой посещённой Org.
-   *
-   * ВАЖНО: ENV-флаги — глобальный rollout-switch. Per-Org конфигурация
-   * (`OrgRetentionPolicy`) задаёт ДЛИТЕЛЬНОСТИ хранения, а не on/off.
-   * Это позволяет включать sweep'ы операционно после полного бэкапа.
-   */
   async processAll(): Promise<{
     recordings: { processed: number; failed: number };
     rawEvents: { processed: number; failed: number };
@@ -171,18 +128,11 @@ export class RetentionService {
       ? await this.processExpiredAuditLogs()
       : { processed: 0, failed: 0 };
 
-    // Помечаем lastSweepAt для всех Org с retention-политикой.
     await this.markAllSwept();
 
     return { recordings, rawEvents, blocks, chat, audit };
   }
 
-  /**
-   * Удаляет RawEvent старше `policy.rawEventDays`. На каждый сжатый event
-   * — S3-cleanup, потом prisma.delete (cascade на IdeaBlockEvidence).
-   * После прохода — auto-archive блоков, у которых после удаления evidence
-   * стало 0 (если archivedBlockAction = 'archive_then_delete').
-   */
   private async processExpiredRawEvents(): Promise<{ processed: number; failed: number }> {
     const policies = await this.prisma.orgRetentionPolicy.findMany();
     const batch = this.cfg.retention.sweepBatchSize;
@@ -209,13 +159,9 @@ export class RetentionService {
         processed += processedHere;
         failed += failedHere;
 
-        // Auto-archive блоков с evidenceCount=0 (если политика так требует).
         if (policy.archivedBlockAction === 'archive_then_delete') {
           await this.autoArchiveOrphanBlocks(policy.tenantId);
         }
-        // Поджимаем других tenant'ов, чьи блоки могли пострадать (не должно
-        // случаться: RawEvent в одном tenantId, но evidence в блоках того
-        // же tenantId — на всякий случай прогоняем по уникальным).
         for (const tid of affectedBlockTenantIds) {
           if (tid !== policy.tenantId) {
             await this.autoArchiveOrphanBlocks(tid);
@@ -239,11 +185,6 @@ export class RetentionService {
     return { processed, failed };
   }
 
-  /**
-   * Удаляет батч RawEvent'ов: сначала S3, потом БД (cascade на evidence).
-   * Возвращает счётчики и набор tenantId, чьи блоки могут потребовать
-   * auto-archive после удаления.
-   */
   private async deleteRawEventBatch(
     candidates: Pick<RawEvent, 'id' | 'tenantId' | 'payloadStorage' | 'payloadS3Key'>[],
   ): Promise<{
@@ -288,20 +229,7 @@ export class RetentionService {
     return { processedHere, failedHere, affectedBlockTenantIds };
   }
 
-  /**
-   * Блок перешёл в состояние «нет evidence» — переводим в archived.
-   * IdeaBlockEvidence удаляются cascade'ом при удалении RawEvent, мы лишь
-   * пересчитываем evidenceCount и архивируем «осиротевшие» блоки.
-   *
-   * NB: status='canonical' и status='draft' — оба переводим в 'archived'
-   * (при evidenceCount=0). 'merged_into' и 'archived' оставляем как есть.
-   */
   private async autoArchiveOrphanBlocks(tenantId: string): Promise<void> {
-    // 1. Пересчитываем evidenceCount у затронутых блоков.
-    //    SQL: UPDATE IdeaBlock SET evidenceCount = (SELECT count(*) FROM
-    //    IdeaBlockEvidence WHERE blockId = IdeaBlock.id) WHERE tenantId=...
-    //    Делаем через Prisma — без сырого SQL, но с ограничением: только
-    //    блоки, у которых evidenceCount > 0 (иначе уже учтены).
     const candidates = await this.prisma.ideaBlock.findMany({
       where: {
         tenantId,
@@ -329,11 +257,6 @@ export class RetentionService {
     }
   }
 
-  /**
-   * Hard-delete для IdeaBlock.status='archived', updatedAt < (now - archivedBlockDays).
-   * Cascade: IdeaBlockEvidence / IdeaBlockEntity / IdeaBlockLink / ThemeIdeaBlock.
-   * AuditLog для каждого удалённого блока.
-   */
   private async processExpiredArchivedBlocks(): Promise<{ processed: number; failed: number }> {
     const policies = await this.prisma.orgRetentionPolicy.findMany();
     const batch = this.cfg.retention.sweepBatchSize;
@@ -341,7 +264,6 @@ export class RetentionService {
     let failed = 0;
 
     for (const policy of policies) {
-      // 'keep_forever' — пропускаем, hard-delete отключён.
       if (policy.archivedBlockAction === 'keep_forever') continue;
       const cutoff = this.daysAgo(policy.archivedBlockDays);
       try {
@@ -404,9 +326,6 @@ export class RetentionService {
     return { processed, failed };
   }
 
-  /**
-   * MeetingChatMessage старше `policy.chatMessageDays` — deleteMany per tenant.
-   */
   private async processExpiredChatMessages(): Promise<{ processed: number; failed: number }> {
     const policies = await this.prisma.orgRetentionPolicy.findMany();
     let processed = 0;
@@ -438,12 +357,6 @@ export class RetentionService {
     return { processed, failed };
   }
 
-  /**
-   * AuditLog старше `policy.auditLogDays` — per tenant. NB: глобальный
-   * RetentionExtrasCron уже удаляет AuditLog старше 365 дней независимо
-   * от per-Org политики, но per-Org может быть строже (например 90 дней
-   * для commercial tenant'а под GDPR).
-   */
   private async processExpiredAuditLogs(): Promise<{ processed: number; failed: number }> {
     const policies = await this.prisma.orgRetentionPolicy.findMany();
     let processed = 0;
@@ -475,11 +388,6 @@ export class RetentionService {
     return { processed, failed };
   }
 
-  /**
-   * Помечает все Org'и, у которых есть retention-политика, как «прошедшие
-   * sweep сейчас». Вызывается RetentionCron'ом после processAll().
-   * Не критично: при ошибке — warn и идём дальше.
-   */
   async markAllSwept(): Promise<void> {
     try {
       await this.prisma.orgRetentionPolicy.updateMany({
@@ -491,13 +399,8 @@ export class RetentionService {
         'markAllSwept: ошибка обновления lastSweepAt',
       );
     }
-    // Используем policySvc явно, чтобы DI-граф не пожаловался на unused.
     void this.policySvc;
   }
-
-  // ─────────────────────────────────────────────────────────────────────
-  // helpers
-  // ─────────────────────────────────────────────────────────────────────
 
   private daysAgo(days: number): Date {
     return new Date(Date.now() - days * 86_400_000);

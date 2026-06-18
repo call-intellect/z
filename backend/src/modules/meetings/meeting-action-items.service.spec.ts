@@ -5,20 +5,12 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 
 import { MeetingActionItemsService } from './meeting-action-items.service';
 
-/**
- * ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 5.2 — unit на
- * `MeetingActionItemsService`. Проверяем gate-парность:
- *   - флаг OFF (дефолт) → читаем Task, нормализуем форму;
- *   - флаг ON → читаем Issue по linkedMeetingIds, маппим в MeetingActionItem.
- */
-
 function makeCfg(trackerOnly: boolean): TypedConfigService {
   return {
     getDynamic: vi.fn(async () => trackerOnly),
   } as unknown as TypedConfigService;
 }
 
-/** Достаёт первый аргумент первого вызова мок-функции (where-объект запроса). */
 function firstCallArg(fn: ReturnType<typeof vi.fn>): {
   where: Record<string, unknown>;
 } {
@@ -53,7 +45,6 @@ describe('MeetingActionItemsService.listForMeeting', () => {
     const svc = new MeetingActionItemsService(prisma, makeCfg(false));
     const out = await svc.listForMeeting({ meetingId: 'm1', tenantId: 't1' });
 
-    // Запрос к Task (не к Issue).
     expect(findMany).toHaveBeenCalledTimes(1);
     const arg = firstCallArg(findMany);
     expect(arg.where.meetingId).toBe('m1');
@@ -116,7 +107,6 @@ describe('MeetingActionItemsService.listForMeeting', () => {
       userId: 'u-issue',
     });
 
-    // Запрос к Issue по has(meetingId) + tenant.
     expect(issueFindMany).toHaveBeenCalledTimes(1);
     const arg = firstCallArg(issueFindMany);
     expect(arg.where.tenantId).toBe('t1');
@@ -127,10 +117,8 @@ describe('MeetingActionItemsService.listForMeeting', () => {
       id: 'i1',
       meetingId: 'm1',
       title: 'Issue из встречи',
-      // state.category 'started' → 'in_progress'
       status: 'in_progress',
       assigneeUserId: 'u-issue',
-      // Issue не хранит сырую строку-имя
       assigneeRaw: null,
       description: 'тело задачи',
     });
@@ -191,9 +179,7 @@ describe('MeetingActionItemsService.searchTitlesForUser', () => {
     });
     const arg = firstCallArg(findMany);
     expect(arg.where.userId).toBe('u1');
-    expect(out).toEqual([
-      { id: 't1', title: 'Найти', status: 'open', meetingId: 'm1' },
-    ]);
+    expect(out).toEqual([{ id: 't1', title: 'Найти', status: 'open', meetingId: 'm1' }]);
   });
 
   it('флаг ON → ищет по Issue (externalSource=meeting), meetingId из linkedMeetingIds[0]', async () => {
@@ -218,8 +204,6 @@ describe('MeetingActionItemsService.searchTitlesForUser', () => {
     });
     const arg = firstCallArg(issueFindMany);
     expect(arg.where.externalSource).toBe('meeting');
-    expect(out).toEqual([
-      { id: 'i1', title: 'Issue найти', status: 'done', meetingId: 'm1' },
-    ]);
+    expect(out).toEqual([{ id: 'i1', title: 'Issue найти', status: 'done', meetingId: 'm1' }]);
   });
 });

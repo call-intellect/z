@@ -1,39 +1,13 @@
-/**
- * BehaviorMetricsCalculator (Фаза B).
- *
- * Источник: plans/tz/2026-05-21-phase-B-meeting-behavior-metrics.md §5.
- *
- * Pure-функция: на вход — диалог из merged.json (сегменты с участником,
- * временем и текстом) + список Participant'ов встречи. На выход —
- * общие метрики встречи и per-participant метрики.
- *
- * Без side-effects (нет БД / S3 / LLM) — легко юнит-тестируется.
- *
- * Спикер в диалоге может приходить как `participantIdentity` (LiveKit identity)
- * либо как `speakerName` (имя из per-track json). Мы маппим обоих в `Participant`
- * по `livekitIdentity` (точное совпадение) или, если не нашли, по `name`
- * (case-insensitive). Если ни так, ни так — создаём «синтетического» гостя
- * с `participantId=null` и `displayName=<speaker>`, чтобы не потерять метрику.
- */
-
-/** Один сегмент диалога — то, что приходит из merged.json. */
 export interface BehaviorDiarizationSegment {
-  /** LiveKit identity либо `speakerName`, по которому будем матчить Participant. */
   speaker: string;
-  /** Начало сегмента, мс от старта встречи. */
   startMs: number;
-  /** Конец сегмента, мс от старта встречи. */
   endMs: number;
-  /** Транскрипт сегмента (опционально). */
   text?: string;
-  /** Confidence ASR для сегмента (опционально). */
   confidence?: number;
 }
 
 export interface BehaviorParticipantInput {
-  /** Participant.id (cuid) — primary key. */
   id: string;
-  /** LiveKit identity — для матчинга со speaker'ом диалога. */
   identity: string;
   displayName: string;
   isGuest: boolean;
@@ -42,22 +16,10 @@ export interface BehaviorParticipantInput {
 export interface BehaviorCalculatorInput {
   meetingId: string;
   tenantId: string;
-  /** Общая длительность встречи (Meeting.endedAt - startedAt), мс. */
   totalDurationMs: number;
-  /** Сегменты диалога (можно передавать в любом порядке — отсортируем). */
   diarization: BehaviorDiarizationSegment[];
   participants: BehaviorParticipantInput[];
-  /**
-   * Среднее confidence диаризации (0..1). Если не задан, считаем как
-   * среднее `segment.confidence` (или 1.0, если confidence нигде нет).
-   */
   diarizationConfidence?: number;
-  /**
-   * Были ли у дорожек пословные тайминги. Если `false` — поведенческие
-   * сегменты построены по длительности дорожек (приблизительно, см.
-   * merge.worker псевдо-turn), поэтому метрики помечаются `lowConfidence`.
-   * `undefined`/`true` — обычный путь (тайминги есть).
-   */
   wordTimingsAvailable?: boolean;
 }
 
@@ -73,7 +35,6 @@ export interface BehaviorMeetingMetrics {
 }
 
 export interface BehaviorParticipantMetrics {
-  /** Participant.id или null для синтезированного «гостя без записи». */
   participantId: string | null;
   displayName: string;
   isGuest: boolean;
@@ -94,21 +55,12 @@ export interface BehaviorCalculatorResult {
   participants: BehaviorParticipantMetrics[];
 }
 
-/** ТЗ B §5.2 — порог «монолога». */
 export const MONOLOGUE_THRESHOLD_MS = 60_000;
-/** ТЗ B §5.2 — gap между сегментами одного спикера, при котором это всё ещё один turn. */
 export const TURN_GAP_MS = 2_000;
-/** ТЗ B §5.2 — минимальное пересечение для счёта прерывания. */
 export const INTERRUPTION_MIN_OVERLAP_MS = 500;
-/** ТЗ B §5.4 — встречи короче этого порога не считаем. */
 export const MIN_MEETING_DURATION_MS = 60_000;
-/** ТЗ B §4 — порог diarizationConfidence для отметки `lowConfidence`. */
 export const LOW_CONFIDENCE_THRESHOLD = 0.85;
 
-/**
- * Словарь русских слов-паразитов из ТЗ B §5.2. Регистронезависимый,
- * матчим по границам слов либо как multi-word phrase в lowercased тексте.
- */
 export const FILLER_WORDS_RU: readonly string[] = [
   'эээ',
   'ммм',
@@ -125,21 +77,14 @@ export const FILLER_WORDS_RU: readonly string[] = [
 ];
 
 interface NormalisedSegment extends BehaviorDiarizationSegment {
-  /** Ключ, по которому матчим Participant (lowercase). */
   speakerKey: string;
 }
 
-/**
- * Главная точка входа: pure-функция, считает все метрики ТЗ B §5.2.
- */
-export function calculateBehaviorMetrics(
-  input: BehaviorCalculatorInput,
-): BehaviorCalculatorResult {
+export function calculateBehaviorMetrics(input: BehaviorCalculatorInput): BehaviorCalculatorResult {
   const diarizationConfidence = resolveDiarizationConfidence(input);
   const lowConfidenceFromDiar = diarizationConfidence < LOW_CONFIDENCE_THRESHOLD;
   const lowConfidenceFromDuration = input.totalDurationMs < MIN_MEETING_DURATION_MS;
 
-  // Edge case ТЗ §5.4: короткая встреча → метрики нулевые, lowConfidence=true.
   if (lowConfidenceFromDuration) {
     return {
       meeting: emptyMeetingMetrics(input.totalDurationMs, diarizationConfidence, true),
@@ -147,13 +92,10 @@ export function calculateBehaviorMetrics(
     };
   }
 
-  // 1. Нормализуем сегменты: сортировка + ключ для матчинга.
   const segments = normaliseSegments(input.diarization);
 
-  // 2. Маппим speakerKey → BehaviorParticipantInput | null.
   const speakerMap = buildSpeakerMap(input.participants, segments);
 
-  // 3. Считаем per-participant speakingTimeMs + сегменты по участнику.
   const segmentsByParticipantKey = new Map<string, NormalisedSegment[]>();
   for (const seg of segments) {
     const key = seg.speakerKey;
@@ -162,17 +104,13 @@ export function calculateBehaviorMetrics(
     segmentsByParticipantKey.set(key, list);
   }
 
-  // 4. Total speech, silence, crosstalk.
   const totalSpeechMs = segments.reduce((sum, s) => sum + Math.max(0, s.endMs - s.startMs), 0);
   const unionSpeechMs = unionDurationMs(segments);
   const silenceMs = Math.max(0, input.totalDurationMs - unionSpeechMs);
-  const silencePercent = input.totalDurationMs > 0
-    ? roundFloat((silenceMs / input.totalDurationMs) * 100)
-    : 0;
+  const silencePercent =
+    input.totalDurationMs > 0 ? roundFloat((silenceMs / input.totalDurationMs) * 100) : 0;
   const crossTalkMs = computeCrossTalkMs(segments);
 
-  // 5. Per-participant. Идём по «всем известным speaker-key» и по participants,
-  //    которые могли не сказать ни слова (тоже фиксируем нулевые метрики).
   const seenKeys = new Set<string>();
   const participantMetrics: BehaviorParticipantMetrics[] = [];
 
@@ -193,7 +131,6 @@ export function calculateBehaviorMetrics(
     );
   }
 
-  // Синтезированные гости: speaker, который есть в диалоге, но не в participants.
   for (const [key, segs] of segmentsByParticipantKey.entries()) {
     if (seenKeys.has(key)) continue;
     const matched = speakerMap.get(key);
@@ -211,7 +148,6 @@ export function calculateBehaviorMetrics(
     );
   }
 
-  // 6. dominanceIndex по ТЗ §5.2.
   const speakingTimes = participantMetrics.map((m) => m.speakingTimeMs);
   const dominanceIndex = computeDominanceIndex(speakingTimes);
 
@@ -229,8 +165,6 @@ export function calculateBehaviorMetrics(
     participants: participantMetrics,
   };
 }
-
-// ─────────────────────────── helpers ────────────────────────────────────
 
 function resolveDiarizationConfidence(input: BehaviorCalculatorInput): number {
   if (typeof input.diarizationConfidence === 'number') {
@@ -252,11 +186,6 @@ function normaliseSegments(diar: BehaviorDiarizationSegment[]): NormalisedSegmen
   return out;
 }
 
-/**
- * Возвращает Map(speakerKey → matched participant). Используется только для
- * подсказки displayName синтезированному гостю; реальное «есть/нет в participants»
- * проверяется через `seenKeys`.
- */
 function buildSpeakerMap(
   participants: BehaviorParticipantInput[],
   segments: NormalisedSegment[],
@@ -275,9 +204,6 @@ function buildSpeakerMap(
   return map;
 }
 
-/**
- * Длительность объединения интервалов (для silenceMs).
- */
 function unionDurationMs(segments: NormalisedSegment[]): number {
   if (segments.length === 0) return 0;
   let total = 0;
@@ -297,26 +223,13 @@ function unionDurationMs(segments: NormalisedSegment[]): number {
   return total;
 }
 
-/**
- * Crosstalk = сумма пересечений всех пар сегментов разных спикеров.
- * Sweep line по событиям: при ≥2 активных спикерах считаем «двойную» речь.
- *
- * Реализация: события (start/end), идём по времени, в момент когда активно
- * k спикеров — каждый мс даёт (k-1) crosstalk-мс (т.е. длина пересечений
- * относительно «нормальной» речи). Это эквивалентно
- * `totalSpeechMs - unionSpeechMs` если каждый спикер не имеет внутренних
- * пересечений, что и есть наш кейс (per-track аудио).
- */
 function computeCrossTalkMs(segments: NormalisedSegment[]): number {
-  // Эквивалентная формула, устойчивая к перекрытиям внутри одного спикера:
-  //   crossTalkMs = sum_pairs(intersect(s_i, s_j) for s_i.speaker != s_j.speaker).
-  // Делаем naive O(N^2) — N сегментов в одной встрече обычно < 5000.
   let total = 0;
   for (let i = 0; i < segments.length; i++) {
     const a = segments[i]!;
     for (let j = i + 1; j < segments.length; j++) {
       const b = segments[j]!;
-      if (b.startMs >= a.endMs) break; // отсортировано, дальше пересечений нет
+      if (b.startMs >= a.endMs) break;
       if (a.speakerKey === b.speakerKey) continue;
       const overlapStart = Math.max(a.startMs, b.startMs);
       const overlapEnd = Math.min(a.endMs, b.endMs);
@@ -340,11 +253,11 @@ function computeParticipantMetrics(p: ParticipantCalcParams): BehaviorParticipan
   const segs = [...p.segments].sort((a, b) => a.startMs - b.startMs);
 
   const speakingTimeMs = segs.reduce((sum, s) => sum + Math.max(0, s.endMs - s.startMs), 0);
-  const speakingTimePercent = p.totalSpeechMsOfMeeting > 0
-    ? roundFloat((speakingTimeMs / p.totalSpeechMsOfMeeting) * 100)
-    : 0;
+  const speakingTimePercent =
+    p.totalSpeechMsOfMeeting > 0
+      ? roundFloat((speakingTimeMs / p.totalSpeechMsOfMeeting) * 100)
+      : 0;
 
-  // Turns: соседние segments с gap < TURN_GAP_MS объединяем.
   const turns: { startMs: number; endMs: number }[] = [];
   for (const s of segs) {
     const last = turns[turns.length - 1];
@@ -356,13 +269,11 @@ function computeParticipantMetrics(p: ParticipantCalcParams): BehaviorParticipan
   }
   const turnsCount = turns.length;
   const turnDurations = turns.map((t) => t.endMs - t.startMs);
-  const avgTurnDurationMs = turnsCount > 0
-    ? roundFloat(turnDurations.reduce((a, b) => a + b, 0) / turnsCount)
-    : 0;
+  const avgTurnDurationMs =
+    turnsCount > 0 ? roundFloat(turnDurations.reduce((a, b) => a + b, 0) / turnsCount) : 0;
   const monologueCount = turnDurations.filter((d) => d >= MONOLOGUE_THRESHOLD_MS).length;
   const longestMonologueMs = turnDurations.length > 0 ? Math.max(...turnDurations) : 0;
 
-  // questionCount: по ?-знаку в тексте.
   let questionCount = 0;
   let fillerWordsCount = 0;
   for (const s of segs) {
@@ -372,26 +283,20 @@ function computeParticipantMetrics(p: ParticipantCalcParams): BehaviorParticipan
     fillerWordsCount += countFillers(text);
   }
 
-  // Interruptions:
-  //  для каждого сегмента B этого спикера ищем сегмент A другого спикера,
-  //  такой что start_B ∈ [start_A, end_A] и пересечение ≥ INTERRUPTION_MIN_OVERLAP_MS.
-  //  Если есть — B сделал interruption (made), A получил (received).
   let interruptionsMade = 0;
   let interruptionsReceived = 0;
   for (const s of segs) {
-    // B начал внутри активного segment'а другого спикера → made.
     for (const a of p.allSegments) {
       if (a.speakerKey === p.speakerKey) continue;
       if (s.startMs < a.startMs || s.startMs > a.endMs) continue;
       const overlap = Math.min(s.endMs, a.endMs) - s.startMs;
       if (overlap >= INTERRUPTION_MIN_OVERLAP_MS) {
         interruptionsMade += 1;
-        break; // одно прерывание на segment
+        break;
       }
     }
   }
   for (const a of segs) {
-    // Кто-то начал внутри a → a получил interruption (received++).
     let received = false;
     for (const b of p.allSegments) {
       if (b.speakerKey === p.speakerKey) continue;
@@ -423,8 +328,6 @@ function computeParticipantMetrics(p: ParticipantCalcParams): BehaviorParticipan
 }
 
 function countQuestions(text: string): number {
-  // По ?-знаку в любом месте: каждый «?» = одно предложение-вопрос.
-  // Простой подход, ТЗ B §5.2 «количество предложений, заканчивающихся на ?».
   let count = 0;
   for (const ch of text) if (ch === '?') count += 1;
   return count;
@@ -437,8 +340,6 @@ function fillerRegex(word: string): RegExp {
     cached.lastIndex = 0;
     return cached;
   }
-  // \b плохо работает для кириллицы в JS — используем lookarounds
-  // «не-буква или граница» вокруг фразы. Регистронезависимо.
   const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp(`(?:^|[^а-яёa-z])(${escaped})(?=[^а-яёa-z]|$)`, 'giu');
   FILLER_REGEX_CACHE.set(word, re);
@@ -505,9 +406,7 @@ function emptyMeetingMetrics(
   };
 }
 
-function emptyParticipantMetrics(
-  p: BehaviorParticipantInput,
-): BehaviorParticipantMetrics {
+function emptyParticipantMetrics(p: BehaviorParticipantInput): BehaviorParticipantMetrics {
   return {
     participantId: p.id,
     displayName: p.displayName,
@@ -525,9 +424,6 @@ function emptyParticipantMetrics(
   };
 }
 
-/**
- * Класс-обёртка для DI в NestJS (воркер запрашивает через @Inject).
- */
 import { Injectable } from '@nestjs/common';
 
 @Injectable()

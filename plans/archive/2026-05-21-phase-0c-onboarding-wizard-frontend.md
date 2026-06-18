@@ -20,7 +20,7 @@ covers_matrix_rows: [32, 33, 34, 35, 36, 67, 68, 70, 71, 72, 73, 74, 75, 76, 77,
 >
 > **Контекст для исполнителя:**
 > - Стек frontend — Next.js 14 App Router + LiveKit React Components + Radix + Tailwind + SWR. Слоистая модель `ApiDto → DomainModel → UiModel` (см. skill `frontend-rules`).
-> - Все строки UI — на русском, без английских слов в пользовательских лейблах (правило `feedback_admin_ui_russian_only.md`). Глоссарий новых терминов — §10 этого ТЗ + дополнения в [`delivery/13-glossary.md`](../../delivery/13-glossary.md).
+> - Все строки UI — на русском, без английских слов в пользовательских лейблах (правило `feedback_admin_ui_russian_only.md`). Глоссарий новых терминов — §10 этого ТЗ + дополнения в [`second-brain/13_glossary/ui-glossary.md`](../../second-brain/13_glossary/ui-glossary.md).
 > - Изменения в Prisma-схеме и API — **не часть этого ТЗ**. Все нужные endpoint'ы должны быть готовы к моменту старта работ по 0c (см. §7 «Контракты API»).
 
 ---
@@ -72,7 +72,7 @@ covers_matrix_rows: [32, 33, 34, 35, 36, 67, 68, 70, 71, 72, 73, 74, 75, 76, 77,
 - `CommandPalette` — расширение на `Role`, `Department`, `Person`, `Document`, `RoleProfile` через `/api/v1/search`.
 
 **Е. Документация:**
-- Пополнение [`delivery/13-glossary.md`](../../delivery/13-glossary.md) и `delivery/ui/copy-strings.ru.md` новыми терминами (см. §10).
+- Пополнение [`second-brain/13_glossary/ui-glossary.md`](../../second-brain/13_glossary/ui-glossary.md) и `second-brain/13_glossary/copy-strings.ru.md` новыми терминами (см. §10).
 - Заметка в [`second-brain/01_projects/onboarding-wizard.md`](../../second-brain/01_projects/) — что это, как устроено, состояния, edge cases (создаётся в момент закрытия sub-TZ 0c).
 
 ### Не входит в 0c
@@ -125,7 +125,7 @@ covers_matrix_rows: [32, 33, 34, 35, 36, 67, 68, 70, 71, 72, 73, 74, 75, 76, 77,
 | `DashboardRouter.tsx` — fallback на `/me` для member | edit | frontend/app/(authenticated)/dashboard/ | `/me` готов |
 | API-слой | new | frontend/src/api/ + frontend/src/domain/ | API 0a/0b/0d |
 | `CommandPalette.tsx` | edit | frontend/src/ui/components/command-palette/ | расширение `/api/v1/search` |
-| `delivery/13-glossary.md`, `delivery/ui/copy-strings.ru.md` | edit | delivery/ | — |
+| `second-brain/13_glossary/ui-glossary.md`, `second-brain/13_glossary/copy-strings.ru.md` | edit | delivery/ | — |
 | `second-brain/01_projects/onboarding-wizard.md` | new | second-brain/01_projects/ | — (создаётся в DoD) |
 
 ---
@@ -662,9 +662,9 @@ export default function ProcessesPage() {
 
 ---
 
-## 10. Глоссарий — что добавляется в `delivery/13-glossary.md`
+## 10. Глоссарий — что добавляется в `second-brain/13_glossary/ui-glossary.md`
 
-Полный список новых терминов UI Фазы 0c. Каждый — добавляется в [`delivery/13-glossary.md`](../../delivery/13-glossary.md) и [`delivery/ui/copy-strings.ru.md`](../../delivery/ui/copy-strings.ru.md) (в существующих форматах этих файлов).
+Полный список новых терминов UI Фазы 0c. Каждый — добавляется в [`second-brain/13_glossary/ui-glossary.md`](../../second-brain/13_glossary/ui-glossary.md) и [`second-brain/13_glossary/copy-strings.ru.md`](../../second-brain/13_glossary/copy-strings.ru.md) (в существующих форматах этих файлов).
 
 | Термин (русский) | Значение | Не путать с |
 |---|---|---|
@@ -762,7 +762,7 @@ export default function ProcessesPage() {
 
 ### Документация
 
-- [ ] Обновлены `delivery/13-glossary.md` и `delivery/ui/copy-strings.ru.md` всеми терминами из §10.
+- [ ] Обновлены `second-brain/13_glossary/ui-glossary.md` и `second-brain/13_glossary/copy-strings.ru.md` всеми терминами из §10.
 - [ ] Создана заметка `second-brain/01_projects/onboarding-wizard.md` с описанием wizard'а, состояний, edge cases.
 - [ ] Обновлена `second-brain/01_projects/frontend-pages.md` (или эквивалент) — список новых страниц.
 - [ ] Обновлена `second-brain/01_projects/frontend-contexts-hooks.md` — добавление `OrgSwitcher` / нового состояния `comingSoon` в Sidebar.

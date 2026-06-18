@@ -9,13 +9,7 @@ export const IntakeSourceSchema = z.enum([
   'api',
   'concierge',
 ]);
-export type IntakeSourceDto = z.infer<typeof IntakeSourceSchema>;
 
-/**
- * DTO создания intake-карточки (входящая задача перед триажем).
- * Источник — обычно webhook чек-инов или Telegram/email-адаптер, поэтому
- * `userId` (автор) не обязателен — сервис создаёт от tenant'а.
- */
 export const CreateIntakeSchema = z
   .object({
     source: IntakeSourceSchema,
@@ -26,21 +20,12 @@ export const CreateIntakeSchema = z
     extractedTitle: z.string().max(500).nullable().optional(),
     extractedDescription: z.string().max(50_000).nullable().optional(),
     projectId: z.string().max(64).nullable().optional(),
-    /** AI-предложения (если уже посчитаны на стороне адаптера). */
     suggestedProjectId: z.string().max(64).nullable().optional(),
     suggestedAssigneeId: z.string().max(64).nullable().optional(),
     suggestedGoalId: z.string().max(64).nullable().optional(),
-    suggestedPriority: z
-      .enum(['urgent', 'high', 'medium', 'low', 'none'])
-      .nullable()
-      .optional(),
+    suggestedPriority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).nullable().optional(),
     suggestedDueDate: z.coerce.date().nullable().optional(),
     suggestedLabels: z.array(z.string().min(1).max(64)).max(16).default([]),
-    /**
-     * A10 (2026-06-14) — IdeaBlock-источники кандидата (провенанс). Прокидываются
-     * в `Issue.sourceBlockIds` при промоуте → пересечение с
-     * `Decision.sourceBlockIds` рождает `DecisionTaskLink(linkType='derived')`.
-     */
     sourceBlockIds: z.array(z.string().min(1).max(64)).max(64).default([]),
     /**
      * Фикс linkedMeetingIds 2026-06-17 — ID встречи-источника (source='meeting').
@@ -56,9 +41,7 @@ export type CreateIntakeDto = z.infer<typeof CreateIntakeSchema>;
 
 export const ListIntakeQuerySchema = z
   .object({
-    status: z
-      .enum(['pending', 'snoozed', 'accepted', 'rejected', 'duplicate'])
-      .optional(),
+    status: z.enum(['pending', 'snoozed', 'accepted', 'rejected', 'duplicate']).optional(),
     source: IntakeSourceSchema.optional(),
     projectId: z.string().max(64).optional(),
     page: z.coerce.number().int().min(1).default(1),

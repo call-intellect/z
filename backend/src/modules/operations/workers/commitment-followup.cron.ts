@@ -6,28 +6,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { Specialist39PromiseKeeperService } from '../services/specialist-3-9-promise-keeper.service';
 import { getLocalHour } from '../utils/local-date';
 
-/**
- * SBA β-8.2 — CommitmentFollowupCron.
- *
- * Раз в час (`@Cron('0 * * * *')`) проходит по всем Org'ам. Если локальный
- * час (`Org.timezone`) совпадает с `COMMITMENT_FOLLOWUP_LOCAL_HOUR`
- * (default 9), выполняет два прохода через `Specialist39PromiseKeeperService`:
- *
- *   1. `followup` — для всех open-обещаний с просроченным сроком +1
- *      рабочий день отправляет probe автору.
- *   2. `escalate` — для обещаний со статусом asked, по которым молчат
- *      `COMMITMENT_ESCALATION_DAYS` дней, эскалирует COO + owner.
- *
- * Master-flag — `COMMITMENT_FOLLOWUP_ENABLED`. False → cron всё равно
- * тикает, но сразу выходит (можно включать без рестарта).
- *
- * Идемпотентность:
- *   - повторный запуск не отправит второй probe тому же человеку про то
- *     же обещание (защита внутри `ProbeService.suggest` через dedup +
- *     наш флаг `commitmentStatus='asked'`).
- *   - эскалация выполняется ровно один раз (фильтр
- *     `commitmentEscalatedAt IS NULL`).
- */
 @Injectable()
 export class CommitmentFollowupCron {
   private readonly logger = new Logger(CommitmentFollowupCron.name);
@@ -42,15 +20,13 @@ export class CommitmentFollowupCron {
   @Cron('0 * * * *')
   async run(): Promise<void> {
     if (!this.cfg.betaOps.commitmentFollowupEnabled) {
-      this.logger.debug(
-        'commitment-followup.cron: COMMITMENT_FOLLOWUP_ENABLED=false, skip',
-      );
+      this.logger.debug('commitment-followup.cron: COMMITMENT_FOLLOWUP_ENABLED=false, skip');
       return;
     }
     const now = new Date();
     try {
       const stats = await this.runOnce(now);
-      this.logger.log(stats, 'commitment-followup.cron: проход завершён');
+      this.logger.debug(stats, 'commitment-followup.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -59,7 +35,6 @@ export class CommitmentFollowupCron {
     }
   }
 
-  /** Выделен для unit-тестов: можно передать произвольный `now`. */
   async runOnce(now: Date): Promise<{
     orgsProcessed: number;
     orgsSkippedOutsideWindow: number;
@@ -90,13 +65,11 @@ export class CommitmentFollowupCron {
       }
       orgsProcessed++;
 
-      // Followup-проход.
       try {
-        const followupCandidates =
-          await this.promiseKeeper.findFollowupCandidates({
-            tenantId: org.id,
-            now,
-          });
+        const followupCandidates = await this.promiseKeeper.findFollowupCandidates({
+          tenantId: org.id,
+          now,
+        });
         for (const block of followupCandidates) {
           try {
             const res = await this.promiseKeeper.sendFollowupForBlock({
@@ -129,13 +102,11 @@ export class CommitmentFollowupCron {
         );
       }
 
-      // Escalate-проход.
       try {
-        const escalationCandidates =
-          await this.promiseKeeper.findEscalationCandidates({
-            tenantId: org.id,
-            now,
-          });
+        const escalationCandidates = await this.promiseKeeper.findEscalationCandidates({
+          tenantId: org.id,
+          now,
+        });
         for (const block of escalationCandidates) {
           try {
             const res = await this.promiseKeeper.sendEscalationForBlock({

@@ -8,15 +8,11 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
-
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { ActivityFeedService } from '../../activity-feed/services/activity-feed.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
-import {
-  CORE_QUEUE_NAMES,
-  type RecognitionFormulateJobData,
-} from '../../core-queue/queues';
+import { CORE_QUEUE_NAMES, type RecognitionFormulateJobData } from '../../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import {
   RECOGNITION_FORMULATE_JSON_SCHEMA,
@@ -26,11 +22,6 @@ import {
   recognitionFallbackMessage,
 } from '../prompts/recognition-formulate.prompt';
 
-/**
- * Wave 2 finishing (A2) — маппинг recognition.type → читаемый title (заголовок
- * для ActivityFeedItem). Не дублирует message — message формирует LLM или
- * fallback (большой тёплый текст), title — короткая шапка для UI.
- */
 function recognitionFeedTitle(type: string): string {
   switch (type) {
     case 'thanks_comment':
@@ -50,36 +41,14 @@ function recognitionFeedTitle(type: string): string {
   }
 }
 
-function recognitionFeedIcon(
-  type: string,
-): 'bulb' | 'check' | 'thumbs' {
+function recognitionFeedIcon(type: string): 'bulb' | 'check' | 'thumbs' {
   if (type === 'idea_shipped') return 'bulb';
   if (type === 'streak_milestone' || type === 'weekly_summary') return 'check';
   return 'thumbs';
 }
 
-/**
- * Wave 2 — RecognitionFormulateWorker.
- *
- * Consumer `core.recognition-formulate`. На каждый job:
- *   1. Если `message` уже задан в payload — пропускаем LLM-шаг.
- *   2. Иначе — LLM `recognition-formulate` (JSON Schema, strict). На ошибку
- *      / пустую строку → deterministic fallback (см. prompt).
- *   3. Создаём запись `Recognition` (`visibility` по умолчанию 'private').
- *   4. Если visibility ∈ {team, public_org} — публикуем в Activity Feed
- *      (TODO: ActivityFeedService ещё не реализован — Agent 14/15 ставят
- *      его параллельно. На 2026-05-24 оставляем только log + Recognition в БД).
- *
- * Этическая защита (см. ТЗ §8):
- *   - fromUserId сохраняется (если был передан), но message формируется AI,
- *     а не подделывается под голос человека. См. prompt.
- *   - Если message получился пустой — записываем deterministic fallback, чтобы
- *     UI не показывал «пустой» Recognition.
- */
 @Injectable()
-export class RecognitionFormulateWorker
-  implements OnModuleInit, OnModuleDestroy
-{
+export class RecognitionFormulateWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RecognitionFormulateWorker.name);
   private worker: Worker<RecognitionFormulateJobData> | null = null;
 
@@ -119,7 +88,7 @@ export class RecognitionFormulateWorker
         'recognition-formulate: job failed (повтор по политике BullMQ)',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `RecognitionFormulateWorker запущен (${CORE_QUEUE_NAMES.RECOGNITION_FORMULATE})`,
     );
   }
@@ -134,10 +103,6 @@ export class RecognitionFormulateWorker
   async process(job: Job<RecognitionFormulateJobData>): Promise<void> {
     const data = job.data;
 
-    // 1. Проверка идемпотентности на уровне БД: если уже создавали
-    //    Recognition для того же контекста / type / получателя — выходим.
-    //    BullMQ jobId этого, в принципе, не пропустит, но защита от
-    //    параллельной публикации из разных мест.
     const existing = await this.prisma.recognition.findFirst({
       where: {
         tenantId: data.tenantId,
@@ -156,13 +121,11 @@ export class RecognitionFormulateWorker
       return;
     }
 
-    // 2. message: либо прислали готовый, либо формулируем через LLM.
     const message =
       data.message && data.message.trim().length > 0
         ? data.message.slice(0, 400)
         : await this.formulateMessage(data);
 
-    // 3. Создаём Recognition в БД.
     const visibility = data.visibility ?? 'private';
     const created = await this.prisma.recognition.create({
       data: {
@@ -176,13 +139,10 @@ export class RecognitionFormulateWorker
         visibility,
       },
     });
-    this.logger.log(
+    this.logger.debug(
       `recognition created: id=${created.id} type=${data.type} toUserId=${data.toUserId} from=${data.fromUserId ?? 'ai'} visibility=${visibility}`,
     );
 
-    // 4. Публикация в Activity Feed (если visibility > private).
-    //    Wave 2 A2: best-effort — Recognition уже сохранён, упавший publish не
-    //    ломает worker (warn-лог, BullMQ не повторяет job).
     if (visibility !== 'private') {
       if (!this.feed) {
         this.logger.debug(
@@ -219,12 +179,7 @@ export class RecognitionFormulateWorker
     }
   }
 
-  /** LLM `recognition-formulate` с fallback. */
-  private async formulateMessage(
-    data: RecognitionFormulateJobData,
-  ): Promise<string> {
-    // Подтягиваем имена для контекста промпта (тёплое обращение). Лёгкие
-    // запросы — два по PK.
+  private async formulateMessage(data: RecognitionFormulateJobData): Promise<string> {
     const [toUser, fromUser] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: data.toUserId },

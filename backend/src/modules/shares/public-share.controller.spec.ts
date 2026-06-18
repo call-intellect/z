@@ -1,16 +1,3 @@
-/**
- * Spec для PublicShareController (Phase F.6).
- *
- * Покрытие:
- *   - happy: getPublicMeetingShare/getPublicHighlightShare делегируются с
- *     корректными visitor-параметрами (ip / userAgent / referrer).
- *   - revoke / expire: пробрасывают исключения SharesService.
- *   - extractIp: X-Forwarded-For (string / array), fallback на req.ip.
- *   - Sanity: на контроллере и методах стоит @Throttle (anti-brute-force).
- *   - Referrer header пробрасывается в SharesService (для аудита) — но через
- *     PublicShareHeadersInterceptor ответ всегда `Referrer-Policy: no-referrer`,
- *     поэтому исходящие ответы не утекают referrer.
- */
 import type * as fsModule from 'node:fs';
 import type * as pathModule from 'node:path';
 
@@ -39,7 +26,14 @@ function build(opts: { meetingFails?: 'revoked' | 'expired' | 'not_found' } = {}
         throw new NotFoundException('share_not_found');
       }
       return {
-        meeting: { id: 'm-1', title: 't', type: 'sales', startedAt: null, endedAt: null, durationMs: null },
+        meeting: {
+          id: 'm-1',
+          title: 't',
+          type: 'sales',
+          startedAt: null,
+          endedAt: null,
+          durationMs: null,
+        },
         permissions: {
           allowVideo: false,
           allowTranscript: false,
@@ -61,10 +55,12 @@ function build(opts: { meetingFails?: 'revoked' | 'expired' | 'not_found' } = {}
   return { ctrl: new PublicShareController(svc), svc };
 }
 
-function makeReq(over: {
-  headers?: Record<string, string | string[] | undefined>;
-  ip?: string;
-} = {}): {
+function makeReq(
+  over: {
+    headers?: Record<string, string | string[] | undefined>;
+    ip?: string;
+  } = {},
+): {
   headers: Record<string, string | string[] | undefined>;
   ip?: string;
 } {
@@ -124,23 +120,23 @@ describe('PublicShareController', () => {
 
   it('410 share_revoked если SharesService бросает GoneException', async () => {
     const { ctrl } = build({ meetingFails: 'revoked' });
-    await expect(
-      ctrl.getMeeting('tok-1', makeReq() as never),
-    ).rejects.toBeInstanceOf(GoneException);
+    await expect(ctrl.getMeeting('tok-1', makeReq() as never)).rejects.toBeInstanceOf(
+      GoneException,
+    );
   });
 
   it('410 share_expired если время вышло', async () => {
     const { ctrl } = build({ meetingFails: 'expired' });
-    await expect(
-      ctrl.getMeeting('tok-1', makeReq() as never),
-    ).rejects.toBeInstanceOf(GoneException);
+    await expect(ctrl.getMeeting('tok-1', makeReq() as never)).rejects.toBeInstanceOf(
+      GoneException,
+    );
   });
 
   it('404 share_not_found на неизвестный токен', async () => {
     const { ctrl } = build({ meetingFails: 'not_found' });
-    await expect(
-      ctrl.getMeeting('not-a-token', makeReq() as never),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(ctrl.getMeeting('not-a-token', makeReq() as never)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('happy: getClip делегируется в getPublicHighlightShare', async () => {
@@ -150,22 +146,12 @@ describe('PublicShareController', () => {
     expect(res.presignedMp4Url).toContain('https://');
   });
 
-  // ─────────────────────────── @Throttle статическая проверка ────────────
-  // Vitest-runtime (через bun + esbuild) НЕ применяет class-decorators так же,
-  // как `tsc --emitDecoratorMetadata` в Nest-рантайме, поэтому
-  // `Reflect.getMetadata(THROTTLER_LIMIT+'default', ctor)` пуст.
-  // Вместо этого делаем статическую проверку файла: убеждаемся, что @Throttle
-  // присутствует на классе + на каждом GET-методе с разумным лимитом.
-  // Если кто-то удалит декоратор — этот тест упадёт.
   describe('@Throttle декоратор для anti-brute-force (статическая проверка)', () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const fs = require('node:fs') as typeof fsModule;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const path = require('node:path') as typeof pathModule;
-    const src = fs.readFileSync(
-      path.join(__dirname, 'public-share.controller.ts'),
-      'utf8',
-    );
+    const src = fs.readFileSync(path.join(__dirname, 'public-share.controller.ts'), 'utf8');
 
     it('импорт Throttle из @nestjs/throttler', () => {
       expect(src).toContain("from '@nestjs/throttler'");
@@ -173,8 +159,6 @@ describe('PublicShareController', () => {
     });
 
     it('@Throttle на классе с разумным лимитом (≤60 req/min)', () => {
-      // Класс-уровневая директива: @Throttle({ default: { limit: N, ttl: M } })
-      // непосредственно перед `export class PublicShareController`.
       const classMatch = src.match(
         /@Throttle\(\{[^}]*default:[^}]*limit:\s*(\d+)[\s\S]*?\}\s*\}\)\s*\nexport class PublicShareController/,
       );

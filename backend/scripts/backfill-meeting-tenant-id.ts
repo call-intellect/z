@@ -1,39 +1,3 @@
-/**
- * Backfill для CRIT-3 (Sprint 1, тикет B2-1.3, 2026-05-24).
- *
- * Цель: безопасно заполнить `Meeting.tenantId` для legacy-записей, где
- * значение NULL. По текущей схеме (см. schema.prisma:892) tenantId уже
- * объявлен NOT NULL — поэтому на «здоровой» БД скрипт ничего не найдёт
- * и завершится с нулевыми счётчиками.
- *
- * Скрипт остаётся в репозитории как safety net для:
- *   - окружений, где админ откатывал NOT NULL вручную;
- *   - восстановлений из старых бэкапов с legacy-данными;
- *   - сторонних дев-баз с историческими данными до backfill-orgs-fase0.
- *
- * Почему raw SQL, а не Prisma client:
- *   В типах Prisma `tenantId: string` (NOT NULL), поэтому
- *   `where: { tenantId: null }` отвергнется на этапе compile. Чтобы
- *   скрипт всё равно мог обнаружить legacy-NULL в БД, обращаемся к
- *   таблице напрямую через $queryRawUnsafe.
- *
- * Источники tenantId (приоритет сверху вниз):
- *   1. owner.tenantId (если у владельца встречи проставлен личный Org).
- *   2. Первый Org, которым владеет owner (Org.ownerId = Meeting.ownerId).
- *   3. Если ничего — skip с пометкой в финальном отчёте.
- *
- * Идемпотентность: обновляются только записи с tenantId IS NULL; уже
- * заполненные не трогаются. Повторный запуск безопасен.
- *
- * Запуск:
- *   bun run scripts/backfill-meeting-tenant-id.ts                  # dry-run (default)
- *   bun run scripts/backfill-meeting-tenant-id.ts --apply          # реально применить
- *   bun run scripts/backfill-meeting-tenant-id.ts --batch-size=50  # размер батча
- *
- * См. правила safe-seed-rules: dry-run по умолчанию, явное --apply,
- * pino-логирование (через console для one-off), идемпотентность.
- */
-
 import { Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
@@ -74,10 +38,6 @@ interface LegacyMeetingRow {
 }
 
 async function fetchLegacyMeetings(limit: number): Promise<LegacyMeetingRow[]> {
-  // raw SQL — Prisma client считает tenantId NOT NULL и не даст
-  // составить where: { tenantId: null }. Здесь мы обходим типы намеренно.
-  // Используем $queryRawUnsafe + параметр через шаблонную строку безопасно,
-  // т.к. limit — number, валидированный parseFlags.
   return prisma.$queryRawUnsafe<LegacyMeetingRow[]>(
     `SELECT "id", "ownerId" FROM "Meeting" WHERE "tenantId" IS NULL ORDER BY "createdAt" ASC LIMIT ${limit}`,
   );
@@ -92,16 +52,14 @@ async function countLegacyMeetings(): Promise<number> {
 }
 
 async function resolveTenantId(ownerId: string): Promise<string | null> {
-  // 1) Личный tenantId владельца (User.tenantId, если поле есть в схеме).
-  // Здесь делаем raw-select, чтобы не зависеть от точного имени поля в Prisma client.
-  const userRows = await prisma.$queryRawUnsafe<Array<{ tenantId: string | null }>>(
-    `SELECT "tenantId" FROM "User" WHERE "id" = $1 LIMIT 1`,
-    ownerId,
-  ).catch(() => [] as Array<{ tenantId: string | null }>);
+  const userRows = await prisma
+    .$queryRawUnsafe<
+      Array<{ tenantId: string | null }>
+    >(`SELECT "tenantId" FROM "User" WHERE "id" = $1 LIMIT 1`, ownerId)
+    .catch(() => [] as Array<{ tenantId: string | null }>);
   const userTenant = userRows[0]?.tenantId ?? null;
   if (userTenant) return userTenant;
 
-  // 2) Первый Org, которым владеет user (личная орг по бэкфиллу из fase0).
   const org = await prisma.org.findFirst({
     where: { ownerId, deletedAt: null },
     orderBy: { createdAt: 'asc' },
@@ -111,8 +69,6 @@ async function resolveTenantId(ownerId: string): Promise<string | null> {
 }
 
 async function applyBackfillOne(meetingId: string, tenantId: string): Promise<void> {
-  // raw UPDATE — по той же причине, что и SELECT выше. Также гарантируем,
-  // что НЕ перезатираем уже-проставленный tenantId (идемпотентность).
   await prisma.$executeRawUnsafe(
     `UPDATE "Meeting" SET "tenantId" = $1 WHERE "id" = $2 AND "tenantId" IS NULL`,
     tenantId,
@@ -130,7 +86,9 @@ interface RunReport {
 
 async function main(): Promise<void> {
   const flags = parseFlags(process.argv);
-  log.log(`=== backfill-meeting-tenant-id START (mode=${flags.apply ? 'APPLY' : 'DRY-RUN'}, batchSize=${flags.batchSize}) ===`);
+  log.log(
+    `=== backfill-meeting-tenant-id START (mode=${flags.apply ? 'APPLY' : 'DRY-RUN'}, batchSize=${flags.batchSize}) ===`,
+  );
 
   const totalNullBefore = await countLegacyMeetings();
   log.log(`Найдено Meeting с tenantId IS NULL: ${totalNullBefore}`);
@@ -149,8 +107,6 @@ async function main(): Promise<void> {
   };
 
   let processed = 0;
-  // Простой пагинационный цикл: после каждого батча в APPLY-режиме
-  // фактическое число null падает, поэтому всегда берём «первые N» с условием.
   while (processed < totalNullBefore) {
     const batch = await fetchLegacyMeetings(flags.batchSize);
     if (batch.length === 0) break;
@@ -161,7 +117,9 @@ async function main(): Promise<void> {
         report.totalSkipped += 1;
         const reason = 'no_tenant_resolvable_for_owner';
         report.skippedReasons[reason] = (report.skippedReasons[reason] ?? 0) + 1;
-        log.warn(`SKIP meeting=${m.id} owner=${m.ownerId} — tenantId не определён ни через User.tenantId, ни через Org.ownerId`);
+        log.warn(
+          `SKIP meeting=${m.id} owner=${m.ownerId} — tenantId не определён ни через User.tenantId, ни через Org.ownerId`,
+        );
         continue;
       }
 
@@ -177,14 +135,13 @@ async function main(): Promise<void> {
     log.log({ processed, total: totalNullBefore, batchSize: batch.length }, 'batch processed');
 
     if (!flags.apply) {
-      // В dry-run выходим после первого батча, чтобы не зацикливаться
-      // (мы ничего не изменили — следующий fetchLegacyMeetings вернёт те же id).
-      log.log('DRY-RUN: показан один батч, остальное аналогично. Запусти с --apply для применения.');
+      log.log(
+        'DRY-RUN: показан один батч, остальное аналогично. Запусти с --apply для применения.',
+      );
       break;
     }
   }
 
-  // Финальный отчёт
   log.log('=== ИТОГ ===');
   log.log(`totalNullBefore: ${report.totalNullBefore}`);
   log.log(`totalUpdated:    ${report.totalUpdated}`);
@@ -204,20 +161,10 @@ async function main(): Promise<void> {
   log.log('=== backfill-meeting-tenant-id DONE ===');
 }
 
-// TODO Sprint 2+: после успешного backfill на prod:
-// 1. Проверить, что 0 записей с tenantId IS NULL:
-//      SELECT COUNT(*) FROM "Meeting" WHERE "tenantId" IS NULL;
-// 2. В schema.prisma — убедиться, что tenantId уже String (NOT NULL).
-//    На момент 2026-05-24 это уже сделано (schema.prisma:892).
-// 3. bun run prisma:push (если меняли).
-// 4. Найти и удалить весь if (!meeting.tenantId) код по проекту:
-//      grep -rn "meeting.tenantId" backend/src/
-//    — оставлять защиту имеет смысл только если есть риск отката NOT NULL.
-
 main()
   .catch((err) => {
     log.error('backfill-meeting-tenant-id FAILED');
-    log.error(err instanceof Error ? err.stack ?? err.message : String(err));
+    log.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
     process.exit(1);
   })
   .finally(async () => {

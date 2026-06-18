@@ -1,9 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import type {
-  LlmCompleteInput,
-  LlmCompleteOutput,
-} from '../../llm.types';
+import type { LlmCompleteInput, LlmCompleteOutput } from '../../llm.types';
 import { LlmError } from '../../llm.types';
 import { OllamaService } from '../../ollama.service';
 import type {
@@ -12,12 +9,6 @@ import type {
   ProtocolKind,
 } from '../protocol-adapter.types';
 
-/**
- * SBA α-10 wave 3 — Ollama native API адаптер.
- *
- * Обёртка над OllamaService — реальная реализация (POST /api/generate либо
- * /v1/chat/completions, без prompt cache) живёт там.
- */
 @Injectable()
 export class OllamaNativeProtocolAdapter implements LlmProtocolAdapter {
   readonly protocolKind: ProtocolKind = 'ollama-native';
@@ -35,11 +26,7 @@ export class OllamaNativeProtocolAdapter implements LlmProtocolAdapter {
     } catch (err) {
       if (err instanceof LlmError) throw err;
       const message = err instanceof Error ? err.message : String(err);
-      throw new LlmError(
-        `ollama-native ${provider.name}: ${message}`,
-        undefined,
-        err,
-      );
+      throw new LlmError(`ollama-native ${provider.name}: ${message}`, undefined, err);
     }
   }
 }

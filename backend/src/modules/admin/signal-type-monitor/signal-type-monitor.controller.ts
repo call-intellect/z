@@ -18,14 +18,6 @@ import {
   type SignalTypeMonitorItem,
 } from './signal-type-monitor.service';
 
-/**
- * G.2 KC-Temporal — admin-endpoint для просмотра матриц переходов signalType
- * (по всем Org / по одной Org). Использует данные `SignalTypeStatsCron`,
- * который ежедневно пишет в `AdminSetting{key=signal_type_transition_matrix:<orgId>}`.
- *
- * Owner/super_admin only через `SuperAdminGuard`. UI:
- * `/admin/ai/signal-type-monitor` — таблица распределений и heatmap матрицы.
- */
 @ApiExcludeController()
 @Controller('api/v1/admin/llm/signal-type-monitor')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -43,9 +35,7 @@ export class SignalTypeMonitorController {
   }
 
   @Get(':tenantId')
-  async getOne(
-    @Param('tenantId') tenantId: string,
-  ): Promise<SignalTypeMonitorItem> {
+  async getOne(@Param('tenantId') tenantId: string): Promise<SignalTypeMonitorItem> {
     const item = await this.svc.findByTenant(tenantId);
     if (!item) {
       throw new NotFoundException(

@@ -5,13 +5,6 @@ import type { Request } from 'express';
 
 import { MyCustomerRiskController } from './my-customer-risk.controller';
 
-/**
- * TZ-1 Фаза 1 (daily-value-engine) — unit-тесты `/me/customer-risk`.
- *
- * Главный инвариант — self-scope: запрос фильтруется по resolved selfPersonId,
- * не по произвольному входу. Чужих клиентов не светим. Нет Person → пустой
- * список (graceful), как в /me/promises.
- */
 describe('MyCustomerRiskController', () => {
   const req = { user: { id: 'user-1' } } as unknown as Request;
   const query = { limit: 20 } as never;
@@ -27,10 +20,7 @@ describe('MyCustomerRiskController', () => {
         warningCount: 0,
       }),
     };
-    const ctrl = new MyCustomerRiskController(
-      commitments as never,
-      customerRisk as never,
-    );
+    const ctrl = new MyCustomerRiskController(commitments as never, customerRisk as never);
 
     await ctrl.list('org1', req, query);
 
@@ -57,10 +47,7 @@ describe('MyCustomerRiskController', () => {
     const customerRisk = {
       listForResponsible: vi.fn(),
     };
-    const ctrl = new MyCustomerRiskController(
-      commitments as never,
-      customerRisk as never,
-    );
+    const ctrl = new MyCustomerRiskController(commitments as never, customerRisk as never);
 
     const res = await ctrl.list('org1', req, query);
     expect(res).toEqual({ items: [], criticalCount: 0, warningCount: 0 });
@@ -77,23 +64,15 @@ describe('MyCustomerRiskController', () => {
       ),
     };
     const customerRisk = { listForResponsible: vi.fn() };
-    const ctrl = new MyCustomerRiskController(
-      commitments as never,
-      customerRisk as never,
-    );
+    const ctrl = new MyCustomerRiskController(commitments as never, customerRisk as never);
 
-    await expect(ctrl.list('org1', req, query)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(ctrl.list('org1', req, query)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('нет tenantId → BadRequest', async () => {
     const commitments = { resolveSelfPerson: vi.fn() };
     const customerRisk = { listForResponsible: vi.fn() };
-    const ctrl = new MyCustomerRiskController(
-      commitments as never,
-      customerRisk as never,
-    );
+    const ctrl = new MyCustomerRiskController(commitments as never, customerRisk as never);
     await expect(ctrl.list(undefined, req, query)).rejects.toThrow();
     expect(commitments.resolveSelfPerson).not.toHaveBeenCalled();
   });

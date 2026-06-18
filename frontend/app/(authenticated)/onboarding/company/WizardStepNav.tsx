@@ -1,15 +1,10 @@
-'use client';
+"use client";
 
-import { useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
+import { useRouter } from "next/navigation";
+import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 
-import { Button } from '@/ui/shadcn/button';
+import { Button } from "@/ui/shadcn/button";
 
-/**
- * Универсальный «низ» каждого шага wizard'а: кнопки «Назад» / «Далее» /
- * «Пропустить». Стандартный layout — flex justify-between, чтобы у всех
- * шагов был одинаковый ритм.
- */
 export function WizardStepNav({
   prevHref,
   nextHref,
@@ -72,7 +67,7 @@ export function WizardStepNav({
           {submitting ? (
             <Loader2 size={14} className="mr-1 animate-spin" />
           ) : null}
-          {nextLabel ?? 'Далее'}
+          {nextLabel ?? "Далее"}
           {!submitting && <ArrowRight size={14} className="ml-1" />}
         </Button>
       </div>

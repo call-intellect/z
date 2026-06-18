@@ -10,29 +10,13 @@ import type {
   SprintArchiveSummaryDto,
 } from '../dto/sprints/sprint-archive.dto';
 
-/**
- * Pulse Wave 5 §5.3 (2026-05-30) — Архив гипотез.
- *
- * Источник правды: model Cycle. Возвращает хронику Cycle tenant'а с
- * фильтрами по period (month / quarter / year), status и поиску по
- * `description`.
- *
- * `confirmedHypothesis`:
- *   - status='completed' + ≥80% SprintHint resolved → true;
- *   - status='completed' + < 80% resolved → false;
- *   - 'in_progress' / 'cancelled' → null.
- *
- * Поиск по query — простой ILIKE по `description` (без embedding на MVP).
- */
 @Injectable()
 export class SprintArchiveService {
   private readonly logger = new Logger(SprintArchiveService.name);
   private static readonly MAX_ITEMS = 200;
   private static readonly CONFIRMED_THRESHOLD = 0.8;
 
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-  ) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async getArchive(args: {
     tenantId: string;
@@ -90,7 +74,6 @@ export class SprintArchiveService {
 
     const cycleIds = cycles.map((c) => c.id);
 
-    // ── Кол-во completed Issue per cycle (для outcome) ──
     const closedIssueRows = await this.prisma.issue.groupBy({
       by: ['cycleId'],
       where: {
@@ -106,7 +89,6 @@ export class SprintArchiveService {
       if (r.cycleId) closedByCycle.set(r.cycleId, r._count._all);
     }
 
-    // ── Hint-резюме per cycle (для confirmedHypothesis + learningSummary) ──
     const hintRows = await this.prisma.sprintHint.findMany({
       where: {
         cycleId: { in: cycleIds },
@@ -147,8 +129,7 @@ export class SprintArchiveService {
           confirmedHypothesis = null;
         } else {
           confirmedHypothesis =
-            hintInfo.resolved / hintInfo.total >=
-            SprintArchiveService.CONFIRMED_THRESHOLD;
+            hintInfo.resolved / hintInfo.total >= SprintArchiveService.CONFIRMED_THRESHOLD;
         }
       }
 
@@ -184,9 +165,6 @@ export class SprintArchiveService {
           })
         : items;
 
-    // D10/R10 (ТЗ 2026-06-11): тайлы архива «Завершены/Отменены» считаем по
-    // СТАТУСУ цикла, а не по гипотезе (UI-релейбл A2 уже сделан). Имена полей
-    // confirmed/rejected — легаси (фронт читает их), семантика — completed/cancelled.
     const summary: SprintArchiveSummaryDto = {
       total: filtered.length,
       confirmed: filtered.filter((i) => i.status === 'completed').length,

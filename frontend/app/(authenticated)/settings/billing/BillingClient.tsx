@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -9,10 +9,10 @@ import {
   Loader2,
   Mail,
   X,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { entitlementsApi } from '@/api/entitlements.api';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { entitlementsApi } from "@/api/entitlements.api";
 import {
   ALL_QUOTAS,
   FEATURE_GROUPS,
@@ -23,35 +23,22 @@ import {
   tierLabel,
   type EntitlementDomain,
   type FeatureKey,
-} from '@/domain/entitlement';
-import { useAuth } from '@/contexts/auth-context';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+} from "@/domain/entitlement";
+import { useAuth } from "@/contexts/auth-context";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-/**
- * `/settings/billing` — owner-only страница «Тариф и лимиты» (Фаза 12 шаг 11).
- *
- * Что показываем:
- *   - Текущий tier — крупно, badge, дата активации (`updatedAt`).
- *   - «Что входит» — таблица feature → ✓/✗, сгруппированная по разделам:
- *     Знания / Коммуникация / Источники / Базовые.
- *   - «Лимиты» — таблица quota → значение, с форматированием для байтов.
- *   - Заметка от super_admin (`notes`), если задана.
- *   - CTA «Связаться с нами» — на MVP без онлайн-апгрейда (`mailto:`).
- *
- * Доступ:
- *   - Owner Org → видит данные. Не-owner видит «empty state» с пояснением.
- *   - Backend дополнительно защищает endpoint (403 если не-owner).
- */
 export function BillingClient() {
   const { currentOrgRole } = useAuth();
-  const [entitlement, setEntitlement] = useState<EntitlementDomain | null>(null);
+  const [entitlement, setEntitlement] = useState<EntitlementDomain | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (currentOrgRole !== 'owner') {
+    if (currentOrgRole !== "owner") {
       setLoading(false);
       return;
     }
@@ -66,7 +53,7 @@ export function BillingClient() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setError(humanizeApiError(e, 'Не удалось загрузить тариф'));
+        setError(humanizeApiError(e, "Не удалось загрузить тариф"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -76,7 +63,7 @@ export function BillingClient() {
     };
   }, [currentOrgRole]);
 
-  if (currentOrgRole !== 'owner') {
+  if (currentOrgRole !== "owner") {
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-semibold">Тариф и лимиты</h1>
@@ -118,7 +105,10 @@ export function BillingClient() {
       <div className="space-y-3">
         <h1 className="text-2xl font-semibold">Тариф и лимиты</h1>
         <div className="rounded-lg border border-dashed border-border-subtle px-6 py-12 text-center">
-          <Loader2 size={20} className="mx-auto mb-2 animate-spin text-fg-tertiary" />
+          <Loader2
+            size={20}
+            className="mx-auto mb-2 animate-spin text-fg-tertiary"
+          />
           <p className="text-sm text-fg-tertiary">Нет данных по тарифу.</p>
         </div>
       </div>
@@ -166,14 +156,18 @@ export function BillingClient() {
   );
 }
 
-function CurrentTierSection({ entitlement }: { entitlement: EntitlementDomain }) {
+function CurrentTierSection({
+  entitlement,
+}: {
+  entitlement: EntitlementDomain;
+}) {
   const tier = entitlement.tier;
-  const variant: 'default' | 'secondary' | 'success' =
-    tier === 'tier_enterprise'
-      ? 'success'
-      : tier === 'tier_pro'
-      ? 'default'
-      : 'secondary';
+  const variant: "default" | "secondary" | "success" =
+    tier === "tier_enterprise"
+      ? "success"
+      : tier === "tier_pro"
+        ? "default"
+        : "secondary";
   return (
     <section className="rounded-lg border border-border-subtle bg-bg-card p-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -188,11 +182,11 @@ function CurrentTierSection({ entitlement }: { entitlement: EntitlementDomain })
         </div>
         {entitlement.updatedAt && (
           <div className="text-xs text-fg-tertiary">
-            Обновлено{' '}
-            {entitlement.updatedAt.toLocaleDateString('ru-RU', {
-              day: '2-digit',
-              month: 'long',
-              year: 'numeric',
+            Обновлено{" "}
+            {entitlement.updatedAt.toLocaleDateString("ru-RU", {
+              day: "2-digit",
+              month: "long",
+              year: "numeric",
             })}
           </div>
         )}
@@ -248,7 +242,9 @@ function FeatureGroupTable({
               )}
               <span
                 className={
-                  enabled ? 'text-sm text-fg-primary' : 'text-sm text-fg-tertiary'
+                  enabled
+                    ? "text-sm text-fg-primary"
+                    : "text-sm text-fg-tertiary"
                 }
               >
                 {featureLabel(f)}
@@ -318,7 +314,7 @@ function ChangeTierSection() {
     <section className="rounded-lg border border-border-subtle bg-bg-card p-5">
       <h2 className="text-base font-medium">Сменить тариф</h2>
       <p className="mt-1 text-sm text-fg-tertiary">
-        На MVP апгрейд в один клик ещё не подключён. Напишите нам — поможем
+        Смена тарифа в один клик пока недоступна. Напишите нам — поможем
         подобрать тариф под задачи и оформим переход.
       </p>
       <div className="mt-4 flex flex-wrap gap-2">

@@ -28,10 +28,8 @@ describe('computeDesiredChain', () => {
       secondary: ds('deepseek-v4-flash'),
     });
     expect(result.primary).toEqual(ds('deepseek-v4-flash'));
-    // secondary кандидат был deepseek == primary deepseek → дефолт openai-mini.
     expect(result.secondary).toEqual(openai('gpt-5.4-mini'));
     expect(result.tertiary).toEqual({ providerName: 'kie', model: 'gemini-3.1-pro' });
-    // Три разных провайдера.
     const providers = [
       result.primary.providerName,
       result.secondary.providerName,
@@ -54,9 +52,7 @@ describe('computeDesiredChain', () => {
       primary: openaiRaw('gpt-5.4-nano'),
       secondary: ds('deepseek-v4-flash'),
     });
-    // primary не ollama, не override → сохранён как есть.
     expect(result.primary).toEqual(openaiRaw('gpt-5.4-nano'));
-    // secondary deepseek валиден (≠ openai primary, ≠ kie) → сохранён.
     expect(result.secondary).toEqual(ds('deepseek-v4-flash'));
     expect(result.tertiary).toEqual({ providerName: 'kie', model: 'gemini-3.1-pro' });
     const providers = [
@@ -73,7 +69,6 @@ describe('computeDesiredChain', () => {
       secondary: ds('deepseek-v4-flash'),
     });
     expect(result.primary).toEqual(ds('deepseek-v4-pro'));
-    // primary стал deepseek → secondary deepseek дублирует → дефолт openai-mini.
     expect(result.secondary).toEqual(openai('gpt-5.4-mini'));
     expect(result.tertiary).toEqual({ providerName: 'kie', model: 'gemini-3.1-pro' });
   });
@@ -84,8 +79,6 @@ describe('computeDesiredChain', () => {
       secondary: openai('gpt-5.4-mini'),
     });
     expect(result.primary).toEqual({ providerName: 'openai-via-proxy', model: 'gpt-5-mini' });
-    // primary openai → secondary кандидат openai дублирует primary провайдера →
-    // дефолт для non-deepseek primary = deepseek-flash.
     expect(result.secondary).toEqual(ds('deepseek-v4-flash'));
     expect(result.tertiary).toEqual({ providerName: 'kie', model: 'gemini-3.1-pro' });
     const providers = [
@@ -114,21 +107,40 @@ describe('computeDesiredChain', () => {
 
   it('идемпотентность: f(asCurrent(f(x))) == f(x) для разных taskType', () => {
     const cases: Array<[string, Parameters<typeof computeDesiredChain>[1]]> = [
-      ['some-task', { primary: ds('deepseek-v4-flash'), secondary: openai('gpt-5.4-mini'), tertiary: ollama('qwen3.5:9b') }],
-      ['concierge-toolcall-validate', { primary: ollama('qwen3.5:9b'), secondary: ds('deepseek-v4-flash') }],
+      [
+        'some-task',
+        {
+          primary: ds('deepseek-v4-flash'),
+          secondary: openai('gpt-5.4-mini'),
+          tertiary: ollama('qwen3.5:9b'),
+        },
+      ],
+      [
+        'concierge-toolcall-validate',
+        { primary: ollama('qwen3.5:9b'), secondary: ds('deepseek-v4-flash') },
+      ],
       ['decision-hygiene', { primary: ds('deepseek-v4-pro') }],
-      ['theme-classify', { primary: openaiRaw('gpt-5.4-nano'), secondary: ds('deepseek-v4-flash') }],
+      [
+        'theme-classify',
+        { primary: openaiRaw('gpt-5.4-nano'), secondary: ds('deepseek-v4-flash') },
+      ],
       ['orchestrator-plan', { primary: openaiRaw('gpt-4o') }],
       ['concierge-respond', { primary: openaiRaw('gpt-4o'), secondary: openai('gpt-5.4-mini') }],
-      ['debate-decision-supersede-supporter', { primary: openaiRaw('gpt-5.4'), secondary: ds('deepseek-v4-pro') }],
+      [
+        'debate-decision-supersede-supporter',
+        { primary: openaiRaw('gpt-5.4'), secondary: ds('deepseek-v4-pro') },
+      ],
       ['empty-task', {}],
     ];
     for (const [taskType, current] of cases) {
       const once = computeDesiredChain(taskType, current);
       const twice = computeDesiredChain(taskType, asCurrent(once));
       expect(twice, `idempotency failed for ${taskType}`).toEqual(once);
-      // Все три провайдера всегда разные.
-      const providers = [once.primary.providerName, once.secondary.providerName, once.tertiary.providerName];
+      const providers = [
+        once.primary.providerName,
+        once.secondary.providerName,
+        once.tertiary.providerName,
+      ];
       expect(new Set(providers).size, `distinct providers failed for ${taskType}`).toBe(3);
     }
   });

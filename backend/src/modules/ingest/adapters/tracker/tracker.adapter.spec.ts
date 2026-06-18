@@ -7,19 +7,6 @@ import type { IngestService } from '../../ingest.service';
 
 import { TrackerAdapter } from './tracker.adapter';
 
-/**
- * Юнит-тесты TrackerAdapter.
- *
- * Покрытие:
- *   1. Маппинг events → signalType (8 типов).
- *   2. sourceExternalId детерминированный (один payload → один ключ).
- *   3. payload.signalTypeHint проставляется.
- *   4. payload.fullText проставляется для issue.created и comment.created
- *      (и НЕ для status_changed без текста).
- *   5. Метрика incTrackerEventToKnowledgeCore вызывается с правильными метками.
- *   6. Lazy upsert Source(type=tracker_event) при первом вызове.
- *   7. Ошибка ingest'а НЕ пробрасывается наружу (best-effort).
- */
 describe('TrackerAdapter', () => {
   let prisma: PrismaService;
   let ingest: IngestService;
@@ -35,7 +22,7 @@ describe('TrackerAdapter', () => {
     id: 'src_tracker_1',
     tenantId: 'org_1',
     type: 'tracker_event',
-    name: 'Трекер Z',
+    name: 'Трекер',
     dataClass: 'internal',
     isActive: true,
     description: null,
@@ -104,8 +91,6 @@ describe('TrackerAdapter', () => {
     };
   }
 
-  // ─── 1. Маппинг events → signalType ────────────────────────────────────
-
   const SIGNAL_MAP: Array<[string, string]> = [
     ['issue.created', 'task_created'],
     ['issue.status_changed', 'task_status_changed'],
@@ -122,13 +107,9 @@ describe('TrackerAdapter', () => {
       await adapter.handleTrackerEvent(basePayload(eventType) as never);
       expect(ingestFn).toHaveBeenCalledTimes(1);
       const call = ingestFn.mock.calls[0]![0];
-      expect((call.payload as { signalTypeHint: string }).signalTypeHint).toBe(
-        expectedSignal,
-      );
+      expect((call.payload as { signalTypeHint: string }).signalTypeHint).toBe(expectedSignal);
     });
   }
-
-  // ─── 2. sourceExternalId детерминированный ─────────────────────────────
 
   it('sourceExternalId одинаков при одинаковых payload', async () => {
     const payload = basePayload('issue.created');
@@ -138,21 +119,16 @@ describe('TrackerAdapter', () => {
     const k1 = ingestFn.mock.calls[0]![0].sourceExternalId;
     const k2 = ingestFn.mock.calls[1]![0].sourceExternalId;
     expect(k1).toBe(k2);
-    // Формат: tracker:issue:<id>:<type>:<iso>:<metaHash>
     expect(k1).toMatch(/^tracker:issue:i1:issue\.created:/);
   });
 
   it('sourceExternalId различается для разных type на одной задаче', async () => {
     await adapter.handleTrackerEvent(basePayload('issue.created') as never);
-    await adapter.handleTrackerEvent(
-      basePayload('issue.status_changed') as never,
-    );
+    await adapter.handleTrackerEvent(basePayload('issue.status_changed') as never);
     const k1 = ingestFn.mock.calls[0]![0].sourceExternalId;
     const k2 = ingestFn.mock.calls[1]![0].sourceExternalId;
     expect(k1).not.toBe(k2);
   });
-
-  // ─── 3. payload.fullText для issue.created / comment.created ───────────
 
   it('payload.fullText заполнен для issue.created (title + description)', async () => {
     await adapter.handleTrackerEvent(
@@ -198,8 +174,6 @@ describe('TrackerAdapter', () => {
     expect(p.fullText).toBeUndefined();
   });
 
-  // ─── 4. Метрика ────────────────────────────────────────────────────────
-
   it('метрика incTrackerEventToKnowledgeCore вызывается с tenant + type', async () => {
     await adapter.handleTrackerEvent(basePayload('issue.created') as never);
     expect(incMetric).toHaveBeenCalledWith({
@@ -207,8 +181,6 @@ describe('TrackerAdapter', () => {
       type: 'issue.created',
     });
   });
-
-  // ─── 5. Lazy upsert Source ─────────────────────────────────────────────
 
   it('lazy-создаёт Source(type=tracker_event), если его нет', async () => {
     sourceFindUnique.mockResolvedValueOnce(null);
@@ -218,7 +190,7 @@ describe('TrackerAdapter', () => {
       data: expect.objectContaining({
         tenantId: 'org_1',
         type: 'tracker_event',
-        name: 'Трекер Z',
+        name: 'Трекер',
         dataClass: 'internal',
         isActive: true,
       }),
@@ -230,8 +202,6 @@ describe('TrackerAdapter', () => {
     await adapter.handleTrackerEvent(basePayload('issue.created') as never);
     expect(sourceCreate).not.toHaveBeenCalled();
   });
-
-  // ─── 6. Best-effort: ошибки не пробрасываются ──────────────────────────
 
   it('ошибка ingest НЕ пробрасывается наружу (best-effort)', async () => {
     ingestFn.mockRejectedValueOnce(new Error('ingest down'));

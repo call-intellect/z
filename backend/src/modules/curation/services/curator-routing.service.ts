@@ -3,19 +3,6 @@ import type { CurationLevel, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * CuratorRoutingService — выбирает кандидатов-кураторов для CurationItem.
- *
- * Алгоритм (sub-TZ §3.6, §6.6):
- *   1. Точное совпадение `(tenantId, resourceType, level)`.
- *   2. Если ничего — `(tenantId, resourceType, level=null)`.
- *   3. Если ничего — wildcard `(tenantId, '*', ...)`.
- *   4. Если ничего — fallback на owner/admin Org через Membership.
- *
- * `criteria` (опц.) — при совпадении тегов/полей пересечение усиливает
- * приоритет. На α-4 — простая проверка совпадения по верхним полям (см.
- * `matchesCriteria` ниже).
- */
 @Injectable()
 export class CuratorRoutingService {
   private readonly logger = new Logger(CuratorRoutingService.name);
@@ -30,7 +17,6 @@ export class CuratorRoutingService {
   }): Promise<string[]> {
     const { tenantId, resourceType, level, criteria } = args;
 
-    // 1. Точное resourceType + level.
     const exact = await this.findAssignments({
       tenantId,
       resourceType,
@@ -41,47 +27,34 @@ export class CuratorRoutingService {
       return uniq(exactMatched.flatMap((a) => a.curatorUserIds));
     }
 
-    // 2. resourceType + level=null (универсальный).
     if (level !== undefined) {
       const universal = await this.findAssignments({
         tenantId,
         resourceType,
         levelExact: null,
       });
-      const universalMatched = universal.filter((a) =>
-        this.matchesCriteria(a.criteria, criteria),
-      );
+      const universalMatched = universal.filter((a) => this.matchesCriteria(a.criteria, criteria));
       if (universalMatched.length > 0) {
         return uniq(universalMatched.flatMap((a) => a.curatorUserIds));
       }
     }
 
-    // 3. Wildcard '*' (с тем же level или без).
     const wildcard = await this.findAssignments({
       tenantId,
       resourceType: '*',
       levelExact: 'any',
     });
-    const wildcardMatched = wildcard.filter((a) =>
-      this.matchesCriteria(a.criteria, criteria),
-    );
+    const wildcardMatched = wildcard.filter((a) => this.matchesCriteria(a.criteria, criteria));
     if (wildcardMatched.length > 0) {
       return uniq(wildcardMatched.flatMap((a) => a.curatorUserIds));
     }
 
-    // 4. Fallback — owner / admin Org.
     return this.fallbackOwnersAdmins(tenantId);
   }
 
-  /**
-   * Гарантирует не-пустой массив кандидатов: если ни ассайнментов, ни owner/admin
-   * не нашлось — возвращает [], а сервис-вызыватель решает что делать (по умолчанию
-   * — выкидывает в логи).
-   */
   private async findAssignments(args: {
     tenantId: string;
     resourceType: string;
-    /** 'any' — игнорировать level фильтр; null — взять level=null; CurationLevel — точное совпадение. */
     levelExact: CurationLevel | null | 'any';
   }): Promise<
     Array<{
@@ -119,11 +92,6 @@ export class CuratorRoutingService {
     return uniq(ids);
   }
 
-  /**
-   * Проверка `assignment.criteria ⊆ input.criteria`. На α-4 — простая
-   * проверка совпадения по верхним полям. Если в assignment нет criteria
-   * (null) — assignment всегда подходит.
-   */
   private matchesCriteria(
     assignmentCriteria: Prisma.JsonValue | null,
     inputCriteria: Record<string, unknown> | undefined,
@@ -135,7 +103,7 @@ export class CuratorRoutingService {
     if (!inputCriteria) return false;
     const obj = assignmentCriteria as Record<string, unknown>;
     for (const [k, v] of Object.entries(obj)) {
-      if (v === '*') continue; // wildcard для конкретного поля
+      if (v === '*') continue;
       if (inputCriteria[k] !== v) return false;
     }
     return true;

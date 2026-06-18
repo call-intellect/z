@@ -1,16 +1,3 @@
-/**
- * §4 Ф3 (2026-06-11) — chat-v2 пробрасывает СВОЙ per-call timeout синтеза
- * (knowledge.chatV2SynthesisTimeoutMs) в LlmRouter.call, независимо от
- * глобального LLM_ROUTER_DISPATCH_TIMEOUT_MS. Это защищает длинный ответ
- * AI-чата от обрыва на глобальном hard-timeout'е.
- *
- * Тест изолирует именно синтез-вызов: private retrieval/prisma-методы
- * заспаены (stub), чтобы `ask` детерминированно дошёл до `this.llm.call`
- * без сети/БД. Проверяем, что объект вызова содержит
- * `{ taskType: 'chat-v2', timeoutMs: <значение из cfg> }`.
- *
- * ТЗ: plans/tz/2026-06-11-cabinet-leftovers-ui-probe-chat.md
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';
@@ -28,8 +15,6 @@ function makeService(): {
   svc: ChatV2Service;
   llmCall: ReturnType<typeof vi.fn>;
 } {
-  // ТЗ 2026-06-15 — ask() читает CompanyProfile для хвоста «О компании».
-  // Здесь профиля нет (findUnique→null) → секция опускается.
   const prisma = {
     companyProfile: { findUnique: vi.fn().mockResolvedValue(null) },
   } as unknown as PrismaService;
@@ -82,8 +67,6 @@ function makeService(): {
     undefined,
   );
 
-  // Изолируем синтез: заглушаем retrieval/prisma-зависимые private-методы,
-  // чтобы `ask` детерминированно дошёл до `this.llm.call` без сети/БД.
   const block = {
     id: 'b-1',
     name: 'seed',

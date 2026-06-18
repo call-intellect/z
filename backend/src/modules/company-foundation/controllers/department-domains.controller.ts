@@ -15,10 +15,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -30,16 +27,6 @@ import {
 } from '../dto/department-domain-link.dto';
 import { DepartmentDomainLinkService } from '../services/department-domain-link.service';
 
-/**
- * SBA α-9 wave 3 — REST API для связей Department ↔ FunctionalDomain.
- *
- *   GET    /api/v1/departments/:id/domains              — список связей отдела.
- *   POST   /api/v1/departments/:id/link-domain          — добавить связь (admin).
- *   DELETE /api/v1/departments/:id/domains/:domainId    — убрать связь (admin).
- *
- * Отдельный контроллер, чтобы не трогать существующий DepartmentsController
- * из модуля departments (α-9 wave 1).
- */
 @ApiTags('departments')
 @Controller('api/v1/departments')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -51,7 +38,7 @@ export class DepartmentDomainsController {
   ) {}
 
   @Get(':id/domains')
-  @ApiOperation({ summary: 'Список FunctionalDomain'+"'"+'ов, привязанных к отделу' })
+  @ApiOperation({ summary: 'Список FunctionalDomain' + "'" + 'ов, привязанных к отделу' })
   async listForDepartment(
     @Param('id') departmentId: string,
     @CurrentUser() user: CurrentUserPayload,
@@ -104,8 +91,6 @@ export class DepartmentDomainsController {
     });
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({
@@ -116,18 +101,12 @@ export class DepartmentDomainsController {
     return tenantId;
   }
 
-  private async requireDepartmentRead(
-    userId: string,
-    tenantId: string,
-  ): Promise<void> {
+  private async requireDepartmentRead(userId: string, tenantId: string): Promise<void> {
     const ok = await this.rbac.canRead(userId, tenantId, 'department');
     if (!ok) throw this.forbidden('Недостаточно прав для чтения отделов');
   }
 
-  private async requireDepartmentWrite(
-    userId: string,
-    tenantId: string,
-  ): Promise<void> {
+  private async requireDepartmentWrite(userId: string, tenantId: string): Promise<void> {
     const ok = await this.rbac.canWrite(userId, tenantId, 'department');
     if (!ok)
       throw this.forbidden('Изменять связи отделов и доменов может только владелец/администратор');

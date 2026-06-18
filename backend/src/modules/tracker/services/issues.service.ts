@@ -36,6 +36,7 @@ import { IssueEmbedQueueService } from './issue-embed-queue.service';
 import { IssueGoalSuggestService } from './issue-goal-suggest.service';
 import { IssueInferFieldsService } from './issue-infer-fields.service';
 import { ProjectsService } from './projects.service';
+import { TaskDedupService } from './task-dedup.service';
 import { TrackerEmitterService } from './tracker-emitter.service';
 import { TrackerEventsService } from './tracker-events.service';
 import { WebhookDispatcher } from './webhook-dispatcher.service';
@@ -99,6 +100,13 @@ export class IssuesService {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
+    // TZ task-dedup (2026-06-16, Ф1 уровень B) — дедуп-гейт прямого create
+    // (email-inbox / self-task в обход intake). @Optional: unit-тесты
+    // IssuesService строятся без него → дедуп пропускается, задача создаётся
+    // как есть. Только suggest (IssueRelation('duplicates')), не блокирует.
+    @Optional()
+    @Inject(TaskDedupService)
+    private readonly taskDedup?: TaskDedupService,
   ) {}
 
   /**
@@ -140,6 +148,23 @@ export class IssuesService {
       dueDate: dto.dueDate ?? null,
       respectHolidays: dto.respectHolidays,
     });
+
+    // TZ task-dedup (2026-06-16, Ф1 уровень B) — дедуп-гейт ПЕРЕД транзакцией
+    // для прямого create (email/self-task). Best-effort (R4): сбой → 'nil'.
+    // verdict='same' → создаём задачу как обычно, затем заводим
+    // IssueRelation('duplicates') как ПОДСКАЗКУ (не блокируем создание, R2/R13).
+    // skipDedup ставят внутренние caller'ы intake (уже прошли дедуп уровня A).
+    let dedupMatchedIssueId: string | null = null;
+    if (this.taskDedup && !dto.skipDedup) {
+      const dedup = await this.taskDedup.evaluate({
+        tenantId,
+        title: dto.title,
+        description: dto.descriptionStripped ?? dto.description ?? null,
+      });
+      if (dedup.verdict === 'same') {
+        dedupMatchedIssueId = dedup.matchedIssueId;
+      }
+    }
 
     const issue = await this.prisma.$transaction(async (tx) => {
       // audit-fixes Б9: валидация родителя ВНУТРИ tx с advisory_xact_lock.
@@ -246,6 +271,35 @@ export class IssuesService {
     });
 
     const response = await this.assemble(issue.id, tenantId);
+
+    // TZ task-dedup (2026-06-16, Ф1 уровень B) — кандидат-подсказка дубля:
+    // связь IssueRelation('duplicates') от новой задачи к найденной открытой.
+    // Подтверждает существование, НЕ блокирует и НЕ сливает (R2/R13). Best-effort:
+    // ошибка/гонка @@unique не валит создание. Self-ссылку не заводим.
+    if (dedupMatchedIssueId && dedupMatchedIssueId !== issue.id) {
+      try {
+        await this.prisma.issueRelation.create({
+          data: {
+            sourceIssueId: issue.id,
+            targetIssueId: dedupMatchedIssueId,
+            relationType: 'duplicates',
+            createdById: userId,
+          },
+        });
+        this.logger.log(
+          { issueId: issue.id, duplicateOfIssueId: dedupMatchedIssueId },
+          'issues.create: дедуп-арбитр нашёл дубль — заведена связь duplicates (suggest)',
+        );
+      } catch (e) {
+        this.logger.warn(
+          {
+            issueId: issue.id,
+            err: e instanceof Error ? e.message : String(e),
+          },
+          'issues.create: не удалось завести связь duplicates (best-effort)',
+        );
+      }
+    }
     // Tracker subtasks UI (2026-05-27) — отдельный счётчик подзадач, чтобы
     // в Grafana отделить «корневые» задачи от подзадач. Метрика
     // `subtasks_created_total{tenant, project}`.

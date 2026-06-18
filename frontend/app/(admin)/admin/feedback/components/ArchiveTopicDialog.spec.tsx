@@ -1,44 +1,36 @@
-/**
- * Фаза 8 — компонентный smoke-тест ArchiveTopicDialog.
- *
- * Что проверяется:
- *  (1) mode='archive' → клик «Архивировать» вызывает archiveTopic + toast + onSaved.
- *  (2) mode='unarchive' → клик «Восстановить» вызывает unarchiveTopic.
- *  (3) Ошибка API → toast.error, диалог не закрывается.
- */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 
-vi.mock('@/api/admin-feedback.api', () => ({
+vi.mock("@/api/admin-feedback.api", () => ({
   adminFeedbackApi: {
     archiveTopic: vi.fn(),
     unarchiveTopic: vi.fn(),
   },
 }));
 
-vi.mock('sonner', () => ({
+vi.mock("sonner", () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
   },
 }));
 
-import { adminFeedbackApi } from '@/api/admin-feedback.api';
-import { toast } from 'sonner';
+import { adminFeedbackApi } from "@/api/admin-feedback.api";
+import { toast } from "sonner";
 
-import { ArchiveTopicDialog } from './ArchiveTopicDialog';
+import { ArchiveTopicDialog } from "./ArchiveTopicDialog";
 
 const archiveMock = () =>
   adminFeedbackApi.archiveTopic as unknown as ReturnType<typeof vi.fn>;
 const unarchiveMock = () =>
   adminFeedbackApi.unarchiveTopic as unknown as ReturnType<typeof vi.fn>;
 
-describe('ArchiveTopicDialog', () => {
+describe("ArchiveTopicDialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('archive mode → вызывает archiveTopic', async () => {
+  it("archive mode → вызывает archiveTopic", async () => {
     archiveMock().mockResolvedValue({});
     const onOpenChange = vi.fn();
     const onSaved = vi.fn();
@@ -54,17 +46,17 @@ describe('ArchiveTopicDialog', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /архивировать/i }));
+    fireEvent.click(screen.getByRole("button", { name: /архивировать/i }));
 
     await vi.waitFor(() => {
-      expect(archiveMock()).toHaveBeenCalledWith('ftp_1');
+      expect(archiveMock()).toHaveBeenCalledWith("ftp_1");
     });
-    expect(toast.success).toHaveBeenCalledWith('Готово');
+    expect(toast.success).toHaveBeenCalledWith("Готово");
     expect(onSaved).toHaveBeenCalledTimes(1);
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('unarchive mode → вызывает unarchiveTopic', async () => {
+  it("unarchive mode → вызывает unarchiveTopic", async () => {
     unarchiveMock().mockResolvedValue({});
     const onSaved = vi.fn();
 
@@ -79,16 +71,16 @@ describe('ArchiveTopicDialog', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /восстановить/i }));
+    fireEvent.click(screen.getByRole("button", { name: /восстановить/i }));
 
     await vi.waitFor(() => {
-      expect(unarchiveMock()).toHaveBeenCalledWith('ftp_1');
+      expect(unarchiveMock()).toHaveBeenCalledWith("ftp_1");
     });
     expect(onSaved).toHaveBeenCalledTimes(1);
   });
 
-  it('ошибка API → toast.error, диалог не закрывается', async () => {
-    archiveMock().mockRejectedValue(new Error('boom'));
+  it("ошибка API → toast.error, диалог не закрывается", async () => {
+    archiveMock().mockRejectedValue(new Error("boom"));
     const onOpenChange = vi.fn();
     const onSaved = vi.fn();
 
@@ -103,7 +95,7 @@ describe('ArchiveTopicDialog', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /архивировать/i }));
+    fireEvent.click(screen.getByRole("button", { name: /архивировать/i }));
 
     await vi.waitFor(() => {
       expect(toast.error).toHaveBeenCalled();

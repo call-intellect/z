@@ -1,15 +1,4 @@
-/**
- * API-клиент SBA γ-2 — Concierge Agent.
- *
- *   POST   /api/v1/concierge/messages          — SSE stream
- *   POST   /api/v1/concierge/messages/once     — polling fallback (one JSON)
- *   GET    /api/v1/concierge/conversations
- *   GET    /api/v1/concierge/conversations/:id
- *   POST   /api/v1/concierge/undo/:logId
- *   GET    /api/v1/concierge/quota
- */
-
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
 export interface ConciergePageContextApi {
   clientPath?: string;
@@ -26,32 +15,27 @@ export interface ConciergePostMessageBody {
 }
 
 export type ConciergeStreamEvent =
-  | { type: 'started'; conversationId: string }
-  | { type: 'thinking'; text: string }
+  | { type: "started"; conversationId: string }
+  | { type: "thinking"; text: string }
   | {
-      type: 'tool_call';
+      type: "tool_call";
       toolName: string;
       params: Record<string, unknown>;
       requiresConfirm: boolean;
     }
   | {
-      type: 'tool_result';
+      type: "tool_result";
       toolName: string;
       ok: boolean;
       status: number;
       undoLogId?: string;
       preview: string;
-      /**
-       * Smart-tables ТЗ Фаза 1 — для whitelist-инструментов с богатым превью
-       * (например `infer_table_schema`) backend кладёт сюда полный результат,
-       * чтобы фронт отрисовал интерактивную карточку. Для прочих — отсутствует.
-       */
       data?: unknown;
     }
-  | { type: 'message'; text: string }
-  | { type: 'done'; messageId: string }
-  | { type: 'error'; code: string; message: string }
-  | { type: 'quota_exceeded'; scope: 'daily' | 'monthly' };
+  | { type: "message"; text: string }
+  | { type: "done"; messageId: string }
+  | { type: "error"; code: string; message: string }
+  | { type: "quota_exceeded"; scope: "daily" | "monthly" };
 
 export interface ConciergeOnceResponseApi {
   conversationId: string;
@@ -63,7 +47,7 @@ export interface ConciergeOnceResponseApi {
     status: number;
     undoLogId?: string;
   }>;
-  quotaExceeded?: 'daily' | 'monthly';
+  quotaExceeded?: "daily" | "monthly";
   error?: { code: string; message: string };
 }
 
@@ -95,24 +79,18 @@ export interface ConciergeQuotaApi {
   monthlyLimit: number;
 }
 
-/**
- * SSE-стрим. Возвращает AsyncIterable события Concierge.
- * Используется на странице /assistant и в floating button.
- *
- * Закрытие: вызывающий вызывает `abort()` через AbortController сигнал.
- */
 export async function* streamConciergeMessage(
   body: ConciergePostMessageBody,
   signal?: AbortSignal,
 ): AsyncGenerator<ConciergeStreamEvent, void, unknown> {
   const baseUrl =
-    process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+    process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
   const res = await fetch(`${baseUrl}/api/v1/concierge/messages`, {
-    method: 'POST',
-    credentials: 'include',
+    method: "POST",
+    credentials: "include",
     headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
     },
     body: JSON.stringify(body),
     ...(signal ? { signal } : {}),
@@ -122,57 +100,52 @@ export async function* streamConciergeMessage(
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '';
+  let buffer = "";
   try {
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      // SSE: события разделены `\n\n`.
       let idx: number;
-      while ((idx = buffer.indexOf('\n\n')) >= 0) {
+      while ((idx = buffer.indexOf("\n\n")) >= 0) {
         const raw = buffer.slice(0, idx);
         buffer = buffer.slice(idx + 2);
-        // Игнорируем heartbeat (`: heartbeat`).
-        if (raw.startsWith(':')) continue;
-        const dataLine = raw
-          .split('\n')
-          .find((l) => l.startsWith('data:'));
+        if (raw.startsWith(":")) continue;
+        const dataLine = raw.split("\n").find((l) => l.startsWith("data:"));
         if (!dataLine) continue;
         const payload = dataLine.slice(5).trim();
         try {
           const ev = JSON.parse(payload) as ConciergeStreamEvent;
           yield ev;
-          if (ev.type === 'done' || ev.type === 'error' || ev.type === 'quota_exceeded') {
+          if (
+            ev.type === "done" ||
+            ev.type === "error" ||
+            ev.type === "quota_exceeded"
+          ) {
             return;
           }
-        } catch {
-          // skip malformed
-        }
+        } catch {}
       }
     }
   } finally {
     try {
       reader.releaseLock();
-    } catch {
-      /* */
-    }
+    } catch {}
   }
 }
 
 export const conciergeApi = {
-  /** Polling fallback — одна HTTP-команда, собранный финальный ответ. */
   askOnce: (body: ConciergePostMessageBody) =>
     apiClient.post<ConciergeOnceResponseApi>(
-      '/api/v1/concierge/messages/once',
+      "/api/v1/concierge/messages/once",
       body,
     ),
 
   listConversations: (archived?: boolean, page = 1, limit = 20) => {
     const usp = new URLSearchParams();
-    if (archived) usp.set('archived', 'true');
-    usp.set('page', String(page));
-    usp.set('limit', String(limit));
+    if (archived) usp.set("archived", "true");
+    usp.set("page", String(page));
+    usp.set("limit", String(limit));
     return apiClient.get<{
       items: ConciergeConversationApi[];
       total: number;
@@ -192,8 +165,7 @@ export const conciergeApi = {
       {},
     ),
 
-  getQuota: () => apiClient.get<ConciergeQuotaApi>('/api/v1/concierge/quota'),
+  getQuota: () => apiClient.get<ConciergeQuotaApi>("/api/v1/concierge/quota"),
 };
 
-/** Стримящая функция (named export для SSE). */
 export const conciergeStreamApi = streamConciergeMessage;

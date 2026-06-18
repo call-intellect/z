@@ -1,32 +1,20 @@
-'use client';
+"use client";
 
-import { useRouter } from 'next/navigation';
-import { useState, type ReactElement } from 'react';
+import { useRouter } from "next/navigation";
+import { useState, type ReactElement } from "react";
 
-import { streamOrchestratorRun } from '@/api/orchestrator.api';
+import { streamOrchestratorRun } from "@/api/orchestrator.api";
 
-/**
- * SBA δ-1 — клиент request page `/orchestrator`.
- *
- * Минимальный UI: textarea + примеры запросов + кнопка «Запустить research».
- * При запуске:
- *   1) открываем SSE → получаем первый event `started` → берём runId;
- *   2) НЕ ждём окончания — сразу redirect на `/orchestrator/runs/:id`,
- *      где live-view замаунтит свой stream.
- *
- * Это даёт быстрый UX: пользователь не висит на «Подключение...» —
- * сразу видит live timeline.
- */
 const EXAMPLES = [
-  'Составь отчёт по проекту: что обсуждали последний квартал, какие решения, какие риски.',
-  'Сравни наши процессы онбординга и оффбординга сотрудников.',
-  'Построй хронологию принятых решений по теме «ребрендинг» за последний год.',
-  'Что компания знает о клиенте «Альфа»? Собери всё, что знаем.',
+  "Составь отчёт по проекту: что обсуждали последний квартал, какие решения, какие риски.",
+  "Сравни наши процессы онбординга и оффбординга сотрудников.",
+  "Построй хронологию принятых решений по теме «ребрендинг» за последний год.",
+  "Что компания знает о клиенте «Альфа»? Собери всё, что знаем.",
 ];
 
 export function OrchestratorRequestClient(): ReactElement {
   const router = useRouter();
-  const [task, setTask] = useState('');
+  const [task, setTask] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,25 +23,24 @@ export function OrchestratorRequestClient(): ReactElement {
     setError(null);
     const trimmed = task.trim();
     if (trimmed.length < 5) {
-      setError('Опишите запрос (минимум 5 символов).');
+      setError("Опишите запрос (минимум 5 символов).");
       return;
     }
     setSubmitting(true);
     try {
       const stream = streamOrchestratorRun({ task: trimmed });
       for await (const ev of stream) {
-        if (ev.type === 'started') {
-          // Сразу redirect на live-view — там подхватит остальной stream через /events.
+        if (ev.type === "started") {
           router.push(`/orchestrator/runs/${ev.runId}`);
           return;
         }
-        if (ev.type === 'error') {
+        if (ev.type === "error") {
           setError(`${ev.code}: ${ev.message}`);
           setSubmitting(false);
           return;
         }
       }
-      setError('SSE прервался без события started');
+      setError("SSE прервался без события started");
       setSubmitting(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -73,9 +60,7 @@ export function OrchestratorRequestClient(): ReactElement {
       </header>
 
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
-        <label className="text-sm font-semibold text-fg-primary">
-          Запрос
-        </label>
+        <label className="text-sm font-semibold text-fg-primary">Запрос</label>
         <textarea
           className="min-h-[120px] w-full rounded-md border border-border-subtle bg-bg-overlay p-3 text-sm text-fg-primary focus:outline-none focus:ring-2 focus:ring-accent"
           placeholder="Опишите, что нужно собрать..."
@@ -92,7 +77,7 @@ export function OrchestratorRequestClient(): ReactElement {
             disabled={submitting}
             className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-fg hover:bg-accent-hover disabled:opacity-60"
           >
-            {submitting ? 'Запускаю…' : 'Запустить research'}
+            {submitting ? "Запускаю…" : "Запустить research"}
           </button>
         </div>
         {error && (
@@ -103,9 +88,7 @@ export function OrchestratorRequestClient(): ReactElement {
       </form>
 
       <section className="rounded-md border border-border-subtle bg-bg-overlay p-4">
-        <h2 className="mb-3 text-sm font-semibold text-fg-primary">
-          Примеры
-        </h2>
+        <h2 className="mb-3 text-sm font-semibold text-fg-primary">Примеры</h2>
         <ul className="flex flex-col gap-2">
           {EXAMPLES.map((ex) => (
             <li key={ex}>

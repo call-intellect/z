@@ -5,18 +5,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { PromptResolverService } from './prompt-resolver.service';
 
-/**
- * Тесты PromptResolverService — Фаза A.1.
- *
- * Проверяемые кейсы:
- *  1. db_org override — найден активный шаблон scope=org → возвращаем его.
- *  2. db_system fallback — нет org-шаблона, есть system → возвращаем системный.
- *  3. code_fallback на db_empty — нет ни org, ни system → code-fallback.
- *  4. code_fallback на db_error — Prisma бросает → code-fallback + warn.
- *  5. meetingType fallback — для tasks/chapters/follow-up ищется шаблон
- *     с meetingType=null (универсальный), когда точного meetingType нет.
- */
-
 interface DbTemplate {
   id: string;
   scope: 'system' | 'org';
@@ -81,18 +69,20 @@ function mkTemplate(overrides: Partial<DbTemplate>): DbTemplate {
 }
 
 function buildPrismaMock(templatesFound: DbTemplate[] | Error): PrismaService {
-  const findFirst = vi.fn(async (args: { where: { orgId: string | null; meetingType?: string | null } }) => {
-    if (templatesFound instanceof Error) throw templatesFound;
-    return (
-      templatesFound.find(
-        (t) =>
-          t.orgId === args.where.orgId &&
-          (args.where.meetingType === undefined ||
-            t.meetingType === args.where.meetingType ||
-            (args.where.meetingType === null && t.meetingType === null)),
-      ) ?? null
-    );
-  });
+  const findFirst = vi.fn(
+    async (args: { where: { orgId: string | null; meetingType?: string | null } }) => {
+      if (templatesFound instanceof Error) throw templatesFound;
+      return (
+        templatesFound.find(
+          (t) =>
+            t.orgId === args.where.orgId &&
+            (args.where.meetingType === undefined ||
+              t.meetingType === args.where.meetingType ||
+              (args.where.meetingType === null && t.meetingType === null)),
+        ) ?? null
+      );
+    },
+  );
   return {
     promptTemplate: { findFirst },
   } as unknown as PrismaService;
@@ -175,9 +165,6 @@ describe('PromptResolverService', () => {
 
     expect(result.source).toBe('code_fallback');
     expect(result.versionId).toBeNull();
-    // Проверяем, что system-промпт из встроенного code-модуля type-sales.ts
-    // действительно про продажи (Z-AI-agent-rules: code-fallback ОБЯЗАТЕЛЕН).
-    // ТЗ consolidation Ф3.2 (A2): роль «аналитик продаж в Коре».
     expect(result.systemPrompt).toContain('аналитик продаж');
     expect(result.toolName).toBe('extract_sales');
     expect(metrics.incPromptResolverFallback).toHaveBeenCalledWith({ reason: 'db_empty' });

@@ -1,29 +1,29 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
-import { cardsApi, type CreateCardRequest } from '@/api/cards.api';
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { Button } from '@/ui/shadcn/button';
+import { cardsApi, type CreateCardRequest } from "@/api/cards.api";
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { Textarea } from "@/ui/shadcn/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
 export function CreateCardDialog({
   open,
@@ -36,27 +36,27 @@ export function CreateCardDialog({
 }) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
-  const [name, setName] = useState('');
-  const [kind, setKind] = useState<CreateCardRequest['kind']>('client');
-  const [contactName, setContactName] = useState('');
-  const [contactEmail, setContactEmail] = useState('');
-  const [contactPhone, setContactPhone] = useState('');
-  const [description, setDescription] = useState('');
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState<CreateCardRequest["kind"]>("client");
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [description, setDescription] = useState("");
 
   function reset() {
-    setName('');
-    setKind('client');
-    setContactName('');
-    setContactEmail('');
-    setContactPhone('');
-    setDescription('');
+    setName("");
+    setKind("client");
+    setContactName("");
+    setContactEmail("");
+    setContactPhone("");
+    setDescription("");
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (submitting) return;
     if (!name.trim()) {
-      toast.error('Укажите название карточки');
+      toast.error("Укажите название карточки");
       return;
     }
     setSubmitting(true);
@@ -69,14 +69,13 @@ export function CreateCardDialog({
         contactPhone: contactPhone.trim() || null,
         description: description.trim() || null,
       });
-      toast.success('Карточка создана');
+      toast.success("Карточка создана");
       onCreated?.(created.id);
       onOpenChange(false);
       reset();
-      // Сразу переходим в карточку — главный сценарий «открыть и завести встречу».
       router.push(`/cards/${encodeURIComponent(created.id)}`);
     } catch (err) {
-      const msg = humanizeApiError(err, 'Не удалось создать карточку');
+      const msg = humanizeApiError(err, "Не удалось создать карточку");
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -110,7 +109,10 @@ export function CreateCardDialog({
           </div>
           <div>
             <Label>Тип</Label>
-            <Select value={kind} onValueChange={(v) => setKind(v as CreateCardRequest['kind'])}>
+            <Select
+              value={kind}
+              onValueChange={(v) => setKind(v as CreateCardRequest["kind"])}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -173,7 +175,7 @@ export function CreateCardDialog({
               Отмена
             </Button>
             <Button type="submit" disabled={submitting}>
-              {submitting ? 'Создаём…' : 'Создать'}
+              {submitting ? "Создаём…" : "Создать"}
             </Button>
           </DialogFooter>
         </form>

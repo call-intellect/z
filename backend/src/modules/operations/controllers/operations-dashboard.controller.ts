@@ -77,10 +77,7 @@ import {
   type ValueRecapQuery,
   type ValueRecapSnapshotDto,
 } from '../dto/value-recap.dto';
-import {
-  TeamTemperatureQuerySchema,
-  type TeamTemperatureQuery,
-} from '../dto/weekly-digest.dto';
+import { TeamTemperatureQuerySchema, type TeamTemperatureQuery } from '../dto/weekly-digest.dto';
 import { BlockerSynthesisService } from '../services/blocker-synthesis.service';
 import { CommitmentsService } from '../services/commitments.service';
 import { CustomerRiskRadarService } from '../services/customer-risk-radar.service';
@@ -91,20 +88,11 @@ import { OperationsDashboardService } from '../services/operations-dashboard.ser
 import { PortfolioHealthService } from '../services/portfolio-health.service';
 import { PromiseNetworkService } from '../services/promise-network.service';
 import { TeamCapacityService } from '../services/team-capacity.service';
-import {
-  shiftPeriod,
-  ValueRecapService,
-} from '../services/value-recap.service';
+import { shiftPeriod, ValueRecapService } from '../services/value-recap.service';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 import { buildValueRecapSlides } from '../utils/value-recap-export';
 import { buildValueRecapPptx } from '../utils/value-recap-pptx';
 
-/**
- * SBA β-8 — `GET /api/v1/dashboard/operations/*`.
- *
- * Доступ — owner/admin/coo/super_admin (см.
- * `RbacService.canViewOperationsDashboard`). Manager → 403 forbidden_role.
- */
 @ApiTags('dashboard-operations')
 @Controller('api/v1/dashboard/operations')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -185,9 +173,6 @@ export class OperationsDashboardController {
   async capacity(
     @CurrentOrg() tenantId: string | undefined,
     @Req() req: Request,
-    // Tracker Project Overview Wave 2 (2026-05-27) — параметр принят для
-    // совместимости с фронтом-партнёром; внутри `getCapacity` пока не
-    // используется (см. ApiOperation выше).
     @Query('projectId') _projectId?: string,
   ): Promise<OperationsDashboardCapacityListDto> {
     const uid = this.requireUser(req);
@@ -196,10 +181,6 @@ export class OperationsDashboardController {
     return this.svc.getCapacity({ tenantId: tenantId! });
   }
 
-  /**
-   * SBA β-8.1 — Температура команды за окно (default 7 дней).
-   * Доступ — coo/owner/admin (как остальные эндпоинты дашборда).
-   */
   @Get('team-temperature')
   @ApiOperation({
     summary: 'COO operations dashboard — температура команды (зелёный/жёлтый/красный)',
@@ -216,11 +197,6 @@ export class OperationsDashboardController {
     return this.svc.getTeamTemperature({ tenantId: tenantId!, days: q.days });
   }
 
-  /**
-   * Pulse Wave 2.3 — Кто из сотрудников ещё не отчитался за сегодня (или
-   * за указанный `?date=YYYY-MM-DD`). Используется виджетом «Не отчитались
-   * сегодня» на дашборде операций.
-   */
   @Get('missing-checkins')
   @ApiOperation({
     summary:
@@ -234,19 +210,10 @@ export class OperationsDashboardController {
     const uid = this.requireUser(req);
     this.requireTenant(tenantId);
     await this.requireAccess(uid, tenantId!);
-    const target =
-      date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : this.todayMsk();
+    const target = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : this.todayMsk();
     return this.svc.getMissingCheckIns({ tenantId: tenantId!, date: target });
   }
 
-  /**
-   * ТЗ Ф8.7 (cabinet-redesign-rhythms) — Дисциплина чек-инов за окно
-   * `?from=&to=` (default — текущая неделя: понедельник..сегодня МСК).
-   *
-   * Агрегат «ожидаемо / сдано / пропущено» по утренним и вечерним чек-инам —
-   * суммарно и по людям. `enabled=false` (флаг `DAILY_CHECKIN_ENABLED` OFF) →
-   * totals по нулям, причина «нет данных» на фронте. Доступ — owner/admin/coo.
-   */
   @Get('checkin-discipline')
   @ApiOperation({
     summary:
@@ -266,11 +233,6 @@ export class OperationsDashboardController {
     return this.svc.getCheckinDiscipline({ tenantId: tenantId!, from, to });
   }
 
-  /**
-   * Pulse Wave 2.3 — «Зависшие» задачи трекера (без активности > 5 дней
-   * или с просроченным `dueDate` без `completedAt`). Используется виджетом
-   * «Зависли задачи» на дашборде операций.
-   */
   @Get('stale-issues')
   @ApiOperation({
     summary:
@@ -290,20 +252,11 @@ export class OperationsDashboardController {
     return this.svc.getStaleIssues({
       tenantId: tenantId!,
       staleDays:
-        parsedStale !== undefined && Number.isFinite(parsedStale)
-          ? parsedStale
-          : undefined,
-      limit:
-        parsedLimit !== undefined && Number.isFinite(parsedLimit)
-          ? parsedLimit
-          : undefined,
+        parsedStale !== undefined && Number.isFinite(parsedStale) ? parsedStale : undefined,
+      limit: parsedLimit !== undefined && Number.isFinite(parsedLimit) ? parsedLimit : undefined,
     });
   }
 
-  /**
-   * SBA β-8.2 — Открытые обещания за окно (default 14 дней).
-   * Доступ — coo/owner/admin (как остальные эндпоинты дашборда).
-   */
   @Get('open-commitments')
   @ApiOperation({
     summary: 'COO operations dashboard — открытые обещания (с именами)',
@@ -324,18 +277,9 @@ export class OperationsDashboardController {
     });
   }
 
-  /**
-   * TZ-1 Фаза 0 (daily-value-engine) — покрытие Telegram-привязкой.
-   *
-   * Сколько сотрудников (Person.relationship='employee', userId IS NOT NULL)
-   * имеют verified telegram-binding. `gatePassed` (покрытие ≥ 70%) — индикатор
-   * готовности дневного движка к выкату (без привязок чек-ин не доходит в ТГ).
-   * Доступ — owner/admin/coo (как остальные эндпоинты дашборда).
-   */
   @Get('binding-coverage')
   @ApiOperation({
-    summary:
-      'COO operations dashboard — покрытие сотрудников Telegram-привязкой (gate ≥ 70%)',
+    summary: 'COO operations dashboard — покрытие сотрудников Telegram-привязкой (gate ≥ 70%)',
   })
   async bindingCoverage(
     @CurrentOrg() tenantId: string | undefined,
@@ -360,9 +304,7 @@ export class OperationsDashboardController {
       select: { userId: true },
     });
     const totalPersons = employees.length;
-    const userIds = employees
-      .map((e) => e.userId)
-      .filter((u): u is string => u !== null);
+    const userIds = employees.map((e) => e.userId).filter((u): u is string => u !== null);
 
     let boundPersons = 0;
     if (userIds.length > 0) {
@@ -380,10 +322,7 @@ export class OperationsDashboardController {
       boundPersons = new Set(bound.map((b) => b.userId)).size;
     }
 
-    const coveragePercent =
-      totalPersons > 0
-        ? Math.round((boundPersons / totalPersons) * 100)
-        : 0;
+    const coveragePercent = totalPersons > 0 ? Math.round((boundPersons / totalPersons) * 100) : 0;
     return {
       totalPersons,
       boundPersons,
@@ -392,17 +331,9 @@ export class OperationsDashboardController {
     };
   }
 
-  /**
-   * TZ-1 Фаза 1 (daily-value-engine) — Радар клиентов под риском.
-   *
-   * Список снимков `CustomerRiskSnapshot` за последний день с drill-down
-   * (signalCounts, topBlocks, динамика). Фильтр `?level=critical|warning|ok`,
-   * `?limit=` (1..100, default 20). Доступ — owner/admin/coo.
-   */
   @Get('customer-risk')
   @ApiOperation({
-    summary:
-      'COO operations dashboard — клиенты под риском (топ по riskScore, drill-down)',
+    summary: 'COO operations dashboard — клиенты под риском (топ по riskScore, drill-down)',
   })
   async customerRiskList(
     @CurrentOrg() tenantId: string | undefined,
@@ -416,17 +347,9 @@ export class OperationsDashboardController {
     return this.customerRisk.listForTenant({ tenantId: tenantId!, query: q });
   }
 
-  /**
-   * TZ-1 Фаза 3.A (daily-value-engine) — хронические блокеры.
-   *
-   * Накопленные кластеры блокеров из `BlockerSynthesis`: новые/повторяющиеся
-   * (default — `new`+`recurring`) или конкретный `?status=`. Сортировка по
-   * бизнес-удару. `?limit=` (1..100, default 20). Доступ — owner/admin/coo.
-   */
   @Get('blockers/chronic')
   @ApiOperation({
-    summary:
-      'COO operations dashboard — хронические/открытые блокеры (накопительный синтез)',
+    summary: 'COO operations dashboard — хронические/открытые блокеры (накопительный синтез)',
   })
   async blockersChronic(
     @CurrentOrg() tenantId: string | undefined,
@@ -445,17 +368,9 @@ export class OperationsDashboardController {
     return { items };
   }
 
-  /**
-   * TZ-1 Фаза 3.B (daily-value-engine) — пропускная способность решений.
-   *
-   * Агрегат «% решений, доведённых до actualOutcomes» за окно `?from=&to=`
-   * (default — последние 90 дней). `count` всегда в паре с «% доведённых»
-   * (Р7). Доступ — owner/admin/coo.
-   */
   @Get('decisions/throughput')
   @ApiOperation({
-    summary:
-      'COO operations dashboard — % решений, доведённых до результата (за окно)',
+    summary: 'COO operations dashboard — % решений, доведённых до результата (за окно)',
   })
   async decisionsThroughput(
     @CurrentOrg() tenantId: string | undefined,
@@ -482,16 +397,9 @@ export class OperationsDashboardController {
     };
   }
 
-  /**
-   * TZ-1 Фаза 3.B (daily-value-engine) — застрявшие решения.
-   *
-   * Решения с `implementationStatus='stalled'` (0 задач + нет результатов
-   * старше N дней). Доступ — owner/admin/coo.
-   */
   @Get('decisions/stalled')
   @ApiOperation({
-    summary:
-      'COO operations dashboard — решения без движения (stalled, контролёр внедрения)',
+    summary: 'COO operations dashboard — решения без движения (stalled, контролёр внедрения)',
   })
   async decisionsStalled(
     @CurrentOrg() tenantId: string | undefined,
@@ -506,17 +414,9 @@ export class OperationsDashboardController {
     return { items };
   }
 
-  /**
-   * TZ-1 Фаза 4.C (daily-value-engine) — знание-под-риском × уход человека.
-   *
-   * Последний снимок `KnowledgeAtRiskSnapshot` per category (critical → warning
-   * → ok). Доступ — owner/admin/coo. Носителю эти данные НЕ показываются —
-   * только руководству (этика).
-   */
   @Get('knowledge-at-risk')
   @ApiOperation({
-    summary:
-      'COO operations dashboard — знание-под-риском × уход человека (bus-factor × burnout)',
+    summary: 'COO operations dashboard — знание-под-риском × уход человека (bus-factor × burnout)',
   })
   async knowledgeAtRiskList(
     @CurrentOrg() tenantId: string | undefined,
@@ -528,12 +428,6 @@ export class OperationsDashboardController {
     return this.knowledgeAtRisk.listForTenant({ tenantId: tenantId! });
   }
 
-  /**
-   * ТЗ coo-orphan-agents Ф7 — перегруз ответственностью.
-   *
-   * Последний PromiseNetworkSnapshot → accumulators (на ком висит много
-   * обещаний). Доступ — owner/admin/coo.
-   */
   @Get('promise-network')
   @ApiOperation({
     summary:
@@ -549,17 +443,9 @@ export class OperationsDashboardController {
     return this.promiseNetwork.getLatest({ tenantId: tenantId! });
   }
 
-  /**
-   * TZ-1 Фаза 4.D (daily-value-engine) — загрузка команд.
-   *
-   * Агрегат `Appointment.loadPercent` по отделам (avg/max + перегруз/недогруз
-   * по AdminSetting-порогам). `empty=true`, если loadPercent нигде не заполнен.
-   * Доступ — owner/admin/coo.
-   */
   @Get('team-capacity')
   @ApiOperation({
-    summary:
-      'COO operations dashboard — загрузка команд (перегруз/недогруз по отделам)',
+    summary: 'COO operations dashboard — загрузка команд (перегруз/недогруз по отделам)',
   })
   async teamCapacityList(
     @CurrentOrg() tenantId: string | undefined,
@@ -569,23 +455,15 @@ export class OperationsDashboardController {
     this.requireTenant(tenantId);
     await this.requireAccess(uid, tenantId!);
     const result = await this.teamCapacity.aggregate({ tenantId: tenantId! });
-    // ТЗ-2 Ф2 — наблюдаемость отдачи виджета загрузки команд.
     this.metrics.incCooTeamCapacityWidgetServed({
       tenantTop: resolveOperationsTenantTop(tenantId!),
     });
     return result;
   }
 
-  /**
-   * TZ-1 Фаза 4.E (daily-value-engine) — активация новичков.
-   *
-   * Новые сотрудники (по `Person.createdAt`, окно 2×silent_days) с флагом
-   * stalled (0 активности за `onboarding.silent_days`). Доступ — owner/admin/coo.
-   */
   @Get('onboarding-ramp')
   @ApiOperation({
-    summary:
-      'COO operations dashboard — активация новичков (молчащие новички)',
+    summary: 'COO operations dashboard — активация новичков (молчащие новички)',
   })
   async onboardingRampList(
     @CurrentOrg() tenantId: string | undefined,
@@ -600,17 +478,9 @@ export class OperationsDashboardController {
     });
   }
 
-  /**
-   * TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap.
-   *
-   * Снимок `ValueRecapSnapshot` за `?period=YYYY-MM` (default — прошлый месяц).
-   * Если снимка нет — строит его на лету (idempotent build). Доступ —
-   * owner/admin/coo. Только твёрдые данные (Р6), count в паре с «% доведённых».
-   */
   @Get('value-recap')
   @ApiOperation({
-    summary:
-      'COO — месячная витрина «что Кора сделала за месяц» (снятая рутина + soft-слой)',
+    summary: 'COO — месячная витрина «что Кора сделала за месяц» (снятая рутина + soft-слой)',
   })
   async valueRecapGet(
     @CurrentOrg() tenantId: string | undefined,
@@ -621,8 +491,6 @@ export class OperationsDashboardController {
     const uid = this.requireUser(req);
     this.requireTenant(tenantId);
     await this.requireAccess(uid, tenantId!);
-    // Дефолт-период (Ф3 редизайн): последний месяц С ДАННЫМИ, иначе прошлый
-    // календарный. Явный ?period= имеет приоритет и не ломается.
     const periodYm =
       q.period ??
       (await this.valueRecap.getLatestPeriodWithData(tenantId!)) ??
@@ -634,7 +502,6 @@ export class OperationsDashboardController {
     });
     if (existing) return existing;
 
-    // Нет снимка → строим на лету (идемпотентно). Возвращаем свежий.
     const built = await this.valueRecap.build({ tenantId: tenantId!, periodYm });
     const fresh = await this.valueRecap.getSnapshot({
       tenantId: tenantId!,
@@ -652,9 +519,6 @@ export class OperationsDashboardController {
     );
   }
 
-  /**
-   * TZ-1 Фаза 5 — пометить витрину открытой (фиксация openedAt).
-   */
   @Post('value-recap/:id/opened')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'COO — отметить месячную витрину открытой' })
@@ -676,17 +540,9 @@ export class OperationsDashboardController {
     return { ok: true, opened };
   }
 
-  /**
-   * TZ-1 Фаза 5 + Ф3 редизайн — экспорт витрины. `format=slides` (default) —
-   * структурный набор печатаемых слайдов (заголовок + буллеты); `format=json`
-   * — сырой payload; `format=pptx` — готовая PPTX-презентация поверх slides-JSON
-   * (binary stream). PDF серверно НЕ делаем — фронт печатает браузером.
-   * Доступ — owner/admin/coo.
-   */
   @Get('value-recap/:id/export')
   @ApiOperation({
-    summary:
-      'COO — экспорт месячной витрины (slides=слайды / json=payload / pptx=презентация)',
+    summary: 'COO — экспорт месячной витрины (slides=слайды / json=payload / pptx=презентация)',
   })
   async valueRecapExport(
     @CurrentOrg() tenantId: string | undefined,
@@ -732,19 +588,9 @@ export class OperationsDashboardController {
     };
   }
 
-  /**
-   * ТЗ-2 Ф6.A (daily-value-dashboards) — Здоровье портфеля целей.
-   *
-   * Интегральный балл 0..100 + шкала/уровень, разрезы по статусу движения и по
-   * MoSCoW-приоритету, построчный список целей, дельта к прошлой неделе.
-   * Считается на лету за `?date=YYYY-MM-DD` (default — сегодня МСК); cron лишь
-   * persist'ит снимок для дельты. Гейт `operations.portfolio_health.enabled`
-   * (kill-switch, ON). OFF → пустой каркас. Доступ — owner/admin/coo.
-   */
   @Get('portfolio-health')
   @ApiOperation({
-    summary:
-      'COO operations dashboard — здоровье портфеля целей (балл 0..100 + MoSCoW-разрез)',
+    summary: 'COO operations dashboard — здоровье портфеля целей (балл 0..100 + MoSCoW-разрез)',
   })
   async portfolioHealthGet(
     @CurrentOrg() tenantId: string | undefined,
@@ -763,12 +609,10 @@ export class OperationsDashboardController {
     );
     if (!enabled) return this.emptyPortfolioHealth();
 
-    const dateLocal =
-      q.date && /^\d{4}-\d{2}-\d{2}$/.test(q.date) ? q.date : this.todayMsk();
+    const dateLocal = q.date && /^\d{4}-\d{2}-\d{2}$/.test(q.date) ? q.date : this.todayMsk();
     return this.portfolioHealth.compute({ tenantId: tenantId!, dateLocal });
   }
 
-  /** Пустой каркас здоровья портфеля (флаг OFF). */
   private emptyPortfolioHealth(): PortfolioHealthDto {
     return {
       healthScore: 0,
@@ -792,34 +636,21 @@ export class OperationsDashboardController {
     };
   }
 
-  /** Прошлый месяц YYYY-MM (default для value-recap). */
   private previousMonth(): string {
     const now = new Date();
     const cur = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
     return shiftPeriod(cur, -1);
   }
 
-  /**
-   * Pulse Wave 2.3 — текущая дата в МСК (UTC+3) в формате YYYY-MM-DD.
-   * Используется как default для `?date=` в `missing-checkins`. Не зависит
-   * от системной таймзоны контейнера (в проде backend может стоять и в
-   * UTC, и в Europe/Moscow).
-   */
   private todayMsk(): string {
     const now = new Date();
     const msk = new Date(now.getTime() + 3 * 60 * 60 * 1000);
     return msk.toISOString().slice(0, 10);
   }
 
-  /**
-   * ТЗ Ф8.7 — понедельник текущей недели в МСК (UTC+3), формат YYYY-MM-DD.
-   * Default `from` для виджета дисциплины чек-инов. Неделя начинается с
-   * понедельника (ISO). Не зависит от системной таймзоны контейнера.
-   */
   private mondayOfCurrentWeekMsk(): string {
     const now = new Date();
     const msk = new Date(now.getTime() + 3 * 60 * 60 * 1000);
-    // getUTCDay: 0=вс..6=сб. Сдвиг до понедельника (вс → −6, иначе → 1−day).
     const day = msk.getUTCDay();
     const diff = day === 0 ? -6 : 1 - day;
     const monday = new Date(msk.getTime() + diff * 24 * 60 * 60 * 1000);

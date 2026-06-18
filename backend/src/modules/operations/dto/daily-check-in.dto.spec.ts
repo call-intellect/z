@@ -6,13 +6,6 @@ import {
   type DailyCheckInDto,
 } from './daily-check-in.dto';
 
-/**
- * SBA β-8.1 — фильтр настроения по роли (см. sub-ТЗ §10).
- *
- * Поле `sentiment*` отдаётся только ролям `coo / owner / admin / super_admin`.
- * Для остальных (включая `member` и `null`) — поля убираются из ответа
- * на уровне маппера, чтобы не зависеть от ошибки в RBAC-конфиге.
- */
 describe('stripSentimentForRole', () => {
   function buildDto(): DailyCheckInDto {
     return {

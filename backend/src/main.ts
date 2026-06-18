@@ -14,33 +14,18 @@ import { GlobalZodValidationPipe } from './common/pipes/zod-validation.pipe';
 import { DbLoggerBridge } from './modules/logging/db-logger.bridge';
 
 async function bootstrap(): Promise<void> {
-  // bodyParser: false — собственный JSON-парсер с `verify`, который сохраняет
-  // сырой Buffer тела в `req.rawBody` (нужно для HMAC-подписей Crossmark и
-  // для верификации LiveKit-вебхуков). Парсинг `req.body` остаётся прежним.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
-    // Буферизуем bootstrap-логи и заменяем логгер на мост Nest Logger → БД ниже.
     bufferLogs: true,
   });
 
-  // Мост технического логирования: все `this.logger.*` по приложению (включая
-  // воркеры/кроны) дублируются в БД (SystemLog). См. db-logger.bridge.ts.
   app.useLogger(app.get(DbLoggerBridge));
 
-  // Tochka шлёт webhook JWT-строкой (Content-Type: application/jose / text/plain
-  // / application/x-www-form-urlencoded). Подключаем express.text() ТОЛЬКО для
-  // webhook-эндпоинта Точки, до общего express.json() — чтобы JWT-строка
-  // долетела в @Body() как string. См. ТЗ billing-tochka-referral-dadata-z §16.1.
-  app.use(
-    '/api/v1/internal/billing/provider-events',
-    express.text({ type: '*/*', limit: '1mb' }),
-  );
+  app.use('/api/v1/internal/billing/provider-events', express.text({ type: '*/*', limit: '1mb' }));
 
   app.use(
     express.json({
       limit: '1mb',
-      // LiveKit шлёт вебхуки с Content-Type: application/webhook+json — без этого
-      // express.json его не парсит, rawBody не сохраняется и sha256-проверка падает.
       type: ['application/json', 'application/webhook+json'],
       verify: (req, _res, buf) => {
         (req as unknown as { rawBody?: Buffer }).rawBody = Buffer.from(buf);
@@ -51,7 +36,6 @@ async function bootstrap(): Promise<void> {
 
   const cfg = app.get(TypedConfigService);
 
-  // ── базовая безопасность ────────────────────────────────────────────────
   app.use(cookieParser());
   app.use(
     helmet({
@@ -59,7 +43,6 @@ async function bootstrap(): Promise<void> {
         ? {
             directives: {
               defaultSrc: [`'self'`],
-              // 'unsafe-inline' нужен для inline-скриптов Next.js RSC.
               scriptSrc: [`'self'`, `'unsafe-inline'`],
               styleSrc: [`'self'`, `'unsafe-inline'`],
               imgSrc: [`'self'`, 'blob:', 'data:', 'https:'],
@@ -77,13 +60,10 @@ async function bootstrap(): Promise<void> {
           }
         : false,
       crossOriginEmbedderPolicy: false,
-      // HSTS включаем только в prod (за TLS-терминатором nginx).
       strictTransportSecurity: cfg.runtime.isProduction
         ? { maxAge: 63072000, includeSubDomains: true, preload: false }
         : false,
-      // X-Frame-Options: DENY — двойная защита помимо CSP frame-ancestors.
       frameguard: { action: 'deny' },
-      // X-Content-Type-Options: nosniff — включается по умолчанию, явно.
       noSniff: true,
     }),
   );
@@ -93,16 +73,10 @@ async function bootstrap(): Promise<void> {
     credentials: true,
   });
 
-  // ── глобальные пайпы ───────────────────────────────────────────────────
-  // AllExceptionsFilter регистрируется через APP_FILTER в AppModule,
-  // чтобы получить через DI PinoLogger.
   app.useGlobalPipes(new GlobalZodValidationPipe());
 
-  // ── Swagger ─────────────────────────────────────────────────────────────
-  // Swagger включаем только в dev. В prod защищается basic-auth middleware'ом.
   if (!cfg.runtime.isProduction) {
     try {
-      // Internal API — все controllers (cookie + bearer auth).
       const swaggerConfig = new DocumentBuilder()
         .setTitle('Z Backend API')
         .setDescription('Z — память компании. Backend API. MVP-вертикаль — AI-встречи на LiveKit.')
@@ -115,13 +89,9 @@ async function bootstrap(): Promise<void> {
         swaggerOptions: { persistAuthorization: true },
       });
 
-      // Public REST API (M3c) — отдельный документ, только endpoints под
-      // `/api/public/v1`. Предназначен для внешних интеграций по API-ключам.
       const publicSwaggerConfig = new DocumentBuilder()
         .setTitle('Z Public API')
-        .setDescription(
-          'Public REST API. Авторизация: Bearer <API key из /api/v1/api-keys>.',
-        )
+        .setDescription('Public REST API. Авторизация: Bearer <API key из /api/v1/api-keys>.')
         .setVersion('1.0.0')
         .addBearerAuth({
           type: 'http',
@@ -132,16 +102,12 @@ async function bootstrap(): Promise<void> {
         .build();
       const publicDocument = SwaggerModule.createDocument(app, publicSwaggerConfig, {
         include: [],
-        // Включаем только controllers под `/api/public/v1`.
         deepScanRoutes: true,
         operationIdFactory: (controllerKey: string, methodKey: string) =>
           `${controllerKey}_${methodKey}`,
       });
-      // Фильтруем paths, оставляя только публичные.
       publicDocument.paths = Object.fromEntries(
-        Object.entries(publicDocument.paths).filter(([path]) =>
-          path.startsWith('/api/public/v1'),
-        ),
+        Object.entries(publicDocument.paths).filter(([path]) => path.startsWith('/api/public/v1')),
       );
       SwaggerModule.setup('api/public/v1/docs', app, publicDocument, {
         swaggerOptions: { persistAuthorization: true },
@@ -153,18 +119,14 @@ async function bootstrap(): Promise<void> {
     }
   }
 
-  // ── graceful shutdown ───────────────────────────────────────────────────
   app.enableShutdownHooks();
 
-  // ── запуск ──────────────────────────────────────────────────────────────
   await app.listen(cfg.port);
   const url = await app.getUrl();
   new NestLogger('Bootstrap').log(`Application is running on: ${url}`);
 }
 
 bootstrap().catch((err: unknown) => {
-  // Если до получения логгера упали — пишем в stderr.
-   
   console.error('[bootstrap] Не удалось запустить приложение:', err);
   process.exit(1);
 });

@@ -1,8 +1,5 @@
 import { z } from 'zod';
 
-/**
- * Метка трекера. `projectId=null` → глобальная (на уровне Org).
- */
 export const CreateLabelSchema = z
   .object({
     name: z.string().min(1).max(80),

@@ -1,6 +1,6 @@
 # Runbook — Outbound DataClass Gating (W4.3 KC-Temporal)
 
-> **Codename:** KC-Temporal W4.3 (см. `plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md`).
+> **Codename:** KC-Temporal W4.3 (см. `plans/archive/2026-05-25-knowledge-core-temporal-and-graph-quality.md`).
 > **Источник правды по правилам:** `docs/policies/dataclass-policy-v1.md`.
 > **Owner:** @sergrv80.
 
@@ -146,9 +146,9 @@ bun run scripts/patch-channel-binding-defaults.ts            # apply
 
 - **LLM-провайдеры** — не gating'уются в W4.3 (решение №8: «пока всё можно
   отправлять, отдельно решу»). Поле `LlmProvider.maxDataClass` не добавлено.
-- **Prometheus-alert rule** — определение алерта в `infra/prometheus/alerts.yml`
-  делается командой infra (не входит в W4.3 backend-scope). Метрика собирается,
-  алерт нужно поднять отдельно.
+- **Prometheus-alert rule** — метрика собирается (backend `/metrics`), но alert-rule
+  не заведён: in-repo конфиг мониторинга (`infra/prometheus/`) удалён 2026-06-17,
+  алерт поднимается командой infra при настройке мониторинг-VM.
 - **Edit floors из UI** — `/admin/policy/dataclass` сейчас read-only.
   Правка через `/admin/settings` с ключом `dataclass_policy:floors`.
 

@@ -1,15 +1,5 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
-import type {
-  Prisma,
-  ProcessTemplate,
-  ProcessTemplateVersion,
-} from '@prisma/client';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import type { Prisma, ProcessTemplate, ProcessTemplateVersion } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type {
@@ -31,23 +21,6 @@ import type {
 import { CrossFunctionalDetectorService } from './cross-functional-detector.service';
 import { ProcessTemplateCompletenessService } from './process-template-completeness.service';
 
-/**
- * SBA α-7 wave 2 — ProcessTemplateService.
- *
- * CRUD + versioning для `ProcessTemplate` (immutable snapshots версий).
- * Любое обновление `definition` создаёт новую `ProcessTemplateVersion` с
- * монотонно возрастающим `version`. `currentVersionId` указывает на актуальную
- * версию; активация — отдельным методом (после куратор-review).
- *
- * Decision §3.2 — versioning ProcessTemplateVersion immutable. Перенос
- * DecisionPoint'ов на новую версию — обязанность caller'а (UI / extraction),
- * сервис только хранит definition в JSON.
- *
- * Decision §3.4 — DELETE = soft delete (status='archived'). Hard-delete
- * требует `manage` action (super_admin bypass).
- *
- * Все методы кидают `BadRequest` / `NotFound` с сообщениями на русском.
- */
 @Injectable()
 export class ProcessTemplateService {
   private readonly logger = new Logger(ProcessTemplateService.name);
@@ -59,8 +32,6 @@ export class ProcessTemplateService {
     @Inject(CrossFunctionalDetectorService)
     private readonly crossFunctional: CrossFunctionalDetectorService,
   ) {}
-
-  // ─────────────────────────── list ─────────────────────────────────
 
   async list(args: {
     tenantId: string;
@@ -81,10 +52,7 @@ export class ProcessTemplateService {
       where.category = q.category;
     }
     if (q.ownerEntityId) {
-      where.OR = [
-        { ownerRoleId: q.ownerEntityId },
-        { ownerPersonId: q.ownerEntityId },
-      ];
+      where.OR = [{ ownerRoleId: q.ownerEntityId }, { ownerPersonId: q.ownerEntityId }];
     }
     if (q.q) {
       const contains = q.q;
@@ -105,7 +73,6 @@ export class ProcessTemplateService {
       this.prisma.processTemplate.count({ where }),
     ]);
 
-    // Подгружаем количество steps/dp/handoffs одним батчем для отображаемых строк.
     const ids = rows.map((r) => r.id);
     const [dpCounts, handoffCounts, currentVersionsMap] = await Promise.all([
       this.groupCountByTemplateId({
@@ -118,16 +85,12 @@ export class ProcessTemplateService {
         ids,
       }),
       this.loadCurrentVersionsMap({
-        ids: rows
-          .map((r) => r.currentVersionId)
-          .filter((x): x is string => !!x),
+        ids: rows.map((r) => r.currentVersionId).filter((x): x is string => !!x),
       }),
     ]);
 
     let items: ProcessTemplateListItemDto[] = rows.map((r) => {
-      const cv = r.currentVersionId
-        ? currentVersionsMap.get(r.currentVersionId) ?? null
-        : null;
+      const cv = r.currentVersionId ? (currentVersionsMap.get(r.currentVersionId) ?? null) : null;
       const definition = this.safeDefinition(cv?.definitionJson);
       return this.toListItem({
         template: r,
@@ -150,13 +113,10 @@ export class ProcessTemplateService {
     };
   }
 
-  // ─────────────────────────── create / get / update / delete ───────
-
   async create(args: {
     tenantId: string;
     body: CreateProcessTemplateBody;
   }): Promise<ProcessTemplateDetailDto> {
-    // Проверяем уникальность (tenantId, name).
     const dup = await this.prisma.processTemplate.findFirst({
       where: {
         tenantId: args.tenantId,
@@ -192,7 +152,6 @@ export class ProcessTemplateService {
       tenantId: args.tenantId,
       templateId: created.id,
     });
-    // SBA γ-3 — cross-functional детектор (best-effort).
     await this.crossFunctional.recalculateAndPersist({
       tenantId: args.tenantId,
       templateId: created.id,
@@ -200,35 +159,31 @@ export class ProcessTemplateService {
     return this.detail({ tenantId: args.tenantId, id: created.id });
   }
 
-  async detail(args: {
-    tenantId: string;
-    id: string;
-  }): Promise<ProcessTemplateDetailDto> {
+  async detail(args: { tenantId: string; id: string }): Promise<ProcessTemplateDetailDto> {
     const t = await this.prisma.processTemplate.findFirst({
       where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
     });
     if (!t) throw this.notFound(args.id);
 
-    const [currentVersion, decisionPoints, handoffsFrom, handoffsTo] =
-      await Promise.all([
-        t.currentVersionId
-          ? this.prisma.processTemplateVersion.findUnique({
-              where: { id: t.currentVersionId },
-            })
-          : Promise.resolve(null),
-        this.prisma.decisionPoint.findMany({
-          where: { tenantId: args.tenantId, templateId: t.id },
-          orderBy: { order: 'asc' },
-        }),
-        this.prisma.processHandoff.findMany({
-          where: { tenantId: args.tenantId, fromTemplateId: t.id },
-          orderBy: { createdAt: 'desc' },
-        }),
-        this.prisma.processHandoff.findMany({
-          where: { tenantId: args.tenantId, toTemplateId: t.id },
-          orderBy: { createdAt: 'desc' },
-        }),
-      ]);
+    const [currentVersion, decisionPoints, handoffsFrom, handoffsTo] = await Promise.all([
+      t.currentVersionId
+        ? this.prisma.processTemplateVersion.findUnique({
+            where: { id: t.currentVersionId },
+          })
+        : Promise.resolve(null),
+      this.prisma.decisionPoint.findMany({
+        where: { tenantId: args.tenantId, templateId: t.id },
+        orderBy: { order: 'asc' },
+      }),
+      this.prisma.processHandoff.findMany({
+        where: { tenantId: args.tenantId, fromTemplateId: t.id },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.processHandoff.findMany({
+        where: { tenantId: args.tenantId, toTemplateId: t.id },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
 
     const definition = this.safeDefinition(currentVersion?.definitionJson);
     const list = this.toListItem({
@@ -241,9 +196,7 @@ export class ProcessTemplateService {
     return {
       ...list,
       sourceBlockIds: t.sourceBlockIds,
-      currentVersion: currentVersion
-        ? this.toVersionDto(currentVersion)
-        : null,
+      currentVersion: currentVersion ? this.toVersionDto(currentVersion) : null,
       decisionPoints: decisionPoints.map((dp) => this.toDecisionPointDto(dp)),
       handoffsFrom: handoffsFrom.map((h) => this.toHandoffDto(h)),
       handoffsTo: handoffsTo.map((h) => this.toHandoffDto(h)),
@@ -288,7 +241,6 @@ export class ProcessTemplateService {
       tenantId: args.tenantId,
       templateId: args.id,
     });
-    // SBA γ-3 — пересчёт cross-functional при изменении мета.
     await this.crossFunctional.recalculateAndPersist({
       tenantId: args.tenantId,
       templateId: args.id,
@@ -308,8 +260,6 @@ export class ProcessTemplateService {
     });
     return { ok: true };
   }
-
-  // ─────────────────────────── versions ─────────────────────────────
 
   async listVersions(args: {
     tenantId: string;
@@ -355,9 +305,7 @@ export class ProcessTemplateService {
           definitionJson: args.body.definition as unknown as Prisma.InputJsonValue,
           source: args.body.source,
           changeNote: args.body.changeNote ?? null,
-          publishedById: args.body.activateImmediately
-            ? args.publishedByUserId
-            : null,
+          publishedById: args.body.activateImmediately ? args.publishedByUserId : null,
           publishedAt: args.body.activateImmediately ? new Date() : null,
         },
       });
@@ -374,7 +322,6 @@ export class ProcessTemplateService {
       tenantId: args.tenantId,
       templateId: args.id,
     });
-    // SBA γ-3 — пересчёт cross-functional после новой version (steps могли поменяться).
     await this.crossFunctional.recalculateAndPersist({
       tenantId: args.tenantId,
       templateId: args.id,
@@ -422,7 +369,6 @@ export class ProcessTemplateService {
       tenantId: args.tenantId,
       templateId: args.id,
     });
-    // SBA γ-3 — пересчёт cross-functional после смены активной version.
     await this.crossFunctional.recalculateAndPersist({
       tenantId: args.tenantId,
       templateId: args.id,
@@ -430,17 +376,13 @@ export class ProcessTemplateService {
     return this.toVersionDto(updated);
   }
 
-  // ─────────────────────────── mappers ──────────────────────────────
-
   private toListItem(args: {
     template: ProcessTemplate;
     stepsCount: number;
     decisionPointsCount: number;
     handoffsCount: number;
   }): ProcessTemplateListItemDto {
-    const completeness = this.completeness.extractCompleteness(
-      args.template.metadata,
-    );
+    const completeness = this.completeness.extractCompleteness(args.template.metadata);
     return {
       id: args.template.id,
       name: args.template.name,
@@ -539,8 +481,6 @@ export class ProcessTemplateService {
     };
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
   private safeDefinition(value: unknown): ProcessTemplateDefinitionDto | null {
     if (!value || typeof value !== 'object') return null;
     const rec = value as Record<string, unknown>;
@@ -557,19 +497,13 @@ export class ProcessTemplateService {
   }
 
   private statusToDto(status: string): ProcessTemplateStatusDto {
-    if (
-      status === 'active' ||
-      status === 'deprecated' ||
-      status === 'archived'
-    ) {
+    if (status === 'active' || status === 'deprecated' || status === 'archived') {
       return status;
     }
     return 'active';
   }
 
-  private versionSourceToDto(
-    source: string,
-  ): ProcessTemplateVersionDto['source'] {
+  private versionSourceToDto(source: string): ProcessTemplateVersionDto['source'] {
     if (source === 'manual' || source === 'agent' || source === 'imported') {
       return source;
     }
@@ -647,18 +581,12 @@ export class ProcessTemplateService {
     ]);
     for (const r of from) {
       if (r.fromTemplateId) {
-        result.set(
-          r.fromTemplateId,
-          (result.get(r.fromTemplateId) ?? 0) + r._count._all,
-        );
+        result.set(r.fromTemplateId, (result.get(r.fromTemplateId) ?? 0) + r._count._all);
       }
     }
     for (const r of to) {
       if (r.toTemplateId) {
-        result.set(
-          r.toTemplateId,
-          (result.get(r.toTemplateId) ?? 0) + r._count._all,
-        );
+        result.set(r.toTemplateId, (result.get(r.toTemplateId) ?? 0) + r._count._all);
       }
     }
     return result;

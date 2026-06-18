@@ -1,6 +1,11 @@
-import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
-
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -17,26 +22,6 @@ import {
 import type { DialogTurn } from '../services/prompts/common';
 import { TranscriptCleanLlmRefineService } from '../services/transcript-clean-llm-refine.service';
 
-/**
- * Воркер `ai.transcript-clean` — sub-TZ D §7.
- *
- *   1. Idempotency: cleaningStatus='ready' → return.
- *   2. cleaningStatus='pending' + lock.
- *   3. Читает merged.json (turns + опц. roomChat) из S3 по `Transcript.mergedS3Url`.
- *   4. Уровень 1 (`DeterministicCleaner`) — всегда выполняется.
- *   5. Уровень 2 (`TranscriptCleanLlmRefine`) — опционально, по флагу
- *      `TRANSCRIPT_CLEANING_LLM_REFINE_ENABLED`. На полный отказ LLM
- *      работа НЕ падает — воркер всё равно завершается с уровнем 1.
- *   6. Собирает cleaned.json по формату §5 sub-TZ D и кладёт в S3
- *      по ключу `meetings/<id>/transcripts/cleaned.json`.
- *   7. Update `Transcript.cleanedS3Url / cleaningStatus='ready' / cleaningStats / cleanedAt`.
- *   8. Метрики prom-client (§10.1 sub-TZ D).
- *
- * ВАЖНО (зонтик Q6/Q8):
- *   - Оригинал `mergedS3Url` НИКОГДА не перезаписывается и не удаляется.
- *   - AI-pipeline (`ai.analyze`, `ai.chapters`, `ai.tasks`) продолжает читать
- *     `mergedS3Url` (этот воркер их не модифицирует).
- */
 @Injectable()
 export class TranscriptCleanWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TranscriptCleanWorker.name);
@@ -51,15 +36,19 @@ export class TranscriptCleanWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(S3Service) private readonly s3: S3Service,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-    @Inject(TranscriptCleanLlmRefineService) private readonly llmRefine: TranscriptCleanLlmRefineService,
+    @Inject(TranscriptCleanLlmRefineService)
+    private readonly llmRefine: TranscriptCleanLlmRefineService,
   ) {}
 
   onModuleInit(): void {
     this.worker = new Worker<AiJobData>(
       QUEUE_NAMES.TRANSCRIPT_CLEAN,
       async (job) =>
-        this.pipe.meeting(SystemLogPipeline.TRANSCRIPTION, 'ai.transcript-clean', job.data.meetingId, () =>
-          this.process(job),
+        this.pipe.meeting(
+          SystemLogPipeline.TRANSCRIPTION,
+          'ai.transcript-clean',
+          job.data.meetingId,
+          () => this.process(job),
         ),
       {
         connection: this.redis.client,
@@ -81,8 +70,6 @@ export class TranscriptCleanWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // ─────────────────────────── core ────────────────────────────────────────
-
   async process(job: Job<AiJobData>): Promise<void> {
     const { meetingId } = job.data;
     const startedAt = Date.now();
@@ -96,31 +83,24 @@ export class TranscriptCleanWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Idempotency: уже готов — выходим. ВОЗМОЖНОСТЬ re-run даёт ручной
-    // POST .../transcript/clean, который перед enqueue сбросит cleaningStatus
-    // на 'pending' (через MeetingsService — см. transcript-cleaning.service).
     if (meeting.transcript.cleaningStatus === 'ready' && meeting.transcript.cleanedS3Url) {
-      this.logger.log({ meetingId }, 'transcript-clean: уже ready — пропуск (idempotent)');
+      this.logger.debug({ meetingId }, 'transcript-clean: уже ready — пропуск (idempotent)');
       return;
     }
 
-    // 1. pending.
     await this.prisma.transcript.update({
       where: { id: meeting.transcript.id },
       data: { cleaningStatus: 'pending' },
     });
 
-    // 2. читаем merged.json.
     const merged = await this.s3.getJson<{
       turns: DialogTurn[];
     }>(meeting.transcript.mergedS3Url);
     const turns = merged.turns ?? [];
 
-    // 3. Уровень 1 — детерминистский.
     const segmentsInput = turnsToCleanerInput(turns);
     const phase1 = deterministicClean(segmentsInput);
 
-    // 4. Уровень 2 — опциональный LLM-refine.
     let finalSegments: CleanedSegment[] = phase1.segments;
     let llmRefineSkipped = !this.cfg.aiFeatures.transcriptCleaningLlmRefine;
     if (this.cfg.aiFeatures.transcriptCleaningLlmRefine) {
@@ -135,26 +115,18 @@ export class TranscriptCleanWorker implements OnModuleInit, OnModuleDestroy {
       llmRefineSkipped = refined.llmRefineSkipped;
     }
 
-    // 5. Пересчитаем stats после уровня 2 (LLM мог изменить cleanedText'ы).
     let charsAfter = 0;
     let fillerRemoved = phase1.stats.fillerWordsRemoved;
     let repeatsRemoved = phase1.stats.repeatsRemoved;
     let falseStartsRemoved = phase1.stats.falseStartsRemoved;
     for (const seg of finalSegments) {
       charsAfter += seg.cleanedText.length;
-      // Уровень 2 добавляет removed-items к seg.removed; пересчитываем,
-      // не теряя уже посчитанные на уровне 1.
-      // Уровень 1 уже учтён в phase1.stats; пересчёт нужен только если
-      // LLM добавил false-start'ы (которых уровень 1 не делал).
     }
-    // Для false-start считаем дополнительно из removed (уровень 1 их не делает).
     for (const seg of finalSegments) {
       for (const r of seg.removed) {
         if (r.type === 'false_start') falseStartsRemoved += 1;
       }
     }
-    // На случай, если LLM добавил filler/repeat сверх уровня 1 — также
-    // их посчитаем (отличаем от уровня 1 по сравнению с phase1).
     const lvl1RemovedIdxToCount = new Map<number, number>();
     for (const seg of phase1.segments) {
       lvl1RemovedIdxToCount.set(seg.originalIndex, seg.removed.length);
@@ -177,7 +149,6 @@ export class TranscriptCleanWorker implements OnModuleInit, OnModuleDestroy {
       llmRefineSkipped,
     } as const;
 
-    // 6. cleaned.json в S3.
     const cleanedKey = `meetings/${meetingId}/transcripts/cleaned.json`;
     const cleanedJson = {
       version: 1,
@@ -187,7 +158,6 @@ export class TranscriptCleanWorker implements OnModuleInit, OnModuleDestroy {
     };
     await this.s3.putJson(cleanedKey, cleanedJson);
 
-    // 7. Update Transcript.
     await this.prisma.transcript.update({
       where: { id: meeting.transcript.id },
       data: {
@@ -198,7 +168,6 @@ export class TranscriptCleanWorker implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    // 8. Метрики.
     const durationSec = (Date.now() - startedAt) / 1000;
     this.metrics.incTranscriptCleaningCompleted();
     this.metrics.observeTranscriptCleaningDuration(durationSec);
@@ -207,16 +176,14 @@ export class TranscriptCleanWorker implements OnModuleInit, OnModuleDestroy {
       this.metrics.observeTranscriptCleaningCharsReduced(reducedRatio);
     }
 
-    this.logger.log(
+    this.logger.debug(
       {
         meetingId,
         durationSec,
         charsBefore: stats.charsBefore,
         charsAfter: stats.charsAfter,
         reducedPct:
-          stats.charsBefore > 0
-            ? Math.round((1 - stats.charsAfter / stats.charsBefore) * 100)
-            : 0,
+          stats.charsBefore > 0 ? Math.round((1 - stats.charsAfter / stats.charsBefore) * 100) : 0,
         llmRefineSkipped,
       },
       'transcript-clean: успешно',

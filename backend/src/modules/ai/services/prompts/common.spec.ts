@@ -39,12 +39,8 @@ describe('withZPreamble', () => {
   });
 
   it('preamble упоминает Кора / русский / injection-guard', () => {
-    // 2026-05-29 ребренд Z → Кора: имя продукта в preamble — «Кора»
-    // (имя бренда Z сохранилось только в имени константы `Z_GLOBAL_PREAMBLE`
-    // и функции `withZPreamble`, что отражает внутренний код-неминг).
     expect(Z_GLOBAL_PREAMBLE).toContain('Кора');
     expect(Z_GLOBAL_PREAMBLE).toContain('русском');
-    // Ссылка на маркеры USER_DATA_BEGIN — защита от prompt-injection.
     expect(Z_GLOBAL_PREAMBLE).toContain('USER_DATA_BEGIN');
     expect(Z_GLOBAL_PREAMBLE.toLowerCase()).toContain('игнорируй');
   });
@@ -79,9 +75,6 @@ describe('withEdgeCasePolicy', () => {
     const once = withEdgeCasePolicy(SYSTEM);
     const twice = withEdgeCasePolicy(once);
     expect(twice).toContain(SYSTEM);
-    // Политика повторилась — это ожидаемо (helper не самоидемпотентен), но
-    // система не сломалась. Зафиксируем поведение тестом, чтобы случайная
-    // оптимизация в виде «уберём дубль» не прошла без явного решения.
     const count = twice.split(EDGE_CASE_POLICY).length - 1;
     expect(count).toBe(2);
   });
@@ -92,7 +85,6 @@ describe('withAsrNote', () => {
 
   it('дописывает ASR_NOTE в КОНЕЦ system-промпта', () => {
     const out = withAsrNote(SYSTEM);
-    // Нота — самый последний блок (cache-friendly суффикс).
     expect(out.endsWith(ASR_NOTE)).toBe(true);
     expect(out).toContain(ASR_NOTE);
     expect(out.indexOf(ASR_NOTE)).toBeGreaterThan(0);
@@ -100,7 +92,6 @@ describe('withAsrNote', () => {
 
   it('исходный system-префикс не изменён (cache-friendly)', () => {
     const out = withAsrNote(SYSTEM);
-    // Стабильный SYSTEM в начале — кэш промпта не ломается.
     expect(out.startsWith(SYSTEM)).toBe(true);
     expect(out).toBe(`${SYSTEM}\n\n${ASR_NOTE}`);
   });
@@ -117,9 +108,7 @@ describe('withAsrNote', () => {
 describe('formatOrgContextForPrompt', () => {
   it('пустой ctx → пустая строка', () => {
     expect(formatOrgContextForPrompt({})).toBe('');
-    expect(
-      formatOrgContextForPrompt({ projects: [], goals: [], people: [] }),
-    ).toBe('');
+    expect(formatOrgContextForPrompt({ projects: [], goals: [], people: [] })).toBe('');
   });
 
   it('проект с identifier → "name (identifier)", без identifier → name', () => {
@@ -147,9 +136,7 @@ describe('withOrgContextNote', () => {
 
   it('пустой ctx → возвращает system без изменений (no-op)', () => {
     expect(withOrgContextNote(SYSTEM, {})).toBe(SYSTEM);
-    expect(
-      withOrgContextNote(SYSTEM, { projects: [], goals: [], people: [] }),
-    ).toBe(SYSTEM);
+    expect(withOrgContextNote(SYSTEM, { projects: [], goals: [], people: [] })).toBe(SYSTEM);
   });
 
   it('непустой ctx → дописывает блок в КОНЕЦ, system-префикс не изменён', () => {
@@ -157,7 +144,6 @@ describe('withOrgContextNote', () => {
       projects: [{ identifier: 'DEV', name: 'Команда разработки' }],
       people: [{ name: 'Иванов Сергей' }],
     });
-    // Стабильный SYSTEM-префикс остаётся в начале (cache-friendly).
     expect(out.startsWith(SYSTEM)).toBe(true);
     expect(out).toContain('Контекст компании');
     expect(out).toContain('Проекты компании: Команда разработки (DEV).');
@@ -203,9 +189,7 @@ describe('applyInputGuards (A0.1)', () => {
       meetingDateIso: '2026-06-10',
     });
     expect(out.user.startsWith('meetingDateIso: 2026-06-10')).toBe(true);
-    expect(out.user.indexOf('meetingDateIso')).toBeLessThan(
-      out.user.indexOf(DATA_MARKER_OPEN),
-    );
+    expect(out.user.indexOf('meetingDateIso')).toBeLessThan(out.user.indexOf(DATA_MARKER_OPEN));
   });
 
   it('пустой user → не оборачивается в маркеры', () => {

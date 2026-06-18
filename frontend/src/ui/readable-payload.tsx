@@ -91,7 +91,7 @@ function renderValue(v: unknown): string {
 }
 
 export function ReadablePayload({ value }: { value: unknown }) {
-  if (value === null || value === undefined || typeof value !== 'object') {
+  if (value === null || value === undefined || typeof value !== "object") {
     return <p className="text-sm text-fg-secondary">{renderValue(value)}</p>;
   }
 

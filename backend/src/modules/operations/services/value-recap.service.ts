@@ -6,8 +6,6 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { ChatV2FeedbackService } from '../../chat-v2/services/chat-v2-feedback.service';
-// Чистая функция «мало данных» — импорт из dashboard-сервиса НЕ создаёт
-// зависимости модуля (берём только helper, не сам Injectable).
 import { reliabilityOrLowData } from '../../dashboard/services/commitment-reliability.service';
 import {
   buildValueRecapFallbackNarrative,
@@ -27,27 +25,10 @@ import {
   type ValueRecapTeam,
 } from './value-recap.scoring';
 
-/**
- * TZ-1 Фаза 5 (daily-value-engine) — ValueRecapService.
- *
- * Месячный агрегатор «что Кора сделала за месяц» (витрина владельцу). Ведущая
- * ось — твёрдые счётчики «снятой рутины» (из БД); второй слой — soft-цифры
- * «команда лучше» (с «оценка» + знаменателем). Дельта к прошлому месяцу.
- * baseline = первый снимок (без атрибуции продукту без контрольной группы).
- *
- * Честность (Р6/Р7) гарантируется кодом: `assembleValueRecapPayload` вызывает
- * `assertNoForbiddenMetricKeys` (₽/часы×ставка, было→стало, medianHoursToAnswer,
- * roiScore/alignment как KPI — запрещены). LLM — ТОЛЬКО на narrative поверх
- * посчитанных цифр (с детерминированным fallback).
- *
- * Переиспользует `getDecisionThroughput` (Ф3.B) и `getChatUsageStats` (Ф5
- * chat-feedback) — не дублирует логику.
- */
 @Injectable()
 export class ValueRecapService {
   private readonly logger = new Logger(ValueRecapService.name);
 
-  /** Code-fallback для `reliability.min_denominator` (как в dashboard). */
   private static readonly DEFAULT_MIN_DENOMINATOR = 3;
 
   constructor(
@@ -62,14 +43,6 @@ export class ValueRecapService {
     private readonly decisions: DecisionImplementationService,
   ) {}
 
-  // ──────────────────────────── build (cron / read) ───────────────────
-
-  /**
-   * Построить (или пересобрать) месячный value-recap. Идемпотентно — upsert по
-   * (tenantId, periodYm). Возвращает snapshot + payload.
-   *
-   * @param periodYm YYYY-MM месяца отчёта.
-   */
   async build(args: {
     tenantId: string;
     periodYm: string;
@@ -78,13 +51,10 @@ export class ValueRecapService {
     const now = args.now ?? new Date();
     const { from, to } = monthBounds(args.periodYm);
 
-    // 1. Твёрдые счётчики «снятой рутины» (из БД, без LLM).
     const routine = await this.computeRoutine(args.tenantId, from, to);
 
-    // 2. Soft-слой «команда лучше» (оценка + знаменатель).
     const team = await this.computeTeam({ tenantId: args.tenantId, from, to });
 
-    // 2.b. Список решений месяца со статусом доведения (Ф3 редизайн).
     const decisions = await this.computeDecisions({
       tenantId: args.tenantId,
       from,
@@ -92,14 +62,9 @@ export class ValueRecapService {
       now,
     });
 
-    // 3. Прошлый месяц — для дельты (baseline → null).
     const prevPeriod = shiftPeriod(args.periodYm, -1);
-    const previousRoutine = await this.loadPreviousRoutine(
-      args.tenantId,
-      prevPeriod,
-    );
+    const previousRoutine = await this.loadPreviousRoutine(args.tenantId, prevPeriod);
 
-    // 4. Narrative (LLM поверх цифр, с детерминированным fallback).
     const promptInput = this.buildPromptInput({
       periodYm: args.periodYm,
       routine,
@@ -108,7 +73,6 @@ export class ValueRecapService {
     });
     const narrative = await this.buildNarrative(args.tenantId, promptInput);
 
-    // 5. Сборка payload (assert честности — внутри).
     const payload = assembleValueRecapPayload({
       periodYm: args.periodYm,
       builtAt: now,
@@ -119,7 +83,6 @@ export class ValueRecapService {
       narrative,
     });
 
-    // 6. Upsert снимка (идемпотентно).
     const existing = await this.prisma.valueRecapSnapshot.findUnique({
       where: {
         tenantId_periodYm: { tenantId: args.tenantId, periodYm: args.periodYm },
@@ -137,7 +100,6 @@ export class ValueRecapService {
       },
       update: {
         payloadJson: payload as unknown as Prisma.InputJsonValue,
-        // deliveredAt/openedAt НЕ сбрасываем (доставка идемпотентна).
       },
       select: { id: true },
     });
@@ -160,11 +122,7 @@ export class ValueRecapService {
     };
   }
 
-  /** Прочитать готовый снимок (для эндпоинта). */
-  async getSnapshot(args: {
-    tenantId: string;
-    periodYm: string;
-  }): Promise<{
+  async getSnapshot(args: { tenantId: string; periodYm: string }): Promise<{
     id: string;
     periodYm: string;
     payload: ValueRecapPayload | null;
@@ -188,14 +146,7 @@ export class ValueRecapService {
     };
   }
 
-  /**
-   * Последний период (YYYY-MM), для которого уже построен снимок с payload.
-   * Используется как дефолт-период витрины «последний месяц С ДАННЫМИ»
-   * (Ф3 редизайн) вместо «всегда прошлый календарный месяц». NULL — снимков нет.
-   */
   async getLatestPeriodWithData(tenantId: string): Promise<string | null> {
-    // payloadJson — NOT NULL колонка (Json, не Json?): любой снимок уже несёт
-    // payload, отдельный фильтр на null не нужен. Берём максимальный period.
     const row = await this.prisma.valueRecapSnapshot.findFirst({
       where: { tenantId },
       orderBy: { periodYm: 'desc' },
@@ -204,11 +155,7 @@ export class ValueRecapService {
     return row?.periodYm ?? null;
   }
 
-  /** Прочитать снимок по id (для opened/export, scope по tenantId). */
-  async getById(args: {
-    tenantId: string;
-    id: string;
-  }): Promise<{
+  async getById(args: { tenantId: string; id: string }): Promise<{
     id: string;
     periodYm: string;
     payload: ValueRecapPayload | null;
@@ -230,14 +177,13 @@ export class ValueRecapService {
     };
   }
 
-  /** Пометить снимок открытым (idempotent — ставит openedAt один раз). */
   async markOpened(args: { tenantId: string; id: string }): Promise<boolean> {
     const row = await this.prisma.valueRecapSnapshot.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
       select: { id: true, openedAt: true },
     });
     if (!row) return false;
-    if (row.openedAt) return true; // уже открыт — не плодим метрику
+    if (row.openedAt) return true;
     await this.prisma.valueRecapSnapshot.update({
       where: { id: row.id },
       data: { openedAt: new Date() },
@@ -246,7 +192,6 @@ export class ValueRecapService {
     return true;
   }
 
-  /** Пометить снимок доставленным (push-first). */
   async markDelivered(id: string): Promise<void> {
     await this.prisma.valueRecapSnapshot.update({
       where: { id },
@@ -254,14 +199,7 @@ export class ValueRecapService {
     });
   }
 
-  // ──────────────────────────── compute parts ─────────────────────────
-
-  /** Твёрдые счётчики «снятой рутины» за окно (из БД, без LLM). */
-  private async computeRoutine(
-    tenantId: string,
-    from: Date,
-    to: Date,
-  ): Promise<ValueRecapRoutine> {
+  private async computeRoutine(tenantId: string, from: Date, to: Date): Promise<ValueRecapRoutine> {
     const [
       meetingsAutoProtocoled,
       tasksExtracted,
@@ -270,9 +208,6 @@ export class ValueRecapService {
       statusesCollected,
       ideasShipped,
     ] = await Promise.all([
-      // Встреча запротоколирована авто = есть AiResult, у Meeting той же Org,
-      // созданная в окне. Считаем через AiResult.meeting (надёжнее, чем
-      // nullable AiResult.tenantId).
       this.prisma.aiResult.count({
         where: {
           meeting: { tenantId, createdAt: { gte: from, lte: to } },
@@ -291,7 +226,6 @@ export class ValueRecapService {
           createdAt: { gte: from, lte: to },
         },
       }),
-      // Статусов собрано = завершённые чек-ины (человек ответил) в окне.
       this.prisma.dailyCheckIn.count({
         where: {
           tenantId,
@@ -302,7 +236,6 @@ export class ValueRecapService {
         where: {
           tenantId,
           status: 'shipped',
-          // shipped в окне — по statusChangedAt (когда довели), fallback updatedAt.
           OR: [
             { statusChangedAt: { gte: from, lte: to } },
             { statusChangedAt: null, updatedAt: { gte: from, lte: to } },
@@ -311,8 +244,6 @@ export class ValueRecapService {
       }),
     ]);
 
-    // Вопросов отвечено памятью с привязкой к источнику — grounding-proxy из
-    // агрегатора чата (org-scope). Переиспользуем getChatUsageStats (Ф5).
     const chat = await this.chatFeedback.getChatUsageStats({
       tenantId,
       from,
@@ -331,7 +262,6 @@ export class ValueRecapService {
     };
   }
 
-  /** Soft-слой «команда лучше» (оценка + знаменатель). */
   private async computeTeam(args: {
     tenantId: string;
     from: Date;
@@ -339,7 +269,6 @@ export class ValueRecapService {
   }): Promise<ValueRecapTeam> {
     const minDenom = await this.resolveMinDenominator();
 
-    // Надёжность обещаний за месяц (по commitmentDueDate в окне).
     const reliability = await this.computeReliability({
       tenantId: args.tenantId,
       from: args.from,
@@ -347,7 +276,6 @@ export class ValueRecapService {
       minDenom,
     });
 
-    // helped-rate чата (org-scope, скрыт при rated<min внутри агрегатора).
     const chat = await this.chatFeedback.getChatUsageStats({
       tenantId: args.tenantId,
       from: args.from,
@@ -355,7 +283,6 @@ export class ValueRecapService {
       scope: 'org',
     });
 
-    // throughput решений (Ф3.B — count В ПАРЕ с %).
     const throughput = await this.decisions.getDecisionThroughput({
       tenantId: args.tenantId,
       from: args.from,
@@ -387,11 +314,6 @@ export class ValueRecapService {
     };
   }
 
-  /**
-   * Список решений месяца со статусом доведения (Ф3 редизайн). Топ-N=10,
-   * отсортированы done→in_progress→stalled→not_started. Переиспользует
-   * DecisionImplementationService (не дублирует классификацию/окно).
-   */
   private async computeDecisions(args: {
     tenantId: string;
     from: Date;
@@ -413,12 +335,6 @@ export class ValueRecapService {
     }));
   }
 
-  /**
-   * Надёжность обещаний за месяц: kept/(kept+broken+overdue), скрыта при малом
-   * знаменателе. Дельта к предыдущему месяцу той же длины. Логика — как в
-   * dashboard CommitmentReliabilityService, но локально (компания-scope) чтобы
-   * не тянуть весь dashboard-модуль (избегаем circular dependency).
-   */
   private async computeReliability(args: {
     tenantId: string;
     from: Date;
@@ -429,7 +345,6 @@ export class ValueRecapService {
     const curDenom = cur.kept + cur.broken + cur.overdue;
     const percent = reliabilityOrLowData(cur.kept, curDenom, args.minDenom);
 
-    // Предыдущее окно той же длины.
     const lenMs = args.to.getTime() - args.from.getTime();
     const prevTo = new Date(args.from.getTime() - 1);
     const prevFrom = new Date(prevTo.getTime() - lenMs);
@@ -437,8 +352,7 @@ export class ValueRecapService {
     const prevDenom = prev.kept + prev.broken + prev.overdue;
     const prevPercent = reliabilityOrLowData(prev.kept, prevDenom, args.minDenom);
 
-    const delta =
-      percent !== null && prevPercent !== null ? percent - prevPercent : null;
+    const delta = percent !== null && prevPercent !== null ? percent - prevPercent : null;
 
     return { percent, denominator: curDenom, delta };
   }
@@ -474,7 +388,6 @@ export class ValueRecapService {
     return { kept, broken, overdue };
   }
 
-  /** Загрузить routine прошлого месяца из его снимка (для дельты). */
   private async loadPreviousRoutine(
     tenantId: string,
     prevPeriodYm: string,
@@ -489,8 +402,6 @@ export class ValueRecapService {
     const payload = parsePayload(prev.payloadJson);
     return payload?.routine ?? null;
   }
-
-  // ──────────────────────────── narrative (LLM) ───────────────────────
 
   private buildPromptInput(args: {
     periodYm: string;
@@ -523,8 +434,7 @@ export class ValueRecapService {
             meetingsAutoProtocoled:
               args.routine.meetingsAutoProtocoled - prev.meetingsAutoProtocoled,
             tasksExtracted: args.routine.tasksExtracted - prev.tasksExtracted,
-            decisionsExtracted:
-              args.routine.decisionsExtracted - prev.decisionsExtracted,
+            decisionsExtracted: args.routine.decisionsExtracted - prev.decisionsExtracted,
           }
         : null,
     };
@@ -558,8 +468,6 @@ export class ValueRecapService {
     }
   }
 
-  // ──────────────────────────── helpers ───────────────────────────────
-
   private async resolveMinDenominator(): Promise<number> {
     const v = await this.cfg.getDynamic<number>(
       'reliability.min_denominator',
@@ -572,7 +480,6 @@ export class ValueRecapService {
   }
 }
 
-/** Парс payload из JSON-колонки (защита от мусора). */
 function parsePayload(raw: Prisma.JsonValue): ValueRecapPayload | null {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     return raw as unknown as ValueRecapPayload;
@@ -580,7 +487,6 @@ function parsePayload(raw: Prisma.JsonValue): ValueRecapPayload | null {
   return null;
 }
 
-/** Границы месяца YYYY-MM в UTC: [first 00:00, last 23:59:59.999]. */
 export function monthBounds(periodYm: string): { from: Date; to: Date } {
   const m = periodYm.match(/^(\d{4})-(\d{2})$/);
   const year = m ? Number(m[1]) : new Date().getUTCFullYear();
@@ -590,7 +496,6 @@ export function monthBounds(periodYm: string): { from: Date; to: Date } {
   return { from, to };
 }
 
-/** Сдвиг YYYY-MM на N месяцев. */
 export function shiftPeriod(periodYm: string, months: number): string {
   const m = periodYm.match(/^(\d{4})-(\d{2})$/);
   const year = m ? Number(m[1]) : new Date().getUTCFullYear();

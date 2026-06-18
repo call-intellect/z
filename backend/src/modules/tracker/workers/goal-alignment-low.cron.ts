@@ -7,37 +7,10 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { ProbeService } from '../../probe/probe.service';
 
-/**
- * Wave 3 finishing (Sprint 10, 2026-05-24) — GoalAlignmentLowCron.
- *
- * Каждый понедельник в 06:00 UTC сканирует все активные Org'и. Для каждого
- * пользователя-сотрудника (Membership) считает задачи, созданные им
- * (`Issue.createdById = userId`) за последние 14 дней с `deletedAt=null`
- * и `completedAt>=today-14d` (т.е. фактически активность пользователя за
- * период). Если:
- *   - всего задач ≥ 5 (порог `MIN_ISSUES`)
- *   - из них без `goalId` ≥ 80% (порог `LOW_RATIO`)
- * — эмитим probe-event `goal_alignment_low` через `ProbeService.suggest`.
- *
- * Дедупликация: Redis SET NX EX 86400 (24 часа) по ключу
- * `goal_alignment_low:{userId}:{YYYY-MM-DD}` — защита от повторных эмитов
- * в случае ручного запуска cron'а в тот же день.
- *
- * Cron-литерал `'0 6 * * 1'` (понедельник 06:00 UTC). @nestjs/schedule
- * читает выражение литералом из декоратора (ENV-override невозможен).
- *
- * Тумблер `GOAL_ALIGNMENT_LOW_ENABLED=false` отключает работу без выгрузки
- * сервиса из DI. По умолчанию ВКЛ.
- *
- * Метрика: `probe_goal_alignment_low_emitted_total{tenant_top}` —
- * инкремент только при успешном `ok:true` от ProbeService (т.е. probe-event
- * фактически создан в БД, не задержан dedup/rate-limit/cold-start).
- */
-
 const DEFAULT_PERIOD_DAYS = 14;
 const DEFAULT_MIN_ISSUES = 5;
 const DEFAULT_LOW_RATIO = 0.8;
-const DEFAULT_DEDUP_TTL_SECONDS = 86_400; // 24 часа
+const DEFAULT_DEDUP_TTL_SECONDS = 86_400;
 
 function readEnabled(): boolean {
   const raw = String(process.env.GOAL_ALIGNMENT_LOW_ENABLED ?? '').toLowerCase();
@@ -77,7 +50,7 @@ export class GoalAlignmentLowCron {
     }
     try {
       const summary = await this.run();
-      this.logger.log(summary, 'goal-alignment-low: проход завершён');
+      this.logger.debug(summary, 'goal-alignment-low: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -86,10 +59,6 @@ export class GoalAlignmentLowCron {
     }
   }
 
-  /**
-   * Внутренний публичный метод — удобно вызывать из юнит-тестов с
-   * замоканными PrismaService/RedisService/ProbeService.
-   */
   async run(): Promise<{
     scannedOrgs: number;
     scannedUsers: number;
@@ -100,9 +69,7 @@ export class GoalAlignmentLowCron {
       where: { deletedAt: null },
       select: { id: true },
     });
-    const periodStart = new Date(
-      Date.now() - GoalAlignmentLowCron.PERIOD_DAYS * 24 * 3600 * 1000,
-    );
+    const periodStart = new Date(Date.now() - GoalAlignmentLowCron.PERIOD_DAYS * 24 * 3600 * 1000);
     const todayKey = this.todayKey();
 
     let scannedUsers = 0;
@@ -152,7 +119,6 @@ export class GoalAlignmentLowCron {
         }
         if (!candidate) continue;
 
-        // Dedup per user per day.
         const dedupOk = await this.dedupAcquire(m.userId, todayKey);
         if (!dedupOk) {
           dedupSkipped += 1;
@@ -181,15 +147,6 @@ export class GoalAlignmentLowCron {
     };
   }
 
-  /**
-   * Считает суммарную статистику задач user'а в Org за period:
-   *   - totalIssues = Issue.count(createdById=user, tenantId=org, deletedAt=null,
-   *     completedAt >= periodStart)
-   *   - withoutGoalCount = то же + goalId=null.
-   *
-   * Возвращает `CandidateUser` только если оба порога превышены
-   * (`>= MIN_ISSUES` И `ratio >= LOW_RATIO`). Иначе null.
-   */
   private async collectUserStats(args: {
     tenantId: string;
     userId: string;
@@ -218,22 +175,10 @@ export class GoalAlignmentLowCron {
     };
   }
 
-  /**
-   * Redis SET NX EX dedup. Возвращает:
-   *   - true  → ключ установлен впервые (можно эмитить probe).
-   *   - false → ключ уже был (пропустить, чтобы не дублировать).
-   * При ошибке Redis — true (graceful: ProbeService сам имеет свой дедуп).
-   */
   private async dedupAcquire(userId: string, dayKey: string): Promise<boolean> {
     const key = `goal_alignment_low:${userId}:${dayKey}`;
     try {
-      const res = await this.redis.client.set(
-        key,
-        '1',
-        'EX',
-        DEFAULT_DEDUP_TTL_SECONDS,
-        'NX',
-      );
+      const res = await this.redis.client.set(key, '1', 'EX', DEFAULT_DEDUP_TTL_SECONDS, 'NX');
       return res !== null;
     } catch (err) {
       this.logger.warn(
@@ -248,11 +193,6 @@ export class GoalAlignmentLowCron {
     }
   }
 
-  /**
-   * Кандидаты-получатели probe — owner/admin Org (без personId).
-   * Если их нет — добавляем самого user'а как fallback (probe о его задачах
-   * имеет смысл получить ему же).
-   */
   private async findOwnerCandidates(tenantId: string): Promise<string[]> {
     try {
       const rows = await this.prisma.membership.findMany({
@@ -288,11 +228,7 @@ export class GoalAlignmentLowCron {
       );
       return false;
     }
-    // Получатели: user сам + owners/admins. Если оба пусты — пропустим.
-    const recipientSet = new Set<string>([
-      args.candidate.userId,
-      ...args.ownerCandidates,
-    ]);
+    const recipientSet = new Set<string>([args.candidate.userId, ...args.ownerCandidates]);
     const recipients = Array.from(recipientSet);
     if (recipients.length === 0) return false;
     try {
@@ -314,7 +250,7 @@ export class GoalAlignmentLowCron {
           actionUrl: `/tracker/me/inbox?filter=no_goal`,
         },
         recipientCandidates: recipients,
-        priorityHint: 0.3, // low-medium
+        priorityHint: 0.3,
         dataClass: 'internal',
       });
       return 'ok' in result && result.ok === true;
@@ -331,7 +267,6 @@ export class GoalAlignmentLowCron {
     }
   }
 
-  /** UTC YYYY-MM-DD — для dedup-ключа. */
   private todayKey(): string {
     const now = new Date();
     const y = now.getUTCFullYear();

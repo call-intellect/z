@@ -1,16 +1,5 @@
 import type { DirectorDashboardDto } from '../dto/director-dashboard.dto';
 
-/**
- * Sample story — синтетический датасет, который backend отдаёт пустому tenant'у.
- * Frontend рисует watermark «образец» поверх. ТЗ §1.2 принцип 4.
- *
- * Сюжет: воображаемая SaaS-команда «Поток», 6 человек, прошла одна неделя:
- *   - 3 новых темы (онбординг, биллинг, ретеншен)
- *   - Несколько сигналов разных типов
- *   - Открытый вопрос про метрики ретеншена
- *
- * Числа подобраны так, чтобы выглядело live, но не подавляло.
- */
 export const SAMPLE_STORY_DATASET = {
   newThemes: [
     {
@@ -130,8 +119,7 @@ export const SAMPLE_STORY_DATASET = {
     {
       id: 'sample-q-1',
       name: 'Ретеншен второй недели',
-      criticalQuestion:
-        'Какая доля клиентов возвращается на 8-14 день? Нет ни одной метрики.',
+      criticalQuestion: 'Какая доля клиентов возвращается на 8-14 день? Нет ни одной метрики.',
       createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
     },
   ],
@@ -142,21 +130,12 @@ export const SAMPLE_STORY_DATASET = {
   | 'narrativeSummary'
   | 'strategicAlignment'
   | 'isEmpty'
-  // KPI-hero выставляются отдельным набором в DirectorDashboardService
-  // (синтетические оптимистичные значения для пустого tenant'а).
   | 'kpiSentimentIndex'
   | 'kpiCommitmentReliability'
   | 'kpiHangingDecisions'
-  // ТЗ-2 Ф1 — «Полоса пользы» и флаг новой компоновки тоже выставляются в
-  // DirectorDashboardService (valueStrip — реальный fetchValueStrip,
-  // mainReworkEnabled — из AdminSetting), не входят в статичный датасет.
   | 'valueStrip'
   | 'mainReworkEnabled'
 >;
 
-/**
- * narrativeSummary для sample story — статичный текст с тонкой подсказкой,
- * что это пример.
- */
 export const SAMPLE_STORY_NARRATIVE =
   'Это пример того, как выглядит ваш дашборд после недели работы. Команда «Поток» обсудила онбординг трёх клиентов: один (Acme) застрял на импорте — нужен progress-bar. Три клиента просят детализацию счёта — потенциальный churn-риск. Решено перенести запуск API на 15 июня из-за нагрузочных тестов. После вашей первой встречи здесь появятся реальные темы и сигналы.';

@@ -7,11 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import {
-  type Decision,
-  type DecisionStatus,
-  Prisma,
-} from '@prisma/client';
+import { type Decision, type DecisionStatus, Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -35,16 +31,6 @@ import type {
   TrustTierDto,
 } from '../dto/decisions.dto';
 
-/**
- * DecisionsService (SBA β-3) — реестр решений компании.
- *
- *   - list / getById / history
- *   - supersedeChain — родительские + дочерние цепочки.
- *   - supersede — пометить старое superseded + создать ConflictItem (evolving).
- *   - changeStatus — изменить status + CardVersion.
- *   - setOutcomes — записать фактический результат.
- *   - createManual — owner/admin вручную создаёт Decision (через triage).
- */
 @Injectable()
 export class DecisionsService {
   private readonly logger = new Logger(DecisionsService.name);
@@ -53,16 +39,9 @@ export class DecisionsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CurationService) private readonly curation: CurationService,
     @Inject(ConflictService) private readonly conflicts: ConflictService,
-    /**
-     * SBA α-5 dialog-layer — эмит `card-version.created` для cache invalidation.
-     */
     @Optional()
     @Inject(EventEmitter2)
     private readonly events: EventEmitter2 | null = null,
-    /**
-     * Ф6 knowledge-access (R12) — наследование группы на проекции. @Optional —
-     * spec-и конструируют сервис позиционно; null → гейт не активируется.
-     */
     @Optional()
     @Inject(KnowledgeAccessResolver)
     private readonly accessResolver: KnowledgeAccessResolver | null = null,
@@ -74,15 +53,6 @@ export class DecisionsService {
     private readonly metrics: BusinessMetricsService | null = null,
   ) {}
 
-  /**
-   * Ф6 knowledge-access — гейт проекций по доступу спрашивающего. Группы
-   * проекции выводятся ON-READ из sourceBlockIds (Ф3 материализовал
-   * IdeaBlockAccess блоков). off → выдача байт-в-байт; shadow → только метрика;
-   * enforce → отфильтровываем недоступные. ВАЖНО про пагинацию: при enforce
-   * страница может стать короче (denied-элементы убираются), а total остаётся
-   * посчитанным до фильтра — лёгкий over-count; приемлемый трейд-офф on-read
-   * подхода.
-   */
   private async gateProjections<T extends { id: string; sourceBlockIds: string[] }>(
     items: T[],
     args: { tenantId: string; userId?: string; surface: string },
@@ -96,11 +66,10 @@ export class DecisionsService {
       userId: args.userId,
     });
     if (accessCtx.isBypass) return items;
-    const { accessibleIds, denied } =
-      await this.accessResolver.partitionProjectionsByAccess(
-        accessCtx,
-        items.map((i) => ({ id: i.id, sourceBlockIds: i.sourceBlockIds ?? [] })),
-      );
+    const { accessibleIds, denied } = await this.accessResolver.partitionProjectionsByAccess(
+      accessCtx,
+      items.map((i) => ({ id: i.id, sourceBlockIds: i.sourceBlockIds ?? [] })),
+    );
     if (enf === 'enforce') {
       this.metrics?.incAccessDenied({ surface: args.surface }, denied);
       return items.filter((i) => accessibleIds.has(i.id));
@@ -108,8 +77,6 @@ export class DecisionsService {
     this.metrics?.incAccessShadowDiff({ surface: args.surface }, denied);
     return items;
   }
-
-  // ───────────────────────────── list ─────────────────────────────
 
   async list(args: {
     tenantId: string;
@@ -128,16 +95,13 @@ export class DecisionsService {
       }),
       this.prisma.decision.count({ where }),
     ]);
-    // Ф6 — гейт доступа по проекционным группам (наследование из sourceBlockIds).
     const visible = await this.gateProjections(items, {
       tenantId: args.tenantId,
       userId: args.userId,
       surface: 'decisions',
     });
     return {
-      items: visible.map((d) =>
-        this.toListItem(d, d.currentVersion?.trustTier ?? 'human'),
-      ),
+      items: visible.map((d) => this.toListItem(d, d.currentVersion?.trustTier ?? 'human')),
       total,
       page: q.page,
       limit: q.limit,
@@ -145,12 +109,7 @@ export class DecisionsService {
     };
   }
 
-  // ───────────────────────────── get by id ─────────────────────────────
-
-  async getById(args: {
-    tenantId: string;
-    id: string;
-  }): Promise<DecisionDetailDto> {
+  async getById(args: { tenantId: string; id: string }): Promise<DecisionDetailDto> {
     const decision = await this.prisma.decision.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
       include: { currentVersion: { select: { trustTier: true } } },
@@ -159,12 +118,7 @@ export class DecisionsService {
     return this.toDetail(decision, decision.currentVersion?.trustTier ?? 'human');
   }
 
-  // ───────────────────────────── history ─────────────────────────────
-
-  async getHistory(args: {
-    tenantId: string;
-    id: string;
-  }): Promise<DecisionHistoryResponse> {
+  async getHistory(args: { tenantId: string; id: string }): Promise<DecisionHistoryResponse> {
     const versions = await this.prisma.cardVersion.findMany({
       where: {
         tenantId: args.tenantId,
@@ -187,8 +141,6 @@ export class DecisionsService {
     };
   }
 
-  // ─────────────────────── supersede chain ───────────────────────
-
   async getSupersedeChain(args: {
     tenantId: string;
     userId?: string;
@@ -204,24 +156,20 @@ export class DecisionsService {
     });
     if (!root) this.notFound(args.id);
 
-    // Идём вверх (родители) — пока supersedesId != null. Cap 50.
     const ancestors: DecisionWithTier[] = [];
     let cur: DecisionWithTier | null = root;
     const seen = new Set<string>([root.id]);
     while (cur?.supersedesId && ancestors.length < 50) {
-      const parent: DecisionWithTier | null =
-        await this.prisma.decision.findFirst({
-          where: { id: cur.supersedesId, tenantId: args.tenantId },
-          include: { currentVersion: { select: { trustTier: true } } },
-        });
+      const parent: DecisionWithTier | null = await this.prisma.decision.findFirst({
+        where: { id: cur.supersedesId, tenantId: args.tenantId },
+        include: { currentVersion: { select: { trustTier: true } } },
+      });
       if (!parent || seen.has(parent.id)) break;
       ancestors.push(parent);
       seen.add(parent.id);
       cur = parent;
     }
 
-    // Потомки — Decision'ы, у которых supersedesId = root.id (и далее
-    // транзитивно). BFS, cap 50.
     const descendants: DecisionWithTier[] = [];
     const queue: string[] = [root.id];
     const seenDesc = new Set<string>([root.id]);
@@ -241,7 +189,6 @@ export class DecisionsService {
       }
     }
 
-    // Ф6 — supersede-цепочка тоже user-facing деталь: гейтим соседние решения.
     const [visAncestors, visDescendants] = await Promise.all([
       this.gateProjections(ancestors, {
         tenantId: args.tenantId,
@@ -263,8 +210,6 @@ export class DecisionsService {
       ),
     };
   }
-
-  // ─────────────────────── actions ───────────────────────
 
   async supersede(args: {
     tenantId: string;
@@ -325,8 +270,6 @@ export class DecisionsService {
       }),
     ]);
 
-    // Создаём ConflictItem с suggested resolution 'evolving' (логически
-    // ручной supersede тоже фиксируем в конфликтном feed'е для аудита).
     try {
       const conflict = await this.conflicts.report({
         tenantId: args.tenantId,
@@ -336,20 +279,13 @@ export class DecisionsService {
         relationType: 'supersedes',
         detectedBy: 'manual',
         evidence: {
-          oldStatement: (existing.statement ?? existing.text ?? '').slice(
-            0,
-            1_000,
-          ),
-          newStatement: (successor.statement ?? successor.text ?? '').slice(
-            0,
-            1_000,
-          ),
+          oldStatement: (existing.statement ?? existing.text ?? '').slice(0, 1_000),
+          newStatement: (successor.statement ?? successor.text ?? '').slice(0, 1_000),
           supersedeReason: args.body.supersedeReason ?? null,
           suggestedResolution: 'evolving',
           evolvingMeta,
         },
       });
-      // Автоматически резолвим как evolving — реализатор уже сделал supersede.
       await this.conflicts.resolve({
         tenantId: args.tenantId,
         conflictId: conflict.id,
@@ -390,14 +326,12 @@ export class DecisionsService {
       },
     });
 
-    // CardVersion — записываем смену статуса как новую версию.
     try {
       await this.writeCardVersion({
         tenantId: args.tenantId,
         decision: updated,
         reviewerUserId: args.reviewerUserId,
-        changeReason:
-          args.body.reason ?? `status: ${existing.status} → ${args.body.newStatus}`,
+        changeReason: args.body.reason ?? `status: ${existing.status} → ${args.body.newStatus}`,
       });
     } catch (err) {
       this.logger.warn(
@@ -447,13 +381,6 @@ export class DecisionsService {
     return { ok: true };
   }
 
-  // ─────────────────────── manual create ───────────────────────
-
-  /**
-   * Manual creation Decision (owner/admin). Создаёт черновик + всегда уходит
-   * в triage (decision — critical type → deep review). UI на β-3 не делаем
-   * (см. §14.3 sub-TZ); endpoint доступен через POST /api/v1/decisions.
-   */
   async createManual(args: {
     tenantId: string;
     body: CreateDecisionBody;
@@ -481,13 +408,12 @@ export class DecisionsService {
         affectsEntityIds: args.body.affectsEntityIds ?? [],
         sourceBlockIds: [],
         personSubjectIds: [],
-        confidence: new Prisma.Decimal(0.95), // manual = высокая уверенность
+        confidence: new Prisma.Decimal(0.95),
         dataClass: 'sensitive',
         validFrom: decidedAt ?? null,
       },
     });
 
-    // Triage — decision в critical → deep review всегда.
     try {
       await this.curation.triage({
         tenantId: args.tenantId,
@@ -521,12 +447,7 @@ export class DecisionsService {
     return { id: decision.id };
   }
 
-  // ─────────────────────── helpers ───────────────────────
-
-  private buildWhere(
-    tenantId: string,
-    q: ListDecisionsQuery,
-  ): Prisma.DecisionWhereInput {
+  private buildWhere(tenantId: string, q: ListDecisionsQuery): Prisma.DecisionWhereInput {
     const where: Prisma.DecisionWhereInput = { tenantId };
     if (q.status) where.status = q.status as DecisionStatus;
     if (q.decided_by) {
@@ -554,10 +475,7 @@ export class DecisionsService {
     return where;
   }
 
-  private toListItem(
-    d: Decision,
-    trustTier: TrustTierDto = 'human',
-  ): DecisionListItemDto {
+  private toListItem(d: Decision, trustTier: TrustTierDto = 'human'): DecisionListItemDto {
     return {
       id: d.id,
       statement: d.statement ?? d.text ?? '',
@@ -590,9 +508,7 @@ export class DecisionsService {
     };
   }
 
-  private parseAlternatives(
-    value: Prisma.JsonValue | null,
-  ): DecisionAlternativeDto[] {
+  private parseAlternatives(value: Prisma.JsonValue | null): DecisionAlternativeDto[] {
     if (!Array.isArray(value)) return [];
     const result: DecisionAlternativeDto[] = [];
     for (const item of value) {
@@ -601,10 +517,7 @@ export class DecisionsService {
         if (typeof obj.option === 'string') {
           result.push({
             option: obj.option,
-            reasonRejected:
-              typeof obj.reasonRejected === 'string'
-                ? obj.reasonRejected
-                : null,
+            reasonRejected: typeof obj.reasonRejected === 'string' ? obj.reasonRejected : null,
           });
         }
       }
@@ -612,10 +525,6 @@ export class DecisionsService {
     return result;
   }
 
-  /**
-   * Записать новую CardVersion для Decision. Уникальный constraint на
-   * (resourceType, resourceId, version) — сами считаем next version.
-   */
   private async writeCardVersion(args: {
     tenantId: string;
     decision: Decision;
@@ -644,30 +553,20 @@ export class DecisionsService {
           rationale: args.decision.rationale,
           status: args.decision.status,
           decidedByPersonIds: args.decision.decidedByPersonIds,
-          decidedAt: args.decision.decidedAt
-            ? args.decision.decidedAt.toISOString()
-            : null,
-          deadline: args.decision.deadline
-            ? args.decision.deadline.toISOString()
-            : null,
+          decidedAt: args.decision.decidedAt ? args.decision.decidedAt.toISOString() : null,
+          deadline: args.decision.deadline ? args.decision.deadline.toISOString() : null,
           actualOutcomes: args.decision.actualOutcomes,
-          validFrom: args.decision.validFrom
-            ? args.decision.validFrom.toISOString()
-            : null,
-          validUntil: args.decision.validUntil
-            ? args.decision.validUntil.toISOString()
-            : null,
+          validFrom: args.decision.validFrom ? args.decision.validFrom.toISOString() : null,
+          validUntil: args.decision.validUntil ? args.decision.validUntil.toISOString() : null,
         } as Prisma.InputJsonValue,
         changeReason: args.changeReason,
         createdByUserId: args.reviewerUserId,
       },
     });
-    // Сделаем эту версию текущей.
     await this.prisma.decision.update({
       where: { id: args.decision.id },
       data: { currentVersionId: created.id },
     });
-    // SBA α-5 dialog-layer — эмит для CacheInvalidationService (best-effort).
     try {
       this.events?.emit('card-version.created', {
         tenantId: args.tenantId,
@@ -683,12 +582,6 @@ export class DecisionsService {
     }
   }
 
-  // ─────────────────────── dispute / correct (E1) ───────────────────
-  /**
-   * Action Center E1 «поправить карточку знаний» (2026-06-04) — «Это неверно».
-   * Флаг без правки текста → обучающий сигнал `misleading` через
-   * `CurationService.recordDecision(mark_as_misleading)`.
-   */
   async dispute(args: {
     tenantId: string;
     id: string;
@@ -711,11 +604,6 @@ export class DecisionsService {
     return { ok: true };
   }
 
-  /**
-   * Action Center E1 — «Исправить». owner/admin (`canApplyDirectly=true`) →
-   * применяем сразу (новая человеко-проверенная CardVersion). read-only →
-   * правка уходит предложением в очередь курации (анти-вандализм), без 403.
-   */
   async correct(args: {
     tenantId: string;
     id: string;
@@ -748,7 +636,6 @@ export class DecisionsService {
     const data: Prisma.DecisionUpdateInput = {};
     if (args.correctedPayload.statement !== undefined) {
       data.statement = args.correctedPayload.statement;
-      // legacy-поле `text` — короткая копия statement.
       data.text = args.correctedPayload.statement.slice(0, 1000);
     }
     if (args.correctedPayload.rationale !== undefined) {
@@ -764,7 +651,6 @@ export class DecisionsService {
       reviewerUserId: args.actorUserId,
       changeReason: 'user_correction',
     });
-    // Обучающий сэмпл approve_with_edits (label='correct'); before→after в context.
     await this.curation.recordDecision({
       tenantId: args.tenantId,
       resourceType: 'decision',

@@ -1,19 +1,11 @@
-/**
- * API-клиент модуля tracker.webhooks.
- *
- * Контракт: `backend/src/modules/tracker/controllers/webhooks.controller.ts`
- * (префикс `/api/v1/tracker/webhooks` чтобы не конфликтовать с LiveKit
- * webhook-ами).
- */
-
-import { apiClient } from '../api-client';
-import { buildQuery, orgHeaders } from '../admin-helpers';
+import { apiClient } from "../api-client";
+import { buildQuery, orgHeaders } from "../admin-helpers";
 import type {
   WebhookApi,
   WebhookLogsResponseApi,
   WebhookTestEnqueueResultApi,
   WebhookEvent,
-} from '@/domain/tracker';
+} from "@/domain/tracker";
 
 export interface CreateWebhookRequest {
   name: string;
@@ -42,12 +34,12 @@ export interface WebhookLogsRequest {
 
 export const webhooksApi = {
   list: (orgId: string) =>
-    apiClient.get<WebhookApi[]>('/api/v1/tracker/webhooks', {
+    apiClient.get<WebhookApi[]>("/api/v1/tracker/webhooks", {
       headers: orgHeaders(orgId),
     }),
 
   create: (orgId: string, body: CreateWebhookRequest) =>
-    apiClient.post<WebhookApi>('/api/v1/tracker/webhooks', body, {
+    apiClient.post<WebhookApi>("/api/v1/tracker/webhooks", body, {
       headers: orgHeaders(orgId),
     }),
 
@@ -66,9 +58,11 @@ export const webhooksApi = {
 
   logs: (orgId: string, webhookId: string, req: WebhookLogsRequest = {}) =>
     apiClient.get<WebhookLogsResponseApi>(
-      `/api/v1/tracker/webhooks/${encodeURIComponent(webhookId)}/logs${buildQuery({
-        ...req,
-      })}`,
+      `/api/v1/tracker/webhooks/${encodeURIComponent(webhookId)}/logs${buildQuery(
+        {
+          ...req,
+        },
+      )}`,
       { headers: orgHeaders(orgId) },
     ),
 

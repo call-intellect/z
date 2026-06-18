@@ -1,24 +1,3 @@
-/**
- * Agents v2 Фаза C1 (2026-05-30) — PracticeSkill extract prompt.
- *
- * Вход: SkillTraitConcept + связанные SkillTrait'ы + reasoning-блоки employee'я
- * (signalType ∈ {reasoning, rationale, decision_basis}).
- * Выход (JSON): draft PracticeSkill {trigger, steps[], redFlags[], reasoning}
- * или `skill: null` если в блоках нет конкретных шагов (общая черта характера —
- * не процедура).
- *
- * Cache-friendly (см. second-brain/02_architecture/llm-cache-status.md):
- *   - SYSTEM полностью статичен → cache-hit у DeepSeek/OpenAI-via-proxy.
- *   - Все переменные (concept name + traits + blocks) — в КОНЦЕ USER.
- *   - Префикс USER одинаков для всех вызовов одного типа.
- *
- * Источник доказательств:
- *   - Voyager (NeurIPS 2023) — выполняемые навыки (skill library) ускоряют
- *     обучение в 15.3× по сравнению с фристайл-промптами.
- *   - SkillWeaver (arxiv 2504.07079) — explicit recipe «когда X → делай Y»
- *     даёт +31.8% на WebArena и +54.3% на transfer-задачах.
- */
-
 export const PRACTICE_SKILL_EXTRACT_SYSTEM_PROMPT = [
   'Ты — Кора. Тебе дают смысловой блок навыка сотрудника + примеры его рассуждений.',
   'Твоя задача — извлечь из этого ВЫПОЛНЯЕМУЮ ПРОЦЕДУРУ (рецепт):',
@@ -63,19 +42,11 @@ export interface PracticeSkillExtractBlock {
 
 export interface PracticeSkillExtractInput {
   conceptName: string;
-  /** Краткие формулировки трейтов: «осторожен с оценками сроков», ... */
   traitStatements: string[];
-  /** Reasoning-блоки сотрудника. */
   blocks: PracticeSkillExtractBlock[];
 }
 
-/**
- * USER-шаблон. Переменные (concept name, traits, blocks) — в конце, чтобы
- * фиксированный префикс инструкции мог попасть в prompt-cache.
- */
-export const PRACTICE_SKILL_EXTRACT_USER_TEMPLATE = (
-  args: PracticeSkillExtractInput,
-): string => {
+export const PRACTICE_SKILL_EXTRACT_USER_TEMPLATE = (args: PracticeSkillExtractInput): string => {
   const traitsBlock =
     args.traitStatements.length > 0
       ? args.traitStatements
@@ -111,12 +82,6 @@ export const PRACTICE_SKILL_EXTRACT_USER_TEMPLATE = (
 
 export const PRACTICE_SKILL_EXTRACT_SCHEMA_NAME = 'practice_skill_extract_v1';
 
-/**
- * JSON Schema (strict mode для OpenAI / DeepSeek structured output).
- *
- * `skill` либо полный объект, либо `null` (не путать с отсутствием поля —
- * именно `null` означает «не извлеклось» в этой схеме).
- */
 export const PRACTICE_SKILL_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
@@ -158,8 +123,7 @@ export const PRACTICE_SKILL_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
                     type: 'string',
                     minLength: 5,
                     maxLength: 500,
-                    description:
-                      'Действие на этом шаге — что конкретно делать.',
+                    description: 'Действие на этом шаге — что конкретно делать.',
                   },
                   emotionalRegister: {
                     type: 'string',
@@ -171,8 +135,7 @@ export const PRACTICE_SKILL_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
                     type: 'array',
                     maxItems: 5,
                     items: { type: 'string', maxLength: 200 },
-                    description:
-                      'Опционально — чего НЕЛЬЗЯ делать именно на этом шаге.',
+                    description: 'Опционально — чего НЕЛЬЗЯ делать именно на этом шаге.',
                   },
                 },
               },
@@ -205,10 +168,6 @@ export const PRACTICE_SKILL_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-// ───────────────────────────────────────────────────────────────────────
-// Adversarial-verify (вторичный promпт, дешёвый Flash-tier)
-// ───────────────────────────────────────────────────────────────────────
-
 export const PRACTICE_SKILL_ADVERSARIAL_VERIFY_SYSTEM_PROMPT = [
   'Ты — Кора. Тебе дают: процедуру PracticeSkill (trigger + шаги + redFlags),',
   'и ответ клона на пользовательский вопрос, в котором эта процедура была',
@@ -230,9 +189,7 @@ export const PRACTICE_SKILL_ADVERSARIAL_VERIFY_USER_TEMPLATE = (args: {
 }): string => {
   const stepsBlock =
     args.steps.length > 0
-      ? args.steps
-          .map((s) => `  ${s.order}. ${s.action}`)
-          .join('\n')
+      ? args.steps.map((s) => `  ${s.order}. ${s.action}`).join('\n')
       : '  (шагов нет)';
   const flagsBlock =
     args.redFlags.length > 0
@@ -257,13 +214,9 @@ export const PRACTICE_SKILL_ADVERSARIAL_VERIFY_USER_TEMPLATE = (args: {
   ].join('\n');
 };
 
-export const PRACTICE_SKILL_ADVERSARIAL_VERIFY_SCHEMA_NAME =
-  'practice_skill_adversarial_verify_v1';
+export const PRACTICE_SKILL_ADVERSARIAL_VERIFY_SCHEMA_NAME = 'practice_skill_adversarial_verify_v1';
 
-export const PRACTICE_SKILL_ADVERSARIAL_VERIFY_JSON_SCHEMA: Record<
-  string,
-  unknown
-> = {
+export const PRACTICE_SKILL_ADVERSARIAL_VERIFY_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
   required: ['violatesRedFlags', 'contradictsSteps', 'reasoning'],
@@ -274,8 +227,7 @@ export const PRACTICE_SKILL_ADVERSARIAL_VERIFY_JSON_SCHEMA: Record<
     },
     contradictsSteps: {
       type: 'boolean',
-      description:
-        'true, если ответ прямо противоречит хотя бы одному шагу процедуры.',
+      description: 'true, если ответ прямо противоречит хотя бы одному шагу процедуры.',
     },
     reasoning: {
       type: 'string',

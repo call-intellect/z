@@ -26,15 +26,6 @@ import {
 } from './dto/entitlements.dto';
 import { AdminEntitlementsService } from './entitlements.service';
 
-/**
- * Admin-redesign Фаза 4 — `AdminEntitlementsController`.
- *
- * Глобальный обзор OrgEntitlement + per-org мутации. UI Z-Admin вкладка
- * «Тенанты → Entitlements» (overrides relative to plan).
- *
- * Префикс — `/admin/orgs` (glob list `/entitlements`, per-org —
- * `/orgs/:id/entitlements`).
- */
 @ApiTags('admin-entitlements')
 @Controller('api/v1/admin/orgs')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -64,8 +55,7 @@ export class AdminEntitlementsController {
 
   @Patch(':id/entitlements')
   @ApiOperation({
-    summary:
-      'Обновить OrgEntitlement для конкретной Org. Если записи нет — создаст (upsert).',
+    summary: 'Обновить OrgEntitlement для конкретной Org. Если записи нет — создаст (upsert).',
   })
   upsert(
     @Param('id') orgId: string,
@@ -78,10 +68,7 @@ export class AdminEntitlementsController {
   @ApiOperation({
     summary: 'Снять override конкретной фичи (удаляет ключ из featureOverrides).',
   })
-  removeFeature(
-    @Param('id') orgId: string,
-    @Param('featureKey') featureKey: string,
-  ) {
+  removeFeature(@Param('id') orgId: string, @Param('featureKey') featureKey: string) {
     return this.svc.removeFeatureKey(orgId, featureKey);
   }
 
@@ -89,10 +76,7 @@ export class AdminEntitlementsController {
   @ApiOperation({
     summary: 'Снять override конкретной quota (удаляет ключ из quotaOverrides).',
   })
-  removeQuota(
-    @Param('id') orgId: string,
-    @Param('quotaKey') quotaKey: string,
-  ) {
+  removeQuota(@Param('id') orgId: string, @Param('quotaKey') quotaKey: string) {
     return this.svc.removeQuotaKey(orgId, quotaKey);
   }
 

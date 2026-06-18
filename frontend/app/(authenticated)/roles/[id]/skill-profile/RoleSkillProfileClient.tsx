@@ -1,55 +1,58 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import useSWR from 'swr';
-import { Bot, Loader2, Send, Sparkles, Users } from 'lucide-react';
+import { useState } from "react";
+import useSWR from "swr";
+import { Bot, Loader2, Send, Sparkles, Users } from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { clonesApi } from '@/api/clones.api';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
-import { mapCloneAnswer, type CloneAnswer } from '@/domain/clone';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { Textarea } from '@/ui/shadcn/textarea';
+import { ApiError } from "@/api/api-error";
+import { clonesApi } from "@/api/clones.api";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { mapCloneAnswer, type CloneAnswer } from "@/domain/clone";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { Textarea } from "@/ui/shadcn/textarea";
 
-/**
- * `/roles/:id/skill-profile` (SBA γ-1) — агрегатный профиль роли.
- *
- * - Топ-5 общих черт для роли.
- * - Список людей на роли с их skill summary (number of active traits).
- * - Кнопка «Попробовать клона роли» → раскрывает chat-input → POST clones/roles/:id/ask.
- */
 export function RoleSkillProfileClient({ roleId }: { roleId: string }) {
   const { currentOrgId, isLoading } = useAuth();
 
-  const swrKey = currentOrgId ? ['role-skill-profile', currentOrgId, roleId] : null;
-  const { data, error, isLoading: loading } = useSWR(swrKey, async () =>
+  const swrKey = currentOrgId
+    ? ["role-skill-profile", currentOrgId, roleId]
+    : null;
+  const {
+    data,
+    error,
+    isLoading: loading,
+  } = useSWR(swrKey, async () =>
     clonesApi.getRoleSkillProfile(currentOrgId!, roleId),
   );
 
-  // Chat state.
   const [chatOpen, setChatOpen] = useState(false);
-  const [question, setQuestion] = useState('');
+  const [question, setQuestion] = useState("");
   const [pending, setPending] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<
-    Array<{ id: string; role: 'user' | 'assistant'; text: string; clone?: CloneAnswer }>
+    Array<{
+      id: string;
+      role: "user" | "assistant";
+      text: string;
+      clone?: CloneAnswer;
+    }>
   >([]);
 
   async function handleAsk() {
     if (!currentOrgId) return;
     const text = question.trim();
     if (text.length < 3) {
-      toast.error('Вопрос слишком короткий.');
+      toast.error("Вопрос слишком короткий.");
       return;
     }
     setPending(true);
     const userMessageId = `user-${Date.now()}`;
-    setMessages((prev) => [...prev, { id: userMessageId, role: 'user', text }]);
-    setQuestion('');
+    setMessages((prev) => [...prev, { id: userMessageId, role: "user", text }]);
+    setQuestion("");
     try {
       const apiRes = await clonesApi.askRole(currentOrgId, roleId, {
         question: text,
@@ -61,7 +64,7 @@ export function RoleSkillProfileClient({ roleId }: { roleId: string }) {
         ...prev,
         {
           id: answer.messageId,
-          role: 'assistant',
+          role: "assistant",
           text: answer.text,
           clone: answer,
         },
@@ -69,8 +72,8 @@ export function RoleSkillProfileClient({ roleId }: { roleId: string }) {
     } catch (err) {
       const message =
         err instanceof ApiError
-          ? err.payload?.message ?? err.message
-          : 'Не удалось получить ответ от клона роли.';
+          ? (err.payload?.message ?? err.message)
+          : "Не удалось получить ответ от клона роли.";
       toast.error(message);
       setMessages((prev) => prev.filter((m) => m.id !== userMessageId));
     } finally {
@@ -130,7 +133,9 @@ export function RoleSkillProfileClient({ roleId }: { roleId: string }) {
                 <li key={t.category} className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{t.category}</span>
-                    <Badge variant="outline">наблюдений: {t.observationCount}</Badge>
+                    <Badge variant="outline">
+                      наблюдений: {t.observationCount}
+                    </Badge>
                   </div>
                   <p className="text-muted-foreground">{t.statement}</p>
                 </li>
@@ -155,7 +160,10 @@ export function RoleSkillProfileClient({ roleId }: { roleId: string }) {
           ) : (
             <ul className="space-y-1 text-sm">
               {data.people.map((p) => (
-                <li key={p.personId} className="flex items-center justify-between">
+                <li
+                  key={p.personId}
+                  className="flex items-center justify-between"
+                >
                   <a
                     href={`/persons/${p.personId}/skill-profile`}
                     className="underline hover:text-foreground"
@@ -204,9 +212,15 @@ export function RoleSkillProfileClient({ roleId }: { roleId: string }) {
               <ul className="space-y-2">
                 {messages.map((m) => (
                   <li key={m.id}>
-                    <Card className={m.role === 'user' ? 'ml-auto max-w-[80%]' : 'max-w-[85%]'}>
+                    <Card
+                      className={
+                        m.role === "user"
+                          ? "ml-auto max-w-[80%]"
+                          : "max-w-[85%]"
+                      }
+                    >
                       <CardContent className="p-3 text-sm">
-                        {m.role === 'assistant' && (
+                        {m.role === "assistant" && (
                           <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
                             <Bot className="h-3 w-3" />
                             <span>Клон роли</span>

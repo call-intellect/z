@@ -1,20 +1,11 @@
-'use client';
+"use client";
 
-/**
- * HealthLivekitTab — вкладка «LiveKit» в /admin/health.
- * Источник: `GET /api/v1/admin/health/livekit` (Фаза 1 ТЗ admin-redesign).
- */
+import { ApiError } from "@/api/api-error";
+import { apiClient } from "@/api/api-client";
+import { Badge } from "@/ui/shadcn/badge";
 
-import { ApiError } from '@/api/api-error';
-import { apiClient } from '@/api/api-client';
-import { Badge } from '@/ui/shadcn/badge';
-
-import {
-  AdminEmpty,
-  AdminError,
-  AdminLoading,
-} from '../AdminStateViews';
-import { useAdminQuery } from '../useAdminQuery';
+import { AdminEmpty, AdminError, AdminLoading } from "../AdminStateViews";
+import { useAdminQuery } from "../useAdminQuery";
 
 type LivekitHealthApi = {
   sfuUrl: string;
@@ -27,16 +18,16 @@ type LivekitHealthApi = {
 
 export function HealthLivekitTab() {
   const q = useAdminQuery(
-    'admin-health-livekit',
+    "admin-health-livekit",
     async () => {
       try {
         return await apiClient.get<LivekitHealthApi>(
-          '/api/v1/admin/health/livekit',
+          "/api/v1/admin/health/livekit",
         );
       } catch (e) {
         if (
           e instanceof ApiError &&
-          (e.code === 'http_404' || e.code === 'not_found')
+          (e.code === "http_404" || e.code === "not_found")
         ) {
           return null;
         }
@@ -62,10 +53,10 @@ export function HealthLivekitTab() {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
       <Tile title="SFU">
-        <span className="font-mono text-xs">{d.sfuUrl || '—'}</span>
+        <span className="font-mono text-xs">{d.sfuUrl || "—"}</span>
       </Tile>
       <Tile title="Egress">
-        <span className="font-mono text-xs">{d.egressUrl || '—'}</span>
+        <span className="font-mono text-xs">{d.egressUrl || "—"}</span>
       </Tile>
       <Tile title="Доступность">
         {d.available ? (
@@ -76,16 +67,16 @@ export function HealthLivekitTab() {
       </Tile>
       <Tile title="Активных встреч">
         <span className="tabular-nums">
-          {d.activeRooms.toLocaleString('ru-RU')}
+          {d.activeRooms.toLocaleString("ru-RU")}
         </span>
       </Tile>
       <Tile title="Активных участников">
         <span className="tabular-nums">
-          {d.activeParticipants.toLocaleString('ru-RU')}
+          {d.activeParticipants.toLocaleString("ru-RU")}
         </span>
       </Tile>
       <Tile title="Задержка">
-        {d.latencyMs !== null ? `${d.latencyMs} мс` : '—'}
+        {d.latencyMs !== null ? `${d.latencyMs} мс` : "—"}
       </Tile>
     </div>
   );

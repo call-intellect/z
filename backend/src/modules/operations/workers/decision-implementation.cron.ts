@@ -7,19 +7,6 @@ import { ConversationalService } from '../../conversational/conversational.servi
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 import { DecisionImplementationService } from '../services/decision-implementation.service';
 
-/**
- * TZ-1 Фаза 3.B (daily-value-engine) — DecisionImplementationCron.
- *
- * Глобальный `@Cron('0 6 * * *')`: раз в день обходит активные Org →
- * `DecisionImplementationService.computeForTenant` (пересчёт
- * implementationStatus, пометка stalled) → push ответственным
- * (`decidedByPersonIds`) по застрявшим решениям (через бюджет Ф0, priorityTier
- * 1). Агрегат «N решений не двигаются» — для COO-дайджеста (читается отдельно).
- *
- * Master-flag `operations.decision_controller.enabled` (kill-switch, ON по
- * умолчанию). БЕЗ LLM. Метрики: `decision_stalled_total`,
- * `decision_throughput_percent` (в сервисе).
- */
 @Injectable()
 export class DecisionImplementationCron {
   private readonly logger = new Logger(DecisionImplementationCron.name);
@@ -48,7 +35,7 @@ export class DecisionImplementationCron {
     }
     try {
       const stats = await this.runOnce(new Date());
-      this.logger.log(stats, 'decision-implementation.cron: проход завершён');
+      this.logger.debug(stats, 'decision-implementation.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -57,7 +44,6 @@ export class DecisionImplementationCron {
     }
   }
 
-  /** Выделен для unit-тестов: можно передать произвольный `now`. */
   async runOnce(now: Date): Promise<{
     orgsProcessed: number;
     checked: number;
@@ -117,12 +103,6 @@ export class DecisionImplementationCron {
     };
   }
 
-  /**
-   * Push ответственным за решение (decidedByPersonIds → Person.userId).
-   * priorityTier=1 (обходит дневной бюджет — застрявшее решение важно).
-   * Идемпотентность по дню обеспечивается дедупом proactiveNotificationId
-   * (decisionId + dateLocal). Возвращает число отправленных пушей.
-   */
   private async notifyResponsible(args: {
     tenantId: string;
     decisionId: string;
@@ -140,11 +120,7 @@ export class DecisionImplementationCron {
       select: { userId: true },
     });
     const userIds = Array.from(
-      new Set(
-        persons
-          .map((p) => p.userId)
-          .filter((u): u is string => typeof u === 'string'),
-      ),
+      new Set(persons.map((p) => p.userId).filter((u): u is string => typeof u === 'string')),
     );
     let sent = 0;
     const dateLocal = new Date().toISOString().slice(0, 10);

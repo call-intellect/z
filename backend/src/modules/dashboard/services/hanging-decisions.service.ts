@@ -3,26 +3,10 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 
-/**
- * HangingDecisionsService — счётчик «висящих» решений: тех, что
- * status ∈ {proposed, approved, active}, возраст ≥ minAgeDays, и поднимались
- * ≥ minRaisedCount раз. Pulse Wave 1 §1.2.
- *
- * Используется KPI hero «Висящие решения» (Фаза 1.5) и drill-down
- * /decisions?status=hanging. Sparkline 12w показывает тренд повторных
- * упоминаний по неделям.
- */
 export interface HangingDecisionsDto {
-  /** Текущее число висящих решений по фильтру. */
   count: number;
-  /** Параметры запроса (для дебага UI). */
   minAgeDays: number;
   minRaisedCount: number;
-  /**
-   * Sparkline 12 недель: для каждой недели — число «merge-событий»
-   * (lastRaisedAt в этой неделе) для решений, удовлетворяющих критерию
-   * hanging ПО ИТОГУ окна. Old→new, длина 12.
-   */
   sparkline12w: number[];
 }
 
@@ -52,12 +36,6 @@ export class HangingDecisionsService {
     });
   }
 
-  /**
-   * ТЗ coo-orphan-agents Ф2 — список висящих решений с их авторами
-   * (`decidedByPersonIds`) для per-dept атрибуции в `TeamHealthService`.
-   * ОДНА выборка за tenant; раскладку по отделам делает вызывающий in-memory
-   * (запрет N+1). Критерий «висящего» — тот же, что в `count`.
-   */
   async listHangingWithAuthors(args: {
     tenantId: string;
     minAgeDays?: number;
@@ -67,9 +45,7 @@ export class HangingDecisionsService {
     const minAgeDays = args.minAgeDays ?? 7;
     const minRaisedCount = args.minRaisedCount ?? 2;
     const now = args.now ?? new Date();
-    const ageThreshold = new Date(
-      now.getTime() - minAgeDays * 24 * 60 * 60 * 1000,
-    );
+    const ageThreshold = new Date(now.getTime() - minAgeDays * 24 * 60 * 60 * 1000);
     return this.prisma.decision.findMany({
       where: {
         tenantId: args.tenantId,
@@ -81,7 +57,6 @@ export class HangingDecisionsService {
     });
   }
 
-  /** Public для тестов — можно подменить `now`. */
   async compute(args: {
     tenantId: string;
     minAgeDays: number;
@@ -90,7 +65,6 @@ export class HangingDecisionsService {
   }): Promise<HangingDecisionsDto> {
     const cacheKey = `hanging_decisions:${args.tenantId}:${args.minAgeDays}:${args.minRaisedCount}`;
 
-    // Cache get.
     try {
       const cached = await this.redis.client.get(cacheKey);
       if (cached) {
@@ -102,11 +76,8 @@ export class HangingDecisionsService {
       );
     }
 
-    const ageThreshold = new Date(
-      args.now.getTime() - args.minAgeDays * 24 * 60 * 60 * 1000,
-    );
+    const ageThreshold = new Date(args.now.getTime() - args.minAgeDays * 24 * 60 * 60 * 1000);
 
-    // Текущий count.
     const count = await this.prisma.decision.count({
       where: {
         tenantId: args.tenantId,
@@ -116,12 +87,8 @@ export class HangingDecisionsService {
       },
     });
 
-    // Sparkline 12w: одной выборкой берём все decisions, удовлетворяющие
-    // критерию hanging, с lastRaisedAt за последние 12 недель.
     const weeksBack = 12;
-    const sparklineStart = new Date(
-      args.now.getTime() - weeksBack * 7 * 24 * 60 * 60 * 1000,
-    );
+    const sparklineStart = new Date(args.now.getTime() - weeksBack * 7 * 24 * 60 * 60 * 1000);
 
     const events = await this.prisma.decision.findMany({
       where: {
@@ -143,7 +110,6 @@ export class HangingDecisionsService {
       sparkline12w,
     };
 
-    // Cache set.
     try {
       await this.redis.client.set(cacheKey, JSON.stringify(result), 'EX', 300);
     } catch (err) {
@@ -155,11 +121,6 @@ export class HangingDecisionsService {
     return result;
   }
 
-  /**
-   * Раскладывает массив событий по 12 недельным bucket'ам.
-   * bucket[0] = самая старая неделя ([now-12w, now-11w)),
-   * bucket[11] = последняя завершившаяся неделя ([now-1w, now)).
-   */
   private bucketize(
     events: Array<{ lastRaisedAt: Date | null }>,
     now: Date,

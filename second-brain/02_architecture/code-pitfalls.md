@@ -224,7 +224,7 @@ DeepSeek (OpenAI-compat) при `response_format: {type:'json_object'}` отве
 
 ## Cypher только через GraphService
 
-С Фазы 0a (см. [plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md](../../plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md) §6.3) запрещён прямой `$queryRaw cypher(...)` из бизнес-сервисов. Все обращения к AGE — через `GraphService` из `backend/src/common/graph/`.
+С Фазы 0a (см. [plans/archive/2026-05-21-phase-0a-data-model-and-graph-infra.md](../../plans/archive/2026-05-21-phase-0a-data-model-and-graph-infra.md) §6.3) запрещён прямой `$queryRaw cypher(...)` из бизнес-сервисов. Все обращения к AGE — через `GraphService` из `backend/src/common/graph/`.
 
 **Почему:** двойная запись `Postgres EntityLink` + `AGE z_graph` гарантирует консистентность только внутри одной Prisma-транзакции `GraphService`. Вне его — рассинхрон (Postgres-связь есть, AGE-ребра нет, или наоборот), и обход графа на Cypher даёт неверные ответы.
 
@@ -377,7 +377,7 @@ System всегда содержит `INJECTION_GUARD_NOTE` (см. [`backend/src
 
 ### Куда вынести общий префикс
 
-`backend/src/common/ai/cache-prefix-builder.ts` (см. ТЗ [`2026-05-25-llm-cache-prefix-everywhere.md`](../../plans/tz/2026-05-25-llm-cache-prefix-everywhere.md)) — utility, формирующая стабильный «роль + commonContext + commonRules».
+`backend/src/common/ai/cache-prefix-builder.ts` (см. ТЗ [`2026-05-25-llm-cache-prefix-everywhere.md`](../../plans/archive/2026-05-25-llm-cache-prefix-everywhere.md)) — utility, формирующая стабильный «роль + commonContext + commonRules».
 
 ### Подробности и сырые числа
 
@@ -655,5 +655,30 @@ knowledge-/skill-профиль). **Правило:** при per-message сег�
 Read-маппер — единственное место, где дрейф формы ответа становится виден (его правишь, а
 не молча получаешь `undefined` в JSX). Нашёл один такой дрейф — ищи остальные
 list/byId-эндпоинты (impact-graph / run_pipeline), это повторяемый конструкт.
+
+## BullMQ: фиксированный jobId + age-ретеншен = повторный add молча игнорируется
+
+`queue.add(name, data, { jobId })` с УЖЕ существующим в Redis jobId — **no-op** (BullMQ
+дедуплицирует по jobId). А `removeOnComplete/removeOnFail: { age }` держат завершённую
+джобу в очереди (часы) → детерминированный jobId (`{queue}-{tenantId}-{scope}`) после
+первого прогона блокирует ВСЕ последующие `enqueue` того же scope. Симптом: «синк не
+запускается повторно», в логах ни старта джобы, ни ошибки (тихо). Бил и Bitrix, и
+ChatBox одинаково (`bitrix-sync.queue.service.ts`, `chatbox-sync.queue.service.ts`).
+**Фикс:** `await queue.remove(jobId).catch(() => undefined)` ПЕРЕД `queue.add(...)` —
+снимает остаточную completed/failed-джобу, перезапуск гарантирован. Активную (running)
+джобу `remove` не трогает → дедуп конкурентных запусков сохраняется.
+Серверное «идёт ли синк» для UI — `queue.getJobState(jobId)`, считать running только
+`active|waiting|delayed|prioritized|waiting-children` (НЕ `completed`/`failed` — иначе
+из-за age-ретеншена баннер залипнет на часы).
+
+## Bitrix24 iframe install: DOMAIN в query, токены в теле; refresh обязателен
+
+Обработчик установки в iframe получает `DOMAIN` в **query-параметрах** URL, а
+`AUTH_ID/REFRESH_ID/member_id` — в **теле** POST (form-urlencoded). Читать домен из
+тела недостаточно → без домена нет `clientEndpoint` → синк не достучится. Брать
+`DOMAIN` из query (+ фолбэк на `referer`/`origin` с проверкой `*.bitrix24.*`).
+`user.get` отдаёт сотрудников и EMAIL уже на scope `user_basic` (не нужен `user`).
+`accessExpiresAt` протухает за ~1ч → **`BITRIX_CLIENT_ID/SECRET` обязательны** для
+refresh, иначе интеграция «умирает» после первого часа (синк падает `bitrix_misconfigured`).
 
 [[../index|← index]]

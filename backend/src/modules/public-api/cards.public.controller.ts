@@ -21,28 +21,13 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { BearerAuthGuard, RequireScope } from '../api-keys/bearer-auth.guard';
 import { CurrentApiUserId } from '../api-keys/current-api-key.decorator';
 import { CardsService } from '../cards/cards.service';
-import {
-  type CreateCardDto,
-  CreateCardSchema,
-} from '../cards/dto/create-card.dto';
-import {
-  type ListCardsQuery,
-  ListCardsQuerySchema,
-} from '../cards/dto/list-cards.dto';
-import {
-  type UpdateCardDto,
-  UpdateCardSchema,
-} from '../cards/dto/update-card.dto';
+import { type CreateCardDto, CreateCardSchema } from '../cards/dto/create-card.dto';
+import { type ListCardsQuery, ListCardsQuerySchema } from '../cards/dto/list-cards.dto';
+import { type UpdateCardDto, UpdateCardSchema } from '../cards/dto/update-card.dto';
 import { RequireEntitlement } from '../entitlements/require-entitlement.decorator';
 
 import { ApiAccessLogInterceptor } from './api-access-log.interceptor';
 
-/**
- * Public REST API: cards.
- *
- * Все эндпоинты под `/api/public/v1/cards`, защищены `BearerAuthGuard`.
- * Read-эндпоинты — `read` scope, mutating — `write`.
- */
 @ApiTags('public-cards')
 @ApiBearerAuth()
 @Controller('api/public/v1')
@@ -74,10 +59,7 @@ export class CardsPublicController {
   @Get('cards/:id')
   @RequireScope('read')
   @ApiOperation({ summary: 'Карточка по id' })
-  async get(
-    @CurrentApiUserId() userId: string,
-    @Param('id') id: string,
-  ) {
+  async get(@CurrentApiUserId() userId: string, @Param('id') id: string) {
     const card = await this.cards.getById(id, userId);
     return this.serializeCard(card);
   }
@@ -91,7 +73,6 @@ export class CardsPublicController {
     @Query('limit') limitRaw?: string,
     @Query('offset') offsetRaw?: string,
   ) {
-    // Owner-проверка (выкинет 404 если чужая).
     await this.cards.getById(id, userId);
     const limit = limitRaw ? Math.min(100, Math.max(1, Number(limitRaw))) : 50;
     const offset = offsetRaw ? Math.max(0, Number(offsetRaw)) : 0;
@@ -152,10 +133,7 @@ export class CardsPublicController {
   @RequireScope('write')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Soft-delete карточки' })
-  async remove(
-    @CurrentApiUserId() userId: string,
-    @Param('id') id: string,
-  ) {
+  async remove(@CurrentApiUserId() userId: string, @Param('id') id: string) {
     await this.cards.softDelete(id, userId);
   }
 
@@ -182,8 +160,6 @@ export class CardsPublicController {
   ) {
     await this.cards.unlinkMeeting(cardId, meetingId, userId);
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────────
 
   private serializeCard(c: {
     id: string;

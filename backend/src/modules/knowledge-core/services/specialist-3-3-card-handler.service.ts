@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -13,27 +8,8 @@ import {
   CardSpecialistRegistry,
 } from '../../chat-v2/services/card-specialist-registry.service';
 
-/**
- * SBA β-3 — обработчик `CardSpecialistRegistry` для специалиста 3.3
- * (Decisions).
- *
- * Регистрируется в `CardSpecialistRegistry` через `onModuleInit`.
- * Возвращает Decision-карточки, чьи `sourceBlockIds` пересекаются с
- * `candidateBlockIds` retrieval'а chat-v2, плюс ILIKE-поиск по
- * `statement` / `rationale` / `actualOutcomes`.
- *
- * Контракт `CardSpecialistHandler`:
- *   - метод НЕ должен бросать — на любую ошибку возвращаем `[]` и логируем.
- *   - tenant isolation: запрос всегда фильтруется по `tenantId`.
- *   - `confidence` — берём из самой записи (Decimal), иначе 0.75 (decisions
- *     обычно высокого качества — deep review).
- *   - возвращаем только status NOT IN ('rejected','cancelled','superseded') —
- *     устаревшие версии не показываем в chat-v2.
- */
 @Injectable()
-export class Specialist33CardHandler
-  implements OnModuleInit, CardSpecialistHandler
-{
+export class Specialist33CardHandler implements OnModuleInit, CardSpecialistHandler {
   private readonly logger = new Logger(Specialist33CardHandler.name);
   static readonly SPECIALIST_NAME = '3-3-decisions';
   private static readonly DEFAULT_CONFIDENCE = 0.75;
@@ -69,7 +45,6 @@ export class Specialist33CardHandler
           notIn: ['rejected', 'cancelled', 'superseded'],
         },
       };
-      // OR — overlap по sourceBlockIds ИЛИ ILIKE по statement/rationale/actualOutcomes.
       const queryWords = args.query
         .trim()
         .split(/\s+/)
@@ -121,18 +96,11 @@ export class Specialist33CardHandler
         const score = overlap * 2 + ilikeHit;
         if (score === 0) continue;
         const baseConfidence =
-          d.confidence !== null
-            ? Number(d.confidence)
-            : Specialist33CardHandler.DEFAULT_CONFIDENCE;
-        const finalConfidence = Math.min(
-          1,
-          baseConfidence + Math.min(0.1, overlap * 0.02),
-        );
+          d.confidence !== null ? Number(d.confidence) : Specialist33CardHandler.DEFAULT_CONFIDENCE;
+        const finalConfidence = Math.min(1, baseConfidence + Math.min(0.1, overlap * 0.02));
         const title = statement.slice(0, 100);
         const text =
-          rationale && rationale.length > 0
-            ? rationale.slice(0, 600)
-            : statement.slice(0, 600);
+          rationale && rationale.length > 0 ? rationale.slice(0, 600) : statement.slice(0, 600);
         candidates.push({
           result: {
             id: d.id,

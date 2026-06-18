@@ -1,18 +1,5 @@
 import { z } from 'zod';
 
-/**
- * DTO модуля org-members (Calendar MVP Фаза P4, 2026-05-25).
- *
- * Объединённый поиск по «членам Org» для ParticipantPicker в EventForm:
- *   - `User` через `Membership` (коллеги, которые имеют логин в Z);
- *   - `Person` (контакты Org, в том числе ещё не активировавшие приглашение,
- *     и внешние контакты — клиенты, партнёры).
- *
- * Используется в EventForm.ParticipantPicker — нам не важна семантическая
- * чистота между «коллегой» и «контактом», важно «человек, которого можно
- * добавить в событие».
- */
-
 export const OrgMembersSearchQuerySchema = z.object({
   q: z
     .string()
@@ -28,9 +15,7 @@ export interface OrgMemberUserItemDto {
   userId: string;
   name: string;
   email: string;
-  /** Опц. primary role (через активный Membership → не реализовано в MVP, пока null). */
   primaryRole: string | null;
-  /** Опц. avatarUrl (MVP — null, фронт берёт инициалы). */
   avatarUrl: string | null;
 }
 
@@ -43,9 +28,7 @@ export interface OrgMemberPersonItemDto {
   primaryDepartment: string | null;
 }
 
-export type OrgMemberSearchItemDto =
-  | OrgMemberUserItemDto
-  | OrgMemberPersonItemDto;
+export type OrgMemberSearchItemDto = OrgMemberUserItemDto | OrgMemberPersonItemDto;
 
 export interface OrgMembersSearchResponseDto {
   items: OrgMemberSearchItemDto[];

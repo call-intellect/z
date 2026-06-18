@@ -1,18 +1,3 @@
-/**
- * Фаза A.3 — AdminPromptExperimentsController.
- *
- * Эндпоинты `/api/v1/admin/prompt-experiments` (см. ТЗ A §7.2).
- *
- * RBAC: CookieAuthGuard. SuperAdmin видит ВСЕ. Owner/Admin Org — только
- * эксперименты своих Org (фильтрация в сервисе). Доступ для не-super_admin
- * получают только пользователи, у которых есть хотя бы одна Org с ролью
- * owner/admin (определяется в `resolveRbacContext`).
- *
- * Для прямой работы с PromptExperiment как ресурсом мы НЕ используем
- * `prompt_template` policy.csv (там granularity ниже), а делаем явный
- * чек в сервисе через `ExperimentRbacContext` (см. service).
- */
-
 import {
   BadRequestException,
   Body,
@@ -44,10 +29,7 @@ import {
   StopPromptExperimentSchema,
   type StopPromptExperimentDto,
 } from './dto/prompt-experiments.dto';
-import {
-  type ExperimentRbacContext,
-  PromptExperimentsService,
-} from './prompt-experiments.service';
+import { type ExperimentRbacContext, PromptExperimentsService } from './prompt-experiments.service';
 
 @ApiExcludeController()
 @Controller('api/v1/admin/prompt-experiments')
@@ -101,10 +83,7 @@ export class AdminPromptExperimentsController {
   }
 
   @Post(':id/start')
-  async start(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload | null | undefined,
-  ) {
+  async start(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload | null | undefined) {
     const rbac = await this.resolveRbacContext(user);
     return this.svc.start(id, rbac);
   }
@@ -119,8 +98,6 @@ export class AdminPromptExperimentsController {
     return this.svc.stop(id, dto, rbac);
   }
 
-  // ─── private ───────────────────────────────────────────────────────
-
   private async resolveRbacContext(
     user: CurrentUserPayload | null | undefined,
   ): Promise<ExperimentRbacContext> {
@@ -130,7 +107,6 @@ export class AdminPromptExperimentsController {
         error: { code: 'no_user_context' },
       });
     }
-    // Сначала isSuperAdmin.
     const u = await this.prisma.user.findUnique({
       where: { id: user.id },
       select: { isSuperAdmin: true },
@@ -141,7 +117,6 @@ export class AdminPromptExperimentsController {
         error: { code: 'no_user_found' },
       });
     }
-    // Owned Orgs (owner | admin).
     const memberships = await this.prisma.membership.findMany({
       where: { userId: user.id, role: { in: ['owner', 'admin'] } },
       select: { orgId: true },

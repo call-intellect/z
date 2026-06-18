@@ -22,15 +22,17 @@ import {
 import type { PasswordService } from './password.service';
 import type { SessionService } from './session.service';
 
-function makeUser(over: Partial<{
-  id: string;
-  email: string;
-  name: string;
-  role: 'user' | 'admin';
-  signupSource: 'crossmark' | 'standalone';
-  passwordHash: string | null;
-  mustChangePassword: boolean;
-}> = {}) {
+function makeUser(
+  over: Partial<{
+    id: string;
+    email: string;
+    name: string;
+    role: 'user' | 'admin';
+    signupSource: 'crossmark' | 'standalone';
+    passwordHash: string | null;
+    mustChangePassword: boolean;
+  }> = {},
+) {
   return {
     id: 'u1',
     email: 'alice@example.com',
@@ -133,9 +135,6 @@ describe('AccountsService', () => {
         findFirst: vi.fn(async () => null),
         findUnique: vi.fn(async () => null),
       },
-      // 2026-06-01 (shared-demo-org-model) — register дергает membership.{findUnique,create}
-      // только если cfg.demo.referenceOrgId не пустой. getMe — membership.findFirst и
-      // user.findUnique. По умолчанию все возвращают null.
       membership: {
         findUnique: vi.fn(async () => null),
         findFirst: vi.fn(async () => null),
@@ -152,8 +151,6 @@ describe('AccountsService', () => {
         magicLinkRateLimitPerHour: 5,
         magicLinkTtlMinutes: 15,
       },
-      // 2026-06-01 (ТЗ shared-demo-org-model §4.6) — по умолчанию демо-Org
-      // не подключена; тесты, проверяющие demo-attach, переопределяют cfg.demo.
       demo: { referenceOrgId: null as string | null },
     } as unknown as TypedConfigService;
     redis = {
@@ -181,18 +178,18 @@ describe('AccountsService', () => {
       orgs as unknown as OrgsService,
       redis as unknown as RedisService,
       metrics as unknown as BusinessMetricsService,
-      // β-9: OrgInvitationsService — для acceptInvitationMagicLink.
-      // Не нужен в текущих тестах, поэтому пустой stub.
       {} as unknown as OrgInvitationsService,
     );
   }
 
-  // ─────────────────────────── register ──────────────────────────
-
   describe('register', () => {
     it('создаёт standalone-юзера, шлёт письмо с temp-паролем', async () => {
       const svc = make();
-      const result = await svc.register({ email: 'Alice@Example.com', name: 'Alice', consentDataProcessing: true });
+      const result = await svc.register({
+        email: 'Alice@Example.com',
+        name: 'Alice',
+        consentDataProcessing: true,
+      });
 
       expect(disposable.isDisposable).toHaveBeenCalledWith('alice@example.com');
       expect(passwords.hash).toHaveBeenCalled();
@@ -230,9 +227,9 @@ describe('AccountsService', () => {
     it('disposable email → DisposableEmailError', async () => {
       disposable.isDisposable.mockReturnValueOnce(true);
       const svc = make();
-      await expect(svc.register({ email: 'a@mailinator.com', name: 'A', consentDataProcessing: true })).rejects.toBeInstanceOf(
-        DisposableEmailError,
-      );
+      await expect(
+        svc.register({ email: 'a@mailinator.com', name: 'A', consentDataProcessing: true }),
+      ).rejects.toBeInstanceOf(DisposableEmailError);
       expect(repo.upsertStandalone).not.toHaveBeenCalled();
     });
 
@@ -244,8 +241,6 @@ describe('AccountsService', () => {
       expect(result.emailError).toBe('SMTP timeout');
     });
   });
-
-  // ─────────────────────────── login ────────────────────────────
 
   describe('login', () => {
     it('успех: standalone-юзер с верным паролем → выдаёт сессию', async () => {
@@ -288,15 +283,11 @@ describe('AccountsService', () => {
     });
   });
 
-  // ─────────────────────────── logout ───────────────────────────
-
   it('logout: вызывает sessions.revokeByJti', async () => {
     const svc = make();
     await svc.logout('jti-xxx');
     expect(sessions.revokeByJti).toHaveBeenCalledWith('jti-xxx');
   });
-
-  // ─────────────────────────── forgot password ──────────────────
 
   describe('forgotPassword', () => {
     it('юзера нет → silent ok, ничего не делаем', async () => {
@@ -337,12 +328,9 @@ describe('AccountsService', () => {
       const created = repo.createVerificationToken.mock.calls[0]?.[0] as {
         tokenHash: string;
       };
-      // hash — sha256 hex = 64 символа
       expect(created.tokenHash).toMatch(/^[a-f0-9]{64}$/);
     });
   });
-
-  // ─────────────────────────── reset password ───────────────────
 
   describe('resetPassword', () => {
     it('валидный токен → меняет пароль, помечает usedAt, отзывает все сессии', async () => {
@@ -367,9 +355,9 @@ describe('AccountsService', () => {
     it('токен не найден → ResetTokenInvalidError', async () => {
       repo.findVerificationToken.mockResolvedValue(null);
       const svc = make();
-      await expect(svc.resetPassword({ token: 'x', newPassword: 'NewPass1' })).rejects.toBeInstanceOf(
-        ResetTokenInvalidError,
-      );
+      await expect(
+        svc.resetPassword({ token: 'x', newPassword: 'NewPass1' }),
+      ).rejects.toBeInstanceOf(ResetTokenInvalidError);
     });
 
     it('токен использован → ResetTokenInvalidError', async () => {
@@ -382,9 +370,9 @@ describe('AccountsService', () => {
         tokenHash: 'h',
       });
       const svc = make();
-      await expect(svc.resetPassword({ token: 'x', newPassword: 'NewPass1' })).rejects.toBeInstanceOf(
-        ResetTokenInvalidError,
-      );
+      await expect(
+        svc.resetPassword({ token: 'x', newPassword: 'NewPass1' }),
+      ).rejects.toBeInstanceOf(ResetTokenInvalidError);
     });
 
     it('токен истёк → ResetTokenInvalidError', async () => {
@@ -397,13 +385,11 @@ describe('AccountsService', () => {
         tokenHash: 'h',
       });
       const svc = make();
-      await expect(svc.resetPassword({ token: 'x', newPassword: 'NewPass1' })).rejects.toBeInstanceOf(
-        ResetTokenInvalidError,
-      );
+      await expect(
+        svc.resetPassword({ token: 'x', newPassword: 'NewPass1' }),
+      ).rejects.toBeInstanceOf(ResetTokenInvalidError);
     });
   });
-
-  // ─────────────────────────── change password ──────────────────
 
   describe('changePassword', () => {
     it('успех: меняет пароль, отзывает все сессии кроме текущей (если есть jti)', async () => {
@@ -468,8 +454,6 @@ describe('AccountsService', () => {
       ).rejects.toBeInstanceOf(CurrentPasswordInvalidError);
     });
   });
-
-  // ─────────────────────────── magic-link (β-9) ──────────────────
 
   describe('requestMagicLink', () => {
     beforeEach(() => {
@@ -583,8 +567,6 @@ describe('AccountsService', () => {
     });
   });
 
-  // ─── β-9 / Phase 6: requestMagicLinkForBot (internal, без письма) ─────
-
   describe('requestMagicLinkForBot', () => {
     it('успех: создаёт verification token, возвращает URL и TTL, метрика ok', async () => {
       repo.findById.mockResolvedValue(makeUser());
@@ -600,7 +582,6 @@ describe('AccountsService', () => {
           userId: 'u1',
         }),
       );
-      // Письмо НЕ отправляется (контракт: бот доставит сам).
       expect(mail.sendPasswordReset).not.toHaveBeenCalled();
       expect(metrics.incBotLoginCommand).toHaveBeenCalledWith({ outcome: 'ok' });
     });
@@ -609,9 +590,7 @@ describe('AccountsService', () => {
       repo.findById.mockResolvedValue(null);
       const svc = make();
 
-      await expect(
-        svc.requestMagicLinkForBot({ userId: 'ghost' }),
-      ).rejects.toThrow(/не найден/i);
+      await expect(svc.requestMagicLinkForBot({ userId: 'ghost' })).rejects.toThrow(/не найден/i);
       expect(repo.createVerificationToken).not.toHaveBeenCalled();
       expect(metrics.incBotLoginCommand).toHaveBeenCalledWith({
         outcome: 'user_not_found',
@@ -629,13 +608,9 @@ describe('AccountsService', () => {
 
       const r = await svc.requestMagicLinkForBot({ userId: 'u1' });
 
-      expect(r.url).toMatch(
-        /^https:\/\/kora\.example\.com\/accounts\/magic-link\/consume\?token=/,
-      );
+      expect(r.url).toMatch(/^https:\/\/kora\.example\.com\/accounts\/magic-link\/consume\?token=/);
     });
   });
-
-  // ─────────────────────────── helpers ──────────────────────────
 
   it('normalizeEmail: trim + lowercase', () => {
     expect(AccountsService.normalizeEmail('  Alice@Z.APP ')).toBe('alice@z.app');
@@ -654,10 +629,8 @@ describe('AccountsService', () => {
     expect(pw.length).toBeGreaterThanOrEqual(10);
   });
 
-  // ───────────────────── shared-demo-org-model (ТЗ 2026-06-01) ─────────────────
   describe('register: demo-attach (shared-demo-org-model)', () => {
     it('cfg.demo.referenceOrgId=null → membership.create НЕ вызывается', async () => {
-      // По умолчанию demo.referenceOrgId=null (см. beforeEach).
       const svc = make();
       await svc.register({
         email: 'newby@example.com',
@@ -668,7 +641,8 @@ describe('AccountsService', () => {
     });
 
     it('cfg.demo.referenceOrgId задан + Org валидна → membership.create("demo_observer")', async () => {
-      (cfg as unknown as { demo: { referenceOrgId: string | null } }).demo.referenceOrgId = 'demo-org-1';
+      (cfg as unknown as { demo: { referenceOrgId: string | null } }).demo.referenceOrgId =
+        'demo-org-1';
       prisma.org.findUnique.mockResolvedValueOnce({
         id: 'demo-org-1',
         isReferenceDemo: true,
@@ -692,7 +666,8 @@ describe('AccountsService', () => {
     });
 
     it('cfg.demo.referenceOrgId задан, но Org не isReferenceDemo → create НЕ вызывается (warn)', async () => {
-      (cfg as unknown as { demo: { referenceOrgId: string | null } }).demo.referenceOrgId = 'fake-org';
+      (cfg as unknown as { demo: { referenceOrgId: string | null } }).demo.referenceOrgId =
+        'fake-org';
       prisma.org.findUnique.mockResolvedValueOnce({
         id: 'fake-org',
         isReferenceDemo: false,
@@ -708,7 +683,8 @@ describe('AccountsService', () => {
     });
 
     it('membership уже существует → create НЕ вызывается (idempotent)', async () => {
-      (cfg as unknown as { demo: { referenceOrgId: string | null } }).demo.referenceOrgId = 'demo-org-1';
+      (cfg as unknown as { demo: { referenceOrgId: string | null } }).demo.referenceOrgId =
+        'demo-org-1';
       prisma.org.findUnique.mockResolvedValueOnce({
         id: 'demo-org-1',
         isReferenceDemo: true,
@@ -729,7 +705,6 @@ describe('AccountsService', () => {
     it('есть demo + owner → currentOrgRole=demo_observer (предпочтение demo)', async () => {
       repo.findById.mockResolvedValueOnce(makeUser({ id: 'u1' }));
       prisma.user.findUnique.mockResolvedValueOnce({ isSuperAdmin: false });
-      // Первый findFirst — для demo_observer, второй — для owned.
       prisma.membership.findFirst
         .mockResolvedValueOnce({ orgId: 'demo-org', role: 'demo_observer' })
         .mockResolvedValueOnce({ orgId: 'own-org', role: 'owner' });
@@ -745,8 +720,8 @@ describe('AccountsService', () => {
       repo.findById.mockResolvedValueOnce(makeUser({ id: 'u1' }));
       prisma.user.findUnique.mockResolvedValueOnce({ isSuperAdmin: false });
       prisma.membership.findFirst
-        .mockResolvedValueOnce(null) // demo
-        .mockResolvedValueOnce({ orgId: 'own-org', role: 'owner' }); // owned
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ orgId: 'own-org', role: 'owner' });
 
       const svc = make();
       const me = await svc.getMe('u1');
@@ -758,9 +733,7 @@ describe('AccountsService', () => {
     it('нет membership вообще → currentOrgRole=null, currentOrgId=null', async () => {
       repo.findById.mockResolvedValueOnce(makeUser({ id: 'u1' }));
       prisma.user.findUnique.mockResolvedValueOnce({ isSuperAdmin: false });
-      prisma.membership.findFirst
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null);
+      prisma.membership.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
 
       const svc = make();
       const me = await svc.getMe('u1');

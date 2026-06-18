@@ -26,14 +26,6 @@ import {
 } from './dto/tag.dto';
 import { TagsService } from './tags.service';
 
-/**
- *   `GET    /api/v1/tags`                          — все теги юзера
- *   `POST   /api/v1/tags`                          — создать
- *   `PATCH  /api/v1/tags/:id`                      — переименовать/перекрасить
- *   `DELETE /api/v1/tags/:id`                      — удалить (каскад MeetingTag)
- *   `GET    /api/v1/meetings/:id/tags`             — теги встречи
- *   `POST   /api/v1/meetings/:id/tags`             — заменить теги встречи
- */
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard)
 export class TagsController {
@@ -69,10 +61,7 @@ export class TagsController {
 
   @Delete('tags/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async delete(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<void> {
+  async delete(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload): Promise<void> {
     await this.tags.delete(id, user.id);
   }
 
@@ -95,14 +84,12 @@ export class TagsController {
     return this.tags.setMeetingTags(meetingId, user.id, body);
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────────
-
-  private mapTag(t: {
+  private mapTag(t: { id: string; name: string; color: string; createdAt: Date }): {
     id: string;
     name: string;
     color: string;
-    createdAt: Date;
-  }): { id: string; name: string; color: string; createdAt: string } {
+    createdAt: string;
+  } {
     return {
       id: t.id,
       name: t.name,

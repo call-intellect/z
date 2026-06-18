@@ -1,12 +1,3 @@
-/**
- * TenantMiddleware unit-tests (Pulse Фаза 1.0.1).
- *
- * Покрываем все 3 стратегии резолва tenantId (header / URL / body) +
- * fallback-поведение (next() всегда вызывается, не бросает исключений).
- *
- * БД и пользовательский контекст здесь не нужны — middleware работает
- * синхронно, без зависимостей.
- */
 import type { NextFunction, Request, Response } from 'express';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -195,7 +186,6 @@ describe('TenantMiddleware', () => {
 
     mw.use(req, {} as Response, next as NextFunction);
 
-    // Массив не строка → пропускаем → body.tenantId.
     expect(req.tenantId).toBe('body-tenant');
   });
 

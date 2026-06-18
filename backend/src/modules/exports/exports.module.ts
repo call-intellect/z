@@ -10,13 +10,6 @@ import { BulkZipGenerator } from './generators/bulk-zip.generator';
 import { DocxGenerator } from './generators/docx.generator';
 import { MdGenerator } from './generators/md.generator';
 
-/**
- * Модуль экспортов. Worker запускается в HTTP-процессе (как и webhook-out)
- * — нагрузка низкая, отдельный процесс не требуется. Если объёмы вырастут —
- * переедет в `WorkersModule`.
- *
- * Не глобальный — наружу выставлен только REST.
- */
 @Module({
   controllers: [ExportsController],
   providers: [

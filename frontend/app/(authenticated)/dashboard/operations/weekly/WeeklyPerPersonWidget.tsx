@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, Download, Users } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { ChevronDown, ChevronRight, Download, Users } from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { weeklyPerPersonApi } from '@/api/weekly-per-person.api';
+import { ApiError } from "@/api/api-error";
+import { weeklyPerPersonApi } from "@/api/weekly-per-person.api";
 import {
   pluralRu,
   reliabilityDisplay,
@@ -14,55 +14,32 @@ import {
   type WeeklyPersonItemTone,
   type WeeklyPersonItemUi,
   type WeeklyPersonRowUi,
-} from '@/domain/weekly-per-person';
-import {
-  buildPlanerkaCsv,
-  type PlanerkaPerson,
-} from '@/domain/planerka-csv';
-import {
-  CardTitle,
-  GlassCard,
-  GRAD,
-} from '@/ui/components/dashboard/modern';
-import { toast } from '@/ui/shadcn/toast';
+} from "@/domain/weekly-per-person";
+import { buildPlanerkaCsv, type PlanerkaPerson } from "@/domain/planerka-csv";
+import { CardTitle, GlassCard, GRAD } from "@/ui/components/dashboard/modern";
+import { toast } from "@/ui/shadcn/toast";
 
-/**
- * ТЗ-D Фаза 5 (2026-06-05) — виджет недельного план-факта по людям.
- * ТЗ редизайн Ф8.5 (2026-06-13) — раскрытие строки человека → вложенная
- * drill-down таблица плана-факта за неделю (Что · Тип · План · Факт · Что
- * мешало) с ленивой загрузкой; «N не сделано» в своде.
- *
- * Встроен в «Недельную сводку», но грузит данные САМ и независимо от дайджеста
- * (`GET /api/v1/dashboard/operations/weekly-per-person`). Показывает две
- * колонки: «Держат слово» (надёжные) и «Зоны риска» (срывы/просрочки), плюс
- * drill-down «Показать всех» с полным списком людей за неделю.
- *
- * Инварианты: парные токены chip-*-bg/-fg, весь текст по-русски, без финансов.
- */
 export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
   const [data, setData] = useState<WeeklyPerPersonUi | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Drill-down: полный список людей за неделю (загружается по запросу).
   const [allRows, setAllRows] = useState<WeeklyPersonRowUi[] | null>(null);
   const [allLoading, setAllLoading] = useState(false);
   const [allError, setAllError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
-  // Экспорт «для планёрки»: собираем построчный план-факт по ВСЕМ людям.
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    // При смене недели сбрасываем drill-down — данные устарели.
     setExpanded(false);
     setAllRows(null);
     setAllError(null);
     weeklyPerPersonApi
-      .get(weekStart, { sort: 'reliability' })
+      .get(weekStart, { sort: "reliability" })
       .then((res) => {
         if (cancelled) return;
         setData(weeklyPerPersonFromApi(res));
@@ -70,7 +47,7 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
       .catch((err: unknown) => {
         if (cancelled) return;
         setData(null);
-        setError(toMessage(err, 'Не удалось загрузить план-факт по людям'));
+        setError(toMessage(err, "Не удалось загрузить план-факт по людям"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -84,47 +61,36 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
     setAllLoading(true);
     setAllError(null);
     weeklyPerPersonApi
-      .get(weekStart, { limit: 100, offset: 0, sort: 'reliability' })
+      .get(weekStart, { limit: 100, offset: 0, sort: "reliability" })
       .then((res) => {
         setAllRows(weeklyPerPersonFromApi(res).rows);
         setExpanded(true);
       })
       .catch((err: unknown) => {
-        setAllError(toMessage(err, 'Не удалось загрузить полный список'));
+        setAllError(toMessage(err, "Не удалось загрузить полный список"));
       })
       .finally(() => {
         setAllLoading(false);
       });
   };
 
-  /**
-   * Собирает ПОЛНУЮ построчную таблицу план-факта по всем людям и скачивает
-   * CSV «для планёрки» (клиентский blob, без новых зависимостей).
-   *
-   * Шаги: (1) тянем полный список людей (если ещё нет — `get` с limit=100);
-   * (2) для каждого человека грузим его items батчами (ограничиваем
-   * параллелизм, чтобы не залить бэкенд при больших командах); (3) мапим,
-   * строим CSV (чистая `buildPlanerkaCsv`), добавляем BOM и скачиваем.
-   */
   const handleExport = async () => {
     if (exporting) return;
     setExporting(true);
     try {
-      // 1. Полный список людей (rows из основной загрузки — это top-5, не все).
       const full = weeklyPerPersonFromApi(
         await weeklyPerPersonApi.get(weekStart, {
           limit: 100,
           offset: 0,
-          sort: 'reliability',
+          sort: "reliability",
         }),
       );
       const rows = full.rows;
       if (rows.length === 0) {
-        toast.error('За эту неделю нет данных для выгрузки');
+        toast.error("За эту неделю нет данных для выгрузки");
         return;
       }
 
-      // 2. Построчные items по каждому человеку — батчами по 6 параллельно.
       const BATCH = 6;
       const people: PlanerkaPerson[] = [];
       for (let i = 0; i < rows.length; i += BATCH) {
@@ -141,22 +107,21 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
         people.push(...loaded);
       }
 
-      // 3. CSV + BOM + клиентский blob-download.
       const csv = buildPlanerkaCsv(people);
-      const blob = new Blob(['﻿', csv], {
-        type: 'text/csv;charset=utf-8',
+      const blob = new Blob(["﻿", csv], {
+        type: "text/csv;charset=utf-8",
       });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
       a.download = `planerka-${weekStart}.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast.success('Таблица для планёрки скачана');
+      toast.success("Таблица для планёрки скачана");
     } catch (err: unknown) {
-      toast.error(toMessage(err, 'Не удалось собрать таблицу для планёрки'));
+      toast.error(toMessage(err, "Не удалось собрать таблицу для планёрки"));
     } finally {
       setExporting(false);
     }
@@ -200,7 +165,7 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
                   disabled={allLoading}
                   className="rounded border px-3 py-1 text-sm text-fg-primary hover:bg-bg-subtle disabled:opacity-50"
                 >
-                  {allLoading ? 'Загрузка…' : 'Показать всех'}
+                  {allLoading ? "Загрузка…" : "Показать всех"}
                 </button>
               ) : (
                 <button
@@ -226,7 +191,7 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
                 ) : (
                   <Download size={14} aria-hidden />
                 )}
-                {exporting ? 'Готовим…' : 'Скачать для планёрки'}
+                {exporting ? "Готовим…" : "Скачать для планёрки"}
               </button>
             </div>
             {allError ? (
@@ -244,7 +209,6 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
   );
 }
 
-/* ── Колонка «Держат слово» (тон success) ─────────────────────────────── */
 function ReliableColumn({
   rows,
   weekStart,
@@ -283,7 +247,6 @@ function ReliableColumn({
   );
 }
 
-/* ── Колонка «Зоны риска» (тон danger/warning) ────────────────────────── */
 function RiskColumn({
   rows,
   weekStart,
@@ -322,35 +285,32 @@ function RiskColumn({
   );
 }
 
-/* ── Карточка одного человека (раскрывается в drill-down план-факта) ───── */
 function PersonRow({
   row,
   tone,
   weekStart,
 }: {
   row: WeeklyPersonRowUi;
-  tone: 'success' | 'danger';
+  tone: "success" | "danger";
   weekStart: string;
 }) {
   const drill = usePersonItems(weekStart, row.personId);
   const toneChip =
-    tone === 'success'
-      ? 'bg-chip-success-bg text-chip-success-fg'
-      : 'bg-chip-danger-bg text-chip-danger-fg';
+    tone === "success"
+      ? "bg-chip-success-bg text-chip-success-fg"
+      : "bg-chip-danger-bg text-chip-danger-fg";
   const broken = row.promisesBroken + row.promisesOverdue;
   const reliability = reliabilityDisplay(row);
-  // «мало данных» — приглушённый предупреждающий тон (не фейковые 100%);
-  // «—» — нейтральный; процент — тон колонки (success/danger).
   const reliabilityChip =
-    reliability.kind === 'low_data'
-      ? 'bg-chip-warning-bg text-chip-warning-fg'
-      : reliability.kind === 'none'
-      ? 'bg-bg-subtle text-fg-tertiary'
-      : toneChip;
+    reliability.kind === "low_data"
+      ? "bg-chip-warning-bg text-chip-warning-fg"
+      : reliability.kind === "none"
+        ? "bg-bg-subtle text-fg-tertiary"
+        : toneChip;
   const reliabilityTitle =
-    reliability.kind === 'low_data'
-      ? 'Слишком мало обещаний за неделю, чтобы считать надёжность.'
-      : 'Надёжность: доля сдержанных обещаний за неделю';
+    reliability.kind === "low_data"
+      ? "Слишком мало обещаний за неделю, чтобы считать надёжность."
+      : "Надёжность: доля сдержанных обещаний за неделю";
   return (
     <li className="rounded-md bg-bg-card">
       <button
@@ -360,11 +320,7 @@ function PersonRow({
         className="flex w-full items-start gap-1.5 rounded-md p-2 text-left hover:bg-bg-subtle"
       >
         <span aria-hidden className="mt-0.5 shrink-0 text-fg-tertiary">
-          {drill.open ? (
-            <ChevronDown size={14} />
-          ) : (
-            <ChevronRight size={14} />
-          )}
+          {drill.open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-2">
@@ -384,13 +340,13 @@ function PersonRow({
             </span>
           </span>
           <span className="mt-1 block text-xs text-fg-secondary">
-            {tone === 'success' ? (
+            {tone === "success" ? (
               <>
-                Сдержал {row.promisesKept} из {row.promisesGiven}{' '}
+                Сдержал {row.promisesKept} из {row.promisesGiven}{" "}
                 {pluralRu(row.promisesGiven, [
-                  'обещания',
-                  'обещаний',
-                  'обещаний',
+                  "обещания",
+                  "обещаний",
+                  "обещаний",
                 ])}
                 .
               </>
@@ -398,12 +354,12 @@ function PersonRow({
               <>
                 {row.promisesOverdue > 0
                   ? `Просрочил ${row.promisesOverdue}`
-                  : `Сорвал ${row.promisesBroken}`}{' '}
-                из {row.promisesGiven}{' '}
+                  : `Сорвал ${row.promisesBroken}`}{" "}
+                из {row.promisesGiven}{" "}
                 {pluralRu(row.promisesGiven, [
-                  'обещания',
-                  'обещаний',
-                  'обещаний',
+                  "обещания",
+                  "обещаний",
+                  "обещаний",
                 ])}
                 .
               </>
@@ -414,7 +370,7 @@ function PersonRow({
           <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-fg-tertiary">
             <span>
               Задачи: {row.tasksDone}
-              {row.tasksPlanned > 0 ? `/${row.tasksPlanned}` : ''}
+              {row.tasksPlanned > 0 ? `/${row.tasksPlanned}` : ""}
             </span>
             {row.tasksNotDone > 0 ? (
               <span className="rounded bg-chip-warning-bg px-1.5 py-0.5 text-chip-warning-fg">
@@ -430,7 +386,6 @@ function PersonRow({
   );
 }
 
-/* ── Ленивая загрузка построчного план-факта одного человека ──────────── */
 interface PersonItemsState {
   open: boolean;
   loading: boolean;
@@ -439,18 +394,12 @@ interface PersonItemsState {
   toggle: () => void;
 }
 
-/**
- * Управляет раскрытием и ленивой загрузкой items одного человека. Несколько
- * строк раскрываются независимо (у каждой свой инстанс хука). При смене недели
- * (`weekStart`) кэш сбрасывается — данные устарели.
- */
 function usePersonItems(weekStart: string, personId: string): PersonItemsState {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<WeeklyPersonItemUi[] | null>(null);
 
-  // Неделя сменилась — закрыть и забыть загруженное.
   useEffect(() => {
     setOpen(false);
     setItems(null);
@@ -464,7 +413,6 @@ function usePersonItems(weekStart: string, personId: string): PersonItemsState {
       return;
     }
     setOpen(true);
-    // Грузим только при первом раскрытии (или после ошибки).
     if (items !== null || loading) return;
     setLoading(true);
     setError(null);
@@ -474,7 +422,7 @@ function usePersonItems(weekStart: string, personId: string): PersonItemsState {
         setItems(res.items.map(weeklyPersonItemFromApi));
       })
       .catch((err: unknown) => {
-        setError(toMessage(err, 'Не удалось загрузить план-факт человека'));
+        setError(toMessage(err, "Не удалось загрузить план-факт человека"));
       })
       .finally(() => {
         setLoading(false);
@@ -485,13 +433,12 @@ function usePersonItems(weekStart: string, personId: string): PersonItemsState {
 }
 
 const TONE_CHIP: Record<WeeklyPersonItemTone, string> = {
-  ok: 'bg-chip-success-bg text-chip-success-fg',
-  risk: 'bg-chip-danger-bg text-chip-danger-fg',
-  warn: 'bg-chip-warning-bg text-chip-warning-fg',
-  neutral: 'bg-chip-info-bg text-chip-info-fg',
+  ok: "bg-chip-success-bg text-chip-success-fg",
+  risk: "bg-chip-danger-bg text-chip-danger-fg",
+  warn: "bg-chip-warning-bg text-chip-warning-fg",
+  neutral: "bg-chip-info-bg text-chip-info-fg",
 };
 
-/* ── Вложенная drill-down таблица план-факта человека ─────────────────── */
 function PersonItemsDrill({ drill }: { drill: PersonItemsState }) {
   return (
     <div className="border-t border-border-subtle px-2 pb-2 pt-2">
@@ -540,7 +487,7 @@ function PersonItemsDrill({ drill }: { drill: PersonItemsState }) {
                     </span>
                   </td>
                   <td className="py-1.5 text-fg-secondary">
-                    {it.blockedBy ?? '—'}
+                    {it.blockedBy ?? "—"}
                   </td>
                 </tr>
               ))}
@@ -552,7 +499,6 @@ function PersonItemsDrill({ drill }: { drill: PersonItemsState }) {
   );
 }
 
-/* ── Полный список (drill-down «показать всех») ──────────────────────── */
 function AllRowsTable({
   rows,
   weekStart,
@@ -576,7 +522,6 @@ function AllRowsTable({
   );
 }
 
-/* ── Строка полного списка — тоже раскрывается в drill-down ───────────── */
 function AllRowItem({
   row,
   weekStart,
@@ -595,24 +540,20 @@ function AllRowItem({
         className="flex w-full items-center gap-2 rounded-md p-2 text-left text-sm hover:bg-bg-subtle"
       >
         <span aria-hidden className="shrink-0 text-fg-tertiary">
-          {drill.open ? (
-            <ChevronDown size={14} />
-          ) : (
-            <ChevronRight size={14} />
-          )}
+          {drill.open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </span>
         <span className="min-w-0 flex-1 truncate font-medium text-fg-primary">
           {row.personName}
         </span>
         <span className="shrink-0 text-xs text-fg-tertiary">
-          {row.departmentName ?? '—'}
+          {row.departmentName ?? "—"}
         </span>
         <span className="shrink-0 text-xs tabular-nums text-fg-secondary">
           Сдержал {row.promisesKept}/{row.promisesGiven}
         </span>
         <span className="shrink-0 text-xs tabular-nums text-fg-secondary">
           Задачи {row.tasksDone}
-          {row.tasksPlanned > 0 ? `/${row.tasksPlanned}` : ''}
+          {row.tasksPlanned > 0 ? `/${row.tasksPlanned}` : ""}
         </span>
         {row.tasksNotDone > 0 ? (
           <span className="shrink-0 rounded bg-chip-warning-bg px-1.5 py-0.5 text-[11px] text-chip-warning-fg">
@@ -624,16 +565,16 @@ function AllRowItem({
         </span>
         <span
           className={`shrink-0 rounded px-2 py-0.5 text-[11px] tabular-nums ${
-            reliability.kind === 'low_data'
-              ? 'bg-chip-warning-bg text-chip-warning-fg'
-              : reliability.kind === 'none'
-              ? 'bg-bg-subtle text-fg-tertiary'
-              : 'bg-chip-info-bg text-chip-info-fg'
+            reliability.kind === "low_data"
+              ? "bg-chip-warning-bg text-chip-warning-fg"
+              : reliability.kind === "none"
+                ? "bg-bg-subtle text-fg-tertiary"
+                : "bg-chip-info-bg text-chip-info-fg"
           }`}
           title={
-            reliability.kind === 'low_data'
-              ? 'Слишком мало обещаний за неделю, чтобы считать надёжность.'
-              : 'Надёжность: доля сдержанных обещаний за неделю'
+            reliability.kind === "low_data"
+              ? "Слишком мало обещаний за неделю, чтобы считать надёжность."
+              : "Надёжность: доля сдержанных обещаний за неделю"
           }
         >
           {reliability.label}
@@ -645,8 +586,8 @@ function AllRowItem({
 }
 
 function toMessage(err: unknown, fallback: string): string {
-  if (err instanceof ApiError && err.code === 'forbidden_role') {
-    return 'Нет доступа к план-факту по людям (нужна роль coo / admin / owner).';
+  if (err instanceof ApiError && err.code === "forbidden_role") {
+    return "Нет доступа к план-факту по людям (нужна роль coo / admin / owner).";
   }
   if (err instanceof Error) return err.message;
   return fallback;

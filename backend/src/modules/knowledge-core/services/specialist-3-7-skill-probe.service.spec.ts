@@ -1,18 +1,3 @@
-/**
- * TZ clone-method Э3.1 (2026-06-12) — unit-тесты CDM-интервью носителя
- * (`Specialist37ProbeService.checkCdmInterview`).
- *
- * Покрывает:
- *   1. Гейт ON + нет прошлых вопросов + есть свежий reasoning-блок →
- *      `probeService.suggest` вызван с reason='skill.cdm_interview',
- *      payload.suggestedQuestion из LLM, recipientCandidates=[userId носителя].
- *   2. Уже maxQuestions задано → suggest НЕ вызван.
- *   3. Cooldown не истёк → suggest НЕ вызван.
- *   4. Флаг OFF → suggest НЕ вызван (и LLM не дёргается).
- *   5. LLM упал → skip без throw, suggest НЕ вызван.
- *
- * Все Prisma/LLM/Probe/Metrics/Cfg мокированы (без БД, без сети).
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';
@@ -59,14 +44,10 @@ function makeMocks(opts: {
       count: vi.fn().mockResolvedValue(opts.askedCount ?? 0),
       findFirst: vi
         .fn()
-        .mockResolvedValue(
-          opts.lastAskedAt ? { createdAt: opts.lastAskedAt } : null,
-        ),
+        .mockResolvedValue(opts.lastAskedAt ? { createdAt: opts.lastAskedAt } : null),
     },
     ideaBlockEntity: {
-      findMany: vi
-        .fn()
-        .mockResolvedValue(opts.freshMentions ?? [{ blockId: 'b1' }]),
+      findMany: vi.fn().mockResolvedValue(opts.freshMentions ?? [{ blockId: 'b1' }]),
     },
     ideaBlock: {
       findMany: vi.fn().mockResolvedValue([
@@ -75,9 +56,7 @@ function makeMocks(opts: {
           name: 'Перенос релиза',
           trustedAnswer: 'Решил перенести релиз ради нагрузочного теста',
           createdAt: new Date('2026-06-01T10:00:00.000Z'),
-          evidence: [
-            { quote: 'Лучше неделя задержки, чем падение у клиентов' },
-          ],
+          evidence: [{ quote: 'Лучше неделя задержки, чем падение у клиентов' }],
         },
       ]),
     },
@@ -93,9 +72,7 @@ function makeMocks(opts: {
     probe: { subjectAddressingEnabled: true },
     getDynamic: vi
       .fn()
-      .mockImplementation(
-        async (_key: string, _tenantId: unknown, dflt: unknown) => dflt,
-      ),
+      .mockImplementation(async (_key: string, _tenantId: unknown, dflt: unknown) => dflt),
   } as unknown as TypedConfigService;
 
   const llmCall = vi.fn();
@@ -160,7 +137,6 @@ describe('Specialist37ProbeService.checkCdmInterview — TZ clone-method Э3.1',
       payload: Record<string, unknown>;
     };
     expect(suggestArgs.reason).toBe('skill.cdm_interview');
-    // Адресат — САМ носитель (subject), не менеджер.
     expect(suggestArgs.recipientCandidates).toEqual(['user-subject-1']);
     expect(suggestArgs.priorityHint).toBe(0.4);
     expect(suggestArgs.payload.suggestedQuestion).toBe(
@@ -168,9 +144,7 @@ describe('Specialist37ProbeService.checkCdmInterview — TZ clone-method Э3.1',
     );
     expect(suggestArgs.payload.contextCardId).toBe('profile-cdm-1');
     expect(suggestArgs.payload.contextCardKind).toBe('skill_profile');
-    expect(suggestArgs.payload.contextCardTitle).toBe(
-      'Разбор кейса для клона роли',
-    );
+    expect(suggestArgs.payload.contextCardTitle).toBe('Разбор кейса для клона роли');
   });
 
   it('уже maxQuestions (5) задано → suggest НЕ вызван', async () => {
@@ -199,9 +173,7 @@ describe('Specialist37ProbeService.checkCdmInterview — TZ clone-method Э3.1',
     const svc = makeService(mocks);
     await svc.checkCdmInterview(CDM_ARGS);
 
-    expect(
-      (mocks.prisma.person.findUnique as ReturnType<typeof vi.fn>).mock.calls,
-    ).toHaveLength(0);
+    expect((mocks.prisma.person.findUnique as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
     expect(mocks.llmCall).not.toHaveBeenCalled();
     expect(mocks.suggest).not.toHaveBeenCalled();
   });
@@ -224,6 +196,27 @@ describe('Specialist37ProbeService.checkCdmInterview — TZ clone-method Э3.1',
     expect(mocks.suggest).not.toHaveBeenCalled();
   });
 
+  it('Б21: бюджет вопросов считается только по доставленным probe (status IN pending/dispatched)', async () => {
+    const svc = makeService(mocks);
+    await svc.checkCdmInterview(CDM_ARGS);
+
+    const countWhere = (mocks.prisma.probeEvent.count as ReturnType<typeof vi.fn>).mock.calls[0]![0]
+      .where as { status?: { in?: string[] }; reason: string };
+    expect(countWhere.reason).toBe('skill.cdm_interview');
+    expect(countWhere.status).toEqual({ in: ['pending', 'dispatched'] });
+    expect(countWhere.status?.in).not.toContain('queued_digest');
+    expect(countWhere.status?.in).not.toContain('dropped_rate_limit');
+  });
+
+  it('Б21: cooldown отсчитывается от доставленного probe (findFirst фильтрует status IN pending/dispatched)', async () => {
+    const svc = makeService(mocks);
+    await svc.checkCdmInterview(CDM_ARGS);
+
+    const ffWhere = (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0].where as { status?: { in?: string[] } };
+    expect(ffWhere.status).toEqual({ in: ['pending', 'dispatched'] });
+  });
+
   it('LLM упал → skip без throw, suggest НЕ вызван (best-effort)', async () => {
     mocks = makeMocks({ llmThrow: new Error('llm proxy 500') });
     const svc = makeService(mocks);
@@ -234,8 +227,6 @@ describe('Specialist37ProbeService.checkCdmInterview — TZ clone-method Э3.1',
 
   it('checkAndEmitProbes прокидывает entityId в CDM-проверку (упавший starved не мешает)', async () => {
     const svc = makeService(mocks);
-    // starved упадёт на person.relationship (мок без relationship) — это
-    // нормально: try/catch в checkAndEmitProbes изолирует триггеры.
     await svc.checkAndEmitProbes(CDM_ARGS);
     expect(mocks.suggest).toHaveBeenCalledTimes(1);
     const suggestArgs = mocks.suggest.mock.calls[0]![0] as { reason: string };

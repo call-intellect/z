@@ -1,22 +1,3 @@
-/**
- * Backfill `EntityLink.fromType` / `toType` для legacy-записей (до Фазы 0).
- *
- * С Фазы 0a модель EntityLink стала полиморфной: одни связи остаются
- * Entity↔Entity (knowledge-core, до Фазы 0), другие — между бизнес-сущностями
- * Фазы 0 (Role/Person/Process/...). Discriminator — поля `fromType` / `toType`.
- *
- * Существующие записи EntityLink, созданные до миграции, имеют
- * `fromType IS NULL` / `toType IS NULL`. Этот скрипт безопасно проставляет
- * им `'entity'` — единственно правильное значение, так как до Фазы 0
- * EntityLink хранил только Entity↔Entity связи (FK constraint).
- *
- * Запуск (из backend/):
- *   bun run scripts/backfill-entity-link-types-fase0.ts
- *
- * Идемпотентность: апдейтит только записи WHERE fromType IS NULL OR toType IS NULL.
- * Повторный запуск — no-op.
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -36,8 +17,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Один UPDATE через raw SQL — Prisma updateMany не позволит OR + AND с двумя SET.
-  // Гарантия: и fromType, и toType заполнятся в одной транзакции.
   const updated = await prisma.$executeRawUnsafe(`
     UPDATE "EntityLink"
        SET "fromType" = COALESCE("fromType", 'entity'),

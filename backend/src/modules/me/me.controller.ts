@@ -19,15 +19,9 @@ import { z } from 'zod';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
-import {
-  ConsentUpsertSchema,
-  type ConsentUpsertBody,
-} from '../onboarding/dto/consent.dto';
+import { ConsentUpsertSchema, type ConsentUpsertBody } from '../onboarding/dto/consent.dto';
 import {
   ConsentService,
   type ConsentDataType,
@@ -50,19 +44,10 @@ interface AccessLogItemDto {
   sectionAccessed: string;
 }
 
-/**
- * TZ-1 Фаза 0 (daily-value-engine) — body для PATCH /me/notification-preferences.
- * Все поля опциональны (частичное обновление). Хранятся в preferences
- * in_app-ChannelBinding текущего пользователя; их читает
- * NotificationBudgetService при решении о push-доставке.
- */
 const NotificationPreferencesSchema = z
   .object({
-    /** eventType'ы, от которых отписаться (push не приходит; in_app остаётся). */
     optOutEventTypes: z.array(z.string().min(1)).max(100).optional(),
-    /** Час начала тихих часов 0..23 (перекрывает дефолт). */
     quietHoursStart: z.number().int().min(0).max(23).optional(),
-    /** Час конца тихих часов 0..23 (перекрывает дефолт). */
     quietHoursEnd: z.number().int().min(0).max(23).optional(),
   })
   .strict();
@@ -183,10 +168,6 @@ export class MeController {
     return { items };
   }
 
-  /**
-   * Pulse Wave 4 §4.1 — выдать или отозвать согласие.
-   * Каждый POST = новая запись `ConsentLog` (append-only).
-   */
   @Post('consents')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Выдать или отозвать согласие 152-ФЗ (per dataType)' })
@@ -222,10 +203,6 @@ export class MeController {
     return { ok: true };
   }
 
-  /**
-   * Pulse Wave 4 §4.2 — кто и когда открывал мою pulse-карточку.
-   * Записи копит `KnowledgeAccessLoggerInterceptor` на `PersonsController`.
-   */
   @Get('privacy/access-log')
   @ApiOperation({ summary: 'История просмотров моей карточки (audit log)' })
   async getMyAccessLog(
@@ -238,10 +215,7 @@ export class MeController {
     if (!person) return { items: [] };
 
     const parsedLimit = Number.parseInt(limit ?? '', 10);
-    const lim =
-      Number.isFinite(parsedLimit) && parsedLimit > 0
-        ? Math.min(parsedLimit, 200)
-        : 50;
+    const lim = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50;
 
     const logs = await this.prisma.knowledgeAccessLog.findMany({
       where: { tenantId: t, viewedPersonId: person.id },
@@ -267,17 +241,10 @@ export class MeController {
     return { items };
   }
 
-  /**
-   * TZ-1 Фаза 0 (daily-value-engine) — настройки уведомлений текущего
-   * пользователя (opt-out по eventType + личное окно тихих часов). Хранится в
-   * preferences in_app-ChannelBinding'а (переиспользуем существующий механизм
-   * preferences, без новой колонки). Читается NotificationBudgetService.
-   */
   @Patch('notification-preferences')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary:
-      'Настройки моих уведомлений: отписка по типам + личные тихие часы (push)',
+    summary: 'Настройки моих уведомлений: отписка по типам + личные тихие часы (push)',
   })
   @ApiOkResponse({ description: '{ ok: true }' })
   async updateNotificationPreferences(
@@ -301,7 +268,6 @@ export class MeController {
       });
     }
 
-    // Гарантируем наличие in_app-канала + binding'а текущего пользователя.
     const channel = await this.prisma.channel.upsert({
       where: { tenantId_kind: { tenantId: t, kind: 'in_app' } },
       update: {},
@@ -352,10 +318,6 @@ export class MeController {
     return { ok: true };
   }
 
-  /**
-   * ТЗ coo-orphan-agents Ф8 — чтение моих настроек уведомлений (для UI-галочек).
-   * Зеркало PATCH: читает preferences in_app-ChannelBinding текущего пользователя.
-   */
   @Get('notification-preferences')
   @ApiOperation({
     summary: 'Мои настройки уведомлений (opt-out типы + тихие часы)',
@@ -406,8 +368,6 @@ export class MeController {
         : null;
     return { optOutEventTypes: optOut, quietHoursStart: qhs, quietHoursEnd: qhe };
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

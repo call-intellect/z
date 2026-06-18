@@ -2,9 +2,6 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 import { CurrencyRateSyncCron } from './currency-rate-sync.cron';
 
-/**
- * SBA α-10 wave 3 — тесты sync курса USD/RUB от ЦБ РФ + fallback.
- */
 describe('CurrencyRateSyncCron', () => {
   const fakePrisma = {
     currencyRate: { upsert: vi.fn(async () => ({})) },

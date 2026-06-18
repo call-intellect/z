@@ -1,10 +1,3 @@
-/**
- * Смоук-вызов DeepSeek — проверить, что ключ рабочий и модель отвечает.
- * Запуск:  cd backend && bun run scripts/eval/smoke-deepseek.ts
- *
- * Намеренно НЕ зависит от Nest / TypedConfigService — это разовая проверка.
- * Ключ нигде не выводится. В лог идут только: модель, ответ, токены, время.
- */
 import OpenAI from 'openai';
 
 const apiKey = process.env.DEEPSEEK_API_KEY;

@@ -1,28 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AiParticipantContext } from '../../ai/services/prompts/participant-context';
 import type { MeetingReportFastTask } from '../../ai/services/prompts/meeting-report-fast.prompt';
+import type { AiParticipantContext } from '../../ai/services/prompts/participant-context';
 import { TaskAssigneeResolverService } from '../services/task-assignee-resolver.service';
 
 import { MeetingReportFastWorker } from './meeting-report-fast.worker';
-
-/**
- * ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 4 — mini-e2e:
- * `MeetingReportFastWorker.writeTasks` пост-фактум резолвит `assigneeUserId`
- * из `assigneeRaw` по участникам встречи (БЕЗ правки LLM-промпта).
- *
- * Проверяем:
- *   1. assigneeRaw='Настя' + зарегистрированный участник «Настя» →
- *      Task.assigneeUserId='u-nastya'.
- *   2. Имя не совпало (нет такого участника) → assigneeUserId=null, задача
- *      всё равно создаётся, assigneeRaw сохраняется.
- *   3. Тёзки (два участника с одинаковым именем) → ambiguous → assigneeUserId=null,
- *      задача создаётся.
- *
- * writeTasks — private; дёргаем через any-cast, чтобы не поднимать BullMQ Worker
- * и весь DI-граф. `assigneeResolver` — реальный сервис (resolve чистый, метрики
- * @Optional()), участников передаём аргументом.
- */
 
 interface CreatedTask {
   title: string;
@@ -39,8 +21,6 @@ function buildWorker(opts?: { trackerOnly?: boolean }): {
   meetingUpdate: ReturnType<typeof vi.fn>;
 } {
   const created: CreatedTask[] = [];
-  // Доводка 2 (ТЗ consolidation §1.2.2) — writeQualityScore пишет в каноничную
-  // таблицу MeetingQualityScore + Meeting.qualityScoreStatus одной транзакцией.
   const qualityUpsert = vi.fn(async () => ({}));
   const meetingUpdate = vi.fn(async () => ({}));
   const prisma = {
@@ -69,26 +49,23 @@ function buildWorker(opts?: { trackerOnly?: boolean }): {
 
   const assigneeResolver = new TaskAssigneeResolverService();
 
-  // ТЗ Ф5.2 — gate `meetingTasksToTrackerOnly`. По умолчанию OFF (false):
-  // задачи создаются как раньше (тесты Фазы 4). Можно включить через opts.
   const cfg = {
     getDynamic: vi.fn(async () => opts?.trackerOnly ?? false),
   };
 
-  // Ф5 Р2 — MeetingTaskDedupeService (best-effort no-op в writeTasks).
   const taskDedupe = {
     dedupeForMeeting: vi.fn(async () => ({ merged: 0 })),
   };
 
   const worker = new MeetingReportFastWorker(
-    {} as never, // redis
+    {} as never,
     prisma as never,
-    {} as never, // router
-    {} as never, // participantContext (writeTasks получает participants аргументом)
+    {} as never,
+    {} as never,
     assigneeResolver,
-    taskDedupe as never, // taskDedupe (MeetingTaskDedupeService)
-    cfg as never, // cfg (TypedConfigService) — gate meetingTasksToTrackerOnly
-    undefined, // metrics @Optional()
+    taskDedupe as never,
+    cfg as never,
+    undefined,
   );
 
   return {
@@ -100,7 +77,6 @@ function buildWorker(opts?: { trackerOnly?: boolean }): {
   };
 }
 
-/** Валидный quality_score под схему MeetingReportFastQualityScoreSchema. */
 function qualityScore(): Record<string, unknown> {
   return {
     overallScore: 72,
@@ -118,10 +94,7 @@ function qualityScore(): Record<string, unknown> {
   };
 }
 
-function task(
-  title: string,
-  assigneeRaw: string | null,
-): MeetingReportFastTask {
+function task(title: string, assigneeRaw: string | null): MeetingReportFastTask {
   return {
     title,
     assigneeRaw,
@@ -131,9 +104,7 @@ function task(
   } as unknown as MeetingReportFastTask;
 }
 
-function participant(
-  overrides: Partial<AiParticipantContext>,
-): AiParticipantContext {
+function participant(overrides: Partial<AiParticipantContext>): AiParticipantContext {
   return {
     livekitIdentity: 'host:u-x',
     displayName: 'X',
@@ -245,7 +216,6 @@ describe('MeetingReportFastWorker.writeTasks — Ф5.2 gate meetingTasksToTracke
       participants,
     });
 
-    // Видимая задача = tracker Issue (создаётся отдельно), Task не пишем.
     expect(created).toHaveLength(0);
   });
 
@@ -269,6 +239,87 @@ describe('MeetingReportFastWorker.writeTasks — Ф5.2 gate meetingTasksToTracke
     });
 
     expect(created).toHaveLength(1);
+  });
+});
+
+/**
+ * Б32 [K6] — при деградации провайдера внутренний цикл (MAX_LLM_RETRIES+1 = 3
+ * дорогих LLM-вызова) исчерпывается без валидного вывода. РАНЬШЕ воркер бросал
+ * исключение «чтобы BullMQ зачёл attempt» → attempts=5 на очереди давали ×3
+ * вызова на КАЖДУЮ попытку = до 15 дорогих вызовов на одну встречу. Теперь
+ * статус 'failed' записан, job ЗАВЕРШАЕТСЯ без throw → ровно ≤3 LLM-вызова.
+ */
+describe('MeetingReportFastWorker.process — Б32 ограничение дорогих LLM-вызовов', () => {
+  function buildProcessWorker(routerCall: ReturnType<typeof vi.fn>): {
+    worker: MeetingReportFastWorker;
+    meetingUpdate: ReturnType<typeof vi.fn>;
+    routerCall: ReturnType<typeof vi.fn>;
+  } {
+    const meetingUpdate = vi.fn(async () => ({}));
+    const prisma = {
+      meeting: {
+        findUnique: vi.fn(async () => ({
+          id: 'm-1',
+          tenantId: 't-1',
+          deletedAt: null,
+          ownerId: 'owner-1',
+          type: 'team',
+          title: null,
+          startedAt: new Date('2026-06-16T10:00:00.000Z'),
+          transcript: {
+            turns: [
+              { speaker: 'Алиса', text: 'Привет, начнём', startSec: 0, endSec: 2 },
+            ],
+          },
+          aiResult: null,
+        })),
+        update: meetingUpdate,
+      },
+    };
+    const router = { call: routerCall };
+    const participantContext = { loadForMeeting: vi.fn(async () => []) };
+    const cfg = { getDynamic: vi.fn(async () => false) };
+    const worker = new MeetingReportFastWorker(
+      {} as never, // redis
+      prisma as never,
+      router as never,
+      participantContext as never,
+      new TaskAssigneeResolverService(),
+      { dedupeForMeeting: vi.fn(async () => ({ merged: 0 })) } as never,
+      cfg as never,
+      undefined, // events @Optional
+      undefined, // metrics @Optional
+      undefined, // meetingTitle @Optional
+    );
+    return { worker, meetingUpdate, routerCall };
+  }
+
+  it('провайдер всегда отдаёт мусор → ровно 3 LLM-вызова, process НЕ бросает, статус failed', async () => {
+    // Router всегда возвращает невалидный ответ (ни tool_calls, ни JSON).
+    const routerCall = vi.fn(async () => ({
+      text: 'это не JSON',
+      toolCalls: undefined,
+      modelUsed: 'deepseek:v4',
+      providerUsed: 'deepseek',
+      tier: 'fast',
+    }));
+    const { worker, meetingUpdate } = buildProcessWorker(routerCall);
+
+    // НЕ должно бросить (раньше бросало).
+    await expect(
+      (worker as any).process({ id: 'job-1', data: { meetingId: 'm-1' } }),
+    ).resolves.toBeUndefined();
+
+    // Ровно MAX_LLM_RETRIES+1 = 3 дорогих вызова, не больше.
+    expect(routerCall).toHaveBeenCalledTimes(3);
+
+    // Финальный статус failed записан в БД.
+    const failedCall = meetingUpdate.mock.calls.find(
+      (c) =>
+        (c[0] as { data?: { reportFastStatus?: string } })?.data
+          ?.reportFastStatus === 'failed',
+    );
+    expect(failedCall).toBeDefined();
   });
 });
 
@@ -323,14 +374,12 @@ describe('MeetingReportFastWorker.writeQualityScore — Доводка 2 (кан
       tenantId: 't-1',
       qualityScore: qualityScore(),
     });
-    // Meeting.update — снимок JSON + статус ready.
     expect(meetingUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'm-1' },
         data: expect.objectContaining({ qualityScoreStatus: 'ready' }),
       }),
     );
-    // Каноничная таблица — маппинг categories.* → *Score.
     expect(qualityUpsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { meetingId: 'm-1' },

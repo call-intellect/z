@@ -5,21 +5,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { GoalThemeLinkerService } from '../services/goal-theme-linker.service';
 
-/**
- * GoalThemeLinkerCron (agent-chain overhaul, Фаза 4.2) — догоночная авто-привязка
- * тем к AI-целям без единой темы.
- *
- * On-event хук в Specialist314GoalsService привязывает темы в момент создания
- * цели, но к этому моменту тема/провенанс/co-mention могут быть ещё не готовы
- * (theme-clusterer / entity-graph отрабатывают позже). Этот cron подбирает
- * остаток: AI-цели с непустым sourceBlockIds, у которых нет ни одной GoalTheme.
- *
- * Раз в 30 минут. Лимит 50 целей на Org на тик. Идемпотентно: повторный прогон
- * не создаёт дублей (GoalTheme PK + skipDuplicates в линкере); как только у
- * цели появилась хотя бы одна тема — фильтр `themes: { none: {} }` её исключает.
- *
- * WorkerOrgGate: уважает тумблер `Org.workersEnabled['goal-theme-linker']`.
- */
 @Injectable()
 export class GoalThemeLinkerCron {
   private readonly logger = new Logger(GoalThemeLinkerCron.name);
@@ -38,10 +23,7 @@ export class GoalThemeLinkerCron {
     try {
       const summary = await this.scanAllOrgs();
       if (summary.linkedGoals > 0) {
-        this.logger.log(
-          summary,
-          'goal-theme-linker-cron: догоночная привязка завершена',
-        );
+        this.logger.debug(summary, 'goal-theme-linker-cron: догоночная привязка завершена');
       }
     } catch (err) {
       this.logger.error(
@@ -51,7 +33,6 @@ export class GoalThemeLinkerCron {
     }
   }
 
-  /** Публично — для возможного ручного запуска / админ-эндпоинта. */
   async scanAllOrgs(): Promise<{
     scannedOrgs: number;
     linkedGoals: number;
@@ -70,7 +51,6 @@ export class GoalThemeLinkerCron {
     let linkedGoals = 0;
 
     for (const org of orgs) {
-      // Тумблер Org → если выключено, пропускаем эту Org (не валим весь тик).
       try {
         await this.gate.checkOrThrow(org.id, GoalThemeLinkerCron.WORKER_NAME);
       } catch {
@@ -78,7 +58,6 @@ export class GoalThemeLinkerCron {
       }
       scannedOrgs += 1;
 
-      // AI-цели с блоками-источниками, но без единой темы (GoalTheme).
       const goals = await this.prisma.goal.findMany({
         where: {
           tenantId: org.id,

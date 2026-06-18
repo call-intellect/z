@@ -17,10 +17,7 @@ import type { Response } from 'express';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -33,21 +30,6 @@ import {
 import { readOrchestratorLimits } from './orchestrator.config';
 import { OrchestratorService } from './services/orchestrator.service';
 
-/**
- * SBA δ-1 — REST API Orchestrator.
- *
- *   POST /api/v1/orchestrator/runs            — запустить (SSE stream)
- *   POST /api/v1/orchestrator/runs/start      — same, но JSON polling (создаёт run, не ждёт)
- *   GET  /api/v1/orchestrator/runs/:id        — status + результаты
- *   GET  /api/v1/orchestrator/runs/:id/events — SSE re-stream поверх БД (для подключения позже)
- *   POST /api/v1/orchestrator/runs/:id/cancel — отменить (помечает failed)
- *
- * RBAC: resource='orchestrator'. write — запустить (employee + feature-flag);
- * read — посмотреть свой run; manage — admin (видеть/убивать чужие).
- *
- * Feature-flag ORCHESTRATOR_ENABLED проверяется и в RBAC-layer (через 503),
- * и в OrchestratorService (через error event).
- */
 @ApiTags('orchestrator')
 @Controller('api/v1/orchestrator')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -58,8 +40,6 @@ export class OrchestratorController {
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
-
-  // ───────────────── POST /runs — SSE stream ─────────────────────────
 
   @Post('runs')
   @ApiOperation({
@@ -84,9 +64,7 @@ export class OrchestratorController {
     const heartbeat = setInterval(() => {
       try {
         res.write(`: heartbeat\n\n`);
-      } catch {
-        /* socket dead */
-      }
+      } catch {}
     }, 15_000);
 
     try {
@@ -107,9 +85,7 @@ export class OrchestratorController {
         res.write(
           `data: ${JSON.stringify({ type: 'error', code: 'stream_failure', message })}\n\n`,
         );
-      } catch {
-        /* */
-      }
+      } catch {}
     } finally {
       clearInterval(heartbeat);
       if (!res.writableEnded) {
@@ -117,8 +93,6 @@ export class OrchestratorController {
       }
     }
   }
-
-  // ───────────────── GET /runs/:id — статус ──────────────────────────
 
   @Get('runs/:id')
   @ApiOperation({ summary: 'Статус research-run + результат' })
@@ -186,8 +160,6 @@ export class OrchestratorController {
       })),
     };
   }
-
-  // ───────────────── GET /runs/:id/events — replay SSE ──────────────
 
   @Get('runs/:id/events')
   @ApiOperation({
@@ -264,8 +236,6 @@ export class OrchestratorController {
     res.end();
   }
 
-  // ───────────────── POST /runs/:id/cancel ───────────────────────────
-
   @Post('runs/:id/cancel')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Отменить research-run' })
@@ -307,8 +277,6 @@ export class OrchestratorController {
     });
     return { ok: true, status: 'failed' };
   }
-
-  // ───────────────── helpers ─────────────────────────────────────────
 
   private requireTenant(t: string | undefined): string {
     if (!t) {

@@ -7,31 +7,6 @@ import { CoreQueueService } from '../../core-queue/core-queue.service';
 import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { RouterService } from '../services/router.service';
 
-/**
- * SBA β-2 — Specialist 3.2 (Knowledge Clone) handler.
- *
- * Handler очереди `core.specialist-routing` с jobName='3-2-knowledge-clone'.
- * Вызывается из `SpecialistRoutingDispatcherWorker.dispatch`, когда
- * `RouterService.dispatch` диспатчит блок (signalType='fact' с упомянутым
- * employee Person ИЛИ signalType='knowledge_gap') этому специалисту.
- *
- * Логика:
- *   1. Получить block + entities (IdeaBlockEntity → Entity).
- *   2. Для каждого упомянутого Person (через Person.entityId), у которого
- *      `relationship='employee'`, debounce-enqueue
- *      `RebuildKnowledgeProfileJob` (jobId =
- *      `rebuild-knowledge-profile_<personId>`, delay из cfg).
- *   3. Метрики `core_specialist_pipeline_duration_seconds{type='knowledge_profile'}`.
- *
- * НЕ делает: LLM-extraction (это `KnowledgeCloneRebuildWorker`), запись
- * в Person.knowledgeProfile (это Specialist32Service внутри rebuild'а),
- * probe/conflict (это сервисы внутри rebuild'а).
- *
- * Идемпотентность:
- *   - jobId диспатча — `3-2-knowledge-clone_<blockId>` (см. RouterService);
- *   - внутри: enqueueRebuildKnowledgeProfile идемпотентен по
- *     `rebuild-knowledge-profile_<personId>` + debounce.
- */
 @Injectable()
 export class Specialist32KnowledgeCloneWorker {
   private readonly logger = new Logger(Specialist32KnowledgeCloneWorker.name);
@@ -59,10 +34,7 @@ export class Specialist32KnowledgeCloneWorker {
         },
       });
       if (!block) {
-        this.logger.debug(
-          { blockId },
-          'specialist-3-2: блок не найден — skip',
-        );
+        this.logger.debug({ blockId }, 'specialist-3-2: блок не найден — skip');
         this.metrics.incCoreSpecialistSkipped({
           specialist: Specialist32KnowledgeCloneWorker.SPECIALIST_NAME,
           reason: 'block_not_found',
@@ -92,7 +64,6 @@ export class Specialist32KnowledgeCloneWorker {
         return;
       }
 
-      // Найти Person'ов через IdeaBlockEntity → Entity{type=person} → Person.
       const mentions = await this.prisma.ideaBlockEntity.findMany({
         where: {
           blockId: block.id,
@@ -103,10 +74,7 @@ export class Specialist32KnowledgeCloneWorker {
       });
       const entityIds = [...new Set(mentions.map((m) => m.entityId))];
       if (entityIds.length === 0) {
-        this.logger.debug(
-          { blockId },
-          'specialist-3-2: упомянутых Person-entities нет — skip',
-        );
+        this.logger.debug({ blockId }, 'specialist-3-2: упомянутых Person-entities нет — skip');
         this.metrics.incCoreSpecialistSkipped({
           specialist: Specialist32KnowledgeCloneWorker.SPECIALIST_NAME,
           reason: 'signal_out_of_scope',
@@ -155,7 +123,7 @@ export class Specialist32KnowledgeCloneWorker {
         }
       }
 
-      this.logger.log(
+      this.logger.debug(
         {
           blockId,
           personsDispatched: persons.length,

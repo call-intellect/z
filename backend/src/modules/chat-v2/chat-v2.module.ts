@@ -1,10 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  Module,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, Module, type OnModuleInit } from '@nestjs/common';
 
 import { ConversationalService } from '../conversational/conversational.service';
 import type { InboundMessage } from '../conversational/types/channel.types';
@@ -19,25 +13,6 @@ import { IssueCardHandler } from './specialists/issue-card-handler.service';
 import { ProjectCardHandler } from './specialists/project-card-handler.service';
 import { SprintCardHandler } from './specialists/sprint-card-handler.service';
 import { ChatV2CleanupCron } from './workers/chat-v2-cleanup.cron';
-
-/**
- * SBA α-5 — ChatV2Module.
- *
- * Зависимости (через @Global):
- *   - PrismaService, TypedConfigService, BusinessMetricsService — глобальные.
- *   - LlmRouterService (AiModule, @Global) — для generateTitle.
- *   - ChatV2Service (KnowledgeCoreModule, @Global) — основной retrieval+LLM.
- *   - ConversationalService (ConversationalModule, @Global) — inbound
- *     `chat_query` подписка + outbound `sendChatReply`.
- *
- * Регистрирует inbound-handler 'chat_query' в onModuleInit — любое
- * сообщение через любой канал, распарсенное как chat_query, превращается в
- * ChatV2OrchestrationService.ask() и ответ уходит обратно через тот же
- * канал (через ConversationalService.sendChatReply).
- *
- * Старый `ChatModule` остаётся в строю (помечен @deprecated), переключается
- * через ENV `CHAT_V2_ENABLED`.
- */
 
 @Injectable()
 export class ChatV2OmnichannelBridge implements OnModuleInit {
@@ -67,14 +42,10 @@ export class ChatV2OmnichannelBridge implements OnModuleInit {
         userId: msg.userId,
         question: msg.question,
         conversationId: msg.conversationId,
-        // mode/scope не задаём — используются дефолты.
         channelKindOrigin: msg.originChannelBindingId ? 'external' : 'in_app',
       });
 
-      // M-1 (2026-06-12): derived класс ответа sensitive/private → текст НЕ
-      // льём в канал, шлём указатель на кабинет (сам факт ответа internal).
-      const restricted =
-        answer.dataClass === 'sensitive' || answer.dataClass === 'private';
+      const restricted = answer.dataClass === 'sensitive' || answer.dataClass === 'private';
       const text = restricted
         ? `Ответ содержит данные ограниченного доступа — откройте в кабинете: /chat?conversation=${answer.conversationId}`
         : answer.text;
@@ -89,11 +60,6 @@ export class ChatV2OmnichannelBridge implements OnModuleInit {
         mode: answer.mode,
         uncertaintyNote: answer.uncertaintyNote ?? undefined,
         originChannelBindingId: msg.originChannelBindingId,
-        // Ф1 «Стоп-молчание» (ТЗ 2026-06-11 assistant-channels): solicited
-        // reply на заданный вопрос — должен дойти в канал-источник даже в
-        // тихие часы. dataClass 'internal' вместо дефолтного 'sensitive',
-        // чтобы ответ (или указатель на кабинет — M-1) прошёл maxDataClass
-        // внешних каналов (Telegram/MAX), а не молча уходил только в кабинет.
         dataClass: 'internal',
         solicited: true,
       });
@@ -112,8 +78,6 @@ export class ChatV2OmnichannelBridge implements OnModuleInit {
         { userId: msg.userId, err: message },
         'chat_query handler упал — пользователь не получит ответ',
       );
-      // Не пробрасываем дальше — ConversationalService.dispatchInbound сам
-      // ловит ошибки, чтобы один кривой handler не валил весь pipeline.
     }
   }
 }
@@ -127,29 +91,16 @@ export class ChatV2OmnichannelBridge implements OnModuleInit {
     CardSpecialistRegistry,
     ChatV2CleanupCron,
     ChatV2OmnichannelBridge,
-    // TZ-1 Фаза 5 (daily-value-engine) — оценка «помог ли ответ» +
-    // агрегатор метрики чата (getChatUsageStats). Экспортируется для
-    // ValueRecapService (OperationsModule импортирует ChatV2Module).
     ChatV2FeedbackService,
-    // Tracker Phase 3 part C (Wave 3, 2026-05-24) — Issue/Project как
-    // источники для retrieval'а chat-v2. Регистрируются автоматически в
-    // CardSpecialistRegistry через onModuleInit (паттерн как
-    // Specialist31/34CardHandler из knowledge-core).
     IssueCardHandler,
     ProjectCardHandler,
-    // Sprints (2026-05-27) — спринты как источник для retrieval'а chat-v2
-    // («покажи проблемы спринта по проекту X»). Зависит только от Prisma —
-    // регистрируется в CardSpecialistRegistry в onModuleInit.
     SprintCardHandler,
   ],
   exports: [
     ChatV2OrchestrationService,
     ChatV2ConversationsService,
     CardSpecialistRegistry,
-    // TZ-1 Фаза 5 — для ValueRecapService (метрика чата в месячной витрине).
     ChatV2FeedbackService,
-    // Export'им helper-сервисы, чтобы будущий расширенный ChatV2RetrievalService
-    // мог вызывать getCitations / formatForChat напрямую.
     IssueCardHandler,
     ProjectCardHandler,
     SprintCardHandler,

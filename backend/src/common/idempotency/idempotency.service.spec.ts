@@ -5,13 +5,6 @@ import type { RedisService } from '../redis/redis.service';
 
 import { IdempotencyService } from './idempotency.service';
 
-/**
- * Юнит-тест IdempotencyService:
- *   - формула ключа: `idempotency:${tenantId ?? 'global'}:${key}`;
- *   - setCached → SET ... EX <ttl>;
- *   - getCached → JSON.parse;
- *   - fail-open на ошибках Redis (возвращаем null / не падаем).
- */
 describe('IdempotencyService', () => {
   let getMock: ReturnType<typeof vi.fn>;
   let setMock: ReturnType<typeof vi.fn>;
@@ -71,9 +64,7 @@ describe('IdempotencyService', () => {
   });
 
   it('getCached — HIT возвращает разобранный JSON', async () => {
-    getMock.mockResolvedValueOnce(
-      JSON.stringify({ status: 201, body: { id: 'issue_1' } }),
-    );
+    getMock.mockResolvedValueOnce(JSON.stringify({ status: 201, body: { id: 'issue_1' } }));
     const result = await service.getCached('k1', 'org_1');
     expect(result).toEqual({ status: 201, body: { id: 'issue_1' } });
     expect(getMock).toHaveBeenCalledWith('idempotency:org_1:k1');
@@ -93,10 +84,7 @@ describe('IdempotencyService', () => {
 
   it('setCached — ошибка Redis → не пробрасывается (fail-open)', async () => {
     setMock.mockRejectedValueOnce(new Error('readonly replica'));
-    // Не должно throw'ить.
-    await expect(
-      service.setCached('k4', null, { status: 200, body: {} }),
-    ).resolves.toBeUndefined();
+    await expect(service.setCached('k4', null, { status: 200, body: {} })).resolves.toBeUndefined();
   });
 
   it('изоляция tenant: один key + разные tenantId → разные ключи Redis', async () => {

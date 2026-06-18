@@ -1,15 +1,9 @@
-/**
- * W2.3 KC-Temporal (2026-05-25) — API-клиент для admin preference-dataset.
- *
- * Backend: `backend/src/modules/admin/llm-preference-dataset/
- * llm-preference-dataset.controller.ts`.
- */
-import { apiClient } from './api-client';
-import { buildQuery } from './admin-helpers';
+import { apiClient } from "./api-client";
+import { buildQuery } from "./admin-helpers";
 import type {
   AdminPreferenceSampleListApi,
   AdminPreferenceStatsApi,
-} from '@/domain/admin-llm-preference-sample';
+} from "@/domain/admin-llm-preference-sample";
 
 type ListFilters = {
   taskType?: string;
@@ -39,10 +33,6 @@ export const adminLlmPreferenceDatasetApi = {
       })}`,
     ),
 
-  /**
-   * Прямой URL для скачивания JSONL. Используется в `<a download>` —
-   * браузер сам идёт по cookie-auth, эндпоинт отдаёт `application/jsonl`.
-   */
   downloadJsonlUrl: (req: ListFilters = {}) =>
     `/api/v1/admin/llm/preference-dataset${buildQuery({
       taskType: req.taskType,

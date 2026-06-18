@@ -1,75 +1,40 @@
-'use client';
+"use client";
 
-import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
-import { Loader2, MessageCircle, Send } from 'lucide-react';
-import { toast } from 'sonner';
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { Loader2, MessageCircle, Send } from "lucide-react";
+import { toast } from "sonner";
 
 import {
   chatApi,
   type ChatCitationApi,
   type ChatMessageApi,
-} from '@/api/chat.api';
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { stripContextMarkers } from '@/domain/chat-v2';
-import { Button } from '@/ui/shadcn/button';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { ScrollArea } from '@/ui/shadcn/scroll-area';
-import { cn } from '@/ui/shadcn/lib/utils';
-import { AiTypingDots } from '@/ui/components/ai/AiTypingDots';
+} from "@/api/chat.api";
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { stripContextMarkers } from "@/domain/chat-v2";
+import { Button } from "@/ui/shadcn/button";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { ScrollArea } from "@/ui/shadcn/scroll-area";
+import { cn } from "@/ui/shadcn/lib/utils";
+import { AiTypingDots } from "@/ui/components/ai/AiTypingDots";
 import {
   VoiceInputButton,
   appendTranscript,
-} from '@/ui/components/voice/VoiceInputButton';
+} from "@/ui/components/voice/VoiceInputButton";
 
-/**
- * Общий компонент org-scope AI-чата (Фаза 8 шаг 5).
- *
- * Используется на двух страницах:
- *   - `/chat` — выделенная страница чата (`withHistory=true`).
- *   - `/dashboard` (вид директора) — встроенный inline-блок Q&A
- *     (`withHistory=false`, ad-hoc подсказки).
- *
- * Источник правды:
- *   - `chatApi.askV2({scope:'org', query})` — основной путь (Фаза 6).
- *   - При 503 `chat_v2_disabled` — graceful fallback на legacy
- *     `chatApi.sendGlobal({message})`.
- *   - История — `chatApi.historyGlobal()` (общий cross-history).
- *
- * Контракт props:
- *   - `withHistory` (default `true`) — подгружать ли сохранённую историю.
- *     На дашборде директора отключаем, чтобы не путать с длинной историей
- *     `/chat`.
- *   - `height` — фиксированная высота области сообщений (CSS-значение
- *     для inline-style). По умолчанию — высота на остаток flex-родителя.
- *   - `placeholder` — кастомный плейсхолдер для textarea.
- *   - `intro` — кастомная подсказка в пустом состоянии.
- *
- * АДДИТИВНЫЕ опц. пропсы (мобильный «Спросить», B4/Ф5) — все с дефолтом-off,
- * десктоп без них = байт-в-байт прежнее поведение:
- *   - `suggestedPrompts` — промпт-кнопки в один тап над полем ввода. Тап
- *     подставляет текст в поле и фокусирует его (пользователь дополняет «…»
- *     и отправляет). Отправку/citations НЕ дублируем.
- *   - `voiceInput` — показать кнопку голосового ВВОДА (`VoiceInputButton`,
- *     серверный ASR Vox, iOS ок) рядом с полем. Только ВВОД, без TTS/озвучки
- *     (см. [[concierge_text_only_output]]).
- */
 export type OrgChatPanelProps = {
   withHistory?: boolean;
   height?: string;
   placeholder?: string;
   intro?: React.ReactNode;
-  /** Доп.класс на корневой контейнер (обёртка `.flex.flex-col`). */
   className?: string;
-  /** Промпт-кнопки в один тап над полем ввода (дефолт — нет). */
   suggestedPrompts?: string[];
-  /** Показать кнопку голосового ВВОДА рядом с полем (дефолт — нет). */
   voiceInput?: boolean;
 };
 
 type ChatMessage = {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   citations?: ChatCitationApi[];
 };
@@ -77,20 +42,19 @@ type ChatMessage = {
 export function OrgChatPanel({
   withHistory = true,
   height,
-  placeholder = 'Спросите про команду, сделки, продукт, риски…',
+  placeholder = "Спросите про команду, сделки, продукт, риски…",
   intro,
   className,
   suggestedPrompts,
   voiceInput = false,
 }: OrgChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(!withHistory);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // История диалога — только если запрошена.
   useEffect(() => {
     if (!withHistory) return;
     let cancelled = false;
@@ -111,7 +75,7 @@ export function OrgChatPanel({
   }, [withHistory]);
 
   useEffect(() => {
-    scrollAnchorRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, sending]);
 
   async function sendMessage() {
@@ -120,22 +84,22 @@ export function OrgChatPanel({
     setSending(true);
     const userMsg: ChatMessage = {
       id: `local-${Date.now()}`,
-      role: 'user',
+      role: "user",
       content: text,
     };
     setMessages((prev) => [...prev, userMsg]);
-    setInput('');
+    setInput("");
     try {
       const res = await sendOrgChatWithFallback(text);
       const aiMsg: ChatMessage = {
         id: `local-ai-${Date.now()}`,
-        role: 'assistant',
+        role: "assistant",
         content: res.message,
         citations: res.citations,
       };
       setMessages((prev) => [...prev, aiMsg]);
     } catch (err) {
-      const msg = humanizeApiError(err, 'Ошибка чата');
+      const msg = humanizeApiError(err, "Ошибка чата");
       toast.error(msg);
     } finally {
       setSending(false);
@@ -143,15 +107,12 @@ export function OrgChatPanel({
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void sendMessage();
     }
   }
 
-  // Тап по промпт-кнопке: подставляем шаблон в поле и фокусируем — пользователь
-  // дополняет «…» и отправляет сам (НЕ автоотправка). Не дублируем логику
-  // sendMessage — переиспользуем тот же `input`/`sendOrgChatWithFallback`.
   function applySuggestedPrompt(prompt: string) {
     if (sending) return;
     setInput(prompt);
@@ -159,14 +120,11 @@ export function OrgChatPanel({
       const el = inputRef.current;
       if (!el) return;
       el.focus();
-      // Каретку — в конец, чтобы можно было сразу дописывать.
       const end = el.value.length;
       el.setSelectionRange(end, end);
     });
   }
 
-  // Голосовой ВВОД: распознанный текст аппендим к текущему вводу (общая чистая
-  // функция appendTranscript), фокус возвращаем в поле. Без TTS/озвучки.
   function onVoiceTranscript(text: string) {
     setInput((prev) => appendTranscript(prev, text));
     requestAnimationFrame(() => inputRef.current?.focus());
@@ -175,7 +133,7 @@ export function OrgChatPanel({
   return (
     <div
       className={cn(
-        'flex flex-col rounded-xl border border-border-subtle bg-bg-elevated',
+        "flex flex-col rounded-xl border border-border-subtle bg-bg-elevated",
         className,
       )}
       style={height ? { height } : undefined}
@@ -187,7 +145,7 @@ export function OrgChatPanel({
             Загрузка истории…
           </div>
         ) : messages.length === 0 ? (
-          intro ?? <DefaultEmptyHint />
+          (intro ?? <DefaultEmptyHint />)
         ) : (
           <div className="flex flex-col gap-3 py-4">
             {messages.map((m) => (
@@ -268,13 +226,13 @@ function DefaultEmptyHint() {
 }
 
 function ChatBubble({ message }: { message: ChatMessage }) {
-  const isUser = message.role === 'user';
+  const isUser = message.role === "user";
   return (
-    <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
+    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          'max-w-[85%] rounded-2xl px-3 py-2 text-sm',
-          isUser ? 'bg-accent text-accent-fg' : 'bg-bg-overlay text-fg-primary',
+          "max-w-[85%] rounded-2xl px-3 py-2 text-sm",
+          isUser ? "bg-accent text-accent-fg" : "bg-bg-overlay text-fg-primary",
         )}
       >
         <p className="whitespace-pre-wrap">
@@ -289,7 +247,7 @@ function ChatBubble({ message }: { message: ChatMessage }) {
                 className="inline-flex max-w-full items-center rounded-full border border-border-subtle bg-bg-elevated px-2 py-0.5 text-xs text-fg-secondary hover:border-accent/60 hover:text-accent"
                 title={c.snippet}
               >
-                <span className="truncate">{c.meetingTitle ?? 'Встреча'}</span>
+                <span className="truncate">{c.meetingTitle ?? "Встреча"}</span>
               </Link>
             ))}
           </div>
@@ -299,20 +257,14 @@ function ChatBubble({ message }: { message: ChatMessage }) {
   );
 }
 
-/**
- * Отправка org-вопроса с graceful fallback:
- *   1. POST /api/v1/chat/v2 (scope='org', query=text).
- *   2. Если 503 chat_v2_disabled — POST /api/v1/chat (legacy).
- * Возвращает унифицированный shape {message, citations}.
- */
 async function sendOrgChatWithFallback(
   text: string,
 ): Promise<{ message: string; citations: ChatCitationApi[] }> {
   try {
-    const res = await chatApi.askV2({ scope: 'org', query: text });
+    const res = await chatApi.askV2({ scope: "org", query: text });
     return { message: res.message, citations: res.citations };
   } catch (err) {
-    if (err instanceof ApiError && err.code === 'chat_v2_disabled') {
+    if (err instanceof ApiError && err.code === "chat_v2_disabled") {
       const res = await chatApi.sendGlobal({ message: text });
       return { message: res.message, citations: res.citations };
     }

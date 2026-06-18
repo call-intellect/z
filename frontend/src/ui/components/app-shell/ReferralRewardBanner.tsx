@@ -1,107 +1,69 @@
-'use client';
+"use client";
 
-/**
- * ReferralRewardBanner — единый persistent-баннер партнёрской программы (B3).
- *
- * Заменяет `ReferralPromoStrip`. В отличие от старой одноразовой промо-полосы:
- *   - persistent: НЕ прячется при наличии Referral-профиля;
- *   - живой прогресс окупаемости подписки (шкала `activePaying / targetClients`);
- *   - морфит копи по роли (руководитель / рядовой) и состоянию профиля.
- *
- * Архитектура:
- *   - Видимость + роль вычисляет `useReferralBannerVisibility`
- *     (pathname-whitelist + paywall + dismiss-TTL 30 дней). Здесь компонент
- *     только рендерит результат.
- *   - Данные прогресса — SWR (`referralsApi.getRewardProgress` →
- *     `rewardProgressFromApi`), tenant-аккуратный ключ.
- *   - Выбор копи и варианта — чистая функция `referralBannerCopy` (тестируемо).
- *   - Трекинг: impression (один раз за сессию вкладки), click, dismiss —
- *     через `POST /api/v1/referrals/me/promo-event`.
- *
- * Стиль — парные/семантические токены (тема-зависимо), как `IncompleteSetupBanner`:
- * `border-accent/30 bg-accent-muted/50`, тексты `text-fg-*`; шкала прогресса на
- * `bg-chip-success-bg` / `text-chip-success-fg`. Никакого emerald/хардкода.
- */
+import Link from "next/link";
+import { ArrowRight, X } from "lucide-react";
+import { useCallback, useEffect } from "react";
+import useSWR from "swr";
 
-import Link from 'next/link';
-import { ArrowRight, X } from 'lucide-react';
-import { useCallback, useEffect } from 'react';
-import useSWR from 'swr';
-
-import { referralsApi } from '@/api/referrals.api';
+import { referralsApi } from "@/api/referrals.api";
 import {
   referralBannerCopy,
   referralMonthlyEarnedLabel,
   rewardProgressFromApi,
   type RewardProgressDomain,
-} from '@/domain/referral';
-import { useAuth } from '@/contexts/auth-context';
-import { useReferralBannerVisibility } from '@/hooks/useReferralBannerVisibility';
-import type { EffectiveOrgRole } from '@/hooks/useEffectiveOrgRole';
+} from "@/domain/referral";
+import { useAuth } from "@/contexts/auth-context";
+import { useReferralBannerVisibility } from "@/hooks/useReferralBannerVisibility";
+import type { EffectiveOrgRole } from "@/hooks/useEffectiveOrgRole";
 
-const LS_DISMISSED_AT = 'z.referralRewardBanner.dismissedAt';
-const SS_IMPRESSION_AT = 'z.referralRewardBanner.impressionSentAt';
+const LS_DISMISSED_AT = "z.referralRewardBanner.dismissedAt";
+const SS_IMPRESSION_AT = "z.referralRewardBanner.impressionSentAt";
 
-/**
- * Безопасный fire-and-forget — события трекинга не должны валить UI и не
- * требуют await/обработки ошибок.
- */
 function trackSafe(
-  type: 'impression' | 'click' | 'dismissed',
+  type: "impression" | "click" | "dismissed",
   role: EffectiveOrgRole,
 ): void {
-  void referralsApi.trackPromoEvent({ type, role }).catch(() => {
-    /* ignore */
-  });
+  void referralsApi.trackPromoEvent({ type, role }).catch(() => {});
 }
 
 export function ReferralRewardBanner() {
   const { visible, isLeader, role } = useReferralBannerVisibility();
   const { currentOrgId } = useAuth();
 
-  // Грузим прогресс только когда баннер реально виден — не плодим запросы на
-  // blacklist-страницах / в paywall. Ключ tenant-аккуратный.
   const progressSwr = useSWR(
-    visible ? ['referral-reward-progress', currentOrgId] : null,
+    visible ? ["referral-reward-progress", currentOrgId] : null,
     async (): Promise<RewardProgressDomain> =>
       rewardProgressFromApi(await referralsApi.getRewardProgress()),
     { revalidateOnFocus: false },
   );
   const progress = progressSwr.data;
 
-  // Impression — один раз за сессию вкладки.
   useEffect(() => {
     if (!visible) return;
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     try {
       if (window.sessionStorage.getItem(SS_IMPRESSION_AT)) return;
       window.sessionStorage.setItem(SS_IMPRESSION_AT, new Date().toISOString());
-      trackSafe('impression', role);
-    } catch {
-      // sessionStorage недоступен — пропускаем, не критично.
-    }
+      trackSafe("impression", role);
+    } catch {}
   }, [visible, role]);
 
   const handleClick = useCallback(() => {
-    trackSafe('click', role);
+    trackSafe("click", role);
   }, [role]);
 
   const handleDismiss = useCallback(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       try {
         window.localStorage.setItem(LS_DISMISSED_AT, new Date().toISOString());
-      } catch {
-        /* ignore */
-      }
-      window.dispatchEvent(new CustomEvent('z:referralRewardBanner:dismissed'));
+      } catch {}
+      window.dispatchEvent(new CustomEvent("z:referralRewardBanner:dismissed"));
     }
-    trackSafe('dismissed', role);
+    trackSafe("dismissed", role);
   }, [role]);
 
   if (!visible) return null;
 
-  // Пока грузится прогресс — компактный скелет фиксированной высоты, чтобы
-  // не было скачка контента при появлении баннера.
   if (!progress) {
     return (
       <div className="px-4 pt-3" data-testid="referral-reward-banner-skeleton">
@@ -112,7 +74,7 @@ export function ReferralRewardBanner() {
 
   const copy = referralBannerCopy(isLeader, progress);
   const earnedLabel =
-    copy.variant === 'leaderReached'
+    copy.variant === "leaderReached"
       ? referralMonthlyEarnedLabel(progress.monthlyEarnedKopecks)
       : null;
 
@@ -137,7 +99,7 @@ export function ReferralRewardBanner() {
                 {copy.subtitle}
                 {earnedLabel ? (
                   <>
-                    {' '}
+                    {" "}
                     <span className="font-medium text-chip-success-fg">
                       Сейчас: {earnedLabel}.
                     </span>

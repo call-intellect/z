@@ -7,18 +7,6 @@ import type { RbacService } from '../../rbac/rbac.service';
 
 import { TrackerGateway } from './tracker.gateway';
 
-/**
- * T8 (2026-05-24) — unit-тесты presence/typing handler'ов TrackerGateway.
- *
- * Не поднимаем реальный socket.io; используем моки socket + map контекста
- * gateway'а. Покрытие:
- *   1. issue.chat.join — 404 на чужой issue, join + broadcast user_joined.
- *   2. issue.chat.join — повторный join тем же сокетом не дублирует broadcast.
- *   3. issue.chat.leave — broadcast user_left только для последнего сокета юзера.
- *   4. issue.chat.typing — relay в room только если сокет в presence-room.
- *   5. issue.chat.presence — снимок уникален по userId.
- */
-
 type MockSocket = {
   id: string;
   join: ReturnType<typeof vi.fn>;
@@ -44,34 +32,21 @@ function makeSocket(id: string): MockSocket & { _toCalls: string[] } {
   return s as unknown as MockSocket & { _toCalls: string[]; _emit: typeof emit };
 }
 
-function makeGateway(opts: {
-  issueExists?: boolean;
-}): {
+function makeGateway(opts: { issueExists?: boolean }): {
   gw: TrackerGateway;
-  setCtx: (
-    socketId: string,
-    userId: string,
-    displayName: string,
-    tenantId?: string,
-  ) => void;
+  setCtx: (socketId: string, userId: string, displayName: string, tenantId?: string) => void;
 } {
   const prisma = {
     issue: {
-      findFirst: vi.fn(async () =>
-        opts.issueExists === false ? null : { id: 'i1' },
-      ),
+      findFirst: vi.fn(async () => (opts.issueExists === false ? null : { id: 'i1' })),
     },
   } as unknown as PrismaService;
   const jwt = {} as JwtService;
   const cfg = {} as TypedConfigService;
-  // audit В12: RBAC mock — по умолчанию canRead=true (тесты T8 про
-  // presence/typing, не про RBAC subscribe.*).
   const rbac = {
     canRead: vi.fn(async () => true),
   } as unknown as RbacService;
   const gw = new TrackerGateway(jwt, prisma, cfg, rbac);
-  // Подсунем минимальный server (для emitToRooms он не используется в наших
-  // handler'ах, broadcast идёт через client.to(...).emit).
   (gw as unknown as { server: { to: ReturnType<typeof vi.fn> } }).server = {
     to: vi.fn(),
   };
@@ -82,7 +57,6 @@ function makeGateway(opts: {
     displayName: string,
     tenantId = 'tenant-1',
   ): void => {
-    // socketContext — private; через any для теста.
     (gw as any).socketContext.set(socketId, {
       userId,
       email: `${userId}@example.com`,
@@ -104,7 +78,7 @@ describe('TrackerGateway: chat presence/typing', () => {
     socketB = makeSocket('sock-b');
   });
 
-  it('issue.chat.join — 404 если issue в другом tenant\'е', async () => {
+  it("issue.chat.join — 404 если issue в другом tenant'е", async () => {
     const { gw, setCtx } = makeGateway({ issueExists: false });
     setCtx(socketA.id, 'user-1', 'Анна');
     const res = await gw.onChatJoin(socketA as never, { issueId: 'i-unknown' });
@@ -130,7 +104,6 @@ describe('TrackerGateway: chat presence/typing', () => {
     socketA.to.mockClear();
     const res = await gw.onChatJoin(socketA as never, { issueId: 'i1' });
     expect(res.ok).toBe(true);
-    // .to() не дёргается — broadcast пропущен из-за wasAlreadyIn.
     expect(socketA.to).not.toHaveBeenCalled();
   });
 
@@ -143,11 +116,9 @@ describe('TrackerGateway: chat presence/typing', () => {
     socketA.to.mockClear();
     socketB.to.mockClear();
 
-    // Закрытие socketA: остаётся socketB — broadcast НЕ должен случиться.
     await gw.onChatLeave(socketA as never, { issueId: 'i1' });
     expect(socketA.to).not.toHaveBeenCalled();
 
-    // Закрытие socketB: больше сокетов нет — broadcast user_left должен пойти.
     await gw.onChatLeave(socketB as never, { issueId: 'i1' });
     expect(socketB.to).toHaveBeenCalledWith('presence:issue:i1');
   });
@@ -156,7 +127,6 @@ describe('TrackerGateway: chat presence/typing', () => {
     const { gw, setCtx } = makeGateway({ issueExists: true });
     setCtx(socketA.id, 'user-1', 'Анна');
 
-    // Без join — typing должен быть отброшен.
     const denied = gw.onChatTyping(socketA as never, {
       issueId: 'i1',
       isTyping: true,
@@ -164,7 +134,6 @@ describe('TrackerGateway: chat presence/typing', () => {
     expect(denied.ok).toBe(false);
     expect(socketA.to).not.toHaveBeenCalled();
 
-    // С join — relay срабатывает.
     await gw.onChatJoin(socketA as never, { issueId: 'i1' });
     socketA.to.mockClear();
     const ok = gw.onChatTyping(socketA as never, {

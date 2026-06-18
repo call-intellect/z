@@ -1,20 +1,3 @@
-/**
- * End-to-end smoke-тест feedback-фичи:
- *   1. Сидит маршрут LLM `feedback.cluster` (если ещё нет).
- *   2. Создаёт 10 тестовых пользователей с email вида `e2e-feedback-N@test.local`.
- *   3. Итерация 1: создаёт N1 FeedbackMessage с разнообразной тематикой.
- *   4. Запускает FeedbackDigestService.runDigest().
- *   5. Печатает созданные topics + items + assignments.
- *   6. Итерация 2: добавляет N2 новых сообщений (часть лезет в существующие
- *      блоки, часть про новые темы).
- *   7. Снова runDigest().
- *   8. Печатает дельту: сколько новых блоков добавилось, в какие старые блоки
- *      попали новые items.
- *
- * Запуск:  bun run scripts/e2e-feedback-clustering.ts
- * Очистка: bun run scripts/e2e-feedback-clustering.ts --cleanup
- */
-
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from '../src/app.module';
@@ -22,54 +5,78 @@ import { PrismaService } from '../src/common/prisma/prisma.service';
 import { FeedbackDigestService } from '../src/modules/feedback/services/feedback-digest.service';
 
 interface SeedMessage {
-  userIndex: number; // 0..9
+  userIndex: number;
   text: string;
 }
 
-// 18 сообщений первой волны — несколько повторяющихся тем + уникальные.
 const WAVE_1: SeedMessage[] = [
   { userIndex: 0, text: 'Очень не хватает тёмной темы в интерфейсе. Глаза устают вечером.' },
   { userIndex: 1, text: 'Дайте, пожалуйста, тёмный режим. Все нормальные приложения его имеют.' },
   { userIndex: 2, text: 'Кнопка экспорта в Excel виснет на больших отчётах, ждёшь по 3-4 минуты.' },
   { userIndex: 3, text: 'Экспорт тупит. Что-то надо делать с производительностью.' },
-  { userIndex: 4, text: 'Спасибо за дашборд директора — это просто гениально, экономит мне час в день!' },
+  {
+    userIndex: 4,
+    text: 'Спасибо за дашборд директора — это просто гениально, экономит мне час в день!',
+  },
   { userIndex: 5, text: 'Дашборд CEO суперский, ребята молодцы.' },
   { userIndex: 0, text: 'Добавьте интеграцию с Telegram чтобы оповещения приходили прямо туда.' },
   { userIndex: 6, text: 'Можно ли получать уведомления в Телеграм? Слак мы не используем.' },
-  { userIndex: 7, text: 'Хочу мобильное приложение. Сейчас приходится открывать сайт на телефоне — неудобно.' },
+  {
+    userIndex: 7,
+    text: 'Хочу мобильное приложение. Сейчас приходится открывать сайт на телефоне — неудобно.',
+  },
   { userIndex: 8, text: 'Срочно нужен мобильный клиент. Без него фича доступна только в офисе.' },
   { userIndex: 9, text: 'Сделайте, пожалуйста, экспорт встреч в PDF, а не только в Excel.' },
-  { userIndex: 1, text: 'PDF-экспорт отчётов — must have. Сейчас приходится сначала в Word, потом сохранять.' },
+  {
+    userIndex: 1,
+    text: 'PDF-экспорт отчётов — must have. Сейчас приходится сначала в Word, потом сохранять.',
+  },
   { userIndex: 2, text: 'Поиск по встречам очень медленный, иногда висит 10+ секунд.' },
-  { userIndex: 3, text: 'Хочу видеть всю историю своих идей одним списком, а не лезть в каждую встречу.' },
-  { userIndex: 4, text: 'асдфасдфасдф' }, // мусор
+  {
+    userIndex: 3,
+    text: 'Хочу видеть всю историю своих идей одним списком, а не лезть в каждую встречу.',
+  },
+  { userIndex: 4, text: 'асдфасдфасдф' },
   { userIndex: 5, text: 'Не работает озвучка отчёта голосом, выдает ошибку Network.' },
   { userIndex: 6, text: 'Спасибо за новый поиск, стало гораздо удобнее искать инсайты!' },
-  { userIndex: 7, text: 'Кнопка экспорта вообще ничего не делает, нажимаю — ничего. Браузер Firefox.' },
+  {
+    userIndex: 7,
+    text: 'Кнопка экспорта вообще ничего не делает, нажимаю — ничего. Браузер Firefox.',
+  },
 ];
 
-// 14 сообщений второй волны — часть лезет в существующие, часть про новые темы.
 const WAVE_2: SeedMessage[] = [
-  { userIndex: 8, text: 'Когда уже тёмная тема? Спрашиваю третий раз.' }, // → существующий блок про тёмную тему
-  { userIndex: 9, text: 'Экспорт в Excel снова виснет на отчёте за месяц.' }, // → существующий про экспорт
-  { userIndex: 0, text: 'Гениальный дашборд директора, рекомендую всем коллегам.' }, // → благодарности дашборду
-  { userIndex: 1, text: 'Хочу видеть прогресс цели в реальном времени, а не раз в неделю.' }, // → новый блок про цели
-  { userIndex: 2, text: 'Можно ли настроить какие именно оповещения приходят, а какие нет? Сейчас всё подряд.' }, // → новый про настройки оповещений
-  { userIndex: 3, text: 'Slack-интеграция тоже была бы полезна, не только Telegram.' }, // → новый или к Telegram?
-  { userIndex: 4, text: 'Когда мобильное приложение появится? Уже год обещаете.' }, // → существующий про мобилку
-  { userIndex: 5, text: 'Хочу видеть все мои поручения в одном месте, сейчас приходится переходить по встречам.' }, // → новый про инбокс/таски
-  { userIndex: 6, text: 'Спасибо за быстрый поиск, теперь нахожу нужное за пару секунд!' }, // → существующий про поиск
-  { userIndex: 7, text: 'Очень нужны рекуррентные встречи каждую неделю с автоматическим созданием.' }, // → новый про рекуррентные
-  { userIndex: 8, text: 'Бот в Telegram нужен срочно, у нас все там общаются.' }, // → существующий про Telegram
-  { userIndex: 9, text: 'фыфыфыфы хахаха не понимаю что это' }, // → discard
-  { userIndex: 0, text: 'Можно ли экспортировать одну встречу как PDF с фотками участников?' }, // → существующий PDF-экспорт
-  { userIndex: 1, text: 'Голосовой ассистент в браузере не работает на айпаде в Сафари. Что делать?' }, // → новый про bug Safari/voice
+  { userIndex: 8, text: 'Когда уже тёмная тема? Спрашиваю третий раз.' },
+  { userIndex: 9, text: 'Экспорт в Excel снова виснет на отчёте за месяц.' },
+  { userIndex: 0, text: 'Гениальный дашборд директора, рекомендую всем коллегам.' },
+  { userIndex: 1, text: 'Хочу видеть прогресс цели в реальном времени, а не раз в неделю.' },
+  {
+    userIndex: 2,
+    text: 'Можно ли настроить какие именно оповещения приходят, а какие нет? Сейчас всё подряд.',
+  },
+  { userIndex: 3, text: 'Slack-интеграция тоже была бы полезна, не только Telegram.' },
+  { userIndex: 4, text: 'Когда мобильное приложение появится? Уже год обещаете.' },
+  {
+    userIndex: 5,
+    text: 'Хочу видеть все мои поручения в одном месте, сейчас приходится переходить по встречам.',
+  },
+  { userIndex: 6, text: 'Спасибо за быстрый поиск, теперь нахожу нужное за пару секунд!' },
+  {
+    userIndex: 7,
+    text: 'Очень нужны рекуррентные встречи каждую неделю с автоматическим созданием.',
+  },
+  { userIndex: 8, text: 'Бот в Telegram нужен срочно, у нас все там общаются.' },
+  { userIndex: 9, text: 'фыфыфыфы хахаха не понимаю что это' },
+  { userIndex: 0, text: 'Можно ли экспортировать одну встречу как PDF с фотками участников?' },
+  {
+    userIndex: 1,
+    text: 'Голосовой ассистент в браузере не работает на айпаде в Сафари. Что делать?',
+  },
 ];
 
 const TEST_EMAIL_PREFIX = 'e2e-feedback-';
 
 async function cleanup(prisma: PrismaService): Promise<void> {
-  // Удаляем items → messages → topics (созданные только за время теста)
   const users = await prisma.user.findMany({
     where: { email: { startsWith: TEST_EMAIL_PREFIX } },
     select: { id: true },
@@ -83,17 +90,17 @@ async function cleanup(prisma: PrismaService): Promise<void> {
   });
   const messageIds = messages.map((m) => m.id);
 
-  // items
   const items = await prisma.feedbackItem.findMany({
     where: { messageId: { in: messageIds } },
     select: { topicId: true },
   });
-  const touchedTopicIds = Array.from(new Set(items.map((i) => i.topicId).filter((t): t is string => t !== null)));
+  const touchedTopicIds = Array.from(
+    new Set(items.map((i) => i.topicId).filter((t): t is string => t !== null)),
+  );
 
   await prisma.feedbackItem.deleteMany({ where: { messageId: { in: messageIds } } });
   await prisma.feedbackMessage.deleteMany({ where: { id: { in: messageIds } } });
 
-  // удаляем topics, у которых после удаления items больше нет items
   for (const topicId of touchedTopicIds) {
     const remaining = await prisma.feedbackItem.count({ where: { topicId } });
     if (remaining === 0) {
@@ -101,10 +108,11 @@ async function cleanup(prisma: PrismaService): Promise<void> {
     }
   }
 
-  // юзеров
   await prisma.user.deleteMany({ where: { id: { in: userIds } } });
 
-  console.log(`Удалено: ${userIds.length} юзеров, ${messageIds.length} сообщений, ${touchedTopicIds.length} тронутых блоков.`);
+  console.log(
+    `Удалено: ${userIds.length} юзеров, ${messageIds.length} сообщений, ${touchedTopicIds.length} тронутых блоков.`,
+  );
 }
 
 async function findOrCreateUsers(prisma: PrismaService): Promise<string[]> {
@@ -120,7 +128,6 @@ async function findOrCreateUsers(prisma: PrismaService): Promise<string[]> {
       data: {
         email,
         name: `E2E Feedback Юзер ${i}`,
-        // signupSource — обязательное? Зависит от схемы. Если нужно — добавим позже.
       },
     });
     ids.push(created.id);
@@ -139,7 +146,6 @@ async function seedMessages(
       data: {
         userId: userIds[msg.userIndex],
         text: msg.text,
-        // orgId — не ставим, фидбэк глобальный.
       },
     });
     created++;
@@ -151,7 +157,9 @@ async function printState(prisma: PrismaService, label: string): Promise<void> {
   console.log(`\n=== ${label} ===`);
   const topics = await prisma.feedbackTopic.findMany({
     where: { status: 'ACTIVE' },
-    include: { items: { include: { message: { include: { user: { select: { email: true } } } } } } },
+    include: {
+      items: { include: { message: { include: { user: { select: { email: true } } } } } },
+    },
     orderBy: { createdAt: 'asc' },
   });
 
@@ -180,7 +188,9 @@ async function printState(prisma: PrismaService, label: string): Promise<void> {
 
   const discardedCount = await prisma.feedbackItem.count({ where: { discarded: true } });
   const unprocessed = await prisma.feedbackMessage.count({ where: { processedAt: null } });
-  console.log(`\nИтого: блоков=${topics.length}, discard'ов=${discardedCount}, необработанных сообщений=${unprocessed}`);
+  console.log(
+    `\nИтого: блоков=${topics.length}, discard'ов=${discardedCount}, необработанных сообщений=${unprocessed}`,
+  );
 }
 
 async function main(): Promise<void> {
@@ -202,43 +212,39 @@ async function main(): Promise<void> {
 
     console.log('=== E2E feedback clustering test ===\n');
 
-    // 0. Очистка предыдущего тестового запуска (если был).
     console.log('Очищаю прошлые тестовые данные...');
     await cleanup(prisma);
 
-    // 1. Создаём пользователей.
     const userIds = await findOrCreateUsers(prisma);
     console.log(`Создано ${userIds.length} тестовых юзеров.`);
 
-    // 2. Итерация 1.
     const wave1Count = await seedMessages(prisma, userIds, WAVE_1);
     console.log(`\nИтерация 1: создано ${wave1Count} сообщений. Запускаю runDigest()...`);
     const result1 = await digest.runDigest();
     console.log(`runDigest() результат:`, JSON.stringify(result1));
     await printState(prisma, 'После итерации 1');
 
-    // Запомним id блоков, созданных в итерации 1.
     const after1Topics = await prisma.feedbackTopic.findMany({
       where: { status: 'ACTIVE' },
       select: { id: true, title: true },
     });
     const after1Ids = new Set(after1Topics.map((t) => t.id));
 
-    // 3. Итерация 2.
     const wave2Count = await seedMessages(prisma, userIds, WAVE_2);
     console.log(`\nИтерация 2: добавлено ${wave2Count} сообщений. Запускаю runDigest()...`);
     const result2 = await digest.runDigest();
     console.log(`runDigest() результат:`, JSON.stringify(result2));
     await printState(prisma, 'После итерации 2');
 
-    // 4. Дельта.
     const after2Topics = await prisma.feedbackTopic.findMany({
       where: { status: 'ACTIVE' },
       select: { id: true, title: true, items: { select: { id: true, createdAt: true } } },
     });
     const newTopics = after2Topics.filter((t) => !after1Ids.has(t.id));
     console.log(`\n=== ДЕЛЬТА ===`);
-    console.log(`Блоков было: ${after1Topics.length}, стало: ${after2Topics.length}, новых: ${newTopics.length}`);
+    console.log(
+      `Блоков было: ${after1Topics.length}, стало: ${after2Topics.length}, новых: ${newTopics.length}`,
+    );
     if (newTopics.length > 0) {
       console.log(`Новые блоки (Итерация 2):`);
       for (const t of newTopics) {

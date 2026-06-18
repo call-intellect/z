@@ -12,22 +12,8 @@ import type {
   OrchestratorSubagentResult,
 } from '../orchestrator.types';
 
-import type {
-  SubagentExecuteInput,
-  SubagentStrategy,
-} from './subagent-strategy';
+import type { SubagentExecuteInput, SubagentStrategy } from './subagent-strategy';
 
-/**
- * SBA δ-1 — общий базовый класс subagent-стратегий.
- *
- * Делает следующее:
- *   1) retrieve относящиеся IdeaBlock'и через ChatV2RetrievalService (scope='org').
- *   2) подгружает текст блоков и evidence.
- *   3) вызывает LLM (taskType='orchestrator-subagent') с промптом стратегии.
- *   4) парсит ответ → OrchestratorSubagentResult.
- *
- * Расширяется конкретными стратегиями через `agentType` + `buildSystemPrompt`.
- */
 @Injectable()
 export abstract class BaseRetrievalStrategy implements SubagentStrategy {
   abstract readonly agentType: OrchestratorAgentType;
@@ -38,9 +24,6 @@ export abstract class BaseRetrievalStrategy implements SubagentStrategy {
     @Inject(LlmRouterService) protected readonly llm: LlmRouterService,
     @Inject(ChatV2RetrievalService)
     protected readonly retrieval: ChatV2RetrievalService,
-    // Ф4 (knowledge-access) — гейт доступа в orchestrator-стратегиях.
-    // RbacModule @Global. Наследники не объявляют свой constructor → получают
-    // эти зависимости автоматически (NestJS читает param-types базового класса).
     @Inject(KnowledgeAccessResolver)
     protected readonly accessResolver: KnowledgeAccessResolver,
     @Inject(TypedConfigService) protected readonly cfg: TypedConfigService,
@@ -50,22 +33,18 @@ export abstract class BaseRetrievalStrategy implements SubagentStrategy {
     this.logger = new Logger(`${this.constructor.name}`);
   }
 
-  /** Сформировать system prompt стратегии. */
   protected abstract buildSystemPrompt(step: OrchestratorPlanStep): string;
 
-  /** Сформировать query для retrieval (по умолчанию — focus + seedHints). */
   protected buildRetrievalQuery(step: OrchestratorPlanStep): string {
-    const seedPart =
-      (step.contextSlice.seedHints ?? []).filter((s) => s && s.length > 0).join(', ');
-    return seedPart
-      ? `${step.contextSlice.focus}. ${seedPart}`
-      : step.contextSlice.focus;
+    const seedPart = (step.contextSlice.seedHints ?? [])
+      .filter((s) => s && s.length > 0)
+      .join(', ');
+    return seedPart ? `${step.contextSlice.focus}. ${seedPart}` : step.contextSlice.focus;
   }
 
   async execute(args: SubagentExecuteInput): Promise<OrchestratorSubagentResult> {
     const start = Date.now();
 
-    // Ф4 knowledge-access — режим гейта. off → ctx=null (поведение неизменно).
     const enf = this.cfg.knowledgeAccess.enforcement;
     const accessCtx =
       enf !== 'off'
@@ -98,14 +77,8 @@ export abstract class BaseRetrievalStrategy implements SubagentStrategy {
       );
     }
 
-    // Ф4 knowledge-access — shadow: считаем, сколько блоков было бы
-    // отфильтровано (выдачу НЕ меняем). enforce фильтрует уже в fetchCandidates
-    // (accessWhere) + findMany ниже.
     if (enf === 'shadow' && accessCtx && !accessCtx.isBypass && blockIds.length > 0) {
-      const { denied } = await this.accessResolver.partitionBlockIdsByAccess(
-        accessCtx,
-        blockIds,
-      );
+      const { denied } = await this.accessResolver.partitionBlockIdsByAccess(accessCtx, blockIds);
       this.metrics.incAccessShadowDiff({ surface: 'orchestrator' }, denied);
     }
 
@@ -135,8 +108,7 @@ export abstract class BaseRetrievalStrategy implements SubagentStrategy {
       args.step.contextSlice.seedHints && args.step.contextSlice.seedHints.length > 0
         ? `Ключевые сущности/слова: ${args.step.contextSlice.seedHints.join(', ')}`
         : '',
-      args.step.contextSlice.params &&
-      Object.keys(args.step.contextSlice.params).length > 0
+      args.step.contextSlice.params && Object.keys(args.step.contextSlice.params).length > 0
         ? `Параметры: ${JSON.stringify(args.step.contextSlice.params)}`
         : '',
       '',

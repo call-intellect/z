@@ -21,7 +21,6 @@ interface BuildOpts {
     type?: string;
   } | null;
   auditCount?: number;
-  /** При этом числе update() бросает P2025 (имитация optimistic-conflict). */
   conflictOnUpdate?: boolean;
   llmRouterText?: string;
 }
@@ -86,7 +85,18 @@ function build(opts: BuildOpts = {}) {
   } as unknown as TypedConfigService;
 
   const svc = new RegenerateService(prisma, queue, coreQueue, router, cfg);
-  return { svc, findUnique, update, aiResultUpdate, auditCreate, auditCount, queue, coreQueue, router, txn };
+  return {
+    svc,
+    findUnique,
+    update,
+    aiResultUpdate,
+    auditCreate,
+    auditCount,
+    queue,
+    coreQueue,
+    router,
+    txn,
+  };
 }
 
 describe('RegenerateService.regenerateMeeting', () => {

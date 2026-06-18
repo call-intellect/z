@@ -1,33 +1,8 @@
-/**
- * Backfill для Фазы 0 knowledge-core ТЗ.
- *
- * Задача:
- *   1. Для каждого `User` без owned `Org` — создать персональный Org +
- *      Membership(owner). Идемпотентность через upsert по slug.
- *   2. Для каждой записи в Meeting/Card/Task/MeetingChapter/MeetingHighlight/
- *      MeetingChatMessage/Tag/AiUsageLog/AuditLog/Export/ApiKey/
- *      WebhookSubscription/IntegrationDestination БЕЗ tenantId — найти
- *      владельца записи и проставить tenantId по его персональному Org.
- *
- * Запускается:
- *   bun run scripts/backfill-orgs-fase0.ts
- *
- * Идемпотентен: повторный запуск ничего не ломает (skip уже-проставленных).
- *
- * См. правила safe-seed-rules: используем upsert, читаем PRINTED-данные
- * сначала, не делаем mass updateMany без явного where.
- */
-
 import { PrismaClient, type User } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
 
-/**
- * Проверяет, осталась ли колонка nullable. На уже-мигрированном проде
- * (`tenantId` стал NOT NULL) типизированные `where: { tenantId: null }`
- * падают в Prisma 7 валидацией — этот guard позволяет выйти чисто ДО них.
- */
 async function isColumnNullable(table: string, column: string): Promise<boolean> {
   const rows = await prisma.$queryRaw<Array<{ is_nullable: string }>>`
     SELECT is_nullable FROM information_schema.columns
@@ -37,22 +12,21 @@ async function isColumnNullable(table: string, column: string): Promise<boolean>
 }
 
 function slugify(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9а-яё]+/giu, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40)
-    || 'org';
+  return (
+    input
+      .toLowerCase()
+      .replace(/[^a-z0-9а-яё]+/giu, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'org'
+  );
 }
 
 async function ensureOrgForUser(user: User): Promise<string> {
-  // Сначала ищем уже-владеемую Org (idempotent).
   const existing = await prisma.org.findFirst({
     where: { ownerId: user.id, deletedAt: null },
     orderBy: { createdAt: 'asc' },
   });
   if (existing) {
-    // Гарантируем, что Membership(owner) тоже есть.
     await prisma.membership.upsert({
       where: { orgId_userId: { orgId: existing.id, userId: user.id } },
       create: {
@@ -95,9 +69,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log('=== backfill-orgs-fase0 START ===');
 
-  // Guard: если Meeting.tenantId уже NOT NULL — Фаза 0 backfill применена
-  // в прошлый выкат. Дальше идти нельзя (where:{tenantId:null} упадёт в
-  // Prisma 7), да и не нужно — выходим чисто.
   if (!(await isColumnNullable('Meeting', 'tenantId'))) {
     // eslint-disable-next-line no-console
     console.log(
@@ -115,7 +86,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`Найдено активных юзеров: ${users.length}`);
 
-  // Карта userId -> orgId.
   const userToOrg = new Map<string, string>();
   for (const u of users) {
     const orgId = await ensureOrgForUser(u);
@@ -124,7 +94,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`Готово Org для юзеров: ${userToOrg.size}`);
 
-  // ─── Backfill tenantId по моделям ───
   let mtgUpdated = 0;
   for (const [userId, orgId] of userToOrg) {
     const res = await prisma.meeting.updateMany({
@@ -158,7 +127,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`Task.tenantId backfilled: ${taskUpdated}`);
 
-  // MeetingChapter — через meeting.tenant.
   const chapters = await prisma.meetingChapter.findMany({
     where: { tenantId: null },
     select: { id: true, meeting: { select: { tenantId: true } } },
@@ -192,7 +160,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`MeetingHighlight.tenantId backfilled: ${hlUpdated}`);
 
-  // MeetingChatMessage — через userId или meeting.tenant.
   const chatMsgs = await prisma.meetingChatMessage.findMany({
     where: { tenantId: null },
     select: {
@@ -214,7 +181,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`MeetingChatMessage.tenantId backfilled: ${cmUpdated}`);
 
-  // Tag — через userId.
   let tagUpdated = 0;
   for (const [userId, orgId] of userToOrg) {
     const res = await prisma.tag.updateMany({
@@ -226,7 +192,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`Tag.tenantId backfilled: ${tagUpdated}`);
 
-  // ApiKey — через userId.
   let apiKeyUpdated = 0;
   for (const [userId, orgId] of userToOrg) {
     const res = await prisma.apiKey.updateMany({
@@ -238,7 +203,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`ApiKey.tenantId backfilled: ${apiKeyUpdated}`);
 
-  // WebhookSubscription — через userId.
   let whUpdated = 0;
   for (const [userId, orgId] of userToOrg) {
     const res = await prisma.webhookSubscription.updateMany({
@@ -250,7 +214,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`WebhookSubscription.tenantId backfilled: ${whUpdated}`);
 
-  // IntegrationDestination — через userId.
   let dstUpdated = 0;
   for (const [userId, orgId] of userToOrg) {
     const res = await prisma.integrationDestination.updateMany({
@@ -262,7 +225,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`IntegrationDestination.tenantId backfilled: ${dstUpdated}`);
 
-  // Export — через userId.
   let expUpdated = 0;
   for (const [userId, orgId] of userToOrg) {
     const res = await prisma.export.updateMany({
@@ -274,7 +236,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`Export.tenantId backfilled: ${expUpdated}`);
 
-  // AuditLog — через userId (если задан).
   let alUpdated = 0;
   for (const [userId, orgId] of userToOrg) {
     const res = await prisma.auditLog.updateMany({
@@ -286,7 +247,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`AuditLog.tenantId backfilled: ${alUpdated}`);
 
-  // AiUsageLog — через userId, иначе через meeting.
   let aiUpdated = 0;
   for (const [userId, orgId] of userToOrg) {
     const res = await prisma.aiUsageLog.updateMany({
@@ -295,7 +255,6 @@ async function main(): Promise<void> {
     });
     aiUpdated += res.count;
   }
-  // Дозаполняем по meetingId если userId был null.
   const aiNoUser = await prisma.aiUsageLog.findMany({
     where: { tenantId: null, userId: null, meetingId: { not: null } },
     select: { id: true, meetingId: true },

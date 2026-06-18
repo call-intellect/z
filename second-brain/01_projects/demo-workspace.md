@@ -3,9 +3,9 @@ title: Демо-кабинет «Демо: ТехноСтрим» (shared эта
 status: in_progress
 date: 2026-06-01
 references:
-  - plans/tz/2026-06-01-demo-shared-org-model.md
+  - plans/archive/2026-06-01-demo-shared-org-model.md
   - plans/analysis/2026-06-01-demo-shared-org-architecture.md
-  - plans/tz/2026-05-28-demo-workspace.md  # source seedDemoWorkspace
+  - plans/archive/2026-05-28-demo-workspace.md  # source seedDemoWorkspace
 ---
 
 # Демо-кабинет «Демо: ТехноСтрим» (shared эталон)
@@ -100,7 +100,7 @@ docker compose exec backend bun run scripts/seed-demo-workspace.ts --tenant $ZDE
 
 ## Открытые хвосты
 
-См. `plans/tz/2026-06-01-demo-shared-org-model.md` §4.6, §4.12:
+См. `plans/archive/2026-06-01-demo-shared-org-model.md` §4.6, §4.12:
 - Probe-events для demo-Person'ов — фильтр в воркере (не задевать demo_observer наблюдателей).
 - Notifications для demo-Person'ов — фильтрация в `/me/notifications` (показать только до joinedAt).
 - `/settings/members` фильтрация demo_observer'ов из списка.

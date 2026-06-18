@@ -1,25 +1,3 @@
-/**
- * SBA δ-2 — Seed маршрутов LLM для ProactiveWatcher.
- *
- *   - proactive-message-craft — короткое friendly-сообщение по сработавшему
- *     правилу ('decision без owner'а', 'insight без mitigation', ...).
- *     Не критично к точности (если LLM упала — fallback на deterministic
- *     шаблон в ProactiveMessageCraftService.fallbackTextByRule).
- *
- *   Primary = ollama qwen3.5:9b (дёшево, локально, частые вызовы),
- *   secondary = deepseek-chat (баланс цена/качество),
- *   tertiary = openai-via-proxy/gpt-4o-mini.
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-proactive.ts
- *   bun run scripts/seed-llm-task-routes-proactive.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - editedByAdmin=true → НЕ перезаписываем.
- *   - Без --update-existing — пропускаем существующие записи.
- *   - С --update-existing — обновляем model/priority/isActive.
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -94,17 +72,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -129,18 +103,14 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 
 async function main(): Promise<void> {
   const updateExisting = process.argv.includes('--update-existing');
   // eslint-disable-next-line no-console
-  console.log(
-    `=== seed-llm-task-routes-proactive START (updateExisting=${updateExisting}) ===`,
-  );
+  console.log(`=== seed-llm-task-routes-proactive START (updateExisting=${updateExisting}) ===`);
   // eslint-disable-next-line no-console
   console.log(`TaskTypes: ${SEEDS.map((s) => s.taskType).join(', ')}`);
 

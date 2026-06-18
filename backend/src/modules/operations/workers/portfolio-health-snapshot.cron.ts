@@ -6,20 +6,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { PortfolioHealthService } from '../services/portfolio-health.service';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
-/**
- * ТЗ-2 Ф6.A (daily-value-dashboards) — PortfolioHealthSnapshotCron.
- *
- * `@Cron('0 5 * * 1')` — понедельник 05:00 (UTC контейнера). Обходит активные
- * Org → `compute` за сегодня (МСК) → upsert недельного снимка
- * `PortfolioHealthSnapshot` (идемпотентно по (tenantId, dateLocal)). Снимок
- * нужен для дельты «к прошлой неделе»; экран читает `compute` на лету.
- *
- * Master-flag `operations.portfolio_health.enabled` (kill-switch, ON по
- * умолчанию). False → cron тикает, но сразу выходит (без рестарта).
- *
- * Метрики: `portfolio_health_snapshot_total{tenant_top}` +
- * `portfolio_health_score{tenant_top}` (в сервисе).
- */
 @Injectable()
 export class PortfolioHealthSnapshotCron {
   private readonly logger = new Logger(PortfolioHealthSnapshotCron.name);
@@ -47,7 +33,7 @@ export class PortfolioHealthSnapshotCron {
     const now = new Date();
     try {
       const stats = await this.runOnce(now);
-      this.logger.log(stats, 'portfolio-health-snapshot.cron: проход завершён');
+      this.logger.debug(stats, 'portfolio-health-snapshot.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -56,7 +42,6 @@ export class PortfolioHealthSnapshotCron {
     }
   }
 
-  /** Выделен для unit-тестов: можно передать произвольный `now`. */
   async runOnce(now: Date): Promise<{
     orgsProcessed: number;
     snapshotsBuilt: number;
@@ -96,7 +81,6 @@ export class PortfolioHealthSnapshotCron {
   }
 }
 
-/** Сегодняшняя дата в МСК (Europe/Moscow) в формате YYYY-MM-DD. */
 export function todayInMoscow(now: Date): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Moscow',

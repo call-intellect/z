@@ -10,36 +10,14 @@ import { type Job, Worker } from 'bullmq';
 
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 import { RedisService } from '../../../../common/redis/redis.service';
-import {
-  CORE_QUEUE_NAMES,
-  type DumpCreatedJobData,
-} from '../../../core-queue/queues';
+import { CORE_QUEUE_NAMES, type DumpCreatedJobData } from '../../../core-queue/queues';
 import { IngestService } from '../../ingest.service';
 
-/**
- * `TextIngestAdapter` (Фаза 0b knowledge-core).
- *
- * BullMQ-consumer очереди `core.dump-created`. Принимает уже готовый текст
- * (Document.kind='text', status='parsed') и без парсинга:
- *
- *   1. Идентифицирует Document по id (skip — если не найден).
- *   2. lazy-upsert дефолтного Source `(type='web_form', name='Дамп мысли')` —
- *      переиспользуем тот же Source, что и legacy /ingest/dump.
- *   3. Создаёт RawEvent через `IngestService.ingest(...)` с
- *      `sourceExternalId = doc:<documentId>`. IngestService сам публикует
- *      `core.raw-events` для дальнейшего knowledge-core pipeline.
- *
- * NB: дублирование с legacy `DumpService.createDump` (он тоже публикует
- * `core.raw-events` через `IngestService.ingest`) намеренно не делаем —
- * `DumpService` теперь не дёргает `IngestService` сам, а просто публикует
- * `dump.created` и доверяет этому воркеру (см. dump.service.ts).
- */
 @Injectable()
 export class TextIngestAdapter implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TextIngestAdapter.name);
   private worker: Worker<DumpCreatedJobData> | null = null;
 
-  /** Канонический name Source'а для дампов (как у legacy DumpService). */
   static readonly DUMP_SOURCE_NAME = 'Дамп мысли';
 
   constructor(
@@ -54,8 +32,6 @@ export class TextIngestAdapter implements OnModuleInit, OnModuleDestroy {
       async (job) => this.process(job),
       {
         connection: this.redis.client,
-        // Дампы лёгкие — текст уже в payload, парсинга нет, единственный
-        // тяжёлый шаг — INSERT RawEvent. 4 одновременно — с запасом.
         concurrency: 4,
       },
     );
@@ -69,9 +45,7 @@ export class TextIngestAdapter implements OnModuleInit, OnModuleDestroy {
         'dump-created: job failed',
       );
     });
-    this.logger.log(
-      `TextIngestAdapter worker started (${CORE_QUEUE_NAMES.DUMP_CREATED})`,
-    );
+    this.logger.log(`TextIngestAdapter worker started (${CORE_QUEUE_NAMES.DUMP_CREATED})`);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -88,10 +62,7 @@ export class TextIngestAdapter implements OnModuleInit, OnModuleDestroy {
       where: { id: documentId },
     });
     if (!doc) {
-      this.logger.warn(
-        { documentId, jobId: job.id },
-        'dump-created: Document не найден — skip',
-      );
+      this.logger.warn({ documentId, jobId: job.id }, 'dump-created: Document не найден — skip');
       return;
     }
     if (doc.tenantId !== tenantId) {
@@ -128,10 +99,6 @@ export class TextIngestAdapter implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  /**
-   * lazy-upsert Source(type='web_form', name='Дамп мысли') — единый для
-   * legacy /ingest/dump и нового /api/v1/documents/text (через text.adapter).
-   */
   private async upsertDumpSource(tenantId: string): Promise<Source> {
     const existing = await this.prisma.source.findUnique({
       where: {
@@ -164,9 +131,7 @@ export class TextIngestAdapter implements OnModuleInit, OnModuleDestroy {
         },
       });
       if (retry) return retry;
-      throw new Error(
-        'TextIngestAdapter: не удалось upsert web_form Source',
-      );
+      throw new Error('TextIngestAdapter: не удалось upsert web_form Source');
     }
   }
 }

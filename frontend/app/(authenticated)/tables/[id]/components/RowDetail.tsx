@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useEditor, EditorContent, type Editor } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Link from '@tiptap/extension-link';
+import { useEditor, EditorContent, type Editor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import Link from "@tiptap/extension-link";
 import {
   Bold,
   ChevronRight,
@@ -20,9 +20,9 @@ import {
   Link as LinkIcon,
   Undo2,
   X,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { useEffect, useMemo, useRef, useState } from 'react';
+} from "lucide-react";
+import { toast } from "sonner";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   COMPUTED_TYPES,
@@ -34,64 +34,33 @@ import {
   type CellProvenanceDomain,
   type TablePropertyDomain,
   type TableRowDomain,
-} from '@/domain/table';
-import { Button } from '@/ui/shadcn/button';
-import { Checkbox } from '@/ui/shadcn/checkbox';
-import { Input } from '@/ui/shadcn/input';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/ui/shadcn/popover';
-import { Sheet, SheetContent } from '@/ui/shadcn/sheet';
-import { Textarea } from '@/ui/shadcn/textarea';
-
-/**
- * Карточка строки (Фаза 2 ТЗ smart-tables) — открывается как side-panel справа.
- *
- * Содержит:
- *   1. Шапку: имя строки (берётся из `isPrimary` property или fallback) +
- *      статус сохранения + кнопка «Закрыть».
- *   2. Список property'ей: каждая в одну строку «название — значение».
- *      Inline-edit для текстов/чисел/email/url/phone/checkbox. Status / select
- *      / person / date — read-only display (полноценный редактор будет в
- *      следующих фазах, чтобы переиспользовать popover'ы из Grid).
- *   3. Разделитель + Tiptap editor для `pageContent` (rich text).
- *   4. Заглушки разделов «Комментарии» и «История изменений» (Фаза 2+).
- *
- * Persistence:
- *   - Изменение property → `onUpdateCell` (store сам debounce'ит PATCH 500ms).
- *   - Изменение Tiptap content → `onUpdatePageContent` (store сам debounce'ит).
- *
- * Cover / emoji строки — отсутствуют в Prisma-схеме TableRow (есть только у
- * Table), поэтому в UI не рисуются.
- */
+} from "@/domain/table";
+import { Button } from "@/ui/shadcn/button";
+import { Checkbox } from "@/ui/shadcn/checkbox";
+import { Input } from "@/ui/shadcn/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/ui/shadcn/popover";
+import { Sheet, SheetContent } from "@/ui/shadcn/sheet";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 const ALLOWED_INLINE_TYPES = new Set([
-  'text',
-  'longtext',
-  'number',
-  'currency',
-  'percent',
-  'url',
-  'email',
-  'phone',
-  'checkbox',
+  "text",
+  "longtext",
+  "number",
+  "currency",
+  "percent",
+  "url",
+  "email",
+  "phone",
+  "checkbox",
 ]);
 
-/**
- * Подсказка для read-only attribute-полей (Smart-tables Фаза 2): значение
- * приходит из памяти компании (граф знаний / Entity) и редактируется в самой
- * сущности, а не в таблице.
- */
 const READONLY_HINT =
-  'Значение приходит из памяти компании и редактируется в самой сущности';
+  "Значение приходит из памяти компании и редактируется в самой сущности";
 
 export interface RowDetailProps {
   open: boolean;
   onClose: () => void;
   tableId: string;
-  /** Имя таблицы для breadcrumb. Если не передано — fallback «Таблица». */
   tableName?: string;
   rowId: string | null;
   properties: TablePropertyDomain[];
@@ -101,18 +70,13 @@ export interface RowDetailProps {
     rowId: string,
     pageContentJson: Record<string, unknown> | null,
   ) => void;
-  /**
-   * Загрузить провенансы строки (источники авто-правок ячеек). Фаза 3.
-   * Возвращает только актуальные записи (откатанные отфильтрованы).
-   */
   onLoadProvenance?: (rowId: string) => Promise<CellProvenanceDomain[]>;
-  /** Откатить авто-правку ячейки. Возвращает true при успехе. */
   onUndoProvenance?: (provenanceId: string) => Promise<boolean>;
-  /**
-   * Локально записать значение в ячейку (без PATCH). Используется после undo:
-   * backend уже восстановил previousValue, нужно лишь синхронизировать стор.
-   */
-  onApplyCellLocal?: (rowId: string, propertyId: string, value: unknown) => void;
+  onApplyCellLocal?: (
+    rowId: string,
+    propertyId: string,
+    value: unknown,
+  ) => void;
 }
 
 export function RowDetail({
@@ -138,8 +102,6 @@ export function RowDetail({
       <SheetContent
         side="right"
         className="w-full overflow-y-auto p-0 sm:max-w-[640px] md:max-w-[640px]"
-        // Закрытие по клику вне — стандартное поведение Sheet.
-        // Esc и кнопка X обрабатываются Radix.
       >
         {rowId && rowData ? (
           <RowDetailContent
@@ -177,56 +139,56 @@ interface RowDetailContentProps {
   onClose: () => void;
   onLoadProvenance?: (rowId: string) => Promise<CellProvenanceDomain[]>;
   onUndoProvenance?: (provenanceId: string) => Promise<boolean>;
-  onApplyCellLocal?: (rowId: string, propertyId: string, value: unknown) => void;
+  onApplyCellLocal?: (
+    rowId: string,
+    propertyId: string,
+    value: unknown,
+  ) => void;
 }
 
-/**
- * Tone-маппинг для шапки строки (фон + текст) по значению status-property.
- * Совпадает с эвристикой GridView (русские/английские синонимы).
- */
-type HeaderTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
+type HeaderTone = "success" | "warning" | "danger" | "info" | "neutral";
 
 const HEADER_TONE_BG: Record<HeaderTone, string> = {
-  success: 'bg-chip-success-bg/10',
-  warning: 'bg-chip-warning-bg/10',
-  danger: 'bg-chip-danger-bg/10',
-  info: 'bg-chip-info-bg/10',
-  neutral: 'bg-bg-subtle',
+  success: "bg-chip-success-bg/10",
+  warning: "bg-chip-warning-bg/10",
+  danger: "bg-chip-danger-bg/10",
+  info: "bg-chip-info-bg/10",
+  neutral: "bg-bg-subtle",
 };
 
 const HEADER_TONE_DOT: Record<HeaderTone, string> = {
-  success: 'bg-chip-success-fg',
-  warning: 'bg-chip-warning-fg',
-  danger: 'bg-chip-danger-fg',
-  info: 'bg-chip-info-fg',
-  neutral: 'bg-fg-tertiary',
+  success: "bg-chip-success-fg",
+  warning: "bg-chip-warning-fg",
+  danger: "bg-chip-danger-fg",
+  info: "bg-chip-info-fg",
+  neutral: "bg-fg-tertiary",
 };
 
 function pickHeaderTone(label: string | null): HeaderTone {
-  if (!label) return 'neutral';
+  if (!label) return "neutral";
   const l = label.trim().toLowerCase();
-  if (!l) return 'neutral';
+  if (!l) return "neutral";
   if (/^(готово|сделано|завершено|done|complete|closed|success|ок|ok)$/.test(l))
-    return 'success';
+    return "success";
   if (
     /^(в работе|in.progress|active|идёт|идет|review|на проверке|открыт)$/.test(
       l,
     )
   )
-    return 'info';
+    return "info";
   if (
     /^(планируется|backlog|todo|новая|новое|новый|план|to.?do|ожидание|waiting)$/.test(
       l,
     )
   )
-    return 'warning';
+    return "warning";
   if (
     /^(блокировано|отменено|cancelled|canceled|blocked|fail|failed|error|просрочено|overdue)$/.test(
       l,
     )
   )
-    return 'danger';
-  return 'neutral';
+    return "danger";
+  return "neutral";
 }
 
 function RowDetailContent({
@@ -241,8 +203,6 @@ function RowDetailContent({
   onUndoProvenance,
   onApplyCellLocal,
 }: RowDetailContentProps) {
-  // Provenance (Фаза 3): загружаем источники авто-правок строки при открытии.
-  // Держим локально в карточке (стор не засоряем — это вспомогательные данные).
   const [provenance, setProvenance] = useState<CellProvenanceDomain[]>([]);
   useEffect(() => {
     if (!onLoadProvenance) return;
@@ -255,7 +215,6 @@ function RowDetailContent({
     };
   }, [rowId, onLoadProvenance]);
 
-  // Map propertyId → последняя актуальная запись провенанса.
   const provByProperty = useMemo(() => {
     const map = new Map<string, CellProvenanceDomain>();
     for (const p of provenance) {
@@ -267,23 +226,19 @@ function RowDetailContent({
     return map;
   }, [provenance]);
 
-  // Откат авто-правки: backend восстановит previousValue в cells, локально
-  // синхронизируем значение и убираем иконку провенанса у этой ячейки.
   const handleUndo = async (prov: CellProvenanceDomain) => {
     if (!onUndoProvenance) return false;
     const ok = await onUndoProvenance(prov.id);
     if (ok) {
       onApplyCellLocal?.(rowId, prov.propertyId, prov.previousValue ?? null);
       setProvenance((prev) => prev.filter((x) => x.id !== prov.id));
-      toast.success('Изменение отменено');
+      toast.success("Изменение отменено");
     } else {
-      toast.error('Не удалось отменить изменение');
+      toast.error("Не удалось отменить изменение");
     }
     return ok;
   };
 
-  // Заголовок берём из isPrimary property — если её нет, из первой текстовой,
-  // иначе — «Без названия».
   const title = useMemo(() => {
     const primary = properties.find((p) => p.isPrimary);
     if (primary) {
@@ -291,39 +246,40 @@ function RowDetailContent({
       if (display) return display;
     }
     const firstText = properties.find(
-      (p) => p.type === 'text' || p.type === 'longtext',
+      (p) => p.type === "text" || p.type === "longtext",
     );
     if (firstText) {
-      const display = formatCellValue(rowData.cells[firstText.id], firstText.type);
+      const display = formatCellValue(
+        rowData.cells[firstText.id],
+        firstText.type,
+      );
       if (display) return display;
     }
-    return 'Без названия';
+    return "Без названия";
   }, [properties, rowData.cells]);
 
-  // Сортируем по order — порядок как в Grid.
   const sortedProps = useMemo(
     () => [...properties].sort((a, b) => a.order - b.order),
     [properties],
   );
 
-  // Tone шапки — по значению первой `status`-колонки строки, если есть.
   const headerTone = useMemo<HeaderTone>(() => {
-    const statusProp = properties.find((p) => p.type === 'status');
-    if (!statusProp) return 'neutral';
-    const label = formatCellValue(rowData.cells[statusProp.id], 'status');
+    const statusProp = properties.find((p) => p.type === "status");
+    if (!statusProp) return "neutral";
+    const label = formatCellValue(rowData.cells[statusProp.id], "status");
     return pickHeaderTone(label || null);
   }, [properties, rowData.cells]);
 
   const statusLabel = useMemo(() => {
-    const statusProp = properties.find((p) => p.type === 'status');
+    const statusProp = properties.find((p) => p.type === "status");
     if (!statusProp) return null;
-    const label = formatCellValue(rowData.cells[statusProp.id], 'status');
+    const label = formatCellValue(rowData.cells[statusProp.id], "status");
     return label || null;
   }, [properties, rowData.cells]);
 
   return (
     <div className="flex h-full flex-col">
-      {/* Шапка — тоновый фон по статусу строки */}
+      {}
       <div
         className={`border-b border-border-subtle px-6 pb-5 pt-4 transition-colors ${HEADER_TONE_BG[headerTone]}`}
       >
@@ -333,7 +289,7 @@ function RowDetailContent({
               aria-label="Хлебные крошки"
               className="mb-2 flex items-center gap-1 text-xs text-fg-tertiary"
             >
-              <span className="truncate">{tableName ?? 'Таблица'}</span>
+              <span className="truncate">{tableName ?? "Таблица"}</span>
               <ChevronRight className="h-3 w-3 shrink-0" aria-hidden />
               <span className="text-fg-secondary">Строка</span>
             </nav>
@@ -352,11 +308,11 @@ function RowDetailContent({
               ) : null}
               {statusLabel ? <span className="text-fg-tertiary">·</span> : null}
               <span className="text-fg-tertiary">
-                Создано {rowData.createdAt.toLocaleDateString('ru-RU')}
+                Создано {rowData.createdAt.toLocaleDateString("ru-RU")}
               </span>
               <span className="text-fg-tertiary">·</span>
               <span className="text-fg-tertiary">
-                Обновлено {rowData.updatedAt.toLocaleDateString('ru-RU')}
+                Обновлено {rowData.updatedAt.toLocaleDateString("ru-RU")}
               </span>
             </div>
           </div>
@@ -372,9 +328,9 @@ function RowDetailContent({
         </div>
       </div>
 
-      {/* Body */}
+      {}
       <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
-        {/* Property'и */}
+        {}
         <section aria-label="Свойства">
           <div className="space-y-2">
             {sortedProps.map((property) => (
@@ -391,7 +347,7 @@ function RowDetailContent({
           </div>
         </section>
 
-        {/* Содержимое (rich text) */}
+        {}
         <section aria-label="Содержимое">
           <h3 className="mb-2 text-sm font-medium text-fg-secondary">
             Содержимое
@@ -402,7 +358,7 @@ function RowDetailContent({
           />
         </section>
 
-        {/* Заглушка комментариев */}
+        {}
         <section aria-label="Комментарии">
           <h3 className="mb-2 text-sm font-medium text-fg-secondary">
             Комментарии
@@ -412,7 +368,7 @@ function RowDetailContent({
           </div>
         </section>
 
-        {/* Заглушка истории */}
+        {}
         <section aria-label="История изменений">
           <h3 className="mb-2 text-sm font-medium text-fg-secondary">
             История изменений
@@ -426,16 +382,12 @@ function RowDetailContent({
   );
 }
 
-// ─────────────────────────── PropertyRow ─────────────────────────────────
-
 interface PropertyRowProps {
   property: TablePropertyDomain;
   value: unknown;
   row: TableRowDomain;
   onChange: (v: unknown) => void;
-  /** Провенанс ячейки (источник авто-правки), если есть. Фаза 3. */
   provenance?: CellProvenanceDomain | null;
-  /** Откатить авто-правку. Если не передан — кнопка «Отменить» скрыта. */
   onUndoProvenance?: (prov: CellProvenanceDomain) => Promise<boolean>;
 }
 
@@ -449,8 +401,6 @@ function PropertyRow({
 }: PropertyRowProps) {
   const isSupported = FAZA1_SUPPORTED_TYPES.has(property.type);
   const isComputed = COMPUTED_TYPES.has(property.type);
-  // Read-only attribute-колонка (значение из памяти компании) — приоритетнее
-  // inline-редактируемости: даже text/email/phone не должны иметь редактор.
   const isReadonlyAttr = isReadonlyProperty(property);
   const isInlineEditable =
     !isReadonlyAttr &&
@@ -463,10 +413,7 @@ function PropertyRow({
       <div className="pt-1.5 text-xs text-fg-tertiary">
         <div className="flex items-center gap-1">
           {isReadonlyAttr ? (
-            <Link2
-              className="h-3 w-3 shrink-0 text-fg-tertiary"
-              aria-hidden
-            />
+            <Link2 className="h-3 w-3 shrink-0 text-fg-tertiary" aria-hidden />
           ) : null}
           <span className="truncate" title={property.name}>
             {property.name}
@@ -479,39 +426,40 @@ function PropertyRow({
 
       <div className="flex min-w-0 items-start gap-1">
         <div className="min-w-0 flex-1">
-        {isReadonlyAttr ? (
-          // Значение приходит из памяти компании — только отображение, без
-          // редактора. Иконка-«звено» + подсказка поясняют, почему.
-          <div
-            className="flex min-h-9 items-center gap-1.5 px-2 py-1.5 text-sm"
-            title={READONLY_HINT}
-          >
-            <span className={value ? 'text-fg-secondary' : 'text-fg-tertiary'}>
-              {formatCellValue(value, property.type) || '—'}
-            </span>
-            <Link2
-              className="h-3 w-3 shrink-0 text-fg-tertiary"
-              aria-label={READONLY_HINT}
+          {isReadonlyAttr ? (
+            <div
+              className="flex min-h-9 items-center gap-1.5 px-2 py-1.5 text-sm"
+              title={READONLY_HINT}
+            >
+              <span
+                className={value ? "text-fg-secondary" : "text-fg-tertiary"}
+              >
+                {formatCellValue(value, property.type) || "—"}
+              </span>
+              <Link2
+                className="h-3 w-3 shrink-0 text-fg-tertiary"
+                aria-label={READONLY_HINT}
+              />
+            </div>
+          ) : !isSupported ? (
+            <ReadOnlyText text="Тип пока не поддерживается" muted />
+          ) : isComputed ? (
+            <ComputedDisplay property={property} row={row} />
+          ) : isInlineEditable ? (
+            <InlineEditor
+              property={property}
+              value={value}
+              onChange={onChange}
             />
-          </div>
-        ) : !isSupported ? (
-          <ReadOnlyText text="Тип пока не поддерживается" muted />
-        ) : isComputed ? (
-          <ComputedDisplay property={property} row={row} />
-        ) : isInlineEditable ? (
-          <InlineEditor property={property} value={value} onChange={onChange} />
-        ) : (
-          // status / selectSingle / selectMulti / person / date — read-only
-          // отображение через formatCellValue. Полноценный popover-редактор
-          // будет добавлен позже (переиспользует Grid-логику).
-          <ReadOnlyText
-            text={formatCellValue(value, property.type) || '—'}
-            muted={!value}
-          />
-        )}
+          ) : (
+            <ReadOnlyText
+              text={formatCellValue(value, property.type) || "—"}
+              muted={!value}
+            />
+          )}
         </div>
 
-        {/* Индикатор провенанса (Фаза 3): значение обновлено из источника. */}
+        {}
         {provenance ? (
           <ProvenanceIndicator
             provenance={provenance}
@@ -522,8 +470,6 @@ function PropertyRow({
     </div>
   );
 }
-
-// ─────────────────────────── ProvenanceIndicator ─────────────────────────
 
 function ProvenanceIndicator({
   provenance,
@@ -563,7 +509,7 @@ function ProvenanceIndicator({
       <PopoverContent align="end" className="w-72 space-y-2">
         <div className="text-xs text-fg-tertiary">Обновлено из:</div>
         <div className="text-sm font-medium text-fg-primary">
-          {provenance.sourceLabel || 'Источник'}
+          {provenance.sourceLabel || "Источник"}
         </div>
         {confidence ? (
           <div className="text-xs text-fg-secondary">
@@ -571,7 +517,7 @@ function ProvenanceIndicator({
           </div>
         ) : null}
         <div className="text-xs text-fg-tertiary">
-          {provenance.appliedAt.toLocaleString('ru-RU')}
+          {provenance.appliedAt.toLocaleString("ru-RU")}
         </div>
         <div className="flex items-center justify-between gap-2 pt-1">
           {provenance.sourceLink ? (
@@ -608,13 +554,19 @@ function ProvenanceIndicator({
   );
 }
 
-function ReadOnlyText({ text, muted = false }: { text: string; muted?: boolean }) {
+function ReadOnlyText({
+  text,
+  muted = false,
+}: {
+  text: string;
+  muted?: boolean;
+}) {
   return (
     <div
       className={
         muted
-          ? 'min-h-9 px-2 py-1.5 text-sm text-fg-tertiary'
-          : 'min-h-9 px-2 py-1.5 text-sm text-fg-primary'
+          ? "min-h-9 px-2 py-1.5 text-sm text-fg-tertiary"
+          : "min-h-9 px-2 py-1.5 text-sm text-fg-primary"
       }
     >
       {text}
@@ -630,13 +582,13 @@ function ComputedDisplay({
   row: TableRowDomain;
 }) {
   let display: string;
-  if (property.type === 'createdAt') display = row.createdAt.toLocaleString('ru-RU');
-  else if (property.type === 'updatedAt') display = row.updatedAt.toLocaleString('ru-RU');
+  if (property.type === "createdAt")
+    display = row.createdAt.toLocaleString("ru-RU");
+  else if (property.type === "updatedAt")
+    display = row.updatedAt.toLocaleString("ru-RU");
   else display = row.createdBy;
   return <ReadOnlyText text={display} muted />;
 }
-
-// ─────────────────────────── InlineEditor ────────────────────────────────
 
 interface InlineEditorProps {
   property: TablePropertyDomain;
@@ -645,10 +597,8 @@ interface InlineEditorProps {
 }
 
 function InlineEditor({ property, value, onChange }: InlineEditorProps) {
-  // Локальное состояние для свободного ввода — синхронизируется со store через
-  // onChange. Store у себя debounce'ит PATCH.
   switch (property.type) {
-    case 'checkbox': {
+    case "checkbox": {
       const checked = Boolean(value);
       return (
         <div className="flex min-h-9 items-center px-2">
@@ -661,10 +611,10 @@ function InlineEditor({ property, value, onChange }: InlineEditorProps) {
       );
     }
 
-    case 'longtext': {
+    case "longtext": {
       return (
         <Textarea
-          defaultValue={typeof value === 'string' ? value : ''}
+          defaultValue={typeof value === "string" ? value : ""}
           onChange={(e) => onChange(e.target.value)}
           rows={3}
           className="text-sm"
@@ -673,20 +623,20 @@ function InlineEditor({ property, value, onChange }: InlineEditorProps) {
       );
     }
 
-    case 'number':
-    case 'currency':
-    case 'percent': {
+    case "number":
+    case "currency":
+    case "percent": {
       const display =
-        typeof value === 'number' || typeof value === 'string'
+        typeof value === "number" || typeof value === "string"
           ? String(value)
-          : '';
+          : "";
       return (
         <Input
           type="number"
           defaultValue={display}
           onChange={(e) => {
             const v = e.target.value;
-            if (v === '') onChange(null);
+            if (v === "") onChange(null);
             else {
               const n = Number(v);
               onChange(Number.isFinite(n) ? n : null);
@@ -699,20 +649,20 @@ function InlineEditor({ property, value, onChange }: InlineEditorProps) {
       );
     }
 
-    case 'url':
-    case 'email':
-    case 'phone':
-    case 'text':
+    case "url":
+    case "email":
+    case "phone":
+    case "text":
     default: {
-      const display = typeof value === 'string' ? value : '';
+      const display = typeof value === "string" ? value : "";
       const inputType =
-        property.type === 'url'
-          ? 'url'
-          : property.type === 'email'
-            ? 'email'
-            : property.type === 'phone'
-              ? 'tel'
-              : 'text';
+        property.type === "url"
+          ? "url"
+          : property.type === "email"
+            ? "email"
+            : property.type === "phone"
+              ? "tel"
+              : "text";
       return (
         <Input
           type={inputType}
@@ -726,16 +676,15 @@ function InlineEditor({ property, value, onChange }: InlineEditorProps) {
   }
 }
 
-// ─────────────────────────── Tiptap editor ───────────────────────────────
-
 interface PageContentEditorProps {
   initialContent: Record<string, unknown> | null;
   onChange: (json: Record<string, unknown> | null) => void;
 }
 
-function PageContentEditor({ initialContent, onChange }: PageContentEditorProps) {
-  // Дебаунс onUpdate, чтобы не вызывать store-PATCH на каждый кейстрок —
-  // store сам тоже debounce'ит, но это убирает нагрузку на zustand-рендеры.
+function PageContentEditor({
+  initialContent,
+  onChange,
+}: PageContentEditorProps) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -748,25 +697,20 @@ function PageContentEditor({ initialContent, onChange }: PageContentEditorProps)
       Link.configure({
         openOnClick: false,
         HTMLAttributes: {
-          rel: 'noopener noreferrer',
-          target: '_blank',
+          rel: "noopener noreferrer",
+          target: "_blank",
         },
       }),
     ],
     content:
-      initialContent && typeof initialContent === 'object'
+      initialContent && typeof initialContent === "object"
         ? initialContent
-        : { type: 'doc', content: [{ type: 'paragraph' }] },
-    // SSR-safe (React 19 / Next 16 App Router) — Tiptap инициализируется только
-    // на клиенте. См. https://tiptap.dev/docs/editor/getting-started/install/react
+        : { type: "doc", content: [{ type: "paragraph" }] },
     immediatelyRender: false,
     editorProps: {
       attributes: {
-        // Tailwind-стили без `@tailwindcss/typography` — задаём базовый
-        // ритм заголовков/списков/цитат локальными классами `tt-prose`
-        // (определены ниже в <style jsx> внутри компонента).
         class:
-          'tt-prose min-h-[200px] w-full rounded-md border border-border-subtle bg-bg-card px-3 py-2 text-sm text-fg-primary focus:outline-none focus:ring-2 focus:ring-accent',
+          "tt-prose min-h-[200px] w-full rounded-md border border-border-subtle bg-bg-card px-3 py-2 text-sm text-fg-primary focus:outline-none focus:ring-2 focus:ring-accent",
       },
     },
     onUpdate: ({ editor: e }) => {
@@ -785,7 +729,6 @@ function PageContentEditor({ initialContent, onChange }: PageContentEditorProps)
   }, []);
 
   if (!editor) {
-    // SSR / первый рендер — Tiptap ещё не инициализирован.
     return (
       <div className="min-h-[200px] w-full rounded-md border border-border-subtle bg-bg-card px-3 py-2 text-sm text-fg-tertiary">
         Загрузка редактора...
@@ -805,83 +748,82 @@ function PageContentEditor({ initialContent, onChange }: PageContentEditorProps)
 function EditorToolbar({ editor }: { editor: Editor }) {
   const [, force] = useState(0);
 
-  // Перерисовываем кнопки при изменении selection / formatting state.
   useEffect(() => {
     const handler = () => force((n) => n + 1);
-    editor.on('selectionUpdate', handler);
-    editor.on('transaction', handler);
+    editor.on("selectionUpdate", handler);
+    editor.on("transaction", handler);
     return () => {
-      editor.off('selectionUpdate', handler);
-      editor.off('transaction', handler);
+      editor.off("selectionUpdate", handler);
+      editor.off("transaction", handler);
     };
   }, [editor]);
 
   const onLink = () => {
-    const previous = editor.getAttributes('link').href as string | undefined;
-    const url = window.prompt('Адрес ссылки', previous ?? 'https://');
+    const previous = editor.getAttributes("link").href as string | undefined;
+    const url = window.prompt("Адрес ссылки", previous ?? "https://");
     if (url === null) return;
-    if (url === '') {
-      editor.chain().focus().extendMarkRange('link').unsetLink().run();
+    if (url === "") {
+      editor.chain().focus().extendMarkRange("link").unsetLink().run();
       return;
     }
-    editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
   };
 
   return (
     <div className="mb-1 flex flex-wrap items-center gap-0.5 rounded-md border border-border-subtle bg-bg-subtle px-1 py-1">
       <ToolbarButton
-        active={editor.isActive('bold')}
+        active={editor.isActive("bold")}
         onClick={() => editor.chain().focus().toggleBold().run()}
         label="Жирный"
         icon={<Bold className="h-3.5 w-3.5" />}
       />
       <ToolbarButton
-        active={editor.isActive('italic')}
+        active={editor.isActive("italic")}
         onClick={() => editor.chain().focus().toggleItalic().run()}
         label="Курсив"
         icon={<Italic className="h-3.5 w-3.5" />}
       />
       <ToolbarButton
-        active={editor.isActive('strike')}
+        active={editor.isActive("strike")}
         onClick={() => editor.chain().focus().toggleStrike().run()}
         label="Зачёркнутый"
         icon={<Strikethrough className="h-3.5 w-3.5" />}
       />
       <Divider />
       <ToolbarButton
-        active={editor.isActive('heading', { level: 1 })}
+        active={editor.isActive("heading", { level: 1 })}
         onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
         label="Заголовок 1"
         icon={<Heading1 className="h-3.5 w-3.5" />}
       />
       <ToolbarButton
-        active={editor.isActive('heading', { level: 2 })}
+        active={editor.isActive("heading", { level: 2 })}
         onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
         label="Заголовок 2"
         icon={<Heading2 className="h-3.5 w-3.5" />}
       />
       <Divider />
       <ToolbarButton
-        active={editor.isActive('bulletList')}
+        active={editor.isActive("bulletList")}
         onClick={() => editor.chain().focus().toggleBulletList().run()}
         label="Маркированный список"
         icon={<List className="h-3.5 w-3.5" />}
       />
       <ToolbarButton
-        active={editor.isActive('orderedList')}
+        active={editor.isActive("orderedList")}
         onClick={() => editor.chain().focus().toggleOrderedList().run()}
         label="Нумерованный список"
         icon={<ListOrdered className="h-3.5 w-3.5" />}
       />
       <ToolbarButton
-        active={editor.isActive('blockquote')}
+        active={editor.isActive("blockquote")}
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
         label="Цитата"
         icon={<Quote className="h-3.5 w-3.5" />}
       />
       <Divider />
       <ToolbarButton
-        active={editor.isActive('link')}
+        active={editor.isActive("link")}
         onClick={onLink}
         label="Ссылка"
         icon={<LinkIcon className="h-3.5 w-3.5" />}
@@ -909,8 +851,8 @@ function ToolbarButton({
       title={label}
       className={
         active
-          ? 'inline-flex h-7 w-7 items-center justify-center rounded bg-accent-muted text-accent transition-colors'
-          : 'inline-flex h-7 w-7 items-center justify-center rounded text-fg-secondary transition-colors hover:bg-bg-overlay hover:text-fg-primary'
+          ? "inline-flex h-7 w-7 items-center justify-center rounded bg-accent-muted text-accent transition-colors"
+          : "inline-flex h-7 w-7 items-center justify-center rounded text-fg-secondary transition-colors hover:bg-bg-overlay hover:text-fg-primary"
       }
     >
       {icon}
@@ -922,12 +864,6 @@ function Divider() {
   return <span className="mx-0.5 h-4 w-px bg-border-subtle" aria-hidden />;
 }
 
-/**
- * Минимальные стили для Tiptap-контента — `@tailwindcss/typography` в проекте
- * не подключён, поэтому задаём базовый ритм через scoped CSS.
- *
- * Цвета — через семантические токены проекта (var(--text-*)).
- */
 const TIPTAP_CSS = `
       .tt-prose {
         line-height: 1.55;
@@ -1018,8 +954,5 @@ const TIPTAP_CSS = `
 `;
 
 function TiptapStyles() {
-  // Глобальные стили для Tiptap-контента. Используем обычный <style> без
-  // styled-jsx — Next 16 App Router styled-jsx по умолчанию не активен,
-  // а CSS-in-JS не нужен (один статический блок).
   return <style dangerouslySetInnerHTML={{ __html: TIPTAP_CSS }} />;
 }

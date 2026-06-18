@@ -1,18 +1,9 @@
-/**
- * Демо-данные «ТехноСтрим» — организационная структура.
- *
- * Создаёт: CompanyProfile (1), Department (7), Role (12), Person (12),
- * Appointment (12), FunctionalDomain (5).
- * Обновляет headPersonId для 4 отделов.
- */
 import type { SeedFn } from './types';
 
 export const seedOrgStructure: SeedFn = async (ctx, ids) => {
   const { prisma, tenantId } = ctx;
 
   try {
-    // ── 1. CompanyProfile ────────────────────────────────────────────────
-
     await prisma.companyProfile.create({
       data: {
         tenantId,
@@ -25,18 +16,12 @@ export const seedOrgStructure: SeedFn = async (ctx, ids) => {
           text: 'Платформа №1 для B2B-коммуникаций в России с AI-аналитикой',
         },
         strategyJson: {
-          pillars: [
-            'AI-first аналитика встреч',
-            'Мобильность',
-            'Enterprise-безопасность',
-          ],
+          pillars: ['AI-first аналитика встреч', 'Мобильность', 'Enterprise-безопасность'],
           targetMarket: 'B2B SaaS 50-500 сотрудников',
           arr: 'целевой ARR 10M к концу года',
         },
       },
     });
-
-    // ── 2. Departments (7) ───────────────────────────────────────────────
 
     const deptDefs: { key: string; name: string }[] = [
       { key: 'leadership', name: 'Руководство' },
@@ -54,8 +39,6 @@ export const seedOrgStructure: SeedFn = async (ctx, ids) => {
       });
       ids.departments[d.key] = dept.id;
     }
-
-    // ── 3. Roles (12) ────────────────────────────────────────────────────
 
     const roleDefs: { key: string; name: string; dept: string }[] = [
       { key: 'ceo', name: 'CEO / Основатель', dept: 'leadership' },
@@ -82,8 +65,6 @@ export const seedOrgStructure: SeedFn = async (ctx, ids) => {
       });
       ids.roles[r.key] = role.id;
     }
-
-    // ── 4. Persons (12) ──────────────────────────────────────────────────
 
     interface PersonDef {
       key: string;
@@ -131,7 +112,10 @@ export const seedOrgStructure: SeedFn = async (ctx, ids) => {
           expertise: ['микросервисы', 'безопасность', 'SFU-архитектура', 'OAuth2'],
           responsibilities: ['архитектура бэкенда', 'code review', 'технический долг'],
           communicationStyle: 'pragmatic, code-first',
-          decisionPatterns: ['hotfix сначала, рефакторинг потом', 'берёт критические задачи на себя'],
+          decisionPatterns: [
+            'hotfix сначала, рефакторинг потом',
+            'берёт критические задачи на себя',
+          ],
         },
       },
       {
@@ -160,13 +144,55 @@ export const seedOrgStructure: SeedFn = async (ctx, ids) => {
           decisionPatterns: ['референсы перед дизайном', 'итеративный подход'],
         },
       },
-      { key: 'novikov', name: 'Игорь Новиков', email: 'novikov@technostream.io', dept: 'engineering', role: 'backend_dev' },
-      { key: 'sidorov', name: 'Павел Сидоров', email: 'sidorov@technostream.io', dept: 'engineering', role: 'frontend_dev' },
-      { key: 'kuznetsova', name: 'Ольга Кузнецова', email: 'kuznetsova@technostream.io', dept: 'marketing', role: 'marketer' },
-      { key: 'lebedev', name: 'Виктор Лебедев', email: 'lebedev@technostream.io', dept: 'sales', role: 'sales_manager' },
-      { key: 'ivanova', name: 'Наталья Иванова', email: 'ivanova@technostream.io', dept: 'support', role: 'customer_success' },
-      { key: 'popov', name: 'Сергей Попов', email: 'popov@technostream.io', dept: 'engineering', role: 'qa_engineer' },
-      { key: 'mikhailova', name: 'Татьяна Михайлова', email: 'mikhailova@technostream.io', dept: 'hr', role: 'hr' },
+      {
+        key: 'novikov',
+        name: 'Игорь Новиков',
+        email: 'novikov@technostream.io',
+        dept: 'engineering',
+        role: 'backend_dev',
+      },
+      {
+        key: 'sidorov',
+        name: 'Павел Сидоров',
+        email: 'sidorov@technostream.io',
+        dept: 'engineering',
+        role: 'frontend_dev',
+      },
+      {
+        key: 'kuznetsova',
+        name: 'Ольга Кузнецова',
+        email: 'kuznetsova@technostream.io',
+        dept: 'marketing',
+        role: 'marketer',
+      },
+      {
+        key: 'lebedev',
+        name: 'Виктор Лебедев',
+        email: 'lebedev@technostream.io',
+        dept: 'sales',
+        role: 'sales_manager',
+      },
+      {
+        key: 'ivanova',
+        name: 'Наталья Иванова',
+        email: 'ivanova@technostream.io',
+        dept: 'support',
+        role: 'customer_success',
+      },
+      {
+        key: 'popov',
+        name: 'Сергей Попов',
+        email: 'popov@technostream.io',
+        dept: 'engineering',
+        role: 'qa_engineer',
+      },
+      {
+        key: 'mikhailova',
+        name: 'Татьяна Михайлова',
+        email: 'mikhailova@technostream.io',
+        dept: 'hr',
+        role: 'hr',
+      },
     ];
 
     for (const p of personDefs) {
@@ -177,18 +203,12 @@ export const seedOrgStructure: SeedFn = async (ctx, ids) => {
           email: p.email,
           primaryDepartmentId: ids.departments[p.dept]!,
           relationship: 'employee',
-          knowledgeProfile: p.knowledgeProfile
-            ? (p.knowledgeProfile as object)
-            : undefined,
-          // Ключевые сотрудники получают связку с User'ом, созданным
-          // ранее в seedUsers (нужна для Helpfulness*/Contribution*).
+          knowledgeProfile: p.knowledgeProfile ? (p.knowledgeProfile as object) : undefined,
           userId: ids.users[p.key] ?? undefined,
         },
       });
       ids.persons[p.key] = person.id;
     }
-
-    // ── 5. Appointments (12) ─────────────────────────────────────────────
 
     for (const p of personDefs) {
       await prisma.appointment.create({
@@ -202,8 +222,6 @@ export const seedOrgStructure: SeedFn = async (ctx, ids) => {
         },
       });
     }
-
-    // ── 6. FunctionalDomain (5) ──────────────────────────────────────────
 
     const domainDefs: { name: string; slug: string }[] = [
       { name: 'Product', slug: 'product' },
@@ -224,8 +242,6 @@ export const seedOrgStructure: SeedFn = async (ctx, ids) => {
       });
     }
 
-    // ── 7. Обновляем headPersonId для отделов ────────────────────────────
-
     const headMap: [string, string][] = [
       ['leadership', 'morozov'],
       ['product', 'volkova'],
@@ -242,8 +258,8 @@ export const seedOrgStructure: SeedFn = async (ctx, ids) => {
 
     console.log(
       `[demo/org-structure] Создано: 1 CompanyProfile, ${deptDefs.length} отделов, ` +
-      `${roleDefs.length} ролей, ${personDefs.length} сотрудников, ` +
-      `${personDefs.length} назначений, ${domainDefs.length} функциональных доменов.`,
+        `${roleDefs.length} ролей, ${personDefs.length} сотрудников, ` +
+        `${personDefs.length} назначений, ${domainDefs.length} функциональных доменов.`,
     );
   } catch (error) {
     console.error('[demo/org-structure] Ошибка при создании орг-структуры:', error);

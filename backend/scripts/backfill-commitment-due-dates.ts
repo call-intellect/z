@@ -1,22 +1,3 @@
-/**
- * SBA β-8.2 — Backfill `commitmentStatus` и `commitmentDueDate` для уже
- * существующих IdeaBlock'ов с signalType='commitment', у которых эти поля
- * ещё не заполнены.
- *
- * Логика:
- *   - Все блоки signalType='commitment' и commitmentStatus IS NULL:
- *     - commitmentStatus = 'open'
- *     - commitmentDueDate = nextBusinessDay(createdAt + COMMITMENT_FALLBACK_DUE_WORKDAYS)
- *       рабочих дней через HolidayService (учёт праздников/выходных).
- *
- * Запуск (разовый, после деплоя β-8.2):
- *   bun run scripts/backfill-commitment-due-dates.ts --dry-run
- *   bun run scripts/backfill-commitment-due-dates.ts
- *
- * Идемпотентность: повторный запуск пропустит уже обработанные (commitmentStatus
- * IS NOT NULL).
- */
-
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from '../src/app.module';
@@ -39,9 +20,6 @@ interface Stats {
 }
 
 async function main(args: RunArgs): Promise<void> {
-  // Лёгкий pre-check ДО подъёма всего AppModule (Nest DI + HolidayService +
-  // конфиг): если бэкфилить нечего — выходим чисто, не поднимая тяжёлый
-  // контекст и не рискуя упасть на bootstrap при неготовой инфраструктуре.
   const preCheck = createPrismaClient();
   try {
     const pending = await preCheck.ideaBlock.count({
@@ -133,11 +111,6 @@ async function main(args: RunArgs): Promise<void> {
   }
 }
 
-/**
- * Сдвинуть дату вперёд на N рабочих дней через HolidayService. Считаем
- * последовательно: каждый раз berëм nextBusinessDay(date + 1) и
- * уменьшаем счётчик.
- */
 async function addWorkdays(
   holidays: HolidayService,
   args: { tenantId: string; startDate: Date; workdays: number },

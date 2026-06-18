@@ -1,29 +1,24 @@
-import { Inject, Injectable, Logger, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { type AiResult, type Meeting, Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
-
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
-// Pulse Wave 6 §6.3 — best-effort enqueue Meeting-ROI после ai_ready.
-// Optional injection: старые unit-тесты AnalyzeWorker не передают
-// DashboardQueueService, и поведение остаётся идентичным (worker просто не
-// постит job в dashboard.meeting-roi).
 import { DashboardQueueService } from '../../dashboard/services/dashboard-queue.service';
 import { MeetingIngestAdapter } from '../../ingest/adapters/meeting.adapter';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { MeetingsService } from '../../meetings/meetings.service';
-// Smart-tables auto-creation Фаза 3 — Event-to-Cells. После ai_ready эмитим
-// `meeting.ai_ready` (best-effort), который ловит TableEnrichListener в модуле
-// tables и ставит enrich-job. Импортируем только константу-строку имени события.
 import { MEETING_AI_READY } from '../../tables/events/entity-sync.events';
-// Wave 3 / Tracker Phase 3 part B — best-effort вызов meeting-extract-actions
-// после ai_ready. Optional injection (старые тесты analyze.worker не сломаются).
-// Импорт оставлен type-only, чтобы не тащить tracker в граф ai/workers — DI
-// резолвит провайдер по строковому токену, type здесь только для @Inject.
 import { MeetingExtractActionsService } from '../../tracker/services/meeting-extract-actions.service';
 import { AiQueueService } from '../ai-queue.service';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
@@ -43,70 +38,24 @@ import {
   withOrgContextNote,
   wrapUserData,
 } from '../services/prompts/common';
-// Волна 4 B0 — нейтральный протокол встречи наружу для клиента (free-text).
 import {
   CLIENT_PROTOCOL_PROMPT_NAME,
   buildClientProtocolPrompt,
 } from '../services/prompts/client-meeting-split.prompt';
-import type {
-  DialogTurn,
-  OrgContextForPrompt,
-  RoomChatMessage,
-} from '../services/prompts/common';
+import type { DialogTurn, OrgContextForPrompt, RoomChatMessage } from '../services/prompts/common';
 import {
   FOLLOW_UP_SCHEMA,
   FOLLOW_UP_TOOL,
   FOLLOW_UP_TOOL_NAME,
   buildFollowUpPrompt,
 } from '../services/prompts/follow-up';
-import {
-  getPromptForType,
-  typeNeedsFollowUp,
-} from '../services/prompts/index';
+import { getPromptForType, typeNeedsFollowUp } from '../services/prompts/index';
 import { sanitizeCustomPrompt } from '../services/prompts/sanitize-custom-prompt';
-import {
-  SUMMARY_TOOL_NAME,
-  buildSummaryPrompt,
-} from '../services/prompts/system-summary';
+import { SUMMARY_TOOL_NAME, buildSummaryPrompt } from '../services/prompts/system-summary';
 
-/**
- * Worker стадии `ai.analyze`.
- *
- * Шаги:
- *   1. Достаём merged.json.
- *   2. transitionStatus → ai_processing.
- *   3. Создаём empty AiResult (чтобы видеть прогресс).
- *   4. Summary — общий промпт, всегда.
- *   5. customPrompt OR promptByType (через tool_use, retry на invalid JSON).
- *   6. Если нужно — follow-up.
- *   7. Если нужно — tasks.
- *   8. Каждый LLM-вызов пишется в AiUsageLog.
- *   9. transitionStatus → ai_ready.
- *   10. enqueueNotify.
- *
- * Concurrency: 2 (рейт-лимит Anthropic-комплита).
- */
-
-/**
- * retest3 Ф5 #51 — per-agent модель главного отчёта. summary/report-by-type/
- * follow-up идут на capable pro-модель DeepSeek; tasks/custom — на flash-default
- * (model не задаётся). В minimax-ветке `LlmFallbackService` это имя сбрасывается
- * (D1) — поэтому безопасно проставлять всегда.
- */
 const MAIN_REPORT_MODEL = 'deepseek-v4-pro';
 
-/**
- * Волна 4 B0 — клиентские типы встреч, для которых генерится нейтральный
- * ПРОТОКОЛ наружу (`client-meeting-split`). Внутренняя аналитика остаётся в
- * отчёте по типу (`extract_sales` и т.п.); протокол — безопасный документ для
- * отправки клиенту, без внутренних оценок (граница D6).
- */
-const CLIENT_PROTOCOL_TYPES = new Set<string>([
-  'sales',
-  'customer_success',
-  'partner',
-  'custdev',
-]);
+const CLIENT_PROTOCOL_TYPES = new Set<string>(['sales', 'customer_success', 'partner', 'custdev']);
 
 @Injectable()
 export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
@@ -126,38 +75,18 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(MeetingIngestAdapter) private readonly meetingIngest: MeetingIngestAdapter,
-    // Фаза A.1 — PromptResolver. Optional: в существующих unit-тестах analyze.worker
-    // его нет, и поведение должно остаться идентичным (code-fallback через
-    // getPromptForType). Если резолвер инжектится — используем его и сохраняем
-    // promptTemplateVersionId в AiResult.
     @Optional()
     @Inject(PromptResolverService)
     private readonly promptResolver?: PromptResolverService,
-    // Wave 3 / Tracker Phase 3 part B — после ai_ready вызываем
-    // meeting-extract-actions для извлечения структурированных IntakeIssue.
-    // @Optional: старые тесты analyze.worker (где DI без tracker) продолжают
-    // работать без изменений. Best-effort: ошибка не валит analyze.
     @Optional()
     @Inject(MeetingExtractActionsService)
     private readonly meetingExtractActions?: MeetingExtractActionsService,
-    // Pulse Wave 6 §6.3 — Meeting-ROI-Scorer. После ai_ready enqueue'им
-    // пересчёт `Meeting.roiScore`. Best-effort: отсутствие DashboardModule в
-    // unit-тестах не ломает analyze.
     @Optional()
     @Inject(DashboardQueueService)
     private readonly dashboardQueue?: DashboardQueueService,
-    // Smart-tables auto-creation Фаза 3 — Event-to-Cells. После ai_ready
-    // эмитим `meeting.ai_ready`. @Optional: в старых unit-тестах analyze.worker
-    // эмиттер не передаётся — эмит просто пропускается (no-op), pipeline не
-    // ломается.
     @Optional()
     @Inject(EventEmitter2)
     private readonly events?: EventEmitter2,
-    // ТЗ-4 Ф3 — компактный org-контекст (проекты/цели/сотрудники) для инъекции
-    // в SYSTEM summary + report-by-type (cache-friendly суффикс). @Optional:
-    // в старых unit-тестах analyze.worker сервис не передаётся — инъекция
-    // просто пропускается (no-op), поведение остаётся идентичным. В проде
-    // резолвится из @Global AiModule.
     @Optional()
     @Inject(OrgContextService)
     private readonly orgContext?: OrgContextService,
@@ -190,8 +119,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // ─────────────────────────── core ────────────────────────────────────────
-
   private async process(job: Job<AiJobData>): Promise<void> {
     const { meetingId } = job.data;
     const stageStartedAt = Date.now();
@@ -204,10 +131,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       this.logger.warn({ meetingId }, 'analyze: нет transcript.turns в БД');
       return;
     }
-    if (
-      meeting.status !== 'transcription_ready' &&
-      meeting.status !== 'ai_processing'
-    ) {
+    if (meeting.status !== 'transcription_ready' && meeting.status !== 'ai_processing') {
       this.logger.debug(
         { meetingId, status: meeting.status },
         'analyze: статус не transcription_ready/ai_processing — пропуск',
@@ -215,25 +139,18 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // 1. transition.
     if (meeting.status === 'transcription_ready') {
       await this.meetings.transitionStatus(meetingId, 'ai_processing', {
         reason: 'ai:analyze:start',
       });
     }
 
-    // 2. Читаем turns/roomChat из БД (сохранены merge.worker).
     const dialog = (meeting.transcript.turns as unknown as DialogTurn[] | null) ?? [];
-    const roomChat = (meeting.transcript.roomChat as unknown as RoomChatMessage[] | null) ?? undefined;
+    const roomChat =
+      (meeting.transcript.roomChat as unknown as RoomChatMessage[] | null) ?? undefined;
 
-    // 3. создаём/находим AiResult (placeholder для постепенного заполнения).
     let aiResult: AiResult = await this.upsertEmptyAiResult(meeting);
 
-    // 4. Summary (legacy summary-агент за флагом). Каноническая сводка теперь
-    //    идёт из meeting-report-fast (`summaryFast`); все потребители читают её
-    //    через pickPrimarySummary (Р6). При выключенном флаге НЕ зовём runSummary
-    //    (−1 LLM-вызов MiniMax) и пишем пустой `summary` (колонка non-null;
-    //    fast-воркер тоже пишет '' при create — тип не ломается).
     const summaryStarted = Date.now();
     if (this.isSummaryAgentEnabled()) {
       const summary = await this.runSummary({
@@ -256,7 +173,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         seconds: (Date.now() - summaryStarted) / 1000,
       });
     } else {
-      this.logger.log(
+      this.logger.debug(
         { meetingId },
         'analyze: summary-агент выключен (Р6) — пишем summary="" , каноническая сводка из summaryFast',
       );
@@ -266,7 +183,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    // 5. customPrompt OR promptByType.
     if (meeting.customPrompt && meeting.customPrompt.trim().length > 0) {
       const customStarted = Date.now();
       const out = await this.runCustomPrompt({
@@ -303,9 +219,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
           structuredData: data.json as Prisma.InputJsonValue,
           modelUsed: data.model,
           customOutputMd: null,
-          // Фаза A.1 — если PromptResolver резолвил через БД, фиксируем
-          // версию шаблона в AiResult.promptTemplateVersionId; для
-          // code-fallback оставляем NULL (как и было до A.1).
           ...(data.promptTemplateVersionId
             ? { promptTemplateVersionId: data.promptTemplateVersionId }
             : {}),
@@ -319,16 +232,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         seconds: (Date.now() - reportStarted) / 1000,
       });
 
-      // 5a. Волна 4 B0 — нейтральный ПРОТОКОЛ встречи наружу для клиента.
-      //     Только для клиентских типов и только в структурном пути (custom-
-      //     prompt — отдельный сценарий, протокол к нему не относится). Результат
-      //     (free-text Markdown) мержим в structuredData.client_protocol_md,
-      //     НЕ перезатирая основной отчёт. Best-effort: фича за kill-switch ON,
-      //     при ошибке/выключенном флаге — пропуск, основной отчёт не валится.
-      if (
-        CLIENT_PROTOCOL_TYPES.has(meeting.type) &&
-        this.isClientProtocolEnabled()
-      ) {
+      if (CLIENT_PROTOCOL_TYPES.has(meeting.type) && this.isClientProtocolEnabled()) {
         const protocolStarted = Date.now();
         try {
           const protocolText = await this.runClientProtocol({
@@ -338,8 +242,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
             jobId: job.id ?? null,
           });
           if (protocolText && protocolText.trim().length > 0) {
-            const existing =
-              (aiResult.structuredData as Prisma.JsonObject | null) ?? {};
+            const existing = (aiResult.structuredData as Prisma.JsonObject | null) ?? {};
             aiResult = await this.prisma.aiResult.update({
               where: { id: aiResult.id },
               data: {
@@ -369,7 +272,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // 6. follow-up.
     if (typeNeedsFollowUp(meeting.type)) {
       const fuStarted = Date.now();
       const followUp = await this.runFollowUp({
@@ -378,9 +280,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         roomChat,
         jobId: job.id ?? null,
       });
-      const composed = followUp
-        ? `Тема: ${followUp.subject}\n\n${followUp.body}`
-        : null;
+      const composed = followUp ? `Тема: ${followUp.subject}\n\n${followUp.body}` : null;
       aiResult = await this.prisma.aiResult.update({
         where: { id: aiResult.id },
         data: { followUpEmail: composed },
@@ -393,20 +293,10 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    // 7. tasks — снято 2026-06-10. Раньше analyze писал AiResult.tasks (мёртвое
-    //    поле: фронт читает Task-модель, заполняемую tasks-extract.worker'ом).
-    //    Блок и private runTasks удалены вместе с v2-стеком; колонка
-    //    AiResult.tasks остаётся в БД (миграция не делалась), но больше не пишется.
-
-    // 8. transition → ai_ready.
     await this.meetings.transitionStatus(meetingId, 'ai_ready', {
       reason: 'ai:analyze:done',
     });
 
-    // 8a. Smart-tables auto-creation Фаза 3 — Event-to-Cells. Best-effort эмит
-    //     `meeting.ai_ready` ПОСЛЕ успешного перехода статуса. TableEnrichListener
-    //     поставит enrich-job в `tables.enrich`. Никогда не валит analyze:
-    //     EventEmitter2.emit синхронный, оборачиваем в try/catch.
     if (this.events && meeting.tenantId) {
       try {
         this.events.emit(MEETING_AI_READY, {
@@ -422,7 +312,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // 9. суммарная метрика.
     this.metrics.observeAiPipelineDuration({
       stage: 'analyze',
       type: meeting.type,
@@ -430,19 +319,8 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       seconds: (Date.now() - stageStartedAt) / 1000,
     });
 
-    // 10. enqueue notify.
     await this.queue.enqueueNotify(meetingId);
 
-    // 11. Параллельные стадии: transcript-index + ingest в knowledge-core.
-    //     Главы / задачи / качество встречи теперь делает ЕДИНЫЙ воркер
-    //     `meeting-report-fast` (core-очередь), здесь они не ставятся.
-    //
-    //   - Выставляем embeddingsStatus='queued' заранее, чтобы UI сразу показал
-    //     спиннер индексации.
-    //   - Запускаем обе стадии как Promise.allSettled — ошибка добавления одной
-    //     не должна блокировать другую.
-    //   - На ошибку добавления — пишем failureReason, но НЕ меняем общий
-    //     status (он уже ai_ready: основное саммари есть и доступно).
     try {
       await this.prisma.meeting.update({
         where: { id: meetingId },
@@ -451,19 +329,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         },
       });
       const enqueueAttempt = job.data.attempt ?? 1;
-      // knowledge-core: дополнительно вызываем meeting-adapter — ЕДИНСТВЕННЫЙ
-      // вход результата встречи в knowledge-core. Это прямой await (адаптер сам
-      // внутри ingest.service делает enqueue в core.raw-events), а не enqueue в
-      // нашу очередь. consumer `core.raw-events` (BlockIngestWorker) ЖИВОЙ —
-      // ingest критичен для графа: без RawEvent встреча не попадает в knowledge-
-      // core и в граф ничего не уходит. Ф7 МТЗ: провал ingest БОЛЬШЕ не глушим
-      // в resolved-null — на ошибке логируем error, инкрементим метрику
-      // meeting_ingest_failed{reason} и RE-THROW, чтобы allSettled пометил
-      // 'ingest' как rejected → попал в ветку `failed` ниже → записался
-      // meeting.failureReason='post-analyze enqueue: ingest=...'. failureReason
-      // НЕ меняет общий status (остаётся ai_ready — саммари доступно).
-      // Невидимый раньше обрыв теперь виден через failureReason + метрику;
-      // восстановление — ретрай-cron meeting-reingest.
       const settled = await Promise.allSettled([
         this.queue.enqueueTranscriptIndex(meetingId, enqueueAttempt),
         this.meetingIngest.ingestMeeting(meetingId).catch((err) => {
@@ -503,10 +368,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
             data: { failureReason: `post-analyze enqueue: ${reason}` },
           })
           .catch(() => undefined);
-        this.logger.warn(
-          { meetingId, reason },
-          'analyze: часть post-analyze jobs не добавилась',
-        );
+        this.logger.warn({ meetingId, reason }, 'analyze: часть post-analyze jobs не добавилась');
       }
     } catch (e) {
       this.logger.warn(
@@ -514,8 +376,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    // 12. Card rollup — если встреча принадлежит карточке, ставим пересборку
-    //     `Card.summaryCache` через дебаунсированную очередь `ai.card-rollup`.
     if (meeting.cardId) {
       await this.queue
         .enqueueCardRollup(meeting.cardId, 'analyze')
@@ -526,15 +386,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         );
     }
 
-    // 13. Качество встречи (quality-score) больше НЕ ставится отсюда — его
-    //     считает ЕДИНЫЙ воркер `meeting-report-fast` (core-очередь) и пишет
-    //     в MeetingQualityScore + Meeting.qualityScoreStatus='ready'.
-
-    // 13a. Pulse Wave 6 §6.3 — Meeting-ROI-Scorer (event-driven). Считается
-    //      детерминистически из БД (decisions/commitments/tasks/duration/
-    //      participants), поэтому ставим после ai_ready (quality-score и tasks
-    //      уже могли записаться). Best-effort + Optional: если DashboardModule
-    //      не подключён (unit-тест AnalyzeWorker) — просто skip.
     if (this.dashboardQueue) {
       await this.dashboardQueue
         .enqueueMeetingRoi(meetingId)
@@ -545,11 +396,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         );
     }
 
-    // 14. Wave 3 / Tracker Phase 3 part B — meeting-extract-actions.
-    //     Извлекаем структурированные «автозадачи» из транскрипта и
-    //     создаём IntakeIssue (status='pending', source='meeting'). Дальше
-    //     IntakeAutoTriageWorker при confidence ≥ 0.92 примет автоматически.
-    //     Best-effort: если сервис не подключён или упал — analyze не валим.
     if (this.meetingExtractActions && meeting.tenantId) {
       try {
         await this.meetingExtractActions.extract({
@@ -567,20 +413,13 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    this.logger.log(
+    this.logger.debug(
       { meetingId, type: meeting.type, model: aiResult.modelUsed, cardId: meeting.cardId ?? null },
       'analyze: успешно — notify + post-analyze jobs поставлены',
     );
-
   }
 
-  // ─────────────────────────── pieces ──────────────────────────────────────
-
   private async upsertEmptyAiResult(meeting: Meeting): Promise<AiResult> {
-    // Атомарный upsert (INSERT ... ON CONFLICT) убирает TOCTOU: раньше
-    // findUnique→create мог упасть P2002, если meeting-report-fast.worker
-    // создал AiResult между двумя запросами (тот же КЛАСС гонки, S6-01, Р5).
-    // update:{} — no-op: existing возвращается без перезаписи полей.
     return this.prisma.aiResult.upsert({
       where: { meetingId: meeting.id },
       update: {},
@@ -604,19 +443,10 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       dialog: args.dialog,
       roomChat: args.roomChat,
     });
-    // ТЗ 2026-05-24 §4 (F1) — prompt-injection guard. При выключенном флаге
-    // используем оригинальные system/user (rollback по §13).
     const guardOn = this.isPromptInjectionGuardEnabled();
-    // ТЗ-4 Ф3 — org-контекст компании (стабильный per-tenant блок) внутри
-    // ASR-обёртки, чтобы ASR-нота оставалась самым последним блоком system.
     const orgCtx = await this.loadOrgContextSafe(args.meeting);
-    // ТЗ-4 Ф2 — ASR-нота дописывается СНАРУЖИ guard'а (самым последним блоком
-    // system), чтобы оставаться стабильным cache-friendly суффиксом.
     const systemText = withAsrNote(
-      withOrgContextNote(
-        guardOn ? withInjectionGuard(prompt.system) : prompt.system,
-        orgCtx,
-      ),
+      withOrgContextNote(guardOn ? withInjectionGuard(prompt.system) : prompt.system, orgCtx),
     );
     const userText = guardOn ? wrapUserData(prompt.user) : prompt.user;
     return this.callLlm({
@@ -632,13 +462,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /**
-   * Волна 4 B0 — нейтральный ПРОТОКОЛ встречи наружу для клиента (free-text
-   * Markdown). Мирроль `runSummary`: free-text (без tool), на той же capable
-   * MAIN_REPORT_MODEL. Входные guard'ы (E1/E2) — через единый `applyInputGuards`
-   * (injection + asr), kill-switch — общий `promptInjectionGuardEnabled`.
-   * Возвращает строку Markdown; caller мержит её в structuredData.client_protocol_md.
-   */
   private async runClientProtocol(args: {
     meeting: Meeting;
     dialog: DialogTurn[];
@@ -680,12 +503,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     jobId: string | null;
   }): Promise<LlmCompleteOutput> {
     const rawCustom = args.meeting.customPrompt ?? '';
-    // Сохраняем компактный формат `Speaker: text` без таймкодов (legacy contract
-    // custom-промпта), но если есть чат — добавляем блок «Чат встречи» вручную,
-    // используя те же правила форматирования, что и `turnsToText`.
-    const dialogText = args.dialog
-      .map((t) => `${t.speaker}: ${t.text}`)
-      .join('\n');
+    const dialogText = args.dialog.map((t) => `${t.speaker}: ${t.text}`).join('\n');
     const chatText =
       args.roomChat && args.roomChat.length > 0
         ? `\n\nЧат встречи:\n${args.roomChat
@@ -695,7 +513,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
 
     const guardOn = this.isPromptInjectionGuardEnabled();
     if (!guardOn) {
-      // ── Legacy path (rollback по §13 ТЗ): customPrompt идёт как system. ──
       const systemWithChatNote =
         args.roomChat && args.roomChat.length > 0
           ? `${rawCustom}\n\n${ROOM_CHAT_SYSTEM_NOTE}`
@@ -712,13 +529,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    // ── Guarded path (ТЗ 2026-05-24 §4): ───────────────────────────────────
-    //   1. Sanitize → метрика на каждый сработавший pattern.
-    //   2. customPrompt идёт в USER внутри маркеров — НЕ в system. Это
-    //      ключевое изменение: даже если sanitize что-то пропустил, LLM по
-    //      INJECTION_GUARD_NOTE проигнорирует команды внутри маркеров.
-    //   3. System — стандартный «деловой ассистент» + (опционально) note про
-    //      room-chat + INJECTION_GUARD_NOTE.
     const sanitized = sanitizeCustomPrompt(rawCustom);
     for (const pattern of sanitized.reasons) {
       this.metrics.incPromptInjectionAttempt({ source: 'custom_prompt', pattern });
@@ -749,29 +559,15 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /**
-   * Читает мастер-флаг защиты от prompt-injection из TypedConfigService.
-   * Defensive: в старых unit-тестах cfg инжектится как `{ ai: {} }` без
-   * `aiFeatures`, поэтому при отсутствии — возвращаем true (текущий default
-   * совпадает с env.schema). При false — legacy-поведение для rollback.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       const features = this.cfg.aiFeatures;
-      // Если поле существует и === false → выкл. Иначе — вкл.
       return features.promptInjectionGuardEnabled !== false;
     } catch {
       return true;
     }
   }
 
-  /**
-   * ТЗ 2026-06-07 agent-chain-overhaul, Фаза 5 / Р6 — флаг legacy summary-агента.
-   * Defensive (как `isPromptInjectionGuardEnabled`): в старых unit-тестах cfg
-   * инжектится как `{ ai: {}, aiFeatures: { promptInjectionGuardEnabled } }` без
-   * `summaryAgentEnabled`, поэтому при отсутствии — возвращаем true (дефолт ВКЛ:
-   * summary-агент продолжает работать). При явном false — runSummary не зовётся.
-   */
   private isSummaryAgentEnabled(): boolean {
     try {
       const features = this.cfg.aiFeatures as { summaryAgentEnabled?: boolean };
@@ -781,12 +577,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Волна 4 B0 — kill-switch агента `client-meeting-split` (нейтральный протокол
-   * наружу для клиента). Defensive (как `isSummaryAgentEnabled`): в старых
-   * unit-тестах cfg инжектится без `clientProtocolEnabled` → возвращаем true
-   * (дефолт ВКЛ). При явном false — протокол не генерится (экстренное выключение).
-   */
   private isClientProtocolEnabled(): boolean {
     try {
       const features = this.cfg.aiFeatures as { clientProtocolEnabled?: boolean };
@@ -807,19 +597,9 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     promptTemplateVersionId: string | null;
     experimentGroup: string | null;
   }> {
-    // Фаза A.1: PromptResolver выбирает источник промпта (БД → code-fallback).
-    // Если резолвер инжектнут — спрашиваем его; при source='code_fallback' или
-    // если резолвер вообще не подключён (старые unit-тесты), идём по существующему
-    // пути через `getPromptForType` и сохраняем 1:1 поведение. Это критично для
-    // side-by-side compatibility (см. ТЗ A.1 §15 «Регрессия качества»).
     const resolved = await this.tryResolvePrompt(args.meeting);
     const descriptor = getPromptForType(args.meeting.type);
 
-    // Источник промпта решает, что подать в LLM:
-    //  - code_fallback → используем descriptor.buildPrompt как раньше (с roomChat-обёрткой);
-    //  - db_org/db_system → systemPrompt берём из БД, user-составляющую формируем
-    //    тем же способом (turns + room-chat), потому что user — это транскрипт,
-    //    он не зависит от шаблона.
     const codeBuilt = descriptor.buildPrompt({
       meeting: { ...args.meeting },
       dialog: args.dialog,
@@ -827,7 +607,8 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     });
     const useDb = resolved && resolved.source !== 'code_fallback';
     const systemText = useDb
-      ? resolved!.systemPrompt + (args.roomChat && args.roomChat.length > 0 ? `\n\n${ROOM_CHAT_SYSTEM_NOTE}` : '')
+      ? resolved!.systemPrompt +
+        (args.roomChat && args.roomChat.length > 0 ? `\n\n${ROOM_CHAT_SYSTEM_NOTE}` : '')
       : codeBuilt.system;
     const tool: LlmTool = useDb
       ? {
@@ -836,26 +617,18 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
           input_schema: resolved!.outputSchema,
         }
       : descriptor.tool;
-    const expectedToolName = useDb ? (resolved!.toolName ?? descriptor.toolName) : descriptor.toolName;
+    const expectedToolName = useDb
+      ? (resolved!.toolName ?? descriptor.toolName)
+      : descriptor.toolName;
     const promptTemplateVersionId = resolved?.versionId ?? null;
     const experimentGroup = resolved?.experimentGroup ?? null;
 
     let lastError: unknown = null;
     let model: string;
-    // ТЗ 2026-05-24 §4 (F1) — обернуть system + user. retry-suffix остаётся
-    // СНАРУЖИ маркеров (это системное сообщение оркестратора, а не
-    // пользовательские данные).
     const guardOn = this.isPromptInjectionGuardEnabled();
-    // ТЗ-4 Ф3 — org-контекст компании грузим ОДИН раз (до retry-loop), внутри
-    // ASR-обёртки, чтобы ASR-нота оставалась самым последним блоком system.
     const orgCtx = await this.loadOrgContextSafe(args.meeting);
-    // ТЗ-4 Ф2 — ASR-нота в ЕДИНОЙ точке: покрывает обе ветки (DB-resolved и
-    // code-built), дописывается СНАРУЖИ guard'а самым последним блоком system.
     const wrappedSystem = withAsrNote(
-      withOrgContextNote(
-        guardOn ? withInjectionGuard(systemText) : systemText,
-        orgCtx,
-      ),
+      withOrgContextNote(guardOn ? withInjectionGuard(systemText) : systemText, orgCtx),
     );
     const wrappedUserBase = guardOn ? wrapUserData(codeBuilt.user) : codeBuilt.user;
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -898,14 +671,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  /**
-   * ТЗ-4 Ф3 — безопасная загрузка компактного org-контекста для инъекции в
-   * SYSTEM (summary / report-by-type). Никогда не бросает и не падает:
-   *   - сервис не подключён (старые unit-тесты) → пустой ctx (no-op);
-   *   - у встречи нет tenantId → пустой ctx (withOrgContextNote → no-op);
-   *   - ошибка БД → warn + пустой ctx (контекст — обогащение, не критичен).
-   * Загружается ОДИН раз на метод (не в retry-loop), чтобы не дёргать БД.
-   */
   private async loadOrgContextSafe(meeting: Meeting): Promise<OrgContextForPrompt> {
     if (!this.orgContext) return {};
     const tenantId = (meeting as unknown as { tenantId?: string | null }).tenantId;
@@ -921,12 +686,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Фаза A.1: безопасный вызов PromptResolver. Если резолвер не подключён
-   * (старые тесты) или у встречи нет orgId — возвращает null. Никогда не
-   * бросает: при ошибке резолвера логирует warn и возвращает null
-   * (caller использует code-fallback через getPromptForType).
-   */
   private async tryResolvePrompt(meeting: Meeting): Promise<ResolvedPrompt | null> {
     if (!this.promptResolver) return null;
     const tenantId = (meeting as unknown as { tenantId?: string | null }).tenantId;
@@ -968,11 +727,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  /**
-   * Структурный вызов с retry на invalid schema. Используется follow-up.
-   * Не падает фатально — на устойчивую ошибку возвращает null
-   * (follow-up — не критичное поле).
-   */
   private async callStructured<T>(
     args: { meeting: Meeting; jobId: string | null },
     prompt: { system: string; user: string },
@@ -981,7 +735,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     schema: { safeParse: (v: unknown) => { success: boolean; data?: T } },
     agentType: 'follow-up',
   ): Promise<T | null> {
-    // ТЗ 2026-05-24 §4 (F1) — обернуть system + user; retry-suffix снаружи маркеров.
     const guardOn = this.isPromptInjectionGuardEnabled();
     const guardedSystem = guardOn ? withInjectionGuard(prompt.system) : prompt.system;
     const wrappedSystem = guardedSystem;
@@ -993,7 +746,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         agentType,
         promptName: toolName,
         input: {
-          // follow-up — на pro-модели.
           model: MAIN_REPORT_MODEL,
           system: { text: wrappedSystem, cacheControl: 'ephemeral' },
           user:
@@ -1015,19 +767,10 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     return null;
   }
 
-  /**
-   * Обёртка над `LlmFallbackService.complete` + запись в `AiUsageLog`.
-   */
   private async callLlm(args: {
     meeting: Meeting;
     jobId: string | null;
-    agentType:
-      | 'summary'
-      | 'report-by-type'
-      | 'follow-up'
-      | 'tasks'
-      | 'custom'
-      | 'client_protocol';
+    agentType: 'summary' | 'report-by-type' | 'follow-up' | 'tasks' | 'custom' | 'client_protocol';
     promptName: string;
     input: Parameters<LlmFallbackService['complete']>[0];
   }): Promise<LlmCompleteOutput> {
@@ -1057,13 +800,9 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         provider,
         inputTokens,
         outputTokens,
-        // T7-F3 — prompt caching телеметрия. Учитывается calcCostUsd:
-        // cached_per_1M < input_per_1M, поэтому общая стоимость падает.
         cachedTokens,
         cacheCreationTokens,
-        costUsd: success
-          ? calcCostUsd(model, inputTokens, outputTokens, cachedTokens)
-          : 0,
+        costUsd: success ? calcCostUsd(model, inputTokens, outputTokens, cachedTokens) : 0,
         durationMs: Date.now() - startedAt,
         success,
         errorText,
@@ -1075,9 +814,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     if (!job || job.attemptsMade < (job.opts.attempts ?? 5)) return;
     const meetingId = job.data.meetingId;
     try {
-      // Фаза 11 (развязка записи от AI-статуса): сбой AI-ветки после исчерпания
-      // ретраев НЕ схлопывает встречу в терминальный `failed` — запись (если есть)
-      // должна остаться смотрибельной. `ai_failed` сохраняет видео доступным.
       await this.meetings.transitionStatus(meetingId, 'ai_failed', {
         failureReason: `analyze: ${err.message}`,
         reason: 'ai:analyze:final_failure',
@@ -1091,22 +827,6 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   }
 }
 
-// ─────────────────────────── helpers ───────────────────────────────────────
-
-/**
- * Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — классификация провала
- * `ingestMeeting` для метрики `meeting_ingest_failed{reason}`. Все режимы
- * провала — это `throw` ДО внутреннего idempotent-возврата:
- *   - `source_inactive`        — IngestService: Source отключён.
- *   - `no_merged_transcript`   — MeetingIngestAdapter: нет transcript.turns.
- *   - `without_tenant`         — MeetingIngestAdapter: meeting.tenantId null.
- *   - `quota_exceeded`         — QuotaService: ingest_bytes_per_month (HTTP 429).
- *   - `other`                  — всё прочее (meeting_not_found, БД, S3, ...).
- *
- * Код достаём из тела NestJS HttpException (`err.response.error.code` /
- * `err.getResponse()`), QuotaExceededError ловим ещё и по `err.name`. На
- * крайний случай — substring по message.
- */
 function classifyIngestFailure(err: unknown): string {
   const code = extractErrorCode(err);
   switch (code) {
@@ -1132,11 +852,6 @@ function classifyIngestFailure(err: unknown): string {
   return 'other';
 }
 
-/**
- * Достаёт `error.code` из тела NestJS HttpException. Тело лежит и в приватном
- * `err.response`, и доступно через `err.getResponse()` — читаем оба, не
- * полагаясь на интуицию (см. правило «поведение фреймворка — эмпирически»).
- */
 function extractErrorCode(err: unknown): string | null {
   if (!err || typeof err !== 'object') return null;
   const candidates: unknown[] = [];
@@ -1144,9 +859,7 @@ function extractErrorCode(err: unknown): string | null {
   if (typeof maybeGet === 'function') {
     try {
       candidates.push(maybeGet.call(err));
-    } catch {
-      /* noop */
-    }
+    } catch {}
   }
   candidates.push((err as { response?: unknown }).response);
   for (const body of candidates) {
@@ -1156,11 +869,13 @@ function extractErrorCode(err: unknown): string | null {
   return null;
 }
 
-function pickToolInput(out: LlmCompleteOutput | null | undefined, toolName: string): unknown | null {
+function pickToolInput(
+  out: LlmCompleteOutput | null | undefined,
+  toolName: string,
+): unknown | null {
   if (!out || !out.toolCalls || out.toolCalls.length === 0) return null;
   const direct = out.toolCalls.find((t) => t.name === toolName);
   if (direct) return direct.input;
-  // На случай, если LLM вернул только один tool_use с другим именем — берём первый.
   const first = out.toolCalls[0];
   return first ? first.input : null;
 }

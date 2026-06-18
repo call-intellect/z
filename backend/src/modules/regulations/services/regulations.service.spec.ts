@@ -9,14 +9,6 @@ import { ListRegulationsQuerySchema } from '../dto/regulations.dto';
 
 import { RegulationsService } from './regulations.service';
 
-/**
- * Поведенческие юнит-тесты RegulationsService — Фаза C1 (trustTier в read-DTO).
- *
- * trustTier актуальной версии (CardVersion.trustTier через relation
- * currentVersion) должен выезжать в list/detail DTO регуляций; при
- * currentVersion: null применяется fallback 'human'.
- */
-
 const FIXED_DATE = new Date('2026-01-01');
 
 function makeRegulation(over: Record<string, unknown> = {}) {
@@ -59,8 +51,6 @@ describe('RegulationsService — trustTier в read-DTO', () => {
         findFirst: regFindFirst,
         count: regCount,
       },
-      // process/policy не используются в этих сценариях, но list() с фильтром
-      // kind='regulation' дергает только regulation.*.
       process: {
         findMany: vi.fn(),
         findFirst: vi.fn(),
@@ -89,7 +79,6 @@ describe('RegulationsService — trustTier в read-DTO', () => {
     });
 
     expect(dto.trustTier).toBe('provisional');
-    // include должен запрашивать currentVersion.trustTier.
     expect(regFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         include: { currentVersion: { select: { trustTier: true } } },
@@ -135,10 +124,6 @@ describe('RegulationsService — trustTier в read-DTO', () => {
   });
 });
 
-/**
- * Action Center E1 «поправить карточку знаний» (2026-06-04) —
- * dispute / correct по регламентам / процессам / политикам.
- */
 describe('RegulationsService — E1 dispute / correct', () => {
   let regFindFirst: ReturnType<typeof vi.fn>;
   let regUpdate: ReturnType<typeof vi.fn>;
@@ -245,14 +230,12 @@ describe('RegulationsService — E1 dispute / correct', () => {
     });
 
     expect(res).toEqual({ ok: true, applied: true });
-    // контент обновлён
     expect(regUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'r-1' },
         data: expect.objectContaining({ name: 'Новое имя' }),
       }),
     );
-    // CardVersion создана с resourceType=regulation
     expect(cvCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -263,14 +246,12 @@ describe('RegulationsService — E1 dispute / correct', () => {
         }),
       }),
     );
-    // currentVersionId обновлён
     expect(regUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'r-1' },
         data: { currentVersionId: 'cv-1' },
       }),
     );
-    // approve_with_edits с before/after
     expect(recordDecisionMock).toHaveBeenCalledWith(
       expect.objectContaining({
         decisionType: 'approve_with_edits',
@@ -339,11 +320,6 @@ describe('RegulationsService — E1 dispute / correct', () => {
   });
 });
 
-/**
- * Ф6 knowledge-access (R12) — гейт проекций (regulation) по доступу
- * спрашивающего на листинге. off→все; enforce→недоступная убрана +
- * incAccessDenied; shadow→та же выдача + incAccessShadowDiff; bypass→все.
- */
 describe('RegulationsService — Ф6 гейт проекций на list', () => {
   const OPEN = makeRegulation({ id: 'r-open', sourceBlockIds: ['b-open'] });
   const DENIED = makeRegulation({ id: 'r-council', sourceBlockIds: ['b-council'] });
@@ -434,9 +410,6 @@ describe('RegulationsService — Ф6 гейт проекций на list', () =>
   });
 });
 
-/**
- * C4 — `getSummary`: счётчики 4 типов карточек + weekDelta (создано за 7 дней).
- */
 describe('RegulationsService — C4 getSummary', () => {
   it('считает 4 типа + weekDelta (сумма созданных за 7 дней) с tenant-фильтром', async () => {
     const regCount = vi.fn().mockResolvedValueOnce(10).mockResolvedValueOnce(2);
@@ -463,12 +436,10 @@ describe('RegulationsService — C4 getSummary', () => {
       redesignEnabled: true,
     });
 
-    // tenant-фильтр на каждом count'е (первый вызов каждой модели — общий count).
     expect(regCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1' } });
     expect(procCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1' } });
     expect(instrCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1' } });
     expect(polCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1' } });
-    // weekDelta-вызов — с createdAt >= weekAgo и тем же tenant'ом.
     expect(regCount).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
@@ -481,10 +452,6 @@ describe('RegulationsService — C4 getSummary', () => {
   });
 });
 
-/**
- * C3 — `getSources`: цитаты-первоисточники карточки. Непустой sourceBlockIds →
- * цитаты из IdeaBlockEvidence (+ резолв встречи best-effort); пустой → {items:[]}.
- */
 describe('RegulationsService — C3 getSources', () => {
   function buildSvc(opts: {
     sourceBlockIds: string[];
@@ -502,9 +469,7 @@ describe('RegulationsService — C3 getSources', () => {
     evidenceFindMany: ReturnType<typeof vi.fn>;
     meetingFindMany: ReturnType<typeof vi.fn>;
   } {
-    const regFindFirst = vi
-      .fn()
-      .mockResolvedValue({ sourceBlockIds: opts.sourceBlockIds });
+    const regFindFirst = vi.fn().mockResolvedValue({ sourceBlockIds: opts.sourceBlockIds });
     const blockFindMany = vi.fn().mockResolvedValue(opts.blocks ?? []);
     const evidenceFindMany = vi.fn().mockResolvedValue(opts.evidence ?? []);
     const meetingFindMany = vi.fn().mockResolvedValue(opts.meetings ?? []);
@@ -530,26 +495,23 @@ describe('RegulationsService — C3 getSources', () => {
 
   it('непустой sourceBlockIds → цитаты + резолв встречи (best-effort)', async () => {
     const startedAt = new Date('2026-03-10T09:00:00.000Z');
-    const { svc, regFindFirst, blockFindMany, evidenceFindMany, meetingFindMany } =
-      buildSvc({
-        sourceBlockIds: ['b-1', 'b-2'],
-        blocks: [{ id: 'b-1' }, { id: 'b-2' }],
-        evidence: [
-          {
-            blockId: 'b-1',
-            quote: 'Мы решили перейти на недельные спринты',
-            rawEvent: { sourceType: 'meeting', sourceExternalId: 'm-1' },
-          },
-          {
-            blockId: 'b-2',
-            quote: 'Из чата без встречи',
-            rawEvent: { sourceType: 'chat', sourceExternalId: 'c-9' },
-          },
-        ],
-        meetings: [
-          { id: 'm-1', title: 'Планёрка', startedAt, createdAt: new Date('2026-03-01') },
-        ],
-      });
+    const { svc, regFindFirst, blockFindMany, evidenceFindMany, meetingFindMany } = buildSvc({
+      sourceBlockIds: ['b-1', 'b-2'],
+      blocks: [{ id: 'b-1' }, { id: 'b-2' }],
+      evidence: [
+        {
+          blockId: 'b-1',
+          quote: 'Мы решили перейти на недельные спринты',
+          rawEvent: { sourceType: 'meeting', sourceExternalId: 'm-1' },
+        },
+        {
+          blockId: 'b-2',
+          quote: 'Из чата без встречи',
+          rawEvent: { sourceType: 'chat', sourceExternalId: 'c-9' },
+        },
+      ],
+      meetings: [{ id: 'm-1', title: 'Планёрка', startedAt, createdAt: new Date('2026-03-01') }],
+    });
 
     const res = await svc.getSources({ tenantId: 't-1', id: 'r-1', kind: 'regulation' });
 
@@ -559,11 +521,9 @@ describe('RegulationsService — C3 getSources', () => {
         quote: 'Мы решили перейти на недельные спринты',
         meeting: { id: 'm-1', title: 'Планёрка', date: startedAt.toISOString() },
       },
-      // chat-источник → meeting:null.
       { blockId: 'b-2', quote: 'Из чата без встречи', meeting: null },
     ]);
 
-    // tenant-фильтр на карточке, блоках и встречах.
     expect(regFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ id: 'r-1', tenantId: 't-1' }),
@@ -579,7 +539,6 @@ describe('RegulationsService — C3 getSources', () => {
         where: { tenantId: 't-1', id: { in: ['m-1'] } },
       }),
     );
-    // evidence запрашивается только по блокам этого tenant'а.
     expect(evidenceFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { blockId: { in: ['b-1', 'b-2'] } },
@@ -598,7 +557,7 @@ describe('RegulationsService — C3 getSources', () => {
           rawEvent: { sourceType: 'meeting', sourceExternalId: 'm-missing' },
         },
       ],
-      meetings: [], // встреча не найдена (чужой tenant / удалена)
+      meetings: [],
     });
     const res = await svc.getSources({ tenantId: 't-1', id: 'r-1', kind: 'regulation' });
     expect(res.items).toEqual([

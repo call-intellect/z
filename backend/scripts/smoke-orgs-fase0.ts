@@ -1,16 +1,3 @@
-/**
- * Smoke-скрипт Фазы 0 knowledge-core: создаёт двух тестовых юзеров,
- * Org для каждого, инвайт от A на B, accept, проверка membership.
- *
- * Назначение: проверить, что DB-уровень всех новых сущностей работает
- * корректно. UI-сценарий проверяется отдельно вручную через dev-сервер.
- *
- * Запуск:
- *   bun run scripts/smoke-orgs-fase0.ts
- *
- * После прогона — все созданные данные удаляются (`cleanup`).
- */
-
 import { randomBytes } from 'node:crypto';
 
 import { PrismaClient } from '@prisma/client';
@@ -41,7 +28,6 @@ async function main(): Promise<void> {
     },
   });
 
-  // Создаём Org для A.
   const orgA = await prisma.org.create({
     data: {
       name: `Тест-Компания-${tag}`,
@@ -56,7 +42,6 @@ async function main(): Promise<void> {
   });
   console.log(`✓ Org A создан: ${orgA.id}, owner=${userA.email}`);
 
-  // Org для B (дефолт по name).
   const orgB = await prisma.org.create({
     data: {
       name: `Компания Smoke B`,
@@ -70,7 +55,6 @@ async function main(): Promise<void> {
   });
   console.log(`✓ Org B создан: ${orgB.id}, owner=${userB.email}`);
 
-  // A приглашает B как manager в orgA.
   const token = nanoid(40);
   const invite = await prisma.orgInvitation.create({
     data: {
@@ -85,7 +69,6 @@ async function main(): Promise<void> {
   });
   console.log(`✓ Invitation создан: token=${token.slice(0, 10)}…`);
 
-  // B принимает.
   await prisma.$transaction(async (tx) => {
     await tx.orgInvitation.update({
       where: { id: invite.id },
@@ -106,7 +89,6 @@ async function main(): Promise<void> {
   });
   console.log(`✓ B принял инвайт, membership(manager) создан`);
 
-  // Проверка: B имеет 2 membership'a.
   const bMemberships = await prisma.membership.findMany({
     where: { userId: userB.id },
     include: { org: true },
@@ -116,7 +98,6 @@ async function main(): Promise<void> {
     console.log(`    - ${m.org.name} (${m.role})`);
   }
 
-  // Проверка: AiUsageLog работает с tenantId.
   await prisma.aiUsageLog.create({
     data: {
       tenantId: orgA.id,
@@ -139,7 +120,6 @@ async function main(): Promise<void> {
   });
   console.log(`✓ AiUsageLog с tenantId записан: ${usageCount} записей в orgA`);
 
-  // ─── Cleanup ───
   await prisma.aiUsageLog.deleteMany({ where: { userId: { in: [userA.id, userB.id] } } });
   await prisma.membership.deleteMany({
     where: { userId: { in: [userA.id, userB.id] } },

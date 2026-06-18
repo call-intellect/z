@@ -4,16 +4,6 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { OrgKnowledgeIndexService } from '../services/org-knowledge-index.service';
 
-/**
- * SBA δ-1 — `org-knowledge-index-builder` cron (`0 3 * * *`).
- *
- * Каждую ночь в 03:00 пересобирает OrgKnowledgeSummary для всех активных
- * Org-ов и кладёт в Redis (TTL 24h).
- *
- * Не real-time — слишком cost. Если в течение дня будет cache miss
- * (например, новый Org), `OrgKnowledgeIndexService.getSummary()`
- * автоматически пересчитает на лету и закэширует.
- */
 @Injectable()
 export class OrgKnowledgeIndexBuilderCron {
   private readonly logger = new Logger(OrgKnowledgeIndexBuilderCron.name);
@@ -45,7 +35,7 @@ export class OrgKnowledgeIndexBuilderCron {
         );
       }
     }
-    this.logger.log(
+    this.logger.debug(
       `org-knowledge-index-builder: total=${orgs.length} ok=${ok} failed=${failed} duration_ms=${Date.now() - start}`,
     );
   }

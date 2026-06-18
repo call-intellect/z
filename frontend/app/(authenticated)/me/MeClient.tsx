@@ -1,17 +1,17 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import useSWR from 'swr';
-import { Calendar, FileText, IdCard, Sparkles, Users } from 'lucide-react';
+import Link from "next/link";
+import useSWR from "swr";
+import { Calendar, FileText, IdCard, Sparkles, Users } from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { listMyChannels } from '@/api/conversational.api';
-import { documentsApi } from '@/api/documents.api';
-import { meetingsApi } from '@/api/meetings.api';
-import { meProfileApi, type MyProfileApi } from '@/api/structure.api';
-import { mapTelegramChannelEntry } from '@/domain/me-channels';
-import { useAuth } from '@/contexts/auth-context';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+import { ApiError } from "@/api/api-error";
+import { listMyChannels } from "@/api/conversational.api";
+import { documentsApi } from "@/api/documents.api";
+import { meetingsApi } from "@/api/meetings.api";
+import { meProfileApi, type MyProfileApi } from "@/api/structure.api";
+import { mapTelegramChannelEntry } from "@/domain/me-channels";
+import { useAuth } from "@/contexts/auth-context";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 import {
   CardTitle,
   CHART,
@@ -19,25 +19,25 @@ import {
   GRAD,
   MODERN_PAGE_BG,
   ModernPageShell,
-} from '@/ui/components/dashboard/modern';
+} from "@/ui/components/dashboard/modern";
 import {
   RoleMapGrid,
   isRoleMapEmpty,
-} from '@/ui/components/role-map/RoleMapCards';
+} from "@/ui/components/role-map/RoleMapCards";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-import { MyPositionCard } from './MyPositionCard';
-import { MyTelegramCard } from './MyTelegramCard';
-import { MemoryHelpedMeWidget } from './widgets/MemoryHelpedMeWidget';
-import { MyIdeasFateWidget } from './widgets/MyIdeasFateWidget';
-import { MyWeeklyPlanFactWidget } from './widgets/MyWeeklyPlanFactWidget';
-import { RecognitionInboxWidget } from './widgets/RecognitionInboxWidget';
-import { CoraFeedWidget } from '@/ui/components/feed/CoraFeedWidget';
+import { MyPositionCard } from "./MyPositionCard";
+import { MyTelegramCard } from "./MyTelegramCard";
+import { MemoryHelpedMeWidget } from "./widgets/MemoryHelpedMeWidget";
+import { MyIdeasFateWidget } from "./widgets/MyIdeasFateWidget";
+import { MyWeeklyPlanFactWidget } from "./widgets/MyWeeklyPlanFactWidget";
+import { RecognitionInboxWidget } from "./widgets/RecognitionInboxWidget";
+import { CoraFeedWidget } from "@/ui/components/feed/CoraFeedWidget";
 
 export function MeClient() {
   const { currentOrgId, user, isLoading } = useAuth();
@@ -60,12 +60,11 @@ function Content({
   orgId: string;
   userName: string | null;
 }) {
-  const profileSwr = useSWR(['me-profile', orgId], () =>
+  const profileSwr = useSWR(["me-profile", orgId], () =>
     meProfileApi.get(orgId),
   );
 
-  // Тот же SWR-ключ и фетчер, что в MyTelegramCard — SWR дедуплицирует запрос.
-  const channelsSwr = useSWR(['me-channels', orgId], async () => {
+  const channelsSwr = useSWR(["me-channels", orgId], async () => {
     const res = await listMyChannels(orgId);
     for (const entry of res.items) {
       const view = mapTelegramChannelEntry(entry);
@@ -77,10 +76,10 @@ function Content({
   if (profileSwr.error) {
     if (
       profileSwr.error instanceof ApiError &&
-      profileSwr.error.code === 'http_404'
+      profileSwr.error.code === "http_404"
     ) {
       return (
-        <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
+        <div style={{ background: MODERN_PAGE_BG, minHeight: "100vh" }}>
           <div className="mx-auto w-full max-w-4xl px-4 py-6 md:px-6 md:py-8">
             <AdminEmpty
               title="Раздел в разработке"
@@ -91,13 +90,13 @@ function Content({
       );
     }
     return (
-      <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
+      <div style={{ background: MODERN_PAGE_BG, minHeight: "100vh" }}>
         <div className="mx-auto w-full max-w-4xl px-4 py-6 md:px-6 md:py-8">
           <AdminError
             message={
               profileSwr.error instanceof Error
                 ? profileSwr.error.message
-                : 'Ошибка загрузки'
+                : "Ошибка загрузки"
             }
             onRetry={() => void profileSwr.mutate()}
           />
@@ -108,22 +107,20 @@ function Content({
 
   const profile = profileSwr.data;
 
-  const tgLinked = channelsSwr.data?.status === 'linked';
+  const tgLinked = channelsSwr.data?.status === "linked";
   const needPosition = !profileSwr.isLoading && profile?.primaryRole == null;
-  const needTelegram = !channelsSwr.isLoading && !channelsSwr.error && !tgLinked;
+  const needTelegram =
+    !channelsSwr.isLoading && !channelsSwr.error && !tgLinked;
   const showNudge = needPosition || needTelegram;
 
-  // Заголовок shell: пока профиль грузится — нейтральный «Мой кабинет» без
-  // подзаголовка (скелетоны имени/должности остаются в теле, в ProfileHeader).
-  // После загрузки — имя пользователя в title, «должность · отдел» в subtitle.
   const shellTitle = profileSwr.isLoading
-    ? 'Мой кабинет'
-    : (profile?.person?.name ?? userName ?? 'Мой кабинет');
+    ? "Мой кабинет"
+    : (profile?.person?.name ?? userName ?? "Мой кабинет");
   const shellSubtitle = profileSwr.isLoading
     ? undefined
-    : ([profile?.primaryRole?.name, profile?.primaryDepartment?.name]
+    : [profile?.primaryRole?.name, profile?.primaryDepartment?.name]
         .filter(Boolean)
-        .join(' · ') || undefined);
+        .join(" · ") || undefined;
 
   return (
     <ModernPageShell
@@ -138,38 +135,30 @@ function Content({
         />
       )}
 
-      <ProfileHeader
+      <ProfileHeader loading={profileSwr.isLoading} profile={profile ?? null} />
+
+      <MyPositionCard orgId={orgId} profile={profile ?? null} />
+
+      <RoleProfileBlock
         loading={profileSwr.isLoading}
         profile={profile ?? null}
       />
 
-      <MyPositionCard orgId={orgId} profile={profile ?? null} />
-
-      <RoleProfileBlock loading={profileSwr.isLoading} profile={profile ?? null} />
-
       <DailyValueSection />
-
-      {orgId && (
-        <div className="mb-6">
-          <CoraFeedWidget variant="compact" orgId={orgId} canControl={false} />
-        </div>
-      )}
 
       <MyTelegramCard orgId={orgId} />
 
       <MyDocumentsBlock orgId={orgId} />
 
       <MyMeetingsBlock />
+
+      <div className="mb-6">
+        <CoraFeedWidget variant="compact" orgId={orgId} canControl={false} />
+      </div>
     </ModernPageShell>
   );
 }
 
-/**
- * ТЗ-2 Ф5 + ТЗ-3 Ф3 — секция «Моя польза за неделю»: 4 виджета ежедневной
- * ценности на современном визуальном языке (стеклянные карточки). Каждый
- * виджет фетчит свои данные сам (SWR) и gracefully показывает empty-state,
- * поэтому шелл `/me` остаётся прежним, а виджеты живут локально в GlassCard.
- */
 function DailyValueSection() {
   return (
     <section className="mb-6">
@@ -197,8 +186,8 @@ function ProfileNudgeBanner({
     <div
       className="mb-6 flex flex-col gap-2 rounded-2xl p-4 sm:flex-row sm:items-center sm:justify-between"
       style={{
-        background: 'oklch(0.66 0.2 300 / 0.1)',
-        border: '1px solid oklch(0.66 0.2 300 / 0.3)',
+        background: "oklch(0.66 0.2 300 / 0.1)",
+        border: "1px solid oklch(0.66 0.2 300 / 0.3)",
       }}
     >
       <p
@@ -213,10 +202,10 @@ function ProfileNudgeBanner({
         <span>
           Заполните профиль, чтобы Кора работала точнее
           {needPosition && needTelegram
-            ? ': укажите должность и подключите Telegram.'
+            ? ": укажите должность и подключите Telegram."
             : needPosition
-              ? ': укажите свою должность.'
-              : ': подключите Telegram для уведомлений.'}
+              ? ": укажите свою должность."
+              : ": подключите Telegram для уведомлений."}
         </span>
       </p>
       <div className="flex flex-wrap gap-3 text-sm">
@@ -243,12 +232,6 @@ function ProfileNudgeBanner({
   );
 }
 
-/**
- * Слим-шапка профиля. Имя и «должность · отдел» вынесены в заголовок
- * `ModernPageShell` (title/subtitle), поэтому здесь — только интерактивные
- * чипы: кликабельная ссылка на должность (`/roles/[id]`) и отдел, плюс
- * loading-скелетон. Это навигация, которой нет в текстовом subtitle.
- */
 function ProfileHeader({
   loading,
   profile,
@@ -301,13 +284,6 @@ function ProfileHeader({
   );
 }
 
-/**
- * «Моя карта должности» на /me. Рендерит полную карту роли пользователя
- * (`roleProfile.roleMap`, формат `RoleMapApi`) теми же 6 категориями, что и
- * `/roles/[id]/map` — через общий `RoleMapGrid`. Fallback-заглушка показывается,
- * когда: нет primaryRole (карты), карта недоступна/`null` (мягкая деградация),
- * карта в форминге (`isForming`) или ещё пустая (все 6 категорий без элементов).
- */
 function RoleProfileBlock({
   loading,
   profile,
@@ -353,10 +329,7 @@ function RoleProfileBlock({
           ) : (
             <>
               {completenessPct !== null && (
-                <p
-                  className="mb-4 text-xs"
-                  style={{ color: CHART.faint }}
-                >
+                <p className="mb-4 text-xs" style={{ color: CHART.faint }}>
                   Полнота карты: {completenessPct}%
                 </p>
               )}
@@ -373,11 +346,8 @@ function RoleProfileBlock({
 }
 
 function MyDocumentsBlock({ orgId }: { orgId: string }) {
-  const swr = useSWR(['me-documents', orgId], () =>
-    // Маркер `me` понимает backend (см. backend/src/modules/documents).
-    // Если эндпоинт его не поддерживает — список придёт по умолчанию,
-    // и мы отрендерим первые 5.
-    documentsApi.list(orgId, { uploaderId: 'me' }),
+  const swr = useSWR(["me-documents", orgId], () =>
+    documentsApi.list(orgId, { uploaderId: "me" }),
   );
   return (
     <div className="mb-6">
@@ -405,7 +375,7 @@ function MyDocumentsBlock({ orgId }: { orgId: string }) {
                   style={
                     i === 0
                       ? undefined
-                      : { borderTop: '1px solid var(--border-inset)' }
+                      : { borderTop: "1px solid var(--border-inset)" }
                   }
                 >
                   <Link
@@ -419,7 +389,7 @@ function MyDocumentsBlock({ orgId }: { orgId: string }) {
                     className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium"
                     style={{
                       color: documentStatusColor(d.status),
-                      background: 'var(--surface-inset)',
+                      background: "var(--surface-inset)",
                     }}
                   >
                     {documentStatusLabel(d.status)}
@@ -436,11 +406,8 @@ function MyDocumentsBlock({ orgId }: { orgId: string }) {
 
 function MyMeetingsBlock() {
   const swr = useSWR(
-    ['me-meetings'],
+    ["me-meetings"],
     async () => {
-      // Backend сейчас фильтрует /api/v1/meetings по текущему юзеру
-      // (контекст из cookie). Если эндпоинт расширят на participantId — UI
-      // переключим. Пока — обычный список.
       return meetingsApi.list({ limit: 5 });
     },
     { revalidateOnFocus: false, shouldRetryOnError: false },
@@ -470,7 +437,7 @@ function MyMeetingsBlock() {
                 style={
                   i === 0
                     ? undefined
-                    : { borderTop: '1px solid var(--border-inset)' }
+                    : { borderTop: "1px solid var(--border-inset)" }
                 }
               >
                 <Link
@@ -497,28 +464,27 @@ function MyMeetingsBlock() {
 
 function documentStatusLabel(status: string): string {
   switch (status) {
-    case 'parsed':
-      return 'готово';
-    case 'parsing':
-      return 'обрабатывается';
-    case 'uploaded':
-      return 'загружено';
-    case 'failed':
-      return 'ошибка';
+    case "parsed":
+      return "готово";
+    case "parsing":
+      return "обрабатывается";
+    case "uploaded":
+      return "загружено";
+    case "failed":
+      return "ошибка";
     default:
       return status;
   }
 }
 
-/** Цвет плашки статуса документа в палитре современного языка. */
 function documentStatusColor(status: string): string {
   switch (status) {
-    case 'parsed':
+    case "parsed":
       return CHART.mint;
-    case 'failed':
+    case "failed":
       return CHART.red;
-    case 'parsing':
-    case 'uploaded':
+    case "parsing":
+    case "uploaded":
       return CHART.amber;
     default:
       return CHART.dim;
@@ -527,9 +493,9 @@ function documentStatusColor(status: string): string {
 
 function formatDate(iso: string): string {
   try {
-    return new Intl.DateTimeFormat('ru-RU', {
-      day: 'numeric',
-      month: 'short',
+    return new Intl.DateTimeFormat("ru-RU", {
+      day: "numeric",
+      month: "short",
     }).format(new Date(iso));
   } catch {
     return iso;

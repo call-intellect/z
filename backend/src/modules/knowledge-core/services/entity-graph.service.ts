@@ -1,35 +1,14 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import {
-  type Entity,
-  type EntityLinkType,
-  type IdeaBlock,
-} from '@prisma/client';
+import { type Entity, type EntityLinkType, type IdeaBlock } from '@prisma/client';
 import { z } from 'zod';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { tryParseJson } from '../../ai/services/json-extract.util';
-import {
-  LlmRouterService,
-  maxDataClass,
-} from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { LlmRouterService, maxDataClass } from '../../ai/services/llm-router.service';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 
-/**
- * Результат LLM-арбитра для пары сущностей.
- *   - `'none'` → relationType = null.
- *   - Иначе — конкретный тип из enum'а EntityLinkType.
- *
- * KC-Temporal W3.1 (2026-05-25) — Rich edges:
- *   - `validFromHint` / `validUntilHint` — ISO-даты, если LLM смог извлечь
- *     временные рамки из контекста блоков (или null, если непонятно).
- *   - `attributes` — извлечённые семантические свойства ребра (role / share /
- *     since / ...). null, если непонятно.
- */
 export interface EntityRelationVerdict {
   relationType: EntityLinkType | null;
   confidence: number;
@@ -56,10 +35,6 @@ const ENTITY_LINK_TYPES: EntityLinkType[] = [
 
 const ENTITY_LINK_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
-  // KC-Temporal W3.1: новые поля validFromHint/validUntilHint/attributes —
-  // опциональные. Оставляем additionalProperties:false и required:
-  // [relationType, confidence, explanation] (как было), новые поля LLM ставит
-  // через nullable.
   additionalProperties: false,
   required: [
     'relationType',
@@ -76,24 +51,15 @@ const ENTITY_LINK_JSON_SCHEMA: Record<string, unknown> = {
     },
     confidence: { type: 'number', minimum: 0, maximum: 1 },
     explanation: { type: 'string', maxLength: 500 },
-    // KC-Temporal W3.1 — временные рамки ребра (если явно указано в блоках).
     validFromHint: { type: ['string', 'null'], maxLength: 40 },
     validUntilHint: { type: ['string', 'null'], maxLength: 40 },
-    // KC-Temporal W3.1 — семантические атрибуты ребра. Плоский объект
-    // примитивов (LLM иногда возвращает вложенные структуры — entity-link
-    // сервис их отбросит).
     attributes: {
       anyOf: [
         { type: 'null' },
         {
           type: 'object',
           additionalProperties: {
-            anyOf: [
-              { type: 'string' },
-              { type: 'number' },
-              { type: 'boolean' },
-              { type: 'null' },
-            ],
+            anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }, { type: 'null' }],
           },
         },
       ],
@@ -113,16 +79,10 @@ const EntityLinkResponseSchema = z.object({
   ]),
   confidence: z.number().min(0).max(1),
   explanation: z.string().max(500),
-  // KC-Temporal W3.1: новые опц. поля. `.nullable().optional()` — старые ответы
-  // (LLM без апдейта промпта) тоже валидны.
   validFromHint: z.string().max(40).nullable().optional(),
   validUntilHint: z.string().max(40).nullable().optional(),
-  // KC-Temporal W3.1 — Zod 4: z.record(keySchema, valueSchema).
   attributes: z
-    .record(
-      z.string(),
-      z.union([z.string(), z.number(), z.boolean(), z.null()]),
-    )
+    .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
     .nullable()
     .optional(),
 });
@@ -149,18 +109,17 @@ const ENTITY_LINK_SYSTEM_PROMPT = `Ты — эксперт по связям м�
 - "attributes" — плоский объект с дополнительными свойствами связи (role, share, since, intensity и т.п.), если они явно названы в блоках. Иначе null. Только примитивы (строки/числа/булевы). Не выдумывай.
 - Ответ — строго JSON по схеме. Никакого markdown.`;
 
-/**
- * EntityGraphService — поиск co-mentioned пар сущностей + LLM-арбитр для
- * `entity-graph-builder.cron`.
- *
- *   - `findCoMentionedPairs`: пары Entity одного tenant'а, упомянутые в одном
- *     IdeaBlock хотя бы N раз (порог `ENTITY_GRAPH_MIN_COMENTIONS`).
- *   - `judgeRelation`: один LLM-вызов на пару с подгруженными последними
- *     блоками для контекста.
- */
 @Injectable()
 export class EntityGraphService {
   private readonly logger = new Logger(EntityGraphService.name);
+
+  /**
+   * Б30 [K6]: пара исключается из выборки, если уже есть EntityLink между ней,
+   * обновлённый за последние N дней. Без этого cron ежечасно re-LLM'ит топ-50
+   * пар даже при существующей свежей связи (~1200 вызовов/сутки/Org). 30 дней —
+   * связь подтверждена недавно, переспрашивать арбитра незачем.
+   */
+  private static readonly LINK_REFRESH_DAYS = 30;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -173,9 +132,6 @@ export class EntityGraphService {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -184,16 +140,20 @@ export class EntityGraphService {
     }
   }
 
-  /**
-   * Возвращает топ-N пар сущностей одного tenant'а, отсортированных по
-   * количеству совместных упоминаний (через canonical-блоки). Антидубль
-   * по `a.id < b.id`.
-   */
   async findCoMentionedPairs(args: {
     tenantId: string;
     minComentions: number;
     limit: number;
   }): Promise<CoMentionedPair[]> {
+    // Б30 [K6]: исключаем пары со свежим EntityLink (updatedAt > now-Nдней).
+    // upsertRichEdge пишет ребро с fromEntityId=меньший id, toEntityId=больший
+    // id (cron подаёт пары в том же порядке a.entityId<b.entityId), поэтому
+    // сопоставление NOT EXISTS by (from=a, to=b) корректно. Деактивированные
+    // (deletedAt) рёбра — не считаются свежими, пару пересмотрит арбитр.
+    const linkFreshCutoff = new Date(
+      Date.now() -
+        EntityGraphService.LINK_REFRESH_DAYS * 24 * 60 * 60 * 1000,
+    );
     const rows = await this.prisma.$queryRawUnsafe<
       Array<{
         a_id: string;
@@ -212,6 +172,14 @@ export class EntityGraphService {
       JOIN "IdeaBlock" blk ON blk.id = a."blockId"
       WHERE blk."tenantId" = $1
         AND blk.status = 'canonical'
+        AND NOT EXISTS (
+          SELECT 1 FROM "EntityLink" el
+          WHERE el."tenantId" = $1
+            AND el."fromEntityId" = a."entityId"
+            AND el."toEntityId" = b."entityId"
+            AND el."deletedAt" IS NULL
+            AND el."updatedAt" > $4
+        )
       GROUP BY a."entityId", b."entityId"
       HAVING COUNT(*) >= $2
       ORDER BY COUNT(*) DESC
@@ -220,6 +188,7 @@ export class EntityGraphService {
       args.tenantId,
       args.minComentions,
       args.limit,
+      linkFreshCutoff,
     );
     if (rows.length === 0) return [];
 
@@ -238,7 +207,6 @@ export class EntityGraphService {
       const a = map.get(r.a_id);
       const b = map.get(r.b_id);
       if (!a || !b) continue;
-      // Игнорируем merged_into-сущности — связь должна быть на canonical.
       if (a.mergedIntoId !== null || b.mergedIntoId !== null) continue;
       const coMentions =
         typeof r.co_mentions === 'bigint'
@@ -251,10 +219,6 @@ export class EntityGraphService {
     return pairs;
   }
 
-  /**
-   * Подтянуть последние N IdeaBlock'ов, где упомянуты обе сущности.
-   * Используется как контекст для LLM-арбитра.
-   */
   async findRecentSharedBlocks(args: {
     entityAId: string;
     entityBId: string;
@@ -290,11 +254,8 @@ export class EntityGraphService {
     };
     const userMessage = `Сущности A и B + контекст блоков ниже. Определи отношение (или "none").\n\n${JSON.stringify(userPayload, null, 2)}`;
 
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (сущности + блоки) в маркеры.
     const guardOn = this.isPromptInjectionGuardEnabled();
 
-    // Ретрай зеркалит block-linker (block-link.service.ts): 2 попытки
-    // вызов+парсинг, чтобы один невалидный JSON арбитра не терял связь молча.
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const out = await this.llm.call({
@@ -311,17 +272,11 @@ export class EntityGraphService {
             schema: ENTITY_LINK_JSON_SCHEMA,
           },
           sourceRef: { type: 'entity', id: args.entityA.id },
-          // Фаза 11: dataClass — max по упомянутым блокам.
           dataClass: maxDataClass(args.recentBlocks.map((b) => b.dataClass)),
-          // ТЗ-3 Ф2: битый primary (HTTP 200, не JSON-вердикт) → router сам
-          // переключится на secondary ВНУТРИ одного attempt, прежде чем этот
-          // retry-цикл увидит ошибку.
           validate: (text) => this.parseVerdict(text) !== null,
         });
         const parsed = this.parseVerdict(out.text);
         if (parsed) return parsed;
-        // Доля невалидного JSON per-attempt (видна ещё до терминального
-        // fallback). ?.(...) — метрика @Optional() + мок может не иметь метода.
         this.metrics?.incKcEntityGraphInvalidJson?.({ reason: 'parse' });
         this.logger.warn(
           { aId: args.entityA.id, bId: args.entityB.id, attempt },
@@ -341,7 +296,6 @@ export class EntityGraphService {
       }
     }
 
-    // После двух попыток — fallback на none + метрика молчаливой деградации.
     this.metrics?.incKcEntityGraphFallbackNone?.({ reason: 'exhausted' });
     this.logger.warn(
       { aId: args.entityA.id, bId: args.entityB.id },
@@ -350,16 +304,10 @@ export class EntityGraphService {
     return { relationType: null, confidence: 0, explanation: 'invalid LLM judge JSON' };
   }
 
-  // ─────────────────────────── helpers ─────────────────────────────────────
-
   private parseVerdict(text: string): EntityRelationVerdict | null {
-    // `tryParseJson` снимает ```json-обёртку и вытаскивает первый {…} из
-    // прозы/преамбулы; не бросает — на мусор вернёт `{ raw }`, который не
-    // пройдёт Zod-валидацию → null (без ложных null на fenced-ответах).
     const raw = tryParseJson(text);
     const parsed = EntityLinkResponseSchema.safeParse(raw);
     if (!parsed.success) return null;
-    // KC-Temporal W3.1: для 'none' rich-edge данные не нужны (ребро не создаём).
     if (parsed.data.relationType === 'none') {
       return {
         relationType: null,

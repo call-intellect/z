@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { type JobsOptions, Queue } from 'bullmq';
 
 import { RedisService } from '../../common/redis/redis.service';
@@ -13,9 +19,6 @@ import {
   type QueueName,
 } from './queues';
 
-/**
- * Опции для clip-render — ffmpeg тяжёлый, лимит 2 попытки.
- */
 const CLIP_RENDER_JOB_OPTIONS: JobsOptions = {
   attempts: 2,
   backoff: { type: 'exponential', delay: 30_000 },
@@ -23,11 +26,6 @@ const CLIP_RENDER_JOB_OPTIONS: JobsOptions = {
   removeOnFail: false,
 };
 
-/**
- * Опции для card-rollup. delay=5_000 даёт окно для дедупа: в течение 5 секунд
- * после первого вызова повторные `add(jobId=...)` игнорируются BullMQ —
- * серия из 3-4 встреч за минуту → один rollup.
- */
 const CARD_ROLLUP_JOB_OPTIONS: JobsOptions = {
   attempts: 3,
   backoff: { type: 'exponential', delay: 15_000 },
@@ -36,9 +34,6 @@ const CARD_ROLLUP_JOB_OPTIONS: JobsOptions = {
   delay: 5_000,
 };
 
-/**
- * Фаза E — custom-report. 3 попытки с экспоненциальным backoff (ТЗ §5.3).
- */
 const CUSTOM_REPORT_JOB_OPTIONS: JobsOptions = {
   attempts: 3,
   backoff: { type: 'exponential', delay: 10_000 },
@@ -46,10 +41,6 @@ const CUSTOM_REPORT_JOB_OPTIONS: JobsOptions = {
   removeOnFail: false,
 };
 
-/**
- * Опции для recording.faststart — ffmpeg-ремукс большого MP4, тяжёлый по IO.
- * 2 попытки (как clip.render); failed оставляем для разбора.
- */
 const RECORDING_FASTSTART_JOB_OPTIONS: JobsOptions = {
   attempts: 2,
   backoff: { type: 'exponential', delay: 30_000 },
@@ -57,18 +48,9 @@ const RECORDING_FASTSTART_JOB_OPTIONS: JobsOptions = {
   removeOnFail: false,
 };
 
-/**
- * HTTP-side диспетчер для AI-pipeline. Воркеры подписаны в отдельном процессе
- * (`workers/main.ts`), здесь же только enqueue.
- *
- * jobId формируется как `<meetingId>:<stage>:<attempt>` — даёт идемпотентность:
- * повторные enqueue с тем же attempt не создают дубль job'а в очереди.
- */
 @Injectable()
 export class AiQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AiQueueService.name);
-  // Хранится как Queue<unknown> — payload типа AiJobData в большинстве очередей,
-  // ClipRenderJobData в `clip.render`. Каст делается в enqueue-методах.
   private queues: Map<QueueName, Queue<unknown>> | null = null;
 
   constructor(@Inject(RedisService) private readonly redis: RedisService) {}
@@ -115,8 +97,6 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
     this.queues = null;
   }
 
-  // ─────────────────────────── enqueue API ─────────────────────────────────
-
   enqueueTranscribe(meetingId: string, attempt = 1): Promise<void> {
     return this.enqueue(QUEUE_NAMES.TRANSCRIBE, meetingId, attempt);
   }
@@ -137,20 +117,10 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
     return this.enqueue(QUEUE_NAMES.EMBEDDINGS, meetingId, attempt);
   }
 
-  /**
-   * Фаза B — постановка расчёта behavior-метрик. Идемпотентность через
-   * `<meetingId>:behavior-metrics:<attempt>` (повторный enqueue с тем же
-   * attempt не создаёт дубль).
-   */
   enqueueBehaviorMetrics(meetingId: string, attempt = 1): Promise<void> {
     return this.enqueue(QUEUE_NAMES.BEHAVIOR_METRICS, meetingId, attempt);
   }
 
-  /**
-   * Фаза D — постановка очистки транскрипта. jobId дедуп — фиксированный по
-   * meetingId без attempt'а: повторная постановка в течение жизни той же job'ы
-   * в Redis игнорируется. См. sub-TZ D §7.3.
-   */
   async enqueueTranscriptClean(meetingId: string): Promise<void> {
     const map = this.queues;
     if (!map) {
@@ -158,17 +128,12 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
     }
     const q = map.get(QUEUE_NAMES.TRANSCRIPT_CLEAN);
     if (!q) throw new Error('AiQueueService: ai.transcript-clean не инициализирован');
-    // BullMQ 5.x: jobId с ':' допустим только при ровно 3 частях — используем '_'.
     const jobId = `transcript-clean_${meetingId}`;
     const payload: AiJobData = { meetingId, attempt: 1 };
     await q.add('transcript-clean', payload, { jobId });
     this.logger.debug(`enqueue ai.transcript-clean meeting=${meetingId}`);
   }
 
-  /**
-   * Перезапуск analyze (с опциональным templateId — для regenerate).
-   * jobId уникальный — повторные вызовы с тем же attempt не создадут дубль.
-   */
   async enqueueAnalyzeWithTemplate(
     meetingId: string,
     attempt: number,
@@ -185,14 +150,11 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
       ? { meetingId, attempt, templateId }
       : { meetingId, attempt };
     await q.add('analyze', data, { jobId });
-    this.logger.debug(`enqueue ai.analyze meeting=${meetingId} attempt=${attempt} templateId=${templateId ?? '-'}`);
+    this.logger.debug(
+      `enqueue ai.analyze meeting=${meetingId} attempt=${attempt} templateId=${templateId ?? '-'}`,
+    );
   }
 
-  /**
-   * Постановка card-rollup. Идемпотентность через фиксированный jobId по cardId.
-   * Повторная постановка в окне дебаунса (5 сек) игнорируется — серия встреч
-   * мержится в один rollup.
-   */
   async enqueueCardRollup(
     cardId: string,
     reason: CardRollupJobData['reason'] = 'analyze',
@@ -209,12 +171,6 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
     this.logger.debug(`enqueue ai.card-rollup card=${cardId} reason=${reason}`);
   }
 
-  /**
-   * Фаза E — постановка генерации дополнительного («custom») AI-отчёта.
-   * jobId — `custom-report:<reportId>:<reason>` (без attempt — повторный enqueue
-   * с тем же jobId в течение жизни первого игнорируется BullMQ; на регенерацию
-   * передаётся другой reason='regenerate', что даёт другой jobId).
-   */
   async enqueueCustomReport(
     reportId: string,
     meetingId: string,
@@ -239,10 +195,6 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  /**
-   * Постановка ffmpeg-рендера клипа.
-   * jobId — `clip:<highlightId>:<attempt>` для идемпотентности.
-   */
   async enqueueClipRender(highlightId: string, attempt = 1): Promise<void> {
     const map = this.queues;
     if (!map) {
@@ -256,13 +208,6 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
     this.logger.debug(`enqueue clip.render highlight=${highlightId} attempt=${attempt}`);
   }
 
-  /**
-   * Фаза 3 (recording-reliability) — постановка faststart-постобработки composite.
-   * jobId фиксированный по meetingId (`faststart_<meetingId>`): повторная
-   * постановка в течение жизни job'а в Redis игнорируется (идемпотентность);
-   * сам ремукс тоже идемпотентен (перезалив того же ключа faststart-версией).
-   * BullMQ 5.x: ':' в jobId требует ровно 3 частей — используем '_'.
-   */
   async enqueueRecordingFaststart(meetingId: string): Promise<void> {
     const map = this.queues;
     if (!map) {

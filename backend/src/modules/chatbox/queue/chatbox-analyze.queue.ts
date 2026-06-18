@@ -1,6 +1,5 @@
 import type { JobsOptions } from 'bullmq';
 
-/** Имя очереди анализа закрытых сессий ChatBox. Отдельный домен от sync. */
 export const CHATBOX_ANALYZE_QUEUE = 'chatbox.analyze';
 
 export interface ChatboxAnalyzeJobData {

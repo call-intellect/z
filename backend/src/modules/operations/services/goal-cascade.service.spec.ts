@@ -2,16 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { GoalCascadeService } from './goal-cascade.service';
 
-/**
- * SBA β-8 — GoalCascadeService unit-тесты.
- *
- * Покрываем:
- *   1. Все children achieved → parent переводится в achieved.
- *   2. Не все children achieved → parent остаётся в active.
- *   3. parent abandoned → дети помечаются cascadeMissed=true.
- *   4. Идемпотентность: повторный onParentMissed на детях с тем же
- *      cascadeMissedFromGoalId не плодит апдейты.
- */
 describe('GoalCascadeService', () => {
   function buildSvc(overrides: {
     goalById?: Record<
@@ -34,9 +24,7 @@ describe('GoalCascadeService', () => {
         }),
         findMany: vi.fn().mockResolvedValue(overrides.siblings ?? []),
         update: vi.fn().mockResolvedValue({}),
-        updateMany: vi
-          .fn()
-          .mockResolvedValue({ count: overrides.updateManyCount ?? 0 }),
+        updateMany: vi.fn().mockResolvedValue({ count: overrides.updateManyCount ?? 0 }),
       },
     };
     const metrics = { incGoalCascadeMisses: vi.fn() };

@@ -3,8 +3,8 @@ title: Specialist 3.4 — Project / Customer Context (эталонный реф�
 phase: SBA α-6
 status: реализован 2026-05-22
 parent: ../02_architecture/module-map.md#sba-α-6
-tz: ../../plans/tz/2026-05-21-sba-alpha-6-specialist-3-4-project-customer.md
-umbrella: ../../plans/tz/2026-05-21-second-brain-agents-umbrella.md
+tz: ../../plans/archive/2026-05-21-sba-alpha-6-specialist-3-4-project-customer.md
+umbrella: ../../plans/archive/2026-05-21-second-brain-agents-umbrella.md
 ---
 
 # Specialist 3.4 — Project / Customer Context

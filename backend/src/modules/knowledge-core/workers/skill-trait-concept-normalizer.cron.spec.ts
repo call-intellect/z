@@ -2,21 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SkillTraitConceptNormalizerCron } from './skill-trait-concept-normalizer.cron';
 
-/**
- * ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — юнит-тесты
- * SkillTraitConceptNormalizerCron.runOnce / processTenant (через runOnce).
- *
- * Сценарии:
- *   1. Два близких концепта (similarity 0.95) — сливаются в опорный с max traitCount.
- *   2. Один близкий (similarity 0.85) и один далёкий (similarity 0.5) —
- *      порог слияния 0.92, поэтому 0.85 < 0.92, и слияния НЕ происходит.
- *   3. Архивация концепта без активных traits старше 6 мес.
- *
- * Все БД-вызовы замоканы. Чтобы попасть в cluster-merge ветку, концепты
- * должны: status='active', embedding!=null. Тест передаёт собственные
- * embedding-вектора (через mocked $queryRawUnsafe).
- */
-
 interface FakeConceptRow {
   id: string;
   canonical_name: string;
@@ -29,9 +14,7 @@ function vec(values: number[]): string {
   return `[${values.join(',')}]`;
 }
 
-/** Возвращает 2 вектора с заданной cosine similarity. */
 function similarVectors(sim: number): { a: number[]; b: number[] } {
-  // a = (1, 0); b = (cos(theta), sin(theta)) — angle между ними arccos(sim).
   const theta = Math.acos(sim);
   return {
     a: [1, 0],
@@ -41,11 +24,11 @@ function similarVectors(sim: number): { a: number[]; b: number[] } {
 
 function buildCron(args: {
   conceptRows: FakeConceptRow[];
-  /** count для archive updateMany — сколько концептов попадает под архивацию. */
   archiveCount?: number;
+  liveCounts?: Record<string, number>;
+  mergeReturns?: boolean;
 }) {
   const concepts = args.conceptRows;
-  // Side-effect логи.
   const mergeCalls: Array<{ targetId: string; sourceIds: string[] }> = [];
   const probeCalls: any[] = [];
 
@@ -55,15 +38,23 @@ function buildCron(args: {
     },
     skillTraitConcept: {
       updateMany: vi.fn(async () => ({ count: args.archiveCount ?? 0 })),
-      groupBy: vi.fn(async () => [
-        { status: 'active', _count: { _all: concepts.length } },
-      ]),
+      groupBy: vi.fn(async () => [{ status: 'active', _count: { _all: concepts.length } }]),
+      findMany: vi.fn(async () => []),
+    },
+    skillTrait: {
+      groupBy: vi.fn(async () =>
+        concepts.map((c) => ({
+          conceptId: c.id,
+          _count: {
+            _all: args.liveCounts ? (args.liveCounts[c.id] ?? 0) : c.trait_count,
+          },
+        })),
+      ),
     },
     membership: {
       findMany: vi.fn(async () => [{ userId: 'admin-1' }]),
     },
     $queryRawUnsafe: vi.fn(async (sql: string) => {
-      // Возвращаем фейковые концепты для основной выборки.
       if (sql.includes('FROM "skill_trait_concepts"')) {
         return concepts;
       }
@@ -101,11 +92,13 @@ function buildCron(args: {
     })),
   } as any;
   const concepts$ = {
-    mergeConcepts: vi.fn(async (args: any) => {
-      mergeCalls.push({ targetId: args.targetId, sourceIds: args.sourceIds });
+    mergeConcepts: vi.fn(async (a: any) => {
+      mergeCalls.push({ targetId: a.targetId, sourceIds: a.sourceIds });
+      return args.mergeReturns ?? true;
     }),
     findOrCreateConcept: vi.fn(),
     recomputeConceptForTrait: vi.fn(),
+    recomputeTraitCount: vi.fn(),
   } as any;
   const probe = {
     suggest: vi.fn(async (args: any) => {
@@ -155,7 +148,6 @@ describe('SkillTraitConceptNormalizerCron', () => {
     expect(summary.tenantsScanned).toBe(1);
     expect(summary.clustersMerged).toBe(1);
     expect(mergeCalls).toHaveLength(1);
-    // Опорный — с max traitCount (c-strong).
     expect(mergeCalls[0]!.targetId).toBe('c-strong');
     expect(mergeCalls[0]!.sourceIds).toEqual(['c-weak']);
   });
@@ -193,8 +185,7 @@ describe('SkillTraitConceptNormalizerCron', () => {
     expect(mergeCalls).toHaveLength(0);
   });
 
-  it('сценарий 3: концепт без активных traits старше 6 мес — архивируется', async () => {
-    // Никаких концептов для merge — пустая выборка.
+  it('сценарий 3: концепт без активных traits старше 6 мес — архивируется по traits.none (Б7), не по счётчику', async () => {
     const { cron, prisma } = buildCron({
       conceptRows: [],
       archiveCount: 2,
@@ -205,8 +196,69 @@ describe('SkillTraitConceptNormalizerCron', () => {
     expect(prisma.skillTraitConcept.updateMany).toHaveBeenCalledTimes(1);
     const call = (prisma.skillTraitConcept.updateMany as any).mock.calls[0][0];
     expect(call.where.status).toBe('active');
-    expect(call.where.traitCount).toBe(0);
+    expect(call.where.traitCount).toBeUndefined();
+    expect(call.where.traits).toEqual({ none: { status: 'active' } });
     expect(call.where.lastSeenAt.lt).toBeInstanceOf(Date);
     expect(call.data.status).toBe('archived');
+  });
+
+  it('Б6: опорный концепт выбирается по ЖИВОМУ COUNT(active), а не по дрейфующему traitCount', async () => {
+    const { a, b } = similarVectors(0.95);
+    const rows: FakeConceptRow[] = [
+      {
+        id: 'c-a',
+        canonical_name: 'имя A',
+        trait_count: 10,
+        variants: ['имя A'],
+        embedding_text: vec(a),
+      },
+      {
+        id: 'c-b',
+        canonical_name: 'имя B',
+        trait_count: 3,
+        variants: ['имя B'],
+        embedding_text: vec(b),
+      },
+    ];
+    const { cron, mergeCalls } = buildCron({
+      conceptRows: rows,
+      liveCounts: { 'c-a': 1, 'c-b': 8 },
+    });
+    const summary = await cron.runOnce();
+
+    expect(summary.clustersMerged).toBe(1);
+    expect(mergeCalls).toHaveLength(1);
+    expect(mergeCalls[0]!.targetId).toBe('c-b');
+    expect(mergeCalls[0]!.sourceIds).toEqual(['c-a']);
+  });
+
+  it('Б8: mergeConcepts вернул false (no-op) — clustersMerged НЕ инкрементится, probe не шлётся', async () => {
+    const { a, b } = similarVectors(0.95);
+    const rows: FakeConceptRow[] = [
+      {
+        id: 'c-strong',
+        canonical_name: 'имя один',
+        trait_count: 10,
+        variants: ['имя один'],
+        embedding_text: vec(a),
+      },
+      {
+        id: 'c-weak',
+        canonical_name: 'имя два',
+        trait_count: 3,
+        variants: ['имя два'],
+        embedding_text: vec(b),
+      },
+    ];
+    const { cron, mergeCalls, probeCalls } = buildCron({
+      conceptRows: rows,
+      mergeReturns: false,
+    });
+    const summary = await cron.runOnce();
+
+    expect(mergeCalls).toHaveLength(1);
+    expect(summary.clustersMerged).toBe(0);
+    expect(summary.probesSent).toBe(0);
+    expect(probeCalls).toHaveLength(0);
   });
 });

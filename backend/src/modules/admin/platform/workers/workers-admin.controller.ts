@@ -18,12 +18,6 @@ import { SuperAdminAuditInterceptor } from '../../super-admin.audit.interceptor'
 
 import { WorkersAdminService } from './workers-admin.service';
 
-/**
- * Admin-redesign Фаза 8 — `WorkersAdminController`.
- *
- * UI Z-Admin `/admin/platform/workers` — BullMQ-inspector с действиями
- * pause / resume / retry / delete failed job.
- */
 @ApiTags('admin-platform-workers')
 @Controller('api/v1/admin/platform/workers')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -79,10 +73,7 @@ export class WorkersAdminController {
   @ApiOperation({
     summary: 'Удалить конкретный failed job из очереди (job.remove).',
   })
-  deleteFailed(
-    @Param('name') name: string,
-    @Param('jobId') jobId: string,
-  ) {
+  deleteFailed(@Param('name') name: string, @Param('jobId') jobId: string) {
     return this.svc.deleteFailedJob(name, jobId);
   }
 }

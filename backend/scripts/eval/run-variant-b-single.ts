@@ -1,38 +1,19 @@
-/**
- * Variant Б — один объединённый вызов на сыром транскрипте.
- *
- *   fixture → один вызов DeepSeek-V4-Pro с большим tool, возвращающим
- *             { chapters, tasks, summary_markdown, quality_score }
- *
- * Отличие от Variant A:
- *   - Нет block-ingest шага. Модель работает прямо на тексте транскрипта.
- *   - Один вызов вместо 5. Все 4 секции в одной JSON-схеме.
- *
- * Запуск: cd backend && bun run scripts/eval/run-variant-b-single.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
 
-// ── константы ────────────────────────────────────────────────────────────────
 const MODEL = 'deepseek-v4-pro';
-// DeepSeek-V4-Pro со скидкой 75% (постоянная):
-//   input miss $0.435/M, cache hit $0.003625/M, output $0.87/M.
 const PRICE_IN = 0.435 / 1_000_000;
 const PRICE_CACHED_IN = 0.003625 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
-// Объединённый вывод (главы + задачи + резюме + оценка) — большой output + thinking.
 const MAX_TOKENS_COMBINED = 32000;
 
 const FIXTURE_ID = process.argv[2] ?? 'fixture-01-pilot';
-const FIXTURE_PATH = path.resolve(
-  `test/eval/sales-merge-experiment/fixtures/${FIXTURE_ID}.json`,
-);
+const FIXTURE_PATH = path.resolve(`test/eval/sales-merge-experiment/fixtures/${FIXTURE_ID}.json`);
 const REPORT_PATH = path.resolve(
   `test/eval/sales-merge-experiment/reports/${FIXTURE_ID}-variant-b.json`,
 );
 
-// ── типы фикстуры ────────────────────────────────────────────────────────────
 interface FixtureJson {
   fixtureId: string;
   meetingType: 'sales';
@@ -46,7 +27,6 @@ interface FixtureJson {
   transcript: string;
 }
 
-// ── клиент ───────────────────────────────────────────────────────────────────
 if (!process.env.DEEPSEEK_API_KEY) {
   console.error('✗ DEEPSEEK_API_KEY не задан');
   process.exit(1);
@@ -56,13 +36,11 @@ const client = new OpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
 });
 
-// ── объединённый tool (4 секции в одном выходе) ──────────────────────────────
 const COMBINED_TOOL = {
   type: 'function' as const,
   function: {
     name: 'submit_meeting_analysis',
-    description:
-      'Отдать полный анализ встречи: главы, задачи, резюме, оценка качества.',
+    description: 'Отдать полный анализ встречи: главы, задачи, резюме, оценка качества.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -78,8 +56,7 @@ const COMBINED_TOOL = {
             properties: {
               title: {
                 type: 'string',
-                description:
-                  'Короткое название главы (≤200 символов), без префикса "Глава N:".',
+                description: 'Короткое название главы (≤200 символов), без префикса "Глава N:".',
               },
               summary: {
                 type: 'string',
@@ -151,13 +128,7 @@ const COMBINED_TOOL = {
             },
             categories: {
               type: 'object',
-              required: [
-                'preparation',
-                'structure',
-                'clarity',
-                'outcomes',
-                'engagement',
-              ],
+              required: ['preparation', 'structure', 'clarity', 'outcomes', 'engagement'],
               properties: {
                 preparation: { type: 'integer', minimum: 0, maximum: 100 },
                 structure: { type: 'integer', minimum: 0, maximum: 100 },
@@ -181,13 +152,7 @@ const COMBINED_TOOL = {
                   },
                   category: {
                     type: 'string',
-                    enum: [
-                      'preparation',
-                      'structure',
-                      'clarity',
-                      'outcomes',
-                      'engagement',
-                    ],
+                    enum: ['preparation', 'structure', 'clarity', 'outcomes', 'engagement'],
                   },
                 },
               },
@@ -204,7 +169,6 @@ const COMBINED_TOOL = {
   },
 };
 
-// ── системный промпт (объединённый) ──────────────────────────────────────────
 const SYSTEM_PROMPT = `Ты — аналитик деловых видеовстреч. Получаешь транскрипт продажной встречи и возвращаешь полный комплексный анализ через инструмент submit_meeting_analysis.
 
 Анализ состоит из 4 секций. Все 4 — обязательны.
@@ -266,16 +230,13 @@ strengths: 2-4 пункта что было хорошо.
 
 ВАЖНО: верни результат строго через вызов инструмента submit_meeting_analysis. Не пиши ничего вне tool_use.`;
 
-// ── вызов ────────────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
   console.log('=== Variant Б — один объединённый вызов на сыром транскрипте ===');
   console.log(`  модель:    ${MODEL}`);
   console.log(`  фикстура:  ${path.basename(FIXTURE_PATH)}`);
   const fixtureRaw = await fs.readFile(FIXTURE_PATH, 'utf-8');
   const fixture: FixtureJson = JSON.parse(fixtureRaw);
-  console.log(
-    `  знаков:    ${fixture.transcript.length}, тип: ${fixture.meetingType}\n`,
-  );
+  console.log(`  знаков:    ${fixture.transcript.length}, тип: ${fixture.meetingType}\n`);
 
   const userMessage = `Заголовок встречи: ${fixture.meta.vendorName} ↔ ${fixture.meta.clientName} (${fixture.meetingType})
 
@@ -346,14 +307,12 @@ ${fixture.transcript}
     usage.prompt_tokens_details?.cached_tokens ??
     0;
   const uncached = Math.max(0, tokensIn - cachedTokens);
-  const costUsd =
-    uncached * PRICE_IN + cachedTokens * PRICE_CACHED_IN + tokensOut * PRICE_OUT;
+  const costUsd = uncached * PRICE_IN + cachedTokens * PRICE_CACHED_IN + tokensOut * PRICE_OUT;
 
   console.log(
     `\n  ${error ? '✗' : '✓'} ${ms} мс | вход=${tokensIn} (кэш=${cachedTokens}) выход=${tokensOut} | $${costUsd.toFixed(4)}${error ? ` | ${error}` : ''}`,
   );
 
-  // ── сводка секций ───────────────────────────────────────────────────────────
   if (jsonValid && typeof output === 'object' && output !== null) {
     const out = output as {
       chapters?: unknown[];
@@ -368,7 +327,6 @@ ${fixture.transcript}
     console.log(`  overallScore:    ${out.quality_score?.overallScore ?? '—'}`);
   }
 
-  // ── отчёт ───────────────────────────────────────────────────────────────────
   await fs.writeFile(
     REPORT_PATH,
     JSON.stringify(

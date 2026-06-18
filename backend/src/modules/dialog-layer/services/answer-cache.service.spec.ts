@@ -2,12 +2,6 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { AnswerCacheService, type AnswerCacheEntry } from './answer-cache.service';
 
-/**
- * SBA α-5 dialog-layer — unit-тесты AnswerCacheService.
- *
- * Покрывает: key-stability, set/get, hit-rate на 3 идентичных запросах,
- * fallback на null при ошибках Redis.
- */
 describe('AnswerCacheService', () => {
   let store: Map<string, string>;
   let redisStub: {
@@ -110,7 +104,6 @@ describe('AnswerCacheService', () => {
     };
     await svc.set(args, sampleEntry);
 
-    // 3 идентичных запроса = 3 HIT.
     const r1 = await svc.get(args);
     const r2 = await svc.get(args);
     const r3 = await svc.get(args);
@@ -146,7 +139,7 @@ describe('AnswerCacheService', () => {
     expect(await svc.get({ ...base, validAt: '2025-01-01T00:00:00Z' })).toBeNull();
   });
 
-  it('invalidateTenant удаляет ВСЕ ключи tenant\'а', async () => {
+  it("invalidateTenant удаляет ВСЕ ключи tenant'а", async () => {
     const args1 = {
       tenantId: 't1',
       userId: 'u1',

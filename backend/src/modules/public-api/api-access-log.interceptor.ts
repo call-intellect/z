@@ -13,11 +13,6 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import type { RequestWithApiKey } from '../api-keys/current-api-key.decorator';
 import { IpHashingService } from '../security/ip-hashing.service';
 
-
-/**
- * Логирует каждый Public API запрос в `ApiAccessLog`. Запись fire-and-forget
- * — ошибка БД не должна валить запрос.
- */
 @Injectable()
 export class ApiAccessLogInterceptor implements NestInterceptor {
   private readonly logger = new Logger(ApiAccessLogInterceptor.name);
@@ -35,24 +30,21 @@ export class ApiAccessLogInterceptor implements NestInterceptor {
       tap({
         next: () => this.write(req, route, 200, startedAt),
         error: (err: unknown) => {
-          const status = (err as { status?: number; getStatus?: () => number })?.status
-            ?? (err as { getStatus?: () => number })?.getStatus?.()
-            ?? 500;
+          const status =
+            (err as { status?: number; getStatus?: () => number })?.status ??
+            (err as { getStatus?: () => number })?.getStatus?.() ??
+            500;
           this.write(req, route, status, startedAt);
         },
       }),
     );
   }
 
-  private write(
-    req: RequestWithApiKey,
-    route: string,
-    status: number,
-    startedAt: number,
-  ): void {
-    const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim()
-      ?? req.socket?.remoteAddress
-      ?? 'unknown';
+  private write(req: RequestWithApiKey, route: string, status: number, startedAt: number): void {
+    const ip =
+      (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
+      req.socket?.remoteAddress ??
+      'unknown';
     const ipHash = this.ipHasher.hashIp(ip);
     void this.prisma.apiAccessLog
       .create({
@@ -66,9 +58,7 @@ export class ApiAccessLogInterceptor implements NestInterceptor {
         },
       })
       .catch((err: unknown) => {
-        this.logger.debug(
-          `ApiAccessLog: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        this.logger.debug(`ApiAccessLog: ${err instanceof Error ? err.message : String(err)}`);
       });
   }
 }

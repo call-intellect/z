@@ -1,28 +1,14 @@
-/**
- * Доменная модель для `/admin/integrations/livekit` — обзор медиа-стека LiveKit
- * (SFU / Egress / TURN). Фаза 6 редизайна Z-Admin.
- *
- * Контракт backend: `AdminLivekitController` под префиксом
- * `/api/v1/admin/integrations/livekit` (планируется). На момент сборки фронта
- * эндпоинты могут отсутствовать — UI ловит 404 и показывает `AdminEmpty`.
- */
-
-// ────────────────────────── ApiDto ──────────────────────────
-
 export type LivekitSfuHealthApiDto = {
   reachable: boolean;
   activeRooms: number;
   totalParticipants: number;
-  /** 0..1 либо null — если SFU не отдаёт. */
   serverLoad: number | null;
-  /** Версия LiveKit Server, если известна. */
   version: string | null;
   checkedAt: string;
 };
 
 export type LivekitEgressJobApiDto = {
   id: string;
-  /** record (общий микс) / track (отдельные дорожки) / rtmp. */
   type: string;
   status: string;
   roomName: string | null;
@@ -36,12 +22,11 @@ export type LivekitEgressOverviewApiDto = {
   checkedAt: string;
 };
 
-export type LivekitTurnModeApi = 'builtin' | 'external';
+export type LivekitTurnModeApi = "builtin" | "external";
 
 export type LivekitTurnHealthApiDto = {
   mode: LivekitTurnModeApi;
   host: string | null;
-  /** Время ответа от TURN в мс, либо null если не достижим. */
   pingMs: number | null;
   reachable: boolean;
   checkedAt: string;
@@ -52,8 +37,6 @@ export type LivekitOverviewApiDto = {
   egress: LivekitEgressOverviewApiDto | null;
   turn: LivekitTurnHealthApiDto | null;
 };
-
-// ────────────────────────── DomainModel ──────────────────────────
 
 export type LivekitSfuHealthDomain = {
   reachable: boolean;
@@ -81,7 +64,6 @@ export type LivekitEgressOverviewDomain = {
 
 export type LivekitTurnHealthDomain = {
   mode: LivekitTurnModeApi;
-  /** Локализованная подпись режима. */
   modeLabel: string;
   host: string | null;
   pingMs: number | null;
@@ -96,11 +78,9 @@ export type LivekitOverviewDomain = {
 };
 
 export const LIVEKIT_TURN_MODE_LABELS: Record<LivekitTurnModeApi, string> = {
-  builtin: 'Встроенный (LiveKit)',
-  external: 'Внешний (coturn / отдельный сервер)',
+  builtin: "Встроенный (LiveKit)",
+  external: "Внешний (coturn / отдельный сервер)",
 };
-
-// ────────────────────────── Mappers ──────────────────────────
 
 export function livekitSfuFromApi(
   api: LivekitSfuHealthApiDto,

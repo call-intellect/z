@@ -1,16 +1,11 @@
-'use client';
+"use client";
 
-/**
- * SWR-хук для данных онбординга Org (setup-прогресс).
- * ТЗ 2026-05-29 onboarding-v2.
- */
-
-import useSWR from 'swr';
-import { orgsApi, type OrgApi } from '@/api/orgs.api';
+import useSWR from "swr";
+import { orgsApi, type OrgApi } from "@/api/orgs.api";
 
 export function useOrgSetup(orgId: string | null) {
   const swr = useSWR<{ org: OrgApi }>(
-    orgId ? ['orgs.setup', orgId] : null,
+    orgId ? ["orgs.setup", orgId] : null,
     () => orgsApi.byId(orgId!),
     { revalidateOnFocus: false },
   );

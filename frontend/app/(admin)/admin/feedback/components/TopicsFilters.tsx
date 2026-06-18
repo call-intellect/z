@@ -1,26 +1,21 @@
-'use client';
+"use client";
 
-/**
- * TopicsFilters — фильтры дашборда обратной связи: окно агрегатов, поиск,
- * чекбокс «Показывать архивированные». Все тексты — только русские.
- */
-
-import { Search } from 'lucide-react';
+import { Search } from "lucide-react";
 
 import {
   FEEDBACK_WINDOW_LABEL,
   type FeedbackWindow,
-} from '@/domain/admin-feedback';
-import { Checkbox } from '@/ui/shadcn/checkbox';
+} from "@/domain/admin-feedback";
+import { Checkbox } from "@/ui/shadcn/checkbox";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
-const WINDOW_OPTIONS: FeedbackWindow[] = ['30', '90', 'all'];
+const WINDOW_OPTIONS: FeedbackWindow[] = ["30", "90", "all"];
 
 interface TopicsFiltersProps {
   window: FeedbackWindow;

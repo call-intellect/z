@@ -1,43 +1,29 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
-import { toast } from 'sonner';
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { useAuth } from '@/contexts/auth-context';
-import { AuthShell } from '@/ui/components/auth-shell/AuthShell';
-import { Button } from '@/ui/shadcn/button';
-import { Checkbox } from '@/ui/shadcn/checkbox';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { useAuth } from "@/contexts/auth-context";
+import { AuthShell } from "@/ui/components/auth-shell/AuthShell";
+import { Button } from "@/ui/shadcn/button";
+import { Checkbox } from "@/ui/shadcn/checkbox";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
-/**
- * Единый логин для всех — обычных пользователей И супер-админов — через
- * `/auth/login` (бэк сам пробует standalone → admin). Отдельной формы
- * `/admin/login` больше нет (она редиректит сюда).
- *
- * После успеха:
- *   - Безопасный `?next=` имеет приоритет.
- *   - Иначе супер-админ → `/admin`, обычный пользователь → `/meetings`.
- *   - Если `mustChangePassword=true` — guard в `(authenticated)/layout.tsx`
- *     сам отправит на `/onboarding/change-password`.
- *
- * Единая ошибка `login_invalid` не раскрывает существование учётки
- * (защита от user-enumeration — логика на бэке).
- */
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  const nextParam = searchParams?.get('next') ?? null;
+  const nextParam = searchParams?.get("next") ?? null;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -46,22 +32,21 @@ export function LoginForm() {
     setSubmitting(true);
     try {
       const { isSuperAdmin } = await login(email.trim(), password);
-      // mustChangePassword обработает guard в (authenticated)/layout.
       const target = isSafeNext(nextParam)
         ? nextParam!
         : isSuperAdmin
-          ? '/admin'
-          : '/meetings';
+          ? "/admin"
+          : "/meetings";
       router.replace(target);
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.code === 'login_invalid' || err.code === 'unauthorized') {
-          toast.error('Неверный логин или пароль.');
+        if (err.code === "login_invalid" || err.code === "unauthorized") {
+          toast.error("Неверный логин или пароль.");
         } else {
           toast.error(humanizeApiError(err));
         }
       } else {
-        toast.error('Не удалось войти. Попробуйте ещё раз.');
+        toast.error("Не удалось войти. Попробуйте ещё раз.");
       }
       setSubmitting(false);
     }
@@ -73,7 +58,7 @@ export function LoginForm() {
       subtitle="Войдите в свой кабинет Кора."
       footer={
         <>
-          Нет аккаунта?{' '}
+          Нет аккаунта?{" "}
           <Link
             href="/signup"
             className="text-accent underline-offset-4 hover:underline"
@@ -137,21 +122,17 @@ export function LoginForm() {
           size="lg"
           disabled={submitting}
         >
-          {submitting ? 'Входим…' : 'Войти'}
+          {submitting ? "Входим…" : "Войти"}
         </Button>
       </form>
     </AuthShell>
   );
 }
 
-/**
- * Безопасный next: только internal path (начинается с '/' но не с '//' и
- * не с '/http'). Защита от open-redirect.
- */
 function isSafeNext(next: string | null): boolean {
   if (!next) return false;
-  if (!next.startsWith('/')) return false;
-  if (next.startsWith('//')) return false;
-  if (next.startsWith('/http')) return false;
+  if (!next.startsWith("/")) return false;
+  if (next.startsWith("//")) return false;
+  if (next.startsWith("/http")) return false;
   return true;
 }

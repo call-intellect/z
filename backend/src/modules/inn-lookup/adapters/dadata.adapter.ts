@@ -1,44 +1,10 @@
-/**
- * DadataAdapter — лукап ИНН через DaData Suggestions API.
- *
- * Endpoint:
- *   POST https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/party
- *   Headers: { Authorization: 'Token <DADATA_API_KEY>', Content-Type: application/json }
- *   Body:    { query: '<inn>', branch_type: 'MAIN' }
- *
- * Response format:
- *   {
- *     suggestions: [{
- *       data: {
- *         inn, kpp, ogrn,
- *         type: 'LEGAL' | 'INDIVIDUAL',
- *         name: { full_with_opf },
- *         address: { value },
- *         management?: { name },
- *         opf?: { code }  — '50102' для НПД (самозанятых)
- *       }
- *     }]
- *   }
- *
- * Маппинг payerType:
- *   - type='LEGAL'      → 'legal_entity'
- *   - type='INDIVIDUAL' → 'individual_entrepreneur' (по умолчанию)
- *
- * Самозанятые (НПД) в DaData возвращаются как `type='INDIVIDUAL'` + специальный
- * `opf.code`. На MVP: маппим в `individual_entrepreneur`, пользователь
- * корректирует руками. Точное определение НПД — TODO.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §8.
- */
-
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../common/config/index';
 
 import type { InnLookupAdapter, InnLookupResult } from './inn-lookup.adapter';
 
-const DADATA_FINDBYID_URL =
-  'https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/party';
+const DADATA_FINDBYID_URL = 'https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/party';
 
 const REQUEST_TIMEOUT_MS = 5000;
 
@@ -76,9 +42,7 @@ export class DadataAdapter implements InnLookupAdapter {
   async lookup(inn: string): Promise<InnLookupResult | null> {
     const apiKey = this.cfg.billing.dadata.apiKey;
     if (!apiKey) {
-      this.logger.warn(
-        'DadataAdapter.lookup вызван без DADATA_API_KEY — возвращаю null',
-      );
+      this.logger.warn('DadataAdapter.lookup вызван без DADATA_API_KEY — возвращаю null');
       return null;
     }
 
@@ -99,12 +63,7 @@ export class DadataAdapter implements InnLookupAdapter {
 
       if (!response.ok) {
         const text = await response.text().catch(() => '');
-        this.logger.warn(
-          `DaData findById вернул HTTP ${response.status}: ${text.slice(0, 200)}`,
-        );
-        // 4xx — это «не найдено / неверный ключ»; не ретраим, отдаём null
-        // и даём fallback'у шанс. 5xx — тоже null, чтобы не падать в UI;
-        // в проде CallerInvariant: если все источники молчат — 404 в сервисе.
+        this.logger.warn(`DaData findById вернул HTTP ${response.status}: ${text.slice(0, 200)}`);
         return null;
       }
 
@@ -114,14 +73,8 @@ export class DadataAdapter implements InnLookupAdapter {
 
       return {
         source: 'dadata',
-        payerType:
-          candidate.type === 'INDIVIDUAL'
-            ? 'individual_entrepreneur'
-            : 'legal_entity',
-        legalName:
-          candidate.name?.full_with_opf ??
-          candidate.name?.short_with_opf ??
-          candidate.inn,
+        payerType: candidate.type === 'INDIVIDUAL' ? 'individual_entrepreneur' : 'legal_entity',
+        legalName: candidate.name?.full_with_opf ?? candidate.name?.short_with_opf ?? candidate.inn,
         inn: candidate.inn,
         kpp: candidate.kpp ?? null,
         ogrn: candidate.ogrn ?? null,
@@ -146,12 +99,6 @@ export class DadataAdapter implements InnLookupAdapter {
     }
   }
 
-  /**
-   * audit С2 (2026-05-29): маскирует ИНН для логов — оставляет только
-   * последние 4 цифры. ИНН считается PII / коммерчески чувствительным,
-   * поэтому в логи попадает в виде `***XXXX`. Полный ИНН остаётся
-   * в БД (`Org.payerInn`) и в исходящих API-вызовах в DaData.
-   */
   static maskInn(rawInn: string): string {
     const digits = rawInn.replace(/\D/g, '');
     if (digits.length <= 4) return '***';

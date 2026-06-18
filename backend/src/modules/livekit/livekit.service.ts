@@ -8,29 +8,13 @@ import {
 
 import { TypedConfigService } from '../../common/config/index';
 
-/**
- * Обёртка над LiveKit Server SDK.
- *
- * Главные обязанности:
- *   1. Генерация JWT-токенов для host/guest (`generateHostToken` / `generateGuestToken`).
- *   2. Idempotent создание room (`ensureRoom`) — встреча привязана к LiveKit-room
- *      по `meeting.id` (он же `roomName`).
- *   3. Управление участниками: `mute`, `remove`, `updateAttributes`.
- *
- * Внутри — единственный `RoomServiceClient`, инициализированный из
- * `cfg.livekit.{apiUrl,apiKey,apiSecret}`. Сам SDK в `livekit-server-sdk` v2
- * возвращает `Promise<string>` из `AccessToken.toJwt()` — учитываем это.
- */
 @Injectable()
 export class LivekitService {
   private readonly logger = new Logger(LivekitService.name);
   private readonly roomService: RoomServiceClient;
 
-  /** TTL по умолчанию (4 часа) — если у встречи нет `endedAt`. */
   private static readonly DEFAULT_TTL_SECONDS = 4 * 60 * 60;
-  /** Жёсткий потолок TTL (8 часов) — выше выдавать опасно. */
   private static readonly MAX_TTL_SECONDS = 8 * 60 * 60;
-  /** Грация после `endedAt` — даём 5 минут чтобы корректно отключиться. */
   private static readonly POST_END_GRACE_SECONDS = 5 * 60;
 
   constructor(@Inject(TypedConfigService) private readonly cfg: TypedConfigService) {
@@ -41,14 +25,12 @@ export class LivekitService {
     );
   }
 
-  // ─────────────────────────────── токены ─────────────────────────────────
-
   async generateHostToken(
     meeting: { id: string; endedAt?: Date | null },
     identity: string,
     name: string,
   ): Promise<string> {
-    return this.generateToken(meeting, identity, name, /* host */ true);
+    return this.generateToken(meeting, identity, name, true);
   }
 
   async generateGuestToken(
@@ -56,7 +38,7 @@ export class LivekitService {
     identity: string,
     name: string,
   ): Promise<string> {
-    return this.generateToken(meeting, identity, name, /* host */ false);
+    return this.generateToken(meeting, identity, name, false);
   }
 
   private async generateToken(
@@ -77,19 +59,12 @@ export class LivekitService {
       canPublish: true,
       canSubscribe: true,
       canPublishData: true,
-      // Нужно @livekit/components-react (обновляет метаданные участника, напр. hand-raise).
       canUpdateOwnMetadata: true,
       roomAdmin: isHost,
     });
     return at.toJwt();
   }
 
-  /**
-   * TTL = меньшее из (до `endedAt + 5 минут`) и `MAX_TTL_SECONDS` (8 часов).
-   * Если `endedAt` не задан — `DEFAULT_TTL_SECONDS` (4 часа).
-   * Минимум — 60 секунд (даже если встреча уже закончилась — даём гостю шанс
-   * отключиться корректно).
-   */
   private computeTtlSeconds(endedAt: Date | null): number {
     if (!endedAt) {
       return Math.min(LivekitService.DEFAULT_TTL_SECONDS, LivekitService.MAX_TTL_SECONDS);
@@ -98,18 +73,11 @@ export class LivekitService {
     const deadlineMs = endedAt.getTime() + LivekitService.POST_END_GRACE_SECONDS * 1000;
     const remainingSec = Math.floor((deadlineMs - nowMs) / 1000);
     if (remainingSec <= 0) {
-      // Если уже мимо — выдаём минимум, чтобы клиент мог корректно завершить.
       return 60;
     }
     return Math.min(remainingSec, LivekitService.MAX_TTL_SECONDS);
   }
 
-  // ─────────────────────────────── комнаты ────────────────────────────────
-
-  /**
-   * Idempotent создание room. Если уже существует — игнорируем ошибку
-   * "room already exists" и возвращаем `null`. На прочие ошибки бросаем.
-   */
   async ensureRoom(meeting: { id: string }): Promise<Room | null> {
     try {
       const room = await this.roomService.createRoom({ name: meeting.id });
@@ -117,13 +85,9 @@ export class LivekitService {
       return room;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      // LiveKit отвечает "room already exists" — это норма для idempotent ensure.
       if (message.toLowerCase().includes('already exists')) {
         return null;
       }
-      // LiveKit недоступен (fetch failed, ECONNREFUSED, timeout) — НЕ блокируем
-      // join: SFU сам создаст room при первом подключении participant'а
-      // (auto-create поведение по умолчанию). Логируем warning и продолжаем.
       const isNetworkError =
         message.toLowerCase().includes('fetch failed') ||
         message.toLowerCase().includes('econnrefused') ||
@@ -147,7 +111,6 @@ export class LivekitService {
       this.logger.log(`LiveKit room удалена: ${meeting.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      // "room does not exist" — тоже допустимо в idle/finish сценариях.
       if (message.toLowerCase().includes('does not exist')) {
         return;
       }
@@ -160,18 +123,7 @@ export class LivekitService {
     return this.roomService.listParticipants(meeting.id);
   }
 
-  // ─────────────────────────────── управление ─────────────────────────────
-
-  /**
-   * Мьют/анмьют всех опубликованных треков участника. SDK не имеет
-   * "mute participant" единым вызовом — нужно дёрнуть `mutePublishedTrack`
-   * для каждого track sid. Если у участника треков нет — no-op.
-   */
-  async muteParticipant(
-    meeting: { id: string },
-    identity: string,
-    mute: boolean,
-  ): Promise<void> {
+  async muteParticipant(meeting: { id: string }, identity: string, mute: boolean): Promise<void> {
     const participant = await this.roomService.getParticipant(meeting.id, identity);
     const tracks = participant.tracks ?? [];
     for (const track of tracks) {
@@ -179,9 +131,7 @@ export class LivekitService {
         await this.roomService.mutePublishedTrack(meeting.id, identity, track.sid, mute);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        this.logger.warn(
-          `mutePublishedTrack ${meeting.id}/${identity}/${track.sid} → ${message}`,
-        );
+        this.logger.warn(`mutePublishedTrack ${meeting.id}/${identity}/${track.sid} → ${message}`);
       }
     }
   }

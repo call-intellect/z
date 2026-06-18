@@ -1,27 +1,3 @@
-/**
- * Демо-данные «ТехноСтрим» — статичные Pulse snapshot'ы для главной директора.
- *
- * Заполняет 8 моделей, которые читает `pulse-patterns.service.ts` и
- * Team Health Grid:
- *  - KnowledgeRiskSnapshot (5)
- *  - RecurringTopic (4)
- *  - PromiseNetworkSnapshot (1)
- *  - PersonGoalContribution (5 person × 4 goals × 4 weeks = 80)
- *  - KnowledgeVelocitySnapshot (1)
- *  - PersonEngagementSnapshot (5 person × 12 weeks = 60)
- *  - ForecastSnapshot (4)
- *  - CrossFunctionalFrictionReport (3)
- *
- * Все snapshot'ы детерминированы — без Math.random(). Решение владельца
- * (2026-05-31): cron-агенты не дёргаем, snapshot'ы запекаем статично.
- *
- * Окна выборки фронта (см. pulse-patterns.service.ts):
- *  - BusFactor: latest snapshot per categoryName за 30 дней
- *  - RecurringTopic: 14 дней
- *  - Bottleneck: 30 дней (CrossFunctionalFrictionReport.createdAt)
- *  - GoalVector: 4 недели (week-режим) / 12 недель (month-режим)
- *  - KnowledgeVelocity: latest 1 шт без окна
- */
 import type { Prisma } from '@prisma/client';
 
 import type { SeedFn } from './types';
@@ -29,8 +5,6 @@ import { daysAgo, mondayOf, req } from './types';
 
 export const seedPulseSnapshots: SeedFn = async (ctx, ids) => {
   const { prisma, tenantId } = ctx;
-
-  // ── 1. KnowledgeRiskSnapshot × 5 ───────────────────────────────────────
 
   const knowledgeRisks = [
     {
@@ -103,8 +77,6 @@ export const seedPulseSnapshots: SeedFn = async (ctx, ids) => {
     ids.pulseSnapshotIds.knowledgeRisks.push(snap.id);
   }
 
-  // ── 2. RecurringTopic × 4 ──────────────────────────────────────────────
-
   const recurringTopics = [
     {
       themeKey: null as string | null,
@@ -144,7 +116,7 @@ export const seedPulseSnapshots: SeedFn = async (ctx, ids) => {
     const snap = await prisma.recurringTopic.create({
       data: {
         tenantId,
-        themeId: t.themeKey ? ids.themes[t.themeKey] ?? null : null,
+        themeId: t.themeKey ? (ids.themes[t.themeKey] ?? null) : null,
         themeName: t.themeName,
         mentionCount: t.mentionCount,
         meetingCount: t.meetingCount,
@@ -160,14 +132,47 @@ export const seedPulseSnapshots: SeedFn = async (ctx, ids) => {
     ids.pulseSnapshotIds.recurringTopics.push(snap.id);
   }
 
-  // ── 3. PromiseNetworkSnapshot × 1 ──────────────────────────────────────
-
   const networkNodes = [
-    { personKey: 'morozov', name: 'Алексей Морозов', role: 'donor', inDegree: 1, outDegree: 4, balance: -3 },
-    { personKey: 'volkova', name: 'Марина Волкова', role: 'accumulator', inDegree: 5, outDegree: 1, balance: 4 },
-    { personKey: 'kozlov', name: 'Дмитрий Козлов', role: 'accumulator', inDegree: 6, outDegree: 2, balance: 4 },
-    { personKey: 'sokolova', name: 'Екатерина Соколова', role: 'balanced', inDegree: 3, outDegree: 3, balance: 0 },
-    { personKey: 'petrova', name: 'Анна Петрова', role: 'balanced', inDegree: 2, outDegree: 2, balance: 0 },
+    {
+      personKey: 'morozov',
+      name: 'Алексей Морозов',
+      role: 'donor',
+      inDegree: 1,
+      outDegree: 4,
+      balance: -3,
+    },
+    {
+      personKey: 'volkova',
+      name: 'Марина Волкова',
+      role: 'accumulator',
+      inDegree: 5,
+      outDegree: 1,
+      balance: 4,
+    },
+    {
+      personKey: 'kozlov',
+      name: 'Дмитрий Козлов',
+      role: 'accumulator',
+      inDegree: 6,
+      outDegree: 2,
+      balance: 4,
+    },
+    {
+      personKey: 'sokolova',
+      name: 'Екатерина Соколова',
+      role: 'balanced',
+      inDegree: 3,
+      outDegree: 3,
+      balance: 0,
+    },
+    {
+      personKey: 'petrova',
+      name: 'Анна Петрова',
+      role: 'balanced',
+      inDegree: 2,
+      outDegree: 2,
+      balance: 0,
+    },
   ];
 
   const networkEdges = [
@@ -209,43 +214,56 @@ export const seedPulseSnapshots: SeedFn = async (ctx, ids) => {
     ids.pulseSnapshotIds.promiseNetwork = snap.id;
   }
 
-  // ── 4. PersonGoalContribution × 80 (5 × 4 goals × 4 weeks) ─────────────
-
   const personKeys = ['morozov', 'volkova', 'kozlov', 'sokolova', 'petrova'] as const;
   const goalKeys = ['goal_arr', 'goal_v2', 'goal_mobile', 'goal_nps'] as const;
   const weekOffsets = [21, 14, 7, 0] as const;
 
-  type ContribRow = { pro: string; contra: string; kinds: ReadonlyArray<'idea' | 'commitment_kept' | 'commitment_broken' | 'issue_closed'> };
-  const CONTRIB_TABLE: Record<typeof personKeys[number], Record<typeof goalKeys[number], ContribRow>> = {
+  type ContribRow = {
+    pro: string;
+    contra: string;
+    kinds: ReadonlyArray<'idea' | 'commitment_kept' | 'commitment_broken' | 'issue_closed'>;
+  };
+  const CONTRIB_TABLE: Record<
+    (typeof personKeys)[number],
+    Record<(typeof goalKeys)[number], ContribRow>
+  > = {
     morozov: {
-      goal_arr:    { pro: '6.500', contra: '0.500', kinds: ['idea', 'idea', 'commitment_kept'] },
-      goal_v2:     { pro: '2.000', contra: '1.000', kinds: ['idea'] },
+      goal_arr: { pro: '6.500', contra: '0.500', kinds: ['idea', 'idea', 'commitment_kept'] },
+      goal_v2: { pro: '2.000', contra: '1.000', kinds: ['idea'] },
       goal_mobile: { pro: '1.500', contra: '0.500', kinds: ['idea'] },
-      goal_nps:    { pro: '3.000', contra: '0.500', kinds: ['idea', 'commitment_kept'] },
+      goal_nps: { pro: '3.000', contra: '0.500', kinds: ['idea', 'commitment_kept'] },
     },
     volkova: {
-      goal_arr:    { pro: '4.500', contra: '0.500', kinds: ['idea', 'idea'] },
-      goal_v2:     { pro: '5.500', contra: '1.500', kinds: ['idea', 'commitment_kept'] },
+      goal_arr: { pro: '4.500', contra: '0.500', kinds: ['idea', 'idea'] },
+      goal_v2: { pro: '5.500', contra: '1.500', kinds: ['idea', 'commitment_kept'] },
       goal_mobile: { pro: '3.500', contra: '2.000', kinds: ['idea', 'commitment_broken'] },
-      goal_nps:    { pro: '4.000', contra: '0.500', kinds: ['idea', 'idea'] },
+      goal_nps: { pro: '4.000', contra: '0.500', kinds: ['idea', 'idea'] },
     },
     kozlov: {
-      goal_arr:    { pro: '0.500', contra: '0.500', kinds: ['idea'] },
-      goal_v2:     { pro: '8.000', contra: '0.500', kinds: ['issue_closed', 'issue_closed', 'commitment_kept'] },
+      goal_arr: { pro: '0.500', contra: '0.500', kinds: ['idea'] },
+      goal_v2: {
+        pro: '8.000',
+        contra: '0.500',
+        kinds: ['issue_closed', 'issue_closed', 'commitment_kept'],
+      },
       goal_mobile: { pro: '1.000', contra: '2.500', kinds: ['commitment_broken'] },
-      goal_nps:    { pro: '0.500', contra: '0.000', kinds: [] },
+      goal_nps: { pro: '0.500', contra: '0.000', kinds: [] },
     },
     sokolova: {
-      goal_arr:    { pro: '8.000', contra: '0.500', kinds: ['idea', 'commitment_kept', 'commitment_kept'] },
-      goal_v2:     { pro: '0.500', contra: '0.500', kinds: ['idea'] },
+      goal_arr: {
+        pro: '8.000',
+        contra: '0.500',
+        kinds: ['idea', 'commitment_kept', 'commitment_kept'],
+      },
+      goal_v2: { pro: '0.500', contra: '0.500', kinds: ['idea'] },
       goal_mobile: { pro: '1.000', contra: '0.500', kinds: ['idea'] },
-      goal_nps:    { pro: '3.500', contra: '1.000', kinds: ['idea', 'commitment_kept'] },
+      goal_nps: { pro: '3.500', contra: '1.000', kinds: ['idea', 'commitment_kept'] },
     },
     petrova: {
-      goal_arr:    { pro: '1.000', contra: '0.500', kinds: ['idea'] },
-      goal_v2:     { pro: '4.500', contra: '0.500', kinds: ['idea', 'issue_closed'] },
+      goal_arr: { pro: '1.000', contra: '0.500', kinds: ['idea'] },
+      goal_v2: { pro: '4.500', contra: '0.500', kinds: ['idea', 'issue_closed'] },
       goal_mobile: { pro: '5.000', contra: '0.500', kinds: ['idea', 'issue_closed'] },
-      goal_nps:    { pro: '2.000', contra: '0.500', kinds: ['idea'] },
+      goal_nps: { pro: '2.000', contra: '0.500', kinds: ['idea'] },
     },
   };
 
@@ -254,16 +272,18 @@ export const seedPulseSnapshots: SeedFn = async (ctx, ids) => {
       const base = CONTRIB_TABLE[personKey][goalKey];
       for (const offset of weekOffsets) {
         const weekStart = mondayOf(daysAgo(offset));
-        const variance = 0.8 + (offset / 21) * 0.4; // 0.8..1.2 в зависимости от недели
+        const variance = 0.8 + (offset / 21) * 0.4;
         const proNum = parseFloat(base.pro) * variance;
         const contraNum = parseFloat(base.contra) * variance;
         const netNum = proNum - contraNum;
 
-        // IdeaBlock-id под каждую запись — для transparent sourcing.
         const sourceBlockKeys = Object.keys(ids.ideaBlocks);
         const signalsRefs = base.kinds.map((kind, i) => {
-          const key = sourceBlockKeys[(personKey.length * 7 + goalKey.length * 3 + offset + i) % sourceBlockKeys.length];
-          const refId = key ? ids.ideaBlocks[key] ?? 'demo-ref' : 'demo-ref';
+          const key =
+            sourceBlockKeys[
+              (personKey.length * 7 + goalKey.length * 3 + offset + i) % sourceBlockKeys.length
+            ];
+          const refId = key ? (ids.ideaBlocks[key] ?? 'demo-ref') : 'demo-ref';
           return {
             kind,
             refId,
@@ -288,8 +308,6 @@ export const seedPulseSnapshots: SeedFn = async (ctx, ids) => {
       }
     }
   }
-
-  // ── 5. KnowledgeVelocitySnapshot × 1 ───────────────────────────────────
 
   {
     await prisma.knowledgeVelocitySnapshot.create({
@@ -320,19 +338,15 @@ export const seedPulseSnapshots: SeedFn = async (ctx, ids) => {
         snapshotAt: daysAgo(1),
       },
     });
-    // Берём id из последнего findFirst если нужно — не используется дальше.
     ids.pulseSnapshotIds.knowledgeVelocity = 'created';
   }
 
-  // ── 6. PersonEngagementSnapshot × 60 (5 × 12 weeks) ────────────────────
-
-  // Trajectory: index 0 — текущая неделя, index 11 — 11 недель назад.
-  const engagementTrajectories: Record<typeof personKeys[number], readonly number[]> = {
-    morozov:  [0.60, 0.65, 0.62, 0.68, 0.70, 0.72, 0.68, 0.75, 0.78, 0.72, 0.70, 0.68],
-    volkova:  [0.88, 0.85, 0.90, 0.92, 0.88, 0.85, 0.82, 0.80, 0.78, 0.75, 0.78, 0.80],
-    kozlov:   [0.75, 0.78, 0.82, 0.80, 0.78, 0.72, 0.68, 0.65, 0.62, 0.58, 0.55, 0.52], // выгорание
-    sokolova: [0.75, 0.80, 0.85, 0.88, 0.90, 0.88, 0.92, 0.90, 0.88, 0.85, 0.82, 0.80],
-    petrova:  [0.90, 0.88, 0.85, 0.82, 0.80, 0.78, 0.75, 0.72, 0.70, 0.68, 0.65, 0.62], // выгорание
+  const engagementTrajectories: Record<(typeof personKeys)[number], readonly number[]> = {
+    morozov: [0.6, 0.65, 0.62, 0.68, 0.7, 0.72, 0.68, 0.75, 0.78, 0.72, 0.7, 0.68],
+    volkova: [0.88, 0.85, 0.9, 0.92, 0.88, 0.85, 0.82, 0.8, 0.78, 0.75, 0.78, 0.8],
+    kozlov: [0.75, 0.78, 0.82, 0.8, 0.78, 0.72, 0.68, 0.65, 0.62, 0.58, 0.55, 0.52],
+    sokolova: [0.75, 0.8, 0.85, 0.88, 0.9, 0.88, 0.92, 0.9, 0.88, 0.85, 0.82, 0.8],
+    petrova: [0.9, 0.88, 0.85, 0.82, 0.8, 0.78, 0.75, 0.72, 0.7, 0.68, 0.65, 0.62],
   };
 
   for (const personKey of personKeys) {
@@ -359,8 +373,6 @@ export const seedPulseSnapshots: SeedFn = async (ctx, ids) => {
       ids.pulseSnapshotIds.personEngagements.push(snap.id);
     }
   }
-
-  // ── 7. ForecastSnapshot × 4 (последние 4 недели) ───────────────────────
 
   const forecastVariants = [
     {
@@ -429,8 +441,6 @@ export const seedPulseSnapshots: SeedFn = async (ctx, ids) => {
     ids.pulseSnapshotIds.forecasts.push(snap.id);
   }
 
-  // ── 8. CrossFunctionalFrictionReport × 3 ──────────────────────────────
-
   const frictions = [
     {
       processTemplateKey: 'sales_to_eng',
@@ -439,7 +449,7 @@ export const seedPulseSnapshots: SeedFn = async (ctx, ids) => {
         'Sales обещают клиентам функции до согласования с разработкой. 6 случаев за месяц — Engineering догоняет.',
       sourceBlockKeys: ['ib2', 'ib18'],
       involvedDepartmentKeys: ['sales', 'engineering'],
-      recommendedAction: 'Внедрить sync-чек до commitment\'а с клиентом.',
+      recommendedAction: "Внедрить sync-чек до commitment'а с клиентом.",
       daysAgoCreated: 7,
     },
     {

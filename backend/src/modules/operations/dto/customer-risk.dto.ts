@@ -5,19 +5,9 @@ import type {
   CustomerRiskSignalCounts,
 } from '../services/customer-risk.scoring';
 
-/**
- * TZ-1 Фаза 1 (daily-value-engine) — DTO «Радар клиентов под риском».
- *
- * Снимок риска по клиенту с drill-down (signalCounts, topBlocks, дельта).
- * Используется COO-эндпоинтом `/dashboard/operations/customer-risk` и
- * self-эндпоинтом менеджера `/me/customer-risk`.
- */
-
-/** Один блок-источник для drill-down. */
 export interface CustomerRiskTopBlockDto {
   blockId: string;
   signalType: string;
-  /** Краткая выдержка (name/criticalQuestion), усечённая. */
   excerpt: string;
 }
 
@@ -30,14 +20,11 @@ export interface CustomerRiskSnapshotDto {
   windowDays: number;
   riskScore: number;
   riskLevel: CustomerRiskLevel;
-  /** Дельта riskScore к вчерашнему снимку (+приток / -отток). */
   scoreDelta: number;
-  /** Дельта суммарного числа сигналов к вчерашнему снимку. */
   signalDelta: number;
   responsiblePersonId: string | null;
   responsiblePersonName: string | null;
   topBlocks: CustomerRiskTopBlockDto[];
-  /** Человекочитаемая подсказка (LLM или детерминированный fallback). */
   hint: string;
   snapshotAt: string;
 }
@@ -48,7 +35,6 @@ export interface CustomerRiskListDto {
   warningCount: number;
 }
 
-/** Query для `GET /dashboard/operations/customer-risk?level=&limit=`. */
 export const CustomerRiskQuerySchema = z
   .object({
     level: z.enum(['critical', 'warning', 'ok']).optional(),

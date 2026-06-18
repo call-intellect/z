@@ -1,6 +1,6 @@
 # Curation (Слой 4) — Layer 4 Curation Foundation
 
-> Sub-TZ: [`plans/tz/2026-05-21-sba-alpha-4-layer4-curation-foundation.md`](../../plans/tz/2026-05-21-sba-alpha-4-layer4-curation-foundation.md). Зонтичный: [`plans/tz/2026-05-21-second-brain-agents-umbrella.md`](../../plans/tz/2026-05-21-second-brain-agents-umbrella.md) §3.6, §5.
+> Sub-TZ: [`plans/archive/2026-05-21-sba-alpha-4-layer4-curation-foundation.md`](../../plans/archive/2026-05-21-sba-alpha-4-layer4-curation-foundation.md). Зонтичный: [`plans/archive/2026-05-21-second-brain-agents-umbrella.md`](../../plans/archive/2026-05-21-second-brain-agents-umbrella.md) §3.6, §5.
 
 ## Зачем
 
@@ -13,7 +13,9 @@ const res = await curation.triage({
   tenantId,
   resourceType: 'regulation',   // тип карточки специалиста
   resourceId,                   // id карточки в его собственной таблице
-  confidence: 0.72,             // [0..1]
+  confidence: 0.72,             // [0..1] (raw, сырое значение LLM)
+  calibratedConfidence: 0.81,   // опц. [0..1] — калиброванная через Platt scaling;
+                                // если задана, triage сравнивает с порогами ИМЕННО её
   proposedPayload: {...},       // что предлагаем канонизировать
   conflictSignal: 'none' | 'soft' | 'hard',
   conflictIds: ['cf_...'],      // опц. ConflictItem'ы, созданные через ConflictService
@@ -22,19 +24,22 @@ const res = await curation.triage({
   dataClass: 'internal',        // опц. — dataClass для нотификаций
 });
 
-// res.decision: 'auto' | 'light' | 'deep'
-// если 'auto' — res.cardVersionId создан (специалист помечает свою карточку
-// как canonical). Иначе — карточка остаётся draft до завершения triage'а;
-// после `decide`'а — CardVersion создаётся через CurationService.
+// res.decision: 'auto' | 'provisional' | 'light' | 'deep'
+// если 'auto' | 'provisional' — res.cardVersionId создан (специалист помечает
+// свою карточку как canonical). Иначе — карточка остаётся draft до завершения
+// triage'а; после `decide`'а — CardVersion создаётся через CurationService.
 ```
 
-## Три уровня triage
+## Четыре уровня triage
+
+Сравнение с порогами идёт по `effectiveConfidence` = `calibratedConfidence` (Platt scaling, clamped в [0..1]), если она задана; иначе fallback на raw `confidence`. `TriageDecision = 'auto' | 'provisional' | 'light' | 'deep'`.
 
 | Уровень | Условие | Что делается |
 |---|---|---|
-| **auto-canonical** | `confidence >= autoThreshold` И `conflictSignal='none'` И тип не в `criticalTypes` | сразу `CardVersion(version=N+1, changeReason='initial')`. Метрика `curation_auto_canonical_total`. |
-| **light review** | `autoThreshold > confidence >= deepReviewThreshold` ИЛИ `conflictSignal='soft'` | `CurationItem(level='light')` + probe через `curation.pending`. Куратор одной кнопкой approve/reject/approve_with_edits. |
-| **deep review** | `confidence < deepReviewThreshold` ИЛИ `conflictSignal='hard'` ИЛИ тип в `criticalTypes` | `CurationItem(level='deep')` + probe + дополнительная эскалация через `system.message` severity='warning'. Reasoning обязателен. |
+| **auto-canonical** | `effectiveConfidence >= autoThreshold` И `conflictSignal='none'` И тип не в `criticalTypes` | сразу `CardVersion(version=N+1, changeReason='initial', trustTier='auto')`. Метрика `curation_auto_canonical_total`. |
+| **provisional** (A1 «лестница доверия») | тип в `criticalTypes` И `conflictSignal!='hard'` И `aiVerifierEnabled` И `effectiveConfidence >= provisionalThreshold` И AI-судья (3-голосовый debate) дал accept-консенсус | `CardVersion(version=N+1, trustTier='provisional')` минуя человека. Метрика `curation_provisional_total`. Если AI-судья не дал accept / недоступен — безопасный fallback в deep review. |
+| **light review** | `autoThreshold > effectiveConfidence >= deepReviewThreshold` ИЛИ `conflictSignal='soft'` | `CurationItem(level='light')` + probe через `curation.pending`. Куратор одной кнопкой approve/reject/approve_with_edits. |
+| **deep review** | `effectiveConfidence < deepReviewThreshold` ИЛИ `conflictSignal='hard'` ИЛИ тип в `criticalTypes` (если провизорный путь не сработал) | `CurationItem(level='deep')` + probe + дополнительная эскалация через `system.message` severity='warning'. Reasoning обязателен. |
 
 Пороги настраиваются per-org через `/settings/curation`. Дефолты — из ENV (`CURATION_*`).
 

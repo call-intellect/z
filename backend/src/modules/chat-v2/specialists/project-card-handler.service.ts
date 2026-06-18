@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
@@ -12,21 +7,6 @@ import {
   CardSpecialistRegistry,
 } from '../services/card-specialist-registry.service';
 
-/**
- * Tracker Phase 3 part C (Wave 3, 2026-05-24) — обработчик
- * `CardSpecialistRegistry` для Projects трекера.
- *
- * Project НЕ имеет `sourceBlockIds`, поэтому связь с retrieval-pool'ом chat-v2
- * строится через Issue: ищем проекты, у которых хотя бы одна задача в проекте
- * имеет `sourceBlockIds`, пересекающиеся с `candidateBlockIds` retrieval'а
- * chat-v2. Это даёт сигнал «эти блоки касаются того же проекта».
- *
- * Дополнительно поддерживаем простой ILIKE-фильтр по `query` (короткие
- * именованные сущности — название проекта). На больших org'ах можем добавить
- * embedding-поиск по `Project.description`, но это vNext.
- *
- * Tenant isolation — обязательно. Контракт: не бросает, на ошибку — `[]`.
- */
 @Injectable()
 export class ProjectCardHandler implements OnModuleInit, CardSpecialistHandler {
   private readonly logger = new Logger(ProjectCardHandler.name);
@@ -57,7 +37,6 @@ export class ProjectCardHandler implements OnModuleInit, CardSpecialistHandler {
       const tenantId = args.tenantId;
       const blockIds = args.candidateBlockIds.slice(0, 200);
 
-      // 1. projectId'ы из Issue с пересекающимися sourceBlockIds.
       let projectIds: string[] = [];
       if (blockIds.length > 0) {
         const linked = await this.prisma.issue.findMany({
@@ -72,8 +51,6 @@ export class ProjectCardHandler implements OnModuleInit, CardSpecialistHandler {
         projectIds = [...new Set(linked.map((l) => l.projectId))];
       }
 
-      // 2. Доп. кандидаты по name ILIKE — для коротких запросов вида
-      //    «как дела с проектом X».
       const trimmedQuery = (args.query ?? '').trim();
       const nameMatches =
         trimmedQuery.length >= 3
@@ -112,7 +89,7 @@ export class ProjectCardHandler implements OnModuleInit, CardSpecialistHandler {
         type: 'project',
         title: `${p.identifier} · ${p.name}`,
         text: (p.description ?? '').slice(0, 600),
-        sourceBlockIds: [], // Project не хранит sourceBlockIds напрямую
+        sourceBlockIds: [],
         confidence: ProjectCardHandler.DEFAULT_CONFIDENCE,
       }));
     } catch (err) {
@@ -127,11 +104,6 @@ export class ProjectCardHandler implements OnModuleInit, CardSpecialistHandler {
     }
   }
 
-  /**
-   * Public helper: вернуть проекты по списку id (для citations / preview).
-   * Возможен повторный вызов из ChatV2RetrievalService без cross-tenant
-   * утечки — фильтр по tenantId обязателен.
-   */
   async getCitations(args: {
     tenantId: string;
     projectIds: readonly string[];
@@ -173,16 +145,7 @@ export class ProjectCardHandler implements OnModuleInit, CardSpecialistHandler {
     }
   }
 
-  /**
-   * Public helper: форматирует Project как короткую карточку для prompt'а.
-   *
-   *   "📁 PROJ · Релиз v2 (владелец u123)"
-   */
-  formatForChat(args: {
-    identifier: string;
-    name: string;
-    ownerName?: string | null;
-  }): string {
+  formatForChat(args: { identifier: string; name: string; ownerName?: string | null }): string {
     const meta = args.ownerName ? ` (владелец: ${args.ownerName})` : '';
     return `📁 ${args.identifier} · ${args.name}${meta}`;
   }

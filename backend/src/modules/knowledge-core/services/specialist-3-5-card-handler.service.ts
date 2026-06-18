@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -13,26 +8,8 @@ import {
   CardSpecialistRegistry,
 } from '../../chat-v2/services/card-specialist-registry.service';
 
-/**
- * SBA β-4 — обработчик `CardSpecialistRegistry` для специалиста 3.5
- * (Insights Radar).
- *
- * Регистрируется в `CardSpecialistRegistry` через `onModuleInit`.
- * Возвращает Insight-карточки, чьи `sourceBlockIds` пересекаются с
- * `candidateBlockIds` retrieval'а chat-v2, плюс ILIKE-поиск по `statement` /
- * `mitigationPlan`.
- *
- * Контракт `CardSpecialistHandler`:
- *   - метод НЕ должен бросать — на любую ошибку возвращаем `[]` и логируем.
- *   - tenant isolation: запрос всегда фильтруется по `tenantId`.
- *   - `confidence` — берём из самой записи; иначе fallback на 0.7.
- *   - возвращаем только status ∈ ('active', 'mitigating', 'mitigated') —
- *     archived/false_alarm в chat-v2 не показываем.
- */
 @Injectable()
-export class Specialist35CardHandler
-  implements OnModuleInit, CardSpecialistHandler
-{
+export class Specialist35CardHandler implements OnModuleInit, CardSpecialistHandler {
   private readonly logger = new Logger(Specialist35CardHandler.name);
   static readonly SPECIALIST_NAME = '3-5-insights';
   private static readonly DEFAULT_CONFIDENCE = 0.7;
@@ -114,27 +91,16 @@ export class Specialist35CardHandler
         const stmt = ins.statement ?? '';
         const mit = ins.mitigationPlan ?? '';
         const haystack = `${stmt} ${mit}`.toLowerCase();
-        const ilikeHit =
-          queryWordsLower && haystack.includes(queryWordsLower) ? 1 : 0;
-        // Bonus для severity high/critical и dynamicLabel spike/growing.
-        const sevBonus =
-          ins.severity === 'critical' ? 2 : ins.severity === 'high' ? 1 : 0;
-        const dynBonus =
-          ins.dynamicLabel === 'spike'
-            ? 2
-            : ins.dynamicLabel === 'growing'
-              ? 1
-              : 0;
+        const ilikeHit = queryWordsLower && haystack.includes(queryWordsLower) ? 1 : 0;
+        const sevBonus = ins.severity === 'critical' ? 2 : ins.severity === 'high' ? 1 : 0;
+        const dynBonus = ins.dynamicLabel === 'spike' ? 2 : ins.dynamicLabel === 'growing' ? 1 : 0;
         const score = overlap * 2 + ilikeHit + sevBonus + dynBonus;
         if (score === 0) continue;
         const baseConfidence =
           ins.confidence !== null
             ? Number(ins.confidence)
             : Specialist35CardHandler.DEFAULT_CONFIDENCE;
-        const finalConfidence = Math.min(
-          1,
-          baseConfidence + Math.min(0.1, overlap * 0.02),
-        );
+        const finalConfidence = Math.min(1, baseConfidence + Math.min(0.1, overlap * 0.02));
         const title = stmt.slice(0, 100);
         const text = mit && mit.length > 0 ? mit.slice(0, 600) : stmt.slice(0, 600);
         candidates.push({

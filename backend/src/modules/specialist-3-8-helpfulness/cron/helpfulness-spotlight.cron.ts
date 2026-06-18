@@ -4,14 +4,8 @@ import { Cron } from '@nestjs/schedule';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import {
   HELPFULNESS_SPOTLIGHT_FORMULATE_JSON_SCHEMA,
   HELPFULNESS_SPOTLIGHT_FORMULATE_SCHEMA_NAME,
@@ -20,29 +14,12 @@ import {
 } from '../prompts/helpfulness.prompts';
 import { Specialist38HelpfulnessService } from '../services/specialist-3-8-helpfulness.service';
 
-/**
- * SBA Wave 2 — HelpfulnessSpotlightCron.
- *
- * Каждый понедельник 09:00 UTC формирует кандидаты-spotlight'ы для helper'ов,
- * у которых ≥3 active trait'а (public-friendly) за прошедшую неделю.
- *
- * Этическая защита:
- *   1. Используются ТОЛЬКО первые 5 traitType (без question_unanswered /
- *      question_acknowledged_no_action).
- *   2. Spotlight создаётся в status='pending' — никакой автопубликации.
- *      Руководитель команды одобряет вручную через POST /api/v1/feed/spotlights/:id/approve.
- *   3. После approve → published в ActivityFeedItem.
- *
- * Дедупликация: один spotlight на (helperUserId, periodFrom). Не дублируем,
- * если за тот же period уже есть active (pending|approved|published).
- */
 @Injectable()
 export class HelpfulnessSpotlightCron {
   private readonly logger = new Logger(HelpfulnessSpotlightCron.name);
   private static readonly MAX_HELPERS_PER_SWEEP = 500;
   private static readonly MIN_HELP_COUNT_FOR_SPOTLIGHT = 3;
 
-  /** 5 публичных traitType — все, что НЕ в PRIVATE_TRAIT_TYPES. */
   private static readonly PUBLIC_TRAIT_TYPES = [
     'help_provided',
     'proactive_hint',
@@ -61,9 +38,6 @@ export class HelpfulnessSpotlightCron {
     private readonly cfg?: TypedConfigService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -76,7 +50,7 @@ export class HelpfulnessSpotlightCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runOnce();
-      this.logger.log(summary, 'helpfulness-spotlight.cron: проход завершён');
+      this.logger.debug(summary, 'helpfulness-spotlight.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -85,7 +59,6 @@ export class HelpfulnessSpotlightCron {
     }
   }
 
-  /** Public — для ручного запуска / тестов. */
   async runOnce(): Promise<{
     spotlightsCreated: number;
     helpersSkipped: number;
@@ -97,10 +70,9 @@ export class HelpfulnessSpotlightCron {
     const periodTo = now;
     const periodFrom = new Date(now.getTime() - 7 * 86400 * 1000);
 
-    // 1. Помощники с ≥3 public-trait за неделю.
-    const publicTraitsList = HelpfulnessSpotlightCron.PUBLIC_TRAIT_TYPES.map(
-      (t) => `'${t}'`,
-    ).join(',');
+    const publicTraitsList = HelpfulnessSpotlightCron.PUBLIC_TRAIT_TYPES.map((t) => `'${t}'`).join(
+      ',',
+    );
     const minCount = HelpfulnessSpotlightCron.MIN_HELP_COUNT_FOR_SPOTLIGHT;
     const limit = HelpfulnessSpotlightCron.MAX_HELPERS_PER_SWEEP;
     const helpers = await this.prisma.$queryRawUnsafe<
@@ -150,7 +122,6 @@ export class HelpfulnessSpotlightCron {
     periodFrom: Date;
     periodTo: Date;
   }): Promise<boolean> {
-    // Дедуп: уже есть pending|approved|published за тот же periodFrom?
     const existing = await this.prisma.helpfulnessSpotlight.findFirst({
       where: {
         tenantId: args.tenantId,
@@ -171,7 +142,6 @@ export class HelpfulnessSpotlightCron {
       return false;
     }
 
-    // Загрузить публичные trait'ы за неделю.
     const traits = await this.prisma.helpfulnessTrait.findMany({
       where: {
         tenantId: args.tenantId,
@@ -179,9 +149,7 @@ export class HelpfulnessSpotlightCron {
         status: 'active',
         lastObservedAt: { gte: args.periodFrom },
         traitType: {
-          in: [
-            ...HelpfulnessSpotlightCron.PUBLIC_TRAIT_TYPES,
-          ] as unknown as string[],
+          in: [...HelpfulnessSpotlightCron.PUBLIC_TRAIT_TYPES] as unknown as string[],
         },
       },
       select: {
@@ -195,7 +163,6 @@ export class HelpfulnessSpotlightCron {
       return false;
     }
 
-    // Резолвить имя helper'а через Person.userId.
     const person = await this.prisma.person.findFirst({
       where: {
         tenantId: args.tenantId,
@@ -206,7 +173,6 @@ export class HelpfulnessSpotlightCron {
     });
     const helperName = person?.name ?? 'Коллега';
 
-    // Сводка для LLM.
     const breakdown: Record<string, number> = {};
     const topicCounts = new Map<string, number>();
     for (const t of traits) {
@@ -221,8 +187,6 @@ export class HelpfulnessSpotlightCron {
       .slice(0, 3)
       .map(([k]) => k);
 
-    // LLM-формулировка.
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (helperName + traits) в маркеры.
     const guardOn = this.isPromptInjectionGuardEnabled();
     const rawUser = HELPFULNESS_SPOTLIGHT_FORMULATE_USER_TEMPLATE({
       helperName,

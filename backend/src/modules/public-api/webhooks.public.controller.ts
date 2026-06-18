@@ -26,10 +26,6 @@ import { SubscriptionsService } from '../webhooks-out/subscriptions.service';
 
 import { ApiAccessLogInterceptor } from './api-access-log.interceptor';
 
-/**
- * Public API: webhook subscriptions (proxy на внутренние).
- * Используется внешними интеграциями для CRUD подписок без cookie-сессии.
- */
 @ApiTags('public-webhooks')
 @ApiBearerAuth()
 @Controller('api/public/v1/webhooks/subscriptions')
@@ -63,10 +59,7 @@ export class WebhooksPublicController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequireScope('write')
   @ApiOperation({ summary: 'Удалить подписку' })
-  async delete(
-    @CurrentApiUserId() userId: string,
-    @Param('id') id: string,
-  ): Promise<void> {
+  async delete(@CurrentApiUserId() userId: string, @Param('id') id: string): Promise<void> {
     await this.svc.delete(id, userId);
   }
 }

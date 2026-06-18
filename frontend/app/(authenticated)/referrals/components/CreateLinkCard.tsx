@@ -1,34 +1,20 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import Link from "next/link";
+import { useState } from "react";
+import { Loader2 } from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { referralsApi } from '@/api/referrals.api';
-import { referralFromApi, type ReferralDomain } from '@/domain/referral';
-import { GlassCard } from '@/ui/components/dashboard/modern';
-import { Button } from '@/ui/shadcn/button';
-import { Checkbox } from '@/ui/shadcn/checkbox';
+import { ApiError } from "@/api/api-error";
+import { referralsApi } from "@/api/referrals.api";
+import { referralFromApi, type ReferralDomain } from "@/domain/referral";
+import { GlassCard } from "@/ui/components/dashboard/modern";
+import { Button } from "@/ui/shadcn/button";
+import { Checkbox } from "@/ui/shadcn/checkbox";
 
 interface Props {
   onCreated: (referral: ReferralDomain) => void;
 }
 
-/**
- * CreateLinkCard — состояние A (`referral === null`): главное действие
- * «Создать ссылку» в один клик с чекбоксом оферты.
- *
- * Правила (ТЗ §6.1, §6.2):
- *   - Кнопка disabled пока не отмечен чекбокс оферты (юридически обязательный).
- *   - Без ИНН и реквизитов — это отдельная задача «подготовиться к выводу
- *     денег», она не блокирует получение ссылки.
- *   - Чекбокс отправляет `contractAccepted: true` в backend; backend
- *     валидирует через Zod `literal(true)` и фиксирует `contractAcceptedAt = now()`.
- *
- * Текст копи — ТЗ §9 (вариант 3, финальный).
- * Редизайн B10: стеклянная обёртка `GlassCard`. Логику создания не трогаем.
- */
 export function CreateLinkCard({ onCreated }: Props) {
   const [agreed, setAgreed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -45,7 +31,7 @@ export function CreateLinkCard({ onCreated }: Props) {
       setError(
         e instanceof ApiError
           ? e.message
-          : 'Не удалось создать ссылку. Попробуй ещё раз.',
+          : "Не удалось создать ссылку. Попробуй ещё раз.",
       );
     } finally {
       setSubmitting(false);
@@ -55,10 +41,13 @@ export function CreateLinkCard({ onCreated }: Props) {
   return (
     <GlassCard className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+        <h2
+          className="text-lg font-semibold"
+          style={{ color: "var(--text-primary)" }}
+        >
           Получи ссылку прямо сейчас
         </h2>
-        <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
+        <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
           Один клик — и ты можешь начать делиться. Реквизиты для вывода
           заполнишь, когда захочешь получить деньги.
         </p>
@@ -77,7 +66,7 @@ export function CreateLinkCard({ onCreated }: Props) {
 
         <label
           className="flex cursor-pointer items-start gap-2 text-sm"
-          style={{ color: 'var(--text-secondary)' }}
+          style={{ color: "var(--text-secondary)" }}
         >
           <Checkbox
             checked={agreed}
@@ -86,7 +75,7 @@ export function CreateLinkCard({ onCreated }: Props) {
             aria-label="Согласен с офертой партнёрской программы"
           />
           <span>
-            Создаю ссылку → соглашаюсь с условиями{' '}
+            Создаю ссылку → соглашаюсь с условиями{" "}
             <Link
               href="/legal/partner-offer"
               target="_blank"

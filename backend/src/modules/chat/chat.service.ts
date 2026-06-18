@@ -16,6 +16,7 @@ import { LlmRouterService } from '../ai/services/llm-router.service';
 import { applyInputGuards } from '../ai/services/prompts/common';
 import { CardsService } from '../cards/cards.service';
 import { EmbeddingFallbackService } from '../embeddings/services/embedding-fallback.service';
+import { buildVectorLiteral } from '../embeddings/services/vector-literal.util';
 import { EntitlementService } from '../entitlements/entitlement.service';
 import {
   ChatV2Service,
@@ -901,7 +902,19 @@ export class ChatService {
     queryEmbedding: number[],
     limit: number,
   ): Promise<CrossMeetingChunk[]> {
-    const vec = `[${queryEmbedding.join(',')}]`;
+    // Класс G2 — guard pgvector-литерала query-вектора. При reject (смена модели
+    // → другая размерность; битый вектор → NaN/Infinity) деградируем на []
+    // (LLM ответит без cross-meeting контекста), не валя оператор `<=>` 500-кой.
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    const guard = buildVectorLiteral(queryEmbedding, expectedDim);
+    if (guard.literal === null) {
+      this.logger.warn(
+        { userId, reason: guard.rejectReason, actualDim: queryEmbedding.length, expectedDim },
+        'chat.searchSimilarChunks: query-вектор отвергнут guard-ом — без cross-meeting recall',
+      );
+      return [];
+    }
+    const vec = guard.literal;
     // ВАЖНО: не интерполировать `vec` напрямую (chunks)/limit (chunks/userId должны быть параметрами).
     // Используем $queryRaw с тегированной template literal. PostgreSQL не позволяет
     // bind для cast `::vector`, поэтому вектор через `$2::vector`.
@@ -959,7 +972,17 @@ export class ChatService {
     queryEmbedding: number[],
     limit: number,
   ): Promise<CrossMeetingChunk[]> {
-    const vec = `[${queryEmbedding.join(',')}]`;
+    // Класс G2 — guard pgvector-литерала query-вектора (см. searchSimilarChunks).
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    const guard = buildVectorLiteral(queryEmbedding, expectedDim);
+    if (guard.literal === null) {
+      this.logger.warn(
+        { userId, cardId, reason: guard.rejectReason, actualDim: queryEmbedding.length, expectedDim },
+        'chat.searchSimilarChunksByCard: query-вектор отвергнут guard-ом — без recall',
+      );
+      return [];
+    }
+    const vec = guard.literal;
     const rows = await this.prisma.$queryRawUnsafe<
       Array<{
         meeting_id: string;

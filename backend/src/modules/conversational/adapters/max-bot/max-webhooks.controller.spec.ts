@@ -1,19 +1,5 @@
-/**
- * Spec для MaxWebhooksController (Phase F.5).
- *
- * MAX Bot API (dev.max.ru/docs-api) НЕ передаёт header-secret. Secret валидация
- * — через path-параметр `/:tenantId/:secret`. URL сам по себе является
- * shared-secret. `setup-max-bot.ts` использует тот же формат.
- *
- * Покрытие:
- *   - 404 если Channel нет / неактивен.
- *   - 403 invalid_webhook_secret если secret в URL не совпал.
- *   - 200 happy: ingestUpdate + dispatchInbound.
- *   - 200 без 5xx если adapter / dispatch бросают.
- */
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
-
 
 import type { TypedConfigService } from '../../../../common/config';
 import type { PrismaService } from '../../../../common/prisma/prisma.service';
@@ -31,11 +17,8 @@ function build(opts: {
   readSecret?: string | null;
   adapterIngestReturns?: 'inbound' | 'null' | 'throw';
   dispatchThrows?: boolean;
-  /** Ф1: что вернёт `redis.client.set(...,'NX')`. По умолчанию `'OK'`. */
   redisSet?: 'OK' | 'null' | 'throw';
-  /** Ф1: значение флага раннего ACK. По умолчанию false (синхронный путь). */
   asyncEnabled?: boolean;
-  /** Ф1: что сделает `inboundQueue.enqueue`. По умолчанию резолвится. */
   enqueueThrows?: boolean;
 } = {}) {
   const channel =
@@ -64,7 +47,6 @@ function build(opts: {
     }),
   } as unknown as ConversationalService;
 
-  // Ф1: дедуп mid (SET NX) + ранний ACK.
   const redisSet = vi.fn(async () => {
     if (opts.redisSet === 'throw') throw new Error('redis down');
     if (opts.redisSet === 'null') return null;
@@ -111,16 +93,16 @@ describe('MaxWebhooksController', () => {
 
   it('404 если Channel отсутствует', async () => {
     const { ctrl } = build({ channel: null });
-    await expect(
-      ctrl.receive('tenant-1', SECRET, validBody as never),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(ctrl.receive('tenant-1', SECRET, validBody as never)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('404 если канал неактивен', async () => {
     const { ctrl } = build({ channel: { status: 'disabled' } });
-    await expect(
-      ctrl.receive('tenant-1', SECRET, validBody as never),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(ctrl.receive('tenant-1', SECRET, validBody as never)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('403 invalid_webhook_secret если secret в URL не совпал', async () => {
@@ -132,9 +114,9 @@ describe('MaxWebhooksController', () => {
 
   it('403 webhook_secret_unreadable если расшифровка падает', async () => {
     const { ctrl } = build({ readSecret: null });
-    await expect(
-      ctrl.receive('tenant-1', SECRET, validBody as never),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(ctrl.receive('tenant-1', SECRET, validBody as never)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('200 (НЕ 5xx) если adapter.ingestUpdate бросает', async () => {
@@ -159,7 +141,6 @@ describe('MaxWebhooksController', () => {
 });
 
 describe('MaxWebhooksController — Ф1 дедуп по mid + ранний ACK', () => {
-  // Тело с mid — на нём строится дедуп-ключ MAX.
   const bodyM1 = {
     update_type: 'message_created',
     timestamp: 1700000000,

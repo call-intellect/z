@@ -16,10 +16,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { EntitlementService } from '../entitlements/entitlement.service';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
@@ -39,17 +36,6 @@ import {
 } from './dto/chatbox-integration.dto';
 import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
 
-/**
- * REST API ChatBox-интеграции org (ТЗ 2026-06-05, Фаза 2).
- *
- *   - GET    /api/v1/chatbox/integration            — текущая (read).
- *   - POST   /api/v1/chatbox/integration/workspaces — список воркспейсов по токену (manage).
- *   - PUT    /api/v1/chatbox/integration            — создать/обновить (manage).
- *   - DELETE /api/v1/chatbox/integration            — отключить (delete).
- *
- * RBAC ресурс — `chatbox`. Фича тарифа — `feature.chatbox`. Guard'ы и формат
- * ошибок `{ ok:false, error:{ code, message } }` — по образцу `sources.controller`.
- */
 @ApiTags('chatbox')
 @Controller('api/v1/chatbox/integration')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -142,7 +128,7 @@ export class ChatboxIntegrationController {
   ): Promise<{ ok: true; jobId: string }> {
     const t = this.requireTenant(tenantId);
     await this.requireManage(user.id, t);
-    const { jobId } = await this.syncQueue.enqueue(t, body.scope);
+    const { jobId } = await this.syncQueue.enqueue(t, body.scope, body.since);
     return { ok: true, jobId };
   }
 
@@ -165,35 +151,36 @@ export class ChatboxIntegrationController {
       },
     });
     if (!integration) {
-      return { configured: false };
+      return { configured: false, running: false, runningScopes: [] };
     }
 
+    const runningScopes = await this.syncQueue.getRunningScopes(t);
     const where = { tenantId: t };
-    const [chats, messages, customers, channelClients, members, sessions] =
-      await Promise.all([
-        this.prisma.chatboxChat.count({ where }),
-        this.prisma.chatboxMessage.count({ where }),
-        this.prisma.chatboxCustomer.count({ where }),
-        this.prisma.chatboxChannelClient.count({ where }),
-        this.prisma.chatboxMember.count({ where }),
-        this.prisma.chatboxChatSession.count({ where }),
-      ]);
+    const [chats, messages, customers, channelClients, members, sessions] = await Promise.all([
+      this.prisma.chatboxChat.count({ where }),
+      this.prisma.chatboxMessage.count({ where }),
+      this.prisma.chatboxCustomer.count({ where }),
+      this.prisma.chatboxChannelClient.count({ where }),
+      this.prisma.chatboxMember.count({ where }),
+      this.prisma.chatboxChatSession.count({ where }),
+    ]);
 
     return {
       configured: true,
+      running: runningScopes.length > 0,
+      runningScopes,
+      activeSyncScope: runningScopes[0] ?? null,
       status: integration.status,
       lastError: integration.lastError,
       lastFullSyncAt: integration.lastFullSyncAt?.toISOString() ?? null,
-      lastIncrementalSyncAt:
-        integration.lastIncrementalSyncAt?.toISOString() ?? null,
+      lastIncrementalSyncAt: integration.lastIncrementalSyncAt?.toISOString() ?? null,
       counts: { chats, messages, customers, channelClients, members, sessions },
     };
   }
 
   @Get('memory-summary')
   @ApiOperation({
-    summary:
-      'Сводка «Чаты в памяти»: забрано/проанализировано/в работе/блоки/задачи',
+    summary: 'Сводка «Чаты в памяти»: забрано/проанализировано/в работе/блоки/задачи',
   })
   async memorySummary(
     @CurrentUser() user: CurrentUserPayload,
@@ -211,33 +198,25 @@ export class ChatboxIntegrationController {
     }
 
     const where = { tenantId: t };
-    const [dialogs, sessions, analyzed, inProgress, failed, blocks, tasks] =
-      await Promise.all([
-        // забрано диалогов (зеркало чатов)
-        this.prisma.chatboxChat.count({ where }),
-        // всего сессий
-        this.prisma.chatboxChatSession.count({ where }),
-        // проанализировано (мост в граф выполнен)
-        this.prisma.chatboxChatSession.count({
-          where: { tenantId: t, analysisStatus: 'done' },
-        }),
-        // в работе (ждут / анализируются)
-        this.prisma.chatboxChatSession.count({
-          where: { tenantId: t, analysisStatus: { in: ['pending', 'analyzing'] } },
-        }),
-        // упавшие
-        this.prisma.chatboxChatSession.count({
-          where: { tenantId: t, analysisStatus: 'failed' },
-        }),
-        // блоки знаний из переписки (RawEvent из chatbox → дальше граф)
-        this.prisma.rawEvent.count({
-          where: { tenantId: t, sourceType: 'chatbox' },
-        }),
-        // задачи, порождённые из переписки
-        this.prisma.task.count({
-          where: { tenantId: t, sourceType: 'chatbox' },
-        }),
-      ]);
+    const [dialogs, sessions, analyzed, inProgress, failed, blocks, tasks] = await Promise.all([
+      this.prisma.chatboxChat.count({ where }),
+      this.prisma.chatboxChatSession.count({ where }),
+      this.prisma.chatboxChatSession.count({
+        where: { tenantId: t, analysisStatus: 'done' },
+      }),
+      this.prisma.chatboxChatSession.count({
+        where: { tenantId: t, analysisStatus: { in: ['pending', 'analyzing'] } },
+      }),
+      this.prisma.chatboxChatSession.count({
+        where: { tenantId: t, analysisStatus: 'failed' },
+      }),
+      this.prisma.rawEvent.count({
+        where: { tenantId: t, sourceType: 'chatbox' },
+      }),
+      this.prisma.task.count({
+        where: { tenantId: t, sourceType: 'chatbox' },
+      }),
+    ]);
 
     return {
       configured: true,
@@ -251,8 +230,6 @@ export class ChatboxIntegrationController {
       tasks,
     };
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
@@ -289,8 +266,7 @@ export class ChatboxIntegrationController {
         ok: false,
         error: {
           code: 'forbidden',
-          message:
-            'Управлять ChatBox-интеграцией может только владелец или администратор Org',
+          message: 'Управлять ChatBox-интеграцией может только владелец или администратор Org',
         },
       });
     }

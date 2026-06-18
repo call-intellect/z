@@ -1,18 +1,3 @@
-/**
- * Unit-тесты PeopleAtRiskService (ТЗ-G Фаза 1) — БД-независимые.
- *
- * Покрытие:
- *   - чистые функции computePulseScore / computeTopReason / parseRiskFlags
- *     / computeOverduePenalty / computeMoodPenalty;
- *   - getAtRisk: ранжирование, порог риска, totalAtRisk vs limit, base=50 для
- *     null engagementScore, штраф за просрочки с cap, штраф за «красное»
- *     настроение, выбор topReason.
- *
- * Все зависимости мокаются: Prisma (person/department/dailyCheckIn.findMany),
- * RedisService (get→null, set→no-op), TypedConfigService (getDynamic→fallback),
- * CommitmentReliabilityService (computeReliability→{ overdue }).
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config';
@@ -52,29 +37,22 @@ interface CheckInSeed {
   sentiment: string | null;
 }
 
-/** Мок cfg.getDynamic → возвращает code-fallback (def), кроме явных overrides. */
-function makeCfg(
-  overrides: Partial<PeopleAtRiskThresholds> = {},
-): TypedConfigService {
+function makeCfg(overrides: Partial<PeopleAtRiskThresholds> = {}): TypedConfigService {
   const map: Record<string, number> = {
     'peopleAtRisk.overduePenaltyPerItem':
       overrides.overduePenaltyPerItem ?? DEFAULTS.overduePenaltyPerItem,
-    'peopleAtRisk.overduePenaltyCap':
-      overrides.overduePenaltyCap ?? DEFAULTS.overduePenaltyCap,
+    'peopleAtRisk.overduePenaltyCap': overrides.overduePenaltyCap ?? DEFAULTS.overduePenaltyCap,
     'peopleAtRisk.redMoodShareThreshold':
       overrides.redMoodShareThreshold ?? DEFAULTS.redMoodShareThreshold,
-    'peopleAtRisk.redMoodPenalty':
-      overrides.redMoodPenalty ?? DEFAULTS.redMoodPenalty,
-    'peopleAtRisk.riskThreshold':
-      overrides.riskThreshold ?? DEFAULTS.riskThreshold,
+    'peopleAtRisk.redMoodPenalty': overrides.redMoodPenalty ?? DEFAULTS.redMoodPenalty,
+    'peopleAtRisk.riskThreshold': overrides.riskThreshold ?? DEFAULTS.riskThreshold,
   };
   return {
     getDynamic: async <T>(key: string, _env: string | undefined, def: T): Promise<T> =>
-      (map[key] !== undefined ? (map[key] as unknown as T) : def),
+      map[key] !== undefined ? (map[key] as unknown as T) : def,
   } as unknown as TypedConfigService;
 }
 
-/** Redis-мок: get→null (промах), set→no-op. */
 function makeRedis(): RedisService {
   return {
     client: {
@@ -84,7 +62,6 @@ function makeRedis(): RedisService {
   } as unknown as RedisService;
 }
 
-/** Reliability-мок: overdue по personId (default 0). */
 function makeReliability(
   overdueByPerson: Record<string, number> = {},
 ): CommitmentReliabilityService {
@@ -95,37 +72,31 @@ function makeReliability(
   } as unknown as CommitmentReliabilityService;
 }
 
-/** Prisma-мок: person/department/dailyCheckIn.findMany по сидам. */
 function makePrisma(opts: {
   persons: PersonSeed[];
   departments?: Array<{ id: string; name: string }>;
   checkIns?: CheckInSeed[];
-  /** Резолв зрителя: userId → Person.id (для excludePersonId). */
   viewerPersonByUserId?: Record<string, string>;
 }): PrismaService {
   return {
     person: {
-      findMany: vi.fn(
-        async (arg?: { where?: { id?: { not?: string } } }) => {
-          const excludeId = arg?.where?.id?.not;
-          return opts.persons
-            .filter((p) => (excludeId ? p.id !== excludeId : true))
-            .map((p) => ({
-              id: p.id,
-              name: p.name,
-              engagementScore: p.engagementScore,
-              engagementScoreAt: p.engagementScoreAt ?? null,
-              riskFlagsJson: p.riskFlagsJson ?? null,
-              primaryDepartmentId: p.primaryDepartmentId ?? null,
-            }));
-        },
-      ),
+      findMany: vi.fn(async (arg?: { where?: { id?: { not?: string } } }) => {
+        const excludeId = arg?.where?.id?.not;
+        return opts.persons
+          .filter((p) => (excludeId ? p.id !== excludeId : true))
+          .map((p) => ({
+            id: p.id,
+            name: p.name,
+            engagementScore: p.engagementScore,
+            engagementScoreAt: p.engagementScoreAt ?? null,
+            riskFlagsJson: p.riskFlagsJson ?? null,
+            primaryDepartmentId: p.primaryDepartmentId ?? null,
+          }));
+      }),
       findFirst: vi.fn(async (arg?: { where?: { userId?: string } }) => {
         const userId = arg?.where?.userId;
         const personId =
-          userId && opts.viewerPersonByUserId
-            ? opts.viewerPersonByUserId[userId]
-            : undefined;
+          userId && opts.viewerPersonByUserId ? opts.viewerPersonByUserId[userId] : undefined;
         return personId ? { id: personId } : null;
       }),
     },
@@ -156,13 +127,11 @@ function makeService(opts: {
 
 const NOW = new Date('2026-06-05T12:00:00.000Z');
 
-// ─── Чистые функции ──────────────────────────────────────────────────────────
-
 describe('parseRiskFlags (терпимый парсинг)', () => {
   it('валидная структура → массив', () => {
-    expect(
-      parseRiskFlags({ flags: [{ type: 'sentiment_dip', severity: 'high' }] }),
-    ).toEqual([{ type: 'sentiment_dip', severity: 'high' }]);
+    expect(parseRiskFlags({ flags: [{ type: 'sentiment_dip', severity: 'high' }] })).toEqual([
+      { type: 'sentiment_dip', severity: 'high' },
+    ]);
   });
   it('null / не-объект / нет flags → []', () => {
     expect(parseRiskFlags(null)).toEqual([]);
@@ -171,9 +140,9 @@ describe('parseRiskFlags (терпимый парсинг)', () => {
     expect(parseRiskFlags({ flags: 'bad' })).toEqual([]);
   });
   it('флаг без type отбрасывается; severity по умолчанию low', () => {
-    expect(
-      parseRiskFlags({ flags: [{ severity: 'high' }, { type: 'x' }] }),
-    ).toEqual([{ type: 'x', severity: 'low' }]);
+    expect(parseRiskFlags({ flags: [{ severity: 'high' }, { type: 'x' }] })).toEqual([
+      { type: 'x', severity: 'low' },
+    ]);
   });
 });
 
@@ -204,18 +173,12 @@ describe('computePulseScore', () => {
   });
   it('штрафы вычитаются и зажимаются в 0 (0.30 − 30 − 15 = clamp(-15)→0)', () => {
     expect(
-      computePulseScore(
-        { engagementScore: 0.3, overdue14d: 10, redShare30d: 0.5 },
-        DEFAULTS,
-      ),
+      computePulseScore({ engagementScore: 0.3, overdue14d: 10, redShare30d: 0.5 }, DEFAULTS),
     ).toBe(0);
   });
   it('red-mood штраф применён (0.62 − 15 = 47)', () => {
     expect(
-      computePulseScore(
-        { engagementScore: 0.62, overdue14d: 0, redShare30d: 0.4 },
-        DEFAULTS,
-      ),
+      computePulseScore({ engagementScore: 0.62, overdue14d: 0, redShare30d: 0.4 }, DEFAULTS),
     ).toBe(47);
   });
 });
@@ -268,8 +231,6 @@ describe('computeTopReason', () => {
   });
 });
 
-// ─── getAtRisk (интеграция чистых функций + моки БД) ─────────────────────────
-
 describe('PeopleAtRiskService.getAtRisk', () => {
   it('кейс §316: 5 сотрудников, ранжирование ASC, totalAtRisk=3', async () => {
     const svc = makeService({
@@ -283,7 +244,6 @@ describe('PeopleAtRiskService.getAtRisk', () => {
     });
     const res = await svc.compute({ tenantId: 't1', limit: 3 }, NOW);
 
-    // pulseScore = [30, 55, 85, 50, 62]; под порогом <60 → 30,55,50.
     expect(res.totalAtRisk).toBe(3);
     expect(res.items.map((i) => i.pulseScore)).toEqual([30, 50, 55]);
     expect(res.items.map((i) => i.personId)).toEqual(['p1', 'p4', 'p2']);
@@ -317,7 +277,6 @@ describe('PeopleAtRiskService.getAtRisk', () => {
       overdueByPerson: { p1: 10 },
     });
     const res = await svc.compute({ tenantId: 't1', limit: 3 }, NOW);
-    // base=85, penOverdue=min(30,80)=30 → 55 < 60.
     expect(res.items).toHaveLength(1);
     expect(res.items[0]!.pulseScore).toBe(55);
     expect(res.items[0]!.topReason).toBe(
@@ -328,7 +287,6 @@ describe('PeopleAtRiskService.getAtRisk', () => {
   it('red-mood: доля красных >= порога → penMood применён', async () => {
     const svc = makeService({
       persons: [{ id: 'p1', name: 'A', engagementScore: 0.62 }],
-      // 2 из 4 отвеченных = 0.5 >= 0.34
       checkIns: [
         { personId: 'p1', sentiment: 'red' },
         { personId: 'p1', sentiment: 'red' },
@@ -337,12 +295,9 @@ describe('PeopleAtRiskService.getAtRisk', () => {
       ],
     });
     const res = await svc.compute({ tenantId: 't1', limit: 3 }, NOW);
-    // base=62, penMood=15 → 47 < 60.
     expect(res.items).toHaveLength(1);
     expect(res.items[0]!.pulseScore).toBe(47);
-    expect(res.items[0]!.topReason).toBe(
-      'Настроение проседает — стоит спросить, как дела',
-    );
+    expect(res.items[0]!.topReason).toBe('Настроение проседает — стоит спросить, как дела');
   });
 
   it('topReason: активный флаг high workload_overload приоритетнее штрафов', async () => {
@@ -378,9 +333,7 @@ describe('PeopleAtRiskService.getAtRisk', () => {
       departments: [{ id: 'd1', name: 'Маркетинг' }],
     });
     const res = await svc.compute({ tenantId: 't1', limit: 3 }, NOW);
-    expect(res.items[0]!.topReason).toBe(
-      'Вовлечённость ниже обычного — повод для короткого 1:1',
-    );
+    expect(res.items[0]!.topReason).toBe('Вовлечённость ниже обычного — повод для короткого 1:1');
     expect(res.items[0]!.department).toBe('Маркетинг');
     expect(res.items[0]!.engagementScoreAt).toBe(at.toISOString());
   });
@@ -400,8 +353,6 @@ describe('PeopleAtRiskService.getAtRisk', () => {
   });
 });
 
-// ─── excludePersonId / viewerUserId (зритель не видит сам себя) ───────────────
-
 describe('PeopleAtRiskService — исключение зрителя', () => {
   it('compute с excludePersonId фильтрует зрителя из выборки', async () => {
     const svc = makeService({
@@ -410,11 +361,7 @@ describe('PeopleAtRiskService — исключение зрителя', () => {
         { id: 'p2', name: 'B', engagementScore: 0.2 },
       ],
     });
-    const res = await svc.compute(
-      { tenantId: 't1', limit: 3, excludePersonId: 'p1' },
-      NOW,
-    );
-    // p1 исключён — остаётся только p2.
+    const res = await svc.compute({ tenantId: 't1', limit: 3, excludePersonId: 'p1' }, NOW);
     expect(res.totalAtRisk).toBe(1);
     expect(res.items.map((i) => i.personId)).toEqual(['p2']);
   });
@@ -442,7 +389,6 @@ describe('PeopleAtRiskService — исключение зрителя', () => {
         { id: 'p1', name: 'A', engagementScore: 0.1 },
         { id: 'p2', name: 'B', engagementScore: 0.2 },
       ],
-      // viewerPersonByUserId не задан → findFirst вернёт null.
     });
     const res = await svc.getAtRisk({
       tenantId: 't1',

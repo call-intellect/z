@@ -1,53 +1,43 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useMemo, useState } from 'react';
-import { Edit3, Search } from 'lucide-react';
+import Link from "next/link";
+import { useMemo, useState } from "react";
+import { Edit3, Search } from "lucide-react";
 
-import { adminEntitlementsApi } from '@/api/admin-entitlements.api';
+import { adminEntitlementsApi } from "@/api/admin-entitlements.api";
 import {
   entitlementOverviewFromApi,
   type EntitlementOverviewItemDomain,
-} from '@/domain/admin-entitlement';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Switch } from '@/ui/shadcn/switch';
+} from "@/domain/admin-entitlement";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminTabs, type AdminTabDef } from "@/ui/components/admin/AdminTabs";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Switch } from "@/ui/shadcn/switch";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 const TABS: AdminTabDef[] = [
-  { value: 'by-org', label: 'По Org' },
-  { value: 'by-feature', label: 'По фиче' },
-  { value: 'expiring', label: 'Истекающие' },
+  { value: "by-org", label: "По Org" },
+  { value: "by-feature", label: "По фиче" },
+  { value: "expiring", label: "Истекающие" },
 ];
 
-/**
- * `/admin/orgs/entitlements` — глобальный обзор overrides (Z-Admin Фаза 4).
- *
- * 3 вкладки:
- *   - «По Org» — таблица OrgEntitlement с фильтрами `hasOverrides` / `plan` +
- *     локальный поиск по orgName. Drill-in → `/admin/orgs/[id]?tab=billing`.
- *   - «По фиче» — pivot: агрегируем Plan.features + override-keys из listOverview.
- *   - «Истекающие» — заглушка («ждёт Фазу 9», у Entitlement сейчас нет
- *     expirationDate).
- */
 export function EntitlementsOverviewClient() {
   return (
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'Тенанты' },
-        { label: 'Entitlements' },
+        { label: "Тенанты" },
+        { label: "Entitlements" },
       ]}
       title="Entitlements (overrides)"
       description="Какие Org переопределяют значения тарифов. Источник: OrgEntitlement.featureOverrides / quotaOverrides."
@@ -55,9 +45,9 @@ export function EntitlementsOverviewClient() {
       <AdminTabs tabs={TABS}>
         {(active) => (
           <>
-            {active === 'by-org' && <ByOrgTab />}
-            {active === 'by-feature' && <ByFeatureTab />}
-            {active === 'expiring' && <ExpiringTab />}
+            {active === "by-org" && <ByOrgTab />}
+            {active === "by-feature" && <ByFeatureTab />}
+            {active === "expiring" && <ExpiringTab />}
           </>
         )}
       </AdminTabs>
@@ -65,15 +55,11 @@ export function EntitlementsOverviewClient() {
   );
 }
 
-// ───────────────────────────── По Org ────────────────────────────────────────
-
 function ByOrgTab() {
   const [hasOverrides, setHasOverrides] = useState(true);
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
 
-  // После collapse-to-standard (ТЗ 2026-05-31) тариф один — фильтр по plan
-  // больше не нужен.
   const entQ = useAdminQuery(
     `admin-entitlements:overview:${hasOverrides}`,
     async () => {
@@ -183,10 +169,10 @@ function EntRow({ row }: { row: EntitlementOverviewItemDomain }) {
         {row.quotaOverridesKeys}
       </td>
       <td className="px-3 py-2 max-w-[280px] text-xs text-fg-tertiary">
-        {row.notes ?? '—'}
+        {row.notes ?? "—"}
       </td>
       <td className="px-3 py-2 text-xs text-fg-tertiary">
-        {row.updatedAt.toLocaleString('ru-RU')}
+        {row.updatedAt.toLocaleString("ru-RU")}
       </td>
       <td className="px-3 py-2">
         <Button asChild variant="ghost" size="sm" title="Редактировать">
@@ -201,13 +187,6 @@ function EntRow({ row }: { row: EntitlementOverviewItemDomain }) {
   );
 }
 
-// ──────────────────────────── По фиче ───────────────────────────────────────
-
-/**
- * После collapse-to-standard (ТЗ 2026-05-31) тариф у Z один — `tier_standard`,
- * pivot «по фичам тарифов» теряет смысл (фичи зашиты в TIER_CONFIG и
- * редактируются релизом). Состав фич смотрим на карточке тарифа.
- */
 function ByFeatureTab() {
   return (
     <AdminEmpty
@@ -217,8 +196,6 @@ function ByFeatureTab() {
   );
 }
 
-// ─────────────────────────── Истекающие ─────────────────────────────────────
-
 function ExpiringTab() {
   return (
     <AdminEmpty
@@ -227,4 +204,3 @@ function ExpiringTab() {
     />
   );
 }
-

@@ -11,11 +11,11 @@ related:
   - second-brain/01_projects/knowledge-core.md
   - backend/src/modules/documents/
   - backend/src/modules/ingest/
-  - plans/tz/2026-06-08-manual-document-upload-and-import-tz.md
+  - plans/archive/2026-06-08-manual-document-upload-and-import-tz.md
 ---
 
 > **Цель разбора:** дать компании привычный ручной канал «принести уже готовые документы» (регламенты, инструкции, политики, базы знаний) в Кору — и пометить, к чему они относятся, — так, как это привыкли делать в Teamly/Notion/Confluence, но с превращением документа в граф знаний, а не просто в файл в папке.
-> **Следующий шаг → ТЗ:** `plans/tz/2026-06-08-manual-document-upload-and-import-tz.md`
+> **Следующий шаг → ТЗ:** `plans/archive/2026-06-08-manual-document-upload-and-import-tz.md`
 
 ---
 

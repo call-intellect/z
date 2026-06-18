@@ -1,26 +1,8 @@
-/**
- * Доменная модель `/admin/platform/maintenance` — бэкапы, реиндексация,
- * окна обслуживания. Фаза 8 редизайна Z-Admin.
- *
- * Контракт backend (`AdminMaintenanceController`, префикс
- * `/api/v1/admin/platform/maintenance`):
- *   GET   /              → MaintenanceStatusApiDto
- *   POST  /backup-now    → { ok: true, jobId: string } | 501
- *   POST  /reindex-now   → { ok: true, jobId: string } | 501
- *
- * Активные maintenance-окна берутся из `SystemMessage` с type='maintenance'
- * (отдельный эндпоинт `/api/v1/admin/content/system-messages`).
- */
-
-// ────────────────────────── ApiDto ──────────────────────────
-
 export type MaintenanceStatusApiDto = {
   backups: {
     lastBackupAt: string | null;
     lastBackupSizeBytes: number | null;
-    /** Если null — бэкапы не настроены или не поддерживаются на этом инстансе. */
     enabled: boolean;
-    /** Следующий запланированный бэкап. */
     nextScheduledAt: string | null;
   };
   reindex: {
@@ -28,8 +10,6 @@ export type MaintenanceStatusApiDto = {
     inProgress: boolean;
   };
 };
-
-// ────────────────────────── DomainModel ──────────────────────────
 
 export type MaintenanceStatusDomain = {
   backups: {
@@ -43,8 +23,6 @@ export type MaintenanceStatusDomain = {
     inProgress: boolean;
   };
 };
-
-// ────────────────────────── Mappers ──────────────────────────
 
 export function maintenanceStatusFromApi(
   api: MaintenanceStatusApiDto,
@@ -61,18 +39,16 @@ export function maintenanceStatusFromApi(
         : null,
     },
     reindex: {
-      lastRunAt: api.reindex.lastRunAt
-        ? new Date(api.reindex.lastRunAt)
-        : null,
+      lastRunAt: api.reindex.lastRunAt ? new Date(api.reindex.lastRunAt) : null,
       inProgress: api.reindex.inProgress,
     },
   };
 }
 
 export function formatBytes(bytes: number | null): string {
-  if (bytes === null || bytes === undefined) return '—';
-  if (!Number.isFinite(bytes) || bytes < 0) return '—';
-  const units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
+  if (bytes === null || bytes === undefined) return "—";
+  if (!Number.isFinite(bytes) || bytes < 0) return "—";
+  const units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
   let value = bytes;
   let i = 0;
   while (value >= 1024 && i < units.length - 1) {

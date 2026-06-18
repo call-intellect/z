@@ -1,19 +1,3 @@
-/**
- * Доменная модель BullMQ-очередей для `/admin/platform/workers`.
- * Фаза 8 редизайна Z-Admin.
- *
- * Контракт backend (предполагаемый, эндпоинты ещё не реализованы —
- * UI падает в AdminEmpty при 404):
- *   GET   /api/v1/admin/workers/queues               → WorkerQueueApiDto[]
- *   GET   /api/v1/admin/workers/queues/:name         → WorkerQueueDetailApiDto
- *   POST  /api/v1/admin/workers/queues/:name/pause   → { ok: true, paused: boolean }
- *   POST  /api/v1/admin/workers/queues/:name/resume  → { ok: true, paused: boolean }
- *   POST  /api/v1/admin/workers/queues/:name/retry-failed → { ok: true, retried: number }
- *   POST  /api/v1/admin/workers/queues/:name/jobs/:id/remove → { ok: true }
- */
-
-// ────────────────────────── ApiDto ──────────────────────────
-
 export type WorkerQueueApiDto = {
   name: string;
   waiting: number;
@@ -32,7 +16,6 @@ export type WorkerJobApiDto = {
   finishedOn: string | null;
   processedOn: string | null;
   timestamp: string;
-  /** Стек ошибок, опционально (для failed). */
   stacktrace?: string[] | null;
 };
 
@@ -41,11 +24,8 @@ export type WorkerQueueDetailApiDto = WorkerQueueApiDto & {
   completedJobs: WorkerJobApiDto[];
 };
 
-// ────────────────────────── DomainModel ──────────────────────────
-
 export type WorkerQueueDomain = WorkerQueueApiDto & {
-  /** Сводный статус: «error», «paused», «ok» — для индикации в таблице. */
-  status: 'error' | 'paused' | 'ok';
+  status: "error" | "paused" | "ok";
 };
 
 export type WorkerJobDomain = {
@@ -64,17 +44,13 @@ export type WorkerQueueDetailDomain = WorkerQueueDomain & {
   completedJobs: WorkerJobDomain[];
 };
 
-// ────────────────────────── Mappers ──────────────────────────
-
-function statusOf(api: WorkerQueueApiDto): WorkerQueueDomain['status'] {
-  if (api.failed > 0) return 'error';
-  if (api.paused) return 'paused';
-  return 'ok';
+function statusOf(api: WorkerQueueApiDto): WorkerQueueDomain["status"] {
+  if (api.failed > 0) return "error";
+  if (api.paused) return "paused";
+  return "ok";
 }
 
-export function workerQueueFromApi(
-  api: WorkerQueueApiDto,
-): WorkerQueueDomain {
+export function workerQueueFromApi(api: WorkerQueueApiDto): WorkerQueueDomain {
   return { ...api, status: statusOf(api) };
 }
 

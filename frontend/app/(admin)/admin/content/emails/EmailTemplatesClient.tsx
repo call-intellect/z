@@ -1,64 +1,54 @@
-'use client';
+"use client";
 
-import { useMemo, useState } from 'react';
-import { Send } from 'lucide-react';
-import { toast } from 'sonner';
+import { useMemo, useState } from "react";
+import { Send } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import { adminEmailTemplatesApi } from '@/api/admin-email-templates.api';
+import { ApiError } from "@/api/api-error";
+import { adminEmailTemplatesApi } from "@/api/admin-email-templates.api";
 import {
   EMAIL_TEMPLATE_CATEGORY_LABELS,
   emailTemplateListFromApi,
   type EmailTemplateItemDomain,
-} from '@/domain/admin-email-template';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/domain/admin-email-template";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminTabs, type AdminTabDef } from "@/ui/components/admin/AdminTabs";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
-import { EmailPreviewPanel } from './EmailPreviewPanel';
-import { EmailTemplateEditor } from './EmailTemplateEditor';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
+import { EmailPreviewPanel } from "./EmailPreviewPanel";
+import { EmailTemplateEditor } from "./EmailTemplateEditor";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 const TABS: AdminTabDef[] = [
-  { value: 'list', label: 'Список' },
-  { value: 'editor', label: 'Редактор' },
-  { value: 'preview', label: 'Превью' },
-  { value: 'test-send', label: 'Тестовое отправление' },
-  { value: 'history', label: 'История' },
+  { value: "list", label: "Список" },
+  { value: "editor", label: "Редактор" },
+  { value: "preview", label: "Превью" },
+  { value: "test-send", label: "Тестовое отправление" },
+  { value: "history", label: "История" },
 ];
 
-/**
- * `/admin/content/emails` — управление email-шаблонами (Z-Admin Фаза 5).
- *
- * Шаблоны хранятся в БД (`EmailTemplate`), `mail.templates.ts` остаётся как
- * code-fallback. Редактор — inline (textarea + key/value variables),
- * превью — рендер Handlebars-light через `renderEmailPreview` (без тяжёлого
- * runtime'а). Тестовое отправление — POST с email-адресом.
- *
- * Активный шаблон выбирается из списка и шарится между всеми вкладками.
- */
 export function EmailTemplatesClient() {
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
 
-  const q = useAdminQuery('admin-email-templates', async () => {
+  const q = useAdminQuery("admin-email-templates", async () => {
     const res = await adminEmailTemplatesApi.list();
     return emailTemplateListFromApi(res);
   });
@@ -72,7 +62,7 @@ export function EmailTemplatesClient() {
   }, [items]);
 
   const filteredItems = useMemo(() => {
-    if (categoryFilter === 'all') return items;
+    if (categoryFilter === "all") return items;
     return items.filter((it) => it.category === categoryFilter);
   }, [items, categoryFilter]);
 
@@ -85,8 +75,8 @@ export function EmailTemplatesClient() {
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'Контент' },
-        { label: 'Email-шаблоны' },
+        { label: "Контент" },
+        { label: "Email-шаблоны" },
       ]}
       title="Email-шаблоны"
       description="Тексты транзакционных и маркетинговых писем в БД. Редактор + превью + тестовое отправление. Code-fallback в backend/src/modules/mail/mail.templates.ts."
@@ -99,7 +89,7 @@ export function EmailTemplatesClient() {
       {!q.isLoading && q.data && (
         <AdminTabs tabs={TABS} defaultTab="list">
           {(active) => {
-            if (active === 'list') {
+            if (active === "list") {
               return (
                 <ListTab
                   items={filteredItems}
@@ -111,7 +101,7 @@ export function EmailTemplatesClient() {
                 />
               );
             }
-            if (active === 'editor') {
+            if (active === "editor") {
               if (!activeTemplate) {
                 return (
                   <AdminEmpty
@@ -129,7 +119,7 @@ export function EmailTemplatesClient() {
                 />
               );
             }
-            if (active === 'preview') {
+            if (active === "preview") {
               if (!activeTemplate) {
                 return (
                   <AdminEmpty
@@ -140,7 +130,7 @@ export function EmailTemplatesClient() {
               }
               return <EmailPreviewPanel template={activeTemplate} />;
             }
-            if (active === 'test-send') {
+            if (active === "test-send") {
               if (!activeTemplate) {
                 return (
                   <AdminEmpty
@@ -151,7 +141,7 @@ export function EmailTemplatesClient() {
               }
               return <TestSendTab template={activeTemplate} />;
             }
-            if (active === 'history') {
+            if (active === "history") {
               return (
                 <AdminEmpty
                   title="История не отслеживается"
@@ -166,8 +156,6 @@ export function EmailTemplatesClient() {
     </AdminSection>
   );
 }
-
-// ──────────────────────────────── ListTab ───────────────────────────────────
 
 function ListTab({
   items,
@@ -228,7 +216,7 @@ function ListTab({
               <tr
                 key={t.key}
                 className={`border-t border-border-subtle align-top hover:bg-bg-overlay ${
-                  activeKey === t.key ? 'bg-accent/5' : ''
+                  activeKey === t.key ? "bg-accent/5" : ""
                 }`}
               >
                 <td className="px-3 py-3">
@@ -236,22 +224,22 @@ function ListTab({
                     {t.key}
                   </code>
                 </td>
-                <td className="px-3 py-3 font-medium">{t.subject || '—'}</td>
+                <td className="px-3 py-3 font-medium">{t.subject || "—"}</td>
                 <td className="px-3 py-3 text-xs">
                   <Badge variant="secondary" className="text-[10px]">
                     {EMAIL_TEMPLATE_CATEGORY_LABELS[t.category] ?? t.category}
                   </Badge>
                 </td>
                 <td className="px-3 py-3 text-xs text-fg-tertiary">
-                  {t.updatedAt.toLocaleString('ru-RU')}
+                  {t.updatedAt.toLocaleString("ru-RU")}
                 </td>
                 <td className="px-3 py-3">
                   <Button
-                    variant={activeKey === t.key ? 'default' : 'outline'}
+                    variant={activeKey === t.key ? "default" : "outline"}
                     size="sm"
                     onClick={() => onPick(t.key)}
                   >
-                    {activeKey === t.key ? 'Выбран' : 'Выбрать'}
+                    {activeKey === t.key ? "Выбран" : "Выбрать"}
                   </Button>
                 </td>
               </tr>
@@ -267,10 +255,8 @@ function ListTab({
   );
 }
 
-// ────────────────────────────── TestSendTab ─────────────────────────────────
-
 function TestSendTab({ template }: { template: EmailTemplateItemDomain }) {
-  const [to, setTo] = useState('');
+  const [to, setTo] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -279,7 +265,7 @@ function TestSendTab({ template }: { template: EmailTemplateItemDomain }) {
     setError(null);
     const email = to.trim();
     if (!/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(email)) {
-      setError('Введите корректный email-адрес');
+      setError("Введите корректный email-адрес");
       return;
     }
     setSending(true);
@@ -292,7 +278,7 @@ function TestSendTab({ template }: { template: EmailTemplateItemDomain }) {
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось отправить';
+            : "Не удалось отправить";
       setError(msg);
       toast.error(msg);
     } finally {
@@ -337,7 +323,7 @@ function TestSendTab({ template }: { template: EmailTemplateItemDomain }) {
         onClick={() => void handleSend()}
       >
         <Send size={14} />
-        {sending ? 'Отправляем…' : 'Отправить себе'}
+        {sending ? "Отправляем…" : "Отправить себе"}
       </Button>
     </div>
   );

@@ -1,6 +1,3 @@
-/**
- * Unit-тесты `KnowledgeVelocityTrackerCron` (Pulse Wave 6 §6.7).
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -18,18 +15,14 @@ interface MockGap {
   }>;
 }
 
-function buildCron(opts: {
-  orgs: Array<{ id: string }>;
-  gapsByOrg?: Record<string, MockGap[]>;
-}): {
+function buildCron(opts: { orgs: Array<{ id: string }>; gapsByOrg?: Record<string, MockGap[]> }): {
   cron: KnowledgeVelocityTrackerCron;
   snapshotCreate: ReturnType<typeof vi.fn>;
 } {
   const snapshotCreate = vi.fn();
   const orgFindMany = vi.fn(async () => opts.orgs);
   const ideaBlockFindMany = vi.fn(
-    async (args: { where: { tenantId: string } }) =>
-      opts.gapsByOrg?.[args.where.tenantId] ?? [],
+    async (args: { where: { tenantId: string } }) => opts.gapsByOrg?.[args.where.tenantId] ?? [],
   );
 
   const prisma = {
@@ -47,9 +40,9 @@ function buildCron(opts: {
 describe('KnowledgeVelocityTrackerCron.runOnce', () => {
   it('happy path: считает median hours и top responders', async () => {
     const t0 = new Date('2026-05-20T10:00:00Z');
-    const t6h = new Date('2026-05-20T16:00:00Z'); // +6 часов
-    const t24h = new Date('2026-05-21T10:00:00Z'); // +24 часа
-    const t48h = new Date('2026-05-22T10:00:00Z'); // +48 часов
+    const t6h = new Date('2026-05-20T16:00:00Z');
+    const t24h = new Date('2026-05-21T10:00:00Z');
+    const t48h = new Date('2026-05-22T10:00:00Z');
 
     const gaps: MockGap[] = [
       {
@@ -87,7 +80,6 @@ describe('KnowledgeVelocityTrackerCron.runOnce', () => {
         trustedAnswer: 'Третий полноценный ответ команды',
         entities: [],
       },
-      // Не отвеченный (пустой trustedAnswer).
       {
         id: 'g4',
         createdAt: t0,
@@ -108,7 +100,6 @@ describe('KnowledgeVelocityTrackerCron.runOnce', () => {
     const data = snapshotCreate.mock.calls[0]?.[0].data;
     expect(data.resolvedGapsCount).toBe(3);
     expect(data.openGapsCount).toBe(1);
-    // Median(6, 24, 48) = 24.
     expect(Number(data.medianHoursToAnswer)).toBe(24);
     const responders = data.topRespondersJson.responders as Array<{
       personId: string;
@@ -116,7 +107,6 @@ describe('KnowledgeVelocityTrackerCron.runOnce', () => {
     }>;
     expect(responders[0]?.personId).toBe('p_anna');
     expect(responders[0]?.resolvedCount).toBe(2);
-    // Автор (role='subject') не должен попасть в responders.
     expect(responders.find((r) => r.personId === 'p_author')).toBeUndefined();
   });
 
@@ -128,7 +118,7 @@ describe('KnowledgeVelocityTrackerCron.runOnce', () => {
         id: 'g1',
         createdAt: t0,
         updatedAt: t6h,
-        trustedAnswer: 'да', // слишком короткий
+        trustedAnswer: 'да',
         entities: [],
       },
     ];

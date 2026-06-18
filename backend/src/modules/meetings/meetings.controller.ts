@@ -38,10 +38,7 @@ import {
   type CreateMeetingForUserDto,
   CreateMeetingForUserSchema,
 } from './dto/create-meeting.dto';
-import {
-  type ListMeetingsQuery,
-  ListMeetingsQuerySchema,
-} from './dto/list-meetings.dto';
+import { type ListMeetingsQuery, ListMeetingsQuerySchema } from './dto/list-meetings.dto';
 import type { MeetingForUserDto } from './dto/meeting-public.dto';
 import { SetVisibilitySchema, type SetVisibilityBody } from './dto/visibility.dto';
 import { HostControlsService } from './host-controls.service';
@@ -65,25 +62,11 @@ const UpdateParticipantSchema = z.object({
 });
 type UpdateParticipantBody = z.infer<typeof UpdateParticipantSchema>;
 
-/**
- * ТЗ 2026-06-06 knowledge-access (Фаза 7A) — установка закрытости встречи
- * постфактум. null = открыто; 'leadership' | 'council' | 'personal'.
- */
 const SetClosedGroupSchema = z.object({
   closedGroupKind: z.enum(['leadership', 'council', 'personal']).nullable(),
 });
 type SetClosedGroupBody = z.infer<typeof SetClosedGroupSchema>;
 
-/**
- * Cookie endpoints для встреч (для фронта).
- *
- *   GET /api/v1/meetings/:id/access — optional cookie. Возвращает роль,
- *      нужна странице `/m/:id` ДО того как мы решили показывать что-то юзеру.
- *   GET /api/v1/meetings           — список встреч пользователя (он — host).
- *   GET /api/v1/meetings/:id       — детали встречи (только host'у).
- *
- * Все mutating endpoints (`/join`, `/leave`, controls) — в других контроллерах.
- */
 @Controller('api/v1/meetings')
 @UseGuards(CookieAuthGuard)
 export class MeetingsController {
@@ -98,8 +81,6 @@ export class MeetingsController {
 
   @Get(':id/access')
   @OptionalAuth()
-  // Public endpoint (страница `/m/:id` его дёргает у анонимного гостя).
-  // Лимит — 30 запросов в минуту с одного IP, защита от перебора meetingId.
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async access(
     @Param('id') id: string,
@@ -137,10 +118,6 @@ export class MeetingsController {
     };
   }
 
-  /**
-   * Создание встречи под уже залогиненного юзера (Фаза 7.5).
-   * Возвращает `id` — фронт делает редирект на `/m/<id>`.
-   */
   @Post()
   @RequireSubscription()
   @HttpCode(HttpStatus.CREATED)
@@ -163,14 +140,6 @@ export class MeetingsController {
     return { id: meeting.id, url: `/m/${meeting.id}` };
   }
 
-  /**
-   * B5 (2026-06-06) — допригласить участников на joinable-встречу (host-only).
-   * Идемпотентно: повтор того же userId/personId = no-op.
-   *
-   *   - 403 `not_meeting_host` — actor не хост встречи;
-   *   - 404 `meeting_not_found` — встреча не найдена;
-   *   - 409 `meeting_not_joinable` — встреча не scheduled/active.
-   */
   @Post(':id/invitees')
   @RequireSubscription()
   @HttpCode(HttpStatus.CREATED)
@@ -182,11 +151,6 @@ export class MeetingsController {
     return this.meetings.addInvitees(id, body.invitees, user.id);
   }
 
-  // ─────────────────────────── result page (Фаза 7.6) ────────────────────
-
-  /**
-   * Полные данные result-страницы для host'а.
-   */
   @Get(':id/result')
   async getResult(
     @Param('id') id: string,
@@ -195,9 +159,6 @@ export class MeetingsController {
     return this.meetings.getResult(id, user.id);
   }
 
-  /**
-   * Краткий стейт для polling'а.
-   */
   @Get(':id/result/status')
   async getResultStatus(
     @Param('id') id: string,
@@ -206,14 +167,6 @@ export class MeetingsController {
     return this.meetings.getResultStatus(id, user.id);
   }
 
-  /**
-   * Транскрипт встречи (host-only) — массив реплик `turns` для UI.
-   *
-   * Query: `?cleaned=true|false` (default false).
-   *   - false → оригинал из БД-колонки `Transcript.turns` (источник правды).
-   *   - true  → cleaned-транскрипт. Если cleaning не готов → 404 с
-   *     `{ reason: 'pending'|'not_started'|'failed' }` (см. sub-TZ D §8.1).
-   */
   @Get(':id/transcript')
   async getTranscript(
     @Param('id') id: string,
@@ -232,16 +185,6 @@ export class MeetingsController {
     });
   }
 
-  /**
-   * Запуск очистки транскрипта от слов-паразитов (sub-TZ D §8.2).
-   *
-   * Auth: host встречи. Rate-limit: 1 в час на пользователя
-   * (cleaning редкая операция, дорогой LLM-refine).
-   * Идемпотентность по `Transcript.cleaningStatus`:
-   *   - 'ready' → 200 already_clean (без enqueue);
-   *   - 'pending' → 409 in_progress;
-   *   - 'failed' / 'not_started' / null → 202 queued.
-   */
   @Post(':id/transcript/clean')
   @RequireSubscription()
   @HttpCode(HttpStatus.ACCEPTED)
@@ -284,8 +227,6 @@ export class MeetingsController {
       })),
     };
   }
-
-  // ─────────────────────────── host controls ─────────────────────────────
 
   @Post(':id/participants/:pid/mute')
   @RequireSubscription()
@@ -346,32 +287,17 @@ export class MeetingsController {
     return { ok: true, status: result.status, failureReason: result.failureReason };
   }
 
-  // ─────────────────────────── visibility «Кому видно» (Ф4) ───────────────
-
-  /**
-   * ТЗ 2026-06-10 meeting-visibility (Ф4) — текущий режим «Кому видно» + гранты
-   * с человекочитаемыми именами (host-only).
-   *
-   *   - 403 `not_meeting_host` — actor не хост встречи;
-   *   - 404 `meeting_not_found` — встреча не найдена.
-   */
   @Get(':id/visibility')
   async getMeetingVisibility(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
-  ): Promise<{ scope: string; grants: { granteeType: string; granteeId: string; name: string }[] }> {
+  ): Promise<{
+    scope: string;
+    grants: { granteeType: string; granteeId: string; name: string }[];
+  }> {
     return this.meetings.getMeetingVisibility(id, user.id);
   }
 
-  /**
-   * ТЗ 2026-06-10 meeting-visibility (Ф4) — задать режим «Кому видно» (host-only).
-   * Для scope='custom' grants — полная замена набора получателей.
-   *
-   *   - 400 `grants_required_for_custom` — scope='custom' без получателей;
-   *   - 400 `invalid_grantee` — получатель не из этой компании;
-   *   - 403 `not_meeting_host` — actor не хост встречи;
-   *   - 404 `meeting_not_found` — встреча не найдена.
-   */
   @Patch(':id/visibility')
   @RequireSubscription()
   @HttpCode(HttpStatus.OK)
@@ -384,18 +310,6 @@ export class MeetingsController {
     return { ok: true };
   }
 
-  /**
-   * Zoom-модель (commercial-reliability pack, 2026-05-30, Фаза 3): хост
-   * переименовывает гостя встречи (`Participant.isRegisteredUser=false`)
-   * после её окончания. Зарегистрированных трогать нельзя — их имя из аккаунта.
-   *
-   * Защита: хост-only (через `meetings.renameParticipant` → `getForUser`).
-   *   - 403 `not_authorized` — actor не хост встречи;
-   *   - 403 `participant_rename_forbidden` — попытка переименовать
-   *     зарегистрированного участника;
-   *   - 404 `participant_not_found` — participant не найден или принадлежит
-   *     другой встрече (защита от path-traversal).
-   */
   @Patch(':id/participants/:pid')
   @RequireSubscription()
   @HttpCode(HttpStatus.OK)
@@ -414,14 +328,6 @@ export class MeetingsController {
     return { id: updated.id, name: updated.name };
   }
 
-  /**
-   * ТЗ 2026-06-06 knowledge-access (Фаза 7A) — пометить закрытость встречи
-   * постфактум (host-only). null = открыто; 'leadership' | 'council' |
-   * 'personal'. Читается на ingest (Ф3) для привязки блоков к закрытой группе.
-   *
-   *   - 403 `not_meeting_host` — actor не хост встречи (через `getForUser`);
-   *   - 404 `meeting_not_found` — встреча не найдена.
-   */
   @Patch(':id/closed-group')
   @RequireSubscription()
   @HttpCode(HttpStatus.OK)
@@ -438,11 +344,6 @@ export class MeetingsController {
     return { id: updated.id, closedGroupKind: updated.closedGroupKind };
   }
 
-  /**
-   * Перезапуск AI-pipeline. Только хост встречи. Rate-limit 3/час на пользователя.
-   * Перед вызовом проверяем ownership через `meetings.getForUser`, который
-   * бросит `NotAuthorizedError` если пользователь не хост.
-   */
   @Post(':id/retry-ai')
   @RequireSubscription()
   @HttpCode(HttpStatus.OK)
@@ -450,23 +351,11 @@ export class MeetingsController {
     @Param('id') meetingId: string,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<{ ok: true; stage: string }> {
-    // Host-only: retry-ai перезапускает AI-пайплайн (деньги) — строго владелец.
-    // assertMeetingHost кидает NotAuthorizedError('not_meeting_host') для не-хоста.
-    // (getForUser после ТЗ meeting-visibility Ф3 виден участникам — для гейта НЕ годится.)
     await this.meetings.assertMeetingHost(meetingId, user.id);
     const result = await this.retry.retry(meetingId, 'user', user.id);
     return { ok: true, stage: result.stage };
   }
 
-  // ─────────────────────────── regenerate (M3a) ──────────────────────────
-
-  /**
-   * Полная регенерация AI-отчёта. Optimistic-lock через `expectedRecapVersion`.
-   *
-   *   - 200 OK с новым `recapVersion` — успех (jobs поставлены в очередь).
-   *   - 409 `recap_version_mismatch` — версия успела измениться.
-   *   - 429 `quota_exceeded` — `MAX_REGENERATE_PER_MEETING_PER_DAY`.
-   */
   @Post(':id/regenerate')
   @RequireSubscription()
   @HttpCode(HttpStatus.OK)
@@ -487,10 +376,6 @@ export class MeetingsController {
     }
   }
 
-  /**
-   * Регенерация одной секции `AiResult.structuredData[sectionKey]`.
-   * Семантика статусов та же: 409 / 429.
-   */
   @Post(':id/regenerate-section')
   @RequireSubscription()
   @HttpCode(HttpStatus.OK)
@@ -505,16 +390,12 @@ export class MeetingsController {
         userId: user.id,
         expectedRecapVersion: body.expectedRecapVersion,
         sectionKey: body.sectionKey,
-        ...(body.userInstruction !== undefined
-          ? { userInstruction: body.userInstruction }
-          : {}),
+        ...(body.userInstruction !== undefined ? { userInstruction: body.userInstruction } : {}),
       });
     } catch (err) {
       throw this.mapRegenerateError(err);
     }
   }
-
-  // ─────────────────────────── soft-delete ───────────────────────────────
 
   @Delete(':id')
   @RequireSubscription()
@@ -526,18 +407,6 @@ export class MeetingsController {
     await this.meetings.softDelete(meetingId, user.id);
   }
 
-  // ─────────────────────────── helpers ────────────────────────────────────
-
-  /**
-   * Маппинг ошибок RegenerateService → HttpException.
-   * `RegenerateForbiddenError` мы не маппим тут отдельно — он наследуется
-   * не от DomainError, поэтому будет 500 в `AllExceptionsFilter`. Для UI
-   * этого достаточно, т.к. forbidden случается только если `userId` не
-   * совпадает с ownerId, а на этом эндпоинте ownership уже подтверждён
-   * (в RegenerateService.regenerateMeeting проверяет владельца — но
-   * на cookie-флоу пользователь = owner, иначе вернётся 500 что мы
-   * мапим как 403 здесь).
-   */
   private mapRegenerateError(err: unknown): HttpException {
     if (err instanceof RegenerateConflictError) {
       return new ConflictException({
@@ -559,8 +428,6 @@ export class MeetingsController {
           },
         },
         HttpStatus.TOO_MANY_REQUESTS,
-        // Retry-After ставим через response.setHeader в фильтре нельзя — он
-        // у нас не сохраняет HttpException-headers. Поэтому отдадим в payload.
         { description: `Retry-After: ${retryAfterSeconds}` },
       );
     }

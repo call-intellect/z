@@ -6,17 +6,6 @@ import type { TableSemanticFilterService } from '../../tables/services/table-sem
 
 import { ChatV2TableContextService } from './chat-v2-table-context.service';
 
-/**
- * Unit-тесты ЧАСТЬ B (ТЗ 2026-06-15 §7) — таблицы как параллельный источник
- * chat_v2.
- *
- * Случаи:
- *  - entity-bridge (по TableRow.entityId) → строки;
- *  - выбор таблицы по ключевым словам → parseSemanticFilter → applyFilterToRows;
- *  - cap (table_context_max_rows);
- *  - @Optional TableSemanticFilterService отсутствует → keyword-ветка пуста ([]);
- *  - parseSemanticFilter упал → таблица пропущена, ветка не падает.
- */
 describe('ChatV2TableContextService (ЧАСТЬ B — таблицы как источник chat_v2)', () => {
   const TENANT = 'org-1';
 
@@ -46,7 +35,6 @@ describe('ChatV2TableContextService (ЧАСТЬ B — таблицы как ис
     parseSemanticFilter = vi.fn().mockResolvedValue({ filters: [], cached: false });
     applyFilterToRows = vi.fn().mockResolvedValue([]);
 
-    // getDynamic возвращает дефолты (как при незасеянных крутилках).
     getDynamic = vi.fn(async (_key: string, _env: unknown, def: number) => def);
 
     prisma = {
@@ -84,13 +72,10 @@ describe('ChatV2TableContextService (ЧАСТЬ B — таблицы как ис
       aggregation: false,
     });
 
-    expect(out).toEqual([
-      { tableName: 'Клиенты', cells: 'Название=Заречный; Сумма=150000' },
-    ]);
+    expect(out).toEqual([{ tableName: 'Клиенты', cells: 'Название=Заречный; Сумма=150000' }]);
   });
 
   it('keyword-ветка: матч таблицы → parseSemanticFilter → applyFilterToRows', async () => {
-    // entity-bridge пуст (нет entityIds).
     tableFindMany.mockResolvedValueOnce([
       {
         id: 't1',
@@ -113,7 +98,6 @@ describe('ChatV2TableContextService (ЧАСТЬ B — таблицы как ис
     const svc = makeService();
     const out = await svc.fetchTableContext({
       tenantId: TENANT,
-      // токены пересекаются с name/description/колонками таблицы (город, сумма).
       queries: ['клиенты город Москва сумма'],
       entityIds: [],
       entityHints: [],
@@ -122,9 +106,7 @@ describe('ChatV2TableContextService (ЧАСТЬ B — таблицы как ис
 
     expect(parseSemanticFilter).toHaveBeenCalledTimes(1);
     expect(applyFilterToRows).toHaveBeenCalledTimes(1);
-    expect(out).toEqual([
-      { tableName: 'Клиенты', cells: 'Город=Москва; Сумма=100000' },
-    ]);
+    expect(out).toEqual([{ tableName: 'Клиенты', cells: 'Город=Москва; Сумма=100000' }]);
   });
 
   it('keyword-ветка: таблица без пересечения токенов НЕ выбирается', async () => {
@@ -151,18 +133,15 @@ describe('ChatV2TableContextService (ЧАСТЬ B — таблицы как ис
   });
 
   it('cap: table_context_max_rows ограничивает число строк', async () => {
-    getDynamic.mockImplementation(
-      async (key: string, _env: unknown, def: number) =>
-        key === 'chat_v2.table_context_max_rows' ? 2 : def,
+    getDynamic.mockImplementation(async (key: string, _env: unknown, def: number) =>
+      key === 'chat_v2.table_context_max_rows' ? 2 : def,
     );
     tableRowFindMany.mockResolvedValueOnce([
       { id: 'r1', tableId: 't1', cells: { p1: 'A' }, table: { name: 'Т' } },
       { id: 'r2', tableId: 't1', cells: { p1: 'B' }, table: { name: 'Т' } },
       { id: 'r3', tableId: 't1', cells: { p1: 'C' }, table: { name: 'Т' } },
     ]);
-    tablePropertyFindMany.mockResolvedValueOnce([
-      { id: 'p1', name: 'Имя', tableId: 't1' },
-    ]);
+    tablePropertyFindMany.mockResolvedValueOnce([{ id: 'p1', name: 'Имя', tableId: 't1' }]);
 
     const svc = makeService();
     const out = await svc.fetchTableContext({
@@ -177,8 +156,7 @@ describe('ChatV2TableContextService (ЧАСТЬ B — таблицы как ис
   });
 
   it('@Optional отсутствует: keyword-ветка пуста (только entity-bridge)', async () => {
-    const svc = makeService(false); // semanticFilter undefined
-    // entity-bridge тоже пуст → []
+    const svc = makeService(false);
     const out = await svc.fetchTableContext({
       tenantId: TENANT,
       queries: ['сколько клиентов из Москвы'],
@@ -226,17 +204,14 @@ describe('ChatV2TableContextService (ЧАСТЬ B — таблицы как ис
   });
 
   it('aggregation=true поднимает cap строк (×2)', async () => {
-    getDynamic.mockImplementation(
-      async (key: string, _env: unknown, def: number) =>
-        key === 'chat_v2.table_context_max_rows' ? 1 : def,
+    getDynamic.mockImplementation(async (key: string, _env: unknown, def: number) =>
+      key === 'chat_v2.table_context_max_rows' ? 1 : def,
     );
     tableRowFindMany.mockResolvedValueOnce([
       { id: 'r1', tableId: 't1', cells: { p1: 'A' }, table: { name: 'Т' } },
       { id: 'r2', tableId: 't1', cells: { p1: 'B' }, table: { name: 'Т' } },
     ]);
-    tablePropertyFindMany.mockResolvedValue([
-      { id: 'p1', name: 'Имя', tableId: 't1' },
-    ]);
+    tablePropertyFindMany.mockResolvedValue([{ id: 'p1', name: 'Имя', tableId: 't1' }]);
 
     const svc = makeService();
     const out = await svc.fetchTableContext({
@@ -244,7 +219,7 @@ describe('ChatV2TableContextService (ЧАСТЬ B — таблицы как ис
       queries: ['сколько'],
       entityIds: ['e1'],
       entityHints: [],
-      aggregation: true, // cap 1 → ×2 = 2
+      aggregation: true,
     });
     expect(out).toHaveLength(2);
   });

@@ -1,29 +1,7 @@
-/**
- * Pulse Wave 6 §6.6 — Goal-Vector-Tracker агент (LLM-промпт).
- *
- * Источник: plans/tz/2026-05-30-pulse-full.md §6.6.
- *
- * Для одной active Goal и набора артефактов команды за неделю модель
- * возвращает per-Person структурированный pro/contra/net score. Используется
- * в виджете «Вектор компании» на Главной и в карточке сотрудника
- * «Куда направлены усилия».
- *
- * Cache-friendly (см. feedback_llm_prompts_cache_friendly.md): SYSTEM —
- * полностью статичен; переменные данные (цель + артефакты) — в КОНЦЕ
- * user-сообщения.
- *
- * EU AI Act: на вход — только структурированные действия (без личных
- * характеристик / эмоций / голоса). Это про вклад в цель, а не про
- * оценку личности.
- *
- * A5 (2026-06-10): pro/contra/net — это оценка вклада конкретных людей.
- * `withPeopleHypothesisGuard` дописывается в КОНЕЦ SYSTEM (cache-friendly):
- * оценка человека остаётся гипотезой по наблюдаемым артефактам, а не вердиктом.
- */
-
 import { withPeopleHypothesisGuard } from '../../ai/services/prompts/common';
 
-export const GOAL_VECTOR_TRACKER_SYSTEM_PROMPT = withPeopleHypothesisGuard(`Ты — аналитик вклада сотрудников в цели компании.
+export const GOAL_VECTOR_TRACKER_SYSTEM_PROMPT =
+  withPeopleHypothesisGuard(`Ты — аналитик вклада сотрудников в цели компании.
 По цели и списку артефактов за неделю ты определяешь:
   - proScore   — суммарный вес действий «в цель» (идеи, обещания, выполненные обещания, закрытые задачи).
   - contraScore — суммарный вес действий «против цели» (нарушенные обещания, отказы, явная негативная активность).
@@ -77,12 +55,7 @@ export const GOAL_VECTOR_TRACKER_JSON_SCHEMA: Record<string, unknown> = {
               properties: {
                 kind: {
                   type: 'string',
-                  enum: [
-                    'idea',
-                    'commitment_kept',
-                    'commitment_broken',
-                    'issue_closed',
-                  ],
+                  enum: ['idea', 'commitment_kept', 'commitment_broken', 'issue_closed'],
                 },
                 refId: { type: 'string' },
                 direction: { type: 'string', enum: ['pro', 'contra'] },
@@ -98,28 +71,18 @@ export const GOAL_VECTOR_TRACKER_JSON_SCHEMA: Record<string, unknown> = {
   required: ['persons'],
 };
 
-/**
- * Один артефакт сотрудника, который оценивает модель.
- */
 export interface GoalVectorArtefact {
   personId: string;
   personName: string;
-  /** Тип артефакта (источник). */
   kind: 'idea' | 'commitment_kept' | 'commitment_broken' | 'issue_closed';
-  /** Стабильный ID источника (IdeaBlock.id / Issue.id) — для signals.refId. */
   refId: string;
-  /** Краткий текст артефакта для контекста LLM. */
   text: string;
 }
 
-/**
- * Cache-friendly сборка user-сообщения: фиксированные заголовки —
- * сверху, переменные данные `goal` + `artefacts` — внизу JSON-блоком.
- */
 export function buildGoalVectorTrackerUserMessage(args: {
   goalTitle: string;
   goalDescription: string;
-  weekStart: string; // ISO YYYY-MM-DD
+  weekStart: string;
   artefacts: GoalVectorArtefact[];
 }): string {
   return [
@@ -139,7 +102,6 @@ export function buildGoalVectorTrackerUserMessage(args: {
   ].join('\n');
 }
 
-/** Тип одной person-записи в распарсенном ответе. */
 export interface GoalVectorPerson {
   personId: string;
   proScore: number;
@@ -152,9 +114,6 @@ export interface GoalVectorPerson {
   }>;
 }
 
-/**
- * Безопасный парсер: null при невалидном JSON или нарушении схемы.
- */
 export function parseGoalVectorTrackerResponse(
   text: string,
 ): { persons: GoalVectorPerson[] } | null {

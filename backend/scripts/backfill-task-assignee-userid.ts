@@ -1,46 +1,3 @@
-/**
- * One-off backfill — заполнить `Task.assigneeUserId` для исторических задач.
- *
- * Контекст:
- *   В коммите d1790cb (feat(ai)) внедрена цепочка резолва assignee через
- *   `TaskAssigneeResolverService`. Новые задачи получают `assigneeUserId`
- *   автоматически. Все задачи, созданные ДО этого коммита, имеют
- *   `assigneeUserId = null`, хотя `assigneeRaw` зачастую однозначно
- *   совпадает с одним из участников встречи (`Participant.name` + `User.id`).
- *
- *   Этот скрипт прогоняет резолвер по существующим задачам, чтобы фильтр
- *   «мои задачи» начал работать на исторических данных.
- *
- * Логика:
- *   1. Курсор-пагинация по `Task` где `assigneeUserId IS NULL` и
- *      `assigneeRaw IS NOT NULL`, batch 100 задач, orderBy id asc.
- *   2. В рамках батча группируем задачи по `meetingId` и для каждой встречи
- *      один раз грузим participants через `ParticipantContextService`.
- *   3. Каждую задачу прогоняем через `TaskAssigneeResolverService.resolve(...)`.
- *      Если резолвер вернул не-null `assigneeUserId` — обновляем задачу.
- *   4. Не трогаем `assigneeRaw`, `status` и прочие поля — только
- *      `assigneeUserId`.
- *
- * Идемпотентность:
- *   Фильтр `assigneeUserId IS NULL` гарантирует, что повторный запуск
- *   пропустит уже обработанные задачи. Резолвер не имеет побочных эффектов
- *   кроме логов/метрик.
- *
- * Запуск:
- *   bun run scripts/backfill-task-assignee-userid.ts --dry-run   — только подсчёт
- *   bun run scripts/backfill-task-assignee-userid.ts             — реальный backfill
- *
- * Метрики (печатаются в финальный отчёт):
- *   - processed                 — всего обработано задач
- *   - matched_exactly_one       — резолвер вернул userId → задача обновлена
- *   - ambiguous_duplicate_name  — ≥2 участника с тем же именем (raw оставлен)
- *   - no_match                  — имя не найдено в participants встречи
- *   - participants_empty        — у встречи нет participants (deleted/legacy)
- *
- * НЕ ЗАПУСКАТЬ НА ПРОДЕ без согласования. Скрипт безопасен (только
- * заполняет null → userId), но perf-влияние не измерено для больших БД.
- */
-
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from '../src/app.module';
@@ -95,9 +52,6 @@ async function main(args: RunArgs): Promise<void> {
       `=== backfill-task-assignee-userid START (dryRun=${args.dryRun}, batchSize=${BATCH_SIZE}) ===`,
     );
 
-    // Кеш participants по meetingId — внутри одного запуска повторно не
-    // грузим (одна встреча может «всплыть» в нескольких батчах при больших
-    // объёмах задач).
     const participantsCache = new Map<string, AiParticipantContext[]>();
 
     let cursorId: string | undefined = undefined;
@@ -122,8 +76,6 @@ async function main(args: RunArgs): Promise<void> {
       });
       if (batch.length === 0) break;
 
-      // Группируем батч по meetingId, чтобы загрузить participants
-      // ровно по одному разу на каждую встречу в батче.
       const meetingIdsInBatch = new Set(batch.map((t) => t.meetingId));
       for (const meetingId of meetingIdsInBatch) {
         if (participantsCache.has(meetingId)) continue;
@@ -146,8 +98,6 @@ async function main(args: RunArgs): Promise<void> {
           continue;
         }
 
-        // Резолвер ожидает не-null assigneeRaw — фильтр выше это гарантирует,
-        // но TS не выводит non-null из where-clause. Подстрахуемся.
         const assigneeRaw = task.assigneeRaw;
         if (!assigneeRaw || assigneeRaw.trim().length === 0) {
           stats.noMatch++;
@@ -161,8 +111,6 @@ async function main(args: RunArgs): Promise<void> {
         );
 
         if (!resolved) {
-          // Никогда не должно произойти (resolve возвращает массив того же
-          // размера, что и input), но защитимся.
           stats.noMatch++;
           continue;
         }
@@ -188,8 +136,6 @@ async function main(args: RunArgs): Promise<void> {
             reason: 'duplicate_name',
           });
         } else {
-          // Имя не нашлось в participants — нормальный кейс (гость,
-          // упомянут в речи, роль типа «маркетинг»).
           stats.noMatch++;
         }
 

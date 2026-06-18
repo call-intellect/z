@@ -14,20 +14,6 @@ interface IdeaStatusChangedEvent {
   changedByUserId?: string;
 }
 
-/**
- * Goals OKR v2 (Фаза 5, мост к гипотезам) — GoalsCheckpointProbeHandler.
- *
- * Слушает `idea.status_changed` (эмитит Specialist36Service.changeStatus).
- * Когда гипотеза (`Idea`), привязанная к цели (`Idea.goalId`), переходит в
- * `shipped` — специалист целей ПРЕДЛАГАЕТ через probe обновить checkpoint
- * ключевых результатов этой цели. Это **outcome** (фактический результат), а
- * не output — поэтому НЕ авто-запись в KR: только предложение человеку
- * (owner цели + owner/admin Org), которое он подтверждает руками.
- *
- * Специалист целей по-прежнему не создаёт идеи/спринты — только подсказывает.
- *
- * Контракт: best-effort. Не бросает наружу (вызов в @OnEvent) — лог и выход.
- */
 @Injectable()
 export class GoalsCheckpointProbeHandler {
   private readonly logger = new Logger(GoalsCheckpointProbeHandler.name);
@@ -54,7 +40,6 @@ export class GoalsCheckpointProbeHandler {
         where: { id: event.ideaId, tenantId: event.tenantId },
         select: { id: true, statement: true, goalId: true },
       });
-      // Идея не привязана к цели — нечего предлагать.
       if (!idea || !idea.goalId) return;
 
       const goal = await this.prisma.goal.findFirst({
@@ -85,9 +70,7 @@ export class GoalsCheckpointProbeHandler {
 
       const krLine =
         goal.keyResults.length > 0
-          ? ` Ключевые результаты: ${goal.keyResults
-              .map((kr) => kr.name)
-              .join('; ')}.`
+          ? ` Ключевые результаты: ${goal.keyResults.map((kr) => kr.name).join('; ')}.`
           : '';
       const message =
         `Гипотеза «${idea.statement.slice(0, 100)}» завершена (отгружена). ` +
@@ -95,7 +78,6 @@ export class GoalsCheckpointProbeHandler {
         `ключевых результатов этой цели?${krLine}`;
 
       if (!this.probeService) {
-        // Probe-слой недоступен (например, worker-процесс) — no-op.
         return;
       }
 
@@ -109,8 +91,6 @@ export class GoalsCheckpointProbeHandler {
             contextCardId: goal.id,
             contextCardKind: 'goal',
             actionUrl: `/goals/${goal.id}`,
-            // Семантический контекст для LLM probe-formulate (НЕ показывается
-            // пользователю как кнопки — probe без inline-кнопок). НЕ авто-запись.
             suggestedActions: ['Обновить ключевые результаты цели'],
           },
           recipientCandidates: recipients,
@@ -141,9 +121,6 @@ export class GoalsCheckpointProbeHandler {
     }
   }
 
-  /**
-   * Получатели предложения: owner цели (`Goal.createdById`) + owner/admin Org.
-   */
   private async resolveRecipients(args: {
     tenantId: string;
     goalCreatedById: string;

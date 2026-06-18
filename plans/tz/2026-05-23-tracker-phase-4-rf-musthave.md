@@ -4,7 +4,7 @@ status: partial
 feature: Таск-трекер Z/Кора — Фаза 4 — РФ must-have (Telegram-бот для задач, email-to-task, 10-15 шаблонов команд, локализация)
 date: 2026-05-23
 phase: 4 / 6
-parent: plans/tz/2026-05-23-tracker-phase-1-models-api.md
+parent: plans/archive/2026-05-23-tracker-phase-1-models-api.md
 ---
 
 # Фаза 4 трекера: РФ must-have

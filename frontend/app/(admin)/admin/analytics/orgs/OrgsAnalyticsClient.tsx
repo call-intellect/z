@@ -1,53 +1,47 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useState } from 'react';
-import { ExternalLink, Search } from 'lucide-react';
+import Link from "next/link";
+import { useState } from "react";
+import { ExternalLink, Search } from "lucide-react";
 
-import { adminOrgsApi } from '@/api/admin-orgs.api';
+import { adminOrgsApi } from "@/api/admin-orgs.api";
 import {
   ORG_TIER_LABELS,
   adminOrgListFromApi,
   type AdminOrgRowDomain,
-} from '@/domain/admin-org';
+} from "@/domain/admin-org";
 import {
   ADMIN_PERIOD_LABELS,
   formatUsd,
   type AdminPeriod,
-} from '@/domain/admin-usage';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminCsvDownloadButton } from '@/ui/components/admin/AdminCsvDownloadButton';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
+} from "@/domain/admin-usage";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminCsvDownloadButton } from "@/ui/components/admin/AdminCsvDownloadButton";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
 
-const PERIODS: AdminPeriod[] = ['day', 'week', 'month'];
+const PERIODS: AdminPeriod[] = ["day", "week", "month"];
 
-/**
- * Read-only представление списка Org для аналитики.
- *
- * Полная редактируемая версия (с заморозкой/удалением/изменением тарифа) живёт
- * на `/admin/orgs`. Здесь — только просмотр и быстрые ссылки на drill-down.
- */
 export function OrgsAnalyticsClient() {
-  const [period, setPeriod] = useState<AdminPeriod>('month');
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  const [period, setPeriod] = useState<AdminPeriod>("month");
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
 
   const q = useAdminQuery(
     `admin-analytics-orgs:${period}:${search}`,
@@ -68,7 +62,7 @@ export function OrgsAnalyticsClient() {
       name: o.name,
       slug: o.slug,
       tier: ORG_TIER_LABELS[o.tier],
-      ownerEmail: o.ownerEmail ?? '',
+      ownerEmail: o.ownerEmail ?? "",
       membersCount: o.membersCount,
       meetingsCount: o.meetingsCount,
       costUsd: o.costUsdInPeriod.toFixed(4),
@@ -79,8 +73,8 @@ export function OrgsAnalyticsClient() {
     <AdminSection
       title="Org и пользователи"
       description={
-        'Read-only обзор организаций и их расхода LLM. Управление (заморозка, ' +
-        'изменение тарифа, удаление) — в разделе «Тенанты → Список Org».'
+        "Read-only обзор организаций и их расхода LLM. Управление (заморозка, " +
+        "изменение тарифа, удаление) — в разделе «Тенанты → Список Org»."
       }
       actions={
         <>
@@ -102,13 +96,13 @@ export function OrgsAnalyticsClient() {
           <AdminCsvDownloadButton
             rows={csvRows}
             columns={[
-              { key: 'name', label: 'Org' },
-              { key: 'slug', label: 'Slug' },
-              { key: 'tier', label: 'Тариф' },
-              { key: 'ownerEmail', label: 'Владелец' },
-              { key: 'membersCount', label: 'Участников' },
-              { key: 'meetingsCount', label: 'Встреч' },
-              { key: 'costUsd', label: 'Расход, USD' },
+              { key: "name", label: "Org" },
+              { key: "slug", label: "Slug" },
+              { key: "tier", label: "Тариф" },
+              { key: "ownerEmail", label: "Владелец" },
+              { key: "membersCount", label: "Участников" },
+              { key: "meetingsCount", label: "Встреч" },
+              { key: "costUsd", label: "Расход, USD" },
             ]}
             filename={`admin-orgs-${period}.csv`}
           />
@@ -189,7 +183,7 @@ function OrgsReadonlyTable({ items }: { items: AdminOrgRowDomain[] }) {
                 </Badge>
               </td>
               <td className="px-3 py-2 text-xs text-fg-tertiary">
-                {o.ownerEmail ?? '—'}
+                {o.ownerEmail ?? "—"}
               </td>
               <td className="px-3 py-2 text-right tabular-nums">
                 {o.membersCount}

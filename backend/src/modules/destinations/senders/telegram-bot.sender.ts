@@ -7,25 +7,6 @@ import type { TelegramConfig } from '../dto/destination.dto';
 
 import type { DestinationSender, SenderMessage } from './sender.types';
 
-/**
- * `destination.type = telegram_bot` — отправка уведомления в произвольный
- * чат через токен бота, заведённый пользователем-владельцем destination'а.
- *
- * 2026-05-26 (ТЗ plans/tz/2026-05-26-telegram-via-crossmark-proxy.md §2):
- * транспорт идёт через единый `TelegramApiClient` — он сам решает,
- * пускать через прокси `telegram.crossmark.ru` или прямой `api.telegram.org`
- * (на основании `TELEGRAM_PROXY_ENABLED`). Это убирает дублирование
- * `fetch('https://api.telegram.org/...')` в трёх местах и даёт единые
- * метрики (`telegram_proxy_request_total`).
- *
- * Замечание: прокси crossmark пропускает только зарегистрированные в нём
- * боты. Если у клиента-владельца destination'а свой бот, не известный
- * прокси — outbound вернёт 401/403. В таком случае оператор должен либо
- * зарегистрировать токен в прокси, либо временно выставить
- * `TELEGRAM_PROXY_ENABLED=false` (см. ТЗ §13 «rollback»). Это известная
- * деградация на старте; в нашем основном flow (kora_bot) она не
- * проявляется.
- */
 @Injectable()
 export class TelegramBotSender implements DestinationSender {
   readonly type = 'telegram_bot';

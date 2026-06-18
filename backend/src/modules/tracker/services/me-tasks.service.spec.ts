@@ -8,16 +8,6 @@ import type { IssuesService } from './issues.service';
 import { MeTasksService } from './me-tasks.service';
 import type { ProjectsService } from './projects.service';
 
-/**
- * ТЗ#3 (2026-06-15) — unit-тесты self-постановки задачи (POST /api/v1/me/tasks).
- *
- * Изолированно (мок Prisma / IssuesService / ProjectsService):
- *  (а) создаёт задачу себе → исполнитель = userId, проект = «Входящие»,
- *      ответ { id, title, projectId, status };
- *  (б) inbox-проект недоступен (Org без владельца) → 400 inbox_project_unavailable;
- *  (в) status резолвится из категории состояния (stateId → IssueState.category).
- */
-
 const TENANT = 'org_1';
 const USER = 'user_1';
 const INBOX = 'proj_inbox';
@@ -98,18 +88,10 @@ describe('MeTasksService.createSelfTask', () => {
       USER,
     );
 
-    // Резолв inbox-проекта произошёл с правильным tenant.
     expect(ensureInbox).toHaveBeenCalledWith(TENANT);
 
-    // IssuesService.create вызван с проектом «Входящие», assignee = сам,
-    // priority='none', externalSource='assistant'.
     expect(issuesCreate).toHaveBeenCalledTimes(1);
-    const call = issuesCreate.mock.calls[0] as [
-      string,
-      Record<string, unknown>,
-      string,
-      string,
-    ];
+    const call = issuesCreate.mock.calls[0] as [string, Record<string, unknown>, string, string];
     const [projectIdArg, dtoArg, tenantArg, userArg] = call;
     expect(projectIdArg).toBe(INBOX);
     expect(tenantArg).toBe(TENANT);
@@ -120,7 +102,6 @@ describe('MeTasksService.createSelfTask', () => {
     expect(dtoArg.priority).toBe('none');
     expect(dtoArg.externalSource).toBe('assistant');
 
-    // Ответ — узкий контракт { id, title, projectId, status }.
     expect(res).toEqual({
       id: 'issue_1',
       title: 'Задача',
@@ -132,18 +113,14 @@ describe('MeTasksService.createSelfTask', () => {
   it('(б) inbox-проект недоступен → BadRequest inbox_project_unavailable', async () => {
     ensureInbox.mockResolvedValueOnce(null);
 
-    await expect(
-      service.createSelfTask({ title: 'Что-то' }, TENANT, USER),
-    ).rejects.toMatchObject({
+    await expect(service.createSelfTask({ title: 'Что-то' }, TENANT, USER)).rejects.toMatchObject({
       response: { error: { code: 'inbox_project_unavailable' } },
     });
     expect(issuesCreate).not.toHaveBeenCalled();
   });
 
   it('(в) status = категория состояния созданной задачи', async () => {
-    issuesCreate.mockResolvedValueOnce(
-      makeIssueResponse({ stateId: 'state_started' }),
-    );
+    issuesCreate.mockResolvedValueOnce(makeIssueResponse({ stateId: 'state_started' }));
     issueStateFindUnique.mockResolvedValueOnce({ category: 'started' });
 
     const res = await service.createSelfTask({ title: 'X' }, TENANT, USER);
@@ -166,8 +143,8 @@ describe('MeTasksService.createSelfTask', () => {
 
   it('защита BadRequestException — корректный тип ошибки', async () => {
     ensureInbox.mockResolvedValueOnce(null);
-    await expect(
-      service.createSelfTask({ title: 'X' }, TENANT, USER),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.createSelfTask({ title: 'X' }, TENANT, USER)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 });

@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { type Experiment, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -20,25 +15,11 @@ import type {
   UpdateExperimentBody,
 } from '../dto/experiments.dto';
 
-/**
- * ExperimentsService (SBA β-6) — REST API над Experiment-карточками.
- *
- * Pипная master-detail: list / getById / create / update / delete (soft) /
- * transition (явная смена status'а через UI).
- *
- * Все user-facing строки — на русском. RBAC и tenant filter — в контроллере.
- *
- * NB: канонический pipeline ingest идёт через `experiment-detector.worker` +
- * `Specialist39ExperimentsService`. REST используется для ручного создания
- * и редактирования владельцем / администратором (corner-case'ы и kuration).
- */
 @Injectable()
 export class ExperimentsService {
   private readonly logger = new Logger(ExperimentsService.name);
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
-
-  // ───────────────────────────── list ─────────────────────────────
 
   async list(args: {
     tenantId: string;
@@ -74,20 +55,13 @@ export class ExperimentsService {
     };
   }
 
-  // ───────────────────────────── get by id ─────────────────────────────
-
-  async getById(args: {
-    tenantId: string;
-    id: string;
-  }): Promise<ExperimentDetailDto> {
+  async getById(args: { tenantId: string; id: string }): Promise<ExperimentDetailDto> {
     const exp = await this.prisma.experiment.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
     });
     if (!exp) this.notFound(args.id);
     return this.toDetail(exp);
   }
-
-  // ───────────────────────────── create ─────────────────────────────
 
   async create(args: {
     tenantId: string;
@@ -96,11 +70,8 @@ export class ExperimentsService {
     const now = new Date();
     const status: ExperimentStatusDto = args.body.status ?? 'hypothesis';
     const startedAt =
-      status === 'running' || status === 'completed' || status === 'dropped'
-        ? now
-        : null;
-    const completedAt =
-      status === 'completed' || status === 'dropped' ? now : null;
+      status === 'running' || status === 'completed' || status === 'dropped' ? now : null;
+    const completedAt = status === 'completed' || status === 'dropped' ? now : null;
 
     const created = await this.prisma.experiment.create({
       data: {
@@ -113,14 +84,12 @@ export class ExperimentsService {
         startedAt,
         completedAt,
         lastConfirmedAt: now,
-        confidence: new Prisma.Decimal(0.9), // manual-create → высокий
+        confidence: new Prisma.Decimal(0.9),
       },
     });
     await this.writeVersion(created, 'manual_create');
     return this.toDetail(created);
   }
-
-  // ───────────────────────────── update ─────────────────────────────
 
   async update(args: {
     tenantId: string;
@@ -152,9 +121,7 @@ export class ExperimentsService {
         sourceBlockId: l.sourceBlockId ?? null,
       }));
       data.lessonsJson =
-        sanitized.length > 0
-          ? (sanitized as unknown as Prisma.InputJsonValue)
-          : Prisma.JsonNull;
+        sanitized.length > 0 ? (sanitized as unknown as Prisma.InputJsonValue) : Prisma.JsonNull;
     }
 
     const updated = await this.prisma.experiment.update({
@@ -164,8 +131,6 @@ export class ExperimentsService {
     await this.writeVersion(updated, 'manual_update');
     return this.toDetail(updated);
   }
-
-  // ───────────────────────────── transition ─────────────────────────────
 
   async transition(args: {
     tenantId: string;
@@ -184,42 +149,27 @@ export class ExperimentsService {
       lastConfirmedAt: now,
     };
     if (
-      (status === 'running' ||
-        status === 'completed' ||
-        status === 'dropped') &&
+      (status === 'running' || status === 'completed' || status === 'dropped') &&
       !existing.startedAt
     ) {
       data.startedAt = now;
     }
-    if (
-      (status === 'completed' || status === 'dropped') &&
-      !existing.completedAt
-    ) {
+    if ((status === 'completed' || status === 'dropped') && !existing.completedAt) {
       data.completedAt = now;
     }
     const updated = await this.prisma.experiment.update({
       where: { id: existing.id },
       data,
     });
-    await this.writeVersion(
-      updated,
-      `manual_transition_to_${args.body.to}`,
-    );
+    await this.writeVersion(updated, `manual_transition_to_${args.body.to}`);
     return this.toDetail(updated);
   }
 
-  // ───────────────────────────── delete (soft) ─────────────────────────────
-
-  async softDelete(args: {
-    tenantId: string;
-    id: string;
-  }): Promise<{ ok: true }> {
+  async softDelete(args: { tenantId: string; id: string }): Promise<{ ok: true }> {
     const existing = await this.prisma.experiment.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
     });
     if (!existing) this.notFound(args.id);
-    // Soft-delete: переводим в `dropped` и фиксируем completedAt. Hard delete
-    // вынесен в admin-операции (нет UI-кнопки на пользовательской стороне).
     await this.prisma.experiment.update({
       where: { id: existing.id },
       data: {
@@ -231,12 +181,7 @@ export class ExperimentsService {
     return { ok: true };
   }
 
-  // ───────────────────────────── version snapshots ─────────────────────────────
-
-  private async writeVersion(
-    exp: Experiment,
-    changeReason: string,
-  ): Promise<void> {
+  private async writeVersion(exp: Experiment, changeReason: string): Promise<void> {
     try {
       const last = await this.prisma.experimentVersion.findFirst({
         where: { experimentId: exp.id },
@@ -284,8 +229,6 @@ export class ExperimentsService {
     } as Prisma.InputJsonValue;
   }
 
-  // ───────────────────────────── mappers ─────────────────────────────
-
   private toListItem(exp: Experiment): ExperimentListItemDto {
     const lessons = this.parseLessons(exp.lessonsJson);
     return {
@@ -314,9 +257,7 @@ export class ExperimentsService {
       personSubjectIds: exp.personSubjectIds,
       entityId: exp.entityId,
       currentVersionId: exp.currentVersionId,
-      lastConfirmedAt: exp.lastConfirmedAt
-        ? exp.lastConfirmedAt.toISOString()
-        : null,
+      lastConfirmedAt: exp.lastConfirmedAt ? exp.lastConfirmedAt.toISOString() : null,
     };
   }
 
@@ -338,8 +279,7 @@ export class ExperimentsService {
       result.push({
         text: obj.text,
         type,
-        sourceBlockId:
-          typeof obj.sourceBlockId === 'string' ? obj.sourceBlockId : null,
+        sourceBlockId: typeof obj.sourceBlockId === 'string' ? obj.sourceBlockId : null,
       });
     }
     return result;

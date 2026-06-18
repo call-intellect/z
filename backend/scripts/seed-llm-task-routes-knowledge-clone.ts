@@ -1,35 +1,3 @@
-/**
- * SBA β-2 — Seed маршрутов LLM для 2 новых taskType'ов Specialist 3.2
- * (Knowledge Clone):
- *   - knowledge-clone-extract — извлечение черновика knowledgeProfile из
- *     набора блоков сотрудника. JSON Schema strict (категории + опыт).
- *   - knowledge-clone-merge   — объединение старого профиля и нового
- *     черновика, с decay устаревших категорий. Та же сложность, что и extract.
- *
- * Оба taskType маршрутизируются по `maxDataClass >= internal` (профили
- * сотрудников содержат внутреннюю инфу о компетенциях; public-only провайдеры
- * не должны их видеть). Цепочка совпадает с extract из α-7.
- *
- * Источник цепочек: `docs/reference/llm-models-playbook.md` §2.1 + verified-
- * карта `second-brain/01_projects/llm-providers-verified.md` (smoke 2026-05-21).
- *
- * Дефолтная тройная цепочка:
- *   primary   — deepseek-v4-flash         (быстрый, дешёвый, JSON Schema strict)
- *   secondary — openai-via-proxy gpt-5.4-mini (резерв при недоступности DeepSeek)
- *   tertiary  — ollama qwen3:30b           (локальный fallback, internal-only)
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-knowledge-clone.ts
- *   bun run scripts/seed-llm-task-routes-knowledge-clone.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Записи с `editedByAdmin=true` НЕ перезаписываются (даже с
- *     `--update-existing`).
- *   - Без флага — пропускаем все существующие записи (insert only).
- *   - С `--update-existing` — обновляем model/priority/isActive (но НЕ
- *     editedByAdmin).
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -50,8 +18,7 @@ interface TaskRouteSeed {
 const SEEDS: TaskRouteSeed[] = [
   {
     taskType: 'knowledge-clone-extract',
-    playbookSection:
-      '§2.1 block-distill (similar complexity, structured JSON) + β-2 sub-TZ §10',
+    playbookSection: '§2.1 block-distill (similar complexity, structured JSON) + β-2 sub-TZ §10',
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
@@ -118,17 +85,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -153,9 +116,7 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 

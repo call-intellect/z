@@ -7,16 +7,7 @@ import type { ActivityRecorderService } from './activity-recorder.service';
 import type { IssuesService } from './issues.service';
 import { RelationsService } from './relations.service';
 
-/**
- * Mocked Prisma + IssuesService + ActivityRecorder. Покрываем:
- *   1. self-relation → BadRequestException.
- *   2. blocks → создаёт ОБЕ записи (direct + blocked_by) внутри одной транзакции.
- *   3. relates_to → создаёт ОБЕ записи с одинаковым type (relates_to ↔ relates_to).
- *   4. duplicates → создаёт duplicates + duplicated_by.
- */
-
 interface MockSetup {
-  /** Что вернёт `issueRelation.upsert` (direct call). */
   upsertResult?: {
     id: string;
     sourceIssueId: string;
@@ -105,7 +96,6 @@ describe('RelationsService.createRelation', () => {
     expect(oppositeCall.create.targetIssueId).toBe('iss-A');
     expect(oppositeCall.create.relationType).toBe('blocked_by');
 
-    // IssueActivity verb='related' на обоих issues.
     expect(activity.record).toHaveBeenCalledTimes(2);
 
     expect(result.direction).toBe('out');

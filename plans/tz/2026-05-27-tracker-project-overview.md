@@ -3,7 +3,7 @@ type: tz
 status: draft
 feature: Вкладка «Обзор» проекта + «Загруженность» + «Приложения»
 date: 2026-05-27
-parent: plans/tz/2026-05-27-tracker-parity-with-competitors.md
+parent: plans/archive/2026-05-27-tracker-parity-with-competitors.md
 related:
   - plans/tz/2026-05-27-tracker-boards.md
   - plans/tz/2026-05-27-tracker-project-documents.md

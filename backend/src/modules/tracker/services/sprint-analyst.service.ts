@@ -36,29 +36,10 @@ import {
 
 import { TrackerEventsService } from './tracker-events.service';
 
-/**
- * Sprints (2026-05-27) — SQL-аналитика спринта без LLM.
- *
- * Сборка `GET /api/v1/cycles/:id/dashboard`:
- *   - progress + byCategory (count по IssueState.category),
- *   - tasksWithoutDueDate / tasksAtRisk / tasksWithoutMovement (top-5 each),
- *   - linkedMeetings (Meeting WHERE linkedCycleId),
- *   - carryOverCount (distinct issueId из IssueActivity WHERE verb in
- *     ['moved_from_cycle','cycle_changed'] и toCycleId = current),
- *   - scope.label (по 4 опц. полям Project).
- *
- * Кэш Redis 5 мин по ключу `sprint:dashboard:<cycleId>`. На инвалидации
- * сбрасываем кэш и эмитим `cycle.progress_updated` event (через
- * TrackerEventsService) — OverviewCacheService поймает и сбросит
- * `project:overview:<projectId>` (см. §0 актуализированного ТЗ).
- *
- * Учёт паритета трекера: в DTO задачи отдаём `boardId`, `board.{name,color}`,
- * `checklistTotalCount/DoneCount`, `childrenCount` — фронт рисует бэйджи.
- */
 @Injectable()
 export class SprintAnalystService {
   private readonly logger = new Logger(SprintAnalystService.name);
-  private static readonly CACHE_TTL_SECONDS = 300; // 5 мин
+  private static readonly CACHE_TTL_SECONDS = 300;
   private static readonly TASKS_TOPN = 5;
 
   constructor(
@@ -73,9 +54,6 @@ export class SprintAnalystService {
     private readonly llm?: LlmRouterService,
   ) {}
 
-  /**
-   * Главный метод: вернуть dashboard'у DTO. Если есть кэш — отдадим его.
-   */
   async getSprintDashboard(args: {
     cycleId: string;
     tenantId: string;
@@ -124,17 +102,11 @@ export class SprintAnalystService {
     return dto;
   }
 
-  /**
-   * Сбросить кэш дашборда и эмитить `cycle.progress_updated` событие —
-   * OverviewCacheService подхватит и сбросит project-overview-кэш.
-   */
   async invalidateDashboardCache(cycleId: string): Promise<void> {
     if (this.redis) {
       try {
         await this.redis.client.del(`sprint:dashboard:${cycleId}`);
-      } catch {
-        // graceful
-      }
+      } catch {}
     }
     try {
       const cycle = await this.prisma.cycle.findUnique({
@@ -173,8 +145,6 @@ export class SprintAnalystService {
     }
   }
 
-  // ─────────────────────────── internals ───────────────────────────────
-
   private async computeDashboard(args: {
     cycleId: string;
     tenantId: string;
@@ -198,7 +168,6 @@ export class SprintAnalystService {
 
     const scope = this.buildScopeLabel(cycle.project);
 
-    // ── Прогресс ──
     const issues = await this.prisma.issue.findMany({
       where: {
         cycleId: cycle.id,
@@ -232,15 +201,11 @@ export class SprintAnalystService {
       ratio: total > 0 ? +(byCategory.completed / total).toFixed(3) : 0,
       durationDays: Math.max(
         1,
-        Math.round(
-          (cycle.endDate.getTime() - cycle.startDate.getTime()) / (1000 * 86400),
-        ),
+        Math.round((cycle.endDate.getTime() - cycle.startDate.getTime()) / (1000 * 86400)),
       ),
       elapsedDays: Math.max(
         0,
-        Math.round(
-          (Date.now() - cycle.startDate.getTime()) / (1000 * 86400),
-        ),
+        Math.round((Date.now() - cycle.startDate.getTime()) / (1000 * 86400)),
       ),
     };
 
@@ -248,7 +213,6 @@ export class SprintAnalystService {
     const horizon = new Date(now.getTime() + 2 * 86400_000);
     const movementCutoff = new Date(now.getTime() - 3 * 86400_000);
 
-    // ── tasksWithoutDueDate ──
     const tasksWithoutDueDate = await this.fetchTaskRefs({
       where: {
         cycleId: cycle.id,
@@ -260,7 +224,6 @@ export class SprintAnalystService {
       orderBy: [{ createdAt: 'desc' }],
     });
 
-    // ── tasksAtRisk: dueDate ≤ now+2д И не Done ──
     const tasksAtRisk = await this.fetchTaskRefs({
       where: {
         cycleId: cycle.id,
@@ -272,8 +235,6 @@ export class SprintAnalystService {
       orderBy: [{ dueDate: 'asc' }],
     });
 
-    // ── tasksWithoutMovement: задачи cycle, чей lastActivity < now-3д ──
-    // Используем createdAt в IssueActivity (DateTime) — проще, чем bigint epoch.
     const candidateIssueIds = issues.map((i) => i.id);
     let tasksWithoutMovement: SprintDashboardTaskRefDto[] = [];
     if (candidateIssueIds.length > 0) {
@@ -283,9 +244,7 @@ export class SprintAnalystService {
         _max: { createdAt: true },
       });
       const stale = lastActivity.filter(
-        (r) =>
-          r._max.createdAt != null &&
-          r._max.createdAt.getTime() < movementCutoff.getTime(),
+        (r) => r._max.createdAt != null && r._max.createdAt.getTime() < movementCutoff.getTime(),
       );
       if (stale.length > 0) {
         tasksWithoutMovement = await this.fetchTaskRefs({
@@ -300,7 +259,6 @@ export class SprintAnalystService {
       }
     }
 
-    // ── linkedMeetings ──
     const meetingRows = await this.prisma.meeting.findMany({
       where: {
         linkedCycleId: cycle.id,
@@ -329,7 +287,6 @@ export class SprintAnalystService {
       createdAt: m.createdAt.toISOString(),
     }));
 
-    // ── carryOverCount ──
     let carryOverCount = 0;
     if (candidateIssueIds.length > 0) {
       const rows = await this.prisma.issueActivity.findMany({
@@ -344,7 +301,6 @@ export class SprintAnalystService {
       carryOverCount = rows.length;
     }
 
-    // ── activeHintsCount ──
     const activeHintsCount = await this.prisma.sprintHint.count({
       where: {
         cycleId: cycle.id,
@@ -369,14 +325,12 @@ export class SprintAnalystService {
     };
   }
 
-  private buildScopeLabel(
-    project: {
-      customerCard: { id: string; name: string } | null;
-      vendor: { id: string; name: string } | null;
-      subjectPerson: { id: string; name: string } | null;
-      department: { id: string; name: string } | null;
-    },
-  ): SprintDashboardDto['scope'] {
+  private buildScopeLabel(project: {
+    customerCard: { id: string; name: string } | null;
+    vendor: { id: string; name: string } | null;
+    subjectPerson: { id: string; name: string } | null;
+    department: { id: string; name: string } | null;
+  }): SprintDashboardDto['scope'] {
     if (project.customerCard) {
       return {
         kind: 'customer',
@@ -436,16 +390,13 @@ export class SprintAnalystService {
       id: i.id,
       identifier: i.identifier,
       title: i.title,
-      stateCategory:
-        (i.state?.category as SprintDashboardTaskRefDto['stateCategory']) ?? null,
+      stateCategory: (i.state?.category as SprintDashboardTaskRefDto['stateCategory']) ?? null,
       priority: i.priority,
       dueDate: i.dueDate?.toISOString() ?? null,
       completedAt: i.completedAt?.toISOString() ?? null,
       assigneeUserIds: i.assignees.map((a) => a.userId),
       boardId: i.boardId ?? null,
-      board: i.board
-        ? { id: i.board.id, name: i.board.name, color: i.board.color }
-        : null,
+      board: i.board ? { id: i.board.id, name: i.board.name, color: i.board.color } : null,
       checklistTotalCount: i.checklistTotalCount,
       checklistDoneCount: i.checklistDoneCount,
       childrenCount: i.children.length,
@@ -453,27 +404,11 @@ export class SprintAnalystService {
     }));
   }
 
-  // ───────────────────────── Daily Digest (Pulse §5.1) ─────────────────────────
-
   private static readonly DAILY_CACHE_TTL_SECONDS = 60;
   private static readonly WEEKLY_CACHE_TTL_SECONDS = 300;
   private static readonly DAY_MS = 86_400_000;
 
-  /**
-   * Pulse §5.1 — Daily digest для таба «Daily» дашборда спринта.
-   *
-   * Источники:
-   *   - `Cycle.description` — `hypothesisText` (первый абзац).
-   *   - Issue + IssueAssignee + IssueActivity (последняя активность) → светофор.
-   *   - LLM `sprint-daily-digest` → AI Daily Standup нарратив.
-   *   - Top-closers — по `IssueActivity.verb='status_changed'` newValue=completed.
-   *   - Top-helpers — по `HelpfulnessTrait` за период спринта.
-   *   - Alarm — SprintHint severity='critical' OR kind='due_date_at_risk'.
-   */
-  async getDailyDigest(args: {
-    cycleId: string;
-    tenantId: string;
-  }): Promise<SprintDailyDigestDto> {
+  async getDailyDigest(args: { cycleId: string; tenantId: string }): Promise<SprintDailyDigestDto> {
     const cacheKey = `sprint:dashboard:daily:${args.cycleId}`;
 
     if (this.redis) {
@@ -529,7 +464,6 @@ export class SprintAnalystService {
 
     const hypothesisText = this.extractHypothesisText(cycle.description);
 
-    // ── Issue + lastActivity для светофора ──
     const issues = await this.prisma.issue.findMany({
       where: {
         cycleId: cycle.id,
@@ -568,33 +502,26 @@ export class SprintAnalystService {
       }
     }
 
-    // ── Имена ассайни ──
     const assigneeUserIds = Array.from(
       new Set(issues.flatMap((i) => i.assignees.map((a) => a.userId))),
     );
     const userNameMap = await this.resolveUserNames(assigneeUserIds);
 
-    const issuesWithActivity: SprintDailyIssueWithActivityDto[] = issues.map(
-      (i) => {
-        const last = lastActivityMap.get(i.id) ?? i.updatedAt;
-        const firstAssignee = i.assignees[0]?.userId ?? null;
-        return {
-          issueId: i.id,
-          identifier: i.identifier,
-          title: i.title,
-          assigneeName: firstAssignee
-            ? userNameMap.get(firstAssignee) ?? null
-            : null,
-          lastActivity: last.toISOString(),
-          activityColor: this.activityColor(last, new Date()),
-          stateCategory:
-            (i.state?.category as SprintDailyIssueWithActivityDto['stateCategory']) ??
-            null,
-        };
-      },
-    );
+    const issuesWithActivity: SprintDailyIssueWithActivityDto[] = issues.map((i) => {
+      const last = lastActivityMap.get(i.id) ?? i.updatedAt;
+      const firstAssignee = i.assignees[0]?.userId ?? null;
+      return {
+        issueId: i.id,
+        identifier: i.identifier,
+        title: i.title,
+        assigneeName: firstAssignee ? (userNameMap.get(firstAssignee) ?? null) : null,
+        lastActivity: last.toISOString(),
+        activityColor: this.activityColor(last, new Date()),
+        stateCategory:
+          (i.state?.category as SprintDailyIssueWithActivityDto['stateCategory']) ?? null,
+      };
+    });
 
-    // ── topClosers: верб status_changed -> completed, актёр user, за период спринта ──
     const topClosers = await this.computeTopClosers({
       tenantId: args.tenantId,
       cycleId: cycle.id,
@@ -602,27 +529,21 @@ export class SprintAnalystService {
       to: new Date(),
     });
 
-    // ── topHelpers: HelpfulnessTrait за период спринта ──
     const topHelpers = await this.computeTopHelpers({
       tenantId: args.tenantId,
       from: cycle.startDate,
       to: new Date(),
     });
 
-    // ── Alarm: SprintHint severity='critical' OR kind='due_date_at_risk' ──
     const alarmCount = await this.prisma.sprintHint.count({
       where: {
         cycleId: cycle.id,
         tenantId: args.tenantId,
         status: 'active',
-        OR: [
-          { severity: 'critical' },
-          { kind: 'due_date_at_risk' },
-        ],
+        OR: [{ severity: 'critical' }, { kind: 'due_date_at_risk' }],
       },
     });
 
-    // ── Прогресс для AI-нарратива ──
     const allIssuesForProgress = await this.prisma.issue.findMany({
       where: {
         cycleId: cycle.id,
@@ -643,19 +564,15 @@ export class SprintAnalystService {
     const now = new Date();
     const elapsedDays = Math.max(
       0,
-      Math.round(
-        (now.getTime() - cycle.startDate.getTime()) / SprintAnalystService.DAY_MS,
-      ),
+      Math.round((now.getTime() - cycle.startDate.getTime()) / SprintAnalystService.DAY_MS),
     );
     const durationDays = Math.max(
       1,
       Math.round(
-        (cycle.endDate.getTime() - cycle.startDate.getTime()) /
-          SprintAnalystService.DAY_MS,
+        (cycle.endDate.getTime() - cycle.startDate.getTime()) / SprintAnalystService.DAY_MS,
       ),
     );
 
-    // ── carryOver ──
     const carryOverCount = await this.computeCarryOver({
       tenantId: args.tenantId,
       cycleId: cycle.id,
@@ -679,7 +596,6 @@ export class SprintAnalystService {
       .slice(0, 5)
       .map((i) => i.title);
 
-    // ── LLM-нарратив (best-effort) ──
     const aiNarrative = await this.generateDailyNarrative({
       tenantId: args.tenantId,
       cycleName: cycle.name,
@@ -708,20 +624,6 @@ export class SprintAnalystService {
     };
   }
 
-  // ───────────────────────── Weekly Digest (Pulse §5.2) ────────────────────────
-
-  /**
-   * Pulse §5.2 — Weekly digest для таба «Weekly» дашборда спринта.
-   *
-   * Источники:
-   *   - `Cycle.description` — `hypothesisText` (первый абзац).
-   *   - Velocity — кол-во completed за этот спринт vs предыдущий (по проекту).
-   *   - Team Health — мини-агрегат sentiment/promises per dept.
-   *   - Learnings — IdeaBlock с signalType insight/knowledge_gap за период спринта.
-   *   - Action items — заголовки активных SprintHint.
-   *   - Forecast — последний ForecastSnapshot scope='company' за 14 дней.
-   *   - LLM `sprint-weekly-digest` → связный markdown summary.
-   */
   async getWeeklyDigest(args: {
     cycleId: string;
     tenantId: string;
@@ -779,7 +681,6 @@ export class SprintAnalystService {
 
     const hypothesisText = this.extractHypothesisText(cycle.description);
 
-    // ── Прогресс ──
     const allIssues = await this.prisma.issue.findMany({
       where: {
         cycleId: cycle.id,
@@ -821,7 +722,6 @@ export class SprintAnalystService {
             : 'flat',
     };
 
-    // ── Hypothesis confirmed: если completed + ≥80% hints resolved → true. ──
     let hypothesisConfirmed: boolean | null = null;
     if (cycle.completedAt) {
       const [totalHints, resolvedHints] = await Promise.all([
@@ -836,13 +736,9 @@ export class SprintAnalystService {
           },
         }),
       ]);
-      hypothesisConfirmed =
-        totalHints === 0 ? null : resolvedHints / totalHints >= 0.8;
+      hypothesisConfirmed = totalHints === 0 ? null : resolvedHints / totalHints >= 0.8;
     }
 
-    // ── Team health — мини-агрегат per dept. Без зависимости от TeamHealthService. ──
-    // Берём всех Department tenant'а и считаем размер. Sentiment/promises
-    // оставляем null — полная агрегация в Wave 1 dashboard'е.
     const teamHealth: SprintWeeklyTeamHealthRowDto[] = [];
     const depts = await this.prisma.department.findMany({
       where: { tenantId: args.tenantId, deletedAt: null },
@@ -865,9 +761,6 @@ export class SprintAnalystService {
       });
     }
 
-    // ── Learnings: IdeaBlock signalType IN idea/knowledge_gap/fact за период спринта ──
-    // («insight» как SignalType отсутствует — используем idea+knowledge_gap+fact
-    //  по ТЗ §5.2 «что узнали»).
     const learningRows = await this.prisma.ideaBlock.findMany({
       where: {
         tenantId: args.tenantId,
@@ -889,7 +782,6 @@ export class SprintAnalystService {
       signalType: b.signalType,
     }));
 
-    // ── Action items — активные подсказки. ──
     const actionHints = await this.prisma.sprintHint.findMany({
       where: {
         cycleId: cycle.id,
@@ -911,26 +803,20 @@ export class SprintAnalystService {
       },
     });
 
-    // ── Forecast snapshot (Pulse Wave 4 §4.6). ──
     const forecast = await this.getLatestForecast(args.tenantId);
 
-    // ── LLM weekly narrative (best-effort) ──
     const aiNarrative = await this.generateWeeklyNarrative({
       tenantId: args.tenantId,
       cycleName: cycle.name,
       hypothesisText,
       elapsedDays: Math.max(
         0,
-        Math.round(
-          (now.getTime() - cycle.startDate.getTime()) /
-            SprintAnalystService.DAY_MS,
-        ),
+        Math.round((now.getTime() - cycle.startDate.getTime()) / SprintAnalystService.DAY_MS),
       ),
       durationDays: Math.max(
         1,
         Math.round(
-          (cycle.endDate.getTime() - cycle.startDate.getTime()) /
-            SprintAnalystService.DAY_MS,
+          (cycle.endDate.getTime() - cycle.startDate.getTime()) / SprintAnalystService.DAY_MS,
         ),
       ),
       total,
@@ -960,25 +846,13 @@ export class SprintAnalystService {
     };
   }
 
-  // ───────────────────────── helpers ───────────────────────────────────────────
-
-  /**
-   * Цветной светофор по `lastActivity`:
-   *   - ≤ 2 дня → success
-   *   - 3-4 дня → warning
-   *   - ≥ 5 дней → danger
-   */
   private activityColor(lastActivity: Date, now: Date): SprintActivityColor {
-    const ageDays = (now.getTime() - lastActivity.getTime()) /
-      SprintAnalystService.DAY_MS;
+    const ageDays = (now.getTime() - lastActivity.getTime()) / SprintAnalystService.DAY_MS;
     if (ageDays <= 2) return 'success';
     if (ageDays < 5) return 'warning';
     return 'danger';
   }
 
-  /**
-   * Первый параграф `description` как hypothesisText (convention; ТЗ §5.2).
-   */
   private extractHypothesisText(description: string | null): string | null {
     if (!description) return null;
     const trimmed = description.trim();
@@ -987,9 +861,7 @@ export class SprintAnalystService {
     return firstParagraph?.trim() ?? null;
   }
 
-  private async resolveUserNames(
-    userIds: string[],
-  ): Promise<Map<string, string>> {
+  private async resolveUserNames(userIds: string[]): Promise<Map<string, string>> {
     if (userIds.length === 0) return new Map();
     const users = await this.prisma.user.findMany({
       where: { id: { in: userIds } },
@@ -1006,7 +878,6 @@ export class SprintAnalystService {
     from: Date;
     to: Date;
   }): Promise<SprintDailyTopCloserDto[]> {
-    // Issue из cycle, completed за период спринта.
     const closedIssues = await this.prisma.issue.findMany({
       where: {
         cycleId: args.cycleId,
@@ -1080,9 +951,7 @@ export class SprintAnalystService {
     return rows.length;
   }
 
-  private async getLatestForecast(
-    tenantId: string,
-  ): Promise<SprintWeeklyForecastDto> {
+  private async getLatestForecast(tenantId: string): Promise<SprintWeeklyForecastDto> {
     const cutoff = new Date(Date.now() - 14 * SprintAnalystService.DAY_MS);
     const row = await this.prisma.forecastSnapshot.findFirst({
       where: {
@@ -1094,16 +963,14 @@ export class SprintAnalystService {
       select: { snapshotAt: true, payloadJson: true },
     });
     if (!row) return { trend: null, summary: null, snapshotAt: null };
-    const payload = row.payloadJson as
-      | {
-          trend?: 'improving' | 'stable' | 'declining';
-          expectedShifts?: Array<{
-            metric: string;
-            direction: string;
-            confidence: number;
-          }>;
-        }
-      | null;
+    const payload = row.payloadJson as {
+      trend?: 'improving' | 'stable' | 'declining';
+      expectedShifts?: Array<{
+        metric: string;
+        direction: string;
+        confidence: number;
+      }>;
+    } | null;
     const shifts = payload?.expectedShifts ?? [];
     const summaryParts = shifts.slice(0, 3).map((s) => {
       const arrow = s.direction === 'up' ? '↑' : s.direction === 'down' ? '↓' : '→';

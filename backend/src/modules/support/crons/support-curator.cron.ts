@@ -4,17 +4,6 @@ import { Cron } from '@nestjs/schedule';
 import { TypedConfigService } from '../../../common/config/index';
 import { SupportCuratorService } from '../services/support-curator.service';
 
-/**
- * SupportCuratorCron — ночной (03:00) прогон куратора закрытого контура памяти
- * поддержки (TZ 2026-06-09 support-desk Ф4, R22).
- *
- * Куратор смотрит дневные сигналы + блоки базы и наводит порядок:
- * keep|promote|fix|merge|archive. Destructive — только за дебат-гейтом и только
- * мягко (см. SupportCuratorService).
- *
- * Kill-switch: при `cfg.supportDesk.curatorEnabled === false` — no-op (cron
- * остаётся зарегистрированным). Cron auto-discovered как провайдер модуля.
- */
 @Injectable()
 export class SupportCuratorCron {
   private readonly logger = new Logger(SupportCuratorCron.name);
@@ -33,7 +22,7 @@ export class SupportCuratorCron {
       }
       const result = await this.curator.runOnce(new Date());
       if (!result.skipped) {
-        this.logger.log(
+        this.logger.debug(
           { proposed: result.proposed, applied: result.applied },
           'support-curator.cron: ночной прогон контура завершён',
         );

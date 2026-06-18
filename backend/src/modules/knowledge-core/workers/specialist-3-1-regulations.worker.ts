@@ -7,37 +7,10 @@ import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { RouterService } from '../services/router.service';
 import { Specialist31Service } from '../services/specialist-3-1-regulations.service';
 
-/**
- * SBA α-7 — Specialist 3.1 (Regulations) — handler `core.specialist-routing`
- * с jobName='3-1-regulations'.
- *
- * Вызывается из `SpecialistRoutingDispatcherWorker.dispatch` для блоков
- * (`signalType='regulation'` или `'process_step'`), которые `RouterService.dispatch`
- * диспатчит этому специалисту. Маршрутизацию по jobName делает диспетчер.
- *
- * Логика:
- *   1. Загрузить block + evidence + entities.
- *   2. Проверить tenant + status ('canonical' — только из BlockDistillWorker'а
- *      опубликованные блоки участвуют в специалистах; draft пропускаем).
- *   3. По signalType вызвать соответствующий метод Specialist31Service.
- *
- * Идемпотентность:
- *   - jobId диспатча = `'3-1-regulations_<blockId>'` (см. RouterService).
- *   - Внутри Specialist31Service — upsert по (tenantId, name), так что
- *     повторный запуск с тем же блоком безопасен.
- *
- * Метрики:
- *   - `core_specialist_pipeline_duration_seconds{type='regulation'}` —
- *     длительность полного цикла специалиста.
- */
 @Injectable()
 export class Specialist31RegulationsWorker {
   private readonly logger = new Logger(Specialist31RegulationsWorker.name);
 
-  /**
-   * Имя специалиста (ключ маршрутизации диспетчера). Должно совпадать со
-   * значением `RouterService.SPECIALIST.REGULATIONS`.
-   */
   static readonly SPECIALIST_NAME = RouterService.SPECIALIST.REGULATIONS;
 
   constructor(
@@ -60,10 +33,7 @@ export class Specialist31RegulationsWorker {
         },
       });
       if (!block) {
-        this.logger.debug(
-          { blockId },
-          'specialist-3-1: блок не найден — skip',
-        );
+        this.logger.debug({ blockId }, 'specialist-3-1: блок не найден — skip');
         this.metrics.incCoreSpecialistSkipped({
           specialist: Specialist31RegulationsWorker.SPECIALIST_NAME,
           reason: 'block_not_found',
@@ -93,7 +63,6 @@ export class Specialist31RegulationsWorker {
         return;
       }
 
-      // Делегация по signalType. Specialist31Service сам fallback'ит по kind.
       if (block.signalType === 'regulation') {
         await this.svc.processRegulationBlock(block);
       } else if (block.signalType === 'process_step') {
@@ -110,7 +79,7 @@ export class Specialist31RegulationsWorker {
         return;
       }
 
-      this.logger.log(
+      this.logger.debug(
         {
           blockId,
           signalType: block.signalType,

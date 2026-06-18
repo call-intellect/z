@@ -1,16 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  classifyCapacity,
-  DEFAULT_CAPACITY_THRESHOLDS,
-} from './team-capacity.scoring';
+import { classifyCapacity, DEFAULT_CAPACITY_THRESHOLDS } from './team-capacity.scoring';
 
-/**
- * TZ-1 Фаза 4.D (daily-value-engine) — unit-тесты классификации загрузки команды.
- * Без БД.
- */
 describe('team-capacity.scoring → classifyCapacity', () => {
-  const t = DEFAULT_CAPACITY_THRESHOLDS; // overload 120, underload 50
+  const t = DEFAULT_CAPACITY_THRESHOLDS;
 
   it('загрузка строго > overload → overload', () => {
     expect(classifyCapacity(121, t)).toBe('overload');
@@ -43,7 +36,6 @@ describe('team-capacity.scoring → classifyCapacity', () => {
   });
 
   it('мусорный loadPercent (NaN) → ok (0 трактуется в норме при дефолте? нет — 0<50 → underload)', () => {
-    // NaN → 0 → 0 < underload(50) → underload
     expect(classifyCapacity(Number.NaN, t)).toBe('underload');
   });
 });

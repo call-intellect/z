@@ -1,40 +1,18 @@
-/**
- * Ф3 редизайн (Итоги месяца) — генерация PPTX-презентации поверх готового
- * структурного slides-JSON (`buildValueRecapSlides`). Один `ValueRecapSlideDto`
- * → один слайд (крупный заголовок + подзаголовок + буллеты).
- *
- * pptxgenjs — pure-JS (JSZip под капотом), без native-биндингов; в Node
- * `write({ outputType: 'nodebuffer' })` отдаёт Buffer (OOXML/ZIP, сигнатура
- * `PK`). Тема нейтрально-тёмная, RU-текст как есть.
- *
- * Честность (Р6): рендерим ровно те слайды, что собрал `buildValueRecapSlides`
- * (только твёрдые данные + soft со словом «оценка»). Здесь — только верстка.
- */
-
 import PptxGenJS from 'pptxgenjs';
 
 import type { ValueRecapSlideDto } from '../dto/value-recap.dto';
 
-/** Палитра (hex без #, как требует pptxgenjs). */
-const COLOR_BG = '14161F'; // тёмный фон
+const COLOR_BG = '14161F';
 const COLOR_TITLE = 'FFFFFF';
 const COLOR_SUBTITLE = 'A9B0C0';
 const COLOR_BULLET = 'E6E9F0';
-const COLOR_ACCENT = '7C5CFF'; // фиолет-герой (как в редизайне)
+const COLOR_ACCENT = '7C5CFF';
 
-/**
- * Построить PPTX из набора слайдов. Возвращает Buffer (OOXML/ZIP «PK…»).
- * Пустой `slides` → презентация с одним титульным слайдом-заглушкой (валидный
- * непустой PPTX, не падаем).
- */
-export async function buildValueRecapPptx(
-  slides: ValueRecapSlideDto[],
-): Promise<Buffer> {
+export async function buildValueRecapPptx(slides: ValueRecapSlideDto[]): Promise<Buffer> {
   const pptx = new PptxGenJS();
   pptx.author = 'Кора';
   pptx.company = 'Кора';
   pptx.title = 'Итоги месяца';
-  // 16:9, 13.33" × 7.5".
   pptx.layout = 'LAYOUT_WIDE';
 
   const list =
@@ -52,7 +30,6 @@ export async function buildValueRecapPptx(
     const slide = pptx.addSlide();
     slide.background = { color: COLOR_BG };
 
-    // Акцентная полоса слева.
     slide.addShape('rect', {
       x: 0,
       y: 0,
@@ -62,7 +39,6 @@ export async function buildValueRecapPptx(
       line: { type: 'none' },
     });
 
-    // Заголовок (крупно).
     slide.addText(s.title, {
       x: 0.6,
       y: 0.5,
@@ -76,7 +52,6 @@ export async function buildValueRecapPptx(
       valign: 'top',
     });
 
-    // Подзаголовок (опц.).
     let bodyY = 1.6;
     if (s.subtitle && s.subtitle.trim().length > 0) {
       slide.addText(s.subtitle, {
@@ -94,10 +69,7 @@ export async function buildValueRecapPptx(
       bodyY = 2.4;
     }
 
-    // Буллеты.
-    const bullets = (s.bullets ?? []).filter(
-      (b) => typeof b === 'string' && b.trim().length > 0,
-    );
+    const bullets = (s.bullets ?? []).filter((b) => typeof b === 'string' && b.trim().length > 0);
     if (bullets.length > 0) {
       slide.addText(
         bullets.map((text) => ({
@@ -120,7 +92,6 @@ export async function buildValueRecapPptx(
     }
   }
 
-  // outputType 'nodebuffer' → Node Buffer (OOXML/ZIP, «PK»). compression — −30%.
   const out = await pptx.write({ outputType: 'nodebuffer', compression: true });
   return out as Buffer;
 }

@@ -1,41 +1,34 @@
-'use client';
+"use client";
 
-/**
- * SprintHintCard — карточка подсказки помощника по спринту.
- *
- * Принимает SprintHintApi и колбэки `onDismiss` / `onResolve`.
- * Цветовая полоса слева зависит от severity.
- */
-
-import { useState } from 'react';
-import { AlertTriangle, Info, ShieldAlert } from 'lucide-react';
-import { Button } from '@/ui/shadcn/button';
+import { useState } from "react";
+import { AlertTriangle, Info, ShieldAlert } from "lucide-react";
+import { Button } from "@/ui/shadcn/button";
 import {
   getSprintHintKindLabel,
   getSprintHintSeverityLabel,
   type SprintHintApi,
   type SprintHintSeverityApi,
-} from '@/domain/sprint';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/domain/sprint";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 const SEVERITY_STYLES: Record<
   SprintHintSeverityApi,
   { stripe: string; badge: string; iconClass: string }
 > = {
   info: {
-    stripe: 'bg-slate-200',
-    badge: 'bg-slate-200 text-slate-900',
-    iconClass: 'text-slate-500',
+    stripe: "bg-slate-200",
+    badge: "bg-slate-200 text-slate-900",
+    iconClass: "text-slate-500",
   },
   warning: {
-    stripe: 'bg-amber-500',
-    badge: 'bg-amber-500 text-white',
-    iconClass: 'text-amber-500',
+    stripe: "bg-amber-500",
+    badge: "bg-amber-500 text-white",
+    iconClass: "text-amber-500",
   },
   critical: {
-    stripe: 'bg-rose-500',
-    badge: 'bg-rose-500 text-white',
-    iconClass: 'text-rose-500',
+    stripe: "bg-rose-500",
+    badge: "bg-rose-500 text-white",
+    iconClass: "text-rose-500",
   },
 };
 
@@ -55,14 +48,14 @@ export function SprintHintCard({
   onResolve?: (hintId: string) => Promise<void> | void;
 }) {
   const [pendingAction, setPendingAction] = useState<
-    'dismiss' | 'resolve' | null
+    "dismiss" | "resolve" | null
   >(null);
   const [error, setError] = useState<string | null>(null);
   const style = SEVERITY_STYLES[hint.severity] ?? SEVERITY_STYLES.info;
   const Icon = SEVERITY_ICON[hint.severity] ?? Info;
 
   const handle = async (
-    action: 'dismiss' | 'resolve',
+    action: "dismiss" | "resolve",
     cb?: (id: string) => Promise<void> | void,
   ) => {
     if (!cb) return;
@@ -74,7 +67,7 @@ export function SprintHintCard({
       setError(
         e instanceof Error
           ? e.message
-          : 'Не удалось выполнить действие. Попробуйте ещё раз.',
+          : "Не удалось выполнить действие. Попробуйте ещё раз.",
       );
     } finally {
       setPendingAction(null);
@@ -88,7 +81,7 @@ export function SprintHintCard({
     >
       <span
         aria-hidden
-        className={cn('absolute left-0 top-0 h-full w-1', style.stripe)}
+        className={cn("absolute left-0 top-0 h-full w-1", style.stripe)}
       />
       <div className="ml-2 mt-0.5 shrink-0">
         <Icon size={18} strokeWidth={1.75} className={style.iconClass} />
@@ -97,7 +90,7 @@ export function SprintHintCard({
         <div className="flex flex-wrap items-center gap-2">
           <span
             className={cn(
-              'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider',
+              "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
               style.badge,
             )}
             title={`Уровень: ${getSprintHintSeverityLabel(hint.severity)}`}
@@ -109,7 +102,7 @@ export function SprintHintCard({
           </span>
           {hint.affectedIssueIds.length > 0 && (
             <span className="text-[11px] text-fg-tertiary">
-              · {hint.affectedIssueIds.length}{' '}
+              · {hint.affectedIssueIds.length}{" "}
               {pluralizeTasks(hint.affectedIssueIds.length)}
             </span>
           )}
@@ -131,11 +124,11 @@ export function SprintHintCard({
                 variant="ghost"
                 size="sm"
                 disabled={pendingAction !== null}
-                onClick={() => void handle('dismiss', onDismiss)}
+                onClick={() => void handle("dismiss", onDismiss)}
               >
-                {pendingAction === 'dismiss'
-                  ? 'Закрываем…'
-                  : 'Закрыть подсказку'}
+                {pendingAction === "dismiss"
+                  ? "Закрываем…"
+                  : "Закрыть подсказку"}
               </Button>
             )}
             {onResolve && (
@@ -143,9 +136,11 @@ export function SprintHintCard({
                 variant="outline"
                 size="sm"
                 disabled={pendingAction !== null}
-                onClick={() => void handle('resolve', onResolve)}
+                onClick={() => void handle("resolve", onResolve)}
               >
-                {pendingAction === 'resolve' ? 'Сохраняем…' : 'Принято к работе'}
+                {pendingAction === "resolve"
+                  ? "Сохраняем…"
+                  : "Принято к работе"}
               </Button>
             )}
           </div>
@@ -157,9 +152,9 @@ export function SprintHintCard({
 
 function pluralizeTasks(n: number): string {
   const m = n % 100;
-  if (m >= 11 && m <= 14) return 'задач';
+  if (m >= 11 && m <= 14) return "задач";
   const last = n % 10;
-  if (last === 1) return 'задача';
-  if (last >= 2 && last <= 4) return 'задачи';
-  return 'задач';
+  if (last === 1) return "задача";
+  if (last >= 2 && last <= 4) return "задачи";
+  return "задач";
 }

@@ -23,32 +23,8 @@ import type {
   UpdateAppointmentDto,
 } from '../dto/appointments.dto';
 
-import {
-  resolveAppointmentStatus,
-  resolveAppointmentTenantTop,
-} from './tenant-top';
+import { resolveAppointmentStatus, resolveAppointmentTenantTop } from './tenant-top';
 
-/**
- * SBA α-8 wave 3 — сервис Appointment'ов.
- *
- * Бизнес-правила:
- *   - Уникальность @@unique([tenantId, personId, roleId, validFrom]) — нельзя
- *     создать два одинаковых назначения с одной startDate.
- *   - softDelete = status='former' + validTo=now() (не физическое удаление).
- *   - На каждое create/update — пересчитывается gauge `appointments_total`.
- *   - EntityLink `executes_role` создаётся отдельно через PersonsService
- *     (там же где сегодня создаётся для PersonRole), это сохраняет совместимость.
- *
- * Метрики:
- *   - `appointments_total{tenant_top, status}` — gauge кол-ва.
- *
- * RBAC — `appointment.read|write|delete`. Проверка в контроллере.
- *
- * Clones=Roles Ф2 (2026-05-25) — после успешного create/update/softDelete
- * вызываем `maybeEmitBearerChanged(roleId)` чтобы определить, сменился ли
- * носитель роли. Если да — эмитим `role.bearer_changed` для
- * `RoleClonePersonaVersioningHandler` в knowledge-core.
- */
 @Injectable()
 export class AppointmentsService {
   private readonly logger = new Logger(AppointmentsService.name);
@@ -58,15 +34,10 @@ export class AppointmentsService {
     @Inject(AuditLogService) private readonly audit: AuditLogService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
-    // Clones=Roles Ф2 (2026-05-25) — EventEmitter2 для `role.bearer_changed`.
-    // `@Optional()` чтобы не ломать существующие интеграционные тесты, где
-    // EventEmitterModule не подключён. Если null — emit'ы пропускаются (no-op).
     @Optional()
     @Inject(EventEmitter2)
     private readonly events?: EventEmitter2,
   ) {}
-
-  // ─────────────────────────── list / get ───────────────────────────
 
   async list(args: {
     tenantId: string;
@@ -76,9 +47,7 @@ export class AppointmentsService {
       tenantId: args.tenantId,
       ...(args.query.personId ? { personId: args.query.personId } : {}),
       ...(args.query.roleId ? { roleId: args.query.roleId } : {}),
-      ...(args.query.departmentId
-        ? { departmentId: args.query.departmentId }
-        : {}),
+      ...(args.query.departmentId ? { departmentId: args.query.departmentId } : {}),
       ...(args.query.status ? { status: args.query.status } : {}),
       ...(args.query.activeOnly ? { validTo: null } : {}),
     };
@@ -121,11 +90,6 @@ export class AppointmentsService {
     return this.toDto(row);
   }
 
-  /**
-   * Timeline по Entity{type=person}.id — резолвим Person через
-   * `Person.entityId` (EntityResolutionService уже линкует Entity↔Person).
-   * Если Person для данного Entity не найден — возвращаем пустой список.
-   */
   async personTimelineByEntity(args: {
     tenantId: string;
     entityId: string;
@@ -141,7 +105,6 @@ export class AppointmentsService {
     });
   }
 
-  /** Timeline всех назначений одного Person'а (упорядочены по validFrom desc). */
   async personTimeline(args: {
     tenantId: string;
     personId: string;
@@ -160,19 +123,12 @@ export class AppointmentsService {
       const dto = this.toDto(r);
       const end = r.validTo ? r.validTo.getTime() : null;
       const durationDays =
-        end === null
-          ? null
-          : Math.max(
-              0,
-              Math.floor((end - r.validFrom.getTime()) / 86_400_000),
-            );
+        end === null ? null : Math.max(0, Math.floor((end - r.validFrom.getTime()) / 86_400_000));
       return { ...dto, durationDays };
     });
 
     return { items };
   }
-
-  // ─────────────────────────── create / update / delete ─────────────
 
   async create(args: {
     tenantId: string;
@@ -226,16 +182,10 @@ export class AppointmentsService {
         this.logger.warn(`refreshAppointmentsGauge failed: ${String(err)}`),
       );
 
-      // Clones=Roles Ф2 — после успешного create проверяем, сменился ли
-      // активный носитель роли. Если да — emit `role.bearer_changed`.
       void this.maybeEmitBearerChanged({
         tenantId: args.tenantId,
         roleId: args.body.roleId,
-      }).catch((err) =>
-        this.logger.warn(
-          `maybeEmitBearerChanged failed (create): ${String(err)}`,
-        ),
-      );
+      }).catch((err) => this.logger.warn(`maybeEmitBearerChanged failed (create): ${String(err)}`));
 
       return this.toDto(created);
     } catch (err) {
@@ -307,15 +257,10 @@ export class AppointmentsService {
         this.logger.warn(`refreshAppointmentsGauge failed: ${String(err)}`),
       );
 
-      // Clones=Roles Ф2 — изменение status/validTo может означать смену носителя.
       void this.maybeEmitBearerChanged({
         tenantId: args.tenantId,
         roleId: existing.roleId,
-      }).catch((err) =>
-        this.logger.warn(
-          `maybeEmitBearerChanged failed (update): ${String(err)}`,
-        ),
-      );
+      }).catch((err) => this.logger.warn(`maybeEmitBearerChanged failed (update): ${String(err)}`));
 
       return this.toDto(updated);
     } catch (err) {
@@ -367,25 +312,17 @@ export class AppointmentsService {
       this.logger.warn(`refreshAppointmentsGauge failed: ${String(err)}`),
     );
 
-    // Clones=Roles Ф2 — softDelete активного назначения = освобождение роли.
     void this.maybeEmitBearerChanged({
       tenantId: args.tenantId,
       roleId: existing.roleId,
     }).catch((err) =>
-      this.logger.warn(
-        `maybeEmitBearerChanged failed (softDelete): ${String(err)}`,
-      ),
+      this.logger.warn(`maybeEmitBearerChanged failed (softDelete): ${String(err)}`),
     );
 
     return this.toDto(updated);
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  private async assertPersonExists(
-    tenantId: string,
-    personId: string,
-  ): Promise<void> {
+  private async assertPersonExists(tenantId: string, personId: string): Promise<void> {
     const p = await this.prisma.person.findUnique({
       where: { id: personId },
       select: { tenantId: true, deletedAt: true },
@@ -401,10 +338,7 @@ export class AppointmentsService {
     }
   }
 
-  private async assertRoleExists(
-    tenantId: string,
-    roleId: string,
-  ): Promise<void> {
+  private async assertRoleExists(tenantId: string, roleId: string): Promise<void> {
     const role = await this.prisma.role.findUnique({
       where: { id: roleId },
       select: { tenantId: true, deletedAt: true },
@@ -420,10 +354,7 @@ export class AppointmentsService {
     }
   }
 
-  private async assertDepartmentExists(
-    tenantId: string,
-    departmentId: string,
-  ): Promise<void> {
+  private async assertDepartmentExists(tenantId: string, departmentId: string): Promise<void> {
     const dep = await this.prisma.department.findUnique({
       where: { id: departmentId },
       select: { tenantId: true, deletedAt: true },
@@ -439,22 +370,7 @@ export class AppointmentsService {
     }
   }
 
-  /**
-   * Clones=Roles Ф2 — сравнить «активный носитель сейчас» (по Appointment-у)
-   * с `currentBearerPersonId` у активной ExecutablePersona(scope='role').
-   * Если различаются — эмитим `role.bearer_changed` и handler в knowledge-core
-   * создаст новую версию persona.
-   *
-   * Активный носитель = Appointment(tenantId, roleId, validTo IS NULL) с
-   * максимальным `loadPercent`, при равенстве — самый поздний `validFrom`.
-   *
-   * Безопасно дёргать после любого create/update/softDelete: idempotent
-   * относительно handler'а (двойной emit будет фильтрован handler'ом).
-   */
-  private async maybeEmitBearerChanged(args: {
-    tenantId: string;
-    roleId: string;
-  }): Promise<void> {
+  private async maybeEmitBearerChanged(args: { tenantId: string; roleId: string }): Promise<void> {
     if (!this.events) return;
 
     const activeAppointments = await this.prisma.appointment.findMany({
@@ -481,7 +397,7 @@ export class AppointmentsService {
     });
     const oldBearerId = currentPersona?.currentBearerPersonId ?? null;
 
-    if (oldBearerId === newBearerId) return; // нет смены
+    if (oldBearerId === newBearerId) return;
 
     const payload: RoleBearerChangedEvent = {
       tenantId: args.tenantId,
@@ -490,8 +406,6 @@ export class AppointmentsService {
       newPersonId: newBearerId,
       changedAt: new Date(),
     };
-    // EventEmitter2.emit — синхронный. emitAsync ждёт async-обработчиков.
-    // Fire-and-forget с warn-логом при ошибке (controller'ный путь не блокируем).
     void this.events.emitAsync('role.bearer_changed', payload).catch((err) => {
       this.logger.warn(
         {
@@ -503,10 +417,6 @@ export class AppointmentsService {
     });
   }
 
-  /**
-   * Пересчёт gauge `appointments_total{tenant_top, status}` по группам.
-   * Без транзакции — это observability, не критичный путь.
-   */
   private async refreshAppointmentsGauge(tenantId: string): Promise<void> {
     const groups = await this.prisma.appointment.groupBy({
       by: ['status'],
@@ -524,16 +434,12 @@ export class AppointmentsService {
   }
 
   private handleUniqueViolation(err: unknown): void {
-    if (
-      err instanceof Prisma.PrismaClientKnownRequestError &&
-      err.code === 'P2002'
-    ) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       throw new ConflictException({
         ok: false,
         error: {
           code: 'appointment_duplicate',
-          message:
-            'Назначение с такими (personId, roleId, validFrom) уже существует',
+          message: 'Назначение с такими (personId, roleId, validFrom) уже существует',
         },
       });
     }

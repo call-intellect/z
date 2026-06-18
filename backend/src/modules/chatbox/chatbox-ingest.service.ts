@@ -5,35 +5,55 @@ import { LlmRouterService } from '../ai/services/llm-router.service';
 import { applyInputGuards } from '../ai/services/prompts/common';
 import { IngestService } from '../ingest/ingest.service';
 
-/**
- * ChatboxIngestService — мост ChatBox → knowledge-core (ТЗ
- * plans/tz/2026-06-05-chatbox-integration.md, Фаза 5).
- *
- * Закрытую сессию чата (`ChatboxChatSession.endedAt != null`) превращает в
- * один `RawEvent(sourceType='chatbox')` через `IngestService.ingest` —
- * дальше его подхватывает block-ingest worker knowledge-core (мы его не
- * трогаем). Payload содержит `fullText` (рендер транскрипта строкой),
- * иначе извлечение IdeaBlock было бы слабым.
- *
- * Дополнительно генерирует best-effort LLM-summary сессии (`llm-router`,
- * taskType `chatbox-summary`) — для подмешивания в анализ следующих сессий
- * и показа в вебе. При ошибке LLM summary = null (не роняем мост).
- *
- * Зависимости (все @Global, в imports модуля не нужны):
- *   - PrismaService (PrismaModule @Global).
- *   - IngestService (IngestModule @Global, exports IngestService).
- *   - LlmRouterService (AiModule @Global, exports LlmRouterService).
- */
-
 const SOURCE_TYPE = 'chatbox' as const;
 const SOURCE_NAME = 'ChatBox' as const;
 
-const SUMMARY_SYSTEM_PROMPT =
-  'Ты — аналитик клиентских диалогов. Сделай краткое саммари переписки: ' +
-  'суть запроса клиента, ключевые решения, договорённости, открытые вопросы. ' +
-  '3-6 предложений, по-русски.';
+const DAY_ROLLUP_SYSTEM_PROMPT = [
+  'Ты — аналитик клиентских диалогов.',
+  'Тебе дают НАКОПИТЕЛЬНОЕ САММАРИ переписки (контекст прошлых дней, может быть пустым)',
+  'и СООБЩЕНИЯ ЗА ОДИН ДЕНЬ.',
+  'Верни СТРОГО валидный JSON без markdown и пояснений, ровно с двумя строковыми полями:',
+  '{"daySummary": "...", "rollingSummary": "..."}',
+  '- daySummary — что произошло в этот день: суть запроса клиента, ключевые',
+  '  решения, договорённости, открытые вопросы. 3-6 предложений, по-русски.',
+  '- rollingSummary — ОБНОВЛЁННОЕ накопительное саммари всей переписки: объедини',
+  '  прошлый контекст с событиями дня, убери устаревшее, держи компактным',
+  '  (до ~10 предложений), по-русски. Если накопительного нет — построй с нуля.',
+].join(' ');
 
-/** Минимальная форма сообщения для рендера транскрипта. */
+export interface ChatboxDayRollup {
+  daySummary: string;
+  rollingSummary: string;
+}
+
+function stripCodeFence(text: string): string {
+  const t = text.trim();
+  if (!t.startsWith('```')) return t;
+  return t
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+}
+
+export function parseChatboxDayRollup(text: string): ChatboxDayRollup | null {
+  try {
+    const obj = JSON.parse(stripCodeFence(text)) as unknown;
+    if (obj && typeof obj === 'object') {
+      const rec = obj as Record<string, unknown>;
+      const { daySummary, rollingSummary } = rec;
+      if (typeof daySummary === 'string' && typeof rollingSummary === 'string') {
+        return {
+          daySummary: daySummary.trim(),
+          rollingSummary: rollingSummary.trim(),
+        };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export interface TranscriptMessage {
   senderType: string;
   senderName?: string | null;
@@ -41,23 +61,13 @@ export interface TranscriptMessage {
   contentType: string;
 }
 
-/**
- * Чистый рендер транскрипта сессии в строку (для unit-теста и payload).
- *
- * Формат строки на сообщение: `<роль> [<имя>]: <текст>`, где роль —
- * `Клиент` для `senderType==='CLIENT'`, иначе `Менеджер`
- * (USER/ASSISTANT/QUALITY_CONTROL). Для не-TEXT сообщений и пустого текста
- * подставляется `[<contentType>]`.
- */
 export function renderTranscript(msgs: TranscriptMessage[]): string {
   return msgs
     .map((m) => {
       const role = m.senderType === 'CLIENT' ? 'Клиент' : 'Менеджер';
       const name = m.senderName ? ` [${m.senderName}]` : '';
       const body =
-        m.contentType !== 'TEXT' || !m.text || m.text.trim() === ''
-          ? `[${m.contentType}]`
-          : m.text;
+        m.contentType !== 'TEXT' || !m.text || m.text.trim() === '' ? `[${m.contentType}]` : m.text;
       return `${role}${name}: ${body}`;
     })
     .join('\n');
@@ -73,10 +83,6 @@ export class ChatboxIngestService {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
   ) {}
 
-  /**
-   * Lazy upsert `Source(type='chatbox', name='ChatBox')` для tenant'а.
-   * Конкурентно-безопасен (try/catch на P2002 — повторный findUnique).
-   */
   private async upsertSource(tenantId: string): Promise<{ id: string }> {
     const existing = await this.prisma.source.findUnique({
       where: {
@@ -101,7 +107,6 @@ export class ChatboxIngestService {
         select: { id: true },
       });
     } catch (err) {
-      // Гонка: между findUnique и create кто-то создал — повторим find.
       const retry = await this.prisma.source.findUnique({
         where: {
           tenantId_type_name: {
@@ -117,17 +122,10 @@ export class ChatboxIngestService {
     }
   }
 
-  /**
-   * Best-effort LLM-summary сессии. При любой ошибке LLM → warn + null
-   * (мост в knowledge-core не должен падать из-за саммари).
-   */
-  async generateSummary(
-    tenantId: string,
-    sessionId: string,
-  ): Promise<string | null> {
+  async generateSummary(tenantId: string, sessionId: string): Promise<string | null> {
     const session = await this.prisma.chatboxChatSession.findFirst({
       where: { id: sessionId, tenantId },
-      select: { id: true },
+      select: { id: true, chatId: true },
     });
     if (!session) return null;
 
@@ -143,54 +141,65 @@ export class ChatboxIngestService {
     });
     if (msgs.length === 0) return null;
 
-    const transcript = renderTranscript(msgs);
+    const chat = await this.prisma.chatboxChat.findFirst({
+      where: { id: session.chatId, tenantId },
+      select: { id: true, rollingSummary: true },
+    });
 
-    // Анти-инъекция: транскрипт чата — сырые внешние сообщения (клиент/менеджер),
-    // классический вектор prompt-injection. Оборачиваем user в маркеры данных +
-    // ноту в system. У сервиса нет TypedConfigService, поэтому глобальный
-    // kill-switch (aiFeatures.promptInjectionGuardEnabled) тут НЕ гейтит —
-    // guards включены всегда (enabled по умолчанию true).
-    const { system: guardedSystem, user: guardedUser } = applyInputGuards(
-      SUMMARY_SYSTEM_PROMPT,
+    const transcript = renderTranscript(msgs);
+    const prevRolling = chat?.rollingSummary?.trim() || '(пусто)';
+    const variableInput = [
+      'НАКОПИТЕЛЬНОЕ САММАРИ (прошлые дни):',
+      prevRolling,
+      '',
+      'СООБЩЕНИЯ ЗА ДЕНЬ:',
       transcript,
+    ].join('\n');
+
+    const { system: guardedSystem, user: guardedUser } = applyInputGuards(
+      DAY_ROLLUP_SYSTEM_PROMPT,
+      variableInput,
       { injection: true },
     );
 
-    try {
-      const result = await this.llm.call({
-        taskType: 'chatbox-summary',
-        systemPrompt: guardedSystem,
-        // Переменная часть (транскрипт) — в конце, под prompt caching.
-        userMessage: guardedUser,
-        tenantId,
-        dataClass: 'sensitive',
-        maxTokens: 500,
-      });
-      return result.text.trim();
-    } catch (err) {
-      this.logger.warn(
-        `generateSummary: LLM-ошибка для session=${sessionId} tenant=${tenantId}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-      return null;
+    let parsed: ChatboxDayRollup | null = null;
+    for (let attempt = 0; attempt < 2 && !parsed; attempt += 1) {
+      try {
+        const result = await this.llm.call({
+          taskType: 'chatbox-summary',
+          systemPrompt: guardedSystem,
+          userMessage: guardedUser,
+          tenantId,
+          dataClass: 'sensitive',
+          maxTokens: 900,
+          sourceRef: { type: 'chatbox_session', id: sessionId },
+          validate: (t: string) => parseChatboxDayRollup(t) !== null,
+        });
+        parsed = parseChatboxDayRollup(result.text);
+      } catch (err) {
+        this.logger.warn(
+          `generateSummary: LLM-ошибка session=${sessionId} tenant=${tenantId} attempt=${attempt}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        break;
+      }
     }
+    if (!parsed) return null;
+
+    if (chat) {
+      await this.prisma.chatboxChat.updateMany({
+        where: { id: chat.id, tenantId },
+        data: {
+          rollingSummary: parsed.rollingSummary,
+          rollingSummaryAt: new Date(),
+        },
+      });
+    }
+    return parsed.daySummary;
   }
 
-  /**
-   * Превращает закрытую сессию чата в `RawEvent(sourceType='chatbox')` через
-   * `IngestService.ingest` (мост в knowledge-core). Анализируем только
-   * закрытые сессии (`endedAt != null`) — открытая ещё копит сообщения.
-   *
-   * Идемпотентно: `sourceExternalId=sessionId` → стабильный idempotencyKey,
-   * повторный вызов не плодит RawEvent.
-   *
-   * @returns `{ rawEventId }` или null (открытая/отсутствующая сессия).
-   */
-  async ingestSession(
-    tenantId: string,
-    sessionId: string,
-  ): Promise<{ rawEventId: string } | null> {
+  async ingestSession(tenantId: string, sessionId: string): Promise<{ rawEventId: string } | null> {
     const session = await this.prisma.chatboxChatSession.findFirst({
       where: { id: sessionId, tenantId },
       select: {
@@ -202,7 +211,6 @@ export class ChatboxIngestService {
         previousSessionId: true,
       },
     });
-    // Анализируем только закрытые сессии — открытая (endedAt=null) ещё копит.
     if (!session || session.endedAt === null) return null;
 
     const chat = await this.prisma.chatboxChat.findFirst({
@@ -212,6 +220,7 @@ export class ChatboxIngestService {
         channelType: true,
         customerExternalId: true,
         responsibleExternalId: true,
+        rollingSummary: true,
       },
     });
 
@@ -227,7 +236,6 @@ export class ChatboxIngestService {
       },
     });
 
-    // Summary предыдущей сессии (для подмешивания в анализ).
     let previousSessionSummary: string | null = null;
     if (session.previousSessionId) {
       const prev = await this.prisma.chatboxChatSession.findFirst({
@@ -237,7 +245,6 @@ export class ChatboxIngestService {
       previousSessionSummary = prev?.summary ?? null;
     }
 
-    // Резолв клиента (unified Customer).
     let customer: { externalId: string; name: string | null } | null = null;
     if (chat?.customerExternalId) {
       const c = await this.prisma.chatboxCustomer.findUnique({
@@ -252,7 +259,6 @@ export class ChatboxIngestService {
       customer = c ? { externalId: c.externalId, name: c.name } : null;
     }
 
-    // Резолв ответственного менеджера (+ связь с Person Коры).
     let responsible: {
       externalId: string;
       name: string | null;
@@ -281,11 +287,6 @@ export class ChatboxIngestService {
     }));
     const fullText = renderTranscript(renderMsgs);
 
-    // Per-message сегментация для корректной атрибуции subject по говорящему
-    // (фикс cross-attribution chatbox). Менеджер-реплики → authorPersonId
-    // ответственного; клиент-реплики → authorPersonId=null (не сотрудник).
-    // Синтетические таймкоды (1 сообщение = 1 секунда) дают block-extraction
-    // привязку evidenceStartMs к нужному сегменту.
     const transcriptTurns = messages.map((m, i) => ({
       speaker:
         m.senderType === 'CLIENT'
@@ -295,8 +296,7 @@ export class ChatboxIngestService {
       startSec: i,
       endSec: i + 0.9,
       speakerParticipantId: null,
-      authorPersonId:
-        m.senderType === 'CLIENT' ? null : (responsible?.personId ?? null),
+      authorPersonId: m.senderType === 'CLIENT' ? null : (responsible?.personId ?? null),
     }));
 
     const payload = {
@@ -308,23 +308,19 @@ export class ChatboxIngestService {
       customer,
       responsible,
       previousSessionSummary,
+      rollingSummary: chat?.rollingSummary ?? null,
       messages: messages.map((m) => ({
         at: m.externalCreatedAt.toISOString(),
         from: m.senderType === 'CLIENT' ? 'client' : 'manager',
         name: m.senderName ?? null,
         text: m.text ?? null,
       })),
-      // Обязательно для block-ingest worker (generic-путь ищет fullText).
       fullText,
-      // Per-message turns (фикс cross-attribution): buildSegments идёт по
-      // meeting-пути и строит сегмент на сообщение с authorPersonId.
       transcript: { turns: transcriptTurns },
     };
 
     const source = await this.upsertSource(tenantId);
 
-    // стабильный occurredAt = startedAt: idempotencyKey не должен меняться при
-    // дозаполнении сессии (иначе дубль RawEvent)
     const occurredAt = session.startedAt;
 
     const res = await this.ingest.ingest({

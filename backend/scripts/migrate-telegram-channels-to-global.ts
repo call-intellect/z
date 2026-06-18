@@ -1,45 +1,3 @@
-/**
- * β-9 (2026-05-25) — Миграция Telegram-каналов с per-tenant модели на глобальную.
- *
- * Контекст. До β-9 в проекте была заложена модель «один Telegram-бот на одну
- * организацию» (Channel.tenantId NOT NULL). С β-9 решено использовать
- * один глобальный бот на всю платформу (один Channel с tenantId IS NULL).
- *
- * Логика (case-split по фактическому состоянию таблицы `channels`):
- *
- *   А. 0 любых telegram_bot Channel'ов → создать пустую глобальную запись
- *      (config={}, status='active', tenantId=NULL). Дальше токен прокладывает
- *      главный администратор через `/admin/system/telegram-bot`.
- *
- *   Б. 1 глобальный + 0 per-tenant → ничего не делать (уже мигрировано).
- *
- *   В. 0 глобальных + 1 per-tenant → конвертировать единственный per-tenant
- *      в глобальный: UPDATE channels SET tenantId=NULL, config = config || {legacyTenantId}.
- *
- *   Г. 0 глобальных + >1 per-tenant → выбрать самый свежий по updatedAt как
- *      глобальный, остальные пометить status='broken' с brokenReason='migrated-to-global'.
- *      Все их ChannelBinding'и UPDATE channel_bindings SET channelId=<global_id>.
- *      Токены остальных сохранить в config.legacyTokens[] глобального канала —
- *      главный администратор сам разберётся, какой токен оставить активным.
- *
- *   Д. 1 глобальный + >0 per-tenant → перенести ChannelBinding'и per-tenant на
- *      глобальный, per-tenant каналы пометить broken. Токены per-tenant
- *      сохранить в config.legacyTokens[].
- *
- * Идемпотентность: повторный запуск попадает в case Б (уже мигрировано) и
- * завершается без изменений и без ошибки (exit 0).
- *
- * ВАЖНО. Скрипт меняет channel_bindings и channels. Перед запуском на проде:
- *   1. Сделать снапшот БД.
- *   2. Запустить с --dry-run, проверить вывод.
- *   3. Запустить без --dry-run.
- *   4. Если что-то пошло не так — запустить `migrate-telegram-channels-back.ts`.
- *
- * Запуск (из backend/):
- *   bun run scripts/migrate-telegram-channels-to-global.ts --dry-run
- *   bun run scripts/migrate-telegram-channels-to-global.ts
- */
-
 import { createPrismaClient } from './_lib/prisma';
 
 interface RunArgs {
@@ -59,8 +17,6 @@ const KIND = 'telegram_bot' as const;
 const BROKEN_REASON = 'migrated-to-global';
 
 async function main(args: RunArgs): Promise<void> {
-  // Скрипт работает только с prisma — не поднимаем весь AppModule (Nest DI),
-  // чтобы не зависеть от готовности всей инфраструктуры на момент выката.
   const prisma = createPrismaClient();
   try {
     log(`=== migrate-telegram-channels-to-global START (dryRun=${args.dryRun}) ===`);
@@ -81,11 +37,8 @@ async function main(args: RunArgs): Promise<void> {
       bindingsMoved: 0,
     };
 
-    log(
-      `before: global=${stats.channelsBeforeGlobal}, perTenant=${stats.channelsBeforePerTenant}`,
-    );
+    log(`before: global=${stats.channelsBeforeGlobal}, perTenant=${stats.channelsBeforePerTenant}`);
 
-    // ── А. Свежая БД — нет ни одного telegram_bot канала.
     if (!global && perTenant.length === 0) {
       stats.caseDetected = 'A:fresh';
       log('case A: fresh DB — создаём пустой глобальный канал');
@@ -105,15 +58,11 @@ async function main(args: RunArgs): Promise<void> {
       } else {
         stats.channelsAfterGlobal = 1;
       }
-    }
-    // ── Б. Уже мигрировано.
-    else if (global && perTenant.length === 0) {
+    } else if (global && perTenant.length === 0) {
       stats.caseDetected = 'B:already-migrated';
       log('case B: уже мигрировано — ничего не делаем');
       stats.channelsAfterGlobal = 1;
-    }
-    // ── В. Единственный per-tenant → конвертация в глобальный.
-    else if (!global && perTenant.length === 1) {
+    } else if (!global && perTenant.length === 1) {
       stats.caseDetected = 'C:single-per-tenant';
       const only = perTenant[0]!;
       log(
@@ -134,11 +83,9 @@ async function main(args: RunArgs): Promise<void> {
         });
       }
       stats.channelsAfterGlobal = 1;
-    }
-    // ── Г. Нет глобального, несколько per-tenant.
-    else if (!global && perTenant.length > 1) {
+    } else if (!global && perTenant.length > 1) {
       stats.caseDetected = 'D:multi-per-tenant';
-      const chosen = perTenant[0]!; // самый свежий по updatedAt
+      const chosen = perTenant[0]!;
       const rest = perTenant.slice(1);
       log(
         `case D: выбран самый свежий channelId=${chosen.id} (tenantId=${chosen.tenantId}), остальных ${rest.length}`,
@@ -190,9 +137,7 @@ async function main(args: RunArgs): Promise<void> {
       }
       stats.channelsAfterGlobal = 1;
       stats.channelsMarkedBroken = rest.length;
-    }
-    // ── Д. Уже есть глобальный + дополнительно per-tenant (странный случай, частичная миграция).
-    else if (global && perTenant.length > 0) {
+    } else if (global && perTenant.length > 0) {
       stats.caseDetected = 'E:global-plus-per-tenant';
       log(
         `case E: глобальный уже есть (channelId=${global.id}), плюс ${perTenant.length} per-tenant → переносим bindings, помечаем broken`,
@@ -251,7 +196,9 @@ async function main(args: RunArgs): Promise<void> {
     if (args.dryRun) {
       log('DRY-RUN: ничего не записано. Запустите без --dry-run чтобы применить.');
     } else {
-      log('Изменения применены. Если что-то не так — `bun run scripts/migrate-telegram-channels-back.ts`.');
+      log(
+        'Изменения применены. Если что-то не так — `bun run scripts/migrate-telegram-channels-back.ts`.',
+      );
     }
   } finally {
     await prisma.$disconnect();

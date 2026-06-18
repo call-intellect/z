@@ -1,10 +1,5 @@
 import { z } from 'zod';
 
-/**
- * Sprints (2026-05-27) — DTO для `SprintHint`.
- * См. plans/tz/2026-05-27-sprints.md §1.1 и backend/prisma/schema.prisma.
- */
-
 export const SprintHintKindValues = [
   'no_due_date',
   'no_description',
@@ -50,4 +45,3 @@ export const ListSprintHintsQuerySchema = z
     status: z.enum(SprintHintStatusValues).optional(),
   })
   .strict();
-export type ListSprintHintsQueryDto = z.infer<typeof ListSprintHintsQuerySchema>;

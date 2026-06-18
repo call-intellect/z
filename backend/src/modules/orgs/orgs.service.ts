@@ -9,12 +9,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import type {
-  MembershipRole,
-  Org,
-  OrgVisibilityMode,
-  Prisma,
-} from '@prisma/client';
+import type { MembershipRole, Org, OrgVisibilityMode, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { SubscriptionService } from '../billing/services/subscription.service';
@@ -23,13 +18,6 @@ import { RbacService } from '../rbac/rbac.service';
 import { TablesAutoProvisionService } from '../tables/services/tables-auto-provision.service';
 
 import type { TeamRosterItem } from './dto/team-roster.dto';
-
-/**
- * Бизнес-сервис Org / Membership.
- *
- * Слой DomainModel — простые DTO-объекты с camelCase, без внутренних полей
- * Prisma. Отдаются наружу через `OrgsController`.
- */
 
 export interface OrgDomain {
   id: string;
@@ -67,14 +55,6 @@ export class OrgsService {
     @Inject(PersonsService) private readonly persons: PersonsService,
   ) {}
 
-  /**
-   * Создать Org + Membership(owner) для текущего юзера.
-   * Используется и в endpoint'е POST /orgs, и в хуке регистрации.
-   *
-   * Также создаёт дефолтный `Source(type=meeting, name='Встречи Z')` —
-   * единый канал ingest для встреч (knowledge-core Фаза 1). Управление
-   * другими источниками (telegram/email/...) — Фаза 10.
-   */
   async createForOwner(
     input: { name: string; ownerId: string },
     tx?: Prisma.TransactionClient,
@@ -98,10 +78,6 @@ export class OrgsService {
         invitedBy: null,
       },
     });
-    // Ф9 (no_person): сразу создаём Person владельца и проставляем
-    // Membership.personId — иначе `me/promises` отдаёт 403, а dump уходит в
-    // legacy-ветку без provenance. Идемпотентно (ensurePersonForUser сначала
-    // ищет по userId). Внутри того же транзакционного клиента `client`.
     const ownerPerson = await this.persons.ensurePersonForUser(
       { tenantId: org.id, userId: input.ownerId },
       client,
@@ -110,29 +86,21 @@ export class OrgsService {
       where: { orgId_userId: { orgId: org.id, userId: input.ownerId } },
       data: { personId: ownerPerson.id },
     });
-    // knowledge-core Фаза 1: дефолтный Source для встреч.
-    // Канонический name берётся из MeetingIngestAdapter.DEFAULT_SOURCE_NAME,
-    // но импортировать его здесь нельзя (циклическая зависимость orgs↔ingest).
-    // Дублируем строковую константу — единственное место, где это допустимо.
     await client.source.create({
       data: {
         tenantId: org.id,
         type: 'meeting',
-        name: 'Встречи Z',
+        name: 'Встречи',
         dataClass: 'internal',
         isActive: true,
       },
     });
-    // ТЗ paywall-no-trial §3 — для каждой новой Org создаём запись
-    // Subscription со status=DEMO, чтобы SubscriptionGuard работал детерминированно.
     await this.subscriptions.ensureDemo(org.id, tx);
-    // Smart-tables Фаза 0 — 10 системных таблиц (пустых), видны в /tables сразу.
     await this.tablesAutoProvision.provisionDefaults(org.id, input.ownerId, tx);
     this.rbac.invalidate(input.ownerId, org.id);
     return org;
   }
 
-  /** Список Org текущего юзера. */
   async listForUser(userId: string): Promise<OrgDomain[]> {
     const memberships = await this.prisma.membership.findMany({
       where: { userId, org: { deletedAt: null } },
@@ -142,7 +110,6 @@ export class OrgsService {
     return memberships.map((m) => this.toOrgDomain(m.org));
   }
 
-  /** Получить Org по id, если у юзера есть membership. */
   async getById(orgId: string, userId: string): Promise<OrgDomain> {
     const ctx = await this.rbac.loadContext(userId, orgId);
     if (!ctx) throw new ForbiddenException({ ok: false, error: { code: 'no_membership' } });
@@ -153,7 +120,6 @@ export class OrgsService {
     return this.toOrgDomain(org);
   }
 
-  /** Обновить Org (name / visibilityMode). Только owner. */
   async update(
     orgId: string,
     userId: string,
@@ -175,12 +141,10 @@ export class OrgsService {
       where: { id: orgId },
       data,
     });
-    // Инвалидируем кэш всех membership'ов этой Org (visibilityMode мог поменяться).
     this.rbac.invalidateAll();
     return this.toOrgDomain(updated);
   }
 
-  /** Список членов Org. Доступно member'у любой роли. */
   async listMembers(orgId: string, userId: string): Promise<MembershipDomain[]> {
     const ctx = await this.rbac.loadContext(userId, orgId);
     if (!ctx) throw new ForbiddenException({ ok: false, error: { code: 'no_membership' } });
@@ -200,12 +164,6 @@ export class OrgsService {
     }));
   }
 
-  /**
-   * ТЗ «Команда + доступы» Фаза 2 — объединённый ростер: все Person Org ⊕
-   * участники без связанной карточки (Person.userId). Видит любой участник
-   * Org (действия гейтятся ролью на уровне отдельных эндпоинтов). Логика
-   * текущей должности зеркалит persons.service (appointment → personRole).
-   */
   async listTeamRoster(orgId: string, userId: string): Promise<TeamRosterItem[]> {
     const ctx = await this.rbac.loadContext(userId, orgId);
     if (!ctx) {
@@ -267,12 +225,9 @@ export class OrgsService {
     const coveredUserIds = new Set<string>();
 
     for (const p of persons) {
-      const currentRole =
-        p.appointments?.[0]?.role ?? p.personRoles[0]?.role ?? null;
+      const currentRole = p.appointments?.[0]?.role ?? p.personRoles[0]?.role ?? null;
       if (p.userId) coveredUserIds.add(p.userId);
-      const membership = p.userId
-        ? membershipByUserId.get(p.userId) ?? null
-        : null;
+      const membership = p.userId ? (membershipByUserId.get(p.userId) ?? null) : null;
       rows.push({
         personId: p.id,
         userId: p.userId,
@@ -280,6 +235,7 @@ export class OrgsService {
         email: p.email || null,
         roleId: currentRole?.id ?? null,
         roleName: currentRole?.name ?? null,
+        relationship: p.relationship,
         departmentId: p.primaryDepartmentId,
         departmentName: p.primaryDepartment?.name ?? null,
         invitationStatus: membership ? 'accepted' : (p.invitations[0]?.status ?? 'none'),
@@ -299,6 +255,7 @@ export class OrgsService {
         email: m.user.email,
         roleId: null,
         roleName: null,
+        relationship: 'employee',
         departmentId: null,
         departmentName: null,
         invitationStatus: 'accepted',
@@ -312,14 +269,6 @@ export class OrgsService {
     return this.dedupRosterByEmail(rows);
   }
 
-  /**
-   * ТЗ 2026-06-10 meeting-stuck-and-team-roster Ф1 — дедуп ростера по email на чтении
-   * (страховка; реальные дубли Person убирает backfill Ф3). Схлопывает строки с
-   * одинаковым непустым нормализованным email в одну. База — строка с userId
-   * (носитель аккаунта/системной роли); должность/отдел/человеческое имя/карточка
-   * дополняются из «ручной» строки. Порядок первого появления сохраняется.
-   * Два аккаунта на один email (обе строки с userId) — НЕ схлопываются (аномалия видна).
-   */
   private dedupRosterByEmail(rows: TeamRosterItem[]): TeamRosterItem[] {
     const indexByEmail = new Map<string, number>();
     const result: TeamRosterItem[] = [];
@@ -335,7 +284,6 @@ export class OrgsService {
         indexByEmail.set(norm, result.length);
         result.push(row);
       } else if (existing.userId && row.userId) {
-        // два аккаунта на один email — не схлопываем (Ф3 backfill тоже не сольёт)
         result.push(row);
       } else {
         result[idx] = this.mergeRosterRows(existing, row);
@@ -344,7 +292,6 @@ export class OrgsService {
     return result;
   }
 
-  /** Слить две строки ростера с одним email: база — носитель userId, обогащение из второй. */
   private mergeRosterRows(a: TeamRosterItem, b: TeamRosterItem): TeamRosterItem {
     const base = a.userId ? a : b.userId ? b : a;
     const other = base === a ? b : a;
@@ -375,7 +322,6 @@ export class OrgsService {
     };
   }
 
-  /** «Слабое» имя = логин/локальная часть email (ASCII без пробелов) → можно заменить человеческим. */
   private isWeakDisplayName(name: string, email: string | null): boolean {
     const n = (name ?? '').trim();
     if (!n) return true;
@@ -384,7 +330,6 @@ export class OrgsService {
     return /^[A-Za-z0-9._+-]+$/.test(n);
   }
 
-  /** Сменить роль участника. Только owner/admin. */
   async updateMember(
     orgId: string,
     actorUserId: string,
@@ -398,7 +343,6 @@ export class OrgsService {
         error: { code: 'forbidden' },
       });
     }
-    // Только owner может назначать owner-роль.
     if (newRole === 'owner' && ctx.role !== 'owner' && !ctx.isSuperAdmin) {
       throw new ForbiddenException({
         ok: false,
@@ -412,7 +356,6 @@ export class OrgsService {
     if (!target) {
       throw new NotFoundException({ ok: false, error: { code: 'membership_not_found' } });
     }
-    // Защищаем последнего owner'а — нельзя понизить.
     if (target.role === 'owner' && newRole !== 'owner') {
       const owners = await this.prisma.membership.count({
         where: { orgId, role: 'owner' },
@@ -440,12 +383,7 @@ export class OrgsService {
     };
   }
 
-  /** Удалить участника из Org. Только owner/admin. */
-  async removeMember(
-    orgId: string,
-    actorUserId: string,
-    targetUserId: string,
-  ): Promise<void> {
+  async removeMember(orgId: string, actorUserId: string, targetUserId: string): Promise<void> {
     const ctx = await this.rbac.loadContext(actorUserId, orgId);
     if (!ctx || (ctx.role !== 'owner' && ctx.role !== 'admin' && !ctx.isSuperAdmin)) {
       throw new ForbiddenException({ ok: false, error: { code: 'forbidden' } });
@@ -472,8 +410,6 @@ export class OrgsService {
     });
     this.rbac.invalidate(targetUserId, orgId);
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private toOrgDomain(o: Org): OrgDomain {
     return {

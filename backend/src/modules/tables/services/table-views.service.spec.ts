@@ -6,16 +6,6 @@ import type { RbacService } from '../../rbac/rbac.service';
 
 import { TableViewsService } from './table-views.service';
 
-/**
- * Unit-тесты `TableViewsService` — Saved Views (Фаза 3).
- *
- * Покрытие:
- *  1. create — view создаётся с ownerId=userId.
- *  2. list   — пользователь видит свои personal + shared/public.
- *  3. list   — чужие personal-виды скрываются (фильтр в where).
- *  4. update — владелец может править свой view.
- *  5. update — чужой view, не admin → ForbiddenException.
- */
 describe('TableViewsService', () => {
   const TENANT = 'org-1';
   const USER = 'user-1';
@@ -119,7 +109,6 @@ describe('TableViewsService', () => {
     };
     expect(call.where.tableId).toBe(TABLE_ID);
     expect(Array.isArray(call.where.OR)).toBe(true);
-    // OR содержит ветку «shared/public» и ветку «personal + ownerId=USER».
     expect(call.where.OR).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -131,16 +120,12 @@ describe('TableViewsService', () => {
   });
 
   it('list — чужой personal не попадает (where.OR построен корректно)', async () => {
-    // Эквивалентно п.2: проверяем точечно, что в where OR нет ветки,
-    // которая бы пропустила personal без ownerId=USER. Дополнительно — emit
-    // findMany не должен включать в условие чужие personal.
     tableFindUnique.mockResolvedValueOnce({ tenantId: TENANT, deletedAt: null });
     viewFindMany.mockResolvedValueOnce([]);
 
     await svc.list({ tenantId: TENANT, tableId: TABLE_ID, userId: USER });
 
     const call = viewFindMany.mock.calls[0]![0] as { where: { OR: unknown[] } };
-    // Ни одна ветка не должна разрешать personal без ownerId-фильтра.
     for (const branch of call.where.OR) {
       const b = branch as { visibility?: unknown; ownerId?: unknown };
       if (b.visibility === 'personal') {
@@ -164,17 +149,12 @@ describe('TableViewsService', () => {
 
     expect(out.id).toBe('v-1');
     expect(viewUpdate).toHaveBeenCalledTimes(1);
-    // canWrite не должен звался — владелец и так может.
     expect(canWrite).not.toHaveBeenCalled();
   });
 
   it('update — чужой view без admin прав → ForbiddenException', async () => {
-    // findById должен сработать: visibility=shared, поэтому USER его видит,
-    // но редактировать не может — view не его, и canWrite=false.
     tableFindUnique.mockResolvedValueOnce({ tenantId: TENANT, deletedAt: null });
-    viewFindUnique.mockResolvedValueOnce(
-      view({ ownerId: OTHER, visibility: 'shared' }),
-    );
+    viewFindUnique.mockResolvedValueOnce(view({ ownerId: OTHER, visibility: 'shared' }));
     canWrite.mockResolvedValueOnce(false);
 
     await expect(
@@ -193,9 +173,7 @@ describe('TableViewsService', () => {
 
   it('findById — чужой personal → NotFoundException (а не 403)', async () => {
     tableFindUnique.mockResolvedValueOnce({ tenantId: TENANT, deletedAt: null });
-    viewFindUnique.mockResolvedValueOnce(
-      view({ ownerId: OTHER, visibility: 'personal' }),
-    );
+    viewFindUnique.mockResolvedValueOnce(view({ ownerId: OTHER, visibility: 'personal' }));
 
     await expect(
       svc.findById({

@@ -1,4 +1,3 @@
-import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 const USER_COMPANY_ROLES = [
@@ -14,5 +13,4 @@ export const UpdateCompanyRoleSchema = z.object({
   companyRole: z.enum(USER_COMPANY_ROLES),
 });
 
-export class UpdateCompanyRoleDto extends createZodDto(UpdateCompanyRoleSchema) {}
 export type UpdateCompanyRoleBody = z.infer<typeof UpdateCompanyRoleSchema>;

@@ -9,27 +9,6 @@ import { PersonalDailyBriefService } from '../services/personal-daily-brief.serv
 import { getLocalDate, getLocalHour } from '../utils/local-date';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
-/**
- * TZ-1 Фаза 2 (daily-value-engine) — PersonalDailyBriefCron.
- *
- * Раз в час (`@Cron('0 * * * *')`) обходит employee-Person'ов с привязанным
- * User'ом и для тех, у кого локальный час == утреннему окну
- * (`operations.personal_daily_brief.morning_hour`, default 9) собирает
- * персональный бриф «Твой день»:
- *
- *   - `buildFor` → upsert `PersonalDailyBrief` (идемпотентно по
- *     (tenantId, personId, dateLocal));
- *   - если бриф уже доставлен сегодня — не шлём повторно (idempotent push);
- *   - если в брифе есть содержимое — push через дневной бюджет Ф0
- *     (eventType `proactive.notification`, priorityTier 2 — обычный приоритет,
- *     режется бюджетом и тихими часами); `deliveredAt` ставится после push.
- *
- * Master-flag `operations.personal_daily_brief.enabled` (kill-switch, ON по
- * умолчанию). False → cron тикает, но сразу выходит (без рестарта).
- *
- * Метрики: `personal_daily_brief_built_total` (в сервисе),
- * `personal_daily_brief_delivered_total{channel}`.
- */
 @Injectable()
 export class PersonalDailyBriefCron {
   private readonly logger = new Logger(PersonalDailyBriefCron.name);
@@ -63,7 +42,7 @@ export class PersonalDailyBriefCron {
     const now = new Date();
     try {
       const stats = await this.runOnce(now);
-      this.logger.log(stats, 'personal-daily-brief.cron: проход завершён');
+      this.logger.debug(stats, 'personal-daily-brief.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -72,7 +51,6 @@ export class PersonalDailyBriefCron {
     }
   }
 
-  /** Выделен для unit-тестов: можно передать произвольный `now`. */
   async runOnce(now: Date): Promise<{
     briefsBuilt: number;
     delivered: number;
@@ -137,8 +115,6 @@ export class PersonalDailyBriefCron {
           tenantId: p.tenantId,
           recipientUserId: p.userId,
           eventType: 'proactive.notification',
-          // priorityTier=2 → обычный приоритет, режется дневным бюджетом Ф0 и
-          // тихими часами (личный бриф не критичен как клиент под риском).
           priorityTier: 2,
           payload: {
             proactiveNotificationId: id,
@@ -176,19 +152,15 @@ export class PersonalDailyBriefCron {
     };
   }
 
-  /** Короткое тело push'а: счётчики + подсказка. Без markdown. */
   private buildPushBody(payload: {
     counts: { tasks: number; promises: number; blockers: number; promisedToMe: number };
     hint: string;
   }): string {
     const parts: string[] = [];
     if (payload.counts.tasks > 0) parts.push(`задач: ${payload.counts.tasks}`);
-    if (payload.counts.promises > 0)
-      parts.push(`обещаний: ${payload.counts.promises}`);
-    if (payload.counts.blockers > 0)
-      parts.push(`блокеров: ${payload.counts.blockers}`);
-    if (payload.counts.promisedToMe > 0)
-      parts.push(`обещано тебе: ${payload.counts.promisedToMe}`);
+    if (payload.counts.promises > 0) parts.push(`обещаний: ${payload.counts.promises}`);
+    if (payload.counts.blockers > 0) parts.push(`блокеров: ${payload.counts.blockers}`);
+    if (payload.counts.promisedToMe > 0) parts.push(`обещано тебе: ${payload.counts.promisedToMe}`);
     const summary = parts.length > 0 ? `Сегодня: ${parts.join(', ')}.` : '';
     const hint = payload.hint ? ` ${payload.hint}` : '';
     return `${summary}${hint}`.trim().slice(0, 4_000) || 'Твой день готов.';

@@ -1,38 +1,28 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import useSWR from 'swr';
+import { useEffect, useState } from "react";
+import useSWR from "swr";
 
-import { qualityScoreApi } from '@/api/quality-score.api';
-import { humanizeApiError } from '@/api/api-error';
-import { orgQualityScoreSettingsFromApi } from '@/domain/quality-score';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-
-/**
- * Клиент страницы `/company-admin/meetings` (ТЗ 2026-06-02).
- *
- * Содержит блок «Считать оценку для типов встреч» — чекбокс-список 9 типов.
- * Под капотом — `Org.qualityScoreDisabledForTypes`: ВЫКЛЮЧЕННЫЙ чекбокс
- * = тип в массиве disabled.
- *
- * Все строки на русском (memory `feedback_admin_ui_russian_only`).
- */
+import { qualityScoreApi } from "@/api/quality-score.api";
+import { humanizeApiError } from "@/api/api-error";
+import { orgQualityScoreSettingsFromApi } from "@/domain/quality-score";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 
 const MEETING_TYPES: Array<{ value: string; label: string }> = [
-  { value: 'team', label: 'Командная встреча (team)' },
-  { value: 'standup', label: 'Стендап (standup)' },
-  { value: 'plan_fact', label: 'План-факт (plan_fact)' },
-  { value: 'project', label: 'Проект (project)' },
-  { value: 'sales', label: 'Продажи (sales)' },
-  { value: 'custdev', label: 'Custdev' },
-  { value: 'partner', label: 'Партнёр (partner)' },
-  { value: 'interview', label: 'Интервью (interview)' },
-  { value: 'customer_success', label: 'Customer Success' },
+  { value: "team", label: "Командная встреча (team)" },
+  { value: "standup", label: "Стендап (standup)" },
+  { value: "plan_fact", label: "План-факт (plan_fact)" },
+  { value: "project", label: "Проект (project)" },
+  { value: "sales", label: "Продажи (sales)" },
+  { value: "custdev", label: "Custdev" },
+  { value: "partner", label: "Партнёр (partner)" },
+  { value: "interview", label: "Интервью (interview)" },
+  { value: "customer_success", label: "Customer Success" },
 ];
 
 export function MeetingsAdminSettingsClient() {
   const swr = useSWR(
-    ['org-quality-score-settings'],
+    ["org-quality-score-settings"],
     async () => {
       const dto = await qualityScoreApi.getOrgSettings();
       return orgQualityScoreSettingsFromApi(dto);
@@ -78,7 +68,9 @@ export function MeetingsAdminSettingsClient() {
     setError(null);
     setDisabled((prev) => {
       const base = prev ?? [...(swr.data?.disabledForTypes ?? [])];
-      return base.includes(value) ? base.filter((v) => v !== value) : [...base, value];
+      return base.includes(value)
+        ? base.filter((v) => v !== value)
+        : [...base, value];
     });
   };
 
@@ -91,10 +83,10 @@ export function MeetingsAdminSettingsClient() {
         disabledForTypes: currentDisabled,
       });
       setDisabled([...dto.disabledForTypes]);
-      setSuccess('Настройки сохранены.');
+      setSuccess("Настройки сохранены.");
       await swr.mutate();
     } catch (e) {
-      setError(humanizeApiError(e, 'Не удалось сохранить настройки.'));
+      setError(humanizeApiError(e, "Не удалось сохранить настройки."));
     } finally {
       setSaving(false);
     }
@@ -111,7 +103,9 @@ export function MeetingsAdminSettingsClient() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Считать оценку для типов встреч</CardTitle>
+          <CardTitle className="text-base">
+            Считать оценку для типов встреч
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-fg-secondary">
@@ -130,7 +124,10 @@ export function MeetingsAdminSettingsClient() {
                     onChange={() => toggle(t.value)}
                     className="h-4 w-4 rounded border-border text-accent focus:ring-accent"
                   />
-                  <label htmlFor={`mt-${t.value}`} className="text-sm text-fg-primary">
+                  <label
+                    htmlFor={`mt-${t.value}`}
+                    className="text-sm text-fg-primary"
+                  >
                     {t.label}
                   </label>
                 </li>
@@ -149,7 +146,7 @@ export function MeetingsAdminSettingsClient() {
             disabled={saving}
             className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg hover:opacity-90 disabled:opacity-50"
           >
-            {saving ? 'Сохраняем…' : 'Сохранить'}
+            {saving ? "Сохраняем…" : "Сохранить"}
           </button>
         </CardContent>
       </Card>

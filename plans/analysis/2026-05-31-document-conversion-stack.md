@@ -3,7 +3,7 @@ type: analysis
 date: 2026-05-31
 status: complete
 relates_to:
-  - plans/tz/2026-05-31-document-ingest-universal.md
+  - plans/archive/2026-05-31-document-ingest-universal.md
 research_method: 6 параллельных агентов с web-research; каждый ссылается на GitHub, HuggingFace, бенчмарки, статьи 2025-2026
 ---
 

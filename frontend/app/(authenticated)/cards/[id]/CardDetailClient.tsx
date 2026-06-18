@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import useSWR from 'swr';
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import useSWR from "swr";
 import {
   Archive,
   ArchiveRestore,
@@ -23,31 +23,31 @@ import {
   Trash2,
   Truck,
   User,
-} from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import rehypeSanitize from 'rehype-sanitize';
-import { toast } from 'sonner';
+} from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
+import { toast } from "sonner";
 
-import { cardsApi } from '@/api/cards.api';
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
-import { CARD_KIND_LABELS, type CardKind, cardFromApi } from '@/domain/card';
-import { meetingStatusLabel } from '@/domain/meeting';
-import { meetingTypeLabel } from '@/domain/admin-prompt-template';
-import type { MeetingTypeApi } from '@/api/admin-prompt-templates.api';
-import { CardChat } from '@/ui/components/cards/CardChat';
-import { CardThemesSection } from '@/ui/components/cards/CardThemesSection';
-import { CurationBanner } from '@/ui/components/curation/CurationBanner';
-import { Button } from '@/ui/shadcn/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
+import { cardsApi } from "@/api/cards.api";
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
+import { CARD_KIND_LABELS, type CardKind, cardFromApi } from "@/domain/card";
+import { meetingStatusLabel } from "@/domain/meeting";
+import { meetingTypeLabel } from "@/domain/admin-prompt-template";
+import type { MeetingTypeApi } from "@/api/admin-prompt-templates.api";
+import { CardChat } from "@/ui/components/cards/CardChat";
+import { CardThemesSection } from "@/ui/components/cards/CardThemesSection";
+import { CurationBanner } from "@/ui/components/curation/CurationBanner";
+import { Button } from "@/ui/shadcn/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/shadcn/tabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/ui/shadcn/dropdown-menu';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/ui/shadcn/dropdown-menu";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 const KIND_ICONS: Record<CardKind, typeof FolderKanban> = {
   client: User,
@@ -55,22 +55,21 @@ const KIND_ICONS: Record<CardKind, typeof FolderKanban> = {
   project: Layers,
   topic: TagIcon,
   custom: FolderKanban,
-  // SBA α-3: новый kind 'vendor' (поставщик). Иконка — грузовик.
   vendor: Truck,
 };
 
 export function CardDetailClient({ cardId }: { cardId: string }) {
   const router = useRouter();
-  const [tab, setTab] = useState<'overview' | 'chat'>('overview');
+  const [tab, setTab] = useState<"overview" | "chat">("overview");
   const { ask, dialog: confirmDialog } = useConfirmDialog();
 
-  const cardSwr = useSWR(['card', cardId], async () => {
+  const cardSwr = useSWR(["card", cardId], async () => {
     const api = await cardsApi.get(cardId);
     return cardFromApi(api);
   });
 
   const meetingsSwr = useSWR(
-    cardSwr.data ? ['card-meetings', cardId] : null,
+    cardSwr.data ? ["card-meetings", cardId] : null,
     () => cardsApi.listMeetings(cardId, 1, 50),
   );
 
@@ -106,7 +105,7 @@ export function CardDetailClient({ cardId }: { cardId: string }) {
       const updated = await cardsApi.update(card.id, { pinned: !card.pinned });
       await cardSwr.mutate(cardFromApi(updated), { revalidate: false });
     } catch (err) {
-      toast.error(humanizeApiError(err, 'Ошибка'));
+      toast.error(humanizeApiError(err, "Ошибка"));
     }
   }
 
@@ -117,27 +116,29 @@ export function CardDetailClient({ cardId }: { cardId: string }) {
         archived: !card.archivedAt,
       });
       await cardSwr.mutate(cardFromApi(updated), { revalidate: false });
-      toast.success(card.archivedAt ? 'Карточка восстановлена' : 'Карточка в архиве');
+      toast.success(
+        card.archivedAt ? "Карточка восстановлена" : "Карточка в архиве",
+      );
     } catch (err) {
-      toast.error(humanizeApiError(err, 'Ошибка'));
+      toast.error(humanizeApiError(err, "Ошибка"));
     }
   }
 
   async function deleteCard() {
     if (!card) return;
     const ok = await ask({
-      title: 'Удалить карточку?',
-      description: 'Восстановить можно в течение 30 дней.',
-      confirmLabel: 'Удалить',
+      title: "Удалить карточку?",
+      description: "Восстановить можно в течение 30 дней.",
+      confirmLabel: "Удалить",
       destructive: true,
     });
     if (!ok) return;
     try {
       await cardsApi.remove(card.id);
-      toast.success('Карточка удалена');
-      router.push('/cards');
+      toast.success("Карточка удалена");
+      router.push("/cards");
     } catch (err) {
-      toast.error(humanizeApiError(err, 'Ошибка удаления'));
+      toast.error(humanizeApiError(err, "Ошибка удаления"));
     }
   }
 
@@ -146,18 +147,23 @@ export function CardDetailClient({ cardId }: { cardId: string }) {
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-6">
       <div className="mb-4">
-        <Button asChild variant="ghost" size="sm" className="gap-1 text-fg-tertiary">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="gap-1 text-fg-tertiary"
+        >
           <Link href="/cards">
             <ChevronLeft size={16} /> Все карточки
           </Link>
         </Button>
       </div>
 
-      {/* Header */}
+      {}
       <header className="mb-6 flex flex-wrap items-start gap-4">
         <div
           className="grid h-12 w-12 shrink-0 place-items-center rounded-lg"
-          style={{ backgroundColor: card.color + '22', color: card.color }}
+          style={{ backgroundColor: card.color + "22", color: card.color }}
         >
           <Icon size={22} />
         </div>
@@ -256,14 +262,12 @@ export function CardDetailClient({ cardId }: { cardId: string }) {
         </div>
       </header>
 
-      {/* SBA α-6 — Curation Banner: показывает «На проверке», если для этой
-          карточки есть открытый CurationItem (auto-rollup не прошёл триаж и
-          ждёт куратора). Сам компонент рендерит null, если открытых items нет. */}
+      {}
       <div className="mb-4">
         <CurationBanner resourceType="card" resourceId={card.id} />
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as 'overview' | 'chat')}>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as "overview" | "chat")}>
         <TabsList>
           <TabsTrigger value="overview">Обзор</TabsTrigger>
           <TabsTrigger value="chat">AI-чат</TabsTrigger>
@@ -271,7 +275,7 @@ export function CardDetailClient({ cardId }: { cardId: string }) {
 
         <TabsContent value="overview" className="mt-4">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            {/* Timeline (2 columns) */}
+            {}
             <section className="lg:col-span-2">
               <h2 className="mb-3 text-sm font-medium text-fg-tertiary">
                 Встречи в карточке
@@ -300,12 +304,13 @@ export function CardDetailClient({ cardId }: { cardId: string }) {
                               {m.title}
                             </span>
                             <span className="text-xs text-fg-tertiary">
-                              {meetingTypeLabel(m.type as MeetingTypeApi) ?? m.type}
+                              {meetingTypeLabel(m.type as MeetingTypeApi) ??
+                                m.type}
                             </span>
                             <StatusBadge status={m.status} />
                           </div>
                           <div className="mt-0.5 text-xs text-fg-tertiary">
-                            {new Date(m.createdAt).toLocaleString('ru-RU')}
+                            {new Date(m.createdAt).toLocaleString("ru-RU")}
                           </div>
                           {m.summary && (
                             <p className="mt-1 line-clamp-2 text-xs text-fg-secondary">
@@ -320,7 +325,7 @@ export function CardDetailClient({ cardId }: { cardId: string }) {
               )}
             </section>
 
-            {/* Sidebar: rollup + AI-темы */}
+            {}
             <aside className="flex flex-col gap-4">
               <RollupCard
                 summary={card.summary}
@@ -364,11 +369,11 @@ function RollupCard({
         <h3 className="text-sm font-medium">Сводка по карточке</h3>
         {summaryUpdatedAt && (
           <span className="ml-auto text-xs text-fg-tertiary">
-            {new Intl.DateTimeFormat('ru-RU', {
-              day: 'numeric',
-              month: 'short',
-              hour: '2-digit',
-              minute: '2-digit',
+            {new Intl.DateTimeFormat("ru-RU", {
+              day: "numeric",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
             }).format(summaryUpdatedAt)}
           </span>
         )}
@@ -393,13 +398,13 @@ function RollupCard({
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const tone = status.includes('failed')
-    ? 'bg-danger/15 text-danger'
-    : status === 'ai_ready'
-      ? 'bg-accent/15 text-accent'
-      : 'bg-bg-overlay text-fg-tertiary';
+  const tone = status.includes("failed")
+    ? "bg-danger/15 text-danger"
+    : status === "ai_ready"
+      ? "bg-accent/15 text-accent"
+      : "bg-bg-overlay text-fg-tertiary";
   return (
-    <span className={cn('rounded-full px-1.5 py-0.5 text-[10px]', tone)}>
+    <span className={cn("rounded-full px-1.5 py-0.5 text-[10px]", tone)}>
       {meetingStatusLabel(status)}
     </span>
   );

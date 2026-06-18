@@ -1,15 +1,3 @@
-/**
- * Snapshot-тест сборки промта `type-sales.ts`.
- *
- * ⚠ ВАЖНО — НЕ про качество LLM-вывода.
- * Snapshot ловит регрессии в `buildPrompt(...)` / `withRoomChatNote` /
- * `withConfidenceCalibration` / `withInjectionGuard` (порядок применения,
- * дублирование, потерянные кусочки). Регрессия КАЧЕСТВА — отдельная история
- * через SPO (см. `plans/tz/2026-05-24-supervised-prompt-optimization.md`).
- *
- * Обновлять snapshot ТОЛЬКО при осознанном изменении промта (после ревью
- * diff'а): `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import { buildPrompt } from './type-sales';

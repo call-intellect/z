@@ -19,10 +19,6 @@ function meeting(type: MeetingType) {
   };
 }
 
-// CRIT-2 guard: при добавлении нового значения в MeetingType TypeScript
-// потребует ключ в этой карте — тест ниже автоматически проверит регистр.
-// Без `satisfies Record<MeetingType, true>` забытый enum-value тихо ломал
-// бы AI-pipeline (см. plans/analysis/2026-05-22-code-reality-deltas.md §CRIT-2).
 const ALL_MEETING_TYPES = {
   team: true,
   standup: true,
@@ -87,9 +83,7 @@ describe('Prompts registry — все типы MeetingType покрыты', () =
     const d = getPromptForType('team');
     const sample = {
       discussed: ['релиз'],
-      decisions: [
-        { text: 'выпускаем в пятницу', speaker: 'Алиса', changes_what: 'дату релиза' },
-      ],
+      decisions: [{ text: 'выпускаем в пятницу', speaker: 'Алиса', changes_what: 'дату релиза' }],
       tasks: [{ title: 'починить баг X', assignee: 'Боб', dueDate: null }],
       blockers: [],
       next_step: 'тестируем в четверг',
@@ -98,8 +92,6 @@ describe('Prompts registry — все типы MeetingType покрыты', () =
     expect(result.success).toBe(true);
   });
 
-  // CRIT-2 fix (2026-05-24): review/retrospective получили собственные
-  // промпты. Тесты ниже фиксируют контракт нового JSON.
   it('review — schema валидирует ожидаемый JSON', () => {
     const d = getPromptForType('review');
     const sample = {
@@ -119,9 +111,7 @@ describe('Prompts registry — все типы MeetingType покрыты', () =
     const sample = {
       what_worked: ['ежедневные standup'],
       what_did_not_work: ['эстимация затянутая'],
-      action_items: [
-        { title: 'попробовать planning poker', assignee: 'Алиса', dueDate: null },
-      ],
+      action_items: [{ title: 'попробовать planning poker', assignee: 'Алиса', dueDate: null }],
       experiments: ['разбить таск-доску по эпикам'],
       kudos: ['Боб героически выкатил релиз'],
       team_mood: 'mixed',
@@ -139,7 +129,7 @@ describe('Prompts registry — все типы MeetingType покрыты', () =
       action_items: [],
       experiments: [],
       kudos: [],
-      team_mood: 'awesome', // не в enum
+      team_mood: 'awesome',
       mood_notes: null,
     };
     const result = d.schema.safeParse(bad);

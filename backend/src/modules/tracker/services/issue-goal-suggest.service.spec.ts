@@ -6,16 +6,6 @@ import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
 import { IssueGoalSuggestService } from './issue-goal-suggest.service';
 
-/**
- * Tracker Phase 3 part C — юнит-тест IssueGoalSuggestService.
- *
- * Покрытие:
- *  - KNN voting ≥ 60% и top distance ≤ 0.20 → возвращаем goalId с source='knn'.
- *  - KNN voting < 60% → fallback на LLM.
- *  - top distance > 0.20 → fallback на LLM.
- *  - LLM вернул goalId не из списка → null.
- *  - Issue без embedding (пустой KNN) → fallback на LLM.
- */
 describe('IssueGoalSuggestService.suggestGoal', () => {
   let prisma: PrismaService;
   let router: LlmRouterService;
@@ -57,21 +47,18 @@ describe('IssueGoalSuggestService.suggestGoal', () => {
 
   it('KNN: ≥60% top-10 → одна Goal с distance ≤ 0.20 → source=knn', async () => {
     setupIssue();
-    queryRaw.mockResolvedValue(
-      // 10 строк, 7 указывают на g1 (70%), top distance = 0.05
-      [
-        { goalId: 'g1', distance: 0.05 },
-        { goalId: 'g1', distance: 0.06 },
-        { goalId: 'g1', distance: 0.07 },
-        { goalId: 'g1', distance: 0.08 },
-        { goalId: 'g1', distance: 0.09 },
-        { goalId: 'g1', distance: 0.1 },
-        { goalId: 'g1', distance: 0.11 },
-        { goalId: 'g2', distance: 0.12 },
-        { goalId: 'g2', distance: 0.13 },
-        { goalId: 'g3', distance: 0.14 },
-      ],
-    );
+    queryRaw.mockResolvedValue([
+      { goalId: 'g1', distance: 0.05 },
+      { goalId: 'g1', distance: 0.06 },
+      { goalId: 'g1', distance: 0.07 },
+      { goalId: 'g1', distance: 0.08 },
+      { goalId: 'g1', distance: 0.09 },
+      { goalId: 'g1', distance: 0.1 },
+      { goalId: 'g1', distance: 0.11 },
+      { goalId: 'g2', distance: 0.12 },
+      { goalId: 'g2', distance: 0.13 },
+      { goalId: 'g3', distance: 0.14 },
+    ]);
     const result = await svc.suggestGoal({
       tenantId: 't1',
       issueId: 'iss1',
@@ -133,9 +120,7 @@ describe('IssueGoalSuggestService.suggestGoal', () => {
       { goalId: 'g4', distance: 0.08 },
       { goalId: 'g5', distance: 0.09 },
     ]);
-    goalFindMany.mockResolvedValue([
-      { id: 'g1', name: 'Релиз', description: '' },
-    ]);
+    goalFindMany.mockResolvedValue([{ id: 'g1', name: 'Релиз', description: '' }]);
     routerCall.mockResolvedValue({
       text: JSON.stringify({ goalId: 'g1', confidence: 0.9 }),
       modelUsed: 'deepseek:deepseek-chat',
@@ -155,9 +140,7 @@ describe('IssueGoalSuggestService.suggestGoal', () => {
   it('Пустой KNN (нет embedding у источника) → fallback LLM', async () => {
     setupIssue();
     queryRaw.mockResolvedValue([]);
-    goalFindMany.mockResolvedValue([
-      { id: 'g1', name: 'Цель 1', description: '' },
-    ]);
+    goalFindMany.mockResolvedValue([{ id: 'g1', name: 'Цель 1', description: '' }]);
     routerCall.mockResolvedValue({
       text: JSON.stringify({ goalId: 'g1', confidence: 0.7 }),
       modelUsed: 'deepseek:deepseek-chat',
@@ -176,9 +159,7 @@ describe('IssueGoalSuggestService.suggestGoal', () => {
   it('LLM вернул goalId не из списка → null + source=none', async () => {
     setupIssue();
     queryRaw.mockResolvedValue([]);
-    goalFindMany.mockResolvedValue([
-      { id: 'g1', name: 'Цель 1', description: '' },
-    ]);
+    goalFindMany.mockResolvedValue([{ id: 'g1', name: 'Цель 1', description: '' }]);
     routerCall.mockResolvedValue({
       text: JSON.stringify({ goalId: 'g-phantom', confidence: 0.9 }),
       modelUsed: 'deepseek:deepseek-chat',

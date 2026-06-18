@@ -1,26 +1,22 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 
-import { adminLlmModelsApi } from '@/api/admin-llm-models.api';
+import { adminLlmModelsApi } from "@/api/admin-llm-models.api";
 import {
   adminLlmModelFromApi,
   type AdminLlmModelDomain,
-} from '@/domain/admin-llm-model';
-import { Badge } from '@/ui/shadcn/badge';
+} from "@/domain/admin-llm-model";
+import { Badge } from "@/ui/shadcn/badge";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
 
-/**
- * SBA α-10 wave 3 — /admin/llm/models.
- * Список LlmModel из реестра с группировкой по провайдеру.
- */
 export function LlmModelsClient() {
   const [includeInactive, setIncludeInactive] = useState(false);
 
@@ -94,9 +90,11 @@ function ModelsTable({ items }: { items: AdminLlmModelDomain[] }) {
               <td className="px-3 py-2 font-mono text-xs">{m.providerName}</td>
               <td className="px-3 py-2 font-mono text-xs">{m.modelKey}</td>
               <td className="px-3 py-2">{m.displayName}</td>
-              <td className="px-3 py-2 text-xs">{m.category ?? '—'}</td>
+              <td className="px-3 py-2 text-xs">{m.category ?? "—"}</td>
               <td className="px-3 py-2 text-right tabular-nums">
-                {m.contextWindow ? m.contextWindow.toLocaleString('ru-RU') : '—'}
+                {m.contextWindow
+                  ? m.contextWindow.toLocaleString("ru-RU")
+                  : "—"}
               </td>
               <td className="px-3 py-2">
                 {m.isActive ? (
@@ -106,9 +104,11 @@ function ModelsTable({ items }: { items: AdminLlmModelDomain[] }) {
                 )}
               </td>
               <td className="px-3 py-2 text-xs">
-                {m.verifiedAt
-                  ? m.verifiedAt.toLocaleDateString('ru-RU')
-                  : <span className="text-fg-tertiary">не проверена</span>}
+                {m.verifiedAt ? (
+                  m.verifiedAt.toLocaleDateString("ru-RU")
+                ) : (
+                  <span className="text-fg-tertiary">не проверена</span>
+                )}
               </td>
             </tr>
           ))}

@@ -22,7 +22,6 @@ export const SCHEMA = z
     pilot: z.string().nullable(),
     risks: z.array(z.string()),
     next_step: z.string().nullable(),
-    // A11-Волна2 (additive, опциональное — обратная совместимость):
     data_quality: z.string().nullable().optional(),
   })
   .strict();

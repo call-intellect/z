@@ -1,28 +1,13 @@
-import {
-  BadRequestException,
-  Controller,
-  Get,
-  Inject,
-  UseGuards,
-} from '@nestjs/common';
+import { BadRequestException, Controller, Get, Inject, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import type { BadgeDto, UserBadgeDto } from '../dto/recognition.dto';
 import { RecognitionService } from '../services/recognition.service';
 
-/**
- * Wave 2 — Badges REST API.
- *
- *   GET /api/v1/badges       — каталог Badge (общий, не зависит от user'а).
- *   GET /api/v1/me/badges    — мои выданные UserBadge'ы (с join по Badge).
- */
 @ApiTags('recognition / badges')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -51,11 +36,7 @@ export class BadgesController {
 
   @Get('me/badges')
   @ApiOperation({ summary: 'Мои выданные бейджи' })
-  async myBadges(
-    @CurrentUser() user: CurrentUserPayload,
-    // tenantId не нужен для select моих бейджей (UserBadge.userId = self),
-    // но проверяем тенант для consistency UI.
-  ): Promise<UserBadgeDto[]> {
+  async myBadges(@CurrentUser() user: CurrentUserPayload): Promise<UserBadgeDto[]> {
     if (!user?.id) {
       throw new BadRequestException({
         ok: false,

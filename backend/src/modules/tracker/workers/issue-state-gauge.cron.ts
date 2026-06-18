@@ -4,23 +4,6 @@ import { Cron } from '@nestjs/schedule';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * IssueStateGaugeCron (Sprint 3 B1-3.1, 2026-05-24).
- *
- * Каждые 5 минут snapshot'ит per-tenant/per-project счётчики трекера в
- * gauge'и:
- *   - `issues_by_state_count{tenant, project, state}` — по `IssueState.name`.
- *   - `issues_overdue_count{tenant, project}` — задачи с `dueDate<now AND
- *     state.category NOT IN ('completed', 'cancelled')`.
- *   - `intake_pending_count{tenant}` — `IntakeIssue.status='pending'`.
- *
- * NB: gauge.set перезаписывает значение. Комбинации (tenant, project, state),
- * которые исчезли из выборки (всё закрылось), останутся с устаревшим
- * значением до рестарта процесса. Это допустимый компромисс для MVP —
- * Grafana показывает «срез последний раз», а нулевые состояния редки.
- *
- * См. `core-metrics-snapshot.cron.ts` (knowledge-core) — тот же паттерн.
- */
 @Injectable()
 export class IssueStateGaugeCron {
   private readonly logger = new Logger(IssueStateGaugeCron.name);
@@ -47,14 +30,11 @@ export class IssueStateGaugeCron {
     }
   }
 
-  /** Внутренний публичный метод — удобно вызывать из тестов вручную. */
   async run(): Promise<void> {
     await this.refreshGauges();
   }
 
   private async refreshByState(): Promise<void> {
-    // groupBy по (tenantId, projectId, stateId) — затем подгружаем имена
-    // состояний в одном запросе для удобства Grafana (label по name, а не cuid).
     const groups = await this.prisma.issue.groupBy({
       by: ['tenantId', 'projectId', 'stateId'],
       where: { deletedAt: null },
@@ -70,9 +50,7 @@ export class IssueStateGaugeCron {
     });
     const idToName = new Map(states.map((s) => [s.id, s.name]));
     for (const g of groups) {
-      const stateName = g.stateId
-        ? idToName.get(g.stateId) ?? 'unknown'
-        : 'none';
+      const stateName = g.stateId ? (idToName.get(g.stateId) ?? 'unknown') : 'none';
       this.metrics.setIssuesByStateCount({
         tenant: g.tenantId,
         project: g.projectId,
@@ -84,8 +62,6 @@ export class IssueStateGaugeCron {
 
   private async refreshOverdue(): Promise<void> {
     const now = new Date();
-    // raw groupBy по проектам с фильтром по дате и категории состояния. Prisma
-    // не поддерживает groupBy с join по category — берём через include + reduce.
     const rows = await this.prisma.issue.findMany({
       where: {
         deletedAt: null,
@@ -96,7 +72,6 @@ export class IssueStateGaugeCron {
       },
       select: { tenantId: true, projectId: true },
     });
-    // Сводим in-memory.
     const counter = new Map<string, { tenant: string; project: string; count: number }>();
     for (const r of rows) {
       const key = `${r.tenantId}|${r.projectId}`;

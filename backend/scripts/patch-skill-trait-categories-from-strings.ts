@@ -1,27 +1,3 @@
-/**
- * Patch (SBA γ-1 доделки) — миграция SkillTrait.category (legacy string)
- * → SkillTraitCategory FK.
- *
- * Логика:
- *   1. Для каждого Org:
- *      a. SELECT DISTINCT category FROM SkillTrait WHERE category IS NOT NULL
- *         AND categoryId IS NULL AND profile.tenantId = <org>.
- *      b. Для каждой уникальной строки:
- *          - slug = slugify(name).
- *          - UPSERT SkillTraitCategory(tenantId, name, slug).
- *          - UPDATE SkillTrait SET categoryId = newCategory.id
- *            WHERE category = <name> AND categoryId IS NULL AND profileId IN (...).
- *   2. Лог: N categories created, M traits linked.
- *
- * Идемпотентно: повторный запуск увидит уже привязанные traits и пропустит.
- * Не перезаписывает admin-edited записи — UPSERT идёт по уникальному (tenantId, slug),
- * без перезаписи name/description у существующих категорий.
- *
- * Запуск:
- *   bun run scripts/patch-skill-trait-categories-from-strings.ts
- *   bun run scripts/patch-skill-trait-categories-from-strings.ts --dry-run
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 import { columnExists } from './_lib/schema-guards';
@@ -40,8 +16,6 @@ interface OrgCounters {
 
 async function main(): Promise<void> {
   const prisma = createPrismaClient();
-  // Локальный slugify — берём из SkillTraitCategoryService.prototype.slugify
-  // через instance с заглушками (нам нужна только чистая функция).
   const slugifyHelper = new SkillTraitCategoryService(
     prisma as never,
     { log: () => Promise.resolve() } as never,
@@ -56,9 +30,6 @@ async function main(): Promise<void> {
       `=== patch-skill-trait-categories-from-strings START (${DRY_RUN ? 'DRY-RUN' : 'REAL'}) ===`,
     );
 
-    // Guard: legacy-колонка SkillTrait.category планово удаляется после
-    // перехода на FK SkillTraitCategory. Если её уже нет — where:{category}
-    // упал бы. Выходим чисто.
     if (!(await columnExists(prisma, 'SkillTrait', 'category'))) {
       console.log(
         'SkillTrait.category удалён — миграция в SkillTraitCategory применена ранее, обновление не требуется.',
@@ -81,7 +52,6 @@ async function main(): Promise<void> {
         traitsLinked: 0,
       };
 
-      // Уникальные не-пустые legacy строки.
       const raw = await prisma.skillTrait.findMany({
         where: {
           categoryId: null,
@@ -91,9 +61,7 @@ async function main(): Promise<void> {
         select: { category: true },
         distinct: ['category'],
       });
-      const uniqueNames = [
-        ...new Set(raw.map((r) => r.category.trim()).filter(Boolean)),
-      ];
+      const uniqueNames = [...new Set(raw.map((r) => r.category.trim()).filter(Boolean))];
       orgCounters.uniqueCategoriesFound = uniqueNames.length;
 
       for (const name of uniqueNames) {
@@ -101,7 +69,7 @@ async function main(): Promise<void> {
         let categoryId: string | null = null;
 
         if (DRY_RUN) {
-          orgCounters.categoriesCreated++; // условно — для оценки
+          orgCounters.categoriesCreated++;
           continue;
         }
 
@@ -126,7 +94,6 @@ async function main(): Promise<void> {
             orgCounters.categoriesCreated++;
           }
         } catch (err) {
-          // Race: возможна параллельная вставка — повторный read.
           console.warn(
             `[org ${org.id}] upsert категории "${name}" (slug=${slug}) упал, retry-read:`,
             err instanceof Error ? err.message : String(err),
@@ -143,7 +110,6 @@ async function main(): Promise<void> {
           }
         }
 
-        // Линк traits батчем 500.
         const BATCH = 500;
         let totalLinked = 0;
         // eslint-disable-next-line no-constant-condition
@@ -170,8 +136,7 @@ async function main(): Promise<void> {
 
     const totals = counters.reduce(
       (acc, c) => ({
-        uniqueCategoriesFound:
-          acc.uniqueCategoriesFound + c.uniqueCategoriesFound,
+        uniqueCategoriesFound: acc.uniqueCategoriesFound + c.uniqueCategoriesFound,
         categoriesCreated: acc.categoriesCreated + c.categoriesCreated,
         categoriesReused: acc.categoriesReused + c.categoriesReused,
         traitsLinked: acc.traitsLinked + c.traitsLinked,

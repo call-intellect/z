@@ -15,24 +15,6 @@ const USER_RETRY_TTL_SECONDS = 3600;
 
 export type RetryActor = 'user' | 'admin';
 
-/**
- * Перезапуск AI-pipeline для встречи в `failed`.
- *
- * Определение этапа повтора:
- *   - нет Transcript.rawIndexS3Url → transcribe (recording_ready как промежуточный).
- *   - есть rawIndex, нет mergedS3Url → merge (transcription_processing).
- *   - есть merged, нет AiResult.id → analyze (transcription_ready).
- *   - всё есть — нечего повторять.
- *
- * NB: в MVP FSM из `failed` сделать переход назад в `recording_ready` нельзя —
- * `failed` терминальное. Поэтому для retry используем «жесткий» апдейт через
- * `prisma.meeting.update` (минуя FSM) ТОЛЬКО для retry-сценария. Это исключение
- * из общего правила «всё через transitionStatus», и оно зафиксировано в
- * `meeting-fsm.ts` комментарием: `retryFromFailed()` — отдельный путь.
- *
- * Rate-limit для user: 3 retry/час по ключу `ai:retry:user:<userId>`.
- * Admin не лимитируется.
- */
 @Injectable()
 export class RetryService {
   private readonly logger = new Logger(RetryService.name);
@@ -43,7 +25,7 @@ export class RetryService {
     @Inject(AiQueueService) private readonly queue: AiQueueService,
     @Inject(MeetingsService) private readonly meetings: MeetingsService,
   ) {
-    void this.meetings; // зарезервирован для будущих сценариев логирования через FSM-meta
+    void this.meetings;
   }
 
   async retry(
@@ -60,7 +42,6 @@ export class RetryService {
     });
     if (!meeting) throw new MeetingNotFoundError(meetingId);
 
-    // User может ретраить только из `failed`. Admin — с любого «не-ai_ready».
     if (actor === 'user') {
       if (meeting.status !== 'failed') {
         throw new NotAuthorizedError('retry_only_from_failed');
@@ -79,9 +60,6 @@ export class RetryService {
       throw new NotAuthorizedError('nothing_to_retry');
     }
 
-    // Сбрасываем `failed` на промежуточный статус, минуя FSM.
-    // Это необходимо, потому что `failed` — терминальный по FSM, но retry —
-    // легальный кейс (отдельный путь, см. `meeting-fsm.ts` комментарий).
     const targetStatus =
       stage === 'transcribe'
         ? 'recording_ready'
@@ -114,15 +92,10 @@ export class RetryService {
       await this.queue.enqueueAnalyze(meetingId, Date.now());
     }
 
-    this.logger.log(
-      { meetingId, actor, stage },
-      'retry: AI-pipeline перезапущен',
-    );
+    this.logger.log({ meetingId, actor, stage }, 'retry: AI-pipeline перезапущен');
 
     return { stage };
   }
-
-  // ─────────────────────────── private ─────────────────────────────────────
 
   private detectStage(meeting: {
     transcript: { turns: unknown; tracks: { id: string }[] } | null;

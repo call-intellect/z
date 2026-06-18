@@ -1,16 +1,3 @@
-/**
- * Agents v2 Фаза C1 (2026-05-30) — Unit-тесты PracticeSkillExtractorService.
- *
- * Сценарии:
- *   1. concept с traitCount < minTraitsForExtract → пропуск (LLM не вызывался).
- *   2. LLM вернул skill=null → ничего не создаётся.
- *   3. LLM вернул валидный skill с confidence ≥ 0.7 → create new PracticeSkill,
- *      embedding записан, метрика incPracticeSkillsExtracted вызвана.
- *   4. KNN dedup нашёл existing → mergeIntoExisting (без create), version++.
- *   5. LLM вернул confidence < 0.7 → не создаётся.
- *
- * Все Prisma/LLM/Embedder/Metrics мокированы.
- */
 import type { PracticeSkill } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -67,9 +54,7 @@ function makePrisma(args?: {
       findMany: vi.fn().mockResolvedValue(args?.traits ?? []),
     },
     skillProfile: {
-      findMany: vi
-        .fn()
-        .mockResolvedValue([{ id: PROFILE, personId: PERSON, tenantId: TENANT }]),
+      findMany: vi.fn().mockResolvedValue([{ id: PROFILE, personId: PERSON, tenantId: TENANT }]),
     },
     ideaBlock: {
       findMany: vi.fn().mockResolvedValue(args?.blocks ?? []),
@@ -170,7 +155,7 @@ describe('PracticeSkillExtractorService', () => {
         tenantId: TENANT,
         canonicalName: 'Aккуратность с оценками',
         status: 'active',
-        traitCount: 2, // < 5
+        traitCount: 2,
       },
     });
     const svc = new PracticeSkillExtractorService(
@@ -240,9 +225,7 @@ describe('PracticeSkillExtractorService', () => {
         status: 'active',
         traitCount: 10,
       },
-      traits: [
-        { id: 'trait-1', statement: 't1', sourceBlockIds: [block.id], profileId: PROFILE },
-      ],
+      traits: [{ id: 'trait-1', statement: 't1', sourceBlockIds: [block.id], profileId: PROFILE }],
       blocks: [block],
     });
     llmMock = makeLlm(
@@ -319,11 +302,9 @@ describe('PracticeSkillExtractorService', () => {
         status: 'active',
         traitCount: 10,
       },
-      traits: [
-        { id: 'trait-1', statement: 't1', sourceBlockIds: [block.id], profileId: PROFILE },
-      ],
+      traits: [{ id: 'trait-1', statement: 't1', sourceBlockIds: [block.id], profileId: PROFILE }],
       blocks: [block],
-      knnRows: [{ id: 'skill-existing', dist: 0.05 }], // cosine sim 0.95 ≥ 0.85
+      knnRows: [{ id: 'skill-existing', dist: 0.05 }],
       existingSkill,
     });
     llmMock = makeLlm(
@@ -375,9 +356,7 @@ describe('PracticeSkillExtractorService', () => {
         status: 'active',
         traitCount: 10,
       },
-      traits: [
-        { id: 't1', statement: 's', sourceBlockIds: [block.id], profileId: PROFILE },
-      ],
+      traits: [{ id: 't1', statement: 's', sourceBlockIds: [block.id], profileId: PROFILE }],
       blocks: [block],
     });
     llmMock = makeLlm(

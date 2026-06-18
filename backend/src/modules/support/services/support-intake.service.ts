@@ -17,7 +17,6 @@ import { SupportAccessService } from './support-access.service';
 import { SupportLearningService } from './support-learning.service';
 import { SupportSlaService } from './support-sla.service';
 
-/** Идентификатор Support-проекта (systemGenerated) в вендор-Org. */
 const SUPPORT_PROJECT_IDENTIFIER = 'SUP';
 
 export interface MyTicketListItem {
@@ -43,18 +42,9 @@ export interface MyTicketDetail {
   status: string | null;
   createdAt: string;
   updatedAt: string;
-  /** Только access='external' — internal-заметки/черновики НИКОГДА не отдаём. */
   messages: MyTicketMessage[];
 }
 
-/**
- * SupportIntakeService — клиентская сторона деска: создание обращения,
- * чтение своих тикетов (ТОЛЬКО access='external'), ответ, оценка.
- *
- * ТЗ 2026-06-09 support-desk Ф1. Cross-tenant: клиент любой Org пишет в
- * вендор-Org (Support-проект). НЕ читает чужой tenant — всё в scope
- * вендор-Org + supportCustomerUserId=caller.
- */
 @Injectable()
 export class SupportIntakeService {
   private readonly logger = new Logger(SupportIntakeService.name);
@@ -73,10 +63,6 @@ export class SupportIntakeService {
     private readonly learning: SupportLearningService,
   ) {}
 
-  /**
-   * Создать тикет = Issue в вендор-Org (Support-проект). Лента access='external'.
-   * Best-effort после tx: дублирование сотрудникам в Telegram+почту.
-   */
   async createTicket(
     callerUserId: string,
     callerOrgId: string | null,
@@ -120,22 +106,19 @@ export class SupportIntakeService {
       });
     }
 
-    // Контакт клиента для отображения в деске (email/имя).
     const caller = await this.prisma.user.findUnique({
       where: { id: callerUserId },
       select: { email: true, name: true },
     });
-    const contact = caller
-      ? `${caller.name ?? ''} <${caller.email ?? ''}>`.trim()
-      : null;
+    const contact = caller ? `${caller.name ?? ''} <${caller.email ?? ''}>`.trim() : null;
 
     const createdAt = new Date();
-    const { firstResponseDueAt, resolutionDueAt } =
-      await this.sla.computeDueDates(vendorOrgId, createdAt);
+    const { firstResponseDueAt, resolutionDueAt } = await this.sla.computeDueDates(
+      vendorOrgId,
+      createdAt,
+    );
 
     const issue = await this.prisma.$transaction(async (tx) => {
-      // Атомарный sequenceId: max+1 per project (узкая гонка снимается
-      // unique-constraint'ом @@unique([projectId, sequenceId])).
       const maxRow = await tx.issue.aggregate({
         where: { projectId: project.id },
         _max: { sequenceId: true },
@@ -164,7 +147,6 @@ export class SupportIntakeService {
         },
       });
 
-      // Первое сообщение клиента — лента видима клиенту (access='external').
       await tx.issueComment.create({
         data: {
           issueId: created.id,
@@ -188,7 +170,6 @@ export class SupportIntakeService {
       return created;
     });
 
-    // Best-effort: дублирование сотрудникам (Telegram+почта).
     await this.notifyStaff(vendorOrgId, 'support.ticket_created', {
       ticketId: issue.id,
       ticketNumber: issue.identifier,
@@ -200,10 +181,7 @@ export class SupportIntakeService {
     return { ticketId: issue.id, ticketNumber: issue.identifier };
   }
 
-  /** Список тикетов клиента (его обращения в вендор-деск). */
-  async listMyTickets(
-    callerUserId: string,
-  ): Promise<{ items: MyTicketListItem[] }> {
+  async listMyTickets(callerUserId: string): Promise<{ items: MyTicketListItem[] }> {
     const vendorOrgId = await this.access.getVendorOrgId();
     if (!vendorOrgId) return { items: [] };
 
@@ -233,14 +211,7 @@ export class SupportIntakeService {
     };
   }
 
-  /**
-   * Детали тикета клиента + ВНЕШНИЕ сообщения (access='external' ВСЕГДА).
-   * internal-заметки и черновики клона НИКОГДА не отдаются (R-INV-3).
-   */
-  async getMyTicket(
-    callerUserId: string,
-    ticketId: string,
-  ): Promise<MyTicketDetail> {
+  async getMyTicket(callerUserId: string, ticketId: string): Promise<MyTicketDetail> {
     const issue = await this.requireMyTicket(callerUserId, ticketId);
     const comments = await this.prisma.issueComment.findMany({
       where: { issueId: issue.id, access: 'external', deletedAt: null },
@@ -276,7 +247,6 @@ export class SupportIntakeService {
     };
   }
 
-  /** Клиент дописывает сообщение в свой тикет (access='external'). */
   async addMyMessage(
     callerUserId: string,
     ticketId: string,
@@ -294,7 +264,6 @@ export class SupportIntakeService {
       },
       select: { id: true },
     });
-    // Тикет обновился — двигаем updatedAt, чтобы всплыл в очереди.
     await this.prisma.issue.update({
       where: { id: issue.id },
       data: { updatedAt: new Date() },
@@ -310,7 +279,6 @@ export class SupportIntakeService {
     return { ok: true, commentId: comment.id };
   }
 
-  /** Оценка тикета клиентом (CSAT). Upsert по issueId (unique). */
   async rateTicket(
     callerUserId: string,
     ticketId: string,
@@ -330,8 +298,6 @@ export class SupportIntakeService {
       },
     });
 
-    // Гейт качества Ф3: при достаточном CSAT промоутим принятые/исправленные
-    // ответы клона в контур (best-effort, не валит оценку).
     try {
       await this.learning.maybePromote(issue.id);
     } catch (err) {
@@ -347,9 +313,6 @@ export class SupportIntakeService {
     return { ok: true };
   }
 
-  // ─────────────────────────── internal ───────────────────────────
-
-  /** Загрузить тикет в scope вендор-Org + проверка владения клиентом. 404/403. */
   private async requireMyTicket(callerUserId: string, ticketId: string) {
     const vendorOrgId = await this.access.getVendorOrgId();
     if (!vendorOrgId) {
@@ -389,10 +352,6 @@ export class SupportIntakeService {
     return issue;
   }
 
-  /**
-   * Дублировать событие сотрудникам поддержки (Telegram+почта+in_app).
-   * Best-effort: ошибка по одному получателю не валит остальных и intake.
-   */
   private async notifyStaff(
     vendorOrgId: string,
     eventType: 'support.ticket_created' | 'support.ticket_reply',
@@ -416,11 +375,7 @@ export class SupportIntakeService {
         select: { userId: true },
       });
       const userIds = Array.from(
-        new Set(
-          persons
-            .map((p) => p.userId)
-            .filter((id): id is string => typeof id === 'string'),
-        ),
+        new Set(persons.map((p) => p.userId).filter((id): id is string => typeof id === 'string')),
       );
 
       for (const uid of userIds) {

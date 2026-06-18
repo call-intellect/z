@@ -1,20 +1,11 @@
-'use client';
+"use client";
 
-/**
- * TopicItemsList — таблица items блока обратной связи. Каждая строка через
- * ItemRow; пагинация снизу. Группировка по пользователю — добавляет блок
- * «Кто сколько раз писал» наверху (опц.).
- */
+import { useMemo } from "react";
 
-import { useMemo } from 'react';
+import { formatAuthor, type FeedbackItem } from "@/domain/admin-feedback";
+import { Button } from "@/ui/shadcn/button";
 
-import {
-  formatAuthor,
-  type FeedbackItem,
-} from '@/domain/admin-feedback';
-import { Button } from '@/ui/shadcn/button';
-
-import { ItemRow } from './ItemRow';
+import { ItemRow } from "./ItemRow";
 
 interface TopicItemsListProps {
   topicId: string;
@@ -37,15 +28,17 @@ export function TopicItemsList({
 }: TopicItemsListProps) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  // Группировка по пользователю — считаем количество тезисов на каждой странице.
-  // Backend пока не отдаёт агрегаты глобально, считаем по текущей странице.
   const userGroups = useMemo(() => {
-    if (!groupByUser) return [] as Array<{
-      userId: string;
-      label: string;
-      count: number;
-    }>;
-    const map = new Map<string, { userId: string; label: string; count: number }>();
+    if (!groupByUser)
+      return [] as Array<{
+        userId: string;
+        label: string;
+        count: number;
+      }>;
+    const map = new Map<
+      string,
+      { userId: string; label: string; count: number }
+    >();
     for (const it of items) {
       const existing = map.get(it.user.id);
       if (existing) {

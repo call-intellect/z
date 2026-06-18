@@ -1,25 +1,12 @@
-'use client';
+"use client";
 
-/**
- * RenameTopicDialog — диалог переименования смыслового блока обратной связи.
- *
- * Поля:
- *   - title (обязательное, ≤ 120 символов)
- *   - description (обязательное, ≤ 500 символов)
- *
- * Pre-fill из текущих значений блока. После успеха — toast + onSaved (родитель
- * выполняет SWR mutate).
- *
- * Фаза 8 ТЗ user-feedback-with-ai-clustering.
- */
+import { useEffect, useState } from "react";
+import { Save } from "lucide-react";
+import { toast } from "sonner";
 
-import { useEffect, useState } from 'react';
-import { Save } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { ApiError } from '@/api/api-error';
-import { adminFeedbackApi } from '@/api/admin-feedback.api';
-import { Button } from '@/ui/shadcn/button';
+import { ApiError } from "@/api/api-error";
+import { adminFeedbackApi } from "@/api/admin-feedback.api";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -27,10 +14,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 const TITLE_MAX = 120;
 const DESCRIPTION_MAX = 500;
@@ -84,7 +71,7 @@ export function RenameTopicDialog({
         title: trimmedTitle,
         description: trimmedDescription,
       });
-      toast.success('Готово');
+      toast.success("Готово");
       onSaved();
       onOpenChange(false);
     } catch (e) {
@@ -93,7 +80,7 @@ export function RenameTopicDialog({
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось переименовать блок';
+            : "Не удалось переименовать блок";
       setError(msg);
       toast.error(msg);
     } finally {
@@ -131,9 +118,7 @@ export function RenameTopicDialog({
             <div className="flex items-center justify-between text-[11px] text-fg-tertiary">
               <span>Не более {TITLE_MAX} символов.</span>
               <span
-                className={
-                  titleTooLong ? 'text-danger' : 'text-fg-tertiary'
-                }
+                className={titleTooLong ? "text-danger" : "text-fg-tertiary"}
               >
                 {title.length}/{TITLE_MAX}
               </span>
@@ -155,7 +140,7 @@ export function RenameTopicDialog({
               <span>Не более {DESCRIPTION_MAX} символов.</span>
               <span
                 className={
-                  descriptionTooLong ? 'text-danger' : 'text-fg-tertiary'
+                  descriptionTooLong ? "text-danger" : "text-fg-tertiary"
                 }
               >
                 {description.length}/{DESCRIPTION_MAX}
@@ -190,7 +175,7 @@ export function RenameTopicDialog({
             onClick={() => void handleSave()}
           >
             <Save size={14} />
-            {saving ? 'Сохраняем…' : 'Сохранить'}
+            {saving ? "Сохраняем…" : "Сохранить"}
           </Button>
         </DialogFooter>
       </DialogContent>

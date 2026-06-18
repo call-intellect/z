@@ -59,10 +59,9 @@ cp .env.example .env
 > Заглушки проходят валидацию и дают приложению подняться. Реальные значения нужны
 > только для соответствующих фич (AI-отчёт, запись, LiveKit-токены).
 
-Frontend:
+Frontend (переменные `NEXT_PUBLIC_*` живут в том же корневом `.env` — отдельный `.env.local` не создаём):
 ```bash
-cd ../frontend
-cp .env.example .env.local
+# в корневом .env:
 # NEXT_PUBLIC_API_BASE_URL=http://localhost:3000
 # NEXT_PUBLIC_BACKEND_URL=http://localhost:3000
 # NEXT_PUBLIC_LIVEKIT_URL=wss://media.local   (заглушка для dev)
@@ -74,7 +73,7 @@ cp .env.example .env.local
 cd backend
 bun install
 bun run prisma:generate         # Prisma 7 Client
-bun run prisma:push             # схема в z_main (db push, без migrate)
+bun run prisma:migrate          # применить версионируемые миграции в z_main (migrate dev); db push — только для черновых проб
 bun run apply-postgres-init     # HNSW/GIN-индексы pgvector (не в schema.prisma)
 bun run prisma:seed             # промпты по типам встреч + дефолтные шаблоны (опц., нужен ADMIN_BOOTSTRAP_EMAIL)
 ```

@@ -2,18 +2,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { DIALOG_CLASSIFY_JSON_SCHEMA } from '../prompts/classify.prompt';
 
-import {
-  QueryClassifierService,
-  type DialogIntent,
-} from './query-classifier.service';
+import { QueryClassifierService, type DialogIntent } from './query-classifier.service';
 
-/**
- * SBA α-5 dialog-layer — unit-тесты QueryClassifierService.
- *
- * Покрывает: эвристика matches (factual / exploratory / analytical /
- * clone_roleplay) — БЕЗ LLM-вызова; LLM-fallback при отсутствии паттерна.
- * T7-F6: проверка responseFormat:json_schema проброса + метрика.
- */
 describe('QueryClassifierService', () => {
   let llmCallMock: ReturnType<typeof vi.fn>;
   let observeMock: ReturnType<typeof vi.fn>;
@@ -93,7 +83,6 @@ describe('QueryClassifierService', () => {
     expect(result.source).toBe('fallback');
   });
 
-  // ─── T7-F6 ───────────────────────────────────────────────────────────────
   it('T7-F6: пробрасывает responseFormat: json_schema strict в LlmRouter', async () => {
     llmCallMock.mockResolvedValue({
       text: '{"intent": "factual"}',
@@ -132,7 +121,6 @@ describe('QueryClassifierService', () => {
     });
   });
 
-  // ─── ТЗ 2026-05-29 telegram-self-initiated-checkins ──────────────────
   it('skipHeuristicFirstPass=true → эвристика не срабатывает, идёт в LLM', async () => {
     llmCallMock.mockResolvedValue({
       text: '{"intent": "daily_plan_morning", "confidence": 0.92}',
@@ -141,7 +129,6 @@ describe('QueryClassifierService', () => {
     const result = await svc.classify({
       tenantId: 't',
       userId: 'u',
-      // «сколько» — обычно срабатывает heuristic→factual, но мы пропускаем.
       question: 'Сегодня хочу закрыть КП и созвониться. Сколько времени уйдёт?',
       conversationId: null,
       skipHeuristicFirstPass: true,

@@ -7,31 +7,19 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { RolePrincipleSynthesisService } from '../services/role-principle-synthesis.service';
 
-/**
- * TZ clone-method Э1.2 (2026-06-12) — RolePrincipleSynthesisCron
- * (Reflection-слой принципов роли).
- *
- * `@Cron('30 5 * * *')` — ночью, ПОСЛЕ skill-trait-concept-normalizer (03:00)
- * и practice-skill-evaluate (04:00): к этому моменту дневной материал
- * (canonical reasoning-блоки) устоялся.
- *
- * Гибрид двух образцов:
- *   - sweep Org → Role (как knowledge-clone-rebuild.cron): общий бюджет
- *     MAX_ROLES_PER_SWEEP на проход — защита от взрыва LLM-нагрузки;
- *   - global Redis SETNX lock на 1 час (как practice-skill-evaluate.cron) —
- *     один pod выполняет проход.
- *
- * Kill-switch `ROLE_PRINCIPLE_SYNTHESIS_ENABLED` (cfg.rolePrinciples.
- * synthesisEnabled, ON): выкл → принципы роли не синтезируются, persona
- * продолжает работать без секции принципов.
- */
 @Injectable()
 export class RolePrincipleSynthesisCron {
   private readonly logger = new Logger(RolePrincipleSynthesisCron.name);
   private static readonly LOCK_KEY = 'role-principle-synthesis:lock';
   private static readonly LOCK_TTL_SEC = 60 * 60;
-  /** Общий бюджет ролей на один проход (по всем Org суммарно). */
   private static readonly MAX_ROLES_PER_SWEEP = 100;
+  private static readonly PRE_LLM_SKIP_REASONS: ReadonlySet<string> = new Set([
+    'role_not_found',
+    'no_persons',
+    'no_entities',
+    'below_threshold',
+    'no_groups',
+  ]);
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -67,9 +55,9 @@ export class RolePrincipleSynthesisCron {
         );
         return;
       }
-      this.logger.log('role-principle-synthesis.cron: START');
+      this.logger.debug('role-principle-synthesis.cron: START');
       const summary = await this.runOnce();
-      this.logger.log(
+      this.logger.debug(
         `role-principle-synthesis.cron: DONE orgs=${summary.orgsScanned} roles=${summary.rolesProcessed} created=${summary.created} merged=${summary.merged} skipped=${summary.skipped} failures=${summary.failures}`,
       );
     } catch (err) {
@@ -80,16 +68,12 @@ export class RolePrincipleSynthesisCron {
       if (locked) {
         try {
           await this.redis.client.del(RolePrincipleSynthesisCron.LOCK_KEY);
-        } catch {
-          /* TTL подчистит */
-        }
+        } catch {}
       }
-      // Snapshot gauge активных принципов — даже если сам проход упал.
       await this.refreshGauge();
     }
   }
 
-  /** Public — для ручного запуска / возможного админ-эндпоинта. */
   async runOnce(): Promise<{
     orgsScanned: number;
     rolesProcessed: number;
@@ -115,10 +99,10 @@ export class RolePrincipleSynthesisCron {
       const roles = await this.prisma.role.findMany({
         where: { tenantId: org.id, deletedAt: null },
         select: { id: true },
-        take: budget,
+        take: RolePrincipleSynthesisCron.MAX_ROLES_PER_SWEEP,
       });
-      budget -= roles.length;
       for (const role of roles) {
+        if (budget <= 0) break;
         try {
           const res = await this.synthesis.synthesizeForRole({
             tenantId: org.id,
@@ -128,6 +112,10 @@ export class RolePrincipleSynthesisCron {
           created += res.created;
           merged += res.merged;
           if (res.skipped) skipped++;
+          const calledLlm =
+            res.skipped === null ||
+            !RolePrincipleSynthesisCron.PRE_LLM_SKIP_REASONS.has(res.skipped);
+          if (calledLlm) budget--;
         } catch (err) {
           failures++;
           this.logger.warn(
@@ -151,7 +139,6 @@ export class RolePrincipleSynthesisCron {
     };
   }
 
-  /** Gauge `role_principles_active_total` — число active-принципов по всем Org. */
   private async refreshGauge(): Promise<void> {
     try {
       const n = await this.prisma.rolePrinciple.count({

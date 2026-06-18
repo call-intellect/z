@@ -4,11 +4,6 @@ import type { ValueRecapSlideDto } from '../dto/value-recap.dto';
 
 import { buildValueRecapPptx } from './value-recap-pptx';
 
-/**
- * Ф3 редизайн (Итоги месяца) — unit-тест PPTX-генератора. Проверяем, что
- * возвращается непустой Buffer с сигнатурой OOXML/ZIP («PK»). Детерминизм —
- * без БД/сети (pptxgenjs pure-JS).
- */
 describe('buildValueRecapPptx', () => {
   const slides: ValueRecapSlideDto[] = [
     {
@@ -27,7 +22,6 @@ describe('buildValueRecapPptx', () => {
     const buf = await buildValueRecapPptx(slides);
     expect(Buffer.isBuffer(buf)).toBe(true);
     expect(buf.length).toBeGreaterThan(0);
-    // OOXML (.pptx) — это ZIP-контейнер: первые два байта 0x50 0x4B = «PK».
     expect(buf[0]).toBe(0x50);
     expect(buf[1]).toBe(0x4b);
     expect(buf.subarray(0, 2).toString('latin1')).toBe('PK');

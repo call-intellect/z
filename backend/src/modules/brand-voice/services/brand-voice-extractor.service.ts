@@ -3,10 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
 import {
   BRAND_VOICE_EXTRACT_JSON_SCHEMA,
   BRAND_VOICE_EXTRACT_SCHEMA_NAME,
@@ -20,36 +17,12 @@ import { brandVoiceTenantTop } from '../utils/tenant-top';
 
 import { BrandVoiceService } from './brand-voice.service';
 
-/**
- * SBA β-7 — BrandVoiceExtractorService.
- *
- * Daily-cron, который пересобирает BrandVoiceProfile из:
- *   - Document'ов с useCases includes 'brand_corpus' (полный parsedText
- *     с укорочением до 2000 символов на документ);
- *   - IdeaBlock'ов с signalType='brand_principle' (status=canonical).
- *
- * Anti-noise threshold: если документов меньше BRAND_VOICE_MIN_CORPUS_SIZE
- * (default 5) — пропускаем Org (нечего экстрагировать). Это страхует от
- * шумного профиля на новых тенантах.
- *
- * Idempotency window: если профиль уже собирался < 6h назад — пропускаем
- * (защита от двойного срабатывания cron'а / manual rebuild'а).
- *
- * Best-effort: ошибки логируем, продолжаем со следующим тенантом. LLM-ошибки
- * фиксируются в counter `brand_voice_extractor_runs_total{result='llm_error'}`.
- */
-
-/** Idempotency-окно — не пересобираем профиль чаще раза в 6 часов. */
 const REBUILD_DEDUP_WINDOW_MS = 6 * 60 * 60 * 1000;
 
-/** Лимит документов на один LLM-вызов (не больше — иначе токен-бюджет
- *  перерастёт лимит модели). */
 const MAX_DOCS_PER_RUN = 30;
 
-/** Лимит brand_principle блоков на вызов. */
 const MAX_BLOCKS_PER_RUN = 50;
 
-/** Сколько символов parsedText брать на один документ (укорочение). */
 const DOC_EXCERPT_MAX_CHARS = 2000;
 
 @Injectable()
@@ -65,9 +38,6 @@ export class BrandVoiceExtractorService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Прогон по всем активным тенантам (вызывается из cron'а).
-   */
   async runForAllTenants(): Promise<{
     tenantsScanned: number;
     tenantsBuilt: number;
@@ -76,8 +46,6 @@ export class BrandVoiceExtractorService {
   }> {
     if (!this.cfg.brandVoice.extractorEnabled) {
       const orgs = await this.prisma.org.count({ where: { deletedAt: null } });
-      // Один counter-инкремент на тенанта чисто для трекинга «прогон был, но
-      // в no-op режиме». Без tenantTop разбивки — общий 'other' bucket.
       this.metrics.incBrandVoiceExtractorRun({
         tenantTop: 'other',
         result: 'skipped_disabled',
@@ -122,20 +90,8 @@ export class BrandVoiceExtractorService {
     };
   }
 
-  /**
-   * Одна итерация — для конкретного тенанта. Возвращает структурированный
-   * результат для тестов и manual rebuild'а.
-   */
-  async runForTenant(args: {
-    tenantId: string;
-    companyName?: string;
-  }): Promise<{
-    result:
-      | 'built'
-      | 'skipped_low_corpus'
-      | 'skipped_idempotency'
-      | 'llm_error'
-      | 'db_error';
+  async runForTenant(args: { tenantId: string; companyName?: string }): Promise<{
+    result: 'built' | 'skipped_low_corpus' | 'skipped_idempotency' | 'llm_error' | 'db_error';
     profileVersion?: number;
     corpusSize: number;
   }> {
@@ -156,7 +112,6 @@ export class BrandVoiceExtractorService {
       return { result: 'skipped_low_corpus', corpusSize };
     }
 
-    // Idempotency: профиль уже собирался недавно — skip.
     const existing = await this.profiles.getRaw(args.tenantId);
     if (
       existing?.lastBuiltAt &&
@@ -176,26 +131,18 @@ export class BrandVoiceExtractorService {
       };
     }
 
-    // 1. Документы (parsedText) brand_corpus.
     const docs = await this.loadBrandCorpusDocuments(args.tenantId);
-    // 2. brand_principle блоки.
     const blocks = await this.loadBrandPrincipleBlocks(args.tenantId);
 
     if (docs.length === 0 && blocks.length === 0) {
-      // Корпус формально >= порога (docs > min), но parsedText по факту нет
-      // (документы ещё парсятся). Скорее всего, retry на следующем cron-проходе.
       this.metrics.incBrandVoiceExtractorRun({
         tenantTop,
         result: 'skipped_low_corpus',
       });
-      this.logger.debug(
-        { tenantId: args.tenantId },
-        'brand-voice-extractor: пустые тексты — skip',
-      );
+      this.logger.debug({ tenantId: args.tenantId }, 'brand-voice-extractor: пустые тексты — skip');
       return { result: 'skipped_low_corpus', corpusSize };
     }
 
-    // 3. LLM call.
     const companyName = args.companyName ?? '(без названия)';
     const userMessage = buildBrandVoiceExtractUserMessage({
       companyName,
@@ -246,7 +193,6 @@ export class BrandVoiceExtractorService {
       return { result: 'llm_error', corpusSize };
     }
 
-    // 4. Apply.
     try {
       const updated = await this.profiles.applyExtracted({
         tenantId: args.tenantId,
@@ -291,19 +237,12 @@ export class BrandVoiceExtractorService {
     }
   }
 
-  // ─────────────────────────── private ──────────────────────────────
-
-  private async loadBrandCorpusDocuments(
-    tenantId: string,
-  ): Promise<BrandVoiceExtractDocument[]> {
+  private async loadBrandCorpusDocuments(tenantId: string): Promise<BrandVoiceExtractDocument[]> {
     const rows = await this.prisma.document.findMany({
       where: {
         tenantId,
         deletedAt: null,
         useCases: { has: 'brand_corpus' },
-        // parsedText может быть null, если документ ещё не распарсен —
-        // фильтр на уровне SQL не делаем (Prisma не позволяет not-null на
-        // нём без сложного where), отфильтруем в JS.
       },
       orderBy: { createdAt: 'desc' },
       take: MAX_DOCS_PER_RUN,
@@ -327,9 +266,7 @@ export class BrandVoiceExtractorService {
       }));
   }
 
-  private async loadBrandPrincipleBlocks(
-    tenantId: string,
-  ): Promise<BrandVoiceExtractBlock[]> {
+  private async loadBrandPrincipleBlocks(tenantId: string): Promise<BrandVoiceExtractBlock[]> {
     const blocks = await this.prisma.ideaBlock.findMany({
       where: {
         tenantId,
@@ -362,16 +299,10 @@ export class BrandVoiceExtractorService {
   }
 }
 
-// ─────────────────────────── parsing ───────────────────────────────
-
 interface ExtractedProfile {
   tone: Record<string, number> | null;
-  values:
-    | Array<{ value: string; weight: number; exampleBlockIds: string[] }>
-    | null;
-  taboos:
-    | Array<{ phrase: string; alternative?: string; reason: string }>
-    | null;
+  values: Array<{ value: string; weight: number; exampleBlockIds: string[] }> | null;
+  taboos: Array<{ phrase: string; alternative?: string; reason: string }> | null;
 }
 
 function parseExtractedProfile(raw: string): ExtractedProfile | null {
@@ -384,7 +315,6 @@ function parseExtractedProfile(raw: string): ExtractedProfile | null {
   if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
   const obj = json as Record<string, unknown>;
 
-  // tone
   let tone: Record<string, number> | null = null;
   if (obj.tone && typeof obj.tone === 'object' && !Array.isArray(obj.tone)) {
     const t = obj.tone as Record<string, unknown>;
@@ -398,10 +328,7 @@ function parseExtractedProfile(raw: string): ExtractedProfile | null {
     if (Object.keys(out).length > 0) tone = out;
   }
 
-  // values
-  let values:
-    | Array<{ value: string; weight: number; exampleBlockIds: string[] }>
-    | null = null;
+  let values: Array<{ value: string; weight: number; exampleBlockIds: string[] }> | null = null;
   if (Array.isArray(obj.values)) {
     const list: Array<{
       value: string;
@@ -417,19 +344,14 @@ function parseExtractedProfile(raw: string): ExtractedProfile | null {
           ? Math.max(0, Math.min(1, item.weight))
           : 0.5;
       const exampleBlockIds = Array.isArray(item.exampleBlockIds)
-        ? item.exampleBlockIds.filter(
-            (x): x is string => typeof x === 'string' && x.length > 0,
-          )
+        ? item.exampleBlockIds.filter((x): x is string => typeof x === 'string' && x.length > 0)
         : [];
       list.push({ value: item.value.slice(0, 120), weight, exampleBlockIds });
     }
     if (list.length > 0) values = list;
   }
 
-  // taboos
-  let taboos:
-    | Array<{ phrase: string; alternative?: string; reason: string }>
-    | null = null;
+  let taboos: Array<{ phrase: string; alternative?: string; reason: string }> | null = null;
   if (Array.isArray(obj.taboos)) {
     const list: Array<{
       phrase: string;

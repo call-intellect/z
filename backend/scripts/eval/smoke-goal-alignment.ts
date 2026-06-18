@@ -1,12 +1,3 @@
-/**
- * Smoke-тест taskType=goal-alignment.
- * Источник промпта: backend/src/modules/knowledge-core/prompts/goal-alignment.prompt.ts
- *
- * Выход — JSON {score, explanation, signals{pro,contra}}. Используем tools API
- * (tool_choice: 'auto') во избежание 400 от json_schema strict на DeepSeek-Pro.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-goal-alignment.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -23,9 +14,7 @@ const MODEL = 'deepseek-v4-pro';
 const PRICE_IN = 0.435 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
 
-const SCRIPT_DIR = path
-  .dirname(new URL(import.meta.url).pathname)
-  .replace(/^\/([A-Za-z]):/, '$1:');
+const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
 const FIXTURE_PATH = path.resolve(
   SCRIPT_DIR,
   `../../test/eval/smoke-all-agents/fixtures/${TASK_TYPE}.json`,
@@ -55,9 +44,7 @@ const GOAL_TOOL = {
 
 async function main(): Promise<void> {
   console.log(`=== smoke ${TASK_TYPE} ===`);
-  const fixture: GoalAlignmentInput = JSON.parse(
-    await fs.readFile(FIXTURE_PATH, 'utf-8'),
-  );
+  const fixture: GoalAlignmentInput = JSON.parse(await fs.readFile(FIXTURE_PATH, 'utf-8'));
 
   const { systemPrompt, userMessage } = buildGoalAlignmentMessages(fixture);
   const userWithToolHint = `${userMessage}\n\nВерни результат через инструмент submit_goal_alignment.`;

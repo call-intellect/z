@@ -143,7 +143,7 @@ services:
   gepa:
     image: z-gepa:latest
     build:
-      context: ./backend/python
+      context: ./infra/gepa
       dockerfile: Dockerfile
       args:
         HTTP_PROXY: ${HTTP_PROXY:-}

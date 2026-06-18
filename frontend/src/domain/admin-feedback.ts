@@ -1,13 +1,3 @@
-/**
- * DomainModel для админ-стороны канала обратной связи.
- *
- * Слой ApiDto → DomainModel: компонент работает только с DomainModel
- * (Date-объекты, нормализованный статус). UI-маппинг (label, цвета) — в UiModel
- * внутри компонентов.
- *
- * Фаза 7 ТЗ user-feedback-with-ai-clustering.
- */
-
 import type {
   FeedbackFailedMessageApi,
   FeedbackFailedMessagesListApi,
@@ -18,9 +8,9 @@ import type {
   FeedbackTopicStatusApi,
   FeedbackTopicSummaryApi,
   FeedbackTopicsListApi,
-} from '@/api/admin-feedback.api';
+} from "@/api/admin-feedback.api";
 
-export type FeedbackTopicStatus = 'active' | 'archived' | 'merged';
+export type FeedbackTopicStatus = "active" | "archived" | "merged";
 
 export interface FeedbackTopicSummary {
   id: string;
@@ -29,7 +19,6 @@ export interface FeedbackTopicSummary {
   status: FeedbackTopicStatus;
   itemsCount: number;
   uniqueUsersCount: number;
-  /** Доля items блока от всех items в выбранном окне (0..100). */
   percentOfWindow: number;
   lastItemAt: Date | null;
   createdAt: Date;
@@ -105,16 +94,14 @@ export interface FeedbackFailedMessagesList {
   pageSize: number;
 }
 
-/* ─────────────────────────── мапперы ─────────────────────────── */
-
 function statusFromApi(api: FeedbackTopicStatusApi): FeedbackTopicStatus {
   switch (api) {
-    case 'ACTIVE':
-      return 'active';
-    case 'ARCHIVED':
-      return 'archived';
-    case 'MERGED':
-      return 'merged';
+    case "ACTIVE":
+      return "active";
+    case "ARCHIVED":
+      return "archived";
+    case "MERGED":
+      return "merged";
   }
 }
 
@@ -220,29 +207,22 @@ export function toFeedbackFailedMessagesList(
   };
 }
 
-/* ─────────────────────────── UI helpers ─────────────────────────── */
+export const FEEDBACK_TOPIC_STATUS_LABEL: Record<FeedbackTopicStatus, string> =
+  {
+    active: "Активный",
+    archived: "Архив",
+    merged: "Слит",
+  };
 
-export const FEEDBACK_TOPIC_STATUS_LABEL: Record<FeedbackTopicStatus, string> = {
-  active: 'Активный',
-  archived: 'Архив',
-  merged: 'Слит',
-};
-
-export type FeedbackWindow = '30' | '90' | 'all';
+export type FeedbackWindow = "30" | "90" | "all";
 
 export const FEEDBACK_WINDOW_LABEL: Record<FeedbackWindow, string> = {
-  '30': '30 дней',
-  '90': '90 дней',
-  all: 'За всё время',
+  "30": "30 дней",
+  "90": "90 дней",
+  all: "За всё время",
 };
 
-export type FeedbackSort = 'percent' | 'users' | 'recent';
-
-export const FEEDBACK_SORT_LABEL: Record<FeedbackSort, string> = {
-  percent: 'По доле',
-  users: 'По числу юзеров',
-  recent: 'По свежести',
-};
+export type FeedbackSort = "percent" | "users" | "recent";
 
 export function formatAuthor(user: FeedbackItemAuthor): string {
   if (user.name && user.name.trim().length > 0) {

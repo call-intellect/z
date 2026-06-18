@@ -141,7 +141,7 @@ Cardinality риск (известный, общий для tracker/calendar): l
 ## Связи
 
 - [tracker](tracker.md) — `Issue.dueDate` микшируется с Events в `/me/calendar`; per-project Calendar view заменил заглушку Sprint 4
-- [concierge-voice](concierge-voice.md) — Concierge AI-агент получил 5 новых tools для календаря
+- [concierge-agent](concierge-agent.md) — Concierge AI-агент получил 5 новых tools для календаря
 - [conversational-channels](conversational-channels.md) — доставка reminders через `event.reminder` notification (registry + policy)
 - [knowledge-core](../02_architecture/knowledge-core.md) — Events с `visibility != personal` индексируются как Entity{type=event} (legacy путь через `EntityResolutionService`)
 - LiveKit `Meeting` — связь через `Event.relatedMeetingId` (TODO авто-создание из Event при kind=meeting)
@@ -182,8 +182,8 @@ Cardinality риск (известный, общий для tracker/calendar): l
 
 ## План реализации
 
-- Базовый ТЗ: [`plans/tz/2026-05-25-calendar-mvp.md`](../../plans/tz/2026-05-25-calendar-mvp.md) — три фазы (1+2 закрыты).
-- Polish ТЗ: [`plans/tz/2026-05-25-calendar-mvp-polish.md`](../../plans/tz/2026-05-25-calendar-mvp-polish.md) — 4 фазы (P1-P4) закрыты.
+- Базовый ТЗ: [`plans/archive/2026-05-25-calendar-mvp.md`](../../plans/archive/2026-05-25-calendar-mvp.md) — три фазы (1+2 закрыты).
+- Polish ТЗ: [`plans/archive/2026-05-25-calendar-mvp-polish.md`](../../plans/archive/2026-05-25-calendar-mvp-polish.md) — 4 фазы (P1-P4) закрыты.
 - External sync ТЗ: [`plans/tz/2026-05-25-calendar-external-sync.md`](../../plans/tz/2026-05-25-calendar-external-sync.md) — F1-F4 для интеграций (планируется).
 - Коммиты: `800fdbd` (Фаза 1 — backend), `6e5fd62` (Фаза 2 — UI+ICS), `13b6a66` (second-brain), `5c4c6c1` (Polish P1-P4).
 - Тесты: 63 unit + integration зелёных (+1 skipped) в events/persons/org-members/meetings, frontend typecheck 0.

@@ -7,7 +7,13 @@
  */
 
 export interface PendingActionItem {
-  source: 'curation' | 'conflict' | 'intake' | 'probe';
+  source:
+    | 'curation'
+    | 'conflict'
+    | 'intake'
+    | 'probe'
+    | 'task_closure'
+    | 'task_review';
   resourceType: string;
   resourceId: string;
   /// Готовый к показу заголовок (RU) — РЕАЛЬНАЯ суть item'а, а не шаблон.
@@ -29,7 +35,9 @@ export type PendingActionDetail =
   | ProbePendingDetail
   | ConflictPendingDetail
   | IntakePendingDetail
-  | CurationPendingDetail;
+  | CurationPendingDetail
+  | TaskClosurePendingDetail
+  | TaskReviewPendingDetail;
 
 /// probe: сам вопрос + контекст для ответа.
 export interface ProbePendingDetail {
@@ -67,6 +75,31 @@ export interface IntakePendingDetail {
   /// Уверенность извлечения (0..1), если посчитана.
   confidence?: number;
   cite?: string;
+}
+
+/// task_closure (TZ task-dedup, 2026-06-16, Ф2): задача-кандидат на закрытие
+/// по сигналу из разговора. Обратимое предложение — человек подтверждает/отклоняет.
+export interface TaskClosurePendingDetail {
+  kind: 'task_closure';
+  /// Заголовок задачи-кандидата на закрытие.
+  taskTitle: string;
+  /// «Почему считаем сделанным» — человеческим языком, +/- сигналы.
+  rationale?: string;
+  /// Цитата из разговора (объяснимость в стиле Gong).
+  evidenceQuote?: string;
+  /// Откалиброванная уверенность верификатора (0..1), если посчитана.
+  confidence?: number;
+}
+
+/// task_review (TZ task-dedup, 2026-06-16, Ф4): задача «под вопросом» после
+/// отмены/замены связанного решения (supersede). Человек проверяет актуальность
+/// и снимает пометку — задача НЕ закрывается/не отменяется автоматически (R11/R13).
+export interface TaskReviewPendingDetail {
+  kind: 'task_review';
+  /// Заголовок задачи «под вопросом».
+  taskTitle: string;
+  /// Человеческое объяснение «почему под вопросом».
+  reason?: string;
 }
 
 /// curation: что за карточка требует проверки.

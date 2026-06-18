@@ -1,14 +1,14 @@
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
 export type SearchTypeKey =
-  | 'cards'
-  | 'meetings'
-  | 'tasks'
-  | 'roles'
-  | 'departments'
-  | 'persons'
-  | 'documents'
-  | 'role-profiles';
+  | "cards"
+  | "meetings"
+  | "tasks"
+  | "roles"
+  | "departments"
+  | "persons"
+  | "documents"
+  | "role-profiles";
 
 export type SearchCardItem = {
   id: string;
@@ -57,7 +57,6 @@ export type SearchDocumentItem = {
 };
 
 export type SearchRoleProfileItem = {
-  /** id роли — карты живут на странице должности `/roles/:id`. */
   roleId: string;
   roleName: string;
 };
@@ -66,7 +65,6 @@ export type SearchResponse = {
   cards: SearchCardItem[];
   meetings: SearchMeetingItem[];
   tasks: SearchTaskItem[];
-  /** Расширения Фазы 0c — могут отсутствовать в ответе старого backend. */
   roles?: SearchRoleItem[];
   departments?: SearchDepartmentItem[];
   persons?: SearchPersonItem[];
@@ -77,9 +75,9 @@ export type SearchResponse = {
 export const searchApi = {
   query: (q: string, types?: SearchTypeKey[], limit = 10) => {
     const params = new URLSearchParams();
-    params.set('q', q);
-    if (types && types.length > 0) params.set('types', types.join(','));
-    params.set('limit', String(limit));
+    params.set("q", q);
+    if (types && types.length > 0) params.set("types", types.join(","));
+    params.set("limit", String(limit));
     return apiClient.get<SearchResponse>(`/api/v1/search?${params.toString()}`);
   },
 };

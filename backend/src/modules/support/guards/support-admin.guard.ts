@@ -10,18 +10,6 @@ import type { Request } from 'express';
 import { RbacService } from '../../rbac/rbac.service';
 import { SupportAccessService } from '../services/support-access.service';
 
-/**
- * SupportAdminGuard — пускает в admin-API поддержки (галочка + засев контура)
- * ТОЛЬКО владельца вендор-Org или супер-админа (Р-7, ТЗ 2026-06-09 support-desk
- * Ф2). Подключается ПОСЛЕ CookieAuthGuard.
- *
- * Алгоритм:
- *   1. Нет `req.user` → 403 `no_user`.
- *   2. `getVendorOrgId()` пуст → 403 `SUPPORT_DESK_DISABLED` (деск не настроен).
- *   3. `RbacService.loadContext(user.id, vendorOrgId)` → пускаем, если
- *      `isSuperAdmin || role==='owner'`; иначе 403 `SUPPORT_ADMIN_REQUIRED`.
- *   4. Кладёт `req.tenantId = vendorOrgId` (admin всегда работает в вендор-Org).
- */
 @Injectable()
 export class SupportAdminGuard implements CanActivate {
   constructor(

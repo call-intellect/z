@@ -3,7 +3,7 @@ type: analysis
 date: 2026-06-02
 owner: sergrv80@gmail.com
 relates_to:
-  - plans/tz/2026-06-02-smart-tables-auto-creation.md
+  - plans/archive/2026-06-02-smart-tables-auto-creation.md
   - second-brain/01_projects/smart-tables.md
   - second-brain/01_projects/llm-providers-verified.md
   - second-brain/02_architecture/llm-cache-status.md

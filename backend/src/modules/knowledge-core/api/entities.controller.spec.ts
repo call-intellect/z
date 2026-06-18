@@ -1,14 +1,3 @@
-/**
- * Integration spec для KnowledgeEntitiesController (Phase F.2).
- *
- * Реальный Postgres из docker-compose.dev.yml.
- *
- * Покрытие:
- *   - GET /entities — список (фильтр type/q, includeMerged).
- *   - GET /entities/:id — деталка с примерами блоков.
- *   - GET /entities/:id/links — типизированные связи.
- *   - 403 cross-tenant, 403 forbidden, 404, Zod 400, tenant_required.
- */
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -122,9 +111,7 @@ describe('KnowledgeEntitiesController (integration)', () => {
     const f = ctx.fixture!;
     const ctrl = new KnowledgeEntitiesController(prisma, makeRbac(true));
 
-    await expect(
-      ctrl.byId(f.entityAId, userB, f.orgBId),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(ctrl.byId(f.entityAId, userB, f.orgBId)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('403 forbidden если canRead=false', async (testCtx) => {
@@ -133,9 +120,9 @@ describe('KnowledgeEntitiesController (integration)', () => {
     const f = ctx.fixture!;
     const ctrl = new KnowledgeEntitiesController(prisma, makeRbac(false));
 
-    await expect(
-      ctrl.byId(f.entityAId, userA, f.orgAId),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(ctrl.byId(f.entityAId, userA, f.orgAId)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('403 tenant_required (X-Org-Id не передан)', async (testCtx) => {
@@ -144,9 +131,9 @@ describe('KnowledgeEntitiesController (integration)', () => {
     const f = ctx.fixture!;
     const ctrl = new KnowledgeEntitiesController(prisma, makeRbac(true));
 
-    await expect(
-      ctrl.byId(f.entityAId, userA, undefined),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(ctrl.byId(f.entityAId, userA, undefined)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('404 на несуществующую сущность', async (testCtx) => {
@@ -155,9 +142,9 @@ describe('KnowledgeEntitiesController (integration)', () => {
     const f = ctx.fixture!;
     const ctrl = new KnowledgeEntitiesController(prisma, makeRbac(true));
 
-    await expect(
-      ctrl.byId(`${PREFIX}-no-entity`, userA, f.orgAId),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(ctrl.byId(`${PREFIX}-no-entity`, userA, f.orgAId)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('GET /entities/:id/links — outgoing + incoming (пустые для изолированной сущности)', async (testCtx) => {
@@ -176,12 +163,6 @@ describe('KnowledgeEntitiesController (integration)', () => {
     expect(r.success).toBe(false);
   });
 });
-
-// ───────────────── Ф4 knowledge-access — гейт сущности (unit) ───────────────
-//
-// Юнит-тесты (без БД): мокаем prisma/resolver/cfg/metrics. Проверяем
-// GET /entities/:id (блоки-упоминания) и GET /entities/:id/graph (evidence
-// блоков на рёбрах + удаление рёбер/осиротевших узлов при enforce).
 
 const GATE_USER: CurrentUserPayload = {
   id: 'ent-gate-user',
@@ -221,9 +202,7 @@ function gateResolver(opts: {
   partitionSpy: ReturnType<typeof vi.fn>;
 } {
   const resolveSpy = vi.fn(async () => opts.ctx);
-  const partitionSpy = vi.fn(
-    async () => opts.partition ?? { accessible: [], denied: 0 },
-  );
+  const partitionSpy = vi.fn(async () => opts.partition ?? { accessible: [], denied: 0 });
   const resolver = {
     resolveAccessibleGroups: resolveSpy,
     partitionBlockIdsByAccess: partitionSpy,
@@ -358,8 +337,6 @@ describe('KnowledgeEntitiesController.byId — Ф4 гейт (unit)', () => {
   });
 });
 
-// Граф сущности: центр E0 → E1 (ребро edgeAB, source=['b1']) и
-// E0 → E2 (ребро edgeAC, source=['b2']). b1 недоступен, b2 доступен.
 function graphPrisma(): PrismaService {
   const center = {
     id: 'E0',
@@ -409,19 +386,16 @@ function graphPrisma(): PrismaService {
     entity: {
       findUnique: vi.fn(async () => center),
       findMany: vi.fn(async () => {
-        // 1-й вызов — peers по entityLink; дальше пусто (frontier исчерпан).
         entityFindManyCall += 1;
         return entityFindManyCall === 1 ? peers : [];
       }),
     },
     entityLink: {
       findMany: vi.fn(async (args: { where?: { id?: unknown } }) => {
-        // Вызовы 1-2 — outgoing/incoming на BFS; 3-й — fullEdges (по id IN).
         linkFindManyCall += 1;
         if (args?.where && 'id' in args.where) {
           return links.map((l) => ({ id: l.id, sourceBlockIds: l.sourceBlockIds }));
         }
-        // outgoing для frontier E0 → оба ребра; incoming → пусто.
         return linkFindManyCall === 1 ? links : [];
       }),
     },
@@ -447,9 +421,7 @@ describe('KnowledgeEntitiesController.getGraph — Ф4 гейт (unit)', () => {
     expect(resolveSpy).not.toHaveBeenCalled();
     const edgeIds = res.edges.map((e) => e.edgeId).sort();
     expect(edgeIds).toEqual(['edgeAB', 'edgeAC']);
-    const allEvidenceBlockIds = res.edges
-      .flatMap((e) => e.evidence.map((ev) => ev.blockId))
-      .sort();
+    const allEvidenceBlockIds = res.edges.flatMap((e) => e.evidence.map((ev) => ev.blockId)).sort();
     expect(allEvidenceBlockIds).toEqual(['b1', 'b2']);
   });
 
@@ -461,7 +433,7 @@ describe('KnowledgeEntitiesController.getGraph — Ф4 гейт (unit)', () => {
     };
     const { resolver } = gateResolver({
       ctx,
-      partition: { accessible: ['b2'], denied: 1 }, // b1 недоступен
+      partition: { accessible: ['b2'], denied: 1 },
     });
     const { metrics, incDenied } = gateMetrics();
     const ctrl = new KnowledgeEntitiesController(
@@ -473,14 +445,9 @@ describe('KnowledgeEntitiesController.getGraph — Ф4 гейт (unit)', () => {
       metrics,
     );
     const res = await ctrl.getGraph('E0', QUERY, GATE_USER, TENANT);
-    // Ребро edgeAB (source=['b1']) удалено целиком; edgeAC осталось.
     expect(res.edges.map((e) => e.edgeId)).toEqual(['edgeAC']);
-    // evidence ребра edgeAC — только b2 (b1 не утёк).
-    const allEvidenceBlockIds = res.edges.flatMap((e) =>
-      e.evidence.map((ev) => ev.blockId),
-    );
+    const allEvidenceBlockIds = res.edges.flatMap((e) => e.evidence.map((ev) => ev.blockId));
     expect(allEvidenceBlockIds).toEqual(['b2']);
-    // E1 (только через удалённое ребро) — осиротел и убран; E0 (центр) и E2 — есть.
     const nodeIds = res.nodes.map((n) => n.id).sort();
     expect(nodeIds).toContain('E0');
     expect(nodeIds).toContain('E2');
@@ -529,11 +496,8 @@ describe('KnowledgeEntitiesController.getGraph — Ф4 гейт (unit)', () => {
       metrics,
     );
     const res = await ctrl.getGraph('E0', QUERY, GATE_USER, TENANT);
-    // Обе грани и оба evidence остаются (выдача байт-в-байт).
     expect(res.edges.map((e) => e.edgeId).sort()).toEqual(['edgeAB', 'edgeAC']);
-    const allEvidenceBlockIds = res.edges
-      .flatMap((e) => e.evidence.map((ev) => ev.blockId))
-      .sort();
+    const allEvidenceBlockIds = res.edges.flatMap((e) => e.evidence.map((ev) => ev.blockId)).sort();
     expect(allEvidenceBlockIds).toEqual(['b1', 'b2']);
     expect(incShadow).toHaveBeenCalledWith({ surface: 'entities' }, 1);
     expect(incDenied).not.toHaveBeenCalled();

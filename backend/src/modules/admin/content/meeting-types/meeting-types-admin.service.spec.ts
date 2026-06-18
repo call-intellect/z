@@ -1,13 +1,3 @@
-/**
- * Admin-redesign Фаза 5 — unit-тесты `MeetingTypesAdminService`.
- *
- * Покрываем:
- *   1) list(): на пустой БД делает bootstrap-sync и возвращает enum-значения.
- *   2) create(): создаёт MeetingTypeConfig; 400 если id занят.
- *   3) update(): partial-обновление обновляет только переданные поля.
- *   4) softDelete(): isActive=false; 404 для отсутствующего id.
- */
-
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -34,9 +24,7 @@ function buildPrisma(state: { rows: ConfigRow[] }): PrismaService {
     return state.rows.find((r) => r.id === where.id) ?? null;
   });
   const findMany = vi.fn(async () => {
-    return [...state.rows].sort(
-      (a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id),
-    );
+    return [...state.rows].sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id));
   });
   const create = vi.fn(async ({ data }: { data: Partial<ConfigRow> & { id: string } }) => {
     const row: ConfigRow = {
@@ -55,13 +43,7 @@ function buildPrisma(state: { rows: ConfigRow[] }): PrismaService {
     return row;
   });
   const update = vi.fn(
-    async ({
-      where,
-      data,
-    }: {
-      where: { id: string };
-      data: Partial<ConfigRow>;
-    }) => {
+    async ({ where, data }: { where: { id: string }; data: Partial<ConfigRow> }) => {
       const r = state.rows.find((x) => x.id === where.id);
       if (!r) throw new Error('not found');
       Object.assign(r, data, { updatedAt: new Date() });
@@ -107,25 +89,21 @@ describe('MeetingTypesAdminService', () => {
     const state = { rows: [] as ConfigRow[] };
     const svc = new MeetingTypesAdminService(buildPrisma(state));
     const res = await svc.list();
-    // Enum MeetingType содержит как минимум 9 значений MVP.
     expect(res.items.length).toBeGreaterThanOrEqual(9);
     expect(state.rows.length).toBeGreaterThanOrEqual(9);
-    // sortOrder проставлен (default 0 если не задан — но в bootstrap проставляем).
     expect(res.items.every((i) => typeof i.sortOrder === 'number')).toBe(true);
-    // Все элементы изначально активны.
     expect(res.items.every((i) => i.isActive === true)).toBe(true);
   });
 
   it('bootstrap (Ф8 knowledge-access): interview → defaultClosedGroupKind=personal, остальные null', async () => {
     const state = { rows: [] as ConfigRow[] };
     const svc = new MeetingTypesAdminService(buildPrisma(state));
-    await svc.list(); // триггерит ensureBootstrap
+    await svc.list();
 
     const interview = state.rows.find((r) => r.id === 'interview');
     expect(interview).toBeDefined();
     expect(interview?.defaultClosedGroupKind).toBe('personal');
 
-    // Все прочие типы — открыты по умолчанию (null).
     const others = state.rows.filter((r) => r.id !== 'interview');
     expect(others.length).toBeGreaterThan(0);
     expect(others.every((r) => r.defaultClosedGroupKind === null)).toBe(true);
@@ -176,7 +154,6 @@ describe('MeetingTypesAdminService', () => {
     );
     expect(upd.displayName).toBe('Продажи (новое)');
     expect(upd.isActive).toBe(false);
-    // description не менялся.
     expect(upd.description).toBe('Старое описание');
     expect(upd.sortOrder).toBe(5);
     expect(upd.updatedBy).toBe('user-2');
@@ -188,9 +165,7 @@ describe('MeetingTypesAdminService', () => {
     };
     const svc = new MeetingTypesAdminService(buildPrisma(state));
 
-    await expect(svc.softDelete('missing', null)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(svc.softDelete('missing', null)).rejects.toBeInstanceOf(NotFoundException);
 
     const res = await svc.softDelete('review', 'user-3');
     expect(res.ok).toBe(true);

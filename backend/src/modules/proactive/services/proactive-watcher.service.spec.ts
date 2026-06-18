@@ -2,13 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ProactiveWatcherService } from './proactive-watcher.service';
 
-/**
- * SBA δ-2 — unit-тесты ProactiveWatcherService.
- *
- *   - Anti-spam: 2 trigger одного user'а за день → 1 emit (второй skip).
- *   - Disabled rule → skip (rulesSkippedDisabled).
- *   - Decision без owner'а старше 3 дней → emit; новый — нет.
- */
 describe('ProactiveWatcherService', () => {
   const allRulesEnabled = {
     decisionNoOwner: true,
@@ -32,9 +25,7 @@ describe('ProactiveWatcherService', () => {
     membershipUserId?: string | null;
     dedupReturns?: boolean[];
   }) {
-    const decisionsMany = vi
-      .fn()
-      .mockResolvedValue(opts.decisions ?? []);
+    const decisionsMany = vi.fn().mockResolvedValue(opts.decisions ?? []);
     const insightsMany = vi.fn().mockResolvedValue([]);
     const experimentsMany = vi.fn().mockResolvedValue([]);
     const processesMany = vi.fn().mockResolvedValue([]);
@@ -75,13 +66,15 @@ describe('ProactiveWatcherService', () => {
         update: proactiveUpdate,
       },
       membership: {
-        findFirst: vi.fn().mockResolvedValue(
-          opts.membershipUserId === undefined
-            ? { userId: 'u-admin' }
-            : opts.membershipUserId === null
-              ? null
-              : { userId: opts.membershipUserId },
-        ),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue(
+            opts.membershipUserId === undefined
+              ? { userId: 'u-admin' }
+              : opts.membershipUserId === null
+                ? null
+                : { userId: opts.membershipUserId },
+          ),
       },
     };
 
@@ -93,9 +86,7 @@ describe('ProactiveWatcherService', () => {
       },
     };
 
-    const sendNotification = vi
-      .fn()
-      .mockResolvedValue({ id: 'notif-1' });
+    const sendNotification = vi.fn().mockResolvedValue({ id: 'notif-1' });
 
     let dedupCallIdx = 0;
     const dedup = {
@@ -145,7 +136,7 @@ describe('ProactiveWatcherService', () => {
 
   it('anti-spam: 2 trigger одного user за день → только 1 notification', async () => {
     const now = new Date('2026-05-23T12:00:00Z');
-    const oldDate = new Date('2026-05-15T00:00:00Z'); // > 3 дня
+    const oldDate = new Date('2026-05-15T00:00:00Z');
     const { svc, sendNotification, metrics } = buildSvc({
       rules: {
         decisionNoOwner: true,
@@ -161,7 +152,6 @@ describe('ProactiveWatcherService', () => {
         { id: 'd1', statement: 'Решение 1', text: null, createdAt: oldDate },
         { id: 'd2', statement: 'Решение 2', text: null, createdAt: oldDate },
       ],
-      // 1-й вызов acquire → true (lock наш), 2-й → false (anti-spam отбросил).
       dedupReturns: [true, false],
     });
 
@@ -194,7 +184,7 @@ describe('ProactiveWatcherService', () => {
 
   it('Decision новее 3 дней → emit не происходит', async () => {
     const now = new Date('2026-05-23T12:00:00Z');
-    const recent = new Date('2026-05-23T08:00:00Z'); // 4 часа назад
+    const recent = new Date('2026-05-23T08:00:00Z');
     const { svc, sendNotification } = buildSvc({
       rules: {
         decisionNoOwner: true,
@@ -208,7 +198,6 @@ describe('ProactiveWatcherService', () => {
       },
       decisions: [],
     });
-    // Mock возвращает [] — детектор не должен ничего слать.
     const stats = await svc.runOnce(now);
     expect(stats.notificationsSent).toBe(0);
     expect(sendNotification).not.toHaveBeenCalled();

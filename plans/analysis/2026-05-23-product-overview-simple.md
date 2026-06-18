@@ -7,7 +7,7 @@ audience: владелец продукта (не программист)
 related:
   - plans/analysis/2026-05-23-ai-coo-readiness-analysis.md
   - plans/analysis/2026-05-23-tracker-as-entry-wedge.md
-  - plans/tz/2026-05-22-final-roadmap.md
+  - plans/archive/2026-05-22-final-roadmap.md
   - second-brain/06_marketing/positioning.md
 ---
 

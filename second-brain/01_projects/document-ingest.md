@@ -4,7 +4,7 @@ phase: 0b
 status: in_progress
 date: 2026-05-21
 references:
-  - plans/tz/2026-05-21-phase-0b-document-ingest.md
+  - plans/archive/2026-05-21-phase-0b-document-ingest.md
 ---
 
 # Document ingest pipeline
@@ -38,7 +38,7 @@ references:
 
 ## Расширение канала (ТЗ-4, 2026-06-09)
 
-**Источник:** [`plans/tz/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/tz/2026-06-08-manual-document-upload-and-import-tz.md). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модули — [[../02_architecture/module-map]] §«Батч 5».
+**Источник:** [`plans/archive/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/archive/2026-06-08-manual-document-upload-and-import-tz.md). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модули — [[../02_architecture/module-map]] §«Батч 5».
 
 - **Новые форматы** (`DocumentKind +=` xlsx/pptx/html/rtf/odt/csv): `officeparser` (v7, функция `parseOffice`) для pptx/rtf/odt/csv/html, `exceljs` для .xlsx (текст по листам). `detectKind` расширен. PDF — `pdf-parse` (заброшен, но работает), DOCX — `mammoth`. ⚠ officeparser имеет `postinstall` — проверить нативную сборку на проде.
 - **Мультифайл-загрузка** `POST /documents` (`FileFieldsInterceptor`) + дедуп по `Document.contentHash` (sha256 содержимого).

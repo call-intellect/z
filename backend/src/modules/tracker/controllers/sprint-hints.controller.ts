@@ -9,10 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
@@ -21,12 +18,6 @@ import { RbacService } from '../../rbac/rbac.service';
 import type { SprintHintResponseDto } from '../dto/sprint-hints/sprint-hint.dto';
 import { SprintHintsService } from '../services/sprint-hints.service';
 
-/**
- * Sprints (2026-05-27) — REST `/api/v1/sprint-hints/:id/{dismiss,resolve}`.
- *
- * RBAC: ResourceType='sprint_hint' (см. policy.csv) — write нужен для
- * dismiss / resolve. Read — на cycles.controller.
- */
 @ApiTags('tracker / sprint-hints')
 @ApiBearerAuth()
 @Controller('api/v1/sprint-hints')

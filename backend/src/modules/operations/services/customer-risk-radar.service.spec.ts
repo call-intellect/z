@@ -2,21 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { CustomerRiskRadarService } from './customer-risk-radar.service';
 
-/**
- * TZ-1 Фаза 1 (daily-value-engine) — unit-тесты CustomerRiskRadarService.
- *
- * Покрываем (mock Prisma/cfg, без реальной сети/времени):
- *   1. computeForTenant — группировка блоков по customerEntityId + взвешивание
- *      + классификация уровня + upsert.
- *   2. responsiblePersonId = null, когда нет карточки клиента (не выдумываем).
- *   3. responsiblePersonId резолвится через Project.owner → Person.
- *   4. computeDelta — приток/отток сигналов к вчерашнему снимку.
- */
 describe('CustomerRiskRadarService', () => {
   const dateLocal = '2026-06-07';
 
   function buildCfg(overrides?: Record<string, unknown>) {
-    // getDynamic(key, env, default) → default (или override по ключу).
     const map: Record<string, unknown> = {
       'customer_risk.window_days': 14,
       'customer_risk.weight.churn_risk': 5,
@@ -28,9 +17,8 @@ describe('CustomerRiskRadarService', () => {
       ...overrides,
     };
     return {
-      getDynamic: vi.fn(
-        async (key: string, _env: string, def: unknown) =>
-          key in map ? map[key] : def,
+      getDynamic: vi.fn(async (key: string, _env: string, def: unknown) =>
+        key in map ? map[key] : def,
       ),
     };
   }
@@ -53,11 +41,9 @@ describe('CustomerRiskRadarService', () => {
         createdAt: Date;
       };
     }>;
-    /** Резолв ответственного менеджера. */
     cards?: Array<{ id: string; ownerId: string | null }>;
     project?: { ownerId: string } | null;
     person?: { id: string } | null;
-    /** Снимок «вчера» для дельты. */
     prevSnapshot?: { riskScore: number; signalCounts: unknown } | null;
     cfgOverrides?: Record<string, unknown>;
   }) {
@@ -101,12 +87,7 @@ describe('CustomerRiskRadarService', () => {
     return { svc, prisma, upsertCalls };
   }
 
-  function be(
-    entityId: string,
-    name: string,
-    blockId: string,
-    signalType: string,
-  ) {
+  function be(entityId: string, name: string, blockId: string, signalType: string) {
     return {
       entityId,
       entity: { canonicalName: name },
@@ -122,11 +103,9 @@ describe('CustomerRiskRadarService', () => {
 
   it('группирует блоки по клиенту, считает score/level и upsert-ит снимок', async () => {
     const { svc, upsertCalls } = build({
-      // Клиент A: 2× churn_risk (2*5=10) → critical.
       blockEntities: [
         be('cust-A', 'Клиент А', 'b1', 'churn_risk'),
         be('cust-A', 'Клиент А', 'b2', 'churn_risk'),
-        // Клиент B: 1× pain (1*2=2) → ok (порог warning=4).
         be('cust-B', 'Клиент Б', 'b3', 'pain'),
       ],
     });
@@ -144,10 +123,7 @@ describe('CustomerRiskRadarService', () => {
     expect(b.riskScore).toBe(2);
     expect(b.riskLevel).toBe('ok');
 
-    // signalCounts в create верны для A (2 churn).
-    const createA = (upsertCalls as Array<{ create: { signalCounts: unknown } }>).find(
-      () => true,
-    );
+    const createA = (upsertCalls as Array<{ create: { signalCounts: unknown } }>).find(() => true);
     expect(createA).toBeTruthy();
     expect(metrics.incCustomerRiskSnapshots).toHaveBeenCalledWith({
       level: 'critical',
@@ -157,7 +133,7 @@ describe('CustomerRiskRadarService', () => {
   it('responsiblePersonId = null, когда нет карточки клиента (не выдумываем)', async () => {
     const { svc } = build({
       blockEntities: [be('cust-A', 'Клиент А', 'b1', 'churn_risk')],
-      cards: [], // нет карточек → не резолвится
+      cards: [],
     });
     const res = await svc.computeForTenant({ tenantId: 'org1', dateLocal });
     expect(res.snapshots[0]!.responsiblePersonId).toBeNull();
@@ -206,8 +182,8 @@ describe('CustomerRiskRadarService', () => {
         todayScore: 16,
         todayCounts: { churn_risk: 2, objection: 1, pain: 2, feature_request: 0 },
       });
-      expect(delta.signalDelta).toBe(3); // (2+1+2) - (1+1) = 5 - 2
-      expect(delta.scoreDelta).toBe(10); // 16 - 6
+      expect(delta.signalDelta).toBe(3);
+      expect(delta.scoreDelta).toBe(10);
     });
 
     it('отток сигналов: сегодня меньше → signalDelta отрицательный', async () => {
@@ -225,8 +201,8 @@ describe('CustomerRiskRadarService', () => {
         todayScore: 5,
         todayCounts: { churn_risk: 1, objection: 0, pain: 0, feature_request: 0 },
       });
-      expect(delta.signalDelta).toBe(-3); // 1 - 4
-      expect(delta.scoreDelta).toBe(-15); // 5 - 20
+      expect(delta.signalDelta).toBe(-3);
+      expect(delta.scoreDelta).toBe(-15);
     });
   });
 });

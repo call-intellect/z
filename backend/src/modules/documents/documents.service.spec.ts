@@ -3,17 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DocumentsService } from './documents.service';
 
-/**
- * ТЗ-4 Ф3 — multipart-загрузка с атрибуцией и дедупликацией.
- *
- * Юнит-тесты сервиса на моках (Prisma / S3 / CoreQueue / Config). Проверяем:
- *   - multifile: возвращает items[] по числу файлов;
- *   - dedup: повторная идентичная загрузка → deduped:true и 2-й Document
- *     НЕ создаётся (document.create вызван 1 раз на 2 идентичных файла);
- *   - attachedThemeId чужой Org → theme_not_found (404);
- *   - лимиты Ф6: too_many_files / unsupported_format / file_too_large.
- */
-
 const TENANT = 'org_1';
 const PERSON = 'person_1';
 
@@ -35,16 +24,13 @@ function buildService(opts?: {
 
   const document = {
     findFirst: vi.fn(async ({ where }: { where: { contentHash?: string } }) => {
-      const hit = where.contentHash
-        ? existingByHash.get(where.contentHash)
-        : undefined;
+      const hit = where.contentHash ? existingByHash.get(where.contentHash) : undefined;
       return hit ?? null;
     }),
     create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
       const id = `doc_${createdDocs.length + 1}`;
       const doc = { id, status: 'uploaded', ...data };
       createdDocs.push(doc);
-      // Зеркалим дедуп-индекс: следующий идентичный файл найдётся как существующий.
       if (typeof data.contentHash === 'string') {
         existingByHash.set(data.contentHash, { id, status: 'uploaded' });
       }
@@ -54,9 +40,7 @@ function buildService(opts?: {
   };
   const role = { findUnique: vi.fn(async () => ({ tenantId: TENANT })) };
   const theme = {
-    findUnique: vi.fn(
-      async (): Promise<{ tenantId: string } | null> => null,
-    ),
+    findUnique: vi.fn(async (): Promise<{ tenantId: string } | null> => null),
   };
   const project = { findUnique: vi.fn(async () => ({ tenantId: TENANT })) };
 
@@ -74,7 +58,6 @@ function buildService(opts?: {
     acceptedFormats: ['pdf', 'docx', 'txt', 'md', 'csv'] as readonly string[],
     ...opts?.limits,
   };
-  // maxSizeBytes пересчитываем из переопределённого maxSizeMb.
   limits.maxSizeBytes = limits.maxSizeMb * 1024 * 1024;
 
   const cfg = {
@@ -119,17 +102,13 @@ describe('DocumentsService.uploadMany (ТЗ-4 Ф3)', () => {
       files: [makeFile('doc-renamed.txt', 'identical-content')],
     });
     expect(second.items[0]?.deduped).toBe(true);
-    // тот же существующий id, что у первого
     expect(second.items[0]?.id).toBe(first.items[0]?.id);
-    // create вызван ровно 1 раз за обе загрузки
     expect(document.create).toHaveBeenCalledTimes(1);
-    // prisma.count подтверждает: в «БД» только 1 Document
     expect(await document.count()).toBe(1);
   });
 
   it('attachedThemeId чужой Org → theme_not_found (404)', async () => {
     const { service, theme, document } = buildService();
-    // theme.findUnique возвращает null (как для чужой/несуществующей темы)
     theme.findUnique.mockResolvedValueOnce(null);
     await expect(
       service.uploadMany({
@@ -141,7 +120,6 @@ describe('DocumentsService.uploadMany (ТЗ-4 Ф3)', () => {
     ).rejects.toMatchObject({
       response: { error: { code: 'theme_not_found' } },
     });
-    // На несоответствии атрибуции ни один Document не создан.
     expect(document.create).not.toHaveBeenCalled();
   });
 
@@ -185,7 +163,6 @@ describe('DocumentsService.uploadMany (ТЗ-4 Ф3)', () => {
 
   it('лимит Ф6: file_too_large', async () => {
     const { service } = buildService({ limits: { maxSizeMb: 1 } });
-    // 2 МБ > 1 МБ лимита
     const big = {
       buffer: Buffer.alloc(2 * 1024 * 1024, 1),
       originalName: 'big.txt',

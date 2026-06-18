@@ -1,13 +1,3 @@
-/**
- * Snapshot-тест промта `block-linker.prompt.ts`.
- *
- * Фиксирует:
- *   - текст `BLOCK_LINKER_SYSTEM_PROMPT`;
- *   - JSON-схему `BLOCK_LINKER_JSON_SCHEMA`;
- *   - набор `BLOCK_LINK_TYPES` (полный список IdeaBlockLinkType).
- *
- * Обновлять только при осознанном изменении: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import {

@@ -15,13 +15,10 @@ import {
 
 import { SupportAccessService } from './support-access.service';
 
-/** Сколько блоков контура отдаём куратору за прогон (cap по токенам). */
 const CURATE_BLOCK_LIMIT = 200;
 
-/** Окно дневных сигналов — последние 24 часа. */
 const SIGNALS_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** Допустимые действия куратора. */
 type CuratorAction = 'keep' | 'promote' | 'fix' | 'merge' | 'archive';
 const DESTRUCTIVE_ACTIONS: ReadonlySet<CuratorAction> = new Set<CuratorAction>([
   'fix',
@@ -43,27 +40,6 @@ interface ContourBlockLite {
   status: string;
 }
 
-/**
- * SupportCuratorService — ночной куратор закрытого контура памяти поддержки
- * (TZ 2026-06-09 support-desk Ф4, R22/R23/R24, R-INV-6).
- *
- * Раз в сутки рефлексирующий агент смотрит блоки базы контура + дневные сигналы
- * (исходы черновиков, тип правок) и по каждому блоку-кандидату предлагает
- * действие keep|promote|fix|merge|archive. Применение:
- *   - keep — ничего не меняем, пишем аудит (applied=false).
- *   - promote — флаг хорошего ответа (промоут CSAT-driven в Ф3); блок НЕ
- *     мутируем, пишем аудит (applied=true).
- *   - fix / merge / archive — DESTRUCTIVE: только за дебат-гейтом
- *     (MultiAgentDebateService, family `decision-supersede`, R23) и только МЯГКО
- *     (status='archived'/supersededAt либо status='merged_into'/mergedIntoId —
- *     НИКОГДА prisma.ideaBlock.delete, R24).
- *
- * Каждая операция (в т.ч. отклонённая дебатом и keep) пишет аудит-строку
- * SupportCuratorAction. Идемпотентность в пределах прогона: повтор того же
- * (tenantId, runDate, blockId) — no-op.
- *
- * Kill-switch: `cfg.supportDesk.curatorEnabled === false` → no-op.
- */
 @Injectable()
 export class SupportCuratorService {
   private readonly logger = new Logger(SupportCuratorService.name);
@@ -78,13 +54,7 @@ export class SupportCuratorService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  /**
-   * Один прогон куратора. Возвращает счётчики predложенных/применённых действий
-   * (или `skipped` при выключенном kill-switch / неинициализированном контуре).
-   */
-  async runOnce(
-    now: Date,
-  ): Promise<{ skipped?: boolean; proposed: number; applied: number }> {
+  async runOnce(now: Date): Promise<{ skipped?: boolean; proposed: number; applied: number }> {
     if (!this.cfg.supportDesk.curatorEnabled) {
       return { skipped: true, proposed: 0, applied: 0 };
     }
@@ -100,7 +70,6 @@ export class SupportCuratorService {
 
     const runDate = now.toISOString().slice(0, 10);
 
-    // Блоки контура (только canonical, в support-группе).
     const blocks: ContourBlockLite[] = await this.prisma.ideaBlock.findMany({
       where: {
         tenantId: vendorOrgId,
@@ -119,14 +88,12 @@ export class SupportCuratorService {
       return { proposed: 0, applied: 0 };
     }
 
-    // Дневные сигналы — исходы черновиков за последние 24 часа.
     const since = new Date(now.getTime() - SIGNALS_WINDOW_MS);
     const signals = await this.prisma.supportDraftOutcome.findMany({
       where: { tenantId: vendorOrgId, createdAt: { gte: since } },
       select: { issueId: true, outcome: true, editType: true },
     });
 
-    // LLM-куратор (strict JSON).
     let proposals: CuratorProposal[];
     try {
       const llmResult = await this.llm.call({
@@ -168,7 +135,6 @@ export class SupportCuratorService {
     for (const proposal of proposals) {
       const block = blocksById.get(proposal.blockId);
       if (!block) {
-        // LLM сослался на несуществующий/чужой блок — пропускаем.
         continue;
       }
       proposed++;
@@ -203,14 +169,6 @@ export class SupportCuratorService {
     return { proposed, applied };
   }
 
-  /**
-   * Применение одного действия куратора. Возвращает `true`, если действие
-   * реально применено (мутация блока или промоут-флаг), `false` — если отклонено
-   * дебатом / это keep / идемпотентный повтор.
-   *
-   * Идемпотентность: уже есть SupportCuratorAction по (tenantId, runDate,
-   * blockId) → no-op. Блок уже не canonical → no-op (заархивирован/слит ранее).
-   */
   private async applyAction(args: {
     vendorOrgId: string;
     runDate: string;
@@ -222,7 +180,6 @@ export class SupportCuratorService {
     const { vendorOrgId, runDate, proposal, block, blocksById, now } = args;
     const { blockId, action, reason } = proposal;
 
-    // Идемпотентность в пределах дня.
     const existing = await this.prisma.supportCuratorAction.findFirst({
       where: { tenantId: vendorOrgId, runDate, blockId },
       select: { id: true },
@@ -231,15 +188,11 @@ export class SupportCuratorService {
       return false;
     }
 
-    // Блок уже не canonical (заархивирован/слит ранее) — не трогаем.
     if (block.status !== 'canonical') {
       return false;
     }
 
-    // keep / promote — НЕ destructive: блок не мутируем.
     if (!DESTRUCTIVE_ACTIONS.has(action)) {
-      // promote — флаг хорошего ответа (промоут CSAT-driven в Ф3); куратор лишь
-      // помечает, мутации блока нет. keep — оставить как есть.
       await this.recordAudit({
         vendorOrgId,
         runDate,
@@ -253,7 +206,6 @@ export class SupportCuratorService {
       return action === 'promote';
     }
 
-    // DESTRUCTIVE (fix/merge/archive) — дебат-гейт ПЕРЕД любым изменением (R23).
     const verdict = await this.debate.judge({
       taskType: 'debate-decision-supersede',
       taskFamily: 'decision-supersede',
@@ -272,7 +224,6 @@ export class SupportCuratorService {
     });
 
     if (!isAffirmative(verdict)) {
-      // R23: «против»/split/fallback → НЕ применяем, фиксируем аудит.
       await this.recordAudit({
         vendorOrgId,
         runDate,
@@ -286,16 +237,10 @@ export class SupportCuratorService {
       return false;
     }
 
-    // Affirm → применяем МЯГКО (никогда delete, R24).
     let appliedTargetBlockId: string | null = null;
     if (action === 'merge') {
-      const target = proposal.targetBlockId
-        ? blocksById.get(proposal.targetBlockId)
-        : undefined;
-      const targetValid =
-        !!target &&
-        target.id !== blockId &&
-        target.status === 'canonical';
+      const target = proposal.targetBlockId ? blocksById.get(proposal.targetBlockId) : undefined;
+      const targetValid = !!target && target.id !== blockId && target.status === 'canonical';
       if (targetValid) {
         await this.prisma.ideaBlock.update({
           where: { id: blockId },
@@ -303,14 +248,12 @@ export class SupportCuratorService {
         });
         appliedTargetBlockId = proposal.targetBlockId;
       } else {
-        // Нет валидной цели → деградируем до soft-archive.
         await this.prisma.ideaBlock.update({
           where: { id: blockId },
           data: { status: 'archived', supersededAt: now },
         });
       }
     } else {
-      // fix / archive → soft-archive (исходный ряд сохранён).
       await this.prisma.ideaBlock.update({
         where: { id: blockId },
         data: { status: 'archived', supersededAt: now },
@@ -330,7 +273,6 @@ export class SupportCuratorService {
     return true;
   }
 
-  /** Запись аудит-строки действия куратора (что/почему/verdict). */
   private async recordAudit(args: {
     vendorOrgId: string;
     runDate: string;
@@ -356,31 +298,14 @@ export class SupportCuratorService {
   }
 }
 
-// ─────────────────────────── helpers ───────────────────────────
-
-/**
- * Affirm-гейт для destructive: применяем ТОЛЬКО при явной поддержке дебатом.
- * Семейство `decision-supersede` возвращает verdict-токены вроде
- * `supersedes`/`merge`/`accept` (поддержка) vs `new`/`keep`/`reject`/
- * `split_uncertain` (против). Консервативно: при любом сомнении — НЕ применяем
- * (split-консенсус, fallback провайдера, неизвестный/против-токен → false).
- */
 function isAffirmative(verdict: DebateVerdict): boolean {
   if (verdict.consensusType === 'split') return false;
   if (verdict.fallbackUsed) return false;
   const decision = verdict.decision.trim().toLowerCase();
-  const AFFIRM = new Set([
-    'supersedes',
-    'supersede',
-    'merge',
-    'accept',
-    'archive',
-    'fix',
-  ]);
+  const AFFIRM = new Set(['supersedes', 'supersede', 'merge', 'accept', 'archive', 'fix']);
   return AFFIRM.has(decision);
 }
 
-/** Парс strict-JSON ответа куратора в список предложений. */
 function parseCurateJson(text: string): CuratorProposal[] {
   try {
     const cleaned = stripCodeFence(text).trim();
@@ -407,13 +332,7 @@ function parseCurateJson(text: string): CuratorProposal[] {
 }
 
 function isCuratorAction(x: unknown): x is CuratorAction {
-  return (
-    x === 'keep' ||
-    x === 'promote' ||
-    x === 'fix' ||
-    x === 'merge' ||
-    x === 'archive'
-  );
+  return x === 'keep' || x === 'promote' || x === 'fix' || x === 'merge' || x === 'archive';
 }
 
 function stripCodeFence(s: string): string {

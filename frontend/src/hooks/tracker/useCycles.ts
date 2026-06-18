@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { useMemo } from 'react';
-import useSWR from 'swr';
+import { useMemo } from "react";
+import useSWR from "swr";
 
-import { cyclesApi } from '@/api/tracker/cycles.api';
-import { cycleFromApi, type Cycle } from '@/domain/tracker';
+import { cyclesApi } from "@/api/tracker/cycles.api";
+import { cycleFromApi, type Cycle } from "@/domain/tracker";
 
-import { useTrackerLiveRefresh } from './useTrackerLiveRefresh';
+import { useTrackerLiveRefresh } from "./useTrackerLiveRefresh";
 
 export function useCycles(
   orgId: string | null | undefined,
@@ -18,20 +18,22 @@ export function useCycles(
   isLoading: boolean;
   mutate: () => Promise<unknown>;
 } {
-  const key =
-    orgId && projectId ? ['tracker.cycles', orgId, projectId] : null;
+  const key = orgId && projectId ? ["tracker.cycles", orgId, projectId] : null;
 
   const swr = useSWR(
     key,
     async () => {
-      if (!orgId || !projectId) throw new Error('orgId/projectId required');
+      if (!orgId || !projectId) throw new Error("orgId/projectId required");
       return cyclesApi.list(orgId, projectId);
     },
     { revalidateOnFocus: false },
   );
 
-  // Live: cycle.* (created/progress_updated/completed).
-  useTrackerLiveRefresh(orgId, { projectId: projectId ?? null }, Boolean(orgId && projectId));
+  useTrackerLiveRefresh(
+    orgId,
+    { projectId: projectId ?? null },
+    Boolean(orgId && projectId),
+  );
 
   const cycles = useMemo<Cycle[]>(
     () => (swr.data?.items ? swr.data.items.map(cycleFromApi) : []),

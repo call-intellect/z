@@ -1,9 +1,5 @@
 import { z } from 'zod';
 
-/**
- * Базовая регулярка валидации пароля: минимум 8 символов, хотя бы одна буква,
- * хотя бы одна цифра. ТЗ не требует строгих complexity rules — этого достаточно.
- */
 export const STRONG_PASSWORD_RX = /^(?=.*[A-Za-zА-Яа-я])(?=.*\d).{8,}$/;
 
 export const ResetPasswordSchema = z.object({

@@ -1,12 +1,3 @@
-/**
- * DTO для behavior-metrics API (Фаза B §8).
- *
- * Источник: plans/tz/2026-05-21-phase-B-meeting-behavior-metrics.md §8.2.
- *
- * Zod-схема → класс через `nestjs-zod`. Используется в контроллере + Swagger.
- */
-
-import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 const ParticipantMetricsSchema = z.object({
@@ -45,10 +36,6 @@ export const BehaviorMetricsResponseSchema = z.object({
 
 export type BehaviorMetricsResponse = z.infer<typeof BehaviorMetricsResponseSchema>;
 
-export class BehaviorMetricsResponseDto extends createZodDto(BehaviorMetricsResponseSchema) {}
-
-// ───────────────────────── org aggregate ─────────────────────────
-
 export const OrgAggregateQuerySchema = z.object({
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
@@ -73,5 +60,3 @@ export const OrgAggregateResponseSchema = z.object({
 });
 
 export type OrgAggregateResponse = z.infer<typeof OrgAggregateResponseSchema>;
-
-export class OrgAggregateResponseDto extends createZodDto(OrgAggregateResponseSchema) {}

@@ -7,18 +7,6 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { RedisService } from '../../../common/redis/redis.service';
 import { tenantTopOf } from '../utils/tenant-top';
 
-/**
- * SBA α-5 dialog-layer — RetrievalCache.
- *
- * Хранит результат retrieval'а (blockIds[] + opt. score'ы) под ключом
- * `dlg:ret:{tenantId}:{hash(standalone+scope+validAt)}`. Hit — пропускаем
- * cosine+BM25+граф, LLM-synthesis всё ещё вызывается.
- *
- * TTL — настраивается через ENV (default 1h). Инвалидация — событием
- * CardVersion.create через CacheInvalidationService (pessimistic flush
- * tenant-prefix).
- */
-
 export interface RetrievalCacheKeyArgs {
   tenantId: string;
   standaloneQuestion: string;
@@ -75,10 +63,7 @@ export class RetrievalCacheService {
     }
   }
 
-  async set(
-    args: RetrievalCacheKeyArgs,
-    entry: RetrievalCacheEntry,
-  ): Promise<void> {
+  async set(args: RetrievalCacheKeyArgs, entry: RetrievalCacheEntry): Promise<void> {
     const key = this.buildKey(args);
     const ttl = this.cfg.dialogLayer.retrievalCacheTtlSeconds;
     try {
@@ -91,10 +76,6 @@ export class RetrievalCacheService {
     }
   }
 
-  /**
-   * Инвалидация по pattern `dlg:ret:{tenantId}:*`. Используется
-   * CacheInvalidationService при CardVersion.create.
-   */
   async invalidateTenant(tenantId: string): Promise<number> {
     const pattern = `${KEY_PREFIX}:${tenantId}:*`;
     return this.scanAndDelete(pattern);
@@ -105,13 +86,7 @@ export class RetrievalCacheService {
     let deleted = 0;
     try {
       do {
-        const [next, keys] = await this.redis.client.scan(
-          cursor,
-          'MATCH',
-          pattern,
-          'COUNT',
-          500,
-        );
+        const [next, keys] = await this.redis.client.scan(cursor, 'MATCH', pattern, 'COUNT', 500);
         cursor = next;
         if (keys.length > 0) {
           deleted += await this.redis.client.del(...keys);

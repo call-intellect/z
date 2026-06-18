@@ -1,32 +1,22 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import useSWR from 'swr';
-import { ArrowLeft, Calendar, ShieldCheck } from 'lucide-react';
+import Link from "next/link";
+import useSWR from "swr";
+import { ArrowLeft, Calendar, ShieldCheck } from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { knowledgeCloneApi } from '@/api/knowledge-clone.api';
-import { useAuth } from '@/contexts/auth-context';
+import { ApiError } from "@/api/api-error";
+import { knowledgeCloneApi } from "@/api/knowledge-clone.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   mapKnowledgeProfile,
   type KnowledgeProfile,
-} from '@/domain/knowledge-profile';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { PersonSubpagesNav } from '@/ui/components/persons/PersonSubpagesNav';
-import { SkillsTable } from '@/ui/components/knowledge-profile/SkillsTable';
+} from "@/domain/knowledge-profile";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { PersonSubpagesNav } from "@/ui/components/persons/PersonSubpagesNav";
+import { SkillsTable } from "@/ui/components/knowledge-profile/SkillsTable";
 
-/**
- * Профиль знаний другого Person — read-only (без «помечу неверным»).
- *
- * ТЗ 2026-05-26 §4: используется тот же `<SkillsTable>`, что и для своего
- * профиля, но без `onMarkWrong` → кнопка скрыта.
- *
- * Член Org видит сводку без цитат; owner/admin/self — с цитатами.
- * Поведение «без цитат» уже обеспечивается на бэке через RBAC-уровень
- * (см. KnowledgeCloneService.serialize).
- */
 export function PersonKnowledgeProfileClient({
   personId,
 }: {
@@ -35,15 +25,16 @@ export function PersonKnowledgeProfileClient({
   const { currentOrgId, isLoading } = useAuth();
 
   const swrKey = currentOrgId
-    ? ['knowledge-profile-of-person', currentOrgId, personId]
+    ? ["knowledge-profile-of-person", currentOrgId, personId]
     : null;
-  const { data, error, isLoading: loadingProfile } = useSWR(
-    swrKey,
-    async () => {
-      const res = await knowledgeCloneApi.getByPerson(currentOrgId!, personId);
-      return mapKnowledgeProfile(res);
-    },
-  );
+  const {
+    data,
+    error,
+    isLoading: loadingProfile,
+  } = useSWR(swrKey, async () => {
+    const res = await knowledgeCloneApi.getByPerson(currentOrgId!, personId);
+    return mapKnowledgeProfile(res);
+  });
 
   const profile: KnowledgeProfile | undefined = data ?? undefined;
 
@@ -65,11 +56,10 @@ export function PersonKnowledgeProfileClient({
           href={`/persons/${encodeURIComponent(personId)}`}
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
-          <ArrowLeft className="h-4 w-4" />
-          К карточке сотрудника
+          <ArrowLeft className="h-4 w-4" />К карточке сотрудника
         </Link>
         <h1 className="text-2xl font-semibold">
-          {profile ? `Профиль знаний: ${profile.personName}` : 'Профиль знаний'}
+          {profile ? `Профиль знаний: ${profile.personName}` : "Профиль знаний"}
         </h1>
         <p className="text-sm text-muted-foreground">
           Области экспертизы, которые Кора собрала из встреч и материалов.
@@ -94,9 +84,9 @@ export function PersonKnowledgeProfileClient({
       {!loadingProfile && error && (
         <Card>
           <CardContent className="p-6 text-sm text-destructive">
-            {error instanceof ApiError && error.code === 'person_not_found'
-              ? 'Сотрудник не найден.'
-              : 'Не удалось загрузить профиль. Попробуйте обновить страницу.'}
+            {error instanceof ApiError && error.code === "person_not_found"
+              ? "Сотрудник не найден."
+              : "Не удалось загрузить профиль. Попробуйте обновить страницу."}
           </CardContent>
         </Card>
       )}
@@ -119,7 +109,7 @@ export function PersonKnowledgeProfileClient({
       {!loadingProfile && profile && !profile.isEmpty && (
         <>
           <ProfileMeta profile={profile} />
-          {/* read-only: без onMarkWrong */}
+          {}
           <SkillsTable categories={profile.categories} />
           {profile.experienceHighlights.length > 0 && (
             <Card>
@@ -154,8 +144,8 @@ export function PersonKnowledgeProfileClient({
 
 function ProfileMeta({ profile }: { profile: KnowledgeProfile }) {
   const builtAt = profile.builtAt
-    ? profile.builtAt.toLocaleString('ru-RU')
-    : '—';
+    ? profile.builtAt.toLocaleString("ru-RU")
+    : "—";
   return (
     <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
       <span className="inline-flex items-center gap-1.5">

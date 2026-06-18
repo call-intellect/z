@@ -1,30 +1,11 @@
-/**
- * Smoke-тест транскрипционного пайплайна.
- *
- * Что делает:
- *   1. Загружает тестовый OGG-файл в S3 (meetings/<meetingId>/tracks/test.ogg).
- *   2. Создаёт Meeting + Recording + AudioTrack в БД.
- *   3. Переводит Meeting в статус recording_ready.
- *   4. Ставит задачу в BullMQ-очередь ai.transcribe.
- *   5. Ждёт до 3 минут и выводит результат транскрипции из S3.
- *
- * Запуск: cd backend && bun scripts/smoke-transcribe.ts
- * Требования: DATABASE_URL, REDIS_URL, S3_*, VOX_API_TOKEN в .env
- */
-
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
-import {
-  S3Client,
-  PutObjectCommand,
-  GetObjectCommand,
-} from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { Queue } from 'bullmq';
 import { createClient } from 'redis';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Load .env
 const envPath = path.join(import.meta.dir, '..', '.env');
 if (fs.existsSync(envPath)) {
   const envContent = fs.readFileSync(envPath, 'utf8');
@@ -34,7 +15,10 @@ if (fs.existsSync(envPath)) {
     const eqIdx = trimmed.indexOf('=');
     if (eqIdx < 0) continue;
     const key = trimmed.slice(0, eqIdx).trim();
-    const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
+    const val = trimmed
+      .slice(eqIdx + 1)
+      .trim()
+      .replace(/^["']|["']$/g, '');
     if (key && !process.env[key]) process.env[key] = val;
   }
 }
@@ -52,7 +36,6 @@ if (!DATABASE_URL || !REDIS_URL || !S3_BUCKET) {
   process.exit(1);
 }
 
-// ─── S3 client ────────────────────────────────────────────────────────────────
 const s3 = new S3Client({
   region: S3_REGION,
   endpoint: S3_ENDPOINT_URL,
@@ -60,9 +43,10 @@ const s3 = new S3Client({
   forcePathStyle: true,
 });
 
-// ─── ULID-like id (simple) ────────────────────────────────────────────────────
 function makeId(): string {
-  return Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 8).toUpperCase();
+  return (
+    Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 8).toUpperCase()
+  );
 }
 
 async function sleep(ms: number) {
@@ -72,17 +56,17 @@ async function sleep(ms: number) {
 async function main() {
   console.log('\n=== smoke-transcribe: начинаем ===\n');
 
-  // 1. Проверяем тестовый аудио файл
   const audioFile = '/tmp/test-audio.ogg';
   if (!fs.existsSync(audioFile)) {
     console.error('❌ Нет /tmp/test-audio.ogg. Создайте через:');
-    console.error('   ffmpeg -f lavfi -i "sine=frequency=440:duration=10" -c:a libopus -ar 48000 /tmp/test-audio.ogg -y');
+    console.error(
+      '   ffmpeg -f lavfi -i "sine=frequency=440:duration=10" -c:a libopus -ar 48000 /tmp/test-audio.ogg -y',
+    );
     process.exit(1);
   }
   const audioBuffer = fs.readFileSync(audioFile);
   console.log(`✓ Тестовый аудио файл: ${audioFile} (${audioBuffer.byteLength} bytes)`);
 
-  // 2. Генерируем ID-шники
   const meetingId = '01SMKTR' + makeId();
   const recordingId = 'rec_smk_' + Date.now();
   const trackId = 'trk_smk_' + Date.now();
@@ -90,22 +74,21 @@ async function main() {
   const fakeUrl = `${S3_ENDPOINT_URL}/${S3_BUCKET}/${audioKey}`;
   console.log(`✓ Meeting ID: ${meetingId}`);
 
-  // 3. Загружаем аудио в S3
   console.log(`\n→ Загружаем аудио в S3: ${audioKey}`);
-  await s3.send(new PutObjectCommand({
-    Bucket: S3_BUCKET,
-    Key: audioKey,
-    Body: audioBuffer,
-    ContentType: 'audio/ogg',
-  }));
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: audioKey,
+      Body: audioBuffer,
+      ContentType: 'audio/ogg',
+    }),
+  );
   console.log(`✓ Аудио загружено в S3`);
 
-  // 4. Создаём записи в БД
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DATABASE_URL }) });
   try {
     console.log('\n→ Создаём записи в БД...');
 
-    // Нам нужен пользователь-владелец. Берём первого доступного.
     const owner = await prisma.user.findFirst();
     if (!owner) {
       console.error('❌ Нет пользователей в БД. Сначала зарегистрируйтесь через API.');
@@ -114,9 +97,8 @@ async function main() {
     console.log(`✓ Владелец встречи: ${owner.email}`);
 
     const now = new Date();
-    const endedAt = new Date(now.getTime() + 10000); // +10s
+    const endedAt = new Date(now.getTime() + 10000);
 
-    // Meeting
     await prisma.meeting.create({
       data: {
         id: meetingId,
@@ -131,8 +113,7 @@ async function main() {
     });
     console.log(`✓ Meeting создан: ${meetingId}`);
 
-    // Recording
-    const expiresAt = new Date(now.getTime() + 30 * 24 * 3600 * 1000); // +30 days
+    const expiresAt = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
     await prisma.recording.create({
       data: {
         id: recordingId,
@@ -146,7 +127,6 @@ async function main() {
     });
     console.log(`✓ Recording создан: ${recordingId}`);
 
-    // AudioTrack
     await prisma.audioTrack.create({
       data: {
         id: trackId,
@@ -162,13 +142,10 @@ async function main() {
       },
     });
     console.log(`✓ AudioTrack создан с URL: ${fakeUrl}`);
-
   } finally {
     await prisma.$disconnect();
   }
 
-  // 5. Ставим задачу в ai.transcribe
-  // BullMQ использует ioredis, поэтому connection opts — не node-redis
   const redisUrl = new URL(REDIS_URL);
   const redisOpts = {
     host: redisUrl.hostname,
@@ -186,7 +163,6 @@ async function main() {
   await queue.close();
   console.log(`\n✓ Задача поставлена в ai.transcribe: jobId=${job.id}`);
 
-  // 6. Ждём результата (до 3 минут)
   console.log('\n⏳ Ждём результата транскрипции (до 3 минут)...');
   const indexKey = `transcripts/${meetingId}/index.json`;
   const maxWaitMs = 3 * 60 * 1000;
@@ -197,7 +173,6 @@ async function main() {
     await sleep(checkIntervalMs);
     const elapsed = Math.round((Date.now() - startedAt) / 1000);
 
-    // Проверяем статус Meeting в БД
     const prisma2 = new PrismaClient({ adapter: new PrismaPg({ connectionString: DATABASE_URL }) });
     try {
       const meeting = await prisma2.meeting.findUnique({
@@ -205,38 +180,52 @@ async function main() {
         include: { transcript: true },
       });
 
-      console.log(`  [${elapsed}s] Meeting status: ${meeting?.status ?? '??'} | transcript: ${meeting?.transcript ? 'есть' : 'нет'}`);
+      console.log(
+        `  [${elapsed}s] Meeting status: ${meeting?.status ?? '??'} | transcript: ${meeting?.transcript ? 'есть' : 'нет'}`,
+      );
 
       if (meeting?.transcript?.rawIndexS3Url) {
-        // Скачиваем index.json
         console.log(`\n✓ Транскрипция готова! rawIndexS3Url = ${meeting.transcript.rawIndexS3Url}`);
         try {
-          const response = await s3.send(new GetObjectCommand({
-            Bucket: S3_BUCKET,
-            Key: meeting.transcript.rawIndexS3Url,
-          }));
-          const body = response.Body as unknown as { transformToByteArray: () => Promise<Uint8Array> };
+          const response = await s3.send(
+            new GetObjectCommand({
+              Bucket: S3_BUCKET,
+              Key: meeting.transcript.rawIndexS3Url,
+            }),
+          );
+          const body = response.Body as unknown as {
+            transformToByteArray: () => Promise<Uint8Array>;
+          };
           const bytes = await body.transformToByteArray();
           const indexJson = JSON.parse(Buffer.from(bytes).toString('utf8'));
           console.log('\n=== index.json ===');
           console.log(JSON.stringify(indexJson, null, 2).slice(0, 2000));
 
-          // Также смотрим на track файл
           if (indexJson.tracks?.[0]?.s3Key) {
-            const trackResponse = await s3.send(new GetObjectCommand({
-              Bucket: S3_BUCKET,
-              Key: indexJson.tracks[0].s3Key,
-            }));
-            const trackBody = trackResponse.Body as unknown as { transformToByteArray: () => Promise<Uint8Array> };
+            const trackResponse = await s3.send(
+              new GetObjectCommand({
+                Bucket: S3_BUCKET,
+                Key: indexJson.tracks[0].s3Key,
+              }),
+            );
+            const trackBody = trackResponse.Body as unknown as {
+              transformToByteArray: () => Promise<Uint8Array>;
+            };
             const trackBytes = await trackBody.transformToByteArray();
             const trackJson = JSON.parse(Buffer.from(trackBytes).toString('utf8'));
             console.log('\n=== track-*.json (первые 500 chars transcript) ===');
-            console.log(JSON.stringify({
-              speakerName: trackJson.speakerName,
-              durationSeconds: trackJson.durationSeconds,
-              transcriptText: trackJson.transcriptText?.slice(0, 500),
-              wordsCount: trackJson.words?.length,
-            }, null, 2));
+            console.log(
+              JSON.stringify(
+                {
+                  speakerName: trackJson.speakerName,
+                  durationSeconds: trackJson.durationSeconds,
+                  transcriptText: trackJson.transcriptText?.slice(0, 500),
+                  wordsCount: trackJson.words?.length,
+                },
+                null,
+                2,
+              ),
+            );
           }
         } catch (e) {
           console.log('  (S3 download error:', e instanceof Error ? e.message : String(e), ')');
@@ -250,7 +239,6 @@ async function main() {
         console.log(`\n❌ Meeting перешёл в failed. failureReason: ${meeting.failureReason}`);
         break;
       }
-
     } finally {
       await prisma2.$disconnect();
     }

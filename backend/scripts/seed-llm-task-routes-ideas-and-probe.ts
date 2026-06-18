@@ -1,25 +1,3 @@
-/**
- * SBA β-5 — Seed маршрутов LLM для 4 новых taskType (Specialist 3.6 + Layer 6):
- *
- *   - idea-extract            — primary deepseek-v4-flash, secondary gpt-5.4-mini, tertiary qwen3:30b.
- *   - idea-cluster-merge      — primary deepseek-v4-flash, secondary gpt-5.4-nano (select-task — дешевле),
- *                                tertiary qwen3:30b.
- *   - probe-formulate         — primary deepseek-v4-flash, secondary gpt-5.4-mini, tertiary qwen3:30b.
- *   - idea-status-summarize   — primary deepseek-v4-flash, secondary gpt-5.4-nano, tertiary qwen3:30b.
- *
- * Источник цепочек: docs/reference/llm-models-playbook.md §2.1 + verified-карта
- * second-brain/01_projects/llm-providers-verified.md (smoke 2026-05-21).
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-ideas-and-probe.ts
- *   bun run scripts/seed-llm-task-routes-ideas-and-probe.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - editedByAdmin=true — не перезаписываем.
- *   - Без флага — пропускаем existing.
- *   - С `--update-existing` — обновляем model/priority/isActive (но НЕ editedByAdmin).
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -147,17 +125,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -182,9 +156,7 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 

@@ -1,25 +1,8 @@
-/**
- * meeting-identity-and-clones-attribution (2026-06-04, Фаза 2.1) — unit-тесты
- * для `MeetingsService.createForUser` в части pre-seed приглашённых.
- *
- * Покрытие:
- *   - invitees с {userId, sendVia:['email']} → создан Participant приглашённого
- *     с invitationStatus:'invited', truthy inviteToken, isRegisteredUser:true,
- *     userId:'u1', livekitIdentity начинается с 'invitee:'.
- *   - регресс: без invitees создаётся только host-participant (как раньше).
- *
- * Сеть/время не используются: $transaction/tx замоканы, nanoid реальный
- * (детерминированно truthy), Date реальный (значение не проверяем).
- */
-
 import { ConflictException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/index';
-import {
-  MeetingNotFoundError,
-  NotAuthorizedError,
-} from '../../common/errors/domain-errors';
+import { MeetingNotFoundError, NotAuthorizedError } from '../../common/errors/domain-errors';
 import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { JwtService } from '../auth/services/jwt.service';
@@ -47,7 +30,6 @@ interface ParticipantCreateArg {
 function makeService() {
   const participantCreate = vi.fn(async (_arg: ParticipantCreateArg) => ({}));
 
-  // tx: внутри транзакции вызываются user/person/org/membership/participant.
   const tx = {
     user: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({
@@ -63,7 +45,6 @@ function makeService() {
     },
     card: { findUnique: vi.fn(), update: vi.fn() },
     org: {
-      // resolveDefaultTenant: владелец Org найден → tenant = 'org1'.
       findFirst: vi.fn(async () => ({ id: 'org1' })),
     },
     membership: { findFirst: vi.fn() },
@@ -71,9 +52,7 @@ function makeService() {
   };
 
   const prisma = {
-    // consumeMeetingFromBalance: возвращаем 0 membership'ов → ранний return.
     membership: { findMany: vi.fn(async () => []) },
-    // side-effect онбординга после транзакции.
     org: { updateMany: vi.fn(async () => ({ count: 0 })) },
     $transaction: vi.fn(async (cb: (t: typeof tx) => Promise<void>) => {
       await cb(tx);
@@ -81,7 +60,6 @@ function makeService() {
   } as unknown as PrismaService;
 
   const repository = {
-    // meetings.create возвращает «созданную» встречу.
     create: vi.fn(async ({ id }: { id: string }) => ({
       id,
       tenantId: 'org1',
@@ -103,12 +81,9 @@ function makeService() {
 
   const mail = {
     sendMeetingInvite: vi.fn(
-      async (_arg: {
-        to: string;
-        hostName: string;
-        meetingTitle: string;
-        joinUrl: string;
-      }) => ({ ok: true }),
+      async (_arg: { to: string; hostName: string; meetingTitle: string; joinUrl: string }) => ({
+        ok: true,
+      }),
     ),
   };
   const conversational = {
@@ -165,13 +140,9 @@ describe('MeetingsService.createForUser — pre-seed приглашённых (�
       'host1',
     );
 
-    // 2 вызова: host + приглашённый.
     expect(participantCreate).toHaveBeenCalledTimes(2);
 
-    // Находим вызов для приглашённого (role:'guest').
-    const inviteeCall = participantCreate.mock.calls.find(
-      ([arg]) => arg.data.role === 'guest',
-    );
+    const inviteeCall = participantCreate.mock.calls.find(([arg]) => arg.data.role === 'guest');
     expect(inviteeCall).toBeTruthy();
     const data = inviteeCall![0].data;
 
@@ -182,7 +153,6 @@ describe('MeetingsService.createForUser — pre-seed приглашённых (�
     expect(data.userId).toBe('u1');
     expect(data.personId).toBeNull();
     expect(data.livekitIdentity.startsWith('invitee:')).toBe(true);
-    // livekitIdentity несёт inviteToken (совместимость с Ф0.4 joinAsInvited).
     expect(data.livekitIdentity).toBe(`invitee:${data.inviteToken}`);
     expect(data.invitedAt).toBeInstanceOf(Date);
     expect(data.name).toBe('Пользователь u1');
@@ -227,10 +197,7 @@ describe('MeetingsService.createForUser — pre-seed приглашённых (�
   it('Ф7A knowledge-access — без флага в data уходит closedGroupKind:null', async () => {
     const { svc, repository } = makeService();
 
-    await svc.createForUser(
-      { type: 'sync' as never, title: 'Обычная' },
-      'host1',
-    );
+    await svc.createForUser({ type: 'sync' as never, title: 'Обычная' }, 'host1');
 
     expect(repository.create).toHaveBeenCalledWith(
       expect.objectContaining({ closedGroupKind: null }),
@@ -245,21 +212,15 @@ describe('MeetingsService.createForUser — pre-seed приглашённых (�
       {
         type: 'sync' as never,
         title: 'Планёрка',
-        invitees: [
-          { userId: 'u1', email: 'nastya@example.com', sendVia: ['email'] },
-        ],
+        invitees: [{ userId: 'u1', email: 'nastya@example.com', sendVia: ['email'] }],
       },
       'host1',
     );
 
-    // Доставка — fire-and-forget (void). Прогоняем микротаски, чтобы
-    // detached-промис успел дойти до mock'а.
     await Promise.resolve();
     await Promise.resolve();
 
-    const inviteeCall = participantCreate.mock.calls.find(
-      ([arg]) => arg.data.role === 'guest',
-    );
+    const inviteeCall = participantCreate.mock.calls.find(([arg]) => arg.data.role === 'guest');
     const token = inviteeCall![0].data.inviteToken;
 
     expect(mail.sendMeetingInvite).toHaveBeenCalledTimes(1);
@@ -294,11 +255,7 @@ describe('MeetingsService.createForUser — pre-seed приглашённых (�
     expect(arg.payload.meetingTitle).toBe('Ретро');
     expect(arg.payload.hostName).toBe('Хост');
     expect(arg.payload.joinUrl).toContain('?inv=');
-    expect(arg.preferredChannelKinds).toEqual([
-      'telegram_bot',
-      'email_smtp',
-      'in_app',
-    ]);
+    expect(arg.preferredChannelKinds).toEqual(['telegram_bot', 'email_smtp', 'in_app']);
   });
 
   it('invitee.userId === host → пропускается (не дублирует хоста)', async () => {
@@ -313,17 +270,10 @@ describe('MeetingsService.createForUser — pre-seed приглашённых (�
       'host1',
     );
 
-    // Только host-participant, приглашённый-дубль не создан.
     expect(participantCreate).toHaveBeenCalledTimes(1);
     expect(participantCreate.mock.calls[0]![0].data.role).toBe('host');
   });
 });
-
-// ──────────────────────────────────────────────────────────────────────────
-// B5 (2026-06-06) — addInvitees: допригласить участников ПОСЛЕ создания /
-// во время встречи. Покрывает общий seedInviteeInTx с другой стороны (host-
-// проверка, joinable-gate, идемпотентность по userId/personId).
-// ──────────────────────────────────────────────────────────────────────────
 
 interface MeetingRow {
   id: string;
@@ -492,11 +442,7 @@ describe('MeetingsService.addInvitees (B5)', () => {
       }),
     });
 
-    const result = await svc.addInvitees(
-      'm-1',
-      [{ personId: 'p2', sendVia: [] }],
-      'u-host',
-    );
+    const result = await svc.addInvitees('m-1', [{ personId: 'p2', sendVia: [] }], 'u-host');
 
     expect(result).toEqual({ added: 0, skipped: 1 });
     expect(participantCreate).not.toHaveBeenCalled();

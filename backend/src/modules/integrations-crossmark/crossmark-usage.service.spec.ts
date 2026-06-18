@@ -5,14 +5,6 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 
 import { CrossmarkUsageService } from './crossmark-usage.service';
 
-/**
- * Юнит-тесты CrossmarkUsageService.
- * Проверяем что:
- *   1. groupBy / aggregate / findMany вызываются с правильным where-фильтром.
- *   2. costUsd корректно конвертируется из Prisma.Decimal в number.
- *   3. distinct meeting count = unique meetingId.
- */
-
 function makePrismaMock(opts: {
   totalsSum: { inputTokens: number | null; outputTokens: number | null; costUsd: unknown };
   distinctMeetings: Array<{ meetingId: string }>;

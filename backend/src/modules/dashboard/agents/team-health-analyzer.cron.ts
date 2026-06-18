@@ -10,36 +10,6 @@ import {
 } from '../../ai/services/prompts/common';
 import { TeamHealthService, type TeamHealthRowDto } from '../services/team-health.service';
 
-/**
- * Pulse Wave 3 §3.1 — Team-Health-Analyzer cron.
- *
- * Источник: plans/tz/2026-05-30-pulse-full.md §3.1.
- *
- * Ежедневный (`@Cron('30 4 * * *')`) обход всех Org. По каждому отделу с
- * cohort ≥ 3 (`!team.belowCohort`) формируем «факты» (sentiment / promises /
- * conflicts / decisions) поверх готового `TeamHealthService.getHealth` и
- * одним LLM-вызовом `team-health-analyzer` собираем 5-осей факторов
- * вовлечённости (low/medium/high) + summary. Результат пишем в
- * `Department.healthSummaryJson` (упрощённая аналитика для UI Pulse).
- *
- * Принципы (см. §0.5 и Приложение А ТЗ):
- *   - cache-friendly: стабильный SYSTEM, переменные данные в КОНЦЕ user.
- *   - не называем имена сотрудников в summary (анти-доксинг).
- *   - best-effort: ошибка по одной Org/отделу не валит общий проход.
- *   - JSON-strict ответ через `responseFormat: json_schema` (см.
- *     `LlmFormatNotSupportedError` — провайдер сам fallback'ится в цепочке).
- *
- * Master-flag: пока нет — фича дешёвая (1 вызов per dept ≤ 1 раз в сутки),
- * можно включить kill-switch отдельным config'ом позже.
- */
-// A9 (2026-06-10): факторы вовлечённости — оценка ТОНА/настроения команды по
-// наблюдаемым сигналам. Тональная шкала уверенности (`withToneConfidenceCalibration`)
-// дописывается в КОНЕЦ SYSTEM (cache-friendly): даёт модели правило
-// «тон — наблюдаемое поведение, не диагноз; при сомнении снижай оценку».
-// A5 (2026-06-10): факторы вовлечённости — это оценка людей (команды/руководителя),
-// поэтому поверх тональной шкалы дописываем `withPeopleHypothesisGuard` в самый
-// КОНЕЦ SYSTEM (cache-friendly) — оценки человека остаются гипотезами по
-// наблюдаемому поведению, а не вердиктом.
 const TEAM_HEALTH_SYSTEM_PROMPT = withPeopleHypothesisGuard(
   withToneConfidenceCalibration(`Ты — аналитик корпоративной культуры. На вход — сводка по отделу за последние 14 дней. Оцени 5 факторов вовлечённости команды по шкале low/medium/high:
 
@@ -96,7 +66,6 @@ interface ParsedHealthAnalysis {
 @Injectable()
 export class TeamHealthAnalyzerCron {
   private readonly logger = new Logger(TeamHealthAnalyzerCron.name);
-  /** Жёсткий лимит на размер выборки Org-ов за прогон (страхуем worker memory). */
   private static readonly MAX_ORGS_PER_RUN = 5_000;
 
   constructor(
@@ -105,12 +74,11 @@ export class TeamHealthAnalyzerCron {
     @Inject(TeamHealthService) private readonly teamHealth: TeamHealthService,
   ) {}
 
-  /** Daily в 04:30 UTC. */
   @Cron('30 4 * * *')
   async run(): Promise<void> {
     try {
       const stats = await this.runOnce();
-      this.logger.log(stats, 'team-health-analyzer.cron: проход завершён');
+      this.logger.debug(stats, 'team-health-analyzer.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         `team-health-analyzer.cron fail: ${err instanceof Error ? err.message : String(err)}`,
@@ -192,10 +160,6 @@ export class TeamHealthAnalyzerCron {
     return { orgsProcessed, deptsProcessed, deptsAnalyzed, errors };
   }
 
-  /**
-   * Формат «фактов команды» — стабильный текст, переменные данные внизу (правило
-   * cache-friendly). На вход — одна строка `TeamHealthRowDto` из агрегата.
-   */
   private formatTeamFacts(team: TeamHealthRowDto): string {
     const promisesDelta =
       team.promises.delta === null || team.promises.delta === undefined

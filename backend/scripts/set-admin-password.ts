@@ -1,24 +1,3 @@
-/**
- * Установка/обновление пароля администратора.
- *
- * Usage:
- *   bun run scripts/set-admin-password.ts <email> <password> [--super]
- *
- * Флаг --super дополнительно выставляет isSuperAdmin=true (доступ к Z-Admin).
- *
- * Эффект:
- *   - Найти `User` с указанным email.
- *   - Если пользователь существует и role='admin' — обновить passwordHash
- *     (и isSuperAdmin=true при --super).
- *   - Если пользователь существует, но role!='admin' — отказ (ошибка).
- *   - Если пользователя нет — создать с role='admin', name=email,
- *     passwordHash=bcrypt(password, 12) (и isSuperAdmin=true при --super).
- *
- * Используется один раз при онбординге админа на проде. См. CLAUDE.md
- * раздел «5. Напомни про prod-операции» — этот скрипт показывается
- * программисту в инструкции по применению на прод.
- */
-
 import bcrypt from 'bcrypt';
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';

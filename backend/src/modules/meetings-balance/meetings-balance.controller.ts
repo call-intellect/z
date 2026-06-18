@@ -1,25 +1,5 @@
-/**
- * MeetingsBalanceController — клиентский эндпоинт «сколько встреч у меня осталось».
- *
- * Маршрут:
- *   GET /api/v1/billing/meetings-balance  (auth + tenant)
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §11.1.
- */
-
-import {
-  Controller,
-  ForbiddenException,
-  Get,
-  Inject,
-  UseGuards,
-} from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { Controller, ForbiddenException, Get, Inject, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';

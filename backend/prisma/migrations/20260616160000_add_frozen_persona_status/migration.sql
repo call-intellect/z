@@ -1,0 +1,13 @@
+-- Раздел 7 (2026-06-16): модель «один человек = один клон должности».
+-- Добавляем статус `frozen` в PersonaStatus — read-only снимок БЫВШЕГО носителя
+-- должности. Уходящий клон роли переходит в `frozen` (а не `superseded`/удаление):
+-- остаётся доступным для вопросов навсегда, но не активен, не дообучается и не
+-- декеится (инварианты И5/И6). Ровно одна `active` на роль — partial unique index
+-- `executable_personas_one_active_per_role` (см. scripts/postgres-init.sql).
+--
+-- ВАЖНО: ALTER TYPE ... ADD VALUE вынесен ОТДЕЛЬНОЙ миграцией от любого использования
+-- значения 'frozen' (Postgres запрещает использовать новое enum-значение в той же
+-- транзакции, где оно добавлено). Дедуп существующих дублей active-клонов — в
+-- §7.6 backfill (backfill-role-clone-single-bearer.ts), после чего partial index
+-- встаёт на следующем прогоне postgres-init.
+ALTER TYPE "PersonaStatus" ADD VALUE IF NOT EXISTS 'frozen';

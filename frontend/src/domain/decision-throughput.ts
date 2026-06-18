@@ -1,14 +1,9 @@
-/**
- * ТЗ coo-orphan-agents Ф3 — domain контролёра доведения решений.
- * ApiDto → DomainModel (skill frontend-rules). Date-поля парсятся на границе.
- * Тон прогресса реюзаем из value-recap (не дублируем пороги).
- */
 import type {
   DecisionThroughputApi,
   StalledDecisionApi,
   StalledDecisionsApi,
-} from '@/api/operations-dashboard.api';
-import { decisionProgressTone } from './value-recap';
+} from "@/api/operations-dashboard.api";
+import { decisionProgressTone } from "./value-recap";
 
 export interface DecisionThroughputDomain {
   total: number;
@@ -16,7 +11,7 @@ export interface DecisionThroughputDomain {
   throughputPercent: number;
   from: string;
   to: string;
-  progressTone: 'teal' | 'warn' | 'risk';
+  progressTone: "teal" | "warn" | "risk";
 }
 
 export function fromDecisionThroughputApi(

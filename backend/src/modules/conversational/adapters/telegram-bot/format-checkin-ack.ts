@@ -1,18 +1,3 @@
-/**
- * ТЗ 2026-05-29 telegram-self-initiated-checkins §Backend.12 —
- * шаблоны подтверждения от бота для самоинициированного план/отчёт чек-ина.
- *
- * 4 шаблона:
- *   1. Утро, новая запись, ok confidence
- *   2. Утро, wasReplace=true
- *   3. Вечер, новая запись
- *   4. Любой kind, lowParserConfidence=true
- *
- * Pure function: легко тестируется. Используется в renderText для
- * eventType='checkin.ack' (см. telegram-bot.adapter.ts) — в дальнейшем
- * можно переиспользовать для max-bot / in-app.
- */
-
 export interface CheckinAckArgs {
   kind: 'morning' | 'evening';
   wasReplace: boolean;
@@ -25,8 +10,7 @@ export interface CheckinAckArgs {
 export function formatCheckinAck(args: CheckinAckArgs): string {
   if (args.lowParserConfidence) {
     const label = args.kind === 'morning' ? 'план дня' : 'отчёт за день';
-    const labelAccusative =
-      args.kind === 'morning' ? 'план' : 'отчёт';
+    const labelAccusative = args.kind === 'morning' ? 'план' : 'отчёт';
     return [
       `✅ Сохранил как ${label}, но не уверен в разборке.`,
       'Оператор перепроверит.',
@@ -50,7 +34,6 @@ export function formatCheckinAck(args: CheckinAckArgs): string {
     ].join(' ');
   }
 
-  // evening
   const summary = formatEveningSummary(args.donesCount, args.blockersCount);
   if (args.wasReplace) {
     return [
@@ -69,7 +52,8 @@ export function formatCheckinAck(args: CheckinAckArgs): string {
 function formatMorningSummary(plans: number, blockers: number): string {
   const parts: string[] = [];
   if (plans > 0) parts.push(`${plans} ${pluralize(plans, 'пункт', 'пункта', 'пунктов')} в плане`);
-  if (blockers > 0) parts.push(`${blockers} ${pluralize(blockers, 'блокер', 'блокера', 'блокеров')}`);
+  if (blockers > 0)
+    parts.push(`${blockers} ${pluralize(blockers, 'блокер', 'блокера', 'блокеров')}`);
   return parts.join(', ');
 }
 

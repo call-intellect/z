@@ -143,6 +143,39 @@ export class IdeaClustererCron {
         );
       }
     }
+    // Б39 [K10] — финальный flush хвоста накопителя. Раньше остаток <
+    // minSupporters молча выпадал из прохода и оставался вечным orphan'ом
+    // (clusterId=null навсегда, в следующий тик снова попадал в накопитель и
+    // снова выпадал). Поведение хвоста теперь осознанное:
+    //   - ≥2 идей в хвосте → создаём кластер (минимальная критическая масса
+    //     кластера = 2; срабатывает только при minSupporters > 2);
+    //   - 1 идея → кластер из одной не имеет смысла; логируем счётчик orphan'ов,
+    //     чтобы backlog был виден в логах (наблюдаемость), идея ждёт соседей.
+    if (accumulated.length >= 2) {
+      try {
+        await this.maybeCreateNewCluster({
+          tenantId,
+          ideas: accumulated.slice(),
+          // Хвост уже прошёл порог критической массы 2 — не отбрасываем его
+          // из-за minSupporters, иначе вернёмся к вечному orphan'у.
+          ignoreMinSupporters: true,
+        });
+      } catch (err) {
+        this.logger.debug(
+          {
+            tenantId,
+            tail: accumulated.length,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'idea-clusterer: flush хвоста упал — пропускаю',
+        );
+      }
+    } else if (accumulated.length === 1) {
+      this.logger.debug(
+        { tenantId, orphanIdeas: accumulated.length },
+        'idea-clusterer: хвост из 1 идеи — кластер не создан, ждём соседей',
+      );
+    }
   }
 
   private async findNearestCluster(args: {
@@ -203,13 +236,27 @@ export class IdeaClustererCron {
       where: { id: args.idea.id },
       data: { clusterId: args.cluster.id },
     });
+    // Б8 [K10] — после добавления идеи пересчитываем embedding кластера как
+    // mean(векторов всех участников), чтобы centroid дрейфовал вместе с
+    // составом кластера и KNN-фильтр оставался корректным.
+    await this.recomputeClusterEmbedding({
+      tenantId: args.idea.tenantId,
+      clusterId: args.cluster.id,
+      ideaIds: nextIds,
+    });
   }
 
   private async maybeCreateNewCluster(args: {
     tenantId: string;
     ideas: Idea[];
+    /** Б39 — flush хвоста: пропустить порог minSupporters (хвост уже ≥2). */
+    ignoreMinSupporters?: boolean;
   }): Promise<void> {
-    if (args.ideas.length < this.cfg.ideas.minSupportersForCluster) return;
+    if (
+      !args.ignoreMinSupporters &&
+      args.ideas.length < this.cfg.ideas.minSupportersForCluster
+    )
+      return;
     const seed = args.ideas[0];
     if (!seed) return;
     const candidates = await this.prisma.ideaCluster.findMany({
@@ -257,6 +304,70 @@ export class IdeaClustererCron {
       where: { id: { in: ideaIds } },
       data: { clusterId: cluster.id },
     });
+    // Б8 [K10] — пишем embedding кластера = mean(векторов участников). Без
+    // этого IdeaCluster.embedding оставался NULL навсегда и KNN-фильтр
+    // `embedding IS NOT NULL` в findNearestCluster отсекал кластер → новые
+    // идеи никогда не дополняли его (мёртвый код кластеризации).
+    await this.recomputeClusterEmbedding({
+      tenantId: args.tenantId,
+      clusterId: cluster.id,
+      ideaIds,
+    });
+  }
+
+  /**
+   * Б8 [K10] — пересчёт `IdeaCluster.embedding` как покомпонентного среднего
+   * (centroid) эмбеддингов идей-участников. Размерность — vector(1536) (см.
+   * schema.prisma: Idea.embedding / IdeaCluster.embedding). Idea.embedding —
+   * Unsupported-тип, его нельзя ни прочитать, ни записать через типизированный
+   * Prisma-клиент, поэтому читаем `::text` сырым SQL и пишем `::vector(1536)`
+   * сырым UPDATE (как сделано для Theme.embedding в theme-clusterer и для
+   * ideas.embedding в specialist-3-6/block-ingest).
+   *
+   * Контракт: НЕ бросает (на любой сбой кластер просто остаётся без embedding,
+   * деградирует, но не ломает проход).
+   */
+  private async recomputeClusterEmbedding(args: {
+    tenantId: string;
+    clusterId: string;
+    ideaIds: string[];
+  }): Promise<void> {
+    if (args.ideaIds.length === 0) return;
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<
+        Array<{ embedding: string | null }>
+      >(
+        `SELECT i."embedding"::text AS embedding
+           FROM "ideas" i
+          WHERE i."tenantId" = $1
+            AND i."id" = ANY($2::text[])
+            AND i."embedding" IS NOT NULL`,
+        args.tenantId,
+        args.ideaIds,
+      );
+      const vectors: number[][] = [];
+      for (const row of rows) {
+        const vec = parseVector(row.embedding);
+        if (vec) vectors.push(vec);
+      }
+      const mean = meanVector(vectors);
+      if (!mean) return;
+      await this.prisma.$executeRawUnsafe(
+        'UPDATE "idea_clusters" SET "embedding" = $1::vector(1536) WHERE "id" = $2 AND "tenantId" = $3',
+        toVectorLiteral(mean),
+        args.clusterId,
+        args.tenantId,
+      );
+    } catch (err) {
+      this.logger.debug(
+        {
+          tenantId: args.tenantId,
+          clusterId: args.clusterId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'idea-clusterer: не удалось записать embedding кластера — продолжаю',
+      );
+    }
   }
 
   private async llmDecide(args: {
@@ -333,4 +444,49 @@ export class IdeaClustererCron {
     }
     return null;
   }
+}
+
+/**
+ * pgvector `::text` возвращает строку вида `[0.123,-0.456,...]`. Превращаем
+ * в `number[]`. На любую кривизну — null.
+ */
+function parseVector(raw: string | null): number[] | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) return null;
+  const inner = trimmed.slice(1, -1).trim();
+  if (inner.length === 0) return null;
+  const parts = inner.split(',');
+  const out = new Array<number>(parts.length);
+  for (let i = 0; i < parts.length; i++) {
+    const n = Number.parseFloat(parts[i]!);
+    if (!Number.isFinite(n)) return null;
+    out[i] = n;
+  }
+  return out;
+}
+
+/**
+ * Покомпонентное среднее (centroid) набора векторов одинаковой размерности.
+ * Векторы разной длины игнорируются (берётся длина первого валидного). На
+ * пустой вход — null.
+ */
+function meanVector(vectors: number[][]): number[] | null {
+  if (vectors.length === 0) return null;
+  const dim = vectors[0]!.length;
+  if (dim === 0) return null;
+  const acc = new Array<number>(dim).fill(0);
+  let used = 0;
+  for (const vec of vectors) {
+    if (vec.length !== dim) continue;
+    for (let i = 0; i < dim; i++) acc[i]! += vec[i]!;
+    used += 1;
+  }
+  if (used === 0) return null;
+  for (let i = 0; i < dim; i++) acc[i]! /= used;
+  return acc;
+}
+
+function toVectorLiteral(vec: number[]): string {
+  return `[${vec.join(',')}]`;
 }

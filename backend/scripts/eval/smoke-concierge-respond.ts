@@ -1,16 +1,3 @@
-/**
- * Smoke-тест taskType=concierge-respond.
- * Источник промпта: backend/src/modules/concierge/services/concierge.service.ts
- *   (метод `buildSystemPrompt` — конструируется на лету; tools передаются через
- *    текстовое описание, а не через OpenAI tools API).
- *
- * ВАЖНО: Concierge — это tool-use loop, но текущая реализация эмулирует tool_use
- * через JSON-инструкцию в system prompt (см. § 38-39 concierge.service.ts).
- * Это smoke = один LLM-tick БЕЗ выполнения tool. Проверяем, что модель
- * возвращает либо валидный JSON {"tool_call": ...}, либо текст для пользователя.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-concierge-respond.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -20,9 +7,7 @@ const MODEL = 'deepseek-v4-pro';
 const PRICE_IN = 0.435 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
 
-const SCRIPT_DIR = path
-  .dirname(new URL(import.meta.url).pathname)
-  .replace(/^\/([A-Za-z]):/, '$1:');
+const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
 const FIXTURE_PATH = path.resolve(
   SCRIPT_DIR,
   `../../test/eval/smoke-all-agents/fixtures/${TASK_TYPE}.json`,
@@ -39,8 +24,6 @@ interface Fixture {
 }
 
 function buildSystemPrompt(contextBlock: string, toolFragment: string): string {
-  // Копия логики concierge.service.ts → buildSystemPrompt.
-  // F1 cache-friendly (2026-06-10): preHits в SYSTEM нет — он стабилен.
   return [
     'Ты — Concierge, AI-помощник в кабинете компании Z (Кора).',
     'Отвечай по-русски, кратко и по делу.',
@@ -109,7 +92,6 @@ async function main(): Promise<void> {
   const tokensOut = usage.completion_tokens ?? 0;
   const costUsd = tokensIn * PRICE_IN + tokensOut * PRICE_OUT;
 
-  // Простая диагностика: попробовали ли мы tool_call vs final text?
   const isToolCall = /\{\s*"tool_call"/.test(modelResponse);
 
   const report = {

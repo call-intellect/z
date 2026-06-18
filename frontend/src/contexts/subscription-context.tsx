@@ -1,20 +1,4 @@
-'use client';
-
-/**
- * SubscriptionContext — статус подписки организации + управление PaywallModal.
- *
- * Архитектура:
- *   - Provider тянет `GET /api/v1/billing/subscription` при mount.
- *   - Слушает CustomEvent `subscription:required` от api-client —
- *     при 403 с кодом `subscription_required` автоматически открывает
- *     PaywallModal (см. PaywallModal.tsx).
- *   - Refetch на window.focus (как EntitlementContext).
- *   - Сброс на auth:expired (как EntitlementContext).
- *
- * Используется через хук `useSubscription()`.
- *
- * ТЗ: plans/tz/2026-05-28-paywall-no-trial.md §4.
- */
+"use client";
 
 import {
   createContext,
@@ -24,11 +8,11 @@ import {
   useMemo,
   useState,
   type ReactNode,
-} from 'react';
+} from "react";
 
-import { billingApi } from '@/api/billing.api';
-import type { SubscriptionStatusApi } from '@/api/types/billing';
-import { useAuth } from '@/contexts/auth-context';
+import { billingApi } from "@/api/billing.api";
+import type { SubscriptionStatusApi } from "@/api/types/billing";
+import { useAuth } from "@/contexts/auth-context";
 
 type SubscriptionState = {
   status: SubscriptionStatusApi | null;
@@ -37,15 +21,14 @@ type SubscriptionState = {
 
 type SubscriptionContextValue = SubscriptionState & {
   refetch: () => Promise<void>;
-  /** Открыть PaywallModal (вызывается из interceptor'а api-client). */
   showPaywallModal: () => void;
-  /** Закрыть PaywallModal. */
   hidePaywallModal: () => void;
-  /** Состояние PaywallModal. */
   isPaywallModalOpen: boolean;
 };
 
-const SubscriptionContext = createContext<SubscriptionContextValue | null>(null);
+const SubscriptionContext = createContext<SubscriptionContextValue | null>(
+  null,
+);
 
 export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const { user, isLoading: authLoading } = useAuth();
@@ -64,13 +47,10 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
         loading: false,
       });
     } catch {
-      // Сетевая / 401 / 403 — оставляем status=null, не блокируем UI.
-      // 401 обработает auth-context через auth:expired.
       setState({ status: null, loading: false });
     }
   }, []);
 
-  // Первая загрузка — после того как auth определил user.
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
@@ -80,33 +60,30 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
     void refetch();
   }, [authLoading, user, refetch]);
 
-  // Refetch на фокус вкладки.
   useEffect(() => {
     if (!user) return;
     const handler = () => {
       void refetch();
     };
-    window.addEventListener('focus', handler);
-    return () => window.removeEventListener('focus', handler);
+    window.addEventListener("focus", handler);
+    return () => window.removeEventListener("focus", handler);
   }, [user, refetch]);
 
-  // Сброс при auth:expired (401).
   useEffect(() => {
     const handler = () => {
       setState({ status: null, loading: false });
       setModalOpen(false);
     };
-    window.addEventListener('auth:expired', handler);
-    return () => window.removeEventListener('auth:expired', handler);
+    window.addEventListener("auth:expired", handler);
+    return () => window.removeEventListener("auth:expired", handler);
   }, []);
 
-  // Слушаем subscription:required от api-client → открываем PaywallModal.
   useEffect(() => {
     const handler = () => {
       setModalOpen(true);
     };
-    window.addEventListener('subscription:required', handler);
-    return () => window.removeEventListener('subscription:required', handler);
+    window.addEventListener("subscription:required", handler);
+    return () => window.removeEventListener("subscription:required", handler);
   }, []);
 
   const showPaywallModal = useCallback(() => setModalOpen(true), []);
@@ -121,7 +98,14 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       hidePaywallModal,
       isPaywallModalOpen: modalOpen,
     }),
-    [state.status, state.loading, refetch, showPaywallModal, hidePaywallModal, modalOpen],
+    [
+      state.status,
+      state.loading,
+      refetch,
+      showPaywallModal,
+      hidePaywallModal,
+      modalOpen,
+    ],
   );
 
   return (
@@ -135,7 +119,7 @@ export function useSubscription(): SubscriptionContextValue {
   const ctx = useContext(SubscriptionContext);
   if (!ctx) {
     throw new Error(
-      'useSubscription must be used within <SubscriptionProvider>',
+      "useSubscription must be used within <SubscriptionProvider>",
     );
   }
   return ctx;

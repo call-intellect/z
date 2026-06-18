@@ -14,38 +14,18 @@ import {
   TRACKER_QUEUE_NAMES,
 } from '../queues';
 
-/**
- * Wave 3 / Tracker Phase 3 part B (2026-05-24) — продьюсер очереди
- * `core.intake-auto-triage`. Lightweight wrapper над BullMQ Queue с
- * фиксированным jobId по `intakeIssueId` — повторный enqueue для того же
- * IntakeIssue в окне жизни первого job'а игнорируется.
- *
- * Используется:
- *   - `IntakeService.create` — best-effort enqueue после создания
- *     IntakeIssue (через @Optional() в самом сервисе, чтобы тесты не
- *     требовали Redis).
- *   - `MeetingExtractActionsService.extract` — после создания IntakeIssue
- *     из встречи (best-effort).
- *
- * Consumer — `IntakeAutoTriageWorker` (см. workers/).
- */
 @Injectable()
-export class IntakeAutoTriageQueueService
-  implements OnModuleInit, OnModuleDestroy
-{
+export class IntakeAutoTriageQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(IntakeAutoTriageQueueService.name);
   private queue: Queue<IntakeAutoTriageJobData> | null = null;
 
   constructor(@Inject(RedisService) private readonly redis: RedisService) {}
 
   onModuleInit(): void {
-    this.queue = new Queue<IntakeAutoTriageJobData>(
-      TRACKER_QUEUE_NAMES.INTAKE_AUTO_TRIAGE,
-      {
-        connection: this.redis.client,
-        defaultJobOptions: INTAKE_AUTO_TRIAGE_JOB_OPTIONS,
-      },
-    );
+    this.queue = new Queue<IntakeAutoTriageJobData>(TRACKER_QUEUE_NAMES.INTAKE_AUTO_TRIAGE, {
+      connection: this.redis.client,
+      defaultJobOptions: INTAKE_AUTO_TRIAGE_JOB_OPTIONS,
+    });
     this.logger.log(
       `IntakeAutoTriageQueueService инициализирован (${TRACKER_QUEUE_NAMES.INTAKE_AUTO_TRIAGE})`,
     );
@@ -64,22 +44,10 @@ export class IntakeAutoTriageQueueService
     }
   }
 
-  /**
-   * Постановка job'а auto-triage. Идемпотентно: jobId фиксирован по
-   * `intakeIssueId`, повторный вызов в окне жизни job'а возвращает быстро
-   * без duplicate'а. Worker сам проверит `triagedAt IS NOT NULL` и
-   * пропустит, если IntakeIssue уже триажен.
-   */
-  async enqueue(args: {
-    tenantId: string;
-    intakeIssueId: string;
-  }): Promise<void> {
+  async enqueue(args: { tenantId: string; intakeIssueId: string }): Promise<void> {
     if (!this.queue) {
-      throw new Error(
-        'IntakeAutoTriageQueueService: попытка enqueue до onModuleInit',
-      );
+      throw new Error('IntakeAutoTriageQueueService: попытка enqueue до onModuleInit');
     }
-    // BullMQ 5.x: jobId с ':' допустим только при ровно 3 частях — используем '_'.
     const jobId = `intake-auto-triage_${args.intakeIssueId}`;
     await this.queue.add(
       'intake-auto-triage',

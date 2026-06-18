@@ -1,30 +1,23 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useState } from 'react';
-import useSWR from 'swr';
+import Link from "next/link";
+import { useState } from "react";
+import useSWR from "swr";
 
-import { ApiError } from '@/api/api-error';
-import { curationApi, type ConflictStatusApi } from '@/api/curation.api';
-import { useAuth } from '@/contexts/auth-context';
-import type { CurrentOrgRole } from '@/domain/account';
-import { conflictStatusLabel, mapConflictItem } from '@/domain/curation';
-import { resourceTypeRu } from '@/domain/resource-type';
+import { ApiError } from "@/api/api-error";
+import { curationApi, type ConflictStatusApi } from "@/api/curation.api";
+import { useAuth } from "@/contexts/auth-context";
+import type { CurrentOrgRole } from "@/domain/account";
+import { conflictStatusLabel, mapConflictItem } from "@/domain/curation";
+import { resourceTypeRu } from "@/domain/resource-type";
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-/**
- * Роли Org, которым разрешены конфликты курации. Строже очереди: только
- * владелец и администратор (НЕ coo, НЕ назначенный куратор) — плюс super-admin.
- *
- * Вынесено отдельным экспортом для unit-покрытия и переиспользования
- * detail-страницей (`ConflictDetailClient`).
- */
-const CONFLICT_ORG_ROLES = new Set<CurrentOrgRole>(['owner', 'admin']);
+const CONFLICT_ORG_ROLES = new Set<CurrentOrgRole>(["owner", "admin"]);
 
 export function isConflictAccessAllowed(
   isSuperAdmin: boolean,
@@ -35,22 +28,21 @@ export function isConflictAccessAllowed(
 }
 
 const STATUS_OPTIONS: Array<{ value: ConflictStatusApi; label: string }> = [
-  { value: 'open', label: 'Открытые' },
-  { value: 'resolved', label: 'Разрешённые' },
-  { value: 'dismissed', label: 'Отклонённые' },
+  { value: "open", label: "Открытые" },
+  { value: "resolved", label: "Разрешённые" },
+  { value: "dismissed", label: "Отклонённые" },
 ];
 
-/** Бейдж-цвета под статус конфликта (парные токены). */
 function statusBadgeClass(status: ConflictStatusApi): string {
   switch (status) {
-    case 'open':
-      return 'border-warning/40 bg-warning/10 text-warning';
-    case 'resolved':
-      return 'border-success/40 bg-success/10 text-success';
-    case 'dismissed':
-      return 'border-border-subtle bg-bg-overlay text-fg-tertiary';
+    case "open":
+      return "border-warning/40 bg-warning/10 text-warning";
+    case "resolved":
+      return "border-success/40 bg-success/10 text-success";
+    case "dismissed":
+      return "border-border-subtle bg-bg-overlay text-fg-tertiary";
     default:
-      return 'border-border-subtle bg-bg-overlay text-fg-secondary';
+      return "border-border-subtle bg-bg-overlay text-fg-secondary";
   }
 }
 
@@ -62,9 +54,9 @@ export function ConflictsListClient() {
     isSuperAdmin,
   } = useAuth();
 
-  const [status, setStatus] = useState<ConflictStatusApi>('open');
+  const [status, setStatus] = useState<ConflictStatusApi>("open");
 
-  const listSwr = useSWR(['curation-conflicts', status], async () => {
+  const listSwr = useSWR(["curation-conflicts", status], async () => {
     const res = await curationApi.listConflicts({ status });
     return {
       items: res.items.map(mapConflictItem),
@@ -112,7 +104,7 @@ export function ConflictsListClient() {
         </p>
       </header>
 
-      {/* Фильтр по статусу */}
+      {}
       <div className="mb-4">
         <label
           htmlFor="conflicts-status-filter"
@@ -141,7 +133,7 @@ export function ConflictsListClient() {
           message={
             listSwr.error instanceof ApiError
               ? listSwr.error.message
-              : 'Не удалось загрузить список конфликтов'
+              : "Не удалось загрузить список конфликтов"
           }
           onRetry={() => void listSwr.mutate()}
         />
@@ -159,7 +151,9 @@ export function ConflictsListClient() {
                 className="flex flex-col gap-1 px-4 py-3 transition hover:bg-bg-hover/50"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium">{resourceTypeRu(c.resourceType)}</span>
+                  <span className="text-sm font-medium">
+                    {resourceTypeRu(c.resourceType)}
+                  </span>
                   <span
                     className={`rounded-full border px-2 py-0.5 text-xs ${statusBadgeClass(
                       c.status,
@@ -172,7 +166,7 @@ export function ConflictsListClient() {
                   Две карточки знания расходятся — откройте, чтобы решить
                 </div>
                 <div className="text-xs text-fg-tertiary">
-                  обнаружен {c.createdAt.toLocaleString('ru-RU')}
+                  обнаружен {c.createdAt.toLocaleString("ru-RU")}
                 </div>
               </Link>
             </li>

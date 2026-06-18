@@ -15,19 +15,13 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
-import type {
-  BoardResponseDto,
-  ListBoardsResponse,
-} from '../dto/boards/board-response.dto';
+import type { BoardResponseDto, ListBoardsResponse } from '../dto/boards/board-response.dto';
 import {
   CreateBoardSchema,
   type CreateBoardDto,
@@ -40,22 +34,6 @@ import {
 } from '../dto/boards/board-schemas';
 import { BoardsService } from '../services/boards.service';
 
-/**
- * Tracker Boards (2026-05-27) — REST API досок проекта.
- *
- * Endpoints (под `/api/v1` глобальным префиксом):
- *   GET    /projects/:projectId/boards            — список (опц. ?includeArchived=true)
- *   POST   /projects/:projectId/boards            — создать
- *   GET    /boards/:id                            — детали
- *   PATCH  /boards/:id                            — изменить
- *   DELETE /boards/:id                            — soft-delete (issues → default)
- *   POST   /boards/:id/archive                    — архивировать
- *   POST   /boards/:id/unarchive                  — снять архив
- *   POST   /boards/reorder                        — массовый sequence
- *
- * Guards: CookieAuth + Tenant. RBAC ResourceType=`board` (см. policy.csv).
- * ТЗ: plans/tz/2026-05-27-tracker-boards.md.
- */
 @ApiTags('tracker / boards')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -95,11 +73,6 @@ export class BoardsController {
     return this.svc.create(projectId, body, t, user.id);
   }
 
-  /**
-   * Массовая переустановка sequence досок. Body: `{ boardIds: string[] }`,
-   * порядок = новый sequence. Должен быть зарегистрирован ДО `/boards/:id`,
-   * иначе NestJS поймёт `reorder` как id.
-   */
   @Post('boards/reorder')
   @RequireSubscription()
   @ApiOperation({ summary: 'Изменить порядок досок проекта (DnD-сортировка)' })
@@ -183,8 +156,6 @@ export class BoardsController {
     await this.requireWrite(user.id, t);
     return this.svc.unarchive(id, t, user.id);
   }
-
-  // ── helpers ──
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

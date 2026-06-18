@@ -1,8 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -14,19 +10,9 @@ import type {
   UpdateProcessHandoffBody,
 } from '../dto/processes.dto';
 
-/**
- * SBA α-7 wave 2 — ProcessHandoffService.
- *
- * CRUD для `ProcessHandoff`. Handoff — связь между шаблонами (см. §3.4):
- * `sourceTemplateId → targetTemplateId`. Допускаются также role-handoff'ы
- * (без template'ов). traversal: получаем входящие/исходящие handoff'ы
- * конкретного template'а одним запросом.
- */
 @Injectable()
 export class ProcessHandoffService {
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-  ) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async list(args: {
     tenantId: string;
@@ -61,7 +47,6 @@ export class ProcessHandoffService {
     tenantId: string;
     body: CreateProcessHandoffBody;
   }): Promise<ProcessHandoffDto> {
-    // Проверим что template'ы (если указаны) принадлежат этому tenant'у.
     const checks: Promise<unknown>[] = [];
     if (args.body.fromTemplateId) {
       checks.push(
@@ -158,8 +143,6 @@ export class ProcessHandoffService {
     await this.prisma.processHandoff.delete({ where: { id: args.id } });
     return { ok: true };
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private toDto(h: {
     id: string;

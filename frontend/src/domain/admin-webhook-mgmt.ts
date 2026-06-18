@@ -1,19 +1,4 @@
-/**
- * Доменная модель для `/admin/integrations/webhooks` — расширенное управление
- * Webhook-подписками (Фаза 6 редизайна Z-Admin).
- *
- * Этот клиент работает с НОВЫМ префиксом `/api/v1/admin/integrations/webhooks-mgmt`
- * (планируется), который добавляет к существующему `tracker.webhooks`:
- *  - историю доставок (deliveries) с cursor pagination;
- *  - DLQ — failed-only с кнопкой retry.
- *
- * Базовый CRUD «активных» webhook'ов реиспользуется из существующего
- * `webhooksApi`, см. `frontend/src/api/tracker/webhooks.api.ts`.
- */
-
-// ────────────────────────── ApiDto ──────────────────────────
-
-export type WebhookDeliveryStatusApi = 'success' | 'failed' | 'pending';
+export type WebhookDeliveryStatusApi = "success" | "failed" | "pending";
 
 export type WebhookDeliveryApiDto = {
   id: string;
@@ -33,15 +18,12 @@ export type WebhookDeliveriesPageApiDto = {
   nextCursor: string | null;
 };
 
-// ────────────────────────── DomainModel ──────────────────────────
-
 export type WebhookDeliveryDomain = {
   id: string;
   webhookId: string;
   webhookUrl: string;
   eventType: string;
   status: WebhookDeliveryStatusApi;
-  /** Локализованная подпись статуса. */
   statusLabel: string;
   httpStatus: number | null;
   attempt: number;
@@ -57,9 +39,9 @@ export type WebhookDeliveriesPageDomain = {
 };
 
 const DELIVERY_STATUS_LABELS: Record<WebhookDeliveryStatusApi, string> = {
-  success: 'Доставлено',
-  failed: 'Ошибка',
-  pending: 'В очереди',
+  success: "Доставлено",
+  failed: "Ошибка",
+  pending: "В очереди",
 };
 
 export function webhookDeliveryFromApi(

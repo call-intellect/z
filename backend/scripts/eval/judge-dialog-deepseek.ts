@@ -1,34 +1,16 @@
-/**
- * Судья диалоговой цепочки — DeepSeek-V4-Pro.
- *
- * Сравнивает Variant A (5 раздельных вызовов) и Б (1 объединённый) на одной
- * фикстуре. Метки A/Б маскируются как X/Y случайно.
- *
- * Запуск: cd backend && bun run scripts/eval/judge-dialog-deepseek.ts <fixture-id>
- *   default: dialog-01-factual
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
 
 const MODEL = 'deepseek-v4-pro';
-// DeepSeek-V4-Pro со скидкой 75%.
 const PRICE_IN = 0.435 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
 
 const FIXTURE_ID = process.argv[2] ?? 'dialog-01-factual';
-const FIXTURE_PATH = path.resolve(
-  `test/eval/dialog-experiment/fixtures/${FIXTURE_ID}.json`,
-);
-const A_PATH = path.resolve(
-  `test/eval/dialog-experiment/reports/${FIXTURE_ID}-variant-a.json`,
-);
-const B_PATH = path.resolve(
-  `test/eval/dialog-experiment/reports/${FIXTURE_ID}-variant-b.json`,
-);
-const SUMMARY_PATH = path.resolve(
-  `test/eval/dialog-experiment/reports/${FIXTURE_ID}-SUMMARY.md`,
-);
+const FIXTURE_PATH = path.resolve(`test/eval/dialog-experiment/fixtures/${FIXTURE_ID}.json`);
+const A_PATH = path.resolve(`test/eval/dialog-experiment/reports/${FIXTURE_ID}-variant-a.json`);
+const B_PATH = path.resolve(`test/eval/dialog-experiment/reports/${FIXTURE_ID}-variant-b.json`);
+const SUMMARY_PATH = path.resolve(`test/eval/dialog-experiment/reports/${FIXTURE_ID}-SUMMARY.md`);
 
 if (!process.env.DEEPSEEK_API_KEY) {
   console.error('✗ DEEPSEEK_API_KEY не задан');
@@ -39,7 +21,6 @@ const client = new OpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
 });
 
-// ── нормализация выходов A → общему формату ─────────────────────────────────
 interface Normalized {
   intent: string;
   standalone_question: string;
@@ -69,8 +50,7 @@ function normalizeA(aReport: {
 
   return {
     intent: classifyOut?.intent ?? aReport.derived?.intent ?? 'unknown',
-    standalone_question:
-      typeof ctxOut === 'string' ? ctxOut : aReport.derived?.standalone ?? '',
+    standalone_question: typeof ctxOut === 'string' ? ctxOut : (aReport.derived?.standalone ?? ''),
     multi_queries: multiOut?.queries ?? [],
     confidence: {
       value: confOut?.confidence ?? 0,
@@ -98,7 +78,6 @@ function normalizeB(bReport: { output: unknown }): Normalized {
   };
 }
 
-// ── промпт судьи ─────────────────────────────────────────────────────────────
 const JUDGE_SYSTEM = `Ты — независимый эксперт по диалоговым AI-ассистентам. Тебе дают:
 1. Фикстуру диалогового запроса: история, вопрос, найденные блоки памяти, ожидаемые факты.
 2. Два разных AI-ответа на этот запрос: вариант X и вариант Y.

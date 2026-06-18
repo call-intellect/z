@@ -1,34 +1,31 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   eventsApi,
   type EventKindApi,
   type EventsListResponseApi,
-} from '@/api/events.api';
-import { useAuth } from '@/contexts/auth-context';
-import { Input } from '@/ui/shadcn/input';
+} from "@/api/events.api";
+import { useAuth } from "@/contexts/auth-context";
+import { Input } from "@/ui/shadcn/input";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
 const KIND_LABEL: Record<EventKindApi, string> = {
-  meeting: 'Встреча',
-  incident: 'Инцидент',
-  release: 'Релиз',
-  transition: 'Переход',
-  milestone: 'Веха',
-  other: 'Другое',
+  meeting: "Встреча",
+  incident: "Инцидент",
+  release: "Релиз",
+  transition: "Переход",
+  milestone: "Веха",
+  other: "Другое",
 };
 
-/**
- * `/events` — список событий Org (SBA α-3).
- */
 export function EventsListClient() {
   const { currentOrgId, isLoading: authLoading } = useAuth();
 
@@ -49,7 +46,7 @@ function EventsListContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState("");
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -62,10 +59,10 @@ function EventsListContent() {
       });
       setData(dto);
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'forbidden') {
+      if (e instanceof ApiError && e.code === "forbidden") {
         setForbidden(true);
       } else {
-        setError(humanizeApiError(e, 'Ошибка загрузки'));
+        setError(humanizeApiError(e, "Ошибка загрузки"));
       }
     } finally {
       setIsLoading(false);
@@ -111,16 +108,16 @@ function EventsListContent() {
               <div>
                 <div className="text-sm font-medium">{e.title}</div>
                 <div className="mt-0.5 text-xs text-fg-tertiary">
-                  {KIND_LABEL[e.kind]} ·{' '}
-                  {new Date(e.startAt).toLocaleString('ru-RU', {
-                    dateStyle: 'medium',
-                    timeStyle: 'short',
+                  {KIND_LABEL[e.kind]} ·{" "}
+                  {new Date(e.startAt).toLocaleString("ru-RU", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
                   })}
-                  {e.location ? ` · ${e.location}` : ''}
+                  {e.location ? ` · ${e.location}` : ""}
                 </div>
               </div>
               <div className="text-xs tabular-nums text-fg-tertiary">
-                {e.durationMin ? `${e.durationMin} мин` : ''}
+                {e.durationMin ? `${e.durationMin} мин` : ""}
               </div>
             </li>
           ))}

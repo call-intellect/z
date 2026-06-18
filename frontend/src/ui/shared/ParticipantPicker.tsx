@@ -1,22 +1,4 @@
-'use client';
-
-/**
- * ParticipantPicker — общий компонент выбора участников события (Calendar MVP
- * Фаза P4, 2026-05-25).
- *
- * Четыре сценария использования:
- *   1. Без участников — компонент рендерит пустое поле, value=[];
- *   2. Коллега из Org — выбор User через `orgMembersApi.search`;
- *   3. Внешний контакт — выбор существующего Person через тот же поиск;
- *   4. Свободный ввод — нет в результатах? Пункт «➕ Добавить «{q}» как
- *      внешний контакт» вызывает `personsApi.quickCreate({name: q})` и
- *      добавляет результат как `{type:'person', ...}`.
- *
- * Multi-select, debounce 250мс, SWR-кэш по строке `q`.
- *
- * Используется в `EventForm` (и потенциально в IssueForm/RbacForm — для
- * этого вынесен в `ui/shared/`).
- */
+"use client";
 
 import {
   useCallback,
@@ -26,46 +8,29 @@ import {
   useState,
   type JSX,
   type KeyboardEvent,
-} from 'react';
-import useSWR from 'swr';
+} from "react";
+import useSWR from "swr";
 
 import {
   orgMembersApi,
   type OrgMemberSearchItemApi,
   type OrgMembersSearchResponseApi,
-} from '@/api/org-members.api';
-import { personsApi } from '@/api/persons.api';
-import {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-} from '@/ui/shadcn/popover';
+} from "@/api/org-members.api";
+import { personsApi } from "@/api/persons.api";
+import { Popover, PopoverAnchor, PopoverContent } from "@/ui/shadcn/popover";
 
-// ─────────────────────────── Types ───────────────────────────────────
+export type ParticipantSendChannel = "email" | "telegram";
 
-/** Канал доставки приглашения участнику. */
-export type ParticipantSendChannel = 'email' | 'telegram';
-
-/**
- * Выбранный участник для передачи в EventForm.onChange / submit.
- *
- * Поля `email` и `sendVia` опциональны:
- *   - `email` приходит из `org-members/search` (backend отдаёт; раньше терялся
- *     в `toValueFromSearch`). Нужен для доставки приглашения по почте;
- *   - `sendVia` — выбранные на чипе каналы доставки (почта / Telegram).
- *     Заполняется только когда пикер показывает переключатели каналов
- *     (`showChannels`). В сценариях без каналов остаётся пустым/undefined.
- */
 export type ParticipantPickerValue =
   | {
-      type: 'user';
+      type: "user";
       userId: string;
       name: string;
       email?: string;
       sendVia?: ParticipantSendChannel[];
     }
   | {
-      type: 'person';
+      type: "person";
       personId: string;
       name: string;
       email?: string;
@@ -76,24 +41,16 @@ export interface ParticipantPickerProps {
   value: ParticipantPickerValue[];
   onChange: (next: ParticipantPickerValue[]) => void;
   placeholder?: string;
-  /** Disabled = поле readonly + плашка-подсказка. */
   disabled?: boolean;
-  /**
-   * Показывать ли на чипе компактные переключатели канала доставки
-   * (почта / Telegram). По умолчанию выключено — другие сценарии
-   * (EventForm) каналы не используют.
-   */
   showChannels?: boolean;
 }
-
-// ─────────────────────────── Helpers ─────────────────────────────────
 
 function isSameParticipant(
   a: ParticipantPickerValue,
   b: ParticipantPickerValue,
 ): boolean {
-  if (a.type === 'user' && b.type === 'user') return a.userId === b.userId;
-  if (a.type === 'person' && b.type === 'person')
+  if (a.type === "user" && b.type === "user") return a.userId === b.userId;
+  if (a.type === "person" && b.type === "person")
     return a.personId === b.personId;
   return false;
 }
@@ -101,17 +58,16 @@ function isSameParticipant(
 function toValueFromSearch(
   item: OrgMemberSearchItemApi,
 ): ParticipantPickerValue {
-  if (item.type === 'user') {
-    // backend (org-members/search) отдаёт email — пробрасываем, не роняем.
+  if (item.type === "user") {
     return {
-      type: 'user',
+      type: "user",
       userId: item.userId,
       name: item.name,
       email: item.email,
     };
   }
   return {
-    type: 'person',
+    type: "person",
     personId: item.personId,
     name: item.name,
     email: item.email ?? undefined,
@@ -127,16 +83,14 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
-// ─────────────────────────── Component ───────────────────────────────
-
 export function ParticipantPicker({
   value,
   onChange,
-  placeholder = 'Найти коллегу или внешний контакт',
+  placeholder = "Найти коллегу или внешний контакт",
   disabled = false,
   showChannels = false,
 }: ParticipantPickerProps): JSX.Element {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [quickCreating, setQuickCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,11 +98,10 @@ export function ParticipantPicker({
 
   const debouncedQuery = useDebouncedValue(query.trim(), 250);
 
-  // SWR кэширует по строке `q`. Запрашиваем только при q.length >= 1.
   const swrKey = useMemo(
     () =>
       debouncedQuery.length >= 1
-        ? (['org-members-search', debouncedQuery] as const)
+        ? (["org-members-search", debouncedQuery] as const)
         : null,
     [debouncedQuery],
   );
@@ -161,7 +114,6 @@ export function ParticipantPicker({
 
   const results = useMemo(() => data?.items ?? [], [data]);
 
-  /** Уже выбранные участники не показываем в dropdown как «добавить». */
   const filteredResults = useMemo(
     () =>
       results.filter(
@@ -170,15 +122,11 @@ export function ParticipantPicker({
     [results, value],
   );
 
-  /** Показывать ли пункт «➕ Добавить «{q}» как внешний контакт». */
   const canQuickCreate = useMemo(() => {
     if (debouncedQuery.length < 2) return false;
     if (quickCreating) return false;
     const qLower = debouncedQuery.toLowerCase();
-    // Точное совпадение с существующим в results или уже выбранным?
-    const exactInResults = results.some(
-      (r) => r.name.toLowerCase() === qLower,
-    );
+    const exactInResults = results.some((r) => r.name.toLowerCase() === qLower);
     const exactInValue = value.some((v) => v.name.toLowerCase() === qLower);
     return !exactInResults && !exactInValue;
   }, [debouncedQuery, quickCreating, results, value]);
@@ -187,9 +135,8 @@ export function ParticipantPicker({
     (next: ParticipantPickerValue) => {
       if (value.some((v) => isSameParticipant(v, next))) return;
       onChange([...value, next]);
-      setQuery('');
+      setQuery("");
       setError(null);
-      // Сохраняем фокус на input — удобно добавлять подряд.
       inputRef.current?.focus();
     },
     [value, onChange],
@@ -225,13 +172,13 @@ export function ParticipantPicker({
     try {
       const created = await personsApi.quickCreate({ name: debouncedQuery });
       addParticipant({
-        type: 'person',
+        type: "person",
         personId: created.personId,
         name: created.name,
       });
     } catch (e) {
       const message =
-        e instanceof Error ? e.message : 'Не удалось создать контакт';
+        e instanceof Error ? e.message : "Не удалось создать контакт";
       setError(message);
     } finally {
       setQuickCreating(false);
@@ -240,7 +187,7 @@ export function ParticipantPicker({
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === 'Enter') {
+      if (e.key === "Enter") {
         e.preventDefault();
         const first = filteredResults[0];
         if (first) {
@@ -252,12 +199,7 @@ export function ParticipantPicker({
         }
         return;
       }
-      if (
-        e.key === 'Backspace' &&
-        query === '' &&
-        value.length > 0
-      ) {
-        // Удаляем последний chip по Backspace в пустом поле.
+      if (e.key === "Backspace" && query === "" && value.length > 0) {
         const last = value[value.length - 1];
         if (last) removeParticipant(last);
       }
@@ -291,9 +233,7 @@ export function ParticipantPicker({
           >
             {value.map((v) => (
               <ParticipantChip
-                key={
-                  v.type === 'user' ? `u:${v.userId}` : `p:${v.personId}`
-                }
+                key={v.type === "user" ? `u:${v.userId}` : `p:${v.personId}`}
                 value={v}
                 onRemove={() => removeParticipant(v)}
                 onToggleChannel={(channel) => toggleChannel(v, channel)}
@@ -305,7 +245,7 @@ export function ParticipantPicker({
               ref={inputRef}
               type="text"
               value={query}
-              placeholder={value.length === 0 ? placeholder : ''}
+              placeholder={value.length === 0 ? placeholder : ""}
               onChange={(e) => {
                 setQuery(e.target.value);
                 setOpen(true);
@@ -325,9 +265,7 @@ export function ParticipantPicker({
         >
           <div className="max-h-72 overflow-y-auto py-1">
             {isLoading && (
-              <div className="px-3 py-2 text-xs text-fg-tertiary">
-                Поиск…
-              </div>
+              <div className="px-3 py-2 text-xs text-fg-tertiary">Поиск…</div>
             )}
             {!isLoading && filteredResults.length === 0 && !canQuickCreate && (
               <div className="px-3 py-2 text-xs text-fg-tertiary">
@@ -337,7 +275,7 @@ export function ParticipantPicker({
             {filteredResults.map((item) => (
               <ParticipantOption
                 key={
-                  item.type === 'user'
+                  item.type === "user"
                     ? `u:${item.userId}`
                     : `p:${item.personId}`
                 }
@@ -355,9 +293,7 @@ export function ParticipantPicker({
                 <span aria-hidden className="text-base leading-none">
                   +
                 </span>
-                <span>
-                  Добавить «{debouncedQuery}» как внешний контакт
-                </span>
+                <span>Добавить «{debouncedQuery}» как внешний контакт</span>
               </button>
             )}
           </div>
@@ -372,8 +308,6 @@ export function ParticipantPicker({
   );
 }
 
-// ─────────────────────────── Subcomponents ───────────────────────────
-
 function ParticipantChip({
   value,
   onRemove,
@@ -387,25 +321,25 @@ function ParticipantChip({
   showChannels: boolean;
   disabled: boolean;
 }): JSX.Element {
-  const isUser = value.type === 'user';
+  const isUser = value.type === "user";
   const sendVia = value.sendVia ?? [];
   return (
     <span className="inline-flex items-center gap-1 rounded-md border border-border-subtle bg-bg-elevated px-2 py-0.5 text-xs text-fg-primary">
       <span aria-hidden className="text-[10px]">
-        {isUser ? '◉' : '○'}
+        {isUser ? "◉" : "○"}
       </span>
       <span className="max-w-[180px] truncate">{value.name}</span>
       {showChannels && !disabled && (
         <span className="ml-0.5 inline-flex items-center gap-0.5">
           <ChannelToggle
             label="Почта"
-            active={sendVia.includes('email')}
-            onToggle={() => onToggleChannel('email')}
+            active={sendVia.includes("email")}
+            onToggle={() => onToggleChannel("email")}
           />
           <ChannelToggle
             label="Телеграм"
-            active={sendVia.includes('telegram')}
-            onToggle={() => onToggleChannel('telegram')}
+            active={sendVia.includes("telegram")}
+            onToggle={() => onToggleChannel("telegram")}
           />
         </span>
       )}
@@ -426,7 +360,6 @@ function ParticipantChip({
   );
 }
 
-/** Компактный переключатель канала доставки приглашения на чипе участника. */
 function ChannelToggle({
   label,
   active,
@@ -447,8 +380,8 @@ function ChannelToggle({
       title={`Отправить приглашение: ${label}`}
       className={
         active
-          ? 'rounded px-1.5 py-0.5 text-[10px] font-medium bg-accent text-accent-fg'
-          : 'rounded px-1.5 py-0.5 text-[10px] font-medium bg-bg-overlay text-fg-tertiary hover:text-fg-secondary'
+          ? "rounded px-1.5 py-0.5 text-[10px] font-medium bg-accent text-accent-fg"
+          : "rounded px-1.5 py-0.5 text-[10px] font-medium bg-bg-overlay text-fg-tertiary hover:text-fg-secondary"
       }
     >
       {label}
@@ -463,7 +396,7 @@ function ParticipantOption({
   item: OrgMemberSearchItemApi;
   onSelect: () => void;
 }): JSX.Element {
-  const isUser = item.type === 'user';
+  const isUser = item.type === "user";
   const subtitle = isUser
     ? item.email
     : item.email
@@ -479,25 +412,23 @@ function ParticipantOption({
         aria-hidden
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border-subtle text-[10px] text-fg-secondary"
       >
-        {isUser ? '◉' : '○'}
+        {isUser ? "◉" : "○"}
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-fg-primary">{item.name}</span>
         {subtitle && (
-          <span className="truncate text-xs text-fg-tertiary">
-            {subtitle}
-          </span>
+          <span className="truncate text-xs text-fg-tertiary">{subtitle}</span>
         )}
       </span>
       <span className="shrink-0 text-[10px] uppercase tracking-wide text-fg-tertiary">
-        {isUser ? 'Коллега' : 'Контакт'}
+        {isUser ? "Коллега" : "Контакт"}
       </span>
     </button>
   );
 }
 
 function relationshipLabel(relationship: string): string {
-  if (relationship === 'employee') return 'Сотрудник';
-  if (relationship === 'external') return 'Внешний контакт';
+  if (relationship === "employee") return "Сотрудник";
+  if (relationship === "external") return "Внешний контакт";
   return relationship;
 }

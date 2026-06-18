@@ -5,24 +5,6 @@ import { TypedConfigService } from '../../../common/config/index';
 import type { LlmCompleteInput, LlmCompleteOutput } from './llm.types';
 import { LlmError } from './llm.types';
 
-/**
- * KIE (api.kie.ai) — мульти-формат провайдер.
- *
- * Один сервис закрывает три разных API-формата на одном host'е:
- *   - Claude   → POST `${base}/claude/v1/messages`   (Anthropic Messages-style)
- *   - GPT      → POST `${base}/codex/v1/responses`   (OpenAI Responses-style)
- *   - Gemini   → POST `${base}/${modelSlug}/v1/chat/completions`
- *                (OpenAI chat/completions, модель в URL)
- *
- * Диспатч по префиксу `input.model`: `claude-*` → Claude, `gpt-*` → GPT,
- * `gemini-*` → Gemini. Если модель не задана или префикс неизвестен —
- * `LlmError`. Модель обязательна (без неё непонятно, какой формат).
- *
- * Retry [500, 1000, 2000] на 429 / 5xx, как у DeepSeekService.
- *
- * См. карту в `second-brain/01_projects/llm-providers-verified.md` (раздел B)
- * и ТЗ `plans/tz/2026-05-24-kie-grsai-llm-router-integration.md`.
- */
 @Injectable()
 export class KieService {
   private readonly logger = new Logger(KieService.name);
@@ -31,9 +13,7 @@ export class KieService {
   private readonly retryDelaysMs = [500, 1000, 2000];
   private readonly timeoutMs = 60_000;
 
-  constructor(
-    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-  ) {
+  constructor(@Inject(TypedConfigService) private readonly cfg: TypedConfigService) {
     this.apiKey = this.cfg.ai.kie.apiKey;
     this.baseUrl = this.cfg.ai.kie.baseUrl.replace(/\/+$/, '');
   }
@@ -41,9 +21,7 @@ export class KieService {
   async complete(input: LlmCompleteInput): Promise<LlmCompleteOutput> {
     const model = input.model;
     if (!model) {
-      throw new LlmError(
-        'KIE: input.model обязателен (по нему выбирается формат API).',
-      );
+      throw new LlmError('KIE: input.model обязателен (по нему выбирается формат API).');
     }
     const format = this.detectFormat(model);
     switch (format) {
@@ -56,8 +34,6 @@ export class KieService {
     }
   }
 
-  // ─────────────────────────── private ─────────────────────────────────────
-
   private detectFormat(model: string): 'claude' | 'gpt' | 'gemini' {
     if (model.startsWith('claude-')) return 'claude';
     if (model.startsWith('gpt-')) return 'gpt';
@@ -67,19 +43,11 @@ export class KieService {
     );
   }
 
-  /**
-   * Claude через KIE. Anthropic Messages-формат, но top-level `system` KIE
-   * не документирует — склеиваем system+user в одно user-сообщение
-   * (см. smoke-llm-providers.ts §6.5). Bearer-auth, `stream: false`.
-   */
   private async completeClaudeFormat(
     input: LlmCompleteInput,
     model: string,
   ): Promise<LlmCompleteOutput> {
     const url = `${this.baseUrl}/claude/v1/messages`;
-    // T7-F3: LlmUserInput может быть string или {text, cacheControl?}.
-    // KIE-claude — внешний прокси, prompt caching отдельной API не имеет;
-    // распаковываем в строку.
     const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const body = {
       model,
@@ -110,17 +78,11 @@ export class KieService {
     };
   }
 
-  /**
-   * GPT через KIE Responses API (`/codex/v1/responses`). Вход — массив
-   * `input` c content-блоками `input_text`. Ответ — массив `output` с
-   * блоками `reasoning` и `message`. `reasoning.effort` поддерживается.
-   */
   private async completeGptFormat(
     input: LlmCompleteInput,
     model: string,
   ): Promise<LlmCompleteOutput> {
     const url = `${this.baseUrl}/codex/v1/responses`;
-    // T7-F3: распаковка LlmUserInput (см. completeClaudeFormat выше).
     const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const body: Record<string, unknown> = {
       model,
@@ -138,9 +100,7 @@ export class KieService {
       ],
     };
     if (input.reasoningEffort) {
-      // KIE Responses принимает `low|medium|high|xhigh` — `minimal` сюда не шлём.
-      const effort =
-        input.reasoningEffort === 'minimal' ? 'low' : input.reasoningEffort;
+      const effort = input.reasoningEffort === 'minimal' ? 'low' : input.reasoningEffort;
       body['reasoning'] = { effort };
     }
     const data = await this.postJson<{
@@ -166,17 +126,11 @@ export class KieService {
     };
   }
 
-  /**
-   * Gemini через KIE direct (`/${modelSlug}/v1/chat/completions`). Модель
-   * закодирована в URL — в body поле `model` НЕ передаётся. По умолчанию
-   * KIE стримит — обязательно `stream:false`.
-   */
   private async completeGeminiFormat(
     input: LlmCompleteInput,
     model: string,
   ): Promise<LlmCompleteOutput> {
     const url = `${this.baseUrl}/${model}/v1/chat/completions`;
-    // T7-F3: распаковка LlmUserInput (см. completeClaudeFormat выше).
     const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const body: Record<string, unknown> = {
       stream: false,
@@ -197,8 +151,7 @@ export class KieService {
       body['max_tokens'] = input.maxTokens;
     }
     if (input.reasoningEffort) {
-      const effort =
-        input.reasoningEffort === 'minimal' ? 'low' : input.reasoningEffort;
+      const effort = input.reasoningEffort === 'minimal' ? 'low' : input.reasoningEffort;
       body['reasoning_effort'] = effort;
     }
     const data = await this.postJson<{
@@ -210,9 +163,7 @@ export class KieService {
       typeof raw === 'string'
         ? raw
         : Array.isArray(raw)
-          ? raw
-              .map((p: { text?: string }) => p?.text ?? '')
-              .join('')
+          ? raw.map((p: { text?: string }) => p?.text ?? '').join('')
           : String(raw);
     return {
       text,
@@ -236,18 +187,11 @@ export class KieService {
     });
     if (!resp.ok) {
       const errText = await resp.text().catch(() => '');
-      throw new LlmError(
-        `KIE HTTP ${resp.status}: ${errText.slice(0, 300)}`,
-        resp.status,
-      );
+      throw new LlmError(`KIE HTTP ${resp.status}: ${errText.slice(0, 300)}`, resp.status);
     }
     return (await resp.json()) as T;
   }
 
-  /**
-   * Retry на 429 / 5xx с фиксированной лестницей [500, 1000, 2000]ms.
-   * Не-retriable ошибки (4xx кроме 429, parse) пробрасываем сразу.
-   */
   private async withRetry<T>(fn: () => Promise<T>): Promise<T> {
     let lastErr: unknown;
     for (let attempt = 0; attempt <= this.retryDelaysMs.length; attempt++) {
@@ -255,14 +199,10 @@ export class KieService {
         return await fn();
       } catch (err) {
         lastErr = err;
-        const status =
-          err instanceof LlmError ? err.httpStatus : undefined;
-        const isRetriable =
-          status === 429 || (status !== undefined && status >= 500);
+        const status = err instanceof LlmError ? err.httpStatus : undefined;
+        const isRetriable = status === 429 || (status !== undefined && status >= 500);
         if (!isRetriable || attempt === this.retryDelaysMs.length) {
-          this.logger.warn(
-            `KIE complete (${status ?? 'no-status'}): ${errMsg(err)}`,
-          );
+          this.logger.warn(`KIE complete (${status ?? 'no-status'}): ${errMsg(err)}`);
           if (err instanceof LlmError) throw err;
           throw new LlmError(`KIE: ${errMsg(err)}`, status, err);
         }

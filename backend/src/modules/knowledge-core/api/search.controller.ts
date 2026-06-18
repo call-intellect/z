@@ -11,10 +11,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -27,12 +24,6 @@ import {
 } from './dto/search.dto';
 import { SearchService } from './search.service';
 
-/**
- * `POST /api/v1/knowledge/search` — гибридный поиск knowledge-core.
- *
- * Префикс `knowledge/` отделяет от существующего `/api/v1/search` (cards /
- * meetings / tasks глобальный поиск). RBAC: `block` `read`.
- */
 @ApiTags('knowledge-core')
 @Controller('api/v1/knowledge')
 @UseGuards(CookieAuthGuard, TenantGuard)

@@ -1,22 +1,9 @@
-/**
- * Admin-redesign Фаза 1 — unit-тесты `AdminIncidentsService`.
- *
- * Покрываем:
- *   1) getKnownQueueNames() — содержит ai.* + core.* + tracker.* очереди.
- *   2) getQueueSummary() — возвращает counts + recentFailed (с моком Queue).
- *   3) listIncidents() — сортирует очереди с failed первыми.
- *   4) createRule() — сохраняет в памяти + помечает mvpInactive.
- *   5) deleteRule() — удаляет из памяти.
- *   6) recentFailed — обрезает stacktrace до excerpt'а.
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RedisService } from '../../../common/redis/redis.service';
 
 import { AdminIncidentsService } from './admin-incidents.service';
 
-// Глобальный store для мока — заполняется тестами, читается MockQueue.
 type FailedJob = {
   id: string;
   name: string;
@@ -25,12 +12,8 @@ type FailedJob = {
   attemptsMade: number;
   stacktrace: string[] | undefined;
 };
-const queueData = new Map<
-  string,
-  { counts: Record<string, number>; failed: FailedJob[] }
->();
+const queueData = new Map<string, { counts: Record<string, number>; failed: FailedJob[] }>();
 
-// Мокируем bullmq.Queue: возвращаем counts / failed-jobs по имени очереди.
 vi.mock('bullmq', () => {
   class MockQueue {
     constructor(
@@ -75,7 +58,6 @@ describe('AdminIncidentsService', () => {
     expect(names).toContain('ai.transcribe');
     expect(names).toContain('core.raw-events');
     expect(names).toContain('tracker.webhook-delivery');
-    // не должно быть дублей
     expect(new Set(names).size).toBe(names.length);
   });
 
@@ -110,10 +92,8 @@ describe('AdminIncidentsService', () => {
     setQueueMock('core.raw-events', { counts: { failed: 2 } });
 
     const list = await svc.listIncidents();
-    // первая — с самым большим failed
     expect(list[0]?.queueName).toBe('ai.analyze');
     expect(list[1]?.queueName).toBe('core.raw-events');
-    // нулевые failed позже
     const zeros = list.filter((i) => (i.counts.failed ?? 0) === 0);
     expect(zeros.length).toBeGreaterThan(0);
   });
@@ -143,11 +123,10 @@ describe('AdminIncidentsService', () => {
     });
     expect(svc.deleteRule(rule.id)).toBe(true);
     expect(svc.listRules()).toHaveLength(0);
-    // удаление несуществующего — false
     expect(svc.deleteRule('missing')).toBe(false);
   });
 
-  it('recentFailed — обрезает stacktrace до excerpt\'а ≤800 символов', async () => {
+  it("recentFailed — обрезает stacktrace до excerpt'а ≤800 символов", async () => {
     const { svc } = buildService();
     const longLine = 'x'.repeat(2000);
     setQueueMock('ai.merge', {

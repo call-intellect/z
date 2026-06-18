@@ -1,27 +1,9 @@
-/**
- * Goals OKR v2 (Фаза 4) — промпт `goals-pulse-summarize`.
- *
- * Задача: на вход — счётчики целей по `progressStatus` за прошедшую неделю +
- * список активных целей со статусами и средним прогрессом KR. На выход —
- * связный markdown-нарратив «пульса целей» из 4-6 коротких разделов +
- * `shortSummary` для Telegram-рассылки и блока на главной.
- *
- * Code-fallback (без PromptRegistry) — как `operations-daily-digest`.
- * cache-friendly: стабильный SYSTEM, переменные данные в конце USER.
- * JSON Schema НЕ используем — свободный markdown; shortSummary отделяем
- * маркером `---SHORT_SUMMARY---` (как daily-digest).
- *
- * Версия промпта — `prompt-v1`.
- */
-
 export const GOALS_PULSE_PROMPT_VERSION = 'prompt-v1';
 
 export const GOALS_PULSE_TASK_TYPE = 'goals-pulse-summarize';
 
-/** Маркер для отделения основного текста от shortSummary в ответе LLM. */
 const SHORT_SUMMARY_DELIMITER = '---SHORT_SUMMARY---';
 
-/** Счётчики целей по progressStatus за неделю + провенанс. */
 export interface GoalsPulseCounters {
   achieved: number;
   on_track: number;
@@ -29,21 +11,16 @@ export interface GoalsPulseCounters {
   stalled: number;
   dropped: number;
   total: number;
-  /** Сколько активных целей появилось за прошедшую неделю. */
   newThisWeek: number;
 }
 
-/** Цель в пульсе: имя, статус движения, средний прогресс KR (%). */
 export interface GoalsPulseGoalLine {
   name: string;
   progressStatus: 'on_track' | 'at_risk' | 'stalled' | 'achieved' | 'dropped';
-  /** Среднее по KR в %, 0..100. null — у цели нет числовых KR. */
   avgKrProgress: number | null;
-  /** Появилась ли цель за отчётную неделю. */
   isNew: boolean;
 }
 
-/** Агрегат недели, подаваемый в промпт. */
 export interface GoalsPulseAggregate {
   isoWeek: string;
   weekStart: string;
@@ -76,7 +53,6 @@ export const GOALS_PULSE_SYSTEM_PROMPT = [
   '  - Длина основного текста — 250-500 слов.',
 ].join('\n');
 
-/** Человекочитаемая метка статуса движения. */
 function statusLabel(s: GoalsPulseGoalLine['progressStatus']): string {
   switch (s) {
     case 'achieved':
@@ -94,9 +70,6 @@ function statusLabel(s: GoalsPulseGoalLine['progressStatus']): string {
   }
 }
 
-/**
- * Сборка user-сообщения: компактная сериализация агрегатов.
- */
 export function buildGoalsPulseUserMessage(agg: GoalsPulseAggregate): string {
   const c = agg.counters;
   const lines: string[] = [];
@@ -128,14 +101,10 @@ export function buildGoalsPulseUserMessage(agg: GoalsPulseAggregate): string {
   return lines.join('\n');
 }
 
-/**
- * Парсит ответ LLM на основной текст и shortSummary по разделителю
- * `---SHORT_SUMMARY---`. Если разделителя нет — bodyMarkdown = весь ответ,
- * shortSummary = первый абзац (если короткий).
- */
-export function parseGoalsPulseLlmResponse(
-  raw: string,
-): { bodyMarkdown: string; shortSummary: string | null } {
+export function parseGoalsPulseLlmResponse(raw: string): {
+  bodyMarkdown: string;
+  shortSummary: string | null;
+} {
   const trimmed = (raw ?? '').trim();
   const idx = trimmed.indexOf(SHORT_SUMMARY_DELIMITER);
   if (idx === -1) {
@@ -153,13 +122,10 @@ export function parseGoalsPulseLlmResponse(
   };
 }
 
-/**
- * «Сухой» вариант пульса при провале LLM. Структура остаётся, связного
- * текста нет — это маркер для UI (badge «не сгенерировано LLM»).
- */
-export function buildGoalsPulseFallbackMarkdown(
-  agg: GoalsPulseAggregate,
-): { bodyMarkdown: string; shortSummary: string | null } {
+export function buildGoalsPulseFallbackMarkdown(agg: GoalsPulseAggregate): {
+  bodyMarkdown: string;
+  shortSummary: string | null;
+} {
   const c = agg.counters;
   const lines: string[] = [];
   lines.push(`# Пульс целей за неделю ${agg.isoWeek}`);

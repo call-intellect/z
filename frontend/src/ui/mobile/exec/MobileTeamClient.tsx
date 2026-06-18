@@ -1,49 +1,29 @@
-'use client';
+"use client";
 
-/**
- * MobileTeamClient — мобильный экран «Команда» руководителя (ТЗ B2/Ф3
- * `2026-06-11-remaining-handoff-finishable-now.md` блок B; полный контракт —
- * `2026-06-11-mobile-cora-exec-manager.md` §Ф3).
- *
- * Инвариант №1: мобайл = тот же web-app, читает СУЩЕСТВУЮЩИЙ эндпоинт
- * `GET /dashboard/operations/overview` (тот же, что десктопная COO-панель),
- * через тот же маппер `fromOperationsOverviewApi` → `OperationsOverviewDomain`.
- * Десктоп НЕ меняем.
- *
- * Раскладка (один столбец, glance):
- *   - «Настроение команды» — светофор (доля зелёных чек-инов);
- *   - «Кому помочь» (вверху) — блокеры/трения, поданные нейтрально-заботливо;
- *   - сводные числа (блокеры/трения/перегруз).
- *
- * Р4 (КРИТИЧНО): фокус «кому помочь», БЕЗ публичного «кто провалил». Чистая
- * логика рядов/тона вынесена в `team-rows.ts` (тестируется юнитом). Финансы
- * НЕ показываем.
- */
+import useSWR from "swr";
+import { AlertCircle, HeartHandshake, Users } from "lucide-react";
 
-import useSWR from 'swr';
-import { AlertCircle, HeartHandshake, Users } from 'lucide-react';
-
-import { operationsDashboardApi } from '@/api/operations-dashboard.api';
-import { humanizeApiError } from '@/api/api-error';
-import { useAuth } from '@/contexts/auth-context';
-import { fromOperationsOverviewApi } from '@/domain/operations-dashboard';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { ZoneTile } from '@/ui/mobile/shared/ZoneTile';
-import { StatusDot } from '@/ui/mobile/shared/StatusDot';
-import { DrillList } from '@/ui/mobile/shared/DrillList';
+import { operationsDashboardApi } from "@/api/operations-dashboard.api";
+import { humanizeApiError } from "@/api/api-error";
+import { useAuth } from "@/contexts/auth-context";
+import { fromOperationsOverviewApi } from "@/domain/operations-dashboard";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { ZoneTile } from "@/ui/mobile/shared/ZoneTile";
+import { StatusDot } from "@/ui/mobile/shared/StatusDot";
+import { DrillList } from "@/ui/mobile/shared/DrillList";
 import {
   isTeamEmpty,
   moodGreenPercent,
   moodTone,
   teamHelpRows,
   teamSummaryStats,
-} from './team-rows';
+} from "./team-rows";
 
 export function MobileTeamClient() {
   const { currentOrgId } = useAuth();
 
   const swr = useSWR(
-    currentOrgId ? ['operations-overview', currentOrgId] : null,
+    currentOrgId ? ["operations-overview", currentOrgId] : null,
     async () => {
       const res = await operationsDashboardApi.getOverview();
       return fromOperationsOverviewApi(res);
@@ -54,7 +34,7 @@ export function MobileTeamClient() {
   const ops = swr.data ?? null;
   const loading = !!currentOrgId && swr.isLoading && !ops;
   const error = swr.error
-    ? humanizeApiError(swr.error, 'Не удалось загрузить команду')
+    ? humanizeApiError(swr.error, "Не удалось загрузить команду")
     : null;
 
   const greenPct = moodGreenPercent(ops);
@@ -70,7 +50,9 @@ export function MobileTeamClient() {
         <Users size={20} className="text-accent" aria-hidden />
         Команда
       </h1>
-      <p className="mb-4 text-sm text-fg-secondary">Настроение и кому помочь — за неделю.</p>
+      <p className="mb-4 text-sm text-fg-secondary">
+        Настроение и кому помочь — за неделю.
+      </p>
 
       {loading && <TeamSkeleton />}
 
@@ -86,33 +68,40 @@ export function MobileTeamClient() {
           data-testid="team-empty"
           className="rounded-2xl border border-border-subtle bg-bg-card p-5 text-center"
         >
-          <HeartHandshake size={24} className="mx-auto mb-2 text-accent" aria-hidden />
+          <HeartHandshake
+            size={24}
+            className="mx-auto mb-2 text-accent"
+            aria-hidden
+          />
           <p className="text-base font-medium text-fg-primary">Пока тихо</p>
           <p className="mt-1 text-sm text-fg-secondary">
-            Появятся чек-ины и встречи — здесь будет настроение команды и кому помочь.
+            Появятся чек-ины и встречи — здесь будет настроение команды и кому
+            помочь.
           </p>
         </div>
       )}
 
       {!loading && !error && !empty && (
         <>
-          {/* Настроение команды — светофор. */}
+          {}
           <div className="mb-4 flex items-center justify-between rounded-2xl border border-border-subtle bg-bg-card p-4">
             <div className="flex items-center gap-2">
               <StatusDot tone={tone} />
-              <span className="text-sm font-medium text-fg-primary">Настроение команды</span>
+              <span className="text-sm font-medium text-fg-primary">
+                Настроение команды
+              </span>
             </div>
             <div className="text-right">
               <div className="text-xl font-semibold tabular-nums text-fg-primary">
-                {greenPct === null ? '—' : `${greenPct}%`}
+                {greenPct === null ? "—" : `${greenPct}%`}
               </div>
               <div className="text-xs text-fg-tertiary">
-                {greenPct === null ? 'нет чек-инов' : 'в добром настрое'}
+                {greenPct === null ? "нет чек-инов" : "в добром настрое"}
               </div>
             </div>
           </div>
 
-          {/* Кому помочь — вверху. */}
+          {}
           {help.length > 0 && (
             <section className="mb-4">
               <h2 className="mb-2 flex items-center gap-1.5 text-sm font-medium text-fg-secondary">
@@ -123,7 +112,7 @@ export function MobileTeamClient() {
             </section>
           )}
 
-          {/* Сводные числа. */}
+          {}
           {stats.length > 0 && (
             <div className="grid grid-cols-3 gap-3">
               {stats.map((s) => (

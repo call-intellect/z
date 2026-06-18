@@ -40,10 +40,6 @@ import {
 } from '../dto/org-admin-knowledge.dto';
 import { OrgAdminKnowledgeService } from '../services/org-admin-knowledge.service';
 
-/**
- * Org-Admin knowledge-core debug (Фаза 7 шаг 7).
- * @UseGuards(CookieAuthGuard, TenantGuard, OrgAdminGuard) — owner|admin Org.
- */
 @ApiExcludeController()
 @Controller('api/v1/org-admin/knowledge')
 @UseGuards(CookieAuthGuard, TenantGuard, OrgAdminGuard)
@@ -139,12 +135,7 @@ export class OrgAdminKnowledgeController {
   ) {
     const userId = requireUserId(req);
     try {
-      return await this.svc.mergeEntities(
-        tenantId,
-        fromEntityId,
-        dto.intoEntityId,
-        { userId },
-      );
+      return await this.svc.mergeEntities(tenantId, fromEntityId, dto.intoEntityId, { userId });
     } catch (err) {
       throw new BadRequestException({
         ok: false,
@@ -168,11 +159,7 @@ export class OrgAdminKnowledgeController {
   }
 
   @Post('raw-events/:id/reprocess')
-  async reprocess(
-    @CurrentOrg() tenantId: string,
-    @Req() req: Request,
-    @Param('id') id: string,
-  ) {
+  async reprocess(@CurrentOrg() tenantId: string, @Req() req: Request, @Param('id') id: string) {
     const userId = requireUserId(req);
     try {
       return await this.svc.reprocessRawEvent(tenantId, id, { userId });

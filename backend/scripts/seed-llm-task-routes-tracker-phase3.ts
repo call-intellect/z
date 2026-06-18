@@ -1,24 +1,3 @@
-/**
- * Wave 3 / Tracker Phase 3 part B — Seed маршрутов LLM для:
- *
- *   - `meeting-extract-actions`: primary DeepSeek (chat), secondary OpenAI
- *     gpt-4o-mini (через proxy.agent-lia.ru), tertiary Ollama qwen3.5:9b.
- *   - `intake-auto-triage`: те же три уровня.
- *
- * Источник цепочки: plans/tz/2026-05-23-tracker-phase-3-ai-features.md
- * (Фича 1 + Фича 5) + docs/reference/llm-models-playbook.md.
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-tracker-phase3.ts
- *   bun run scripts/seed-llm-task-routes-tracker-phase3.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - editedByAdmin=true — НЕ перезаписываем (защита настроек админа).
- *   - Без флага — пропускаем existing записи.
- *   - С `--update-existing` — обновляем model/priority/isActive (но НЕ
- *     editedByAdmin).
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -107,17 +86,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -142,9 +117,7 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 

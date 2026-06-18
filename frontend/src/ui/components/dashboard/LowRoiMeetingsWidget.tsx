@@ -1,25 +1,12 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { Coffee, TrendingDown } from 'lucide-react';
+import Link from "next/link";
+import { Coffee, TrendingDown } from "lucide-react";
 
-import type { PulsePatternLowRoiMeetingDomain } from '@/domain/pulse-patterns';
-import { MiniBarRow } from '@/ui/components/dashboard/charts';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-
-/**
- * LowRoiMeetingsWidget (Pulse Wave 6 §6.3) — «Топ-3 встречи-болтологии».
- *
- * Сортирует завершённые встречи по `Meeting.roiScore` ASC. Дает быстрый
- * drill-down на отчёт встречи.
- *
- * Полировка (Фаза 3 ТЗ dashboards-wow-polish, 2026-06-01):
- *   - ROI рендерится как `MiniBarRow` (низкий ROI = danger).
- *   - Hover-эффект на строку — `bg-chip-danger-bg/5`.
- *   - Чипы участников/категории не показываем — данных в API виджета нет
- *     (только `participantCount`, без массива personId/avatar).
- */
+import type { PulsePatternLowRoiMeetingDomain } from "@/domain/pulse-patterns";
+import { MiniBarRow } from "@/ui/components/dashboard/charts";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
 type Props = {
   meetings: PulsePatternLowRoiMeetingDomain[];
@@ -27,9 +14,6 @@ type Props = {
   error: string | null;
 };
 
-// MVP roiScore ожидается в диапазоне 0..10 (низкий = плохой). Используем
-// фиксированный max=10, чтобы планки между виджетами были сравнимы. Если в
-// данных встретится >10 — пересчитываем max по реальному списку.
 const ROI_DEFAULT_MAX = 10;
 
 export function LowRoiMeetingsWidget({ meetings, loading, error }: Props) {
@@ -78,11 +62,10 @@ export function LowRoiMeetingsWidget({ meetings, loading, error }: Props) {
                       {m.title}
                     </p>
                     <p className="mt-0.5 text-xs text-fg-tertiary">
-                      {m.durationMinutes} мин · {m.participantCount} участ. ·
-                      {' '}
-                      {m.startedAt.toLocaleDateString('ru', {
-                        day: '2-digit',
-                        month: 'short',
+                      {m.durationMinutes} мин · {m.participantCount} участ. ·{" "}
+                      {m.startedAt.toLocaleDateString("ru", {
+                        day: "2-digit",
+                        month: "short",
                       })}
                     </p>
                   </div>

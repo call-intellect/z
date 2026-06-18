@@ -8,33 +8,12 @@ import type {
 
 import { pickPrimarySummary } from '../../ai/utils/pick-primary-summary';
 
-/**
- * Контекст для single-meeting режима (Фаза А — context-stuffing).
- *
- * Собираем:
- *   - meta встречи (title, type, date)
- *   - summary (если есть)
- *   - заголовки chapters
- *   - заголовки tasks
- *   - последние 10 сообщений chat history
- *   - все transcript chunks (если объём <= MAX_CHARS, иначе обрезаем до K последних)
- *
- * Если суммарный объём >MAX_CHARS — режем transcript chunks по приоритету
- * «равномерно с начала и конца, отбрасывая середину» (для AI это понятнее
- * чем «только начало»).
- */
 const MAX_CHARS = 80_000;
 
 export interface SingleMeetingInput {
   meeting: Meeting;
   aiResult: AiResult | null;
   chapters: MeetingChapter[];
-  /**
-   * Задачи встречи. Берётся только `title` (для LLM-контекста), поэтому
-   * принимаем минимальную структурную форму — так сюда подходит как Prisma
-   * `Task`, так и нормализованный `MeetingActionItem` из `MeetingActionItemsService`
-   * (ТЗ Ф5.2 — единая видимая задача).
-   */
   tasks: ReadonlyArray<{ title: string }>;
   chunks: MeetingTranscriptChunk[];
   history: MeetingChatMessage[];
@@ -44,8 +23,13 @@ export interface SingleMeetingInput {
 export interface BuiltContext {
   systemPrompt: string;
   userMessage: string;
-  /** Что использовали для citations parsing. */
-  contextChunks: Array<{ startMs: number; endMs: number; text: string; meetingId: string; meetingTitle: string }>;
+  contextChunks: Array<{
+    startMs: number;
+    endMs: number;
+    text: string;
+    meetingId: string;
+    meetingTitle: string;
+  }>;
 }
 
 const SYSTEM_PROMPT = `Ты — ассистент по конкретной видеовстрече. Отвечай на вопросы пользователя о её содержании.
@@ -84,7 +68,6 @@ export function buildSingleMeetingContext(input: SingleMeetingInput): BuiltConte
     parts.push('');
   }
 
-  // History (последние 10).
   const hist = input.history.slice(-10);
   if (hist.length > 0) {
     parts.push('История диалога:');
@@ -94,7 +77,6 @@ export function buildSingleMeetingContext(input: SingleMeetingInput): BuiltConte
     parts.push('');
   }
 
-  // Transcript chunks — режем если слишком много.
   const trimmedChunks = trimChunksByCharLimit(input.chunks, MAX_CHARS / 2);
   parts.push('Транскрипт (фрагменты):');
   for (const c of trimmedChunks) {
@@ -123,8 +105,6 @@ function trimChunksByCharLimit(
 ): MeetingTranscriptChunk[] {
   let total = 0;
   const taken: MeetingTranscriptChunk[] = [];
-  // Простой проход — берём все, пока не упрёмся в лимит. Простая стратегия,
-  // в V2 можно умнее (равномерное прорежение).
   for (const c of chunks) {
     if (total + c.text.length > maxChars) break;
     taken.push(c);

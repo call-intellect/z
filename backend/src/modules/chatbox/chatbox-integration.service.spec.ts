@@ -11,16 +11,6 @@ import type { ChatboxApiClient } from './chatbox-api.client';
 import { ChatboxIntegrationService } from './chatbox-integration.service';
 import type { ChatboxIntegrationUpsertDto } from './dto/chatbox-integration.dto';
 
-/**
- * Детерминированные unit-тесты ChatboxIntegrationService: Prisma / Crypto /
- * ChatboxApiClient полностью замоканы, БД и сети нет.
- *
- * Контракт ошибок сервиса: BadRequestException с payload
- * `{ ok: false, error: { code, message } }`, достаётся через `.getResponse()`.
- * Коды: `chatbox_token_invalid`, `chatbox_workspace_not_found`.
- */
-
-/** Полная строка ChatboxIntegration (поля, нужные sanitize()). */
 function makeRow(over: Partial<ChatboxIntegration> = {}): ChatboxIntegration {
   return {
     id: 'int1',
@@ -41,7 +31,6 @@ function makeRow(over: Partial<ChatboxIntegration> = {}): ChatboxIntegration {
   } as ChatboxIntegration;
 }
 
-/** Достаёт error.code из брошенного BadRequestException. */
 function errorCode(err: unknown): string | undefined {
   if (!(err instanceof BadRequestException)) return undefined;
   const body = err.getResponse() as { error?: { code?: string } };
@@ -55,6 +44,10 @@ describe('ChatboxIntegrationService', () => {
       upsert: ReturnType<typeof vi.fn>;
       update: ReturnType<typeof vi.fn>;
       deleteMany: ReturnType<typeof vi.fn>;
+    };
+    source: {
+      upsert: ReturnType<typeof vi.fn>;
+      updateMany: ReturnType<typeof vi.fn>;
     };
   };
   let cryptoMock: {
@@ -77,6 +70,10 @@ describe('ChatboxIntegrationService', () => {
         upsert: vi.fn(),
         update: vi.fn(),
         deleteMany: vi.fn(),
+      },
+      source: {
+        upsert: vi.fn().mockResolvedValue({ id: 'src-chatbox' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
     };
     cryptoMock = {
@@ -122,8 +119,8 @@ describe('ChatboxIntegrationService', () => {
 
   it('upsert: новый токен + валидный воркспейс → encrypt(token), upsert с workspaceName', async () => {
     prismaMock.chatboxIntegration.findUnique
-      .mockResolvedValueOnce(null) // existing внутри upsert()
-      .mockResolvedValueOnce(makeRow()); // повторный read в конце upsert()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(makeRow());
     clientMock.listWorkspaces.mockResolvedValue({
       workspaces: [{ id: 'ws1', name: 'WS', role: 'OWNER' }],
       total: 1,
@@ -184,8 +181,8 @@ describe('ChatboxIntegrationService', () => {
   it('upsert: update без нового токена → переиспользует существующий tokenEnc', async () => {
     const existing = makeRow({ tokenEnc: 'gcm:v1:oldsecret' });
     prismaMock.chatboxIntegration.findUnique
-      .mockResolvedValueOnce(existing) // existing внутри upsert()
-      .mockResolvedValueOnce(existing); // повторный read в конце
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(existing);
     clientMock.listWorkspaces.mockResolvedValue({
       workspaces: [{ id: 'ws1', name: 'WS', role: 'OWNER' }],
       total: 1,
@@ -199,16 +196,9 @@ describe('ChatboxIntegrationService', () => {
 
     await service.upsert('t1', dto);
 
-    // расшифровали старый tokenEnc...
     expect(cryptoMock.decrypt).toHaveBeenCalledWith('gcm:v1:oldsecret');
-    // ...и вызвали API расшифрованным токеном
-    expect(clientMock.listWorkspaces).toHaveBeenCalledWith(
-      'oldsecret',
-      expect.anything(),
-    );
-    // не шифровали заново (нового токена нет)
+    expect(clientMock.listWorkspaces).toHaveBeenCalledWith('oldsecret', expect.anything());
     expect(cryptoMock.encrypt).not.toHaveBeenCalled();
-    // в upsert ушёл старый tokenEnc
     expect(prismaMock.chatboxIntegration.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({ tokenEnc: 'gcm:v1:oldsecret' }),
@@ -220,8 +210,8 @@ describe('ChatboxIntegrationService', () => {
   it('upsert: syncMode=realtime без webhook → createWebhook + сохранение полей', async () => {
     const savedRow = makeRow({ syncMode: 'realtime' });
     prismaMock.chatboxIntegration.findUnique
-      .mockResolvedValueOnce(null) // existing внутри upsert()
-      .mockResolvedValueOnce(makeRow({ syncMode: 'realtime' })); // финальный read
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(makeRow({ syncMode: 'realtime' }));
     clientMock.listWorkspaces.mockResolvedValue({
       workspaces: [{ id: 'ws1', name: 'WS', role: 'OWNER' }],
       total: 1,
@@ -242,9 +232,7 @@ describe('ChatboxIntegrationService', () => {
       't',
       'ws1',
       expect.objectContaining({
-        url: expect.stringContaining(
-          'https://z.example.com/api/v1/webhooks/chatbox/t1/',
-        ),
+        url: expect.stringContaining('https://z.example.com/api/v1/webhooks/chatbox/t1/'),
         events: expect.arrayContaining(['MESSAGE_CREATED', 'CHAT_CREATED']),
       }),
     );
@@ -275,7 +263,6 @@ describe('ChatboxIntegrationService', () => {
       syncMode: 'realtime',
     };
 
-    // upsert не должен бросить — best-effort
     await expect(service.upsert('t1', dto)).resolves.toBeDefined();
     expect(prismaMock.chatboxIntegration.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -339,9 +326,7 @@ describe('ChatboxIntegrationService', () => {
   });
 
   it('listWorkspaces: 401 от клиента → chatbox_token_invalid', async () => {
-    clientMock.listWorkspaces.mockRejectedValue(
-      new ChatboxApiError(401, 'unauthorized', false),
-    );
+    clientMock.listWorkspaces.mockRejectedValue(new ChatboxApiError(401, 'unauthorized', false));
 
     const err = await service.listWorkspaces('t').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(BadRequestException);

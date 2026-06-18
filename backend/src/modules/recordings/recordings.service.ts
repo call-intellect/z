@@ -25,47 +25,12 @@ import {
 } from './s3-keys';
 import { S3Service } from './s3.service';
 
-/**
- * `ParticipantInfo.Kind.STANDARD = 0` — конечный пользователь (web-клиент).
- * Числовой литерал, потому что enum `ParticipantInfo_Kind` НЕ реэкспортируется
- * из `livekit-server-sdk`, а `@livekit/protocol` не является прямой
- * зависимостью (импорт оттуда хрупок к hoisting'у). Значения: STANDARD=0,
- * INGRESS=1, EGRESS=2, SIP=3, AGENT=4 (см. node_modules/@livekit/protocol).
- * Для per-track сверки нас интересуют только STANDARD-участники.
- */
 const PARTICIPANT_KIND_STANDARD = 0;
 
-/**
- * Сервис управления записями встреч.
- *
- * Жизненный цикл записи (см. `plans/architecture/2026-05-08-z-architecture.md` §4.4):
- *
- *   not_started → requested → recording → finalizing → ready
- *                                                    ↘ failed
- *   ready → deleted (host вручную или retention cron)
- *
- * Переходы статусов делает либо явный вызов (`start`/`stop`/`deleteEarly`),
- * либо webhook-обработчик (`livekit-events.handler`).
- *
- * Доступ:
- *   - `start`/`stop`/`deleteEarly`/`getDownloadUrl` — host (через cookie auth + ownerId).
- *   - `getCrossmarkDownloadUrl`/`extendRetention` — Crossmark partner (HMAC).
- *   - `ensureTrackEgress` — internal (вызывается из webhook handler на `track_published`).
- */
 @Injectable()
 export class RecordingsService {
   private readonly logger = new Logger(RecordingsService.name);
 
-  /**
-   * In-process lock для `ensureTrackEgress`. Ключ — `${meetingId}:${identity}`.
-   * Закрывает гонку «двойной старт track egress на один и тот же трек», когда
-   * реактивный путь (webhook `track_published`), догон на старте записи и
-   * периодическая сверка-cron срабатывают почти одновременно для одного
-   * участника. Прод Z — один процесс (HTTP + cron + BullMQ-воркеры в одном
-   * backend'е, см. WorkersModule), поэтому in-memory-Set достаточно — внешний
-   * Redis-лок не нужен. DB-проверка (`AudioTrack.findFirst`) остаётся как
-   * вторичный гард для steady-state и на случай рестарта процесса.
-   */
   private readonly inflightTrackEgress = new Set<string>();
 
   constructor(
@@ -78,16 +43,10 @@ export class RecordingsService {
     @Inject(LivekitService) private readonly livekit: LivekitService,
     @Inject(MeetingVisibilityService) private readonly visibility: MeetingVisibilityService,
   ) {
-    // suppress unused-warning: meetings нужен для будущих переходов (см. webhook handler);
-    // здесь оставляем как dep для тестируемой связности.
     void this.meetings;
   }
 
-  // ──────────────────────── публичные сценарии ──────────────────────────
 
-  /**
-   * Запуск записи. Хост, встреча в `active`. Идемпотентность через upsert.
-   */
   async start(meetingId: string, userId: string): Promise<void> {
     const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
     if (!meeting) throw new MeetingNotFoundError(meetingId);
@@ -95,11 +54,9 @@ export class RecordingsService {
       throw new NotAuthorizedError('not_meeting_host');
     }
     if (meeting.status !== 'active') {
-      // Запись можно стартовать только во время встречи.
       throw new RecordingInvalidStateError(meetingId, meeting.status, 'meeting_active');
     }
 
-    // Если запись уже есть и не в not_started — повторный старт запрещён.
     const existing = await this.prisma.recording.findUnique({ where: { meetingId } });
     if (existing && existing.status !== 'not_started' && existing.status !== 'failed') {
       throw new RecordingInvalidStateError(meetingId, existing.status, 'not_started');
@@ -115,7 +72,6 @@ export class RecordingsService {
       'Recording start: запускаем composite egress',
     );
 
-    // Сначала запускаем egress (потенциально может упасть — не плодим Recording).
     const egressResult = await this.egress.startRoomCompositeEgress(
       { id: meetingId },
       { bucket: this.cfg.s3.bucket, key: compositeOutputKey },
@@ -125,7 +81,6 @@ export class RecordingsService {
       'Recording start: composite egress запущен',
     );
 
-    // Создаём/обновляем Recording в одной транзакции с RecordingAction.
     await this.prisma.$transaction(async (tx) => {
       const recording = await tx.recording.upsert({
         where: { meetingId },
@@ -161,10 +116,6 @@ export class RecordingsService {
       'Recording start',
     );
 
-    // Догон уже опубликованных AUDIO-треков: участники, опубликовавшие микрофон
-    // ДО старта записи, не пришлют второй `track_published` — их дорожки иначе
-    // потеряются. Сверяемся с состоянием комнаты (pull) и добираем недостающее.
-    // Не валим старт записи, если сверка упала — её добьёт периодический cron.
     await this.reconcileTrackEgress(meetingId).catch((err) => {
       this.logger.warn(
         { meetingId, err: err instanceof Error ? err.message : String(err) },
@@ -173,10 +124,6 @@ export class RecordingsService {
     });
   }
 
-  /**
-   * Остановка записи. Хост, recording в `recording`.
-   * Дальнейшее finalizing → ready приедет через webhook egress_ended.
-   */
   async stop(meetingId: string, userId: string): Promise<void> {
     const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
     if (!meeting) throw new MeetingNotFoundError(meetingId);
@@ -193,8 +140,6 @@ export class RecordingsService {
       throw new RecordingInvalidStateError(meetingId, recording.status, 'recording|requested');
     }
 
-    // Останавливаем composite + все track egress'ы. Ошибки логируем, но не валим
-    // запрос — finalizing может прийти своим путём от LiveKit при room_finished.
     if (recording.compositeEgressId) {
       try {
         await this.egress.stopEgress(recording.compositeEgressId);
@@ -233,14 +178,6 @@ export class RecordingsService {
     this.logger.log({ meetingId }, 'Recording stop запрошен → finalizing');
   }
 
-  /**
-   * Старт track egress'а на свежеопубликованный AUDIO-трек участника.
-   * Вызывается из LivekitEventsHandler при `track_published`.
-   *
-   * Идемпотентность:
-   *   - повторный track_published для того же sid — no-op (AudioTrack уже есть).
-   *   - если recording не в `requested`/`recording` — no-op.
-   */
   async ensureTrackEgress(
     meeting: { id: string },
     participant: { identity: string; name: string },
@@ -249,7 +186,7 @@ export class RecordingsService {
     const recording = await this.prisma.recording.findUnique({
       where: { meetingId: meeting.id },
     });
-    if (!recording) return; // Запись не запускалась — игнор.
+    if (!recording) return;
     if (recording.status !== 'recording' && recording.status !== 'requested') {
       this.logger.debug(
         { meetingId: meeting.id, status: recording.status },
@@ -258,10 +195,6 @@ export class RecordingsService {
       return;
     }
 
-    // In-process lock: не даём двум путям (реактивный webhook `track_published`,
-    // догон на старте записи, периодическая сверка-cron) одновременно
-    // стартовать egress на один и тот же трек до того, как первый успеет создать
-    // AudioTrack. DB-проверка ниже сама по себе гоночна (read-then-write).
     const lockKey = `${meeting.id}:${participant.identity}`;
     if (this.inflightTrackEgress.has(lockKey)) {
       this.logger.debug(
@@ -278,19 +211,12 @@ export class RecordingsService {
     }
   }
 
-  /**
-   * Внутренняя часть `ensureTrackEgress` под in-process lock'ом: DB-дедуп по
-   * `recordingId+livekitIdentity`, старт track egress, создание `AudioTrack`.
-   * Вынесена отдельным методом, чтобы lock гарантированно снимался в `finally`
-   * вызывающего даже при ранних `return`/`throw` внутри.
-   */
   private async startTrackEgressLocked(
     meeting: { id: string },
     participant: { identity: string; name: string },
     track: { sid: string },
     recordingId: string,
   ): Promise<void> {
-    // Если AudioTrack для этого livekitIdentity уже есть — не дублируем.
     const existing = await this.prisma.audioTrack.findFirst({
       where: { recordingId, livekitIdentity: participant.identity },
     });
@@ -302,8 +228,6 @@ export class RecordingsService {
       return;
     }
 
-    // Найти Participant'а — желательно, чтобы прикрепить FK. Если нет (race) —
-    // продолжаем без `participantId`.
     const participantRecord = await this.prisma.participant.findUnique({
       where: {
         meetingId_livekitIdentity: {
@@ -342,16 +266,10 @@ export class RecordingsService {
         },
         'ensureTrackEgress: не удалось запустить track egress',
       );
-      // Метрика для алерта: рост = дорожки теряются (egress-ёмкость/сбой LiveKit),
-      // несмотря на reconcile-бэкстоп. См. ТЗ §117 (мониторинг egress).
       this.metrics.incTrackEgressStartFailed({ reason: 'start_failed' });
-      // Без egress нет смысла создавать AudioTrack — следующая сверка повторит.
       return;
     }
 
-    // Поля `audioUrl/startedAt/endedAt/durationSeconds` — required в схеме.
-    // На этом этапе у нас ещё нет финальных значений, поэтому ставим
-    // плейсхолдеры. `egress_started`/`egress_ended` дополнят их.
     const placeholderUrl = `s3://${this.cfg.s3.bucket}/${trackKey}`;
     try {
       await this.prisma.audioTrack.create({
@@ -369,7 +287,6 @@ export class RecordingsService {
         },
       });
     } catch (err) {
-      // На race с одновременным track_published — игнорируем уникальный конфликт по participantId.
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002'
@@ -384,22 +301,6 @@ export class RecordingsService {
     }
   }
 
-  /**
-   * Reconciliation (pull-модель): сверяет фактическое состояние комнаты в
-   * LiveKit с собранными per-track дорожками и добирает недостающие.
-   *
-   * Зачем: реактивный путь (`track_published → ensureTrackEgress`) структурно
-   * теряет треки — webhook'и LiveKit без гарантий доставки, а трек,
-   * опубликованный ДО старта записи или под reconnect, второго `track_published`
-   * не присылает. Pull от `listParticipants` не зависит от push и закрывает эти
-   * три класса потерь. Вызывается:
-   *   - догоном на старте записи (`start`);
-   *   - периодической сверкой-cron (`recording-track-reconcile`).
-   *
-   * Берём только STANDARD-участников (kind=0 — реальные люди; egress/agent/sip
-   * пропускаем) и только их AUDIO-треки (вход диаризации/транскрибации).
-   * Идемпотентность — внутри `ensureTrackEgress` (DB-дедуп + in-process lock).
-   */
   async reconcileTrackEgress(meetingId: string): Promise<void> {
     const recording = await this.prisma.recording.findUnique({
       where: { meetingId },
@@ -422,7 +323,6 @@ export class RecordingsService {
 
     let added = 0;
     for (const p of participants) {
-      // Только реальные участники (STANDARD); egress/agent/sip/ingress — мимо.
       if ((p.kind as number) !== PARTICIPANT_KIND_STANDARD) continue;
       if (!p.identity) continue;
       for (const tr of p.tracks ?? []) {
@@ -436,8 +336,6 @@ export class RecordingsService {
           );
           added += 1;
         } catch (err) {
-          // Одна неудачная дорожка не должна срывать сверку остальных —
-          // следующий тик/догон попробует снова (естественный backstop ретрая).
           this.logger.warn(
             {
               meetingId,
@@ -459,9 +357,6 @@ export class RecordingsService {
     }
   }
 
-  /**
-   * Presigned-ссылка хосту для скачивания composite-записи.
-   */
   async getDownloadUrl(
     meetingId: string,
     userId: string,
@@ -470,10 +365,6 @@ export class RecordingsService {
     return this.presignComposite(meetingId);
   }
 
-  /**
-   * Presigned-ссылка партнёру (Crossmark) — без проверки ownerId,
-   * запрос уже валидирован HMAC-ом.
-   */
   async getCrossmarkDownloadUrl(
     meetingId: string,
     _partnerId: string,
@@ -481,10 +372,6 @@ export class RecordingsService {
     return this.presignComposite(meetingId);
   }
 
-  /**
-   * Presigned-ссылки на per-participant OGG-аудиодорожки.
-   * Доступно только host'у. Если записи нет — возвращает пустой массив.
-   */
   async getAudioTracks(
     meetingId: string,
     userId: string,
@@ -522,9 +409,6 @@ export class RecordingsService {
     );
   }
 
-  /**
-   * Досрочное удаление записи host'ом.
-   */
   async deleteEarly(meetingId: string, userId: string): Promise<void> {
     const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
     if (!meeting) throw new MeetingNotFoundError(meetingId);
@@ -569,9 +453,6 @@ export class RecordingsService {
     );
   }
 
-  /**
-   * Продление retention. Партнёр (Crossmark) добавляет N дней.
-   */
   async extendRetention(
     meetingId: string,
     addDays: number,
@@ -617,20 +498,11 @@ export class RecordingsService {
     return { expiresAt: newExpiresAt };
   }
 
-  // ─────────────────── helpers (используются и снаружи) ──────────────────
 
-  /**
-   * Чтение Recording по meetingId. Используется из webhook-обработчика.
-   */
   async findByMeetingId(meetingId: string): Promise<Recording | null> {
     return this.prisma.recording.findUnique({ where: { meetingId } });
   }
 
-  /**
-   * Завершение composite egress'а — приходит из webhook'а egress_ended.
-   * Сохраняет mainVideoUrl + bytesTotal + durationSeconds. Если вся запись
-   * (composite + все треки) ENDED — переводит в `ready`.
-   */
   async onCompositeEnded(
     meetingId: string,
     payload: { url: string | null; bytes: number | null; durationSeconds: number | null },
@@ -667,9 +539,6 @@ export class RecordingsService {
     return this.tryFinalizeReady(meetingId);
   }
 
-  /**
-   * Завершение track egress'а — приходит из webhook'а egress_ended.
-   */
   async onTrackEnded(
     meetingId: string,
     trackEgressId: string,
@@ -712,11 +581,6 @@ export class RecordingsService {
     return this.tryFinalizeReady(meetingId);
   }
 
-  /**
-   * Запись `compositeEgressId` для свежезапущенного composite.
-   * Используется webhook'ом `egress_started` для надёжности (страховка
-   * на случай race'а: webhook пришёл раньше, чем `start()` коммитнул запись).
-   */
   async markCompositeStarted(meetingId: string, egressId: string): Promise<void> {
     const recording = await this.prisma.recording.findUnique({ where: { meetingId } });
     if (!recording) return;
@@ -728,9 +592,6 @@ export class RecordingsService {
     }
   }
 
-  /**
-   * Перевод в failed — для webhook'а `egress_failed`.
-   */
   async markFailed(meetingId: string, reason: string): Promise<void> {
     const recording = await this.prisma.recording.findUnique({ where: { meetingId } });
     if (!recording) return;
@@ -751,19 +612,6 @@ export class RecordingsService {
     });
   }
 
-  /**
-   * Pull-сверка composite-egress (ТЗ 2026-06-06 composite-egress reconcile).
-   *
-   * Зачем: composite egress_ended-вебхук может потеряться/задержаться (LiveKit
-   * не гарантирует доставку push). Тогда у нас бесконечно нет `mainVideoUrl`,
-   * встреча застревает в `recording_processing`, видео не появляется в UI.
-   * Крон раз в минуту тянет статус из LiveKit (`listEgress`) и, если composite
-   * УЖЕ `EGRESS_COMPLETE`, сам финализирует через тот же `onCompositeEnded`,
-   * что и вебхук, — ограничивая паузу сверху интервалом крона.
-   *
-   * Идемпотентно: если у записи уже есть `mainVideoUrl` или она в терминальном
-   * статусе — no-op (даже не дёргаем LiveKit). `onCompositeEnded` сам идемпотентен.
-   */
   async reconcileCompositeEgress(
     meetingId: string,
   ): Promise<{ becameComplete: boolean; allReady: boolean; compositeBytes: number | null }> {
@@ -780,14 +628,11 @@ export class RecordingsService {
     if (!state) return { becameComplete: false, allReady: false, compositeBytes: null };
 
     if (state.status === 'failed') {
-      // LiveKit сообщает, что composite упал, а egress_failed-вебхук не дошёл —
-      // помечаем запись failed (markFailed идемпотентен и щадит deleted/archived).
       await this.markFailed(meetingId, 'egress_failed:reconcile');
       return { becameComplete: false, allReady: false, compositeBytes: null };
     }
 
     if (state.status !== 'complete' || !state.url) {
-      // Ещё пишет/финализирует — ждём следующий тик.
       return { becameComplete: false, allReady: false, compositeBytes: null };
     }
 
@@ -803,11 +648,6 @@ export class RecordingsService {
     return { becameComplete: true, allReady: res.allReady, compositeBytes: state.bytes };
   }
 
-  /**
-   * Все ли egress'ы (composite + все известные треки) завершились?
-   * Если да — переводим в `ready`, иначе — оставляем `finalizing` (или то,
-   * в чём были).
-   */
   private async tryFinalizeReady(
     meetingId: string,
   ): Promise<{ status: RecordingStatus; allReady: boolean }> {
@@ -822,7 +662,7 @@ export class RecordingsService {
       (t) =>
         t.bytes !== null &&
         t.audioUrl &&
-        !t.audioUrl.startsWith('s3://') /* заменили placeholder на реальный URL */,
+        !t.audioUrl.startsWith('s3://'),
     );
 
     const allReady = compositeReady && (recording.audioTracks.length === 0 || allTracksReady);
@@ -847,7 +687,6 @@ export class RecordingsService {
       return { status: 'ready', allReady: true };
     }
 
-    // Если хоть один уже завершён, ставим минимум finalizing.
     if (recording.status === 'recording' || recording.status === 'requested') {
       await this.prisma.recording.update({
         where: { meetingId },
@@ -859,7 +698,6 @@ export class RecordingsService {
     return { status: recording.status, allReady };
   }
 
-  // ─────────────────────────── приватные ────────────────────────────────
 
   private async presignComposite(
     meetingId: string,
@@ -873,8 +711,6 @@ export class RecordingsService {
       throw new RecordingNotReadyError(meetingId);
     }
     const key = extractKeyFromUrl(recording.mainVideoUrl, this.cfg.s3.bucket);
-    // Принудительно отдаём composite как inline video/mp4 — иначе при
-    // `octet-stream` в хранилище браузер не проигрывает видео в плеере.
     return this.s3.presignGet(key, undefined, {
       responseContentType: 'video/mp4',
       responseContentDisposition: 'inline',

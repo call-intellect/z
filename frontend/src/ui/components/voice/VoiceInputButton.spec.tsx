@@ -1,46 +1,29 @@
-/**
- * Тесты `VoiceInputButton` (серверный ASR / Vox) + чистой функции
- * `appendTranscript`.
- *
- * Компонент пишет звук через `MediaRecorder` (MIME через
- * `pickSupportedMimeType`) и расшифровывает blob через `voiceApi.transcribe`
- * — кросс-браузерный путь, работающий в т.ч. на iOS Safari (там Web Speech
- * Recognition недоступен). Сценарии:
- *  1. appendTranscript — пустое/непустое поле, trim, разделитель-пробел,
- *     уже завершённый пробелом/переводом строки текст (6 кейсов).
- *  2. Тап старт → getUserMedia + recorder.start вызваны, состояние recording.
- *  3. Тап стоп → voiceApi.transcribe вызван, onTranscript('привет') получен.
- *  4. Пустой текст / ошибка transcribe → onTranscript НЕ вызван, показан error.
- *  5. Нет getUserMedia (iOS без полифилла / SSR) → graceful: кнопки нет.
- */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-import { VoiceInputButton, appendTranscript } from './VoiceInputButton';
+import { VoiceInputButton, appendTranscript } from "./VoiceInputButton";
 
-// ── Моки внешних зависимостей ────────────────────────────────────────────────
 const transcribeMock = vi.fn();
-vi.mock('@/api/voice.api', () => ({
+vi.mock("@/api/voice.api", () => ({
   voiceApi: {
     transcribe: (...args: unknown[]) => transcribeMock(...args),
   },
 }));
 
-vi.mock('@/contexts/auth-context', () => ({
-  useAuth: () => ({ currentOrgId: 'org1' }),
+vi.mock("@/contexts/auth-context", () => ({
+  useAuth: () => ({ currentOrgId: "org1" }),
 }));
 
-vi.mock('@/ui/concierge/audio-mime', () => ({
-  pickSupportedMimeType: () => 'audio/webm',
+vi.mock("@/ui/concierge/audio-mime", () => ({
+  pickSupportedMimeType: () => "audio/webm",
 }));
 
-// ── Мок MediaRecorder ────────────────────────────────────────────────────────
 type RecorderInstance = {
   start: ReturnType<typeof vi.fn>;
   stop: ReturnType<typeof vi.fn>;
   ondataavailable: ((ev: { data: Blob }) => void) | null;
   onstop: (() => void) | null;
-  state: 'inactive' | 'recording';
+  state: "inactive" | "recording";
   mimeType: string;
 };
 
@@ -51,18 +34,19 @@ class MockMediaRecorder {
   stop: ReturnType<typeof vi.fn>;
   ondataavailable: ((ev: { data: Blob }) => void) | null = null;
   onstop: (() => void) | null = null;
-  state: 'inactive' | 'recording' = 'inactive';
+  state: "inactive" | "recording" = "inactive";
   mimeType: string;
 
   constructor(_stream: MediaStream, options?: { mimeType?: string }) {
-    this.mimeType = options?.mimeType ?? 'audio/webm';
+    this.mimeType = options?.mimeType ?? "audio/webm";
     this.start = vi.fn(() => {
-      this.state = 'recording';
-      // Эмулируем доступность данных сразу после старта.
-      this.ondataavailable?.({ data: new Blob(['x'], { type: this.mimeType }) });
+      this.state = "recording";
+      this.ondataavailable?.({
+        data: new Blob(["x"], { type: this.mimeType }),
+      });
     });
     this.stop = vi.fn(() => {
-      this.state = 'inactive';
+      this.state = "inactive";
       this.onstop?.();
     });
     lastRecorder = this as unknown as RecorderInstance;
@@ -73,7 +57,6 @@ class MockMediaRecorder {
   }
 }
 
-// Фейковый MediaStream с одной дорожкой.
 function makeFakeStream(): MediaStream {
   const track = { stop: vi.fn() };
   return {
@@ -87,7 +70,7 @@ function installMediaRecording(): void {
   (globalThis as unknown as { MediaRecorder: unknown }).MediaRecorder =
     MockMediaRecorder;
   getUserMediaMock.mockResolvedValue(makeFakeStream());
-  Object.defineProperty(navigator, 'mediaDevices', {
+  Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
     value: { getUserMedia: getUserMediaMock },
   });
@@ -95,7 +78,7 @@ function installMediaRecording(): void {
 
 function removeMediaRecording(): void {
   delete (globalThis as unknown as { MediaRecorder?: unknown }).MediaRecorder;
-  Object.defineProperty(navigator, 'mediaDevices', {
+  Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
     value: undefined,
   });
@@ -112,48 +95,48 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('appendTranscript', () => {
-  it('пустое поле → только новый текст без ведущего пробела', () => {
-    expect(appendTranscript('', 'привет')).toBe('привет');
+describe("appendTranscript", () => {
+  it("пустое поле → только новый текст без ведущего пробела", () => {
+    expect(appendTranscript("", "привет")).toBe("привет");
   });
 
-  it('тримит распознанный фрагмент', () => {
-    expect(appendTranscript('', '  привет  ')).toBe('привет');
+  it("тримит распознанный фрагмент", () => {
+    expect(appendTranscript("", "  привет  ")).toBe("привет");
   });
 
-  it('непустое поле → добавляет через пробел', () => {
-    expect(appendTranscript('первый пункт', 'второй')).toBe(
-      'первый пункт второй',
+  it("непустое поле → добавляет через пробел", () => {
+    expect(appendTranscript("первый пункт", "второй")).toBe(
+      "первый пункт второй",
     );
   });
 
-  it('не дублирует разделитель, если предыдущее кончается пробелом', () => {
-    expect(appendTranscript('первый ', 'второй')).toBe('первый второй');
+  it("не дублирует разделитель, если предыдущее кончается пробелом", () => {
+    expect(appendTranscript("первый ", "второй")).toBe("первый второй");
   });
 
-  it('не дублирует разделитель, если предыдущее кончается переводом строки', () => {
-    expect(appendTranscript('первый\n', 'второй')).toBe('первый\nвторой');
+  it("не дублирует разделитель, если предыдущее кончается переводом строки", () => {
+    expect(appendTranscript("первый\n", "второй")).toBe("первый\nвторой");
   });
 
-  it('пустой фрагмент не меняет значение', () => {
-    expect(appendTranscript('текст', '   ')).toBe('текст');
+  it("пустой фрагмент не меняет значение", () => {
+    expect(appendTranscript("текст", "   ")).toBe("текст");
   });
 });
 
-describe('VoiceInputButton', () => {
-  it('нет getUserMedia (iOS без полифилла / SSR) → graceful: кнопки нет', () => {
+describe("VoiceInputButton", () => {
+  it("нет getUserMedia (iOS без полифилла / SSR) → graceful: кнопки нет", () => {
     removeMediaRecording();
     const { container } = render(<VoiceInputButton onTranscript={vi.fn()} />);
     expect(container.firstChild).toBeNull();
-    expect(screen.queryByLabelText('Голосовой ввод')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Голосовой ввод")).not.toBeInTheDocument();
   });
 
-  it('тап старт → getUserMedia + recorder.start вызваны, состояние recording', async () => {
+  it("тап старт → getUserMedia + recorder.start вызваны, состояние recording", async () => {
     installMediaRecording();
     render(<VoiceInputButton onTranscript={vi.fn()} />);
 
-    const button = await screen.findByLabelText('Голосовой ввод');
-    expect(button).toHaveAttribute('aria-pressed', 'false');
+    const button = await screen.findByLabelText("Голосовой ввод");
+    expect(button).toHaveAttribute("aria-pressed", "false");
 
     fireEvent.click(button);
 
@@ -164,71 +147,47 @@ describe('VoiceInputButton', () => {
     });
     expect(lastRecorder?.start).toHaveBeenCalledTimes(1);
     await waitFor(() => {
-      expect(button).toHaveAttribute('aria-pressed', 'true');
+      expect(button).toHaveAttribute("aria-pressed", "true");
     });
   });
 
   it('тап стоп → transcribe вызван, onTranscript("привет") получен', async () => {
     installMediaRecording();
-    transcribeMock.mockResolvedValue({ text: 'привет' });
+    transcribeMock.mockResolvedValue({ text: "привет" });
     const onTranscript = vi.fn();
     render(<VoiceInputButton onTranscript={onTranscript} />);
 
-    const button = await screen.findByLabelText('Голосовой ввод');
-    fireEvent.click(button); // start
+    const button = await screen.findByLabelText("Голосовой ввод");
+    fireEvent.click(button);
     await waitFor(() => {
-      expect(button).toHaveAttribute('aria-pressed', 'true');
+      expect(button).toHaveAttribute("aria-pressed", "true");
     });
 
-    fireEvent.click(button); // stop
+    fireEvent.click(button);
 
     await waitFor(() => {
       expect(transcribeMock).toHaveBeenCalledWith(
-        expect.objectContaining({ orgId: 'org1' }),
+        expect.objectContaining({ orgId: "org1" }),
       );
     });
     await waitFor(() => {
-      expect(onTranscript).toHaveBeenCalledWith('привет');
+      expect(onTranscript).toHaveBeenCalledWith("привет");
     });
-    // Вернулись в idle.
     await waitFor(() => {
-      expect(button).toHaveAttribute('aria-pressed', 'false');
-    });
-  });
-
-  it('пустой текст transcribe → onTranscript НЕ вызван, показан error', async () => {
-    installMediaRecording();
-    transcribeMock.mockResolvedValue({ text: '   ' });
-    const onTranscript = vi.fn();
-    render(<VoiceInputButton onTranscript={onTranscript} />);
-
-    const button = await screen.findByLabelText('Голосовой ввод');
-    fireEvent.click(button);
-    await waitFor(() => {
-      expect(button).toHaveAttribute('aria-pressed', 'true');
-    });
-    fireEvent.click(button);
-
-    await waitFor(() => {
-      expect(transcribeMock).toHaveBeenCalledTimes(1);
-    });
-    expect(onTranscript).not.toHaveBeenCalled();
-    // Мягкая ошибка отражена в title-подсказке.
-    await waitFor(() => {
-      expect(button).toHaveAttribute('title', expect.stringContaining('распознать'));
+      expect(button).toHaveAttribute("aria-pressed", "false");
     });
   });
 
-  it('ошибка transcribe → onTranscript НЕ вызван, показан error', async () => {
+  it("пустой текст transcribe → onTranscript НЕ вызван, показан error", async () => {
     installMediaRecording();
-    transcribeMock.mockRejectedValue(new Error('boom'));
+    transcribeMock.mockResolvedValue({ text: "   " });
     const onTranscript = vi.fn();
     render(<VoiceInputButton onTranscript={onTranscript} />);
 
-    const button = await screen.findByLabelText('Голосовой ввод');
+    const button = await screen.findByLabelText("Голосовой ввод");
     fireEvent.click(button);
     await waitFor(() => {
-      expect(button).toHaveAttribute('aria-pressed', 'true');
+      expect(button).toHaveAttribute("aria-pressed", "true");
     });
     fireEvent.click(button);
 
@@ -237,7 +196,32 @@ describe('VoiceInputButton', () => {
     });
     expect(onTranscript).not.toHaveBeenCalled();
     await waitFor(() => {
-      expect(button).toHaveAttribute('aria-pressed', 'false');
+      expect(button).toHaveAttribute(
+        "title",
+        expect.stringContaining("распознать"),
+      );
+    });
+  });
+
+  it("ошибка transcribe → onTranscript НЕ вызван, показан error", async () => {
+    installMediaRecording();
+    transcribeMock.mockRejectedValue(new Error("boom"));
+    const onTranscript = vi.fn();
+    render(<VoiceInputButton onTranscript={onTranscript} />);
+
+    const button = await screen.findByLabelText("Голосовой ввод");
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(button).toHaveAttribute("aria-pressed", "true");
+    });
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(transcribeMock).toHaveBeenCalledTimes(1);
+    });
+    expect(onTranscript).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(button).toHaveAttribute("aria-pressed", "false");
     });
   });
 });

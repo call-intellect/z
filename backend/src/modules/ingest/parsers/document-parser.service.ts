@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import type { DocumentKind } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -14,13 +9,6 @@ import {
   ParseTimeoutError,
 } from './document-parser.errors';
 
-/**
- * Результат парсинга документа. `text` — основной выход для дальнейшего
- * extraction'а; `metadata` — попытка вытащить «дешёвые» данные (заголовок,
- * автор, число страниц), которые удобно показывать в `/documents/:id`.
- *
- * `extractedAt` всегда заполнен (момент окончания парсинга, UTC).
- */
 export interface ParseResult {
   text: string;
   metadata: {
@@ -31,42 +19,12 @@ export interface ParseResult {
   };
 }
 
-/**
- * `DocumentParserService` (Фаза 0b knowledge-core).
- *
- * Унифицированный парсер документов. Используется:
- *   - `DocumentIngestAdapter` (BullMQ-job `document.uploaded`) — основной путь.
- *   - Будущие e-mail вложения / IMAP / Telegram attachments (Фаза γ).
- *
- * Поддерживает `pdf`, `docx`, `markdown`, `text`, а также (ТЗ-4 Ф2)
- * `xlsx` (ExcelJS), `csv`, `pptx`, `rtf`, `odt`, `html` (officeparser).
- * `other` → `BadRequestException`.
- *
- * Архитектурные решения:
- *   - Внешние библиотеки (`pdf-parse`, `mammoth`, `marked`, `exceljs`,
- *     `officeparser`) подгружаются через
- *     `await import(...)` — это убирает их из cold-start'а Nest и позволяет
- *     приложению подняться даже если для текущей задачи парсер документов не
- *     нужен. Кроме того, `pdf-parse` имеет известные особенности с
- *     CommonJS/ESM-резолвом — динамический import обходит проблему.
- *   - Лимиты (size / timeout) — через `TypedConfigService` (см. `cfg.document`).
- *   - На превышении — типизированные ошибки (`ParseSizeError`/`ParseTimeoutError`)
- *     с человекочитаемыми русскими сообщениями.
- *   - Парсер НЕ обновляет БД и НЕ публикует события — это ответственность
- *     адаптера. Чистая функция `input → ParseResult | throws`.
- */
 @Injectable()
 export class DocumentParserService {
   private readonly logger = new Logger(DocumentParserService.name);
 
-  constructor(
-    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-  ) {}
+  constructor(@Inject(TypedConfigService) private readonly cfg: TypedConfigService) {}
 
-  /**
-   * Главная точка входа. Применяет лимит размера, выбирает парсер по `kind`,
-   * оборачивает вызов в timeout.
-   */
   async parse(input: {
     kind: DocumentKind;
     content: Buffer | string;
@@ -120,14 +78,9 @@ export class DocumentParserService {
     return withTimeout(work, timeoutMs);
   }
 
-  // ─────────────────────────── private parsers ──────────────────────────
-
   private async parsePdf(buffer: Buffer): Promise<ParseResult> {
     try {
-      // Динамический импорт — см. JSDoc класса. Пакет может быть не
-      // установлен в окружении до `bun install`; в рантайме после установки
       // импорт резолвится. Cast через `unknown` достаточен — `@ts-ignore`
-      // выше становится unused после установки типов.
       const mod = (await import('pdf-parse')) as unknown as {
         PDFParse?: new (opts: { data: Buffer | Uint8Array }) => {
           getText: () => Promise<{
@@ -137,16 +90,13 @@ export class DocumentParserService {
           }>;
           destroy: () => Promise<void>;
         };
-        default?: (
-          data: Buffer,
-        ) => Promise<{
+        default?: (data: Buffer) => Promise<{
           text: string;
           numpages?: number;
           info?: { Title?: string; Author?: string };
         }>;
       };
 
-      // Современный API (`PDFParse` class).
       if (mod.PDFParse) {
         const parser = new mod.PDFParse({ data: buffer });
         try {
@@ -154,9 +104,7 @@ export class DocumentParserService {
           return {
             text: result.text ?? '',
             metadata: {
-              pageCount: Array.isArray(result.pages)
-                ? result.pages.length
-                : undefined,
+              pageCount: Array.isArray(result.pages) ? result.pages.length : undefined,
               title: result.info?.Title,
               author: result.info?.Author,
               extractedAt: new Date(),
@@ -171,7 +119,6 @@ export class DocumentParserService {
         }
       }
 
-      // Fallback на legacy-API (`require('pdf-parse')(buffer)`).
       if (typeof mod.default === 'function') {
         const result = await mod.default(buffer);
         return {
@@ -189,49 +136,33 @@ export class DocumentParserService {
         'pdf-parse не предоставил ожидаемый API (PDFParse class или default function)',
       );
     } catch (err) {
-      if (
-        err instanceof DocumentParseFailedError ||
-        err instanceof BadRequestException
-      ) {
+      if (err instanceof DocumentParseFailedError || err instanceof BadRequestException) {
         throw err;
       }
-      throw new DocumentParseFailedError(
-        err instanceof Error ? err.message : String(err),
-        err,
-      );
+      throw new DocumentParseFailedError(err instanceof Error ? err.message : String(err), err);
     }
   }
 
   private async parseDocx(buffer: Buffer): Promise<ParseResult> {
     try {
       const mod = (await import('mammoth')) as unknown as {
-        extractRawText: (input: {
-          buffer: Buffer;
-        }) => Promise<{
+        extractRawText: (input: { buffer: Buffer }) => Promise<{
           value: string;
           messages: Array<{ type: string; message: string }>;
         }>;
         default?: {
-          extractRawText: (input: {
-            buffer: Buffer;
-          }) => Promise<{
+          extractRawText: (input: { buffer: Buffer }) => Promise<{
             value: string;
             messages: Array<{ type: string; message: string }>;
           }>;
         };
       };
       const extractRawText =
-        typeof mod.extractRawText === 'function'
-          ? mod.extractRawText
-          : mod.default?.extractRawText;
+        typeof mod.extractRawText === 'function' ? mod.extractRawText : mod.default?.extractRawText;
       if (!extractRawText) {
-        throw new DocumentParseFailedError(
-          'mammoth не предоставил extractRawText',
-        );
+        throw new DocumentParseFailedError('mammoth не предоставил extractRawText');
       }
       const result = await extractRawText({ buffer });
-      // mammoth.messages может содержать warning'и (неподдерживаемые стили) —
-      // не считаем это фейлом, но логируем.
       if (result.messages && result.messages.length > 0) {
         this.logger.debug(
           { messages: result.messages.slice(0, 5) },
@@ -244,10 +175,7 @@ export class DocumentParserService {
       };
     } catch (err) {
       if (err instanceof DocumentParseFailedError) throw err;
-      throw new DocumentParseFailedError(
-        err instanceof Error ? err.message : String(err),
-        err,
-      );
+      throw new DocumentParseFailedError(err instanceof Error ? err.message : String(err), err);
     }
   }
 
@@ -266,21 +194,10 @@ export class DocumentParserService {
       };
     } catch (err) {
       if (err instanceof DocumentParseFailedError) throw err;
-      throw new DocumentParseFailedError(
-        err instanceof Error ? err.message : String(err),
-        err,
-      );
+      throw new DocumentParseFailedError(err instanceof Error ? err.message : String(err), err);
     }
   }
 
-  /**
-   * Парсинг Excel-таблицы (.xlsx) через `exceljs` (ТЗ-4 Ф2).
-   *
-   * НЕ используем `xlsx`/SheetJS (известная CVE, см. ТЗ). ExcelJS уже стоит
-   * в проекте (рендер отчётов). Обходим все листы и строки, собираем текст
-   * ячеек; листы разделяем строкой-заголовком с именем листа — так LLM/embedding
-   * видит структуру «лист → строки».
-   */
   private async parseXlsx(buffer: Buffer): Promise<ParseResult> {
     try {
       const mod = (await import('exceljs')) as unknown as {
@@ -292,7 +209,6 @@ export class DocumentParserService {
         throw new DocumentParseFailedError('exceljs не предоставил Workbook');
       }
       const wb = new WorkbookCtor();
-      // ExcelJS принимает Buffer напрямую (поверх buffer.buffer как ArrayBuffer).
       await wb.xlsx.load(buffer);
 
       const lines: string[] = [];
@@ -304,7 +220,6 @@ export class DocumentParserService {
         lines.push(`# ${sheetName}`);
         worksheet.eachRow((row) => {
           const cells: string[] = [];
-          // includeEmpty:false по умолчанию — пробегаем только заполненные.
           row.eachCell((cell) => {
             const value = cellToText(cell.value);
             if (value.length > 0) cells.push(value);
@@ -319,18 +234,10 @@ export class DocumentParserService {
       };
     } catch (err) {
       if (err instanceof DocumentParseFailedError) throw err;
-      throw new DocumentParseFailedError(
-        err instanceof Error ? err.message : String(err),
-        err,
-      );
+      throw new DocumentParseFailedError(err instanceof Error ? err.message : String(err), err);
     }
   }
 
-  /**
-   * CSV (ТЗ-4 Ф2). officeparser умеет CSV (с `fileType: 'csv'`), но это
-   * простой текстовый формат — если парсер споткнётся, безопасно отдаём сырой
-   * UTF-8 (CSV самодостаточен как plain text для embedding'а/extract'а).
-   */
   private async parseCsv(content: Buffer | string): Promise<ParseResult> {
     const raw = toStringUtf8(content);
     try {
@@ -351,10 +258,6 @@ export class DocumentParserService {
     }
   }
 
-  /**
-   * Бинарные office-форматы (.pptx, .rtf, .odt) через `officeparser` (ТЗ-4 Ф2).
-   * Эти форматы не синтезировать руками — отдаём как есть в parseOffice.
-   */
   private async parseViaOfficeParser(
     buffer: Buffer,
     fileType: OfficeParserFileType,
@@ -367,18 +270,10 @@ export class DocumentParserService {
       };
     } catch (err) {
       if (err instanceof DocumentParseFailedError) throw err;
-      throw new DocumentParseFailedError(
-        err instanceof Error ? err.message : String(err),
-        err,
-      );
+      throw new DocumentParseFailedError(err instanceof Error ? err.message : String(err), err);
     }
   }
 
-  /**
-   * HTML-страница (выгрузка из вики/Confluence/Notion). Сначала officeparser
-   * (он чистит разметку умнее), при пустом/ошибочном результате — fallback на
-   * наш `stripHtmlTags` поверх сырого HTML.
-   */
   private async parseHtml(content: Buffer | string): Promise<ParseResult> {
     const raw = toStringUtf8(content);
     try {
@@ -399,43 +294,17 @@ export class DocumentParserService {
   }
 }
 
-// ─────────────────────────── officeparser bridge ───────────────────────
-
-/**
- * Поддерживаемые `officeparser` форматы, которые маршрутизирует наш switch.
- * Для бинарных (.pptx/.rtf/.odt) `fileType` опционален (автодетект по сигнатуре),
- * для текстовых (.csv/.html) — обязателен (см. Context7: IMPROPER_BUFFERS без хинта).
- */
 type OfficeParserFileType = 'pptx' | 'rtf' | 'odt' | 'csv' | 'html';
 
-/** Минимальный AST-контракт officeparser, который нам нужен (`toText()`). */
 interface OfficeParserAstLike {
   toText: () => string;
 }
 
-/**
- * Единая обёртка над `officeparser.parseOffice(...)` (v7.x, проверено
- * эмпирически на 7.2.1: `parseOffice(buffer, { fileType }) → AST`, `ast.toText()`
- * синхронно отдаёт plain text). Вынесена в модульную функцию, чтобы юнит-тесты
- * могли подменить пакет через `vi.mock('officeparser')`.
- *
- * Для текстовых форматов (csv/html) `fileType` обязателен — без него v7 кидает
- * `IMPROPER_BUFFERS`. Для бинарных тоже передаём хинт — это безопасно и быстрее.
- */
-async function runOfficeParser(
-  buffer: Buffer,
-  fileType: OfficeParserFileType,
-): Promise<string> {
+async function runOfficeParser(buffer: Buffer, fileType: OfficeParserFileType): Promise<string> {
   const mod = (await import('officeparser')) as unknown as {
-    parseOffice?: (
-      file: Buffer,
-      config?: { fileType?: string },
-    ) => Promise<OfficeParserAstLike>;
+    parseOffice?: (file: Buffer, config?: { fileType?: string }) => Promise<OfficeParserAstLike>;
     default?: {
-      parseOffice?: (
-        file: Buffer,
-        config?: { fileType?: string },
-      ) => Promise<OfficeParserAstLike>;
+      parseOffice?: (file: Buffer, config?: { fileType?: string }) => Promise<OfficeParserAstLike>;
     };
   };
   const parseOffice = mod.parseOffice ?? mod.default?.parseOffice;
@@ -446,7 +315,6 @@ async function runOfficeParser(
   return typeof ast?.toText === 'function' ? ast.toText() : '';
 }
 
-/** Тип ячейки ExcelJS, который нам нужен (`value`). Не тянем полный тип либы. */
 type ExcelCellLike = { value: unknown };
 type ExcelRowLike = { eachCell: (cb: (cell: ExcelCellLike) => void) => void };
 interface ExcelWorksheetLike {
@@ -459,11 +327,6 @@ interface ExcelWorkbookLike {
   eachSheet: (cb: (worksheet: ExcelWorksheetLike) => void) => void;
 }
 
-/**
- * Приводит значение ячейки ExcelJS к строке. ExcelJS возвращает разные формы:
- * примитивы, `{ richText: [...] }`, `{ text, hyperlink }`, `{ formula, result }`,
- * `{ error }`, `Date`. Берём человекочитаемый текст; неизвестное — JSON/String.
- */
 function cellToText(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value.trim();
@@ -496,8 +359,6 @@ function cellToText(value: unknown): string {
   return String(value);
 }
 
-// ─────────────────────────── helpers ───────────────────────────────────
-
 function toBuffer(content: Buffer | string): Buffer {
   if (Buffer.isBuffer(content)) return content;
   return Buffer.from(content, 'utf-8');
@@ -508,13 +369,6 @@ function toStringUtf8(content: Buffer | string): string {
   return content.toString('utf-8');
 }
 
-/**
- * Простая обёртка `Promise.race` с таймером — на наших объёмах достаточно,
- * не тянем `p-timeout` отдельной зависимостью. Если задача не успела —
- * бросаем `ParseTimeoutError`. Реальный процесс парсера не «отменяется»
- * (Node не даёт прервать sync-цикл), но resolved-результат после таймаута
- * проигнорируется.
- */
 async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout | null = null;
   const timeout = new Promise<never>((_, reject) => {
@@ -527,16 +381,6 @@ async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   }
 }
 
-/**
- * Удаляет HTML-теги из строки. Для markdown→plain text-конвертации.
- * Не парсер HTML — но для наших нужд (заглушающий plain-text для
- * embedding'ов и LLM-extract'а) достаточно.
- *
- *   - Удаляет `<tag>...</tag>` и self-closing `<tag/>`.
- *   - Декодирует базовые HTML-сущности (`&amp;`, `&lt;`, `&gt;`, `&quot;`,
- *     `&#39;`, `&nbsp;`).
- *   - Схлопывает множественные whitespace в один space, trim'ит концы.
- */
 function stripHtmlTags(html: string): string {
   return html
     .replace(/<[^>]*>/g, ' ')

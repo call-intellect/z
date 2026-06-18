@@ -7,16 +7,6 @@ import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { RouterService } from '../services/router.service';
 import { Specialist36Service } from '../services/specialist-3-6-ideas.service';
 
-/**
- * SBA β-5 — Specialist 3.6 (Ideas Collector) handler.
- *
- * Handler `core.specialist-routing` jobName='3-6-ideas'. Вызывается из
- * `SpecialistRoutingDispatcherWorker.dispatch`; делегирует в
- * `Specialist36Service.processBlock`.
- *
- * Идемпотентность через jobId `3-6-ideas_<blockId>` + KNN-кластеризацию
- * existing Idea в сервисе.
- */
 @Injectable()
 export class Specialist36IdeasWorker {
   private readonly logger = new Logger(Specialist36IdeasWorker.name);
@@ -68,7 +58,7 @@ export class Specialist36IdeasWorker {
         return;
       }
       await this.svc.processBlock({ tenantId, blockId });
-      this.logger.log(
+      this.logger.debug(
         { blockId, signalType: block.signalType },
         'specialist-3-6: блок обработан',
       );

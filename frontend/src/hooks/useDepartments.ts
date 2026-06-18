@@ -1,17 +1,9 @@
-'use client';
+"use client";
 
-/**
- * useDepartments — SWR-хук списка отделов организации.
- *
- * Backend: `GET /api/v1/departments` (SBA α-0c).
- */
-import { useMemo } from 'react';
-import useSWR from 'swr';
+import { useMemo } from "react";
+import useSWR from "swr";
 
-import {
-  departmentsApi,
-  type DepartmentApi,
-} from '@/api/structure.api';
+import { departmentsApi, type DepartmentApi } from "@/api/structure.api";
 
 export function useDepartments(orgId: string | null | undefined): {
   departments: DepartmentApi[];
@@ -19,12 +11,12 @@ export function useDepartments(orgId: string | null | undefined): {
   error: unknown;
   mutate: () => Promise<unknown>;
 } {
-  const key = orgId ? ['departments.list', orgId] : null;
+  const key = orgId ? ["departments.list", orgId] : null;
 
   const swr = useSWR(
     key,
     async () => {
-      if (!orgId) throw new Error('orgId required');
+      if (!orgId) throw new Error("orgId required");
       return departmentsApi.list(orgId);
     },
     { revalidateOnFocus: false },

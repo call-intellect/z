@@ -1,24 +1,3 @@
-/**
- * E2E-уровневый spec для entitlement-проверок ключевых эндпоинтов (Phase F.4).
- *
- * Поднимает мини-Nest-приложение с двумя контроллер-методами, каждый
- * помечен `@RequireEntitlement(<key>)`, и пробегается по трём тарифам:
- * tier_basic / tier_pro / tier_enterprise. Под каждым тарифом проверяем,
- * что для соответствующего эндпоинта guard либо пропускает (200), либо
- * блокирует (403).
- *
- * Реальный Nest + ENV не нужны — берём только Guard + Reflector + мок
- * EntitlementService.
- *
- * Покрытие требования ТЗ Phase F (F.4):
- *   - record-meeting       → feature.meeting (доступно basic+).
- *   - export-recording     → feature.export_advanced (pro+).
- *   - ai-report            → feature.ai_report (доступно basic+).
- *
- * Хотя basic пропускает 2 из 3, тест гарантирует, что отсутствие фичи
- * под нужным тарифом → 403, а наличие → 200. Это и есть смысл «3 e2e
- * под разными тарифами».
- */
 import { Controller, Get, INestApplication, Module } from '@nestjs/common';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
@@ -28,7 +7,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { EntitlementGuard } from './entitlement.guard';
 import { EntitlementService, ResolvedEntitlement } from './entitlement.service';
 import { RequireEntitlement } from './require-entitlement.decorator';
-import { ALL_FEATURES, ALL_QUOTAS, FeatureKey, QuotaKey, TIER_CONFIG, TierKey } from './tier-config';
+import {
+  ALL_FEATURES,
+  ALL_QUOTAS,
+  FeatureKey,
+  QuotaKey,
+  TIER_CONFIG,
+  TierKey,
+} from './tier-config';
 
 @Controller('test')
 class TestEntitledController {
@@ -87,7 +73,6 @@ async function buildApp(tier: TierKey): Promise<INestApplication> {
     imports: [TestModule],
   }).compile();
   const app = moduleRef.createNestApplication();
-  // Имитируем TenantGuard (выставляет req.tenantId).
   app.use((req: { tenantId?: string }, _res: unknown, next: () => void) => {
     req.tenantId = 'test-tenant';
     next();

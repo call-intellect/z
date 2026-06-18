@@ -1,67 +1,48 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Plus, Search } from 'lucide-react';
+import { useState } from "react";
+import { Plus, Search } from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { adminClonesApi, type CloneTypeApi } from '@/api/admin-clones.api';
+import { ApiError } from "@/api/api-error";
+import { adminClonesApi, type CloneTypeApi } from "@/api/admin-clones.api";
 import {
   accessGrantListFromApi,
   ACCESS_GRANT_STATUS_LABELS,
   CLONE_TYPE_LABELS,
   type AccessGrant,
   type AccessGrantStatus,
-} from '@/domain/admin-clone-access-grant';
-import { useAuth } from '@/contexts/auth-context';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
+} from "@/domain/admin-clone-access-grant";
+import { useAuth } from "@/contexts/auth-context";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Switch } from '@/ui/shadcn/switch';
+} from "@/ui/shadcn/select";
+import { Switch } from "@/ui/shadcn/switch";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../AdminStateViews';
-import { useAdminQuery } from '../useAdminQuery';
+} from "../AdminStateViews";
+import { useAdminQuery } from "../useAdminQuery";
 
-import { CreateGrantDialog } from './CreateGrantDialog';
-import { ExtendGrantDialog } from './ExtendGrantDialog';
-import { RevokeGrantDialog } from './RevokeGrantDialog';
+import { CreateGrantDialog } from "./CreateGrantDialog";
+import { ExtendGrantDialog } from "./ExtendGrantDialog";
+import { RevokeGrantDialog } from "./RevokeGrantDialog";
 
-/**
- * Главный клиент раздела «Управление доступом к клонам».
- *
- * Поток:
- *   1. Фильтры (cloneType, поиск по имени получателя, «только активные»),
- *      pagination (server-side).
- *   2. Таблица грантов с действиями «Отозвать» / «Продлить».
- *   3. Модал «Выдать грант» (CRUD-create).
- *
- * Поиск по `grantedTo.userName` фильтруется на клиенте — backend такого
- * параметра не поддерживает, а pageSize ≤ 200, на витрину доступов этого
- * достаточно.
- *
- * Состояния:
- *   - loading → `AdminLoading`.
- *   - forbidden (403) → `AdminForbidden`.
- *   - error → `AdminError` с retry.
- *   - empty (Org без грантов) → `AdminEmpty` с подсказкой «нажмите Выдать».
- */
 export function ClonesAccessClient() {
   const { currentOrgId, currentOrgRole, isLoading: authLoading } = useAuth();
 
-  const [cloneType, setCloneType] = useState<'all' | CloneTypeApi>('all');
-  const [activeFilter, setActiveFilter] = useState<'all' | 'active'>('active');
-  const [searchInput, setSearchInput] = useState('');
+  const [cloneType, setCloneType] = useState<"all" | CloneTypeApi>("all");
+  const [activeFilter, setActiveFilter] = useState<"all" | "active">("active");
+  const [searchInput, setSearchInput] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 50;
 
@@ -69,28 +50,20 @@ export function ClonesAccessClient() {
   const [revokeTarget, setRevokeTarget] = useState<AccessGrant | null>(null);
   const [extendTarget, setExtendTarget] = useState<AccessGrant | null>(null);
 
-  const key = `admin-clones-grants:${currentOrgId ?? '-'}:${cloneType}:${activeFilter}:${page}`;
+  const key = `admin-clones-grants:${currentOrgId ?? "-"}:${cloneType}:${activeFilter}:${page}`;
 
-  const q = useAdminQuery(
-    key,
-    async () => {
-      if (!currentOrgId) return null;
-      const res = await adminClonesApi.listAccessGrants(currentOrgId, {
-        page,
-        pageSize,
-        ...(cloneType !== 'all' ? { cloneType } : {}),
-        ...(activeFilter === 'active' ? { isActive: true } : {}),
-      });
-      return accessGrantListFromApi(res);
-    },
-    [currentOrgId, cloneType, activeFilter, page],
-  );
+  const q = useAdminQuery(key, async () => {
+    if (!currentOrgId) return null;
+    const res = await adminClonesApi.listAccessGrants(currentOrgId, {
+      page,
+      pageSize,
+      ...(cloneType !== "all" ? { cloneType } : {}),
+      ...(activeFilter === "active" ? { isActive: true } : {}),
+    });
+    return accessGrantListFromApi(res);
+  }, [currentOrgId, cloneType, activeFilter, page]);
 
-  // UI-permission check: разрешён только владельцу/админу Org. super_admin
-  // не имеет currentOrgRole, но всё равно сможет открыть страницу — backend
-  // решит через OrgAdminGuard.
-  const isAllowed =
-    currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const isAllowed = currentOrgRole === "owner" || currentOrgRole === "admin";
 
   if (!authLoading && !isAllowed) {
     return (
@@ -101,13 +74,12 @@ export function ClonesAccessClient() {
     );
   }
 
-  // Локальный фильтр по поиску (имя получателя или email).
   const searchLower = searchInput.trim().toLowerCase();
   const filteredItems = q.data
     ? q.data.items.filter((g) => {
         if (!searchLower) return true;
         const name = g.grantedTo.userName.toLowerCase();
-        const email = (g.grantedTo.userEmail ?? '').toLowerCase();
+        const email = (g.grantedTo.userEmail ?? "").toLowerCase();
         return name.includes(searchLower) || email.includes(searchLower);
       })
     : [];
@@ -134,7 +106,7 @@ export function ClonesAccessClient() {
           <Select
             value={cloneType}
             onValueChange={(v) => {
-              setCloneType(v as 'all' | CloneTypeApi);
+              setCloneType(v as "all" | CloneTypeApi);
               setPage(1);
             }}
           >
@@ -144,9 +116,7 @@ export function ClonesAccessClient() {
             <SelectContent>
               <SelectItem value="all">Все</SelectItem>
               <SelectItem value="role">{CLONE_TYPE_LABELS.role}</SelectItem>
-              <SelectItem value="person">
-                {CLONE_TYPE_LABELS.person}
-              </SelectItem>
+              <SelectItem value="person">{CLONE_TYPE_LABELS.person}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -176,9 +146,9 @@ export function ClonesAccessClient() {
 
         <label className="flex items-center gap-2 pb-[10px] text-xs">
           <Switch
-            checked={activeFilter === 'active'}
+            checked={activeFilter === "active"}
             onCheckedChange={(v) => {
-              setActiveFilter(v ? 'active' : 'all');
+              setActiveFilter(v ? "active" : "all");
               setPage(1);
             }}
           />
@@ -262,8 +232,6 @@ export function ClonesAccessClient() {
   );
 }
 
-// ─────────────── таблица ───────────────
-
 function AccessGrantsTable({
   items,
   onRevoke,
@@ -335,15 +303,15 @@ function AccessGrantRow({
         {grant.grantedBy.userName}
       </td>
       <td className="px-3 py-2 whitespace-nowrap text-xs text-fg-secondary">
-        {grant.grantedAt.toLocaleString('ru-RU')}
+        {grant.grantedAt.toLocaleString("ru-RU")}
       </td>
       <td className="px-3 py-2">
         <StatusBadge status={grant.status} />
       </td>
       <td className="px-3 py-2 whitespace-nowrap text-xs text-fg-secondary">
         {grant.expiresAt
-          ? grant.expiresAt.toLocaleString('ru-RU')
-          : 'бессрочно'}
+          ? grant.expiresAt.toLocaleString("ru-RU")
+          : "бессрочно"}
       </td>
       <td className="px-3 py-2">
         {grant.isActive ? (
@@ -375,20 +343,18 @@ function AccessGrantRow({
 }
 
 function StatusBadge({ status }: { status: AccessGrantStatus }) {
-  const variant: 'success' | 'danger' | 'secondary' =
-    status === 'active'
-      ? 'success'
-      : status === 'revoked'
-        ? 'danger'
-        : 'secondary';
+  const variant: "success" | "danger" | "secondary" =
+    status === "active"
+      ? "success"
+      : status === "revoked"
+        ? "danger"
+        : "secondary";
   return (
     <Badge variant={variant} className="text-[10px]">
       {ACCESS_GRANT_STATUS_LABELS[status]}
     </Badge>
   );
 }
-
-// ─────────────── пагинация ───────────────
 
 function PaginationBar({
   page,
@@ -405,14 +371,14 @@ function PaginationBar({
   if (totalPages <= 1) {
     return (
       <div className="text-xs text-fg-tertiary">
-        Всего грантов: {total.toLocaleString('ru-RU')}
+        Всего грантов: {total.toLocaleString("ru-RU")}
       </div>
     );
   }
   return (
     <div className="flex items-center justify-between text-xs text-fg-tertiary">
       <div>
-        Страница {page} из {totalPages} · всего {total.toLocaleString('ru-RU')}
+        Страница {page} из {totalPages} · всего {total.toLocaleString("ru-RU")}
       </div>
       <div className="flex items-center gap-2">
         <Button

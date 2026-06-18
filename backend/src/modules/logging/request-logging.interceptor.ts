@@ -13,13 +13,6 @@ import { LogService } from './log.service';
 
 type ReqUser = { id?: string; role?: string; isSuperAdmin?: boolean } | null;
 
-/**
- * LoggingModule — глобальный интерсептор УСПЕШНЫХ и ДОЛГИХ запросов.
- *
- * Пишет только при включённом `logSuccessfulRequests` ИЛИ если запрос медленный
- * (slow). 4xx/5xx НЕ пишет — их фиксирует `AllExceptionsFilter` (нет двойной
- * записи). См. plans/tz/2026-06-01-logging-module.md §7.
- */
 @Injectable()
 export class RequestLoggingInterceptor implements NestInterceptor {
   constructor(
@@ -39,8 +32,7 @@ export class RequestLoggingInterceptor implements NestInterceptor {
       tap((data) => {
         const cfg = this.settings.get();
         const duration = Date.now() - startedAt;
-        const isSlow =
-          cfg.slowRequestThresholdMs > 0 && duration >= cfg.slowRequestThresholdMs;
+        const isSlow = cfg.slowRequestThresholdMs > 0 && duration >= cfg.slowRequestThresholdMs;
 
         if (!cfg.logSuccessfulRequests && !isSlow) return;
 
@@ -81,11 +73,7 @@ export class RequestLoggingInterceptor implements NestInterceptor {
     );
   }
 
-  /** Контур по пути/роли (адаптация домена Коры). */
-  private resolveContour(
-    request: Request,
-    user: ReqUser,
-  ): SystemLogContour {
+  private resolveContour(request: Request, user: ReqUser): SystemLogContour {
     const path = (request.originalUrl ?? request.url ?? '').toLowerCase();
     if (path.startsWith('/api/v1/admin') || path.startsWith('/api/v1/platform')) {
       return SystemLogContour.SUPERADMIN;

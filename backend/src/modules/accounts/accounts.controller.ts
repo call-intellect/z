@@ -22,7 +22,10 @@ import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 
 import { AccountsService } from './accounts.service';
 import { ChangePasswordSchema, type ChangePasswordDto } from './dto/change-password.dto';
-import { SetInitialPasswordSchema, type SetInitialPasswordDto } from './dto/set-initial-password.dto';
+import {
+  SetInitialPasswordSchema,
+  type SetInitialPasswordDto,
+} from './dto/set-initial-password.dto';
 import { ForgotPasswordSchema, type ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginSchema, type LoginDto } from './dto/login.dto';
 import {
@@ -39,15 +42,6 @@ import { UpdateProfileSchema, type UpdateProfileDto } from './dto/update-profile
 
 const SESSION_COOKIE = 'z_session';
 
-/**
- * Контроллер standalone-аккаунтов: lead-style регистрация, login/logout,
- * forgot/reset password, профиль.
- *
- * Throttling — на самых уязвимых эндпоинтах:
- *   - /register, /login, /password/forgot — 5/15 минут на IP (защита от
- *     брутфорса и спама письмами).
- *   - /password/reset — 3/15 минут (защита от перебора reset-токена).
- */
 @ApiExcludeController()
 @Controller('api/v1/accounts')
 export class AccountsController {
@@ -55,8 +49,6 @@ export class AccountsController {
     @Inject(AccountsService) private readonly accounts: AccountsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
-
-  // ─────────────────────────── public ────────────────────────────
 
   @Post('register')
   @HttpCode(HttpStatus.OK)
@@ -67,9 +59,6 @@ export class AccountsController {
     const result = await this.accounts.register({
       email: body.email,
       name: body.name,
-      // audit В8: body.phone уже normalized в E.164 ('+7...') либо null
-      // (если ввод не прошёл регекс). null → не передаём — accounts.service
-      // увидит phone=undefined и не запишет ничего.
       ...(body.phone ? { phone: body.phone } : {}),
       ...(body.companyName !== undefined ? { companyName: body.companyName } : {}),
       ...(body.honeypot !== undefined ? { honeypot: body.honeypot } : {}),
@@ -91,7 +80,10 @@ export class AccountsController {
     @Body(new ZodValidationPipe(LoginSchema)) body: LoginDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-  ): Promise<{ user: ReturnType<AccountsService['getMe']> extends Promise<infer R> ? R : never; mustChangePassword: boolean }> {
+  ): Promise<{
+    user: ReturnType<AccountsService['getMe']> extends Promise<infer R> ? R : never;
+    mustChangePassword: boolean;
+  }> {
     const result = await this.accounts.login(body, {
       userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
       ip: req.ip ?? null,
@@ -118,11 +110,6 @@ export class AccountsController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<{ ok: true }> {
-    // jti читаем из req.user (установлено CookieAuthGuard) или payload —
-    // в зависимости от того, что текущий guard кладёт. Сейчас guard кладёт
-    // только { id, email, role }, поэтому подберём jti из самого JWT через
-    // повторный парс безопаснее. Но проще: текущая сессия — её мы и хотим
-    // отозвать, jti берём из req.user.jti (расширим контракт).
     const jti = (req.user as { jti?: string } | null | undefined)?.jti;
     if (jti) {
       await this.accounts.logout(jti);
@@ -160,12 +147,6 @@ export class AccountsController {
     return { ok: true };
   }
 
-  /**
-   * β-9 (2026-05-25) — запросить одноразовую ссылку для входа без пароля.
-   * Публичный эндпоинт с throttling (5 запросов / 15 минут на IP, плюс
-   * дополнительный per-email rate-limit внутри сервиса).
-   * Возвращает всегда `{ ok: true }` — защита от user enumeration.
-   */
   @Post('magic-link/request')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 900_000 } })
@@ -177,10 +158,6 @@ export class AccountsController {
     return { ok: true, email_sent: result.emailSent };
   }
 
-  /**
-   * β-9 (2026-05-25) — прожечь magic-link, открыть сессию.
-   * Публичный эндпоинт (одноразовый токен).
-   */
   @Post('magic-link/consume')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 10, ttl: 900_000 } })
@@ -193,8 +170,7 @@ export class AccountsController {
     const result = await this.accounts.consumeMagicLink(
       { token: body.token },
       {
-        userAgent:
-          typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+        userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
         ip: req.ip ?? null,
       },
     );
@@ -210,11 +186,6 @@ export class AccountsController {
     return { user: result.user };
   }
 
-  /**
-   * β-9 (2026-05-25) — принять приглашение по magic-token из письма.
-   * Публичный эндпоинт. Без auth, одноразовый токен. Под капотом
-   * создаёт User + Membership, открывает сессию (cookie).
-   */
   @Post('invitations/accept-magic')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 10, ttl: 900_000 } })
@@ -229,8 +200,7 @@ export class AccountsController {
     const result = await this.accounts.acceptInvitationMagicLink(
       { magicToken: body.magicToken },
       {
-        userAgent:
-          typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+        userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
         ip: req.ip ?? null,
       },
     );
@@ -245,8 +215,6 @@ export class AccountsController {
 
     return { user: result.user };
   }
-
-  // ─────────────────────────── private (cookie) ──────────────────
 
   @Get('me')
   @UseGuards(CookieAuthGuard)
@@ -287,12 +255,6 @@ export class AccountsController {
     return { ok: true };
   }
 
-  /**
-   * β-10 (2026-05-27) — установить пароль без знания текущего.
-   * Только для `mustChangePassword=true` аккаунтов, созданных через magic-link
-   * без email (placeholder @kora.local). Email-пользователи используют
-   * `change-password` со старым паролем из письма.
-   */
   @Post('me/set-initial-password')
   @HttpCode(HttpStatus.OK)
   @UseGuards(CookieAuthGuard)

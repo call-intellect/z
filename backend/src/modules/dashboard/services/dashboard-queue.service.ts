@@ -17,13 +17,6 @@ import {
   type MeetingRoiJobData,
 } from '../queues';
 
-/**
- * Producer-обёртка над BullMQ-очередями DashboardModule.
- *
- * Аналог `AiQueueService` / `CoreQueueService`. Используется HTTP-side и
- * другими worker'ами для enqueue, сами consumer'ы поднимаются в DI как
- * провайдеры (`MeetingRoiScorerWorker`, `DecisionHygieneScorerWorker`).
- */
 @Injectable()
 export class DashboardQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DashboardQueueService.name);
@@ -48,9 +41,7 @@ export class DashboardQueueService implements OnModuleInit, OnModuleDestroy {
       );
     }
     this.queues = map;
-    this.logger.log(
-      `DashboardQueueService инициализирован (${map.size} очередей)`,
-    );
+    this.logger.log(`DashboardQueueService инициализирован (${map.size} очередей)`);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -69,48 +60,29 @@ export class DashboardQueueService implements OnModuleInit, OnModuleDestroy {
     this.queues = null;
   }
 
-  /**
-   * Pulse Wave 6 §6.3 — постановка пересчёта Meeting ROI. jobId фиксированный
-   * по meetingId — повторный enqueue в течение жизни job'ы игнорируется
-   * (worker всё равно пересчитает корректное значение).
-   */
   async enqueueMeetingRoi(meetingId: string): Promise<void> {
     const q = this.requireQueue(DASHBOARD_QUEUE_NAMES.MEETING_ROI);
     const payload: MeetingRoiJobData = { meetingId };
-    // BullMQ 5.x: jobId с ':' допустим только при ровно 3 частях — используем '_'.
     const jobId = `meeting-roi_${meetingId}`;
     await q.add('meeting-roi', payload, { jobId });
     this.logger.debug(`enqueue dashboard.meeting-roi meeting=${meetingId}`);
   }
 
-  /**
-   * Pulse Wave 6 §6.8 — постановка LLM-классификации reversibility для
-   * Decision. jobId фиксированный по decisionId — повторные enqueue
-   * безопасны (worker skip'ает уже классифицированные).
-   */
-  async enqueueDecisionHygiene(args: {
-    decisionId: string;
-    tenantId: string;
-  }): Promise<void> {
+  async enqueueDecisionHygiene(args: { decisionId: string; tenantId: string }): Promise<void> {
     const q = this.requireQueue(DASHBOARD_QUEUE_NAMES.DECISION_HYGIENE);
     const payload: DecisionHygieneJobData = {
       decisionId: args.decisionId,
       tenantId: args.tenantId,
     };
-    // BullMQ 5.x: jobId с ':' допустим только при ровно 3 частях — используем '_'.
     const jobId = `decision-hygiene_${args.decisionId}`;
     await q.add('decision-hygiene', payload, { jobId });
-    this.logger.debug(
-      `enqueue dashboard.decision-hygiene decision=${args.decisionId}`,
-    );
+    this.logger.debug(`enqueue dashboard.decision-hygiene decision=${args.decisionId}`);
   }
 
   private requireQueue(name: DashboardQueueName): Queue<unknown> {
     const map = this.queues;
     if (!map) {
-      throw new Error(
-        'DashboardQueueService: попытка enqueue до onModuleInit',
-      );
+      throw new Error('DashboardQueueService: попытка enqueue до onModuleInit');
     }
     const q = map.get(name);
     if (!q) {

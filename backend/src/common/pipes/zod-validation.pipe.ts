@@ -1,14 +1,6 @@
 import { BadRequestException, Injectable, type PipeTransform } from '@nestjs/common';
 import { ZodError, type ZodSchema } from 'zod';
 
-/**
- * Пайп валидации DTO через zod-схему. Используется адресно в контроллерах:
- *   `@Body(new ZodValidationPipe(CreateMeetingSchema)) dto: CreateMeetingDto`
- *
- * Глобальный `ZodValidationPipe` без схемы в Nest бессмыслен (схему
- * определяет конкретный DTO), поэтому глобально мы регистрируем no-op
- * вариант, а валидация подключается на уровне эндпоинтов.
- */
 @Injectable()
 export class ZodValidationPipe<T> implements PipeTransform<unknown, T> {
   constructor(private readonly schema: ZodSchema<T>) {}
@@ -36,10 +28,6 @@ export class ZodValidationPipe<T> implements PipeTransform<unknown, T> {
   }
 }
 
-/**
- * Глобальный no-op пайп. Реальная валидация — через адресный
- * `new ZodValidationPipe(schema)` в `@Body()/@Query()`.
- */
 @Injectable()
 export class GlobalZodValidationPipe implements PipeTransform<unknown, unknown> {
   transform(value: unknown): unknown {

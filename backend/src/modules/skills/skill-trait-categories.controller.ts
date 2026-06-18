@@ -17,10 +17,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -40,18 +37,6 @@ import {
 } from './dto/skill-trait-categories.dto';
 import { SkillTraitCategoryService } from './services/skill-trait-categories.service';
 
-/**
- * SBA γ-1 доделки — REST API для SkillTraitCategory.
- *
- *   GET    /api/v1/skills/categories
- *   GET    /api/v1/skills/categories/:id
- *   POST   /api/v1/skills/categories
- *   PATCH  /api/v1/skills/categories/:id
- *   DELETE /api/v1/skills/categories/:id
- *   POST   /api/v1/skills/categories/merge
- *
- * RBAC: ResourceType 'skill_category' (см. policy.csv).
- */
 @ApiTags('skills')
 @Controller('api/v1/skills/categories')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -148,8 +133,6 @@ export class SkillTraitCategoriesController {
       via: 'rest',
     });
   }
-
-  // ─────────────────────────── helpers ────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

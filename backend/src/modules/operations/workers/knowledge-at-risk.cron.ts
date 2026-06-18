@@ -7,19 +7,6 @@ import { ConversationalService } from '../../conversational/conversational.servi
 import { KnowledgeAtRiskService } from '../services/knowledge-at-risk.service';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
-/**
- * TZ-1 Фаза 4.C (daily-value-engine) — KnowledgeAtRiskCron.
- *
- * Еженедельный `@Cron('0 5 * * 1')` (понедельник 05:00 UTC): обходит активные
- * Org → `KnowledgeAtRiskService.computeForTenant` (снимки знание-под-риском) →
- * для critical/warning записей с соло-экспертом шлёт push РУКОВОДИТЕЛЮ носителя
- * (глава отдела / fallback owner-admin) «продублируй зону X / поговори».
- *
- * Этика (Р8 / ТЗ Ф4.C): НОСИТЕЛЮ ничего не уходит — только руководителю.
- *
- * Master-flag `operations.knowledge_at_risk.enabled` (kill-switch, ON по
- * умолчанию). БЕЗ LLM. Метрика `knowledge_at_risk_total{severity}` — в сервисе.
- */
 @Injectable()
 export class KnowledgeAtRiskCron {
   private readonly logger = new Logger(KnowledgeAtRiskCron.name);
@@ -41,14 +28,12 @@ export class KnowledgeAtRiskCron {
       true,
     );
     if (!enabled) {
-      this.logger.debug(
-        'knowledge-at-risk.cron: operations.knowledge_at_risk.enabled=false, skip',
-      );
+      this.logger.debug('knowledge-at-risk.cron: operations.knowledge_at_risk.enabled=false, skip');
       return;
     }
     try {
       const stats = await this.runOnce(new Date());
-      this.logger.log(stats, 'knowledge-at-risk.cron: проход завершён');
+      this.logger.debug(stats, 'knowledge-at-risk.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -57,7 +42,6 @@ export class KnowledgeAtRiskCron {
     }
   }
 
-  /** Выделен для unit-тестов: произвольный `now`. */
   async runOnce(now: Date): Promise<{
     orgsProcessed: number;
     snapshots: number;
@@ -110,11 +94,6 @@ export class KnowledgeAtRiskCron {
     return { orgsProcessed: orgs.length, snapshots, atRisk, notified, errors };
   }
 
-  /**
-   * Push руководителю носителя (глава отдела носителя; fallback — owner/admin
-   * Org). Носителю — НИЧЕГО (этика). priorityTier=2 (важно, но не critical).
-   * Возвращает число отправленных пушей.
-   */
   private async notifyManager(args: {
     tenantId: string;
     categoryName: string;
@@ -161,10 +140,6 @@ export class KnowledgeAtRiskCron {
     return sent;
   }
 
-  /**
-   * Руководитель носителя: глава его primary-отдела (≠ сам носитель). Если не
-   * нашёлся — fallback на owner/admin Org. Возвращает уникальные User.id.
-   */
   private async resolveManagerUserIds(args: {
     tenantId: string;
     soleExpertPersonId: string;
@@ -199,7 +174,6 @@ export class KnowledgeAtRiskCron {
     }
 
     if (userIds.size === 0) {
-      // Fallback — owner/admin Org (но НЕ сам носитель, если он owner/admin).
       const expertUser = await this.prisma.person.findFirst({
         where: { tenantId: args.tenantId, id: args.soleExpertPersonId },
         select: { userId: true },

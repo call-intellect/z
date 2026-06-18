@@ -3,6 +3,8 @@ import type { IdeaBlockLinkType } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
+import { ACTIVE_LINK_FILTER } from './link-read-filter';
+
 /**
  * KC-Temporal W3.2 (2026-05-25) — Reasoning chains first-class.
  *
@@ -136,7 +138,7 @@ export class ReasoningChainService {
       const links = await this.prisma.ideaBlockLink.findMany({
         where: {
           tenantId,
-          status: 'active',
+          ...ACTIVE_LINK_FILTER,
           relationType: { in: [...REASONING_LINK_TYPES] },
           OR: [
             { fromBlockId: { in: frontier } },

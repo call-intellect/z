@@ -2,17 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GoalThemeLinkerService } from './goal-theme-linker.service';
 
-/**
- * Agent-chain overhaul Фаза 4.2 — unit-тесты GoalThemeLinkerService.
- *
- * Мокаем Prisma / CoreQueue / Metrics / TypedConfig. Покрываем:
- *   (a) провенанс: sourceBlockIds ∩ ThemeIdeaBlock → linked>0, source='ai',
- *       weight корректный, enqueueStrategicAlignment вызван;
- *   (b) ручная цель (sourceBlockIds пустой) → linked=0, enqueue НЕ вызван;
- *   (c) co-mention добавляет тему, которой нет в провенансе;
- *   (d) weight ниже minWeight → не привязывается, enqueue НЕ вызван.
- */
-
 const TENANT = 'org-1';
 const GOAL_ID = 'goal-1';
 
@@ -30,9 +19,10 @@ interface Mocks {
   cfg: { goals: { themeAutolinkMinWeight: number; themeAutolinkLlmEnabled: boolean } };
 }
 
-function buildService(
-  cfgOverrides: Partial<Mocks['cfg']['goals']> = {},
-): { svc: GoalThemeLinkerService; m: Mocks } {
+function buildService(cfgOverrides: Partial<Mocks['cfg']['goals']> = {}): {
+  svc: GoalThemeLinkerService;
+  m: Mocks;
+} {
   const m: Mocks = {
     prisma: {
       goal: { findUnique: vi.fn() },
@@ -77,12 +67,8 @@ describe('GoalThemeLinkerService.linkGoalThemes', () => {
       tenantId: TENANT,
       sourceBlockIds: ['b1', 'b2'],
     });
-    // Оба блока цели в теме t1 → weight = 2/2 = 1.0.
-    m.prisma.themeIdeaBlock.findMany.mockResolvedValue([
-      { themeId: 't1' },
-      { themeId: 't1' },
-    ]);
-    m.prisma.theme.findMany.mockResolvedValue([{ id: 't1' }]); // активная
+    m.prisma.themeIdeaBlock.findMany.mockResolvedValue([{ themeId: 't1' }, { themeId: 't1' }]);
+    m.prisma.theme.findMany.mockResolvedValue([{ id: 't1' }]);
     m.prisma.goalTheme.createMany.mockResolvedValue({ count: 1 });
 
     const res = await svc.linkGoalThemes(TENANT, GOAL_ID);
@@ -128,19 +114,13 @@ describe('GoalThemeLinkerService.linkGoalThemes', () => {
       tenantId: TENANT,
       sourceBlockIds: ['b1', 'b2'],
     });
-    // Нет провенанса.
     m.prisma.themeIdeaBlock.findMany.mockResolvedValue([]);
-    // Сущности блоков цели.
-    m.prisma.ideaBlockEntity.findMany.mockResolvedValue([
-      { entityId: 'e1' },
-      { entityId: 'e2' },
-    ]);
-    // Тема t2 упоминает обе сущности → weight = 2/2 = 1.0.
+    m.prisma.ideaBlockEntity.findMany.mockResolvedValue([{ entityId: 'e1' }, { entityId: 'e2' }]);
     m.prisma.themeEntity.findMany.mockResolvedValue([
       { themeId: 't2', entityId: 'e1' },
       { themeId: 't2', entityId: 'e2' },
     ]);
-    m.prisma.theme.findMany.mockResolvedValue([{ id: 't2' }]); // активная
+    m.prisma.theme.findMany.mockResolvedValue([{ id: 't2' }]);
     m.prisma.goalTheme.createMany.mockResolvedValue({ count: 1 });
 
     const res = await svc.linkGoalThemes(TENANT, GOAL_ID);
@@ -162,22 +142,10 @@ describe('GoalThemeLinkerService.linkGoalThemes', () => {
   });
 
   it('(d) weight ниже minWeight → не привязывается, enqueue НЕ вызван', async () => {
-    // minWeight=0.5; провенанс даст weight 1/10 = 0.1 < 0.5.
     ({ svc, m } = buildService({ themeAutolinkMinWeight: 0.5 }));
     m.prisma.goal.findUnique.mockResolvedValue({
       tenantId: TENANT,
-      sourceBlockIds: [
-        'b1',
-        'b2',
-        'b3',
-        'b4',
-        'b5',
-        'b6',
-        'b7',
-        'b8',
-        'b9',
-        'b10',
-      ],
+      sourceBlockIds: ['b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 'b8', 'b9', 'b10'],
     });
     m.prisma.themeIdeaBlock.findMany.mockResolvedValue([{ themeId: 't1' }]);
     m.prisma.theme.findMany.mockResolvedValue([{ id: 't1' }]);

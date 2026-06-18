@@ -4,23 +4,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { DATACLASS_RANK, DataClassPolicyService } from './dataclass-policy.service';
 import type { DataClassSource, DerivedKind } from './dataclass-policy.types';
 
-/**
- * W4.1 — unit-тесты `DataClassPolicyService`.
- *
- * Источник инвариантов: plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md
- * §4 + §W4.1 (Property-based тесты).
- *
- * `fast-check` в backend/package.json отсутствует — используем табличные
- * unit-тесты, покрывающие те же инварианты на репрезентативных кейсах.
- * При добавлении `fast-check` (отдельная фаза) тесты можно переписать на
- * property-based без потери покрытия.
- */
-
-// Заглушка TypedConfigService — derive() не дёргает getDynamic (только
-// version). canEmit читает `dataClassPolicy.outboundGatingEnabled` (W4.3).
-function makeService(opts?: {
-  outboundGatingEnabled?: boolean;
-}): DataClassPolicyService {
+function makeService(opts?: { outboundGatingEnabled?: boolean }): DataClassPolicyService {
   const fakeCfg = {
     dataClassPolicy: {
       enforcement: 'shadow' as const,
@@ -33,9 +17,7 @@ function makeService(opts?: {
   return new DataClassPolicyService(fakeCfg);
 }
 
-function src(
-  overrides: Partial<DataClassSource> = {},
-): DataClassSource {
+function src(overrides: Partial<DataClassSource> = {}): DataClassSource {
   return {
     dataClass: 'internal',
     sourceId: 'b1',
@@ -54,7 +36,6 @@ describe('DataClassPolicyService.derive — инварианты W4.1', () => {
     svc = makeService();
   });
 
-  // ── #1 Идемпотентность: один источник → результат >= источника ───────
   it('идемпотентность: derive([s], kind).dataClass >= s.dataClass', () => {
     const kinds: DerivedKind[] = [
       'insight',
@@ -78,7 +59,6 @@ describe('DataClassPolicyService.derive — инварианты W4.1', () => {
     }
   });
 
-  // ── #2 Монотонность: добавление источников не понижает результат ─────
   it('монотонность: derive([a,b], k) >= max(derive([a],k), derive([b],k))', () => {
     const kind: DerivedKind = 'insight';
     const cases: Array<[DataClass, DataClass]> = [
@@ -97,10 +77,7 @@ describe('DataClassPolicyService.derive — инварианты W4.1', () => {
         context: { kind },
       }).dataClass;
       const rab = svc.derive({
-        sources: [
-          src({ dataClass: a, sourceId: 'a' }),
-          src({ dataClass: b, sourceId: 'b' }),
-        ],
+        sources: [src({ dataClass: a, sourceId: 'a' }), src({ dataClass: b, sourceId: 'b' })],
         context: { kind },
       }).dataClass;
       const expectedMin = Math.max(DATACLASS_RANK[ra], DATACLASS_RANK[rb]);
@@ -108,7 +85,6 @@ describe('DataClassPolicyService.derive — инварианты W4.1', () => {
     }
   });
 
-  // ── #3 Sensitive не утекает: ≥1 sensitive → result ∈ {sensitive,private} ─
   it('sensitive не утекает: при ≥1 sensitive в sources результат ∈ {sensitive,private}', () => {
     const kinds: DerivedKind[] = [
       'insight',
@@ -131,7 +107,6 @@ describe('DataClassPolicyService.derive — инварианты W4.1', () => {
     }
   });
 
-  // ── #4 Private aggregation: ≥1 private + kind=insight → sensitive ────
   it('private aggregation: ≥2 разных subjectPersonId в private+insight → sensitive, subjectPersonId=null', () => {
     const result = svc.derive({
       sources: [
@@ -170,7 +145,6 @@ describe('DataClassPolicyService.derive — инварианты W4.1', () => {
     expect(result.subjectPersonId).toBe('alice');
   });
 
-  // ── #5 Floor executable_persona: всегда >= internal ──────────────────
   it('floor executable_persona/skill_profile: всегда >= internal даже при всех public', () => {
     for (const kind of ['executable_persona', 'skill_profile'] as DerivedKind[]) {
       const result = svc.derive({
@@ -180,9 +154,7 @@ describe('DataClassPolicyService.derive — инварианты W4.1', () => {
         ],
         context: { kind },
       }).dataClass;
-      expect(DATACLASS_RANK[result]).toBeGreaterThanOrEqual(
-        DATACLASS_RANK['internal'],
-      );
+      expect(DATACLASS_RANK[result]).toBeGreaterThanOrEqual(DATACLASS_RANK['internal']);
       expect(result).toBe('internal');
     }
   });
@@ -204,7 +176,6 @@ describe('DataClassPolicyService.derive — инварианты W4.1', () => {
     expect(result.audit.rule).toBe('explicit-floor');
   });
 
-  // ── audit-trail ──────────────────────────────────────────────────────
   it('audit заполняется: sourceIds + inputClasses + policyVersion + derivedAt', () => {
     const result = svc.derive({
       sources: [
@@ -237,7 +208,6 @@ describe('DataClassPolicyService.canEmit — gating outbound каналов', ()
     svc = makeService();
   });
 
-  // ── #6 canEmit reject: sink.maxDataClass=internal + payload=sensitive ─
   it('reject: sink.maxDataClass=internal + payload=sensitive → allowed=false', () => {
     const result = svc.canEmit({
       payloadDataClass: 'sensitive',
@@ -300,12 +270,10 @@ describe('DataClassPolicyService.compareWithLegacy — shadow-метрики', (
   });
 });
 
-// ──────── W4.2 KC-Temporal (2026-05-25) — регрессии enforce-режима ────────
 describe('W4.2 — floor применяется и dataClass не понижается', () => {
   const svc = makeService();
 
   it('floor для каждого kind ≥ max(source.dataClass) ∩ legacy floor', () => {
-    // По таблице §4 ТЗ: floor для основных kind'ов.
     const expectedFloor: Record<string, DataClass> = {
       insight: 'internal',
       decision: 'internal',
@@ -319,14 +287,11 @@ describe('W4.2 — floor применяется и dataClass не понижае
       policy: 'internal',
     };
     for (const [kind, floor] of Object.entries(expectedFloor)) {
-      // public-источник → kind floor лифтит результат до 'internal'.
       const r = svc.derive({
         sources: [src({ dataClass: 'public' })],
         context: { kind: kind as DerivedKind },
       });
-      expect(DATACLASS_RANK[r.dataClass]).toBeGreaterThanOrEqual(
-        DATACLASS_RANK[floor],
-      );
+      expect(DATACLASS_RANK[r.dataClass]).toBeGreaterThanOrEqual(DATACLASS_RANK[floor]);
     }
   });
 
@@ -349,15 +314,12 @@ describe('W4.2 — floor применяется и dataClass не понижае
           sources: [src({ dataClass: dc })],
           context: { kind },
         });
-        expect(DATACLASS_RANK[r.dataClass]).toBeGreaterThanOrEqual(
-          DATACLASS_RANK[dc],
-        );
+        expect(DATACLASS_RANK[r.dataClass]).toBeGreaterThanOrEqual(DATACLASS_RANK[dc]);
       }
     }
   });
 });
 
-// ──────── W4.3 KC-Temporal (2026-05-25) — outbound gating ─────────────────
 describe('W4.3 — canEmit для kind=channel_binding', () => {
   let svc: DataClassPolicyService;
   beforeEach(() => {
@@ -519,10 +481,9 @@ describe('W4.3 — canEmit для kind=public_api', () => {
       }).allowed,
     ).toBe(true);
     for (const dc of ['internal', 'sensitive', 'private'] as DataClass[]) {
-      expect(
-        svc.canEmit({ payloadDataClass: dc, sink: { kind: 'public_api' } })
-          .allowed,
-      ).toBe(false);
+      expect(svc.canEmit({ payloadDataClass: dc, sink: { kind: 'public_api' } }).allowed).toBe(
+        false,
+      );
     }
   });
 });

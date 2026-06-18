@@ -29,21 +29,6 @@ import {
   type IndustrySlug,
 } from './functional-domain.seeds';
 
-/**
- * SBA α-9 wave 3 — управление FunctionalDomain (дерево функциональных областей).
- *
- * Бизнес-правила:
- *   - tenant-isolation на всех чтении/записи.
- *   - soft-delete (deletedAt) — записи остаются для исторического анализа
- *     и совместимости с linked Department'ами.
- *   - parentDomainId должен принадлежать тому же tenantId.
- *   - depth ≤ 5 (anti-loop, см. ТЗ §17).
- *   - детектор циклов: при INSERT/UPDATE проверяем, что this.id не встречается
- *     в цепочке предков нового parent'а.
- *   - isSystem=true (seed) защищён от delete — только update name/desc/icon.
- *
- * Реализует IOrganizationalUnit-фабрику через `toUnit()`.
- */
 @Injectable()
 export class FunctionalDomainService {
   private readonly logger = new Logger(FunctionalDomainService.name);
@@ -54,18 +39,11 @@ export class FunctionalDomainService {
     @Inject(AuditLogService) private readonly audit: AuditLogService,
   ) {}
 
-  // ─────────────────────────── list / get ───────────────────────────
-
-  async list(args: {
-    tenantId: string;
-    query: ListDomainsQuery;
-  }): Promise<ListDomainsResponseDto> {
+  async list(args: { tenantId: string; query: ListDomainsQuery }): Promise<ListDomainsResponseDto> {
     const where: Prisma.FunctionalDomainWhereInput = {
       tenantId: args.tenantId,
       ...(args.query.includeDeleted ? {} : { deletedAt: null }),
-      ...(args.query.onlySystem !== undefined
-        ? { isSystem: args.query.onlySystem }
-        : {}),
+      ...(args.query.onlySystem !== undefined ? { isSystem: args.query.onlySystem } : {}),
     };
     const rows = await this.prisma.functionalDomain.findMany({
       where,
@@ -75,12 +53,9 @@ export class FunctionalDomainService {
     const total = rows.length;
     const linkCounts = await this.countLinks(rows.map((d) => d.id));
 
-    const items: FunctionalDomainDto[] = rows.map((d) =>
-      this.toDto(d, linkCounts.get(d.id) ?? 0),
-    );
+    const items: FunctionalDomainDto[] = rows.map((d) => this.toDto(d, linkCounts.get(d.id) ?? 0));
 
     if (args.query.includeChildren) {
-      // Постройка дерева: для каждого root nestим children из того же list'а.
       const byId = new Map<string, FunctionalDomainDto>();
       for (const it of items) byId.set(it.id, { ...it, children: [] });
       const roots: FunctionalDomainDto[] = [];
@@ -113,8 +88,6 @@ export class FunctionalDomainService {
     const linkCount = (await this.countLinks([dom.id])).get(dom.id) ?? 0;
     return this.toDto(dom, linkCount);
   }
-
-  // ─────────────────────────── create / update / delete ─────────────
 
   async create(args: {
     tenantId: string;
@@ -187,11 +160,7 @@ export class FunctionalDomainService {
       }
       if (args.body.parentDomainId !== null) {
         await this.assertParentExists(args.tenantId, args.body.parentDomainId);
-        await this.assertNoCycle(
-          args.tenantId,
-          args.id,
-          args.body.parentDomainId,
-        );
+        await this.assertNoCycle(args.tenantId, args.id, args.body.parentDomainId);
         await this.assertDepthOk(args.tenantId, args.body.parentDomainId);
       }
     }
@@ -279,15 +248,6 @@ export class FunctionalDomainService {
     };
   }
 
-  // ─────────────────────────── seed-template ────────────────────────
-
-  /**
-   * Создать базовый набор FunctionalDomain под выбранную индустрию.
-   * Идемпотентно: существующие домены по slug пропускаются.
-   *
-   * При первом вызове в новой Org обычно создаются BASE_FUNCTIONAL_DOMAINS
-   * (8 штук) + per-industry надстройка (5–10 доменов).
-   */
   async seedTemplate(args: {
     tenantId: string;
     userId: string;
@@ -295,7 +255,6 @@ export class FunctionalDomainService {
   }): Promise<SeedTemplateResponseDto> {
     let created = 0;
     let skipped = 0;
-    // 1. Базовые 8 доменов (всегда добавляем — это «костяк» любой компании).
     const baseSlugByName = new Map<string, string>();
     for (const it of BASE_FUNCTIONAL_DOMAINS) {
       const exists = await this.prisma.functionalDomain.findUnique({
@@ -320,10 +279,8 @@ export class FunctionalDomainService {
       created++;
     }
 
-    // 2. Per-industry надстройка — обычно дочки к существующим базовым.
     const tpl = INDUSTRY_DOMAIN_TEMPLATES[args.industry];
     if (tpl) {
-      // Подтянуть свежие id для базовых (parent резолвится по slug).
       const baseRows = await this.prisma.functionalDomain.findMany({
         where: {
           tenantId: args.tenantId,
@@ -340,7 +297,7 @@ export class FunctionalDomainService {
           skipped++;
           continue;
         }
-        const parentId = it.parentSlug ? idBySlug.get(it.parentSlug) ?? null : null;
+        const parentId = it.parentSlug ? (idBySlug.get(it.parentSlug) ?? null) : null;
         await this.prisma.functionalDomain.create({
           data: {
             tenantId: args.tenantId,
@@ -372,8 +329,6 @@ export class FunctionalDomainService {
     return { created, skipped, industry: args.industry };
   }
 
-  // ─────────────────────────── IOrganizationalUnit ───────────────────
-
   toUnit(row: FunctionalDomain): IOrganizationalUnit {
     const prisma = this.prisma;
     const getChildrenFromPrisma = async (): Promise<IOrganizationalUnit[]> => {
@@ -400,8 +355,6 @@ export class FunctionalDomainService {
     };
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
   private async countLinks(domainIds: string[]): Promise<Map<string, number>> {
     const out = new Map<string, number>();
     if (domainIds.length === 0) return out;
@@ -415,10 +368,7 @@ export class FunctionalDomainService {
     return out;
   }
 
-  private async assertParentExists(
-    tenantId: string,
-    parentId: string,
-  ): Promise<void> {
+  private async assertParentExists(tenantId: string, parentId: string): Promise<void> {
     const parent = await this.prisma.functionalDomain.findUnique({
       where: { id: parentId },
       select: { tenantId: true, deletedAt: true },
@@ -434,10 +384,7 @@ export class FunctionalDomainService {
     }
   }
 
-  private async assertDepthOk(
-    tenantId: string,
-    parentId: string,
-  ): Promise<void> {
+  private async assertDepthOk(tenantId: string, parentId: string): Promise<void> {
     let depth = 1;
     let currentId: string | null = parentId;
     while (currentId) {
@@ -460,9 +407,6 @@ export class FunctionalDomainService {
     }
   }
 
-  /**
-   * Проверка: новый parent → ... → predecessor НЕ ведёт к thisId.
-   */
   private async assertNoCycle(
     tenantId: string,
     thisId: string,
@@ -480,7 +424,7 @@ export class FunctionalDomainService {
           },
         });
       }
-      if (seen.has(currentId)) break; // уже существующий цикл — не наша проблема
+      if (seen.has(currentId)) break;
       seen.add(currentId);
       const next: { parentDomainId: string | null } | null =
         await this.prisma.functionalDomain.findUnique({
@@ -492,10 +436,7 @@ export class FunctionalDomainService {
   }
 
   private handleUniqueViolation(err: unknown, slug: string | undefined): void {
-    if (
-      err instanceof Prisma.PrismaClientKnownRequestError &&
-      err.code === 'P2002'
-    ) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       throw new ConflictException({
         ok: false,
         error: {

@@ -1,49 +1,44 @@
-'use client';
+"use client";
 
-/**
- * `/admin/llm-routes` — клиентский компонент: таблица всех taskType + фильтры.
- *
- * Все строки на русском (memory `feedback_admin_ui_russian_only`).
- */
+import { useMemo, useState } from "react";
+import { Pencil, Search } from "lucide-react";
 
-import { useMemo, useState } from 'react';
-import { Pencil, Search } from 'lucide-react';
-
-import { ApiError } from '@/api/api-error';
-import { LLM_PROVIDERS, type LlmProvider } from '@/api/admin-llm-routes.api';
+import { ApiError } from "@/api/api-error";
+import { LLM_PROVIDERS, type LlmProvider } from "@/api/admin-llm-routes.api";
 import {
   providerLabel,
   type LlmRouteUi,
   type LlmRouteTierEntryUi,
-} from '@/domain/admin-llm-route';
-import { useLlmRoutes } from '@/hooks/useLlmRoutes';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Checkbox } from '@/ui/shadcn/checkbox';
+} from "@/domain/admin-llm-route";
+import { useLlmRoutes } from "@/hooks/useLlmRoutes";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Checkbox } from "@/ui/shadcn/checkbox";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../AdminStateViews';
-import { EditRouteDialog } from './EditRouteDialog';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../AdminStateViews";
+import { EditRouteDialog } from "./EditRouteDialog";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 export function LlmRoutesClient() {
   const { routes, error, isLoading, mutate } = useLlmRoutes();
 
-  const [search, setSearch] = useState('');
-  const [providerFilter, setProviderFilter] =
-    useState<'all' | LlmProvider>('all');
+  const [search, setSearch] = useState("");
+  const [providerFilter, setProviderFilter] = useState<"all" | LlmProvider>(
+    "all",
+  );
   const [editedOnly, setEditedOnly] = useState(false);
   const [editing, setEditing] = useState<LlmRouteUi | null>(null);
 
@@ -52,7 +47,7 @@ export function LlmRoutesClient() {
     return routes.filter((r) => {
       if (q && !r.taskType.toLowerCase().includes(q)) return false;
       if (
-        providerFilter !== 'all' &&
+        providerFilter !== "all" &&
         r.primary?.providerName !== providerFilter
       ) {
         return false;
@@ -62,20 +57,20 @@ export function LlmRoutesClient() {
     });
   }, [routes, search, providerFilter, editedOnly]);
 
-  const isForbidden = error instanceof ApiError && error.code === 'forbidden';
+  const isForbidden = error instanceof ApiError && error.code === "forbidden";
   const errorMessage =
     error && !isForbidden
       ? error instanceof ApiError
         ? error.message
-        : 'Не удалось загрузить роуты'
+        : "Не удалось загрузить роуты"
       : null;
 
   return (
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'AI и модели' },
-        { label: 'Управление роутами LLM' },
+        { label: "AI и модели" },
+        { label: "Управление роутами LLM" },
       ]}
       title="Управление роутами LLM"
       description="Цепочка primary → secondary → tertiary для каждого taskType. Источник правды — БД LlmTaskRoute. После сохранения seed-скрипты не перезатрут эту настройку."
@@ -96,7 +91,7 @@ export function LlmRoutesClient() {
         </div>
         <Select
           value={providerFilter}
-          onValueChange={(v) => setProviderFilter(v as 'all' | LlmProvider)}
+          onValueChange={(v) => setProviderFilter(v as "all" | LlmProvider)}
         >
           <SelectTrigger className="h-9 w-56 bg-bg-card text-sm">
             <SelectValue />
@@ -131,13 +126,13 @@ export function LlmRoutesClient() {
         <AdminEmpty
           title={
             routes.length === 0
-              ? 'Роуты не настроены'
-              : 'По фильтру ничего не найдено'
+              ? "Роуты не настроены"
+              : "По фильтру ничего не найдено"
           }
           description={
             routes.length === 0
-              ? 'Запустите seed-скрипт `bun run scripts/seed-llm-task-routes-default.ts` на бэкенде, чтобы применить дефолтные цепочки.'
-              : 'Попробуйте сбросить фильтры или ввести другой поисковый запрос.'
+              ? "Запустите seed-скрипт `bun run scripts/seed-llm-task-routes-default.ts` на бэкенде, чтобы применить дефолтные цепочки."
+              : "Попробуйте сбросить фильтры или ввести другой поисковый запрос."
           }
         />
       )}
@@ -152,8 +147,12 @@ export function LlmRoutesClient() {
                 <th className="px-3 py-2 text-left font-medium">Secondary</th>
                 <th className="px-3 py-2 text-left font-medium">Tertiary</th>
                 <th className="px-3 py-2 text-left font-medium">Статус</th>
-                <th className="px-3 py-2 text-left font-medium">Изменено админом</th>
-                <th className="w-28 px-3 py-2 text-right font-medium">Действия</th>
+                <th className="px-3 py-2 text-left font-medium">
+                  Изменено админом
+                </th>
+                <th className="w-28 px-3 py-2 text-right font-medium">
+                  Действия
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -197,7 +196,9 @@ function RouteRow({
   return (
     <tr className="border-t border-border-subtle">
       <td className="px-3 py-2">
-        <code className="font-mono text-xs text-fg-primary">{route.taskType}</code>
+        <code className="font-mono text-xs text-fg-primary">
+          {route.taskType}
+        </code>
       </td>
       <td className="px-3 py-2">
         <TierCell entry={route.primary} />
@@ -217,7 +218,10 @@ function RouteRow({
             Активен
           </Badge>
         ) : (
-          <Badge variant="outline" className="border-border-subtle bg-bg-subtle text-fg-secondary">
+          <Badge
+            variant="outline"
+            className="border-border-subtle bg-bg-subtle text-fg-secondary"
+          >
             Выключен
           </Badge>
         )}

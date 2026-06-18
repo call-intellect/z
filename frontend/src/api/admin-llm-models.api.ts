@@ -1,26 +1,23 @@
-/**
- * SBA α-10 wave 3 — API-клиент для admin LLM models registry.
- */
-import { apiClient } from './api-client';
-import { buildQuery } from './admin-helpers';
+import { apiClient } from "./api-client";
+import { buildQuery } from "./admin-helpers";
 import type {
   AdminLlmModelApi,
   AdminLlmModelListApi,
   AdminLlmModelPriceHistoryApi,
   CreateLlmModelRequest,
   UpdateLlmModelRequest,
-} from '@/domain/admin-llm-model';
+} from "@/domain/admin-llm-model";
 
 export const adminLlmModelsApi = {
   list: (
     req: {
       providerId?: string;
       category?:
-        | 'flagship'
-        | 'fast'
-        | 'reasoning'
-        | 'embedding'
-        | 'experimental';
+        | "flagship"
+        | "fast"
+        | "reasoning"
+        | "embedding"
+        | "experimental";
       includeInactive?: boolean;
     } = {},
   ) =>
@@ -41,7 +38,7 @@ export const adminLlmModelsApi = {
     ),
 
   create: (body: CreateLlmModelRequest) =>
-    apiClient.post<AdminLlmModelApi>('/api/v1/admin/llm-models', body),
+    apiClient.post<AdminLlmModelApi>("/api/v1/admin/llm-models", body),
 
   update: (id: string, body: UpdateLlmModelRequest) =>
     apiClient.patch<AdminLlmModelApi>(`/api/v1/admin/llm-models/${id}`, body),

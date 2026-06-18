@@ -1,16 +1,5 @@
 import { Injectable } from '@nestjs/common';
 
-/**
- * In-memory snapshot популярных одноразовых почтовых доменов.
- *
- * Используется при регистрации (`AccountsService.register`) чтобы блокировать
- * mailinator/yopmail/etc — без них онбординг превращается в полигон для ботов.
- *
- * Источник: компиляция из публичных open-source списков
- * (disposable-email-domains repo, github.com/disposable-email-domains/disposable-email-domains).
- * Здесь — топ ~50 наиболее активных. Полный список в проде можно подгружать
- * из БД/файла, но для MVP достаточно snapshot'а.
- */
 const DISPOSABLE_DOMAINS: ReadonlyArray<string> = [
   '0815.ru',
   '10minutemail.com',
@@ -112,12 +101,6 @@ export class DisposableEmailService {
     this.set = new Set(DISPOSABLE_DOMAINS.map((d) => d.toLowerCase()));
   }
 
-  /**
-   * Возвращает true, если email относится к одноразовому домену.
-   * Email нормализуется: trim + lowercase, домен после `@`.
-   * Невалидный email (без `@`) — считается «не одноразовым» (валидацию
-   * формата делает zod выше по стеку).
-   */
   isDisposable(email: string): boolean {
     const normalized = email.trim().toLowerCase();
     const at = normalized.lastIndexOf('@');
@@ -126,7 +109,6 @@ export class DisposableEmailService {
     return this.set.has(domain);
   }
 
-  /** Возвращает количество доменов в snapshot — для метрик/health-чеков. */
   size(): number {
     return this.set.size;
   }

@@ -1,12 +1,5 @@
 import { z } from 'zod';
 
-/**
- * SBA Wave 2 — DTO-схемы Specialist 3.8 (Helpfulness).
- * Все валидируются через nestjs-zod / ZodValidationPipe.
- */
-
-// ─────────────────────────── SocialContributionProfile ───────────────────────
-
 export const SocialContributionProfileDtoSchema = z.object({
   id: z.string(),
   userId: z.string(),
@@ -14,29 +7,16 @@ export const SocialContributionProfileDtoSchema = z.object({
   proactiveHintCount: z.number().int().nonnegative(),
   mentoringCount: z.number().int().nonnegative(),
   emotionalSupportCount: z.number().int().nonnegative(),
-  /**
-   * Конструктивная обратная связь — на бэке нет отдельной колонки в
-   * SocialContributionProfile, поэтому считается на лету из HelpfulnessTrait
-   * (traitType='constructive_feedback', status='active').
-   */
   constructiveFeedbackCount: z.number().int().nonnegative(),
   expertiseTopics: z.array(z.string()),
   socialRoles: z.array(z.string()),
   lastWeekHelpCount: z.number().int().nonnegative(),
   lastMonthHelpCount: z.number().int().nonnegative(),
-  /**
-   * contributionScoreCached — виден только владельцу профиля + admin/manager.
-   * Никогда не отображается публично как рейтинг.
-   */
   contributionScoreCached: z.number().nullable(),
   buildVersion: z.number().int().nonnegative(),
   lastBuiltAt: z.string(),
 });
-export type SocialContributionProfileDto = z.infer<
-  typeof SocialContributionProfileDtoSchema
->;
-
-// ─────────────────────────── HelpfulnessSpotlight ────────────────────────────
+export type SocialContributionProfileDto = z.infer<typeof SocialContributionProfileDtoSchema>;
 
 export const HelpfulnessSpotlightDtoSchema = z.object({
   id: z.string(),
@@ -52,16 +32,10 @@ export const HelpfulnessSpotlightDtoSchema = z.object({
   publishedAt: z.string().nullable(),
   createdAt: z.string(),
 });
-export type HelpfulnessSpotlightDto = z.infer<
-  typeof HelpfulnessSpotlightDtoSchema
->;
+export type HelpfulnessSpotlightDto = z.infer<typeof HelpfulnessSpotlightDtoSchema>;
 
 export const ListSpotlightsQuerySchema = z.object({
-  /** Фильтр по status. Default только published — для публичной ленты. */
-  status: z
-    .enum(['pending', 'approved', 'published', 'hidden'])
-    .optional()
-    .default('published'),
+  status: z.enum(['pending', 'approved', 'published', 'hidden']).optional().default('published'),
   helperUserId: z.string().optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
@@ -74,11 +48,7 @@ export const ListSpotlightsResponseSchema = z.object({
   page: z.number().int().positive(),
   limit: z.number().int().positive(),
 });
-export type ListSpotlightsResponse = z.infer<
-  typeof ListSpotlightsResponseSchema
->;
-
-// ─────────────────────────── HelpfulnessTrait (для /me) ──────────────────────
+export type ListSpotlightsResponse = z.infer<typeof ListSpotlightsResponseSchema>;
 
 export const HelpfulnessTraitDtoSchema = z.object({
   id: z.string(),
@@ -93,8 +63,6 @@ export const HelpfulnessTraitDtoSchema = z.object({
 });
 export type HelpfulnessTraitDto = z.infer<typeof HelpfulnessTraitDtoSchema>;
 
-// ─────────────────────────── Admin team-map ─────────────────────────────────
-
 export const TeamHelperRowSchema = z.object({
   userId: z.string(),
   name: z.string().nullable(),
@@ -107,14 +75,10 @@ export const TeamHelperRowSchema = z.object({
 });
 export type TeamHelperRow = z.infer<typeof TeamHelperRowSchema>;
 
-// ─────────────────────────── Admin unanswered (PRIVATE) ─────────────────────
-
 export const UnansweredQuestionRowSchema = z.object({
   id: z.string(),
-  /** Кому не ответили. */
   recipientUserId: z.string().nullable(),
   recipientName: z.string().nullable(),
-  /** Кто проигнорировал (если known). */
   helperUserId: z.string(),
   helperName: z.string().nullable(),
   topicHint: z.string().nullable(),
@@ -123,22 +87,10 @@ export const UnansweredQuestionRowSchema = z.object({
 });
 export type UnansweredQuestionRow = z.infer<typeof UnansweredQuestionRowSchema>;
 
-// ─────────────────────────── SocialContribution opt-out ─────────────────────
-
-/**
- * ТЗ-E Ф4 — opt-out социального вклада. `optedOut=true` → пользователь
- * скрывает свой вклад публично (намерение хранится в Redis, см.
- * SocialContributionPreferenceService).
- */
-export const SocialContributionOptOutBodySchema = z
-  .object({ optedOut: z.boolean() })
-  .strict();
-export type SocialContributionOptOutBody = z.infer<
-  typeof SocialContributionOptOutBodySchema
->;
+export const SocialContributionOptOutBodySchema = z.object({ optedOut: z.boolean() }).strict();
+export type SocialContributionOptOutBody = z.infer<typeof SocialContributionOptOutBodySchema>;
 
 export interface SocialContributionOptOutDto {
   optedOut: boolean;
-  /** ISO 8601 — момент последнего изменения; null, если ни разу не менялось. */
   updatedAt: string | null;
 }

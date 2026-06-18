@@ -1,24 +1,15 @@
-'use client';
+"use client";
 
-/**
- * PaywallBanner — sticky-плашка «Демо-режим» на всех authenticated-страницах.
- *
- * Показывается только при `status === 'DEMO'`. При ACTIVE / null / loading —
- * рендерит null. Кнопка «Оплатить» ведёт на /settings/subscription.
- *
- * ТЗ: plans/tz/2026-05-28-paywall-no-trial.md §4.1.
- */
+import Link from "next/link";
+import { Lock } from "lucide-react";
 
-import Link from 'next/link';
-import { Lock } from 'lucide-react';
-
-import { useSubscription } from '@/hooks/useSubscription';
-import { Button } from '@/ui/shadcn/button';
+import { useSubscription } from "@/hooks/useSubscription";
+import { Button } from "@/ui/shadcn/button";
 
 export function PaywallBanner() {
   const { status, loading } = useSubscription();
 
-  if (loading || status !== 'DEMO') return null;
+  if (loading || status !== "DEMO") return null;
 
   return (
     <div
@@ -29,7 +20,8 @@ export function PaywallBanner() {
         <div className="flex items-center gap-3">
           <Lock size={20} className="shrink-0 text-warning" />
           <p className="text-sm text-fg-primary">
-            <strong>Демо-режим:</strong> просмотр данных без возможности создания.
+            <strong>Демо-режим:</strong> просмотр данных без возможности
+            создания.
           </p>
         </div>
         <Button asChild size="sm">

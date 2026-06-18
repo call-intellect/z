@@ -1,26 +1,3 @@
-/**
- * patch-bootstrap-audit-org.ts — одноразовый dev-скрипт для аудита трекера.
- *
- * Идемпотентно подготавливает Org `cmpqs6t9h0001bouncils5az5` (созданную
- * `patch-create-dev-audit-user.ts`) для прохождения UI/API-аудита трекера:
- *
- *   1) UPSERT Subscription со status=ACTIVE (period 30 дней, monthly, manual_admin)
- *      — SubscriptionGuard будет пропускать POST'ы; UI снимет демо-баннер.
- *   2) Прогон системных TeamTemplate (10 шт., tenantId=null) через
- *      `seedSystemTeamTemplates` — чтобы /api/v1/team-templates выдал список.
- *   3) Создаёт ОДИН демо-проект `DEMO` («Демо проект») со всеми атрибутами:
- *        - Board(isDefault=true)
- *        - 4 IssueState: Бэклог / В работе / Готово / Отменено
- *        - 5 Issue (DEMO-1..DEMO-5): разные state/priority,
- *          одна подзадача, одна связь blocks, 3 ассайнмента на audit-dev,
- *          2 комментария к первой задаче (один с @-упоминанием).
- *
- * НЕ регистрируется в `apply-prod-deploy.ts` — в прод не идёт.
- *
- * Запуск (из `backend/`):
- *   WEBHOOK_SECRETS_ENCRYPTION_KEY="..." bun run scripts/patch-bootstrap-audit-org.ts
- */
-
 import type { Prisma, PrismaClient } from '@prisma/client';
 
 import { seedSystemTeamTemplates } from '../src/modules/tracker/seed/team-templates-seed';
@@ -33,8 +10,6 @@ const USER_ID = 'cmpqs6t8i0000bounxb8xfkqf';
 const PROJECT_SLUG = 'demo';
 const PROJECT_IDENTIFIER = 'DEMO';
 const PROJECT_NAME = 'Демо проект';
-
-// ───────────── 1. Подписка ACTIVE ─────────────
 
 async function upsertActiveSubscription(prisma: PrismaClient): Promise<void> {
   const now = new Date();
@@ -89,14 +64,10 @@ async function upsertActiveSubscription(prisma: PrismaClient): Promise<void> {
   });
 }
 
-// ───────────── 2. Системные TeamTemplate ─────────────
-
 async function seedTeamTemplates(prisma: PrismaClient): Promise<void> {
   const stats = await seedSystemTeamTemplates(prisma);
   console.log('[bootstrap] team-templates', stats);
 }
-
-// ───────────── 3. Демо-проект ─────────────
 
 interface StateRow {
   id: string;
@@ -104,7 +75,6 @@ interface StateRow {
 }
 
 async function bootstrapDemoProject(prisma: PrismaClient): Promise<void> {
-  // Project — upsert по @@unique([tenantId, slug])
   let project = await prisma.project.findUnique({
     where: { tenantId_slug: { tenantId: ORG_ID, slug: PROJECT_SLUG } },
   });
@@ -126,7 +96,6 @@ async function bootstrapDemoProject(prisma: PrismaClient): Promise<void> {
     console.log('[bootstrap] project reuse', { id: project.id });
   }
 
-  // ProjectMember (owner — audit-dev)
   await prisma.projectMember.upsert({
     where: {
       projectId_userId: { projectId: project.id, userId: USER_ID },
@@ -134,12 +103,11 @@ async function bootstrapDemoProject(prisma: PrismaClient): Promise<void> {
     create: {
       projectId: project.id,
       userId: USER_ID,
-      role: 20, // Admin
+      role: 20,
     },
     update: { role: 20 },
   });
 
-  // Default Board — @@unique([projectId, name])
   const board = await prisma.board.upsert({
     where: {
       projectId_name: { projectId: project.id, name: 'Доска' },
@@ -160,7 +128,6 @@ async function bootstrapDemoProject(prisma: PrismaClient): Promise<void> {
   });
   console.log('[bootstrap] board ready', { id: board.id });
 
-  // IssueState x4 — нет unique constraint, поэтому проверяем по name
   const stateDefs: Array<{
     name: string;
     category: string;
@@ -204,7 +171,6 @@ async function bootstrapDemoProject(prisma: PrismaClient): Promise<void> {
     stateByName.set(def.name, { id: row.id, category: row.category });
   }
 
-  // Project.defaultStateId — Бэклог
   const backlogId = stateByName.get('Бэклог')!.id;
   if (project.defaultStateId !== backlogId) {
     await prisma.project.update({
@@ -214,7 +180,6 @@ async function bootstrapDemoProject(prisma: PrismaClient): Promise<void> {
   }
   console.log('[bootstrap] issue-states ready', stateByName.size);
 
-  // ── Issues: 5 шт, идемпотентность по identifier ──
   const issueDefs: Array<{
     identifier: string;
     sequenceId: number;
@@ -243,7 +208,7 @@ async function bootstrapDemoProject(prisma: PrismaClient): Promise<void> {
       priority: 'medium',
       stateName: 'Бэклог',
       assigned: true,
-      isSubtask: true, // parent = DEMO-1
+      isSubtask: true,
     },
     {
       identifier: 'DEMO-3',
@@ -318,7 +283,6 @@ async function bootstrapDemoProject(prisma: PrismaClient): Promise<void> {
     issueByIdentifier.set(def.identifier, { id: issue.id });
   }
 
-  // Parent (DEMO-2 → DEMO-1)
   const demo1 = issueByIdentifier.get('DEMO-1')!.id;
   const demo2 = issueByIdentifier.get('DEMO-2')!.id;
   const demo3 = issueByIdentifier.get('DEMO-3')!.id;
@@ -329,7 +293,6 @@ async function bootstrapDemoProject(prisma: PrismaClient): Promise<void> {
     data: { parentId: demo1 },
   });
 
-  // Assignees: DEMO-1, DEMO-2, DEMO-4 — audit-dev
   for (const issueId of [demo1, demo2, demo4]) {
     await prisma.issueAssignee.upsert({
       where: { issueId_userId: { issueId, userId: USER_ID } },
@@ -338,7 +301,6 @@ async function bootstrapDemoProject(prisma: PrismaClient): Promise<void> {
     });
   }
 
-  // IssueRelation: DEMO-1 blocks DEMO-3
   await prisma.issueRelation.upsert({
     where: {
       sourceIssueId_targetIssueId_relationType: {
@@ -356,7 +318,6 @@ async function bootstrapDemoProject(prisma: PrismaClient): Promise<void> {
     update: {},
   });
 
-  // Комментарии к DEMO-1 (идемпотентность через простой findFirst по контенту)
   const commentDefs: Array<{ content: string; mention: boolean }> = [
     {
       content: 'Первый комментарий — фиксирую старт работ.',
@@ -407,18 +368,17 @@ async function bootstrapDemoProject(prisma: PrismaClient): Promise<void> {
   console.log('[bootstrap] issues ready', issueByIdentifier.size);
 }
 
-// ───────────── main ─────────────
-
 async function main(): Promise<void> {
   const prisma = createPrismaClient();
   try {
     console.log('=== patch-bootstrap-audit-org START ===');
 
-    // Sanity-check: Org и User существуют
     const org = await prisma.org.findUnique({ where: { id: ORG_ID } });
-    if (!org) throw new Error(`Org ${ORG_ID} не найдена — запусти patch-create-dev-audit-user сначала`);
+    if (!org)
+      throw new Error(`Org ${ORG_ID} не найдена — запусти patch-create-dev-audit-user сначала`);
     const user = await prisma.user.findUnique({ where: { id: USER_ID } });
-    if (!user) throw new Error(`User ${USER_ID} не найден — запусти patch-create-dev-audit-user сначала`);
+    if (!user)
+      throw new Error(`User ${USER_ID} не найден — запусти patch-create-dev-audit-user сначала`);
 
     await upsertActiveSubscription(prisma);
     await seedTeamTemplates(prisma);

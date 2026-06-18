@@ -1,36 +1,9 @@
-/**
- * Seed системных шаблонов промптов AI-отчёта в БД (Фаза A.1).
- *
- * Источник: plans/tz/2026-05-21-phase-A-prompt-registry-admin.md §6.
- *
- * Что делает:
- *   1. Импортирует все 9 системных промптов из
- *      `backend/src/modules/ai/services/prompts/type-*.ts` в БД
- *      как PromptTemplate(scope='system') + первая PromptTemplateVersion +
- *      PromptTemplateSection[] (по полям JSON-схемы).
- *   2. Дополнительно создаёт 4 «общих» шаблона:
- *        tasks-default     (universal, meetingType=null, taskType='tasks')
- *        chapters-default  (universal, meetingType=null, taskType='chapters')
- *        follow-up-default (universal, meetingType=null, taskType='follow-up')
- *        card-rollup-default (universal, meetingType=null, taskType='card-rollup')
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - на повторный запуск НЕ перезаписывает шаблоны с `editedByAdmin=true`;
- *   - НЕ перезаписывает шаблоны, у которых >1 версии (значит, админ
- *     создавал новые версии через UI);
- *   - в остальных случаях upsert обновляет содержимое первой версии,
- *     чтобы можно было выкатывать новые системные промпты вместе с релизом.
- *
- * Запуск:
- *   cd backend && bun run scripts/seed-prompt-templates.ts
- *
- * Выход:
- *   - в БД появляются 13 системных шаблонов с активной версией №1;
- *   - в `AiResult.promptTemplateVersionId` для всех новых встреч будет
- *     записан id версии шаблона, а не NULL.
- */
-
-import { PrismaClient, type MeetingType, type PromptTemplateScope, type PromptTemplateStatus } from '@prisma/client';
+import {
+  PrismaClient,
+  type MeetingType,
+  type PromptTemplateScope,
+  type PromptTemplateStatus,
+} from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
 import * as customDev from '../src/modules/ai/services/prompts/type-custdev';
@@ -53,7 +26,6 @@ import {
   buildTasksPrompt,
 } from '../src/modules/ai/services/prompts/tasks';
 import { buildCardRollupSystemPrompt } from '../src/modules/ai/services/prompts/card-rollup';
-import { buildChaptersPrompt } from '../src/modules/ai/services/prompts/chapters';
 
 const prisma = createPrismaClient();
 
@@ -89,10 +61,7 @@ interface TemplateSeed {
   };
 }
 
-/** Извлекает SYSTEM-промпт из существующего code-модуля промпта по типу встречи. */
 function systemFromBuilder(mod: PromptModule, meetingType: MeetingType): string {
-  // buildPrompt с пустым диалогом и без roomChat возвращает исторический system
-  // 1:1 как у analyze.worker'а до Фазы A.1 (см. ТЗ A.1 §5.3 «code-fallback»).
   const out = mod.buildPrompt({
     meeting: { id: '__seed__', title: '__seed__', type: meetingType, customPrompt: null },
     dialog: [],
@@ -100,7 +69,13 @@ function systemFromBuilder(mod: PromptModule, meetingType: MeetingType): string 
   return out.system;
 }
 
-function seedForType(mod: PromptModule, key: string, name: string, description: string, meetingType: MeetingType): TemplateSeed {
+function seedForType(
+  mod: PromptModule,
+  key: string,
+  name: string,
+  description: string,
+  meetingType: MeetingType,
+): TemplateSeed {
   return {
     key,
     name,
@@ -122,7 +97,8 @@ function tasksDefaultSeed(): TemplateSeed {
   return {
     key: 'tasks-default',
     name: 'Извлечение задач (по умолчанию)',
-    description: 'Универсальный системный шаблон для извлечения задач из встречи. Применяется ко всем типам встреч, где включён tasks-агент.',
+    description:
+      'Универсальный системный шаблон для извлечения задач из встречи. Применяется ко всем типам встреч, где включён tasks-агент.',
     meetingType: null,
     taskType: 'tasks',
     systemPrompt: dummy.system,
@@ -140,7 +116,8 @@ function followUpDefaultSeed(): TemplateSeed {
   return {
     key: 'follow-up-default',
     name: 'Follow-up письмо (по умолчанию)',
-    description: 'Универсальный системный шаблон для генерации follow-up письма по итогам встречи (sales / customer_success).',
+    description:
+      'Универсальный системный шаблон для генерации follow-up письма по итогам встречи (sales / customer_success).',
     meetingType: null,
     taskType: 'follow-up',
     systemPrompt: dummy.system,
@@ -150,49 +127,12 @@ function followUpDefaultSeed(): TemplateSeed {
   };
 }
 
-function chaptersDefaultSeed(): TemplateSeed {
-  const dummy = buildChaptersPrompt({
-    meeting: { id: '__seed__', title: '__seed__', type: 'team' },
-    dialog: [],
-  });
-  return {
-    key: 'chapters-default',
-    name: 'Извлечение глав встречи (по умолчанию)',
-    description: 'Универсальный системный шаблон для разбиения встречи на смысловые главы (chapters).',
-    meetingType: null,
-    taskType: 'chapters',
-    systemPrompt: dummy.system,
-    // Chapters работает через responseFormat=json, без tool_use — toolName = null.
-    toolName: null,
-    toolDescription: null,
-    outputSchema: {
-      type: 'object',
-      properties: {
-        chapters: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              startMs: { type: 'integer' },
-              endMs: { type: 'integer' },
-              title: { type: 'string' },
-              summary: { type: ['string', 'null'] },
-              order: { type: 'integer' },
-            },
-            required: ['startMs', 'endMs', 'title', 'order'],
-          },
-        },
-      },
-      required: ['chapters'],
-    },
-  };
-}
-
 function cardRollupDefaultSeed(): TemplateSeed {
   return {
     key: 'card-rollup-default',
     name: 'Сводка карточки (по умолчанию)',
-    description: 'Универсальный системный шаблон для обзора всех встреч карточки (CRM card rollup).',
+    description:
+      'Универсальный системный шаблон для обзора всех встреч карточки (CRM card rollup).',
     meetingType: null,
     taskType: 'card-rollup',
     systemPrompt: buildCardRollupSystemPrompt('custom'),
@@ -209,26 +149,76 @@ function cardRollupDefaultSeed(): TemplateSeed {
 
 function buildAllSeeds(): TemplateSeed[] {
   return [
-    seedForType(team, 'type-team', 'Командная встреча', 'Системный шаблон AI-отчёта для командных встреч.', 'team'),
-    seedForType(standup, 'type-standup', 'Дейли-standup', 'Системный шаблон AI-отчёта для планёрок / standup.', 'standup'),
-    seedForType(planFact, 'type-plan_fact', 'План-факт', 'Системный шаблон AI-отчёта для встреч «план/факт».', 'plan_fact'),
-    seedForType(project, 'type-project', 'Проектная встреча', 'Системный шаблон AI-отчёта для проектных встреч.', 'project'),
-    seedForType(sales, 'type-sales', 'Встреча с клиентом (продажи)', 'Системный шаблон AI-отчёта для встреч с клиентом (sales).', 'sales'),
-    seedForType(customDev, 'type-custdev', 'CustDev / интервью с пользователем', 'Системный шаблон AI-отчёта для CustDev-интервью.', 'custdev'),
-    seedForType(partner, 'type-partner', 'Встреча с партнёром', 'Системный шаблон AI-отчёта для партнёрских встреч.', 'partner'),
-    seedForType(interview, 'type-interview', 'Собеседование', 'Системный шаблон AI-отчёта для собеседований с кандидатами.', 'interview'),
-    seedForType(customerSuccess, 'type-customer_success', 'Customer Success', 'Системный шаблон AI-отчёта для встреч customer success.', 'customer_success'),
+    seedForType(
+      team,
+      'type-team',
+      'Командная встреча',
+      'Системный шаблон AI-отчёта для командных встреч.',
+      'team',
+    ),
+    seedForType(
+      standup,
+      'type-standup',
+      'Дейли-standup',
+      'Системный шаблон AI-отчёта для планёрок / standup.',
+      'standup',
+    ),
+    seedForType(
+      planFact,
+      'type-plan_fact',
+      'План-факт',
+      'Системный шаблон AI-отчёта для встреч «план/факт».',
+      'plan_fact',
+    ),
+    seedForType(
+      project,
+      'type-project',
+      'Проектная встреча',
+      'Системный шаблон AI-отчёта для проектных встреч.',
+      'project',
+    ),
+    seedForType(
+      sales,
+      'type-sales',
+      'Встреча с клиентом (продажи)',
+      'Системный шаблон AI-отчёта для встреч с клиентом (sales).',
+      'sales',
+    ),
+    seedForType(
+      customDev,
+      'type-custdev',
+      'CustDev / интервью с пользователем',
+      'Системный шаблон AI-отчёта для CustDev-интервью.',
+      'custdev',
+    ),
+    seedForType(
+      partner,
+      'type-partner',
+      'Встреча с партнёром',
+      'Системный шаблон AI-отчёта для партнёрских встреч.',
+      'partner',
+    ),
+    seedForType(
+      interview,
+      'type-interview',
+      'Собеседование',
+      'Системный шаблон AI-отчёта для собеседований с кандидатами.',
+      'interview',
+    ),
+    seedForType(
+      customerSuccess,
+      'type-customer_success',
+      'Customer Success',
+      'Системный шаблон AI-отчёта для встреч customer success.',
+      'customer_success',
+    ),
     tasksDefaultSeed(),
-    chaptersDefaultSeed(),
     followUpDefaultSeed(),
     cardRollupDefaultSeed(),
   ];
 }
 
 async function pickSystemAdminUserId(): Promise<string> {
-  // Все системные шаблоны принадлежат super_admin'у. Если super_admin нет —
-  // выбираем первого `User.role = admin`. Если и его нет — кидаем понятную
-  // ошибку, чтобы оператор завёл админа перед seed'ом.
   const superAdmin = await prisma.user.findFirst({
     where: { isSuperAdmin: true, deletedAt: null },
     select: { id: true },
@@ -243,7 +233,7 @@ async function pickSystemAdminUserId(): Promise<string> {
 
   throw new Error(
     'seed-prompt-templates: не найден super_admin или admin user в БД. ' +
-    'Заведи администратора: bun run scripts/set-admin-password.ts',
+      'Заведи администратора: bun run scripts/set-admin-password.ts',
   );
 }
 
@@ -253,14 +243,11 @@ interface SeedStats {
   skipped: number;
 }
 
-/**
- * Идемпотентный upsert одного шаблона. Семантика skill `safe-seed-rules`:
- *   - если шаблона нет → создаём + первую версию + sections;
- *   - если шаблон есть и `editedByAdmin=true` → пропускаем;
- *   - если шаблон есть и версий >1 → пропускаем (админ создавал новые версии);
- *   - иначе обновляем version №1 (метаданные + outputSchema + sections).
- */
-async function upsertTemplate(seed: TemplateSeed, createdById: string, stats: SeedStats): Promise<void> {
+async function upsertTemplate(
+  seed: TemplateSeed,
+  createdById: string,
+  stats: SeedStats,
+): Promise<void> {
   const existing = await prisma.promptTemplate.findFirst({
     where: { orgId: null, key: seed.key },
     include: { versions: true },
@@ -280,10 +267,8 @@ async function upsertTemplate(seed: TemplateSeed, createdById: string, stats: Se
       return;
     }
 
-    // Обновим первую версию + sections.
     const firstVersion = existing.versions[0];
     if (!firstVersion) {
-      // Странный случай: шаблон без версий. Создадим версию №1.
       await createFirstVersion(existing.id, seed, createdById);
     } else {
       await prisma.promptTemplateSection.deleteMany({ where: { versionId: firstVersion.id } });
@@ -316,7 +301,6 @@ async function upsertTemplate(seed: TemplateSeed, createdById: string, stats: Se
     return;
   }
 
-  // create-path.
   await prisma.$transaction(async (tx) => {
     const template = await tx.promptTemplate.create({
       data: {
@@ -355,7 +339,11 @@ async function upsertTemplate(seed: TemplateSeed, createdById: string, stats: Se
   console.log(`[created] ${seed.key}`);
 }
 
-async function createFirstVersion(templateId: string, seed: TemplateSeed, createdById: string): Promise<void> {
+async function createFirstVersion(
+  templateId: string,
+  seed: TemplateSeed,
+  createdById: string,
+): Promise<void> {
   const version = await prisma.promptTemplateVersion.create({
     data: {
       templateId,

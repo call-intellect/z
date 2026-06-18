@@ -1,26 +1,10 @@
-/**
- * Spec для RequireEntitlement-декоратора + EntitlementGuard (Phase F.4).
- *
- * Покрытие:
- *   - Декоратор записывает feature-ключ в SetMetadata(REQUIRE_ENTITLEMENT_KEY).
- *   - Reflector.getAllAndOverride корректно достаёт его из handler/class.
- *   - EntitlementGuard:
- *     - return true если декоратора нет (transparent).
- *     - return true если фича доступна.
- *     - 403 entitlement_required если фича выключена.
- *     - 403 tenant_required если req.tenantId не выставлен.
- *     - Игнорирует non-HTTP контексты (WS/RPC) — return true.
- */
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EntitlementGuard } from './entitlement.guard';
 import type { EntitlementService, ResolvedEntitlement } from './entitlement.service';
-import {
-  REQUIRE_ENTITLEMENT_KEY,
-  RequireEntitlement,
-} from './require-entitlement.decorator';
+import { REQUIRE_ENTITLEMENT_KEY, RequireEntitlement } from './require-entitlement.decorator';
 import type { FeatureKey } from './tier-config';
 
 function buildExecCtx(opts: {
@@ -74,10 +58,7 @@ describe('RequireEntitlement decorator', () => {
       }
     }
     const reflector = new Reflector();
-    const meta = reflector.get<FeatureKey>(
-      REQUIRE_ENTITLEMENT_KEY,
-      Sample.prototype.handler,
-    );
+    const meta = reflector.get<FeatureKey>(REQUIRE_ENTITLEMENT_KEY, Sample.prototype.handler);
     expect(meta).toBe('feature.theme');
   });
 });
@@ -99,9 +80,7 @@ describe('EntitlementGuard', () => {
       feature: 'feature.theme',
     });
     const ent = {
-      getEntitlement: vi.fn(async () =>
-        fakeResolved({ 'feature.theme': true }),
-      ),
+      getEntitlement: vi.fn(async () => fakeResolved({ 'feature.theme': true })),
     } as unknown as EntitlementService;
     const guard = new EntitlementGuard(reflector, ent);
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
@@ -113,14 +92,10 @@ describe('EntitlementGuard', () => {
       feature: 'feature.theme',
     });
     const ent = {
-      getEntitlement: vi.fn(async () =>
-        fakeResolved({ 'feature.theme': false }),
-      ),
+      getEntitlement: vi.fn(async () => fakeResolved({ 'feature.theme': false })),
     } as unknown as EntitlementService;
     const guard = new EntitlementGuard(reflector, ent);
-    await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('403 tenant_required если req.tenantId не выставлен', async () => {
@@ -132,9 +107,7 @@ describe('EntitlementGuard', () => {
       getEntitlement: vi.fn(),
     } as unknown as EntitlementService;
     const guard = new EntitlementGuard(reflector, ent);
-    await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
     expect(ent.getEntitlement).not.toHaveBeenCalled();
   });
 

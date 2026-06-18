@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  resolveAppointmentStatus,
-  resolveAppointmentTenantTop,
-} from './tenant-top';
+import { resolveAppointmentStatus, resolveAppointmentTenantTop } from './tenant-top';
 
-/**
- * SBA α-8 wave 3 — unit-тесты pure-функций для appointment-метрик и
- * patch-script'а миграции PersonRole → Appointment.
- */
 describe('resolveAppointmentTenantTop', () => {
   it('пустая строка → "other"', () => {
     expect(resolveAppointmentTenantTop('')).toBe('other');

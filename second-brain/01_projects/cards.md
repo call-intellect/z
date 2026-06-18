@@ -7,7 +7,7 @@ updated: 2026-05-10
 # Cards (CRM-структура встреч)
 
 CRM-карточки, к которым подвязываются встречи. Реализовано 2026-05-09 по
-[plans/tz/2026-05-09-cards.md](../../plans/tz/2026-05-09-cards.md).
+[plans/archive/2026-05-09-cards.md](../../plans/archive/2026-05-09-cards.md).
 
 ## Главный сценарий
 
@@ -160,7 +160,7 @@ CRM-карточки, к которым подвязываются встреч�
 - Связанные эндпоинты themes — см. [[themes]].
 
 Все модели — в [`backend/prisma/schema.prisma`](../../backend/prisma/schema.prisma).
-Применение схемы — только `bun prisma db push` (см. [prisma-db-push-rules](../../.claude/skills/prisma-db-push-rules/)).
+Применение схемы — версионируемые миграции (`bun run prisma:migrate`); `db push` — только для черновых локальных проб (см. [prisma-db-push-rules](../../.claude/skills/prisma-db-push-rules/)).
 
 ## Что осознанно НЕ сделано (vNext)
 
@@ -175,6 +175,6 @@ CRM-карточки, к которым подвязываются встреч�
 
 ## Источники
 
-- ТЗ: [plans/tz/2026-05-09-cards.md](../../plans/tz/2026-05-09-cards.md)
-- Базовое ТЗ: [plans/tz/2026-05-09-standalone-product.md](../../plans/tz/2026-05-09-standalone-product.md)
-- AI Workspace: [plans/tz/2026-05-09-ai-meeting-workspace.md](../../plans/tz/2026-05-09-ai-meeting-workspace.md)
+- ТЗ: [plans/archive/2026-05-09-cards.md](../../plans/archive/2026-05-09-cards.md)
+- Базовое ТЗ: [plans/archive/2026-05-09-standalone-product.md](../../plans/archive/2026-05-09-standalone-product.md)
+- AI Workspace: [plans/archive/2026-05-09-ai-meeting-workspace.md](../../plans/archive/2026-05-09-ai-meeting-workspace.md)

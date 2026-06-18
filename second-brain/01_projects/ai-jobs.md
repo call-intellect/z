@@ -53,6 +53,7 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 | **Sprints, Specialist 3-13 (2026-05-27)** | `sprint-helper-suggest`, `sprint-review-summary` | **DeepSeek V4 Pro** → OpenAI via proxy `gpt-5.4-mini` → Ollama `qwen3.5:9b`. Помощник по спринтам читает контекст активного цикла (задачи + блоки + история подсказок) и возвращает массив `SprintHint` (10 видов) с дедупом по `contentHash`. Финальный отчёт спринта пишется через `CurationService.triage({resourceType:'cycle'})` → CardVersion. Воркер `SprintHelperWorker` (concurrency=1), cron `SprintHelperCron` (каждые 4ч, cap=50). Seed — `backend/scripts/seed-llm-task-routes-sprints.ts`. Полная заметка — [sprints.md](sprints.md). |
 | **Curation verify / AI-судья (Часть A, 2026-06-03)** | `debate-curation-verify-critic`, `debate-curation-verify-supporter`, `debate-curation-verify-neutral` (+ зонтичный) | **cheap-цепочка** `deepseek-v4-flash` → `gpt-5.4-mini` → `ollama qwen3.5:9b` (**без anthropic**). AI-судья канонизации критических типов (`regulation`/`process`/`decision`) в провизорной полосе: `MultiAgentDebateService.judge({taskFamily:'curation-verify'})` — 3 голоса разных провайдеров, accept-консенсус → провизорная канонизация (`CardVersion.trustTier='provisional'`, без человека), иначе → deep `CurationItem`. `MultiAgentDebateService` обобщён полем `taskFamily` (default `decision-supersede` — обратносовместимо, специалист 3-3 не тронут) + 3 cache-friendly промпта accept\|reject. Seed — `backend/scripts/seed-llm-task-routes-curation.ts` (зарегистрирован в `apply-prod-deploy.ts`, phase `seed-llm-routes`). Архитектура — [[../02_architecture/knowledge-core]] §«Лестница доверия», [[curation]]. |
 | **Goals OKR v2, Specialist 3-14 (2026-06-02)** | `goal-extract`, `goal-hierarchy-link`, `goals-pulse-summarize` | **`goal-extract` (capable):** `deepseek/deepseek-v4-pro` → `openai-via-proxy/gpt-5.4-mini` → `ollama/qwen3.5:9b` — извлечь цель + горизонт + (опц.) измеримый KR + провенанс; обязан уметь вернуть `isGoal=false` (анти-плодёж). **`goal-hierarchy-link` (cheap):** `deepseek/deepseek-v4-flash` → `openai-via-proxy/gpt-5.4-mini` → `ollama/qwen3.5:9b` — арбитр «какая цель — родитель данной». **`goals-pulse-summarize`:** цепочка как `operations-daily-digest` (`deepseek-chat` → `gpt-5.4-nano` → `qwen3.5:9b`) — связный текст еженедельного пульса. **Без `anthropic`** (не закупаем). Все cache-friendly (стабильный SYSTEM, переменные данные в конце USER). Seed — `backend/scripts/seed-llm-task-routes-goals.ts` (идемпотентен, `editedByAdmin=false`). Полная заметка — [goals-and-strategic-alignment.md](goals-and-strategic-alignment.md) §«Goals OKR v2». |
+| **task-dedup (knowledge-core MASTER, 2026-06-16)** | `task-dedup-arbiter`, `task-closure-verify` | Оба **cheap-цепочка** `deepseek/deepseek-v4-flash` → `openai-via-proxy/gpt-5.4-mini` → `ollama/qwen3.5:9b`. **`task-dedup-arbiter`** — арбитр серой зоны при создании задачи: «новая задача — дубль уже существующей?» (после embedding-KNN-кандидатов; высокий порог → авто-suggest, серая зона → LLM). **`task-closure-verify`** — верификатор «правда ли блок разговора закрывает задачу X» (петля разговор→кандидат закрытия). Сиды — `seed-llm-task-routes-task-dedup-arbiter.ts` / `seed-llm-task-routes-task-closure-verify.ts` (оба в `apply-prod-deploy.ts` STEPS, phase `seed-llm-routes`). См. §«task-dedup — дедуп задач + петля закрытия» ниже. |
 
 ## Откатный скрипт миграции LLM (2026-05-26)
 
@@ -66,7 +67,7 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 
 ## Массовая миграция на DeepSeek V4 Pro (2026-05-26)
 
-В рамках Фаз 0-8 ТЗ [`plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md) primary capable модель (γ-1) — `deepseek:deepseek-v4-pro` — раскатана на:
+В рамках Фаз 0-8 ТЗ [`plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md) primary capable модель (γ-1) — `deepseek:deepseek-v4-pro` — раскатана на:
 - **chat-v2 + dialog-layer** (Фаза 4 §2): 5 шагов диалогового слоя + 19 одиночек, ранее на flash.
 - **specialists combined** (Фаза 6 §3): новый `knowledge-specialists-combined`.
 - **clone-respond v2** (Фаза 7 §9): новый `dialog-multi-query-clone`.
@@ -179,7 +180,7 @@ P2 (F6-F11) и P3 (F12-F16) — на следующую сессию. См. [`pl
 
 ## Concierge
 
-См. также [`concierge-voice.md`](concierge-voice.md) для voice-streaming контекста (T4).
+См. также [`concierge-agent.md`](concierge-agent.md) для voice-streaming контекста (T4).
 
 ### Concierge dialog-layer integration (ТЗ 2026-05-27)
 
@@ -364,7 +365,7 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 
 ## Загрузка/импорт документов — AI-подсказка привязки (ТЗ-4 Ф10, 2026-06-09)
 
-**Источник:** ТЗ [`plans/tz/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/tz/2026-06-08-manual-document-upload-and-import-tz.md) Ф10. Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модуль `documents` — [[../02_architecture/module-map]] §«Батч 5».
+**Источник:** ТЗ [`plans/archive/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/archive/2026-06-08-manual-document-upload-and-import-tz.md) Ф10. Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модуль `documents` — [[../02_architecture/module-map]] §«Батч 5».
 
 ### Новый taskType `document-attribution-suggest`
 
@@ -396,7 +397,7 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 
 ## Служба поддержки — клон техподдержки (4 taskType, 2026-06-09)
 
-**Источник:** ТЗ [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф3–Ф4). Модуль `support` — [[../02_architecture/module-map]] §«support»; профильная заметка — [[support-desk]]; cron'ы — [[workers-queues]].
+**Источник:** ТЗ [`plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф3–Ф4). Модуль `support` — [[../02_architecture/module-map]] §«support»; профильная заметка — [[support-desk]]; cron'ы — [[workers-queues]].
 
 | taskType | Модель | Роль |
 |---|---|---|
@@ -489,7 +490,7 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 
 ## Единый помощник в каналах + автономизация — 5 новых taskType (2026-06-12)
 
-**Источник:** ТЗ [`plans/tz/2026-06-11-assistant-channels-telegram-max.md`](../../plans/tz/2026-06-11-assistant-channels-telegram-max.md) + [`plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md`](../../plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md). Ветка `feature/assistant-channels-and-autonomy`. Cron — [[workers-queues]]; мост каналов — [[conversational-channels]] §«Единый мозг помощника».
+**Источник:** ТЗ [`plans/archive/2026-06-11-assistant-channels-telegram-max.md`](../../plans/archive/2026-06-11-assistant-channels-telegram-max.md) + [`plans/archive/2026-06-11-autonomy-remove-manual-confirmations.md`](../../plans/archive/2026-06-11-autonomy-remove-manual-confirmations.md). Ветка `feature/assistant-channels-and-autonomy`. Cron — [[workers-queues]]; мост каналов — [[conversational-channels]] §«Единый мозг помощника».
 
 ### Семейство `debate-conflict-arbiter` (autonomy W1, 4 taskType)
 
@@ -506,7 +507,7 @@ LLM-judge текстового подтверждения мутаций в ка
 
 ## Слой метода клона — 5 новых taskType (2026-06-12)
 
-**Источник:** ТЗ [`plans/tz/2026-06-11-clone-persona-method-layer.md`](../../plans/tz/2026-06-11-clone-persona-method-layer.md). Ветка `feature/clone-persona-method-layer`. Полная карта фичи — [[skill-and-clone]] §«Доработки 2026-06-12»; cron'ы — [[workers-queues]]; схема — [[../02_architecture/data-model]] §«Слой метода клона». Все промпты — стабильный SYSTEM, переменные данные в конце USER (prompt-caching-friendly); без anthropic (не закупаем).
+**Источник:** ТЗ [`plans/archive/2026-06-11-clone-persona-method-layer.md`](../../plans/archive/2026-06-11-clone-persona-method-layer.md). Ветка `feature/clone-persona-method-layer`. Полная карта фичи — [[skill-and-clone]] §«Доработки 2026-06-12»; cron'ы — [[workers-queues]]; схема — [[../02_architecture/data-model]] §«Слой метода клона». Все промпты — стабильный SYSTEM, переменные данные в конце USER (prompt-caching-friendly); без anthropic (не закупаем).
 
 | taskType | Цепочка | Что делает |
 |---|---|---|
@@ -529,5 +530,50 @@ LLM-judge текстового подтверждения мутаций в ка
 
 - Сид — `backend/scripts/seed-llm-task-routes-ideas-and-probe.ts` (уже в `apply-prod-deploy.ts` STEPS, phase `seed-llm-routes`, идемпотентен). Без маршрута вызов упал бы на аварийный `DEFAULT_FALLBACK_CHAIN` — маршрут заведён вместе с фичей.
 - Остальные Ф2-доводки (свободный ответ `probe_reply`, выбор получателя по отзывчивости, семантический дедуп через pgvector, re-ask, повод `attribution.unresolved_at_ingest`) — НЕ новые LLM-taskType (детерминированная логика / эмбеддинги). См. [[probe-agent]] §«Фаза 2».
+
+[[../index|← index]]
+
+## Ревизия 12 промптов клона M5 + фиксы конвейера/кронов (2026-06-16)
+
+**Источник:** ТЗ [`plans/tz/2026-06-16-clone-agents-prompt-revision.md`](../../plans/tz/2026-06-16-clone-agents-prompt-revision.md) (Приложения A–D + Раздел 8). Ветка `devsv`, 9 коммитов. **Новых taskType / провайдеров НЕТ.** Карта модуля — [[skill-and-clone]] §«Доработки 2026-06-16»; кроны — [[workers-queues]] §История 2026-06-16.
+
+**Промпты (12 🟣 clone-only):** `skill-trait-detect`/`-merge`/`-verify`, `value-motivation-detect`, `process-marker-detect`, `role-principle-synthesize`, `cdm-case-interview`, `skill-trait-concept-name`, `executable-persona-compile` v2, `clone-respond`, `dialog-multi-query-clone`, `persona-behavior-judge` — добавлены **якорь смысла** «клон отвечает от лица должности» + **few-shot** + **self-check**, всё в стабильный SYSTEM (prompt-caching-friendly, разовый cache-miss). Промпты — code-fallback, едут с билдом. Без anthropic.
+
+**Фиксы конвейера/кронов (Раздел 8, без смены расписаний):**
+- `SkillProfileRecalibrateCron` / `runDecay` — `pending_verification` старше `archiveCutoff` → `archived` (Б1, без вечного re-verify); `orderBy` по устареванию + курсор (Б5).
+- `verifyPendingTraits` — выборка FIFO `orderBy createdAt asc` + исключение безнадёжных (Б2); предфильтр `<2` цитат → `held` без LLM-вызова (Г3); KNN-merge включает `pending_verification` (Б4); `lastConfirmedAt = MAX` (Б3).
+- Нормализатор концептов — `traitCount = COUNT(active)` (старт 0 + `recomputeTraitCount` на promote/discard/supersede; в cron живой COUNT, Б6); архив концепта по `NOT EXISTS active` (Б7); pre-write проверка коллизии `canonicalName` + P2002-retry (Б8).
+- `RolePrincipleSynthesisCron` — `confidence` из `distinctDays` (Б9); raw `UPDATE embedding` обёрнут try/catch (Б10); бюджет декрементится только при фактическом LLM-вызове (Б11).
+- `ExecutablePersonaBuildCron` + `ExecutablePersonaTriggerWatcherCron` — `orderBy lastBuildAt asc nulls-first` + курсор по всему хвосту (Б14); предфильтр build `layer='skill'` (Б15).
+- Прочее: `persona-layer-validation` `take` ПОСЛЕ `orderBy` (Б19); `clone-respond` `parseCitations` `if(!d)continue` в DECISION-ветке — ghost-цитата не обходит grounding (Б20); CDM-бюджет считает только доставленные probe (Б21).
+- Код-гарды Г1 (`targetId` required в схеме merge), Г2 (cosine≥0.85 → не `new`), Г4 (skill-путь пропускает пустой `sourceBlockIds`).
+
+[[../index|← index]]
+
+## knowledge-core MASTER — 30 промптов переписаны по методологии (волна 2, 2026-06-16)
+
+**Источник:** зонтичное ТЗ [`plans/tz/2026-06-16-knowledge-core-MASTER.md`](../../plans/tz/2026-06-16-knowledge-core-MASTER.md) + 6 промпт-ТЗ (`ingest-prompts-revision` / `specialist-extractors-prompts` / `dedup-supersede-prompts` / `linking-prompts` / `cluster-rollup-prompts` / `final-misc-prompts`). Ветка `feature/knowledge-core-master` (от `origin/dev`). Методичка — [`docs/methodology/prompts/`](../../docs/methodology/prompts/README.md). **Это пласт A зонтичного модуля** (наряду с пластом аудит-багов B и task-dedup).
+
+- **30 промпт-агентов knowledge-core перенесены/реконструированы по единой методологии** (пачки: ingest A1–A3/B1–B3, специалисты-экстракторы C1–C5/D1–D4, dedup-supersede, linking, cluster-rollup, final-misc). Затронуты, среди прочего: `block-ingest`, `block-distill`, `block-linker`, `axis-classify`, `entity-merge-arbiter`, `specialists-combined`; экстракторы `decision-extract` / `idea-extract` / `insight-extract` / `goal-extract` / `experiment-extract` / `regulation-extract` / `process-template-extract` / `knowledge-clone-extract` / `knowledge-clone-merge`; dedup/supersede `decision-supersede-detect` / `fact-supersede-detect` / `regulation-dedupe` / `task-dedupe` / `idea-cluster-merge`; linking `goal-alignment` / `goal-hierarchy-link` / `goal-task-link` / `insight-link-to-decisions`; rollup/misc `card-rollup-v2` / `idea-status-summarize` / `theme-classify` / `reframing` / `role-profile-build` / `structured-document-compiler`.
+- **Все правки — code-промпты** (prompt registry с code-fallback): едут с деплоем кода, отдельной seed-операции не требуют. Cache-friendly (стабильный SYSTEM, переменные данные в конце USER) — сохранён prompt-caching.
+- **Парс-фиксы** Б38 / Б40 / Б58 / Б59 (устойчивость парсинга ответа LLM в ingest/экстракторах).
+- **`signalTypeLabel()` разведён в USER-builder'ы** — словарь `SIGNAL_TYPE_LABEL` (56/56 значений enum `SignalType`, файл `knowledge-core/prompts/signal-type-label.ts`, машинный гард полноты) подставляет человеческие ярлыки сигналов в точки сборки USER (`axis-classify`, оба `summariseBlock`, `formatBlockForCombined`).
+- Каждый переписанный промпт закрыт snapshot-тестом (`*.snapshot.spec.ts` / `*.prompt.spec.ts`) — фиксируют текст промпта для регресс-контроля.
+- **Статус:** в коде, ждут прод-выката (`docker compose up -d --build` — seed маршрутов task-dedup отдельно, см. ниже).
+
+[[../index|← index]]
+
+## task-dedup — дедуп задач + петля закрытия (knowledge-core MASTER, 6 фаз, 2026-06-16)
+
+**Источник:** ТЗ [`plans/tz/2026-06-16-task-dedup-and-tracker-reconcile.md`](../../plans/tz/2026-06-16-task-dedup-and-tracker-reconcile.md) (+ orchestrator-prompt). Ветка `feature/knowledge-core-master`. Модели — [[../02_architecture/data-model]] §«task-dedup»; cron'ы/провайдеры — [[workers-queues]], [[../02_architecture/module-map]] §pending-actions. **Пласт task-dedup зонтичного модуля.**
+
+- **Ф0 — гейт качества создания задачи:** `task-quality-gate.util.ts` (детерминированный, без LLM) — объективный фильтр «это реальная задача?» на входе в трекер (telegram-task-parser / meeting-extract-actions / intake). Отсекает мусор до записи.
+- **Ф1 — дедуп задач (2 уровня) + `task-dedup-arbiter`:** embedding-KNN-кандидаты (`SimilarIssuesService`) → высокая близость = авто-suggest, серая зона = LLM-арбитр `task-dedup-arbiter`. Результат пишется в `IntakeIssue.suggestedDuplicateOfIssueId` (новая колонка). Сервис `TaskDedupService` (modules/tracker).
+- **Ф2 — петля разговор→кандидат закрытия:** новая модель `TaskClosureCandidate` + taskType `task-closure-verify`. `TaskCompletionHandler` (`@OnEvent('task.completion_signalled')`, эмитит `RouterService` на блоках `signalType='task_completed'`/ручном закрытии) → верифицирует, что блок реально закрывает задачу → создаёт `TaskClosureCandidate(status='pending')`; провайдер `TaskClosurePendingProvider` показывает кандидата в Action Center.
+- **Ф3 — суточный reconcile + reopen-метрика:** `TaskReconcileCron` (`@Cron('0 3 * * *')`, per-Org, modules/operations) — сверка задач. Метрика `task_closure_reopen_rate{tenant_top}` (gauge, 0..1 — доля ложных авто-закрытий, бьёт по доверию). Kill-switch.
+- **Ф4 — supersede решения → review-пометка задач:** при supersede решения (`specialist-3-3-decisions`) связанные задачи помечаются `Issue.closureReviewState='superseded_decision'` (+ `closureReviewReason` / `closureReviewAt`); провайдер `TaskReviewPendingProvider` поднимает их в Action Center («задача под вопросом»).
+- **Ф5 — вектор целей (KNN-дедуп):** `Goal.embedding` (`vector(1536)`, text-embedding-3-small) + `Goal.embeddingHash`. Новый воркер `GoalEmbedWorker` (очередь `core.goal-embed`, concurrency 4) считает embedding; backfill `backfill-goal-embeddings.ts`. Specialist `3-14-goals` использует KNN-дедуп целей перед записью (анти-дубль). HNSW-индекс на `Goal.embedding` — в `postgres-init.sql`.
+- **Action Center:** в `pending-actions` добавлены 2 read-провайдера (`TaskClosurePendingProvider` / `TaskReviewPendingProvider`) + ярлыки `resource-type-ru.ts` (`task_closure_candidate` → «задача к закрытию», `issue_review` → «задача под вопросом»).
+- **Статус:** в коде, ждут прод-выката. Прод-операции: миграции (авто `migrate deploy`) + сиды маршрутов `task-dedup-arbiter` / `task-closure-verify` + `postgres-init.sql` (HNSW Goal) + backfill `backfill-goal-embeddings.ts` — все в `apply-prod-deploy.ts` STEPS.
 
 [[../index|← index]]

@@ -1,17 +1,3 @@
-/**
- * Domain-модель партнёрской программы.
- *
- * Обновлено по ТЗ 2026-05-31-referrals-cabinet-revamp:
- *   - `Referral.inn / legalForm` теперь nullable (§5.1).
- *   - Маппер `referralClientMaskedFromApi` — анонимный клиент (§6.4).
- *   - `monthlyPointFromApi`, `funnelFromApi` — новые DTO под графики и воронку.
- *   - `funnelConversion(funnel)` — утилита процентов для UI.
- *   - `payoutDetailsAreFilled(referral)` — для логики «можно ли вывести».
- *
- * Терминология (§9.1): «партнёр», «партнёрская ссылка», «оплата клиента» —
- * везде русские термины, английских слов в копи нет.
- */
-
 import type {
   FunnelApi,
   FunnelPeriodApi,
@@ -24,10 +10,8 @@ import type {
   ReferralStatsExtendedApi,
   ReferralViewApi,
   RewardProgressApi,
-} from '@/api/types/referrals';
-import { formatRubles } from '@/domain/billing';
-
-// ────────────────────────── Types ──────────────────────────
+} from "@/api/types/referrals";
+import { formatRubles } from "@/domain/billing";
 
 export type ReferralLegalForm = ReferralLegalFormApi;
 export type ReferralPayoutStatus = ReferralPayoutStatusApi;
@@ -37,15 +21,9 @@ export type FunnelPeriod = FunnelPeriodApi;
 export interface ReferralDomain {
   id: string;
   slug: string;
-  /**
-   * Computed-поле (ТЗ §6.3 + §6.5): backend сообщает, заполнен ли
-   * `payoutDetails` непустым JSON-объектом. См. `payoutDetailsAreFilled`.
-   */
   hasPayoutDetails: boolean;
-  /** ТЗ §5.1: nullable. */
   inn: string | null;
   innVerifiedAt: Date | null;
-  /** ТЗ §5.1: nullable. */
   legalForm: ReferralLegalForm | null;
   contractAcceptedAt: Date | null;
   createdAt: Date;
@@ -85,7 +63,6 @@ export interface ReferralClientMaskedDomain {
 }
 
 export interface MonthlyPointDomain {
-  /** YYYY-MM. */
   month: string;
   incomeRub: number;
   activeClients: number;
@@ -104,15 +81,12 @@ export interface FunnelDomain {
   };
 }
 
-/** Прогресс окупаемости подписки за счёт приведённых клиентов (B2). */
 export interface RewardProgressDomain {
   hasProfile: boolean;
   activePaying: number;
   targetClients: number;
   monthlyEarnedKopecks: number;
 }
-
-// ────────────────────────── Mappers ──────────────────────────
 
 export function referralFromApi(api: ReferralViewApi): ReferralDomain {
   return {
@@ -197,86 +171,55 @@ export function rewardProgressFromApi(
   };
 }
 
-// ────────────────────────── Labels ──────────────────────────
-
 export function legalFormLabel(f: ReferralLegalForm | null): string {
-  if (!f) return 'Не указана';
+  if (!f) return "Не указана";
   const map: Record<ReferralLegalForm, string> = {
-    self_employed: 'Самозанятый (НПД)',
-    individual_entrepreneur: 'ИП',
-    legal_entity: 'Юридическое лицо',
+    self_employed: "Самозанятый (НПД)",
+    individual_entrepreneur: "ИП",
+    legal_entity: "Юридическое лицо",
   };
   return map[f];
 }
 
 export function payoutStatusLabel(s: ReferralPayoutStatus): string {
   const map: Record<ReferralPayoutStatus, string> = {
-    pending: 'Ожидает',
-    paid: 'Выплачено',
-    void: 'Отменено',
+    pending: "Ожидает",
+    paid: "Выплачено",
+    void: "Отменено",
   };
   return map[s];
 }
 
 export function payoutStatusColor(
   s: ReferralPayoutStatus,
-): 'green' | 'amber' | 'red' {
-  if (s === 'paid') return 'green';
-  if (s === 'pending') return 'amber';
-  return 'red';
+): "green" | "amber" | "red" {
+  if (s === "paid") return "green";
+  if (s === "pending") return "amber";
+  return "red";
 }
 
 export function clientStatusLabel(s: ReferralClientStatus): string {
   const map: Record<ReferralClientStatus, string> = {
-    active: 'Активен',
-    churned: 'Ушёл',
-    pending: 'Не оплатил',
+    active: "Активен",
+    churned: "Ушёл",
+    pending: "Не оплатил",
   };
   return map[s];
 }
 
-// ────────────────────────── Utils ──────────────────────────
-
-/**
- * Партнёрская ссылка для копирования / QR-кода.
- * `https://app.kora.app/?ref=<slug>` (в проде) или `<origin>/?ref=<slug>` (dev).
- */
 export function buildReferralUrl(slug: string, origin: string): string {
-  const base = origin.replace(/\/+$/, '');
+  const base = origin.replace(/\/+$/, "");
   return `${base}/?ref=${encodeURIComponent(slug)}`;
 }
 
-/**
- * Партнёр «верифицирован полностью» — оба условия выполнены, можно
- * получать выплаты по cron'у 10-го числа.
- *
- * Дополнительно для фактической выплаты нужны `payoutDetails` —
- * см. `payoutDetailsAreFilled` ниже и ТЗ §6.3.
- */
 export function isFullyVerified(ref: ReferralDomain): boolean {
   return ref.innVerifiedAt !== null && ref.contractAcceptedAt !== null;
 }
 
-/**
- * Заполнены ли реквизиты для вывода (ТЗ §6.3 + §6.5).
- *
- * Backend возвращает `hasPayoutDetails` как computed boolean
- * (`payoutDetails != null && Object.keys > 0`). Это точный признак того,
- * что в `Referral.payoutDetails` лежит непустой объект (т.е. ввели
- * банковские реквизиты, а не только ИНН).
- *
- * До 2026-05-31 здесь была эвристика по `inn && legalForm` — она ложно
- * включала кнопку «Вывести», когда пользователь ввёл ИНН без реквизитов,
- * после чего backend возвращал 400. Перешли на честный признак.
- */
 export function payoutDetailsAreFilled(ref: ReferralDomain): boolean {
   return ref.hasPayoutDetails;
 }
 
-/**
- * Готов ли партнёр к выводу денег (ТЗ §6.5).
- * Активна кнопка «Вывести» только если все условия выполнены и баланс > 0.
- */
 export function canWithdraw(
   ref: ReferralDomain,
   totalPendingKopecks: number,
@@ -288,37 +231,26 @@ export function canWithdraw(
   );
 }
 
-/**
- * Причина, по которой кнопка «Вывести» серая (ТЗ §6.5).
- * Возвращает первую нерешённую причину или `null` если всё ок.
- */
 export function withdrawBlockReason(
   ref: ReferralDomain,
   totalPendingKopecks: number,
 ): string | null {
   if (!payoutDetailsAreFilled(ref)) {
-    return 'Заполни реквизиты для вывода';
+    return "Заполни реквизиты для вывода";
   }
   if (ref.innVerifiedAt === null) {
-    return 'Проверь ИНН в разделе «Реквизиты»';
+    return "Проверь ИНН в разделе «Реквизиты»";
   }
   if (totalPendingKopecks <= 0) {
-    return 'Пока нечего выводить';
+    return "Пока нечего выводить";
   }
   return null;
 }
 
-/**
- * Полезное представление воронки для UI (ТЗ §8.1 состояние C).
- *
- * Возвращает 4 строки с цифрами и процентом конверсии от предыдущего
- * шага. Конверсия первой строки — `null` (нет «предыдущего»).
- */
 export interface FunnelRow {
-  key: 'clicks' | 'signups' | 'firstPayments' | 'activeNow';
+  key: "clicks" | "signups" | "firstPayments" | "activeNow";
   label: string;
   value: number;
-  /** Процент от предыдущей строки. `null` для первой строки и при делении на 0. */
   conversionPercent: number | null;
 }
 
@@ -329,85 +261,55 @@ export function funnelConversion(funnel: FunnelDomain): FunnelRow[] {
   };
   return [
     {
-      key: 'clicks',
-      label: 'Кликов',
+      key: "clicks",
+      label: "Кликов",
       value: funnel.clicks,
       conversionPercent: null,
     },
     {
-      key: 'signups',
-      label: 'Регистраций',
+      key: "signups",
+      label: "Регистраций",
       value: funnel.signups,
       conversionPercent: safePct(funnel.signups, funnel.clicks),
     },
     {
-      key: 'firstPayments',
-      label: 'Первых оплат',
+      key: "firstPayments",
+      label: "Первых оплат",
       value: funnel.firstPayments,
       conversionPercent: safePct(funnel.firstPayments, funnel.signups),
     },
     {
-      key: 'activeNow',
-      label: 'Активных сейчас',
+      key: "activeNow",
+      label: "Активных сейчас",
       value: funnel.activeNow,
       conversionPercent: safePct(funnel.activeNow, funnel.firstPayments),
     },
   ];
 }
 
-/**
- * Лейбл периода для UI селектора.
- */
 export function funnelPeriodLabel(p: FunnelPeriod): string {
   const map: Record<FunnelPeriod, string> = {
-    '30d': 'За 30 дней',
-    '90d': 'За 90 дней',
-    all: 'За всё время',
+    "30d": "За 30 дней",
+    "90d": "За 90 дней",
+    all: "За всё время",
   };
   return map[p];
 }
 
-// ──────────────────── Persistent reward-banner (B3) ────────────────────
-
-/**
- * Ежемесячный платёж одной приведённой компании. Используется в копи
- * баннера («×20 000 ₽/мес»). 20 000 ₽ = 2 000 000 копеек.
- */
-export const REFERRAL_REWARD_PER_CLIENT_KOPECKS = 20_000_00;
-
-/**
- * Состояние persistent-баннера окупаемости (B3) — какой вариант копи
- * показывать.
- *
- *   - `'leaderNoProfile'` — руководитель ещё без профиля: «приведи N компаний».
- *   - `'leaderInProgress'` — руководитель, клиентов меньше цели: живая шкала.
- *   - `'leaderReached'`    — руководитель, цель достигнута: «подписка окуплена».
- *   - `'member'`           — рядовой сотрудник: «дополнительный заработок».
- */
 export type ReferralBannerVariant =
-  | 'leaderNoProfile'
-  | 'leaderInProgress'
-  | 'leaderReached'
-  | 'member';
+  | "leaderNoProfile"
+  | "leaderInProgress"
+  | "leaderReached"
+  | "member";
 
 export interface ReferralBannerCopy {
   variant: ReferralBannerVariant;
-  /** Главный заголовок баннера. */
   title: string;
-  /** Поясняющий хвост (можно скрывать на мобильном). Пустая строка = нет. */
   subtitle: string;
-  /** Текст основной кнопки-CTA (ведёт на `/referrals`). */
   cta: string;
-  /** Показывать ли шкалу прогресса (заполнение `activePaying / targetClients`). */
   showProgress: boolean;
 }
 
-/**
- * Чистая функция выбора варианта и копи баннера по роли + прогрессу.
- * Вынесена из компонента для тестируемости морфинга (B3).
- *
- * `isLeader` — руководитель (owner/admin/coo или super-admin).
- */
 export function referralBannerCopy(
   isLeader: boolean,
   progress: RewardProgressDomain,
@@ -416,21 +318,21 @@ export function referralBannerCopy(
 
   if (!isLeader) {
     return {
-      variant: 'member',
-      title: 'Дополнительный заработок с Корой',
+      variant: "member",
+      title: "Дополнительный заработок с Корой",
       subtitle:
-        'Сделай партнёрскую ссылку и отправь знакомым руководителям — 20 000 ₽/мес с каждой компании.',
-      cta: 'Создать ссылку',
+        "Сделай партнёрскую ссылку и отправь знакомым руководителям — 20 000 ₽/мес с каждой компании.",
+      cta: "Создать ссылку",
       showProgress: false,
     };
   }
 
   if (!hasProfile) {
     return {
-      variant: 'leaderNoProfile',
+      variant: "leaderNoProfile",
       title: `Пользуйся Корой бесплатно — приведи ${targetClients} компании`,
       subtitle: `Каждая платит 20 000 ₽/мес — подписка окупится. Осталось привести: ${targetClients} из ${targetClients}.`,
-      cta: 'Создать ссылку',
+      cta: "Создать ссылку",
       showProgress: true,
     };
   }
@@ -438,52 +340,47 @@ export function referralBannerCopy(
   if (activePaying < targetClients) {
     const left = targetClients - activePaying;
     return {
-      variant: 'leaderInProgress',
-      title: 'Окупаем подписку приведёнными компаниями',
+      variant: "leaderInProgress",
+      title: "Окупаем подписку приведёнными компаниями",
       subtitle: `Осталось привести ещё ${left} из ${targetClients} — подписка окупится.`,
-      cta: 'Моя ссылка',
+      cta: "Моя ссылка",
       showProgress: true,
     };
   }
 
   return {
-    variant: 'leaderReached',
-    title: 'Подписка окуплена 🎉 дальше — чистый заработок',
-    subtitle: 'Каждая новая компания приносит 20 000 ₽/мес сверху.',
-    cta: 'Мой кабинет партнёра',
+    variant: "leaderReached",
+    title: "Подписка окуплена 🎉 дальше — чистый заработок",
+    subtitle: "Каждая новая компания приносит 20 000 ₽/мес сверху.",
+    cta: "Мой кабинет партнёра",
     showProgress: false,
   };
 }
 
-/** Заработок партнёра строкой для UI (если есть что показать). */
 export function referralMonthlyEarnedLabel(kopecks: number): string | null {
   if (kopecks <= 0) return null;
   return `${formatRubles(kopecks)}/мес`;
 }
 
-/**
- * Форматирует `YYYY-MM` в короткую русскую метку: `2026-05` → `май 26`.
- * Используется в IncomeChart (XAxis tickFormatter).
- */
 export function monthLabel(yyyymm: string): string {
   const match = /^(\d{4})-(\d{2})$/.exec(yyyymm);
   if (!match) return yyyymm;
   const year = Number(match[1]);
   const month = Number(match[2]) - 1;
   const monthsShort = [
-    'янв',
-    'фев',
-    'мар',
-    'апр',
-    'май',
-    'июн',
-    'июл',
-    'авг',
-    'сен',
-    'окт',
-    'ноя',
-    'дек',
+    "янв",
+    "фев",
+    "мар",
+    "апр",
+    "май",
+    "июн",
+    "июл",
+    "авг",
+    "сен",
+    "окт",
+    "ноя",
+    "дек",
   ];
-  const m = monthsShort[month] ?? '';
+  const m = monthsShort[month] ?? "";
   return `${m} ${String(year).slice(-2)}`;
 }

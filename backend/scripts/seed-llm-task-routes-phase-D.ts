@@ -1,30 +1,3 @@
-/**
- * Seed LLM-task-route для Фазы D (sub-TZ §6.4) — taskType `transcript-clean-refine`.
- *
- * Источник цепочки моделей: docs/reference/llm-models-playbook.md §11 «Fallback chain»,
- * категория `classifier` (короткий батч-классификатор фрагментов сегментов).
- *
- * Цепочка трёх уровней:
- *   primary    = openai-via-proxy / gpt-5.4-nano   — дёшево, быстро, JSON-стабильно (playbook §2 «Классификаторы»).
- *   secondary  = deepseek / deepseek-v4-flash      — резерв при отказе OpenAI proxy (playbook §2 общий поток).
- *   tertiary   = ollama / qwen3.5:9b               — local fallback; для filler/false-start
- *                                                    qwen3.5 справляется. Если не вытягивает —
- *                                                    воркер корректно работает на одном уровне 1
- *                                                    (детерминистский), llmRefineSkipped=true в stats.
- *
- * Особенность фазы D vs B/C: при ПОЛНОМ отказе LLM воркер успешно завершает работу
- * через уровень 1 — это закладывается в `TranscriptCleanLlmRefineService` (никаких
- * throw из refine, при ошибке возвращается уровень 1 без изменений).
- *
- * Идемпотентность (safe-seed-rules): upsert по (taskType, tenantId=null). Без
- * `--update-existing` НИЧЕГО не меняем у уже-существующих route'ов — это защищает
- * от перезаписи цепочки, которую super_admin уже подредактировал через UI.
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-phase-D.ts
- *   bun run scripts/seed-llm-task-routes-phase-D.ts --update-existing
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -45,9 +18,7 @@ const TRANSCRIPT_CLEAN_REFINE_PROVIDERS: ProviderEntry[] = [
 async function main(): Promise<void> {
   const updateExisting = process.argv.includes('--update-existing');
   // eslint-disable-next-line no-console
-  console.log(
-    `=== seed-llm-task-routes-phase-D START (updateExisting=${updateExisting}) ===`,
-  );
+  console.log(`=== seed-llm-task-routes-phase-D START (updateExisting=${updateExisting}) ===`);
 
   const taskType = 'transcript-clean-refine';
   const existing = await prisma.llmTaskRoute.findFirst({

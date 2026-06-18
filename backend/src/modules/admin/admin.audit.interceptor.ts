@@ -12,57 +12,40 @@ import { type Observable, tap } from 'rxjs';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-/**
- * Маска чувствительных полей в payload для аудит-лога.
- * Сейчас прячем `key`, `password`, `passwordHash`. Расширяемо.
- */
 const SENSITIVE_FIELDS = new Set(['key', 'password', 'passwordHash']);
 
-/**
- * Маппинг `<METHOD> /admin/api/v1/<route>` → `action` + `targetType`.
- * Если совпадения нет — fallback на `<method>:<path>`.
- */
 function classifyAction(
   method: string,
   url: string,
 ): { action: string; targetType: string } | null {
-  // Уберём query-string и завершающий slash.
   const path = url.split('?')[0]?.replace(/\/+$/, '') ?? '';
 
-  // /admin/api/v1/integration-keys
   if (/\/admin\/api\/v1\/integration-keys\/?$/.test(path)) {
     if (method === 'POST') {
       return { action: 'create_integration_key', targetType: 'IntegrationKey' };
     }
   }
-  // /admin/api/v1/integration-keys/:id
   if (/\/admin\/api\/v1\/integration-keys\/[^/]+\/?$/.test(path)) {
     if (method === 'DELETE') {
       return { action: 'revoke_integration_key', targetType: 'IntegrationKey' };
     }
   }
-  // /admin/api/v1/meetings/:id/force-finish
   if (/\/admin\/api\/v1\/meetings\/[^/]+\/force-finish\/?$/.test(path)) {
     if (method === 'POST') {
       return { action: 'force_finish_meeting', targetType: 'Meeting' };
     }
   }
-  // /admin/api/v1/meetings/:id/retry-ai
   if (/\/admin\/api\/v1\/meetings\/[^/]+\/retry-ai\/?$/.test(path)) {
     if (method === 'POST') {
       return { action: 'retry_ai_meeting', targetType: 'Meeting' };
     }
   }
 
-  // ТЗ 2026-05-26 — admin CRUD для CloneAccessGrant (§4.2).
-  // POST /api/v1/admin/clones/access-grants
   if (/\/api\/v1\/admin\/clones\/access-grants\/?$/.test(path)) {
     if (method === 'POST') {
       return { action: 'grant_clone_access', targetType: 'CloneAccessGrant' };
     }
   }
-  // DELETE /api/v1/admin/clones/access-grants/:id
-  // PATCH  /api/v1/admin/clones/access-grants/:id
   if (/\/api\/v1\/admin\/clones\/access-grants\/[^/]+\/?$/.test(path)) {
     if (method === 'DELETE') {
       return { action: 'revoke_clone_access', targetType: 'CloneAccessGrant' };
@@ -75,14 +58,8 @@ function classifyAction(
   return null;
 }
 
-/**
- * Извлекает `targetId` из URL по индексу :id (после `meetings/` или
- * `integration-keys/`). Если не нашли — возвращает 'unknown'.
- */
 function extractTargetIdFromPath(url: string): string {
   const path = url.split('?')[0] ?? '';
-  // ТЗ 2026-05-26 — добавлен `access-grants` для CloneAccessGrant
-  // (`/api/v1/admin/clones/access-grants/:id`).
   const m = /\/(?:integration-keys|meetings|access-grants)\/([^/?]+)/.exec(path);
   return m?.[1] ?? 'unknown';
 }
@@ -114,18 +91,6 @@ function toJson(value: unknown): Prisma.InputJsonValue {
   }
 }
 
-/**
- * Пишет AdminAuditLog для НЕ-GET admin-действий после успешного ответа.
- *
- *   - actorId  → req.user.id (на момент пост-успешного выполнения).
- *   - action   → из таблицы classifyAction.
- *   - targetType → 'IntegrationKey' | 'Meeting' | 'Recording' | fallback.
- *   - targetId → req.params.id, либо из ответа (response.id),
- *                иначе 'unknown'.
- *   - payload  → req.body с замаскированными секретами.
- *
- * Ошибки записи — лог + игнор (аудит важен, но падать не должен).
- */
 @Injectable()
 export class AdminAuditInterceptor implements NestInterceptor {
   private readonly logger = new Logger(AdminAuditInterceptor.name);
@@ -145,7 +110,6 @@ export class AdminAuditInterceptor implements NestInterceptor {
         const actorId = request.user?.id;
         if (!actorId) return;
 
-        // targetId — сначала params.id, потом из ответа, потом 'unknown'.
         const params = (request.params ?? {}) as Record<string, string>;
         let targetId = params['id'];
         if (!targetId) {

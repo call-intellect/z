@@ -20,26 +20,6 @@ import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { extractKeyFromUrl } from '../s3-keys';
 import { S3Service } from '../s3.service';
 
-/**
- * Worker очереди `recording.faststart` (ТЗ 2026-06-03 meeting-recording-reliability,
- * Фаза 3, P1).
- *
- * Зачем: LiveKit Egress кодирует composite MP4 через GStreamer `mp4mux` с
- * `faststart=false` по умолчанию → metadata-atom `moov` пишется в КОНЕЦ файла.
- * Браузеру `moov` нужен ДО старта воспроизведения, поэтому на большом файле
- * (383 МБ на 17-мин встрече; гигабайты на 1–2 ч) плеер тянет весь файл прежде
- * первого кадра — «вечная крутилка». `EncodedFileOutput` не выставляет
- * faststart-опцию (подтверждено Context7 LiveKit Egress), поэтому переупаковываем
- * пост-фактум: `ffmpeg -c copy -movflags +faststart` (без перекодирования —
- * секунды) и перезаливаем в S3 по тому же ключу (mainVideoUrl остаётся валиден).
- *
- * Гейтинг: `RECORDING_FASTSTART_ENABLED` (дефолт OFF — требует ffmpeg в образе
- * и эмпирической проверки на проде). Concurrency=1 — ffmpeg/IO тяжёлые.
- * Идемпотентность: фиксированный jobId по meetingId + сам ремукс идемпотентен
- * (faststart-файл, переупакованный повторно, остаётся faststart).
- *
- * Ffmpeg должен быть в PATH контейнера (Dockerfile backend: `apk add ffmpeg`).
- */
 @Injectable()
 export class FaststartWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(FaststartWorker.name);
@@ -77,12 +57,7 @@ export class FaststartWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Переупаковка composite MP4 в faststart. Идемпотентна и безопасна для
-   * повторного запуска. Публичный метод — для прямого вызова в тестах.
-   */
   async processMeeting(meetingId: string): Promise<void> {
-    // Defense-in-depth: если флаг выключили уже после постановки job'а — skip.
     if (!this.cfg.recording.faststartEnabled) {
       this.logger.debug({ meetingId }, 'faststart: выключен флагом — skip');
       return;
@@ -94,9 +69,6 @@ export class FaststartWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Порог по размеру: мелкий composite браузер проглатывает мгновенно даже с
-    // moov в конце — ремукс был бы лишней нагрузкой. Если размер неизвестен
-    // (bytesTotal=null) — обрабатываем (мог быть большим).
     const minBytes = this.cfg.recording.faststartMinBytes;
     const bytes = recording.bytesTotal !== null ? Number(recording.bytesTotal) : null;
     if (bytes !== null && bytes < minBytes) {
@@ -125,24 +97,12 @@ export class FaststartWorker implements OnModuleInit, OnModuleDestroy {
       const srcBuffer = await this.s3.getObject(key);
       await writeFile(srcPath, srcBuffer);
 
-      // -c copy: без перекодирования (ремукс, секунды).
-      // -movflags +faststart: переносит moov-atom в начало файла.
-      await this.runFfmpeg([
-        '-y',
-        '-i',
-        srcPath,
-        '-c',
-        'copy',
-        '-movflags',
-        '+faststart',
-        outPath,
-      ]);
+      await this.runFfmpeg(['-y', '-i', srcPath, '-c', 'copy', '-movflags', '+faststart', outPath]);
 
       const outBuffer = await readFile(outPath);
-      // Перезаливаем по тому же ключу — mainVideoUrl/AudioTrack/presign не меняются.
       await this.s3.putObject({ key, body: outBuffer, contentType: 'video/mp4' });
 
-      this.logger.log(
+      this.logger.debug(
         { meetingId, key, bytes: outBuffer.byteLength },
         'faststart: composite переупакован (moov в начало)',
       );
@@ -153,7 +113,6 @@ export class FaststartWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Запуск ffmpeg как child process. `protected` — переопределяется в тестах. */
   protected runFfmpeg(args: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
       const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });

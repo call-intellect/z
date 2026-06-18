@@ -1,48 +1,19 @@
-/**
- * Manual smoke-test для KIE и GRSAI (ТЗ
- * `plans/tz/2026-05-24-kie-grsai-llm-router-integration.md`).
- *
- * Цель — один маленький live-вызов в каждый канал, чтобы:
- *   - убедиться, что ключи валидны;
- *   - увидеть фактическую латентность и токены;
- *   - проверить calcCostUsd на реальных цифрах (для gemini-3-flash / gpt-5-4
- *     цены пока заглушка $0 — это видно в логе);
- *   - не зависеть от полного smoke-llm-providers.ts (там много каналов и
- *     долгий прогон).
- *
- * **Не для CI.** Запускается вручную при обновлении ключей / провайдеров.
- * Без записи в БД — никакого `AiUsageLog`, никаких побочных эффектов.
- *
- * Если ENV `KIE_API_KEY` или `GRSAI_API_KEY` не заданы — соответствующий
- * блок пропускается с сообщением «set env to run». Это позволяет крутить
- * скрипт в разработке без боевых ключей.
- *
- * Запуск:
- *   cd backend && bun run scripts/smoke-test-kie-grsai.ts
- */
-
 import 'reflect-metadata';
 import { config as loadEnv } from 'dotenv';
 import { resolve } from 'node:path';
 
 import { KieService } from '../src/modules/ai/services/kie.service';
 import { GrsaiService } from '../src/modules/ai/services/grsai.service';
-import {
-  calcCostUsd,
-  MODEL_PRICES,
-} from '../src/modules/ai/services/model-prices';
+import { calcCostUsd, MODEL_PRICES } from '../src/modules/ai/services/model-prices';
 import type { LlmCompleteInput } from '../src/modules/ai/services/llm.types';
 import type { TypedConfigService } from '../src/common/config/index';
 
-// .env приоритет: корневой override → backend/.env как fallback.
 loadEnv({ path: resolve(__dirname, '..', '..', '.env'), override: true });
 loadEnv({ path: resolve(__dirname, '..', '.env'), override: false });
 
-const SYSTEM_PROMPT =
-  'Ты лаконичный ассистент. Отвечай строго одним словом без знаков препинания.';
+const SYSTEM_PROMPT = 'Ты лаконичный ассистент. Отвечай строго одним словом без знаков препинания.';
 const USER_PROMPT = 'Скажи только одно слово: тест';
 
-// Минимальный TypedConfigService — нам нужны только ai.kie / ai.grsai / ai.proxy.
 function buildCfg(): TypedConfigService {
   return {
     ai: {
@@ -145,7 +116,6 @@ async function main(): Promise<void> {
   const cfg = buildCfg();
   const rows: SmokeRow[] = [];
 
-  // KIE: gemini-3-flash (главный кандидат на A/B; gemini-format).
   if (!process.env.KIE_API_KEY) {
     rows.push({
       provider: 'kie',
@@ -155,15 +125,9 @@ async function main(): Promise<void> {
     });
   } else {
     const kie = new KieService(cfg);
-    rows.push(
-      await runOne('kie', 'gemini-3-flash', (input) => kie.complete(input)),
-    );
+    rows.push(await runOne('kie', 'gemini-3-flash', (input) => kie.complete(input)));
   }
 
-  // GRSAI: gpt-5-4? Нет, у grsai сейчас verified Gemini. В ТЗ §1 явно
-  // указано «GrsaiService с gpt-5-4». Но verified-канал GRSAI — Gemini.
-  // Делаем оба прогона: gpt-5-4 через KIE (как и описывает ТЗ §3), плюс
-  // gemini-3-pro через GRSAI как фактический verified-канал.
   if (!process.env.KIE_API_KEY) {
     rows.push({
       provider: 'kie',
@@ -185,9 +149,7 @@ async function main(): Promise<void> {
     });
   } else {
     const grsai = new GrsaiService(cfg);
-    rows.push(
-      await runOne('grsai', 'gemini-3-pro', (input) => grsai.complete(input)),
-    );
+    rows.push(await runOne('grsai', 'gemini-3-pro', (input) => grsai.complete(input)));
   }
 
   // eslint-disable-next-line no-console
@@ -196,7 +158,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log('=== smoke-test-kie-grsai DONE ===');
 
-  // Возврат non-zero если хотя бы один live-канал упал — удобно для CLI.
   const failed = rows.some((r) => r.status === 'fail');
   if (failed) process.exitCode = 1;
 }

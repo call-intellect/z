@@ -63,13 +63,8 @@ describe('RoomMessagesService', () => {
   });
 
   function make(): RoomMessagesService {
-    return new RoomMessagesService(
-      repo as unknown as RoomMessagesRepository,
-      cfg,
-    );
+    return new RoomMessagesService(repo as unknown as RoomMessagesRepository, cfg);
   }
-
-  // ────────────────────────── send ──────────────────────────
 
   describe('send — happy path', () => {
     it('owner может отправить и сохранить сообщение', async () => {
@@ -285,8 +280,6 @@ describe('RoomMessagesService', () => {
     });
   });
 
-  // ────────────────────────── list ──────────────────────────
-
   describe('list', () => {
     it('owner может читать историю', async () => {
       repo.findMeeting.mockResolvedValue({
@@ -324,9 +317,9 @@ describe('RoomMessagesService', () => {
       });
       repo.findParticipant.mockResolvedValue(null);
       const svc = make();
-      await expect(
-        svc.list({ meetingId: 'm1', currentUser: otherUser }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(svc.list({ meetingId: 'm1', currentUser: otherUser })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
     });
 
     it('soft-deleted встреча → NotFound', async () => {
@@ -336,9 +329,9 @@ describe('RoomMessagesService', () => {
         deletedAt: new Date(),
       });
       const svc = make();
-      await expect(
-        svc.list({ meetingId: 'm1', currentUser: ownerUser }),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.list({ meetingId: 'm1', currentUser: ownerUser })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 });

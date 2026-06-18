@@ -15,30 +15,17 @@ import {
   type DecisionImplementationStatus,
 } from './decision-implementation.scoring';
 
-/** Одно решение месяца со статусом доведения (для витрины Ф5). */
 export interface MonthDecisionRow {
   id: string;
   statement: string;
-  /** Статус внедрения (done/in_progress/stalled/not_started). */
   status: DecisionImplementationStatus;
-  /** % доведения по статусу (done=100, in_progress=50, иначе 0). */
   throughputPercent: number;
 }
 
-/**
- * TZ-1 Фаза 3.B (daily-value-engine) — DecisionImplementationService.
- *
- * Контролёр внедрения решений: ловит `Decision(status∈approved/implemented)`
- * старше `decision.stale_days` (AdminSetting, default 21) с
- * `linkedTaskCount=0 AND actualOutcomes IS NULL` → `implementationStatus=
- * 'stalled'`. Строит агрегат «% решений, доведённых до actualOutcomes»
- * (несущая метрика витрины Ф5). БЕЗ LLM — чистый SQL/TS.
- */
 @Injectable()
 export class DecisionImplementationService {
   private readonly logger = new Logger(DecisionImplementationService.name);
 
-  /** Статусы решений, которые контролируем на внедрение. */
   private static readonly CONTROLLED_STATUSES = ['approved', 'implemented'] as const;
 
   constructor(
@@ -48,17 +35,7 @@ export class DecisionImplementationService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  // ──────────────────────────── compute (cron) ────────────────────────
-
-  /**
-   * Пройти по решениям Org, пересчитать `implementationStatus`. Возвращает
-   * застрявшие решения (для пуша ответственным) + счётчики.
-   * Идемпотентно (повторный прогон апдейтит те же статусы, не плодит).
-   */
-  async computeForTenant(args: {
-    tenantId: string;
-    now: Date;
-  }): Promise<{
+  async computeForTenant(args: { tenantId: string; now: Date }): Promise<{
     checked: number;
     autoImplemented: number;
     stalled: Array<{
@@ -108,12 +85,6 @@ export class DecisionImplementationService {
         staleDays,
       });
 
-      // Редизайн Ф8.1 — детерминированная петля решений: approved-решение,
-      // доведённое до результата (есть actualOutcomes) ИЛИ под которым ВСЕ
-      // связанные задачи закрыты → авто-перевод в статус 'implemented'.
-      // Идемпотентно: после перехода status='implemented' условие (===approved)
-      // не сработает повторно. Mention-based «сделали/внедрили» по транскриптам
-      // НЕ делаем (LLM-эвристика) — закрывает основной кейс детерминированно.
       if (d.status === 'approved') {
         const doneByLoop =
           hasOutcomes ||
@@ -130,13 +101,16 @@ export class DecisionImplementationService {
           autoImplemented++;
           this.metrics.incDecisionAutoImplemented();
           this.logger.log(
-            { tenantId: args.tenantId, decisionId: d.id, reason: hasOutcomes ? 'outcomes' : 'all_tasks_done' },
+            {
+              tenantId: args.tenantId,
+              decisionId: d.id,
+              reason: hasOutcomes ? 'outcomes' : 'all_tasks_done',
+            },
             'decision-implementation: авто-переход approved→implemented',
           );
         }
       }
 
-      // Апдейтим только при изменении (идемпотентность, меньше записей).
       if (status !== d.implementationStatus) {
         await this.prisma.decision.update({
           where: { id: d.id },
@@ -154,7 +128,6 @@ export class DecisionImplementationService {
       checked++;
 
       if (status === 'stalled') {
-        // Метрика только на ПЕРЕХОД в stalled (не на каждый прогон).
         if (d.implementationStatus !== 'stalled') {
           this.metrics.incDecisionStalled();
         }
@@ -166,7 +139,6 @@ export class DecisionImplementationService {
       }
     }
 
-    // Обновляем gauge throughput (за последние 90 дней — операционное окно).
     try {
       const to = args.now;
       const from = new Date(to.getTime() - 90 * 24 * 3_600_000);
@@ -189,14 +161,6 @@ export class DecisionImplementationService {
     return { checked, autoImplemented, stalled };
   }
 
-  /**
-   * Редизайн Ф8.1 — все ли связанные с решением задачи закрыты
-   * (`Issue.completedAt != null`). Признак доведения для авто-перехода
-   * approved→implemented. Требует ≥1 связанной задачи: решение без задач и
-   * без outcomes доводить нельзя (иначе любое «голое» решение автозакроется).
-   * `completedAt` — канон завершённости задачи (см. IssueOverdueDetectorCron),
-   * не зависит от справочника IssueState.
-   */
   private async allLinkedTasksCompleted(args: {
     tenantId: string;
     decisionId: string;
@@ -212,15 +176,6 @@ export class DecisionImplementationService {
     return links.every((l) => l.issue?.completedAt != null);
   }
 
-  // ──────────────────────────── read (endpoints / Ф5) ─────────────────
-
-  /**
-   * Агрегат «% решений, доведённых до actualOutcomes» за окно. Несущая метрика
-   * витрины Ф5 (Р7 — count всегда в паре с «% доведённых»).
-   *
-   * `total` — решения, decidedAt/createdAt в [from, to] со статусом
-   * approved/implemented; `doneWithOutcomes` — из них с непустым actualOutcomes.
-   */
   async getDecisionThroughput(args: {
     tenantId: string;
     from: Date;
@@ -243,15 +198,6 @@ export class DecisionImplementationService {
     return computeDecisionThroughput({ total, doneWithOutcomes });
   }
 
-  /**
-   * Список решений месяца со статусом доведения (для построчной витрины Ф5).
-   * Окно [from, to] по decidedAt (fallback createdAt), статусы
-   * approved/implemented. Статус доведения берётся из `implementationStatus`
-   * (выставлен контролёром); если NULL — классифицируется на лету теми же
-   * правилами. `throughputPercent` — грубая шкала по статусу (Р7: точный % —
-   * только в агрегате getDecisionThroughput). Сортировка
-   * done→in_progress→stalled→not_started, топ-N (default 10).
-   */
   async listDecisionsForMonth(args: {
     tenantId: string;
     from: Date;
@@ -293,19 +239,12 @@ export class DecisionImplementationService {
       };
     });
 
-    mapped.sort(
-      (a, b) => decisionStatusSortRank(a.status) - decisionStatusSortRank(b.status),
-    );
+    mapped.sort((a, b) => decisionStatusSortRank(a.status) - decisionStatusSortRank(b.status));
 
     const limit = Math.min(Math.max(args.limit ?? 10, 1), 50);
     return mapped.slice(0, limit);
   }
 
-  /**
-   * Статус доведения решения для списка месяца: берём `implementationStatus`
-   * если он валиден, иначе классифицируем на лету (контролёр мог ещё не
-   * прогнаться).
-   */
   private resolveMonthDecisionStatus(
     d: {
       decidedAt: Date | null;
@@ -327,8 +266,7 @@ export class DecisionImplementationService {
       return stored;
     }
     const ageDays = this.ageDays(d.decidedAt ?? d.createdAt, now);
-    const hasOutcomes =
-      typeof d.actualOutcomes === 'string' && d.actualOutcomes.trim().length > 0;
+    const hasOutcomes = typeof d.actualOutcomes === 'string' && d.actualOutcomes.trim().length > 0;
     return classifyImplementationStatus({
       ageDays,
       linkedTaskCount: d.linkedTaskCount,
@@ -337,11 +275,7 @@ export class DecisionImplementationService {
     });
   }
 
-  /** Решения без движения (`implementationStatus='stalled'`) — для endpoint'а. */
-  async listStalledForTenant(args: {
-    tenantId: string;
-    limit?: number;
-  }): Promise<
+  async listStalledForTenant(args: { tenantId: string; limit?: number }): Promise<
     Array<{
       id: string;
       statement: string;
@@ -374,8 +308,6 @@ export class DecisionImplementationService {
         : null,
     }));
   }
-
-  // ──────────────────────────── helpers ───────────────────────────────
 
   private ageDays(from: Date, now: Date): number {
     const diff = Math.floor((now.getTime() - from.getTime()) / 86_400_000);

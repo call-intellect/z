@@ -1,17 +1,3 @@
-/**
- * Unit-тесты DadataAdapter.
- *
- * Покрытие:
- *   - Без DADATA_API_KEY → null + warn-лог
- *   - Успешный LEGAL ответ → payerType='legal_entity'
- *   - Успешный INDIVIDUAL ответ → payerType='individual_entrepreneur'
- *   - HTTP 404 / 401 → null (не throw, fallback'у шанс)
- *   - Пустой suggestions[] → null
- *   - Timeout / network error → null (graceful)
- *
- * fetch мокается через vi.stubGlobal.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
@@ -81,11 +67,8 @@ describe('DadataAdapter', () => {
     expect(result?.directorName).toBe('Греф Г.О.');
     expect(result?.legalAddress).toBe('г. Москва, ул. Вавилова, 19');
 
-    // Проверяем что headers/body корректные
     const [url, init] = fetchMock.mock.calls[0] ?? [];
-    expect(url).toBe(
-      'https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/party',
-    );
+    expect(url).toBe('https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/party');
     expect((init as RequestInit).method).toBe('POST');
     const headers = (init as RequestInit).headers as Record<string, string>;
     expect(headers.Authorization).toBe('Token test-token');
@@ -114,7 +97,7 @@ describe('DadataAdapter', () => {
     expect(result?.kpp).toBeNull();
   });
 
-  it('HTTP 404 → null (даём fallback\'у шанс)', async () => {
+  it("HTTP 404 → null (даём fallback'у шанс)", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(404, { message: 'Not found' }));
     const adapter = new DadataAdapter(makeCfg('test-token'));
     expect(await adapter.lookup('0000000000')).toBeNull();

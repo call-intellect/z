@@ -1,18 +1,3 @@
-/**
- * ТЗ 2026-06-15 (chat-v2 единый промпт + человеческий контекст) — unit на
- * `buildUserMessage`. Проверяем:
- *   1) тип блока приходит ПО-РУССКИ (SIGNAL_TYPE_CONTEXT_RU), а не кодом enum;
- *   2) Память диалога (summary + history) — в USER, а не в SYSTEM;
- *   3) противоречащие факты — с русским тегом [ПРОТИВОРЕЧАЩИЙ ФАКТ] и русским
- *      заголовком «Противоречащие факты:»;
- *   4) цепочка рассуждения — русский тег без служебных depth/nodes;
- *   5) блок «Данные из таблиц» — только если переданы строки (ЧАСТЬ B);
- *   6) «Вопрос:» — в самом конце; цитаты [BLOCK:<id>] и «Из встречи …» целы.
- *
- * `buildUserMessage` приватный — вызываем через cast (как в counter-evidence
- * spec). Метод чистый (без сети/БД), поэтому достаточно сконструировать сервис
- * с минимальными stub-зависимостями.
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';
@@ -103,12 +88,8 @@ function makeService(): ChatV2Service {
   );
 }
 
-function build(
-  svc: ChatV2Service,
-  ...args: Parameters<BuildUserMessageFn>
-): string {
-  const fn = (svc as unknown as { buildUserMessage: BuildUserMessageFn })
-    .buildUserMessage;
+function build(svc: ChatV2Service, ...args: Parameters<BuildUserMessageFn>): string {
+  const fn = (svc as unknown as { buildUserMessage: BuildUserMessageFn }).buildUserMessage;
   return fn.apply(svc, args);
 }
 
@@ -133,10 +114,8 @@ describe('ChatV2Service.buildUserMessage — человеческий русск
     const svc = makeService();
     const out = build(svc, 'Какие риски по клиенту?', [baseBlock], [], []);
 
-    // churn_risk → «риск оттока» (точный ярлык, не схлопнутый «риски»).
     expect(out).toContain('(риск оттока)');
     expect(out).not.toContain('(churn_risk)');
-    // Цитата блока и строка «Из встречи …» целы.
     expect(out).toContain('[BLOCK:b1]');
     expect(out).toContain('Из встречи "Звонок с клиентом" [01:05]:');
   });
@@ -157,10 +136,7 @@ describe('ChatV2Service.buildUserMessage — человеческий русск
     expect(out).toContain('- Пользователь: Когда продлеваем?');
     expect(out).toContain('- Ассистент: В следующем квартале.');
 
-    // Память диалога — ДО «Контекст:», «Вопрос:» — в самом конце.
-    expect(out.indexOf('Краткое содержание диалога:')).toBeLessThan(
-      out.indexOf('Контекст:'),
-    );
+    expect(out.indexOf('Краткое содержание диалога:')).toBeLessThan(out.indexOf('Контекст:'));
     expect(out.trimEnd().endsWith('Что дальше?')).toBe(true);
   });
 
@@ -200,12 +176,11 @@ describe('ChatV2Service.buildUserMessage — человеческий русск
       ],
     );
 
-    expect(out).toContain(CONTRADICTIONS_HEADER); // «Противоречащие факты:»
-    expect(out).toContain(CONTRADICTING_FACT_TAG); // «[ПРОТИВОРЕЧАЩИЙ ФАКТ]»
+    expect(out).toContain(CONTRADICTIONS_HEADER);
+    expect(out).toContain(CONTRADICTING_FACT_TAG);
     expect(out).toContain('(противоречит [BLOCK:b1])');
     expect(out).toContain('[BLOCK:c1]');
-    expect(out).toContain('(решение)'); // decision → русский ярлык
-    // Английских тегов больше нет.
+    expect(out).toContain('(решение)');
     expect(out).not.toContain('CONTRADICTING BLOCK');
     expect(out).not.toContain('counter-evidence');
   });
@@ -247,7 +222,6 @@ describe('ChatV2Service.buildUserMessage — человеческий русск
     expect(out).not.toContain('REASONING CHAIN FOR BLOCK');
     expect(out).not.toContain('depth=');
     expect(out).not.toContain('nodes=');
-    // Узел цепочки: тип по-русски, seed пропущен.
     expect(out).toContain('(обоснование) Маржа падала: Скидка съедала маржу.');
   });
 

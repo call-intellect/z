@@ -11,26 +11,13 @@ import {
   type ProbePendingDetail,
 } from './pending-actions-provider.types';
 
-/**
- * Провайдер «уточняющий вопрос ждёт ответа» (Notification
- * eventType='probe.question', responseStatus='pending').
- *
- * Кому показываем: получателю (recipientUserId = user) — любая роль.
- *
- * severity=urgent, если вопрос просрочен (expiresAt < now). canQuickConfirm=false
- * (probe требует свободного ответа текстом/голосом — не «один клик»).
- */
 @Injectable()
 export class ProbePendingProvider implements PendingActionsProvider {
   readonly source = 'probe' as const;
 
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-  ) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  private buildWhere(
-    a: PendingActionsProviderArgs,
-  ): Prisma.NotificationWhereInput {
+  private buildWhere(a: PendingActionsProviderArgs): Prisma.NotificationWhereInput {
     const where: Prisma.NotificationWhereInput = {
       tenantId: a.tenantId,
       recipientUserId: a.userId,
@@ -50,29 +37,37 @@ export class ProbePendingProvider implements PendingActionsProvider {
   async listForUser(
     a: PendingActionsProviderArgs & { limit: number },
   ): Promise<PendingActionItem[]> {
+    const fetchLimit = Math.max(a.limit * 4, 200);
     const items = await this.prisma.notification.findMany({
       where: this.buildWhere(a),
-      orderBy: [{ createdAt: 'asc' }],
-      take: a.limit,
+      orderBy: [{ createdAt: 'desc' }],
+      take: fetchLimit,
       select: {
         id: true,
         payload: true,
         expiresAt: true,
         createdAt: true,
+        contextBlockId: true,
+        contextCardId: true,
       },
     });
+
+    const deduped = deduplicateProbes(items);
+
+    const page = deduped
+      .slice()
+      .sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime())
+      .slice(0, a.limit);
+
     const now = new Date();
-    return items.map((i) => {
+    return page.map((i) => {
       const ageDays = ageDaysFrom(i.createdAt, now);
       const overdue = i.expiresAt != null && i.expiresAt.getTime() < now.getTime();
-      // payload probe.question формируется в ProbeDispatcherWorker:
-      // { question, askedBy, context? } (см. probe-dispatcher.worker.ts §4).
       const payload = asObject(i.payload);
       const question = strOrUndef(payload.question);
       const context = strOrUndef(payload.context);
       const detail: ProbePendingDetail = {
         kind: 'probe',
-        // Если по какой-то причине вопроса нет в payload — мягкий fallback.
         question: question ?? 'Уточняющий вопрос ждёт вашего ответа',
         context,
         notificationId: i.id,
@@ -81,13 +76,9 @@ export class ProbePendingProvider implements PendingActionsProvider {
         source: this.source,
         resourceType: 'probe_question',
         resourceId: i.id,
-        // Реальная суть: сам вопрос вместо шаблона.
         title: question ?? 'Уточняющий вопрос ждёт вашего ответа',
         severity: overdue ? 'urgent' : 'normal',
         ageDays,
-        // Ведём прямо к конкретному вопросу в «Уведомлениях», где на него
-        // можно ответить (ProbeAnswerInput), а не на общий список-ленту.
-        // resourceId здесь = id Notification (см. select выше).
         actionUrl: `/me/notifications?id=${i.id}`,
         canQuickConfirm: false,
         detail,
@@ -96,7 +87,6 @@ export class ProbePendingProvider implements PendingActionsProvider {
   }
 }
 
-/** Безопасно приводит Prisma.JsonValue к объекту (иначе пустой объект). */
 function asObject(v: unknown): Record<string, unknown> {
   if (v && typeof v === 'object' && !Array.isArray(v)) {
     return v as Record<string, unknown>;
@@ -104,7 +94,33 @@ function asObject(v: unknown): Record<string, unknown> {
   return {};
 }
 
-/** Непустая строка или undefined. */
 function strOrUndef(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim().length > 0 ? v : undefined;
+}
+
+function deduplicateProbes<
+  T extends {
+    id: string;
+    payload: unknown;
+    expiresAt: Date | null;
+    contextBlockId: string | null;
+    contextCardId: string | null;
+    createdAt: Date;
+  },
+>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const item of items) {
+    const payload = asObject(item.payload);
+    const question =
+      typeof payload.question === 'string'
+        ? payload.question.toLowerCase().replace(/\s+/g, ' ').trim()
+        : '';
+    const key = [item.contextBlockId ?? '_', item.contextCardId ?? '_', question].join('\x00');
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(item);
+    }
+  }
+  return result;
 }

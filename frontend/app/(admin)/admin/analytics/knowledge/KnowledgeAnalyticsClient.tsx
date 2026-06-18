@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { ArrowUpRight, BarChart3, Building2, Network } from 'lucide-react';
+import { useState } from "react";
+import { ArrowUpRight, BarChart3, Building2, Network } from "lucide-react";
 import {
   CartesianGrid,
   Legend,
@@ -11,54 +11,40 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-} from 'recharts';
+} from "recharts";
 
-import { adminKnowledgeAnalyticsApi } from '@/api/admin-knowledge-analytics.api';
+import { adminKnowledgeAnalyticsApi } from "@/api/admin-knowledge-analytics.api";
 import {
   adminKnowledgeByOrgFromApi,
   adminKnowledgeGrowthFromApi,
   adminKnowledgeOverviewFromApi,
   type AdminKnowledgeByOrgRowDomain,
-} from '@/domain/admin-knowledge-analytics';
-import {
-  ADMIN_PERIOD_LABELS,
-  type AdminPeriod,
-} from '@/domain/admin-usage';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminTabs } from '@/ui/components/admin/AdminTabs';
-import { AdminCsvDownloadButton } from '@/ui/components/admin/AdminCsvDownloadButton';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/ui/shadcn/card';
+} from "@/domain/admin-knowledge-analytics";
+import { ADMIN_PERIOD_LABELS, type AdminPeriod } from "@/domain/admin-usage";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminTabs } from "@/ui/components/admin/AdminTabs";
+import { AdminCsvDownloadButton } from "@/ui/components/admin/AdminCsvDownloadButton";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
 
-const PERIODS: AdminPeriod[] = ['day', 'week', 'month'];
+const PERIODS: AdminPeriod[] = ["day", "week", "month"];
 
-/**
- * Аналитика Knowledge-Core: размеры графа, рост, разбивка по Org.
- *
- * Бэкенд `/api/v1/admin/analytics/knowledge/*` готовится параллельно.
- * Любая ошибка загрузки (включая 404/501) показывает `AdminError`/`AdminEmpty`.
- */
 export function KnowledgeAnalyticsClient() {
-  const [period, setPeriod] = useState<AdminPeriod>('week');
+  const [period, setPeriod] = useState<AdminPeriod>("week");
 
   return (
     <AdminSection
@@ -84,24 +70,22 @@ export function KnowledgeAnalyticsClient() {
     >
       <AdminTabs
         tabs={[
-          { value: 'overview', label: 'Обзор', icon: BarChart3 },
-          { value: 'by-org', label: 'По Org', icon: Building2 },
-          { value: 'growth', label: 'Рост', icon: Network },
+          { value: "overview", label: "Обзор", icon: BarChart3 },
+          { value: "by-org", label: "По Org", icon: Building2 },
+          { value: "growth", label: "Рост", icon: Network },
         ]}
       >
         {(tab) => (
           <>
-            {tab === 'overview' && <OverviewTab period={period} />}
-            {tab === 'by-org' && <ByOrgTab period={period} />}
-            {tab === 'growth' && <GrowthTab period={period} />}
+            {tab === "overview" && <OverviewTab period={period} />}
+            {tab === "by-org" && <ByOrgTab period={period} />}
+            {tab === "growth" && <GrowthTab period={period} />}
           </>
         )}
       </AdminTabs>
     </AdminSection>
   );
 }
-
-// ─── Обзор ────────────────────────────────────────────────────────────────
 
 function OverviewTab({ period }: { period: AdminPeriod }) {
   const q = useAdminQuery(
@@ -126,16 +110,24 @@ function OverviewTab({ period }: { period: AdminPeriod }) {
 
   const { totals, growth7d } = q.data;
   const tiles: Array<{ label: string; value: number; growth: number }> = [
-    { label: 'Блоки идей', value: totals.ideaBlocks, growth: growth7d.ideaBlocks },
-    { label: 'Сущности', value: totals.entities, growth: growth7d.entities },
-    { label: 'Темы', value: totals.themes, growth: growth7d.themes },
-    { label: 'Связи', value: totals.links, growth: growth7d.links },
-    { label: 'Карточки', value: totals.cards, growth: growth7d.cards },
-    { label: 'Решения', value: totals.decisions, growth: growth7d.decisions },
-    { label: 'Инсайты', value: totals.insights, growth: growth7d.insights },
-    { label: 'Идеи', value: totals.ideas, growth: growth7d.ideas },
-    { label: 'Регламенты', value: totals.regulations, growth: growth7d.regulations },
-    { label: 'Процессы', value: totals.processes, growth: growth7d.processes },
+    {
+      label: "Блоки идей",
+      value: totals.ideaBlocks,
+      growth: growth7d.ideaBlocks,
+    },
+    { label: "Сущности", value: totals.entities, growth: growth7d.entities },
+    { label: "Темы", value: totals.themes, growth: growth7d.themes },
+    { label: "Связи", value: totals.links, growth: growth7d.links },
+    { label: "Карточки", value: totals.cards, growth: growth7d.cards },
+    { label: "Решения", value: totals.decisions, growth: growth7d.decisions },
+    { label: "Инсайты", value: totals.insights, growth: growth7d.insights },
+    { label: "Идеи", value: totals.ideas, growth: growth7d.ideas },
+    {
+      label: "Регламенты",
+      value: totals.regulations,
+      growth: growth7d.regulations,
+    },
+    { label: "Процессы", value: totals.processes, growth: growth7d.processes },
   ];
 
   return (
@@ -171,27 +163,25 @@ function KpiTile({
       </CardHeader>
       <CardContent>
         <div className="text-xl font-semibold tabular-nums">
-          {value.toLocaleString('ru-RU')}
+          {value.toLocaleString("ru-RU")}
         </div>
         <div
           className={`mt-1 inline-flex items-center gap-0.5 text-[11px] tabular-nums ${
             positive
-              ? 'text-success'
+              ? "text-success"
               : growth < 0
-                ? 'text-warning'
-                : 'text-fg-tertiary'
+                ? "text-warning"
+                : "text-fg-tertiary"
           }`}
         >
           <ArrowUpRight size={10} />
-          {growth >= 0 ? '+' : ''}
-          {growth.toLocaleString('ru-RU')} за 7 дн.
+          {growth >= 0 ? "+" : ""}
+          {growth.toLocaleString("ru-RU")} за 7 дн.
         </div>
       </CardContent>
     </Card>
   );
 }
-
-// ─── По Org ───────────────────────────────────────────────────────────────
 
 function ByOrgTab({ period }: { period: AdminPeriod }) {
   const q = useAdminQuery(
@@ -236,7 +226,7 @@ function ByOrgTable({
     themes: r.themes,
     links: r.links,
     cards: r.cards,
-    lastIngestAt: r.lastIngestAt ? r.lastIngestAt.toISOString() : '',
+    lastIngestAt: r.lastIngestAt ? r.lastIngestAt.toISOString() : "",
   }));
 
   return (
@@ -245,14 +235,14 @@ function ByOrgTable({
         <AdminCsvDownloadButton
           rows={csvRows}
           columns={[
-            { key: 'orgName', label: 'Org' },
-            { key: 'tenantId', label: 'tenantId' },
-            { key: 'ideaBlocks', label: 'Блоки' },
-            { key: 'entities', label: 'Сущности' },
-            { key: 'themes', label: 'Темы' },
-            { key: 'links', label: 'Связи' },
-            { key: 'cards', label: 'Карточки' },
-            { key: 'lastIngestAt', label: 'Последний ingest' },
+            { key: "orgName", label: "Org" },
+            { key: "tenantId", label: "tenantId" },
+            { key: "ideaBlocks", label: "Блоки" },
+            { key: "entities", label: "Сущности" },
+            { key: "themes", label: "Темы" },
+            { key: "links", label: "Связи" },
+            { key: "cards", label: "Карточки" },
+            { key: "lastIngestAt", label: "Последний ingest" },
           ]}
           filename={`admin-knowledge-by-org-${period}.csv`}
         />
@@ -283,24 +273,24 @@ function ByOrgTable({
                   </div>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {r.ideaBlocks.toLocaleString('ru-RU')}
+                  {r.ideaBlocks.toLocaleString("ru-RU")}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {r.entities.toLocaleString('ru-RU')}
+                  {r.entities.toLocaleString("ru-RU")}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {r.themes.toLocaleString('ru-RU')}
+                  {r.themes.toLocaleString("ru-RU")}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {r.links.toLocaleString('ru-RU')}
+                  {r.links.toLocaleString("ru-RU")}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {r.cards.toLocaleString('ru-RU')}
+                  {r.cards.toLocaleString("ru-RU")}
                 </td>
                 <td className="px-3 py-2 text-xs text-fg-tertiary">
                   {r.lastIngestAt
-                    ? r.lastIngestAt.toLocaleString('ru-RU')
-                    : '—'}
+                    ? r.lastIngestAt.toLocaleString("ru-RU")
+                    : "—"}
                 </td>
               </tr>
             ))}
@@ -310,8 +300,6 @@ function ByOrgTable({
     </div>
   );
 }
-
-// ─── Рост ─────────────────────────────────────────────────────────────────
 
 function GrowthTab({ period }: { period: AdminPeriod }) {
   const q = useAdminQuery(
@@ -336,9 +324,9 @@ function GrowthTab({ period }: { period: AdminPeriod }) {
   }
 
   const chartData = q.data.points.map((p) => ({
-    date: p.date.toLocaleDateString('ru-RU', {
-      day: '2-digit',
-      month: '2-digit',
+    date: p.date.toLocaleDateString("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
     }),
     ideaBlocks: p.ideaBlocks,
     entities: p.entities,

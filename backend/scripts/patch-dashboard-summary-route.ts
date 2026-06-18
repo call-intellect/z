@@ -1,19 +1,3 @@
-/**
- * Patch — гарантирует наличие глобального LlmTaskRoute для taskType=`dashboard-summary`
- * (Фаза 8 шаг 2 knowledge-core).
- *
- * Идемпотентен:
- *   - если запись уже есть (например, посеяна `seed-llm-task-routes-knowledge-core.ts`),
- *     НЕ перезаписывает её — это admin-edited контракт (skill `safe-seed-rules`);
- *   - если записи нет — создаёт с провайдерами `[anthropic, deepseek]` и
- *     `isActive=true`.
- *
- * Запуск:
- *   bun run scripts/patch-dashboard-summary-route.ts
- *
- * Безопасно повторно — каждый прогон либо `[skipped]`, либо `[created]`.
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -24,10 +8,7 @@ interface ProviderEntry {
   model?: string;
 }
 
-const PROVIDERS: ProviderEntry[] = [
-  { provider: 'anthropic' },
-  { provider: 'deepseek' },
-];
+const PROVIDERS: ProviderEntry[] = [{ provider: 'anthropic' }, { provider: 'deepseek' }];
 
 async function main(): Promise<void> {
   // eslint-disable-next-line no-console

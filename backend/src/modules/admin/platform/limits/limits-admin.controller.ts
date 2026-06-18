@@ -20,25 +20,15 @@ import { CookieAuthGuard } from '../../../auth/guards/cookie-auth.guard';
 import { SuperAdminGuard } from '../../../auth/guards/super-admin.guard';
 import { SuperAdminAuditInterceptor } from '../../super-admin.audit.interceptor';
 
-import {
-  UpdateLimitSchema,
-  type UpdateLimitDto,
-} from './dto/limits-admin.dto';
+import { UpdateLimitSchema, type UpdateLimitDto } from './dto/limits-admin.dto';
 import { LimitsAdminService } from './limits-admin.service';
 
-/**
- * Admin-redesign Фаза 8 — `LimitsAdminController`.
- *
- * UI `/admin/platform/limits` — глобальные `MAX_*` лимиты.
- */
 @ApiTags('admin-platform-limits')
 @Controller('api/v1/admin/platform/limits')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
 @UseInterceptors(SuperAdminAuditInterceptor)
 export class LimitsAdminController {
-  constructor(
-    @Inject(LimitsAdminService) private readonly svc: LimitsAdminService,
-  ) {}
+  constructor(@Inject(LimitsAdminService) private readonly svc: LimitsAdminService) {}
 
   @Get()
   @ApiOperation({

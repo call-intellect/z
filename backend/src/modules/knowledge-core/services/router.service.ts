@@ -366,8 +366,36 @@ export class RouterService {
       // sub-ТЗ ниже.
       case 'brand_principle':
       case 'content_artifact':
-      case 'done_item':
         // no-op до появления специалистов.
+        break;
+      // TZ task-dedup (2026-06-16, Ф2) — сигнал «сделал / закрыл / готово» из
+      // разговора. Раньше done_item был no-op; task_completed/task_status_changed
+      // в switch вовсе отсутствовали (сигнал никуда не шёл). Теперь эмиттим
+      // `task.completion_signalled` (по образцу commitment_status выше) — на него
+      // подписан TaskCompletionHandler (operations): семантически найдёт открытую
+      // Issue и заведёт ОБРАТИМЫЙ кандидат на закрытие (авто-закрытие запрещено,
+      // R13). sourceType обязателен — гард от зацикливания (трекер сам эмитит
+      // task_completed при ручном закрытии). Через emit, НЕ targets.add.
+      case 'done_item':
+      case 'task_completed':
+      case 'task_status_changed':
+        try {
+          const sourceType = await this.resolveBlockSourceType(block.id);
+          this.eventEmitter?.emit('task.completion_signalled', {
+            tenantId: block.tenantId,
+            blockId: block.id,
+            signalType: block.signalType,
+            sourceType,
+          });
+        } catch (err) {
+          this.logger.warn(
+            {
+              blockId: block.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'RouterService: emit task.completion_signalled failed — продолжаем без эмита',
+          );
+        }
         break;
       // Goals OKR v2 (2026-06-02) — Specialist 3-14 (Goals) подписан на
       // commitment + plan_item. LLM goal-extract сам решает «цель / не цель»
@@ -514,6 +542,34 @@ export class RouterService {
       }
     }
 
+    // ── Б54 (K6) negative-cache lookup ──
+    // При предыдущем llm_error мы записали короткоживущий negative-маркер.
+    // Пока он жив — НЕ дёргаем LLM повторно (анти-шторм при сбое провайдера):
+    // блоков с unmatched signalType может быть много, иначе каждый снова бьёт
+    // в упавший LLM. Маркер best-effort: ошибка чтения = просто идём в LLM.
+    const negativeKey = this.makeFallbackNegativeKey(cacheKey);
+    if (this.redis) {
+      try {
+        const negative = await this.redis.client.get(negativeKey);
+        if (negative != null) {
+          this.metrics.incRouterFallbackCall({ tenantTop, result: 'llm_error' });
+          this.logger.debug(
+            { negativeKey, signalType: block.signalType },
+            'RouterService.fallback: negative-маркер активен — пропускаем LLM-вызов',
+          );
+          return [];
+        }
+      } catch (err) {
+        this.logger.debug(
+          {
+            negativeKey,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'RouterService.fallback: negative-cache read error — продолжаем',
+        );
+      }
+    }
+
     // ── LLM call ──
     const whitelist = Object.values(RouterService.SPECIALIST) as string[];
     const systemPrompt = [
@@ -546,6 +602,28 @@ export class RouterService {
       llmText = result.text;
     } catch (err) {
       this.metrics.incRouterFallbackCall({ tenantTop, result: 'llm_error' });
+      // Б54 (K6) — записываем короткоживущий negative-маркер, чтобы остальные
+      // блоки в окне сбоя не штормили упавший LLM (circuit-breaker minimal).
+      // Best-effort: ошибка записи не блокирует возврат.
+      if (this.redis) {
+        try {
+          await this.redis.client.set(
+            negativeKey,
+            '1',
+            'EX',
+            this.getRouterFallbackNegativeTtlSeconds(),
+          );
+        } catch (cacheErr) {
+          this.logger.debug(
+            {
+              negativeKey,
+              err:
+                cacheErr instanceof Error ? cacheErr.message : String(cacheErr),
+            },
+            'RouterService.fallback: negative-cache write error — пропускаем',
+          );
+        }
+      }
       this.logger.warn(
         {
           blockId: block.id,
@@ -600,6 +678,30 @@ export class RouterService {
   }
 
   /**
+   * Б54 (K6) — ключ negative-маркера, производный от позитивного cache-key
+   * (тот же signalType+hash). Отдельное пространство `:err:` чтобы не
+   * пересекаться с позитивным кэшем.
+   */
+  private makeFallbackNegativeKey(cacheKey: string): string {
+    return `routerfallback:err:${cacheKey.slice('routerfallback:'.length)}`;
+  }
+
+  /**
+   * Б54 (K6) — TTL negative-маркера при llm_error. Короткий (default 60с):
+   * достаточно, чтобы погасить шторм блоков в окне сбоя, но не «залипнуть»
+   * после восстановления провайдера. env ROUTER_FALLBACK_NEGATIVE_TTL_SECONDS.
+   * TODO(env-refactor): перенести в TypedConfig после фикса TS2589 в EnvSchema
+   * (см. getRouterFallbackTtlSeconds).
+   */
+  private getRouterFallbackNegativeTtlSeconds(): number {
+    const raw = process.env['ROUTER_FALLBACK_NEGATIVE_TTL_SECONDS'];
+    if (raw == null || raw === '') return 60;
+    const num = Number(raw);
+    if (!Number.isFinite(num) || num <= 0) return 60;
+    return Math.floor(num);
+  }
+
+  /**
    * TODO(env-refactor): после фикса TS2589 в EnvSchema перенести в TypedConfig.
    * Default = false (prod safe). Включается в staging для постепенного rollout'а.
    */
@@ -646,6 +748,23 @@ export class RouterService {
       select: { entityId: true },
     });
     return result !== null;
+  }
+
+  /**
+   * TZ task-dedup (2026-06-16, Ф2) — источник блока (`SourceType`) по его
+   * первому свидетельству. Нужен для гарда от зацикливания петли закрытия:
+   * блок, пришедший из самого трекера (`tracker_event`), не должен порождать
+   * кандидат на закрытие — иначе ручное закрытие задачи → блок → новый кандидат
+   * → петля. У блока обычно одно свидетельство; берём самое раннее. Возвращает
+   * код `SourceType` или 'unknown', если свидетельств нет (best-effort).
+   */
+  private async resolveBlockSourceType(blockId: string): Promise<string> {
+    const evidence = await this.prisma.ideaBlockEvidence.findFirst({
+      where: { blockId },
+      orderBy: { createdAt: 'asc' },
+      select: { sourceType: true },
+    });
+    return evidence?.sourceType ?? 'unknown';
   }
 
   /**

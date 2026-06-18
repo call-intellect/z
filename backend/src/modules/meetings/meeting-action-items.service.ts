@@ -4,39 +4,8 @@ import type { Prisma } from '@prisma/client';
 import { TypedConfigService } from '../../common/config/index';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-/**
- * MeetingActionItemsService — единая точка чтения «задач встречи» (action items).
- *
- * ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 5.2
- * («Единая видимая задача»).
- *
- * Источник правды для action-items встречи переключается AdminSetting-флагом
- * `knowledge.meetingTasksToTrackerOnly` (code-fallback FALSE — поэтапная
- * раскатка, текущее поведение):
- *   - FALSE (дефолт): читаем внутренний `Task` (где `meetingId` = встреча) —
- *     ровно как все потребители делали до этой фазы. Ноль изменений в проде до
- *     включения флага владельцем.
- *   - TRUE: видимая задача = tracker `Issue`, связанный со встречей через
- *     `linkedMeetingIds` (`externalSource='meeting'`). Внутренний `Task` для
- *     action-items в этом режиме не создаётся (gate в meeting-report-fast.worker).
- *
- * Все запросы tenant- / owner-scoped (как у каждого потребителя по отдельности).
- * Нормализованная форма `MeetingActionItem` — суперсет полей, нужных всем шести
- * потребителям; каждый маппит её обратно в свой выходной контракт.
- *
- * Сервис объявлен и экспортирован из `@Global() MeetingsModule`, поэтому
- * инжектируется в любой модуль без дополнительных imports (минимум cross-module DI).
- */
-
-/** Флаг — читаем через `getDynamic` (AdminSetting), code-fallback FALSE. */
 const FLAG_KEY = 'knowledge.meetingTasksToTrackerOnly';
 
-/**
- * Нормализованная задача встречи. Даты — `Date | null` (потребители сами
- * сериализуют в ISO там, где нужно). Поля подобраны как суперсет того, что
- * читают все потребители: admin (description/assigneeRaw/extractorVersion),
- * exports/chat (title/assigneeRaw/dueDate), search (id/title/status/meetingId).
- */
 export interface MeetingActionItem {
   id: string;
   meetingId: string | null;
@@ -53,7 +22,6 @@ export interface MeetingActionItem {
   updatedAt: Date;
 }
 
-/** Облегчённая форма для глобального поиска (⌘K) — поиск по заголовку. */
 export interface MeetingActionItemSearchRow {
   id: string;
   title: string;
@@ -61,10 +29,6 @@ export interface MeetingActionItemSearchRow {
   meetingId: string | null;
 }
 
-/**
- * Маппинг `IssueState.category` → строковый статус в стиле `TaskStatus`.
- * Зеркало `TASK_STATUS_TO_CATEGORY` из `scripts/migrate-task-to-issue.ts`.
- */
 function issueCategoryToStatus(category: string | null | undefined): string {
   switch (category) {
     case 'started':
@@ -87,28 +51,14 @@ export class MeetingActionItemsService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  /** true → читаем Issue; false (дефолт) → читаем Task. */
   private async trackerOnly(): Promise<boolean> {
     return this.cfg.getDynamic<boolean>(FLAG_KEY, undefined, false);
   }
 
-  /**
-   * Публичное чтение флага. Нужно потребителям, которым важно знать режим
-   * до маппинга (например public API сохраняет байт-в-байт форму Task при OFF).
-   */
   async isTrackerOnly(): Promise<boolean> {
     return this.trackerOnly();
   }
 
-  /**
-   * Задачи одной встречи в нормализованной форме.
-   *
-   * @param args.userId — если задан, при FLAG=OFF дополнительно фильтрует Task
-   *   по `userId` (как делают owner-scoped потребители: public-api, internal
-   *   tasks). При FLAG=ON используется как owner-фильтр Issue (createdById или
-   *   назначенный исполнитель). Пропусти его для tenant-широких потребителей
-   *   (admin / exports / chat / bulk-zip).
-   */
   async listForMeeting(args: {
     meetingId: string;
     tenantId: string;
@@ -120,11 +70,6 @@ export class MeetingActionItemsService {
     return this.listTasksForMeeting(args);
   }
 
-  /**
-   * Поиск action-items по заголовку для глобального поиска (⌘K).
-   * Гейт-парный с `listForMeeting`: OFF → Task пользователя, ON → Issue,
-   * связанные со встречами (externalSource='meeting'), доступные пользователю.
-   */
   async searchTitlesForUser(args: {
     tenantId: string;
     userId: string;
@@ -137,8 +82,6 @@ export class MeetingActionItemsService {
     return this.searchTasks(args);
   }
 
-  // ───────────────────────────── Task-ветка (OFF, дефолт) ──────────────────
-
   private async listTasksForMeeting(args: {
     meetingId: string;
     tenantId: string;
@@ -147,9 +90,6 @@ export class MeetingActionItemsService {
     const rows = await this.prisma.task.findMany({
       where: {
         meetingId: args.meetingId,
-        // Пустой tenantId трактуем как «без tenant-фильтра» — так legacy-встречи
-        // с tenantId=null не теряют свои Task (сохраняем прежнее поведение
-        // потребителей, которые читали Task только по meetingId).
         ...(args.tenantId ? { tenantId: args.tenantId } : {}),
         ...(args.userId ? { userId: args.userId } : {}),
       },
@@ -194,8 +134,6 @@ export class MeetingActionItemsService {
     }));
   }
 
-  // ───────────────────────────── Issue-ветка (ON, дормант) ─────────────────
-
   private async listIssuesForMeeting(args: {
     meetingId: string;
     tenantId: string;
@@ -207,10 +145,7 @@ export class MeetingActionItemsService {
       linkedMeetingIds: { has: args.meetingId },
       ...(args.userId
         ? {
-            OR: [
-              { createdById: args.userId },
-              { assignees: { some: { userId: args.userId } } },
-            ],
+            OR: [{ createdById: args.userId }, { assignees: { some: { userId: args.userId } } }],
           }
         : {}),
     };
@@ -232,7 +167,6 @@ export class MeetingActionItemsService {
       title: issue.title,
       description: issue.descriptionStripped ?? null,
       status: issueCategoryToStatus(issue.state?.category),
-      // Issue не хранит сырую строку-имя — assigneeRaw недоступен.
       assigneeRaw: null,
       assigneeUserId: issue.assignees[0]?.userId ?? null,
       dueDate: issue.dueDate ?? null,
@@ -256,10 +190,7 @@ export class MeetingActionItemsService {
         deletedAt: null,
         externalSource: 'meeting',
         title: { contains: args.query, mode: 'insensitive' },
-        OR: [
-          { createdById: args.userId },
-          { assignees: { some: { userId: args.userId } } },
-        ],
+        OR: [{ createdById: args.userId }, { assignees: { some: { userId: args.userId } } }],
       },
       orderBy: { createdAt: 'desc' },
       take: args.limit,
@@ -274,7 +205,6 @@ export class MeetingActionItemsService {
       id: issue.id,
       title: issue.title,
       status: issueCategoryToStatus(issue.state?.category),
-      // ⌘K-ссылка ведёт на первую связанную встречу (как было для Task.meetingId).
       meetingId: issue.linkedMeetingIds[0] ?? '',
     }));
   }

@@ -1,20 +1,7 @@
+import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SkillTraitConceptService } from './skill-trait-concept.service';
-
-/**
- * ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — юнит-тесты
- * SkillTraitConceptService.findOrCreateConcept.
- *
- * Покрываемые сценарии:
- *   1. Точное совпадение по embedding (similarity 1.0) → возвращает существующий.
- *   2. Близкое по embedding (similarity 0.87) → возвращает существующий + variants растёт.
- *   3. Далёкое (similarity 0.5) → создаёт новый концепт.
- *
- * Vector-search замокан: `$queryRawUnsafe` возвращает кандидата с заданной
- * `distance`. Сервис сравнивает её с `cfg.skill.conceptMatchThreshold=0.85`
- * (distance <= 0.15 → match).
- */
 
 interface FakeConcept {
   id: string;
@@ -50,10 +37,9 @@ function makeConcept(overrides: Partial<FakeConcept> = {}): FakeConcept {
 }
 
 function buildService(args: {
-  /** distance, который вернёт $queryRawUnsafe (если concepts есть). */
   matchDistance: number | null;
-  /** concept, который вернётся как top-1 (если matchDistance != null). */
   matchedConcept: FakeConcept | null;
+  activeTraitCount?: number;
 }) {
   const store = new Map<string, FakeConcept>();
   if (args.matchedConcept) store.set(args.matchedConcept.id, args.matchedConcept);
@@ -99,7 +85,10 @@ function buildService(args: {
         return created;
       }),
     },
-    skillTrait: { update: vi.fn(async () => ({})) },
+    skillTrait: {
+      update: vi.fn(async () => ({})),
+      count: vi.fn(async () => args.activeTraitCount ?? 0),
+    },
   };
   const embedder = {
     embedQuery: vi.fn(async () => [0.1, 0.2, 0.3]),
@@ -115,12 +104,7 @@ function buildService(args: {
     incSkillTraitConceptsMerged: vi.fn(),
     setSkillTraitConceptsTotal: vi.fn(),
   } as any;
-  const svc = new SkillTraitConceptService(
-    prisma as any,
-    embedder as any,
-    cfg,
-    metrics,
-  );
+  const svc = new SkillTraitConceptService(prisma as any, embedder as any, cfg, metrics);
   return { svc, prisma, embedder, store };
 }
 
@@ -129,11 +113,12 @@ describe('SkillTraitConceptService.findOrCreateConcept', () => {
     vi.restoreAllMocks();
   });
 
-  it('сценарий 1: точное совпадение по embedding (distance 0.0) — возвращает существующий', async () => {
+  it('сценарий 1: точное совпадение по embedding (distance 0.0) — возвращает существующий, traitCount = live COUNT(active)', async () => {
     const existing = makeConcept({ id: 'existing-1', traitCount: 3 });
     const { svc, prisma, store } = buildService({
       matchDistance: 0.0,
       matchedConcept: existing,
+      activeTraitCount: 5,
     });
 
     const result = await svc.findOrCreateConcept({
@@ -145,7 +130,8 @@ describe('SkillTraitConceptService.findOrCreateConcept', () => {
     expect(result?.id).toBe('existing-1');
     expect(prisma.skillTraitConcept.update).toHaveBeenCalledTimes(1);
     const updated = store.get('existing-1')!;
-    expect(updated.traitCount).toBe(4);
+    expect(updated.traitCount).toBe(5);
+    expect(prisma.skillTrait.count).toHaveBeenCalledTimes(1);
     expect(prisma.skillTraitConcept.create).not.toHaveBeenCalled();
   });
 
@@ -157,8 +143,9 @@ describe('SkillTraitConceptService.findOrCreateConcept', () => {
       traitCount: 2,
     });
     const { svc, store } = buildService({
-      matchDistance: 0.13, // similarity 0.87 >= 0.85
+      matchDistance: 0.13,
       matchedConcept: existing,
+      activeTraitCount: 2,
     });
 
     const result = await svc.findOrCreateConcept({
@@ -170,7 +157,7 @@ describe('SkillTraitConceptService.findOrCreateConcept', () => {
     expect(result?.id).toBe('existing-2');
     const updated = store.get('existing-2')!;
     expect(updated.variants).toContain('не любит давать сроки без данных');
-    expect(updated.traitCount).toBe(3);
+    expect(updated.traitCount).toBe(2);
   });
 
   it('сценарий 3: далёкое по embedding (similarity 0.50, distance 0.50) — создаёт новый концепт', async () => {
@@ -179,7 +166,7 @@ describe('SkillTraitConceptService.findOrCreateConcept', () => {
       canonicalName: 'осторожен с оценками сроков',
     });
     const { svc, prisma, store } = buildService({
-      matchDistance: 0.50, // similarity 0.50 < 0.85
+      matchDistance: 0.5,
       matchedConcept: existing,
     });
 
@@ -191,7 +178,210 @@ describe('SkillTraitConceptService.findOrCreateConcept', () => {
 
     expect(result?.canonicalName).toBe('делегирует ранние решения');
     expect(prisma.skillTraitConcept.create).toHaveBeenCalledTimes(1);
-    // Старый концепт не изменился.
+    expect(result?.traitCount).toBe(0);
+    const createData = (prisma.skillTraitConcept.create as any).mock.calls[0][0].data;
+    expect(createData.traitCount).toBe(0);
     expect(store.get('existing-3')!.traitCount).toBe(1);
+  });
+});
+
+function buildMergeService(opts: { collisionConceptId?: string; throwP2002Once?: boolean }) {
+  const target = makeConcept({
+    id: 'target',
+    canonicalName: 'старое опорное имя',
+    variants: ['старое опорное имя'],
+    traitCount: 5,
+  });
+  const source = makeConcept({
+    id: 'source',
+    canonicalName: 'источник',
+    variants: ['источник'],
+    traitCount: 2,
+  });
+
+  let updateCalls = 0;
+  const targetUpdateData: any[] = [];
+
+  const tx = {
+    skillTrait: {
+      updateMany: vi.fn(async () => ({ count: 2 })),
+      count: vi.fn(async () => 7),
+    },
+    skillTraitConcept: {
+      updateMany: vi.fn(async () => ({ count: 1 })),
+      update: vi.fn(async ({ data }: any) => {
+        updateCalls++;
+        targetUpdateData.push(data);
+        if (opts.throwP2002Once && updateCalls === 1 && data.canonicalName) {
+          throw new Prisma.PrismaClientKnownRequestError('unique', {
+            code: 'P2002',
+            clientVersion: 'x',
+          });
+        }
+        return { ...target, ...data };
+      }),
+    },
+  };
+
+  const prisma = {
+    skillTraitConcept: {
+      findUnique: vi.fn(async ({ where }: any) => (where?.id === 'target' ? target : null)),
+      findMany: vi.fn(async () => [source]),
+      findFirst: vi.fn(async ({ where }: any) => {
+        if (opts.collisionConceptId && where?.canonicalName) {
+          return { id: opts.collisionConceptId };
+        }
+        return null;
+      }),
+      update: vi.fn(),
+    },
+    skillTrait: { count: vi.fn(async () => 0) },
+    $transaction: vi.fn(async (fn: any) => fn(tx)),
+  };
+  const embedder = { embedQuery: vi.fn() };
+  const cfg = {
+    skill: {
+      conceptMatchThreshold: 0.85,
+      conceptMergeThreshold: 0.92,
+      conceptArchiveAfterMonths: 6,
+    },
+  } as any;
+  const metrics = {
+    incSkillTraitConceptsMerged: vi.fn(),
+    setSkillTraitConceptsTotal: vi.fn(),
+  } as any;
+  const svc = new SkillTraitConceptService(prisma as any, embedder as any, cfg, metrics);
+  return { svc, prisma, metrics, tx, targetUpdateData };
+}
+
+describe('SkillTraitConceptService.mergeConcepts (Б8 collision)', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it('новое имя свободно — merge проходит, имя меняется, возвращает true', async () => {
+    const { svc, metrics, targetUpdateData } = buildMergeService({});
+
+    const ok = await svc.mergeConcepts({
+      tenantId: 't1',
+      sourceIds: ['source'],
+      targetId: 'target',
+      newCanonicalName: 'новое каноническое имя',
+    });
+
+    expect(ok).toBe(true);
+    expect(metrics.incSkillTraitConceptsMerged).toHaveBeenCalledTimes(1);
+    expect(targetUpdateData.at(-1)!.canonicalName).toBe('новое каноническое имя');
+  });
+
+  it('новое имя занято ДРУГИМ концептом — имя НЕ меняется, merge всё равно проходит (true)', async () => {
+    const { svc, metrics, targetUpdateData } = buildMergeService({
+      collisionConceptId: 'other-concept',
+    });
+
+    const ok = await svc.mergeConcepts({
+      tenantId: 't1',
+      sourceIds: ['source'],
+      targetId: 'target',
+      newCanonicalName: 'занятое имя',
+    });
+
+    expect(ok).toBe(true);
+    expect(metrics.incSkillTraitConceptsMerged).toHaveBeenCalledTimes(1);
+    expect(targetUpdateData.at(-1)!.canonicalName).toBeUndefined();
+  });
+
+  it('P2002 на имени (гонка) — retry без смены имени, merge проходит (true)', async () => {
+    const { svc, metrics, targetUpdateData } = buildMergeService({
+      throwP2002Once: true,
+    });
+
+    const ok = await svc.mergeConcepts({
+      tenantId: 't1',
+      sourceIds: ['source'],
+      targetId: 'target',
+      newCanonicalName: 'новое имя',
+    });
+
+    expect(ok).toBe(true);
+    expect(metrics.incSkillTraitConceptsMerged).toHaveBeenCalledTimes(1);
+    expect(targetUpdateData.at(-1)!.canonicalName).toBeUndefined();
+  });
+
+  it('коллизия — это один из sources (id ∈ merge) — не считается коллизией, имя меняется', async () => {
+    const { svc, targetUpdateData } = buildMergeService({
+      collisionConceptId: 'source',
+    });
+
+    const ok = await svc.mergeConcepts({
+      tenantId: 't1',
+      sourceIds: ['source'],
+      targetId: 'target',
+      newCanonicalName: 'имя источника',
+    });
+
+    expect(ok).toBe(true);
+    expect(targetUpdateData.at(-1)!.canonicalName).toBe('имя источника');
+  });
+
+  it('транзакция упала (не-P2002) — возвращает false, метрика не инкрементится', async () => {
+    const { svc, prisma, metrics } = buildMergeService({});
+    (prisma.$transaction as any).mockRejectedValue(new Error('db down'));
+
+    const ok = await svc.mergeConcepts({
+      tenantId: 't1',
+      sourceIds: ['source'],
+      targetId: 'target',
+      newCanonicalName: 'имя',
+    });
+
+    expect(ok).toBe(false);
+    expect(metrics.incSkillTraitConceptsMerged).not.toHaveBeenCalled();
+  });
+});
+
+describe('SkillTraitConceptService.recomputeTraitCount (Б6)', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it('персистит COUNT(active) и возвращает его', async () => {
+    const updateMock = vi.fn(async () => ({}));
+    const prisma = {
+      skillTrait: { count: vi.fn(async () => 4) },
+      skillTraitConcept: { update: updateMock },
+    } as any;
+    const svc = new SkillTraitConceptService(
+      prisma,
+      { embedQuery: vi.fn() } as any,
+      { skill: {} } as any,
+      {} as any,
+    );
+
+    const count = await svc.recomputeTraitCount('c-1');
+
+    expect(count).toBe(4);
+    expect(prisma.skillTrait.count).toHaveBeenCalledWith({
+      where: { conceptId: 'c-1', status: 'active' },
+    });
+    expect(updateMock).toHaveBeenCalledWith({
+      where: { id: 'c-1' },
+      data: { traitCount: 4 },
+    });
+  });
+
+  it('сбой update — возвращает null, не бросает', async () => {
+    const prisma = {
+      skillTrait: { count: vi.fn(async () => 2) },
+      skillTraitConcept: {
+        update: vi.fn(async () => {
+          throw new Error('boom');
+        }),
+      },
+    } as any;
+    const svc = new SkillTraitConceptService(
+      prisma,
+      { embedQuery: vi.fn() } as any,
+      { skill: {} } as any,
+      {} as any,
+    );
+
+    await expect(svc.recomputeTraitCount('c-1')).resolves.toBeNull();
   });
 });

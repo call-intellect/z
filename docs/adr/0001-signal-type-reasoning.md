@@ -22,7 +22,7 @@ Layer 1 разметки IdeaBlock изначально различал «фа�
 причинно-следственным контекстом), либо в `decision` (засоряя классификатор
 решений). Это ломало две задачи сразу:
 
-- **skill-trait-detect** (γ-1, см. `plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md`):
+- **skill-trait-detect** (γ-1, см. `plans/archive/2026-05-25-knowledge-core-temporal-and-graph-quality.md`):
   специалист анализирует ЛОГИКУ человека — а логика живёт именно в
   обоснованиях. Без `reasoning` он работал по случайным фактам и решениям
   и давал низкий precision.
@@ -37,7 +37,7 @@ Layer 1 разметки IdeaBlock изначально различал «фа�
 описанной в промпте семантикой.
 
 Связанный контекст:
-- ТЗ: `plans/tz/2026-05-23-sba-alpha-2-19-signal-types.md` (волна α-2 wave 1).
+- ТЗ: `plans/archive/2026-05-23-sba-alpha-2-19-signal-types.md` (волна α-2 wave 1).
 - Эксперимент по skill-trait-detect: `backend/test/eval/skill-trait-detect-golden/` (25 кейсов, 96 % accuracy на DeepSeek V4 Pro).
 
 ## Решение

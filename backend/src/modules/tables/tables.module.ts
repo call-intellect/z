@@ -21,30 +21,8 @@ import { TableViewsService } from './services/table-views.service';
 import { TablesAutoProvisionService } from './services/tables-auto-provision.service';
 import { TablesService } from './services/tables.service';
 
-/**
- * Smart Tables (см. plans/tz/2026-05-31-smart-tables.md Фазы 0–3).
- *
- * Подключает четыре HTTP-контроллера:
- *   - `POST/GET/PATCH/DELETE /api/v1/tables[/:id[/archive|unarchive]]`
- *   - `GET/POST/PATCH/DELETE /api/v1/tables/:tableId/properties/...`
- *   - `GET/POST/PATCH/DELETE /api/v1/tables/:tableId/rows/...`
- *   - `GET/POST/PATCH/DELETE /api/v1/tables/:tableId/views/...`        (Фаза 3)
- *
- * Все зависимости (`PrismaService`, `RbacService`, `TypedConfigService`,
- * `CookieAuthGuard`) берутся неявно из @Global-модулей (PrismaModule /
- * RbacModule / ConfigModule / AuthModule).
- *
- * Automations / AI / Public forms — отдельные фазы, в этот модуль добавятся
- * постепенно (Фаза 4+).
- */
 @Module({
   controllers: [
-    // ВАЖНО: PendingPatchesController должен идти ПЕРВЫМ. Он и TablesController
-    // оба биндят базовый путь `api/v1/tables`; Express матчит в порядке
-    // регистрации. Статические пути PendingPatches (`pending-patches`,
-    // `rows/:rowId/provenance`, `cell-provenance`) обязаны регистрироваться
-    // раньше динамического `@Get(':id')` из TablesController, иначе они
-    // затеняются и отдают 404 `table_not_found`.
     PendingPatchesController,
     TablesController,
     TablePropertiesController,
@@ -58,18 +36,12 @@ import { TablesService } from './services/tables.service';
     TableViewsService,
     TablesAutoProvisionService,
     TableAgentService,
-    // Smart-tables Фаза 5 — NL Saved Views (NL-запрос → JSON-фильтр + Redis-кэш).
     TableSemanticFilterService,
-    // Smart-tables Фаза 4 — Document-to-Table (импорт Excel/CSV).
     TableFileParserService,
     TableImportService,
-    // Smart-tables Фаза 2 — live entitySync. Listener слушает события графа и
-    // кладёт job в `tables.sync`; сам воркер живёт в WorkersModule (in-process).
     TableSyncQueueService,
     TableSyncService,
     TableSyncListener,
-    // Smart-tables Фаза 3 — Event-to-Cells. Listener слушает `meeting.ai_ready`
-    // и кладёт job в `tables.enrich`; воркер живёт в WorkersModule (in-process).
     TableEnrichQueueService,
     TableEnrichService,
     TableEnrichListener,
@@ -78,16 +50,9 @@ import { TablesService } from './services/tables.service';
     TablesService,
     TablesAutoProvisionService,
     TableAgentService,
-    // Chat-v2 как параллельный источник (ТЗ 2026-06-15 §7, ЧАСТЬ B) —
-    // экспортируем для knowledge-core ChatV2TableContextService (@Optional-инжект).
-    // chat_v2 ищет в умных таблицах параллельно с графом, переиспользуя
-    // parseSemanticFilter + applyFilterToRows. Если TablesModule не подключён
-    // (worker-процесс / частичная сборка) — @Optional даёт undefined, ветка []==.
     TableSemanticFilterService,
-    // Экспортируем для WorkersModule (TableSyncWorker) и для backfill-сценариев.
     TableSyncService,
     TableSyncQueueService,
-    // Экспортируем для WorkersModule (TableEnrichWorker).
     TableEnrichService,
     TableEnrichQueueService,
   ],

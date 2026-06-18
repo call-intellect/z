@@ -1,22 +1,14 @@
-import type { RoomMessageApi } from '@/api/room-messages.api';
+import type { RoomMessageApi } from "@/api/room-messages.api";
 
-/**
- * Доменная модель in-meeting сообщения чата.
- * Источник правды — backend `MeetingRoomMessage` (Prisma).
- */
 export type RoomMessageDomain = {
   id: string;
   meetingId: string;
-  /** Денормализовано на момент отправки. Не зависит от существования Participant. */
   authorName: string;
-  /** Идентичность LiveKit на момент отправки — для дедупа live-сообщений. */
   authorIdentity: string;
   content: string;
   clientMessageId: string;
   sentAt: Date;
-  /** UI-only: пометка «отправлено до моего присоединения» (для divider'а). */
   fromHistory?: boolean;
-  /** UI-only: пометка «не сохранено в истории» (POST упал, но live дошло). */
   notPersisted?: boolean;
 };
 

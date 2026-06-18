@@ -8,29 +8,8 @@ import { SupportAccessService } from './support-access.service';
 import { SupportContourService } from './support-contour.service';
 import { SupportEditClassifyService } from './support-edit-classify.service';
 
-/** Цитата на блок контура — удаляем из текста, который видит клиент. */
 const BLOCK_CITATION_REGEX = /\[BLOCK:[a-zA-Z0-9_-]+\]/g;
 
-/**
- * SupportLearningService — обучающая петля клона поддержки (TZ 2026-06-09
- * support-desk Ф3, R-INV-2).
- *
- * Регистрирует исход каждого черновика клона:
- *   - accept — человек принял черновик как есть → внешний ответ клиенту +
- *     SupportDraftOutcome(accepted) + LlmPreferenceSample(correct);
- *   - reject — человек отверг черновик → SupportDraftOutcome(rejected) +
- *     LlmPreferenceSample(wrong), БЕЗ внешнего ответа и промоута;
- *   - recordEdit — человек правил черновик и сам отправил (внешний ответ уже
- *     создан SupportDeskService.reply) → классифицируем тип правки +
- *     SupportDraftOutcome(edited) + LlmPreferenceSample(edited).
- *
- * `maybePromote` — гейт качества: после оценки клиентом (CSAT ≥ порог)
- * принятые/исправленные ответы промоутятся в контур (с весом ниже человеческого
- * засева, см. SupportContourService.promoteAnswer).
- *
- * Всё в scope вендор-Org. Ошибки обучения НЕ должны валить ответ/оценку —
- * вызовы из reply/rateTicket обёрнуты в try/catch на стороне caller'ов.
- */
 @Injectable()
 export class SupportLearningService {
   private readonly logger = new Logger(SupportLearningService.name);
@@ -48,15 +27,7 @@ export class SupportLearningService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  /**
-   * Человек ПРИНЯЛ черновик клона как есть. Создаёт внешний ответ клиенту
-   * (со снятыми цитатами `[BLOCK:id]` и пометкой клона), фиксирует исход
-   * `accepted` + позитивный preference-sample.
-   */
-  async accept(
-    draftCommentId: string,
-    agentUserId: string,
-  ): Promise<{ ok: true }> {
+  async accept(draftCommentId: string, agentUserId: string): Promise<{ ok: true }> {
     const { comment, issue } = await this.requirePendingDraft(draftCommentId);
 
     const draftText = comment.content;
@@ -99,9 +70,7 @@ export class SupportLearningService {
           draftText,
           finalText: externalText,
           outcome: 'accepted',
-          cloneConfidence: comment.cloneConfidence
-            ? comment.cloneConfidence.toString()
-            : null,
+          cloneConfidence: comment.cloneConfidence ? comment.cloneConfidence.toString() : null,
           groundednessScore: comment.groundednessScore
             ? comment.groundednessScore.toString()
             : null,
@@ -130,14 +99,7 @@ export class SupportLearningService {
     return { ok: true };
   }
 
-  /**
-   * Человек ОТВЕРГ черновик клона. Фиксирует исход `rejected` + негативный
-   * preference-sample. БЕЗ внешнего ответа, БЕЗ промоута.
-   */
-  async reject(
-    draftCommentId: string,
-    agentUserId: string,
-  ): Promise<{ ok: true }> {
+  async reject(draftCommentId: string, agentUserId: string): Promise<{ ok: true }> {
     const { comment, issue } = await this.requirePendingDraft(draftCommentId);
 
     await this.prisma.$transaction(async (tx) => {
@@ -154,9 +116,7 @@ export class SupportLearningService {
           draftText: comment.content,
           finalText: null,
           outcome: 'rejected',
-          cloneConfidence: comment.cloneConfidence
-            ? comment.cloneConfidence.toString()
-            : null,
+          cloneConfidence: comment.cloneConfidence ? comment.cloneConfidence.toString() : null,
           groundednessScore: comment.groundednessScore
             ? comment.groundednessScore.toString()
             : null,
@@ -185,19 +145,7 @@ export class SupportLearningService {
     return { ok: true };
   }
 
-  /**
-   * Человек ПРАВИЛ черновик и сам отправил (внешний ответ уже создан
-   * SupportDeskService.reply). Здесь ТОЛЬКО учебный сигнал: классифицируем тип
-   * правки + SupportDraftOutcome(edited) + LlmPreferenceSample(edited).
-   *
-   * Defensive: если черновик не найден / не клон-черновик — no-op (reply мог
-   * сослаться на чужой/устаревший commentId, ломать ответ нельзя).
-   */
-  async recordEdit(
-    draftCommentId: string,
-    finalText: string,
-    agentUserId: string,
-  ): Promise<void> {
+  async recordEdit(draftCommentId: string, finalText: string, agentUserId: string): Promise<void> {
     const comment = await this.prisma.issueComment.findUnique({
       where: { id: draftCommentId },
       select: {
@@ -242,9 +190,7 @@ export class SupportLearningService {
           finalText,
           outcome: 'edited',
           editType,
-          cloneConfidence: comment.cloneConfidence
-            ? comment.cloneConfidence.toString()
-            : null,
+          cloneConfidence: comment.cloneConfidence ? comment.cloneConfidence.toString() : null,
           groundednessScore: comment.groundednessScore
             ? comment.groundednessScore.toString()
             : null,
@@ -264,22 +210,8 @@ export class SupportLearningService {
     });
   }
 
-  /**
-   * Гейт качества: после оценки клиентом промоутим в контур принятые/
-   * исправленные ответы по этому тикету. Условие — CSAT ≥ порог
-   * `support_promote_min_csat` (AdminSetting, дефолт 4).
-   *
-   * v1-упрощение: гейтим ТОЛЬКО по CSAT. Детекция «тикет переоткрыли» (no
-   * reopen) — будущее уточнение: если клиент дописал после оценки и тикет
-   * вернулся в работу, ответ не следует считать качественным. Сейчас не
-   * учитываем.
-   */
   async maybePromote(issueId: string): Promise<{ promoted: number }> {
-    const minCsat = await this.cfg.getDynamic<number>(
-      'support_promote_min_csat',
-      undefined,
-      4,
-    );
+    const minCsat = await this.cfg.getDynamic<number>('support_promote_min_csat', undefined, 4);
 
     const rating = await this.prisma.issueRating.findUnique({
       where: { issueId },
@@ -333,13 +265,6 @@ export class SupportLearningService {
     return { promoted };
   }
 
-  // ─────────────────────────── internal ───────────────────────────
-
-  /**
-   * Загрузить черновик клона в состоянии `pending` + его тикет. Требует
-   * `authorType='clone'` и `draftState='pending'` (иначе BadRequest — черновик
-   * уже обработан или это не черновик клона).
-   */
   private async requirePendingDraft(draftCommentId: string): Promise<{
     comment: {
       id: string;
@@ -361,11 +286,7 @@ export class SupportLearningService {
         groundednessScore: true,
       },
     });
-    if (
-      !comment ||
-      comment.authorType !== 'clone' ||
-      comment.draftState !== 'pending'
-    ) {
+    if (!comment || comment.authorType !== 'clone' || comment.draftState !== 'pending') {
       throw new BadRequestException({
         ok: false,
         error: {
@@ -400,7 +321,6 @@ export class SupportLearningService {
     };
   }
 
-  /** Запись активности best-effort — не валит исход черновика. */
   private async recordActivitySafe(args: {
     tenantId: string;
     issueId: string;
@@ -428,13 +348,6 @@ export class SupportLearningService {
   }
 }
 
-// ─────────────────────────── helpers ───────────────────────────
-
-/**
- * Текст черновика → текст для клиента: убираем ведущую `⚠`-пометку клона
- * (всё до первого `\n\n` включительно, если контент начинается с `⚠`) и цитаты
- * `[BLOCK:id]`.
- */
 function toClientFacingText(draft: string): string {
   let text = draft;
   if (text.startsWith('⚠')) {

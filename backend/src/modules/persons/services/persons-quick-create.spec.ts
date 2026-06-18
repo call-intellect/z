@@ -1,13 +1,3 @@
-/**
- * Юнит-тесты `PersonsService.quickCreate` (Calendar MVP Фаза P4).
- *
- * Покрытие:
- *   - dedup по email: возвращает existing вместо создания;
- *   - dedup по name (case-insensitive) когда email пуст;
- *   - создаёт нового Person если ничего не найдено;
- *   - email нормализуется в lower-case и trimmed;
- *   - email отсутствует → сохраняется пустая строка в БД, в ответе — null.
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import { PersonsService } from './persons.service';
@@ -63,7 +53,6 @@ describe('PersonsService.quickCreate', () => {
     await svc.quickCreate({
       tenantId: 'org-1',
       userId: 'u-1',
-      // ZodValidation уже нормализовал бы, но проверим стойкость сервиса.
       body: { name: 'Иван', email: '  IVAN@x.TEST  ' },
     });
     expect(prisma.person.findFirst).toHaveBeenCalledWith(
@@ -143,7 +132,6 @@ describe('PersonsService.quickCreate', () => {
         }),
       }),
     );
-    // email в ответе → null (а не пустая строка).
     expect(res.email).toBeNull();
     expect(res.personId).toBe('p-no-email');
   });

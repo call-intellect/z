@@ -70,7 +70,7 @@
 
 > ✅ **МОДУЛЬ УСВОЕНИЯ (knowledge-core) ЗАКРЫТ: 31/31 промпт-агента переписаны по методологии** (пачки 1–8, без клон-агентов M5 — те ведёт другая сессия). Все 🟡 (текст готов, ждут реализации в коде + выката).
 
-ТЗ выката: [plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md](../../../plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md) · [plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md](../../../plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md) · [plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md](../../../plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md) · [plans/tz/2026-06-16-clone-agents-prompt-revision.md](../../../plans/tz/2026-06-16-clone-agents-prompt-revision.md)
+ТЗ выката: [plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md](../../../plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md) · [plans/archive/2026-06-14-dialog-layer-unified-query-understanding.md](../../../plans/archive/2026-06-14-dialog-layer-unified-query-understanding.md) · [plans/archive/2026-06-15-chat-v2-unified-answer-prompt.md](../../../plans/archive/2026-06-15-chat-v2-unified-answer-prompt.md) · [plans/tz/2026-06-16-clone-agents-prompt-revision.md](../../../plans/tz/2026-06-16-clone-agents-prompt-revision.md)
 
 ## Очередь — отчёты по типам встреч (`extract_*`)
 

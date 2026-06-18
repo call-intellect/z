@@ -1,17 +1,6 @@
-/**
- * Admin-redesign Фаза 5 — DTO для `EmailTemplatesAdminController`.
- *
- * CRUD шаблонов писем (`EmailTemplate`). Поле `variables` хранит
- * `{ varName: description }` — описание переменных для preview-renderer'а.
- */
-
 import { z } from 'zod';
 
-export const EMAIL_TEMPLATE_CATEGORIES = [
-  'transactional',
-  'marketing',
-  'system',
-] as const;
+export const EMAIL_TEMPLATE_CATEGORIES = ['transactional', 'marketing', 'system'] as const;
 export type EmailTemplateCategory = (typeof EMAIL_TEMPLATE_CATEGORIES)[number];
 
 const KeySchema = z

@@ -14,18 +14,6 @@ import { JwtService } from '../auth/services/jwt.service';
 
 import type { SystemLogEntry } from './log-buffer.service';
 
-/**
- * LogStreamGateway — live-стрим технических логов по WebSocket (Socket.IO).
- *
- * Namespace `/ws/platform-logs`. Заменяет поллинг в `/admin/logs`: новые записи
- * пушатся в room `platform-logs` сразу после flush'а буфера в БД.
- *
- * Доступ — **только super_admin** (`User.isSuperAdmin`, как у REST-эндпоинтов).
- * Handshake: тот же session JWT (cookie `z_session` / `auth.token` / Bearer),
- * затем проверка сессии (revocation) + `isSuperAdmin`. Паттерн копирует
- * `ActivityFeedGateway`. См. plans/tz/2026-06-03-logging-pipelines-coverage.md §Ф7.
- */
-
 const LOGS_ROOM = 'platform-logs';
 
 @Injectable()
@@ -64,29 +52,19 @@ export class LogStreamGateway implements OnGatewayConnection, OnGatewayDisconnec
     }
   }
 
-  handleDisconnect(_client: Socket): void {
-    // no-op: room-membership чистится socket.io автоматически.
-  }
+  handleDisconnect(_client: Socket): void {}
 
   @SubscribeMessage('ping')
   onPing(): { ok: true; t: number } {
     return { ok: true, t: Date.now() };
   }
 
-  /**
-   * Рассылает пачку только что записанных логов всем подписчикам.
-   * Вызывается `LogBufferService` после успешного `createMany`. Безопасный
-   * no-op, если сервер ещё не поднят (юнит-тесты) или нет слушателей.
-   */
   broadcast(entries: SystemLogEntry[]): void {
     if (!this.server || entries.length === 0) return;
-    // Не сериализуем, если в room никого нет (дёшево пропускаем горячий путь).
     const room = this.server.sockets?.adapter?.rooms?.get(LOGS_ROOM);
     if (!room || room.size === 0) return;
     this.server.to(LOGS_ROOM).emit('logs', entries.map(toDto));
   }
-
-  // ── auth ────────────────────────────────────────────────────────────────
 
   private async authenticateSuperAdmin(client: Socket): Promise<boolean> {
     const origin = (client.handshake.headers.origin ?? '').toString();
@@ -117,7 +95,10 @@ export class LogStreamGateway implements OnGatewayConnection, OnGatewayDisconnec
       select: { isSuperAdmin: true },
     });
     if (!user || !user.isSuperAdmin) {
-      this.logger.warn({ socketId: client.id, userId: session.sub }, 'platform-logs WS: not super_admin');
+      this.logger.warn(
+        { socketId: client.id, userId: session.sub },
+        'platform-logs WS: not super_admin',
+      );
       return false;
     }
     return true;
@@ -145,7 +126,6 @@ export class LogStreamGateway implements OnGatewayConnection, OnGatewayDisconnec
   }
 }
 
-/** Проекция записи буфера в DTO для фронта (createdAt → ISO-строка). */
 function toDto(e: SystemLogEntry): Record<string, unknown> {
   const createdAt =
     e.createdAt instanceof Date ? e.createdAt.toISOString() : new Date().toISOString();

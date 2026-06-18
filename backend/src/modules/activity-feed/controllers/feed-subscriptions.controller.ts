@@ -14,10 +14,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -33,22 +30,6 @@ import {
 } from '../dto/activity-feed.dto';
 import { ActivityFeedService } from '../services/activity-feed.service';
 
-/**
- * Feed Subscriptions REST API (Wave 2 Поток D, 2026-05-24).
- *
- *   GET    /api/v1/feed-subscriptions
- *   POST   /api/v1/feed-subscriptions
- *   PATCH  /api/v1/feed-subscriptions/:feedType
- *   DELETE /api/v1/feed-subscriptions/:feedType
- *
- * Подписка скоупируется по пользователю (`userId`), не по tenant'у:
- * unique-ключ `(userId, feedType)`. Это сознательное решение sub-ТЗ —
- * один пользователь имеет одну подписку на тип ленты, даже если состоит
- * в нескольких Org. Tenant в read'ах вычисляется отдельно через X-Org-Id.
- *
- * RBAC: `activity_feed_item` read — чтобы получить любую подписку требуется
- * быть members tenant'а (защита от шпионажа). Write — себе.
- */
 @ApiTags('activity-feed-subscriptions')
 @Controller('api/v1/feed-subscriptions')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -119,8 +100,6 @@ export class FeedSubscriptionsController {
     const feedType = this.parseFeedType(feedTypeRaw);
     return this.svc.deleteSubscription({ userId: user.id, feedType });
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

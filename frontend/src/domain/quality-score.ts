@@ -1,12 +1,3 @@
-/**
- * Domain-model для quality-score. Принимает ApiDto и возвращает данные,
- * готовые к показу в UI. UI-форматирование (цвет балла, иконка severity)
- * делается в компоненте.
- *
- * Соответствует слоистой модели Z (skill `frontend-rules`):
- *   ApiDto → DomainModel → UiModel.
- */
-
 import type {
   OrgDashboardQualityScoreResponseApi,
   OrgQualityScoreSettingsResponseApi,
@@ -17,7 +8,7 @@ import type {
   QualityScoreResponseApi,
   QualityScoreSeverityApi,
   QualityScoreStatusApi,
-} from '@/api/quality-score.api';
+} from "@/api/quality-score.api";
 
 export type QualityScoreStatus = QualityScoreStatusApi;
 export type QualityScoreCategory = QualityScoreCategoryApi;
@@ -72,7 +63,9 @@ function qualityScoreFromApi(dto: QualityScoreApi): QualityScoreDomain {
   };
 }
 
-function categoriesFromApi(dto: QualityScoreCategoriesApi): QualityScoreCategoriesDomain {
+function categoriesFromApi(
+  dto: QualityScoreCategoriesApi,
+): QualityScoreCategoriesDomain {
   return {
     preparation: dto.preparation,
     structure: dto.structure,
@@ -93,8 +86,6 @@ function recommendationFromApi(
   };
 }
 
-// ──────────────────────── Org settings ────────────────────────
-
 export interface OrgQualityScoreSettingsDomain {
   tenantId: string;
   disabledForTypes: string[];
@@ -108,8 +99,6 @@ export function orgQualityScoreSettingsFromApi(
     disabledForTypes: [...dto.disabledForTypes],
   };
 }
-
-// ──────────────────────── Dashboard ───────────────────────────
 
 export interface OrgDashboardQualityScoreDomain {
   tenantId: string;
@@ -131,44 +120,34 @@ export function orgDashboardQualityScoreFromApi(
   };
 }
 
-// ──────────────────────── UI utility ───────────────────────────
-
-/**
- * Возвращает цветовую маркировку для балла (sub-TZ C §8.1):
- *   - red    0-39
- *   - yellow 40-69
- *   - green  70-100
- */
-export function qualityScoreColor(value: number): 'red' | 'yellow' | 'green' {
-  if (value <= 39) return 'red';
-  if (value <= 69) return 'yellow';
-  return 'green';
+export function qualityScoreColor(value: number): "red" | "yellow" | "green" {
+  if (value <= 39) return "red";
+  if (value <= 69) return "yellow";
+  return "green";
 }
 
-/** Локализация категории на русский. */
 export function qualityScoreCategoryLabel(c: QualityScoreCategory): string {
   switch (c) {
-    case 'preparation':
-      return 'Подготовка';
-    case 'structure':
-      return 'Структура';
-    case 'clarity':
-      return 'Чёткость формулировок';
-    case 'outcomes':
-      return 'Итоги';
-    case 'engagement':
-      return 'Вовлечённость';
+    case "preparation":
+      return "Подготовка";
+    case "structure":
+      return "Структура";
+    case "clarity":
+      return "Чёткость формулировок";
+    case "outcomes":
+      return "Итоги";
+    case "engagement":
+      return "Вовлечённость";
   }
 }
 
-/** Локализация severity на русский. */
 export function qualityScoreSeverityLabel(s: QualityScoreSeverity): string {
   switch (s) {
-    case 'info':
-      return 'Информация';
-    case 'warning':
-      return 'Внимание';
-    case 'critical':
-      return 'Важно';
+    case "info":
+      return "Информация";
+    case "warning":
+      return "Внимание";
+    case "critical":
+      return "Важно";
   }
 }

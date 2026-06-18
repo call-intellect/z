@@ -1,18 +1,5 @@
-/**
- * Регрессия на баг «LLM-анализ: enqueueQualityScore/MeetingRoi упал — Custom Id
- * cannot contain :» (2026-06-03).
- *
- * BullMQ 5.x (job.js): кастомный jobId, содержащий ':', допустим ТОЛЬКО если
- * `jobId.split(':').length === 3` (легаси-совместимость с repeatable-джобами).
- * Любой jobId с числом ':' ≠ 2 (1 двоеточие, 3+ двоеточий) → бросает
- * «Custom Id cannot contain :». Поэтому `quality:<meetingId>` (1 ':') падал,
- * а `<meetingId>:analyze:<attempt>` (2 ':') — работал.
- *
- * Канон: не использовать ':' как разделитель в jobId — заменён на '_'.
- */
 import { describe, expect, it } from 'vitest';
 
-/** Точная копия проверки BullMQ Job.addJob (node_modules/bullmq job.js). */
 function bullmqRejectsJobId(jobId: string): boolean {
   return jobId.includes(':') && jobId.split(':').length !== 3;
 }

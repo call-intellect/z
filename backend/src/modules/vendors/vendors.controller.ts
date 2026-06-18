@@ -17,10 +17,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -38,17 +35,6 @@ import {
 } from './dto/vendors.dto';
 import { VendorsService } from './services/vendors.service';
 
-/**
- * REST API поставщиков (SBA α-3, категория A онтологии).
- *
- *   GET    /api/v1/vendors?segment=&status=&q=&page=&limit=
- *   GET    /api/v1/vendors/:id
- *   POST   /api/v1/vendors                  (Sprints §1.1, 2026-05-28)
- *   PATCH  /api/v1/vendors/:id              (Sprints §1.1, 2026-05-28)
- *   DELETE /api/v1/vendors/:id              (Sprints §1.1, 2026-05-28)
- *
- * RBAC: `vendor` — owner/admin: read/write/delete; manager: read/write (без delete).
- */
 @ApiTags('vendors')
 @ApiBearerAuth()
 @Controller('api/v1/vendors')
@@ -127,8 +113,6 @@ export class VendorsController {
     await this.requireDelete(user.id, t);
     return this.vendors.softDelete({ tenantId: t, id, actorUserId: user.id });
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

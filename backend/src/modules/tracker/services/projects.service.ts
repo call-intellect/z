@@ -9,10 +9,7 @@ import {
 import { Prisma, type Project, type ProjectMember } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  generateProjectIdentifier,
-  generateProjectSlug,
-} from '../utils/translit';
+import { generateProjectIdentifier, generateProjectSlug } from '../utils/translit';
 import type { CreateProjectDto } from '../dto/projects/create-project.dto';
 import type {
   AddProjectMemberDto,
@@ -38,25 +35,17 @@ const DEFAULT_STATES: ReadonlyArray<{
   { name: 'Отменено', category: 'cancelled', color: '#EF4444', sequence: 4, isDefault: false },
 ];
 
-/**
- * ProjectsService — управление проектами трекера: CRUD + members + дефолтные
- * IssueState. Доступно: TenantGuard + RBAC `project`.
- */
 @Injectable()
 export class ProjectsService {
   private readonly logger = new Logger(ProjectsService.name);
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  /** Создать проект + 4 дефолтных IssueState + самого user как admin. Доступ: admin/owner Org. */
   async create(
     dto: CreateProjectDto,
     tenantId: string,
     userId: string,
   ): Promise<ProjectResponseDto> {
-    // Явный slug проверяем заранее — дружелюбный 409. Если slug не передан,
-    // генерируем внутри транзакции из `name` (транслит + уникальный суффикс);
-    // финальный гарант уникальности — DB-constraint @@unique([tenantId, slug]).
     if (dto.slug) {
       const existing = await this.prisma.project.findUnique({
         where: { tenantId_slug: { tenantId, slug: dto.slug } },
@@ -91,15 +80,12 @@ export class ProjectsService {
             gantViewEnabled: dto.gantViewEnabled,
             timeTrackingEnabled: dto.timeTrackingEnabled,
             teamTemplateId: dto.teamTemplateId ?? null,
-            // Sprints (2026-05-27) — 4 опц. scope-поля. Инвариант ≤1 уже проверен
-            // CreateProjectSchema.superRefine; здесь просто прокидываем.
             customerCardId: dto.customerCardId ?? null,
             vendorId: dto.vendorId ?? null,
             subjectPersonId: dto.subjectPersonId ?? null,
             departmentId: dto.departmentId ?? null,
           },
         });
-        // Дефолтные статусы.
         const states = await tx.issueState.createManyAndReturn({
           data: DEFAULT_STATES.map((s) => ({
             tenantId,
@@ -113,13 +99,9 @@ export class ProjectsService {
           select: { id: true, isDefault: true },
         });
         const defaultStateId = states.find((s) => s.isDefault)?.id ?? null;
-        // Сам пользователь — admin (role=20) проекта.
         await tx.projectMember.create({
           data: { projectId: created.id, userId, role: 20 },
         });
-        // Tracker Boards (2026-05-27) — создаём default-доску сразу с проектом.
-        // Идемпотентно через @@unique([projectId, name]) (если будет повтор —
-        // backfill подберёт; здесь race-free, т.к. в той же транзакции).
         await tx.board.create({
           data: {
             tenantId,
@@ -130,7 +112,6 @@ export class ProjectsService {
             isDefault: true,
           },
         });
-        // Зафиксировать defaultStateId (необязательно — но удобно UI).
         if (defaultStateId) {
           return tx.project.update({
             where: { id: created.id },
@@ -140,9 +121,6 @@ export class ProjectsService {
         return created;
       });
 
-    // P2002 на @@unique([tenantId, slug]) — гонка параллельной транзакции.
-    // Авто-slug → один ретрай (генератор подберёт свежий суффикс); явный slug,
-    // оказавшийся занятым в гонке → дружелюбный 409.
     let project: Project;
     try {
       project = await runCreate();
@@ -164,22 +142,6 @@ export class ProjectsService {
     return this.toResponse(project);
   }
 
-  /**
-   * ТЗ#3 (2026-06-15) — per-tenant дефолт-проект «Входящие» (find-or-create).
-   *
-   * Общий дом логики, которую исторически держал приватно `IntakeService`
-   * (там же помечено TODO «вынести в общий ProjectsService.ensureInboxProject»)
-   * и `intake-auto-triage.worker` (resolveInboxProjectId). Сюда сходятся
-   * ручной/авто-триаж входящих и self-постановка задачи из помощника
-   * (`POST /api/v1/me/tasks`) — все в ОДНУ папку «Входящие», без дублей.
-   *
-   * Владелец проекта = владелец Org (как у авто-приёма). Если у Org нет
-   * владельца — вернуть null (вызывающий решает, что делать; в self-tasks это
-   * 400 inbox_project_unavailable).
-   *
-   * Идемпотентно: findFirst по имени → create → при гонке (P2002 и пр.)
-   * повторный findFirst. network=0 (приватный), создаётся «как Кора».
-   */
   static readonly INBOX_PROJECT_NAME = 'Входящие';
 
   async ensureInboxProjectId(tenantId: string): Promise<string | null> {
@@ -220,21 +182,15 @@ export class ProjectsService {
       );
       return created.id;
     } catch {
-      // Гонка: параллельный accept/воркер/self-task уже создал «Входящие».
       const retry = await findExisting();
       return retry?.id ?? null;
     }
   }
 
-  /** Список проектов tenant'а с фильтрами includeArchived/ownerId/q. */
-  async findAll(
-    tenantId: string,
-    query: ListProjectsQuery,
-  ): Promise<ListProjectsResponse> {
+  async findAll(tenantId: string, query: ListProjectsQuery): Promise<ListProjectsResponse> {
     const where: Prisma.ProjectWhereInput = {
       tenantId,
       deletedAt: null,
-      // A6 (2026-06-06): системные контейнеры «Спринт компании» скрыты из списка.
       systemGenerated: false,
     };
     if (!query.includeArchived) where.archivedAt = null;
@@ -258,13 +214,11 @@ export class ProjectsService {
     return { items: items.map((p) => this.toResponse(p)), total };
   }
 
-  /** Найти проект по id + проверка tenant. NotFound если нет/чужой/удалён. */
   async findById(id: string, tenantId: string): Promise<ProjectResponseDto> {
     const p = await this.requireProject(id, tenantId);
     return this.toResponse(p);
   }
 
-  /** Найти проект по slug + проверка tenant. NotFound если нет/чужой/удалён. */
   async findBySlug(slug: string, tenantId: string): Promise<ProjectResponseDto> {
     const p = await this.prisma.project.findFirst({
       where: { slug, tenantId, deletedAt: null },
@@ -278,7 +232,6 @@ export class ProjectsService {
     return this.toResponse(p);
   }
 
-  /** PATCH проекта. Доступ: admin/owner Org. */
   async update(
     id: string,
     dto: UpdateProjectDto,
@@ -287,16 +240,13 @@ export class ProjectsService {
   ): Promise<ProjectResponseDto> {
     const current = await this.requireProject(id, tenantId);
 
-    // Sprints (2026-05-27) — инвариант: ≤1 scope-поля заполнено после
-    // применения дельты. Считаем итоговое состояние с учётом dto + current.
     const finalScope = {
       customerCardId:
         dto.customerCardId !== undefined ? dto.customerCardId : current.customerCardId,
       vendorId: dto.vendorId !== undefined ? dto.vendorId : current.vendorId,
       subjectPersonId:
         dto.subjectPersonId !== undefined ? dto.subjectPersonId : current.subjectPersonId,
-      departmentId:
-        dto.departmentId !== undefined ? dto.departmentId : current.departmentId,
+      departmentId: dto.departmentId !== undefined ? dto.departmentId : current.departmentId,
     };
     const filled = Object.values(finalScope).filter(
       (v): v is string => typeof v === 'string' && v.length > 0,
@@ -312,7 +262,6 @@ export class ProjectsService {
       });
     }
 
-    // ActivityRecorder не вызываем — Project не имеет issueId. История проектов — отдельно (Sprint 2).
     const updated = await this.prisma.project.update({
       where: { id },
       data: {
@@ -345,7 +294,6 @@ export class ProjectsService {
     return this.toResponse(updated);
   }
 
-  /** Soft-archive (archivedAt = now). Доступ: admin/owner Org. */
   async archive(id: string, tenantId: string, _userId: string): Promise<ProjectResponseDto> {
     await this.requireProject(id, tenantId);
     const updated = await this.prisma.project.update({
@@ -355,7 +303,6 @@ export class ProjectsService {
     return this.toResponse(updated);
   }
 
-  /** Снять archive. */
   async unarchive(id: string, tenantId: string, _userId: string): Promise<ProjectResponseDto> {
     await this.requireProject(id, tenantId);
     const updated = await this.prisma.project.update({
@@ -365,7 +312,6 @@ export class ProjectsService {
     return this.toResponse(updated);
   }
 
-  /** Soft-delete (deletedAt = now). Каскад идёт по schema (issues/cycles/states/labels — Cascade). */
   async softDelete(id: string, tenantId: string): Promise<{ ok: true }> {
     await this.requireProject(id, tenantId);
     await this.prisma.project.update({
@@ -375,16 +321,12 @@ export class ProjectsService {
     return { ok: true };
   }
 
-  /** Список членов проекта. Доступ: project member (проверяется TenantGuard + наличием membership). */
   async listMembers(projectId: string, tenantId: string): Promise<ProjectMemberDto[]> {
     await this.requireProject(projectId, tenantId);
     const members = await this.prisma.projectMember.findMany({
       where: { projectId },
       orderBy: { joinedAt: 'asc' },
     });
-    // T8 (2026-05-24) — догружаем User.name/email для @-mention autocomplete'а.
-    // Не делаем include через relation (его нет на ProjectMember → User), поэтому
-    // батчевый findMany одним запросом.
     const userIds = members.map((m) => m.userId);
     const users = userIds.length
       ? await this.prisma.user.findMany({
@@ -399,7 +341,6 @@ export class ProjectsService {
     });
   }
 
-  /** Добавить участника. role: 20=Admin, 15=Member, 5=Guest. */
   async addMember(
     projectId: string,
     dto: AddProjectMemberDto,
@@ -407,7 +348,6 @@ export class ProjectsService {
     _invitedByUserId: string,
   ): Promise<ProjectMemberDto> {
     await this.requireProject(projectId, tenantId);
-    // Защита от дубликатов — отдадим явный 409.
     const existing = await this.prisma.projectMember.findUnique({
       where: { projectId_userId: { projectId, userId: dto.userId } },
       select: { id: true },
@@ -427,12 +367,7 @@ export class ProjectsService {
     return this.toMemberResponse(created);
   }
 
-  /** Удалить участника. Owner проекта удалить нельзя (BadRequest). */
-  async removeMember(
-    projectId: string,
-    userId: string,
-    tenantId: string,
-  ): Promise<{ ok: true }> {
+  async removeMember(projectId: string, userId: string, tenantId: string): Promise<{ ok: true }> {
     const p = await this.requireProject(projectId, tenantId);
     if (p.ownerId === userId) {
       throw new BadRequestException({
@@ -458,10 +393,6 @@ export class ProjectsService {
     return { ok: true };
   }
 
-  /**
-   * Проверка существования + tenant ownership. Возвращает Project. Кидает
-   * 404 если не найден / удалён / в другом tenant'е.
-   */
   async requireProject(id: string, tenantId: string): Promise<Project> {
     const p = await this.prisma.project.findFirst({
       where: { id, tenantId, deletedAt: null },
@@ -474,8 +405,6 @@ export class ProjectsService {
     }
     return p;
   }
-
-  // ── mappers ──
 
   private toResponse(p: Project): ProjectResponseDto {
     return {

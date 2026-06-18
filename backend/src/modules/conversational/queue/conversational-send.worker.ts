@@ -8,7 +8,6 @@ import {
 import type { NotificationDelivery, NotificationStatus } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
-
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -16,29 +15,9 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { ChannelRegistry } from '../channel-registry';
 
-import {
-  CONVERSATIONAL_SEND_QUEUE,
-  type ConversationalSendJobData,
-} from './conversational-queue';
+import { CONVERSATIONAL_SEND_QUEUE, type ConversationalSendJobData } from './conversational-queue';
 import { ConversationalQueueService } from './conversational-queue.service';
 
-/**
- * Worker очереди `conversational.send`.
- *
- * Алгоритм для одного job:
- *   1. Загрузить `NotificationDelivery + Notification + Binding + Channel`.
- *   2. Если delivery уже завершён (delivered/responded/read/failed) — no-op.
- *   3. Получить адаптер канала через `ChannelRegistry`.
- *   4. Вызвать `adapter.send(...)`.
- *   5. На успех — `status='delivered'`, обновить `attempts`, агрегировать
- *      `Notification.status`.
- *   6. На исключение — `attempts++`, если меньше `maxDeliveryAttempts` —
- *      enqueue retry с exp backoff (cap 1ч). Иначе — `status='failed'`,
- *      агрегировать `Notification.status`.
- *
- * Особенность InApp: канал реально ничего не отправляет — send'хватает,
- * и доставка сразу `delivered`. Это правильно: UI читает Notification из БД.
- */
 const RETRY_BACKOFF_CAP_MS = 60 * 60 * 1000;
 const MAX_ERROR_REASON_LENGTH = 1024;
 
@@ -78,7 +57,7 @@ export class ConversationalSendWorker implements OnModuleInit, OnModuleDestroy {
         'ConversationalSendWorker: job failed (BullMQ-side)',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `ConversationalSendWorker запущен (concurrency=${this.cfg.conversational.outboundConcurrency})`,
     );
   }
@@ -90,7 +69,6 @@ export class ConversationalSendWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Public для тестирования. */
   async process(job: Job<ConversationalSendJobData>): Promise<void> {
     const delivery = await this.prisma.notificationDelivery.findUnique({
       where: { id: job.data.deliveryId },
@@ -111,9 +89,7 @@ export class ConversationalSendWorker implements OnModuleInit, OnModuleDestroy {
       delivery.status === 'responded' ||
       delivery.status === 'read'
     ) {
-      this.logger.debug(
-        `delivery=${delivery.id} уже завершён (${delivery.status}) — skip`,
-      );
+      this.logger.debug(`delivery=${delivery.id} уже завершён (${delivery.status}) — skip`);
       return;
     }
 
@@ -153,7 +129,6 @@ export class ConversationalSendWorker implements OnModuleInit, OnModuleDestroy {
       const newAttempts = delivery.attempts + 1;
       const max = this.cfg.conversational.maxDeliveryAttempts;
       if (newAttempts < max) {
-        // Backoff: 2^attempts × 1s, потолок 1ч.
         const delayMs = Math.min(2 ** newAttempts * 1000, RETRY_BACKOFF_CAP_MS);
         await this.prisma.notificationDelivery.update({
           where: { id: delivery.id },
@@ -176,7 +151,6 @@ export class ConversationalSendWorker implements OnModuleInit, OnModuleDestroy {
         );
         return;
       }
-      // Финальный провал.
       await this.markDeliveryFailed({ delivery, errorReason: message });
       await this.recomputeNotificationStatus(delivery.notificationId);
     }
@@ -200,13 +174,6 @@ export class ConversationalSendWorker implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /**
-   * Пересчёт `Notification.status` по агрегату deliveries:
-   *   - все failed   → failed
-   *   - все delivered/+ читаемо/responded → delivered/read/responded
-   *   - часть delivered, часть queued → sent_partial
-   *   - все queued → queued (без изменений)
-   */
   private async recomputeNotificationStatus(notificationId: string): Promise<void> {
     const deliveries = await this.prisma.notificationDelivery.findMany({
       where: { notificationId },

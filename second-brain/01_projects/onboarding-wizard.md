@@ -1,18 +1,21 @@
 ---
 title: Wizard «Знакомство с компанией»
 phase: 0c
-status: in_progress
+status: done
 date: 2026-05-21
 references:
-  - plans/tz/2026-05-21-phase-0c-onboarding-wizard-frontend.md
+  - plans/archive/2026-05-21-phase-0c-onboarding-wizard-frontend.md
   - plans/analysis/2026-05-21-user-cabinet-design.md §8, §13
 ---
 
 # Wizard «Знакомство с компанией»
 
 ## Что это
-5-шаговый wizard первого входа owner'а в новую Org. URL `/onboarding/company/step-{1..5}`.
-AppShell скрыт (см. `AuthenticatedShell.tsx`).
+Онбординг делится на два независимых блока (оба в проде):
+- **Блок A — «Знакомство», 6 шагов.** URL `/onboarding/welcome/step-{1..6}` — первый вход любого пользователя (редирект из `AuthenticatedShell` при `profileCompletedAt = null`). Шаг 6 → `POST /api/v1/orgs/:orgId/welcome/complete` → создаёт документ «Знакомство», ставит `welcomeCompletedAt`/`profileCompletedAt`, возвращает `{ redirectTo: '/dashboard' }`. Подробности — в hub-секции про shared-demo-org-model ниже.
+- **Блок B — wizard «Знакомство с компанией», 5 шагов** (этот документ ниже). URL `/onboarding/company/step-{1..5}`, owner-only, открывается позже с дашборда; завершается `POST /api/v1/orgs/:orgId/setup/complete`.
+
+Ниже описан Блок B — 5-шаговый wizard owner'а по структуре компании. AppShell скрыт (см. `AuthenticatedShell.tsx`).
 
 ## Шаги
 1. **Отделы** — POST /api/v1/departments по одному или /batch.
@@ -37,7 +40,7 @@ AppShell скрыт (см. `AuthenticatedShell.tsx`).
 
 ## Shared эталонная демо-Org «Демо: ТехноСтрим» (ТЗ 2026-06-01)
 
-Источник: [`plans/tz/2026-06-01-demo-shared-org-model.md`](../../plans/tz/2026-06-01-demo-shared-org-model.md), анализ [`plans/analysis/2026-06-01-demo-shared-org-architecture.md`](../../plans/analysis/2026-06-01-demo-shared-org-architecture.md). **Полностью заменяет** старую модель «копия ТехноСтрим в каждую Org» (ТЗ 2026-05-31-demo-auto-seed-and-cleanup отменён).
+Источник: [`plans/archive/2026-06-01-demo-shared-org-model.md`](../../plans/archive/2026-06-01-demo-shared-org-model.md), анализ [`plans/analysis/2026-06-01-demo-shared-org-architecture.md`](../../plans/analysis/2026-06-01-demo-shared-org-architecture.md). **Полностью заменяет** старую модель «копия ТехноСтрим в каждую Org» (ТЗ 2026-05-31-demo-auto-seed-and-cleanup отменён).
 
 **Идея.** Демо — это не операция (seed), это **состояние** (membership). Эталонная Org «ТехноСтрим» (`isReferenceDemo=true`) живёт **одна** в БД, новые пользователи получают `OrgMember(role='demo_observer')` к ней автоматически — без копирования, без ожидания, без тоста «Готовим…».
 

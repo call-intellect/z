@@ -6,27 +6,9 @@ import type { CryptoService } from '../../common/crypto/crypto.service';
 import type { CoreQueueService } from '../core-queue/core-queue.service';
 import type { S3Service } from '../recordings/s3.service';
 
-import {
-  ConfluenceAuthError,
-  type ConfluenceClient,
-} from './confluence-client';
+import { ConfluenceAuthError, type ConfluenceClient } from './confluence-client';
 import { DocumentImportService } from './document-import.service';
 import type { DocumentsService } from './documents.service';
-
-/**
- * ТЗ-4 Ф7 — unit-тесты `DocumentImportService.processImport`.
- *
- * Проверяем:
- *   1. ZIP с 3 поддерживаемыми записями → totalFiles=3, doneFiles+failedFiles=3,
- *      все done, createOne вызван 3 раза.
- *   2. ZIP с неподдержанной/пустой записью → errorLog содержит её,
- *      failedFiles инкрементнут, импорт НЕ failed (status=completed).
- *   3. Повторный processImport того же importId → no-op (status-guard:
- *      updateMany вернул count=0).
- *
- * Поднимаем сервис напрямую с замоканными prisma / s3 / coreQueue / cfg /
- * documents — без DI-графа и Redis.
- */
 
 interface BatchRow {
   id: string;
@@ -48,20 +30,12 @@ interface BatchRow {
 
 const ACCEPTED = ['pdf', 'docx', 'xlsx', 'pptx', 'md', 'txt', 'html', 'rtf', 'odt', 'csv'];
 
-function buildService(
-  batch: BatchRow,
-  confluencePages?: ConfluenceClient['fetchSpacePages'],
-) {
-  // Stateful in-memory DocumentImport row. updateMany соблюдает where.status,
-  // чтобы воспроизвести status-guard идемпотентности.
+function buildService(batch: BatchRow, confluencePages?: ConfluenceClient['fetchSpacePages']) {
   const prisma = {
     documentImport: {
       findUnique: vi.fn(async () => ({ ...batch })),
       updateMany: vi.fn(
-        async (args: {
-          where: { id: string; status?: string };
-          data: Partial<BatchRow>;
-        }) => {
+        async (args: { where: { id: string; status?: string }; data: Partial<BatchRow> }) => {
           if (args.where.status && batch.status !== args.where.status) {
             return { count: 0 };
           }
@@ -98,11 +72,8 @@ function buildService(
     })),
   } as unknown as TypedConfigService;
 
-  const fetchSpacePages = vi.fn(
-    confluencePages ?? (async () => []),
-  );
+  const fetchSpacePages = vi.fn(confluencePages ?? (async () => []));
   const confluence = { fetchSpacePages } as unknown as ConfluenceClient;
-  // Crypto-мок: encrypt/decrypt round-trip без реального ключа (для Ф9 транзита).
   const crypto = {
     encrypt: vi.fn((s: string) => `gcm:v1:enc(${s})`),
     decrypt: vi.fn((s: string) => s.replace(/^gcm:v1:enc\((.*)\)$/, '$1')),
@@ -120,10 +91,7 @@ function buildService(
   return { service, prisma, createOne, batch, fetchSpacePages };
 }
 
-function baseBatch(
-  zip: Uint8Array,
-  source: BatchRow['source'] = 'upload_zip',
-): BatchRow {
+function baseBatch(zip: Uint8Array, source: BatchRow['source'] = 'upload_zip'): BatchRow {
   return {
     id: 'imp-1',
     tenantId: 'tenant-1',
@@ -159,12 +127,9 @@ describe('DocumentImportService.processImport', () => {
     expect(batch.totalFiles).toBe(3);
     expect(batch.doneFiles).toBe(3);
     expect(batch.failedFiles).toBe(0);
-    // Нет ошибок → service пишет Prisma.JsonNull (правильный sentinel для
-    // обнуления JSON-поля), не литеральный null.
     expect(batch.errorLog).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ file: expect.any(String) })]),
     );
-    // importBatchId проброшен в createOne.
     expect(createOne).toHaveBeenCalledWith(
       expect.objectContaining({ importBatchId: 'imp-1', tenantId: 'tenant-1' }),
     );
@@ -180,7 +145,6 @@ describe('DocumentImportService.processImport', () => {
 
     await service.processImport('imp-1');
 
-    // Только good.md создан.
     expect(createOne).toHaveBeenCalledTimes(1);
     expect(batch.status).toBe('completed');
     expect(batch.doneFiles).toBe(1);
@@ -200,11 +164,8 @@ describe('DocumentImportService.processImport', () => {
     expect(batch.status).toBe('completed');
     expect(createOne).toHaveBeenCalledTimes(1);
 
-    // Второй прогон: status уже completed → updateMany(where status pending)
-    // вернёт count=0 → ранний выход, createOne больше не зовётся.
     await service.processImport('imp-1');
     expect(createOne).toHaveBeenCalledTimes(1);
-    // update (финализация) вызван ровно один раз — только в первом прогоне.
     expect(prisma.documentImport.update).toHaveBeenCalledTimes(1);
   });
 
@@ -220,8 +181,6 @@ describe('DocumentImportService.processImport', () => {
     expect(log[0]?.file).toBe('(архив)');
   });
 
-  // ─────────────────────────── Ф8 — Notion ──────────────────────────────────
-
   it('Notion-экспорт → имена страниц чищены от 32-hex id, source=notion', async () => {
     const zip = zipSync({
       'Команда abcdef0123456789abcdef0123456789/Регламент онбординга 0123456789abcdef0123456789abcdef.md':
@@ -236,38 +195,28 @@ describe('DocumentImportService.processImport', () => {
     expect(batch.doneFiles).toBe(2);
     expect(createOne).toHaveBeenCalledTimes(2);
 
-    // Имена очищены: нет 32-hex id, путь сохранён хлебной крошкой.
     const names = (createOne.mock.calls as unknown[][]).map(
-      (c) =>
-        (c[0] as { file: { originalName: string } }).file.originalName,
+      (c) => (c[0] as { file: { originalName: string } }).file.originalName,
     );
     expect(names).toContain('Команда / Регламент онбординга');
     expect(names).toContain('База знаний');
-    // Никакого hex-хвоста не осталось.
     for (const n of names) {
       expect(n).not.toMatch(/[0-9a-f]{32}/i);
     }
-    // kind выведен из .md → markdown (формат не сломан чисткой имени).
     expect(createOne).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'markdown', importBatchId: 'imp-1' }),
     );
   });
-
-  // ─────────────────────────── Ф9 — Confluence ──────────────────────────────
 
   it('Confluence: 2 страницы из клиента → 2 Document(text), source=confluence', async () => {
     const fetchPages = async () => [
       { title: 'Политика отпусков', text: 'Текст про отпуска' },
       { title: 'Регламент релизов', text: 'Текст про релизы' },
     ];
-    // Confluence-batch без ZIP (zipInline=null).
     const batchRow = baseBatch(new Uint8Array([]), 'confluence');
     batchRow.zipInline = null;
     batchRow.zipSize = 0;
-    const { service, createOne, batch, fetchSpacePages } = buildService(
-      batchRow,
-      fetchPages,
-    );
+    const { service, createOne, batch, fetchSpacePages } = buildService(batchRow, fetchPages);
 
     await service.processImport('imp-1', {
       baseUrl: 'https://acme.atlassian.net',

@@ -1,13 +1,3 @@
-/**
- * SBA α-8 wave 4 — unit-тест RoleMapBuilderService.
- *
- * Покрывает:
- *   - estimateCompleteness — 9 слотов поровну, округление 0.001;
- *   - mergeSourceBlocks (helper из ResponsibilityElementService) — capped 50;
- *   - recomputeCompleteness — пересчёт + запись в RoleProfile.completeness;
- *   - getMap — собрать DTO с правильными counts.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import { mergeSourceBlocks } from './responsibility-element.service';
@@ -29,7 +19,6 @@ describe('mergeSourceBlocks', () => {
     const incoming = Array.from({ length: 20 }, (_, i) => `n${i}`);
     const result = mergeSourceBlocks(initial, incoming);
     expect(result.length).toBe(50);
-    // Последние 50 — оставляем новые в конце.
     expect(result).toContain('n19');
   });
 
@@ -40,12 +29,7 @@ describe('mergeSourceBlocks', () => {
 });
 
 describe('RoleMapBuilderService.estimateCompleteness (через приватный путь)', () => {
-  // Прямой доступ к классу — приватный метод. Тестируем через публичный
-  // recomputeCompleteness, но проще валидировать поведение getMaturity'у:
-  // 0 заполнения = 0 completeness, все 9 = 1.0.
   it('все 9 слотов = 1.0; ни одного = 0', () => {
-    // Тривиальная mock-сборка не нужна — формула одинаковая 1/9 на каждый
-    // заполненный слот. Просто проверим математику.
     const slots = 9;
     const weight = 1 / slots;
     expect(weight * slots).toBeCloseTo(1, 6);
@@ -54,7 +38,6 @@ describe('RoleMapBuilderService.estimateCompleteness (через приватн�
 
 describe('RoleMapBuilderService — smoke (с замоканной prisma)', () => {
   it('getMap возвращает counts и completeness', async () => {
-    // Минимальный smoke-mock: prisma.role.findUnique, listByRole — пустые.
     const role = {
       id: 'r1',
       tenantId: 't1',
@@ -84,7 +67,6 @@ describe('RoleMapBuilderService — smoke (с замоканной prisma)', () 
       setRolesWithNormalizedDataRatio: vi.fn(),
     } as never;
 
-    // Импортируем lazy — чтобы не дёргать @nestjs/common.
     const { RoleMapBuilderService } = await import('./role-map-builder.service');
     const svc = new RoleMapBuilderService(
       prisma,
@@ -106,7 +88,6 @@ describe('RoleMapBuilderService — smoke (с замоканной prisma)', () 
       interactions: 0,
       metrics: 0,
     });
-    // 0 слотов заполнено → completeness=0.
     expect(map.completeness).toBe(0);
     expect(map.isForming).toBe(true);
   });

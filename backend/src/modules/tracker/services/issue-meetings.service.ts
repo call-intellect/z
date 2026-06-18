@@ -7,24 +7,6 @@ import { LivekitService } from '../../livekit/livekit.service';
 import { ActivityRecorderService } from './activity-recorder.service';
 import { IssuesService } from './issues.service';
 
-/**
- * IssueMeetingsService — создание Meeting'а, привязанной к задаче трекера.
- *
- * Эндпоинт `POST /api/v1/issues/:id/start-meeting` (см. ТЗ §REST API):
- *   1. Находит задачу + tenant.
- *   2. Создаёт Meeting (ULID id, type='task_discussion', linkedIssueId=issue.id,
- *      ownerId=currentUser.id) + host-Participant в одной транзакции.
- *   3. Идемпотентно создаёт LiveKit room (best-effort).
- *   4. Генерирует host JWT.
- *   5. Пишет IssueActivity verb='meeting_started' с `{ meetingId }`.
- *
- * NOTE: НЕ используем `MeetingsService.createForUser` напрямую, потому что он
- *   - не поддерживает `linkedIssueId` (пришлось бы расширять сигнатуру),
- *   - списывает 1 встречу с MeetingsBalance (для встреч от задач этого не
- *     делаем — это автоматический системный сценарий, ТЗ 2026-05-27 Фаза 3).
- * Изначальная договорённость: «не модифицировать MeetingsService помимо
- * `create()`» → создаём напрямую.
- */
 @Injectable()
 export class IssueMeetingsService {
   private readonly logger = new Logger(IssueMeetingsService.name);
@@ -37,17 +19,6 @@ export class IssueMeetingsService {
     private readonly activity: ActivityRecorderService,
   ) {}
 
-  /**
-   * Запустить встречу по задаче. Возвращает идентификатор встречи + URL +
-   * host-токен LiveKit для немедленного входа.
-   *
-   * @param issueId          UUID задачи
-   * @param tenantId         текущий Org (из X-Org-Id)
-   * @param userId           инициатор (host)
-   * @param inviteUserIds    опц. список user.id, которых нужно добавить как
-   *                         participant'ов с ролью `guest`. Сразу записываем в
-   *                         БД; нотификации (если есть) — отдельным каналом.
-   */
   async startMeeting(args: {
     issueId: string;
     tenantId: string;
@@ -58,18 +29,14 @@ export class IssueMeetingsService {
 
     const issue = await this.issues.requireIssue(issueId, tenantId);
 
-    // Достаём User host (для name + Participant.userId).
     const host = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, name: true, email: true },
     });
     if (!host) {
-      // Это уровень InternalError — токен авторизации действителен, а user исчез.
-      // CookieAuthGuard это уже отсёк бы, но защищаемся.
       throw new Error('host_user_not_found');
     }
 
-    // Уже валидируем приглашённых: только реальные user'ы того же tenant'а.
     let validInviteIds: string[] = [];
     if (inviteUserIds.length > 0) {
       const memberships = await this.prisma.membership.findMany({
@@ -77,7 +44,6 @@ export class IssueMeetingsService {
         select: { userId: true },
       });
       validInviteIds = memberships.map((m) => m.userId);
-      // Тихо отбрасываем чужих — не валим запрос. Логируем для отладки.
       const dropped = inviteUserIds.filter((id) => !validInviteIds.includes(id));
       if (dropped.length > 0) {
         this.logger.warn(
@@ -106,7 +72,6 @@ export class IssueMeetingsService {
         },
       });
 
-      // host-Participant.
       await tx.participant.create({
         data: {
           meetingId,
@@ -118,7 +83,6 @@ export class IssueMeetingsService {
         },
       });
 
-      // Приглашённые — guest-Participant'ы. Не падаем при дубликатах.
       if (validInviteIds.length > 0) {
         const invitedUsers = await tx.user.findMany({
           where: { id: { in: validInviteIds } },
@@ -137,7 +101,6 @@ export class IssueMeetingsService {
         });
       }
 
-      // IssueActivity verb='meeting_started'.
       await this.activity.record({
         tenantId,
         issueId,
@@ -154,19 +117,14 @@ export class IssueMeetingsService {
       });
     });
 
-    // LiveKit room (idempotent, best-effort — если SFU недоступен, auto-create
-    // на стороне SFU подхватит при первом подключении).
     await this.livekit.ensureRoom({ id: meetingId });
 
-    // host-токен.
     const token = await this.livekit.generateHostToken(
       { id: meetingId },
       `host:${userId}`,
       host.name,
     );
 
-    // URL — относительный путь, конкретный домен фронт-знает сам.
-    // Используем `/m/{meetingId}` — общий public URL встречи (см. positioning).
     const meetingUrl = `/m/${meetingId}`;
 
     this.logger.log(

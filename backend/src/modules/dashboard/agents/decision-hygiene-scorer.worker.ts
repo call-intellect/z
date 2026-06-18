@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
-
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
@@ -19,38 +18,10 @@ import {
   buildDecisionHygieneUserMessage,
   parseDecisionHygieneResponse,
 } from '../prompts/decision-hygiene.prompt';
-import {
-  DASHBOARD_QUEUE_NAMES,
-  type DecisionHygieneJobData,
-} from '../queues';
+import { DASHBOARD_QUEUE_NAMES, type DecisionHygieneJobData } from '../queues';
 
-/**
- * Pulse Wave 6 §6.8 — Decision-Hygiene-Scorer.
- *
- * Источник: plans/tz/2026-05-30-pulse-full.md §6.8.
- *
- * Event-driven worker (`dashboard.decision-hygiene`). Producer —
- * `Specialist33DecisionsWorker` после `processBlock` (новый Decision создан
- * или поднялось raisedCount у существующего). Также может вызываться
- * вручную через `DashboardQueueService.enqueueDecisionHygiene`.
- *
- * Логика на одно Decision:
- *   1. Read Decision. Если `reversibility !== null` — skip (идемпотентно,
- *      повторный вердикт не считаем; если нужно пересчитать — снимать null
- *      вручную через admin).
- *   2. LLM-вызов `decision-hygiene` (cache-friendly промпт): на входе
- *      statement + rationale + alternatives; на выходе `{reversibility,
- *      rationale}` JSON-strict.
- *   3. Если ответ невалиден / LLM упал — лог warning, поле не обновляется
- *      (BullMQ retry'нет с экспоненциальным backoff'ом).
- *   4. На type-1: проверяем наличие IdeaBlock'а с signalType='decision_basis'
- *      среди sourceBlockIds — если нет, лог warning «type-1 без альтернатив».
- *      Виджет на главной добавится отдельным шагом C.3.
- */
 @Injectable()
-export class DecisionHygieneScorerWorker
-  implements OnModuleInit, OnModuleDestroy
-{
+export class DecisionHygieneScorerWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DecisionHygieneScorerWorker.name);
   private worker: Worker<DecisionHygieneJobData> | null = null;
 
@@ -85,7 +56,7 @@ export class DecisionHygieneScorerWorker
         'decision-hygiene-scorer: job failed (повтор по политике BullMQ)',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `DecisionHygieneScorerWorker запущен (${DASHBOARD_QUEUE_NAMES.DECISION_HYGIENE})`,
     );
   }
@@ -97,9 +68,6 @@ export class DecisionHygieneScorerWorker
     }
   }
 
-  /**
-   * Публичный handler — integration-тест вызывает напрямую без BullMQ.
-   */
   async process(job: Job<DecisionHygieneJobData>): Promise<void> {
     const { decisionId, tenantId } = job.data;
     const startedAt = Date.now();
@@ -119,10 +87,7 @@ export class DecisionHygieneScorerWorker
       },
     });
     if (!decision) {
-      this.logger.warn(
-        { decisionId },
-        'decision-hygiene: decision не найден — skip',
-      );
+      this.logger.warn({ decisionId }, 'decision-hygiene: decision не найден — skip');
       return;
     }
     if (decision.tenantId !== tenantId) {
@@ -145,10 +110,7 @@ export class DecisionHygieneScorerWorker
         ? decision.statement
         : (decision.text ?? '').trim();
     if (statement.length === 0) {
-      this.logger.warn(
-        { decisionId },
-        'decision-hygiene: пустой statement/text — skip',
-      );
+      this.logger.warn({ decisionId }, 'decision-hygiene: пустой statement/text — skip');
       return;
     }
 
@@ -208,9 +170,6 @@ export class DecisionHygieneScorerWorker
       },
     });
 
-    // Type-1 без явно зафиксированных оснований — отдельный warning для
-    // будущего виджета «3 необратимых решения без альтернатив за неделю»
-    // (Pulse Wave 6 §6.8). На сейчас — только лог.
     if (parsed.reversibility === 'type-1') {
       const hasAlternatives = Array.isArray(alternatives) && alternatives.length > 0;
       let hasBasisBlock = false;
@@ -232,7 +191,7 @@ export class DecisionHygieneScorerWorker
       }
     }
 
-    this.logger.log(
+    this.logger.debug(
       {
         decisionId,
         reversibility: parsed.reversibility,
@@ -243,13 +202,7 @@ export class DecisionHygieneScorerWorker
   }
 }
 
-/**
- * Парсит `Decision.alternatives` (Json в БД). Поддерживает форму
- * `[{ option, reasonRejected? }, ...]`. Невалидные элементы — отбрасываем.
- */
-function parseAlternatives(
-  raw: unknown,
-): DecisionHygieneAlternative[] | null {
+function parseAlternatives(raw: unknown): DecisionHygieneAlternative[] | null {
   if (!Array.isArray(raw)) return null;
   const out: DecisionHygieneAlternative[] = [];
   for (const item of raw) {
@@ -257,9 +210,7 @@ function parseAlternatives(
     const r = item as Record<string, unknown>;
     const option = r.option;
     if (typeof option !== 'string' || option.trim().length === 0) continue;
-    const reasonRejected = typeof r.reasonRejected === 'string'
-      ? r.reasonRejected
-      : null;
+    const reasonRejected = typeof r.reasonRejected === 'string' ? r.reasonRejected : null;
     out.push({ option, reasonRejected });
   }
   return out.length > 0 ? out : null;

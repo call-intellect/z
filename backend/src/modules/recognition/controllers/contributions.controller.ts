@@ -13,10 +13,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -26,25 +23,9 @@ import type {
   ListRecognitionsResponseDto,
   MyContributionsResponseDto,
 } from '../dto/recognition.dto';
-import {
-  ListRecognitionsQuerySchema,
-  type ListRecognitionsQuery,
-} from '../dto/recognition.dto';
+import { ListRecognitionsQuerySchema, type ListRecognitionsQuery } from '../dto/recognition.dto';
 import { RecognitionService } from '../services/recognition.service';
 
-/**
- * Wave 2 — Contributions / Recognitions REST API.
- *
- *   GET /api/v1/me/contributions            — свой профиль вклада + бейджи + последние 10 Recognition
- *   GET /api/v1/persons/:id/contributions   — для руководителя (manage по org)
- *   GET /api/v1/me/recognitions             — все мои Recognition (фильтр по type/period)
- *
- * RBAC:
- *   - /me/* — авторизация = self; нет RBAC-обвязки кроме CookieAuth + TenantGuard.
- *   - /persons/:id/contributions — manager+ может смотреть подчинённых;
- *     на MVP проверка через rbac.check(act='manage', obj='org') — допустимо для
- *     owner/admin (HR-доступ). Полная иерархия «direct manager» — γ-фаза.
- */
 @ApiTags('recognition / contributions')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -74,7 +55,6 @@ export class ContributionsController {
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<MyContributionsResponseDto> {
     const t = this.requireTenant(tenantId);
-    // Manage по org = доступ owner/admin (HR-функция).
     const canManage = await this.rbac.check({
       userId: user.id,
       tenantId: t,
@@ -86,13 +66,10 @@ export class ContributionsController {
         ok: false,
         error: {
           code: 'forbidden',
-          message:
-            'Профиль вклада сотрудника доступен только руководителям (owner / admin)',
+          message: 'Профиль вклада сотрудника доступен только руководителям (owner / admin)',
         },
       });
     }
-    // Person.userId → User.id. Если у Person нет linked User — отдаём 404
-    // (нет смысла показывать contributions для контакта без аккаунта).
     const person = await this.prisma.person.findFirst({
       where: { id: personId, tenantId: t },
       select: { userId: true },

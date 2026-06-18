@@ -28,6 +28,8 @@ import { linkDerivedDecisionsForIssue } from './decision-task-link.util';
 import { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 import { IssuesService } from './issues.service';
 import { ProjectsService } from './projects.service';
+import { TaskDedupService } from './task-dedup.service';
+import { shouldMaterializeTask } from './task-quality-gate.util';
 import { TrackerEventsService } from './tracker-events.service';
 import { WebhookDispatcher } from './webhook-dispatcher.service';
 
@@ -65,6 +67,8 @@ export interface IntakeResponseDto {
   rejectedReason: string | null;
   snoozedUntil: string | null;
   createdIssueId: string | null;
+  /** TZ task-dedup (2026-06-16) — открытая Issue-дубль, найденная арбитром (suggest). */
+  suggestedDuplicateOfIssueId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -135,6 +139,12 @@ export class IntakeService {
     @Optional()
     @Inject(ProjectsService)
     private readonly projects?: ProjectsService,
+    // TZ task-dedup (2026-06-16, Ф1 уровень A) — дедуп-гейт перед записью
+    // intake-карточки. @Optional: unit-тесты IntakeService строятся без него →
+    // дедуп пропускается (карточка создаётся как есть, suggestedDuplicate=null).
+    @Optional()
+    @Inject(TaskDedupService)
+    private readonly taskDedup?: TaskDedupService,
   ) {}
 
   /**
@@ -206,10 +216,35 @@ export class IntakeService {
     dto: CreateIntakeDto,
     tenantId: string,
   ): Promise<IntakeResponseDto> {
+    // TZ task-dedup (2026-06-16, Ф1 уровень A) — дедуп-гейт ПЕРЕД записью.
+    // Best-effort (R4): любой сбой/таймаут → verdict='nil', карточка создаётся
+    // как есть. verdict='same' → пишем suggestedDuplicateOfIssueId, что блокирует
+    // авто-accept в auto-triage (route to human). Авто-merge НЕ делаем (R13).
+    let suggestedDuplicateOfIssueId: string | null = null;
+    if (this.taskDedup) {
+      const dedup = await this.taskDedup.evaluate({
+        tenantId,
+        title: dto.extractedTitle ?? dto.rawContent,
+        description: dto.extractedDescription ?? null,
+      });
+      if (dedup.verdict === 'same') {
+        suggestedDuplicateOfIssueId = dedup.matchedIssueId;
+        this.logger.log(
+          {
+            tenantId,
+            matchedIssueId: dedup.matchedIssueId,
+            similarity: dedup.similarity,
+          },
+          'intake create: дедуп-арбитр нашёл дубль — помечаем suggestedDuplicateOfIssueId',
+        );
+      }
+    }
+
     const created = await this.prisma.intakeIssue.create({
       data: {
         tenantId,
         projectId: dto.projectId ?? null,
+        suggestedDuplicateOfIssueId,
         source: dto.source,
         sourceEmail: dto.sourceEmail ?? null,
         externalSource: dto.externalSource ?? null,
@@ -328,6 +363,37 @@ export class IntakeService {
         'intake from next-step: дубль — возвращаем существующий',
       );
       return this.toResponse(existing);
+    }
+
+    // Ф0 (ТЗ 2026-06-16) — детерминированный гейт качества ПЕРЕД созданием
+    // задачи из AI-источника (следующий шаг отчёта встречи). Не материализуем
+    // «мусор» (вопрос/намерение без ответственного и срока). Чистые правила,
+    // без LLM. Прямые доверенные пути (email/in_app/self-task) сюда не заходят —
+    // они идут через generic `create()` с источником-человеком (§6 boundary).
+    // [ASSUMPTION: next-step отчёта — доверенный источник (report-агент уже
+    // отфильтровал болтовню), поэтому применяем только форм-гейт (отсеять
+    // вопрос/намерение), не требуя owner/срок — потому что эти поля на пути
+    // next-step не извлекаются вовсе, а строгое требование зарубило бы всю фичу]
+    const gate = shouldMaterializeTask({
+      title: text,
+      ownerUserId: null,
+      ownerHint: null,
+      dueDate: null,
+      source: 'meeting_next_step',
+    });
+    if (!gate.ok) {
+      this.logger.log(
+        { meetingId, reason: gate.reason },
+        'intake from next-step: гейт качества не пропустил задачу',
+      );
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'task_quality_gate_rejected',
+          message:
+            'Текст не похож на задачу с ответственным или сроком — не создаём карточку',
+        },
+      });
     }
 
     // A10 — провенанс: явный список от FE имеет приоритет, иначе резолвим по
@@ -655,8 +721,10 @@ export class IntakeService {
           externalId: intake.externalId,
           // A10 (2026-06-14) — провенанс intake → Issue.
           sourceBlockIds: intake.sourceBlockIds,
-          // Фикс linkedMeetingIds 2026-06-17 — связка Issue со встречей (ручной тридж).
           linkedMeetingIds: intake.meetingId ? [intake.meetingId] : [],
+          // TZ task-dedup (2026-06-16) — дедуп уже отработал на уровне A
+          // (intake create); двойной suggest не нужен.
+          skipDedup: true,
         },
         tenantId,
         userId,
@@ -826,6 +894,7 @@ export class IntakeService {
       rejectedReason: i.rejectedReason,
       snoozedUntil: i.snoozedUntil?.toISOString() ?? null,
       createdIssueId: i.createdIssueId,
+      suggestedDuplicateOfIssueId: i.suggestedDuplicateOfIssueId,
       createdAt: i.createdAt.toISOString(),
       updatedAt: i.updatedAt.toISOString(),
     };

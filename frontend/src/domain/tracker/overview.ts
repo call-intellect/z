@@ -1,19 +1,9 @@
-/**
- * Tracker Project Overview (2026-05-27) — доменные модели для вкладок
- * /overview, /workload, /integrations.
- *
- * Контракт: `backend/src/modules/tracker/dto/overview/*`.
- * Слои: ApiDto → DomainModel (см. skill `frontend-rules`).
- */
-
-// ─── ApiDto (зеркало backend) ─────────────────────────────────────────────
-
 export type OverviewStateCategoryApi =
-  | 'backlog'
-  | 'unstarted'
-  | 'started'
-  | 'completed'
-  | 'cancelled';
+  | "backlog"
+  | "unstarted"
+  | "started"
+  | "completed"
+  | "cancelled";
 
 export interface OverviewProjectMiniApi {
   id: string;
@@ -93,8 +83,6 @@ export interface OverviewResponseApi {
   recentDocuments: OverviewProjectDocumentMiniApi[];
 }
 
-// ─── DomainModel ─────────────────────────────────────────────────────────
-
 export interface ProjectOverviewSummary {
   project: OverviewProjectMiniApi;
   members: OverviewUserMiniApi[];
@@ -134,8 +122,6 @@ export interface ProjectRecentDocument {
   updatedAt: Date;
 }
 
-// ─── Workload ────────────────────────────────────────────────────────────
-
 export interface WorkloadRowApi {
   userId: string;
   userName: string | null;
@@ -153,8 +139,6 @@ export interface WorkloadResponseApi {
 
 export type WorkloadRow = WorkloadRowApi;
 export type WorkloadSummary = WorkloadResponseApi;
-
-// ─── Integrations status ─────────────────────────────────────────────────
 
 export interface IntegrationsStatusApi {
   emailToTask: {
@@ -184,8 +168,6 @@ export interface ProjectIntegrationsStatus {
   webhooksCount: number;
   lastImport: { source: string; completedAt: Date } | null;
 }
-
-// ─── Mappers ─────────────────────────────────────────────────────────────
 
 export function projectOverviewFromApi(
   api: OverviewResponseApi,
@@ -242,14 +224,12 @@ export function projectIntegrationsStatusFromApi(
   };
 }
 
-// ─── UI helpers ──────────────────────────────────────────────────────────
-
 const STATE_LABEL_RU: Record<OverviewStateCategoryApi, string> = {
-  backlog: 'Бэклог',
-  unstarted: 'К работе',
-  started: 'В работе',
-  completed: 'Готово',
-  cancelled: 'Отменено',
+  backlog: "Бэклог",
+  unstarted: "К работе",
+  started: "В работе",
+  completed: "Готово",
+  cancelled: "Отменено",
 };
 
 export function stateCategoryLabel(c: OverviewStateCategoryApi): string {
@@ -257,15 +237,15 @@ export function stateCategoryLabel(c: OverviewStateCategoryApi): string {
 }
 
 const ACTIVITY_VERB_LABEL: Record<string, string> = {
-  created: 'создал задачу',
-  updated: 'изменил задачу',
-  status_changed: 'сменил статус',
-  assigned: 'назначил исполнителя',
-  unassigned: 'снял исполнителя',
-  commented: 'оставил комментарий',
-  linked: 'добавил связь',
-  archived: 'архивировал',
-  restored: 'восстановил',
+  created: "создал задачу",
+  updated: "изменил задачу",
+  status_changed: "сменил статус",
+  assigned: "назначил исполнителя",
+  unassigned: "снял исполнителя",
+  commented: "оставил комментарий",
+  linked: "добавил связь",
+  archived: "архивировал",
+  restored: "восстановил",
 };
 
 export function activityVerbLabel(verb: string): string {

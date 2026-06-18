@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -17,18 +11,6 @@ import type {
   UpdateJobDescriptionDto,
 } from '../dto/job-descriptions.dto';
 
-/**
- * Сервис должностных инструкций (JobDescription — declared-форма).
- *
- * Бизнес-правила:
- *   - Все записи tenant-scoped.
- *   - PATCH увеличивает `version` (+1).
- *   - При создании, если sourceDocumentId передан — EntityLink
- *     `from=job-description, to=document, relationType=derived_from`.
- *   - Также пишем EntityLink `from=role, to=job-description,
- *     relationType=described_by`.
- *   - DELETE — soft.
- */
 @Injectable()
 export class JobDescriptionsService {
   private readonly logger = new Logger(JobDescriptionsService.name);
@@ -37,8 +19,6 @@ export class JobDescriptionsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
   ) {}
-
-  // ─────────────────────────── list / get ───────────────────────────
 
   async list(args: {
     tenantId: string;
@@ -83,8 +63,6 @@ export class JobDescriptionsService {
     return this.toListItem(j, j.role.name);
   }
 
-  // ─────────────────────────── create / update / delete ─────────────
-
   async create(args: {
     tenantId: string;
     userId: string;
@@ -106,7 +84,6 @@ export class JobDescriptionsService {
         },
       });
 
-      // Role → JobDescription (described_by).
       await tx.entityLink.create({
         data: {
           tenantId: args.tenantId,
@@ -123,7 +100,6 @@ export class JobDescriptionsService {
         },
       });
 
-      // JobDescription → Document (derived_from), если есть источник.
       if (args.body.sourceDocumentId) {
         await tx.entityLink.create({
           data: {
@@ -162,9 +138,7 @@ export class JobDescriptionsService {
   }): Promise<{ items: JobDescriptionDto[]; created: number }> {
     const items: JobDescriptionDto[] = [];
     for (const it of args.body.items) {
-      items.push(
-        await this.create({ tenantId: args.tenantId, userId: args.userId, body: it }),
-      );
+      items.push(await this.create({ tenantId: args.tenantId, userId: args.userId, body: it }));
     }
     return { items, created: items.length };
   }
@@ -187,10 +161,7 @@ export class JobDescriptionsService {
         },
       });
     }
-    if (
-      args.body.sourceDocumentId !== undefined &&
-      args.body.sourceDocumentId !== null
-    ) {
+    if (args.body.sourceDocumentId !== undefined && args.body.sourceDocumentId !== null) {
       await this.assertDocumentExists(args.tenantId, args.body.sourceDocumentId);
     }
 
@@ -211,7 +182,6 @@ export class JobDescriptionsService {
         data,
       });
 
-      // EntityLink derived_from синхронизируем при смене source.
       if (
         args.body.sourceDocumentId !== undefined &&
         args.body.sourceDocumentId !== existing.sourceDocumentId
@@ -242,8 +212,7 @@ export class JobDescriptionsService {
               toType: 'document',
               relationType: 'derived_from',
               confidence: new Prisma.Decimal('1.000'),
-              explanation:
-                'Должностная инструкция перепривязана к новому исходному документу',
+              explanation: 'Должностная инструкция перепривязана к новому исходному документу',
               createdBy: 'manual',
               status: 'active',
               properties: {},
@@ -318,12 +287,7 @@ export class JobDescriptionsService {
     return { id: args.id, deletedAt: now.toISOString() };
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  private async assertRoleExists(
-    tenantId: string,
-    roleId: string,
-  ): Promise<void> {
+  private async assertRoleExists(tenantId: string, roleId: string): Promise<void> {
     const role = await this.prisma.role.findUnique({
       where: { id: roleId },
       select: { tenantId: true, deletedAt: true },
@@ -339,10 +303,7 @@ export class JobDescriptionsService {
     }
   }
 
-  private async assertDocumentExists(
-    tenantId: string,
-    documentId: string,
-  ): Promise<void> {
+  private async assertDocumentExists(tenantId: string, documentId: string): Promise<void> {
     const doc = await this.prisma.document.findUnique({
       where: { id: documentId },
       select: { tenantId: true, deletedAt: true },

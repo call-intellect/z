@@ -1,19 +1,7 @@
 import { z } from 'zod';
 
-/**
- * DTO создания проекта трекера. `slug` уникален per tenant; `identifier` —
- * префикс задач (KORA, SALES) длиной до 5 символов; используется в формате
- * `{identifier}-{sequenceId}` (например `KORA-123`).
- *
- * Sprints (2026-05-27) — 4 опц. scope-поля гибкой привязки спринта-проекта:
- * customerCardId / vendorId / subjectPersonId / departmentId. Инвариант:
- * заполнено не более одного. См. plans/tz/2026-05-27-sprints.md §1.6.
- */
 export const CreateProjectSchema = z
   .object({
-    // D2 (ТЗ 2026-06-11): slug/identifier опциональны — если не переданы,
-    // сервер генерит их из `name` (транслит + уникальный суффикс) внутри
-    // транзакции. Regex-валидация остаётся для случая «передан явно».
     slug: z
       .string()
       .min(2)
@@ -43,13 +31,14 @@ export const CreateProjectSchema = z
   })
   .strict()
   .superRefine((v, ctx) => {
-    const filled = [v.customerCardId, v.vendorId, v.subjectPersonId, v.departmentId]
-      .filter((x): x is string => typeof x === 'string' && x.length > 0)
-      .length;
+    const filled = [v.customerCardId, v.vendorId, v.subjectPersonId, v.departmentId].filter(
+      (x): x is string => typeof x === 'string' && x.length > 0,
+    ).length;
     if (filled > 1) {
       ctx.addIssue({
         code: 'custom',
-        message: 'Можно заполнить не более одного scope-поля (customerCardId / vendorId / subjectPersonId / departmentId)',
+        message:
+          'Можно заполнить не более одного scope-поля (customerCardId / vendorId / subjectPersonId / departmentId)',
         path: ['customerCardId'],
       });
     }

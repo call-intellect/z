@@ -9,30 +9,6 @@ import { DailyCheckInService } from '../services/daily-checkin.service';
 import { getLocalDate, getLocalHour } from '../utils/local-date';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
-/**
- * SBA β-8 — DailyCheckInPromptCron.
- *
- * Раз в час (`@Cron('0 * * * *')`) обходит всех employee-Person'ов с
- * привязанным User'ом и проверяет, не пора ли отправить morning/evening
- * checkin prompt:
- *
- *   - Морнинг — когда локальный час Person'а == `DAILY_CHECKIN_MORNING_LOCAL_HOUR`
- *     (default 9) и нет completed-чек-ина за сегодня (kind='morning').
- *   - Ивнинг — аналогично для `DAILY_CHECKIN_EVENING_LOCAL_HOUR` (default 18).
- *
- * Отправка: `ConversationalService.sendNotification(eventType='checkin.prompt')`.
- * Сохраняем notificationId в "пустом" DailyCheckIn (placeholder), чтобы при
- * ответе пользователя `CheckinResponseHandler` мог его найти.
- *
- * Anti-spam:
- *   - Unique constraint `(tenantId, personId, kind, dateLocal)` гарантирует,
- *     что для одного Person'а в один день не будет дубля.
- *   - Если уже есть completed чек-ин — пропускаем (метрика `skipped`).
- *
- * Мастер-флаг `DAILY_CHECKIN_ENABLED` (default true). При false cron
- * срабатывает, но сразу выходит. Это нужно, чтобы оператор мог включать
- * фичу без рестарта (запуск каждый час).
- */
 @Injectable()
 export class DailyCheckInPromptCron {
   private readonly logger = new Logger(DailyCheckInPromptCron.name);
@@ -57,10 +33,7 @@ export class DailyCheckInPromptCron {
     const now = new Date();
     try {
       const stats = await this.runOnce(now);
-      this.logger.log(
-        stats,
-        'daily-checkin-prompt.cron: проход завершён',
-      );
+      this.logger.debug(stats, 'daily-checkin-prompt.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -69,9 +42,6 @@ export class DailyCheckInPromptCron {
     }
   }
 
-  /**
-   * Выделен для unit-тестов: можно передать произвольный `now`.
-   */
   async runOnce(now: Date): Promise<{
     promptsSent: number;
     skippedAlreadyCompleted: number;
@@ -82,7 +52,6 @@ export class DailyCheckInPromptCron {
     const morningHour = this.cfg.betaOps.morningLocalHour;
     const eveningHour = this.cfg.betaOps.eveningLocalHour;
 
-    // Берём все employee-Person'ы Org'ов с активным User'ом.
     const persons = await this.prisma.person.findMany({
       where: {
         deletedAt: null,
@@ -115,11 +84,7 @@ export class DailyCheckInPromptCron {
       const tenantTop = resolveOperationsTenantTop(p.tenantId);
 
       const kind: 'morning' | 'evening' | null =
-        localHour === morningHour
-          ? 'morning'
-          : localHour === eveningHour
-            ? 'evening'
-            : null;
+        localHour === morningHour ? 'morning' : localHour === eveningHour ? 'evening' : null;
 
       if (!kind) {
         skippedOutsideWindow++;

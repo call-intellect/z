@@ -1,19 +1,10 @@
-/**
- * API-клиент SBA δ-1 — Orchestrator (multi-agent research).
- *
- *   POST /api/v1/orchestrator/runs              — SSE stream событий run-а
- *   GET  /api/v1/orchestrator/runs/:id          — статус + результат
- *   GET  /api/v1/orchestrator/runs/:id/events   — re-stream SSE (replay из БД)
- *   POST /api/v1/orchestrator/runs/:id/cancel   — отменить
- */
-
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
 export type OrchestratorAgentType =
-  | 'entity_research'
-  | 'comparison'
-  | 'topic_summary'
-  | 'timeline_construction';
+  | "entity_research"
+  | "comparison"
+  | "topic_summary"
+  | "timeline_construction";
 
 export interface OrchestratorPlanStepApi {
   stepIndex: number;
@@ -44,26 +35,26 @@ export interface OrchestratorVerificationApi {
 }
 
 export type OrchestratorStreamEvent =
-  | { type: 'started'; runId: string }
-  | { type: 'plan'; plan: OrchestratorPlanApi }
+  | { type: "started"; runId: string }
+  | { type: "plan"; plan: OrchestratorPlanApi }
   | {
-      type: 'subagent_started';
+      type: "subagent_started";
       stepIndex: number;
       agentType: OrchestratorAgentType;
       description: string;
     }
   | {
-      type: 'subagent_completed';
+      type: "subagent_completed";
       stepIndex: number;
       agentType: OrchestratorAgentType;
       ok: boolean;
       preview: string;
     }
-  | { type: 'synthesis'; synthesis: OrchestratorSynthesisApi }
-  | { type: 'verification'; verification: OrchestratorVerificationApi }
-  | { type: 'done'; runId: string }
-  | { type: 'error'; code: string; message: string }
-  | { type: 'cancelled' };
+  | { type: "synthesis"; synthesis: OrchestratorSynthesisApi }
+  | { type: "verification"; verification: OrchestratorVerificationApi }
+  | { type: "done"; runId: string }
+  | { type: "error"; code: string; message: string }
+  | { type: "cancelled" };
 
 export interface OrchestratorRunDetailApi {
   id: string;
@@ -88,22 +79,18 @@ export interface OrchestratorRunDetailApi {
   }>;
 }
 
-/**
- * Запустить новый orchestrator-run. Возвращает AsyncIterable событий через SSE.
- * Аналог streamConciergeMessage.
- */
 export async function* streamOrchestratorRun(
   body: { task: string; depth?: number },
   signal?: AbortSignal,
 ): AsyncGenerator<OrchestratorStreamEvent, void, unknown> {
   const baseUrl =
-    process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+    process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
   const res = await fetch(`${baseUrl}/api/v1/orchestrator/runs`, {
-    method: 'POST',
-    credentials: 'include',
+    method: "POST",
+    credentials: "include",
     headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
     },
     body: JSON.stringify(body),
     ...(signal ? { signal } : {}),
@@ -113,35 +100,31 @@ export async function* streamOrchestratorRun(
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '';
+  let buffer = "";
   try {
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       let idx: number;
-      while ((idx = buffer.indexOf('\n\n')) >= 0) {
+      while ((idx = buffer.indexOf("\n\n")) >= 0) {
         const raw = buffer.slice(0, idx);
         buffer = buffer.slice(idx + 2);
-        if (raw.startsWith(':')) continue;
-        const dataLine = raw.split('\n').find((l) => l.startsWith('data:'));
+        if (raw.startsWith(":")) continue;
+        const dataLine = raw.split("\n").find((l) => l.startsWith("data:"));
         if (!dataLine) continue;
         const payload = dataLine.slice(5).trim();
         try {
           const ev = JSON.parse(payload) as OrchestratorStreamEvent;
           yield ev;
-          if (ev.type === 'done' || ev.type === 'error') return;
-        } catch {
-          /* skip malformed */
-        }
+          if (ev.type === "done" || ev.type === "error") return;
+        } catch {}
       }
     }
   } finally {
     try {
       reader.releaseLock();
-    } catch {
-      /* */
-    }
+    } catch {}
   }
 }
 

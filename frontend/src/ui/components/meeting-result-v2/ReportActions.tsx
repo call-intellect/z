@@ -1,20 +1,13 @@
-'use client';
+"use client";
 
-import { Copy, Download, Printer } from 'lucide-react';
-import { toast } from 'sonner';
+import { Copy, Download, Printer } from "lucide-react";
+import { toast } from "sonner";
 
-import { copyToClipboard } from '@/lib/copy-to-clipboard';
-import { Button } from '@/ui/shadcn/button';
+import { copyToClipboard } from "@/lib/copy-to-clipboard";
+import { Button } from "@/ui/shadcn/button";
 
-import { structuredReportToMarkdown } from './structured-report';
+import { structuredReportToMarkdown } from "./structured-report";
 
-/**
- * ТЗ-5 (2026-06-06): действия отчёта встречи — «Скопировать текст / Скачать /
- * Печать». Реюзает человекочитаемый markdown-сериализатор
- * (`structuredReportToMarkdown`). Без новых зависимостей: PDF = печать браузера
- * (`window.print`), скачивание = `Blob` + `URL.createObjectURL` (паттерн
- * `AdminCsvDownloadButton`).
- */
 export function ReportActions({
   output,
   title,
@@ -27,18 +20,18 @@ export function ReportActions({
   const onCopy = async (): Promise<void> => {
     const ok = await copyToClipboard(md);
     if (ok) {
-      toast.success('Текст отчёта скопирован');
+      toast.success("Текст отчёта скопирован");
     } else {
-      toast.error('Не удалось скопировать');
+      toast.error("Не удалось скопировать");
     }
   };
 
   const onDownload = (): void => {
-    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = `${slugifyFilename(title) || 'отчёт'}.md`;
+    a.download = `${slugifyFilename(title) || "отчёт"}.md`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -67,12 +60,11 @@ export function ReportActions({
   );
 }
 
-/** Имя файла из заголовка: пробелы → «-», убираем спецсимволы файловой системы. */
 function slugifyFilename(title?: string): string {
-  if (!title) return '';
+  if (!title) return "";
   return title
     .trim()
-    .replace(/[\\/:*?"<>|]+/g, '')
-    .replace(/\s+/g, '-')
+    .replace(/[\\/:*?"<>|]+/g, "")
+    .replace(/\s+/g, "-")
     .slice(0, 80);
 }

@@ -8,24 +8,6 @@ import { ConversationalService } from '../../conversational/conversational.servi
 import { ValueRecapService, shiftPeriod } from '../services/value-recap.service';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
-/**
- * TZ-1 Фаза 5 (daily-value-engine) — ValueRecapCron.
- *
- * `@Cron('0 7 1 * *')` — 1-е число месяца, 07:00 UTC (= 10:00 МСК). Обходит
- * активные Org → `build` за ПРОШЛЫЙ месяц → push-first владельцу/COO
- * (Telegram/email через бюджет Ф0, eventType `operations.monthly_recap`). Экран
- * (drill-down) — отдельный эндпоинт.
- *
- * Master-flag `operations.value_recap.enabled` (kill-switch, ON по умолчанию).
- * False → cron тикает, но сразу выходит (без рестарта).
- *
- * Идемпотентность:
- *   - снимок upsert'ится по (tenantId, periodYm);
- *   - push шлём только если `deliveredAt IS NULL` (повторный прогон не задвоит).
- *
- * Метрики: `value_recap_built_total` (в сервисе),
- * `value_recap_delivered_total{channel}`.
- */
 @Injectable()
 export class ValueRecapCron {
   private readonly logger = new Logger(ValueRecapCron.name);
@@ -48,15 +30,13 @@ export class ValueRecapCron {
       true,
     );
     if (!enabled) {
-      this.logger.debug(
-        'value-recap.cron: operations.value_recap.enabled=false, skip',
-      );
+      this.logger.debug('value-recap.cron: operations.value_recap.enabled=false, skip');
       return;
     }
     const now = new Date();
     try {
       const stats = await this.runOnce(now);
-      this.logger.log(stats, 'value-recap.cron: проход завершён');
+      this.logger.debug(stats, 'value-recap.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -65,14 +45,12 @@ export class ValueRecapCron {
     }
   }
 
-  /** Выделен для unit-тестов: можно передать произвольный `now`. */
   async runOnce(now: Date): Promise<{
     orgsProcessed: number;
     recapsBuilt: number;
     delivered: number;
     errors: number;
   }> {
-    // Отчёт за ПРОШЛЫЙ месяц (cron запускается 1-го числа нового месяца).
     const currentPeriod = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
     const periodYm = shiftPeriod(currentPeriod, -1);
 
@@ -110,7 +88,7 @@ export class ValueRecapCron {
         continue;
       }
 
-      if (built.alreadyDelivered) continue; // push идемпотентен по deliveredAt
+      if (built.alreadyDelivered) continue;
 
       try {
         const sent = await this.notifyOwners({
@@ -140,11 +118,6 @@ export class ValueRecapCron {
     return { orgsProcessed: orgs.length, recapsBuilt, delivered, errors };
   }
 
-  /**
-   * Push владельцу/COO Org'а (БЕЗ admin — IT/devops-роль). Через дневной
-   * бюджет Ф0, eventType `operations.monthly_recap`. Возвращает кол-во
-   * отправленных.
-   */
   private async notifyOwners(args: {
     tenantId: string;
     snapshotId: string;
@@ -159,9 +132,9 @@ export class ValueRecapCron {
     if (memberships.length === 0) return 0;
 
     const title = `Итоги месяца ${args.periodYm}: что сделала Кора`;
-    const body =
-      (args.narrative || 'Готова месячная сводка. Откройте «Итоги месяца» в панели операций.')
-        .slice(0, 3_900);
+    const body = (
+      args.narrative || 'Готова месячная сводка. Откройте «Итоги месяца» в панели операций.'
+    ).slice(0, 3_900);
     const actionUrl = `/dashboard/operations/value-recap?period=${args.periodYm}`;
 
     let sent = 0;

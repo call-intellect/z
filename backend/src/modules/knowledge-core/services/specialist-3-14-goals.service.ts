@@ -17,6 +17,7 @@ import {
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
+import { CoreQueueService } from '../../core-queue/core-queue.service';
 import { SystemLogPipeline } from '../../logging/log-pipeline';
 import { LogService } from '../../logging/log.service';
 import {
@@ -64,8 +65,9 @@ const VALID_HORIZONS: ReadonlySet<string> = new Set([
  *   - Cap фокуса MAX_ACTIVE_GOALS_PER_HORIZON: при превышении не плодим.
  *   - MIN_EXTRACT_CONFIDENCE — ниже = «не цель», skip.
  *   - Entity{type=goal} в этой фазе НЕ создаём (entityId=null; backfill — вне scope).
- *   - У Goal НЕТ embedding-колонки → KNN через ILIKE-fallback (как у decisions
- *     при отсутствии вектора).
+ *   - Ф5 (TZ 2026-06-16): KNN-дедуп по семантике (`Goal.embedding`, pgvector
+ *     cosine, HNSW) вместо ILIKE по 2 словам; ILIKE остаётся best-effort
+ *     fallback'ом при отсутствии вектора. + source-block guard (Б34).
  *   - Goal.createdById обязателен (FK на User onDelete:Restrict) — подставляем
  *     owner'а Org (Membership role='owner'). Нет owner → skip создания.
  *
@@ -104,6 +106,17 @@ export class Specialist314GoalsService {
   @Optional()
   @Inject(GoalTaskLinkerService)
   private readonly goalTaskLinker?: GoalTaskLinkerService;
+
+  /**
+   * Ф5 (TZ 2026-06-16 task-dedup) — enqueue пересчёта `Goal.embedding` после
+   * создания AI-цели (для семантического KNN-дедупа следующих целей). Тот же
+   * property-injection паттерн, что и goalThemeLinker (не сдвигаем позиционные
+   * аргументы существующих unit-тестов). @Optional: в spec-конструкторе сервис
+   * не передаётся → enqueue no-op.
+   */
+  @Optional()
+  @Inject(CoreQueueService)
+  private readonly coreQueue?: CoreQueueService;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -165,6 +178,34 @@ export class Specialist314GoalsService {
     }
 
     try {
+      // Б34/§5.2 (TZ 2026-06-16) — source-block guard. Если Goal уже
+      // материализована из ЭТОГО блока (ретрай джоба ИЛИ прошлый прогон) — НЕ
+      // создаём дубль. Детерминированно по sourceBlockId, не зависит от наличия
+      // embedding'а. (Как guard ideas/decisions через `sourceBlockIds: { has }`.)
+      const alreadyFromBlock = await this.prisma.goal.findFirst({
+        where: {
+          tenantId: block.tenantId,
+          sourceBlockIds: { has: block.id },
+          promotionState: { not: 'dismissed' },
+        },
+        select: { id: true, promotionState: true },
+      });
+      if (alreadyFromBlock) {
+        // Повтор того же блока: промоутим suggested → active (как handleDuplicate),
+        // но НЕ плодим вторую цель.
+        if (alreadyFromBlock.promotionState === 'suggested') {
+          await this.handleDuplicate({
+            tenantId: block.tenantId,
+            targetId: alreadyFromBlock.id,
+          });
+        }
+        this.logger.debug(
+          { blockId: block.id, goalId: alreadyFromBlock.id },
+          'specialist-3-14: цель из этого блока уже есть — skip (source-block guard)',
+        );
+        return;
+      }
+
       const queryText = `${draft.statement} ${draft.description ?? ''}`;
       const candidates = await this.knnCandidates({
         tenantId: block.tenantId,
@@ -289,6 +330,22 @@ export class Specialist314GoalsService {
         type: METRIC_TYPE,
         status: promotionState,
       });
+
+      // Ф5 (TZ 2026-06-16) — фоновый пересчёт Goal.embedding для семантического
+      // дедупа следующих целей (specialist-3-14 KNN). Fire-and-forget, как
+      // issue-embed: воркер идемпотентен (hash-skip), ошибка не критична для
+      // создания цели.
+      void this.coreQueue
+        ?.enqueueGoalEmbed({ tenantId: block.tenantId, goalId: goal.id })
+        .catch((err: unknown) => {
+          this.logger.warn(
+            {
+              goalId: goal.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'specialist-3-14: enqueue goal-embed упал (не критично)',
+          );
+        });
 
       // Опц. измеримый KR.
       if (draft.measurable) {
@@ -518,10 +575,15 @@ export class Specialist314GoalsService {
   // ─────────────────────────── KNN-кандидаты ───────────────────────────
 
   /**
-   * Ближайшие существующие цели для дедупа/иерархии. У Goal НЕТ embedding-колонки
-   * (проверено в schema.prisma), поэтому используем ILIKE-fallback по name/description
-   * (паттерн fallback из specialist-3-3-decisions). embedQuery дёргаем лишь для
-   * единообразия будущего апгрейда — результат не используется без вектор-колонки.
+   * Ближайшие существующие цели для дедупа/иерархии.
+   *
+   * Ф5 (TZ 2026-06-16) — семантический KNN по `Goal.embedding` (pgvector cosine,
+   * HNSW-индекс `goal_embedding_hnsw_cosine_idx`) вместо прежнего ILIKE по 2
+   * словам. Паттерн идентичен specialist-3-3-decisions: синхронный embed
+   * запроса → pgvector ORDER BY `embedding <=> qvec` по тому же tenant. При
+   * промахе embedding'а (null/таймаут/пустой индекс) — best-effort fallback на
+   * прежний ILIKE по первым словам (не падаем). Свежие цели без вектора
+   * (воркер ещё не отработал) ловятся ILIKE-fallback'ом и source-block guard'ом.
    *
    * Фильтр: tenantId, promotionState != 'dismissed', validUntil IS NULL.
    */
@@ -532,6 +594,58 @@ export class Specialist314GoalsService {
     const queryText = args.queryText.trim().slice(0, 2_000);
     if (!queryText) return [];
 
+    // 1. Семантический путь — embed запроса + pgvector KNN.
+    let embedding: number[] | null;
+    try {
+      embedding = await this.embedder.embedQuery(queryText);
+    } catch {
+      embedding = null;
+    }
+
+    if (embedding && embedding.length > 0) {
+      try {
+        const vec = `[${embedding.join(',')}]`;
+        const rows = await this.prisma.$queryRawUnsafe<
+          Array<{
+            id: string;
+            name: string;
+            description: string | null;
+            horizon: GoalHorizon;
+            promotionState: string;
+          }>
+        >(
+          `SELECT "id", "name", "description", "horizon", "promotionState"
+             FROM "Goal"
+            WHERE "tenantId" = $1
+              AND "embedding" IS NOT NULL
+              AND "promotionState" <> 'dismissed'
+              AND "validUntil" IS NULL
+            ORDER BY "embedding" <=> $2::vector
+            LIMIT ${Specialist314GoalsService.KNN_TOP_K}`,
+          args.tenantId,
+          vec,
+        );
+        if (rows.length > 0) {
+          return rows.map((r) => ({
+            id: r.id,
+            name: r.name,
+            description: r.description ?? null,
+            horizon: r.horizon,
+            promotionState: r.promotionState,
+          }));
+        }
+      } catch (err) {
+        this.logger.debug(
+          {
+            tenantId: args.tenantId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'specialist-3-14.knnCandidates: pgvector KNN упал — fallback на ILIKE',
+        );
+      }
+    }
+
+    // 2. Fallback — ILIKE по первым словам (best-effort, если вектора ещё нет).
     const firstWords = queryText
       .split(/\s+/)
       .filter((w) => w.length >= 3)

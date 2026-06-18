@@ -21,10 +21,7 @@ import type { Request, Response } from 'express';
 import { TypedConfigService } from '../../common/config/index';
 import { PublicDemo } from '../../common/guards/public-demo.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 import { CacheInvalidationService } from '../dialog-layer/services/cache-invalidation.service';
@@ -51,18 +48,6 @@ import {
 import { ChatV2FeedbackService } from './services/chat-v2-feedback.service';
 import { ChatV2ConversationsService } from './services/conversations.service';
 
-/**
- * SBA α-5 — REST API чат-v2.
- *
- *   POST   /api/v1/chat-v2/messages
- *   GET    /api/v1/chat-v2/conversations
- *   GET    /api/v1/chat-v2/conversations/:id
- *   POST   /api/v1/chat-v2/conversations/:id/pin
- *   POST   /api/v1/chat-v2/conversations/:id/archive
- *
- * RBAC: см. policy.csv §SBA α-5 — каждый пользователь видит только свои
- * диалоги; admin/owner видят все для отладки (read).
- */
 @ApiTags('chat-v2')
 @Controller('api/v1/chat-v2')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -79,8 +64,6 @@ export class ChatV2Controller {
     private readonly feedback: ChatV2FeedbackService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
-
-  // ──────────────────────────── messages ──────────────────────────────
 
   @Post('messages')
   @RequireSubscription()
@@ -99,7 +82,6 @@ export class ChatV2Controller {
     citations: unknown[];
     uncertaintyNote: string | null;
     mode: string;
-    /** SBA α-5 dialog-layer — true, если ответ из AnswerCache. */
     cacheHit: boolean;
   }> {
     const t = this.requireTenant(tenantId);
@@ -117,18 +99,6 @@ export class ChatV2Controller {
     });
   }
 
-  /**
-   * §4 Ф1 (2026-06-11) — SSE-вариант ask: тот же ответ, но со стадиями
-   * прогресса «Понимаю вопрос → Ищу в памяти → Пишу ответ», чтобы UI не
-   * выглядел «зависшим». НЕ посимвольный стрим токенов (отдельный follow-up).
-   * За kill-switch `CHAT_V2_STREAMING_ENABLED` (дефолт ON, Ship-On): при OFF —
-   * 503 ДО SSE-заголовков, фронт откатывается на синхронный `/messages`.
-   *
-   * Формат событий:
-   *   event: stage  data: { type:'stage', stage:'understanding'|'searching'|'writing' }
-   *   event: done   data: { type:'done', conversationId, messageId, text, citations, uncertaintyNote, mode, cacheHit }
-   *   event: error  data: { type:'error', code:'stream_failure', message }
-   */
   @Post('messages/stream')
   @RequireSubscription()
   @PublicDemo()
@@ -146,8 +116,6 @@ export class ChatV2Controller {
     const t = this.requireTenant(tenantId);
     await this.requireWriteOwn(user.id, t);
 
-    // Kill-switch: при OFF возвращаем 503 ДО установки SSE-заголовков, чтобы
-    // фронт сделал fallback на синхронный POST /messages.
     if (!this.cfg.chatV2.streamingEnabled) {
       throw new ServiceUnavailableException({
         ok: false,
@@ -167,9 +135,7 @@ export class ChatV2Controller {
     const heartbeat = setInterval(() => {
       try {
         res.write(`: heartbeat\n\n`);
-      } catch {
-        /* socket dead */
-      }
+      } catch {}
     }, this.cfg.concierge.sseHeartbeatSeconds * 1000);
 
     try {
@@ -210,11 +176,6 @@ export class ChatV2Controller {
     }
   }
 
-  /**
-   * SBA α-5 dialog-layer — очистить cache (AnswerCache + RetrievalCache)
-   * по диалогу. Pessimistic flush по tenantId+userId (см. ТЗ §7).
-   * Доступно владельцу диалога (RBAC: chat_v2_conversation/write на свой).
-   */
   @Post('conversations/:id/clear-cache')
   @RequireSubscription()
   @HttpCode(HttpStatus.OK)
@@ -230,8 +191,6 @@ export class ChatV2Controller {
     retrievalDeleted: number;
   }> {
     const t = this.requireTenant(tenantId);
-    // Проверка владения (404 если чужой). RBAC: используем тот же
-    // chat_v2_conversation/write, что и для ask.
     const conv = await this.conversations.getById({
       tenantId: t,
       userId: user.id,
@@ -241,14 +200,6 @@ export class ChatV2Controller {
     return this.cacheInvalidation.invalidateUser(t, conv.userId);
   }
 
-  // ──────────────────────── feedback (TZ-1 Ф5) ────────────────────────
-
-  /**
-   * TZ-1 Фаза 5 (daily-value-engine) — оценить ответ ассистента (палец
-   * вверх/вниз). Upsert по (messageId, userId) с проверкой владения беседой.
-   * Channel-agnostic: вызывается и из web, и из Telegram/in_app адаптеров —
-   * НЕ web-only (нет @PublicDemo / web-гейта).
-   */
   @Post('messages/:id/feedback')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Оценить ответ ассистента (помог: вверх/вниз)' })
@@ -269,9 +220,6 @@ export class ChatV2Controller {
     });
   }
 
-  /**
-   * TZ-1 Фаза 5 — снять оценку ответа. Проверка владения беседой.
-   */
   @Delete('messages/:id/feedback')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Снять оценку ответа ассистента' })
@@ -288,16 +236,9 @@ export class ChatV2Controller {
     });
   }
 
-  /**
-   * TZ-1 Фаза 5 — метрика чата за окно (несущая часть value-recap).
-   * `scope='self'` (default) — мои диалоги (любой пользователь);
-   * `scope='org'` — по всей Org (требует owner/coo).
-   * helped-rate скрыт при rated<min; answeredWithCitation — grounding-proxy.
-   */
   @Get('usage-stats')
   @ApiOperation({
-    summary:
-      'Метрика чата за окно (asked/answered/grounding-proxy/helped-rate). scope self|org',
+    summary: 'Метрика чата за окно (asked/answered/grounding-proxy/helped-rate). scope self|org',
   })
   async usageStats(
     @Query(new ZodValidationPipe(ChatV2UsageStatsQuerySchema))
@@ -336,8 +277,6 @@ export class ChatV2Controller {
       ...stats,
     };
   }
-
-  // ──────────────────────────── conversations ────────────────────────
 
   @Get('conversations')
   @ApiOperation({ summary: 'Список диалогов пользователя (master)' })
@@ -416,8 +355,6 @@ export class ChatV2Controller {
     });
   }
 
-  // ──────────────────────────── helpers ──────────────────────────────
-
   private requireTenant(t: string | undefined): string {
     if (!t) {
       throw new ForbiddenException({
@@ -431,11 +368,6 @@ export class ChatV2Controller {
     return t;
   }
 
-  /**
-   * RBAC проверка на свой ресурс. На α-5 — простая проверка членства в
-   * Org; каждый member может задавать вопросы и видеть СВОИ диалоги.
-   * Проверка ownership происходит в ConversationsService.requireOwnership.
-   */
   private async requireWriteOwn(userId: string, tenantId: string): Promise<void> {
     const ok = await this.rbac.check({
       userId,

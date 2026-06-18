@@ -8,16 +8,6 @@ import type { TrackerEventsService } from '../services/tracker-events.service';
 
 import { TrelloImportStrategy } from './trello-import.strategy';
 
-/**
- * Unit-тесты `TrelloImportStrategy.run` на fake Trello JSON:
- *   - 2 boards, 5 cards (по 2 на board-1, 3 на board-2 (closed → skip 1)).
- *   - 1 card имеет комментарий (action type=commentCard).
- *   - 1 card имеет attachment с URL (мокируем fetch + s3).
- *   - 1 email — matched в userMappings, 1 — unmatched.
- *
- * Цель: проверить агрегаты, маппинг states / labels / assignees / unmatched.
- */
-
 function buildPrismaMock(): {
   prisma: PrismaService;
   calls: {
@@ -45,7 +35,7 @@ function buildPrismaMock(): {
       return { id: `iss-${issueSeq}`, ...data };
     },
   );
-  const issueFindFirst = vi.fn(async () => null); // нет существующих → не skip
+  const issueFindFirst = vi.fn(async () => null);
   const issueAggregate = vi.fn(async () => ({ _max: { sequenceId: 0 } }));
   let projectSeq = 0;
   const projectCreate = vi.fn(
@@ -85,7 +75,6 @@ function buildPrismaMock(): {
     ...data,
   }));
 
-  // Сборка PrismaService-моки: внутри $transaction передаём такой же tx-клиент.
   const txClient = {
     issue: {
       create: issueCreate,
@@ -157,11 +146,8 @@ function buildJsonContent(): Record<string, unknown> {
       { id: 'mem-1', email: 'alice@example.com', fullName: 'Alice' },
       { id: 'mem-2', email: 'bob@example.com', fullName: 'Bob' },
     ],
-    labels: [
-      { id: 'tl-1', idBoard: 'board-1', name: 'Urgent', color: 'red' },
-    ],
+    labels: [{ id: 'tl-1', idBoard: 'board-1', name: 'Urgent', color: 'red' }],
     cards: [
-      // board-1: 2 active cards
       {
         id: 'card-1',
         idBoard: 'board-1',
@@ -190,7 +176,6 @@ function buildJsonContent(): Record<string, unknown> {
         idMembers: [],
         idLabels: [],
       },
-      // board-2: 1 active + 1 closed
       {
         id: 'card-3',
         idBoard: 'board-2',
@@ -223,7 +208,6 @@ function buildJsonContent(): Record<string, unknown> {
 describe('TrelloImportStrategy.run', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Глобально замокать fetch для attachment-загрузки.
     (globalThis as unknown as { fetch: typeof fetch }).fetch = vi.fn(
       async () =>
         new Response('hello', {
@@ -272,7 +256,6 @@ describe('TrelloImportStrategy.run', () => {
         jsonContent: buildJsonContent(),
         selectedBoardIds: ['board-1', 'board-2'],
         userMappings: {
-          // Только bob — matched; alice → unmatched (отсутствует в Record).
           'bob@example.com': 'user-bob-id',
         },
       },
@@ -285,37 +268,29 @@ describe('TrelloImportStrategy.run', () => {
       onProgress,
     });
 
-    // 2 board → 2 Project.
     expect(result.totalProjects).toBe(2);
     expect(calls.projectCreate).toHaveBeenCalledTimes(2);
-    // 3 active card → 3 Issue.
     expect(result.totalIssues).toBe(3);
     expect(calls.issueCreate).toHaveBeenCalledTimes(3);
-    // 1 commentCard → 1 IssueComment.
     expect(result.totalComments).toBe(1);
     expect(calls.issueCommentCreate).toHaveBeenCalledTimes(1);
-    // 1 attachment → 1 IssueAttachment.
     expect(result.totalAttachments).toBe(1);
     expect(calls.issueAttachmentCreate).toHaveBeenCalledTimes(1);
-    // States: board-1 (3) + board-2 (2) = 5.
     expect(calls.issueStateCreate).toHaveBeenCalledTimes(5);
-    // Label: 1 board-label.
     expect(calls.labelCreate).toHaveBeenCalledTimes(1);
-    // Unmatched: alice@example.com (нет в userMappings).
     expect(result.unmatchedEmails).toEqual(['alice@example.com']);
-    // Assignees: card-3 → bob (matched) → createMany вызовется на этом card.
-    // card-1 → alice (unmatched) → НЕ createMany.
     expect(calls.issueAssigneeCreateMany).toHaveBeenCalledTimes(1);
   });
 
   it('skip если Issue с (tenantId, externalSource=trello, externalId) уже существует', async () => {
     const strategy = new TrelloImportStrategy();
     const { prisma, calls } = buildPrismaMock();
-    // Для card-1 вернём existing → skip; для остальных — null.
-    calls.issueFindFirst.mockImplementation(async ({ where }: { where: Record<string, unknown> }) => {
-      if (where?.externalId === 'card-1') return { id: 'existing-iss-1' };
-      return null;
-    });
+    calls.issueFindFirst.mockImplementation(
+      async ({ where }: { where: Record<string, unknown> }) => {
+        if (where?.externalId === 'card-1') return { id: 'existing-iss-1' };
+        return null;
+      },
+    );
 
     const result = await strategy.run({
       importLog: {
@@ -348,9 +323,8 @@ describe('TrelloImportStrategy.run', () => {
       onProgress: vi.fn(async () => undefined),
     });
 
-    // card-1 skipped, card-2 created. totalIssues = 1.
     expect(result.totalIssues).toBe(1);
-    expect(result.totalAttachments).toBe(0); // attachment у card-1 не обработан
-    expect(result.totalComments).toBe(0); // comment у card-1 не обработан
+    expect(result.totalAttachments).toBe(0);
+    expect(result.totalComments).toBe(0);
   });
 });

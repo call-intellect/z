@@ -17,14 +17,6 @@ function cfg(): TypedConfigService {
   } as unknown as TypedConfigService;
 }
 
-/**
- * Unit-тесты DocumentParserService (Фаза 0b + ТЗ-4 Ф2).
- *
- * Пакеты (`exceljs`/`officeparser`/`marked`/`mammoth`/`pdf-parse`) установлены —
- * динамические импорты резолвятся в рантайме vitest. Тесты — pure-unit, без БД
- * и без сети. Бинарные форматы (pptx/odt/rtf) проверяем через `vi.mock`
- * (синтезировать настоящий .pptx/.odt/.rtf руками непрактично).
- */
 describe('DocumentParserService', () => {
   it('parseMarkdown — strip HTML tags + декодирование сущностей', async () => {
     const svc = new DocumentParserService(cfg());
@@ -37,7 +29,7 @@ describe('DocumentParserService', () => {
     expect(result.text).not.toContain('>');
     expect(result.text).toContain('Заголовок');
     expect(result.text).toContain('Жирный');
-    expect(result.text).toContain('&'); // decoded &amp;
+    expect(result.text).toContain('&');
     expect(result.metadata.extractedAt).toBeInstanceOf(Date);
   });
 
@@ -72,7 +64,6 @@ describe('DocumentParserService', () => {
         mimeType: 'application/octet-stream',
       }),
     ).rejects.toThrow();
-    // Проверяем именно код ошибки.
     try {
       await svc.parse({
         kind: 'other',
@@ -81,8 +72,7 @@ describe('DocumentParserService', () => {
       });
       expect.unreachable('должно было бросить');
     } catch (err) {
-      const body = (err as { response?: unknown; getResponse?: () => unknown })
-        .getResponse?.();
+      const body = (err as { response?: unknown; getResponse?: () => unknown }).getResponse?.();
       expect(JSON.stringify(body)).toContain('unsupported_document_kind');
     }
   });
@@ -91,7 +81,7 @@ describe('DocumentParserService', () => {
     const cfgSmall = {
       document: {
         ...cfg().document,
-        maxSizeBytes: 10, // 10 байт лимит
+        maxSizeBytes: 10,
       },
     } as unknown as TypedConfigService;
     const svc = new DocumentParserService(cfgSmall);
@@ -104,10 +94,7 @@ describe('DocumentParserService', () => {
     ).rejects.toThrow(/Превышен лимит размера/);
   });
 
-  // ─────────────────────── ТЗ-4 Ф2 — новые форматы ──────────────────────
-
   it('parseXlsx — синтетический .xlsx (exceljs) → текст по листам', async () => {
-    // Строим настоящий xlsx-буфер через ту же exceljs, что использует парсер.
     const { Workbook } = await import('exceljs');
     const wb = new Workbook();
     const sheet = wb.addWorksheet('Бюджет');
@@ -120,11 +107,10 @@ describe('DocumentParserService', () => {
     const result = await svc.parse({
       kind: 'xlsx',
       content: buffer,
-      mimeType:
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
     expect(result.text.length).toBeGreaterThan(0);
-    expect(result.text).toContain('Бюджет'); // имя листа как заголовок
+    expect(result.text).toContain('Бюджет');
     expect(result.text).toContain('Статья');
     expect(result.text).toContain('Аренда');
     expect(result.text).toContain('100000');
@@ -145,11 +131,6 @@ describe('DocumentParserService', () => {
   });
 });
 
-/**
- * Бинарные форматы (pptx/odt/rtf) — маршрутизацию проверяем через мок
- * `officeparser`: подменяем `parseOffice` на sentinel и убеждаемся, что нужная
- * ветка switch вызвала именно его. Настоящие бинарные фикстуры не требуются.
- */
 describe('DocumentParserService — officeparser routing (mocked)', () => {
   const sentinel = 'SENTINEL-OFFICEPARSER-OUTPUT';
 
@@ -159,11 +140,8 @@ describe('DocumentParserService — officeparser routing (mocked)', () => {
     }));
     vi.doMock('officeparser', () => ({ parseOffice }));
 
-    // Импортируем сервис ПОСЛЕ установки мока (иначе dynamic import возьмёт реальный модуль).
     vi.resetModules();
-    const { DocumentParserService: SvcMocked } = await import(
-      './document-parser.service'
-    );
+    const { DocumentParserService: SvcMocked } = await import('./document-parser.service');
     const svc = new SvcMocked(cfg());
 
     for (const kind of ['pptx', 'odt', 'rtf'] as const) {
@@ -173,7 +151,7 @@ describe('DocumentParserService — officeparser routing (mocked)', () => {
         mimeType: 'application/octet-stream',
       });
       expect(result.text).toContain(sentinel);
-      expect(result.text).toContain(kind); // fileType хинт прокинут
+      expect(result.text).toContain(kind);
     }
     expect(parseOffice).toHaveBeenCalledTimes(3);
 

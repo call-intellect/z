@@ -137,7 +137,6 @@ describe('SupportIntakeService', () => {
     });
     expect(res).toEqual({ ticketId: 'issue-1', ticketNumber: 'SUP-1' });
 
-    // Issue: tenantId=vendorOrg, supportCustomerUserId=caller, customerOrgId=A.
     const issueArg = (issueCreate.mock.calls[0] as unknown[])[0] as {
       data: Record<string, unknown>;
     };
@@ -146,22 +145,18 @@ describe('SupportIntakeService', () => {
     expect(issueArg.data.supportCustomerOrgId).toBe('org-A');
     expect(issueArg.data.externalSource).toBe('support_widget');
 
-    // Первый коммент: access='external'.
     const cmtArg = (commentCreate.mock.calls[0] as unknown[])[0] as {
       data: Record<string, unknown>;
     };
     expect(cmtArg.data.access).toBe('external');
     expect(cmtArg.data.authorId).toBe(CALLER);
 
-    // SLA due dates проставлены.
     expect(issueArg.data.firstResponseDueAt).toBeInstanceOf(Date);
     expect(issueArg.data.resolutionDueAt).toBeInstanceOf(Date);
   });
 
   it('getMyTicket отдаёт ТОЛЬКО external-комменты (internal-заметка не в выдаче)', async () => {
     const findManyComments = vi.fn(async (args: { where: { access: string } }) => {
-      // Сервис ДОЛЖЕН фильтровать access='external'. Эмулируем БД: если фильтр
-      // правильный — вернём только external; internal не попадёт.
       expect(args.where.access).toBe('external');
       return [
         {
@@ -202,7 +197,6 @@ describe('SupportIntakeService', () => {
     const res = await svc.getMyTicket(CALLER, 'issue-1');
     expect(res.messages).toHaveLength(1);
     expect(res.messages[0]!.content).toBe('видимое клиенту');
-    // Гарантия: запрос фильтровал access='external' (assert внутри mock).
     expect(findManyComments).toHaveBeenCalledTimes(1);
   });
 });

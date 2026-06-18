@@ -1,23 +1,7 @@
-'use client';
+"use client";
 
-/**
- * `/integrations/import-tracker/:importId` — детали импорта
- * (Wave 3 / Tracker Phase 5 part 1).
- *
- * Источник данных: `useImportDetail` — SWR с conditional polling 2s +
- * подписка на WS-события `import.progress / completed / failed`.
- *
- * UI:
- *   - Прогресс-бар (processed / total из live overlay или REST).
- *   - Текстовая стадия (boards / issues / comments / attachments / finalizing).
- *   - Сводка по сущностям (создано: проектов / задач / комментариев / вложений).
- *   - Кнопка «Отменить» (только при status='running').
- *   - Раздел «Ошибки» (collapsed list первых 10).
- *   - Раздел «Не сопоставленные пользователи» (если есть).
- */
-
-import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -31,32 +15,28 @@ import {
   WifiOff,
   X,
   XCircle,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { importsApi } from '@/api/tracker/imports.api';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
-import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
-import { useImportDetail } from '@/hooks/tracker/useImportDetail';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { importsApi } from "@/api/tracker/imports.api";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
+import { useImportDetail } from "@/hooks/tracker/useImportDetail";
 import {
   importPhaseLabel,
   importSourceLabel,
   importStatusLabel,
   type ImportStatus,
-} from '@/domain/tracker';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent } from '@/ui/shadcn/card';
-import { Progress } from '@/ui/shadcn/progress';
+} from "@/domain/tracker";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent } from "@/ui/shadcn/card";
+import { Progress } from "@/ui/shadcn/progress";
 
 const MAX_VISIBLE_ERRORS = 10;
 const MAX_VISIBLE_UNMATCHED = 20;
 
-export function ImportDetailClient({
-  importLogId,
-}: {
-  importLogId: string;
-}) {
+export function ImportDetailClient({ importLogId }: { importLogId: string }) {
   const router = useRouter();
   const { currentOrgId } = useAuth();
 
@@ -82,33 +62,28 @@ export function ImportDetailClient({
       },
     });
 
-  // ── Производные значения ───────────────────────────────────────────
   const effective = useMemo(() => {
     if (!importLog) return null;
-    // Live overlay — мгновенное обновление в процессе работы.
     const processed = live.processed ?? importLog.processedItems;
     const phase = live.phase ?? null;
-    // total: backend заполняет totalIssues после фазы issues; до этого
-    // ничего точно неизвестно. Пока берём max(processed, totalIssues).
     const total = Math.max(processed, importLog.totalIssues);
     const percent =
       total > 0
         ? Math.min(100, Math.round((processed / total) * 100))
-        : importLog.status === 'completed'
+        : importLog.status === "completed"
           ? 100
           : 0;
     return { processed, phase, total, percent };
   }, [importLog, live]);
 
-  const isRunning = importLog?.status === 'running';
+  const isRunning = importLog?.status === "running";
 
-  // ── Cancel ─────────────────────────────────────────────────────────
   const handleCancel = async () => {
     if (!currentOrgId || !importLog) return;
     const ok = await ask({
-      title: 'Прервать импорт?',
-      description: 'Уже созданные задачи останутся.',
-      confirmLabel: 'Прервать',
+      title: "Прервать импорт?",
+      description: "Уже созданные задачи останутся.",
+      confirmLabel: "Прервать",
       destructive: true,
     });
     if (!ok) return;
@@ -116,15 +91,14 @@ export function ImportDetailClient({
     try {
       await importsApi.cancel(currentOrgId, importLog.id);
       await mutate();
-      toast('Запрос на отмену отправлен');
+      toast("Запрос на отмену отправлен");
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось отменить импорт'));
+      toast.error(humanizeApiError(e, "Не удалось отменить импорт"));
     } finally {
       setCancelling(false);
     }
   };
 
-  // ── Loading / error guards ─────────────────────────────────────────
   if (!currentOrgId) {
     return (
       <Shell>
@@ -156,7 +130,7 @@ export function ImportDetailClient({
             <div className="mt-1 text-fg-tertiary">
               {error instanceof ApiError
                 ? error.message
-                : 'Проверьте, что ссылка корректна, или вернитесь к списку источников.'}
+                : "Проверьте, что ссылка корректна, или вернитесь к списку источников."}
             </div>
           </div>
           <Button size="sm" variant="ghost" onClick={() => void mutate()}>
@@ -180,7 +154,7 @@ export function ImportDetailClient({
   return (
     <Shell>
       <div className="space-y-4">
-        {/* Header card */}
+        {}
         <Card>
           <CardContent className="p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -192,17 +166,18 @@ export function ImportDetailClient({
                   {importStatusLabel(importLog.status)}
                 </h1>
                 <div className="mt-1 text-sm text-fg-secondary">
-                  Запущен{' '}
-                  {importLog.startedAt.toLocaleString('ru-RU', {
-                    dateStyle: 'short',
-                    timeStyle: 'short',
+                  Запущен{" "}
+                  {importLog.startedAt.toLocaleString("ru-RU", {
+                    dateStyle: "short",
+                    timeStyle: "short",
                   })}
                   {importLog.completedAt && (
                     <>
-                      {' '}· завершён{' '}
-                      {importLog.completedAt.toLocaleString('ru-RU', {
-                        dateStyle: 'short',
-                        timeStyle: 'short',
+                      {" "}
+                      · завершён{" "}
+                      {importLog.completedAt.toLocaleString("ru-RU", {
+                        dateStyle: "short",
+                        timeStyle: "short",
                       })}
                     </>
                   )}
@@ -210,19 +185,22 @@ export function ImportDetailClient({
               </div>
               <div className="flex flex-col items-end gap-2">
                 <StatusBadge status={importLog.status} />
-                <ConnectionIndicator connected={wsConnected} running={isRunning} />
+                <ConnectionIndicator
+                  connected={wsConnected}
+                  running={isRunning}
+                />
               </div>
             </div>
 
-            {/* Progress */}
+            {}
             <div className="mt-5">
               <div className="mb-1.5 flex items-center justify-between text-xs text-fg-tertiary">
                 <span>
                   {effective.phase
                     ? importPhaseLabel(effective.phase)
                     : isRunning
-                      ? 'Подготовка'
-                      : ''}
+                      ? "Подготовка"
+                      : ""}
                 </span>
                 <span>
                   {effective.processed}
@@ -232,9 +210,13 @@ export function ImportDetailClient({
               <Progress value={effective.percent} />
             </div>
 
-            {/* Actions */}
+            {}
             <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-              <Button variant="ghost" size="sm" onClick={() => router.push('/integrations/import-tracker')}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push("/integrations/import-tracker")}
+              >
                 <ArrowLeft size={14} /> К источникам
               </Button>
               <div className="flex gap-2">
@@ -267,7 +249,7 @@ export function ImportDetailClient({
           </CardContent>
         </Card>
 
-        {/* Counters */}
+        {}
         <Card>
           <CardContent className="p-6">
             <h2 className="mb-3 text-sm font-semibold text-fg-primary">
@@ -282,7 +264,7 @@ export function ImportDetailClient({
           </CardContent>
         </Card>
 
-        {/* Errors */}
+        {}
         {importLog.errors.length > 0 && (
           <Card>
             <CardContent className="p-6">
@@ -306,7 +288,7 @@ export function ImportDetailClient({
                     .slice(0, MAX_VISIBLE_ERRORS)
                     .map((err, idx) => (
                       <li
-                        key={`${err.stage}-${err.externalId ?? 'na'}-${idx}`}
+                        key={`${err.stage}-${err.externalId ?? "na"}-${idx}`}
                         className="rounded-md border border-danger/30 bg-danger/5 p-2"
                       >
                         <div className="flex items-center gap-2">
@@ -319,12 +301,14 @@ export function ImportDetailClient({
                             </span>
                           )}
                         </div>
-                        <div className="mt-1 text-fg-secondary">{err.message}</div>
+                        <div className="mt-1 text-fg-secondary">
+                          {err.message}
+                        </div>
                       </li>
                     ))}
                   {importLog.errors.length > MAX_VISIBLE_ERRORS && (
                     <li className="text-fg-tertiary">
-                      …и ещё {importLog.errors.length - MAX_VISIBLE_ERRORS}{' '}
+                      …и ещё {importLog.errors.length - MAX_VISIBLE_ERRORS}{" "}
                       ошибок. Полный журнал доступен бэкенд-логом.
                     </li>
                   )}
@@ -334,7 +318,7 @@ export function ImportDetailClient({
           </Card>
         )}
 
-        {/* Unmatched users */}
+        {}
         {importLog.unmatched.length > 0 && (
           <Card>
             <CardContent className="p-6">
@@ -344,7 +328,7 @@ export function ImportDetailClient({
                 className="flex w-full items-center justify-between text-left"
               >
                 <span className="flex items-center gap-2 text-sm font-semibold text-warn">
-                  <Radio size={14} /> Не сопоставленные пользователи:{' '}
+                  <Radio size={14} /> Не сопоставленные пользователи:{" "}
                   {importLog.unmatched.length}
                 </span>
                 {unmatchedExpanded ? (
@@ -374,7 +358,8 @@ export function ImportDetailClient({
                       ))}
                     {importLog.unmatched.length > MAX_VISIBLE_UNMATCHED && (
                       <li className="text-xs text-fg-tertiary">
-                        …и ещё {importLog.unmatched.length - MAX_VISIBLE_UNMATCHED}
+                        …и ещё{" "}
+                        {importLog.unmatched.length - MAX_VISIBLE_UNMATCHED}
                       </li>
                     )}
                   </ul>
@@ -384,8 +369,8 @@ export function ImportDetailClient({
           </Card>
         )}
 
-        {/* Success CTA */}
-        {importLog.status === 'completed' && (
+        {}
+        {importLog.status === "completed" && (
           <Card>
             <CardContent className="p-6">
               <div className="flex items-start gap-3">
@@ -401,7 +386,7 @@ export function ImportDetailClient({
                     увидеть результаты.
                   </p>
                 </div>
-                <Button onClick={() => router.push('/projects')}>
+                <Button onClick={() => router.push("/projects")}>
                   К проектам
                 </Button>
               </div>
@@ -414,26 +399,24 @@ export function ImportDetailClient({
   );
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
-
 function Shell({ children }: { children: React.ReactNode }) {
   return <div className="mx-auto w-full max-w-4xl p-4 md:p-6">{children}</div>;
 }
 
 function StatusBadge({ status }: { status: ImportStatus }) {
   const cls =
-    status === 'completed'
-      ? 'bg-success/15 text-success'
-      : status === 'failed'
-        ? 'bg-danger/15 text-danger'
-        : status === 'cancelled'
-          ? 'bg-bg-overlay text-fg-tertiary'
-          : 'bg-accent-muted text-accent-fg';
+    status === "completed"
+      ? "bg-success/15 text-success"
+      : status === "failed"
+        ? "bg-danger/15 text-danger"
+        : status === "cancelled"
+          ? "bg-bg-overlay text-fg-tertiary"
+          : "bg-accent-muted text-accent-fg";
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${cls}`}
     >
-      {status === 'running' && <Loader2 size={12} className="animate-spin" />}
+      {status === "running" && <Loader2 size={12} className="animate-spin" />}
       {importStatusLabel(status)}
     </span>
   );
@@ -446,23 +429,21 @@ function ConnectionIndicator({
   connected: boolean;
   running: boolean;
 }) {
-  // Показываем индикатор только когда импорт активно идёт — на завершённых
-  // он не нужен (мы не подписываемся на live-обновления готового импорта).
   if (!running) return null;
   return (
     <span
       className={
-        'inline-flex items-center gap-1 text-[11px] ' +
-        (connected ? 'text-fg-tertiary' : 'text-warn')
+        "inline-flex items-center gap-1 text-[11px] " +
+        (connected ? "text-fg-tertiary" : "text-warn")
       }
       title={
         connected
-          ? 'Подключено к live-обновлениям'
-          : 'Live-обновления недоступны — данные обновляются раз в 2 секунды'
+          ? "Подключено к live-обновлениям"
+          : "Live-обновления недоступны — данные обновляются раз в 2 секунды"
       }
     >
       {connected ? <Wifi size={12} /> : <WifiOff size={12} />}
-      {connected ? 'Live' : 'Polling'}
+      {connected ? "Live" : "Polling"}
     </span>
   );
 }

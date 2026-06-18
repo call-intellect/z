@@ -6,17 +6,6 @@ import type { ConversationalService } from '../../conversational/conversational.
 
 import { CurationItemLifecycleCron } from './curation-item-lifecycle.cron';
 
-/**
- * Action Center B5 «оживление expiresAt» (2026-06-02) — юнит-тесты
- * CurationItemLifecycleCron (закрытие просроченных pending → expired).
- *
- * Покрытие:
- *   - pending с expiresAt в прошлом → updateMany expired + метрики;
- *   - pending с expiresAt в будущем НЕ трогается (фильтр lt:now);
- *   - decided/expired НЕ трогаются (status='pending' в where);
- *   - нет просроченных → нет уведомления owner/admin;
- *   - per-Org итерация переживает ошибку одной Org.
- */
 describe('CurationItemLifecycleCron (B5)', () => {
   let prisma: PrismaService;
   let metrics: BusinessMetricsService;
@@ -102,7 +91,6 @@ describe('CurationItemLifecycleCron (B5)', () => {
     });
     expect(observeAgeMock).toHaveBeenCalledTimes(1);
     expect(observeAgeMock.mock.calls[0]![0].level).toBe('light');
-    // уведомление owner отправлено
     expect(sendNotificationMock).toHaveBeenCalledTimes(1);
     const notif = sendNotificationMock.mock.calls[0]![0];
     expect(notif.recipientUserId).toBe('u-owner');
@@ -137,17 +125,15 @@ describe('CurationItemLifecycleCron (B5)', () => {
   it('per-Org итерация переживает ошибку одной Org', async () => {
     orgFindManyMock.mockResolvedValue([{ id: 'org-bad' }, { id: 'org-ok' }]);
     const expiresAt = new Date(Date.now() - 60_000);
-    itemFindManyMock
-      .mockRejectedValueOnce(new Error('db down'))
-      .mockResolvedValueOnce([
-        {
-          id: 'ci-2',
-          resourceType: 'process',
-          level: 'deep',
-          createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
-          expiresAt,
-        },
-      ]);
+    itemFindManyMock.mockRejectedValueOnce(new Error('db down')).mockResolvedValueOnce([
+      {
+        id: 'ci-2',
+        resourceType: 'process',
+        level: 'deep',
+        createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+        expiresAt,
+      },
+    ]);
 
     const summary = await cron.runForAllOrgs();
 
@@ -177,11 +163,9 @@ describe('CurationItemLifecycleCron (B5)', () => {
     expect(summary.notificationsSent).toBe(0);
   });
 
-  // ──────────────── Редизайн Ф4 — sweep конфликтов/intake ────────────────
-
   it('Ф4: протухшие ConflictItem(open) → dismissed, IntakeIssue(pending) → rejected', async () => {
     orgFindManyMock.mockResolvedValue([{ id: 'org-1' }]);
-    itemFindManyMock.mockResolvedValue([]); // нет протухших curation-items
+    itemFindManyMock.mockResolvedValue([]);
     conflictUpdateManyMock.mockResolvedValue({ count: 2 });
     intakeUpdateManyMock.mockResolvedValue({ count: 3 });
 
@@ -190,7 +174,6 @@ describe('CurationItemLifecycleCron (B5)', () => {
     expect(summary.conflictsDismissed).toBe(2);
     expect(summary.intakesRejected).toBe(3);
 
-    // ConflictItem: open + expiresAt<now → dismissed + reasoning + resolvedAt.
     const cWhere = conflictUpdateManyMock.mock.calls[0]![0].where;
     expect(cWhere.status).toBe('open');
     expect(cWhere.expiresAt.not).toBeNull();
@@ -200,22 +183,18 @@ describe('CurationItemLifecycleCron (B5)', () => {
     expect(cData.reasoning).toBe(CurationItemLifecycleCron.AUTO_EXPIRE_REASON);
     expect(cData.resolvedAt).toBeInstanceOf(Date);
 
-    // IntakeIssue: pending + expiresAt<now → rejected + rejectedReason + triagedAt.
     const iWhere = intakeUpdateManyMock.mock.calls[0]![0].where;
     expect(iWhere.status).toBe('pending');
     expect(iWhere.expiresAt.not).toBeNull();
     const iData = intakeUpdateManyMock.mock.calls[0]![0].data;
     expect(iData.status).toBe('rejected');
-    expect(iData.rejectedReason).toBe(
-      CurationItemLifecycleCron.AUTO_EXPIRE_REASON,
-    );
+    expect(iData.rejectedReason).toBe(CurationItemLifecycleCron.AUTO_EXPIRE_REASON);
     expect(iData.triagedAt).toBeInstanceOf(Date);
   });
 
   it('Ф4: свежие (count=0) не трогаются — sweep вызван, но summary нули', async () => {
     orgFindManyMock.mockResolvedValue([{ id: 'org-1' }]);
     itemFindManyMock.mockResolvedValue([]);
-    // updateMany по фильтру не находит свежих → count 0 (дефолт mock).
 
     const summary = await cron.runForAllOrgs();
 
@@ -228,17 +207,13 @@ describe('CurationItemLifecycleCron (B5)', () => {
   it('Ф4: повторный прогон — no-op (updateMany по фильтру не находит уже закрытых)', async () => {
     orgFindManyMock.mockResolvedValue([{ id: 'org-1' }]);
     itemFindManyMock.mockResolvedValue([]);
-    // Первый прогон закрыл 1 конфликт, второй — уже ничего (count=0).
-    conflictUpdateManyMock
-      .mockResolvedValueOnce({ count: 1 })
-      .mockResolvedValueOnce({ count: 0 });
+    conflictUpdateManyMock.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
 
     const first = await cron.runForAllOrgs();
     const second = await cron.runForAllOrgs();
 
     expect(first.conflictsDismissed).toBe(1);
     expect(second.conflictsDismissed).toBe(0);
-    // Идемпотентность: фильтр одинаковый, повторный прогон безопасен.
     expect(conflictUpdateManyMock).toHaveBeenCalledTimes(2);
   });
 });

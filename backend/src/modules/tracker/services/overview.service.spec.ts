@@ -7,17 +7,6 @@ import type { RedisService } from '../../../common/redis/redis.service';
 import { OverviewService } from './overview.service';
 import type { ProjectsService } from './projects.service';
 
-/**
- * Tracker Project Overview (2026-05-27) — unit-тесты `OverviewService`.
- *
- * Покрытие:
- *  - Кэширование: Redis-hit отдаёт пройдённую DTO без обращения к prisma.
- *  - Сборка из DB при cache-miss + write back в Redis.
- *  - Fallback при отсутствии модели `ProjectDocument` (parallel worktree).
- *  - Cache invalidation через @OnEvent (метод `onTrackerEvent`).
- *
- * ТЗ: plans/tz/2026-05-27-tracker-project-overview.md.
- */
 describe('OverviewService', () => {
   const tenantId = 'org_1';
   const projectId = 'p1';
@@ -76,10 +65,10 @@ describe('OverviewService', () => {
       issue: {
         count: vi
           .fn()
-          .mockResolvedValueOnce(50) // total
-          .mockResolvedValueOnce(8) // inProgress
-          .mockResolvedValueOnce(2) // overdue
-          .mockResolvedValueOnce(5), // completed7d
+          .mockResolvedValueOnce(50)
+          .mockResolvedValueOnce(8)
+          .mockResolvedValueOnce(2)
+          .mockResolvedValueOnce(5),
         findMany: vi.fn().mockResolvedValue([]),
       },
       cycle: {
@@ -94,9 +83,7 @@ describe('OverviewService', () => {
     } as unknown as PrismaService;
 
     projects = {
-      requireProject: vi
-        .fn()
-        .mockResolvedValue(projectRow as unknown as Project),
+      requireProject: vi.fn().mockResolvedValue(projectRow as unknown as Project),
     } as unknown as ProjectsService;
 
     service = new OverviewService(prisma, projects, redis);
@@ -109,9 +96,7 @@ describe('OverviewService', () => {
       const result = await service.getOverview({ projectId, tenantId });
 
       expect(projects.requireProject).toHaveBeenCalledWith(projectId, tenantId);
-      expect(redisGet).toHaveBeenCalledWith(
-        `${OverviewService.CACHE_PREFIX}${projectId}`,
-      );
+      expect(redisGet).toHaveBeenCalledWith(`${OverviewService.CACHE_PREFIX}${projectId}`);
       expect(result.project.id).toBe(projectId);
       expect(result.metrics).toEqual({
         totalIssues: 50,
@@ -122,7 +107,6 @@ describe('OverviewService', () => {
       expect(result.members).toHaveLength(2);
       expect(result.recentDocuments).toEqual([]);
 
-      // Кэш-write был.
       expect(redisSet).toHaveBeenCalledWith(
         `${OverviewService.CACHE_PREFIX}${projectId}`,
         expect.any(String),
@@ -152,7 +136,6 @@ describe('OverviewService', () => {
       const result = await service.getOverview({ projectId, tenantId });
 
       expect(result.metrics.totalIssues).toBe(999);
-      // findFirstOrThrow на project не вызывался — пришло из кэша.
       expect(prisma.project.findFirstOrThrow).not.toHaveBeenCalled();
       expect(redisSet).not.toHaveBeenCalled();
     });
@@ -160,8 +143,6 @@ describe('OverviewService', () => {
     it('не падает и отдаёт recentDocuments=[] когда модель ProjectDocument отсутствует', async () => {
       redisGet.mockResolvedValue(null);
 
-      // В Prisma нет `projectDocument` (проверка `'projectDocument' in prisma`
-      // должна вернуть false и пропустить запрос).
       const result = await service.getOverview({ projectId, tenantId });
 
       expect(result.recentDocuments).toEqual([]);
@@ -192,9 +173,7 @@ describe('OverviewService', () => {
   describe('invalidate', () => {
     it('делает DEL ключа кэша', async () => {
       await service.invalidate(projectId);
-      expect(redisDel).toHaveBeenCalledWith(
-        `${OverviewService.CACHE_PREFIX}${projectId}`,
-      );
+      expect(redisDel).toHaveBeenCalledWith(`${OverviewService.CACHE_PREFIX}${projectId}`);
     });
 
     it('не падает если Redis отсутствует', async () => {
@@ -209,9 +188,7 @@ describe('OverviewService', () => {
         type: 'issue.created',
         issue: { projectId },
       });
-      expect(redisDel).toHaveBeenCalledWith(
-        `${OverviewService.CACHE_PREFIX}${projectId}`,
-      );
+      expect(redisDel).toHaveBeenCalledWith(`${OverviewService.CACHE_PREFIX}${projectId}`);
     });
 
     it('игнорирует event без issue.projectId', async () => {

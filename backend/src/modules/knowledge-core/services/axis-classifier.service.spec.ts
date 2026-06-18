@@ -2,14 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { AxisClassifierService } from './axis-classifier.service';
 
-/**
- * SBA α-3 wave 3 — AxisClassifierService unit-tests.
- *
- * Pure-логика (маппинг signalType→temporal, env-флаг). Полный integration
- * с Prisma + LlmRouter — в `axis-classify-ingest.integration.spec.ts`
- * (TODO до появления тестового стенда).
- */
-
 describe('AxisClassifierService — TEMPORAL_BY_SIGNAL static map', () => {
   const map = AxisClassifierService.TEMPORAL_BY_SIGNAL;
 
@@ -72,13 +64,6 @@ describe('AxisClassifierService — isAxisClassifyEnabled (env)', () => {
   });
 });
 
-// ─────────────────────── helpers ────────────────────────────────────
-
-/**
- * Имитация private isAxisClassifyEnabled — повторяет логику service'а
- * для проверки контракта (default=true). Если контракт поменяется —
- * тест упадёт и заставит обновить и сервис, и тест.
- */
 function isAxisClassifyEnabledMimic(): boolean {
   const raw = process.env['AXIS_CLASSIFY_ENABLED'];
   if (raw == null || raw === '') return true;

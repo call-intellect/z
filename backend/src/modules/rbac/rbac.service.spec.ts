@@ -1,22 +1,8 @@
-/**
- * RBAC × Tenant матрица (Phase F.3).
- *
- * Табличный тест: для каждой пары (role × resource × action) проверяем, что
- * `RbacService.check` возвращает ожидаемый verdict. Источник правды о
- * разрешениях — `policies/policy.csv`; здесь мы лишь фиксируем ключевые
- * сценарии, чтобы изменение policy.csv не сломало контракт незаметно.
- *
- * super_admin (User.isSuperAdmin=true) — bypass всех проверок.
- * Отсутствие membership'а у обычного пользователя — отказ.
- *
- * PrismaService мокаем — нас интересует только evaluate(), а не I/O.
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../common/prisma/prisma.service';
 
 import { RbacService, type Action, type ResourceType } from './rbac.service';
-
 
 interface MockedMembership {
   role: 'owner' | 'admin' | 'manager' | 'coo' | 'hr_partner';
@@ -27,10 +13,6 @@ function buildRbac(opts: {
   isSuperAdmin?: boolean;
   membership?: MockedMembership | null;
   orgVisibility?: 'open' | 'strict';
-  /**
-   * Pulse Wave 4 §4.7 — для тестов `canViewEmployeeFullCard` нужно вернуть
-   * Person.userId и Person.analyticsOptIn. Если не задано — Person не найден.
-   */
   person?: { userId: string | null; analyticsOptIn: boolean } | null;
 }): RbacService {
   const prisma = {
@@ -53,13 +35,11 @@ function buildRbac(opts: {
   } as unknown as PrismaService;
 
   const rbac = new RbacService(prisma);
-  // onModuleInit грузит policy.csv с диска — нужно вызвать вручную в тестах.
   rbac.onModuleInit();
   return rbac;
 }
 
 describe('RbacService — матрица ролей × ресурсов × действий', () => {
-  // ─────────────────────────── super_admin ──────────────────────────────
   describe('super_admin (isSuperAdmin=true) — bypass любых ограничений', () => {
     const superAdminCases: Array<{ obj: ResourceType; act: Action }> = [
       { obj: 'meeting', act: 'read' },
@@ -81,7 +61,6 @@ describe('RbacService — матрица ролей × ресурсов × де�
     });
   });
 
-  // ─────────────────────────── нет membership ───────────────────────────
   describe('нет membership и не super_admin → false', () => {
     it('обычный user без membership на любой ресурс → false', async () => {
       const rbac = buildRbac({ isSuperAdmin: false, membership: null });
@@ -95,7 +74,6 @@ describe('RbacService — матрица ролей × ресурсов × де�
     });
   });
 
-  // ─────────────────────────── owner ────────────────────────────────────
   describe('owner — полный доступ на основные ресурсы', () => {
     const ownerCases: Array<{ obj: ResourceType; act: Action; expected: boolean }> = [
       { obj: 'meeting', act: 'read', expected: true },
@@ -124,14 +102,12 @@ describe('RbacService — матрица ролей × ресурсов × де�
     });
   });
 
-  // ─────────────────────────── admin ────────────────────────────────────
   describe('admin — полный доступ на основные ресурсы, но НЕ erase', () => {
     const adminCases: Array<{ obj: ResourceType; act: Action; expected: boolean }> = [
       { obj: 'meeting', act: 'read', expected: true },
       { obj: 'meeting', act: 'delete', expected: true },
       { obj: 'block', act: 'write', expected: true },
       { obj: 'theme', act: 'write', expected: true },
-      // admin НЕ может erase персональные данные — только owner.
       { obj: 'person', act: 'erase', expected: false },
     ];
     it.each(adminCases)('admin $obj $act → $expected', async ({ obj, act, expected }) => {
@@ -149,7 +125,6 @@ describe('RbacService — матрица ролей × ресурсов × де�
     });
   });
 
-  // ─────────────────────────── manager OPEN ─────────────────────────────
   describe('manager (visibility=open) — read всего, write только своих', () => {
     const cases: Array<{
       obj: ResourceType;
@@ -157,28 +132,21 @@ describe('RbacService — матрица ролей × ресурсов × де�
       isSelf: boolean;
       expected: boolean;
     }> = [
-      // Read meetings/cards/tasks — на всё в Org.
       { obj: 'meeting', act: 'read', isSelf: false, expected: true },
       { obj: 'card', act: 'read', isSelf: false, expected: true },
       { obj: 'task', act: 'read', isSelf: false, expected: true },
-      // Write — только свои.
       { obj: 'meeting', act: 'write', isSelf: true, expected: true },
       { obj: 'meeting', act: 'write', isSelf: false, expected: false },
       { obj: 'card', act: 'write', isSelf: true, expected: true },
       { obj: 'card', act: 'write', isSelf: false, expected: false },
-      // Delete — только свои.
       { obj: 'meeting', act: 'delete', isSelf: true, expected: true },
       { obj: 'meeting', act: 'delete', isSelf: false, expected: false },
-      // Knowledge-core shared: read всем member'ам.
       { obj: 'block', act: 'read', isSelf: false, expected: true },
       { obj: 'theme', act: 'read', isSelf: false, expected: true },
       { obj: 'entity', act: 'read', isSelf: false, expected: true },
-      // Manager НЕ имеет write на block / theme / entity.
       { obj: 'block', act: 'write', isSelf: true, expected: false },
       { obj: 'block', act: 'delete', isSelf: true, expected: false },
-      // Audit log — только admin/owner.
       { obj: 'audit-log', act: 'read', isSelf: true, expected: false },
-      // person.erase — только owner.
       { obj: 'person', act: 'erase', isSelf: true, expected: false },
     ];
     it.each(cases)(
@@ -199,7 +167,6 @@ describe('RbacService — матрица ролей × ресурсов × де�
     );
   });
 
-  // ─────────────────────────── manager STRICT ───────────────────────────
   describe('manager (visibility=strict) — read/write только своих', () => {
     const cases: Array<{
       obj: ResourceType;
@@ -207,18 +174,15 @@ describe('RbacService — матрица ролей × ресурсов × де�
       isSelf: boolean;
       expected: boolean;
     }> = [
-      // Read meetings/cards/tasks ТОЛЬКО свои.
       { obj: 'meeting', act: 'read', isSelf: true, expected: true },
       { obj: 'meeting', act: 'read', isSelf: false, expected: false },
       { obj: 'card', act: 'read', isSelf: true, expected: true },
       { obj: 'card', act: 'read', isSelf: false, expected: false },
       { obj: 'task', act: 'write', isSelf: true, expected: true },
       { obj: 'task', act: 'write', isSelf: false, expected: false },
-      // Knowledge-core (shared) — read всё равно открыт всем member'ам (исключение из strict).
       { obj: 'block', act: 'read', isSelf: false, expected: true },
       { obj: 'theme', act: 'read', isSelf: false, expected: true },
       { obj: 'entity', act: 'read', isSelf: false, expected: true },
-      // Audit-log — нет.
       { obj: 'audit-log', act: 'read', isSelf: true, expected: false },
     ];
     it.each(cases)(
@@ -240,7 +204,6 @@ describe('RbacService — матрица ролей × ресурсов × де�
     );
   });
 
-  // ──────────────── Clones=Roles Ф5 (2026-05-25) — clone_persona member-wide read ───
   describe('clone_persona — Clones=Roles Ф5: read доступен всем member ролям (включая manager strict)', () => {
     const memberRoles: Array<{
       role: 'owner' | 'admin' | 'manager';
@@ -263,7 +226,7 @@ describe('RbacService — матрица ролей × ресурсов × де�
           tenantId: 't-1',
           obj: 'clone_persona',
           act: 'read',
-          resourceOwnerId: 'u-other', // не-self, проверяем именно shared-access
+          resourceOwnerId: 'u-other',
         });
         expect(allowed).toBe(true);
       },
@@ -320,13 +283,12 @@ describe('RbacService — матрица ролей × ресурсов × де�
         tenantId: 't-1',
         obj: 'skill_profile',
         act: 'read',
-        resourceOwnerId: 'u-other', // чужой профиль — должен открыться
+        resourceOwnerId: 'u-other',
       });
       expect(allowed).toBe(true);
     });
   });
 
-  // ─────────────────────────── shortcuts ────────────────────────────────
   describe('shortcuts canRead/canWrite/canManageOrg', () => {
     it('canRead делегирует в check с action=read', async () => {
       const rbac = buildRbac({
@@ -339,7 +301,6 @@ describe('RbacService — матрица ролей × ресурсов × де�
       const rbac = buildRbac({
         membership: { role: 'manager', org: { visibilityMode: 'open' } },
       });
-      // manager open не имеет write на block.
       expect(await rbac.canWrite('u-1', 't-1', 'block', 'u-1')).toBe(false);
     });
 
@@ -396,7 +357,6 @@ describe('RbacService — матрица ролей × ресурсов × де�
     });
   });
 
-  // ─────────────────────────── cache ────────────────────────────────────
   describe('membership cache', () => {
     it('повторный check одного и того же (user, tenant) не дёргает PrismaService снова', async () => {
       const findUserMock = vi.fn(async () => ({ isSuperAdmin: false }));
@@ -441,13 +401,7 @@ describe('RbacService — матрица ролей × ресурсов × де�
     });
   });
 
-  // ─────────────────────────── audit В7 (2026-05-29) ────────────────────────
-  // Дополнительное покрытие основных ролей × ключевых ресурсов из policy.csv.
-  // Цель — поймать регрессии при правках policy: каждая важная роль/ресурс
-  // имеет хотя бы один кейс «должно работать» и один «не должно».
   describe('audit В7: покрытие COO и admin-only ресурсов', () => {
-    // COO — операционный директор. Read на большинство shared-ресурсов,
-    // нет write на org/meeting/card/task.
     const cooReadAllowedCases: ResourceType[] = [
       'meeting',
       'card',
@@ -480,22 +434,19 @@ describe('RbacService — матрица ролей × ресурсов × де�
       'cycle',
       'commitment',
     ];
-    it.each(cooReadAllowedCases)(
-      'coo %s read → true',
-      async (obj) => {
-        const rbac = buildRbac({
-          membership: { role: 'coo', org: { visibilityMode: 'open' } },
-        });
-        const allowed = await rbac.check({
-          userId: 'u-coo',
-          tenantId: 't-1',
-          obj,
-          act: 'read',
-          resourceOwnerId: 'u-other',
-        });
-        expect(allowed).toBe(true);
-      },
-    );
+    it.each(cooReadAllowedCases)('coo %s read → true', async (obj) => {
+      const rbac = buildRbac({
+        membership: { role: 'coo', org: { visibilityMode: 'open' } },
+      });
+      const allowed = await rbac.check({
+        userId: 'u-coo',
+        tenantId: 't-1',
+        obj,
+        act: 'read',
+        resourceOwnerId: 'u-other',
+      });
+      expect(allowed).toBe(true);
+    });
 
     it('coo НЕ имеет write на org', async () => {
       const rbac = buildRbac({
@@ -613,7 +564,6 @@ describe('RbacService — матрица ролей × ресурсов × де�
       const adminR = buildRbac({
         membership: { role: 'admin', org: { visibilityMode: 'open' } },
       });
-      // В policy admin clone_persona delete не объявлен → false.
       expect(
         await adminR.check({
           userId: 'u',
@@ -626,7 +576,6 @@ describe('RbacService — матрица ролей × ресурсов × де�
   });
 
   describe('audit В7: visibility-mode граничные кейсы для manager', () => {
-    // commitment: open — read all members, strict — read self
     it('manager open read commitment (чужой) → true', async () => {
       const rbac = buildRbac({
         membership: { role: 'manager', org: { visibilityMode: 'open' } },
@@ -674,7 +623,6 @@ describe('RbacService — матрица ролей × ресурсов × де�
       ).toBe(true);
     });
 
-    // decision: SBA β-3 — manager open читает все, strict — self.
     it('manager open read decision (чужой) → true', async () => {
       const rbac = buildRbac({
         membership: { role: 'manager', org: { visibilityMode: 'open' } },
@@ -782,12 +730,6 @@ describe('RbacService — матрица ролей × ресурсов × де�
   });
 });
 
-/**
- * Pulse Wave 4 §4.7 — RbacService.canViewEmployeeFullCard.
- *
- * Покрывает гибридные правила (роль + Person.analyticsOptIn + self-view),
- * которые НЕ ложатся в policy.csv (там obj+act, без условий на ресурс).
- */
 describe('RbacService.canViewEmployeeFullCard', () => {
   it('owner — видит карточку любого сотрудника', async () => {
     const rbac = buildRbac({
@@ -917,13 +859,6 @@ describe('RbacService.canViewEmployeeFullCard', () => {
   });
 });
 
-/**
- * 2026-06-01 (ТЗ shared-demo-org-model §4.2.2) — RbacService.canMutate.
- *
- * Чистая функция роли: возвращает false ТОЛЬКО для `demo_observer`. Используется
- * `DemoObserverGuard` чтобы блокировать POST/PUT/PATCH/DELETE для пользователей
- * в shared эталонной демо-Org до первой оплаты.
- */
 describe('RbacService.canMutate (demo_observer)', () => {
   const service = buildRbac({ membership: null });
 

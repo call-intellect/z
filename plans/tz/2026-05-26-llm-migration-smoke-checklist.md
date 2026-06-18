@@ -9,7 +9,7 @@ depends_on: []
 
 # Smoke 28 агентов после миграции LLM на DeepSeek-V4-Pro — операционный чек-лист
 
-> Связанный контекст: [plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md](2026-05-25-llm-architecture-changes-from-experiments.md) (главная ТЗ-копилка миграции), [second-brain/05_история/2026-05-26-llm-migration-deepseek-pro-wave.md](../../second-brain/05_история/2026-05-26-llm-migration-deepseek-pro-wave.md) (рефлексия 8 фаз), задача 5 из [plans/analysis/2026-05-26-llm-migration-followup-prompt.md](../analysis/2026-05-26-llm-migration-followup-prompt.md). Предыдущий отчёт: [backend/test/eval/smoke-all-agents/SUMMARY-SMOKE.md](../../backend/test/eval/smoke-all-agents/SUMMARY-SMOKE.md).
+> Связанный контекст: [plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md](2026-05-25-llm-architecture-changes-from-experiments.md) (главная ТЗ-копилка миграции), [second-brain/05_история/2026-05-26-llm-migration-deepseek-pro-wave.md](../../second-brain/05_история/2026-05-26-llm-migration-deepseek-pro-wave.md) (рефлексия 8 фаз), задача 5 из [plans/analysis/2026-05-26-llm-migration-followup-prompt.md](../analysis/2026-05-26-llm-migration-followup-prompt.md). Предыдущий отчёт: [backend/test/eval/smoke-all-agents/SUMMARY-SMOKE.md](../../backend/test/eval/smoke-all-agents/SUMMARY-SMOKE.md).
 
 ## §0. Контекст
 

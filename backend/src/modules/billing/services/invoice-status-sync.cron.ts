@@ -1,27 +1,3 @@
-/**
- * InvoiceStatusSyncCron — синхронизация статусов «висящих» инвойсов с Точкой.
- *
- * Расписание: `*\/15 * * * *` (каждые 15 минут).
- *
- * Условия выборки:
- *   - Invoice.status = issued
- *   - providerName = tochka
- *   - providerInvoiceId IS NOT NULL
- *   - paymentMethod IN (card_recurring, bank_invoice)
- *   - createdAt < now (исключаем secondsольно созданные)
- *
- * Действия:
- *   - paymentMethod=bank_invoice → provider.getBankInvoiceStatus()
- *     → status='payment_paid' → finalizePaidInvoice
- *   - paymentMethod=card_recurring → provider.getPaymentStatus()
- *     → status='succeeded' → finalizePaidInvoice
- *
- * Это safety-net на случай если webhook не дошёл (Tochka не доставила,
- * наш сервер был недоступен и т.п.). Главный путь финализации — webhook.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §7.4 + §14 Фаза 5.8.
- */
-
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 
@@ -112,7 +88,7 @@ export class InvoiceStatusSyncCron {
       }
 
       if (candidates.length > 0) {
-        this.logger.log(
+        this.logger.debug(
           `InvoiceStatusSyncCron: candidates=${candidates.length} synced=${synced} paid=${paid} notFound=${notFound}`,
         );
       }

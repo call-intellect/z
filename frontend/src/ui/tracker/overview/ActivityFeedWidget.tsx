@@ -1,30 +1,23 @@
-'use client';
+"use client";
 
-/**
- * Tracker Project Overview — лента активности (10 свежих IssueActivity).
- *
- * Кликабельный identifier ведёт на карточку задачи (роут /issues/[id] —
- * существующий в трекере; если нет — на список проекта).
- */
-
-import Link from 'next/link';
+import Link from "next/link";
 
 import {
   activityVerbLabel,
   type ProjectActivityItem,
-} from '@/domain/tracker/overview';
+} from "@/domain/tracker/overview";
 
 function timeAgo(d: Date): string {
   const now = Date.now();
   const diffSec = Math.floor((now - d.getTime()) / 1000);
-  if (diffSec < 60) return 'только что';
+  if (diffSec < 60) return "только что";
   const diffMin = Math.floor(diffSec / 60);
   if (diffMin < 60) return `${diffMin} мин. назад`;
   const diffH = Math.floor(diffMin / 60);
   if (diffH < 24) return `${diffH} ч. назад`;
   const diffD = Math.floor(diffH / 24);
   if (diffD < 7) return `${diffD} дн. назад`;
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
 }
 
 export function ActivityFeedWidget({
@@ -36,7 +29,9 @@ export function ActivityFeedWidget({
 }) {
   return (
     <section className="rounded-lg border border-border-subtle bg-bg-elevated p-4">
-      <h3 className="text-sm font-medium text-fg-primary">Последняя активность</h3>
+      <h3 className="text-sm font-medium text-fg-primary">
+        Последняя активность
+      </h3>
 
       {items.length === 0 ? (
         <p className="mt-2 text-sm text-fg-tertiary">
@@ -50,7 +45,7 @@ export function ActivityFeedWidget({
               className="flex flex-wrap items-baseline gap-1 text-sm text-fg-secondary"
             >
               <span className="text-fg-primary">
-                {a.actorUserId ?? 'Система'}
+                {a.actorUserId ?? "Система"}
               </span>
               <span>{activityVerbLabel(a.verb)}</span>
               {a.issueIdentifier ? (

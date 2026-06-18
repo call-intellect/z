@@ -1,17 +1,3 @@
-/**
- * Agents v2 Фаза B1 (2026-05-30) — Unit-тесты для admin REST API
- * `/api/v1/admin/prompt-evolution/*`.
- *
- * Сценарии:
- *   1. listRules возвращает per-tenant + global; фильтры применяются.
- *   2. archive: правило per-tenant своей Org → status=archived + reason.
- *   3. override: ставит status=overridden_by_admin + инкрементирует метрику.
- *   4. copyToManual: создаёт копию с source=manual_admin status=shadow.
- *   5. requireOwnedRule: чужой per-tenant rule → 404.
- *
- * RBAC (CookieAuthGuard / OrgAdminGuard) тестируются отдельно — здесь
- * только бизнес-логика контроллера.
- */
 import { NotFoundException } from '@nestjs/common';
 import type { PromptRule } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -63,27 +49,30 @@ function makePrisma(args?: {
       findMany: vi.fn().mockResolvedValue(args?.list ?? []),
       count: vi.fn().mockResolvedValue(args?.total ?? 0),
       findUnique: vi.fn().mockResolvedValue(args?.one ?? null),
-      update: vi.fn().mockImplementation(async ({ data }) =>
-        ({ ...(args?.one ?? makeRule('r-x')), ...data }) as PromptRule,
-      ),
-      create: vi.fn().mockImplementation(async ({ data }) =>
-        ({
-          id: 'r-copy',
-          tenantId: data.tenantId,
-          promptKey: data.promptKey,
-          rule: data.rule,
-          ruleType: data.ruleType,
-          source: data.source,
-          status: data.status,
-          confidence: data.confidence,
-          examples: data.examples,
-          shadowMetrics: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          promotedAt: null,
-          archivedAt: null,
-          archivedReason: null,
-        }) as PromptRule,
+      update: vi
+        .fn()
+        .mockImplementation(
+          async ({ data }) => ({ ...(args?.one ?? makeRule('r-x')), ...data }) as PromptRule,
+        ),
+      create: vi.fn().mockImplementation(
+        async ({ data }) =>
+          ({
+            id: 'r-copy',
+            tenantId: data.tenantId,
+            promptKey: data.promptKey,
+            rule: data.rule,
+            ruleType: data.ruleType,
+            source: data.source,
+            status: data.status,
+            confidence: data.confidence,
+            examples: data.examples,
+            shadowMetrics: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            promotedAt: null,
+            archivedAt: null,
+            archivedReason: null,
+          }) as PromptRule,
       ),
     },
   };
@@ -104,10 +93,7 @@ function build(args: {
   prisma: MockPrisma;
   metrics: BusinessMetricsService;
 }): AdminPromptEvolutionController {
-  return new AdminPromptEvolutionController(
-    args.prisma as unknown as PrismaService,
-    args.metrics,
-  );
+  return new AdminPromptEvolutionController(args.prisma as unknown as PrismaService, args.metrics);
 }
 
 describe('AdminPromptEvolutionController', () => {
@@ -147,11 +133,7 @@ describe('AdminPromptEvolutionController', () => {
     const { metrics } = makeMetrics();
     const ctrl = build({ prisma, metrics });
 
-    const res = await ctrl.archive(
-      'r-1',
-      { archivedReason: 'неактуально' },
-      'org-1',
-    );
+    const res = await ctrl.archive('r-1', { archivedReason: 'неактуально' }, 'org-1');
     expect(res.id).toBe('r-1');
     expect(prisma.promptRule.update).toHaveBeenCalledWith({
       where: { id: 'r-1' },
@@ -178,7 +160,7 @@ describe('AdminPromptEvolutionController', () => {
   });
 
   it('copyToManual: создаёт копию с source=manual_admin, status=shadow, tenantId текущий', async () => {
-    const rule = makeRule('r-1', { tenantId: null }); // global
+    const rule = makeRule('r-1', { tenantId: null });
     const prisma = makePrisma({ one: rule });
     const { metrics } = makeMetrics();
     const ctrl = build({ prisma, metrics });
@@ -202,9 +184,9 @@ describe('AdminPromptEvolutionController', () => {
     const { metrics } = makeMetrics();
     const ctrl = build({ prisma, metrics });
 
-    await expect(
-      ctrl.archive('r-1', { archivedReason: 'foo' }, 'org-1'),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(ctrl.archive('r-1', { archivedReason: 'foo' }, 'org-1')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('archive несуществующего rule → 404', async () => {
@@ -212,8 +194,8 @@ describe('AdminPromptEvolutionController', () => {
     const { metrics } = makeMetrics();
     const ctrl = build({ prisma, metrics });
 
-    await expect(
-      ctrl.archive('r-x', { archivedReason: 'foo' }, 'org-1'),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(ctrl.archive('r-x', { archivedReason: 'foo' }, 'org-1')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 });

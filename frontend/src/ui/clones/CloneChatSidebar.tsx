@@ -1,44 +1,26 @@
-'use client';
+"use client";
 
-/**
- * CloneChatSidebar — боковая панель диалогов с клоном (ТЗ §3.7).
- *
- * Используется в `CloneChatClient` двумя путями:
- *   - Desktop (≥ lg): sticky слева 320px.
- *   - Mobile (< lg):  внутри `<Sheet side="left">` (drawer).
- *
- * Контент:
- *   - Header: CloneAvatar + publicName + кнопка «← Назад».
- *   - Большая primary-кнопка «+ Новый диалог».
- *   - Скроллируемый список диалогов (active — подсвечен bg-accent/10).
- *   - Каждый item: title или «Без названия» + относительная дата.
- */
+import { ArrowLeft, Loader2, Plus } from "lucide-react";
+import Link from "next/link";
+import type { ReactElement } from "react";
 
-import { ArrowLeft, Loader2, Plus } from 'lucide-react';
-import Link from 'next/link';
-import type { ReactElement } from 'react';
+import type { CloneConversationUiItem } from "@/domain/clone";
+import { Button } from "@/ui/shadcn/button";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-import type { CloneConversationUiItem } from '@/domain/clone';
-import { Button } from '@/ui/shadcn/button';
-import { cn } from '@/ui/shadcn/lib/utils';
-
-import { CloneAvatar } from './CloneAvatar';
+import { CloneAvatar } from "./CloneAvatar";
 
 export interface CloneChatSidebarProps {
   roleId: string;
   publicName: string;
-  /** Если undefined — клон ещё грузится; departmentId влияет на цвет аватара. */
   departmentId?: string | null;
   activeConversationId: string | null;
   conversations: CloneConversationUiItem[];
   isLoading: boolean;
   error: unknown;
-  /** Создать новый диалог (родитель сам делает createRoleConversation + push). */
   onCreateConversation: () => void | Promise<void>;
-  /** Switch на другой диалог (родитель сам делает router.push). */
   onSelectConversation: (conversationId: string) => void;
   creating?: boolean;
-  /** Доп. action в шапке — кнопка «Закрыть» drawer'а на mobile. */
   onClose?: () => void;
 }
 
@@ -57,7 +39,7 @@ export function CloneChatSidebar({
 }: CloneChatSidebarProps): ReactElement {
   return (
     <aside className="flex h-full w-full flex-col border-r border-border-subtle bg-bg-card">
-      {/* Header */}
+      {}
       <div className="flex items-center gap-2 border-b border-border-subtle p-3">
         <Link
           href={`/clones/${encodeURIComponent(roleId)}`}
@@ -77,7 +59,7 @@ export function CloneChatSidebar({
         </h2>
       </div>
 
-      {/* + Новый диалог */}
+      {}
       <div className="border-b border-border-subtle p-3">
         <Button
           type="button"
@@ -95,7 +77,7 @@ export function CloneChatSidebar({
         </Button>
       </div>
 
-      {/* Список */}
+      {}
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="flex h-full items-center justify-center text-fg-tertiary">
@@ -120,12 +102,12 @@ export function CloneChatSidebar({
                     onClose?.();
                   }}
                   className={cn(
-                    'block w-full px-3 py-2.5 text-left text-sm hover:bg-bg-hover',
-                    c.id === activeConversationId ? 'bg-accent/10' : '',
+                    "block w-full px-3 py-2.5 text-left text-sm hover:bg-bg-hover",
+                    c.id === activeConversationId ? "bg-accent/10" : "",
                   )}
                 >
                   <div className="truncate font-medium text-fg-primary">
-                    {c.title ?? 'Без названия'}
+                    {c.title ?? "Без названия"}
                   </div>
                   <div className="mt-0.5 flex items-center justify-between text-xs text-fg-tertiary">
                     <span>{formatRelativeShort(c.lastMessageAt)}</span>
@@ -148,10 +130,10 @@ function formatRelativeShort(d: Date): string {
     d.getMonth() === now.getMonth() &&
     d.getDate() === now.getDate();
   if (sameDay) {
-    return d.toLocaleTimeString('ru-RU', {
-      hour: '2-digit',
-      minute: '2-digit',
+    return d.toLocaleTimeString("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
     });
   }
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
 }

@@ -12,27 +12,12 @@ import {
   hasPayoutDetails,
 } from './referrals.service';
 
-/**
- * Заглушка SeatService для тестов: `calculateMonthlyPriceKopecks(0)` отдаёт
- * базовую месячную цену (6 000 000 коп. = 60 000 ₽ — code-fallback Z).
- * Тесты, не трогающие getRewardProgress, его не вызывают.
- */
 function makeSeats(baseMonthlyKopecks = 6_000_000): SeatService {
   return {
     calculateMonthlyPriceKopecks: vi.fn(async () => baseMonthlyKopecks),
   } as unknown as SeatService;
 }
 
-/**
- * audit Б6 (2026-05-29) — спецификация на verifyInn:
- *   - mismatch ИНН в lookup-результате → метрика, БЕЗ innVerifiedAt.
- *   - company-payerType + directorName не совпадает с User.name → pending.
- *   - company-payerType + directorName совпадает → innVerifiedAt=now.
- *   - self_employed + правильный ИНН → innVerifiedAt=now.
- *
- * ТЗ referrals-cabinet-revamp (2026-05-31) — дополнительно:
- *   - verifyInn: ref.inn == null → возвращаем профиль без lookup, без метрики.
- */
 describe('ReferralsService.verifyInn (audit Б6 + cabinet-revamp)', () => {
   let prisma: {
     referral: {
@@ -81,7 +66,6 @@ describe('ReferralsService.verifyInn (audit Б6 + cabinet-revamp)', () => {
     expect(metrics.incReferralInnMismatch).toHaveBeenCalledWith({
       reason: 'lookup_inn_mismatch',
     });
-    // Возвращаем оригинальный (с innVerifiedAt=null).
     expect((ref as unknown as { innVerifiedAt: Date | null }).innVerifiedAt).toBeNull();
   });
 
@@ -118,8 +102,6 @@ describe('ReferralsService.verifyInn (audit Б6 + cabinet-revamp)', () => {
       payerType: 'legal_entity',
       legalName: 'ООО Мост',
       inn: '7700123456',
-      // На MVP extractLastName берёт самое длинное слово как «фамилию».
-      // Тестируем сценарий «фамилия совпадает с фамилией director'а».
       directorName: 'Иван Иванов-Петров',
     });
     prisma.user.findUnique.mockResolvedValueOnce({ name: 'Иван Иванов-Петров' });
@@ -165,12 +147,6 @@ describe('ReferralsService.verifyInn (audit Б6 + cabinet-revamp)', () => {
   });
 });
 
-/**
- * ТЗ referrals-cabinet-revamp (2026-05-31) §6.1 + §7.2 — create() новой формы:
- *   - contractAccepted !== true → BadRequest.
- *   - inn без legalForm (и наоборот) → BadRequest.
- *   - без inn/legalForm/payoutDetails — ok, профиль создан с contractAcceptedAt.
- */
 describe('ReferralsService.create (cabinet-revamp)', () => {
   let prisma: {
     referral: {
@@ -205,9 +181,9 @@ describe('ReferralsService.create (cabinet-revamp)', () => {
   });
 
   it('contractAccepted !== true → BadRequest', async () => {
-    await expect(
-      svc.create({ ownerUserId: 'u-1', contractAccepted: false }),
-    ).rejects.toThrow(/contractAccepted/);
+    await expect(svc.create({ ownerUserId: 'u-1', contractAccepted: false })).rejects.toThrow(
+      /contractAccepted/,
+    );
     expect(prisma.referral.create).not.toHaveBeenCalled();
   });
 
@@ -247,17 +223,12 @@ describe('ReferralsService.create (cabinet-revamp)', () => {
     expect(calledWith.data['inn']).toBeNull();
     expect(calledWith.data['legalForm']).toBeNull();
     expect(calledWith.data['contractAcceptedAt']).toBeInstanceOf(Date);
-    expect((ref as unknown as { contractAcceptedAt: Date }).contractAcceptedAt).toBeInstanceOf(Date);
+    expect((ref as unknown as { contractAcceptedAt: Date }).contractAcceptedAt).toBeInstanceOf(
+      Date,
+    );
   });
 });
 
-/**
- * ТЗ referrals-cabinet-revamp §6.4 — listClients возвращает маскированный view:
- *   - НЕТ org.id, org.name.
- *   - clientCode = 'C' + base36(crc32(linkId)).
- *   - status вычисляется из firstPaidAt + subscription.
- *   - monthlyEarningsKopecks / totalEarnedKopecks — агрегаты payouts.
- */
 describe('ReferralsService.listClients (маскировка)', () => {
   let prisma: {
     clientReferralLink: { findMany: ReturnType<typeof vi.fn> };
@@ -299,7 +270,7 @@ describe('ReferralsService.listClients (маскировка)', () => {
       {
         clientReferralLinkId: 'link-abc',
         amountKopecks: 2_000_000,
-        createdAt: new Date(), // в текущем месяце
+        createdAt: new Date(),
       },
       {
         clientReferralLinkId: 'link-abc',
@@ -311,11 +282,10 @@ describe('ReferralsService.listClients (маскировка)', () => {
     const out = await svc.listClients('ref-1');
     expect(out).toHaveLength(1);
     const row = out[0]!;
-    // Не должно быть полей идентифицирующих Org.
     expect(row).not.toHaveProperty('org');
     expect(row).not.toHaveProperty('orgId');
     expect(row).not.toHaveProperty('tenantId');
-    expect(row).not.toHaveProperty('id'); // link.id тоже не утекает
+    expect(row).not.toHaveProperty('id');
     expect(row.clientCode).toBe(clientCodeFromLinkId('link-abc'));
     expect(row.clientCode).toMatch(/^C[0-9a-z]+$/);
     expect(row.status).toBe('active');
@@ -353,9 +323,6 @@ describe('ReferralsService.listClients (маскировка)', () => {
   });
 });
 
-/**
- * ТЗ referrals-cabinet-revamp §7.3 — getFunnel / getIncomeChart.
- */
 describe('ReferralsService.getFunnel + getIncomeChart', () => {
   function makeFunnelMocks(slug: string | null) {
     return {
@@ -371,12 +338,12 @@ describe('ReferralsService.getFunnel + getIncomeChart', () => {
 
   it('getFunnel("30d"): корректные счётчики и конверсии', async () => {
     const prisma = makeFunnelMocks('mysiug');
-    prisma.referralAttribution.count.mockResolvedValueOnce(200); // clicks
+    prisma.referralAttribution.count.mockResolvedValueOnce(200);
     prisma.clientReferralLink.count
-      .mockResolvedValueOnce(40) // signups from links
-      .mockResolvedValueOnce(8) // firstPayments
-      .mockResolvedValueOnce(6); // activeNow
-    prisma.org.count.mockResolvedValueOnce(10); // signups from pending orgs
+      .mockResolvedValueOnce(40)
+      .mockResolvedValueOnce(8)
+      .mockResolvedValueOnce(6);
+    prisma.org.count.mockResolvedValueOnce(10);
     const innLookup = { lookup: vi.fn() };
     const metrics = { incReferralInnMismatch: vi.fn() };
     const svc = new ReferralsService(
@@ -389,12 +356,12 @@ describe('ReferralsService.getFunnel + getIncomeChart', () => {
     const funnel = await svc.getFunnel('ref-1', '30d');
     expect(funnel.period).toBe('30d');
     expect(funnel.clicks).toBe(200);
-    expect(funnel.signups).toBe(50); // 40 + 10
+    expect(funnel.signups).toBe(50);
     expect(funnel.firstPayments).toBe(8);
     expect(funnel.activeNow).toBe(6);
-    expect(funnel.conversions.clickToSignupPercent).toBe(25); // 50/200 = 25%
-    expect(funnel.conversions.signupToPaidPercent).toBe(16); // 8/50 = 16%
-    expect(funnel.conversions.clickToPaidPercent).toBe(4); // 8/200 = 4%
+    expect(funnel.conversions.clickToSignupPercent).toBe(25);
+    expect(funnel.conversions.signupToPaidPercent).toBe(16);
+    expect(funnel.conversions.clickToPaidPercent).toBe(4);
   });
 
   it('getFunnel: деление на 0 → конверсия 0, без NaN', async () => {
@@ -422,9 +389,7 @@ describe('ReferralsService.getFunnel + getIncomeChart', () => {
       referralPayout: {
         findMany: vi.fn().mockResolvedValue([
           {
-            periodMonth: new Date()
-              .toISOString()
-              .slice(0, 7), // текущий месяц 'YYYY-MM'
+            periodMonth: new Date().toISOString().slice(0, 7),
             amountKopecks: 2_000_000,
           },
         ]),
@@ -442,24 +407,15 @@ describe('ReferralsService.getFunnel + getIncomeChart', () => {
 
     const points = await svc.getIncomeChart('ref-1');
     expect(points).toHaveLength(12);
-    // последний элемент — текущий месяц с доходом 20 000 ₽.
     expect(points[11]!.incomeRub).toBe(20_000);
-    // Все месяцы валидной формы.
     for (const p of points) {
       expect(p.month).toMatch(/^\d{4}-(0[1-9]|1[0-2])$/);
     }
-    // Месяцы упорядочены по возрастанию.
     const sorted = [...points].sort((a, b) => a.month.localeCompare(b.month));
     expect(points.map((p) => p.month)).toEqual(sorted.map((p) => p.month));
   });
 });
 
-/**
- * ТЗ referrals-cabinet-revamp §6.3 + §6.5 — hasPayoutDetails:
- *   - используется в `computeWithdrawalEligibility` (no_payout_details);
- *   - выставляется как computed-поле `hasPayoutDetails` в `ReferralViewBody`
- *     (фронт строит по нему `payoutDetailsAreFilled` → `canWithdraw`).
- */
 describe('hasPayoutDetails (file-scope helper)', () => {
   it('null → false', () => {
     expect(hasPayoutDetails({ payoutDetails: null })).toBe(false);
@@ -478,21 +434,10 @@ describe('hasPayoutDetails (file-scope helper)', () => {
   });
 
   it('массив → false (не объект-с-ключами)', () => {
-    // На уровне Prisma JsonValue массив теоретически возможен,
-    // но это не корректные реквизиты — считаем «не заполнено».
     expect(hasPayoutDetails({ payoutDetails: ['x'] })).toBe(false);
   });
 });
 
-/**
- * B2 — getRewardProgress для шкалы прогресса промо-баннера рефералки.
- *   - pre-profile (профиля нет): hasProfile=false, activePaying=0,
- *     monthlyEarnedKopecks=0, но targetClients посчитан (НЕ null).
- *   - профиль с activePaying=2: hasProfile=true, monthlyEarnedKopecks =
- *     2 × REFERRAL_MONTHLY_COMMISSION_KOPECKS.
- *   - targetClients = ceil(baseMonthlyPriceKopecks / комиссия) = 3
- *     при 60 000 ₽ / 20 000 ₽.
- */
 describe('ReferralsService.getRewardProgress (B2)', () => {
   it('pre-profile: профиля нет → hasProfile=false, нули, targetClients=3', async () => {
     const prisma = {
@@ -519,21 +464,16 @@ describe('ReferralsService.getRewardProgress (B2)', () => {
       referral: {
         findUnique: vi
           .fn()
-          // 1-й вызов — getByUserId(ownerUserId)
           .mockResolvedValueOnce({ id: 'r-1', slug: 's' })
-          // 2-й вызов — getStats(referralId).findUnique(select slug)
           .mockResolvedValueOnce({ slug: 's' }),
       },
-      // Порядок Promise.all в getStats:
-      //   totalClients, payouts, activePaying, clicks30d,
-      //   signupsFromLinks, signupsFromOrgs, firstPayments30d.
       clientReferralLink: {
         count: vi
           .fn()
-          .mockResolvedValueOnce(7) // totalClients
-          .mockResolvedValueOnce(2) // activePaying ← интересует нас
-          .mockResolvedValueOnce(0) // signupsFromLinks
-          .mockResolvedValueOnce(0), // firstPayments30d
+          .mockResolvedValueOnce(7)
+          .mockResolvedValueOnce(2)
+          .mockResolvedValueOnce(0)
+          .mockResolvedValueOnce(0),
       },
       referralPayout: { findMany: vi.fn().mockResolvedValue([]) },
       referralAttribution: { count: vi.fn().mockResolvedValue(0) },
@@ -564,7 +504,7 @@ describe('ReferralsService.getRewardProgress (B2)', () => {
       prisma as unknown as PrismaService,
       { lookup: vi.fn() } as unknown as InnLookupService,
       { incReferralInnMismatch: vi.fn() } as unknown as BusinessMetricsService,
-      makeSeats(9_000_000), // ceil(9 000 000 / 2 000 000) = 5
+      makeSeats(9_000_000),
     );
 
     const progress = await svc.getRewardProgress('u-1');

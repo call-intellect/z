@@ -1,19 +1,3 @@
-/**
- * Гард против schema drift по `dataClassAudit` (2026-06-05).
- * Источник: plans/tz/2026-06-05-dataclass-audit-schema-drift-fix.md.
- *
- * ДЕТЕРМИНИРОВАННЫЙ ТЕСТ (без БД, гоняется в `test:unit`).
- *
- * Проверяет рантайм-фильтр крона `modelKeysWithDataClassAudit()`, который
- * считается из `Prisma.dmmf` (т.е. отражает регенерированный Prisma Client) и
- * отсекает проекции без колонки `dataClassAudit`. Без этого фильтра крон слал
- * `count({ where: { dataClassAudit: { not: null } } })` по моделям без колонки,
- * и PrismaService логировал по 5 ERROR каждые 30 минут (Unknown argument).
- *
- * Если кто-то откатит миграцию `*_add_dataclass_audit_to_projections` (уберёт
- * колонку у Regulation/Process/Policy/Idea) и регенерит клиент — эти проверки
- * покраснеют, не дав дрейфу уйти в прод незаметно.
- */
 import { describe, expect, it } from 'vitest';
 
 import { modelKeysWithDataClassAudit } from './dataclass-audit-snapshot.cron';

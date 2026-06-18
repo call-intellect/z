@@ -1,13 +1,3 @@
-/**
- * Admin-redesign Фаза 6 — unit-тесты `AdminWebhooksMgmtService`.
- *
- * Покрываем:
- *   1) listActive(): возвращает только подписки status=active с маппингом полей.
- *   2) listDlq(): фильтрует по status=failed.
- *   3) retryDelivery(): обновляет статус delivery в pending и не падает,
- *      даже если scheduler-очередь не существует (best-effort enqueue).
- */
-
 import { NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -36,53 +26,32 @@ interface DeliveryRow {
   subscription?: { url: string };
 }
 
-function buildService(initial: {
-  subs?: SubRow[];
-  deliveries?: DeliveryRow[];
-}) {
+function buildService(initial: { subs?: SubRow[]; deliveries?: DeliveryRow[] }) {
   const subs = initial.subs ?? [];
   const deliveries = initial.deliveries ?? [];
 
   const prisma = {
     webhookSubscription: {
-      findMany: vi.fn(
-        async ({ where }: { where?: { status?: string } }) => {
-          if (where?.status) {
-            return subs.filter((s) => s.status === where.status);
-          }
-          return subs;
-        },
-      ),
+      findMany: vi.fn(async ({ where }: { where?: { status?: string } }) => {
+        if (where?.status) {
+          return subs.filter((s) => s.status === where.status);
+        }
+        return subs;
+      }),
     },
     webhookDelivery: {
-      findMany: vi.fn(
-        async ({
-          where,
-          take,
-        }: {
-          where?: { status?: string };
-          take?: number;
-        }) => {
-          let result = deliveries;
-          if (where?.status) {
-            result = result.filter((d) => d.status === where.status);
-          }
-          return result.slice(0, take ?? result.length);
-        },
-      ),
-      findUnique: vi.fn(
-        async ({ where }: { where: { id: string } }) => {
-          return deliveries.find((d) => d.id === where.id) ?? null;
-        },
-      ),
+      findMany: vi.fn(async ({ where, take }: { where?: { status?: string }; take?: number }) => {
+        let result = deliveries;
+        if (where?.status) {
+          result = result.filter((d) => d.status === where.status);
+        }
+        return result.slice(0, take ?? result.length);
+      }),
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+        return deliveries.find((d) => d.id === where.id) ?? null;
+      }),
       update: vi.fn(
-        async ({
-          where,
-          data,
-        }: {
-          where: { id: string };
-          data: Partial<DeliveryRow>;
-        }) => {
+        async ({ where, data }: { where: { id: string }; data: Partial<DeliveryRow> }) => {
           const d = deliveries.find((x) => x.id === where.id);
           if (!d) throw new Error('not found');
           Object.assign(d, data);
@@ -92,8 +61,6 @@ function buildService(initial: {
     },
   } as unknown as ConstructorParameters<typeof AdminWebhooksMgmtService>[0];
 
-  // Redis mock — без падений на add(), но без реального BullMQ. Сервис
-  // должен поглотить ошибку и вернуть enqueued=false.
   const redis = {
     client: {} as never,
   } as unknown as ConstructorParameters<typeof AdminWebhooksMgmtService>[1];
@@ -189,8 +156,6 @@ describe('AdminWebhooksMgmtService', () => {
 
   it('retryDelivery: 404 если доставка не найдена', async () => {
     const { svc } = buildService({});
-    await expect(svc.retryDelivery('missing')).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(svc.retryDelivery('missing')).rejects.toBeInstanceOf(NotFoundException);
   });
 });

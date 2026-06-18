@@ -1,16 +1,3 @@
-/**
- * Unit-тесты Фазы 1 (meeting-identity) — атрибуция авторства (role='subject').
- *
- * БЕЗ БД и сети: PrismaService мокается объектом с vi.fn. Детерминированно.
- * Покрывает:
- *   - linkPersonEntity: линковка по имени, а не «к первому» person-Entity.
- *   - ensurePersonEntity: ленивое создание person-Entity + идемпотентность.
- *   - resolveSubjectEntityId: 4 ветки (authorUserId / participantId / name / none).
- *
- * Отдельный файл (а не дополнение к ...service.spec.ts) намеренно: тот spec —
- * интеграционный, его beforeAll коннектится к Postgres; здесь же — чистый unit,
- * который должен зеленеть без dev-стека.
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -18,10 +5,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { KnowledgeEmbeddingService } from './embedding.service';
 import { EntityResolutionService } from './entity-resolution.service';
 
-/**
- * Минимальный мок PrismaService с управляемыми ответами на запросы, которые
- * используют linkPersonEntity / ensurePersonEntity / resolveSubjectEntityId.
- */
 function buildPrismaMock() {
   return {
     person: {
@@ -44,10 +27,7 @@ function buildSvc(prismaMock: ReturnType<typeof buildPrismaMock>) {
     embedEntityNames: vi.fn(),
     embedQuery: vi.fn(),
   } as unknown as KnowledgeEmbeddingService;
-  return new EntityResolutionService(
-    prismaMock as unknown as PrismaService,
-    embed,
-  );
+  return new EntityResolutionService(prismaMock as unknown as PrismaService, embed);
 }
 
 describe('EntityResolutionService — attribution (unit, Фаза 1)', () => {
@@ -56,13 +36,11 @@ describe('EntityResolutionService — attribution (unit, Фаза 1)', () => {
       const prismaMock = buildPrismaMock();
       const svc = buildSvc(prismaMock);
 
-      // Два person-Entity. Ожидаем матч по имени, а не «первый в списке».
       prismaMock.entity.findMany.mockResolvedValue([
         { id: 'ent-anna', canonicalName: 'Анна' },
         { id: 'ent-boris', canonicalName: 'Борис' },
       ]);
 
-      // Person «Борис» (НЕ первый в списке Entity) → ent-boris.
       prismaMock.person.findUnique.mockResolvedValueOnce({
         tenantId: 't1',
         name: 'Борис',
@@ -75,7 +53,6 @@ describe('EntityResolutionService — attribution (unit, Фаза 1)', () => {
         data: { entityId: 'ent-boris' },
       });
 
-      // Person «Анна» → ent-anna.
       prismaMock.person.findUnique.mockResolvedValueOnce({
         tenantId: 't1',
         name: 'Анна',
@@ -101,12 +78,10 @@ describe('EntityResolutionService — attribution (unit, Фаза 1)', () => {
         entityId: null,
         deletedAt: null,
       });
-      const findOrCreateSpy = vi
-        .spyOn(svc, 'findOrCreateEntity')
-        .mockResolvedValue({
-          entity: { id: 'ent-new' } as never,
-          created: true,
-        });
+      const findOrCreateSpy = vi.spyOn(svc, 'findOrCreateEntity').mockResolvedValue({
+        entity: { id: 'ent-new' } as never,
+        created: true,
+      });
 
       const result = await svc.ensurePersonEntity({
         tenantId: 't1',
@@ -193,14 +168,11 @@ describe('EntityResolutionService — attribution (unit, Фаза 1)', () => {
       const svc = buildSvc(prismaMock);
 
       vi.spyOn(svc, 'resolvePersonByHint').mockResolvedValue('pp3');
-      // Person без entityId → personToEntity вызовет ensurePersonEntity.
       prismaMock.person.findUnique.mockResolvedValue({
         id: 'pp3',
         entityId: null,
       });
-      const ensureSpy = vi
-        .spyOn(svc, 'ensurePersonEntity')
-        .mockResolvedValue('e3');
+      const ensureSpy = vi.spyOn(svc, 'ensurePersonEntity').mockResolvedValue('e3');
 
       const result = await svc.resolveSubjectEntityId('t1', {
         speakerName: 'Настя',

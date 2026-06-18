@@ -5,10 +5,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
 import {
   DIALOG_SUMMARIZE_JSON_SCHEMA,
@@ -16,23 +13,6 @@ import {
   buildSummarizeUserPrompt,
 } from '../prompts/summarize.prompt';
 import { tenantTopOf } from '../utils/tenant-top';
-
-/**
- * SBA α-5 dialog-layer — ConversationSummarizerCron.
- *
- * Каждые 30 минут (configurable via `DIALOG_SUMMARIZER_CRON`) проходит
- * по диалогам, которые:
- *   - messageCount > `SUMMARIZER_MESSAGE_THRESHOLD` (default 12), И
- *   - (summaryUpdatedAt IS NULL OR summaryUpdatedAt < now() - staleness).
- *
- * Для каждого подходящего conversation:
- *  1. Берём ВСЕ messages КРОМЕ последних `summarizerKeepLast`.
- *  2. Вызываем LLM (taskType `dialog-summarize`).
- *  3. Парсим JSON → обновляем Conversation.summary + summaryUpdatedAt.
- *
- * Idempotent: если за последние staleness часов уже сжимали — пропускаем.
- * Batch-обработка: лимит 50 conversations за один run (защита от LLM-bomb).
- */
 
 const BATCH_LIMIT = 50;
 
@@ -48,11 +28,6 @@ export class ConversationSummarizerCron {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   * Defensive try/catch — в старых unit-тестах cfg может быть mock без
-   * `aiFeatures`. Default — true (как в env.schema).
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -61,12 +36,6 @@ export class ConversationSummarizerCron {
     }
   }
 
-  /**
-   * Запускается по cron'у `DIALOG_SUMMARIZER_CRON` (default `*\/30 * * * *`).
-   * Cron-выражение в декораторе литералом — `@nestjs/schedule` не поддерживает
-   * runtime-cron-string для `@Cron()` без `SchedulerRegistry.addCronJob()`.
-   * Здесь используем дефолт; ENV-override — vNext через registry.
-   */
   @Cron('*/30 * * * *')
   async run(): Promise<void> {
     if (!this.cfg.dialogLayer.enabled) return;
@@ -81,9 +50,7 @@ export class ConversationSummarizerCron {
         this.logger.debug('ConversationSummarizer: нет кандидатов на сжатие');
         return;
       }
-      this.logger.log(
-        `ConversationSummarizer: запуск для ${candidates.length} conversation(s)`,
-      );
+      this.logger.debug(`ConversationSummarizer: запуск для ${candidates.length} conversation(s)`);
       for (const conv of candidates) {
         try {
           await this.summarizeOne(conv);
@@ -105,16 +72,10 @@ export class ConversationSummarizerCron {
     }
   }
 
-  /**
-   * Найти conversations: messageCount > threshold И stale (или без summary).
-   * NB: messageCount считается через aggregate (нет денорм-колонки).
-   */
   private async findCandidates(
     threshold: number,
     staleBefore: Date,
   ): Promise<Array<{ id: string; tenantId: string }>> {
-    // Сначала — список conversation'ов, у которых ВООБЩЕ есть много messages.
-    // Используем raw-aggregate через groupBy для эффективности.
     const grouped = await this.prisma.chatV2Message.groupBy({
       by: ['conversationId'],
       _count: { _all: true },
@@ -140,14 +101,9 @@ export class ConversationSummarizerCron {
     return convs;
   }
 
-  private async summarizeOne(conv: {
-    id: string;
-    tenantId: string;
-  }): Promise<void> {
+  private async summarizeOne(conv: { id: string; tenantId: string }): Promise<void> {
     const keepLast = this.cfg.dialogLayer.summarizerKeepLast;
 
-    // Берём ВСЕ messages этого conversation, кроме последних `keepLast`
-    // (которые остаются «живыми» в systemPrompt).
     const total = await this.prisma.chatV2Message.count({
       where: { conversationId: conv.id },
     });
@@ -168,10 +124,6 @@ export class ConversationSummarizerCron {
     });
 
     const startedAt = Date.now();
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть пользовательские сообщения диалога
-    // (messages + previousSummary) в маркеры данных + INJECTION_GUARD_NOTE
-    // в system. Источник = 'chat'. Sanitize гоняем по тексту user-сообщений
-    // (assistant-ответы тоже могут содержать echo инъекции).
     const guardOn = this.isPromptInjectionGuardEnabled();
     if (guardOn) {
       for (const m of messages) {
@@ -194,9 +146,7 @@ export class ConversationSummarizerCron {
       tenantId: conv.tenantId,
       systemPrompt: systemText,
       userMessage: userText,
-      // ТЗ 2026-05-25 §10.4 Find 1 — для thinking-моделей (DeepSeek-Pro) минимум 1500.
       maxTokens: 1500,
-      // T7-F6: strict JSON Schema. Wrapper { summary, entities[] } — root object.
       responseFormat: {
         type: 'json_schema',
         name: 'dialog_summarize_response',
@@ -213,8 +163,6 @@ export class ConversationSummarizerCron {
 
     const parsed = parseSummaryJson(result.text);
     if (parsed.parseError) {
-      // T7-F6: ответ не парсится → метрика для observability. Не падаем —
-      // следующий cron-tick попробует ещё раз с актуальной историей.
       this.metrics.incPromptInvalidResponse({
         taskType: 'dialog-summarize',
         model: result.modelUsed,
@@ -229,9 +177,10 @@ export class ConversationSummarizerCron {
       return;
     }
 
-    const finalSummary = parsed.entities.length > 0
-      ? `${parsed.summary}\n\nУпомянутые сущности: ${parsed.entities.join(', ')}`
-      : parsed.summary;
+    const finalSummary =
+      parsed.entities.length > 0
+        ? `${parsed.summary}\n\nУпомянутые сущности: ${parsed.entities.join(', ')}`
+        : parsed.summary;
 
     await this.prisma.chatV2Conversation.update({
       where: { id: conv.id },
@@ -243,7 +192,7 @@ export class ConversationSummarizerCron {
     this.metrics.incConversationSummary({
       tenantTop: tenantTopOf(conv.tenantId),
     });
-    this.logger.log(
+    this.logger.debug(
       {
         conversationId: conv.id,
         compressedMessages: toCompressCount,
@@ -265,8 +214,7 @@ function parseSummaryJson(text: string): {
       summary?: unknown;
       entities?: unknown;
     };
-    const summary =
-      typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
+    const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
     const entities = Array.isArray(parsed.entities)
       ? parsed.entities
           .filter((e): e is string => typeof e === 'string' && e.trim().length > 0)

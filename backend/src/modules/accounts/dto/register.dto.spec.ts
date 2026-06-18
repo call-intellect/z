@@ -1,14 +1,3 @@
-/**
- * audit В8 (2026-05-29): unit-тесты для нормализации телефона в E.164.
- *
- * Покрытие:
- *   - Российские форматы (+7, 8, 9XXX) → +7XXXXXXXXXX
- *   - Грязный ввод (скобки, дефисы, пробелы) → очищается
- *   - Невалидное (буквы, <10 цифр) → null
- *   - Международные ≥10 цифр без 7/8 → +<digits>
- *   - RegisterSchema принимает/отклоняет согласно валидации
- */
-
 import { describe, expect, it } from 'vitest';
 
 import { RegisterSchema, normalizePhoneE164 } from './register.dto';
@@ -30,9 +19,7 @@ describe('normalizePhoneE164', () => {
   });
 
   it('международный (≥10 цифр, не с 7/8) → +<digits>', () => {
-    // США в формате +1
     expect(normalizePhoneE164('+1 415 555 2671')).toBe('+14155552671');
-    // Германия +49
     expect(normalizePhoneE164('+49 89 12345678')).toBe('+498912345678');
   });
 
@@ -80,12 +67,10 @@ describe('RegisterSchema (phone)', () => {
   });
 
   it('phone невалидный (буквы) → null после transform, refine пропускает', () => {
-    // refine допускает null (т.к. поле optional), сервис сам решит игнорировать
     const result = RegisterSchema.safeParse({
       ...basePayload,
       phone: 'abcdef',
     });
-    // refine: v === null || v.startsWith('+'). null проходит.
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.phone).toBeNull();
@@ -101,14 +86,6 @@ describe('RegisterSchema (phone)', () => {
   });
 });
 
-/**
- * audit С12 (2026-05-29): регресс-тест на `consentDataProcessing`.
- *
- * `consentAcceptedAt` пишется в `accounts.service.ts` строго ПОСЛЕ
- * успешной валидации DTO. Если refine не сработает (false / undefined /
- * не-boolean) — service не должен дойти до записи Date. Проверяем,
- * что Zod-схема отрезает все невалидные варианты.
- */
 describe('RegisterSchema (consentDataProcessing — С12 регресс)', () => {
   const basePayload = {
     email: 'user@example.com',

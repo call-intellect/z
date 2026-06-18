@@ -1,21 +1,4 @@
-/**
- * SBA β-7 — System / user prompts + JSON schema для taskType
- * `brand-voice-extract`.
- *
- * Цель: из набора текстов (brand_corpus документов + brand_principle блоков)
- * собрать структурированный BrandVoiceProfile:
- *   - tone (10 осей, числа 0..1);
- *   - values (массив value+weight);
- *   - taboos (массив phrase+reason).
- *
- * Provider chain: gpt-4o (primary) → deepseek (secondary) → qwen3.5:9b
- * (tertiary). См. seed-llm-task-routes-brand-voice.ts §22 verified-карты.
- */
-
-import {
-  BRAND_VOICE_TONE_DIMENSIONS,
-  type BrandVoiceToneDimension,
-} from '../dto/brand-voice.dto';
+import { BRAND_VOICE_TONE_DIMENSIONS, type BrandVoiceToneDimension } from '../dto/brand-voice.dto';
 
 export const BRAND_VOICE_EXTRACT_SCHEMA_NAME = 'brand_voice_profile';
 
@@ -41,7 +24,6 @@ export interface BrandVoiceExtractDocument {
   documentId: string;
   name: string;
   mimeType: string;
-  /** Полностью или укороченный parsedText. */
   excerpt: string;
 }
 
@@ -99,10 +81,6 @@ function truncate(text: string, max: number): string {
   return `${text.slice(0, max)}…`;
 }
 
-/**
- * JSON schema для structured output `brand-voice-extract`. Используется
- * LLM-провайдерами, которые поддерживают `response_format=json_schema`.
- */
 export const BRAND_VOICE_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
@@ -113,12 +91,10 @@ export const BRAND_VOICE_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
       additionalProperties: false,
       required: [...BRAND_VOICE_TONE_DIMENSIONS],
       properties: Object.fromEntries(
-        BRAND_VOICE_TONE_DIMENSIONS.map(
-          (dim: BrandVoiceToneDimension) => [
-            dim,
-            { type: 'number', minimum: 0, maximum: 1 },
-          ],
-        ),
+        BRAND_VOICE_TONE_DIMENSIONS.map((dim: BrandVoiceToneDimension) => [
+          dim,
+          { type: 'number', minimum: 0, maximum: 1 },
+        ]),
       ),
     },
     values: {
@@ -156,5 +132,4 @@ export const BRAND_VOICE_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-/** Версия экстрактора (записывается в BrandVoiceProfile.builderAgentVersion). */
 export const BRAND_VOICE_EXTRACTOR_VERSION = '1.0.0';

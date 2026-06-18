@@ -1,33 +1,10 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  Optional,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 
-/**
- * Tracker Phase 3 part C (2026-05-24) — IssueInferFieldsService.
- *
- * AI-suggest при создании задачи. Загружает Issue + project-context (members,
- * активные Goal, последние задачи), формирует промпт и вызывает LlmRouter
- * (taskType `issue-infer-fields`). Возвращает структурированные подсказки.
- *
- * Принципы:
- *   - confidence < 0.7 → caller получит result, но обычно подсказки скрываются
- *     на фронте (порог решается UI).
- *   - timeout 8s — встроен в `inferFields` (если медленнее, бросает таймаут;
- *     IssuesService.create() ловит и возвращает Issue без `aiSuggestions`).
- *   - Метрика `ai_issue_inferred_total{tenant_top, accepted=false}` инкрементируется
- *     при каждом успешном inference. accepted=true инкрементируется отдельно
- *     при фактическом принятии (через PATCH /issues/:id — добавится позже).
- *   - Используется через `@Optional()` в IssuesService.create() — не должна
- *     ломать создание задачи при недоступности LLM/Redis/embeddings.
- */
 @Injectable()
 export class IssueInferFieldsService {
   private readonly logger = new Logger(IssueInferFieldsService.name);
@@ -42,11 +19,6 @@ export class IssueInferFieldsService {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  /**
-   * Возвращает подсказки для задачи. Не бросает наружу — на любую ошибку
-   * (timeout / LLM down / JSON parse fail) возвращает null. Caller сам
-   * решает, что показать пользователю.
-   */
   async inferFields(args: {
     tenantId: string;
     issueId: string;
@@ -66,10 +38,7 @@ export class IssueInferFieldsService {
       if (!issue) {
         return null;
       }
-      const context = await this.loadProjectContext(
-        args.tenantId,
-        issue.projectId,
-      );
+      const context = await this.loadProjectContext(args.tenantId, issue.projectId);
 
       const systemPrompt = this.buildSystemPrompt();
       const userMessage = this.buildUserMessage({
@@ -88,19 +57,14 @@ export class IssueInferFieldsService {
         tenantId: args.tenantId,
         sourceRef: { type: 'issue', id: issue.id },
         maxTokens: 600,
-        // JSON-mode — критично для парсинга. LlmRouter передаст responseFormat провайдеру.
         responseFormat: { type: 'json_object' },
       });
 
-      const result = await this.withTimeout(
-        callPromise,
-        IssueInferFieldsService.INFER_TIMEOUT_MS,
-      );
+      const result = await this.withTimeout(callPromise, IssueInferFieldsService.INFER_TIMEOUT_MS);
       const parsed = this.parseResponse(result.text);
       if (!parsed) {
         return null;
       }
-      // Валидация ссылочной целостности — фильтруем мусор от LLM.
       const validated = this.validateRefs(parsed, context);
       this.metrics?.incAiIssueInferred({
         tenantTop: tenantTopOf(args.tenantId),
@@ -120,11 +84,6 @@ export class IssueInferFieldsService {
     }
   }
 
-  /**
-   * Помечает, что фронт принял подсказку — отдельный счётчик для
-   * измерения acceptance rate. Контракт: можно вызвать несколько раз
-   * (один раз на каждое applied поле).
-   */
   recordAccepted(args: { tenantId: string }): void {
     this.metrics?.incAiIssueInferred({
       tenantTop: tenantTopOf(args.tenantId),
@@ -132,13 +91,7 @@ export class IssueInferFieldsService {
     });
   }
 
-  // ── private ──
-
-  private async loadProjectContext(
-    tenantId: string,
-    projectId: string,
-  ): Promise<ProjectContext> {
-    // Members: смотрим IssueAssignee истории + Project.ownerId + defaultAssigneeId.
+  private async loadProjectContext(tenantId: string, projectId: string): Promise<ProjectContext> {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, tenantId },
       select: { ownerId: true, defaultAssigneeId: true, name: true },
@@ -146,9 +99,6 @@ export class IssueInferFieldsService {
     if (!project) {
       return { members: [], recentIssues: [], labels: [] };
     }
-    // Последние 200 assignee-записей проекта → топ-30 уникальных userId'ов.
-    // Имена пользователей загружаем отдельным batch-запросом, потому что
-    // у `IssueAssignee` нет relation на `User` в текущей схеме.
     const assigneeRows = await this.prisma.issueAssignee.findMany({
       where: { issue: { projectId, tenantId, deletedAt: null } },
       select: { userId: true },
@@ -204,10 +154,6 @@ export class IssueInferFieldsService {
   }
 
   private buildSystemPrompt(): string {
-    // Волна 5 / кластер B — goal-привязка убрана из этого агента: её владелец
-    // отдельный агент `issue-goal-suggest` (IssueGoalSuggestService). Этот агент
-    // больше не извлекает и не описывает suggestedGoalId. Поле в результате
-    // остаётся (опционально-null) для совместимости контракта, но всегда null.
     return [
       'Ты — AI-помощник трекера задач Кора.',
       'Тебе дана новая задача в проекте и контекст: участники проекта, последние задачи и доступные метки.',
@@ -264,30 +210,20 @@ export class IssueInferFieldsService {
 
   private parseResponse(text: string): RawSuggestion | null {
     try {
-      const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```$/, '');
+      const cleaned = text
+        .trim()
+        .replace(/^```json\s*/i, '')
+        .replace(/```$/, '');
       const obj = JSON.parse(cleaned) as Record<string, unknown>;
       const conf = typeof obj.confidence === 'number' ? obj.confidence : 0;
       return {
         suggestedAssigneeId:
-          typeof obj.suggestedAssigneeId === 'string'
-            ? obj.suggestedAssigneeId
-            : null,
-        suggestedDueDate:
-          typeof obj.suggestedDueDate === 'string'
-            ? obj.suggestedDueDate
-            : null,
-        suggestedPriority:
-          typeof obj.suggestedPriority === 'string'
-            ? obj.suggestedPriority
-            : null,
-        // Волна 5 / кластер B — goal-привязка больше не извлекается этим
-        // агентом (владелец — issue-goal-suggest). Поле оставлено в типе для
-        // совместимости контракта, но всегда null.
+          typeof obj.suggestedAssigneeId === 'string' ? obj.suggestedAssigneeId : null,
+        suggestedDueDate: typeof obj.suggestedDueDate === 'string' ? obj.suggestedDueDate : null,
+        suggestedPriority: typeof obj.suggestedPriority === 'string' ? obj.suggestedPriority : null,
         suggestedGoalId: null,
         suggestedLabels: Array.isArray(obj.suggestedLabels)
-          ? (obj.suggestedLabels as unknown[]).filter(
-              (v): v is string => typeof v === 'string',
-            )
+          ? (obj.suggestedLabels as unknown[]).filter((v): v is string => typeof v === 'string')
           : [],
         confidence: Math.max(0, Math.min(1, conf)),
         reasoning: typeof obj.reasoning === 'string' ? obj.reasoning : null,
@@ -301,26 +237,17 @@ export class IssueInferFieldsService {
     }
   }
 
-  /** Фильтрация мусора: assignee должен быть из контекста. */
-  private validateRefs(
-    raw: RawSuggestion,
-    ctx: ProjectContext,
-  ): IssueInferFieldsResult {
+  private validateRefs(raw: RawSuggestion, ctx: ProjectContext): IssueInferFieldsResult {
     const memberIds = new Set(ctx.members.map((m) => m.id));
-    const validPriorities = new Set([
-      'urgent',
-      'high',
-      'medium',
-      'low',
-      'none',
-    ]);
-    const assignee = raw.suggestedAssigneeId && memberIds.has(raw.suggestedAssigneeId)
-      ? raw.suggestedAssigneeId
-      : null;
-    const priority = raw.suggestedPriority && validPriorities.has(raw.suggestedPriority)
-      ? raw.suggestedPriority
-      : null;
-    // dueDate валидируем как ISO-8601 (YYYY-MM-DD).
+    const validPriorities = new Set(['urgent', 'high', 'medium', 'low', 'none']);
+    const assignee =
+      raw.suggestedAssigneeId && memberIds.has(raw.suggestedAssigneeId)
+        ? raw.suggestedAssigneeId
+        : null;
+    const priority =
+      raw.suggestedPriority && validPriorities.has(raw.suggestedPriority)
+        ? raw.suggestedPriority
+        : null;
     let due: string | null = null;
     if (raw.suggestedDueDate && /^\d{4}-\d{2}-\d{2}$/.test(raw.suggestedDueDate)) {
       const d = new Date(raw.suggestedDueDate);
@@ -330,8 +257,6 @@ export class IssueInferFieldsService {
       suggestedAssigneeId: assignee,
       suggestedDueDate: due,
       suggestedPriority: priority,
-      // Волна 5 / кластер B — goal-привязка убрана из этого агента (владелец —
-      // issue-goal-suggest). Поле сохранено в контракте, всегда null.
       suggestedGoalId: null,
       suggestedLabels: raw.suggestedLabels.slice(0, 8),
       confidence: raw.confidence,
@@ -343,10 +268,7 @@ export class IssueInferFieldsService {
   private async withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
     let timer: NodeJS.Timeout | null = null;
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error(`IssueInferFields timeout ${ms}ms`)),
-        ms,
-      );
+      timer = setTimeout(() => reject(new Error(`IssueInferFields timeout ${ms}ms`)), ms);
     });
     try {
       return await Promise.race([p, timeout]);
@@ -384,7 +306,6 @@ export interface IssueInferFieldsResult {
   suggestedGoalId: string | null;
   suggestedLabels: string[];
   confidence: number;
-  /** True если confidence ≥ 0.7 — caller рекомендует показать подсказки. */
   meetsThreshold: boolean;
   reasoning: string | null;
 }

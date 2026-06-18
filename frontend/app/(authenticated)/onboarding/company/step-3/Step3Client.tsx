@@ -1,30 +1,30 @@
-'use client';
+"use client";
 
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { Plus, X } from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   personsDomainApi,
   rolesDomainApi,
   type RoleDomainApi,
-} from '@/api/structure.api';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/api/structure.api";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+} from "@/ui/shadcn/select";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-import { WizardStepNav } from '../WizardStepNav';
+import { WizardStepNav } from "../WizardStepNav";
 
 interface PersonDraft {
   name: string;
@@ -32,24 +32,19 @@ interface PersonDraft {
   roleId: string | null;
 }
 
-const PREV_HREF = '/onboarding/company/step-2';
-const NEXT_HREF = '/onboarding/company/step-4';
-const NO_ROLE_VALUE = '__none__';
+const PREV_HREF = "/onboarding/company/step-2";
+const NEXT_HREF = "/onboarding/company/step-4";
+const NO_ROLE_VALUE = "__none__";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/**
- * Шаг 3 — Сотрудники. Имя + Email + должность. Минимум один валидный
- * сотрудник для перехода далее (Email обязателен — без него не получится
- * пригласить позже).
- */
 export function Step3Client() {
   const router = useRouter();
   const { currentOrgId } = useAuth();
   const [roles, setRoles] = useState<RoleDomainApi[] | null>(null);
   const [rolesError, setRolesError] = useState<string | null>(null);
   const [rows, setRows] = useState<PersonDraft[]>([
-    { name: '', email: '', roleId: null },
+    { name: "", email: "", roleId: null },
   ]);
   const [submitting, setSubmitting] = useState(false);
 
@@ -65,9 +60,7 @@ export function Step3Client() {
       .catch((e) => {
         if (cancelled) return;
         const msg =
-          e instanceof ApiError
-            ? e.message
-            : 'Не удалось загрузить должности.';
+          e instanceof ApiError ? e.message : "Не удалось загрузить должности.";
         setRolesError(msg);
         setRoles([]);
       });
@@ -77,13 +70,12 @@ export function Step3Client() {
   }, [currentOrgId]);
 
   const addRow = () =>
-    setRows((rs) => [...rs, { name: '', email: '', roleId: null }]);
+    setRows((rs) => [...rs, { name: "", email: "", roleId: null }]);
   const removeRow = (idx: number) =>
     setRows((rs) => (rs.length <= 1 ? rs : rs.filter((_, i) => i !== idx)));
   const updateRow = (idx: number, patch: Partial<PersonDraft>) =>
     setRows((rs) => rs.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
 
-  // Валидное = непустое имя + валидный email.
   const valid = rows
     .map((r) => ({
       ...r,
@@ -107,11 +99,10 @@ export function Step3Client() {
           }),
         ),
       );
-      toast.success('Сотрудники сохранены.');
+      toast.success("Сотрудники сохранены.");
       router.push(NEXT_HREF);
     } catch (e) {
-      const msg =
-        humanizeApiError(e, 'Не удалось сохранить сотрудников.');
+      const msg = humanizeApiError(e, "Не удалось сохранить сотрудников.");
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -138,9 +129,7 @@ export function Step3Client() {
           Сотрудник привязывается к должности. Вернитесь на шаг 2 и создайте
           хотя бы одну должность.
         </p>
-        {rolesError && (
-          <p className="text-sm text-danger">{rolesError}</p>
-        )}
+        {rolesError && <p className="text-sm text-danger">{rolesError}</p>}
         <Button onClick={() => router.push(PREV_HREF)}>← К шагу 2</Button>
       </section>
     );
@@ -175,9 +164,7 @@ export function Step3Client() {
                 <Input
                   type="email"
                   value={row.email}
-                  onChange={(e) =>
-                    updateRow(idx, { email: e.target.value })
-                  }
+                  onChange={(e) => updateRow(idx, { email: e.target.value })}
                   placeholder="email@example.ru"
                   aria-invalid={!emailOk}
                 />

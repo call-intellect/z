@@ -1,15 +1,15 @@
-'use client';
+"use client";
 
-import { useMemo, useState } from 'react';
-import Link from 'next/link';
-import useSWR, { mutate } from 'swr';
-import { Loader2, Save } from 'lucide-react';
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import useSWR, { mutate } from "swr";
+import { Loader2, Save } from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   listMyChannels,
   updateBindingPreferences,
-} from '@/api/me-channels.api';
+} from "@/api/me-channels.api";
 import {
   buildTelegramPreferencesPayload,
   mapTelegramChannelEntry,
@@ -19,40 +19,33 @@ import {
   type TelegramChannelPreferences,
   type TelegramNotificationKey,
   type TelegramQuietHours,
-} from '@/domain/me-channels';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Checkbox } from '@/ui/shadcn/checkbox';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+} from "@/domain/me-channels";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Checkbox } from "@/ui/shadcn/checkbox";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
 const GROUP_LABELS = {
-  inbox: 'Что присылать в Telegram',
-  digest: 'Сводки',
-  team: 'События команды',
+  inbox: "Что присылать в Telegram",
+  digest: "Сводки",
+  team: "События команды",
 } as const;
 
-/**
- * Кабинет сотрудника → раздел «Уведомления в Telegram».
- * 7 галочек + тихие часы (`HH:mm` ↔ `HH:mm`, чекбокс «срочные всё равно»).
- *
- * Сохраняем через единый эндпоинт preferences (Wave 2). Список
- * выбранных eventType идёт как `eventTypeAllow` (whitelist). При
- * отсутствии привязки — показываем подсказку.
- */
 export function NotificationsTelegramClient() {
   const { currentOrgId, isLoading } = useAuth();
-  const swrKey = currentOrgId ? ['my-channels', currentOrgId] : null;
-  const { data, error, isLoading: loadingList } = useSWR(
-    swrKey,
-    async () => {
-      const res = await listMyChannels(currentOrgId!);
-      return res.items;
-    },
-  );
+  const swrKey = currentOrgId ? ["my-channels", currentOrgId] : null;
+  const {
+    data,
+    error,
+    isLoading: loadingList,
+  } = useSWR(swrKey, async () => {
+    const res = await listMyChannels(currentOrgId!);
+    return res.items;
+  });
 
   if (isLoading) return null;
   if (!currentOrgId) {
@@ -84,7 +77,7 @@ export function NotificationsTelegramClient() {
     );
   }
 
-  const tgEntry = (data ?? []).find((e) => e.channel.kind === 'telegram_bot');
+  const tgEntry = (data ?? []).find((e) => e.channel.kind === "telegram_bot");
   const view = tgEntry ? mapTelegramChannelEntry(tgEntry) : null;
 
   return (
@@ -92,8 +85,8 @@ export function NotificationsTelegramClient() {
       <header>
         <h1 className="text-2xl font-semibold">Уведомления в Telegram</h1>
         <p className="text-sm text-muted-foreground">
-          Что Кора может присылать вам в Telegram-бот. Если что-то отключено
-          — оно всё равно появится во «Входящих» в личном кабинете.
+          Что Кора может присылать вам в Telegram-бот. Если что-то отключено —
+          оно всё равно появится во «Входящих» в личном кабинете.
         </p>
       </header>
 
@@ -101,8 +94,8 @@ export function NotificationsTelegramClient() {
         <Card>
           <CardContent className="space-y-3 p-6 text-sm">
             <p className="text-muted-foreground">
-              Telegram-бот ещё не привязан к вашему аккаунту. Сначала
-              привяжите его на странице{' '}
+              Telegram-бот ещё не привязан к вашему аккаунту. Сначала привяжите
+              его на странице{" "}
               <Link href="/me/channels" className="underline">
                 «Мои каналы»
               </Link>
@@ -130,11 +123,11 @@ function PreferencesForm({
   initial: TelegramChannelPreferences;
   onSaved: () => Promise<unknown> | void;
 }) {
-  // Если allow-список пуст в backend (= legacy «всё разрешено») — UX-trick:
-  // включаем все группы inbox по умолчанию, чтобы пользователь увидел
-  // дефолтный набор галочек, а не «всё выключено».
   const initialAllow = useMemo<TelegramNotificationKey[]>(
-    () => (initial.allow.length > 0 ? [...initial.allow] : [...TELEGRAM_DEFAULT_ALLOW]),
+    () =>
+      initial.allow.length > 0
+        ? [...initial.allow]
+        : [...TELEGRAM_DEFAULT_ALLOW],
     [initial.allow],
   );
 
@@ -166,18 +159,20 @@ function PreferencesForm({
           disabledUntilIso: initial.disabledUntilIso,
         }),
       );
-      toast.success('Настройки сохранены.');
+      toast.success("Настройки сохранены.");
       await onSaved();
     } catch (e) {
       if (e instanceof ApiError) {
-        toast.error(`Не удалось сохранить: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
+        toast.error(
+          `Не удалось сохранить: ${humanizeApiError(e, "попробуйте ещё раз")}`,
+        );
       }
     } finally {
       setBusy(false);
     }
   }
 
-  const groups = (['inbox', 'digest', 'team'] as const).map((g) => ({
+  const groups = (["inbox", "digest", "team"] as const).map((g) => ({
     key: g,
     label: GROUP_LABELS[g],
     options: TELEGRAM_NOTIFICATION_OPTIONS.filter((o) => o.group === g),

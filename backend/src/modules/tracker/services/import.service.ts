@@ -26,20 +26,6 @@ import {
 
 export type ImportSource = 'trello' | 'bitrix24' | 'yandex_tracker';
 
-/**
- * Wave 3 / Tracker Phase 5 part 1 (2026-05-24) — ImportService.
- *
- * Точка входа админ-импорта:
- *  - `start` — создаёт ImportLog и ставит job в очередь `core.imports`.
- *    paramsJson хранится в БД (jsonContent может быть мегабайтами;
- *    Redis-job минимален: { tenantId, importLogId }).
- *  - `getById` / `list` — для UI прогресса.
- *  - `cancel` — помечает status='cancelled'; worker регулярно (между батчами
- *    по 50 items) перечитывает status и прерывает работу.
- *
- * Queue владеется этим сервисом (продьюсер). Consumer — `ImportTrackerWorker`
- * (см. `workers/import-tracker.worker.ts`), тот же модуль.
- */
 @Injectable()
 export class ImportService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ImportService.name);
@@ -54,16 +40,11 @@ export class ImportService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    this.queue = new Queue<ImportTrackerJobData>(
-      TRACKER_QUEUE_NAMES.IMPORT_TRACKER,
-      {
-        connection: this.redis.client,
-        defaultJobOptions: IMPORT_TRACKER_JOB_OPTIONS,
-      },
-    );
-    this.logger.log(
-      `ImportService инициализирован (queue=${TRACKER_QUEUE_NAMES.IMPORT_TRACKER})`,
-    );
+    this.queue = new Queue<ImportTrackerJobData>(TRACKER_QUEUE_NAMES.IMPORT_TRACKER, {
+      connection: this.redis.client,
+      defaultJobOptions: IMPORT_TRACKER_JOB_OPTIONS,
+    });
+    this.logger.log(`ImportService инициализирован (queue=${TRACKER_QUEUE_NAMES.IMPORT_TRACKER})`);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -79,11 +60,6 @@ export class ImportService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Стартует импорт: создаёт ImportLog в статусе 'running' и enqueue job.
-   *
-   * @returns id созданного ImportLog (для frontend wizard).
-   */
   async start(args: {
     tenantId: string;
     userId: string;
@@ -102,23 +78,18 @@ export class ImportService implements OnModuleInit, OnModuleDestroy {
       select: { id: true },
     });
     if (!this.queue) {
-      // Сценарий: контроллер позвал до onModuleInit (тесты / странный bootstrap).
-      // Помечаем ImportLog как failed, бросаем — caller получит явную ошибку.
       await this.prisma.importLog
         .update({
           where: { id: created.id },
           data: { status: 'failed', completedAt: new Date() },
         })
         .catch(() => undefined);
-      throw new Error(
-        'ImportService: queue не инициализирована (onModuleInit не отработал)',
-      );
+      throw new Error('ImportService: queue не инициализирована (onModuleInit не отработал)');
     }
     try {
       await this.queue.add(
         'import-tracker',
         { tenantId, importLogId: created.id },
-        // BullMQ 5.x: ':' в jobId допустим только при ровно 3 частях — '_'.
         { jobId: `import-tracker_${created.id}` },
       );
     } catch (err) {
@@ -152,11 +123,7 @@ export class ImportService implements OnModuleInit, OnModuleDestroy {
     return { importLogId: created.id };
   }
 
-  /** Получить ImportLog (с последними 50 ошибками). */
-  async getById(args: {
-    tenantId: string;
-    importLogId: string;
-  }): Promise<ImportLogResponseDto> {
+  async getById(args: { tenantId: string; importLogId: string }): Promise<ImportLogResponseDto> {
     const row = await this.prisma.importLog.findFirst({
       where: { id: args.importLogId, tenantId: args.tenantId },
     });
@@ -172,10 +139,6 @@ export class ImportService implements OnModuleInit, OnModuleDestroy {
     return this.toResponse(row);
   }
 
-  /**
-   * Список ImportLog текущего tenant'а. Cursor-based пагинация по id (desc):
-   * cursor = id последней записи предыдущей страницы.
-   */
   async list(args: {
     tenantId: string;
     limit: number;
@@ -194,9 +157,7 @@ export class ImportService implements OnModuleInit, OnModuleDestroy {
     });
     const hasMore = rows.length > args.limit;
     const pageItems = hasMore ? rows.slice(0, args.limit) : rows;
-    const nextCursor = hasMore
-      ? (pageItems[pageItems.length - 1]?.id ?? null)
-      : null;
+    const nextCursor = hasMore ? (pageItems[pageItems.length - 1]?.id ?? null) : null;
     return {
       items: pageItems.map((r) => this.toResponse(r)),
       nextCursor,
@@ -204,15 +165,7 @@ export class ImportService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  /**
-   * Помечает ImportLog как cancelled. Worker сам проверяет status между
-   * батчами (каждые 50 items в TrelloImportStrategy) и прерывает работу.
-   * На уже completed/failed возвращает 404-like (нечего отменять).
-   */
-  async cancel(args: {
-    tenantId: string;
-    importLogId: string;
-  }): Promise<ImportLogResponseDto> {
+  async cancel(args: { tenantId: string; importLogId: string }): Promise<ImportLogResponseDto> {
     const row = await this.prisma.importLog.findFirst({
       where: { id: args.importLogId, tenantId: args.tenantId },
     });
@@ -226,7 +179,6 @@ export class ImportService implements OnModuleInit, OnModuleDestroy {
       });
     }
     if (row.status !== 'running') {
-      // Идемпотентно: уже завершён в каком-то терминальном статусе.
       return this.toResponse(row);
     }
     const updated = await this.prisma.importLog.update({
@@ -235,8 +187,6 @@ export class ImportService implements OnModuleInit, OnModuleDestroy {
     });
     return this.toResponse(updated);
   }
-
-  // ── mappers ────────────────────────────────────────────────────────
 
   private toResponse(row: ImportLog): ImportLogResponseDto {
     return {
@@ -250,8 +200,6 @@ export class ImportService implements OnModuleInit, OnModuleDestroy {
       totalComments: row.totalComments,
       totalAttachments: row.totalAttachments,
       processedItems: row.processedItems,
-      // errors / paramsJson / unmatchedJson могут быть null / любым JSON.
-      // Возвращаем как unknown для прозрачной сериализации.
       errors: row.errors as unknown,
       status: row.status,
       paramsJson: row.paramsJson as unknown,

@@ -1,27 +1,6 @@
 import { Injectable, type NestMiddleware } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 
-/**
- * TenantMiddleware — выставляет `req.tenantId` ДО глобальных guards (Subscription/
- * Entitlement), чтобы они могли работать на эндпоинтах с @RequireEntitlement /
- * @RequireSubscription декоратором.
- *
- * Алгоритм (точно как `TenantGuard.resolveTenantId`, кроме single-org fallback):
- *   1. Заголовок `X-Org-Id`.
- *   2. URL-параметр `:orgId` (если уже распарсен — Nest парсит до middleware
- *      для матчинга, но `req.params` обычно ещё пуст; читаем из URL вручную).
- *   3. body.tenantId / body.orgId.
- *
- * Single-org fallback (один SELECT в БД) остаётся в TenantGuard — там уже есть
- * `req.user.id` после CookieAuthGuard.
- *
- * Middleware:
- *   - НЕ бросает исключений (если резолв не удался — `req.tenantId` undefined,
- *     далее SubscriptionGuard/EntitlementGuard сами бросят 403, либо TenantGuard
- *     добьёт single-org fallback).
- *   - НЕ делает БД-запросов (нет `req.user`).
- *   - Регистрируется в `AppModule.configure` для `api/v1/*`.
- */
 @Injectable()
 export class TenantMiddleware implements NestMiddleware {
   use(req: Request, _res: Response, next: NextFunction): void {
@@ -33,28 +12,14 @@ export class TenantMiddleware implements NestMiddleware {
   }
 
   private resolve(req: Request): string | null {
-    // 1. X-Org-Id header
     const headerVal = req.headers['x-org-id'];
     if (typeof headerVal === 'string' && headerVal.trim().length > 0) {
       return headerVal.trim();
     }
 
-    // 2. :orgId URL param. На стадии middleware Nest ещё не выполнил
-    //    route-matching, поэтому req.params пуст. Парсим вручную сегмент
-    //    вида /api/v1/orgs/:orgId/...
-    //    ВАЖНО: берём `req.originalUrl`, а НЕ `req.url`. Middleware через
-    //    `forRoutes('api/v1/*')` Express монтирует на под-роутер, и `req.url`
-    //    на этой стадии обрезан до `/` (baseUrl = полный путь). `originalUrl`
-    //    стабильно содержит весь путь `/api/v1/orgs/...`. Без этого
-    //    path-резолвинг tenant молча не работал → 403 tenant_required на
-    //    /orgs/:id/* (создание приглашений и т.п.).
-    const orgIdFromUrl = this.parseOrgIdFromUrl(
-      req.originalUrl ?? req.url ?? '',
-    );
+    const orgIdFromUrl = this.parseOrgIdFromUrl(req.originalUrl ?? req.url ?? '');
     if (orgIdFromUrl) return orgIdFromUrl;
 
-    // 3. body.tenantId / body.orgId. На стадии middleware body уже распарсен
-    //    (express.json() работает ДО RequestIdMiddleware — оба идут до guards).
     const body = (req as Request & { body?: Record<string, unknown> }).body;
     if (body) {
       const t = body['tenantId'];
@@ -65,13 +30,7 @@ export class TenantMiddleware implements NestMiddleware {
     return null;
   }
 
-  /**
-   * Извлекает orgId из URL вида `/api/v1/orgs/<id>/...`.
-   * Поддерживаем cuid/uuid (буквы, цифры, дефис, подчёркивание, длина 6-64).
-   * Не пытаемся валидировать формат строго — это работа downstream-логики.
-   */
   private parseOrgIdFromUrl(url: string): string | null {
-    // Отрезаем query string.
     const path = url.split('?')[0] ?? '';
     const match = path.match(/^\/api\/v1\/orgs\/([A-Za-z0-9_-]{6,64})(?:\/|$)/);
     return match?.[1] ?? null;

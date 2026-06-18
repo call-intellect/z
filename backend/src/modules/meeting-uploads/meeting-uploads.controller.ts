@@ -15,10 +15,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { RequireEntitlement } from '../entitlements/require-entitlement.decorator';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
@@ -39,23 +36,6 @@ import {
 } from './dto/meeting-uploads.dto';
 import { MeetingUploadsService } from './meeting-uploads.service';
 
-/**
- * Контроллер ручной загрузки встреч (ТЗ-5 Ф2).
- *
- * Защита: `CookieAuthGuard + TenantGuard` + `@RequireEntitlement('feature.meeting')`
- * (фича доступна на тарифе со встречами). Запись (создание/завершение загрузки) —
- * RBAC write по ресурсу `meeting` (owner/admin; manager — own). tenantId берётся
- * из `X-Org-Id`/`:orgId` через `@CurrentOrg`.
- *
- * Маршруты живут под `/api/v1/meetings`, но в отдельном контроллере — чтобы не
- * раздувать живой `MeetingsController` (NestJS допускает несколько контроллеров
- * на один префикс; пути не пересекаются с существующими).
- *
- * Эндпоинты:
- *   - `POST /meetings/upload`              — создать загруженную встречу + presigned PUT.
- *   - `POST /meetings/:id/upload/complete` — файл залит → запустить ingest.
- *   - `GET  /meetings/:id/upload/playback` — источник медиа для плеера.
- */
 @ApiTags('meeting-uploads')
 @Controller('api/v1/meetings')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -110,8 +90,7 @@ export class MeetingUploadsController {
 
   @Get(':id/upload/playback')
   @ApiOperation({
-    summary:
-      'Источник медиа для плеера: нативное mp4-видео или нормализованное аудио (presigned).',
+    summary: 'Источник медиа для плеера: нативное mp4-видео или нормализованное аудио (presigned).',
   })
   async getPlayback(
     @Param('id') id: string,
@@ -122,8 +101,6 @@ export class MeetingUploadsController {
     await this.requireRead(user.id, t);
     return this.uploads.getPlayback(id, user.id);
   }
-
-  // ─────────────────────── Разметка спикеров (ТЗ-5 Ф4) ─────────────────────
 
   @Get(':id/speakers')
   @ApiOperation({
@@ -172,8 +149,6 @@ export class MeetingUploadsController {
     await this.requireWrite(user.id, t);
     return this.uploads.confirmSpeakers(id, t);
   }
-
-  // ─────────────────────────── helpers ───────────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

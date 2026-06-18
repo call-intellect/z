@@ -16,11 +16,8 @@ describe('backfillGoalV2Defaults', () => {
 
   it('apply: фиксит recordedAt у legacy-целей (recordedAt != createdAt)', async () => {
     const created = new Date('2026-01-01T00:00:00.000Z');
-    const recorded = new Date('2026-06-02T10:00:00.000Z'); // push выставил now()
-    // Первый batch — 1 кандидат, затем пусто (batch < BATCH_SIZE → стоп).
-    findMany.mockResolvedValueOnce([
-      { id: 'g1', createdAt: created, recordedAt: recorded },
-    ]);
+    const recorded = new Date('2026-06-02T10:00:00.000Z');
+    findMany.mockResolvedValueOnce([{ id: 'g1', createdAt: created, recordedAt: recorded }]);
 
     const stats = await backfillGoalV2Defaults(prisma, { apply: true });
 
@@ -31,7 +28,6 @@ describe('backfillGoalV2Defaults', () => {
       where: { id: 'g1' },
       data: { recordedAt: created },
     });
-    // where должен ограничивать живые версии.
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { validUntil: null, supersededById: null },
@@ -41,9 +37,7 @@ describe('backfillGoalV2Defaults', () => {
 
   it('идемпотентность: recordedAt == createdAt → 0 fixed, без update', async () => {
     const ts = new Date('2026-01-01T00:00:00.000Z');
-    findMany.mockResolvedValueOnce([
-      { id: 'g1', createdAt: ts, recordedAt: ts },
-    ]);
+    findMany.mockResolvedValueOnce([{ id: 'g1', createdAt: ts, recordedAt: ts }]);
 
     const stats = await backfillGoalV2Defaults(prisma, { apply: true });
 
@@ -65,9 +59,7 @@ describe('backfillGoalV2Defaults', () => {
   it('dry-run: считает кандидата, но не пишет', async () => {
     const created = new Date('2026-01-01T00:00:00.000Z');
     const recorded = new Date('2026-06-02T10:00:00.000Z');
-    findMany.mockResolvedValueOnce([
-      { id: 'g1', createdAt: created, recordedAt: recorded },
-    ]);
+    findMany.mockResolvedValueOnce([{ id: 'g1', createdAt: created, recordedAt: recorded }]);
 
     const stats = await backfillGoalV2Defaults(prisma, { apply: false });
 

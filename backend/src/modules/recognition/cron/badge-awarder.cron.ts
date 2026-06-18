@@ -4,25 +4,6 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { BadgeConditionsService } from '../services/badge-conditions.service';
 
-/**
- * Wave 2 — BadgeAwarderCron.
- *
- * `@Cron('0 5 * * *')` — каждый день в 05:00 UTC, после ContributionSnapshotCron.
- *
- * Для каждого user'а проверяет conditions для каждого Badge:
- *   - ideator       → ContributionSnapshot.ideasInDevelopment ≥ threshold
- *   - expert        → ContributionSnapshot.thanksReceived ≥ threshold
- *   - helper        → ContributionSnapshot.helpfulComments ≥ threshold
- *   - aligned       → goal_alignment (TODO — пока no-op)
- *   - consistent    → ContributionSnapshot.currentCheckinStreak ≥ threshold
- *
- * Бейдж выдаётся **один раз** (UserBadge уникален по userId+badgeId). Никакого
- * откатывания обратно (если условие перестанет выполняться). Это сознательное
- * решение — бейдж = факт «в какой-то момент достигнуто», а не текущий статус.
- *
- * Никаких уведомлений / звуков / popup'ов — только тихая запись в `user_badges`.
- * UI на `/me/contributions` покажет бейдж, и всё.
- */
 @Injectable()
 export class BadgeAwarderCron {
   private readonly logger = new Logger(BadgeAwarderCron.name);
@@ -76,7 +57,7 @@ export class BadgeAwarderCron {
           }
         }
       }
-      this.logger.log(
+      this.logger.debug(
         `badge-awarder: snapshots=${snapshots.length} awarded=${awarded} in ${Date.now() - startedAt}ms`,
       );
     } catch (err) {
@@ -87,7 +68,6 @@ export class BadgeAwarderCron {
     }
   }
 
-  /** Возвращает сколько новых бейджей выдано user'у. */
   async evaluateForUser(
     snap: {
       userId: string;
@@ -111,17 +91,13 @@ export class BadgeAwarderCron {
     for (const b of badges) {
       if (owned.has(b.id)) continue;
       if (!this.conditions.evaluate(b.condition, snap)) continue;
-      // Award. unique(userId, badgeId) → защита от гонок.
       try {
         await this.prisma.userBadge.create({
           data: { userId: snap.userId, badgeId: b.id },
         });
         awardedCount += 1;
-        this.logger.debug(
-          `badge awarded: userId=${snap.userId} badgeId=${b.id}`,
-        );
+        this.logger.debug(`badge awarded: userId=${snap.userId} badgeId=${b.id}`);
       } catch (err) {
-        // Гонка / unique конфликт — игнорируем (бейдж уже есть).
         this.logger.debug(
           {
             userId: snap.userId,

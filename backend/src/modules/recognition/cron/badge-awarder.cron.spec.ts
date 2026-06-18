@@ -27,13 +27,11 @@ function mkCron(opts: {
       findMany: vi.fn().mockResolvedValue(opts.snapshots),
     },
     userBadge: {
-      findMany: vi
-        .fn()
-        .mockImplementation(async ({ where }: { where: { userId: string } }) => {
-          return userBadges
-            .filter((u) => u.userId === where.userId)
-            .map((u) => ({ badgeId: u.badgeId }));
-        }),
+      findMany: vi.fn().mockImplementation(async ({ where }: { where: { userId: string } }) => {
+        return userBadges
+          .filter((u) => u.userId === where.userId)
+          .map((u) => ({ badgeId: u.badgeId }));
+      }),
       create: vi.fn().mockResolvedValue({}),
     },
   };
@@ -100,9 +98,7 @@ describe('BadgeAwarderCron', () => {
           condition: { type: 'goal_alignment', threshold: 90 },
         },
       ],
-      snapshots: [
-        emptySnap('user-1', { helpfulComments: 25, thanksReceived: 3 }),
-      ],
+      snapshots: [emptySnap('user-1', { helpfulComments: 25, thanksReceived: 3 })],
     });
     await cron.run();
     const calls = prisma.userBadge.create.mock.calls.map(
@@ -110,7 +106,7 @@ describe('BadgeAwarderCron', () => {
     );
     expect(calls).toContain('badge-helper');
     expect(calls).not.toContain('badge-expert');
-    expect(calls).not.toContain('badge-aligned'); // goal_alignment = TODO false
+    expect(calls).not.toContain('badge-aligned');
   });
 
   it('игнорирует race-условие unique conflict (молча пропускает)', async () => {
@@ -124,7 +120,6 @@ describe('BadgeAwarderCron', () => {
       snapshots: [emptySnap('user-1', { ideasInDevelopment: 5 })],
     });
     prisma.userBadge.create.mockRejectedValueOnce(new Error('unique violation'));
-    // Не падает.
     await expect(cron.run()).resolves.not.toThrow();
   });
 });

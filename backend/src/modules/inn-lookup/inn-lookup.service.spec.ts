@@ -1,18 +1,3 @@
-/**
- * Unit-тесты InnLookupService.
- *
- * Покрытие:
- *   - provider=mock → MockAdapter, DadataAdapter не зовётся
- *   - provider=dadata → DadataAdapter, MockAdapter не зовётся
- *   - provider=tochka_then_dadata (Фаза 2 ≡ dadata) → DadataAdapter
- *   - Кэш hit → cached=true, провайдер не зовётся
- *   - Cache write после первого miss
- *   - Lock SET NX EX срабатывает при miss
- *   - Все источники молчат → NotFoundException
- *   - Невалидный ИНН → throw
- *   - invalidate(inn) → детерминированный DEL по `inn-lookup:<inn>` (audit В1)
- */
-
 import { NotFoundException } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -57,10 +42,7 @@ function makeCfg(
   } as unknown as TypedConfigService;
 }
 
-function makeAdapter(
-  name: 'mock' | 'dadata' | 'tochka',
-  result: InnLookupResult | null,
-) {
+function makeAdapter(name: 'mock' | 'dadata' | 'tochka', result: InnLookupResult | null) {
   return {
     name,
     lookup: vi.fn().mockResolvedValue(result),
@@ -90,8 +72,6 @@ describe('InnLookupService', () => {
     redis = makeRedis();
     mockAdapter = makeAdapter('mock', SBER);
     dadataAdapter = makeAdapter('dadata', { ...SBER, source: 'dadata' });
-    // По умолчанию Tochka возвращает null — DaData fallback срабатывает.
-    // В тестах tochka_then_dadata переопределяем mockResolvedValueOnce.
     tochkaAdapter = makeAdapter('tochka', null);
   });
 
@@ -99,9 +79,7 @@ describe('InnLookupService', () => {
     vi.restoreAllMocks();
   });
 
-  function makeService(
-    provider: 'mock' | 'dadata' | 'tochka_then_dadata' = 'mock',
-  ) {
+  function makeService(provider: 'mock' | 'dadata' | 'tochka_then_dadata' = 'mock') {
     return new InnLookupService(
       makeCfg(provider),
       redis as unknown as RedisService,
@@ -129,7 +107,6 @@ describe('InnLookupService', () => {
   });
 
   it('provider=tochka_then_dadata: Tochka null → DaData fallback', async () => {
-    // tochkaAdapter по умолчанию возвращает null (см. beforeEach)
     const svc = makeService('tochka_then_dadata');
     const result = await svc.lookup('7707083893');
     expect(result.source).toBe('dadata');
@@ -155,7 +132,6 @@ describe('InnLookupService', () => {
   });
 
   it('кэш hit → cached=true, провайдер НЕ зовётся', async () => {
-    // audit В1: детерминированный GET по `inn-lookup:<inn>` (без `KEYS *`).
     redis.client.get.mockResolvedValueOnce(JSON.stringify(SBER));
 
     const svc = makeService('mock');
@@ -172,7 +148,6 @@ describe('InnLookupService', () => {
     const svc = makeService('mock');
     await svc.lookup('7707083893');
 
-    // setNX лок + setEX данных = 2 вызова `set`
     expect(redis.client.set).toHaveBeenCalledWith(
       'inn-lookup:lock:7707083893',
       expect.any(String),
@@ -198,9 +173,7 @@ describe('InnLookupService', () => {
   it('все источники молчат → NotFoundException', async () => {
     mockAdapter.lookup.mockResolvedValueOnce(null);
     const svc = makeService('mock');
-    await expect(svc.lookup('9999999999')).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(svc.lookup('9999999999')).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('невалидный ИНН → throw', async () => {
@@ -210,7 +183,6 @@ describe('InnLookupService', () => {
   });
 
   it('invalidate(inn) → детерминированный DEL по `inn-lookup:<inn>`', async () => {
-    // audit В1: ключ детерминированный, никаких `KEYS *` (блок Redis).
     redis.client.del.mockResolvedValueOnce(1);
 
     const svc = makeService('mock');

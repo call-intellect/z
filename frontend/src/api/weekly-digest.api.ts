@@ -1,14 +1,4 @@
-import { apiClient } from './api-client';
-
-/**
- * SBA β-8.1 — API-клиент недельной сводки операционного директора.
- *
- *   GET  /api/v1/dashboard/operations/weekly-digest?weekStart=YYYY-MM-DD
- *   POST /api/v1/dashboard/operations/weekly-digest/generate?weekStart=YYYY-MM-DD
- *
- * Доступ: coo/owner/admin (см. `RbacService.canViewOperationsDashboard`).
- * Принудительная регенерация — только admin/owner.
- */
+import { apiClient } from "./api-client";
 
 export interface WeeklyDigestMetricsApi {
   totalCheckIns: number;
@@ -22,7 +12,6 @@ export interface WeeklyDigestMetricsApi {
     kind: string;
     dynamicLabel: string;
   }>;
-  // ТЗ-2 Ф3 — топ-идеи недели (производятся backend).
   topIdeas?: Array<{
     ideaId: string;
     statement: string;
@@ -51,51 +40,37 @@ export interface WeeklyDigestSourcesApi {
   decisionIds: string[];
 }
 
-/**
- * Pulse Wave 2 §2.2 — Дельта одного KPI текущая_неделя vs предыдущая.
- * Зеркало `WeeklyKpiDeltaDto` в backend.
- */
 export interface WeeklyKpiDeltaApi {
   label: string;
   current: number;
   previous: number | null;
   delta: number | null;
-  unit: '%' | 'pts' | 'шт';
+  unit: "%" | "pts" | "шт";
 }
 
-/** Pulse Wave 2 §2.2 — Динамика команды по health-метрикам. */
 export interface WeeklyTeamDynamicsRowApi {
   departmentId: string;
   departmentName: string;
   signal:
-    | 'sentiment_improved'
-    | 'sentiment_dropped'
-    | 'promises_improved'
-    | 'promises_dropped';
+    | "sentiment_improved"
+    | "sentiment_dropped"
+    | "promises_improved"
+    | "promises_dropped";
   detail: string;
 }
 
-/** Pulse Wave 2 §2.2 — Прогноз по KPI на следующую неделю. */
 export interface WeeklyForecastItemApi {
-  metric: 'sentiment' | 'promises' | 'hanging_decisions';
+  metric: "sentiment" | "promises" | "hanging_decisions";
   projection: string;
-  confidence: 'low' | 'medium';
+  confidence: "low" | "medium";
 }
 
-/**
- * ТЗ-2 Ф3 — дельта секции «текущая неделя vs предыдущая».
- * `previous`/`delta` равны null, когда сравнивать не с чем.
- */
 export interface WeeklyDeltaApi {
   current: number;
   previous: number | null;
   delta: number | null;
 }
 
-/**
- * Ф1b редизайна дашбордов — точка исторического тренда (зеркало backend
- * `WeeklyDigestTrendPointDto`). Считается из persisted-снимков metricsJson.
- */
 export interface WeeklyDigestTrendPointApi {
   weekStart: string;
   totalCheckIns: number;
@@ -117,17 +92,14 @@ export interface WeeklyOperationsDigestApi {
   sources: WeeklyDigestSourcesApi;
   llmTaskRouteId: string | null;
   createdAt: string;
-  // Pulse Wave 2 §2.2 — расширенные секции (runtime-вычислены на backend).
   kpiDeltas: WeeklyKpiDeltaApi[];
   teamDynamics: WeeklyTeamDynamicsRowApi[];
   forecast: WeeklyForecastItemApi[];
-  // ТЗ-2 Ф3 — дельты по разделам (блокеры / сигналы / идеи) неделя к неделе.
   sectionDeltas: {
     blockers: WeeklyDeltaApi;
     insights: WeeklyDeltaApi;
     ideas: WeeklyDeltaApi;
   };
-  // Ф1b — исторический тренд (runtime из persisted-снимков на backend), old→new.
   trend: WeeklyDigestTrendPointApi[];
 }
 

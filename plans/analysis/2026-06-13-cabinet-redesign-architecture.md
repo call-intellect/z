@@ -315,7 +315,7 @@ Daily-digest + web-push есть. Довести до Superhuman-стандар�
 
 ### 4.6 Недельная/месячная таблица «План-факт по людям» (drill-down) — 🟡 ДОСТРОИТЬ + 🔴 (drill-down)
 
-Запрос владельца: главный артефакт планёрки — построчно по человеку «какие задачи были, что сделано/нет, что мешало», неделя → сводимая в месяц. Сейчас `weekly-per-person` отдаёт только агрегат-числа (`WeeklyPersonRowDto`), построчного списка нет. План = ВСЕ три источника (обещания `IdeaBlock commitment` + задачи `Task` трекера/спринта + чек-ины `DailyCheckIn.plansJson`); факт = их статусы; «что мешало» = `blockersJson` + блокеры графа. Достроить: `tasksPlanned/tasksNotDone` в свод + drill-down эндпоинт `weekly-per-person/:personId/items`. **Полный контракт — ТЗ Ф8.5** (`plans/tz/2026-06-13-cabinet-redesign-rhythms-and-decision-queue.md`).
+Запрос владельца: главный артефакт планёрки — построчно по человеку «какие задачи были, что сделано/нет, что мешало», неделя → сводимая в месяц. Сейчас `weekly-per-person` отдаёт только агрегат-числа (`WeeklyPersonRowDto`), построчного списка нет. План = ВСЕ три источника (обещания `IdeaBlock commitment` + задачи `Task` трекера/спринта + чек-ины `DailyCheckIn.plansJson`); факт = их статусы; «что мешало» = `blockersJson` + блокеры графа. Достроить: `tasksPlanned/tasksNotDone` в свод + drill-down эндпоинт `weekly-per-person/:personId/items`. **Полный контракт — ТЗ Ф8.5** (`plans/archive/2026-06-13-cabinet-redesign-rhythms-and-decision-queue.md`).
 
 ### 4.7 «Лента Коры» — лента-новости с переключателем + контроль вопросов — 🟡 ДОСТРОИТЬ + 🔴 (open_question)
 

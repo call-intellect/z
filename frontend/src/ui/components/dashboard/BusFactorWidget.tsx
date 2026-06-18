@@ -1,27 +1,12 @@
-'use client';
+"use client";
 
-import { AlertTriangle, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ShieldCheck } from "lucide-react";
 
-import type { PulsePatternBusFactorApi } from '@/domain/pulse-patterns';
-import {
-  MiniBarRow,
-  type ChartTone,
-} from '@/ui/components/dashboard/charts';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { cn } from '@/ui/shadcn/lib/utils';
-
-/**
- * BusFactorWidget (Pulse Wave 6 §6.1) — «Угрозы непрерывности».
- *
- * Показывает топ-N категорий знаний с `riskLevel='critical'` (≤1 эксперта).
- * Источник: `KnowledgeRiskSnapshot` через `PulsePatternsService`.
- *
- * Полировка (Фаза 3 ТЗ dashboards-wow-polish, 2026-06-01):
- *   - API даёт только `expertsCount` (без разбивки expert/advanced/beginner) —
- *     `MiniStackedBar` не имеет смысла. Используем `MiniBarRow` (1 сегмент) с
- *     тоном по severity, плюс цветной чип severity рядом.
- */
+import type { PulsePatternBusFactorApi } from "@/domain/pulse-patterns";
+import { MiniBarRow, type ChartTone } from "@/ui/components/dashboard/charts";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 type Props = {
   data: PulsePatternBusFactorApi | null;
@@ -29,27 +14,25 @@ type Props = {
   error: string | null;
 };
 
-// Условный максимум «здоровая» экспертная глубина — 5 человек. На фоне этого
-// 0..2 эксперта читается как тонкая полоска (danger/warning).
 const HEALTHY_EXPERTS_MAX = 5;
 
 function severityForExperts(expertsCount: number): ChartTone {
-  if (expertsCount === 0) return 'danger';
-  if (expertsCount === 1) return 'warning';
-  return 'success';
+  if (expertsCount === 0) return "danger";
+  if (expertsCount === 1) return "warning";
+  return "success";
 }
 
 const TONE_CHIP: Record<ChartTone, string> = {
-  success: 'bg-chip-success-bg text-chip-success-fg',
-  warning: 'bg-chip-warning-bg text-chip-warning-fg',
-  danger: 'bg-chip-danger-bg text-chip-danger-fg',
-  accent: 'bg-bg-overlay text-accent',
-  neutral: 'bg-bg-overlay text-fg-tertiary',
+  success: "bg-chip-success-bg text-chip-success-fg",
+  warning: "bg-chip-warning-bg text-chip-warning-fg",
+  danger: "bg-chip-danger-bg text-chip-danger-fg",
+  accent: "bg-bg-overlay text-accent",
+  neutral: "bg-bg-overlay text-fg-tertiary",
 };
 
 function chipLabel(expertsCount: number): string {
-  if (expertsCount === 0) return 'Нет экспертов';
-  if (expertsCount === 1) return '1 эксперт';
+  if (expertsCount === 0) return "Нет экспертов";
+  if (expertsCount === 1) return "1 эксперт";
   return `${expertsCount} экспертов`;
 }
 
@@ -97,13 +80,13 @@ export function BusFactorWidget({ data, loading, error }: Props) {
                       </p>
                       {item.topExperts.length > 0 && (
                         <p className="mt-0.5 truncate text-xs text-fg-tertiary">
-                          Эксперт: {item.topExperts.join(', ')}
+                          Эксперт: {item.topExperts.join(", ")}
                         </p>
                       )}
                     </div>
                     <span
                       className={cn(
-                        'inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-medium',
+                        "inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-medium",
                         TONE_CHIP[tone],
                       )}
                     >

@@ -5,27 +5,15 @@ import type { CoraFeedQuery } from '../dto/activity-feed.dto';
 
 import { CoraFeedService } from './cora-feed.service';
 
-/**
- * Юнит-тесты CoraFeedService (Редизайн Ф8.6 «Лента Коры»).
- *
- * Покрывают:
- *   - businessDaysBetween — пн–пт, выходные исключаются.
- *   - open_question детектор: вопрос ≥3 раб.дня → в ленте; свежий — нет.
- *   - правильный тип/severity по источникам (idea/insight/decision/blocker).
- *   - unread по курсору (createdAt > lastSeenAt).
- *   - markCoraSeen — upsert курсора.
- */
 describe('CoraFeedService', () => {
   describe('businessDaysBetween (чистая утилита)', () => {
     it('пн → пт = 4 рабочих дня', () => {
-      // 2026-06-08 — понедельник.
       const mon = new Date('2026-06-08T09:00:00.000Z');
       const fri = new Date('2026-06-12T09:00:00.000Z');
       expect(CoraFeedService.businessDaysBetween(mon, fri)).toBe(4);
     });
 
     it('пт → след. пн = 1 рабочий день (сб/вс не считаются)', () => {
-      // 2026-06-12 пятница, 2026-06-15 понедельник.
       const fri = new Date('2026-06-12T09:00:00.000Z');
       const mon = new Date('2026-06-15T09:00:00.000Z');
       expect(CoraFeedService.businessDaysBetween(fri, mon)).toBe(1);
@@ -46,7 +34,7 @@ describe('CoraFeedService', () => {
   describe('open_question детектор', () => {
     let prisma: PrismaService;
     let svc: CoraFeedService;
-    const NOW = new Date('2026-06-15T09:00:00.000Z'); // понедельник
+    const NOW = new Date('2026-06-15T09:00:00.000Z');
 
     beforeEach(() => {
       vi.useFakeTimers();
@@ -82,12 +70,8 @@ describe('CoraFeedService', () => {
     };
 
     it('вопрос, висящий 5 раб.дней без ответа → попадает в ленту', async () => {
-      // задан в пн 2026-06-08, сейчас пн 2026-06-15 → 5 раб.дней.
-      prisma = buildPrisma([
-        { id: 'q-old', createdAt: new Date('2026-06-08T09:00:00.000Z') },
-      ]);
+      prisma = buildPrisma([{ id: 'q-old', createdAt: new Date('2026-06-08T09:00:00.000Z') }]);
       svc = makeSvc(prisma);
-      // countAll тоже дёргает prisma — заглушим count'ы.
       (prisma as unknown as { ideaBlock: { count: ReturnType<typeof vi.fn> } }).ideaBlock.count =
         vi.fn(async () => 0);
       stubCounters(prisma);
@@ -100,10 +84,7 @@ describe('CoraFeedService', () => {
     });
 
     it('свежий вопрос (1 раб.день) → НЕ попадает', async () => {
-      // задан в пт 2026-06-12, сейчас пн 2026-06-15 → 1 раб.день (<3).
-      prisma = buildPrisma([
-        { id: 'q-new', createdAt: new Date('2026-06-12T09:00:00.000Z') },
-      ]);
+      prisma = buildPrisma([{ id: 'q-new', createdAt: new Date('2026-06-12T09:00:00.000Z') }]);
       svc = makeSvc(prisma);
       stubCounters(prisma);
 
@@ -113,8 +94,7 @@ describe('CoraFeedService', () => {
   });
 
   describe('open_question — R9 askedByManager (спросил руководитель)', () => {
-    const NOW = new Date('2026-06-15T09:00:00.000Z'); // понедельник
-    // три вопроса, все висят 5 раб.дней (заданы пн 2026-06-08) → проходят детектор.
+    const NOW = new Date('2026-06-15T09:00:00.000Z');
     const OLD = new Date('2026-06-08T09:00:00.000Z');
 
     beforeEach(() => {
@@ -122,12 +102,6 @@ describe('CoraFeedService', () => {
       vi.setSystemTime(NOW);
     });
 
-    /**
-     * Собирает мок-Prisma для цепочки резолва авторства R9:
-     *   ideaBlockEntity(role='subject') → person(entityId) →
-     *   department(headPersonId) / membership(personId,role).
-     * Параметры описывают данные для каждого из вопросов q-head/q-staff/q-noauthor.
-     */
     function buildPrismaR9() {
       return {
         ideaBlock: {
@@ -144,25 +118,21 @@ describe('CoraFeedService', () => {
             })),
           ),
         },
-        // subject-связи: q-head → e-head, q-staff → e-staff. q-noauthor — нет.
         ideaBlockEntity: {
           findMany: vi.fn(async () => [
             { blockId: 'q-head', entityId: 'e-head', role: 'subject' },
             { blockId: 'q-staff', entityId: 'e-staff', role: 'subject' },
           ]),
         },
-        // Entity → Person: e-head → p-head, e-staff → p-staff.
         person: {
           findMany: vi.fn(async () => [
             { id: 'p-head', entityId: 'e-head' },
             { id: 'p-staff', entityId: 'e-staff' },
           ]),
         },
-        // p-head — глава отдела. p-staff — не глава.
         department: {
           findMany: vi.fn(async () => [{ headPersonId: 'p-head' }]),
         },
-        // никто не owner/admin/coo (проверяем именно ветку «глава отдела»).
         membership: {
           findMany: vi.fn(async () => []),
         },
@@ -196,7 +166,6 @@ describe('CoraFeedService', () => {
 
     it('автор-owner (Membership) → true даже без главы отдела', async () => {
       const prisma = buildPrismaR9();
-      // переопределяем: p-staff теперь owner; никто не глава отдела.
       (
         prisma as unknown as {
           department: { findMany: ReturnType<typeof vi.fn> };
@@ -319,7 +288,6 @@ describe('CoraFeedService', () => {
       expect(blk?.severity).toBe('risk');
       expect(blk?.analysis).toContain('9 дн');
 
-      // unread: все созданы NOW > курсор (14-го) → unread.
       expect(res.unreadCount).toBe(res.items.length);
       expect(res.items.every((i) => i.unread)).toBe(true);
     });
@@ -381,12 +349,11 @@ describe('CoraFeedService', () => {
   });
 });
 
-/**
- * Заглушает .count() для всех source-моделей, которые дёргает countAll(),
- * чтобы тест на конкретный тип не падал из-за отсутствующих моков.
- */
 function stubCounters(prisma: PrismaService): void {
-  const p = prisma as unknown as Record<string, { count?: ReturnType<typeof vi.fn>; findMany?: ReturnType<typeof vi.fn> }>;
+  const p = prisma as unknown as Record<
+    string,
+    { count?: ReturnType<typeof vi.fn>; findMany?: ReturnType<typeof vi.fn> }
+  >;
   const models = [
     'ideaBlock',
     'insight',
@@ -400,13 +367,11 @@ function stubCounters(prisma: PrismaService): void {
     if (!p[m]!.count) p[m]!.count = vi.fn(async () => 0);
     if (!p[m]!.findMany) p[m]!.findMany = vi.fn(async () => []);
   }
-  // ideaBlockLink.groupBy (для idea-связей).
   if (!p.ideaBlockLink) p.ideaBlockLink = {};
-  (p.ideaBlockLink as unknown as { groupBy?: ReturnType<typeof vi.fn> }).groupBy ??=
-    vi.fn(async () => []);
+  (p.ideaBlockLink as unknown as { groupBy?: ReturnType<typeof vi.fn> }).groupBy ??= vi.fn(
+    async () => [],
+  );
 
-  // R9-цепочка резолва авторства open_question (resolveAskedByManager).
-  // По умолчанию пусто → askedByManager=false. Тесты R9 переопределяют сами.
   for (const m of ['ideaBlockEntity', 'person', 'department', 'membership']) {
     if (!p[m]) p[m] = {};
     if (!p[m]!.findMany) p[m]!.findMany = vi.fn(async () => []);

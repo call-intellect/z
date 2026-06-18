@@ -3,8 +3,8 @@ title: AGE deployment decision (Фаза 0a)
 date: 2026-05-21
 status: decided
 references:
-  - plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md §5
-  - plans/tz/2026-05-21-phase-0-roles-and-onboarding.md §6 решение #2
+  - plans/archive/2026-05-21-phase-0a-data-model-and-graph-infra.md §5
+  - plans/archive/2026-05-21-phase-0-roles-and-onboarding.md §6 решение #2
 ---
 
 # AGE deployment decision

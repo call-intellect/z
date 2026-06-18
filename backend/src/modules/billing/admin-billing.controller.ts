@@ -1,24 +1,3 @@
-/**
- * AdminBillingController — админ-операции с подпиской и инвойсами.
- *
- * Маршруты (под /api/v1/admin/orgs/:tenantId/billing/* + /admin/billing/*,
- * super_admin only):
- *   GET   /admin/orgs/:tenantId/billing                    — карточка
- *   POST  /admin/orgs/:tenantId/billing/activate           — paid/bonus
- *   POST  /admin/orgs/:tenantId/billing/adjust-seats       — новые seats
- *   POST  /admin/orgs/:tenantId/billing/force-status       — обход FSM
- *   POST  /admin/billing/invoices/:id/mark-paid            — отметить оплаченным
- *   POST  /admin/billing/invoices/:id/void                 — отменить
- *   GET   /admin/orgs/:tenantId/billing/events             — history
- *
- * Все мутирующие действия:
- *   - требуют reason ≥3 символа (валидация на DTO-уровне),
- *   - пишутся в AdminAuditLog (через ManualBillingService),
- *   - возвращают обновлённое состояние Subscription.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §11.4.
- */
-
 import {
   Body,
   Controller,
@@ -29,20 +8,12 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Subscription } from '@prisma/client';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { SuperAdminGuard } from '../auth/guards/super-admin.guard';
 
@@ -87,25 +58,18 @@ export class AdminBillingController {
     private readonly overview: BillingOverviewService,
   ) {}
 
-  // ──────────────────── Глобальный overview ────────────────────
-
   @Get('billing/overview')
   @ApiOperation({
-    summary:
-      'Метрики биллинга: MRR/ARR, число подписок по статусам, инвойсы, реф-выплаты.',
+    summary: 'Метрики биллинга: MRR/ARR, число подписок по статусам, инвойсы, реф-выплаты.',
   })
   async getOverview(): Promise<BillingOverviewView> {
     return this.overview.getOverview();
   }
 
-  // ──────────────────── Подписка (per-Org) ────────────────────
-
   @Get('orgs/:tenantId/billing')
   @ApiOperation({ summary: 'Карточка биллинга Org.' })
   @ApiOkResponse({ type: SubscriptionViewDto })
-  async getOrgBilling(
-    @Param('tenantId') tenantId: string,
-  ): Promise<{
+  async getOrgBilling(@Param('tenantId') tenantId: string): Promise<{
     subscription: SubscriptionViewBody | null;
     recentInvoices: InvoiceViewBody[];
   }> {
@@ -200,9 +164,7 @@ export class AdminBillingController {
 
   @Get('orgs/:tenantId/billing/events')
   @ApiOperation({ summary: 'История событий подписки Org.' })
-  async getEvents(
-    @Param('tenantId') tenantId: string,
-  ): Promise<{
+  async getEvents(@Param('tenantId') tenantId: string): Promise<{
     items: Array<{
       id: string;
       eventType: string;
@@ -230,8 +192,6 @@ export class AdminBillingController {
       })),
     };
   }
-
-  // ──────────────────── Инвойсы ────────────────────
 
   @Post('billing/invoices/:id/mark-paid')
   @ApiOperation({
@@ -295,13 +255,9 @@ export class AdminBillingController {
     return this.toInvoiceView(voided);
   }
 
-  // ──────────────────────── helpers ────────────────────────
-
   private toSubscriptionView(sub: Subscription): SubscriptionViewBody {
     return {
       status: sub.status,
-      // 2026-06-01 — `reference` (эталонная демо-Org) маппится в `null` для DTO.
-      // Подробнее см. ТЗ demo-shared-org-model §4.10 и billing.controller.toSubscriptionView.
       paymentMode: sub.paymentMode === 'reference' ? null : sub.paymentMode,
       billingPeriod: sub.billingPeriod,
       startedAt: sub.startedAt?.toISOString() ?? null,

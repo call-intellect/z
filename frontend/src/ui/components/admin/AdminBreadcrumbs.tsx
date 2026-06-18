@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { ChevronRight } from 'lucide-react';
+import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 
-import { cn } from '@/ui/shadcn/lib/utils';
+import { cn } from "@/ui/shadcn/lib/utils";
 
 export type AdminBreadcrumbItem = {
   label: string;
@@ -15,19 +15,6 @@ type Props = {
   className?: string;
 };
 
-/**
- * AdminBreadcrumbs — хлебные крошки админки.
- *
- * Последний элемент рендерится как текст текущего раздела (без href).
- * Промежуточные — кликабельные ссылки. Между элементами — иконка ChevronRight.
- *
- * Использование:
- *   <AdminBreadcrumbs items={[
- *     { label: 'Кора-Админ', href: '/admin' },
- *     { label: 'Платформа' },
- *     { label: 'Кроны' },
- *   ]} />
- */
 export function AdminBreadcrumbs({ items, className }: Props) {
   if (items.length === 0) return null;
 
@@ -35,7 +22,7 @@ export function AdminBreadcrumbs({ items, className }: Props) {
     <nav
       aria-label="Хлебные крошки"
       className={cn(
-        'flex flex-wrap items-center gap-1 text-xs text-fg-tertiary',
+        "flex flex-wrap items-center gap-1 text-xs text-fg-tertiary",
         className,
       )}
     >
@@ -43,7 +30,10 @@ export function AdminBreadcrumbs({ items, className }: Props) {
         const isLast = idx === items.length - 1;
         const showSeparator = idx < items.length - 1;
         return (
-          <span key={`${item.label}-${idx}`} className="inline-flex items-center gap-1">
+          <span
+            key={`${item.label}-${idx}`}
+            className="inline-flex items-center gap-1"
+          >
             {item.href && !isLast ? (
               <Link
                 href={item.href}
@@ -53,14 +43,21 @@ export function AdminBreadcrumbs({ items, className }: Props) {
               </Link>
             ) : (
               <span
-                aria-current={isLast ? 'page' : undefined}
-                className={cn('px-1 py-0.5', isLast && 'font-medium text-fg-secondary')}
+                aria-current={isLast ? "page" : undefined}
+                className={cn(
+                  "px-1 py-0.5",
+                  isLast && "font-medium text-fg-secondary",
+                )}
               >
                 {item.label}
               </span>
             )}
             {showSeparator ? (
-              <ChevronRight size={12} className="text-fg-tertiary/60" aria-hidden />
+              <ChevronRight
+                size={12}
+                className="text-fg-tertiary/60"
+                aria-hidden
+              />
             ) : null}
           </span>
         );

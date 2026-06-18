@@ -15,22 +15,10 @@ import {
 
 import { TableSemanticFilterService } from './table-semantic-filter.service';
 
-/**
- * Unit-тесты `TableSemanticFilterService` (Smart-tables NL Saved Views, Фаза 5).
- *
- * Случаи (из ТЗ §7):
- *  (a) cache miss → LLM возвращает валидный {filters} → валидируется, кэшируется.
- *  (b) cache hit  → redis.get вернул JSON → LLM НЕ вызывается, cached:true.
- *  (c) валидатор  → несуществующий propertyId / несовместимый op / кривой value
- *                   отбрасываются.
- *  (d) LLM вернул мусор/не-JSON → {filters:[]} без краха.
- *  + юнит на validateFilters (таблица совместимости op×type).
- */
 describe('TableSemanticFilterService', () => {
   const TENANT = 'org-1';
   const TABLE = 'tbl-1';
 
-  // Колонки тестовой таблицы.
   const PROPS = [
     { id: 'p-name', name: 'Название', type: 'text' as TablePropType },
     { id: 'p-last', name: 'Последний контакт', type: 'date' as TablePropType },
@@ -101,7 +89,6 @@ describe('TableSemanticFilterService', () => {
       { propertyId: 'p-last', op: 'older_than', value: 30 },
       { propertyId: 'p-amount', op: 'gt', value: 100000 },
     ]);
-    // Кэш записан с TTL 7 дней (604800).
     expect(redisSet).toHaveBeenCalledTimes(1);
     const setArgs = redisSet.mock.calls[0] as [string, string, string, number];
     expect(setArgs[0]).toMatch(/^table:semfilter:tbl-1:[0-9a-f]{40}$/);
@@ -123,15 +110,10 @@ describe('TableSemanticFilterService', () => {
     expect(call).not.toHaveBeenCalled();
     expect(redisSet).not.toHaveBeenCalled();
     expect(out.cached).toBe(true);
-    expect(out.filters).toEqual([
-      { propertyId: 'p-status', op: 'in', value: ['active'] },
-    ]);
+    expect(out.filters).toEqual([{ propertyId: 'p-status', op: 'in', value: ['active'] }]);
   });
 
   it('(b2) ФИКС 6: кэш ревалидируется в пустой (протух) → НЕ cached, идём в LLM', async () => {
-    // В кэше лежит условие по колонке, которой уже нет в таблице → после
-    // ревалидации фильтр пуст. Это НЕ должно вернуться как cached:true —
-    // должен сработать LLM-путь.
     redisGet.mockResolvedValueOnce(
       JSON.stringify([{ propertyId: 'p-removed', op: 'eq', value: 'x' }]),
     );
@@ -147,22 +129,16 @@ describe('TableSemanticFilterService', () => {
 
     expect(call).toHaveBeenCalledTimes(1);
     expect(out.cached).toBe(false);
-    expect(out.filters).toEqual([
-      { propertyId: 'p-name', op: 'contains', value: 'ООО' },
-    ]);
+    expect(out.filters).toEqual([{ propertyId: 'p-name', op: 'contains', value: 'ООО' }]);
   });
 
   it('(c) валидатор: несуществующий propertyId / несовместимый op / кривой value отброшены', async () => {
     call.mockResolvedValueOnce(
       reply({
         filters: [
-          // несуществующая колонка → отброшено
           { propertyId: 'p-nope', op: 'eq', value: 'x' },
-          // contains на currency (number-type) → несовместим → отброшено
           { propertyId: 'p-amount', op: 'contains', value: 'x' },
-          // older_than с нечисловым value → кривая форма → отброшено
           { propertyId: 'p-last', op: 'older_than', value: 'вчера' },
-          // валидное условие — остаётся
           { propertyId: 'p-name', op: 'contains', value: 'ООО' },
         ],
       }),
@@ -174,9 +150,7 @@ describe('TableSemanticFilterService', () => {
       nlQuery: 'разный мусор и одно валидное',
     });
 
-    expect(out.filters).toEqual([
-      { propertyId: 'p-name', op: 'contains', value: 'ООО' },
-    ]);
+    expect(out.filters).toEqual([{ propertyId: 'p-name', op: 'contains', value: 'ООО' }]);
   });
 
   it('(d) LLM вернул не-JSON → {filters:[]} без краха, кэш не пишется', async () => {
@@ -197,7 +171,6 @@ describe('TableSemanticFilterService', () => {
 
     expect(out.filters).toEqual([]);
     expect(out.cached).toBe(false);
-    // Пустой результат при ошибке парсинга НЕ кэшируем.
     expect(redisSet).not.toHaveBeenCalled();
   });
 
@@ -249,8 +222,6 @@ describe('TableSemanticFilterService', () => {
     expect(keyA).toBe(keyB);
   });
 });
-
-// ─────────────────── юнит на validateFilters (op × type) ──────────────────
 
 describe('validateFilters (таблица совместимости op×type)', () => {
   const props = [
@@ -307,11 +278,10 @@ describe('validateFilters (таблица совместимости op×type)',
         { propertyId: 'date', op: 'before', value: '2026-05-01' },
         { propertyId: 'date', op: 'after', value: '2026-01-01' },
         { propertyId: 'date', op: 'older_than', value: 30 },
-        // некорректные:
-        { propertyId: 'num', op: 'before', value: '2026-01-01' }, // op∤type
-        { propertyId: 'date', op: 'before', value: 'не дата' }, // кривой value
-        { propertyId: 'date', op: 'older_than', value: -5 }, // не положительное
-        { propertyId: 'date', op: 'older_than', value: 'abc' }, // не число
+        { propertyId: 'num', op: 'before', value: '2026-01-01' },
+        { propertyId: 'date', op: 'before', value: 'не дата' },
+        { propertyId: 'date', op: 'older_than', value: -5 },
+        { propertyId: 'date', op: 'older_than', value: 'abc' },
       ]),
     ).toEqual(['date:before', 'date:after', 'date:older_than']);
   });
@@ -322,8 +292,8 @@ describe('validateFilters (таблица совместимости op×type)',
     expect(
       keep([
         { propertyId: 'sel', op: 'in', value: ['a', 'b'] },
-        { propertyId: 'sel', op: 'in', value: 'a' }, // не массив
-        { propertyId: 'text', op: 'in', value: ['a'] }, // op∤type
+        { propertyId: 'sel', op: 'in', value: 'a' },
+        { propertyId: 'text', op: 'in', value: ['a'] },
       ]),
     ).toEqual(['sel:in']);
   });
@@ -331,8 +301,8 @@ describe('validateFilters (таблица совместимости op×type)',
   it('ФИКС 1: пустой массив в `in` отбрасывается', () => {
     expect(
       keep([
-        { propertyId: 'sel', op: 'in', value: [] }, // пустой → отброшено
-        { propertyId: 'sel', op: 'in', value: ['x'] }, // непустой → остаётся
+        { propertyId: 'sel', op: 'in', value: [] },
+        { propertyId: 'sel', op: 'in', value: ['x'] },
       ]),
     ).toEqual(['sel:in']);
   });
@@ -340,19 +310,16 @@ describe('validateFilters (таблица совместимости op×type)',
   it('ФИКС 2: gt/lt со строковым мусором (не число и не дата) отбрасывается', () => {
     expect(
       keep([
-        { propertyId: 'num', op: 'gt', value: 'дорогой' }, // мусор → отброшено
-        { propertyId: 'num', op: 'lt', value: '   ' }, // пусто → отброшено
-        { propertyId: 'num', op: 'gt', value: '42' }, // парсится в число → остаётся
-        { propertyId: 'date', op: 'lt', value: '2026-05-01' }, // парсится в дату → остаётся
+        { propertyId: 'num', op: 'gt', value: 'дорогой' },
+        { propertyId: 'num', op: 'lt', value: '   ' },
+        { propertyId: 'num', op: 'gt', value: '42' },
+        { propertyId: 'date', op: 'lt', value: '2026-05-01' },
       ]),
     ).toEqual(['num:gt', 'date:lt']);
   });
 
   it('empty нормализуется без value', () => {
-    const out = validateFilters(
-      [{ propertyId: 'text', op: 'empty', value: 'мусор' }],
-      props,
-    );
+    const out = validateFilters([{ propertyId: 'text', op: 'empty', value: 'мусор' }], props);
     expect(out).toEqual([{ propertyId: 'text', op: 'empty' }]);
   });
 
@@ -361,14 +328,18 @@ describe('validateFilters (таблица совместимости op×type)',
   });
 });
 
-// ─── ЧАСТЬ B (ТЗ 2026-06-15 §7) — server-side применение фильтра к строкам ───
-
 describe('cellMatchesCondition / rowMatchesConditions (семантика операторов)', () => {
   it('eq / neq — свободное равенство по строковому представлению', () => {
     expect(cellMatchesCondition('100', { propertyId: 'p', op: 'eq', value: 100 })).toBe(true);
-    expect(cellMatchesCondition('Москва', { propertyId: 'p', op: 'eq', value: 'Москва' })).toBe(true);
-    expect(cellMatchesCondition('Питер', { propertyId: 'p', op: 'neq', value: 'Москва' })).toBe(true);
-    expect(cellMatchesCondition('Москва', { propertyId: 'p', op: 'neq', value: 'Москва' })).toBe(false);
+    expect(cellMatchesCondition('Москва', { propertyId: 'p', op: 'eq', value: 'Москва' })).toBe(
+      true,
+    );
+    expect(cellMatchesCondition('Питер', { propertyId: 'p', op: 'neq', value: 'Москва' })).toBe(
+      true,
+    );
+    expect(cellMatchesCondition('Москва', { propertyId: 'p', op: 'neq', value: 'Москва' })).toBe(
+      false,
+    );
   });
 
   it('empty — пусто/[]/undefined', () => {
@@ -379,31 +350,48 @@ describe('cellMatchesCondition / rowMatchesConditions (семантика опе
   });
 
   it('in — скаляр или массив ячейки против needles', () => {
-    expect(cellMatchesCondition('active', { propertyId: 'p', op: 'in', value: ['active', 'lead'] })).toBe(true);
-    expect(cellMatchesCondition(['a', 'b'], { propertyId: 'p', op: 'in', value: ['b'] })).toBe(true);
-    expect(cellMatchesCondition('closed', { propertyId: 'p', op: 'in', value: ['active'] })).toBe(false);
+    expect(
+      cellMatchesCondition('active', { propertyId: 'p', op: 'in', value: ['active', 'lead'] }),
+    ).toBe(true);
+    expect(cellMatchesCondition(['a', 'b'], { propertyId: 'p', op: 'in', value: ['b'] })).toBe(
+      true,
+    );
+    expect(cellMatchesCondition('closed', { propertyId: 'p', op: 'in', value: ['active'] })).toBe(
+      false,
+    );
   });
 
   it('contains — подстрока без учёта регистра', () => {
-    expect(cellMatchesCondition('ООО Ромашка', { propertyId: 'p', op: 'contains', value: 'ромашка' })).toBe(true);
-    expect(cellMatchesCondition('ООО Ромашка', { propertyId: 'p', op: 'contains', value: 'дуб' })).toBe(false);
+    expect(
+      cellMatchesCondition('ООО Ромашка', { propertyId: 'p', op: 'contains', value: 'ромашка' }),
+    ).toBe(true);
+    expect(
+      cellMatchesCondition('ООО Ромашка', { propertyId: 'p', op: 'contains', value: 'дуб' }),
+    ).toBe(false);
   });
 
   it('gt / lt — числа и даты', () => {
     expect(cellMatchesCondition(150000, { propertyId: 'p', op: 'gt', value: 100000 })).toBe(true);
     expect(cellMatchesCondition('50', { propertyId: 'p', op: 'lt', value: 100 })).toBe(true);
-    expect(cellMatchesCondition('2026-06-01', { propertyId: 'p', op: 'gt', value: '2026-01-01' })).toBe(true);
-    // несравнимое (текст) → false
+    expect(
+      cellMatchesCondition('2026-06-01', { propertyId: 'p', op: 'gt', value: '2026-01-01' }),
+    ).toBe(true);
     expect(cellMatchesCondition('дорого', { propertyId: 'p', op: 'gt', value: 10 })).toBe(false);
   });
 
   it('before / after / older_than — даты', () => {
-    expect(cellMatchesCondition('2026-01-01', { propertyId: 'p', op: 'before', value: '2026-05-01' })).toBe(true);
-    expect(cellMatchesCondition('2026-06-01', { propertyId: 'p', op: 'after', value: '2026-05-01' })).toBe(true);
+    expect(
+      cellMatchesCondition('2026-01-01', { propertyId: 'p', op: 'before', value: '2026-05-01' }),
+    ).toBe(true);
+    expect(
+      cellMatchesCondition('2026-06-01', { propertyId: 'p', op: 'after', value: '2026-05-01' }),
+    ).toBe(true);
     const old = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
     const recent = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
     expect(cellMatchesCondition(old, { propertyId: 'p', op: 'older_than', value: 30 })).toBe(true);
-    expect(cellMatchesCondition(recent, { propertyId: 'p', op: 'older_than', value: 30 })).toBe(false);
+    expect(cellMatchesCondition(recent, { propertyId: 'p', op: 'older_than', value: 30 })).toBe(
+      false,
+    );
   });
 
   it('rowMatchesConditions — AND по всем условиям; пустой фильтр → проходит', () => {
@@ -458,7 +446,6 @@ describe('TableSemanticFilterService.applyFilterToRows (server-side)', () => {
     });
     expect(out.map((r) => r.id)).toEqual(['r1', 'r3']);
     expect(out[0]).toEqual({ id: 'r1', entityId: 'e1', cells: { city: 'Москва', amount: 150000 } });
-    // tenant-scope + живые строки.
     const where = (findMany.mock.calls[0]?.[0] as { where: unknown }).where;
     expect(where).toMatchObject({
       tableId: TABLE,

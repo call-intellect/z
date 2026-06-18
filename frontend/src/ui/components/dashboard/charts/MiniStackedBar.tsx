@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useMemo } from 'react';
+import { useMemo } from "react";
 import {
   Bar,
   BarChart,
@@ -9,11 +9,11 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-} from 'recharts';
+} from "recharts";
 
-import { cn } from '@/ui/shadcn/lib/utils';
+import { cn } from "@/ui/shadcn/lib/utils";
 
-import { toneVars, type ChartTone } from './tones';
+import { toneVars, type ChartTone } from "./tones";
 
 export type StackedSegment = {
   value: number;
@@ -23,21 +23,10 @@ export type StackedSegment = {
 
 type Props = {
   segments: StackedSegment[];
-  /** Высота полосы. По умолчанию 24. */
   height?: number;
   className?: string;
 };
 
-/**
- * MiniStackedBar — горизонтальная stacked-полоска из N сегментов с разными тонами.
- *
- * Реализована поверх `recharts` `BarChart` (`layout="vertical"`, одна строка).
- * Hover-tooltip с label + value — нативный recharts-tooltip; стилизован под
- * CSS-токены проекта (см. `IncomeChart`).
- *
- * Подходит для top-3 contributors в GoalVector, severity breakdown,
- * сегментации участников встречи и т.п.
- */
 export function MiniStackedBar({ segments, height = 24, className }: Props) {
   const { row, keys } = useMemo(() => buildRow(segments), [segments]);
 
@@ -45,14 +34,14 @@ export function MiniStackedBar({ segments, height = 24, className }: Props) {
     return (
       <div
         role="presentation"
-        className={cn('h-6 w-full rounded bg-bg-overlay/40', className)}
+        className={cn("h-6 w-full rounded bg-bg-overlay/40", className)}
         style={{ height }}
       />
     );
   }
 
   return (
-    <div className={cn('w-full', className)} style={{ height }}>
+    <div className={cn("w-full", className)} style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
           layout="vertical"
@@ -63,17 +52,17 @@ export function MiniStackedBar({ segments, height = 24, className }: Props) {
           <XAxis type="number" hide domain={[0, row.__total]} />
           <YAxis type="category" dataKey="name" hide />
           <Tooltip
-            cursor={{ fill: 'var(--bg-overlay)' }}
+            cursor={{ fill: "var(--bg-overlay)" }}
             contentStyle={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border-subtle)',
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-subtle)",
               borderRadius: 8,
               fontSize: 12,
-              color: 'var(--text-primary)',
+              color: "var(--text-primary)",
             }}
-            labelStyle={{ display: 'none' }}
+            labelStyle={{ display: "none" }}
             formatter={(value, name) => {
-              const num = typeof value === 'number' ? value : Number(value);
+              const num = typeof value === "number" ? value : Number(value);
               return [String(num), String(name)];
             }}
           />
@@ -108,8 +97,11 @@ export function MiniStackedBar({ segments, height = 24, className }: Props) {
 }
 
 function buildRow(segments: StackedSegment[]) {
-  const row: Record<string, number | string> & { name: string; __total: number } = {
-    name: 'row',
+  const row: Record<string, number | string> & {
+    name: string;
+    __total: number;
+  } = {
+    name: "row",
     __total: 0,
   };
   const keys: string[] = [];
@@ -121,7 +113,6 @@ function buildRow(segments: StackedSegment[]) {
     keys.push(key);
     total += v;
   });
-  // Если все нули — рисуем единый плейсхолдер, чтобы recharts отрисовал серый бар.
   if (total === 0 && segments.length > 0) {
     row[keys[0]!] = 1;
     total = 1;

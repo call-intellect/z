@@ -1,15 +1,14 @@
-/**
- * SBA α-9 wave 3 — доменная модель FunctionalDomain.
- */
-
-import type { FunctionalDomainApi, IndustrySlugApi } from '@/api/functional-domains.api';
+import type {
+  FunctionalDomainApi,
+  IndustrySlugApi,
+} from "@/api/functional-domains.api";
 
 export const INDUSTRY_LABEL: Record<IndustrySlugApi, string> = {
-  saas: 'SaaS / IT-продукт',
-  developer: 'Девелопер / строительство',
-  retail: 'Ритейл / e-commerce',
-  manufacturing: 'Производство',
-  b2b_services: 'B2B-услуги / агентство',
+  saas: "SaaS / IT-продукт",
+  developer: "Девелопер / строительство",
+  retail: "Ритейл / e-commerce",
+  manufacturing: "Производство",
+  b2b_services: "B2B-услуги / агентство",
 };
 
 export interface FunctionalDomainDomain {
@@ -22,7 +21,6 @@ export interface FunctionalDomainDomain {
   iconName: string | null;
   isSystem: boolean;
   completeness: number | null;
-  /** 0..100. */
   completenessPercent: number | null;
   order: number;
   confidence: number | null;

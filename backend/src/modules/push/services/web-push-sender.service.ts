@@ -5,22 +5,6 @@ import { TypedConfigService } from '../../../common/config/typed-config.service'
 
 import { PushSubscriptionsService } from './push-subscriptions.service';
 
-/**
- * WebPushSender — обёртка над npm `web-push`. Отвечает за фактическую отправку
- * push-уведомлений конкретному user'у по всем его активным подпискам.
- *
- * No-VAPID graceful path:
- *   - Если `cfg.push.isSendEnabled === false` (нет хотя бы одного VAPID-ключа)
- *     → метод `sendToUser` сразу возвращает `{ delivered: 0, failed: 0 }` +
- *     одноразовый warn в лог. Это позволяет собирать подписки заранее, до
- *     настройки VAPID на проде.
- *
- * Failure handling (см. RFC 8030 §7.3):
- *   - 410 Gone / 404 Not Found → подписка протухла, инкрементим failureCount
- *     через `markFailure`. По достижении `cfg.push.maxFailures` запись удаляется.
- *   - Любая другая ошибка (5xx, network) — логируется, failureCount не трогаем
- *     (push-сервис может временно лежать; не выбрасываем рабочие подписки).
- */
 @Injectable()
 export class WebPushSender implements OnModuleInit {
   private readonly logger = new Logger(WebPushSender.name);
@@ -35,7 +19,6 @@ export class WebPushSender implements OnModuleInit {
 
   onModuleInit(): void {
     if (this.cfg.push.isSendEnabled) {
-      // VAPID ключи присутствуют — настраиваем web-push.
       const pub = this.cfg.push.vapidPublicKey;
       const priv = this.cfg.push.vapidPrivateKey;
       if (pub && priv) {
@@ -52,13 +35,6 @@ export class WebPushSender implements OnModuleInit {
     }
   }
 
-  /**
-   * Отправка push-уведомления на все активные подписки user'а.
-   * Возвращает агрегат `{ delivered, failed }` — для логов / метрик worker'а.
-   *
-   * Параметр `url` пакуется в `data.url` payload'а — ServiceWorker откроет
-   * вкладку с этим URL при клике на уведомление.
-   */
   async sendToUser(args: {
     tenantId: string;
     userId: string;
@@ -70,9 +46,7 @@ export class WebPushSender implements OnModuleInit {
   }): Promise<{ delivered: number; failed: number }> {
     if (!this.vapidSetUp) {
       if (!this.warnedNoVapid) {
-        this.logger.warn(
-          'sendToUser: VAPID не настроен — пропускаем отправку (warn один раз).',
-        );
+        this.logger.warn('sendToUser: VAPID не настроен — пропускаем отправку (warn один раз).');
         this.warnedNoVapid = true;
       }
       return { delivered: 0, failed: 0 };
@@ -120,7 +94,6 @@ export class WebPushSender implements OnModuleInit {
             ? ((err as { statusCode: number }).statusCode as number)
             : undefined;
         if (status === 410 || status === 404) {
-          // Подписка протухла — markFailure (с авто-удалением при превышении).
           try {
             await this.subs.markFailure({ subscriptionId: sub.id });
           } catch (e) {

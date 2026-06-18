@@ -1,15 +1,15 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   decisionsApi,
   type DeadlineFilterApi,
   type DecisionStatusApi,
   type DecisionsListResponseApi,
-} from '@/api/decisions.api';
-import { useAuth } from '@/contexts/auth-context';
+} from "@/api/decisions.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   DECISION_STATUS_LABEL,
   DECISION_STATUS_TONE,
@@ -17,35 +17,18 @@ import {
   type DecisionSupersedeChain,
   mapDecisionDetail,
   mapDecisionSupersedeChain,
-} from '@/domain/decision';
-import { TrustBadge } from '@/ui/components/shared/TrustBadge';
-import { CardCorrectionActions } from '@/ui/components/knowledge/CardCorrectionActions';
-import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
-import { Input } from '@/ui/shadcn/input';
+} from "@/domain/decision";
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
+import { TrustBadge } from "@/ui/components/shared/TrustBadge";
+import { CardCorrectionActions } from "@/ui/components/knowledge/CardCorrectionActions";
+import { Input } from "@/ui/shadcn/input";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-/**
- * Master-detail для `/decisions` (SBA β-3).
- *
- * Левая колонка — список (фильтры status / deadline / search).
- * Правая колонка — детальная карточка:
- *   - statement (h2), status badge, supersedes-цепочка
- *   - rationale (markdown как pre-wrap, на β-3 без markdown-рендера)
- *   - alternatives table
- *   - affects (entity chips — на β-3 показываем id-строки; маппинг на имена γ+)
- *   - provenance (sourceBlockIds count)
- *   - timeline для evolving (validFrom → validUntil)
- *   - actualOutcomes
- *   - Actions: Отметить как реализованным / Заменить новой версией / Отменить
- *
- * Действия supersede / changeStatus / setOutcomes выполняются с проверкой
- * RBAC на бэке — если у пользователя нет прав, появится сообщение об ошибке.
- */
 export function DecisionsListClient({
   initialSelectedId,
 }: { initialSelectedId?: string } = {}) {
@@ -63,43 +46,45 @@ export function DecisionsListClient({
 }
 
 const STATUS_FILTERS: ReadonlyArray<{
-  value: 'all' | DecisionStatusApi;
+  value: "all" | DecisionStatusApi;
   label: string;
 }> = [
-  { value: 'all', label: 'Все статусы' },
-  { value: 'proposed', label: 'Предложенные' },
-  { value: 'approved', label: 'Принятые' },
-  { value: 'implemented', label: 'Реализованные' },
-  { value: 'rejected', label: 'Отклонённые' },
-  { value: 'cancelled', label: 'Отменённые' },
-  { value: 'superseded', label: 'Заменённые' },
+  { value: "all", label: "Все статусы" },
+  { value: "proposed", label: "Предложенные" },
+  { value: "approved", label: "Принятые" },
+  { value: "implemented", label: "Реализованные" },
+  { value: "rejected", label: "Отклонённые" },
+  { value: "cancelled", label: "Отменённые" },
+  { value: "superseded", label: "Заменённые" },
 ];
 
 const DEADLINE_FILTERS: ReadonlyArray<{
-  value: 'all' | DeadlineFilterApi;
+  value: "all" | DeadlineFilterApi;
   label: string;
 }> = [
-  { value: 'all', label: 'Все сроки' },
-  { value: 'overdue', label: 'Просроченные' },
-  { value: 'upcoming', label: 'Предстоящие' },
+  { value: "all", label: "Все сроки" },
+  { value: "overdue", label: "Просроченные" },
+  { value: "upcoming", label: "Предстоящие" },
 ];
 
 function DecisionsListContent({
   initialSelectedId,
-}: { initialSelectedId?: string }) {
+}: {
+  initialSelectedId?: string;
+}) {
   const { currentOrgRole } = useAuth();
-  const canApplyDirectly = ['owner', 'admin'].includes(currentOrgRole ?? '');
+  const canApplyDirectly = ["owner", "admin"].includes(currentOrgRole ?? "");
   const [data, setData] = useState<DecisionsListResponseApi | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
-  const [q, setQ] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | DecisionStatusApi>(
-    'all',
+  const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | DecisionStatusApi>(
+    "all",
   );
-  const [deadlineFilter, setDeadlineFilter] = useState<'all' | DeadlineFilterApi>(
-    'all',
-  );
+  const [deadlineFilter, setDeadlineFilter] = useState<
+    "all" | DeadlineFilterApi
+  >("all");
   const [selectedId, setSelectedId] = useState<string | null>(
     initialSelectedId ?? null,
   );
@@ -116,18 +101,18 @@ function DecisionsListContent({
     try {
       const dto = await decisionsApi.list({
         ...(q.trim() ? { q: q.trim() } : {}),
-        ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
-        ...(deadlineFilter !== 'all'
+        ...(statusFilter !== "all" ? { status: statusFilter } : {}),
+        ...(deadlineFilter !== "all"
           ? { deadline_filter: deadlineFilter }
           : {}),
         limit: 50,
       });
       setData(dto);
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'forbidden') {
+      if (e instanceof ApiError && e.code === "forbidden") {
         setForbidden(true);
       } else {
-        setError(humanizeApiError(e, 'Ошибка загрузки'));
+        setError(humanizeApiError(e, "Ошибка загрузки"));
       }
     } finally {
       setIsLoading(false);
@@ -151,7 +136,7 @@ function DecisionsListContent({
       setDetail(mapDecisionDetail(detailDto));
       setChain(mapDecisionSupersedeChain(chainDto));
     } catch (e) {
-      setDetailError(humanizeApiError(e, 'Ошибка загрузки'));
+      setDetailError(humanizeApiError(e, "Ошибка загрузки"));
     } finally {
       setDetailLoading(false);
     }
@@ -171,13 +156,15 @@ function DecisionsListContent({
       setActionMsg(null);
       try {
         await decisionsApi.changeStatus(selectedId, { newStatus });
-        setActionMsg(`Статус изменён на «${DECISION_STATUS_LABEL[newStatus]}».`);
+        setActionMsg(
+          `Статус изменён на «${DECISION_STATUS_LABEL[newStatus]}».`,
+        );
         await Promise.all([load(), loadDetail()]);
       } catch (e) {
         setActionMsg(
           e instanceof ApiError
             ? `Ошибка: ${e.message}`
-            : 'Не удалось изменить статус.',
+            : "Не удалось изменить статус.",
         );
       }
     },
@@ -186,9 +173,6 @@ function DecisionsListContent({
 
   const groupedItems = useMemo(() => data?.items ?? [], [data]);
 
-  // Хлебные крошки: на `/decisions/[id]` показываем суть выбранного решения из
-  // уже загруженной детали (поле `statement`). На `/decisions` без выбора —
-  // null (no-op, остаётся метка раздела «Решения»).
   useRegisterBreadcrumb(detail ? { label: detail.statement } : null);
 
   if (isLoading && !data) return <AdminLoading rows={6} />;
@@ -214,8 +198,8 @@ function DecisionsListContent({
             onClick={() => setStatusFilter(f.value)}
             className={`rounded-full border px-3 py-1 text-xs transition ${
               statusFilter === f.value
-                ? 'border-accent bg-accent/10 text-accent'
-                : 'border-border-subtle text-fg-secondary hover:border-border-strong'
+                ? "border-accent bg-accent/10 text-accent"
+                : "border-border-subtle text-fg-secondary hover:border-border-strong"
             }`}
           >
             {f.label}
@@ -233,7 +217,7 @@ function DecisionsListContent({
         <select
           value={deadlineFilter}
           onChange={(e) =>
-            setDeadlineFilter(e.target.value as 'all' | DeadlineFilterApi)
+            setDeadlineFilter(e.target.value as "all" | DeadlineFilterApi)
           }
           className="rounded-md border border-border-subtle bg-bg-card px-3 py-2 text-sm"
         >
@@ -246,12 +230,12 @@ function DecisionsListContent({
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        {/* Левая колонка: список */}
+        {}
         <div>
           {groupedItems.length === 0 ? (
             <p className="text-sm text-fg-tertiary">
-              Решений пока нет. Они появятся автоматически, когда специалист
-              3.3 обработает встречи и документы.
+              Решений пока нет. Они появятся автоматически, когда специалист 3.3
+              обработает встречи и документы.
             </p>
           ) : (
             <ul className="divide-y divide-border-subtle rounded-lg border border-border-subtle bg-bg-card">
@@ -260,17 +244,17 @@ function DecisionsListContent({
                 const overdue =
                   d.deadline &&
                   new Date(d.deadline) < new Date() &&
-                  d.status !== 'implemented' &&
-                  d.status !== 'cancelled' &&
-                  d.status !== 'rejected' &&
-                  d.status !== 'superseded';
+                  d.status !== "implemented" &&
+                  d.status !== "cancelled" &&
+                  d.status !== "rejected" &&
+                  d.status !== "superseded";
                 return (
                   <li key={d.id}>
                     <button
                       type="button"
                       onClick={() => setSelectedId(d.id)}
                       className={`flex w-full items-start justify-between px-4 py-3 text-left ${
-                        isSelected ? 'bg-accent/5' : 'hover:bg-bg-hover'
+                        isSelected ? "bg-accent/5" : "hover:bg-bg-hover"
                       }`}
                     >
                       <div className="min-w-0 flex-1">
@@ -281,12 +265,15 @@ function DecisionsListContent({
                         </div>
                         <div className="mt-1 text-xs text-fg-tertiary">
                           {d.decidedAt
-                            ? new Date(d.decidedAt).toLocaleDateString('ru-RU')
-                            : 'дата не указана'}
+                            ? new Date(d.decidedAt).toLocaleDateString("ru-RU")
+                            : "дата не указана"}
                           {d.deadline ? (
-                            <span className={overdue ? 'ml-2 text-error' : 'ml-2'}>
-                              · срок {new Date(d.deadline).toLocaleDateString('ru-RU')}
-                              {overdue ? ' (просрочено)' : ''}
+                            <span
+                              className={overdue ? "ml-2 text-error" : "ml-2"}
+                            >
+                              · срок{" "}
+                              {new Date(d.deadline).toLocaleDateString("ru-RU")}
+                              {overdue ? " (просрочено)" : ""}
                             </span>
                           ) : null}
                           {d.supersedesId ? (
@@ -304,7 +291,7 @@ function DecisionsListContent({
           )}
         </div>
 
-        {/* Правая колонка: деталь */}
+        {}
         <div className="rounded-lg border border-border-subtle bg-bg-card p-5">
           {!selectedId ? (
             <p className="text-sm text-fg-tertiary">
@@ -323,17 +310,22 @@ function DecisionsListContent({
                   <TrustBadge tier={detail.trustTier} size="sm" />
                   {detail.decidedAt ? (
                     <span>
-                      Принято {detail.decidedAt.toLocaleDateString('ru-RU')}
+                      Принято {detail.decidedAt.toLocaleDateString("ru-RU")}
                     </span>
                   ) : null}
                   {detail.deadline ? (
-                    <span>· Срок {detail.deadline.toLocaleDateString('ru-RU')}</span>
+                    <span>
+                      · Срок {detail.deadline.toLocaleDateString("ru-RU")}
+                    </span>
                   ) : null}
                 </div>
-                <h2 className="mt-2 text-lg font-semibold">{detail.statement}</h2>
+                <h2 className="mt-2 text-lg font-semibold">
+                  {detail.statement}
+                </h2>
               </header>
 
-              {chain && (chain.ancestors.length > 0 || chain.descendants.length > 0) ? (
+              {chain &&
+              (chain.ancestors.length > 0 || chain.descendants.length > 0) ? (
                 <section className="rounded border border-border-subtle bg-bg-muted/40 p-3">
                   <h3 className="text-xs font-medium text-fg-secondary">
                     Цепочка версий
@@ -392,7 +384,9 @@ function DecisionsListContent({
 
               {detail.alternatives.length > 0 ? (
                 <section>
-                  <h3 className="text-sm font-medium">Рассмотренные альтернативы</h3>
+                  <h3 className="text-sm font-medium">
+                    Рассмотренные альтернативы
+                  </h3>
                   <ul className="mt-2 space-y-2 text-xs">
                     {detail.alternatives.map((a, i) => (
                       <li
@@ -434,13 +428,13 @@ function DecisionsListContent({
                   </h3>
                   <div className="mt-1">
                     {detail.validFrom
-                      ? `с ${detail.validFrom.toLocaleDateString('ru-RU')}`
-                      : 'с — не указано'}
+                      ? `с ${detail.validFrom.toLocaleDateString("ru-RU")}`
+                      : "с — не указано"}
                     {detail.validUntil
-                      ? ` до ${detail.validUntil.toLocaleDateString('ru-RU')}`
-                      : detail.status === 'superseded'
-                      ? ' (заменено)'
-                      : ''}
+                      ? ` до ${detail.validUntil.toLocaleDateString("ru-RU")}`
+                      : detail.status === "superseded"
+                        ? " (заменено)"
+                        : ""}
                   </div>
                 </section>
               ) : null}
@@ -456,36 +450,36 @@ function DecisionsListContent({
 
               <section className="text-xs text-fg-tertiary">
                 <div>
-                  Источники:{' '}
+                  Источники:{" "}
                   {detail.sourceBlockIds.length > 0
                     ? `${detail.sourceBlockIds.length} блок(ов) знаний`
-                    : '—'}
+                    : "—"}
                 </div>
                 {detail.confidence !== null ? (
                   <div>
-                    Уверенность извлечения:{' '}
+                    Уверенность извлечения:{" "}
                     {(detail.confidence * 100).toFixed(0)}%
                   </div>
                 ) : null}
               </section>
 
               <div className="mt-4 flex flex-wrap gap-2">
-                {detail.status !== 'implemented' &&
-                detail.status !== 'cancelled' ? (
+                {detail.status !== "implemented" &&
+                detail.status !== "cancelled" ? (
                   <button
                     type="button"
-                    onClick={() => handleChangeStatus('implemented')}
+                    onClick={() => handleChangeStatus("implemented")}
                     className="rounded-md border border-border-subtle bg-bg-muted px-3 py-1.5 text-xs hover:bg-bg-hover"
                   >
                     Отметить как реализованным
                   </button>
                 ) : null}
-                {detail.status !== 'cancelled' &&
-                detail.status !== 'rejected' &&
-                detail.status !== 'superseded' ? (
+                {detail.status !== "cancelled" &&
+                detail.status !== "rejected" &&
+                detail.status !== "superseded" ? (
                   <button
                     type="button"
-                    onClick={() => handleChangeStatus('cancelled')}
+                    onClick={() => handleChangeStatus("cancelled")}
                     className="rounded-md border border-border-subtle bg-bg-muted px-3 py-1.5 text-xs hover:bg-bg-hover"
                   >
                     Отменить решение
@@ -494,15 +488,15 @@ function DecisionsListContent({
                 <CardCorrectionActions
                   fields={[
                     {
-                      key: 'statement',
-                      label: 'Суть решения',
+                      key: "statement",
+                      label: "Суть решения",
                       value: detail.statement,
                       multiline: true,
                     },
                     {
-                      key: 'rationale',
-                      label: 'Обоснование',
-                      value: detail.rationale ?? '',
+                      key: "rationale",
+                      label: "Обоснование",
+                      value: detail.rationale ?? "",
                       multiline: true,
                     },
                   ]}
@@ -544,19 +538,17 @@ function StatusBadge({ status }: { status: DecisionStatusApi }) {
   const tone = DECISION_STATUS_TONE[status];
   const cls = (() => {
     switch (tone) {
-      case 'success':
-        return 'bg-success/10 text-success';
-      case 'error':
-        return 'bg-error/10 text-error';
-      case 'warning':
-        return 'bg-warning/10 text-warning';
-      case 'info':
-        return 'bg-info/10 text-info';
+      case "success":
+        return "bg-success/10 text-success";
+      case "error":
+        return "bg-error/10 text-error";
+      case "warning":
+        return "bg-warning/10 text-warning";
+      case "info":
+        return "bg-info/10 text-info";
       default:
-        return 'bg-bg-muted text-fg-secondary';
+        return "bg-bg-muted text-fg-secondary";
     }
   })();
-  return (
-    <span className={`rounded px-2 py-0.5 text-xs ${cls}`}>{label}</span>
-  );
+  return <span className={`rounded px-2 py-0.5 text-xs ${cls}`}>{label}</span>;
 }

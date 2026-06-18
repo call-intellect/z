@@ -1,47 +1,3 @@
-/**
- * ТЗ-D (2026-06-05) — Backfill `commitmentAuthorPersonId` для ИСТОРИЧЕСКИХ
- * обещаний (canonical-блоки `signalType='commitment'`).
- *
- * Контекст:
- *   ТЗ `plans/tz/2026-06-05-weekly-per-person-plan-fact.md` (план-факт по людям).
- *   Фаза 1 добавила скаляр-поле `IdeaBlock.commitmentAuthorPersonId` (ссылка на
- *   Person — автор обещания). Фаза 2a включила детерминированную запись этого
- *   поля для НОВЫХ commitment-блоков в block-ingest.worker
- *   (`attributeCommitmentAuthor` → `EntityResolutionService.resolveSubjectPersonId`).
- *   Но исторические canonical-блоки, извлечённые ДО фикса, остались с
- *   `commitmentAuthorPersonId = null`. Без этого вкладка «план-факт по автору»
- *   (выборка «обещания, данные человеком») читает пустую агрегацию.
- *
- *   Этот backfill повторяет логику воркера, но для уже сохранённых
- *   commitment-блоков: находит source-RawEvent через IdeaBlockEvidence,
- *   определяет автора (meeting — по сегменту/спикеру; text — по `payload.userId`),
- *   детерминированно резолвит Person.id (БЕЗ LLM — prompt-cache не затрагивается)
- *   и проставляет `IdeaBlock.commitmentAuthorPersonId`.
- *
- *   Сервисы переиспользуются через Nest DI (НЕ дублируем resolve-логику):
- *   SegmentBuilderService, EntityResolutionService, S3Service.
- *
- * Идемпотентность:
- *   blockWhere фильтрует `commitmentAuthorPersonId: null` — повторный прогон
- *   НЕ выберет уже заполненные блоки (no-op). Это основа идемпотентности
- *   (как и WHERE-фильтр в backfill-subject-attribution; unit-spec не нужен —
- *   гарантия на уровне выборки).
- *
- * Kill-switch:
- *   AdminSetting `knowledge.commitmentAuthorAttributionEnabled` (code-fallback
- *   `true`) — тот же флаг, что воркер Фазы 2a. При `false` атрибуция новых
- *   блоков выключена; backfill уважает тот же флаг — при `false` выходит без
- *   записи (как и воркер пропускает шаг).
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/backfill-commitment-author.ts --dry-run  # только counts
- *   docker compose exec backend bun run scripts/backfill-commitment-author.ts             # запись
- *   docker compose exec backend bun run scripts/backfill-commitment-author.ts --tenant=<orgId>
- *   docker compose exec backend bun run scripts/backfill-commitment-author.ts --limit=5000
- *
- * Регистрация: backend/scripts/apply-prod-deploy.ts (phase: 'backfill', skipBootstrap).
- */
-
 import { NestFactory } from '@nestjs/core';
 import type { SignalType } from '@prisma/client';
 
@@ -92,8 +48,6 @@ function parseArgs(argv: string[]): Options {
   return opts;
 }
 
-/** Извлечь userId автора текстового канала (free_note / in_app). Зеркало
- * `BlockIngestWorker.tryGetAuthorUserId`. */
 function tryGetAuthorUserId(payload: unknown): string | null {
   if (typeof payload !== 'object' || payload === null) return null;
   const v = (payload as { userId?: unknown }).userId;
@@ -107,9 +61,6 @@ async function main(opts: Options): Promise<void> {
       `limit=${opts.limit ?? '<none>'}) ===`,
   );
 
-  // Лёгкий pre-check ДО подъёма AppModule (Nest DI + Redis/BullMQ): если нет
-  // canonical-обещаний без автора — выходим чисто, не поднимая тяжёлый контекст
-  // и не требуя готовой очереди.
   const blockWhere = {
     status: 'canonical' as const,
     signalType: 'commitment' as SignalType,
@@ -147,8 +98,6 @@ async function main(opts: Options): Promise<void> {
     const entities = app.get(EntityResolutionService);
     const s3 = app.get(S3Service);
 
-    // Kill-switch — тот же AdminSetting, что и воркер Фазы 2a. При false —
-    // выходим без записи (как воркер пропускает attributeCommitmentAuthor).
     const enabled = await cfg.getDynamic<boolean>(
       'knowledge.commitmentAuthorAttributionEnabled',
       undefined,
@@ -161,8 +110,6 @@ async function main(opts: Options): Promise<void> {
       return;
     }
 
-    // Кэш payload по rawEventId: один RawEvent рождает много блоков, не грузим
-    // payload (особенно S3) повторно.
     const payloadCache = new Map<string, unknown>();
     const loadPayload = async (event: {
       id: string;
@@ -174,9 +121,7 @@ async function main(opts: Options): Promise<void> {
       let result: unknown;
       if (event.payloadStorage === 's3') {
         if (!event.payloadS3Key) {
-          throw new Error(
-            `RawEvent ${event.id}: payloadStorage=s3, но payloadS3Key пустой`,
-          );
+          throw new Error(`RawEvent ${event.id}: payloadStorage=s3, но payloadS3Key пустой`);
         }
         result = await s3.getJson<unknown>(event.payloadS3Key);
       } else {
@@ -186,14 +131,11 @@ async function main(opts: Options): Promise<void> {
       return result;
     };
 
-    // Курсорная пагинация по canonical-обещаниям без автора.
     let cursorId: string | undefined = undefined;
     let processed = 0;
     while (true) {
       if (opts.limit && processed >= opts.limit) break;
-      const take = opts.limit
-        ? Math.min(BATCH_SIZE, opts.limit - processed)
-        : BATCH_SIZE;
+      const take = opts.limit ? Math.min(BATCH_SIZE, opts.limit - processed) : BATCH_SIZE;
 
       const batch = await prisma.ideaBlock.findMany({
         where: blockWhere,
@@ -208,7 +150,6 @@ async function main(opts: Options): Promise<void> {
         stats.scanned++;
         processed++;
         try {
-          // 1. Источник: первое evidence блока (rawEventId + startMs).
           const evidence = await prisma.ideaBlockEvidence.findFirst({
             where: { blockId: block.id },
             orderBy: { createdAt: 'asc' },
@@ -236,31 +177,26 @@ async function main(opts: Options): Promise<void> {
 
           const payload = await loadPayload(event);
 
-          // 2. Определить identity автора — зеркало attributeCommitmentAuthor:
-          //    text → payload.userId; meeting → сегмент по таймкоду evidence.
           const authorUserId = tryGetAuthorUserId(payload);
 
           let speakerParticipantId: string | null = null;
           let speakerName: string | null = null;
           if (!authorUserId) {
-            // Встреча: строим сегменты и ищем покрывающий evidence.startMs.
             const segs = segments.buildSegments(payload);
             const evidenceStartMs = evidence.startMs ?? 0;
             const seg =
               segs.find(
-                (s) =>
-                  s.endMs > 0 &&
-                  evidenceStartMs >= s.startMs &&
-                  evidenceStartMs <= s.endMs,
+                (s) => s.endMs > 0 && evidenceStartMs >= s.startMs && evidenceStartMs <= s.endMs,
               ) ?? null;
             speakerParticipantId = seg?.speakerParticipantId ?? null;
             speakerName = seg?.speakers?.[0] ?? null;
           }
 
-          const authorPersonId = await entities.resolveSubjectPersonId(
-            event.tenantId,
-            { speakerParticipantId, speakerName, authorUserId },
-          );
+          const authorPersonId = await entities.resolveSubjectPersonId(event.tenantId, {
+            speakerParticipantId,
+            speakerName,
+            authorUserId,
+          });
           if (!authorPersonId) {
             stats.skipped++;
             continue;

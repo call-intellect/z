@@ -1,10 +1,5 @@
 import type { Meeting, MeetingStatus, MeetingType, Participant, User } from '@prisma/client';
 
-/**
- * Доменные типы встречи. Используются между сервисом и контроллерами,
- * чтобы не таскать сырые Prisma-типы наружу.
- */
-
 export type MeetingWithOwner = Meeting & {
   owner: Pick<User, 'id' | 'externalId' | 'email' | 'name'>;
 };

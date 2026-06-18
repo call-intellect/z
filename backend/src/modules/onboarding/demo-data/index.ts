@@ -1,22 +1,3 @@
-/**
- * Демо-данные «ТехноСтрим» — единая точка запуска всех seed-модулей.
- *
- * Один порядок вызовов используется из ТРЁХ мест:
- *   1. `OnboardingService.seedDemoWorkspace` (HTTP-эндпоинт /admin/demo + super-admin)
- *   2. `backend/scripts/patch-create-reference-demo-org.ts` (prod-bootstrap эталона)
- *   3. `backend/scripts/seed-demo-workspace.ts` (CLI dev/staging)
- *
- * Любое изменение списка (добавили новый seed-модуль) делается ТОЛЬКО здесь.
- *
- * Порядок зависимостей (см. ТЗ 2026-05-31-demo-content-expansion-pulse §5):
- *   users → org-structure → process-templates → vendors → tracker → meetings →
- *   knowledge-graph → goals-clones → regulations → ideas → documents →
- *   calendar → experiments → brand-voice → probe-events → operations →
- *   pulse-snapshots → helpfulness → referrals → feedback → chat-notifications →
- *   polish.
- *
- * Источник правды: ТЗ 2026-06-01-demo-shared-org-model §4.7 (Gap fix).
- */
 import { seedChatNotifications } from './chat-notifications';
 import {
   seedBrandVoice,
@@ -44,17 +25,11 @@ import type { IdMap, SeedContext, SeedFn } from './types';
 import { seedUsers } from './users';
 
 export interface DemoSeedStep {
-  /** Стабильный ключ для логов и метрик. */
   key: string;
-  /** Человеко-читаемое имя. */
   label: string;
   fn: SeedFn;
 }
 
-/**
- * Полный упорядоченный список шагов сидинга «ТехноСтрим». Если добавляешь
- * новый seed-модуль — вставь его сюда в правильное место зависимостей.
- */
 export const DEMO_SEED_STEPS: ReadonlyArray<DemoSeedStep> = [
   { key: 'users', label: 'Демо-User-ы', fn: seedUsers },
   { key: 'org-structure', label: 'Орг-структура', fn: seedOrgStructure },
@@ -80,12 +55,6 @@ export const DEMO_SEED_STEPS: ReadonlyArray<DemoSeedStep> = [
   { key: 'polish', label: 'Полировка', fn: seedPolish },
 ];
 
-/**
- * Прогоняет все seed-модули последовательно. Между шагами `await`'ит каждый,
- * чтобы зависимости (ProcessTemplate перед FrictionReport и т.п.) точно были
- * созданы. Опциональный `onStep` колбэк используется CLI / patch-скриптами
- * для пошагового вывода в stdout.
- */
 export async function runAllSeedSteps(
   ctx: SeedContext,
   ids: IdMap,

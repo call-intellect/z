@@ -15,17 +15,6 @@ import { TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC } from '../../../conversational/t
 
 import { AdminTelegramBotService } from './admin-telegram-bot.service';
 
-/**
- * Unit-тесты AdminTelegramBotService (β-9 Phase 4).
- *
- * Покрываем:
- *   - getSettings: токен НЕ возвращается в plain, только tokenLastChars;
- *   - getSettings: пустой канал отдаёт безопасные дефолты;
- *   - updateToken: вызывает getMe (валидация), encrypt, upsert;
- *   - setStatus: меняет channel.status;
- *   - updateTemplates: мерджит, не теряет соседние ключи.
- */
-
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 function makeMockServices(): {
@@ -98,9 +87,6 @@ function makeMockServices(): {
 
   const cfg = {
     publicHostUrl: 'https://app.example.org',
-    // По умолчанию в тестах прокси выключен — это сохраняет старое
-    // поведение (legacy setWebhook) и не требует обновления уже
-    // существующих тестов. Тесты Фазы 3 переключают enabled=true явно.
     telegramProxy: { enabled: false } as { enabled: boolean },
   } as unknown as TypedConfigService;
 
@@ -199,9 +185,7 @@ describe('AdminTelegramBotService', () => {
       expect(r.channelExists).toBe(false);
       expect(r.tokenIsSet).toBe(false);
       expect(r.tokenLastChars).toBeNull();
-      expect(r.webhookUrl).toBe(
-        'https://app.example.org/api/v1/webhooks/telegram-bot',
-      );
+      expect(r.webhookUrl).toBe('https://app.example.org/api/v1/webhooks/telegram-bot');
       expect(r.status).toBe('disabled');
       expect(r.templates.welcome).toContain('Готово');
       expect(m.metricsSpy).toHaveBeenCalledWith({ action: 'settings_read' });
@@ -222,7 +206,6 @@ describe('AdminTelegramBotService', () => {
       const r = await svc.getSettings();
       expect(r.tokenIsSet).toBe(true);
       expect(r.tokenLastChars).toBe('****0XYZ');
-      // Никакой строки полного токена в ответе быть не должно.
       const flat = JSON.stringify(r);
       expect(flat).not.toContain(tokenPlain);
       expect(flat).not.toContain('123456789:ABCdef');
@@ -244,33 +227,26 @@ describe('AdminTelegramBotService', () => {
           } as never,
         }),
       );
-      // После create — для getSettings() — снова findFirst.
-      m.prismaSpies.findFirst
-        .mockResolvedValueOnce(null) // upsert lookup
-        .mockResolvedValueOnce(
-          makeChannel({
-            config: {
-              botToken: 'gcm:v1:enc(123456789:secret-abc)',
-              botUsername: 'kora_bot',
-            } as never,
-          }),
-        );
+      m.prismaSpies.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(
+        makeChannel({
+          config: {
+            botToken: 'gcm:v1:enc(123456789:secret-abc)',
+            botUsername: 'kora_bot',
+          } as never,
+        }),
+      );
 
       const r = await svc.updateToken({ token: '123456789:secret-abc' });
 
       expect(m.tgSpies.getMe).toHaveBeenCalledWith({
         token: '123456789:secret-abc',
       });
-      expect(m.cryptoSpies.encrypt).toHaveBeenCalledWith(
-        '123456789:secret-abc',
-      );
+      expect(m.cryptoSpies.encrypt).toHaveBeenCalledWith('123456789:secret-abc');
       expect(m.prismaSpies.create).toHaveBeenCalledOnce();
       const createArg = m.prismaSpies.create.mock.calls[0]?.[0] as {
         data: { config: Record<string, unknown> };
       };
-      expect(createArg.data.config['botToken']).toBe(
-        'gcm:v1:enc(123456789:secret-abc)',
-      );
+      expect(createArg.data.config['botToken']).toBe('gcm:v1:enc(123456789:secret-abc)');
       expect(createArg.data.config['botUsername']).toBe('kora_bot');
       expect(m.metricsSpy).toHaveBeenCalledWith({ action: 'token_changed' });
       expect(r.tokenIsSet).toBe(true);
@@ -337,17 +313,14 @@ describe('AdminTelegramBotService', () => {
           },
         } as never,
       });
-      // Первый findFirst — для upsert; второй — для последующего getSettings.
-      m.prismaSpies.findFirst
-        .mockResolvedValueOnce(existing)
-        .mockResolvedValueOnce(existing);
+      m.prismaSpies.findFirst.mockResolvedValueOnce(existing).mockResolvedValueOnce(existing);
       const updatedConfig: Mutable<Record<string, unknown>> = {};
-      m.prismaSpies.update.mockImplementation((args: {
-        data: { config: Record<string, unknown> };
-      }) => {
-        Object.assign(updatedConfig, args.data.config);
-        return Promise.resolve(makeChannel({ config: args.data.config as never }));
-      });
+      m.prismaSpies.update.mockImplementation(
+        (args: { data: { config: Record<string, unknown> } }) => {
+          Object.assign(updatedConfig, args.data.config);
+          return Promise.resolve(makeChannel({ config: args.data.config as never }));
+        },
+      );
 
       await svc.updateTemplates({ welcome: 'Новое приветствие' });
 
@@ -365,9 +338,6 @@ describe('AdminTelegramBotService', () => {
   describe('updateToken — auto-register в прокси (2026-05-26)', () => {
     it('proxy=enabled, нет существующего webhookSecret → upsertBot c сгенерированным secret, в config token+secret+proxyBotId', async () => {
       (m.cfg as unknown as { telegramProxy: { enabled: boolean } }).telegramProxy.enabled = true;
-      // 1-й find: autoRegisterInProxy.findGlobalChannel → канала нет, secret сгенерируется
-      // 2-й find: upsertGlobalChannel.findGlobalChannel → канала нет, create
-      // 3-й find: getSettings() в конце
       m.prismaSpies.findFirst
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
@@ -380,12 +350,12 @@ describe('AdminTelegramBotService', () => {
           }),
         );
       let savedConfig: Record<string, unknown> | null = null;
-      m.prismaSpies.create.mockImplementation((args: {
-        data: { config: Record<string, unknown> };
-      }) => {
-        savedConfig = args.data.config;
-        return Promise.resolve(makeChannel({ config: args.data.config as never }));
-      });
+      m.prismaSpies.create.mockImplementation(
+        (args: { data: { config: Record<string, unknown> } }) => {
+          savedConfig = args.data.config;
+          return Promise.resolve(makeChannel({ config: args.data.config as never }));
+        },
+      );
 
       await svc.updateToken({ token: '111111111:token-123' });
 
@@ -396,14 +366,10 @@ describe('AdminTelegramBotService', () => {
         targetUrl: string;
       };
       expect(upsertArg.token).toBe('111111111:token-123');
-      // username ещё неизвестен на момент регистрации (getMe идёт ПОСЛЕ) →
-      // провизорное имя.
       expect(upsertArg.name).toBe('Kora Bot');
-      // Секрет — в пути targetWebhookUrl (32 hex после `/s/`).
       expect(upsertArg.targetUrl).toMatch(
         /^https:\/\/app\.example\.org\/api\/v1\/webhooks\/telegram-bot\/s\/[a-f0-9]{32}$/,
       );
-      // Записанный config содержит token + webhookSecret (encrypted) + proxyBotId.
       expect(savedConfig).not.toBeNull();
       const cfg = savedConfig as unknown as Record<string, unknown>;
       expect(typeof cfg['botToken']).toBe('string');
@@ -423,28 +389,25 @@ describe('AdminTelegramBotService', () => {
         } as never,
       });
       m.prismaSpies.findFirst
-        .mockResolvedValueOnce(existing) // autoRegisterInProxy
-        .mockResolvedValueOnce(existing) // upsertGlobalChannel
-        .mockResolvedValueOnce(existing); // getSettings
+        .mockResolvedValueOnce(existing)
+        .mockResolvedValueOnce(existing)
+        .mockResolvedValueOnce(existing);
       let updatedConfig: Record<string, unknown> | null = null;
-      m.prismaSpies.update.mockImplementation((args: {
-        data: { config: Record<string, unknown> };
-      }) => {
-        updatedConfig = args.data.config;
-        return Promise.resolve(makeChannel({ config: args.data.config as never }));
-      });
+      m.prismaSpies.update.mockImplementation(
+        (args: { data: { config: Record<string, unknown> } }) => {
+          updatedConfig = args.data.config;
+          return Promise.resolve(makeChannel({ config: args.data.config as never }));
+        },
+      );
 
       await svc.updateToken({ token: '222222222:new-token' });
 
       const upsertArg = m.proxySpies.upsertBot.mock.calls[0]?.[0] as {
         targetUrl: string;
       };
-      // existing-secret-42 расшифрован cryptoSpies.decrypt из gcm:v1:enc(existing-secret-42)
-      // и попадает в путь targetWebhookUrl.
       expect(upsertArg.targetUrl).toBe(
         'https://app.example.org/api/v1/webhooks/telegram-bot/s/existing-secret-42',
       );
-      // webhookSecret в config переиспользован (тот же зашифрованный blob), не пере-encrypt'нут.
       expect(updatedConfig).not.toBeNull();
       const cfg = updatedConfig as unknown as Record<string, unknown>;
       expect(cfg['webhookSecret']).toBe('gcm:v1:enc(existing-secret-42)');
@@ -454,8 +417,8 @@ describe('AdminTelegramBotService', () => {
       (m.cfg as unknown as { telegramProxy: { enabled: boolean } }).telegramProxy.enabled = true;
       m.proxySpies.upsertBot.mockRejectedValue(new Error('прокси не отвечает'));
       m.prismaSpies.findFirst
-        .mockResolvedValueOnce(null) // autoRegisterInProxy → канала нет
-        .mockResolvedValueOnce(null) // upsertGlobalChannel → создаём
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(
           makeChannel({
             config: {
@@ -465,14 +428,13 @@ describe('AdminTelegramBotService', () => {
           }),
         );
       let savedConfig: Record<string, unknown> | null = null;
-      m.prismaSpies.create.mockImplementation((args: {
-        data: { config: Record<string, unknown> };
-      }) => {
-        savedConfig = args.data.config;
-        return Promise.resolve(makeChannel({ config: args.data.config as never }));
-      });
+      m.prismaSpies.create.mockImplementation(
+        (args: { data: { config: Record<string, unknown> } }) => {
+          savedConfig = args.data.config;
+          return Promise.resolve(makeChannel({ config: args.data.config as never }));
+        },
+      );
 
-      // Не должен бросать — токен сохраняем best-effort даже при провале прокси.
       const r = await svc.updateToken({ token: '333333333:token-X' });
 
       expect(savedConfig).not.toBeNull();
@@ -480,14 +442,11 @@ describe('AdminTelegramBotService', () => {
       expect(typeof cfg['botToken']).toBe('string');
       expect(cfg['proxyLastSyncError']).toBe('прокси не отвечает');
       expect(cfg['proxyBotId']).toBeUndefined();
-      // tokenIsSet=true в финальном response
       expect(r.tokenIsSet).toBe(true);
-      // 'webhook_reset' метрика НЕ записывается на failed auto-register.
       expect(m.metricsSpy).not.toHaveBeenCalledWith({ action: 'webhook_reset' });
     });
 
     it('proxy=disabled → upsertBot НЕ вызывается, поведение как до 2026-05-26', async () => {
-      // makeMockServices() default: telegramProxy.enabled=false.
       m.prismaSpies.findFirst.mockResolvedValue(null);
       m.prismaSpies.create.mockResolvedValue(makeChannel({ config: {} as never }));
       m.prismaSpies.findFirst
@@ -510,16 +469,16 @@ describe('AdminTelegramBotService', () => {
         } as never,
       });
       m.prismaSpies.findFirst
-        .mockResolvedValueOnce(existing) // initial find в resetWebhook
-        .mockResolvedValueOnce(existing) // upsertGlobalChannel.find
-        .mockResolvedValueOnce(existing); // getSettings() в конце
+        .mockResolvedValueOnce(existing)
+        .mockResolvedValueOnce(existing)
+        .mockResolvedValueOnce(existing);
       let savedConfig: Record<string, unknown> | null = null;
-      m.prismaSpies.update.mockImplementation((args: {
-        data: { config: Record<string, unknown> };
-      }) => {
-        savedConfig = args.data.config;
-        return Promise.resolve(makeChannel({ config: args.data.config as never }));
-      });
+      m.prismaSpies.update.mockImplementation(
+        (args: { data: { config: Record<string, unknown> } }) => {
+          savedConfig = args.data.config;
+          return Promise.resolve(makeChannel({ config: args.data.config as never }));
+        },
+      );
 
       await svc.resetWebhook();
 
@@ -530,13 +489,10 @@ describe('AdminTelegramBotService', () => {
         targetUrl: string;
       };
       expect(call.token).toBe('token-plain-1234');
-      // Секрет — в пути targetWebhookUrl (32 hex после `/s/`).
       expect(call.targetUrl).toMatch(
         /^https:\/\/app\.example\.org\/api\/v1\/webhooks\/telegram-bot\/s\/[a-f0-9]{32}$/,
       );
-      // legacy setWebhook не вызывается.
       expect(m.tgSpies.setWebhook).not.toHaveBeenCalled();
-      // в config сохранены proxyBotId / proxyRegisteredAt.
       expect(savedConfig).not.toBeNull();
       const cfg = savedConfig as unknown as Record<string, unknown>;
       expect(cfg['proxyBotId']).toBe('proxy-bot-1');
@@ -544,7 +500,6 @@ describe('AdminTelegramBotService', () => {
       expect(cfg['proxyLastSyncError']).toBeNull();
       expect(typeof cfg['webhookSecret']).toBe('string');
       expect(m.metricsSpy).toHaveBeenCalledWith({ action: 'webhook_reset' });
-      // Фаза 4: pub/sub-инвалидация in-process кэша во всех нодах.
       expect(m.redisSpies.publish).toHaveBeenCalledWith(
         TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC,
         expect.stringContaining('webhook_reset'),
@@ -573,7 +528,6 @@ describe('AdminTelegramBotService', () => {
     });
 
     it('proxy disabled (legacy) → дёргается tgApi.setWebhook, upsertBot НЕ вызывается', async () => {
-      // cfg.telegramProxy.enabled = false (default makeMockServices()).
       const existing = makeChannel({
         config: {
           botToken: 'gcm:v1:enc(legacy-token-5678)',
@@ -602,9 +556,7 @@ describe('AdminTelegramBotService', () => {
     });
 
     it('токен не задан → BadRequest token_not_set', async () => {
-      m.prismaSpies.findFirst.mockResolvedValue(
-        makeChannel({ config: {} as never }),
-      );
+      m.prismaSpies.findFirst.mockResolvedValue(makeChannel({ config: {} as never }));
       const err = await svc.resetWebhook().catch((e) => e);
       const response = (err as { getResponse?: () => unknown }).getResponse?.();
       expect(response).toMatchObject({

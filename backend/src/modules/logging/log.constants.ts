@@ -1,10 +1,3 @@
-/**
- * LoggingModule — типы и нормализация runtime-настроек технического логирования.
- *
- * Источник истины поведения: plans/tz/2026-06-01-logging-module.md §3.
- * Настройки берутся из env как дефолты при старте (см. `TypedConfigService.logging`)
- * и переопределяются супер-админом через PATCH без рестарта.
- */
 import {
   SystemLogCategory,
   SystemLogContour,
@@ -12,7 +5,6 @@ import {
   SystemLogPipeline,
 } from '@prisma/client';
 
-/** Порядок уровней для сравнения «не ниже». */
 export const LOG_LEVEL_ORDER: Record<SystemLogLevel, number> = {
   DEBUG: 10,
   INFO: 20,
@@ -21,7 +13,6 @@ export const LOG_LEVEL_ORDER: Record<SystemLogLevel, number> = {
   FATAL: 50,
 };
 
-/** Все валидные значения enum'ов (для нормализации произвольного JSON). */
 const LEVEL_VALUES = Object.values(SystemLogLevel) as SystemLogLevel[];
 const CATEGORY_VALUES = Object.values(SystemLogCategory) as SystemLogCategory[];
 const CONTOUR_VALUES = Object.values(SystemLogContour) as SystemLogContour[];
@@ -31,7 +22,6 @@ const MAX_ENABLED_CATEGORIES = 20;
 const MAX_DISABLED_MODULES = 200;
 const MAX_MODULE_NAME_LEN = 128;
 
-/** Границы числовых полей — единый источник для нормализации и Zod-DTO. */
 export const LOGGING_BOUNDS = {
   batchSize: { min: 1, max: 1000 },
   flushIntervalMs: { min: 500, max: 600_000 },
@@ -40,7 +30,6 @@ export const LOGGING_BOUNDS = {
   slowRequestThresholdMs: { min: 0, max: 600_000 },
 } as const;
 
-/** Контракт runtime-настроек логирования. */
 export interface LoggingRuntimeSettings {
   dbLoggingEnabled: boolean;
   minLevel: SystemLogLevel;
@@ -53,17 +42,13 @@ export interface LoggingRuntimeSettings {
   responseBodyLogging: boolean;
   logSuccessfulRequests: boolean;
   slowRequestThresholdMs: number;
-  /** Пусто = все категории включены. */
   enabledCategories: SystemLogCategory[];
-  /** Модули, для которых логирование подавляется. */
   disabledModules: string[];
 }
 
-/** Ключ в `PlatformSetting`, под которым хранятся настройки. */
 export const LOGGING_SETTINGS_KEY = 'logging_settings';
 
-/** Имя advisory-lock-неймспейса cleanup (для pg_try_advisory_lock). */
-export const LOG_CLEANUP_LOCK_KEY = 9_021_476_315; // произвольная стабильная int-константа
+export const LOG_CLEANUP_LOCK_KEY = 9_021_476_315;
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {
   const n = typeof value === 'number' ? value : Number(value);
@@ -79,15 +64,9 @@ function asBool(value: unknown, fallback: boolean): boolean {
 }
 
 function asLevel(value: unknown, fallback: SystemLogLevel): SystemLogLevel {
-  return LEVEL_VALUES.includes(value as SystemLogLevel)
-    ? (value as SystemLogLevel)
-    : fallback;
+  return LEVEL_VALUES.includes(value as SystemLogLevel) ? (value as SystemLogLevel) : fallback;
 }
 
-/**
- * Приводит произвольный частичный/невалидный JSON к валидным настройкам поверх
- * `base`. Используется при чтении из БД и при PATCH. Никогда не бросает.
- */
 export function normalizeLoggingSettings(
   raw: unknown,
   base: LoggingRuntimeSettings,
@@ -111,16 +90,36 @@ export function normalizeLoggingSettings(
       : base.dbLoggingEnabled,
     minLevel: has('minLevel') ? asLevel(r['minLevel'], base.minLevel) : base.minLevel,
     batchSize: has('batchSize')
-      ? clampInt(r['batchSize'], LOGGING_BOUNDS.batchSize.min, LOGGING_BOUNDS.batchSize.max, base.batchSize)
+      ? clampInt(
+          r['batchSize'],
+          LOGGING_BOUNDS.batchSize.min,
+          LOGGING_BOUNDS.batchSize.max,
+          base.batchSize,
+        )
       : base.batchSize,
     flushIntervalMs: has('flushIntervalMs')
-      ? clampInt(r['flushIntervalMs'], LOGGING_BOUNDS.flushIntervalMs.min, LOGGING_BOUNDS.flushIntervalMs.max, base.flushIntervalMs)
+      ? clampInt(
+          r['flushIntervalMs'],
+          LOGGING_BOUNDS.flushIntervalMs.min,
+          LOGGING_BOUNDS.flushIntervalMs.max,
+          base.flushIntervalMs,
+        )
       : base.flushIntervalMs,
     maxBufferSize: has('maxBufferSize')
-      ? clampInt(r['maxBufferSize'], LOGGING_BOUNDS.maxBufferSize.min, LOGGING_BOUNDS.maxBufferSize.max, base.maxBufferSize)
+      ? clampInt(
+          r['maxBufferSize'],
+          LOGGING_BOUNDS.maxBufferSize.min,
+          LOGGING_BOUNDS.maxBufferSize.max,
+          base.maxBufferSize,
+        )
       : base.maxBufferSize,
     retentionDays: has('retentionDays')
-      ? clampInt(r['retentionDays'], LOGGING_BOUNDS.retentionDays.min, LOGGING_BOUNDS.retentionDays.max, base.retentionDays)
+      ? clampInt(
+          r['retentionDays'],
+          LOGGING_BOUNDS.retentionDays.min,
+          LOGGING_BOUNDS.retentionDays.max,
+          base.retentionDays,
+        )
       : base.retentionDays,
     logStackTraces: has('logStackTraces')
       ? asBool(r['logStackTraces'], base.logStackTraces)
@@ -135,7 +134,12 @@ export function normalizeLoggingSettings(
       ? asBool(r['logSuccessfulRequests'], base.logSuccessfulRequests)
       : base.logSuccessfulRequests,
     slowRequestThresholdMs: has('slowRequestThresholdMs')
-      ? clampInt(r['slowRequestThresholdMs'], LOGGING_BOUNDS.slowRequestThresholdMs.min, LOGGING_BOUNDS.slowRequestThresholdMs.max, base.slowRequestThresholdMs)
+      ? clampInt(
+          r['slowRequestThresholdMs'],
+          LOGGING_BOUNDS.slowRequestThresholdMs.min,
+          LOGGING_BOUNDS.slowRequestThresholdMs.max,
+          base.slowRequestThresholdMs,
+        )
       : base.slowRequestThresholdMs,
     enabledCategories,
     disabledModules,
@@ -170,7 +174,6 @@ function normalizeModuleList(value: unknown): string[] {
   return out;
 }
 
-/** Re-export enum-значений для удобства импорта в модуле. */
 export {
   SystemLogCategory,
   SystemLogContour,
@@ -182,13 +185,11 @@ export {
   PIPELINE_VALUES,
 };
 
-/** Вход для записи лога. Все поля кроме level/message опциональны. */
 export interface WriteLogInput {
   level: SystemLogLevel;
   message: string;
   category?: SystemLogCategory;
   contour?: SystemLogContour;
-  /** Процессный контур цепочки (pipeline). Если не задан — берётся из ctx. */
   pipeline?: SystemLogPipeline;
   module?: string;
   action?: string;
@@ -204,6 +205,5 @@ export interface WriteLogInput {
   path?: string;
   statusCode?: number;
   durationMs?: number;
-  /** Ошибка — Error или произвольное значение; нормализуется в LogService. */
   error?: unknown;
 }

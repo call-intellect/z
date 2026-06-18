@@ -2,9 +2,6 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { BudgetAlertCron } from './budget-alert.cron';
 
-/**
- * SBA α-10 wave 3 — BudgetAlertCron: triggers, anti-spam, threshold ordering.
- */
 describe('BudgetAlertCron', () => {
   const sendNotification = vi.fn(async () => ({}));
   const computeForOrg = vi.fn();
@@ -47,14 +44,7 @@ describe('BudgetAlertCron', () => {
       },
     ]);
     computeForOrg.mockResolvedValueOnce({ costRubMonthToDate: 8100 });
-    const cron = new BudgetAlertCron(
-      prisma,
-      cfg,
-      economics,
-      fx,
-      conversational,
-      metrics,
-    );
+    const cron = new BudgetAlertCron(prisma, cfg, economics, fx, conversational, metrics);
     const result = await cron.runOnce();
     expect(result.alertsSent).toBe(1);
     expect(sendNotification).toHaveBeenCalled();
@@ -72,14 +62,7 @@ describe('BudgetAlertCron', () => {
       },
     ]);
     computeForOrg.mockResolvedValueOnce({ costRubMonthToDate: 8200 });
-    const cron = new BudgetAlertCron(
-      prisma,
-      cfg,
-      economics,
-      fx,
-      conversational,
-      metrics,
-    );
+    const cron = new BudgetAlertCron(prisma, cfg, economics, fx, conversational, metrics);
     const result = await cron.runOnce();
     expect(result.alertsSent).toBe(0);
     expect(sendNotification).not.toHaveBeenCalled();
@@ -96,14 +79,7 @@ describe('BudgetAlertCron', () => {
       },
     ]);
     computeForOrg.mockResolvedValueOnce({ costRubMonthToDate: 10500 });
-    const cron = new BudgetAlertCron(
-      prisma,
-      cfg,
-      economics,
-      fx,
-      conversational,
-      metrics,
-    );
+    const cron = new BudgetAlertCron(prisma, cfg, economics, fx, conversational, metrics);
     const result = await cron.runOnce();
     expect(result.alertsSent).toBe(1);
     expect(metrics.incBudgetAlertSent).toHaveBeenCalledWith(100);

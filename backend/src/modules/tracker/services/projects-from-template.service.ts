@@ -28,24 +28,6 @@ export interface CreateFromTemplateResult {
   regulationStubsCount: number;
 }
 
-/**
- * ProjectsFromTemplateService — создание Project на основе TeamTemplate.
- *
- * Алгоритм (`POST /api/v1/projects/from-template`):
- *   1. Найти TeamTemplate по slug: сначала per-tenant, потом fallback к системному (tenantId=null).
- *   2. В транзакции:
- *      - Создать Project (с teamTemplateId).
- *      - Создать IssueState из `definition.states[]` (sequence + category).
- *      - Создать ProjectMember (userId, role=20=Admin).
- *      - Зафиксировать `defaultStateId` = первый state (sequence ASC).
- *      - Если `definition.regulationStubs.length > 0` — создать Regulation rows
- *        status='active' с name = stub, contentMd = '_заглушка, заполните позже_'.
- *      - Если `withExampleTasks=true` — создать 2-3 Issue из `definition.typicalTasks[]`.
- *      - Инкрементировать `TeamTemplate.usageCount`.
- *   3. Метрика `team_template_used_total{tenant_top, slug}`.
- *
- * Идемпотентность: если `identifier` или `slug` уже заняты в tenant → 409 ConflictException.
- */
 @Injectable()
 export class ProjectsFromTemplateService {
   private readonly logger = new Logger(ProjectsFromTemplateService.name);
@@ -64,7 +46,6 @@ export class ProjectsFromTemplateService {
   }): Promise<CreateFromTemplateResult> {
     const { tenantId, userId, dto } = args;
 
-    // 1. Найти шаблон: per-tenant → system.
     const template = await this.findTemplate({
       tenantId,
       slug: dto.templateSlug,
@@ -82,12 +63,6 @@ export class ProjectsFromTemplateService {
     const definition = this.parseDefinition(template.definition);
     const slug = dto.slug ?? dto.identifier.toLowerCase();
 
-    // 2. Проверка уникальности до транзакции — явный 409 (UX).
-    // - slug: @@unique([tenantId, slug]) — findUnique по composite.
-    // - identifier: только @@index([tenantId, identifier]) (не unique на Project уровне,
-    //   уникален в @@unique([tenantId, identifier]) на Issue). Проверяем
-    //   первый matching Project через findFirst, чтобы избежать одинаковых префиксов
-    //   у двух проектов внутри одной Org (UX-уровень, не constraint).
     const [slugTaken, identifierTaken] = await Promise.all([
       this.prisma.project.findUnique({
         where: { tenantId_slug: { tenantId, slug } },
@@ -114,11 +89,7 @@ export class ProjectsFromTemplateService {
       });
     }
 
-    // 3. Транзакция: Project + IssueState + ProjectMember + Regulations + ExampleTasks.
     const result = await this.prisma.$transaction(async (tx) => {
-      // ── Project ──
-      // timezone опц.: если frontend передал IANA TZ id — используем; иначе
-      // default 'Europe/Moscow' (совпадает со schema.prisma default).
       const project = await tx.project.create({
         data: {
           tenantId,
@@ -132,10 +103,7 @@ export class ProjectsFromTemplateService {
         },
       });
 
-      // ── States ──
-      const sortedStates = [...definition.states].sort(
-        (a, b) => a.sequence - b.sequence,
-      );
+      const sortedStates = [...definition.states].sort((a, b) => a.sequence - b.sequence);
       const firstStateKey = sortedStates[0]?.key ?? null;
       const stateIdByKey = new Map<string, string>();
       for (const state of sortedStates) {
@@ -152,10 +120,7 @@ export class ProjectsFromTemplateService {
         });
         stateIdByKey.set(state.key, created.id);
       }
-      // defaultStateId — первый state.
-      const defaultStateId = firstStateKey
-        ? stateIdByKey.get(firstStateKey) ?? null
-        : null;
+      const defaultStateId = firstStateKey ? (stateIdByKey.get(firstStateKey) ?? null) : null;
       if (defaultStateId) {
         await tx.project.update({
           where: { id: project.id },
@@ -163,16 +128,10 @@ export class ProjectsFromTemplateService {
         });
       }
 
-      // ── ProjectMember (admin) ──
       await tx.projectMember.create({
         data: { projectId: project.id, userId, role: 20 },
       });
 
-      // ── Tracker Boards (2026-05-27): default-доска ──
-      // У каждого проекта всегда есть `isDefault=true` Board. Создаём в этой
-      // же транзакции, чтобы при последующем создании задач из шаблона
-      // (ниже) у них был корректный boardId через `IssuesService` →
-      // `BoardsService.resolveDefaultBoardId`.
       await tx.board.create({
         data: {
           tenantId,
@@ -184,8 +143,6 @@ export class ProjectsFromTemplateService {
         },
       });
 
-      // ── Regulation stubs ──
-      // Префиксуем по slug проекта чтобы не конфликтовать с @@unique([tenantId, name]).
       let regulationStubsCount = 0;
       for (const stub of definition.regulationStubs) {
         const name = `${stub} — ${project.identifier}`;
@@ -204,7 +161,6 @@ export class ProjectsFromTemplateService {
         regulationStubsCount += 1;
       }
 
-      // ── Example tasks ──
       let exampleTasksCount = 0;
       if (dto.withExampleTasks && definition.typicalTasks.length > 0) {
         const examples = definition.typicalTasks.slice(0, 3);
@@ -231,7 +187,6 @@ export class ProjectsFromTemplateService {
         }
       }
 
-      // ── TeamTemplate usage counter ──
       await tx.teamTemplate.update({
         where: { id: template.id },
         data: { usageCount: { increment: 1 } },
@@ -247,7 +202,6 @@ export class ProjectsFromTemplateService {
       };
     });
 
-    // 4. Метрика.
     this.metrics?.incTeamTemplateUsed({
       tenantTop: tenantTopOf(tenantId),
       slug: template.slug,
@@ -271,22 +225,12 @@ export class ProjectsFromTemplateService {
     };
   }
 
-  // ── helpers ──
-
-  private async findTemplate(args: {
-    tenantId: string;
+  private async findTemplate(args: { tenantId: string; slug: string }): Promise<{
+    id: string;
     slug: string;
-  }): Promise<
-    | {
-        id: string;
-        slug: string;
-        description: string;
-        definition: Prisma.JsonValue;
-      }
-    | null
-  > {
-    // findFirst подходит для tenantId=null cases (findUnique с null в composite key
-    // не работает в Prisma).
+    description: string;
+    definition: Prisma.JsonValue;
+  } | null> {
     const perTenant = await this.prisma.teamTemplate.findFirst({
       where: { tenantId: args.tenantId, slug: args.slug },
       select: { id: true, slug: true, description: true, definition: true },
@@ -298,12 +242,6 @@ export class ProjectsFromTemplateService {
     });
   }
 
-  /**
-   * Распарсить definition. При невалидной структуре — кидаем NotFound с
-   * пояснением. Шаблон валидируется через safe parsing, а не через zod —
-   * данные приходят из БД (мы сами их туда seedили), потому жёсткий runtime-чек
-   * лишний. Минимальная проверка структуры: states[] не пустой.
-   */
   private parseDefinition(value: Prisma.JsonValue): TeamTemplateDefinition {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw new NotFoundException({
@@ -315,9 +253,7 @@ export class ProjectsFromTemplateService {
       });
     }
     const obj = value as Record<string, unknown>;
-    const states = Array.isArray(obj.states)
-      ? (obj.states as TeamTemplateState[])
-      : [];
+    const states = Array.isArray(obj.states) ? (obj.states as TeamTemplateState[]) : [];
     if (states.length === 0) {
       throw new NotFoundException({
         ok: false,
@@ -328,17 +264,13 @@ export class ProjectsFromTemplateService {
       });
     }
     return {
-      roles: Array.isArray(obj.roles)
-        ? (obj.roles as TeamTemplateDefinition['roles'])
-        : [],
+      roles: Array.isArray(obj.roles) ? (obj.roles as TeamTemplateDefinition['roles']) : [],
       states,
       typicalTasks: Array.isArray(obj.typicalTasks)
         ? (obj.typicalTasks as TeamTemplateTypicalTask[])
         : [],
       regulationStubs: Array.isArray(obj.regulationStubs)
-        ? (obj.regulationStubs as string[]).filter(
-            (s): s is string => typeof s === 'string',
-          )
+        ? (obj.regulationStubs as string[]).filter((s): s is string => typeof s === 'string')
         : [],
       kpiTemplates: Array.isArray(obj.kpiTemplates)
         ? (obj.kpiTemplates as TeamTemplateDefinition['kpiTemplates'])

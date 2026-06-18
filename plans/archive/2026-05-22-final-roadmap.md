@@ -1043,7 +1043,7 @@ backend/src/modules/concierge/
   - Парсинг роутов из `frontend/app/(authenticated)/`.
   - Карта агентов из `CardSpecialistRegistry` + `OrgKnowledgeIndex`.
   - RBAC ResourceType list.
-  - Глоссарий из `delivery/13-glossary.md`.
+  - Глоссарий из `second-brain/13_glossary/ui-glossary.md`.
 - Обновляется при изменении страниц / агентов / RBAC.
 
 #### Tool-use whitelist (для action режима)

@@ -37,12 +37,6 @@ const ListQuerySchema = z
 
 type ListQuery = z.infer<typeof ListQuerySchema>;
 
-/**
- * SBA β-8 — `GET /api/v1/personal-relations`.
- *
- * Read-only API над PersonalRelation (EntityLink между Person'ами). Доступ:
- * owner/admin/coo/super_admin (см. policy.csv `personal_relation.read`).
- */
 @ApiTags('personal-relations')
 @Controller('api/v1/personal-relations')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -57,7 +51,9 @@ export class PersonalRelationsController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'Список personal-relation EntityLink (фильтр по personId/relationType)' })
+  @ApiOperation({
+    summary: 'Список personal-relation EntityLink (фильтр по personId/relationType)',
+  })
   async list(
     @CurrentOrg() tenantId: string | undefined,
     @Req() req: Request,
@@ -80,16 +76,6 @@ export class PersonalRelationsController {
     });
   }
 
-  /**
-   * SBA β-8.2 — Обещания человека (исходящие + входящие).
-   * Доступ — admin/coo/owner (через RBAC commitment.read).
-   *
-   * Принимает `personId` (Person.id) ИЛИ `entityId` (Entity.id, тип `person`).
-   * Если передан только entityId — резолвим Person через `Person.entityId`.
-   * Если Person по entityId не найден — отдаём пустой результат (страница
-   * `/persons/[id]` может вызывать сюда для любой персоны, в т.ч. ещё не
-   * привязанной к учётке сотрудника).
-   */
   @Get('commitments')
   @ApiOperation({ summary: 'Обещания человека (исходящие + входящие)' })
   async commitmentsForPerson(

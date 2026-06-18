@@ -5,17 +5,6 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 
 import type { AuditLogInput, AuditLogQuery } from './audit.types';
 
-/**
- * Единая точка записи в `AuditLog`.
- *
- * Принципы:
- *   - Никогда не падает: ошибка БД логируется, не пробрасывается.
- *     Audit — observability, а не бизнес-критичная мутация.
- *   - Не блокирует основной запрос: вызывающий код делает `void audit.log(...)`
- *     или `audit.log(...).catch(() => undefined)`.
- *   - PII (raw IP, raw User-Agent с device fingerprint) — НЕ хранить.
- *     `ipHash` уже захэширован на уровне caller через `IpHashingService`.
- */
 @Injectable()
 export class AuditLogService {
   private readonly logger = new Logger(AuditLogService.name);
@@ -44,9 +33,6 @@ export class AuditLogService {
     }
   }
 
-  /**
-   * Запрос логов для admin-страницы. Сортировка — newest first.
-   */
   async query(q: AuditLogQuery): Promise<{ items: AuditLog[]; total: number }> {
     const limit = Math.min(q.limit ?? 100, 500);
     const offset = q.offset ?? 0;

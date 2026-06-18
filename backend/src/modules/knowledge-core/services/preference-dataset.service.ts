@@ -5,27 +5,6 @@ import { Counter, register } from 'prom-client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * W2.3 KC-Temporal (2026-05-25) — `PreferenceDatasetService`.
- *
- * Источник: plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §W2.3.
- *
- * Слушает `curation.decision_recorded` (emit от `CurationService.decide()` —
- * см. fix в той же фазе) и для целевых decisionType пишет `LlmPreferenceSample`.
- *
- *   - `approved` / `approve` / `approve_with_edits` → label = 'correct'
- *   - `rejected` → label = 'wrong'
- *   - `rolled_back` (если будет добавлен) → label = 'wrong'
- *   - `mark_as_misleading` → label = 'misleading'
- *
- * `inputContext` извлекаем из CurationItem.proposedPayload (best-effort —
- * там лежит то, что предложил специалист 3.x). `modelOutput` — финальный
- * payload решения куратора (нужен для оценки «куда LLM ошибся»).
- *
- * Без БД-зависимостей в hot-path: только @OnEvent + одна prisma.create.
- */
-
-/** Полезная нагрузка события `curation.decision_recorded`. */
 export interface CurationDecisionRecordedEvent {
   tenantId: string;
   curationItemId: string;
@@ -35,14 +14,10 @@ export interface CurationDecisionRecordedEvent {
   decisionType: string;
   reviewerUserId: string;
   reasoning?: string | null;
-  /** Сырой payload, который предложил специалист (= вход для следующего LLM). */
   proposedPayload?: unknown;
 }
 
-/** Маппинг decisionType → label (или null, если запись не нужна). */
-function decisionTypeToLabel(
-  decisionType: string,
-): 'correct' | 'wrong' | 'misleading' | null {
+function decisionTypeToLabel(decisionType: string): 'correct' | 'wrong' | 'misleading' | null {
   switch (decisionType) {
     case 'approve':
     case 'approved':
@@ -59,7 +34,6 @@ function decisionTypeToLabel(
   }
 }
 
-/** taskType определяем из resourceType — мост между Curation и LLM router. */
 function resourceTypeToTaskType(resourceType: string): string {
   switch (resourceType) {
     case 'decision':
@@ -96,17 +70,43 @@ export class PreferenceDatasetService {
   }
 
   @OnEvent('curation.decision_recorded')
-  async onDecisionRecorded(
-    event: CurationDecisionRecordedEvent,
-  ): Promise<void> {
+  async onDecisionRecorded(event: CurationDecisionRecordedEvent): Promise<void> {
     try {
       const label = decisionTypeToLabel(event.decisionType);
-      if (!label) return; // escalate / merge_categories / unknown — пропускаем.
+      if (!label) return;
 
       if (!event.tenantId || !event.resourceType || !event.resourceId) {
         return;
       }
       const taskType = resourceTypeToTaskType(event.resourceType);
+
+      // G7 дедуп: событие `curation.decision_recorded` может прийти повторно
+      // (ретрай эмиттера/воркера) → без guard'а получим дубль-sample. У модели
+      // LlmPreferenceSample нет @unique, поэтому findFirst перед create.
+      //   - есть curationDecisionId → один sample на curation-решение
+      //     (decisionId — естественный ключ-источник);
+      //   - нет id решения → fallback по (tenantId, taskType, resourceId, label).
+      const dedupWhere: Prisma.LlmPreferenceSampleWhereInput =
+        event.curationDecisionId
+          ? { tenantId: event.tenantId, decisionId: event.curationDecisionId }
+          : {
+              tenantId: event.tenantId,
+              taskType,
+              label,
+              modelOutput: {
+                path: ['resourceId'],
+                equals: event.resourceId,
+              },
+            };
+      const existing = await this.prisma.llmPreferenceSample.findFirst({
+        where: dedupWhere,
+        select: { id: true },
+      });
+      if (existing) {
+        // Повтор события — sample уже записан, no-op.
+        return;
+      }
+
       const inputContext = (event.proposedPayload ?? {}) as Prisma.InputJsonValue;
       const modelOutput: Prisma.InputJsonValue = {
         decisionType: event.decisionType,
@@ -138,10 +138,6 @@ export class PreferenceDatasetService {
     }
   }
 
-  /**
-   * Экспорт сэмплов в формате JSONL (для retraining'а few-shot'ов).
-   * Используется admin-endpoint'ом и offline-скриптами.
-   */
   async exportJsonl(args: {
     taskType?: string;
     label?: string;
@@ -153,12 +149,6 @@ export class PreferenceDatasetService {
     return items.map((s) => JSON.stringify(s)).join('\n');
   }
 
-  /**
-   * Структурированный список сэмплов (для admin-UI `/admin/ai/preference-dataset`).
-   * В отличие от exportJsonl возвращает массив, а не строку — UI рендерит таблицу
-   * + позволяет фильтровать. Дефолтный лимит ниже (200), потому что UI не должен
-   * грузить десятки тысяч записей.
-   */
   async listItems(args: {
     taskType?: string;
     label?: string;
@@ -206,11 +196,6 @@ export class PreferenceDatasetService {
     }));
   }
 
-  /**
-   * Сводка для дашборда `/admin/ai/preference-dataset` — счётчики по
-   * `(taskType, label)` за период, плюс глобальный total. Хорошая «первая
-   * картинка» при открытии страницы.
-   */
   async stats(args: { from?: Date; to?: Date }): Promise<{
     total: number;
     byLabel: Record<string, number>;

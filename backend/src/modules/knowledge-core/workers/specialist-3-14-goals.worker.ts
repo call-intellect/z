@@ -7,34 +7,13 @@ import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { RouterService } from '../services/router.service';
 import { Specialist314GoalsService } from '../services/specialist-3-14-goals.service';
 
-/**
- * Goals OKR v2 (2026-06-02, Фаза 2) — Specialist 3-14 (Goals) — handler
- * `core.specialist-routing` с jobName='3-14-goals'.
- *
- * Вызывается из `SpecialistRoutingDispatcherWorker.dispatch`, когда на очередь
- * `core.specialist-routing` приходит job с jobName='3-14-goals' (диспатч из
- * `RouterService.dispatch` для блоков `signalType ∈ { 'commitment', 'plan_item' }`).
- * Маршрутизацию по jobName делает диспетчер — этому handler'у достаются только
- * «свои» jobs.
- *
- * Логика делегируется в `Specialist314GoalsService.processBlock`
- * (extract → KNN → hierarchy-арбитр → create Goal + опц. KR).
- *
- * Метрики:
- *   - `core_specialist_pipeline_duration_seconds{type='goal'}`.
- */
 @Injectable()
 export class Specialist314GoalsWorker {
   private readonly logger = new Logger(Specialist314GoalsWorker.name);
 
-  /** Имя специалиста (ключ маршрутизации диспетчера). Совпадает с RouterService.SPECIALIST.GOALS. */
   static readonly SPECIALIST_NAME = RouterService.SPECIALIST.GOALS;
 
-  /** signalType'ы, которые обрабатывает этот специалист. */
-  static readonly ALLOWED_SIGNAL_TYPES: ReadonlySet<string> = new Set([
-    'commitment',
-    'plan_item',
-  ]);
+  static readonly ALLOWED_SIGNAL_TYPES: ReadonlySet<string> = new Set(['commitment', 'plan_item']);
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -97,7 +76,7 @@ export class Specialist314GoalsWorker {
 
       await this.svc.processBlock({ tenantId, blockId });
 
-      this.logger.log(
+      this.logger.debug(
         { blockId, signalType: block.signalType },
         'specialist-3-14: блок обработан',
       );

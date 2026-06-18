@@ -1,21 +1,17 @@
-'use client';
+"use client";
 
-/**
- * Фаза A.2 — `PromptVersionsTab` — список версий с возможностью активации.
- */
-
-import { useState } from 'react';
-import { CheckCircle2, Loader2 } from 'lucide-react';
+import { useState } from "react";
+import { CheckCircle2, Loader2 } from "lucide-react";
 
 import {
   adminPromptTemplatesApi,
   type PromptVersionApi,
-} from '@/api/admin-prompt-templates.api';
-import { ApiError } from '@/api/api-error';
-import { toast } from 'sonner';
-import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/api/admin-prompt-templates.api";
+import { ApiError } from "@/api/api-error";
+import { toast } from "sonner";
+import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 
 export function PromptVersionsTab({
   templateId,
@@ -28,24 +24,24 @@ export function PromptVersionsTab({
   activeVersionId: string | null;
   onActivated: () => void;
 }) {
-
   const [activating, setActivating] = useState<string | null>(null);
   const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const activate = async (versionId: string) => {
     const ok = await ask({
-      title: 'Активировать эту версию?',
-      description: 'Все новые встречи начнут использовать её для генерации отчётов.',
-      confirmLabel: 'Активировать',
+      title: "Активировать эту версию?",
+      description:
+        "Все новые встречи начнут использовать её для генерации отчётов.",
+      confirmLabel: "Активировать",
     });
     if (!ok) return;
     setActivating(versionId);
     try {
       await adminPromptTemplatesApi.activateVersion(templateId, versionId);
-      toast.success('Версия активирована');
+      toast.success("Версия активирована");
       onActivated();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось активировать';
+      const msg = e instanceof ApiError ? e.message : "Не удалось активировать";
       toast.error(msg);
     } finally {
       setActivating(null);
@@ -81,7 +77,9 @@ export function PromptVersionsTab({
               <tr key={v.id} className="border-t border-border-subtle">
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-fg-primary">Версия №{v.versionNumber}</span>
+                    <span className="font-medium text-fg-primary">
+                      Версия №{v.versionNumber}
+                    </span>
                     {isActive && (
                       <Badge
                         variant="outline"
@@ -93,9 +91,11 @@ export function PromptVersionsTab({
                   </div>
                 </td>
                 <td className="px-3 py-2 text-fg-secondary">
-                  {new Date(v.createdAt).toLocaleString('ru-RU')}
+                  {new Date(v.createdAt).toLocaleString("ru-RU")}
                 </td>
-                <td className="px-3 py-2 text-fg-secondary">{v.notes ?? '—'}</td>
+                <td className="px-3 py-2 text-fg-secondary">
+                  {v.notes ?? "—"}
+                </td>
                 <td className="px-3 py-2 text-right">
                   {isActive ? (
                     <span className="text-xs text-fg-secondary">текущая</span>

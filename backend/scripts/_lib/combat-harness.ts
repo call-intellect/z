@@ -1,21 +1,3 @@
-/**
- * combat-harness — общие хелперы для боевого e2e-теста knowledge-core на
- * синтетике (см. plans/tz/2026-06-04-combat-test-harness.md).
- *
- * Внешний инжектор + поллер: НЕ поднимает свой Nest-контекст (иначе второй раз
- * зарегистрирует те же BullMQ-воркеры, что и запущенный backend, и будет
- * конкурировать за jobs). Пишет RawEvent/Meeting через Prisma и кладёт jobs в
- * Redis теми же jobId/именами, что прод-код (enqueueRawReceived → core.raw-events,
- * jobId `raw_<id>`), а обработку делает уже запущенный backend-процесс.
- *
- * Безопасность:
- *   - PrismaClient ТОЛЬКО через createPrismaClient() (Prisma 7 driver adapter).
- *   - Жёсткий prod-guard: отказ бить в не-localhost без ALLOW_PROD=1.
- *   - Все сущности под одной синтетической Org → teardown каскадом.
- *
- * Исполняется Bun напрямую: `bun run scripts/smoke-pipeline-e2e.ts`.
- */
-
 import { createHash, randomBytes } from 'node:crypto';
 
 import { Prisma, type PrismaClient } from '@prisma/client';
@@ -23,8 +5,6 @@ import { Queue } from 'bullmq';
 import IORedis, { type Redis } from 'ioredis';
 
 import { createPrismaClient } from './prisma';
-
-// ───────────────────────── env / config ────────────────────────────
 
 export type HarnessMode = 'direct' | 'http' | 'both';
 
@@ -40,7 +20,6 @@ export interface HarnessConfig {
   voxLive: boolean;
   keepTenant: boolean;
   allowProd: boolean;
-  /** 'audit' — known-bug FAIL не роняет exit; 'gate' — любой FAIL роняет. */
   runMode: 'audit' | 'gate';
 }
 
@@ -83,8 +62,6 @@ export function readConfig(argv: string[] = process.argv.slice(2)): HarnessConfi
   };
 }
 
-// ───────────────────────── prod guard ──────────────────────────────────
-
 const LOCAL_HOSTS = new Set([
   'localhost',
   '127.0.0.1',
@@ -94,36 +71,30 @@ const LOCAL_HOSTS = new Set([
   'host.docker.internal',
 ]);
 
-/** Грубая эвристика приватного диапазона (для docker/LAN dev). */
 function isPrivateHost(host: string): boolean {
   if (LOCAL_HOSTS.has(host)) return true;
   if (/^10\./.test(host)) return true;
   if (/^192\.168\./.test(host)) return true;
   if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(host)) return true;
-  // короткое docker-service-имя без точек — считаем внутренним.
   if (!host.includes('.')) return true;
   return false;
 }
 
 function hostOf(urlLike: string): string | null {
   try {
-    // postgres://user:pass@host:port/db — URL парсит.
     return new URL(urlLike).hostname.toLowerCase();
   } catch {
     return null;
   }
 }
 
-/** Бросает, если цель похожа на прод и нет ALLOW_PROD=1. */
 export function assertNotProd(cfg: HarnessConfig): void {
   if (cfg.allowProd) {
     // eslint-disable-next-line no-console
     console.warn('⚠ ALLOW_PROD=1 — prod-guard отключён осознанно.');
     return;
   }
-  const targets = [cfg.databaseUrl, cfg.redisUrl, cfg.baseUrl].filter(
-    (x): x is string => !!x,
-  );
+  const targets = [cfg.databaseUrl, cfg.redisUrl, cfg.baseUrl].filter((x): x is string => !!x);
   for (const t of targets) {
     const host = hostOf(t);
     if (!host) continue;
@@ -136,8 +107,6 @@ export function assertNotProd(cfg: HarnessConfig): void {
     }
   }
 }
-
-// ───────────────────────── infra factories ─────────────────────────
 
 export interface HarnessInfra {
   prisma: PrismaClient;
@@ -164,8 +133,6 @@ export function makeInfra(cfg: HarnessConfig): HarnessInfra {
   };
 }
 
-// ───────────────────────── synthetic tenant ────────────────────────
-
 export interface SyntheticTenant {
   tag: string;
   userId: string;
@@ -173,13 +140,7 @@ export interface SyntheticTenant {
   personId: string;
 }
 
-/**
- * Создаёт User + Org + Membership(owner) + Person(linked userId).
- * Person с заполненным userId — чтобы проверять и no_person-симптом (#7).
- */
-export async function bootstrapTenant(
-  prisma: PrismaClient,
-): Promise<SyntheticTenant> {
+export async function bootstrapTenant(prisma: PrismaClient): Promise<SyntheticTenant> {
   const tag = `cmbt-${randomBytes(3).toString('hex')}`;
   const user = await prisma.user.create({
     data: {
@@ -213,17 +174,8 @@ export async function bootstrapTenant(
   return { tag, userId: user.id, orgId: org.id, personId: person.id };
 }
 
-/**
- * Teardown в FK-порядке (дети → Org → User). Идемпотентно: deleteMany не падает
- * на пустых таблицах. CASCADE Org покрывает большинство knowledge-core моделей,
- * но явно чистим то, что может ссылаться извне или каскадиться по rawEvent.
- */
-export async function teardownTenant(
-  prisma: PrismaClient,
-  t: SyntheticTenant,
-): Promise<void> {
+export async function teardownTenant(prisma: PrismaClient, t: SyntheticTenant): Promise<void> {
   const tenantId = t.orgId;
-  // Связи блоков/сущностей.
   await prisma.ideaBlockEntity
     .deleteMany({ where: { block: { tenantId } } })
     .catch(() => undefined);
@@ -232,7 +184,6 @@ export async function teardownTenant(
     .catch(() => undefined);
   await prisma.ideaBlockLink.deleteMany({ where: { tenantId } }).catch(() => undefined);
   await prisma.entityLink.deleteMany({ where: { tenantId } }).catch(() => undefined);
-  // Проекции/типизированные сущности (CASCADE Org обычно покрывает, но явно — надёжнее).
   for (const del of [
     () => prisma.decision.deleteMany({ where: { tenantId } }),
     () => prisma.insight.deleteMany({ where: { tenantId } }),
@@ -263,18 +214,14 @@ export async function teardownTenant(
   await prisma.user.delete({ where: { id: t.userId } }).catch(() => undefined);
 }
 
-// ───────────────────────── ingest primitives ───────────────────────
-
 export function sha256Hex(s: string): string {
   return createHash('sha256').update(s, 'utf8').digest('hex');
 }
 
-/** Псевдо-ULID для Meeting.id (Meeting.id назначается сервисом, не @default). */
 export function pseudoUlid(): string {
   return `cmbt${Date.now().toString(36)}${randomBytes(6).toString('hex')}`.toUpperCase();
 }
 
-/** lazy-upsert Source по @@unique([tenantId,type,name]). */
 export async function upsertSource(
   prisma: PrismaClient,
   args: { tenantId: string; type: string; name: string },
@@ -283,7 +230,6 @@ export async function upsertSource(
     where: {
       tenantId_type_name: {
         tenantId: args.tenantId,
-        // Source.type — enum SourceType; строковые литералы валидны для известных значений.
         type: args.type as never,
         name: args.name,
       },
@@ -301,11 +247,6 @@ export async function upsertSource(
   return s;
 }
 
-/**
- * Прямой вброс RawEvent + enqueue в core.raw-events ровно как IngestService:
- *   idempotencyKey = sha256(sourceId : (externalId ?? checksum) : occurredAtIso)
- *   jobId = `raw_<rawEventId>` ('_' вместо ':', BullMQ 5.x запрет на ':').
- */
 export async function injectRawEventDirect(
   infra: HarnessInfra,
   args: {
@@ -355,18 +296,13 @@ export async function injectRawEventDirect(
     );
     return { rawEventId: created.id, idempotent: false };
   } catch (err) {
-    if (
-      err instanceof Prisma.PrismaClientKnownRequestError &&
-      err.code === 'P2002'
-    ) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       const ex = await prisma.rawEvent.findUnique({ where: { idempotencyKey } });
       if (ex) return { rawEventId: ex.id, idempotent: true };
     }
     throw err;
   }
 }
-
-// ───────────────────────── http client ──────────────────────────────
 
 export interface HttpResult {
   ok: boolean;
@@ -375,7 +311,6 @@ export interface HttpResult {
   error?: string;
 }
 
-/** Тонкий fetch-обёртка. Возвращает {ok,status,body} без throw на не-2xx. */
 export async function httpPost(
   cfg: HarnessConfig,
   path: string,
@@ -417,8 +352,6 @@ export async function httpPost(
   }
 }
 
-// ───────────────────────── verification ───────────────────────────
-
 export interface TenantCounts {
   rawEvent: number;
   rawEventProcessed: number;
@@ -444,10 +377,7 @@ export interface TenantCounts {
   intakeIssue: number;
 }
 
-export async function loadCounts(
-  prisma: PrismaClient,
-  tenantId: string,
-): Promise<TenantCounts> {
+export async function loadCounts(prisma: PrismaClient, tenantId: string): Promise<TenantCounts> {
   const [
     rawEvent,
     rawEventProcessed,
@@ -524,18 +454,13 @@ export async function loadCounts(
 }
 
 export function typedGroupBTotal(c: TenantCounts): number {
-  return (
-    c.decision + c.process + c.regulation + c.policy + c.tool + c.metric
-  );
+  return c.decision + c.process + c.regulation + c.policy + c.tool + c.metric;
 }
 
 export function terminalProjectionTotal(c: TenantCounts): number {
   return c.decision + c.insight + c.idea + c.experiment;
 }
 
-/**
- * Поллинг до выполнения предиката или таймаута. Возвращает финальные счётчики.
- */
 export async function pollUntil(
   prisma: PrismaClient,
   tenantId: string,
@@ -557,23 +482,13 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// ───────────────────────── AGE probe ─────────────────────────────────
-
 export interface AgeProbe {
   available: boolean;
   nodeCount: number | null;
   error: string | null;
 }
 
-/**
- * Проба AGE: считает узлы графа для тенанта. Ловит баг cypher/AGE (#3/#11/#12):
- * 42883 'function cypher does not exist' / отсутствие search_path → available=false.
- * Пробуем сначала квалифицированный ag_catalog.cypher (надёжнее), затем голый.
- */
-export async function probeAge(
-  prisma: PrismaClient,
-  tenantId: string,
-): Promise<AgeProbe> {
+export async function probeAge(prisma: PrismaClient, tenantId: string): Promise<AgeProbe> {
   const variants = [
     `SELECT count(*)::text AS c FROM ag_catalog.cypher('z_graph', $$ MATCH (n) WHERE n.tenant_id = '${tenantId}' RETURN n $$) AS (n agtype)`,
     `SELECT count(*)::text AS c FROM cypher('z_graph', $$ MATCH (n) WHERE n.tenant_id = '${tenantId}' RETURN n $$) AS (n agtype)`,
@@ -590,8 +505,6 @@ export async function probeAge(
   }
   return { available: false, nodeCount: null, error: lastErr };
 }
-
-// ───────────────────────── matrix render ───────────────────────────
 
 export type CellStatus = 'PASS' | 'FAIL' | 'SKIP' | 'N/A';
 
@@ -646,18 +559,13 @@ export function renderMatrix(rows: ChannelRow[]): string {
   return lines.join('\n');
 }
 
-/** В gate-режиме любой FAIL роняет exit; в audit — только не-known FAIL. */
-export function computeExitCode(
-  rows: ChannelRow[],
-  runMode: 'audit' | 'gate',
-): number {
+export function computeExitCode(rows: ChannelRow[], runMode: 'audit' | 'gate'): number {
   for (const row of rows) {
     for (const col of NODE_COLUMNS) {
       const cell = row.cells[col];
       if (!cell) continue;
       if (cell.status !== 'FAIL') continue;
       if (runMode === 'gate') return 1;
-      // audit: known-bug FAIL не роняет (помечается note 'known bug …').
       if (!cell.note?.toLowerCase().includes('known')) return 1;
     }
   }

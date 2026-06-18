@@ -6,13 +6,13 @@ date: 2026-06-09
 snapshot_date: 2026-06-09
 owner: Сергей (sergrv80@gmail.com)
 related:
-  - plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md
+  - plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md
   - second-brain/01_projects/conversational-channels.md
   - second-brain/02_architecture/knowledge-core.md
   - docs/operations/feature-flags.md
 ---
 > Цель разбора: спроектировать встроенную в продукт «Кора» службу поддержки клиентов (вендорскую техподдержку) с AI-клоном техподдержки, обучающимся на правках человека, и закрытым контуром памяти — на наших наработках. Snapshot: 2026-06-09.
-> Следующий шаг → ТЗ: plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md
+> Следующий шаг → ТЗ: plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md
 
 ---
 

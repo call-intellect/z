@@ -5,11 +5,11 @@ feature: Specialist 3.8 — Агент-помощник (Helpfulness Specialist)
 date: 2026-05-23
 parent: plans/analysis/2026-05-23-product-overview-simple.md
 related:
-  - plans/tz/2026-05-23-gamification-and-motivation.md
-  - plans/tz/2026-05-23-activity-feeds.md
+  - plans/archive/2026-05-23-gamification-and-motivation.md
+  - plans/archive/2026-05-23-activity-feeds.md
   - plans/tz/2026-05-23-sba-beta-2-specialist-3-2-knowledge-clone.md
   - plans/tz/2026-05-23-sba-gamma-1-specialist-3-7-skill-and-clone.md
-  - plans/tz/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md
+  - plans/archive/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md
 ---
 
 # Specialist 3.8 — Агент-помощник (Helpfulness Specialist)

@@ -1,23 +1,6 @@
-'use client';
+"use client";
 
-/**
- * `/settings/subscription` — кабинет подписки (Фаза 3 paywall-no-trial).
- *
- * Что показываем:
- *   - DEMO hero: крупный заголовок «Оплатите подписку, чтобы начать работу»
- *     + конфигуратор (период + места) + CTA-кнопки.
- *   - ACTIVE: текущая подписка + баланс + продление.
- *   - SUSPENDED/EXPIRED/CANCELED: статус + CTA на возобновление.
- *   - Конфигуратор: toggle месяц/год, slider мест 31-100, live-расчёт через
- *     billingApi.getQuote().
- *   - Инвойсы (таблица с PDF).
- *
- * Все суммы — копейки → форматируются через formatRubles.
- *
- * ТЗ: plans/tz/2026-05-28-paywall-no-trial.md §5.
- */
-
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Calendar,
@@ -32,11 +15,14 @@ import {
   Sparkles,
   Users,
   Video,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { billingApi } from '@/api/billing.api';
-import type { BillingPeriodApi, SubscriptionStatusApi } from '@/api/types/billing';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { billingApi } from "@/api/billing.api";
+import type {
+  BillingPeriodApi,
+  SubscriptionStatusApi,
+} from "@/api/types/billing";
 import {
   billingPeriodLabel,
   formatRubles,
@@ -51,14 +37,12 @@ import {
   type MeetingsBalanceDomain,
   type QuoteDomain,
   type SubscriptionDomain,
-} from '@/domain/billing';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Card } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { Slider } from '@/ui/shadcn/slider';
-
-// ────────────────────────── Constants ──────────────────────────
+} from "@/domain/billing";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Card } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { Slider } from "@/ui/shadcn/slider";
 
 const BASE_SEATS = 31;
 const MIN_SEATS = BASE_SEATS;
@@ -66,23 +50,23 @@ const MAX_SEATS = 100;
 const STEP = 1;
 
 const DEMO_FEATURES = [
-  '150 видеовстреч в месяц',
+  "150 видеовстреч в месяц",
   `${BASE_SEATS} мест для пользователей`,
-  'Безлимитные проекты и задачи',
-  'Отчёты Коры и граф знаний',
-  'Клоны сотрудников',
-  'Все интеграции',
+  "Безлимитные проекты и задачи",
+  "Отчёты Коры и граф знаний",
+  "Клоны сотрудников",
+  "Все интеграции",
 ];
 
-// ────────────────────────── Main ──────────────────────────
-
 export function SubscriptionClient() {
-  const [subscription, setSubscription] = useState<SubscriptionDomain | null>(null);
+  const [subscription, setSubscription] = useState<SubscriptionDomain | null>(
+    null,
+  );
   const [balance, setBalance] = useState<MeetingsBalanceDomain | null>(null);
   const [invoices, setInvoices] = useState<InvoiceDomain[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [payLoading, setPayLoading] = useState<'card' | 'bank' | null>(null);
+  const [payLoading, setPayLoading] = useState<"card" | "bank" | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -97,8 +81,7 @@ export function SubscriptionClient() {
       setBalance(meetingsBalanceFromApi(balRes));
       setInvoices(invRes.items.map(invoiceFromApi));
     } catch (e) {
-      const message =
-        humanizeApiError(e, 'Не удалось загрузить данные');
+      const message = humanizeApiError(e, "Не удалось загрузить данные");
       setError(message);
     } finally {
       setLoading(false);
@@ -109,8 +92,11 @@ export function SubscriptionClient() {
     void loadData();
   }, [loadData]);
 
-  const handlePayCard = async (period: BillingPeriodApi, seatsExtra: number) => {
-    setPayLoading('card');
+  const handlePayCard = async (
+    period: BillingPeriodApi,
+    seatsExtra: number,
+  ) => {
+    setPayLoading("card");
     try {
       const result = await billingApi.payCard({
         billingPeriod: period,
@@ -121,18 +107,20 @@ export function SubscriptionClient() {
         window.location.href = result.paymentUrl;
         return;
       }
-      setError('Платёжная ссылка не получена. Свяжитесь с поддержкой.');
+      setError("Платёжная ссылка не получена. Свяжитесь с поддержкой.");
     } catch (e) {
-      const message =
-        humanizeApiError(e, 'Не удалось создать платёж');
+      const message = humanizeApiError(e, "Не удалось создать платёж");
       setError(message);
     } finally {
       setPayLoading(null);
     }
   };
 
-  const handlePayBankInvoice = async (period: BillingPeriodApi, seatsExtra: number) => {
-    setPayLoading('bank');
+  const handlePayBankInvoice = async (
+    period: BillingPeriodApi,
+    seatsExtra: number,
+  ) => {
+    setPayLoading("bank");
     try {
       const result = await billingApi.payBankInvoice({
         billingPeriod: period,
@@ -145,20 +133,20 @@ export function SubscriptionClient() {
         setError(null);
       }
     } catch (e) {
-      const message =
-        humanizeApiError(e, 'Не удалось выставить счёт');
+      const message = humanizeApiError(e, "Не удалось выставить счёт");
       setError(message);
     } finally {
       setPayLoading(null);
     }
   };
 
-  const isDemo = subscription?.status === 'DEMO' || subscription === null;
-  const isActive = subscription?.status === 'ACTIVE';
-  const isBlocked = subscription?.status === 'SUSPENDED'
-    || subscription?.status === 'EXPIRED'
-    || subscription?.status === 'CANCELED'
-    || subscription?.status === 'PAST_DUE';
+  const isDemo = subscription?.status === "DEMO" || subscription === null;
+  const isActive = subscription?.status === "ACTIVE";
+  const isBlocked =
+    subscription?.status === "SUSPENDED" ||
+    subscription?.status === "EXPIRED" ||
+    subscription?.status === "CANCELED" ||
+    subscription?.status === "PAST_DUE";
 
   if (loading) {
     return (
@@ -172,7 +160,9 @@ export function SubscriptionClient() {
 
   return (
     <div className="space-y-6 p-6 max-w-5xl">
-      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
+      {error && (
+        <ErrorBanner message={error} onDismiss={() => setError(null)} />
+      )}
 
       {isDemo && (
         <DemoHero
@@ -207,8 +197,6 @@ export function SubscriptionClient() {
   );
 }
 
-// ────────────────────────── DEMO Hero (3.1 + 3.2 + 3.3) ──────────────────────────
-
 function DemoHero({
   onPayCard,
   onPayBankInvoice,
@@ -216,9 +204,9 @@ function DemoHero({
 }: {
   onPayCard: (period: BillingPeriodApi, seatsExtra: number) => void;
   onPayBankInvoice: (period: BillingPeriodApi, seatsExtra: number) => void;
-  payLoading: 'card' | 'bank' | null;
+  payLoading: "card" | "bank" | null;
 }) {
-  const [period, setPeriod] = useState<BillingPeriodApi>('monthly');
+  const [period, setPeriod] = useState<BillingPeriodApi>("monthly");
   const [seats, setSeats] = useState(BASE_SEATS);
   const seatsExtra = Math.max(0, seats - BASE_SEATS);
 
@@ -255,7 +243,10 @@ function DemoHero({
             </h3>
             <ul className="space-y-2">
               {DEMO_FEATURES.map((f) => (
-                <li key={f} className="flex items-center gap-2 text-sm text-fg-secondary">
+                <li
+                  key={f}
+                  className="flex items-center gap-2 text-sm text-fg-secondary"
+                >
                   <Check size={16} className="shrink-0 text-success" />
                   {f}
                 </li>
@@ -271,7 +262,7 @@ function DemoHero({
               onClick={() => onPayCard(period, seatsExtra)}
               data-testid="pay-card-btn"
             >
-              {payLoading === 'card' ? (
+              {payLoading === "card" ? (
                 <Loader2 size={16} className="animate-spin" />
               ) : (
                 <CreditCard size={16} />
@@ -286,7 +277,7 @@ function DemoHero({
               onClick={() => onPayBankInvoice(period, seatsExtra)}
               data-testid="pay-bank-btn"
             >
-              {payLoading === 'bank' ? (
+              {payLoading === "bank" ? (
                 <Loader2 size={16} className="animate-spin" />
               ) : (
                 <FileText size={16} />
@@ -297,7 +288,8 @@ function DemoHero({
 
           {seatsExtra > 0 && (
             <p className="text-center text-xs text-fg-tertiary">
-              Доп. места: +1 000 ₽/мес за каждого пользователя сверх {BASE_SEATS}
+              Доп. места: +1 000 ₽/мес за каждого пользователя сверх{" "}
+              {BASE_SEATS}
             </p>
           )}
         </div>
@@ -305,8 +297,6 @@ function DemoHero({
     </div>
   );
 }
-
-// ────────────────────────── Pricing Configurator (3.2 + 3.3) ──────────────────────────
 
 function PricingConfigurator({
   period,
@@ -330,35 +320,42 @@ function PricingConfigurator({
   return (
     <Card className="p-6 space-y-6" data-testid="pricing-configurator">
       <div>
-        <h2 className="text-lg font-semibold text-fg-primary">Настройте подписку</h2>
-        <p className="text-sm text-fg-tertiary">Выберите период и количество мест</p>
+        <h2 className="text-lg font-semibold text-fg-primary">
+          Настройте подписку
+        </h2>
+        <p className="text-sm text-fg-tertiary">
+          Выберите период и количество мест
+        </p>
       </div>
 
-      {/* Period toggle (3.2) */}
+      {}
       <div>
         <label className="mb-2 block text-sm font-medium text-fg-secondary">
           Период оплаты
         </label>
-        <div className="flex rounded-lg border border-border-subtle p-1" data-testid="period-toggle">
+        <div
+          className="flex rounded-lg border border-border-subtle p-1"
+          data-testid="period-toggle"
+        >
           <button
             type="button"
             className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              period === 'monthly'
-                ? 'bg-accent text-accent-fg shadow-sm'
-                : 'text-fg-secondary hover:text-fg-primary'
+              period === "monthly"
+                ? "bg-accent text-accent-fg shadow-sm"
+                : "text-fg-secondary hover:text-fg-primary"
             }`}
-            onClick={() => onPeriodChange('monthly')}
+            onClick={() => onPeriodChange("monthly")}
           >
             Месяц
           </button>
           <button
             type="button"
             className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              period === 'yearly'
-                ? 'bg-accent text-accent-fg shadow-sm'
-                : 'text-fg-secondary hover:text-fg-primary'
+              period === "yearly"
+                ? "bg-accent text-accent-fg shadow-sm"
+                : "text-fg-secondary hover:text-fg-primary"
             }`}
-            onClick={() => onPeriodChange('yearly')}
+            onClick={() => onPeriodChange("yearly")}
           >
             Год
             <span className="ml-1.5 inline-block rounded bg-success/20 px-1.5 py-0.5 text-[10px] font-semibold text-success">
@@ -368,13 +365,16 @@ function PricingConfigurator({
         </div>
       </div>
 
-      {/* Seats slider (3.3) */}
+      {}
       <div>
         <div className="mb-2 flex items-baseline justify-between">
           <label className="text-sm font-medium text-fg-secondary">
             Количество мест
           </label>
-          <span className="text-lg font-bold tabular-nums text-fg-primary" data-testid="seats-count">
+          <span
+            className="text-lg font-bold tabular-nums text-fg-primary"
+            data-testid="seats-count"
+          >
             {seats}
           </span>
         </div>
@@ -391,25 +391,38 @@ function PricingConfigurator({
           <span>{MAX_SEATS}</span>
         </div>
         {seatsExtra > 0 && (
-          <p className="mt-1 text-xs text-fg-tertiary" data-testid="extra-seats-note">
-            {seatsExtra} доп. {seatsExtra === 1 ? 'место' : seatsExtra < 5 ? 'места' : 'мест'} × 1 000 ₽/мес
+          <p
+            className="mt-1 text-xs text-fg-tertiary"
+            data-testid="extra-seats-note"
+          >
+            {seatsExtra} доп.{" "}
+            {seatsExtra === 1 ? "место" : seatsExtra < 5 ? "места" : "мест"} × 1
+            000 ₽/мес
           </p>
         )}
       </div>
 
-      {/* Price summary */}
+      {}
       <div className="rounded-lg border border-border-subtle bg-bg-elevated p-4 space-y-2">
         <div className="flex items-baseline justify-between">
           <span className="text-sm text-fg-secondary">В месяц:</span>
-          <span className="text-2xl font-bold tabular-nums text-fg-primary" data-testid="price-monthly">
-            {monthlyRubles !== null ? `${monthlyRubles.toLocaleString('ru-RU')} ₽` : '—'}
+          <span
+            className="text-2xl font-bold tabular-nums text-fg-primary"
+            data-testid="price-monthly"
+          >
+            {monthlyRubles !== null
+              ? `${monthlyRubles.toLocaleString("ru-RU")} ₽`
+              : "—"}
           </span>
         </div>
-        {period === 'yearly' && periodRubles !== null && (
+        {period === "yearly" && periodRubles !== null && (
           <div className="flex items-baseline justify-between">
             <span className="text-sm text-fg-secondary">За год:</span>
-            <span className="text-lg font-semibold tabular-nums text-fg-primary" data-testid="price-period">
-              {periodRubles.toLocaleString('ru-RU')} ₽
+            <span
+              className="text-lg font-semibold tabular-nums text-fg-primary"
+              data-testid="price-period"
+            >
+              {periodRubles.toLocaleString("ru-RU")} ₽
             </span>
           </div>
         )}
@@ -417,7 +430,7 @@ function PricingConfigurator({
           <div className="flex items-baseline justify-between text-success">
             <span className="text-sm">Экономия:</span>
             <span className="text-sm font-medium" data-testid="price-discount">
-              {discountRubles.toLocaleString('ru-RU')} ₽
+              {discountRubles.toLocaleString("ru-RU")} ₽
             </span>
           </div>
         )}
@@ -425,8 +438,6 @@ function PricingConfigurator({
     </Card>
   );
 }
-
-// ────────────────────────── Blocked Hero (SUSPENDED/EXPIRED/CANCELED) ──────────────────────────
 
 function BlockedHero({
   status,
@@ -437,25 +448,26 @@ function BlockedHero({
   status: SubscriptionStatusApi;
   onPayCard: (period: BillingPeriodApi, seatsExtra: number) => void;
   onPayBankInvoice: (period: BillingPeriodApi, seatsExtra: number) => void;
-  payLoading: 'card' | 'bank' | null;
+  payLoading: "card" | "bank" | null;
 }) {
-  const [period, setPeriod] = useState<BillingPeriodApi>('monthly');
+  const [period, setPeriod] = useState<BillingPeriodApi>("monthly");
   const [seats, setSeats] = useState(BASE_SEATS);
   const seatsExtra = Math.max(0, seats - BASE_SEATS);
   const quote = useQuote(period, seatsExtra);
 
   const titles: Record<string, string> = {
-    SUSPENDED: 'Подписка приостановлена',
-    EXPIRED: 'Подписка истекла',
-    CANCELED: 'Подписка отменена',
-    PAST_DUE: 'Не получилось списать оплату',
+    SUSPENDED: "Подписка приостановлена",
+    EXPIRED: "Подписка истекла",
+    CANCELED: "Подписка отменена",
+    PAST_DUE: "Не получилось списать оплату",
   };
 
   const descriptions: Record<string, string> = {
-    SUSPENDED: 'Оплатите подписку, чтобы возобновить доступ ко всем функциям.',
-    EXPIRED: 'Срок подписки истёк. Оплатите, чтобы восстановить доступ к данным.',
-    CANCELED: 'Подписка была отменена. Оплатите, чтобы возобновить работу.',
-    PAST_DUE: 'Платёж не прошёл. Оплатите снова, чтобы избежать приостановки.',
+    SUSPENDED: "Оплатите подписку, чтобы возобновить доступ ко всем функциям.",
+    EXPIRED:
+      "Срок подписки истёк. Оплатите, чтобы восстановить доступ к данным.",
+    CANCELED: "Подписка была отменена. Оплатите, чтобы возобновить работу.",
+    PAST_DUE: "Платёж не прошёл. Оплатите снова, чтобы избежать приостановки.",
   };
 
   const monthlyRubles = quote ? quote.monthlyKopecks / 100 : null;
@@ -467,10 +479,10 @@ function BlockedHero({
           <AlertCircle size={28} className="text-danger" />
         </div>
         <h1 className="text-2xl font-bold text-fg-primary">
-          {titles[status] ?? 'Проблема с подпиской'}
+          {titles[status] ?? "Проблема с подпиской"}
         </h1>
         <p className="mt-2 text-fg-secondary">
-          {descriptions[status] ?? 'Обратитесь в поддержку.'}
+          {descriptions[status] ?? "Обратитесь в поддержку."}
         </p>
       </div>
 
@@ -488,7 +500,9 @@ function BlockedHero({
 
         <div className="space-y-3">
           <div className="text-3xl font-bold text-fg-primary">
-            {monthlyRubles !== null ? `${monthlyRubles.toLocaleString('ru-RU')} ₽` : '—'}
+            {monthlyRubles !== null
+              ? `${monthlyRubles.toLocaleString("ru-RU")} ₽`
+              : "—"}
             <span className="text-base font-normal text-fg-tertiary">/мес</span>
           </div>
           <Button
@@ -497,7 +511,7 @@ function BlockedHero({
             disabled={payLoading !== null}
             onClick={() => onPayCard(period, seatsExtra)}
           >
-            {payLoading === 'card' ? (
+            {payLoading === "card" ? (
               <Loader2 size={16} className="animate-spin" />
             ) : (
               <CreditCard size={16} />
@@ -511,7 +525,7 @@ function BlockedHero({
             disabled={payLoading !== null}
             onClick={() => onPayBankInvoice(period, seatsExtra)}
           >
-            {payLoading === 'bank' ? (
+            {payLoading === "bank" ? (
               <Loader2 size={16} className="animate-spin" />
             ) : (
               <FileText size={16} />
@@ -524,8 +538,6 @@ function BlockedHero({
   );
 }
 
-// ────────────────────────── SubscriptionCard (ACTIVE) ──────────────────────────
-
 function SubscriptionCard({
   subscription,
   balance,
@@ -534,11 +546,11 @@ function SubscriptionCard({
   balance: MeetingsBalanceDomain | null;
 }) {
   const statusColor = subscriptionStatusColor(subscription.status);
-  const badgeVariant: 'success' | 'warning' | 'danger' | 'secondary' = {
-    green: 'success' as const,
-    amber: 'warning' as const,
-    red: 'danger' as const,
-    slate: 'secondary' as const,
+  const badgeVariant: "success" | "warning" | "danger" | "secondary" = {
+    green: "success" as const,
+    amber: "warning" as const,
+    red: "danger" as const,
+    slate: "secondary" as const,
   }[statusColor];
 
   return (
@@ -547,10 +559,10 @@ function SubscriptionCard({
         <div>
           <h2 className="text-lg font-semibold">Текущая подписка</h2>
           <p className="text-sm text-fg-tertiary">
-            tier_standard
+            Стандартный
             {subscription.billingPeriod
               ? ` · ${billingPeriodLabel(subscription.billingPeriod)}`
-              : ''}
+              : ""}
           </p>
         </div>
         <Badge variant={badgeVariant}>
@@ -574,14 +586,14 @@ function SubscriptionCard({
           label="Текущий период"
           value={
             subscription.currentPeriodStart && subscription.currentPeriodEnd
-              ? `${subscription.currentPeriodStart.toLocaleDateString('ru-RU')} — ${subscription.currentPeriodEnd.toLocaleDateString('ru-RU')}`
-              : '—'
+              ? `${subscription.currentPeriodStart.toLocaleDateString("ru-RU")} — ${subscription.currentPeriodEnd.toLocaleDateString("ru-RU")}`
+              : "—"
           }
         />
         <Field
           icon={<CheckCircle2 size={16} />}
           label="Автопродление"
-          value={subscription.autoRenew ? 'Включено' : 'Выключено'}
+          value={subscription.autoRenew ? "Включено" : "Выключено"}
         />
         {balance && (
           <>
@@ -622,8 +634,6 @@ function Field({
   );
 }
 
-// ────────────────────────── Renewal Section (ACTIVE) ──────────────────────────
-
 function RenewalSection({
   onPayCard,
   onPayBankInvoice,
@@ -631,9 +641,9 @@ function RenewalSection({
 }: {
   onPayCard: (period: BillingPeriodApi, seatsExtra: number) => void;
   onPayBankInvoice: (period: BillingPeriodApi, seatsExtra: number) => void;
-  payLoading: 'card' | 'bank' | null;
+  payLoading: "card" | "bank" | null;
 }) {
-  const [period, setPeriod] = useState<BillingPeriodApi>('monthly');
+  const [period, setPeriod] = useState<BillingPeriodApi>("monthly");
   const [seats, setSeats] = useState(BASE_SEATS);
   const seatsExtra = Math.max(0, seats - BASE_SEATS);
   const quote = useQuote(period, seatsExtra);
@@ -643,8 +653,8 @@ function RenewalSection({
       <div>
         <h2 className="text-lg font-semibold">Продление подписки</h2>
         <p className="text-sm text-fg-tertiary">
-          tier_standard — 60 000 ₽/мес или 576 000 ₽/год (скидка 20%).
-          Каждое дополнительное место — +1 000 ₽/мес.
+          Стандартный — 60 000 ₽/мес или 576 000 ₽/год (скидка 20%). Каждое
+          дополнительное место — +1 000 ₽/мес.
         </p>
       </div>
 
@@ -662,7 +672,7 @@ function RenewalSection({
           onClick={() => onPayCard(period, seatsExtra)}
           disabled={payLoading !== null}
         >
-          {payLoading === 'card' ? (
+          {payLoading === "card" ? (
             <Loader2 size={16} className="animate-spin" />
           ) : (
             <CreditCard size={16} />
@@ -674,7 +684,7 @@ function RenewalSection({
           onClick={() => onPayBankInvoice(period, seatsExtra)}
           disabled={payLoading !== null}
         >
-          {payLoading === 'bank' ? (
+          {payLoading === "bank" ? (
             <Loader2 size={16} className="animate-spin" />
           ) : (
             <FileText size={16} />
@@ -690,8 +700,6 @@ function RenewalSection({
   );
 }
 
-// ────────────────────────── Invoices ──────────────────────────
-
 function InvoicesTable({ invoices }: { invoices: InvoiceDomain[] }) {
   if (invoices.length === 0) {
     return (
@@ -705,12 +713,15 @@ function InvoicesTable({ invoices }: { invoices: InvoiceDomain[] }) {
     );
   }
 
-  const statusBadgeVariant: Record<string, 'success' | 'default' | 'warning' | 'secondary' | 'danger'> = {
-    paid: 'success',
-    bonus: 'default',
-    issued: 'warning',
-    draft: 'secondary',
-    void: 'danger',
+  const statusBadgeVariant: Record<
+    string,
+    "success" | "default" | "warning" | "secondary" | "danger"
+  > = {
+    paid: "success",
+    bonus: "default",
+    issued: "warning",
+    draft: "secondary",
+    void: "danger",
   };
 
   return (
@@ -735,16 +746,18 @@ function InvoicesTable({ invoices }: { invoices: InvoiceDomain[] }) {
         <tbody>
           {invoices.map((inv) => (
             <tr key={inv.id} className="border-t border-border-subtle">
-              <td className="px-6 py-3 font-mono text-xs">{inv.invoiceNumber}</td>
+              <td className="px-6 py-3 font-mono text-xs">
+                {inv.invoiceNumber}
+              </td>
               <td className="px-6 py-3">
-                {inv.periodStart.toLocaleDateString('ru-RU')} —{' '}
-                {inv.periodEnd.toLocaleDateString('ru-RU')}
+                {inv.periodStart.toLocaleDateString("ru-RU")} —{" "}
+                {inv.periodEnd.toLocaleDateString("ru-RU")}
               </td>
               <td className="px-6 py-3 font-medium">
                 {formatRubles(inv.totalKopecks)}
               </td>
               <td className="px-6 py-3">
-                <Badge variant={statusBadgeVariant[inv.status] ?? 'secondary'}>
+                <Badge variant={statusBadgeVariant[inv.status] ?? "secondary"}>
                   {invoiceStatusLabel(inv.status)}
                 </Badge>
               </td>
@@ -774,9 +787,13 @@ function InvoicesTable({ invoices }: { invoices: InvoiceDomain[] }) {
   );
 }
 
-// ────────────────────────── ErrorBanner ──────────────────────────
-
-function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+function ErrorBanner({
+  message,
+  onDismiss,
+}: {
+  message: string;
+  onDismiss: () => void;
+}) {
   return (
     <div className="flex items-start gap-3 rounded-lg border border-danger/30 bg-danger/5 p-4">
       <AlertCircle size={20} className="mt-0.5 shrink-0 text-danger" />
@@ -784,16 +801,20 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
         <p className="text-sm font-medium text-fg-primary">Ошибка</p>
         <p className="text-sm text-fg-secondary">{message}</p>
       </div>
-      <button onClick={onDismiss} className="text-fg-tertiary hover:text-fg-primary">
+      <button
+        onClick={onDismiss}
+        className="text-fg-tertiary hover:text-fg-primary"
+      >
         <Sparkles size={16} />
       </button>
     </div>
   );
 }
 
-// ────────────────────────── useQuote hook ──────────────────────────
-
-function useQuote(period: BillingPeriodApi, seatsExtra: number): QuoteDomain | null {
+function useQuote(
+  period: BillingPeriodApi,
+  seatsExtra: number,
+): QuoteDomain | null {
   const [quote, setQuote] = useState<QuoteDomain | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -814,9 +835,7 @@ function useQuote(period: BillingPeriodApi, seatsExtra: number): QuoteDomain | n
             meetingsGrant: res.meetingsGrant,
           });
         })
-        .catch(() => {
-          // Тихо оставляем предыдущее значение при ошибке.
-        });
+        .catch(() => {});
     }, 300);
 
     return () => {

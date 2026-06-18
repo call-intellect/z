@@ -4,7 +4,7 @@ status: blocked-on-owner
 feature: assistant-create-task-tool
 date: 2026-06-12
 relates_to:
-  - plans/tz/2026-06-11-assistant-channels-telegram-max.md
+  - plans/archive/2026-06-11-assistant-channels-telegram-max.md
 ---
 
 # ТЗ-заглушка · Инструмент «поставить задачу» (create_task) у AI-помощника

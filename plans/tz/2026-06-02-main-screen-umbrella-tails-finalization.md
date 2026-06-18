@@ -4,9 +4,9 @@ status: ready-to-implement
 date: 2026-06-02
 owner: sergrv80@gmail.com
 feature: Доделать 9 открытых хвостов зонтика `main-screen-umbrella` — то, что было осознанно отложено за scope-cut'ом первой выкатки (backend endpoints, privacy filters, DTO union, UX-полировка). После этого ТЗ зонтик `main-screen-umbrella` закрыт полностью.
-parent_umbrella: plans/tz/2026-06-01-main-screen-umbrella.md
+parent_umbrella: plans/archive/2026-06-01-main-screen-umbrella.md
 parent_children:
-  - plans/tz/2026-06-01-demo-shared-org-model.md
+  - plans/archive/2026-06-01-demo-shared-org-model.md
   - plans/tz/2026-06-01-dashboard-main-tabs-restructure.md
 relates_to:
   - docs/reference/dashboards-registry.md

@@ -8,31 +8,14 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
 
-import {
-  StructureService,
-  type StructureSummaryDto,
-} from './structure.service';
+import { StructureService, type StructureSummaryDto } from './structure.service';
 
-/**
- * Дополнительные эндпоинты Фазы 0a.3:
- *   - `GET /api/v1/structure/summary` — агрегаты структуры (для дашборда онбординга).
- *   - `GET /api/v1/processes/count`     — для preview γ (только owner/admin).
- *   - `GET /api/v1/regulations/count`   — для preview γ (только owner/admin).
- *   - `GET /api/v1/policies/count`      — для preview γ (только owner/admin).
- *   - `GET /api/v1/metrics/count`       — для preview γ (только owner/admin).
- *
- * RBAC: summary — read для всех members; counters — только owner/admin
- * (member → 403).
- */
 @ApiTags('structure')
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -49,7 +32,6 @@ export class StructureController {
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<StructureSummaryDto> {
     const t = this.requireTenant(tenantId);
-    // Сводка видна всем members Org.
     const ok = await this.rbac.canRead(user.id, t, 'department');
     if (!ok) {
       throw new ForbiddenException({
@@ -103,8 +85,6 @@ export class StructureController {
     await this.requirePrivileged(user.id, t, 'metric');
     return { count: await this.svc.metricCount(t) };
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

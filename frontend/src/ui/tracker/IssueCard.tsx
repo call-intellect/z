@@ -1,20 +1,11 @@
-'use client';
+"use client";
 
-/**
- * IssueCard — компактная карточка задачи для канбана и списка.
- *
- * Mobile (default): одна строка, ≤80px высота — приоритет + identifier +
- * title + assignee + срок. Тап ведёт на `/issues/:id`.
- *
- * Desktop (md+): две строки — добавляются метки и метаданные.
- */
-
-import Link from 'next/link';
-import { cn } from '@/ui/shadcn/lib/utils';
-import { dueDateLabel, type Issue } from '@/domain/tracker';
-import { pluralRu } from '@/domain/contribution';
-import { IssuePriorityIcon } from './IssuePriorityIcon';
-import { AssigneeAvatarGroup } from './AssigneeAvatar';
+import Link from "next/link";
+import { cn } from "@/ui/shadcn/lib/utils";
+import { dueDateLabel, type Issue } from "@/domain/tracker";
+import { pluralRu } from "@/domain/contribution";
+import { IssuePriorityIcon } from "./IssuePriorityIcon";
+import { AssigneeAvatarGroup } from "./AssigneeAvatar";
 
 export function IssueCard({
   issue,
@@ -23,7 +14,6 @@ export function IssueCard({
 }: {
   issue: Issue;
   className?: string;
-  /** Компактный режим для списков / drag-n-drop placeholder. */
   compact?: boolean;
 }) {
   const due = dueDateLabel(issue.dueDate);
@@ -32,9 +22,9 @@ export function IssueCard({
     <Link
       href={`/issues/${encodeURIComponent(issue.id)}`}
       className={cn(
-        'group block rounded-md border border-border-subtle bg-bg-elevated px-3 py-2 transition-colors',
-        'hover:border-border hover:bg-bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-        issue.isCompleted && 'opacity-70',
+        "group block rounded-md border border-border-subtle bg-bg-elevated px-3 py-2 transition-colors",
+        "hover:border-border hover:bg-bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+        issue.isCompleted && "opacity-70",
         className,
       )}
     >
@@ -45,13 +35,17 @@ export function IssueCard({
         </span>
         <span
           className={cn(
-            'min-w-0 flex-1 truncate text-sm text-fg-primary',
-            issue.isCompleted && 'line-through text-fg-secondary',
+            "min-w-0 flex-1 truncate text-sm text-fg-primary",
+            issue.isCompleted && "line-through text-fg-secondary",
           )}
         >
           {issue.title}
         </span>
-        <AssigneeAvatarGroup userIds={issue.assigneeUserIds} max={2} size={20} />
+        <AssigneeAvatarGroup
+          userIds={issue.assigneeUserIds}
+          max={2}
+          size={20}
+        />
       </div>
 
       {!compact && (
@@ -59,8 +53,8 @@ export function IssueCard({
           {due && (
             <span
               className={cn(
-                'truncate',
-                issue.isOverdue ? 'text-danger' : undefined,
+                "truncate",
+                issue.isOverdue ? "text-danger" : undefined,
               )}
             >
               {due}
@@ -71,21 +65,20 @@ export function IssueCard({
           )}
           {issue.labelIds.length > 0 && (
             <span title="Меток">
-              {pluralRu(issue.labelIds.length, 'метка', 'метки', 'меток')}
+              {pluralRu(issue.labelIds.length, "метка", "метки", "меток")}
             </span>
           )}
           {issue.linkedMeetingIds.length > 0 && (
             <span title="Связанные встречи">
               {pluralRu(
                 issue.linkedMeetingIds.length,
-                'встреча',
-                'встречи',
-                'встреч',
+                "встреча",
+                "встречи",
+                "встреч",
               )}
             </span>
           )}
-          {/* Badge'ы в правом нижнем углу: чек-листы (☑ N/M) и подзадачи (✓ N).
-              Порядок: чек-листы слева, подзадачи справа. */}
+          {}
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
             {issue.checklistTotalCount > 0 && (
               <ChecklistBadge
@@ -101,11 +94,6 @@ export function IssueCard({
   );
 }
 
-/**
- * Tracker subtasks UI (2026-05-27) — badge «✓ N» в карточке задачи.
- * `childrenCount > 0` → бейдж виден. Полный «N/M» появится, когда DTO
- * вернёт completedChildrenCount.
- */
 function SubtaskBadge({ issue }: { issue: Issue }) {
   const count = issue.childrenCount;
   if (count === null || count === 0) return null;
@@ -120,20 +108,16 @@ function SubtaskBadge({ issue }: { issue: Issue }) {
   );
 }
 
-/**
- * Tracker Checklists (2026-05-27) — бейдж прогресса «☑ 3/7».
- * Полностью завершённый — зелёный, иначе серый.
- */
 function ChecklistBadge({ total, done }: { total: number; done: number }) {
   const fully = total > 0 && total === done;
   return (
     <span
       title={`Чек-лист: ${done} из ${total}`}
       className={cn(
-        'inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[10px] font-medium',
+        "inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[10px] font-medium",
         fully
-          ? 'bg-success/15 text-success'
-          : 'bg-bg-overlay text-fg-secondary',
+          ? "bg-success/15 text-success"
+          : "bg-bg-overlay text-fg-secondary",
       )}
     >
       <span aria-hidden="true">☑</span>

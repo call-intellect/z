@@ -1,26 +1,3 @@
-/**
- * ТЗ 2026-06-15 (chat-v2 — таблицы как параллельный источник, ЧАСТЬ B §7) —
- * Seed AdminSetting для лимитов табличной ветки chat_v2.
- *
- * Регистрирует ключи динамической конфигурации (крутилки super_admin):
- *   - `chat_v2.table_context_max_rows` (int, default 20) — сколько строк умных
- *     таблиц максимум подмешивается в контекст синтезатора AI-чата. На счётный
- *     вопрос («сколько…») cap поднимается в коде ×2.
- *   - `chat_v2.table_context_max_tables` (int, default 2) — сколько релевантных
- *     таблиц максимум выбирается keyword-веткой (без доп. LLM-вызова в v1).
- *
- * Читаются через `TypedConfigService.getDynamic` (AdminSetting → default).
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-chat-v2-tables.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем только
- *     метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- */
-
 import { type Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -88,7 +65,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },

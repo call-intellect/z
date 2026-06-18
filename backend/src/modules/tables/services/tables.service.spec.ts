@@ -6,19 +6,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { TablesService } from './tables.service';
 
-/**
- * Unit-тесты `TablesService`. БД мокается напрямую (как activity-feed.service.spec).
- *
- * Покрытие:
- *  1. create — ниже лимита: создаёт запись.
- *  2. create — выше лимита: BadRequestException.
- *  3. create с parentDocumentId из другой Org — NotFoundException.
- *  4. findById — не найдена → NotFoundException.
- *  5. findById — чужая Org → NotFoundException (а не 403, чтобы не утечь id).
- *  6. archive → unarchive — переходы и идемпотентность.
- *  7. hardDelete активной таблицы — 403 (нужно сначала архив).
- *  8. hardDelete архивной — успех + caскад через Prisma.
- */
 describe('TablesService', () => {
   const TENANT = 'org-1';
   const USER = 'user-1';
@@ -137,34 +124,31 @@ describe('TablesService', () => {
 
   it('findById — не найдена → NotFoundException', async () => {
     tableFindUnique.mockResolvedValueOnce(null);
-    await expect(
-      svc.findById({ tenantId: TENANT, id: 'missing' }),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.findById({ tenantId: TENANT, id: 'missing' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('findById — чужая Org → NotFoundException', async () => {
     tableFindUnique.mockResolvedValueOnce(row({ tenantId: 'other-org' }));
-    await expect(
-      svc.findById({ tenantId: TENANT, id: 't-1' }),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.findById({ tenantId: TENANT, id: 't-1' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('archive → unarchive — переходы и идемпотентность', async () => {
-    // 1) первый archive — был null, ставим now()
     tableFindUnique.mockResolvedValueOnce(row({ archivedAt: null }));
     tableUpdate.mockResolvedValueOnce(row({ archivedAt: new Date() }));
     const archived = await svc.archive({ tenantId: TENANT, id: 't-1' });
     expect(archived.archivedAt).not.toBeNull();
     expect(tableUpdate).toHaveBeenCalledTimes(1);
 
-    // 2) повторный archive — уже архивная, no-op (update не зовётся)
     tableUpdate.mockClear();
     tableFindUnique.mockResolvedValueOnce(row({ archivedAt: new Date() }));
     const archived2 = await svc.archive({ tenantId: TENANT, id: 't-1' });
     expect(archived2.archivedAt).not.toBeNull();
     expect(tableUpdate).not.toHaveBeenCalled();
 
-    // 3) unarchive — переход в null
     tableUpdate.mockClear();
     tableFindUnique.mockResolvedValueOnce(row({ archivedAt: new Date() }));
     tableUpdate.mockResolvedValueOnce(row({ archivedAt: null }));
@@ -175,20 +159,17 @@ describe('TablesService', () => {
 
   it('hardDelete активной таблицы — ForbiddenException', async () => {
     tableFindUnique.mockResolvedValueOnce(row({ archivedAt: null }));
-    await expect(
-      svc.hardDelete({ tenantId: TENANT, id: 't-1' }),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.hardDelete({ tenantId: TENANT, id: 't-1' })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
     expect(tableDelete).not.toHaveBeenCalled();
   });
 
   it('hardDelete системной таблицы — ForbiddenException (system_table_hard_delete_forbidden)', async () => {
-    // Системная таблица в архиве — всё равно нельзя удалить навсегда.
     tableFindUnique.mockResolvedValueOnce(
       row({ isSystem: true, systemKey: 'clients_deals', archivedAt: new Date() }),
     );
-    await expect(
-      svc.hardDelete({ tenantId: TENANT, id: 't-1' }),
-    ).rejects.toMatchObject({
+    await expect(svc.hardDelete({ tenantId: TENANT, id: 't-1' })).rejects.toMatchObject({
       response: { error: { code: 'system_table_hard_delete_forbidden' } },
     });
     expect(tableDelete).not.toHaveBeenCalled();

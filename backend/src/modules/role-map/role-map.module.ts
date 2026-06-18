@@ -13,32 +13,6 @@ import { RoleMapBuilderService } from './services/role-map-builder.service';
 import { RoleMapBuilderWorker } from './workers/role-map-builder.worker';
 import { RoleMapCompletenessCron } from './workers/role-map-completeness.cron';
 
-/**
- * SBA α-8 wave 4 — RoleMapModule.
- *
- * 5 CRUD-сервисов поверх wave-2 нормализованных моделей:
- *   - ResponsibilityElement (outcome/function/activity)
- *   - AuthorityBoundary (allowed/requires_approval/forbidden)
- *   - RequiredKnowledge (mandatory/preferred/nice_to_have)
- *   - DecisionPolicy
- *   - Interaction (reports_to / collaborates_with / ...)
- *
- * Высокоуровневый агрегатор `RoleMapBuilderService`:
- *   - getMap(roleId) → RoleMapDto для UI;
- *   - getMaturity(roleId) → maturity drill-down с rationale;
- *   - recomputeAllForTenant — пересчёт completeness для всех ролей Org.
- *
- * Worker'ы:
- *   - `RoleMapBuilderWorker` — consumer `core.specialist-routing`
- *     (jobName='3-8-role-map-builder'), батч 5 минут per role, идемпотентный.
- *   - `RoleMapCompletenessCron` — суточный пересчёт completeness в 04:00 UTC
- *     (на час раньше MaturityScorerCron 05:00 UTC из α-9 wave 3).
- *
- * Зависимости (через @Global): PrismaModule, RbacModule, AuthModule, AuditModule,
- * MetricsModule, RedisModule, AiModule (LlmRouterService), ScheduleModule.
- *
- * См. plans/tz/2026-05-23-sba-alpha-8-wave4-role-map-worker-rest-ui.md.
- */
 @Module({
   imports: [PrismaModule, CoreQueueModule],
   controllers: [RoleMapController],
@@ -59,9 +33,6 @@ import { RoleMapCompletenessCron } from './workers/role-map-completeness.cron';
     DecisionPolicyService,
     InteractionService,
     RoleMapBuilderService,
-    // Ф2 МТЗ — экспорт handler'а, чтобы единый SpecialistRoutingDispatcherWorker
-    // (в WorkersModule) мог инжектить его через DI. WorkersModule импортирует
-    // RoleMapModule (модуль не @Global).
     RoleMapBuilderWorker,
   ],
 })

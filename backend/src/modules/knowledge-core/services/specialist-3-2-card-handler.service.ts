@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -13,28 +8,12 @@ import {
   type CardSpecialistResult,
   CardSpecialistRegistry,
 } from '../../chat-v2/services/card-specialist-registry.service';
+import { buildVectorLiteral } from '../../embeddings/services/vector-literal.util';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
 
-/**
- * SBA β-2 — обработчик CardSpecialistRegistry для Specialist 3.2
- * (Knowledge Clone). См. §5.6 контракта зонтичного.
- *
- * Регистрирует себя в `CardSpecialistRegistry` через `onModuleInit`.
- * Запрашивается `ChatV2Service` при выборе релевантных карточек для
- * query: возвращает Person'ов, чей `knowledgeProfile` содержит категории,
- * текстово близкие к query (на β-2 — простой substring/word match;
- * embedding-based search — γ+).
- *
- * Контракт:
- *   - метод НЕ должен бросать — на любую ошибку возвращаем `[]` и логируем.
- *   - tenant isolation: запрос всегда фильтруется по `tenantId`.
- *   - `confidence` — derived из confidence категорий, попавших в overlap.
- */
 @Injectable()
-export class Specialist32CardHandler
-  implements OnModuleInit, CardSpecialistHandler
-{
+export class Specialist32CardHandler implements OnModuleInit, CardSpecialistHandler {
   private readonly logger = new Logger(Specialist32CardHandler.name);
   static readonly SPECIALIST_NAME = '3-2-knowledge-clone';
 
@@ -54,22 +33,6 @@ export class Specialist32CardHandler
     );
   }
 
-  /**
-   * ТЗ 2026-05-25 Фаза 4 — векторный поиск с fallback на substring-match.
-   *
-   * Алгоритм:
-   *   1. Считаем количество embedding-строк per Org. Если меньше
-   *      `cfg.knowledgeClone.embeddingFallbackThreshold` — fallback на
-   *      substring-match (страховка пока бэкфилл не прошёл).
-   *   2. Иначе — embedQuery(args.query) → pgvector cosine KNN по
-   *      `person_knowledge_category_embeddings` с join на persons (фильтр
-   *      relationship='employee' + deletedAt IS NULL).
-   *   3. Группировка по personId, агрегация
-   *      `score = sum(similarity * confidenceWeight[confidence])`.
-   *   4. Только Person'ы с `score >= cfg.knowledgeClone.minMatchScore`.
-   *   5. Top N по score → читаем JSON `Person.knowledgeProfile` и
-   *      собираем CardSpecialistResult.
-   */
   async getCardsForQuery(args: {
     tenantId: string;
     query: string;
@@ -81,14 +44,11 @@ export class Specialist32CardHandler
       const trimmed = args.query.trim();
       if (trimmed.length === 0) return [];
 
-      // 1. Сколько embedding-строк есть в этой Org?
       let embeddingsCount = 0;
       try {
-        embeddingsCount = await this.prisma.personKnowledgeCategoryEmbedding.count(
-          {
-            where: { tenantId: args.tenantId },
-          },
-        );
+        embeddingsCount = await this.prisma.personKnowledgeCategoryEmbedding.count({
+          where: { tenantId: args.tenantId },
+        });
       } catch (err) {
         this.logger.warn(
           {
@@ -104,7 +64,6 @@ export class Specialist32CardHandler
         return this.getCardsForQueryFallback(args);
       }
 
-      // 2. Векторный путь.
       let queryVec: number[] | null;
       try {
         queryVec = await this.embeddings.embedQuery(trimmed);
@@ -122,7 +81,25 @@ export class Specialist32CardHandler
         return this.getCardsForQueryFallback(args);
       }
 
-      const vecLiteral = `[${queryVec.join(',')}]`;
+      // Класс G2 — guard pgvector-литерала query-вектора. При reject (смена
+      // модели → другая размерность; битый вектор → NaN/Infinity) деградируем на
+      // тот же substring-fallback, что и при embed-failure, не валя оператор
+      // `<=>`.
+      const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+      const guard = buildVectorLiteral(queryVec, expectedDim);
+      if (guard.literal === null) {
+        this.logger.warn(
+          {
+            tenantId: args.tenantId,
+            reason: guard.rejectReason,
+            actualDim: queryVec.length,
+            expectedDim,
+          },
+          'Specialist32CardHandler: query-вектор отвергнут guard-ом — fallback на substring',
+        );
+        return this.getCardsForQueryFallback(args);
+      }
+      const vecLiteral = guard.literal;
       const sqlLimit = args.limit * 3;
       let rows: Array<{
         id: string;
@@ -158,7 +135,6 @@ export class Specialist32CardHandler
 
       if (rows.length === 0) return [];
 
-      // 3. Группировка по personId.
       const confidenceWeight: Record<string, number> = {
         low: 1,
         medium: 2,
@@ -194,14 +170,11 @@ export class Specialist32CardHandler
         } else {
           perPerson.set(r.person_id, {
             score: contribution,
-            topCategories: [
-              { name: r.category_name, confidence: conf, similarity },
-            ],
+            topCategories: [{ name: r.category_name, confidence: conf, similarity }],
           });
         }
       }
 
-      // 4. Фильтр по minMatchScore.
       const minScore = this.cfg.knowledgeClone.minMatchScore;
       const aggregated = [...perPerson.entries()]
         .filter(([, v]) => v.score >= minScore)
@@ -210,7 +183,6 @@ export class Specialist32CardHandler
 
       if (aggregated.length === 0) return [];
 
-      // 5. Загружаем профили найденных Person'ов.
       const personIds = aggregated.map(([id]) => id);
       const persons = await this.prisma.person.findMany({
         where: { id: { in: personIds } },
@@ -226,13 +198,9 @@ export class Specialist32CardHandler
       for (const [personId, agg] of aggregated) {
         const person = byId.get(personId);
         if (!person) continue;
-        const profile = person.knowledgeProfile as
-          | KnowledgeProfileLike
-          | null
-          | undefined;
+        const profile = person.knowledgeProfile as KnowledgeProfileLike | null | undefined;
         if (!profile || !Array.isArray(profile.categories)) continue;
 
-        // Имена топ-категорий по similarity (для текста и sourceBlockIds).
         const topCategoryNames = new Set(
           agg.topCategories
             .sort((a, b) => b.similarity - a.similarity)
@@ -250,11 +218,7 @@ export class Specialist32CardHandler
           const sampleStatements: Array<{ quote: string; blockId: string }> = [];
           if (Array.isArray(c.sampleStatements)) {
             for (const s of c.sampleStatements.slice(0, 3)) {
-              if (
-                s &&
-                typeof s.quote === 'string' &&
-                typeof s.blockId === 'string'
-              ) {
+              if (s && typeof s.quote === 'string' && typeof s.blockId === 'string') {
                 sampleStatements.push({ quote: s.quote, blockId: s.blockId });
               }
             }
@@ -262,10 +226,9 @@ export class Specialist32CardHandler
           matches.push({
             name: c.name,
             confidence: conf,
-            observationCount:
-              typeof c.observationCount === 'number' ? c.observationCount : 1,
+            observationCount: typeof c.observationCount === 'number' ? c.observationCount : 1,
             sampleStatements,
-            score: 0, // не используется для текста
+            score: 0,
           });
         }
         if (matches.length === 0) continue;
@@ -295,14 +258,6 @@ export class Specialist32CardHandler
     }
   }
 
-  /**
-   * ТЗ 2026-05-25 Фаза 4 — fallback substring-match (исходный алгоритм β-2).
-   * Используется когда embedding-индекс ещё не наполнен (порог
-   * `cfg.knowledgeClone.embeddingFallbackThreshold`).
-   *
-   * Логика остаётся прежней: load Person'ов с knowledgeProfile, токенизация
-   * запроса, substring-match по category.name, score по confidence-весам.
-   */
   async getCardsForQueryFallback(args: {
     tenantId: string;
     query: string;
@@ -331,10 +286,7 @@ export class Specialist32CardHandler
 
       const results: Array<{ result: CardSpecialistResult; score: number }> = [];
       for (const p of persons) {
-        const profile = p.knowledgeProfile as
-          | KnowledgeProfileLike
-          | null
-          | undefined;
+        const profile = p.knowledgeProfile as KnowledgeProfileLike | null | undefined;
         if (!profile || !Array.isArray(profile.categories)) continue;
         const matches = matchCategories(profile.categories, tokens);
         if (matches.length === 0) continue;
@@ -415,11 +367,7 @@ function matchCategories(
     const sampleStatements: Array<{ quote: string; blockId: string }> = [];
     if (Array.isArray(c.sampleStatements)) {
       for (const s of c.sampleStatements.slice(0, 3)) {
-        if (
-          s &&
-          typeof s.quote === 'string' &&
-          typeof s.blockId === 'string'
-        ) {
+        if (s && typeof s.quote === 'string' && typeof s.blockId === 'string') {
           sampleStatements.push({ quote: s.quote, blockId: s.blockId });
         }
       }
@@ -427,8 +375,7 @@ function matchCategories(
     out.push({
       name: c.name,
       confidence,
-      observationCount:
-        typeof c.observationCount === 'number' ? c.observationCount : 1,
+      observationCount: typeof c.observationCount === 'number' ? c.observationCount : 1,
       sampleStatements,
       score,
     });
@@ -455,10 +402,7 @@ function confidenceForMatches(matches: readonly CategoryMatch[]): number {
   return weights[top.confidence] ?? 0.55;
 }
 
-function formatSummaryText(
-  personName: string,
-  matches: readonly CategoryMatch[],
-): string {
+function formatSummaryText(personName: string, matches: readonly CategoryMatch[]): string {
   const top3 = matches.slice(0, 3);
   const lines = top3.map((m) => {
     return `• ${m.name} (уверенность: ${confidenceRu(m.confidence)}, наблюдений: ${m.observationCount})`;

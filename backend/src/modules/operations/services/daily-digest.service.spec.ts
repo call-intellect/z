@@ -2,16 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { DailyDigestService } from './daily-digest.service';
 
-/**
- * SBA β-8.3 — DailyDigestService unit-тесты.
- *
- *   - aggregate: корректно собирает агрегаты из фикстур (доли green/yellow/red,
- *     топ-3 красных чек-ина, новые блокеры).
- *   - generate: при успехе LLM сохраняет связный bodyMarkdown + llmTaskRouteId
- *     + shortSummary (парсинг разделителя).
- *   - generate: при провале LLM сохраняет fallback markdown с llmTaskRouteId=null.
- *   - getOrGenerate: идемпотентен по `(tenantId, dateLocal)`.
- */
 describe('DailyDigestService', () => {
   function buildSvc(overrides: {
     checkIns?: unknown[];
@@ -32,8 +22,6 @@ describe('DailyDigestService', () => {
       dailyCheckIn: {
         findMany: vi.fn().mockImplementation(() => {
           const i = checkInCallIndex++;
-          // 0 = чек-ины дня (sentiment-filtered);
-          // 1 = topRedCheckIns (red-only, с person.name).
           if (i === 0) return Promise.resolve(overrides.checkIns ?? []);
           return Promise.resolve(overrides.redCheckIns ?? []);
         }),
@@ -41,7 +29,6 @@ describe('DailyDigestService', () => {
       ideaBlock: {
         findMany: vi.fn().mockImplementation(() => {
           const i = blockCallIndex++;
-          // 0 = newBlockers; 1 = overdueCommitments.
           if (i === 0) return Promise.resolve(overrides.newBlockers ?? []);
           return Promise.resolve(overrides.overdueCommitments ?? []);
         }),
@@ -55,7 +42,6 @@ describe('DailyDigestService', () => {
       decision: {
         findMany: vi.fn().mockResolvedValue(overrides.decisions ?? []),
       },
-      // Pulse Wave 2 §2.1 — stubs для enrichDto/computeRuntimeSections.
       meeting: {
         findMany: vi.fn().mockResolvedValue([]),
       },
@@ -98,8 +84,7 @@ describe('DailyDigestService', () => {
         ? vi.fn().mockRejectedValue(overrides.llmReject)
         : vi.fn().mockResolvedValue(
             overrides.llmResult ?? {
-              text:
-                '# Сводка\n\nВсё хорошо.\n\n---SHORT_SUMMARY---\nВчера 5 чек-инов, всё в норме.',
+              text: '# Сводка\n\nВсё хорошо.\n\n---SHORT_SUMMARY---\nВчера 5 чек-инов, всё в норме.',
               modelUsed: 'deepseek:deepseek-chat',
             },
           ),
@@ -157,9 +142,7 @@ describe('DailyDigestService', () => {
           person: { name: 'Иван' },
         },
       ],
-      newBlockers: [
-        { id: 'b1', name: 'нет доступа к S3', confidence: '0.85' },
-      ],
+      newBlockers: [{ id: 'b1', name: 'нет доступа к S3', confidence: '0.85' }],
     });
     const result = await svc.aggregate({
       tenantId: 't1',
@@ -181,8 +164,7 @@ describe('DailyDigestService', () => {
     const { svc, prisma, metrics } = buildSvc({
       checkIns: [{ sentiment: 'green', id: 'c1' }],
       llmResult: {
-        text:
-          '## Сводка\nВсё ок.\n\n---SHORT_SUMMARY---\nКороткая выжимка для Telegram.',
+        text: '## Сводка\nВсё ок.\n\n---SHORT_SUMMARY---\nКороткая выжимка для Telegram.',
         modelUsed: 'deepseek:deepseek-chat',
       },
     });
@@ -214,7 +196,6 @@ describe('DailyDigestService', () => {
     expect(metrics.incCooDailyDigestFailed).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'llm_failed' }),
     );
-    // generated тоже инкрементится (сухой вариант — это всё ещё сохранённый дайджест).
     expect(metrics.incCooDailyDigestGenerated).toHaveBeenCalledOnce();
   });
 
@@ -251,8 +232,6 @@ describe('DailyDigestService', () => {
       }),
     );
   });
-
-  // ───────────── Action Center B3 — блок «Ждёт подтверждения» ─────────────
 
   it('buildPendingActionsLine: total>0 → строка с количеством и /actions', async () => {
     const { svc, pendingActions } = buildSvc({});

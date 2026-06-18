@@ -1,14 +1,3 @@
-/**
- * Регрессия на баг «админ не может активировать подписку» (400 при валидном теле).
- *
- * Причина была в `@UsePipes(new ZodValidationPipe(schema))` на уровне метода:
- * Nest прогоняет такой пайп по ВСЕМ аргументам хендлера, включая `@Param`/
- * `@CurrentUser`/`@Ip`. Объектная zod-схема падала на строковом `@Param`,
- * отдавая 400 ещё до бизнес-логики.
- *
- * Канон проекта — пайп на уровне параметра: `@Body(new ZodValidationPipe(schema))`.
- * Этот тест фиксирует разницу, чтобы паттерн не вернулся.
- */
 import { Body, Controller, INestApplication, Param, Post, UsePipes } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -24,14 +13,12 @@ const Schema = z.object({
 
 @Controller('test')
 class FixtureController {
-  /** Сломанный паттерн — для документации поведения. */
   @Post('usepipes/:tenantId')
   @UsePipes(new ZodValidationPipe(Schema))
   usePipes(@Param('tenantId') tenantId: string, @Body() body: z.infer<typeof Schema>) {
     return { ok: true, tenantId, body };
   }
 
-  /** Канонический паттерн (как теперь в billing/referrals/inn-lookup). */
   @Post('bodypipe/:tenantId')
   bodyPipe(
     @Param('tenantId') tenantId: string,

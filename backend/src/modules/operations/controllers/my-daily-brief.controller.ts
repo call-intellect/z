@@ -34,17 +34,6 @@ import { KnowsWhoService } from '../services/knows-who.service';
 import { PersonalDailyBriefService } from '../services/personal-daily-brief.service';
 import { getLocalDate } from '../utils/local-date';
 
-/**
- * TZ-1 Фаза 2 (daily-value-engine) — `/api/v1/me/daily-brief`, `/me/knows-who`.
- *
- * Движок рядового. ТОЛЬКО self-scope (по `Person.userId`): сотрудник видит свой
- * бриф, своих носителей знания — операционные данные (чужие задачи/клиенты) НЕ
- * открываем (Р8). Self-person резолвится сервером из cookie-сессии, query/param
- * НЕ задают чужой personId.
- *
- * Auth: CookieAuthGuard + TenantGuard. Если у пользователя нет Person-записи —
- * отдаём пустой бриф / пустой список (200), как `/me/customer-risk`.
- */
 @ApiTags('me-daily-brief')
 @Controller('api/v1/me')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -110,7 +99,6 @@ export class MyDailyBriefController {
 
     const personId = await this.resolveSelfPersonId(tenantId!, uid);
     if (!personId) {
-      // Нет Person — чужой бриф открыть нельзя.
       throw new NotFoundException({
         ok: false,
         error: { code: 'not_found', message: 'Бриф не найден' },
@@ -123,7 +111,6 @@ export class MyDailyBriefController {
       briefId: id,
     });
     if (!ok) {
-      // Чужой/несуществующий бриф — не раскрываем, отдаём 404.
       throw new NotFoundException({
         ok: false,
         error: { code: 'not_found', message: 'Бриф не найден' },
@@ -144,7 +131,6 @@ export class MyDailyBriefController {
     const uid = this.requireUser(req);
     this.requireTenant(tenantId);
 
-    // Self-person нужен, чтобы исключить самого себя из носителей.
     const personId = await this.resolveSelfPersonId(tenantId!, uid);
 
     const experts = await this.knowsWho.findExpertsForBlocker({
@@ -157,13 +143,7 @@ export class MyDailyBriefController {
     return toKnowsWhoListDto(experts);
   }
 
-  // ── helpers ──
-
-  /** Резолв self-person (graceful: null если Person нет — не 403). */
-  private async resolveSelfPersonId(
-    tenantId: string,
-    userId: string,
-  ): Promise<string | null> {
+  private async resolveSelfPersonId(tenantId: string, userId: string): Promise<string | null> {
     try {
       const person = await this.commitments.resolveSelfPerson({
         tenantId,

@@ -1,24 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../common/config/index';
-import {
-  type EmbeddingProvider,
-  EmbeddingsAllProvidersFailedError,
-} from '../embeddings.types';
+import { type EmbeddingProvider, EmbeddingsAllProvidersFailedError } from '../embeddings.types';
 
 import { LocalEmbeddingService } from './local-embedding.service';
 import { OpenAiProxyEmbeddingService } from './openai-proxy-embedding.service';
 
-/**
- * Каскад embedding-провайдеров.
- *
- *   - `EMBEDDING_PROVIDER='openai-via-proxy'` (default) — proxy → local.
- *   - `EMBEDDING_PROVIDER='local'`                       — local → proxy.
- *   - `EMBEDDING_PROVIDER='openai-direct'`               — пока трактуем как proxy
- *     (в Z прямой выход на OpenAI не настроен — proxy идентичен по контракту).
- *
- * Если оба упали → `EmbeddingsAllProvidersFailedError`.
- */
 @Injectable()
 export class EmbeddingFallbackService implements EmbeddingProvider {
   readonly name = 'embedding-fallback';
@@ -58,7 +45,6 @@ export class EmbeddingFallbackService implements EmbeddingProvider {
     if (primary === 'local') {
       return [this.local, this.proxy];
     }
-    // openai-via-proxy и openai-direct трактуем одинаково.
     return [this.proxy, this.local];
   }
 }

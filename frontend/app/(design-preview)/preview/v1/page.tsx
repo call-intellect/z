@@ -1,52 +1,102 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useEffect } from 'react';
-
-// V1 — текущий янтарный лендинг (копия HomeClient без auth-редиректа)
+import Link from "next/link";
+import { useEffect } from "react";
 
 const PAIN_ROWS: [string, string][] = [
-  ['Решили на планёрке — через неделю никто не помнит, к чему шли', 'Цель живёт в спринте. Кора возвращает к ней каждую неделю.'],
-  ['Задачи зависают между понедельниками, а вы узнаёте последним', 'Кора слышит, что застряло — и подсвечивает до того, как сорвётся срок.'],
-  ['Статусы в трекере зелёные, а движения нет', 'Кора видит правду из встреч и чатов, а не из галочек.'],
-  ['Клиенту пообещали — не сделали', 'Обещание на встрече = задача на исполнителе. Никто не забывает.'],
-  ['Ключевой человек ушёл — знания ушли с ним', 'Цифровой двойник остаётся. Новый сотрудник входит в курс за минуту.'],
-  ['Тонете в операционке, некогда думать на три хода вперёд', 'AI-директор берёт рутину. Голова освобождается для стратегии.'],
+  [
+    "Решили на планёрке — через неделю никто не помнит, к чему шли",
+    "Цель живёт в спринте. Кора возвращает к ней каждую неделю.",
+  ],
+  [
+    "Задачи зависают между понедельниками, а вы узнаёте последним",
+    "Кора слышит, что застряло — и подсвечивает до того, как сорвётся срок.",
+  ],
+  [
+    "Статусы в трекере зелёные, а движения нет",
+    "Кора видит правду из встреч и чатов, а не из галочек.",
+  ],
+  [
+    "Клиенту пообещали — не сделали",
+    "Обещание на встрече = задача на исполнителе. Никто не забывает.",
+  ],
+  [
+    "Ключевой человек ушёл — знания ушли с ним",
+    "Цифровой двойник остаётся. Новый сотрудник входит в курс за минуту.",
+  ],
+  [
+    "Тонете в операционке, некогда думать на три хода вперёд",
+    "AI-директор берёт рутину. Голова освобождается для стратегии.",
+  ],
 ];
 
 export default function LandingV1() {
   useEffect(() => {
-    const id = 'kl-fonts';
+    const id = "kl-fonts";
     if (document.getElementById(id)) return;
-    const link = document.createElement('link');
+    const link = document.createElement("link");
     link.id = id;
-    link.rel = 'stylesheet';
-    link.href = 'https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,400&family=Manrope:wght@300;400;500;600;700&display=swap';
+    link.rel = "stylesheet";
+    link.href =
+      "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,400&family=Manrope:wght@300;400;500;600;700&display=swap";
     document.head.appendChild(link);
   }, []);
 
   useEffect(() => {
     const io = new IntersectionObserver(
-      (entries) => { entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }); },
-      { rootMargin: '0px 0px -8% 0px', threshold: 0.06 },
+      (entries) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) {
+            e.target.classList.add("in");
+            io.unobserve(e.target);
+          }
+        });
+      },
+      { rootMargin: "0px 0px -8% 0px", threshold: 0.06 },
     );
-    document.querySelectorAll('.kl .reveal').forEach((el) => io.observe(el));
+    document.querySelectorAll(".kl .reveal").forEach((el) => io.observe(el));
     return () => io.disconnect();
   }, []);
 
   return (
     <div className="kl">
       <V1Styles />
-      <div style={{ background: '#D4A574', color: '#1a1410', padding: '8px 24px', fontSize: '12px', fontWeight: 600, letterSpacing: '0.08em', textAlign: 'center', position: 'sticky', top: 0, zIndex: 100 }}>
-        ВАРИАНТ 1 — Янтарь / Fraunces &nbsp;·&nbsp; <Link href="/preview/v2" style={{ color: '#1a1410', textDecoration: 'underline' }}>Посмотреть Вариант 2 →</Link>
+      <div
+        style={{
+          background: "#D4A574",
+          color: "#1a1410",
+          padding: "8px 24px",
+          fontSize: "12px",
+          fontWeight: 600,
+          letterSpacing: "0.08em",
+          textAlign: "center",
+          position: "sticky",
+          top: 0,
+          zIndex: 100,
+        }}
+      >
+        ВАРИАНТ 1 — Янтарь / Fraunces &nbsp;·&nbsp;{" "}
+        <Link
+          href="/preview/v2"
+          style={{ color: "#1a1410", textDecoration: "underline" }}
+        >
+          Посмотреть Вариант 2 →
+        </Link>
       </div>
 
       <header>
         <div className="wrap header-inner">
-          <Link href="/" className="brand"><span className="brand-dot" />КОРА</Link>
+          <Link href="/" className="brand">
+            <span className="brand-dot" />
+            КОРА
+          </Link>
           <nav className="nav">
-            <Link href="/login" className="btn btn-ghost">Войти</Link>
-            <Link href="/signup" className="btn btn-primary">Получить ранний доступ</Link>
+            <Link href="/login" className="btn btn-ghost">
+              Войти
+            </Link>
+            <Link href="/signup" className="btn btn-primary">
+              Получить ранний доступ
+            </Link>
           </nav>
         </div>
       </header>
@@ -54,14 +104,30 @@ export default function LandingV1() {
       <main>
         <section className="hero">
           <div className="wrap">
-            <div className="eyebrow">Память · Спринты · AI-операционный директор</div>
-            <h1>Компании растут, когда добивают цели. <em>Кора</em> следит, чтобы точно добивались.</h1>
-            <p className="lead">Ставите цель — идёте спринтами — Кора из реальных встреч, чатов и отчётов держит фокус и не даёт сбиться. А всё, что наработали, остаётся в памяти компании навсегда.</p>
-            <div className="hero-ctas">
-              <Link href="/signup" className="btn btn-primary btn-lg">Получить ранний доступ</Link>
-              <Link href="/login" className="btn btn-outline btn-lg">Войти</Link>
+            <div className="eyebrow">
+              Память · Спринты · AI-операционный директор
             </div>
-            <div className="hero-note"><span className="pulse" />Встречи, задачи, спринты и память компании — в одном месте</div>
+            <h1>
+              Компании растут, когда добивают цели. <em>Кора</em> следит, чтобы
+              точно добивались.
+            </h1>
+            <p className="lead">
+              Ставите цель — идёте спринтами — Кора из реальных встреч, чатов и
+              отчётов держит фокус и не даёт сбиться. А всё, что наработали,
+              остаётся в памяти компании навсегда.
+            </p>
+            <div className="hero-ctas">
+              <Link href="/signup" className="btn btn-primary btn-lg">
+                Получить ранний доступ
+              </Link>
+              <Link href="/login" className="btn btn-outline btn-lg">
+                Войти
+              </Link>
+            </div>
+            <div className="hero-note">
+              <span className="pulse" />
+              Встречи, задачи, спринты и память компании — в одном месте
+            </div>
           </div>
         </section>
 
@@ -70,21 +136,94 @@ export default function LandingV1() {
             <div className="section-head reveal">
               <div className="section-num">I — Что внутри</div>
               <div>
-                <h2 className="section-title">Двенадцать инструментов — один <em>растущий актив</em>.</h2>
-                <p className="section-sub">Четыре опоры, на которых стоит Кора. Не набор разрозненных сервисов, а единая система — встречи, задачи и память работают друг на друга.</p>
+                <h2 className="section-title">
+                  Двенадцать инструментов — один <em>растущий актив</em>.
+                </h2>
+                <p className="section-sub">
+                  Четыре опоры, на которых стоит Кора. Не набор разрозненных
+                  сервисов, а единая система — встречи, задачи и память работают
+                  друг на друга.
+                </p>
               </div>
             </div>
             <div className="tools-grid reveal">
               {[
-                { label: 'Встречи', cards: [['Видеовстречи с AI-отчётом', 'Полноценные встречи с экраном и чатом. Гость по ссылке без регистрации. Как Zoom — только с памятью.'], ['Автозапись и расшифровка', 'Сохраняются сами. Ничего не нужно включать вручную.'], ['Отчёт под тип встречи', 'Один-на-один, разбор сделки, ретроспектива, собеседование. Структура под задачу — не одна выжимка на всё.']] },
-                { label: 'Задачи и спринты', cards: [['Привычный трекер', 'Доски, статусы, исполнители, сроки. Команде ничего не нужно учить.'], ['Задачи появляются сами', 'Кора слышит «Иван, сделай к пятнице» — и ставит задачу на Ивана. То же из чатов.'], ['Спринты с контролем цели', 'Недельный ритм. Кора следит, реально ли вы идёте к цели — а не просто двигаете статусы.']] },
-                { label: 'AI-директор', cards: [['Картина целиком', 'Кто чем занят, что обещано, где застряло. Раньше — в десяти местах. Теперь — в одном.'], ['Обещания на радаре', 'Расхождения по встречам и чатам подсвечиваются раньше эскалации.'], ['Отчёты в одной ленте', 'Настоящее положение дел без созвонов и докладов.']] },
-                { label: 'Память', cards: [['Второй мозг компании', 'Всё разрозненное — в одном месте. Навсегда.'], ['Цифровые двойники', 'Спросить эксперта в отпуске или уже уволенного — ответит так же, как он.'], ['Telegram-доступ', '«Что решили по клиенту в марте?» — ответ со ссылкой на источник, прямо из Telegram.']] },
+                {
+                  label: "Встречи",
+                  cards: [
+                    [
+                      "Видеовстречи с AI-отчётом",
+                      "Полноценные встречи с экраном и чатом. Гость по ссылке без регистрации. Как Zoom — только с памятью.",
+                    ],
+                    [
+                      "Автозапись и расшифровка",
+                      "Сохраняются сами. Ничего не нужно включать вручную.",
+                    ],
+                    [
+                      "Отчёт под тип встречи",
+                      "Один-на-один, разбор сделки, ретроспектива, собеседование. Структура под задачу — не одна выжимка на всё.",
+                    ],
+                  ],
+                },
+                {
+                  label: "Задачи и спринты",
+                  cards: [
+                    [
+                      "Привычный трекер",
+                      "Доски, статусы, исполнители, сроки. Команде ничего не нужно учить.",
+                    ],
+                    [
+                      "Задачи появляются сами",
+                      "Кора слышит «Иван, сделай к пятнице» — и ставит задачу на Ивана. То же из чатов.",
+                    ],
+                    [
+                      "Спринты с контролем цели",
+                      "Недельный ритм. Кора следит, реально ли вы идёте к цели — а не просто двигаете статусы.",
+                    ],
+                  ],
+                },
+                {
+                  label: "AI-директор",
+                  cards: [
+                    [
+                      "Картина целиком",
+                      "Кто чем занят, что обещано, где застряло. Раньше — в десяти местах. Теперь — в одном.",
+                    ],
+                    [
+                      "Обещания на радаре",
+                      "Расхождения по встречам и чатам подсвечиваются раньше эскалации.",
+                    ],
+                    [
+                      "Отчёты в одной ленте",
+                      "Настоящее положение дел без созвонов и докладов.",
+                    ],
+                  ],
+                },
+                {
+                  label: "Память",
+                  cards: [
+                    [
+                      "Второй мозг компании",
+                      "Всё разрозненное — в одном месте. Навсегда.",
+                    ],
+                    [
+                      "Цифровые двойники",
+                      "Спросить эксперта в отпуске или уже уволенного — ответит так же, как он.",
+                    ],
+                    [
+                      "Telegram-доступ",
+                      "«Что решили по клиенту в марте?» — ответ со ссылкой на источник, прямо из Telegram.",
+                    ],
+                  ],
+                },
               ].map(({ label, cards }) => (
                 <div className="tool-group" key={label}>
                   <div className="tool-group-label">{label}</div>
                   {cards.map(([title, text]) => (
-                    <div className="tool-card" key={title}><h4>{title}</h4><p>{text}</p></div>
+                    <div className="tool-card" key={title}>
+                      <h4>{title}</h4>
+                      <p>{text}</p>
+                    </div>
                   ))}
                 </div>
               ))}
@@ -97,8 +236,13 @@ export default function LandingV1() {
             <div className="section-head reveal">
               <div className="section-num">II — Что меняет Кора</div>
               <div>
-                <h2 className="section-title">Цели ставят все. Добивают — <em>единицы</em>.</h2>
-                <p className="section-sub">Шесть точек, в которых обычно теряется движение компании — и что меняет Кора.</p>
+                <h2 className="section-title">
+                  Цели ставят все. Добивают — <em>единицы</em>.
+                </h2>
+                <p className="section-sub">
+                  Шесть точек, в которых обычно теряется движение компании — и
+                  что меняет Кора.
+                </p>
               </div>
             </div>
             <div className="pain-list reveal">
@@ -116,22 +260,66 @@ export default function LandingV1() {
           <div className="wrap">
             <div className="section-head reveal">
               <div className="section-num">III — Как это работает</div>
-              <div><h2 className="section-title">Один недельный цикл, который <em>двигает компанию</em> вперёд.</h2></div>
+              <div>
+                <h2 className="section-title">
+                  Один недельный цикл, который <em>двигает компанию</em> вперёд.
+                </h2>
+              </div>
             </div>
             <div className="steps reveal">
-              {[['01','Ставите цель','Собираете спринт: что делаем на этой неделе и ради чего.'],['02','Команда работает','В привычном трекере. Задачи из встреч и чатов появляются сами.'],['03','Кора видит правду','Слушает встречи, читает чаты и отчёты — и видит, реально ли вы идёте к цели.'],['04','Разбор спринта','Что добили, что застряло, цель на следующий. Всё уходит в память компании.']].map(([num, title, text]) => (
-                <div className="step" key={num}><div className="step-num">{num}</div><h4>{title}</h4><p>{text}</p></div>
+              {[
+                [
+                  "01",
+                  "Ставите цель",
+                  "Собираете спринт: что делаем на этой неделе и ради чего.",
+                ],
+                [
+                  "02",
+                  "Команда работает",
+                  "В привычном трекере. Задачи из встреч и чатов появляются сами.",
+                ],
+                [
+                  "03",
+                  "Кора видит правду",
+                  "Слушает встречи, читает чаты и отчёты — и видит, реально ли вы идёте к цели.",
+                ],
+                [
+                  "04",
+                  "Разбор спринта",
+                  "Что добили, что застряло, цель на следующий. Всё уходит в память компании.",
+                ],
+              ].map(([num, title, text]) => (
+                <div className="step" key={num}>
+                  <div className="step-num">{num}</div>
+                  <h4>{title}</h4>
+                  <p>{text}</p>
+                </div>
               ))}
             </div>
-            <p className="steps-foot reveal">Так каждую неделю. Память накапливается, цели <em>добиваются</em>, компания растёт.</p>
+            <p className="steps-foot reveal">
+              Так каждую неделю. Память накапливается, цели <em>добиваются</em>,
+              компания растёт.
+            </p>
           </div>
         </section>
 
         <section style={{ padding: 0 }}>
-          <div className="wrap sources" style={{ border: 'none', padding: '56px 0' }}>
+          <div
+            className="wrap sources"
+            style={{ border: "none", padding: "56px 0" }}
+          >
             <div className="sources-label reveal">Откуда Кора видит всё</div>
             <div className="sources-list reveal">
-              {['видеовстречи','планёрки','вечерние отчёты','рабочие чаты','задачи в трекере','спринты'].map((s) => <span key={s}>{s}</span>)}
+              {[
+                "видеовстречи",
+                "планёрки",
+                "вечерние отчёты",
+                "рабочие чаты",
+                "задачи в трекере",
+                "спринты",
+              ].map((s) => (
+                <span key={s}>{s}</span>
+              ))}
             </div>
           </div>
         </section>
@@ -140,14 +328,40 @@ export default function LandingV1() {
           <div className="wrap">
             <div className="section-head reveal">
               <div className="section-num">V — Память компании</div>
-              <div><h2 className="section-title">Под всем этим — память, <em>которая остаётся</em>.</h2></div>
+              <div>
+                <h2 className="section-title">
+                  Под всем этим — память, <em>которая остаётся</em>.
+                </h2>
+              </div>
             </div>
             <div className="memory reveal">
-              <h3>Уходит человек — <em>память остаётся</em>.</h3>
-              <p className="memory-intro">Встречи, решения, спринты, переписки — всё копится в одном месте. С каждым днём память компании знает о вас больше. Это актив, который только растёт.</p>
+              <h3>
+                Уходит человек — <em>память остаётся</em>.
+              </h3>
+              <p className="memory-intro">
+                Встречи, решения, спринты, переписки — всё копится в одном
+                месте. С каждым днём память компании знает о вас больше. Это
+                актив, который только растёт.
+              </p>
               <div className="memory-grid">
-                {[['Знания не уходят с людьми','Увольнение — не катастрофа. Новый сотрудник видит, как работал предшественник и почему принимал такие решения.'],['Цифровые двойники','С двойником можно разговаривать как с самим человеком: спросить эксперта в отпуске или уже уволенного.'],['Личный консультант','Любой вопрос по истории компании — ответ со ссылкой на конкретную встречу или переписку.']].map(([title, text]) => (
-                  <div className="memory-item" key={title}><h4>{title}</h4><p>{text}</p></div>
+                {[
+                  [
+                    "Знания не уходят с людьми",
+                    "Увольнение — не катастрофа. Новый сотрудник видит, как работал предшественник и почему принимал такие решения.",
+                  ],
+                  [
+                    "Цифровые двойники",
+                    "С двойником можно разговаривать как с самим человеком: спросить эксперта в отпуске или уже уволенного.",
+                  ],
+                  [
+                    "Личный консультант",
+                    "Любой вопрос по истории компании — ответ со ссылкой на конкретную встречу или переписку.",
+                  ],
+                ].map(([title, text]) => (
+                  <div className="memory-item" key={title}>
+                    <h4>{title}</h4>
+                    <p>{text}</p>
+                  </div>
                 ))}
               </div>
             </div>
@@ -158,23 +372,74 @@ export default function LandingV1() {
           <div className="wrap">
             <div className="section-head reveal">
               <div className="section-num">VI — Отзывы</div>
-              <div><h2 className="section-title">С этого начинался <em>рост</em> у тех, кто уже внутри.</h2></div>
+              <div>
+                <h2 className="section-title">
+                  С этого начинался <em>рост</em> у тех, кто уже внутри.
+                </h2>
+              </div>
             </div>
             <div className="testimonials reveal">
-              <div className="testimonial"><div className="quote-mark">&ldquo;</div><blockquote>Раньше цели на квартал к середине просто растворялись. Теперь каждую неделю — спринт, и на разборе Кора показывает не галочки в трекере, а что реально обсуждали на встречах. За квартал добили два проекта, которые висели с прошлого года. Выручка +23%.</blockquote><div className="author"><strong>Артём Кравцов</strong><span>основатель digital-агентства · 18 человек · Казань</span></div></div>
-              <div className="testimonial"><div className="quote-mark">&ldquo;</div><blockquote>У нас уволился логист, который шесть лет держал всех поставщиков в голове. Новый человек спросил у его цифрового двойника — и получил ответы со ссылками на конкретные встречи. Онбординг вместо полугода занял две недели.</blockquote><div className="author"><strong>Марина Соколова</strong><span>операционный директор · оптовая компания · 40 человек · Екатеринбург</span></div></div>
-              <div className="testimonial"><div className="quote-mark">&ldquo;</div><blockquote>Кора слышит «сделаем к пятнице» прямо на созвоне и ставит задачу сама. За первый месяц перестали терять обещания — клиенты больше не ловят нас на «вы же обещали».</blockquote><div className="author"><strong>Дмитрий Веров</strong><span>владелец сети сервисных центров · 25 человек · Новосибирск</span></div></div>
+              <div className="testimonial">
+                <div className="quote-mark">&ldquo;</div>
+                <blockquote>
+                  Раньше цели на квартал к середине просто растворялись. Теперь
+                  каждую неделю — спринт, и на разборе Кора показывает не
+                  галочки в трекере, а что реально обсуждали на встречах. За
+                  квартал добили два проекта, которые висели с прошлого года.
+                  Выручка +23%.
+                </blockquote>
+                <div className="author">
+                  <strong>Артём Кравцов</strong>
+                  <span>
+                    основатель digital-агентства · 18 человек · Казань
+                  </span>
+                </div>
+              </div>
+              <div className="testimonial">
+                <div className="quote-mark">&ldquo;</div>
+                <blockquote>
+                  У нас уволился логист, который шесть лет держал всех
+                  поставщиков в голове. Новый человек спросил у его цифрового
+                  двойника — и получил ответы со ссылками на конкретные встречи.
+                  Онбординг вместо полугода занял две недели.
+                </blockquote>
+                <div className="author">
+                  <strong>Марина Соколова</strong>
+                  <span>
+                    операционный директор · оптовая компания · 40 человек ·
+                    Екатеринбург
+                  </span>
+                </div>
+              </div>
+              <div className="testimonial">
+                <div className="quote-mark">&ldquo;</div>
+                <blockquote>
+                  Кора слышит «сделаем к пятнице» прямо на созвоне и ставит
+                  задачу сама. За первый месяц перестали терять обещания —
+                  клиенты больше не ловят нас на «вы же обещали».
+                </blockquote>
+                <div className="author">
+                  <strong>Дмитрий Веров</strong>
+                  <span>
+                    владелец сети сервисных центров · 25 человек · Новосибирск
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        <section style={{ padding: '60px 0' }}>
+        <section style={{ padding: "60px 0" }}>
           <div className="wrap">
             <div className="privacy-wrap reveal">
               <div className="privacy-mark">§</div>
               <div className="privacy-content">
                 <h3>Ваши данные — только ваши.</h3>
-                <p>Встречи, чаты и отчёты хранятся в вашем контуре. Доступ — по ролям: каждый видит своё. Ничего не уходит на сторону и не используется для обучения чужих моделей.</p>
+                <p>
+                  Встречи, чаты и отчёты хранятся в вашем контуре. Доступ — по
+                  ролям: каждый видит своё. Ничего не уходит на сторону и не
+                  используется для обучения чужих моделей.
+                </p>
               </div>
             </div>
           </div>
@@ -182,11 +447,20 @@ export default function LandingV1() {
 
         <section className="final" id="cta">
           <div className="wrap">
-            <h2 className="reveal">Поставьте первую цель уже на <em>этой неделе</em>.</h2>
-            <p className="reveal">Память, которая помнит за всех, и спринты, которые ведут к результату. Двенадцать инструментов — один растущий актив.</p>
+            <h2 className="reveal">
+              Поставьте первую цель уже на <em>этой неделе</em>.
+            </h2>
+            <p className="reveal">
+              Память, которая помнит за всех, и спринты, которые ведут к
+              результату. Двенадцать инструментов — один растущий актив.
+            </p>
             <div className="final-ctas reveal">
-              <Link href="/signup" className="btn btn-primary btn-lg">Получить ранний доступ</Link>
-              <Link href="/login" className="btn btn-outline btn-lg">Войти</Link>
+              <Link href="/signup" className="btn btn-primary btn-lg">
+                Получить ранний доступ
+              </Link>
+              <Link href="/login" className="btn btn-outline btn-lg">
+                Войти
+              </Link>
             </div>
           </div>
         </section>

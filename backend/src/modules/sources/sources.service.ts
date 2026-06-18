@@ -1,16 +1,5 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
-import {
-  type DataClass,
-  Prisma,
-  type Source,
-  type SourceType,
-} from '@prisma/client';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { type DataClass, Prisma, type Source, type SourceType } from '@prisma/client';
 
 import { CryptoService } from '../../common/crypto/crypto.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -29,17 +18,6 @@ import type {
   SourceUpdateDto,
 } from './dto/source.dto';
 
-/**
- * Сервис управления Source'ами Org (Фаза 10 knowledge-core).
- *
- * Адаптер-зависимая логика (валидация config, регистрация webhook'ов, smoke-test)
- * выделена в `*-config.schema.ts` и `*Service` каждого адаптера. SourcesService
- * — координатор: CRUD + audit + диспетчеризация по `type`.
- *
- * Секреты (`botToken`, `apiKey`, `apiSalt`, `passwordEnc`) сохраняются в `config`
- * только зашифрованными через `CryptoService`. UI получает их как маркеры
- * `<encrypted>`.
- */
 @Injectable()
 export class SourcesService {
   private readonly logger = new Logger(SourcesService.name);
@@ -63,7 +41,6 @@ export class SourcesService {
       }),
       this.prisma.source.count({ where }),
     ]);
-    // last RawEvent.receivedAt для каждого Source (одним SQL).
     const ids = items.map((s) => s.id);
     const lastEvents =
       ids.length === 0
@@ -93,11 +70,7 @@ export class SourcesService {
     return this.toDto(source, last?.receivedAt ?? null);
   }
 
-  async create(
-    tenantId: string,
-    userId: string,
-    dto: SourceCreateDto,
-  ): Promise<SourceResponseDto> {
+  async create(tenantId: string, userId: string, dto: SourceCreateDto): Promise<SourceResponseDto> {
     const dataClass: DataClass = dto.dataClass ?? 'internal';
     const config = this.encryptSecrets(dto.type, dto.config ?? null);
     let created: Source;
@@ -136,8 +109,6 @@ export class SourcesService {
       },
     });
 
-    // Адаптер-специфичная пост-инициализация (например, регистрация Telegram
-    // webhook'а). Не блокирует ответ — fire-and-forget с логом.
     void this.afterCreate(created).catch((e) => {
       this.logger.warn(
         {
@@ -163,10 +134,7 @@ export class SourcesService {
     if (dto.dataClass !== undefined) data.dataClass = dto.dataClass;
     if (dto.isActive !== undefined) data.isActive = dto.isActive;
     if (dto.config !== undefined) {
-      const merged = this.mergeConfigPreservingSecrets(
-        source,
-        dto.config ?? null,
-      );
+      const merged = this.mergeConfigPreservingSecrets(source, dto.config ?? null);
       const enc = this.encryptSecrets(source.type, merged);
       data.config = enc === null ? Prisma.JsonNull : (enc as Prisma.InputJsonValue);
     }
@@ -184,7 +152,6 @@ export class SourcesService {
       },
     });
 
-    // Если выключили / включили — пере-регистрируем webhook (telegram).
     if (dto.isActive !== undefined) {
       void this.afterIsActiveChange(updated).catch((e) => {
         this.logger.warn(
@@ -197,16 +164,7 @@ export class SourcesService {
     return this.toDto(updated, null);
   }
 
-  /**
-   * Soft-delete: ставим `isActive=false`. Полное удаление невозможно из-за
-   * FK от `RawEvent` через `onDelete: Restrict` (vNext — отдельный воркер,
-   * который дробит RawEvent с retention).
-   */
-  async softDelete(
-    tenantId: string,
-    userId: string,
-    id: string,
-  ): Promise<{ ok: true }> {
+  async softDelete(tenantId: string, userId: string, id: string): Promise<{ ok: true }> {
     const source = await this.findOwnedOrThrow(tenantId, id);
     if (!source.isActive) {
       return { ok: true };
@@ -225,18 +183,54 @@ export class SourcesService {
     return { ok: true };
   }
 
-  /**
-   * Smoke-test адаптера. Тип-зависимое поведение:
-   *   - telegram → `getMe` Bot API.
-   *   - mango    → проверка подписи на тестовом payload.
-   *   - email    → IMAP login.
-   *   - web_form → no-op (всегда ok).
-   */
-  async test(
+  async hardDelete(
     tenantId: string,
     userId: string,
     id: string,
-  ): Promise<SourceTestResultDto> {
+  ): Promise<{ ok: true; deletedRawEvents: number }> {
+    const source = await this.findOwnedOrThrow(tenantId, id);
+    const deletedRawEvents = await this.prisma.$transaction(async (tx) => {
+      const del = await tx.rawEvent.deleteMany({ where: { sourceId: id } });
+      await tx.source.delete({ where: { id } });
+      if (source.type === 'chatbox') {
+        await tx.chatboxMessage.deleteMany({ where: { tenantId } });
+        await tx.chatboxChatSession.deleteMany({ where: { tenantId } });
+        await tx.chatboxChat.deleteMany({ where: { tenantId } });
+        await tx.chatboxChannelClient.deleteMany({ where: { tenantId } });
+        await tx.chatboxChannel.deleteMany({ where: { tenantId } });
+        await tx.chatboxCustomer.deleteMany({ where: { tenantId } });
+        await tx.chatboxMember.deleteMany({ where: { tenantId } });
+        await tx.chatboxIntegration.deleteMany({ where: { tenantId } });
+      }
+      if (source.type === 'bitrix') {
+        await tx.bitrixMessage.deleteMany({ where: { tenantId } });
+        await tx.bitrixDialogSession.deleteMany({ where: { tenantId } });
+        await tx.bitrixDialog.deleteMany({ where: { tenantId } });
+        await tx.bitrixUser.deleteMany({ where: { tenantId } });
+        await tx.bitrixContact.deleteMany({ where: { tenantId } });
+        await tx.bitrixCompany.deleteMany({ where: { tenantId } });
+        await tx.bitrixDeal.deleteMany({ where: { tenantId } });
+        await tx.bitrixLead.deleteMany({ where: { tenantId } });
+        await tx.bitrixCrmNote.deleteMany({ where: { tenantId } });
+        await tx.bitrixIntegration.deleteMany({ where: { tenantId } });
+      }
+      return del.count;
+    });
+    await this.audit.log({
+      userId,
+      action: AUDIT.SOURCE_DELETED,
+      resourceId: id,
+      metadata: {
+        type: source.type,
+        name: source.name,
+        purged: true,
+        rawEvents: deletedRawEvents,
+      },
+    });
+    return { ok: true, deletedRawEvents };
+  }
+
+  async test(tenantId: string, userId: string, id: string): Promise<SourceTestResultDto> {
     const source = await this.findOwnedOrThrow(tenantId, id);
     let result: SourceTestResultDto;
     try {
@@ -271,8 +265,6 @@ export class SourcesService {
     return result;
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
   private async findOwnedOrThrow(tenantId: string, id: string): Promise<Source> {
     const source = await this.prisma.source.findUnique({ where: { id } });
     if (!source || source.tenantId !== tenantId) {
@@ -306,10 +298,6 @@ export class SourcesService {
     return dto;
   }
 
-  /**
-   * Заменяет секретные поля (botToken, apiKey, apiSalt, passwordEnc) на
-   * `<encrypted>` маркер. Никогда не возвращает plain-секреты в API.
-   */
   private sanitizeConfigForRead(source: Source): Record<string, unknown> | null {
     const cfg = source.config as Record<string, unknown> | null;
     if (!cfg) return null;
@@ -323,10 +311,6 @@ export class SourcesService {
     return out;
   }
 
-  /**
-   * Шифрует чувствительные поля. Допускается передать значение, уже
-   * зашифрованное ранее (`gcm:v1:...`) — оставляем как есть.
-   */
   private encryptSecrets(
     type: SourceType,
     config: Record<string, unknown> | null,
@@ -338,9 +322,6 @@ export class SourcesService {
       const v = out[k];
       if (typeof v === 'string' && v.length > 0) {
         if (this.crypto.isEncrypted(v) || v === '<encrypted>') {
-          // Маркер `<encrypted>` со стороны UI — оставляем без изменений
-          // (в `update` вызовется mergeConfigPreservingSecrets и подменит
-          // его на сохранённое в БД значение).
           continue;
         }
         out[k] = this.crypto.encrypt(v);
@@ -349,10 +330,6 @@ export class SourcesService {
     return out;
   }
 
-  /**
-   * При update'е если в новом `config` секрет передан как `<encrypted>` —
-   * подменяем его на старое значение из БД (не обнуляем).
-   */
   private mergeConfigPreservingSecrets(
     source: Source,
     newConfig: Record<string, unknown> | null,
@@ -369,18 +346,12 @@ export class SourcesService {
     return out;
   }
 
-  /**
-   * Хук пост-обработки create: регистрация webhook'а адаптера, если применимо.
-   */
   private async afterCreate(source: Source): Promise<void> {
     if (source.type === 'bot' && source.isActive) {
       await this.telegram.registerWebhook(source.id);
     }
   }
 
-  /**
-   * Хук на смену isActive: регистрация / снятие webhook'а.
-   */
   private async afterIsActiveChange(source: Source): Promise<void> {
     if (source.type === 'bot') {
       if (source.isActive) await this.telegram.registerWebhook(source.id);
@@ -389,10 +360,6 @@ export class SourcesService {
   }
 }
 
-/**
- * Какие поля `Source.config` считаем секретными для шифрования. Зависит от
- * типа адаптера. Если в будущем добавится новый адаптер — продлеваем список.
- */
 function secretKeysForType(type: SourceType): string[] {
   switch (type) {
     case 'bot':

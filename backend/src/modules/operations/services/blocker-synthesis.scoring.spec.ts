@@ -8,14 +8,9 @@ import {
   normalizeBlockerText,
 } from './blocker-synthesis.scoring';
 
-/**
- * TZ-1 Фаза 3.A (daily-value-engine) — unit-тесты чистой логики синтеза
- * блокеров. Без БД/времени/сети.
- */
 describe('blocker-synthesis.scoring', () => {
   describe('computeBusinessImpact', () => {
     it('база × число блоков (без спец-сигналов, daysOpen=0)', () => {
-      // base=1 × 3 = 3
       expect(
         computeBusinessImpact(
           {
@@ -51,14 +46,12 @@ describe('blocker-synthesis.scoring', () => {
         },
         DEFAULT_BLOCKER_IMPACT_WEIGHTS,
       );
-      // plain = 1; heavy = 1 + 4 + 3 + 2 = 10
       expect(plain).toBe(1);
       expect(heavy).toBe(10);
       expect(heavy).toBeGreaterThan(plain);
     });
 
     it('хроника (daysOpen) добавляет вес', () => {
-      // base 1 + perDayOpen 0.5 × 4 = 1 + 2 = 3
       expect(
         computeBusinessImpact(
           {
@@ -85,7 +78,7 @@ describe('blocker-synthesis.scoring', () => {
           },
           DEFAULT_BLOCKER_IMPACT_WEIGHTS,
         ),
-      ).toBe(1); // base × 1 (min count)
+      ).toBe(1);
     });
   });
 
@@ -146,9 +139,7 @@ describe('blocker-synthesis.scoring', () => {
 
   describe('normalizeBlockerText', () => {
     it('нижний регистр + схлоп пробелов + срез пунктуации', () => {
-      expect(normalizeBlockerText('  Жду  ДОСТУП к API!! ')).toBe(
-        'жду доступ к api',
-      );
+      expect(normalizeBlockerText('  Жду  ДОСТУП к API!! ')).toBe('жду доступ к api');
     });
     it('одинаковые по сути блокеры дают одинаковый ключ', () => {
       const a = normalizeBlockerText('Жду доступ к базе.');

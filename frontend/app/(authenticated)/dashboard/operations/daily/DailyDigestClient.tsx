@@ -1,19 +1,19 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import ReactMarkdown from 'react-markdown';
-import rehypeSanitize from 'rehype-sanitize';
-import useSWR from 'swr';
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
+import useSWR from "swr";
 
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   operationsDailyDigestApi,
   type DailyDigestApi,
   type DailyDigestTrendPointApi,
-} from '@/api/operations-daily-digest.api';
-import { useAuth } from '@/contexts/auth-context';
+} from "@/api/operations-daily-digest.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   CHRONIC_BLOCKER_STATUS_LABEL,
   fromDailyDigestApi,
@@ -24,7 +24,7 @@ import {
   type DailyDigestPersonShinedDomain,
   type DailyDigestPersonStruggledDomain,
   type DailyDigestUrgentItemDomain,
-} from '@/domain/operations-daily-digest';
+} from "@/domain/operations-daily-digest";
 import {
   AlarmClock,
   AlertTriangle,
@@ -38,7 +38,7 @@ import {
   ThermometerSun,
   TrendingDown,
   TrendingUp,
-} from 'lucide-react';
+} from "lucide-react";
 
 import {
   AreaTrend,
@@ -50,44 +50,21 @@ import {
   GRAD,
   ModernPageShell,
   StatCard,
-} from '@/ui/components/dashboard/modern';
-import { OperationsTabs } from '@/ui/components/dashboard/OperationsTabs';
+} from "@/ui/components/dashboard/modern";
+import { OperationsTabs } from "@/ui/components/dashboard/OperationsTabs";
 
-/**
- * SBA β-8.3 Wave 1 — клиентский UI ежедневного отчёта операционного директора.
- *
- * Загрузка: SWR + `operationsDailyDigestApi.getByDate(date)`. Возвращает
- * `null` при 404 (digest_not_found), показывает empty-state.
- *
- * Date-picker:
- *   - По умолчанию — «вчера в МСК» (если в query нет `date=YYYY-MM-DD`).
- *   - Кнопки ← / →, native input[type=date].
- *
- * Кнопка «Перегенерировать» — только при admin / super_admin (через
- * `useAuth().currentOrgRole / isSuperAdmin`). После успешного POST —
- * mutate SWR кэша.
- *
- * UI:
- *   - Карточка shortSummary сверху.
- *   - Markdown-рендер bodyMarkdown (react-markdown + rehype-sanitize, как в
- *     `MeetingSummaryRender`).
- *   - Структурированные виджеты (счётчики метрик).
- *
- * Все строки — на русском (см. CLAUDE.md, feedback admin_ui_russian_only).
- */
 export function DailyDigestClient() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { currentOrgRole, isSuperAdmin } = useAuth();
 
-  const initialDate = searchParams?.get('date') ?? defaultYesterdayMsk();
+  const initialDate = searchParams?.get("date") ?? defaultYesterdayMsk();
   const [date, setDate] = useState(initialDate);
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
 
-  // Если URL поменяли извне (через ссылку) — синхронизируем state.
   useEffect(() => {
-    const fromUrl = searchParams?.get('date');
+    const fromUrl = searchParams?.get("date");
     if (fromUrl && fromUrl !== date) {
       setDate(fromUrl);
     }
@@ -95,7 +72,7 @@ export function DailyDigestClient() {
   }, [searchParams]);
 
   const swr = useSWR(
-    ['daily-digest', date],
+    ["daily-digest", date],
     async () => operationsDailyDigestApi.getByDate(date),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
@@ -106,13 +83,13 @@ export function DailyDigestClient() {
   }, [swr.data]);
 
   const canRegenerate =
-    isSuperAdmin || currentOrgRole === 'admin' || currentOrgRole === 'owner';
+    isSuperAdmin || currentOrgRole === "admin" || currentOrgRole === "owner";
 
   const goToDate = (next: string) => {
     setDate(next);
     setGenerateError(null);
-    const params = new URLSearchParams(searchParams?.toString() ?? '');
-    params.set('date', next);
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    params.set("date", next);
     router.replace(`/dashboard/operations/daily?${params.toString()}`);
   };
 
@@ -121,18 +98,17 @@ export function DailyDigestClient() {
     setGenerateError(null);
     try {
       const fresh = await operationsDailyDigestApi.generate(date);
-      // Принудительно обновляем SWR-кэш для этой даты.
       await swr.mutate(fresh, { revalidate: false });
     } catch (e) {
       if (e instanceof ApiError) {
         setGenerateError(
-          e.code === 'forbidden_role'
-            ? 'Только admin или super_admin может пересобрать отчёт.'
+          e.code === "forbidden_role"
+            ? "Только admin или super_admin может пересобрать отчёт."
             : e.message,
         );
       } else {
         setGenerateError(
-          e instanceof Error ? e.message : 'Не удалось пересобрать отчёт',
+          e instanceof Error ? e.message : "Не удалось пересобрать отчёт",
         );
       }
     } finally {
@@ -152,10 +128,10 @@ export function DailyDigestClient() {
       title="Ежедневный отчёт"
       subtitle="Сводка за сутки в МСК: температура команды, новые блокеры, просроченные обещания, цели, сигналы. Генерируется автоматически каждый день в 01:00 МСК."
     >
-      {/* §5.1 — Общая навигация по операционному разделу. */}
+      {}
       <OperationsTabs />
 
-      {/* Стеклянная панель навигации по датам + кнопка перегенерации. */}
+      {}
       <div
         style={glass({ borderRadius: 18 })}
         className="mb-6 flex flex-wrap items-center gap-3 p-3"
@@ -164,7 +140,7 @@ export function DailyDigestClient() {
           type="button"
           onClick={() => goToDate(prevDate)}
           className="rounded-xl px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
-          style={{ border: '1px solid var(--border-inset)', color: CHART.text }}
+          style={{ border: "1px solid var(--border-inset)", color: CHART.text }}
         >
           ← Предыдущий день
         </button>
@@ -179,7 +155,10 @@ export function DailyDigestClient() {
             max={today}
             onChange={(e) => goToDate(e.target.value)}
             className="rounded-xl bg-transparent px-2 py-1 text-sm"
-            style={{ border: '1px solid var(--border-inset)', color: CHART.text }}
+            style={{
+              border: "1px solid var(--border-inset)",
+              color: CHART.text,
+            }}
           />
         </label>
         <button
@@ -187,7 +166,7 @@ export function DailyDigestClient() {
           onClick={() => goToDate(nextDate)}
           disabled={nextDisabled}
           className="rounded-xl px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)] disabled:opacity-50"
-          style={{ border: '1px solid var(--border-inset)', color: CHART.text }}
+          style={{ border: "1px solid var(--border-inset)", color: CHART.text }}
         >
           Следующий день →
         </button>
@@ -200,16 +179,13 @@ export function DailyDigestClient() {
             style={{ background: GRAD.violet, color: CHART.text }}
             title="Принудительно пересобрать отчёт (admin / super_admin)"
           >
-            {generating ? 'Пересобираем…' : 'Перегенерировать'}
+            {generating ? "Пересобираем…" : "Перегенерировать"}
           </button>
         ) : null}
       </div>
 
       {generateError ? (
-        <div
-          style={glass({ borderRadius: 18 })}
-          className="mb-6 p-3 text-sm"
-        >
+        <div style={glass({ borderRadius: 18 })} className="mb-6 p-3 text-sm">
           <span style={{ color: CHART.red }}>{generateError}</span>
         </div>
       ) : null}
@@ -249,14 +225,15 @@ function EmptyState({ date }: { date: string }) {
   );
 }
 
-function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) {
+function DigestView(props: {
+  data: DailyDigestDomain;
+  rawApi: DailyDigestApi;
+}) {
   const { data } = props;
   const m = data.metrics;
   const pct = (v: number) => `${Math.round(v * 100)}%`;
   const undelivered = data.deliveredAt === null;
 
-  // Pulse Wave 2 §2.1 — если ВСЕ расширенные секции пусты, показываем
-  // нейтральный «вчера было спокойно» вместо четырёх пустых блоков.
   const allRuntimeEmpty =
     data.eventsToday.length === 0 &&
     data.urgentItems.length === 0 &&
@@ -281,7 +258,7 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
                 className="rounded-full px-2 py-0.5 text-[10px] font-medium"
                 style={{
                   color: CHART.amber,
-                  background: 'oklch(0.84 0.16 80 / 0.14)',
+                  background: "oklch(0.84 0.16 80 / 0.14)",
                 }}
               >
                 Не доставлено в Telegram
@@ -294,10 +271,10 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
         </GlassCard>
       ) : null}
 
-      {/* Ф5 — hero-тренд из digest.trend (Ф1b): настроение и нагрузка по дням. */}
+      {}
       <HeroTrend trend={data.trend} />
 
-      {/* Pulse Wave 2 §2.1 — приоритет вверху: срочное → события → люди. */}
+      {}
       <UrgentItemsSection items={data.urgentItems} />
       <EventsTimelineSection items={data.eventsToday} />
       <WhoShinedSection items={data.whoShined} />
@@ -308,13 +285,13 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
       {allRuntimeEmpty ? (
         <GlassCard className="text-center">
           <p className="text-sm" style={{ color: CHART.dim }}>
-            Вчера было спокойно: ни срочных пунктов, ни заметных событий,
-            ни просевших сотрудников.
+            Вчера было спокойно: ни срочных пунктов, ни заметных событий, ни
+            просевших сотрудников.
           </p>
         </GlassCard>
       ) : null}
 
-      {/* Температура команды — пончик зелёный/жёлтый/красный, центр = всего чек-инов. */}
+      {}
       {m.totalCheckIns === 0 ? (
         <GlassCard>
           <CardTitle icon={<ThermometerSun size={16} />} grad={GRAD.teal}>
@@ -330,17 +307,28 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
           icon={<ThermometerSun size={16} />}
           grad={GRAD.teal}
           data={[
-            { name: `Зелёные ${pct(m.greenShare)}`, value: m.greenShare, c: CHART.mint },
-            { name: `Жёлтые ${pct(m.yellowShare)}`, value: m.yellowShare, c: CHART.amber },
-            { name: `Красные ${pct(m.redShare)}`, value: m.redShare, c: CHART.red },
+            {
+              name: `Зелёные ${pct(m.greenShare)}`,
+              value: m.greenShare,
+              c: CHART.mint,
+            },
+            {
+              name: `Жёлтые ${pct(m.yellowShare)}`,
+              value: m.yellowShare,
+              c: CHART.amber,
+            },
+            {
+              name: `Красные ${pct(m.redShare)}`,
+              value: m.redShare,
+              c: CHART.red,
+            },
           ]}
           centerValue={String(m.totalCheckIns)}
           centerLabel="чек-инов"
         />
       )}
 
-      {/* §5.3/§5.4 — Hero-strip главных метрик дня (StatCard-ряд без спарклайнов —
-          у этих KPI нет временных рядов, не выдумываем). */}
+      {}
       <div>
         <h2
           className="mb-3 text-xs uppercase tracking-widest"
@@ -452,10 +440,10 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
               <li
                 key={r.checkInId}
                 className="rounded-xl p-2.5"
-                style={{ background: 'var(--surface-inset)' }}
+                style={{ background: "var(--surface-inset)" }}
               >
                 <div className="text-xs" style={{ color: CHART.faint }}>
-                  {r.personName ?? 'без имени'}
+                  {r.personName ?? "без имени"}
                 </div>
                 <div style={{ color: CHART.text }}>{r.excerpt}</div>
               </li>
@@ -464,7 +452,7 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
         </GlassCard>
       ) : null}
 
-      {/* Полный отчёт — markdown внутри стеклянной карточки. */}
+      {}
       <GlassCard>
         <CardTitle icon={<FileText size={16} />} grad={GRAD.blue}>
           Полный отчёт
@@ -477,20 +465,15 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
       </GlassCard>
 
       <p className="text-xs" style={{ color: CHART.faint }}>
-        Сгенерировано{' '}
-        {data.createdAt.toLocaleString('ru-RU')}
+        Сгенерировано {data.createdAt.toLocaleString("ru-RU")}
         {data.deliveredAt
-          ? ` · доставлено в Telegram ${data.deliveredAt.toLocaleString('ru-RU')}`
-          : ''}
+          ? ` · доставлено в Telegram ${data.deliveredAt.toLocaleString("ru-RU")}`
+          : ""}
       </p>
     </div>
   );
 }
 
-/**
- * Ф5 — hero-тренд из digest.trend (Ф1b): два area-графика за последние дни.
- * При <2 точек — стеклянная заглушка вместо пустого графика.
- */
 function HeroTrend({ trend }: { trend: DailyDigestTrendPointApi[] }) {
   if (trend.length < 2) {
     return (
@@ -514,8 +497,8 @@ function HeroTrend({ trend }: { trend: DailyDigestTrendPointApi[] }) {
         xKey="dateLocal"
         height={220}
         series={[
-          { key: 'greenShare', color: CHART.mint, label: 'Зелёные' },
-          { key: 'redShare', color: CHART.red, label: 'Красные' },
+          { key: "greenShare", color: CHART.mint, label: "Зелёные" },
+          { key: "redShare", color: CHART.red, label: "Красные" },
         ]}
       />
       <AreaTrend
@@ -526,11 +509,11 @@ function HeroTrend({ trend }: { trend: DailyDigestTrendPointApi[] }) {
         xKey="dateLocal"
         height={220}
         series={[
-          { key: 'blockers', color: CHART.amber, label: 'Блокеры' },
+          { key: "blockers", color: CHART.amber, label: "Блокеры" },
           {
-            key: 'overdueCommitments',
+            key: "overdueCommitments",
             color: CHART.pink,
-            label: 'Просроченные обещания',
+            label: "Просроченные обещания",
           },
         ]}
       />
@@ -541,19 +524,16 @@ function HeroTrend({ trend }: { trend: DailyDigestTrendPointApi[] }) {
 function swrErrorMessage(err: unknown): string | null {
   if (!err) return null;
   if (err instanceof ApiError) {
-    if (err.code === 'forbidden_role') {
-      return 'Нет доступа к ежедневному отчёту (нужна роль coo / admin / owner).';
+    if (err.code === "forbidden_role") {
+      return "Нет доступа к ежедневному отчёту (нужна роль coo / admin / owner).";
     }
     return err.message;
   }
-  return err instanceof Error ? err.message : 'Не удалось загрузить отчёт';
+  return err instanceof Error ? err.message : "Не удалось загрузить отчёт";
 }
 
 function defaultYesterdayMsk(): string {
-  // МСК = UTC+3. Берём «сейчас в МСК», вычитаем 24 часа, форматируем как
-  // YYYY-MM-DD по МСК-таймзоне.
   const now = new Date();
-  // Сдвинули на -1 день и +3 часа (МСК) — получили «вчера в МСК».
   const mskDate = new Date(now.getTime() + 3 * 60 * 60 * 1000);
   mskDate.setUTCDate(mskDate.getUTCDate() - 1);
   return toIso(mskDate);
@@ -571,26 +551,16 @@ function todayUtcDate(): string {
 
 function toIso(d: Date): string {
   const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
 }
 
 function formatRu(dateLocal: string): string {
-  // YYYY-MM-DD → DD.MM.YYYY.
-  const [y, m, d] = dateLocal.split('-');
+  const [y, m, d] = dateLocal.split("-");
   if (!y || !m || !d) return dateLocal;
   return `${d}.${m}.${y}`;
 }
-
-/* ──────────────────────────────────────────────────────────────────────
- * Pulse Wave 2 §2.1 — секции «Срочное / Хронология / Шайнили / Просели».
- * Каждая секция:
- *   - empty list → не рендерим карточку (общий fallback «вчера было спокойно»
- *     показывается в `DigestView`, если ВСЕ 4 пусты);
- *   - drill-down — через next/link на frontend-маршруты;
- *   - цвета — парные токены (chip-{role}-bg + chip-{role}-fg).
- * ────────────────────────────────────────────────────────────────────── */
 
 function UrgentItemsSection({
   items,
@@ -610,7 +580,10 @@ function UrgentItemsSection({
               href={item.link}
               className="flex flex-wrap items-center justify-between gap-2 rounded-md p-2 text-sm hover:bg-[var(--surface-hover)]"
             >
-              <span className="flex items-center gap-2" style={{ color: CHART.text }}>
+              <span
+                className="flex items-center gap-2"
+                style={{ color: CHART.text }}
+              >
                 <span aria-hidden style={{ color: CHART.faint }}>
                   {urgentIcon(item.kind)}
                 </span>
@@ -619,9 +592,15 @@ function UrgentItemsSection({
               <span
                 className="rounded-full px-2 py-0.5 text-[11px] font-medium"
                 style={
-                  item.urgency === 'high'
-                    ? { color: CHART.red, background: 'oklch(0.66 0.22 25 / 0.16)' }
-                    : { color: CHART.amber, background: 'oklch(0.84 0.16 80 / 0.14)' }
+                  item.urgency === "high"
+                    ? {
+                        color: CHART.red,
+                        background: "oklch(0.66 0.22 25 / 0.16)",
+                      }
+                    : {
+                        color: CHART.amber,
+                        background: "oklch(0.84 0.16 80 / 0.14)",
+                      }
                 }
               >
                 {item.badge}
@@ -634,11 +613,7 @@ function UrgentItemsSection({
   );
 }
 
-function EventsTimelineSection({
-  items,
-}: {
-  items: DailyDigestEventDomain[];
-}) {
+function EventsTimelineSection({ items }: { items: DailyDigestEventDomain[] }) {
   if (items.length === 0) return null;
   return (
     <GlassCard>
@@ -668,7 +643,10 @@ function EventsTimelineSection({
               {item.detail ? (
                 <span
                   className="rounded-full px-2 py-0.5 text-[11px]"
-                  style={{ color: CHART.faint, background: 'var(--surface-inset)' }}
+                  style={{
+                    color: CHART.faint,
+                    background: "var(--surface-inset)",
+                  }}
                 >
                   {item.detail}
                 </span>
@@ -699,17 +677,25 @@ function WhoShinedSection({
               href={p.link}
               className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-[var(--surface-hover)]"
             >
-              <span aria-hidden style={{ color: CHART.mint }}>★</span>
+              <span aria-hidden style={{ color: CHART.mint }}>
+                ★
+              </span>
               <span className="font-medium" style={{ color: CHART.text }}>
                 {p.personName}
               </span>
               <span
                 className="rounded-full px-2 py-0.5 text-[11px] font-medium"
-                style={{ color: CHART.mint, background: 'oklch(0.85 0.15 165 / 0.14)' }}
+                style={{
+                  color: CHART.mint,
+                  background: "oklch(0.85 0.15 165 / 0.14)",
+                }}
               >
                 {shinedReasonLabel(p.reason)}
               </span>
-              <span className="flex-1 truncate text-xs" style={{ color: CHART.dim }}>
+              <span
+                className="flex-1 truncate text-xs"
+                style={{ color: CHART.dim }}
+              >
                 {p.detail}
               </span>
             </Link>
@@ -743,17 +729,25 @@ function WhoStruggledSection({
               href={p.link}
               className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-[var(--surface-hover)]"
             >
-              <span aria-hidden style={{ color: CHART.amber }}>⚑</span>
+              <span aria-hidden style={{ color: CHART.amber }}>
+                ⚑
+              </span>
               <span className="font-medium" style={{ color: CHART.text }}>
                 {p.personName}
               </span>
               <span
                 className="rounded-full px-2 py-0.5 text-[11px] font-medium"
-                style={{ color: CHART.amber, background: 'oklch(0.84 0.16 80 / 0.14)' }}
+                style={{
+                  color: CHART.amber,
+                  background: "oklch(0.84 0.16 80 / 0.14)",
+                }}
               >
                 {struggledReasonLabel(p.reason)}
               </span>
-              <span className="flex-1 truncate text-xs" style={{ color: CHART.dim }}>
+              <span
+                className="flex-1 truncate text-xs"
+                style={{ color: CHART.dim }}
+              >
                 {p.detail}
               </span>
             </Link>
@@ -788,7 +782,9 @@ function CustomersAtRiskSection({
           >
             <span
               aria-hidden
-              style={{ color: c.riskLevel === 'critical' ? CHART.red : CHART.amber }}
+              style={{
+                color: c.riskLevel === "critical" ? CHART.red : CHART.amber,
+              }}
             >
               ●
             </span>
@@ -798,13 +794,16 @@ function CustomersAtRiskSection({
             <span
               className="rounded-full px-2 py-0.5 text-[11px] font-medium"
               style={{
-                color: c.riskLevel === 'critical' ? CHART.red : CHART.amber,
-                background: 'var(--surface-inset)',
+                color: c.riskLevel === "critical" ? CHART.red : CHART.amber,
+                background: "var(--surface-inset)",
               }}
             >
-              {c.riskLevel === 'critical' ? 'критично' : 'внимание'}
+              {c.riskLevel === "critical" ? "критично" : "внимание"}
             </span>
-            <span className="flex-1 truncate text-xs" style={{ color: CHART.dim }}>
+            <span
+              className="flex-1 truncate text-xs"
+              style={{ color: CHART.dim }}
+            >
               {c.badge}
             </span>
           </li>
@@ -839,7 +838,9 @@ function ChronicBlockersSection({
             <span aria-hidden className="text-chip-danger-fg">
               ⚠
             </span>
-            <span className="flex-1 text-fg-primary">{b.representativeText}</span>
+            <span className="flex-1 text-fg-primary">
+              {b.representativeText}
+            </span>
             <span
               className={`rounded px-2 py-0.5 text-[11px] ${chronicStatusChipClass(
                 b.status,
@@ -866,83 +867,82 @@ function ChronicBlockersSection({
 }
 
 function chronicStatusChipClass(
-  status: DailyDigestChronicBlockerDomain['status'],
+  status: DailyDigestChronicBlockerDomain["status"],
 ): string {
   switch (status) {
-    case 'new':
-      return 'bg-chip-warning-bg text-chip-warning-fg';
-    case 'recurring':
-      return 'bg-chip-danger-bg text-chip-danger-fg';
-    case 'resolved':
-      return 'bg-chip-success-bg text-chip-success-fg';
+    case "new":
+      return "bg-chip-warning-bg text-chip-warning-fg";
+    case "recurring":
+      return "bg-chip-danger-bg text-chip-danger-fg";
+    case "resolved":
+      return "bg-chip-success-bg text-chip-success-fg";
     default:
-      return 'bg-bg-overlay text-fg-secondary';
+      return "bg-bg-overlay text-fg-secondary";
   }
 }
 
-function urgentIcon(kind: DailyDigestUrgentItemDomain['kind']): string {
+function urgentIcon(kind: DailyDigestUrgentItemDomain["kind"]): string {
   switch (kind) {
-    case 'overdue_commitment':
-      return '⏰';
-    case 'raised_decision':
-      return '↑';
-    case 'high_insight':
-      return '!';
+    case "overdue_commitment":
+      return "⏰";
+    case "raised_decision":
+      return "↑";
+    case "high_insight":
+      return "!";
     default:
-      return '·';
+      return "·";
   }
 }
 
-function eventIcon(kind: DailyDigestEventDomain['kind']): string {
+function eventIcon(kind: DailyDigestEventDomain["kind"]): string {
   switch (kind) {
-    case 'meeting':
-      return '◉';
-    case 'decision':
-      return '✓';
-    case 'signal':
-      return '△';
+    case "meeting":
+      return "◉";
+    case "decision":
+      return "✓";
+    case "signal":
+      return "△";
     default:
-      return '·';
+      return "·";
   }
 }
 
 function shinedReasonLabel(
-  reason: DailyDigestPersonShinedDomain['reason'],
+  reason: DailyDigestPersonShinedDomain["reason"],
 ): string {
   switch (reason) {
-    case 'recognition_received':
-      return 'получил признание';
-    case 'helpful_acts':
-      return 'помог коллегам';
-    case 'commitments_kept':
-      return 'сдержал обещания';
+    case "recognition_received":
+      return "получил признание";
+    case "helpful_acts":
+      return "помог коллегам";
+    case "commitments_kept":
+      return "сдержал обещания";
     default:
       return reason;
   }
 }
 
 function struggledReasonLabel(
-  reason: DailyDigestPersonStruggledDomain['reason'],
+  reason: DailyDigestPersonStruggledDomain["reason"],
 ): string {
   switch (reason) {
-    case 'red_checkin':
-      return 'красный чек-ин';
-    case 'broken_commitment':
-      return 'не выполнено обещание';
-    case 'silent_3_days':
-      return 'молчит 3 дня';
+    case "red_checkin":
+      return "красный чек-ин";
+    case "broken_commitment":
+      return "не выполнено обещание";
+    case "silent_3_days":
+      return "молчит 3 дня";
     default:
       return reason;
   }
 }
 
 function formatTimeRu(iso: string): string {
-  // ISO → HH:MM в МСК. Безопасно: если строка кривая, отдаём пустоту.
   const t = new Date(iso);
-  if (Number.isNaN(t.getTime())) return '';
-  return t.toLocaleTimeString('ru-RU', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Europe/Moscow',
+  if (Number.isNaN(t.getTime())) return "";
+  return t.toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Moscow",
   });
 }

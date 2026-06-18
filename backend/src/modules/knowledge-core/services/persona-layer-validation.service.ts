@@ -19,38 +19,13 @@ import {
   PERSONA_BEHAVIOR_JUDGE_USER_TEMPLATE,
 } from '../prompts/persona-behavior-judge.prompt';
 
-/**
- * TZ clone-method ВАЛ.1 (2026-06-12) — PersonaLayerValidationService
- * (поведенческая валидация persona v1-vs-v2, закрывает R10).
- *
- * Валидация клона ПО ПОВЕДЕНИЮ (не самоотчёту): на реальных кейсах роли
- * (свежий subject-reasoning блок с непустым trustedAnswer = «реальный ход»)
- * сравниваем два ответа клона:
- *   - A — persona v1 (baseline: in-memory компиляция DEPRECATED v1-промптом
- *     «только черты», snapshot НЕ сохраняется);
- *   - B — persona v2 (активный role-snapshot со всеми слоями метода).
- * Каждый кейс судит LLM `persona-behavior-judge` (оценивает ТОЛЬКО
- * поведенческий ход, не стиль/самоописания) → метрика
- * `clone_persona_layer_score{variant}`.
- *
- * R10: БЕЗ human-approval-гейта — результат пишется в метрики/лог, НИЧЕГО
- * не блокирует и не меняет (persona v2 уже активна по Ship-On; это
- * наблюдение прод-качества). Сервис не делает ни одного write в БД.
- *
- * Анти-подглядывание: кейс-блоки ИСКЛЮЧАЮТСЯ из subgraph контекста
- * clone-respond — иначе клон читает правильный ответ.
- */
 @Injectable()
 export class PersonaLayerValidationService {
   private readonly logger = new Logger(PersonaLayerValidationService.name);
 
-  /** Окно свежести кейс-кандидатов (subject-reasoning блоков), дней. */
   private static readonly CASE_LOOKBACK_DAYS = 60;
-  /** Максимум блоков-кандидатов, загружаемых на роль. */
   private static readonly MAX_CANDIDATE_BLOCKS = 30;
-  /** Максимум reasoning-блоков в subgraph ответа клона. */
   private static readonly MAX_SUBGRAPH_BLOCKS = 15;
-  /** Top-N активных layer='skill' черт на сотрудника для baseline v1 (как buildForRole). */
   private static readonly MAX_TRAITS_PER_PERSON = 5;
 
   constructor(
@@ -61,20 +36,12 @@ export class PersonaLayerValidationService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Поведенческая валидация одной роли. Best-effort: ошибки отдельного
-   * кейса → skip кейса (warn + counter), не всей роли.
-   */
-  async validateRole(args: {
-    tenantId: string;
-    roleId: string;
-  }): Promise<{
+  async validateRole(args: { tenantId: string; roleId: string }): Promise<{
     cases: number;
     avgV1: number | null;
     avgV2: number | null;
     skipped: string | null;
   }> {
-    // 1. Активная role-persona = вариант B (v2, все слои метода).
     const persona = await this.prisma.executablePersona.findFirst({
       where: {
         tenantId: args.tenantId,
@@ -96,9 +63,6 @@ export class PersonaLayerValidationService {
 
     const personIds = await this.loadRolePersonIds(args);
 
-    // 2. Baseline v1: in-memory компиляция DEPRECATED v1-промптом
-    //    «только черты» (snapshot НЕ сохраняется — buildForRole пишет в БД,
-    //    поэтому здесь локальная выборка).
     const personaV1 = await this.compileBaselineV1({
       tenantId: args.tenantId,
       roleId: args.roleId,
@@ -114,8 +78,6 @@ export class PersonaLayerValidationService {
       };
     }
 
-    // 3. Кейсы: свежие subject-reasoning блоки людей роли с непустым
-    //    trustedAnswer (реальный ход).
     const blocks = await this.loadCaseCandidateBlocks({
       tenantId: args.tenantId,
       personIds,
@@ -132,8 +94,6 @@ export class PersonaLayerValidationService {
       return { cases: 0, avgV1: null, avgV2: null, skipped: 'no_cases' };
     }
 
-    // 4. Subgraph для ответов клона: остальные reasoning-блоки.
-    //    КРИТИЧНО: кейс-блоки исключены — иначе клон читает правильный ответ.
     const caseIds = new Set(caseBlocks.map((b) => b.id));
     const subgraph = {
       reasoningBlocks: blocks
@@ -147,7 +107,6 @@ export class PersonaLayerValidationService {
       decisions: [],
     };
 
-    // 5. Прогон кейсов: 2 ответа клона (v1/v2) + 1 judge на кейс.
     const scoresV1: number[] = [];
     const scoresV2: number[] = [];
     for (const caseBlock of caseBlocks) {
@@ -206,8 +165,6 @@ export class PersonaLayerValidationService {
       }
     }
 
-    // 6. Сводка. R10: НИКАКИХ блокирующих действий по результату — только
-    //    наблюдение (метрики выше + лог здесь).
     const avgV1 = average(scoresV1);
     const avgV2 = average(scoresV2);
     this.logger.log(
@@ -216,29 +173,14 @@ export class PersonaLayerValidationService {
         cases: scoresV1.length,
         avgV1,
         avgV2,
-        verdict:
-          avgV1 !== null && avgV2 !== null
-            ? avgV2 >= avgV1
-              ? 'v2>=v1'
-              : 'v2<v1'
-            : 'n/a',
+        verdict: avgV1 !== null && avgV2 !== null ? (avgV2 >= avgV1 ? 'v2>=v1' : 'v2<v1') : 'n/a',
       },
       'persona-layer-validation: сводка по роли',
     );
     return { cases: scoresV1.length, avgV1, avgV2, skipped: null };
   }
 
-  // ───────────────────── выборки ─────────────────────
-
-  /**
-   * personIds роли = UNION PersonRole(validTo=null, deprecated) +
-   * Appointment(validTo=null, active|acting) — паттерн Э1.2
-   * (persona-build живёт на PersonRole, актуальный мир — Appointment).
-   */
-  private async loadRolePersonIds(args: {
-    tenantId: string;
-    roleId: string;
-  }): Promise<string[]> {
+  private async loadRolePersonIds(args: { tenantId: string; roleId: string }): Promise<string[]> {
     const [personRoleRows, appointmentRows] = await Promise.all([
       this.prisma.personRole.findMany({
         where: { tenantId: args.tenantId, roleId: args.roleId, validTo: null },
@@ -254,19 +196,9 @@ export class PersonaLayerValidationService {
         select: { personId: true },
       }),
     ]);
-    return [
-      ...new Set(
-        [...personRoleRows, ...appointmentRows].map((r) => r.personId),
-      ),
-    ];
+    return [...new Set([...personRoleRows, ...appointmentRows].map((r) => r.personId))];
   }
 
-  /**
-   * Baseline v1: активные layer='skill' черты людей роли (топ-5/чел, как
-   * buildForRole) → LLM `executable-persona-compile` с DEPRECATED
-   * v1-шаблонами. Возвращает текст persona v1 или null (→ caller вернёт
-   * skipped='v1_compile_failed').
-   */
   private async compileBaselineV1(args: {
     tenantId: string;
     roleId: string;
@@ -310,7 +242,6 @@ export class PersonaLayerValidationService {
         }),
         tenantId: args.tenantId,
         dataClass: 'internal',
-        // Как в compilePersonaPrompt: текст 300-800 слов + thinking-токены.
         maxTokens: 8_000,
         sourceRef: { type: 'persona_layer_validation', id: args.roleId },
       });
@@ -329,16 +260,7 @@ export class PersonaLayerValidationService {
     }
   }
 
-  /**
-   * Свежие subject-reasoning блоки людей роли (паттерн Э1.2 /
-   * loadSubjectReasoningBlocks 3.7): employee с entityId → ideaBlockEntity
-   * role='subject', блок canonical, signalType reasoning/rationale/
-   * decision_basis, за CASE_LOOKBACK_DAYS, take 30, свежие сверху.
-   */
-  private async loadCaseCandidateBlocks(args: {
-    tenantId: string;
-    personIds: string[];
-  }): Promise<
+  private async loadCaseCandidateBlocks(args: { tenantId: string; personIds: string[] }): Promise<
     Array<{
       id: string;
       name: string;
@@ -363,8 +285,7 @@ export class PersonaLayerValidationService {
     if (entityIds.length === 0) return [];
 
     const since = new Date(
-      Date.now() -
-        PersonaLayerValidationService.CASE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
+      Date.now() - PersonaLayerValidationService.CASE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
     );
     const mentions = await this.prisma.ideaBlockEntity.findMany({
       where: {
@@ -378,7 +299,6 @@ export class PersonaLayerValidationService {
         },
       },
       select: { blockId: true },
-      take: PersonaLayerValidationService.MAX_CANDIDATE_BLOCKS,
     });
     const blockIds = [...new Set(mentions.map((m) => m.blockId))];
     if (blockIds.length === 0) return [];
@@ -392,12 +312,10 @@ export class PersonaLayerValidationService {
         trustedAnswer: true,
       },
       orderBy: { createdAt: 'desc' },
+      take: PersonaLayerValidationService.MAX_CANDIDATE_BLOCKS,
     });
   }
 
-  // ───────────────────── LLM-вызовы ─────────────────────
-
-  /** Один ответ клона (clone-respond, factual) с заданной persona. */
   private async callCloneRespond(args: {
     tenantId: string;
     roleId: string;
@@ -435,7 +353,6 @@ export class PersonaLayerValidationService {
     return text;
   }
 
-  /** LLM-judge поведенческой верности: scoreA (v1) / scoreB (v2), 0..1. */
   private async judgeCase(args: {
     tenantId: string;
     roleId: string;
@@ -465,26 +382,21 @@ export class PersonaLayerValidationService {
       dataClass: 'internal',
       sourceRef: { type: 'persona_layer_validation', id: args.roleId },
     });
-    // Битый JSON → throw → caller пропускает кейс (counter skipped).
     const parsed = JSON.parse(result.text) as Record<string, unknown>;
     const scoreA = normalizeScore(parsed.scoreA);
     const scoreB = normalizeScore(parsed.scoreB);
     if (scoreA === null || scoreB === null) {
-      throw new Error(
-        'persona-behavior-judge: scoreA/scoreB отсутствуют или не числа 0..1',
-      );
+      throw new Error('persona-behavior-judge: scoreA/scoreB отсутствуют или не числа 0..1');
     }
     return { scoreA, scoreB };
   }
 }
 
-/** Среднее по массиву; null для пустого. */
 function average(values: ReadonlyArray<number>): number | null {
   if (values.length === 0) return null;
   return values.reduce((acc, v) => acc + v, 0) / values.length;
 }
 
-/** Число → clamp 0..1; не-число → null. */
 function normalizeScore(v: unknown): number | null {
   if (typeof v !== 'number' || !Number.isFinite(v)) return null;
   return Math.min(1, Math.max(0, v));

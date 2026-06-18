@@ -5,10 +5,7 @@ import { BusinessMetricsService } from '../../common/metrics/business-metrics.se
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { tryParseJson } from '../ai/services/json-extract.util';
 import { LlmRouterService } from '../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../ai/services/prompts/common';
+import { withInjectionGuard, wrapUserData } from '../ai/services/prompts/common';
 import { EmbeddingFallbackService } from '../embeddings/services/embedding-fallback.service';
 import {
   TASK_DEDUPE_JSON_SCHEMA,
@@ -18,41 +15,6 @@ import {
   TaskDedupeResponseSchema,
 } from '../knowledge-core/prompts/task-dedupe.prompt';
 
-/**
- * CrossSourceTaskDedupeService (ТЗ 2026-06-11 chatbox-tasks, Ф6) — ЕДИНЫЙ
- * межисточниковый дедуп задач.
- *
- * В отличие от `MeetingTaskDedupeService` (дедуп ВНУТРИ одной встречи: fast-
- * черновик против canonical), этот сервис решает межисточниковую задачу:
- * кандидат-задача из новой сессии чата сравнивается с УЖЕ ОТКРЫТЫМИ задачами
- * ВСЕГО tenant (из ЛЮБОГО источника — встреча/переписка). Если совпадение —
- * новая задача НЕ создаётся, а сессия привязывается к существующей через
- * `TaskSource` (Р-2). Иначе создаётся новая задача.
- *
- * Контракт NON-LOSSY:
- *   - существующие задачи НИКОГДА не удаляются и не переписываются;
- *   - при совпадении пишем `TaskSource` (идемпотентно по @@unique) и
- *     best-effort дописываем `evidenceBlockIds` существующей задачи;
- *   - при сомнении LLM-арбитра ('different' или ошибка) — создаём новую задачу
- *     (лучше дубль, чем потерянная задача).
- *
- * Kill-switch `cfg.aiFeatures.tasksCrossSourceDedupeEnabled` (дефолт ON). При
- * OFF — дедуп не работает, кандидат всегда создаётся как новая задача.
- *
- * Алгоритм на один кандидат:
- *   1. flag OFF → create (без сравнения).
- *   2. embed заголовок кандидата + заголовки открытых задач tenant одним батчем.
- *   3. max cosine по открытым задачам:
- *      - sim >= threshold              → дубль → link (TaskSource), result='linked';
- *      - [threshold-0.07, threshold)   → LLM-арбитр task-dedupe (серая зона):
- *                                        verdict='same' → link; иначе → create;
- *      - sim < threshold-0.07          → create.
- *
- * Любая ошибка дедупа — best-effort: падаем в create (non-lossy), вызывающий
- * воркер не роняем.
- */
-
-/** Кандидат-задача из сессии чата (ещё НЕ записана в БД). */
 export interface CrossSourceTaskCandidate {
   title: string;
   description?: string | null;
@@ -61,18 +23,13 @@ export interface CrossSourceTaskCandidate {
   sourceQuote?: string | null;
   confidence?: number | null;
   dueDate?: Date | null;
-  /** IdeaBlock'и-доказательства кандидата (best-effort append к существующей). */
   evidenceBlockIds?: string[];
 }
 
-/** Контекст сессии чата — для записи источника на создаваемую/привязываемую задачу. */
 export interface CrossSourceChatContext {
   tenantId: string;
-  /** Владелец-fallback задачи (Task.userId — NOT NULL). */
   ownerUserId: string;
-  /** ChatboxChatSession.id (= TaskSource.sourceRefId для chatbox). */
   sessionId: string;
-  /** ChatboxChat.id (денорм). */
   chatId: string | null;
 }
 
@@ -82,9 +39,7 @@ export type CrossSourceDedupeResult = 'created' | 'linked' | 'kept';
 export class CrossSourceTaskDedupeService {
   private readonly logger = new Logger(CrossSourceTaskDedupeService.name);
 
-  /** Ширина «серой зоны» под порогом, где решение делегируется LLM-арбитру. */
   private static readonly GRAY_BAND = 0.07;
-  /** Максимум попыток вызова+парсинга LLM-арбитра (зеркалит meeting-dedupe). */
   private static readonly LLM_RETRIES = 2;
 
   constructor(
@@ -98,12 +53,6 @@ export class CrossSourceTaskDedupeService {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  /**
-   * Обрабатывает кандидатов задач сессии: для каждого — дедуп против открытых
-   * задач tenant. Дубль → link (TaskSource), не-дубль → create. Возвращает
-   * сводку результатов. Никогда не бросает: на любой сбой по кандидату —
-   * best-effort create (non-lossy).
-   */
   async processCandidates(
     candidates: readonly CrossSourceTaskCandidate[],
     ctx: CrossSourceChatContext,
@@ -112,7 +61,6 @@ export class CrossSourceTaskDedupeService {
     let linked = 0;
     if (candidates.length === 0) return { created, linked };
 
-    // flag OFF → дедуп выключен: создаём все кандидаты как новые задачи.
     if (!this.isEnabled()) {
       for (const c of candidates) {
         await this.createTask(c, ctx);
@@ -122,7 +70,6 @@ export class CrossSourceTaskDedupeService {
       return { created, linked };
     }
 
-    // Открытые задачи всего tenant (status=open) — против них сравниваем.
     const openTasks = await this.prisma.task.findMany({
       where: { tenantId: ctx.tenantId, status: 'open' },
       select: {
@@ -134,7 +81,6 @@ export class CrossSourceTaskDedupeService {
       },
     });
 
-    // Нет открытых задач — все кандидаты заведомо новые.
     if (openTasks.length === 0) {
       for (const c of candidates) {
         await this.createTask(c, ctx);
@@ -146,14 +92,10 @@ export class CrossSourceTaskDedupeService {
 
     const threshold = this.threshold();
 
-    // Эмбеддинг заголовков открытых задач — ОДИН раз на пачку кандидатов.
     let openVecs: number[][];
     try {
-      openVecs = await this.embeddings.embed(
-        openTasks.map((t) => this.titleText(t)),
-      );
+      openVecs = await this.embeddings.embed(openTasks.map((t) => this.titleText(t)));
     } catch (err) {
-      // Embed упал — не теряем задачи: создаём всех кандидатов как новые.
       this.metrics?.incTaskDedupe({ result: 'cross_created' });
       this.logger.warn(
         {
@@ -195,8 +137,6 @@ export class CrossSourceTaskDedupeService {
     return { created, linked };
   }
 
-  // ─────────────────────────── core per-candidate ──────────────────────────
-
   private async processOne(
     cand: CrossSourceTaskCandidate,
     ctx: CrossSourceChatContext,
@@ -217,7 +157,6 @@ export class CrossSourceTaskDedupeService {
         if (!v) throw new Error('embed вернул пустой вектор');
         candVec = v;
       } catch (err) {
-        // Не смогли эмбеддить кандидата — создаём (non-lossy).
         this.logger.warn(
           {
             sessionId: ctx.sessionId,
@@ -229,7 +168,6 @@ export class CrossSourceTaskDedupeService {
         return 'created';
       }
 
-      // max cosine по открытым задачам + индекс лучшего кандидата.
       let bestSim = -Infinity;
       let bestIdx = -1;
       for (let j = 0; j < openTasks.length; j++) {
@@ -253,22 +191,18 @@ export class CrossSourceTaskDedupeService {
       }
 
       if (bestSim >= threshold - CrossSourceTaskDedupeService.GRAY_BAND) {
-        // Серая зона — один LLM-вызов на пару (кандидат, лучшая открытая задача).
         const same = await this.judgeSame(ctx, cand, best);
         if (same) {
           await this.linkToExisting(best, cand, ctx);
           return 'linked';
         }
-        // verdict='different' / сомнение → создаём (non-lossy).
         await this.createTask(cand, ctx);
         return 'created';
       }
 
-      // Вне серой зоны и ниже порога — заведомо новая задача.
       await this.createTask(cand, ctx);
       return 'created';
     } catch (err) {
-      // Любая непредвиденная ошибка по кандидату → best-effort create.
       this.logger.warn(
         {
           sessionId: ctx.sessionId,
@@ -291,14 +225,6 @@ export class CrossSourceTaskDedupeService {
     }
   }
 
-  // ─────────────────────────── writes ──────────────────────────────────────
-
-  /**
-   * Создаёт новую задачу из переписки. `meetingId=null`, `sourceType='chatbox'`,
-   * ссылки на сессию/чат. Дополнительно пишет `TaskSource` (chatbox) — единый
-   * след источника. Идемпотентность создания обеспечивает вызывающий воркер
-   * (проверка `Task.sourceChatSessionId` + `TaskSource` ДО прогона дедупа).
-   */
   private async createTask(
     cand: CrossSourceTaskCandidate,
     ctx: CrossSourceChatContext,
@@ -323,16 +249,9 @@ export class CrossSourceTaskDedupeService {
       select: { id: true },
     });
 
-    // Первичный источник (chatbox) фиксируем и в TaskSource — единый реестр.
     await this.upsertTaskSource(task.id, ctx, cand.sourceQuote ?? null);
   }
 
-  /**
-   * Привязывает сессию-кандидата к существующей задаче: пишет `TaskSource`
-   * (идемпотентно) + best-effort дописывает `evidenceBlockIds` существующей
-   * задачи (без удаления существующих — только union новых). Саму задачу НЕ
-   * переписываем.
-   */
   private async linkToExisting(
     existing: { id: string; evidenceBlockIds: string[] },
     cand: CrossSourceTaskCandidate,
@@ -340,7 +259,6 @@ export class CrossSourceTaskDedupeService {
   ): Promise<void> {
     await this.upsertTaskSource(existing.id, ctx, cand.sourceQuote ?? null);
 
-    // Best-effort: дописать новые evidence-блоки (union), не теряя старые.
     const newBlocks = (cand.evidenceBlockIds ?? []).filter(
       (b) => !existing.evidenceBlockIds.includes(b),
     );
@@ -362,11 +280,6 @@ export class CrossSourceTaskDedupeService {
     }
   }
 
-  /**
-   * Идемпотентная запись `TaskSource(chatbox, sourceRefId=sessionId)`.
-   * Полагаемся на @@unique([taskId, sourceType, sourceRefId]) — повторный вызов
-   * ловит P2002 и трактует как no-op.
-   */
   private async upsertTaskSource(
     taskId: string,
     ctx: CrossSourceChatContext,
@@ -384,7 +297,6 @@ export class CrossSourceTaskDedupeService {
         },
       });
     } catch (err) {
-      // P2002 (уже привязано) — идемпотентный no-op. Прочие — логируем.
       const code = (err as { code?: string } | null)?.code;
       if (code === 'P2002') return;
       this.logger.warn(
@@ -398,13 +310,10 @@ export class CrossSourceTaskDedupeService {
     }
   }
 
-  // ─────────────────────────── helpers ─────────────────────────────────────
-
   private isEnabled(): boolean {
     try {
       return this.cfg.aiFeatures.tasksCrossSourceDedupeEnabled === true;
     } catch {
-      // На сбое чтения флага — НЕ дедупим (создаём как новые, non-lossy).
       return false;
     }
   }
@@ -418,7 +327,6 @@ export class CrossSourceTaskDedupeService {
     }
   }
 
-  /** Текст для эмбеддинга: title + (description, обрезано до ~200). */
   private titleText(row: { title: string; description?: string | null }): string {
     const title = (row.title ?? '').trim();
     const desc = (row.description ?? '').trim();
@@ -442,12 +350,6 @@ export class CrossSourceTaskDedupeService {
     return dot / (Math.sqrt(na) * Math.sqrt(nb));
   }
 
-  /**
-   * LLM-арбитр для серой зоны: один вызов task-dedupe на пару (кандидат,
-   * открытая задача). verdict='same' → true (дубль). Зеркалит
-   * MeetingTaskDedupeService: retry×2 + validate + tryParseJson + Zod. Любая
-   * неудача после ретраев → false (create, non-lossy).
-   */
   private async judgeSame(
     ctx: CrossSourceChatContext,
     cand: CrossSourceTaskCandidate,
@@ -493,7 +395,6 @@ export class CrossSourceTaskDedupeService {
         );
       }
     }
-    // После ретраев — консервативно создаём новую задачу (non-lossy).
     return false;
   }
 

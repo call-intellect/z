@@ -1,25 +1,19 @@
-'use client';
+"use client";
 
-/**
- * IntakeBoard — триаж входящих задач.
- * Phase 2: список карточек со статусом + action-кнопки accept/reject/snooze
- * (triage по интейку). Полноценный triage-flow с overrides — Sprint 4.
- */
-
-import { useState } from 'react';
-import { Check, X, Clock } from 'lucide-react';
-import { mutate as globalMutate } from 'swr';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
-import { Badge } from '@/ui/shadcn/badge';
-import { useIntake } from '@/hooks/tracker/useIntake';
-import { intakeApi } from '@/api/tracker/intake.api';
+import { useState } from "react";
+import { Check, X, Clock } from "lucide-react";
+import { mutate as globalMutate } from "swr";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
+import { Badge } from "@/ui/shadcn/badge";
+import { useIntake } from "@/hooks/tracker/useIntake";
+import { intakeApi } from "@/api/tracker/intake.api";
 import {
   INTAKE_SOURCE_LABELS,
   INTAKE_STATUS_LABELS,
   intakeDisplayTitle,
   type Intake,
-} from '@/domain/tracker';
+} from "@/domain/tracker";
 
 export function IntakeBoard({
   orgId,
@@ -29,40 +23,37 @@ export function IntakeBoard({
   projectId?: string;
 }) {
   const { intake, isLoading, error, mutate } = useIntake(orgId, {
-    status: 'pending',
+    status: "pending",
     ...(projectId ? { projectId } : {}),
   });
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const handleTriage = async (
     item: Intake,
-    decision: 'accept' | 'reject' | 'snooze',
+    decision: "accept" | "reject" | "snooze",
   ) => {
     setBusyId(item.id);
     try {
       await intakeApi.triage(orgId, item.id, {
         decision,
-        ...(decision === 'snooze'
+        ...(decision === "snooze"
           ? {
               snoozedUntil: new Date(
                 Date.now() + 24 * 60 * 60 * 1000,
               ).toISOString(),
             }
           : {}),
-        // В проектном контексте targetProjectId всегда задан (id проекта);
-        // в общем случае бэк сам зарезолвит intake.projectId/suggested.
-        ...(decision === 'accept'
+        ...(decision === "accept"
           ? { targetProjectId: projectId ?? item.projectId ?? null }
           : {}),
       });
       await mutate();
-      // A7: обновить бейдж «Входящие» в сайдбаре (отдельный SWR-ключ счётчика).
       void globalMutate(
-        (key) => Array.isArray(key) && key[0] === 'tracker.intake.count',
+        (key) => Array.isArray(key) && key[0] === "tracker.intake.count",
       );
     } catch (e) {
       toast.error(
-        `Не удалось выполнить: ${e instanceof Error ? e.message : 'неизвестная ошибка'}`,
+        `Не удалось выполнить: ${e instanceof Error ? e.message : "неизвестная ошибка"}`,
         { duration: 5000 },
       );
     } finally {
@@ -121,7 +112,7 @@ export function IntakeBoard({
             <Button
               size="sm"
               variant="default"
-              onClick={() => void handleTriage(item, 'accept')}
+              onClick={() => void handleTriage(item, "accept")}
               disabled={busyId === item.id}
               className="gap-1"
             >
@@ -130,7 +121,7 @@ export function IntakeBoard({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => void handleTriage(item, 'snooze')}
+              onClick={() => void handleTriage(item, "snooze")}
               disabled={busyId === item.id}
               className="gap-1"
             >
@@ -139,7 +130,7 @@ export function IntakeBoard({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => void handleTriage(item, 'reject')}
+              onClick={() => void handleTriage(item, "reject")}
               disabled={busyId === item.id}
               className="gap-1 text-danger"
             >

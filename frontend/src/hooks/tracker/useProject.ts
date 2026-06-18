@@ -1,20 +1,16 @@
-'use client';
+"use client";
 
-import { useMemo } from 'react';
-import useSWR from 'swr';
+import { useMemo } from "react";
+import useSWR from "swr";
 
-import { projectsApi } from '@/api/tracker/projects.api';
+import { projectsApi } from "@/api/tracker/projects.api";
 import {
   projectFromApi,
   projectMemberFromApi,
   type Project,
   type ProjectMember,
-} from '@/domain/tracker';
+} from "@/domain/tracker";
 
-/**
- * Один проект по ID (или slug — backend принимает только id, slug-резолв
- * пока на стороне фронта через `useProjects`).
- */
 export function useProject(
   orgId: string | null | undefined,
   projectId: string | null | undefined,
@@ -24,13 +20,12 @@ export function useProject(
   isLoading: boolean;
   mutate: () => Promise<unknown>;
 } {
-  const key =
-    orgId && projectId ? ['tracker.project', orgId, projectId] : null;
+  const key = orgId && projectId ? ["tracker.project", orgId, projectId] : null;
 
   const swr = useSWR(
     key,
     async () => {
-      if (!orgId || !projectId) throw new Error('orgId/projectId required');
+      if (!orgId || !projectId) throw new Error("orgId/projectId required");
       return projectsApi.get(orgId, projectId);
     },
     { revalidateOnFocus: false },
@@ -49,7 +44,6 @@ export function useProject(
   };
 }
 
-/** Список участников проекта. */
 export function useProjectMembers(
   orgId: string | null | undefined,
   projectId: string | null | undefined,
@@ -60,14 +54,12 @@ export function useProjectMembers(
   mutate: () => Promise<unknown>;
 } {
   const key =
-    orgId && projectId
-      ? ['tracker.project.members', orgId, projectId]
-      : null;
+    orgId && projectId ? ["tracker.project.members", orgId, projectId] : null;
 
   const swr = useSWR(
     key,
     async () => {
-      if (!orgId || !projectId) throw new Error('orgId/projectId required');
+      if (!orgId || !projectId) throw new Error("orgId/projectId required");
       return projectsApi.listMembers(orgId, projectId);
     },
     { revalidateOnFocus: false },

@@ -1,7 +1,9 @@
-import { apiClient } from './api-client';
-import type { MeetingStatus, MeetingType, ParticipantRole } from '@/domain/enums';
-
-// ───────────────────── Integration keys ─────────────────────
+import { apiClient } from "./api-client";
+import type {
+  MeetingStatus,
+  MeetingType,
+  ParticipantRole,
+} from "@/domain/enums";
 
 export type IntegrationKeyApi = {
   id: string;
@@ -11,8 +13,6 @@ export type IntegrationKeyApi = {
 };
 
 export type IntegrationKeyCreateApiResponse = { id: string; key: string };
-
-// ───────────────────── Meetings ─────────────────────
 
 export type AdminMeetingListItemApi = {
   id: string;
@@ -45,10 +45,12 @@ export type AdminMeetingDetailsApi = {
     startedAt: string | null;
     endedAt: string | null;
     createdAt: string;
-    owner: { id: string; externalId: string | null; email: string; name: string };
-    /// quality_score, целиком сгенерированный воркером meeting-report-fast.
-    /// Структура: { overallScore, categories, recommendations[], strengths[] }
-    /// (см. backend `meeting-report-fast.prompt.ts`). NULL пока не сгенерирован.
+    owner: {
+      id: string;
+      externalId: string | null;
+      email: string;
+      name: string;
+    };
     qualityScore: Record<string, unknown> | null;
   };
   participants: Array<{
@@ -137,16 +139,12 @@ export type AdminMeetingDetailsApi = {
   }>;
 };
 
-// ───────────────────── AI Usage ─────────────────────
-
 export type AdminAiUsageApiResponse = {
   from: string;
   to: string;
-  group_by: 'day' | 'model' | 'meeting_type';
+  group_by: "day" | "model" | "meeting_type";
   items: Array<{ key: string; count: number; costUsd: number }>;
 };
-
-// ───────────────────── Expiring recordings ─────────────────────
 
 export type ExpiringRecordingApi = {
   id: string;
@@ -164,32 +162,33 @@ export type ExpiringRecordingsApiResponse = {
   withinHours: number;
 };
 
-// ───────────────────── helpers ─────────────────────
-
-function buildQuery(params: Record<string, string | number | undefined>): string {
+function buildQuery(
+  params: Record<string, string | number | undefined>,
+): string {
   const usp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
-    if (v === undefined || v === null || v === '') continue;
+    if (v === undefined || v === null || v === "") continue;
     usp.set(k, String(v));
   }
   const qs = usp.toString();
-  return qs ? `?${qs}` : '';
+  return qs ? `?${qs}` : "";
 }
 
-// ───────────────────── api ─────────────────────
-
 export const adminApi = {
-  // Auth
   adminLogin: (email: string, password: string) =>
-    apiClient.post<{ ok: true }>('/api/v1/auth/admin-login', { email, password }),
+    apiClient.post<{ ok: true }>("/api/v1/auth/admin-login", {
+      email,
+      password,
+    }),
 
-  // Integration keys
   listKeys: () =>
-    apiClient.get<{ items: IntegrationKeyApi[] }>('/admin/api/v1/integration-keys'),
+    apiClient.get<{ items: IntegrationKeyApi[] }>(
+      "/admin/api/v1/integration-keys",
+    ),
 
   createKey: (partnerName: string) =>
     apiClient.post<IntegrationKeyCreateApiResponse>(
-      '/admin/api/v1/integration-keys',
+      "/admin/api/v1/integration-keys",
       { partner_name: partnerName },
     ),
 
@@ -198,7 +197,6 @@ export const adminApi = {
       `/admin/api/v1/integration-keys/${encodeURIComponent(id)}`,
     ),
 
-  // Meetings
   listMeetings: (opts: {
     status?: MeetingStatus;
     type?: MeetingType;
@@ -237,8 +235,11 @@ export const adminApi = {
       {},
     ),
 
-  // AI Usage
-  aiUsage: (opts: { from: string; to: string; group_by: 'day' | 'model' | 'meeting_type' }) =>
+  aiUsage: (opts: {
+    from: string;
+    to: string;
+    group_by: "day" | "model" | "meeting_type";
+  }) =>
     apiClient.get<AdminAiUsageApiResponse>(
       `/admin/api/v1/ai-usage${buildQuery({
         from: opts.from,
@@ -247,7 +248,6 @@ export const adminApi = {
       })}`,
     ),
 
-  // Expiring recordings
   expiringRecordings: (withinHours: number) =>
     apiClient.get<ExpiringRecordingsApiResponse>(
       `/admin/api/v1/recordings/expiring${buildQuery({ within_hours: withinHours })}`,

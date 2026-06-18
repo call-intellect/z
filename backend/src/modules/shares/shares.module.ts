@@ -6,15 +6,6 @@ import { SharesController } from './shares.controller';
 import { SharesRepository } from './shares.repository';
 import { SharesService } from './shares.service';
 
-/**
- * `S3Service` — глобальный (RecordingsModule), `AuditLogService` — глобальный
- * (AuditModule, M3c). Здесь регистрируем приватный (Cookie) и публичный
- * (без auth) контроллеры.
- *
- * `PublicShareHeadersInterceptor` — provider, потому что подключается через
- * `@UseInterceptors(...)` на классе `PublicShareController` и должен быть
- * инстанцирован через DI.
- */
 @Module({
   controllers: [SharesController, PublicShareController],
   providers: [SharesService, SharesRepository, PublicShareHeadersInterceptor],

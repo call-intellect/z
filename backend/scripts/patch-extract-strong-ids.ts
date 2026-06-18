@@ -1,45 +1,6 @@
-/**
- * KC-Temporal W3.4 (2026-05-25) — backfill сильных идентификаторов
- * (ИНН/ОГРН/email/phone/domain) из `Entity.metadata` JSON в выделенные колонки.
- *
- * Зачем: до W3.4 strong-IDs клались в `metadata` (например через
- * `findOrCreateVendorEntity({ inn })` или ручные ingest'ы). Теперь у `Entity`
- * есть выделенные колонки + partial unique indices — для дедупа БЕЗ LLM.
- * Этот патч переносит исторические данные в новую структуру.
- *
- * Алгоритм (идемпотентно):
- *   1. Берём batch'ами Entity с непустым metadata и хотя бы одним пустым
- *      strong-полем (`inn IS NULL OR ogrn IS NULL OR email IS NULL OR
- *      phone IS NULL OR domain IS NULL`) AND metadata содержит хотя бы один
- *      из ключей.
- *   2. Для каждой парсим metadata: ищем ключи inn/ogrn/email/phone/domain
- *      (case-insensitive по верхнему ключу — иногда метаданные пишут
- *      `INN`/`Inn`).
- *   3. Нормализуем: ИНН/ОГРН — только цифры, email — lowercase, domain —
- *      без `https://`/`www.`, phone — `+` и цифры. Невалидные пропускаем.
- *   4. UPDATE Entity SET <field>=value WHERE <field> IS NULL — не
- *      перезаписываем уже заполненные колонки.
- *   5. Если partial unique нарушится — поймаем ошибку и логируем (не
- *      падаем; race с конкурирующим UPDATE'ом маловероятен на исторических
- *      данных, но защита есть).
- *
- * Безопасность (skill safe-seed-rules):
- *   - WHERE-условия исключают уже обработанные (по совпадению полей).
- *   - --dry-run печатает UPDATE без записи.
- *   - --limit=N — потолок Entity к обновлению за прогон.
- *   - Batch 500 (мельче чем bitemporal, т.к. JSON-парсинг чуть дороже).
- *
- * Запуск:
- *   cd backend
- *   bun run scripts/patch-extract-strong-ids.ts                # обычный
- *   bun run scripts/patch-extract-strong-ids.ts --dry-run      # сухой прогон
- *   bun run scripts/patch-extract-strong-ids.ts --limit=5000
- */
-
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
-// Prisma 7: driver adapter обязателен. URL из env (bun грузит .env).
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }),
 });
@@ -63,21 +24,14 @@ function parseArgs(argv: string[]): CliOptions {
   return opts;
 }
 
-/** Поля strong-IDs (имена колонок в Entity и ключи в normalized output). */
 type StrongField = 'inn' | 'ogrn' | 'email' | 'phone' | 'domain';
 
-/** Достать поле из metadata, толерантно к регистру верхнего ключа. */
-function readMetaField(
-  meta: Record<string, unknown>,
-  key: StrongField,
-): string | null {
-  // 1) Прямое попадание.
+function readMetaField(meta: Record<string, unknown>, key: StrongField): string | null {
   const direct = meta[key];
   if (typeof direct === 'string' && direct.trim().length > 0) return direct;
   if (typeof direct === 'number' && Number.isFinite(direct)) {
     return String(direct);
   }
-  // 2) Case-insensitive: ищем ключ, чей lowercase совпадает.
   const lowerKey = key.toLowerCase();
   for (const [k, v] of Object.entries(meta)) {
     if (k.toLowerCase() === lowerKey) {
@@ -88,7 +42,6 @@ function readMetaField(
   return null;
 }
 
-/** Нормализация — должна совпадать с EntityResolutionService.normalizeStrongIds. */
 function normalize(field: StrongField, raw: string): string | null {
   if (field === 'inn') {
     const cleaned = raw.replace(/\D/g, '');
@@ -131,9 +84,6 @@ async function main(): Promise<void> {
     `=== patch-extract-strong-ids START (dry-run=${opts.dryRun}, limit=${opts.limit ?? 'none'}) ===`,
   );
 
-  // Общая статистика кандидатов — для прогресс-бара.
-  // Кандидат: metadata JSONB содержит хотя бы один из 5 ключей (case-insensitive
-  //   проверять в JSONB дорого, поэтому грубый фильтр через `?|` массив).
   const totalRow = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
     `
     SELECT COUNT(*)::bigint AS count
@@ -169,8 +119,6 @@ async function main(): Promise<void> {
     const remaining = opts.limit !== null ? opts.limit - processed : BATCH_SIZE;
     const take = Math.min(BATCH_SIZE, remaining);
 
-    // Keyset pagination по id (cuid стабильно сортируется лексикографически
-    // и id — PK с уникальным индексом).
     const rows = await prisma.$queryRawUnsafe<EntityRow[]>(
       `
       SELECT id, metadata, inn, ogrn, email, phone, domain
@@ -201,11 +149,9 @@ async function main(): Promise<void> {
       }
       const meta = row.metadata as Record<string, unknown>;
 
-      // Собираем patch: только те поля, что (1) есть в metadata валидном
-      // виде и (2) ещё NULL в строке.
       const patch: Partial<Record<StrongField, string>> = {};
       for (const field of ['inn', 'ogrn', 'email', 'phone', 'domain'] as StrongField[]) {
-        if (row[field] !== null) continue; // уже заполнено
+        if (row[field] !== null) continue;
         const raw = readMetaField(meta, field);
         if (!raw) continue;
         const norm = normalize(field, raw);
@@ -225,8 +171,6 @@ async function main(): Promise<void> {
         continue;
       }
 
-      // Строим UPDATE с CASE-обновлением только пустых полей (двойная защита
-      // от race: одновременная запись из ingest'а).
       try {
         await prisma.entity.update({
           where: { id: row.id },
@@ -240,9 +184,6 @@ async function main(): Promise<void> {
         });
         updated += 1;
       } catch (err) {
-        // Чаще всего — нарушение partial unique (две Entity с одним ИНН).
-        // Это значит, что нужен entity-merge (отдельный flow); сейчас просто
-        // логируем и идём дальше.
         conflicts += 1;
         const msg = err instanceof Error ? err.message : String(err);
         console.warn(`[conflict] Entity ${row.id}: ${msg.slice(0, 200)}`);

@@ -4,13 +4,6 @@ import { Cron } from '@nestjs/schedule';
 import { TypedConfigService } from '../../../common/config/index';
 import { SupportSlaService } from '../services/support-sla.service';
 
-/**
- * SupportSlaCron — каждые 5 минут помечает нарушения SLA первого ответа в
- * вендор-деске (`Issue.slaBreachedAt`). ТЗ 2026-06-09 support-desk Ф1 (R12).
- *
- * Kill-switch: при `cfg.supportDesk.enabled === false` — no-op (cron остаётся
- * зарегистрированным). Cron auto-discovered как провайдер модуля.
- */
 @Injectable()
 export class SupportSlaCron {
   private readonly logger = new Logger(SupportSlaCron.name);
@@ -28,10 +21,7 @@ export class SupportSlaCron {
       }
       const breached = await this.sla.markBreaches(new Date());
       if (breached > 0) {
-        this.logger.log(
-          { breached },
-          'support-sla.cron: помечены нарушения SLA первого ответа',
-        );
+        this.logger.debug({ breached }, 'support-sla.cron: помечены нарушения SLA первого ответа');
       }
     } catch (err) {
       this.logger.error(

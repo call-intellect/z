@@ -59,7 +59,6 @@ describe('buildSingleMeetingContext', () => {
       history: [],
       question: 'q',
     });
-    // Не все 1000 chunks должны попасть.
     expect(ctx.contextChunks.length).toBeLessThan(1000);
     vi.restoreAllMocks();
   });

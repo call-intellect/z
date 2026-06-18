@@ -13,10 +13,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -43,23 +40,6 @@ import {
 } from './dto/regulations.dto';
 import { RegulationsService } from './services/regulations.service';
 
-/**
- * REST API регламентов / процессов / политик (SBA α-7).
- *
- *   GET  /api/v1/regulations?kind=&status=&scope=&q=&page=&limit=
- *   GET  /api/v1/regulations/:id?kind=
- *   GET  /api/v1/regulations/:id/history?kind=
- *   POST /api/v1/regulations/:id/supersede   { kind, supersededByRegulationId }
- *   POST /api/v1/regulations/:id/confirm     { kind }
- *
- * RBAC:
- *   - `regulation` / `process` / `process-step` / `policy` ResourceType.
- *   - Read: все member'ы Org (через policy.csv).
- *   - Supersede/confirm: owner/admin (write на соответствующий ResourceType).
- *
- * Multi-tenancy: TenantGuard достаёт `tenantId` из `X-Org-Id` / `:orgId`.
- * Все запросы скоупятся на `tenantId`.
- */
 @ApiTags('regulations')
 @Controller('api/v1/regulations')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -71,8 +51,7 @@ export class RegulationsController {
 
   @Get()
   @ApiOperation({
-    summary:
-      'Список регламентов/процессов/политик Org (с фильтрами и пагинацией)',
+    summary: 'Список регламентов/процессов/политик Org (с фильтрами и пагинацией)',
   })
   async list(
     @Query(new ZodValidationPipe(ListRegulationsQuerySchema))
@@ -81,25 +60,19 @@ export class RegulationsController {
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<ListRegulationsResponse> {
     const t = this.requireTenant(tenantId);
-    // Чтение разрешено любому, у кого есть read на хотя бы одну категорию.
-    // Проще всего проверить regulation/process/policy и считать, что
-    // если есть read на любую — пускаем (фильтр kind у нас единый).
     await this.requireReadAny(user.id, t);
     return this.svc.list({ tenantId: t, userId: user.id, query: q });
   }
 
   @Get('summary')
   @ApiOperation({
-    summary:
-      'Сводка хаба «Оцифровано»: счётчики 4 типов карточек + недельный прирост',
+    summary: 'Сводка хаба «Оцифровано»: счётчики 4 типов карточек + недельный прирост',
   })
   async summary(
     @CurrentUser() user: CurrentUserPayload,
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<RegulationSummaryResponse> {
     const t = this.requireTenant(tenantId);
-    // Доступ как у list — read на любой из 4 типов (чтобы read-доступ к хабу
-    // давал и сводку; manager не должен упираться в requirePrivileged).
     await this.requireReadAny(user.id, t);
     return this.svc.getSummary(t);
   }
@@ -130,7 +103,6 @@ export class RegulationsController {
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<RegulationSourcesResponse> {
     const t = this.requireTenant(tenantId);
-    // Тот же гейт, что у GET /:id — read на конкретный kind карточки.
     await this.requireRead(user.id, t, params.kind);
     return this.svc.getSources({ tenantId: t, id, kind: params.kind });
   }
@@ -205,8 +177,7 @@ export class RegulationsController {
 
   @Post(':id/correct')
   @ApiOperation({
-    summary:
-      'Исправить запись (owner/admin — сразу; иначе — предложение в очередь курации)',
+    summary: 'Исправить запись (owner/admin — сразу; иначе — предложение в очередь курации)',
   })
   async correct(
     @Param('id') id: string,
@@ -233,8 +204,6 @@ export class RegulationsController {
       canApplyDirectly,
     });
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
@@ -271,10 +240,7 @@ export class RegulationsController {
     }
   }
 
-  private async requireReadAny(
-    userId: string,
-    tenantId: string,
-  ): Promise<void> {
+  private async requireReadAny(userId: string, tenantId: string): Promise<void> {
     const checks = await Promise.all([
       this.rbac.canRead(userId, tenantId, 'regulation'),
       this.rbac.canRead(userId, tenantId, 'process'),

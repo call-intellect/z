@@ -1,27 +1,20 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { Lightbulb } from 'lucide-react';
-import useSWR from 'swr';
+import Link from "next/link";
+import { Lightbulb } from "lucide-react";
+import useSWR from "swr";
 
-import { meDailyValueApi } from '@/api/me-daily-value.api';
-import { ideaHref, IDEA_STATUS_LABEL } from '@/domain/idea';
+import { meDailyValueApi } from "@/api/me-daily-value.api";
+import { ideaHref, IDEA_STATUS_LABEL } from "@/domain/idea";
 import {
   CardTitle,
   CHART,
   GlassCard,
   GRAD,
-} from '@/ui/components/dashboard/modern';
+} from "@/ui/components/dashboard/modern";
 
-/**
- * ТЗ-2 Ф5 — виджет «Судьба моих идей» (self-scope). Self-fetch через SWR на
- * `meDailyValueApi.ideas()` (мои идеи как автора). Каждая строка — текст идеи
- * (clamp) + RU-статус (`IDEA_STATUS_LABEL`). Современный визуальный язык.
- *
- * Эндпоинт гейтится kill-switch на бэке: OFF → пустой ответ → empty-state.
- */
 export function MyIdeasFateWidget() {
-  const swr = useSWR(['me-ideas-fate'], () => meDailyValueApi.ideas(), {
+  const swr = useSWR(["me-ideas-fate"], () => meDailyValueApi.ideas(), {
     revalidateOnFocus: false,
     shouldRetryOnError: false,
   });
@@ -50,7 +43,7 @@ export function MyIdeasFateWidget() {
               <li
                 key={i}
                 className="h-12 animate-pulse rounded-xl"
-                style={{ background: 'var(--surface-inset)' }}
+                style={{ background: "var(--surface-inset)" }}
               />
             ))}
           </ul>
@@ -76,7 +69,7 @@ export function MyIdeasFateWidget() {
                     <span
                       className="rounded-full px-2 py-0.5 font-medium"
                       style={{
-                        background: 'var(--surface-inset)',
+                        background: "var(--surface-inset)",
                         color: CHART.dim,
                       }}
                     >

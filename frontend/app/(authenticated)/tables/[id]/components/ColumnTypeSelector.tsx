@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import {
   AtSign,
@@ -14,16 +14,19 @@ import {
   RussianRuble,
   Text as TextIcon,
   User as UserIcon,
-} from 'lucide-react';
+} from "lucide-react";
 
 import {
   FAZA1_CREATABLE_TYPES,
   PROP_TYPE_LABEL_RU,
   type TablePropType,
-} from '@/domain/table';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/domain/table";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-const TYPE_ICONS: Record<TablePropType, React.ComponentType<{ className?: string }>> = {
+const TYPE_ICONS: Record<
+  TablePropType,
+  React.ComponentType<{ className?: string }>
+> = {
   text: TextIcon,
   longtext: TextIcon,
   number: Hash,
@@ -38,7 +41,6 @@ const TYPE_ICONS: Record<TablePropType, React.ComponentType<{ className?: string
   url: LinkIcon,
   email: AtSign,
   phone: Phone,
-  // unused в creatable, но требуется по Record:
   file: TextIcon,
   formula: TextIcon,
   relation: TextIcon,
@@ -51,26 +53,21 @@ const TYPE_ICONS: Record<TablePropType, React.ComponentType<{ className?: string
   documentLink: TextIcon,
 };
 
-/**
- * Короткий пример значения / описание для каждого типа — помогает не
- * гадать, что выбрать. Только для creatable-типов; остальные сюда не
- * попадают.
- */
 const TYPE_HINTS: Partial<Record<TablePropType, string>> = {
-  text: 'Короткий текст до 255 символов',
-  longtext: 'Длинный текст, абзацы',
-  number: 'Целое или дробное число',
-  currency: 'Сумма в рублях',
-  percent: 'Доля или процент',
-  date: 'Дата и время',
-  status: 'Статус с цветной меткой',
-  selectSingle: 'Один вариант из списка',
-  selectMulti: 'Несколько вариантов',
-  checkbox: 'Да / нет',
-  person: 'Сотрудник из команды',
-  url: 'Ссылка с https://',
-  email: 'Электронная почта',
-  phone: 'Номер телефона',
+  text: "Короткий текст до 255 символов",
+  longtext: "Длинный текст, абзацы",
+  number: "Целое или дробное число",
+  currency: "Сумма в рублях",
+  percent: "Доля или процент",
+  date: "Дата и время",
+  status: "Статус с цветной меткой",
+  selectSingle: "Один вариант из списка",
+  selectMulti: "Несколько вариантов",
+  checkbox: "Да / нет",
+  person: "Сотрудник из команды",
+  url: "Ссылка с https://",
+  email: "Электронная почта",
+  phone: "Номер телефона",
 };
 
 export function ColumnTypeSelector({
@@ -96,18 +93,18 @@ export function ColumnTypeSelector({
               type="button"
               onClick={() => onSelect(t)}
               className={cn(
-                'flex items-start gap-3 rounded-md border px-3 py-2 text-left transition-colors',
-                'border-transparent text-fg-primary hover:border-border-subtle hover:bg-bg-overlay',
+                "flex items-start gap-3 rounded-md border px-3 py-2 text-left transition-colors",
+                "border-transparent text-fg-primary hover:border-border-subtle hover:bg-bg-overlay",
                 isSelected &&
-                  'border-accent-border bg-accent-muted text-accent hover:border-accent-border',
+                  "border-accent-border bg-accent-muted text-accent hover:border-accent-border",
               )}
             >
               <span
                 className={cn(
-                  'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
+                  "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
                   isSelected
-                    ? 'bg-accent-muted-strong text-accent'
-                    : 'bg-bg-subtle text-fg-secondary',
+                    ? "bg-accent-muted-strong text-accent"
+                    : "bg-bg-subtle text-fg-secondary",
                 )}
                 aria-hidden
               >
@@ -120,8 +117,8 @@ export function ColumnTypeSelector({
                 {hint ? (
                   <span
                     className={cn(
-                      'mt-0.5 block truncate text-xs',
-                      isSelected ? 'text-accent/80' : 'text-fg-tertiary',
+                      "mt-0.5 block truncate text-xs",
+                      isSelected ? "text-accent/80" : "text-fg-tertiary",
                     )}
                   >
                     {hint}

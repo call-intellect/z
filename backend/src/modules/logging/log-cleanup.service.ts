@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  type OnModuleDestroy,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -11,7 +6,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { LogSettingsService } from './log-settings.service';
 import { LOG_CLEANUP_LOCK_KEY } from './log.constants';
 
-const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // раз в час
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 const DELETE_BATCH = 5000;
 const TXN_TIMEOUT_MS = 120_000;
 
@@ -22,16 +17,6 @@ export interface CleanupResult {
   skipped?: boolean;
 }
 
-/**
- * LoggingModule — ретеншен SystemLog.
- *
- * - авто раз в час (setInterval + unref) + ручной запуск из контроллера;
- * - single-flight на флот через `pg_try_advisory_lock` (lock+unlock на одном
- *   соединении — внутри одной интерактивной транзакции);
- * - удаление батчами по 5000, чтобы не держать долгий lock на таблице.
- *
- * См. plans/tz/2026-06-01-logging-module.md §10.
- */
 @Injectable()
 export class LogCleanupService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LogCleanupService.name);

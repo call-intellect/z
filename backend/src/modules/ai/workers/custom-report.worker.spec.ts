@@ -1,15 +1,3 @@
-/**
- * Integration-тест CustomReportWorker (Фаза E).
- *
- * Покрываем:
- *   - happy path: pending → running → ready, output записан, llmCostUsd > 0.
- *   - idempotent: status='ready' → ранний выход, ни LLM, ни update не вызываются.
- *   - cost-guard: оценочная стоимость > $0.50 → status='failed', errorMessage='cost_limit'.
- *   - отсутствие mergedS3Url → status='failed' c reason='transcript_not_ready'.
- *
- * Не запускаем реальный BullMQ — `process(job)` дёргается напрямую.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -137,9 +125,9 @@ const JOB_BASE = {
   attemptsMade: 0,
 };
 
-function makeJob(data: Partial<CustomReportJobData> = {}): Parameters<
-  CustomReportWorker['process']
->[0] {
+function makeJob(
+  data: Partial<CustomReportJobData> = {},
+): Parameters<CustomReportWorker['process']>[0] {
   return {
     ...JOB_BASE,
     data: {
@@ -171,8 +159,9 @@ describe('CustomReportWorker.process', () => {
 
     await h.worker.process(makeJob());
 
-    // Должен быть как минимум update на running и финальный update на ready.
-    const updates = h.reportUpdate.mock.calls.map((c) => c[0] as { data?: Record<string, unknown> });
+    const updates = h.reportUpdate.mock.calls.map(
+      (c) => c[0] as { data?: Record<string, unknown> },
+    );
     const statuses = updates.map((u) => u.data?.['status']).filter(Boolean);
     expect(statuses).toContain('running');
     expect(statuses).toContain('ready');
@@ -200,7 +189,6 @@ describe('CustomReportWorker.process', () => {
   });
 
   it('cost guard: оценочная стоимость > $0.50 → status=failed, errorMessage=cost_limit', async () => {
-    // 10M input tokens × $0.27/1M = $2.7 — больше лимита $0.50.
     const h = buildHarness({
       report: buildReport(),
       merged: { meetingId: 'meet-1', turns: [] },
@@ -209,7 +197,9 @@ describe('CustomReportWorker.process', () => {
 
     await h.worker.process(makeJob());
 
-    const updates = h.reportUpdate.mock.calls.map((c) => c[0] as { data?: Record<string, unknown> });
+    const updates = h.reportUpdate.mock.calls.map(
+      (c) => c[0] as { data?: Record<string, unknown> },
+    );
     const finalUpdate = updates[updates.length - 1];
     expect(finalUpdate?.data?.['status']).toBe('failed');
     expect(finalUpdate?.data?.['errorMessage']).toBe('cost_limit');
@@ -234,16 +224,12 @@ describe('CustomReportWorker.process', () => {
 
     expect(h.llmCall).not.toHaveBeenCalled();
     const failedUpdate = h.reportUpdate.mock.calls.find(
-      (c) =>
-        (c[0] as { data?: Record<string, unknown> })?.data?.['status'] ===
-        'failed',
+      (c) => (c[0] as { data?: Record<string, unknown> })?.data?.['status'] === 'failed',
     );
     expect(failedUpdate).toBeDefined();
-    expect(
-      (failedUpdate?.[0] as { data?: Record<string, unknown> }).data?.[
-        'errorMessage'
-      ],
-    ).toBe('transcript_not_ready');
+    expect((failedUpdate?.[0] as { data?: Record<string, unknown> }).data?.['errorMessage']).toBe(
+      'transcript_not_ready',
+    );
   });
 
   it('LLM-ошибка пробрасывается наверх (BullMQ ретраит)', async () => {

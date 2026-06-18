@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Get,
-  Inject,
-  Query,
-  UseGuards,
-  UseInterceptors,
-} from '@nestjs/common';
+import { Controller, Get, Inject, Query, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
@@ -21,33 +14,19 @@ import {
   type ListAuditQueryDto,
 } from './dto/admin-audit.dto';
 
-/**
- * Admin-redesign Фаза 1 — `AdminAuditController`.
- *
- * GET-only API для просмотра журнала действий super_admin'а. UI Z-Admin
- * раздел «Пульс → Безопасность → Журнал super_admin».
- *
- * Все эндпоинты под `CookieAuthGuard + SuperAdminGuard` и
- * `SuperAdminAuditInterceptor` (просмотр журнала тоже фиксируется — кто и
- * когда читал чужие записи, compliance).
- */
 @ApiTags('admin-audit')
 @Controller('api/v1/admin/audit')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
 @UseInterceptors(SuperAdminAuditInterceptor)
 export class AdminAuditController {
-  constructor(
-    @Inject(AdminAuditService) private readonly svc: AdminAuditService,
-  ) {}
+  constructor(@Inject(AdminAuditService) private readonly svc: AdminAuditService) {}
 
   @Get()
   @ApiOperation({
     summary:
       'Журнал действий super_admin: фильтры по admin/tenant/route/method/period + cursor pagination.',
   })
-  async list(
-    @Query(new ZodValidationPipe(ListAuditQuerySchema)) q: ListAuditQueryDto,
-  ) {
+  async list(@Query(new ZodValidationPipe(ListAuditQuerySchema)) q: ListAuditQueryDto) {
     return this.svc.list({
       ...(q.adminUserId ? { adminUserId: q.adminUserId } : {}),
       ...(q.tenantId ? { tenantId: q.tenantId } : {}),
@@ -62,8 +41,7 @@ export class AdminAuditController {
 
   @Get('admins')
   @ApiOperation({
-    summary:
-      'Список super_admin\'ов с количеством действий и временем последнего действия.',
+    summary: "Список super_admin'ов с количеством действий и временем последнего действия.",
   })
   async admins() {
     return this.svc.listAdmins();
@@ -71,12 +49,9 @@ export class AdminAuditController {
 
   @Get('stats')
   @ApiOperation({
-    summary:
-      'Агрегированная статистика журнала за период: топ routes + распределение по методам.',
+    summary: 'Агрегированная статистика журнала за период: топ routes + распределение по методам.',
   })
-  async stats(
-    @Query(new ZodValidationPipe(AuditStatsQuerySchema)) q: AuditStatsQueryDto,
-  ) {
+  async stats(@Query(new ZodValidationPipe(AuditStatsQuerySchema)) q: AuditStatsQueryDto) {
     return this.svc.stats(q.period);
   }
 }

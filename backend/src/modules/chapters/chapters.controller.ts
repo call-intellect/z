@@ -17,22 +17,9 @@ import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 
 import { ChaptersService } from './chapters.service';
-import {
-  type CreateChapterDto,
-  CreateChapterSchema,
-} from './dto/create-chapter.dto';
-import {
-  type UpdateChapterDto,
-  UpdateChapterSchema,
-} from './dto/update-chapter.dto';
+import { type CreateChapterDto, CreateChapterSchema } from './dto/create-chapter.dto';
+import { type UpdateChapterDto, UpdateChapterSchema } from './dto/update-chapter.dto';
 
-/**
- *   `GET    /api/v1/meetings/:id/chapters`              — список
- *   `POST   /api/v1/meetings/:id/chapters`              — ручное создание
- *   `PATCH  /api/v1/chapters/:id`                       — редактирование
- *   `DELETE /api/v1/chapters/:id`                       — удалить
- *   `POST   /api/v1/meetings/:id/chapters/regenerate`   — ставит job в `ai.chapters`
- */
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard)
 export class ChaptersController {
@@ -70,10 +57,7 @@ export class ChaptersController {
 
   @Delete('chapters/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async delete(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<void> {
+  async delete(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload): Promise<void> {
     await this.chapters.delete(id, user.id);
   }
 
@@ -85,8 +69,6 @@ export class ChaptersController {
   ): Promise<{ status: 'queued' }> {
     return this.chapters.regenerate(meetingId, user.id);
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────────
 
   private mapChapter(c: {
     id: string;
@@ -107,13 +89,6 @@ export class ChaptersController {
     title: string;
     summary: string | null;
     order: number;
-    /**
-     * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — метка генератора главы.
-     * `'fast'` = новый `MeetingReportFastWorker` (приоритет в UI пользователя),
-     * `'v2'` = историческое значение снятого v2-стека (генератор удалён
-     *          2026-06-10; старые строки в БД могут его нести),
-     * `null` = legacy `chapters.worker`.
-     */
     extractorVersion: string | null;
     createdAt: string;
     updatedAt: string;

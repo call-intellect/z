@@ -3,22 +3,6 @@ import { Cron } from '@nestjs/schedule';
 
 import { RetentionService } from './retention.service';
 
-/**
- * Retention cron — периодически прогоняет `RetentionService.processAll`.
- *
- * Расписание: каждый час (`'0 * * * *'`), согласовано с `cfg.retention.cron`.
- * Cron-выражение задаётся декоратором в момент class-decoration и не
- * читается из ENV динамически.
- *
- * До Фазы 11 cron вызывал `processExpired` — только Recording. С Фазы 11
- * расширен на `processAll`, который дополнительно прогоняет per-Org sweep'ы:
- * RawEvent, IdeaBlock(archived), MeetingChatMessage, AuditLog. Каждый
- * управляется ENV-флагом `cfg.retention.*Enabled`.
- *
- * Логи структурированные: один объект со счётчиками по kind. При
- * непойманной ошибке — пишем `error`, но не валим cron'ы (следующий
- * проход попытается ещё раз).
- */
 @Injectable()
 export class RetentionCron {
   private readonly logger = new Logger(RetentionCron.name);
@@ -51,10 +35,9 @@ export class RetentionCron {
           totals.failed >
         0
       ) {
-        this.logger.log(totals, 'Retention cron: проход завершён');
+        this.logger.debug(totals, 'Retention cron: проход завершён');
       }
     } catch (err) {
-      // Не валим NestJS — cron должен переживать сбой и попробовать ещё раз.
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
         'Retention cron: непойманная ошибка',

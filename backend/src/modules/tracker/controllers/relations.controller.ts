@@ -14,10 +14,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
@@ -30,18 +27,6 @@ import {
 } from '../dto/issues/create-relation.dto';
 import { RelationsService } from '../services/relations.service';
 
-/**
- * REST `/api/v1/issues/:id/relations` + `/api/v1/relations/:relationId`.
- *
- * Все эндпоинты под `CookieAuthGuard + TenantGuard` (как остальной трекер).
- * RBAC:
- *   - GET relations  → `issue.read`
- *   - POST relations → `issue.update`
- *   - DELETE relation → `issue.update`
- *
- * См. `services/relations.service.ts` для бизнес-инвариантов
- * (симметричность, идемпотентность, anti-self-relation).
- */
 @ApiTags('tracker / issues / relations')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -98,8 +83,6 @@ export class RelationsController {
     await this.requireWrite(user.id, t);
     await this.svc.deleteRelation(relationId, t, user.id);
   }
-
-  // ── helpers ──
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

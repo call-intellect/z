@@ -10,11 +10,6 @@ import type { S3Service } from '../../recordings/s3.service';
 
 import { MeetingUploadTranscribeWorker } from './meeting-upload-transcribe.worker';
 
-/**
- * Фикстура результата Vox в форме Ф0 (diarizationEnabled:true), 2 спикера.
- * `segments` — то, что отдаёт `vox.poll` после parseVoxResult: startSec/endSec
- * в СЕКУНДАХ (float), speaker = "SPEAKER N", speakerId = int.
- */
 const SEGMENTS: VoxDiarizedSegment[] = [
   { startSec: 0.0, endSec: 3.2, speaker: 'SPEAKER 1', speakerId: 1, text: 'Привет' },
   {
@@ -71,14 +66,7 @@ function make(opts: { numSpeakersHint?: number | null } = {}): {
     ai: { vox: { pollIntervalMs: 10, pollMaxAttempts: 3 } },
   } as unknown as TypedConfigService;
 
-  const worker = new MeetingUploadTranscribeWorker(
-    redis,
-    prisma,
-    vox,
-    s3,
-    meetings,
-    cfg,
-  );
+  const worker = new MeetingUploadTranscribeWorker(redis, prisma, vox, s3, meetings, cfg);
   return { worker, prisma, s3, vox, meetings };
 }
 
@@ -90,13 +78,11 @@ describe('MeetingUploadTranscribeWorker.processMeeting', () => {
 
     await worker.processMeeting('m-1');
 
-    // Vox вызван с диаризацией.
     expect((vox as any).submit).toHaveBeenCalledTimes(1);
     expect((vox as any).submit.mock.calls[0][1]).toMatchObject({
       diarizationEnabled: true,
     });
 
-    // Transcript.turns: один turn на сегмент, ≥2 разных speaker.
     const transcriptArg = (prisma as any).transcript.upsert.mock.calls[0][0];
     const turns = transcriptArg.create.turns as Array<{
       speaker: string;
@@ -107,23 +93,17 @@ describe('MeetingUploadTranscribeWorker.processMeeting', () => {
     expect(turns).toHaveLength(3);
     const distinctSpeakers = new Set(turns.map((t) => t.speaker));
     expect(distinctSpeakers.size).toBeGreaterThanOrEqual(2);
-    // displayLabel «Человек N».
     expect([...distinctSpeakers].every((s) => /^«Человек \d+»$/.test(s))).toBe(true);
 
-    // startSec/endSec — СЕКУНДЫ напрямую из сегмента (без конвертации).
     expect(turns[1]!.startSec).toBeCloseTo(SEGMENTS[1]!.startSec);
     expect(turns[1]!.endSec).toBeCloseTo(SEGMENTS[1]!.endSec);
 
-    // mergedS3Url + merged.json в S3 (как MergeWorker).
-    expect(transcriptArg.create.mergedS3Url).toBe(
-      'meetings/m-1/transcripts/merged.json',
-    );
+    expect(transcriptArg.create.mergedS3Url).toBe('meetings/m-1/transcripts/merged.json');
     expect((s3 as any).putJson).toHaveBeenCalledWith(
       'meetings/m-1/transcripts/merged.json',
       expect.objectContaining({ meetingId: 'm-1' }),
     );
 
-    // MeetingUploadSpeaker — по числу меток (2 говорящих).
     expect((prisma as any).meetingUploadSpeaker.upsert).toHaveBeenCalledTimes(2);
     const speakerRows = (prisma as any).meetingUploadSpeaker.upsert.mock.calls.map(
       (c: any[]) => c[0],
@@ -131,28 +111,20 @@ describe('MeetingUploadTranscribeWorker.processMeeting', () => {
     const labels = speakerRows.map((r: any) => r.create.label).sort();
     expect(labels).toEqual(['SPEAKER 1', 'SPEAKER 2']);
 
-    // sampleText спикера 1 — самый ДЛИННЫЙ его сегмент ("Согласен с тобой" >
-    // "Привет"); у спикера 2 — единственный длинный сегмент.
     const sp1 = speakerRows.find((r: any) => r.create.label === 'SPEAKER 1')!;
     expect(sp1.create.sampleText).toBe('Согласен с тобой');
     expect(sp1.create.turnsCount).toBe(2);
-    // speakingSeconds = round((3.2-0) + (15-13)) = round(5.2) = 5.
     expect(sp1.create.speakingSeconds).toBe(5);
     expect(sp1.create.displayLabel).toBe('«Человек 1»');
 
     const sp2 = speakerRows.find((r: any) => r.create.label === 'SPEAKER 2')!;
     expect(sp2.create.sampleText).toBe(SEGMENTS[1]!.text);
     expect(sp2.create.turnsCount).toBe(1);
-    // round(12.8 - 3.5) = round(9.3) = 9.
     expect(sp2.create.speakingSeconds).toBe(9);
 
-    // FSM: recording_processing → awaiting_speakers.
-    const transitions = (meetings as any).transitionStatus.mock.calls.map(
-      (c: any[]) => c[1],
-    );
+    const transitions = (meetings as any).transitionStatus.mock.calls.map((c: any[]) => c[1]);
     expect(transitions).toContain('transcription_processing');
     expect(transitions).toContain('awaiting_speakers');
-    // ГЕЙТ: НЕ ушли в ai_processing/transcription_ready.
     expect(transitions).not.toContain('ai_processing');
     expect(transitions).not.toContain('transcription_ready');
   });

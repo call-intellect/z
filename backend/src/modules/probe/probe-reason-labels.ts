@@ -1,89 +1,51 @@
-/**
- * Probe-система Фаза 1 (2026-06-11) — словари «машинный reason → человек».
- *
- * Корень жалобы «probe-вопросы глупые»: probe-formulate раньше получал в USER
- * машинные коды (emittedByService, сырой reason), которые сам же SYSTEM
- * запрещал. Здесь — два словаря, превращающие машинный `reason` в человеческий
- * русский текст:
- *   - PROBE_REASON_LABEL — короткий ярлык СИТУАЦИИ для подачи в LLM
- *     (`Тип ситуации: …`) вместо `emittedByService`/`reason`.
- *   - PROBE_REASON_FALLBACK — заранее заготовленный человеческий ВОПРОС на
- *     случай, когда LLM probe-formulate упал/выключен (вместо сырого
- *     `humanizeProbeFallback(message)`, который показывал шаблон).
- *
- * Список reason — фактический инвентарь эмиттеров Слоя 3 (specialist-3-*,
- * temporal/consistency/goals/helpfulness/commitment). Незнакомый reason →
- * дефолт. Статичный словарь (не БД, не AdminSetting): это детерминированная
- * логика, а не крутилка (решения Б3/Б5 ТЗ).
- */
-
-/** Дефолтный ярлык ситуации для незнакомого reason. */
 export const PROBE_REASON_LABEL_DEFAULT = 'требуется уточнение';
 
-/** Дефолтный fallback-вопрос, если для reason нет заготовки. */
 export const PROBE_REASON_FALLBACK_DEFAULT = 'Можете уточнить, пожалуйста?';
 
-/** Машинный `reason` → человеческий ярлык ситуации (рус.). */
 export const PROBE_REASON_LABEL: Record<string, string> = {
-  // decision.* (specialist-3-3)
   'decision.competing_versions': 'по решению есть конкурирующие версии',
   'decision.missing_decider': 'у решения нет ответственного за принятие',
   'decision.no_deadline_critical': 'у важного решения нет срока',
   'decision.overdue': 'решение просрочено',
   'decision.outcome_unknown': 'неизвестен итог решения',
   'decision.confirm_status': 'нужно подтвердить статус решения',
-  // temporal.*
   'temporal.fact_stale_contradiction': 'факт устарел / расхождение',
   'temporal.fact_stale_contradiction.escalated': 'давнее расхождение в фактах',
-  // experiment.* (specialist-3-9)
   'experiment.result_without_lesson': 'у эксперимента есть результат, но нет вывода',
   'experiment.no_owner': 'у эксперимента нет ответственного',
   'experiment.running_too_long': 'эксперимент идёт слишком долго без итога',
-  // knowledge.* (specialist-3-2)
   'knowledge.new_expertise_detected': 'замечена новая экспертиза',
   'knowledge.contradiction_detected': 'обнаружено противоречие в знаниях',
-  // insight.* (specialist-3-5)
   'insight.linked_decision_question': 'инсайт связан с решением — нужен вопрос',
   'insight.escalation_suggested': 'инсайт стоит эскалировать',
   'insight.recurring_after_mitigation': 'проблема повторяется после принятых мер',
   'insight.no_mitigation_plan': 'у проблемы нет плана устранения',
-  // goals
-  'kr_checkpoint_suggested': 'пора свериться по ключевому результату',
+  kr_checkpoint_suggested: 'пора свериться по ключевому результату',
   'goal.kr_checkpoint_suggested': 'пора свериться по ключевому результату',
-  'goal_alignment_low': 'задачи слабо связаны с целями',
-  'strategic_misalignment_high': 'работа расходится со стратегией',
-  // skill.* (specialist-3-7)
+  goal_alignment_low: 'задачи слабо связаны с целями',
+  strategic_misalignment_high: 'работа расходится со стратегией',
   'skill.contradicting_traits': 'в профиле навыков есть противоречие',
   'skill.profile_starved': 'мало данных о навыках',
-  // TZ clone-method Э3.1 — CDM-интервью носителя (вопрос НЕ переформулируется
-  // LLM probe-formulate, ярлык нужен только для единообразия реестра).
   'skill.cdm_interview': 'разбор реального кейса носителя роли',
-  // regulation.* (specialist-3-1)
   'regulation.missing_owner': 'у регламента нет ответственного',
   'regulation.process_no_steps': 'у процесса не описаны шаги',
   'regulation.stale': 'регламент устарел',
   'regulation.scope_unclear': 'непонятна область применения регламента',
-  // card.* (specialist-3-4)
   'card.missing_owner': 'у карточки нет ответственного',
   'card.missing_deadline': 'у карточки нет срока',
   'card.merge_suggestion': 'возможно, две карточки об одном',
   'card.outdated_summary': 'описание карточки устарело',
-  // idea.* (specialist-3-6)
   'idea.support_request': 'идея ищет поддержку',
   'idea.status_unclear': 'идея зависла в обсуждении',
-  // process_template.*
   'process_template.missing_input_artifact': 'у шага процесса не указан вход',
   'process_template.missing_output_artifact': 'у шага процесса не указан результат',
   'process_template.step_without_owner': 'у шага процесса нет ответственного',
-  // helpfulness.* (specialist-3-8)
   'helpfulness.new_expertise_helper_detected': 'кто-то проявил новую экспертизу, помогая',
   'helpfulness.unrecognized_high_contributor': 'активный помощник остаётся незамеченным',
   'helpfulness.mentor_emerging': 'появляется наставник',
   'helpfulness.question_chain_unanswered': 'цепочка вопросов осталась без ответа',
-  // commitment.* (specialist-3-9 promise-keeper)
   'commitment.followup': 'нужно уточнить по обещанию',
   'commitment.silence_escalation': 'по обещанию давно нет ответа',
-  // consistency_violation.R1..R6 (consistency-checker)
   'consistency_violation.R1': 'обнаружено расхождение в данных',
   'consistency_violation.R2': 'обнаружено расхождение в данных',
   'consistency_violation.R3': 'обнаружено расхождение в данных',
@@ -95,7 +57,6 @@ export const PROBE_REASON_LABEL: Record<string, string> = {
     'новая сущность не привязана к отделу/клиенту',
 };
 
-/** Машинный `reason` → заготовленный человеческий ВОПРОС (fallback при провале LLM). */
 export const PROBE_REASON_FALLBACK: Record<string, string> = {
   'decision.competing_versions': 'По этому решению есть несколько версий — какая актуальная?',
   'decision.missing_decider': 'Кто отвечает за это решение?',
@@ -104,7 +65,8 @@ export const PROBE_REASON_FALLBACK: Record<string, string> = {
   'decision.outcome_unknown': 'Чем в итоге закончилось это решение?',
   'decision.confirm_status': 'Какой сейчас статус у этого решения?',
   'temporal.fact_stale_contradiction': 'Здесь есть расхождение в данных. Какой вариант верный?',
-  'temporal.fact_stale_contradiction.escalated': 'Это расхождение давно не разрешено. Какой вариант актуальный?',
+  'temporal.fact_stale_contradiction.escalated':
+    'Это расхождение давно не разрешено. Какой вариант актуальный?',
   'experiment.result_without_lesson': 'Какой вывод вы сделали из этого эксперимента?',
   'experiment.no_owner': 'Кто отвечает за этот эксперимент?',
   'experiment.running_too_long': 'Этот эксперимент идёт уже долго. Какой по нему итог?',
@@ -113,10 +75,10 @@ export const PROBE_REASON_FALLBACK: Record<string, string> = {
   'insight.escalation_suggested': 'Стоит ли вынести это на уровень выше?',
   'insight.recurring_after_mitigation': 'Проблема повторяется. Что, по-вашему, её вызывает?',
   'insight.no_mitigation_plan': 'Что планируете сделать, чтобы это не повторялось?',
-  'kr_checkpoint_suggested': 'Как продвигается этот ключевой результат?',
+  kr_checkpoint_suggested: 'Как продвигается этот ключевой результат?',
   'goal.kr_checkpoint_suggested': 'Как продвигается этот ключевой результат?',
-  'goal_alignment_low': 'Эти задачи связаны с какой-то из целей?',
-  'strategic_misalignment_high': 'Как эта работа связана с вашей стратегией?',
+  goal_alignment_low: 'Эти задачи связаны с какой-то из целей?',
+  strategic_misalignment_high: 'Как эта работа связана с вашей стратегией?',
   'skill.profile_starved': 'Расскажете, чем вы сейчас занимаетесь?',
   'skill.contradicting_traits': 'Уточните, пожалуйста, чем вы сейчас занимаетесь?',
   'skill.cdm_interview':

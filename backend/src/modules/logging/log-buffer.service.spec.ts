@@ -45,10 +45,8 @@ describe('LogBufferService', () => {
     buf.enqueue(entry('ERROR'));
     buf.enqueue(entry('INFO'));
     expect(buf.size()).toBe(3);
-    // 4-я запись вытесняет первый DEBUG/INFO/WARN (DEBUG@0)
     buf.enqueue(entry('WARN'));
     expect(buf.size()).toBe(3);
-    // ещё одна — вытесняет INFO; ERROR остаётся
     buf.enqueue(entry('FATAL'));
     expect(buf.size()).toBe(3);
   });
@@ -64,17 +62,15 @@ describe('LogBufferService', () => {
   });
 
   it('re-buffer: при ошибке БД пачка возвращается, следующий flush повторяет', async () => {
-    createMany
-      .mockRejectedValueOnce(new Error('db down'))
-      .mockResolvedValueOnce({ count: 2 });
+    createMany.mockRejectedValueOnce(new Error('db down')).mockResolvedValueOnce({ count: 2 });
     const buf = new LogBufferService(prisma, makeSettings({ batchSize: 9999 }));
     buf.enqueue(entry('INFO', 'a'));
     buf.enqueue(entry('ERROR', 'b'));
 
-    await buf.flush(); // упал
-    expect(buf.size()).toBe(2); // вернулось
+    await buf.flush();
+    expect(buf.size()).toBe(2);
 
-    await buf.flush(); // повтор успешен
+    await buf.flush();
     expect(buf.size()).toBe(0);
     expect(createMany).toHaveBeenCalledTimes(2);
   });

@@ -12,10 +12,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { OrgAdminGuard } from '../auth/guards/org-admin.guard';
 import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
@@ -29,10 +26,13 @@ import {
   type CloneConversationsListResponseDto,
 } from './dto/clone-conversations.dto';
 import {
+  AskAllFormersBodySchema,
   AskCloneBodySchema,
   CloneQueryLogQuerySchema,
   ClonesListQuerySchema,
   MarkTraitMisleadingBodySchema,
+  type AskAllFormersBody,
+  type AskAllFormersResponseDto,
   type AskCloneBody,
   type AskCloneResponseDto,
   type CloneHistoryResponseDto,
@@ -48,32 +48,18 @@ import {
 import { ClonesAdminService } from './services/clones-admin.service';
 import { ClonesService } from './services/clones.service';
 
-/**
- * SBA γ-1 — REST API Clone (γ-1.9).
- *
- *   POST /api/v1/clones/persons/:personId/ask — ответ от клона сотрудника.
- *   POST /api/v1/clones/roles/:roleId/ask     — ответ от клона роли.
- *
- * RBAC: внутри ClonesService.canAccessPersonClone (owner/admin/self/direct manager).
- * Rate limit: единая per-user квота AI-чата `AiChatQuotaService`
- * (50/20 сообщений в день, общая для Concierge + Clones — ТЗ 2026-05-31).
- */
 @ApiTags('clones')
 @Controller('api/v1/clones')
 @UseGuards(CookieAuthGuard, TenantGuard)
 export class ClonesController {
   constructor(
     @Inject(ClonesService) private readonly clones: ClonesService,
-    // audit В17 (2026-05-29): для requestAccess (in-app сигнал admin'ам).
     @Inject(ClonesAdminService) private readonly admin: ClonesAdminService,
   ) {}
 
-  // ─────── Clones=Roles Ф4 — list + history (новые ролевые эндпоинты) ───────
-
   @Get()
   @ApiOperation({
-    summary:
-      'Clones=Roles Ф4: список текущих ролевых клонов Org (для /clones UI)',
+    summary: 'Clones=Roles Ф4: список текущих ролевых клонов Org (для /clones UI)',
   })
   async listClones(
     @Query(new ZodValidationPipe(ClonesListQuerySchema))
@@ -133,8 +119,7 @@ export class ClonesController {
 
   @Get(':roleId/history')
   @ApiOperation({
-    summary:
-      'Clones=Roles Ф4: история версий клона роли (для /roles/:id/clone/history)',
+    summary: 'Clones=Roles Ф4: история версий клона роли (для /roles/:id/clone/history)',
   })
   async getCloneHistory(
     @Param('roleId') roleId: string,
@@ -152,8 +137,7 @@ export class ClonesController {
   @Post('persons/:personId/conversations')
   @RequireSubscription()
   @ApiOperation({
-    summary:
-      'ТЗ §9.4.7: создать новый пустой диалог с клоном сотрудника (кнопка «Новый диалог»)',
+    summary: 'ТЗ §9.4.7: создать новый пустой диалог с клоном сотрудника (кнопка «Новый диалог»)',
   })
   async createPersonConversation(
     @Param('personId') personId: string,
@@ -172,8 +156,7 @@ export class ClonesController {
   @Post('roles/:roleId/conversations')
   @RequireSubscription()
   @ApiOperation({
-    summary:
-      'ТЗ §9.4.7: создать новый пустой диалог с клоном роли (кнопка «Новый диалог»)',
+    summary: 'ТЗ §9.4.7: создать новый пустой диалог с клоном роли (кнопка «Новый диалог»)',
   })
   async createRoleConversation(
     @Param('roleId') roleId: string,
@@ -228,10 +211,30 @@ export class ClonesController {
       roleId,
       question: body.question,
       conversationId: body.conversationId,
+      roleVersion: body.roleVersion,
     });
   }
 
-  // ──────── audit В17 (2026-05-29) — request access (in-app сигнал admin'ам) ────────
+  @Post('roles/:roleId/ask-all-formers')
+  @RequireSubscription()
+  @ApiOperation({
+    summary:
+      'Раздел 7 §7.5 «совет бывших»: один вопрос → ответы всех версий клона роли (текущая active + бывшие frozen) рядом для сравнения. ФИО не выводятся.',
+  })
+  async askAllFormers(
+    @Param('roleId') roleId: string,
+    @Body(new ZodValidationPipe(AskAllFormersBodySchema)) body: AskAllFormersBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<AskAllFormersResponseDto> {
+    const t = this.requireTenant(tenantId);
+    return this.clones.askAllFormers({
+      tenantId: t,
+      requesterUserId: user.id,
+      roleId,
+      question: body.question,
+    });
+  }
 
   @Post('roles/:roleId/access-grants/request')
   @ApiOperation({
@@ -308,8 +311,7 @@ export class ClonesController {
   @Post('persons/:personId/persona/snapshot')
   @RequireSubscription()
   @ApiOperation({
-    summary:
-      'SBA γ-1 доделки — manual snapshot ExecutablePersona (носитель или admin/owner Org)',
+    summary: 'SBA γ-1 доделки — manual snapshot ExecutablePersona (носитель или admin/owner Org)',
   })
   async triggerManualPersonaSnapshot(
     @Param('personId') personId: string,
@@ -361,20 +363,6 @@ export class ClonesController {
   }
 }
 
-/**
- * ТЗ 2026-05-26 (clone-access-grant-admin-api) §2.6 — user-эндпоинт
- * `GET /api/v1/me/clone-access`. Возвращает id-ы активных грантов текущего
- * пользователя в текущем тенанте (без enrichment — фронт сам мапит, имея
- * уже загруженный список клонов).
- *
- * Не admin-эндпоинт: доступен любому залогиненному member'у Org. Используется
- * фронтом для оптимистичной фильтрации карточек в маркетплейсе клонов
- * (`useMyCloneAccess()` hook).
- *
- * Отдельный @Controller-класс с префиксом `api/v1/me` — чтобы сохранить путь
- * без префикса `/clones`. Регистрируется в `ClonesModule` рядом с
- * `ClonesController`.
- */
 @ApiTags('clones')
 @Controller('api/v1/me')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -386,8 +374,7 @@ export class MeCloneAccessController {
 
   @Get('clone-access')
   @ApiOperation({
-    summary:
-      'ТЗ 2026-05-26 §2.6: id-ы активных грантов на клонов для текущего пользователя.',
+    summary: 'ТЗ 2026-05-26 §2.6: id-ы активных грантов на клонов для текущего пользователя.',
   })
   async getMyCloneAccess(
     @CurrentUser() user: CurrentUserPayload,

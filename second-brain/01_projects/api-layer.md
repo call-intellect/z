@@ -85,7 +85,7 @@ CRUD `POST/PATCH/DELETE/list/getUsage` упразднены. Модель `Plan`
 
 | Метод | Путь | Назначение | Доступ |
 |---|---|---|---|
-| POST | `/api/v1/issues/:id/move` | Перенести задачу в другой проект. Body `{ targetProjectId }`. Атомарная ре-аллокация `sequenceId`/`identifier`, ремап `state` по category, `board`=дефолт целевого проекта, `cycle`=null. Запрет переноса задач с подзадачами (400). WS `IssueMovedToProjectEvent` + метрика `issue_moved_to_project_total`. Закрывает кейс «увести задачу из общей папки „Входящие“ в нужный проект». Без миграций. ТЗ [`2026-06-15-issue-move-to-project`](../../plans/tz/2026-06-15-issue-move-to-project.md). | RBAC `issue`/`write` |
+| POST | `/api/v1/issues/:id/move` | Перенести задачу в другой проект. Body `{ targetProjectId }`. Атомарная ре-аллокация `sequenceId`/`identifier`, ремап `state` по category, `board`=дефолт целевого проекта, `cycle`=null. Запрет переноса задач с подзадачами (400). WS `IssueMovedToProjectEvent` + метрика `issue_moved_to_project_total`. Закрывает кейс «увести задачу из общей папки „Входящие“ в нужный проект». Без миграций. ТЗ [`2026-06-15-issue-move-to-project`](../../plans/archive/2026-06-15-issue-move-to-project.md). | RBAC `issue`/`write` |
 
 ### Финальный handoff Wave 1-3 — новые endpoint'ы
 
@@ -124,7 +124,7 @@ CRUD `POST/PATCH/DELETE/list/getUsage` упразднены. Модель `Plan`
 
 ## Goals OKR v2 — Граф целей (2026-06-02)
 
-ТЗ — [`plans/tz/2026-06-02-goals-okr-v2.md`](../../plans/tz/2026-06-02-goals-okr-v2.md). Полная заметка — [[goals-and-strategic-alignment]] §«Goals OKR v2». Все под `CookieAuthGuard + TenantGuard`. (Базовый CRUD целей `GET/POST/PATCH/DELETE /goals` и темы — описаны выше в Phase 9.)
+ТЗ — [`plans/archive/2026-06-02-goals-okr-v2.md`](../../plans/archive/2026-06-02-goals-okr-v2.md). Полная заметка — [[goals-and-strategic-alignment]] §«Goals OKR v2». Все под `CookieAuthGuard + TenantGuard`. (Базовый CRUD целей `GET/POST/PATCH/DELETE /goals` и темы — описаны выше в Phase 9.)
 
 | Метод | Путь | Назначение | Доступ |
 |---|---|---|---|
@@ -189,15 +189,15 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 
 Таймаут синтеза `chat-v2` разведён от общего `LLM_ROUTER_DISPATCH_TIMEOUT_MS` через AdminSetting `knowledge.chatV2SynthesisTimeoutMs` (POSITIVE_INT, code-default 90000 мс; per-call `LlmCallParams.timeoutMs?` override в llm-router; 2026-06-11, §4 Ф3).
 
-> **Единый промпт-ответчик + таблицы как источник (2026-06-15).** Контракт `POST /chat-v2/messages` не изменился, но изменилось ЧТО считается внутри: убраны режимы факт/синтез/clone — один промпт; контекст переведён в человеческий русский (summary/history → конец USER, «О компании» в SYSTEM); умные таблицы ищутся ПАРАЛЛЕЛЬНО с графом и идут синтезатору «Данные из таблиц» (`ChatV2TableContextService`, крутилки `chat_v2.table_context_max_rows`/`max_tables`). ТЗ [`2026-06-15-chat-v2-unified-answer-prompt`](../../plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md). Клон должности — НЕ режим chat-v2 (выбор в кабинете через `clonesApi.askRole`).
+> **Единый промпт-ответчик + таблицы как источник (2026-06-15).** Контракт `POST /chat-v2/messages` не изменился, но изменилось ЧТО считается внутри: убраны режимы факт/синтез/clone — один промпт; контекст переведён в человеческий русский (summary/history → конец USER, «О компании» в SYSTEM); умные таблицы ищутся ПАРАЛЛЕЛЬНО с графом и идут синтезатору «Данные из таблиц» (`ChatV2TableContextService`, крутилки `chat_v2.table_context_max_rows`/`max_tables`). ТЗ [`2026-06-15-chat-v2-unified-answer-prompt`](../../plans/archive/2026-06-15-chat-v2-unified-answer-prompt.md). Клон должности — НЕ режим chat-v2 (выбор в кабинете через `clonesApi.askRole`).
 
 ## Concierge + Voice
 
 | Метод | Путь | Назначение | T |
 |---|---|---|---|
-| POST | `/api/v1/concierge/ask` | Conversational интерфейс (NL → tool-use). С 2026-06-15 помощник — развилка + руки: понимание/синтез не дублирует (живут в chat-v2), `ask_chat_v2` терминальный; инструменты `create_task`/`search_tasks`/`ingest_note` вместо `search_knowledge`. ТЗ [`2026-06-14-assistant-router-dedup-and-prompt`](../../plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md). | γ-2 |
+| POST | `/api/v1/concierge/ask` | Conversational интерфейс (NL → tool-use). С 2026-06-15 помощник — развилка + руки: понимание/синтез не дублирует (живут в chat-v2), `ask_chat_v2` терминальный; инструменты `create_task`/`search_tasks`/`ingest_note` вместо `search_knowledge`. ТЗ [`2026-06-14-assistant-router-dedup-and-prompt`](../../plans/archive/2026-06-14-assistant-router-dedup-and-prompt.md). | γ-2 |
 | POST | `/api/v1/me/tasks` | **Self-задача (2026-06-15):** рядовой ставит задачу СЕБЕ в проект «Входящие» (через `issue`/`write`, self). Эндпоинт инструмента `create_task` помощника; список — `GET /api/v1/me/inbox`. | — |
-| GET  | `/api/v1/me/ai-chat/quota` | Единая per-user дневная квота AI-общения (Concierge + клоны вместе) — `{ dailyUsed, dailyLimit, role }`. См. ТЗ [`2026-05-31-ai-chat-quota-unified-per-user`](../../plans/tz/2026-05-31-ai-chat-quota-unified-per-user.md). | — |
+| GET  | `/api/v1/me/ai-chat/quota` | Единая per-user дневная квота AI-общения (Concierge + клоны вместе) — `{ dailyUsed, dailyLimit, role }`. См. ТЗ [`2026-05-31-ai-chat-quota-unified-per-user`](../../plans/archive/2026-05-31-ai-chat-quota-unified-per-user.md). | — |
 | **GET / PATCH** | `/api/v1/me/work-profile` | **Рабочий профиль (2026-06-18):** прочитать / выставить таймзону (IANA) + рабочие часы (`workStartHour`/`workEndHour`) + рабочие дни (`workingDays` 0=вс..6=сб) на своём `Person`. Эндпоинт инструмента помощника `set_my_work_profile`; питает «сегодня»/окно дня и `find_free_slot`. ТЗ [`2026-06-18-assistant-calendar-master`](../../plans/tz/2026-06-18-assistant-calendar-master.md). | — |
 | POST | `/api/v1/events/:id/make-online` | **Сделать встречу онлайн (2026-06-18):** идемпотентно выставляет `Event.online=true` и создаёт видеокомнату LiveKit (`EventsService.makeEventOnline`). Эндпоинт инструмента помощника `make_event_online`; см. [[calendar]]. | — |
 | POST | `/api/v1/voice/transcribe` | REST ASR (Vox/GigaAM, fallback) | — |
@@ -208,6 +208,14 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 ## Knowledge-core
 
 См. [`knowledge-core.md`](../02_architecture/knowledge-core.md) — `/api/v1/knowledge/blocks`, `/entities`, `/themes`, `/graph/*`, `/search`.
+
+**Гейт графа на платную `feature.graph` (knowledge-core MASTER G1, 2026-06-16).** Раньше `KnowledgeGraphController` (`/graph/*`) был гейтнут `@RequireEntitlement('feature.graph')`, а entity-/block-centric выходы графа — нет (обход paywall'а). Закрыто: `@RequireEntitlement('feature.graph')` навешан на
+- `GET /api/v1/knowledge/entities/:id/graph` (entity-centric граф) и `GET /api/v1/knowledge/entities/:id/links`,
+- `GET /api/v1/knowledge/blocks/:id/links` и `GET /api/v1/knowledge/blocks/:id/reasoning-chain` (BFS по логическим связям).
+
+Гейт читается глобальным `EntitlementGuard` через `Reflector` (тот же механизм, что у `KnowledgeGraphController`).
+
+**Throttle на `POST /api/v1/knowledge/entities/:id/mark-wrong` (G1).** Точечный rate-limit **только** на этот эндпоинт (`ThrottlerGuard` навешан per-route, глобально не зарегистрирован; `@Throttle` строже дефолта) — чтобы скрипт/циклом не раздувал датасет «неверных» меток.
 
 ## Regulations (единый API регламентов/процессов/политик/инструкций)
 
@@ -251,7 +259,7 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 
 ## Org / RBAC / Admin / LLM
 
-См. [`orgs-and-rbac.md`](orgs-and-rbac.md), [`admin-z-global.md`](admin-z-global.md), [`admin-org-knowledge-core.md`](admin-org-knowledge-core.md), [`llm-router.md`](llm-router.md).
+См. [`rbac-access-control.md`](rbac-access-control.md), [`admin-z-global.md`](admin-z-global.md), [`admin-org-knowledge-core.md`](admin-org-knowledge-core.md), [`llm-router.md`](llm-router.md).
 
 ## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
 
@@ -335,7 +343,8 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | Метод | Путь | Назначение | Доступ | Фаза |
 |---|---|---|---|---|
 | POST | `/api/v1/clones/persons/:personId/ask` | One-shot вопрос клону сотрудника (rate-limit 20/сутки, mode=`clone_style`, антифальшивка ≥2 reasoning-блока с cosine≥0.70) | owner/admin/self/direct manager | γ-1 |
-| POST | `/api/v1/clones/roles/:roleId/ask` | One-shot вопрос агрегатному клону роли (top traits всех employee'ев роли) | owner/admin/manager | γ-1 |
+| POST | `/api/v1/clones/roles/:roleId/ask` | One-shot вопрос клону роли (снимок текущего носителя). **Опц. body `roleVersion`** (с 2026-06-16): спросить конкретную версию — текущую active или бывшую frozen («как ты работал»). Без `roleVersion` — текущая active. | owner/admin/manager | γ-1 (+ roleVersion 2026-06-16) |
+| **POST** | `/api/v1/clones/roles/:roleId/ask-all-formers` | **«Совет бывших» (Раздел 7 §7.5):** один вопрос → веером ВСЕМ версиям клона роли (текущая active + бывшие frozen) → ответы рядом для сравнения. Каждый ответ — от лица `«Клон <Должность> v<N>»` (без ФИО), с дисклеймером; те же анти-дипфейк-гейты per-версия. Body `{ question }`. | owner/admin/manager | **Раздел 7 (2026-06-16)** |
 | GET | `/api/v1/clones/persons/:personId/skill-profile` | Read профиля + traits | manager/admin/self | γ-1 |
 | GET | `/api/v1/clones/roles/:roleId/skill-profile` | Агрегатный профиль роли + список людей | manager/admin | γ-1 |
 | POST | `/api/v1/clones/skill-traits/:traitId/mark-misleading` | Manager/admin помечает trait как неверный (postфактум-контроль) | owner/admin/direct manager | γ-1 |
@@ -359,7 +368,7 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | PATCH | `/admin/clones/access-grants/:id` | Продлить / изменить `expiresAt` (включая «бессрочно» = null). Body: `{ expiresAt: ISO \| null, reason }`. |
 | GET | `/admin/clones/:cloneType/:cloneRefId/access-grants` | Per-clone view — кому уже выдан этот клон (для модалки CreateGrantDialog). |
 
-**ТЗ:** [plans/tz/2026-05-26-clone-access-grant-admin-api.md](../../plans/tz/2026-05-26-clone-access-grant-admin-api.md).
+**ТЗ:** [plans/archive/2026-05-26-clone-access-grant-admin-api.md](../../plans/archive/2026-05-26-clone-access-grant-admin-api.md).
 
 ## WebSocket gateways
 
@@ -529,6 +538,20 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 |---|---|---|---|
 | POST | `/api/v1/meetings/:id/invitees` | **Допригласить участников на joinable-встречу** (`status ∈ {scheduled, active}` — единый критерий `isJoinableStatus`). Тело `{ invitees: [{ userId?, personId?, email?, sendVia: ('email'\|'telegram')[] }] }`. **Идемпотентно** (повтор уже приглашённого `userId`/`personId` = no-op). Переиспользует `seedInviteeInTx` + `deliverMeetingInvites` — ровно ту же логику, что и при создании встречи (тот же `inviteToken` / joinUrl `${publicFrontendUrl}/m/<id>?inv=<token>`). Ответ `{ added, skipped }`. | host-only, `@RequireSubscription` |
 
+## Bitrix24-интеграция (2026-06-09)
+
+ТЗ — [`plans/archive/2026-06-09-bitrix24-integration-install.md`](../../plans/archive/2026-06-09-bitrix24-integration-install.md). Модуль `bitrix`. Аутентифицированные — под `CookieAuthGuard + TenantGuard`, RBAC-ресурс `bitrix`, gate `feature.bitrix`. Public-роуты (callback/install) — без cookie-auth, `@ApiExcludeController`. Модули — [[../02_architecture/module-map]] §«Bitrix24-интеграция».
+
+| Метод | Путь | Назначение | RBAC |
+|---|---|---|---|
+| GET | `/api/v1/bitrix/integration` | текущая интеграция org (без токенов) | read |
+| GET | `/api/v1/bitrix/integration/authorize-url?domain=` | URL OAuth-авторизации портала | manage |
+| POST | `/api/v1/bitrix/integration/test` | проверка соединения (`app.info`) | manage |
+| POST | `/api/v1/bitrix/integration/claim` | привязать установку из Маркета `{memberId}` к org | manage |
+| DELETE | `/api/v1/bitrix/integration` | отключить (удалить токены) | delete |
+| GET | `/api/v1/bitrix/oauth/callback` | **public** — callback OAuth (code→токены → redirect на фронт) | — |
+| POST | `/api/v1/bitrix/install/event` | **public** — `ONAPPINSTALL`/`ONAPPUNINSTALL` (kill-switch `bitrix.enabled`, всегда 200) | — |
+
 ## ChatBox-интеграция (2026-06-05)
 
 ТЗ — [`plans/tz/2026-06-05-chatbox-integration.md`](../../plans/tz/2026-06-05-chatbox-integration.md). Модуль `chatbox`. Все (кроме webhook) под `CookieAuthGuard + TenantGuard`, RBAC-ресурс `chatbox`. Профильная заметка — [[chatbox-integration]], фронт — [[frontend-pages]] §«Чаты».
@@ -623,7 +646,7 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 
 ## Служба поддержки `/support/*` (2026-06-09)
 
-ТЗ — [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md). Модуль `support`, 3 контроллера. Профильная заметка — [[support-desk]]; модели — [[../02_architecture/data-model]] §«Служба поддержки». Коды ошибок machine-readable: `SUPPORT_DESK_DISABLED` (503), `SUPPORT_RATE_LIMIT` (429), `SUPPORT_NOT_AGENT` (403). Swagger-тег `support`.
+ТЗ — [`plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md). Модуль `support`, 3 контроллера. Профильная заметка — [[support-desk]]; модели — [[../02_architecture/data-model]] §«Служба поддержки». Коды ошибок machine-readable: `SUPPORT_DESK_DISABLED` (503), `SUPPORT_RATE_LIMIT` (429), `SUPPORT_NOT_AGENT` (403). Swagger-тег `support`.
 
 **Клиент (любой авторизованный, любая Org → приём в вендор-деск):**
 
@@ -662,12 +685,12 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 
 - **2026-05-25:** создан как часть финального handoff Wave 1-3. Документированы T1/T2/T4/T5/T6a/T8.
 - **2026-05-25 (β-8.1/β-8.2):** добавлены `team-temperature`, `weekly-digest`, `open-commitments`, `/me/promises`, `personal-relations/commitments` endpoints; зафиксирована fail-safe privacy для поля `sentiment`.
-- **2026-05-25 (β-8.3):** добавлены `daily-digest` (GET/POST + `/latest`) endpoints — ежедневный отчёт COO в окне 1 день МСК. См. [`plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md`](../../plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md).
+- **2026-05-25 (β-8.3):** добавлены `daily-digest` (GET/POST + `/latest`) endpoints — ежедневный отчёт COO в окне 1 день МСК. См. [`plans/archive/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md`](../../plans/archive/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md).
 - **2026-05-25 (admin-redesign Фазы 0-9):** добавлен раздел «Admin (Z-Admin) — новые эндпоинты Фаз 0-9» с полным списком префиксов `/api/v1/admin/{settings,crons,audit,incidents,analytics,ai,orgs/{plans,entitlements,:id/*},content/*,integrations/*,media/*,platform/*,llm-routes}`.
 - **2026-05-25 (feedback):** добавлен раздел «Feedback — канал обратной связи + AI-кластеризация» с пользовательскими и админскими эндпоинтами `/api/v1/feedback/*` и `/api/v1/admin/feedback/*`. Полная заметка фичи — [[feedback]].
 - **2026-05-26 (clones v2, Фаза 7 §9):** добавлены `POST /clones/persons/:id/conversations` и `POST /clones/roles/:id/conversations` — многотуровый диалог с клоном, dialog-layer, режимы factual / judgmental, taskType `dialog-multi-query-clone` на DeepSeek V4 Pro. Доступ через модель `CloneAccessGrant`, флаг `CLONE_V2_ENABLED`. См. [[skill-and-clone]] §«Доработки 2026-05-26».
-- **2026-05-26 (clones admin CRUD + user list):** добавлены 5 admin endpoints `/api/v1/admin/clones/access-grants` (list / create / revoke / extend / per-clone-view) + 2 user endpoints `/api/v1/clones/conversations` (мои диалоги с клоном) и `/api/v1/me/clone-access` (что мне выдано). `AdminAuditInterceptor.classifyAction` расширен 3 ветками (grant/revoke/extend, severity high). `RbacService.canAccess*Clone` исправлен: теперь фильтрует активность грантов (`revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt > now())`). См. [plans/tz/2026-05-26-clone-access-grant-admin-api.md](../../plans/tz/2026-05-26-clone-access-grant-admin-api.md).
-- **2026-06-02 (Goals OKR v2):** добавлен раздел «Goals OKR v2 — Граф целей» — KR-эндпоинты `POST/PATCH/DELETE /goals/:id/key-results[/:krId]`, `POST /goals/:id/supersede`, расширенный `PATCH /goals/:id` (parentGoalId/progressStatus/promotionState), `POST /ideas/:id/goal`, расширенный `PATCH /cycles/:id` (primaryGoalId), дашборд `goalsTree`/`goalsPulse`. Новый RBAC-ресурс `goal_key_result`. См. [plans/tz/2026-06-02-goals-okr-v2.md](../../plans/tz/2026-06-02-goals-okr-v2.md).
+- **2026-05-26 (clones admin CRUD + user list):** добавлены 5 admin endpoints `/api/v1/admin/clones/access-grants` (list / create / revoke / extend / per-clone-view) + 2 user endpoints `/api/v1/clones/conversations` (мои диалоги с клоном) и `/api/v1/me/clone-access` (что мне выдано). `AdminAuditInterceptor.classifyAction` расширен 3 ветками (grant/revoke/extend, severity high). `RbacService.canAccess*Clone` исправлен: теперь фильтрует активность грантов (`revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt > now())`). См. [plans/archive/2026-05-26-clone-access-grant-admin-api.md](../../plans/archive/2026-05-26-clone-access-grant-admin-api.md).
+- **2026-06-02 (Goals OKR v2):** добавлен раздел «Goals OKR v2 — Граф целей» — KR-эндпоинты `POST/PATCH/DELETE /goals/:id/key-results[/:krId]`, `POST /goals/:id/supersede`, расширенный `PATCH /goals/:id` (parentGoalId/progressStatus/promotionState), `POST /ideas/:id/goal`, расширенный `PATCH /cycles/:id` (primaryGoalId), дашборд `goalsTree`/`goalsPulse`. Новый RBAC-ресурс `goal_key_result`. См. [plans/archive/2026-06-02-goals-okr-v2.md](../../plans/archive/2026-06-02-goals-okr-v2.md).
 - **2026-06-04 (Команда + доступы):** добавлен раздел «Команда + персональные доступы сотрудников» — `GET /orgs/:id/team-roster`, capabilities CRUD `GET/PUT/DELETE /orgs/:id/members/:userId/capabilities[/:capability]`, `GET /orgs/:id/effective-access`; `POST /persons` расширен `linkUserId`, приглашение — `personId`. Новая модель `EmployeeCapabilityOverride`. См. [plans/tz/2026-06-03-team-section-and-employee-access.md](../../plans/tz/2026-06-03-team-section-and-employee-access.md).
 - **2026-06-05 (МТЗ №1 meeting-identity):** добавлен раздел «Meetings — приглашение сотрудников + задачи встречи» — POST создания встречи принимает `invitees[]`; `GET /meetings/:id/tasks` стал gate-coupled на `knowledge.meetingTasksToTrackerOnly` (контракт при дефолте сохранён); новый conversational `eventType 'meeting.invite'`. См. [plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md](../../plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md).
 - **2026-06-05 (ChatBox-интеграция):** добавлен раздел «ChatBox-интеграция» — `/chatbox/integration(+workspaces,sync,sync/status)`, `/chatbox/chats(+/:id,/messages,POST send)`, `/chatbox/members(+/:id/link)`, inbound webhook `/webhooks/chatbox/:tenantId/:secret`. Новый RBAC-ресурс `chatbox`, privacy-инвариант (super_admin без bypass на текст переписки). См. [plans/tz/2026-06-05-chatbox-integration.md](../../plans/tz/2026-06-05-chatbox-integration.md).
@@ -675,8 +698,9 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 - **2026-06-06 (надёжность отчёта встречи):** `GET /meetings/:id/reports/:reportId` теперь отдаёт **200 и для primary-отчёта** (когда `reportId === aiResult.id`) — `get()` синтезирует `ReportDetailDto` из `AiResult` (`output` = `structuredData` или `{summary}`, `promptTemplateVersionId: null`), зеркаля primary-ветку `list()`. Раньше искал только `MeetingReport` → 404 на «Открыть» основного отчёта (S6-07). Контракт additional-отчётов не изменён (primary-ветка только при совпадении `aiResult.id`). См. [plans/tz/2026-06-06-meeting-report-reliability-and-ui-honesty.md](../../plans/tz/2026-06-06-meeting-report-reliability-and-ui-honesty.md) Ф1.
 - **2026-06-11 (Probe-система Фаза 1):** добавлены два notification eventType `probe.digest` (батч-дайджест отложенных probe от `ProbeDigestCron`, канал-политика `['telegram_bot','max_bot','in_app']`, label «Вопросы от Коры») и `probe.answer_acknowledged` (подтверждение «ваш ответ записан» от `ProbeResponseHandler`, label «Ответ записан»). Zod в `event-payload.registry.ts`, рендер telegram/max-bot. См. [`plans/tz/2026-06-11-probe-system-upgrade-phase1.md`](../../plans/tz/2026-06-11-probe-system-upgrade-phase1.md).
 - **2026-06-06 (Трекер + Встречи, B5):** новый эндпоинт `POST /meetings/:id/invitees` — допригласить участников на joinable-встречу (host-only, `@RequireSubscription`, идемпотентно по `userId`/`personId`); переиспользует `seedInviteeInTx` + `deliverMeetingInvites` (та же логика, что при создании встречи). Контроллер `meetings.controller.ts`, сервис `MeetingsService.addInvitees`. См. [plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md](../../plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md).
-- **2026-06-12 (слой метода клона, Э0.1):** новый эндпоинт `GET /api/v1/clones/query-log` (OrgAdminGuard, пагинация limit/offset, фильтр `cloneTargetId`) — журнал запросов к клонам (модель `CloneQueryLog`: questionPreview+sha256, answeredGrounded, refusalReason `'ungrounded'`). Пишется на каждый ask всех 4 путей, вкл. программные отказы grounding-гейта (`CLONE_RESPOND_GROUNDING_ENABLED`). См. [[skill-and-clone]] §«Доработки 2026-06-12», [plans/tz/2026-06-11-clone-persona-method-layer.md](../../plans/tz/2026-06-11-clone-persona-method-layer.md).
-- **2026-06-15 (помощник = развилка + руки; цепочка из 5 ТЗ):** новый self-эндпоинт `POST /api/v1/me/tasks` (рядовой ставит задачу СЕБЕ в проект «Входящие», self через `issue`/`write`; эндпоинт инструмента `create_task` помощника, список — `GET /me/inbox`). Контракты `POST /concierge/ask` и `POST /chat-v2/messages` не изменились, но изменилось ЧТО внутри: помощник не дублирует понимание/синтез (`ask_chat_v2` терминальный, `search_knowledge` убран), chat-v2 — единый промпт без режимов + умные таблицы как параллельный источник. Удалена ENV `CONTEXTUALIZER_CONFIDENCE_MIN` (слитый dialog-layer). ТЗ [`2026-06-14-assistant-router-dedup-and-prompt`](../../plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md) / [`2026-06-15-chat-v2-unified-answer-prompt`](../../plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md) / [`2026-06-14-dialog-layer-unified-query-understanding`](../../plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md).
-- **2026-06-15 (перенос задачи между проектами):** новый эндпоинт `POST /api/v1/issues/:id/move` (body `{ targetProjectId }`, RBAC `issue`/`write`) — атомарная ре-аллокация `sequenceId`/`identifier`, ремап `state` по category, `board`=дефолт целевого проекта, `cycle`=null; запрет переноса задач с подзадачами; WS `IssueMovedToProjectEvent` + метрика `issue_moved_to_project_total`. Закрывает кейс «увести задачу из „Входящих“ в нужный проект» (поверх дефолт-проекта Ф3). Без миграций. ТЗ [`2026-06-15-issue-move-to-project`](../../plans/tz/2026-06-15-issue-move-to-project.md).
+- **2026-06-12 (слой метода клона, Э0.1):** новый эндпоинт `GET /api/v1/clones/query-log` (OrgAdminGuard, пагинация limit/offset, фильтр `cloneTargetId`) — журнал запросов к клонам (модель `CloneQueryLog`: questionPreview+sha256, answeredGrounded, refusalReason `'ungrounded'`). Пишется на каждый ask всех 4 путей, вкл. программные отказы grounding-гейта (`CLONE_RESPOND_GROUNDING_ENABLED`). См. [[skill-and-clone]] §«Доработки 2026-06-12», [plans/archive/2026-06-11-clone-persona-method-layer.md](../../plans/archive/2026-06-11-clone-persona-method-layer.md).
+- **2026-06-15 (помощник = развилка + руки; цепочка из 5 ТЗ):** новый self-эндпоинт `POST /api/v1/me/tasks` (рядовой ставит задачу СЕБЕ в проект «Входящие», self через `issue`/`write`; эндпоинт инструмента `create_task` помощника, список — `GET /me/inbox`). Контракты `POST /concierge/ask` и `POST /chat-v2/messages` не изменились, но изменилось ЧТО внутри: помощник не дублирует понимание/синтез (`ask_chat_v2` терминальный, `search_knowledge` убран), chat-v2 — единый промпт без режимов + умные таблицы как параллельный источник. Удалена ENV `CONTEXTUALIZER_CONFIDENCE_MIN` (слитый dialog-layer). ТЗ [`2026-06-14-assistant-router-dedup-and-prompt`](../../plans/archive/2026-06-14-assistant-router-dedup-and-prompt.md) / [`2026-06-15-chat-v2-unified-answer-prompt`](../../plans/archive/2026-06-15-chat-v2-unified-answer-prompt.md) / [`2026-06-14-dialog-layer-unified-query-understanding`](../../plans/archive/2026-06-14-dialog-layer-unified-query-understanding.md).
+- **2026-06-15 (перенос задачи между проектами):** новый эндпоинт `POST /api/v1/issues/:id/move` (body `{ targetProjectId }`, RBAC `issue`/`write`) — атомарная ре-аллокация `sequenceId`/`identifier`, ремап `state` по category, `board`=дефолт целевого проекта, `cycle`=null; запрет переноса задач с подзадачами; WS `IssueMovedToProjectEvent` + метрика `issue_moved_to_project_total`. Закрывает кейс «увести задачу из „Входящих“ в нужный проект» (поверх дефолт-проекта Ф3). Без миграций. ТЗ [`2026-06-15-issue-move-to-project`](../../plans/archive/2026-06-15-issue-move-to-project.md).
+- **2026-06-16 (один человек = один клон должности, Раздел 7):** (1) `POST /api/v1/clones/roles/:roleId/ask` теперь принимает опц. body `roleVersion` — спросить конкретную версию клона роли (текущую `active` или бывшую `frozen`); без поля — текущая active. (2) Новый эндпоинт `POST /api/v1/clones/roles/:roleId/ask-all-formers` («совет бывших», §7.5) — один вопрос веером всем версиям клона роли, ответы рядом для сравнения, от лица `«Клон <Должность> v<N>»` (без ФИО), анти-дипфейк per-версия. Клон роли = снимок ОДНОГО носителя (без агрегации); прошлые носители — `frozen` (read-only, доступны навсегда). Без новых ENV/флагов; миграция enum `PersonaStatus += frozen` + partial-unique индекс + backfill. ТЗ [`2026-06-16-clone-agents-prompt-revision`](../../plans/tz/2026-06-16-clone-agents-prompt-revision.md) Раздел 7. См. [[skill-and-clone]] §«Доработки 2026-06-16».
 
 [[../index|← index]]

@@ -4,12 +4,6 @@ import type { OrchestratorPlanStep } from '../orchestrator.types';
 
 import { BaseRetrievalStrategy } from './base-retrieval-strategy';
 
-/**
- * SBA δ-1 — стратегия `topic_summary`.
- *
- * Цель: обобщить то, что в компании говорят про тему. Это «default» стратегия
- * — fallback, если planning не уверен, какую стратегию выбрать.
- */
 @Injectable()
 export class TopicSummaryStrategy extends BaseRetrievalStrategy {
   readonly agentType = 'topic_summary' as const;

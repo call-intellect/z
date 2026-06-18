@@ -1,30 +1,3 @@
-/**
- * ТЗ 2026-05-25 §9 (clone-respond эволюция, Фаза 7) — seed маршрутов LLM
- * для двух новых/обновлённых taskType'ов:
- *
- *   - `dialog-multi-query-clone` (новый) — multi-query расширение запросов
- *     к клону по аналогии (3 формулировки: точная / ситуационный аналог /
- *     общий принцип). Используется только если `CLONE_V2_ENABLED=true`.
- *     Primary — deepseek-v4-pro (capable thinking), fallback — gpt-5.4-mini
- *     и ollama qwen3.5:9b.
- *
- *   - `clone-respond` (обновление) — primary переключаем с deepseek-v4-flash
- *     на deepseek-v4-pro (ТЗ §9.3 решение 9 + smoke §10.3 #17). Запускается
- *     ОНЛИ с `--update-existing`, иначе пропускается.
- *
- * Эти маршруты не блокируют включение V2: legacy `clone-respond` остаётся
- * рабочим даже без seed-обновления (просто будет использоваться prev primary).
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-clone-v2.ts
- *   bun run scripts/seed-llm-task-routes-clone-v2.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Записи с editedByAdmin=true НЕ перезаписываются (admin edit > seed).
- *   - Без `--update-existing` — пропускаем существующие.
- *   - С `--update-existing` — обновляем model/priority/isActive.
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -40,7 +13,6 @@ interface RouteSeed {
 }
 
 const ROUTES: RouteSeed[] = [
-  // ── dialog-multi-query-clone — новый route ─────────────────────────
   {
     taskType: 'dialog-multi-query-clone',
     tier: 'primary',
@@ -65,7 +37,6 @@ const ROUTES: RouteSeed[] = [
     priority: 0,
     maxDataClass: 'private',
   },
-  // ── clone-respond — обновление primary до deepseek-v4-pro ──────────
   {
     taskType: 'clone-respond',
     tier: 'primary',
@@ -79,9 +50,7 @@ const ROUTES: RouteSeed[] = [
 async function main(): Promise<void> {
   const updateExisting = process.argv.includes('--update-existing');
   // eslint-disable-next-line no-console
-  console.log(
-    `=== seed-llm-task-routes-clone-v2 START (updateExisting=${updateExisting}) ===`,
-  );
+  console.log(`=== seed-llm-task-routes-clone-v2 START (updateExisting=${updateExisting}) ===`);
 
   let inserted = 0;
   let updated = 0;
@@ -109,9 +78,7 @@ async function main(): Promise<void> {
       if (!updateExisting) {
         skipped++;
         // eslint-disable-next-line no-console
-        console.log(
-          `[skipped:exists] ${r.taskType} ${r.tier} ${r.provider}:${r.model}`,
-        );
+        console.log(`[skipped:exists] ${r.taskType} ${r.tier} ${r.provider}:${r.model}`);
         continue;
       }
       if (
@@ -134,9 +101,7 @@ async function main(): Promise<void> {
       });
       updated++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[updated] ${r.taskType} ${r.tier} ${r.provider}:${r.model}`,
-      );
+      console.log(`[updated] ${r.taskType} ${r.tier} ${r.provider}:${r.model}`);
       continue;
     }
     await prisma.llmTaskRoute.create({

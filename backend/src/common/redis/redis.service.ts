@@ -1,14 +1,14 @@
-import { Inject, Injectable, type OnModuleDestroy, type OnModuleInit, Logger } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  type OnModuleDestroy,
+  type OnModuleInit,
+  Logger,
+} from '@nestjs/common';
 import IORedis, { type Redis } from 'ioredis';
 
 import { TypedConfigService } from '../config/index';
 
-/**
- * Тонкая обёртка над `ioredis` с lifecycle-хуками Nest.
- *
- * URL берётся из `REDIS_URL`. Сам клиент доступен через `client`
- * — bullmq, idempotency-store, deep-link cache используют его напрямую.
- */
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
@@ -16,7 +16,6 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   constructor(@Inject(TypedConfigService) private readonly cfg: TypedConfigService) {}
 
-  /** Доступ к нижележащему `ioredis` клиенту. */
   get client(): Redis {
     if (!this.redis) {
       throw new Error('RedisService: client used before onModuleInit()');
@@ -53,10 +52,6 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Простой `PING`. Используется в health check.
-   * Возвращает `'PONG'` или бросает исключение.
-   */
   async ping(): Promise<string> {
     return this.client.ping();
   }

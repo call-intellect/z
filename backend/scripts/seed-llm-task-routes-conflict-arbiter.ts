@@ -1,35 +1,3 @@
-/**
- * Autonomy W1 (2026-06-12) — Seed маршрутов LLM для taskType'ов семейства
- * `conflict-arbiter` (ночной LLM-арбитр конфликтов знаний: ConflictItem(open)
- * → авто-резолв keep_old | accept_new | merge при уверенном консенсусе дебата;
- * evolving / escalate остаются open).
- *
- * 4 taskType:
- *   - debate-conflict-arbiter           — зонтичный (агрегатная аналитика/smoke).
- *   - debate-conflict-arbiter-critic    — stance "strict-critic".
- *   - debate-conflict-arbiter-supporter — stance "empathetic-supporter".
- *   - debate-conflict-arbiter-neutral   — stance "neutral-judge".
- *
- * Цепочка — дешёвая (cheap), как у `debate-curation-verify`:
- *   primary   = deepseek/deepseek-v4-flash
- *   secondary = openai-via-proxy/gpt-5.4-mini  (diverse провайдер)
- *   tertiary  = ollama/qwen3.5:9b              (safety-net)
- * Supporter — primary gpt-5.4-mini (diversity голосов). НИКАКОГО anthropic.
- *
- * Источник цепочек: docs/reference/llm-models-playbook.md §2.1 + verified-
- * карта second-brain/01_projects/llm-providers-verified.md + правило
- * feedback `Ollama qwen3.5:9b — только tertiary fallback`.
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-conflict-arbiter.ts
- *   bun run scripts/seed-llm-task-routes-conflict-arbiter.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - editedByAdmin=true — не перезаписываем.
- *   - Без флага — пропускаем existing.
- *   - С `--update-existing` — обновляем model/priority/isActive (но НЕ editedByAdmin).
- */
-
 import { type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -48,7 +16,6 @@ interface TaskRouteSeed {
   pinnedVersionNote?: string;
 }
 
-/** Общая cheap-цепочка для conflict-arbiter taskType (зонтичный/critic/neutral). */
 const CHEAP_CHAIN: TierEntry[] = [
   { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
   { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
@@ -133,17 +100,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -171,9 +134,7 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 

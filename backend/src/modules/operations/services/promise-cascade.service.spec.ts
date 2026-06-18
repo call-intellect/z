@@ -2,14 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { PromiseCascadeService } from './promise-cascade.service';
 
-/**
- * TZ-1 Фаза 3.C (daily-value-engine) — unit-тесты PromiseCascadeService.
- *
- * Mock Prisma, без сети/времени. Покрываем:
- *   1. просроченное обещание с зависимостью (цель адресата) → каскад.
- *   2. просроченное обещание БЕЗ зависимости → не каскад.
- *   3. обещание без автора → не каскад.
- */
 describe('PromiseCascadeService', () => {
   const now = new Date('2026-06-08T10:00:00.000Z');
 
@@ -82,8 +74,8 @@ describe('PromiseCascadeService', () => {
           commitmentRecipient: { id: 'pRecipient', name: 'Маша', userId: 'u2' },
         },
       ],
-      goal: null, // нет цели
-      assignee: null, // нет задачи
+      goal: null,
+      assignee: null,
     });
     const res = await svc.findCascadesForTenant({ tenantId: 't1', now });
     expect(res).toHaveLength(0);

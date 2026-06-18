@@ -9,26 +9,12 @@ import type { IntakeAutoTriageQueueService } from '../../../tracker/services/int
 import type { IssuesService } from '../../../tracker/services/issues.service';
 
 import type { TelegramApiClient } from './telegram-api-client';
-import {
-  TelegramBotMessageHandler,
-  renderMyTasksText,
-} from './telegram-bot-message.handler';
+import { TelegramBotMessageHandler, renderMyTasksText } from './telegram-bot-message.handler';
 import type {
   TelegramTaskParseResult,
   TelegramTaskParserService,
 } from './telegram-task-parser.service';
 import type { TelegramBotChannelConfig, TelegramMessage } from './telegram.types';
-
-/**
- * Unit-тесты `TelegramBotMessageHandler` (ТЗ 2026-06-10 §2 — гейт намерения).
- *
- * После §2 handler НЕ перехватывает plain text/voice безусловно. Три точки:
- *   - `tryHandleStructural` — forward + reply (структурные спецслучаи).
- *   - `handleCreateTask` — создание задачи из текста (зовёт адаптер при
- *      intent=task).
- *   - `handleShowTasks` — читалка «мои задачи» (intent=show_tasks, Р-6).
- *   - `renderMyTasksText` — чистый рендер списка задач.
- */
 
 interface PrismaMock {
   notificationDelivery: { findFirst: ReturnType<typeof vi.fn> };
@@ -116,16 +102,18 @@ function makeMessage(overrides: Partial<TelegramMessage> = {}): TelegramMessage 
   } as TelegramMessage;
 }
 
-function makeHandler(deps: {
-  prisma?: PrismaMock;
-  api?: TelegramApiClient;
-  metrics?: BusinessMetricsService;
-  parser?: TelegramTaskParserService;
-  cfg?: TypedConfigService;
-  issuesService?: IssuesService;
-  commentsService?: CommentsService;
-  autoTriageQueue?: IntakeAutoTriageQueueService;
-} = {}): {
+function makeHandler(
+  deps: {
+    prisma?: PrismaMock;
+    api?: TelegramApiClient;
+    metrics?: BusinessMetricsService;
+    parser?: TelegramTaskParserService;
+    cfg?: TypedConfigService;
+    issuesService?: IssuesService;
+    commentsService?: CommentsService;
+    autoTriageQueue?: IntakeAutoTriageQueueService;
+  } = {},
+): {
   handler: TelegramBotMessageHandler;
   prisma: PrismaMock;
   api: TelegramApiClient;
@@ -187,7 +175,12 @@ describe('renderMyTasksText', () => {
   it('список → «Ваши задачи (N):» + буллеты + дедлайн', () => {
     const out = renderMyTasksText(
       [
-        { identifier: 'KORA-1', title: 'Подготовить КП', stateName: 'В работе', dueDate: new Date('2026-06-12T00:00:00.000Z') },
+        {
+          identifier: 'KORA-1',
+          title: 'Подготовить КП',
+          stateName: 'В работе',
+          dueDate: new Date('2026-06-12T00:00:00.000Z'),
+        },
         { identifier: 'KORA-2', title: 'Созвон', stateName: 'Бэклог', dueDate: null },
       ],
       2,
@@ -226,8 +219,6 @@ describe('TelegramBotMessageHandler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
-
-  // ─────────────────────── handleCreateTask (intent=task) ─────────────────
 
   it('handleCreateTask → parseCreateTask + bot-reply + metric=created', async () => {
     const { handler, parser, api, metrics } = makeHandler();
@@ -277,8 +268,6 @@ describe('TelegramBotMessageHandler', () => {
     });
   });
 
-  // ─────────────────────── handleShowTasks (intent=show_tasks) ─────────────
-
   it('handleShowTasks → listOpenForAssignee + reply со списком', async () => {
     const listOpenForAssignee = vi.fn().mockResolvedValue({
       items: [
@@ -326,9 +315,7 @@ describe('TelegramBotMessageHandler', () => {
   });
 
   it('handleShowTasks пусто → «Открытых задач нет»', async () => {
-    const listOpenForAssignee = vi
-      .fn()
-      .mockResolvedValue({ items: [], total: 0 });
+    const listOpenForAssignee = vi.fn().mockResolvedValue({ items: [], total: 0 });
     const issuesService = { listOpenForAssignee } as unknown as IssuesService;
     const { handler, api } = makeHandler({ issuesService });
 
@@ -345,8 +332,6 @@ describe('TelegramBotMessageHandler', () => {
       }),
     );
   });
-
-  // ─────────────────────── tryHandleStructural (forward/reply) ─────────────
 
   it('forward → parseForwardToTask + metric incTelegramForwards', async () => {
     const { handler, parser, metrics } = makeHandler();

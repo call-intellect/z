@@ -1,27 +1,10 @@
-/**
- * Agents v2 Фаза B2 (2026-05-30) — Unit-тесты `ConciergeStepScorerService`.
- *
- * Проверяем 3 ключевых сценария:
- *   (1) scoreStep с одним кандидатом → score в [0,1] + reasoning из LLM.
- *   (2) scoreAllCandidates с 3 кандидатами → 3 scores в том же порядке.
- *   (3) LLM провайдер падает (throw) → fallback score=0 без re-throw (shadow).
- *
- * Дополнительно:
- *   (4) LLM вернул невалидный JSON → fallback score=0 с warn.
- *   (5) score клампится в [0, 1] (модель вернула 1.5 или -0.3).
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
-import {
-  ConciergeStepScorerService,
-  type StepCandidate,
-} from './step-scorer.service';
+import { ConciergeStepScorerService, type StepCandidate } from './step-scorer.service';
 
-function buildScorer(args: {
-  llmCall: ReturnType<typeof vi.fn>;
-}): ConciergeStepScorerService {
+function buildScorer(args: { llmCall: ReturnType<typeof vi.fn> }): ConciergeStepScorerService {
   const llm = { call: args.llmCall } as unknown as LlmRouterService;
   return new ConciergeStepScorerService(llm);
 }
@@ -162,7 +145,6 @@ describe('ConciergeStepScorerService.scoreStep', () => {
 
 describe('ConciergeStepScorerService.scoreAllCandidates', () => {
   it('(2) top-3 кандидата → 3 scores параллельно, порядок сохранён', async () => {
-    // Mock: каждый вызов возвращает разный score, чтобы проверить порядок.
     let callIdx = 0;
     const scores = [0.9, 0.4, 0.7];
     const llmCall = vi.fn(async () => {

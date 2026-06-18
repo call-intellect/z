@@ -1,15 +1,16 @@
-'use client';
+"use client";
 
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 
-import { CHART, GRAD, STATUS_TONE, glass } from './tokens';
+import { CHART, GRAD, STATUS_TONE, glass } from "./tokens";
 
-/* ------------------------------------------------------------------ */
-/* Хелперы-ячейки                                                     */
-/* ------------------------------------------------------------------ */
-
-/** Круглый аватар-инициал с градиентным фоном (по умолчанию фиолетовый). */
-export function Avatar({ name, grad = GRAD.violet }: { name: string; grad?: string }) {
+export function Avatar({
+  name,
+  grad = GRAD.violet,
+}: {
+  name: string;
+  grad?: string;
+}) {
   return (
     <div
       className="grid h-8 w-8 place-items-center rounded-full text-xs font-semibold"
@@ -20,14 +21,13 @@ export function Avatar({ name, grad = GRAD.violet }: { name: string; grad?: stri
   );
 }
 
-/** Тонкий прогресс-бар (мятно-бирюзовый градиент) + подпись процента справа. */
 export function ProgressBar({ percent }: { percent: number }) {
   const clamped = Math.max(0, Math.min(100, percent));
   return (
     <div className="flex items-center gap-3">
       <div
         className="h-1.5 w-28 overflow-hidden rounded-full"
-        style={{ background: 'var(--surface-inset-strong)' }}
+        style={{ background: "var(--surface-inset-strong)" }}
       >
         <div
           className="h-full rounded-full"
@@ -39,14 +39,13 @@ export function ProgressBar({ percent }: { percent: number }) {
   );
 }
 
-/** Плашка статуса: цвет текста + фон из `STATUS_TONE`. Русская подпись. */
-const STATUS_LABEL: Record<'ok' | 'warning' | 'risk', string> = {
-  ok: 'ок',
-  warning: 'внимание',
-  risk: 'риск',
+const STATUS_LABEL: Record<"ok" | "warning" | "risk", string> = {
+  ok: "ок",
+  warning: "внимание",
+  risk: "риск",
 };
 
-export function StatusPill({ status }: { status: 'ok' | 'warning' | 'risk' }) {
+export function StatusPill({ status }: { status: "ok" | "warning" | "risk" }) {
   const tone = STATUS_TONE[status];
   return (
     <span
@@ -58,20 +57,12 @@ export function StatusPill({ status }: { status: 'ok' | 'warning' | 'risk' }) {
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Обобщённая таблица                                                 */
-/* ------------------------------------------------------------------ */
-
 export interface ModernTableColumn<T> {
   header: string;
-  align?: 'left' | 'right';
+  align?: "left" | "right";
   cell: (row: T) => ReactNode;
 }
 
-/**
- * Обобщённая таблица в стиле нового языка дашбордов (витринный `PeopleTable`):
- * стеклянная карточка, приглушённая шапка, строки с верхней границей.
- */
 export function ModernTable<T>({
   title,
   titleIcon,
@@ -107,7 +98,7 @@ export function ModernTable<T>({
               {columns.map((col, ci) => (
                 <th
                   key={col.header + ci}
-                  className={`pb-3 font-medium${col.align === 'right' ? ' text-right' : ''}`}
+                  className={`pb-3 font-medium${col.align === "right" ? " text-right" : ""}`}
                 >
                   {col.header}
                 </th>
@@ -116,11 +107,14 @@ export function ModernTable<T>({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={getKey(row)} style={{ borderTop: '1px solid var(--border-inset)' }}>
+              <tr
+                key={getKey(row)}
+                style={{ borderTop: "1px solid var(--border-inset)" }}
+              >
                 {columns.map((col, ci) => (
                   <td
                     key={col.header + ci}
-                    className={`py-3${col.align === 'right' ? ' text-right' : ''}`}
+                    className={`py-3${col.align === "right" ? " text-right" : ""}`}
                   >
                     {col.cell(row)}
                   </td>

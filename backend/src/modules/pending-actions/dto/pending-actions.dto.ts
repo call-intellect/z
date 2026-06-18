@@ -15,6 +15,10 @@ export const PendingActionSourceSchema = z.enum([
   'conflict',
   'intake',
   'probe',
+  // TZ task-dedup (2026-06-16, Ф2) — задача-кандидат на закрытие из разговора.
+  'task_closure',
+  // TZ task-dedup (2026-06-16, Ф4) — задача «под вопросом» после отмены решения.
+  'task_review',
 ]);
 export type PendingActionSourceDto = z.infer<typeof PendingActionSourceSchema>;
 

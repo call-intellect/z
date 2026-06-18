@@ -10,17 +10,6 @@ import type { TrackerEmitterService } from './tracker-emitter.service';
 import type { TrackerEventsService } from './tracker-events.service';
 import type { WebhookDispatcher } from './webhook-dispatcher.service';
 
-/**
- * Unit-тесты `IssuesService.findMyInbox`. Mocked Prisma + остальные сервисы.
- *
- * Покрываем:
- *   1. фильтр по assignee=userId — через `assignees: { some }`.
- *   2. фильтр по stateCategory + projectId + labelId + dueBefore попадает в where.
- *   3. пагинация: возвращаем `limit` элементов + nextCursor, если есть N+1.
- *   4. tenant isolation: вызов с другим tenantId — другой where.
- *   5. includeDeleted/includeArchived=false (default) — добавляются null-фильтры.
- */
-
 interface FakeIssueRow {
   id: string;
   tenantId: string;
@@ -106,7 +95,6 @@ function makeService(rows: FakeIssueRow[]): {
   const prisma = {
     issue: { findMany },
   } as unknown as PrismaService;
-  // Все остальные зависимости IssuesService — null-like, findMyInbox их не дергает.
   const svc = new IssuesService(
     prisma,
     {} as ActivityRecorderService,
@@ -137,7 +125,6 @@ describe('IssuesService.findMyInbox', () => {
     const call = findMany.mock.calls[0]?.[0] as { where: Record<string, unknown> };
     expect(call.where.tenantId).toBe('t1');
     expect(call.where.assignees).toEqual({ some: { userId: 'me' } });
-    // По умолчанию — без архивных / удалённых.
     expect(call.where.deletedAt).toBeNull();
     expect(call.where.archivedAt).toBeNull();
     expect(result.items).toHaveLength(1);
@@ -166,17 +153,15 @@ describe('IssuesService.findMyInbox', () => {
   });
 
   it('пагинация: limit=2, есть 3 задачи → возвращает 2 + nextCursor=id последней', async () => {
-    const rows = [makeRow('z'), makeRow('y'), makeRow('x')]; // отсортированы id desc
+    const rows = [makeRow('z'), makeRow('y'), makeRow('x')];
     const { svc, findMany } = makeService(rows);
     const result = await svc.findMyInbox('t1', 'me', { ...baseQuery, limit: 2 });
 
-    // Сервис запрашивает take=limit+1 = 3 (чтобы определить hasMore).
     const call = findMany.mock.calls[0]?.[0] as { take: number };
     expect(call.take).toBe(3);
 
     expect(result.items).toHaveLength(2);
     expect(result.items.map((i) => i.id)).toEqual(['z', 'y']);
-    // nextCursor = id последнего в этой странице (после которого продолжать).
     expect(result.nextCursor).toBe('y');
     expect(result.limit).toBe(2);
   });

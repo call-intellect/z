@@ -1,51 +1,38 @@
-'use client';
+"use client";
 
-import { useCallback, useMemo, useState } from 'react';
-import useSWR from 'swr';
-import { ChevronDown, Loader2, ShieldCheck, UserPlus, X } from 'lucide-react';
+import { useCallback, useMemo, useState } from "react";
+import useSWR from "swr";
+import { ChevronDown, Loader2, ShieldCheck, UserPlus, X } from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { knowledgeAccessApi } from '@/api/knowledge-access.api';
-import { personsDomainApi, type PersonDomainApi } from '@/api/structure.api';
-import { useAuth } from '@/contexts/auth-context';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { knowledgeAccessApi } from "@/api/knowledge-access.api";
+import { personsDomainApi, type PersonDomainApi } from "@/api/structure.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   buildVisibilityMatrix,
   toGroupMember,
   toKnowledgeGroup,
   type KnowledgeGroupDomain,
-} from '@/domain/knowledge-access';
-import { Button } from '@/ui/shadcn/button';
-import { Card } from '@/ui/shadcn/card';
-import { Checkbox } from '@/ui/shadcn/checkbox';
-import { Input } from '@/ui/shadcn/input';
-import { toast } from '@/ui/shadcn/toast';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/domain/knowledge-access";
+import { Button } from "@/ui/shadcn/button";
+import { Card } from "@/ui/shadcn/card";
+import { Checkbox } from "@/ui/shadcn/checkbox";
+import { Input } from "@/ui/shadcn/input";
+import { toast } from "@/ui/shadcn/toast";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-/**
- * `/company-admin/access-groups` (ТЗ 2026-06-06 knowledge-access-groups, Ф7b).
- *
- * Две секции:
- *   1. Матрица видимости отделов — направленная, несимметричная: «какие отделы
- *      видит выбранный отдел». Для каждого отдела — мультиселект видимых отделов;
- *      сохранение через PUT /matrix/:subjectGroupId.
- *   2. Членство в группах — для закрытых групп «Руководство» / «Совет» (и отделов):
- *      список членов + добавить человека (clearance-override) + убрать.
- *
- * Все тексты — на русском (memory `feedback_admin_ui_russian_only`),
- * цвета — через парные токены.
- */
 export function AccessGroupsClient() {
   const { currentOrgRole, isLoading: authLoading } = useAuth();
-  const canEdit = currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const canEdit = currentOrgRole === "owner" || currentOrgRole === "admin";
 
   const groupsSwr = useSWR(
-    canEdit ? ['knowledge-access-groups'] : null,
+    canEdit ? ["knowledge-access-groups"] : null,
     async () => {
       const dto = await knowledgeAccessApi.listGroups();
       return dto.items.map(toKnowledgeGroup);
@@ -69,7 +56,7 @@ export function AccessGroupsClient() {
         message={
           groupsSwr.error instanceof ApiError
             ? groupsSwr.error.message
-            : 'Не удалось загрузить группы доступа'
+            : "Не удалось загрузить группы доступа"
         }
         onRetry={() => void groupsSwr.mutate()}
       />
@@ -87,27 +74,29 @@ export function AccessGroupsClient() {
         </h1>
         <p className="text-sm text-fg-secondary">
           Здесь вы решаете, кто внутри компании видит какие знания. По умолчанию
-          знание видно всей компании — это и есть ценность памяти. Закрытые группы
-          и матрица отделов лишь сужают доступ там, где это действительно нужно.
+          знание видно всей компании — это и есть ценность памяти. Закрытые
+          группы и матрица отделов лишь сужают доступ там, где это действительно
+          нужно.
         </p>
       </header>
 
       <MatrixSection groups={groups} />
-      <MembershipSection groups={groups} onChanged={() => void groupsSwr.mutate()} />
+      <MembershipSection
+        groups={groups}
+        onChanged={() => void groupsSwr.mutate()}
+      />
     </section>
   );
 }
 
-// ─────────────────────────── Матрица видимости отделов ───────────────────────
-
 function MatrixSection({ groups }: { groups: KnowledgeGroupDomain[] }) {
   const departments = useMemo(
-    () => groups.filter((g) => g.kind === 'department'),
+    () => groups.filter((g) => g.kind === "department"),
     [groups],
   );
 
   const matrixSwr = useSWR(
-    ['knowledge-access-matrix'],
+    ["knowledge-access-matrix"],
     async () => {
       const dto = await knowledgeAccessApi.getMatrix();
       return buildVisibilityMatrix(dto.items);
@@ -118,10 +107,13 @@ function MatrixSection({ groups }: { groups: KnowledgeGroupDomain[] }) {
   if (departments.length === 0) {
     return (
       <div className="rounded-lg border border-border-subtle bg-bg-card p-5">
-        <h2 className="font-medium text-fg-primary">Матрица видимости отделов</h2>
+        <h2 className="font-medium text-fg-primary">
+          Матрица видимости отделов
+        </h2>
         <p className="mt-1 text-sm text-fg-tertiary">
           В компании пока нет отделов. Создайте отделы в разделе «Структура» —
-          после этого можно будет настроить, какие отделы видят знания друг друга.
+          после этого можно будет настроить, какие отделы видят знания друг
+          друга.
         </p>
       </div>
     );
@@ -136,7 +128,8 @@ function MatrixSection({ groups }: { groups: KnowledgeGroupDomain[] }) {
         <p className="text-sm text-fg-secondary">
           Для каждого отдела отметьте, знания каких <em>других</em> отделов он
           может видеть. Связь направленная: если отдел продаж видит логистику —
-          это не значит, что логистика видит продажи. Свой отдел доступен всегда.
+          это не значит, что логистика видит продажи. Свой отдел доступен
+          всегда.
         </p>
       </div>
 
@@ -147,7 +140,7 @@ function MatrixSection({ groups }: { groups: KnowledgeGroupDomain[] }) {
           message={
             matrixSwr.error instanceof ApiError
               ? matrixSwr.error.message
-              : 'Не удалось загрузить матрицу'
+              : "Не удалось загрузить матрицу"
           }
           onRetry={() => void matrixSwr.mutate()}
         />
@@ -188,7 +181,6 @@ function DepartmentVisibilityRow({
   const [draft, setDraft] = useState<Set<string>>(() => new Set(visible));
   const [saving, setSaving] = useState(false);
 
-  // Синхронизируем черновик с сервером при сворачивании/первом раскрытии.
   const toggleOpen = useCallback(() => {
     setOpen((prev) => {
       const next = !prev;
@@ -221,17 +213,14 @@ function DepartmentVisibilityRow({
       toast.success(`Сохранено: «${subject.name}» видит ${draft.size} отделов`);
       onSaved();
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
+      toast.error(humanizeApiError(e, "Не удалось сохранить"));
     } finally {
       setSaving(false);
     }
   }, [subject.id, subject.name, draft, onSaved]);
 
   const visibleNames = useMemo(
-    () =>
-      others
-        .filter((d) => visible.has(d.id))
-        .map((d) => d.name),
+    () => others.filter((d) => visible.has(d.id)).map((d) => d.name),
     [others, visible],
   );
 
@@ -246,18 +235,18 @@ function DepartmentVisibilityRow({
         <div className="min-w-0">
           <div className="font-medium text-fg-primary">{subject.name}</div>
           <div className="mt-0.5 text-xs text-fg-tertiary">
-            Видит:{' '}
+            Видит:{" "}
             <span className="text-fg-secondary">
               {visibleNames.length > 0
-                ? `свой отдел и ${visibleNames.join(', ')}`
-                : 'только свой отдел'}
+                ? `свой отдел и ${visibleNames.join(", ")}`
+                : "только свой отдел"}
             </span>
           </div>
         </div>
         <ChevronDown
           className={cn(
-            'mt-0.5 h-4 w-4 shrink-0 text-fg-tertiary transition-transform',
-            open && 'rotate-180',
+            "mt-0.5 h-4 w-4 shrink-0 text-fg-tertiary transition-transform",
+            open && "rotate-180",
           )}
         />
       </button>
@@ -265,9 +254,7 @@ function DepartmentVisibilityRow({
       {open && (
         <div className="border-t border-border-subtle p-4">
           {others.length === 0 ? (
-            <p className="text-sm text-fg-tertiary">
-              Других отделов пока нет.
-            </p>
+            <p className="text-sm text-fg-tertiary">Других отделов пока нет.</p>
           ) : (
             <>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -311,8 +298,6 @@ function DepartmentVisibilityRow({
   );
 }
 
-// ─────────────────────────── Членство в группах ─────────────────────────────
-
 function MembershipSection({
   groups,
   onChanged,
@@ -320,19 +305,16 @@ function MembershipSection({
   groups: KnowledgeGroupDomain[];
   onChanged: () => void;
 }) {
-  // Закрытые группы (Руководство/Совет) — первыми; затем отделы.
   const closed = useMemo(() => groups.filter((g) => g.isClosed), [groups]);
   const departments = useMemo(
-    () => groups.filter((g) => g.kind === 'department'),
+    () => groups.filter((g) => g.kind === "department"),
     [groups],
   );
 
   return (
     <div className="space-y-4">
       <div className="space-y-1">
-        <h2 className="text-lg font-medium text-fg-primary">
-          Участники групп
-        </h2>
+        <h2 className="text-lg font-medium text-fg-primary">Участники групп</h2>
         <p className="text-sm text-fg-secondary">
           Кто входит в каждую группу. Обычно состав берётся из должностей
           автоматически. Здесь можно добавить человека вручную — например,
@@ -366,7 +348,7 @@ function GroupMembers({
   const [open, setOpen] = useState(false);
 
   const membersSwr = useSWR(
-    open ? ['knowledge-access-members', group.id] : null,
+    open ? ["knowledge-access-members", group.id] : null,
     async () => {
       const dto = await knowledgeAccessApi.listMembers(group.id);
       return dto.items.map(toGroupMember);
@@ -386,10 +368,10 @@ function GroupMembers({
       setBusyPersonId(personId);
       try {
         const res = await knowledgeAccessApi.addMember(group.id, { personId });
-        toast.success(res.added ? 'Человек добавлен' : 'Уже в группе');
+        toast.success(res.added ? "Человек добавлен" : "Уже в группе");
         refresh();
       } catch (e) {
-        toast.error(humanizeApiError(e, 'Не удалось добавить'));
+        toast.error(humanizeApiError(e, "Не удалось добавить"));
       } finally {
         setBusyPersonId(null);
       }
@@ -402,10 +384,10 @@ function GroupMembers({
       setBusyPersonId(personId);
       try {
         await knowledgeAccessApi.removeMember(group.id, personId);
-        toast.success('Человек убран из группы');
+        toast.success("Человек убран из группы");
         refresh();
       } catch (e) {
-        toast.error(humanizeApiError(e, 'Не удалось убрать'));
+        toast.error(humanizeApiError(e, "Не удалось убрать"));
       } finally {
         setBusyPersonId(null);
       }
@@ -431,7 +413,7 @@ function GroupMembers({
           <span className="font-medium text-fg-primary">{group.name}</span>
           <span className="rounded-sm bg-bg-overlay px-2 py-0.5 text-[11px] text-fg-tertiary">
             {group.kindLabel}
-            {group.isClosed ? ' · закрытая' : ''}
+            {group.isClosed ? " · закрытая" : ""}
           </span>
           <span className="text-xs text-fg-tertiary">
             {group.memberCount} участн.
@@ -439,8 +421,8 @@ function GroupMembers({
         </div>
         <ChevronDown
           className={cn(
-            'h-4 w-4 shrink-0 text-fg-tertiary transition-transform',
-            open && 'rotate-180',
+            "h-4 w-4 shrink-0 text-fg-tertiary transition-transform",
+            open && "rotate-180",
           )}
         />
       </button>
@@ -454,7 +436,7 @@ function GroupMembers({
               message={
                 membersSwr.error instanceof ApiError
                   ? membersSwr.error.message
-                  : 'Не удалось загрузить участников'
+                  : "Не удалось загрузить участников"
               }
               onRetry={() => void membersSwr.mutate()}
             />
@@ -476,7 +458,7 @@ function GroupMembers({
                           {m.personName}
                         </span>
                         <span className="shrink-0 rounded-sm bg-bg-card px-1.5 py-0.5 text-[10px] text-fg-tertiary">
-                          {m.isManual ? 'добавлен вручную' : 'из должности'}
+                          {m.isManual ? "добавлен вручную" : "из должности"}
                         </span>
                       </span>
                       <button
@@ -506,11 +488,6 @@ function GroupMembers({
   );
 }
 
-/**
- * Поиск сотрудника компании для добавления в группу. Берём людей через
- * `personsDomainApi.list` (у них гарантированно есть `personId`) и фильтруем
- * по введённому имени. Уже состоящих в группе не показываем.
- */
 function AddMemberPicker({
   excludeIds,
   busyPersonId,
@@ -521,10 +498,10 @@ function AddMemberPicker({
   onPick: (personId: string) => void;
 }) {
   const { currentOrgId } = useAuth();
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
 
   const personsSwr = useSWR(
-    currentOrgId ? ['org-persons-for-membership', currentOrgId] : null,
+    currentOrgId ? ["org-persons-for-membership", currentOrgId] : null,
     async () => {
       const dto = await personsDomainApi.list(currentOrgId as string);
       return dto.items;
@@ -538,7 +515,9 @@ function AddMemberPicker({
     return all
       .filter((p: PersonDomainApi) => !excludeIds.has(p.id))
       .filter((p: PersonDomainApi) =>
-        q.length === 0 ? false : (p.fullName?.toLowerCase().includes(q) ?? false),
+        q.length === 0
+          ? false
+          : (p.fullName?.toLowerCase().includes(q) ?? false),
       )
       .slice(0, 8);
   }, [personsSwr.data, excludeIds, query]);
@@ -578,7 +557,7 @@ function AddMemberPicker({
                     <span className="truncate text-xs text-fg-tertiary">
                       {[p.roleName, p.departmentName]
                         .filter(Boolean)
-                        .join(' · ')}
+                        .join(" · ")}
                     </span>
                   )}
                 </span>

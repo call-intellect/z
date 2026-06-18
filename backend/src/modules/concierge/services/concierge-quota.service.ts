@@ -5,20 +5,6 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 
-/**
- * SBA γ-2 — ConciergeQuotaService.
- *
- * Anti-abuse quota для Concierge Agent. Realtime-счётчик — Redis,
- * durable snapshot — БД (`OrgConciergeQuota`). Cron'ы daily/monthly
- * reset обнуляют счётчики и пишут snapshot.
- *
- * Redis-ключи:
- *   - `concierge:quota:daily:${tenantId}:${YYYY-MM-DD}`   → counter int
- *   - `concierge:quota:monthly:${tenantId}:${YYYY-MM}`    → counter int
- * TTL: daily — 36h, monthly — 33d (с запасом, cron подчистит).
- *
- * tryConsume() атомарно: INCR; если > limit — DECR обратно + false.
- */
 @Injectable()
 export class ConciergeQuotaService {
   private readonly logger = new Logger(ConciergeQuotaService.name);
@@ -31,10 +17,6 @@ export class ConciergeQuotaService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Попытаться списать 1 сообщение из daily+monthly квоты Org. Возвращает
-   * `null` при успехе, или объект с причиной отказа.
-   */
   async tryConsume(tenantId: string): Promise<{ scope: 'daily' | 'monthly' } | null> {
     const quota = await this.ensureQuota(tenantId);
     const dailyKey = this.dailyKey(tenantId);
@@ -42,10 +24,8 @@ export class ConciergeQuotaService {
 
     const client = this.redis.client;
 
-    // Atomic INCR per day.
     const dailyAfter = await client.incr(dailyKey);
     if (dailyAfter === 1) {
-      // expire через 36 часов (с запасом перед next-day reset)
       await client.expire(dailyKey, 36 * 3600);
     }
     if (dailyAfter > quota.dailyMessagesLimit) {
@@ -63,7 +43,7 @@ export class ConciergeQuotaService {
     }
     if (monthlyAfter > quota.monthlyMessagesLimit) {
       await client.decr(monthlyKey);
-      await client.decr(dailyKey); // откат daily, раз monthly failed
+      await client.decr(dailyKey);
       this.metrics.incConciergeQuotaExceeded?.({
         tenantTop: this.tenantTop(tenantId),
         scope: 'monthly',
@@ -73,7 +53,6 @@ export class ConciergeQuotaService {
     return null;
   }
 
-  /** Текущие счётчики для UI отображения. */
   async getUsage(tenantId: string): Promise<{
     dailyUsed: number;
     dailyLimit: number;
@@ -94,10 +73,6 @@ export class ConciergeQuotaService {
     };
   }
 
-  /**
-   * Daily reset (cron). Сбрасывает realtime-счётчик в Redis,
-   * сохраняет snapshot в БД.
-   */
   async resetDaily(): Promise<{ tenantsReset: number }> {
     const quotas = await this.prisma.orgConciergeQuota.findMany();
     const client = this.redis.client;
@@ -117,7 +92,6 @@ export class ConciergeQuotaService {
     return { tenantsReset: n };
   }
 
-  /** Monthly reset (cron). */
   async resetMonthly(): Promise<{ tenantsReset: number }> {
     const quotas = await this.prisma.orgConciergeQuota.findMany();
     const client = this.redis.client;
@@ -140,8 +114,6 @@ export class ConciergeQuotaService {
     return { tenantsReset: n };
   }
 
-  // ──────────────────────────── private ────────────────────────────────
-
   private async ensureQuota(tenantId: string) {
     let q = await this.prisma.orgConciergeQuota.findUnique({
       where: { tenantId },
@@ -159,19 +131,15 @@ export class ConciergeQuotaService {
   }
 
   private dailyKey(tenantId: string): string {
-    const d = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const d = new Date().toISOString().slice(0, 10);
     return `concierge:quota:daily:${tenantId}:${d}`;
   }
 
   private monthlyKey(tenantId: string): string {
-    const d = new Date().toISOString().slice(0, 7); // YYYY-MM
+    const d = new Date().toISOString().slice(0, 7);
     return `concierge:quota:monthly:${tenantId}:${d}`;
   }
 
-  /**
-   * Cardinality-safe label bucket для метрик. Hash mod 100 → 'bucket_NN'.
-   * Защищает от взрыва series при тысячах Org.
-   */
   private tenantTop(tenantId: string): string {
     let h = 0;
     for (let i = 0; i < tenantId.length; i++) {

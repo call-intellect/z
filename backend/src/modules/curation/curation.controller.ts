@@ -14,10 +14,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -40,26 +37,6 @@ import {
 import { ConflictService } from './services/conflict.service';
 import { CurationService } from './services/curation.service';
 
-/**
- * REST API Слоя 4 (SBA α-4).
- *
- *   GET    /api/v1/curation/queue                     — очередь CurationItem
- *   GET    /api/v1/curation/items/:id                 — детальная CurationItem
- *   POST   /api/v1/curation/items/:id/decide          — принять решение
- *   GET    /api/v1/curation/conflicts                 — список ConflictItem
- *   GET    /api/v1/curation/conflicts/:id             — детальная ConflictItem
- *   POST   /api/v1/curation/conflicts/:id/resolve     — резолюция конфликта
- *   POST   /api/v1/curation/conflicts/:id/dismiss     — отказ от резолюции
- *   GET    /api/v1/settings/curation                  — настройки triage'а
- *   PATCH  /api/v1/settings/curation                  — обновить настройки
- *
- * RBAC: см. policy.csv §SBA α-4. Пользовательский доступ:
- *   - owner/admin: полный доступ;
- *   - manager: read self (только когда участвует кандидатом/назначен).
- *
- * Все эндпоинты — `CookieAuthGuard + TenantGuard`. Org берётся из заголовка
- * `X-Org-Id` или `:orgId` query.
- */
 @ApiTags('curation')
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -70,10 +47,10 @@ export class CurationController {
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
-  // ──────────────────────────── curation queue ────────────────────────
-
   @Get('curation/queue')
-  @ApiOperation({ summary: 'Очередь CurationItem (фильтры по level/status/resourceType, assignedToMe)' })
+  @ApiOperation({
+    summary: 'Очередь CurationItem (фильтры по level/status/resourceType, assignedToMe)',
+  })
   async listQueue(
     @Query(new ZodValidationPipe(ListCurationQueueQuerySchema))
     query: ListCurationQueueQuery,
@@ -111,8 +88,6 @@ export class CurationController {
     @CurrentOrg() tenantId: string | undefined,
   ) {
     const t = this.requireTenant(tenantId);
-    // Любой member Org может принять решение, если он в candidateCuratorIds
-    // (проверка в сервисе). owner/admin — bypass.
     const allowed = await this.rbac.canWrite(user.id, t, 'curation_decision', user.id);
     if (!allowed) {
       throw new ForbiddenException({
@@ -130,8 +105,6 @@ export class CurationController {
     });
   }
 
-  // ──────────────────────────── override stats (A0) ──────────────────
-
   @Get('curation/override-stats')
   @ApiOperation({ summary: 'Override-rate по resourceType (для автоподстройки порогов)' })
   async getOverrideStats(
@@ -142,8 +115,6 @@ export class CurationController {
     await this.requireRead(user.id, t, 'curation_item');
     return this.curation.getOverrideStats({ tenantId: t });
   }
-
-  // ──────────────────────────── conflicts ────────────────────────────
 
   @Get('curation/conflicts')
   @ApiOperation({ summary: 'Список ConflictItem (фильтры по status/resourceType)' })
@@ -222,8 +193,6 @@ export class CurationController {
     });
   }
 
-  // ──────────────────────────── settings ─────────────────────────────
-
   @Get('settings/curation')
   @ApiOperation({ summary: 'Получить настройки Слоя 4 (пороги, critical-types)' })
   async getSettings(
@@ -256,8 +225,6 @@ export class CurationController {
     }
     return this.curation.updateSettings({ tenantId: t, patch: body });
   }
-
-  // ──────────────────────────── helpers ─────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

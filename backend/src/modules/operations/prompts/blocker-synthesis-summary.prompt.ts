@@ -1,27 +1,3 @@
-/**
- * TZ-1 Фаза 3.A (daily-value-engine) — промпт `blocker-synthesis-summary`.
- *
- * Назначение: ТОЛЬКО финальный человекочитаемый абзац-сводка по
- * синтезированным блокерам Org за день (для COO-дайджеста / лога). Вся
- * аналитика (нормализация блокеров, embedding-кластеризация, присвоение
- * статусов new|recurring|resolved, daysOpen, businessImpactScore, мост в
- * Insight) — чистый SQL/TS + embeddings в `BlockerSynthesisService`, БЕЗ LLM.
- *
- * Code-fallback (без PromptRegistry) — как `customer-risk-digest`: систему
- * передаём прямо в `LlmRouterService.call`, поэтому отдельный seed в
- * `seed-prompt-templates.ts` НЕ нужен; маршрут (цепочка моделей) регистрируется
- * в `seed-llm-task-routes-default.ts`. Если LLM упал — сервис использует
- * детерминированный `buildBlockerSynthesisFallbackSummary`.
- *
- * Совместимость с prompt caching (mandatory):
- *   - SYSTEM стабильный (ниже) — не меняем от вызова к вызову.
- *   - Переменные данные (список блокеров, статусы, счётчики) — в КОНЦЕ
- *     user-сообщения.
- *   - Без ₽-оценок (Р6): не выдумываем суммы/часы/деньги.
- */
-
-export const BLOCKER_SYNTHESIS_SUMMARY_PROMPT_VERSION = 'prompt-v1';
-
 export const BLOCKER_SYNTHESIS_SUMMARY_TASK_TYPE = 'blocker-synthesis-summary';
 
 export const BLOCKER_SYNTHESIS_SUMMARY_SYSTEM_PROMPT = [
@@ -37,27 +13,20 @@ export const BLOCKER_SYNTHESIS_SUMMARY_SYSTEM_PROMPT = [
   '  - Длина — 2-3 предложения, максимум ~360 символов. Без markdown, без списков.',
 ].join('\n');
 
-/** Один синтезированный кластер блокеров (то, что нужно LLM). */
 export interface BlockerSynthesisSummaryItem {
   text: string;
   status: 'new' | 'recurring' | 'resolved';
   daysOpen: number;
-  /** True если кластер задевает клиента/дедлайн/обещание (высокий импакт). */
   highImpact: boolean;
 }
 
 export interface BlockerSynthesisSummaryPromptInput {
-  /** Топ-кластеры за день (уже отранжированы по импакту). */
   items: BlockerSynthesisSummaryItem[];
   newCount: number;
   recurringCount: number;
   resolvedCount: number;
 }
 
-/**
- * Сборка user-сообщения: стабильная преамбула + переменные данные В КОНЦЕ —
- * для prompt caching.
- */
 export function buildBlockerSynthesisSummaryUserMessage(
   input: BlockerSynthesisSummaryPromptInput,
 ): string {
@@ -82,18 +51,10 @@ export function buildBlockerSynthesisSummaryUserMessage(
   return lines.join('\n');
 }
 
-/**
- * Детерминированный fallback-текст сводки (если LLM недоступна). Без ₽.
- * Используется и как «сухой» вариант для дайджеста/пуша.
- */
 export function buildBlockerSynthesisFallbackSummary(
   input: BlockerSynthesisSummaryPromptInput,
 ): string {
-  if (
-    input.newCount === 0 &&
-    input.recurringCount === 0 &&
-    input.resolvedCount === 0
-  ) {
+  if (input.newCount === 0 && input.recurringCount === 0 && input.resolvedCount === 0) {
     return 'Активных блокеров за день не зафиксировано.';
   }
   const parts: string[] = [];
@@ -107,9 +68,7 @@ export function buildBlockerSynthesisFallbackSummary(
       `Дольше всего держится: «${truncate(chronic.text, 80)}» (${chronic.daysOpen} дн.) — стоит разобрать.`,
     );
   } else if (highImpact) {
-    parts.push(
-      `Высокий приоритет: «${truncate(highImpact.text, 80)}» — задевает клиента/дедлайн.`,
-    );
+    parts.push(`Высокий приоритет: «${truncate(highImpact.text, 80)}» — задевает клиента/дедлайн.`);
   }
   return parts.join(' ').slice(0, 360);
 }

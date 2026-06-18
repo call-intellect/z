@@ -16,15 +16,6 @@ import {
   type MeetingUploadQueueName,
 } from './meeting-uploads.queues';
 
-/**
- * HTTP/worker-side диспетчер очередей ручной загрузки встреч (ТЗ-5).
- * По образцу `CoreQueueService`/`AiQueueService`: на `onModuleInit` поднимает
- * `Queue` на каждое имя, enqueue-методы кладут тонкий payload с фиксированным
- * jobId (идемпотентность — повторный enqueue той же встречи не создаст дубль).
- *
- * jobId через `_` (не `:`) — BullMQ 5.x запрещает `:` в Custom Id
- * (см. Job.validateOptions). cuid/ulid сами по себе `:` не содержат.
- */
 @Injectable()
 export class MeetingUploadsQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MeetingUploadsQueueService.name);
@@ -62,11 +53,6 @@ export class MeetingUploadsQueueService implements OnModuleInit, OnModuleDestroy
     this.queues = null;
   }
 
-  /**
-   * Постановка ingest-job (Ф2). Producer — `POST /meetings/:id/upload/complete`.
-   * jobId = `meeting_upload_ingest_<meetingId>` → повторный complete = no-op
-   * enqueue в окне дедупа BullMQ. Воркер дополнительно идемпотентен (FSM-guard).
-   */
   async enqueueUploadIngest(meetingId: string): Promise<{ jobId: string }> {
     const q = this.requireQueue(MEETING_UPLOAD_QUEUE_NAMES.UPLOAD_INGEST);
     const jobId = `meeting_upload_ingest_${meetingId}`;
@@ -76,19 +62,12 @@ export class MeetingUploadsQueueService implements OnModuleInit, OnModuleDestroy
     return { jobId };
   }
 
-  /**
-   * Постановка transcribe-job (Ф3). Producer — `MeetingUploadIngestWorker` в
-   * конце успешного ingest'а. jobId = `meeting_upload_transcribe_<meetingId>`
-   * → идемпотентно. Сам воркер этой очереди реализуется в Ф3.
-   */
   async enqueueUploadTranscribe(meetingId: string): Promise<{ jobId: string }> {
     const q = this.requireQueue(MEETING_UPLOAD_QUEUE_NAMES.UPLOAD_TRANSCRIBE);
     const jobId = `meeting_upload_transcribe_${meetingId}`;
     const payload: MeetingUploadJobData = { meetingId };
     await q.add('upload-transcribe', payload, { jobId });
-    this.logger.debug(
-      `enqueue meeting.upload-transcribe meetingId=${meetingId} jobId=${jobId}`,
-    );
+    this.logger.debug(`enqueue meeting.upload-transcribe meetingId=${meetingId} jobId=${jobId}`);
     return { jobId };
   }
 

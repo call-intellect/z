@@ -1,15 +1,5 @@
-/**
- * LoggingModule — маскирование секретов и ограничение размера payload.
- *
- * Принцип: до записи в БД любой `details`/`body` проходит через
- * `sanitizePayload` (рекурсивная редакция чувствительных ключей + усечение),
- * затем через `capPayloadSize` (жёсткий лимит байт). Никогда не бросает.
- * См. plans/tz/2026-06-01-logging-module.md §4.
- */
-
 export const REDACTED = '[REDACTED]';
 
-/** Подстроки (lower-case) в имени ключа → значение маскируется целиком. */
 export const SENSITIVE_KEY_PATTERNS: readonly string[] = [
   'password',
   'passwd',
@@ -41,7 +31,6 @@ export const SENSITIVE_KEY_PATTERNS: readonly string[] = [
   'idempotency-key',
   'passport',
   'snils',
-  // домен-специфика Коры
   'jwt',
   'livekit',
   'hmac',
@@ -56,14 +45,6 @@ function isSensitiveKey(key: string): boolean {
   return SENSITIVE_KEY_PATTERNS.some((p) => lower.includes(p));
 }
 
-/**
- * Рекурсивно редактирует чувствительные ключи и ограничивает размеры.
- * - ключ совпал по подстроке → `[REDACTED]`;
- * - строки длиннее лимита усекаются (с пометкой `…[+N]`);
- * - глубина > MAX_DEPTH → `[TRUNCATED_DEPTH]`;
- * - массивы — максимум MAX_ARRAY_ITEMS элементов;
- * - Date → ISO; функции/symbol/bigint → String().
- */
 export function sanitizePayload(
   value: unknown,
   maxStringLength: number = DEFAULT_MAX_STRING,
@@ -84,9 +65,9 @@ export function sanitizePayload(
   if (value instanceof Date) return value.toISOString();
 
   if (Array.isArray(value)) {
-    const limited = value.slice(0, MAX_ARRAY_ITEMS).map((v) =>
-      sanitizePayload(v, maxStringLength, depth + 1),
-    );
+    const limited = value
+      .slice(0, MAX_ARRAY_ITEMS)
+      .map((v) => sanitizePayload(v, maxStringLength, depth + 1));
     if (value.length > MAX_ARRAY_ITEMS) {
       limited.push(`[+${value.length - MAX_ARRAY_ITEMS} more]`);
     }
@@ -96,9 +77,7 @@ export function sanitizePayload(
   if (t === 'object') {
     const out: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = isSensitiveKey(key)
-        ? REDACTED
-        : sanitizePayload(val, maxStringLength, depth + 1);
+      out[key] = isSensitiveKey(key) ? REDACTED : sanitizePayload(val, maxStringLength, depth + 1);
     }
     return out;
   }
@@ -114,15 +93,7 @@ function truncateString(s: string, max: number): string {
 const DEFAULT_MAX_BYTES = 16_000;
 const PREVIEW_CHARS = 1000;
 
-/**
- * Жёсткий лимит на сериализованный размер payload. Если `JSON.stringify`
- * превышает лимит — возвращает заглушку с превью. При ошибке сериализации —
- * `[UNSERIALIZABLE_PAYLOAD]`. Никогда не бросает.
- */
-export function capPayloadSize(
-  value: unknown,
-  maxBytes: number = DEFAULT_MAX_BYTES,
-): unknown {
+export function capPayloadSize(value: unknown, maxBytes: number = DEFAULT_MAX_BYTES): unknown {
   if (value === null || value === undefined) return value;
   let json: string;
   try {

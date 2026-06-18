@@ -1,33 +1,28 @@
-'use client';
+"use client";
 
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { Check, CloudUpload, Loader2 } from 'lucide-react';
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { Check, CloudUpload, Loader2 } from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { documentsApi } from '@/api/documents.api';
-import { rolesDomainApi, type RoleDomainApi } from '@/api/structure.api';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { documentsApi } from "@/api/documents.api";
+import { rolesDomainApi, type RoleDomainApi } from "@/api/structure.api";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-import { WizardStepNav } from '../WizardStepNav';
+import { WizardStepNav } from "../WizardStepNav";
 
-const PREV_HREF = '/onboarding/company/step-3';
-const NEXT_HREF = '/onboarding/company/step-5';
+const PREV_HREF = "/onboarding/company/step-3";
+const NEXT_HREF = "/onboarding/company/step-5";
 
 interface RowState {
-  status: 'idle' | 'uploading' | 'done' | 'error';
+  status: "idle" | "uploading" | "done" | "error";
   fileName?: string;
   errorMessage?: string;
 }
 
-/**
- * Шаг 4 — Должностные инструкции. Опционален: можно «Пропустить».
- * Каждая должность — отдельный drag-drop. На успех — кнопка «Загружено»
- * (зелёная галочка), пользователь может перейти дальше.
- */
 export function Step4Client() {
   const router = useRouter();
   const { currentOrgId } = useAuth();
@@ -56,7 +51,7 @@ export function Step4Client() {
     if (!currentOrgId) return;
     setRowStates((s) => ({
       ...s,
-      [roleId]: { status: 'uploading', fileName: file.name },
+      [roleId]: { status: "uploading", fileName: file.name },
     }));
     try {
       await documentsApi.upload(currentOrgId, {
@@ -65,16 +60,15 @@ export function Step4Client() {
       });
       setRowStates((s) => ({
         ...s,
-        [roleId]: { status: 'done', fileName: file.name },
+        [roleId]: { status: "done", fileName: file.name },
       }));
       toast.success(`«${file.name}» загружено.`);
     } catch (e) {
-      const msg =
-        humanizeApiError(e, 'Не удалось загрузить файл.');
+      const msg = humanizeApiError(e, "Не удалось загрузить файл.");
       setRowStates((s) => ({
         ...s,
         [roleId]: {
-          status: 'error',
+          status: "error",
           fileName: file.name,
           errorMessage: msg,
         },
@@ -114,7 +108,7 @@ export function Step4Client() {
             <RoleUploadRow
               key={role.id}
               role={role}
-              state={rowStates[role.id] ?? { status: 'idle' }}
+              state={rowStates[role.id] ?? { status: "idle" }}
               onFile={(file) => void handleFile(role.id, file)}
             />
           ))}
@@ -148,15 +142,17 @@ function RoleUploadRow({
         <div>
           <div className="text-sm font-medium text-fg-primary">{role.name}</div>
           {role.departmentName && (
-            <div className="text-xs text-fg-tertiary">{role.departmentName}</div>
+            <div className="text-xs text-fg-tertiary">
+              {role.departmentName}
+            </div>
           )}
         </div>
-        {state.status === 'done' && (
+        {state.status === "done" && (
           <span className="inline-flex items-center gap-1 text-xs text-success">
             <Check size={14} /> Загружено
           </span>
         )}
-        {state.status === 'uploading' && (
+        {state.status === "uploading" && (
           <span className="inline-flex items-center gap-1 text-xs text-fg-tertiary">
             <Loader2 size={14} className="animate-spin" /> Загружаем…
           </span>
@@ -177,14 +173,14 @@ function RoleUploadRow({
         }}
         className={`flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed px-4 py-6 text-sm transition-colors ${
           dragOver
-            ? 'border-accent bg-accent/10 text-accent'
-            : 'border-border-subtle text-fg-tertiary hover:border-accent/60 hover:text-fg-secondary'
+            ? "border-accent bg-accent/10 text-accent"
+            : "border-border-subtle text-fg-tertiary hover:border-accent/60 hover:text-fg-secondary"
         }`}
       >
         <CloudUpload size={16} />
         {state.fileName
           ? `Заменить «${state.fileName}»`
-          : 'Перетащите файл или нажмите, чтобы выбрать'}
+          : "Перетащите файл или нажмите, чтобы выбрать"}
         <input
           id={inputId}
           type="file"
@@ -193,11 +189,11 @@ function RoleUploadRow({
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) onFile(file);
-            e.target.value = '';
+            e.target.value = "";
           }}
         />
       </label>
-      {state.status === 'error' && state.errorMessage && (
+      {state.status === "error" && state.errorMessage && (
         <p className="mt-2 text-xs text-danger">{state.errorMessage}</p>
       )}
     </div>

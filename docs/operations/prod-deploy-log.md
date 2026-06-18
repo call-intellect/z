@@ -124,6 +124,47 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔌 2026-06-17 — Bitrix24 как источник: синк IM+CRM + посуточный анализ + UI (Ф0–Ф6)
+
+> Контракт: ветка `bitrix`, коммиты `aa44f18a` (Ф0–Ф4: схема+синк+очереди+анализ), `40580414` (Ф5–Ф6: страница+сопоставление+статус). ТЗ: `plans/archive/2026-06-17-bitrix24-source-sync.md`.
+
+- **Шаг 1 — ENV** — **новых нет.** `BITRIX_CLIENT_ID/SECRET` и пр. заведены ещё на фазе установки (`2026-06-09-bitrix24-integration-install`). Kill-switch `bitrix.enabled` — admin-настройка (не ENV).
+- **Шаг 4 — Prisma** — **обязательно, авто** (4 миграции, аддитивные, без потери данных, `prisma migrate deploy` в migrate-контейнере на `docker compose up -d`):
+  - `20260617000000_bitrix_source_sync` — зеркала `BitrixUser/Dialog/DialogSession/Message/Contact/Company/Deal` + enum'ы `BitrixLinkMode/BitrixDialogType/BitrixDialogAnalysisStatus` + поля `BitrixIntegration.analysisEnabled`(default true)/`lastFullSyncAt`/`lastIncrementalSyncAt`.
+  - `20260617000001_bitrix_age_schema_fix` — идемпотентный перенос ag_catalog→public (AGE-трап; для повторного выката no-op).
+  - `20260617010000_bitrix_rolling_summary_crm_notes` — `rollingSummary`/`rollingSummaryAt` на `BitrixDialog` И `ChatboxChat` + зеркала `BitrixLead`/`BitrixCrmNote`.
+  - `20260617020000_bitrix_source_type` — `ALTER TYPE "SourceType" ADD VALUE IF NOT EXISTS 'bitrix'`. ⚠ `ADD VALUE` не-транзакционна → отдельный файл; идемпотентна.
+  - `20260617030000_bitrix_crm_delta` (Ф4b) — колонка `modifiedAt` + индекс `[tenantId, modifiedAt]` на `BitrixContact/Company/Deal/Lead` + курсоры `lastCrmSyncAt`/`lastCrmDigestAt` на `BitrixIntegration` (дельта-синк CRM + посуточный дайджест).
+  - **В STEPS агрегатора регистрировать НЕ нужно** (миграции схемы, не seed/patch/backfill).
+- **Шаг 12 — Smoke** (после выката):
+  - В логах backend при старте: `BitrixSyncWorker запущен (bitrix.sync)` и `BitrixAnalyzeWorker запущен (bitrix.analyze)` (in-process воркеры в `WorkersModule`).
+  - Новые BullMQ-очереди: `bitrix.sync`, `bitrix.analyze`. Кроны `@Cron 00:00`: `BitrixSyncCron` (синк connected-порталов), `BitrixAnalyzeCron` (анализ закрытых сессий + **посуточный CRM-дайджест Ф4b** `ingestCrmDigests`, гейт `bitrix.enabled`+`analysisEnabled`).
+  - Новые REST (Swagger tag `bitrix`): `GET /api/v1/bitrix/integration/status`, `PATCH .../analysis`, `GET .../users`, `PATCH .../users/:externalId/link`, `POST .../sync?scope=all|users|dialogs|crm`.
+  - Фронт: `/company-admin/sources/bitrix` (стеклянная страница) + `/company-admin/sources/bitrix/managers` (сопоставление сотрудников).
+- **LLM сам не побежит:** анализ гейтится `analysisEnabled` + наличием подключённого портала. Дефолт `analysisEnabled=true`, но без connected-интеграции крон/синк ничего не ставят. Включение для существующих — через тумблер на странице источника.
+- **Отложено (Ф4b):** CRM посуточный дайджест — нужна дельта по `DATE_MODIFY` + `modifiedAt`/курсор + решение владельца по глубине/периоду. См. `second-brain/04_не-сделано/README.md`.
+
+---
+
+### 🔌 2026-06-17 — Bitrix24 SSR-установка из маркета + фиксы синка + sync-state + сотрудники/клиенты
+
+> Контракт: ветка `bitrixNext`, коммиты `b25802e0`, `efb09fa5`, `1f7021f5`. ТЗ:
+> `plans/tz/2026-06-17-bitrix24-install-ssr-and-recovery.md`. Рефлексия:
+> `second-brain/05_история/2026-06-17-bitrix-install-chatbox-sync-fixes.md`.
+
+- **Шаг 1 — ENV — проверить на проде:**
+  - `PUBLIC_HOST_URL` = публичный домен бэка (Bitrix install/oauth/event URL; пусто → фолбэк на `PUBLIC_FRONTEND_URL`). В dev — туннель.
+  - `BITRIX_CLIENT_ID` / `BITRIX_CLIENT_SECRET` — **обязательны** (refresh access-token; без них синк умирает через ~1ч). Заведены ранее — убедиться, что заполнены.
+  - Партнёрский кабинет Bitrix: обработчик установки `{PUBLIC_HOST_URL}/api/v1/bitrix/install/handler`, событие `.../install/event`, redirect_uri `.../oauth/callback`; scope `crm,user_basic,im`.
+- **Шаг 4 — Prisma — авто** (`migrate deploy`): `20260617130000_task_closure_candidate_to_public` — идемпотентный AGE-перенос `ag_catalog."TaskClosureCandidate"` → public (тот же класс трапа, что `..._bitrix_age_schema_fix`, но для таблицы из не-bitrix-миграции `..._task_closure_candidate`). Прочие pending-миграции ветки (`frozen_persona`, `task_dedup`, `issue_closure_review`, `goal_embedding`) — аддитивные, авто.
+- **Шаг 12 — Smoke:**
+  - Новые REST: `POST /api/v1/bitrix/install/bind`, `POST /api/v1/bitrix/integration/claim-by-domain`; `GET /api/v1/bitrix/integration/status` и `GET /api/v1/chatbox/integration/sync/status` теперь несут `runningScopes`/`activeSyncScope`.
+  - Фронт: `/accounts/magic-link/consume` (вход по одноразовой ссылке из iframe-визарда).
+  - В логах при старте: `Bitrix24 install URLs (партнёрский кабинет): handler=… event=… oauthCallback=…`.
+- **Код-фиксы (прод-шагов НЕ требуют):** `queue.remove(jobId)` перед `add` (bitrix+chatbox — фикс «повторный синк не запускается»); клиенты ChatBox → `Person.relationship=external`; менеджеры → `employee`; sync-state из BullMQ; разделение сотрудники/клиенты в директории «Команда».
+
+---
+
 ### 🧠 2026-06-17 — База знаний: форматтер на создании карточки + редизайн раздела (Ф1–Ф6)
 
 > Контракт: ветка `feature/knowledge-base-redesign-formatter`, коммиты `6e98d3a8..28b6217e` (8 коммитов: Ф1 форматтер-на-создании, Ф2 backfill, Ф3 граница промпта, Ф6 docType→hint, Ф4 нейминг, Ф5a backend-kill-switch, Ф5b редизайн). ТЗ: `plans/tz/2026-06-16-knowledge-base-redesign-and-formatter-tz.md`. second-brain: `01_projects/regulations.md`, `02_architecture/knowledge-core.md`, `03_processes/specialist-3-1-regulations.md`. Реестр флагов — `docs/operations/feature-flags.md` (новая строка `knowledge_base.redesign.enabled`).
@@ -170,9 +211,67 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🧬 2026-06-16 — Один человек = один клон должности (Раздел 7) + ревизия 12 промптов клона + 21 баг конвейера M5
+
+> Контракт: ветка `devsv`, 9 коммитов (`80ce250a..8168d915`). ТЗ: `plans/tz/2026-06-16-clone-agents-prompt-revision.md` (Раздел 7 + Раздел 8 + Приложения A–D). second-brain: `02_architecture/data-model.md` §«PersonaStatus += frozen», `02_architecture/module-map.md`, `02_architecture/agent-modules.md`, `01_projects/skill-and-clone.md` §«Доработки 2026-06-16», `01_projects/api-layer.md`, `01_projects/ai-jobs.md`, `01_projects/workers-queues.md`.
+>
+> **Зачем для прода:** клон роли переосмыслен как снимок ОДНОГО текущего носителя должности (без агрегации нескольких людей); прошлый носитель замораживается (`frozen`, read-only) и остаётся доступным навсегда («совет бывших»), имя — «Клон <Должность> v<N>» без ФИО. Плюс ревизия 12 промптов клона (якорь смысла + few-shot + self-check, всё в стабильный SYSTEM) и фиксы 21 бага конвейера M5 (застой черт, дрейф traitCount, версионирование, бюджеты кронов).
+
+- **Шаг 1 — ENV / флаги — НЕТ** (новых ENV и флагов нет; промпты — code-fallback, едут с билдом).
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260616160000_add_frozen_persona_status`, `prisma migrate deploy` в migrate-контейнере на `docker compose up`): `ALTER TYPE "PersonaStatus" ADD VALUE IF NOT EXISTS 'frozen'`. Аддитивна, идемпотентна (`IF NOT EXISTS`). ⚠ `ADD VALUE` **не-транзакционна** → вынесена в отдельную миграцию (нельзя использовать новое enum-значение в той же транзакции). **В STEPS агрегатора регистрировать НЕ нужно** (миграция схемы).
+- **Шаг 5 — postgres-init.sql — partial-unique (новый, self-skip):** `executable_personas_one_active_per_role` — `UNIQUE (scopeRefId) WHERE scope='role' AND status='active'` (ровно одна active-персона на должность; образец self-skip — `persons_tenant_email_active_uniq`). **Self-skip:** если на момент прогона есть роли с >1 active-клоном — блок делает `RAISE NOTICE` и пропускает создание; индекс встанет на следующем прогоне `postgres-init` **после** backfill Шага 8 (он заморозит лишние active). Применяется: `docker compose exec backend bun run apply-postgres-init` (идемпотентно, `CREATE INDEX IF NOT EXISTS`; на штатном `up -d` агрегатор гоняет его сам).
+- **Шаг 8 — Backfill** — **1 новый, идемпотентный, в STEPS** (`phase:'backfill'`, `skipBootstrap:true`): `docker compose exec backend bun run scripts/backfill-role-clone-single-bearer.ts` — дедуп active-дублей клона роли → frozen, `superseded` → frozen, пересборка агрегатов snapshot'ом единственного текущего носителя (single-bearer). Идемпотентен (повтор → 0). Флаг `--skip-rebuild` — прогнать без LLM-пересборки (только дедуп/freeze). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. **Порядок:** backfill → затем повторный `apply-postgres-init` (чтобы self-skip-индекс Шага 5 встал).
+- **Шаг 11 — Docker rebuild** — обязателен (переписаны промпты клона M5, `clones`-сервис/контроллер, конвейер черт/концептов/принципов/кронов, фронт — frozen-бейдж/спросить версию/совет бывших): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) Swagger `/api/docs` содержит `POST /api/v1/clones/roles/{roleId}/ask-all-formers`; у `POST /api/v1/clones/roles/{roleId}/ask` в схеме body есть опц. `roleVersion`.
+  - (б) `psql`/`diag`: `SELECT enum_range(NULL::"PersonaStatus")` содержит `frozen`; индекс `executable_personas_one_active_per_role` существует (или `RAISE NOTICE` о дублях — тогда прогнать Шаг 8 и повторить Шаг 5).
+  - (в) на экране должности с несколькими бывшими носителями — список версий (active + frozen) без ФИО, кнопка «спросить версию» и экран «Совет бывших» отвечают.
+  - (г) в логах backend — нет вечного re-verify застрявших черт (Б1) и runaway-реэмита `role.bearer_changed` (Б16).
+
+---
+
+### 🧠 2026-06-17 — Модуль усвоения (knowledge-core) MASTER: промпты + аудит-фиксы + дедуп задач (волны 0–6)
+
+> Контракт: ветка `feature/knowledge-core-master`, 18 коммитов (`ee96aea7`..`9c5218aa`). ТЗ: `plans/tz/2026-06-16-knowledge-core-MASTER.md` (зонтик) + 6 промпт-ТЗ + `plans/tz/2026-06-16-task-dedup-and-tracker-reconcile.md`. Отложено: `plans/tz/2026-06-17-knowledge-core-queue-dlq-per-queue-config.md` (G5, DLQ/per-queue — vNext). second-brain: `02_architecture/data-model.md`, `01_projects/ai-jobs.md`, `01_projects/workers-queues.md`, `01_projects/api-layer.md`, `02_architecture/module-map.md`, `04_не-сделано/README.md`.
+>
+> **Зачем для прода:** закрыты 59 аудит-багов (4 HIGH потери/утечки данных, 36 MED, 19 LOW); 30 промптов knowledge-core переписаны по методологии; реализован дедуп задач + петля «разговор→кандидат закрытия» (task-dedup, 6 фаз Ф0–Ф5); закрыты пробелы покрытия G1–G8 (в т.ч. обход платного `feature.graph` — G1, выручка).
+>
+> **4 миграции (авто). postgres-init: 4 partial-unique + 1 HNSW. 2 seed-маршрута + 1 backfill (все в STEPS). Новые ENV — опц., default. Docker rebuild backend обязателен.**
+
+- **Шаг 1 — ENV (опц., code-default — действий владельца НЕ требуют):** `TASK_RECONCILE_ENABLED` (kill-switch суточного task-reconcile-крона, default `true`); `ROUTER_FALLBACK_NEGATIVE_TTL_SECONDS` (negative-cache LLM-fallback, default 60 — весь fallback OFF по `ROUTER_LLM_FALLBACK_ENABLED=false`). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 1 — AdminSetting (опц., code-fallback — без сида работает на дефолтах):** `taskDedup.suggestThreshold` (0.88), `taskDedup.embedTimeoutMs`, `taskClosure.matchThreshold` (0.85), `taskClosure.autoConfirmThreshold` (0.95), `taskClosure.reopenRateAlert` (0.10), kill-switch'и `taskDedup.enabled` / `taskClosure.enabled` (ON). Доезжают перепрогоном агрегатора (уважает admin-override).
+- **Шаг 4 — Prisma (обязательно, авто — `prisma migrate deploy` в migrate-контейнере на `up`):** 4 аддитивные миграции (без потери данных): `20260616233329_task_dedup_intake_suggested_duplicate` (IntakeIssue.suggestedDuplicateOfIssueId), `20260617000614_task_closure_candidate` (модель TaskClosureCandidate), `20260617002427_issue_closure_review` (Issue.closureReviewState/Reason/At + индекс), `20260617005105_goal_embedding` (Goal.embedding `vector(1536)` + embeddingHash).
+- **Шаг 5 — postgres-init.sql (через `docker compose exec backend bun run apply-postgres-init`, идемпотентно; агрегатор на `up` гоняет сам):** 4 новых partial-unique (K1, защита от гонки дублей): `uq_conflict_open`, `uq_knowledge_group_singleton`, `uq_executable_persona_role_version`, `uq_executable_persona_role_active`; 1 HNSW: `goal_embedding_hnsw_cosine_idx` (Ф5, KNN-дедуп целей).
+- **Шаг 7 — Seed (2 LLM-маршрута, идемпотентны, в STEPS `phase:'seed-llm-routes'`):** `seed-llm-task-routes-task-dedup-arbiter.ts`, `seed-llm-task-routes-task-closure-verify.ts` (CHEAP_CHAIN). Прогон одним агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 8 — Backfill (в STEPS `phase:'backfill'`, идемпотентен):** `backfill-goal-embeddings.ts` — посчитать `Goal.embedding` существующим целям (повтор = no-op; пропускает уже с embedding). Выполнится тем же `apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild backend** обязателен (4 модели/колонки в PrismaClient; новые cron `BlockDistillReconcileCron`/`TaskReconcileCron`, worker `GoalEmbedWorker` + очередь `core.goal-embed`; **удалена** очередь `core.idea-clusterer`; 2 новых taskType; новые pending-провайдеры `task_closure`/`task_review`; entitlement-гард на граф-эндпоинтах; 30 переписанных промптов): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) `/admin/ai-models` содержит `task-dedup-arbiter` и `task-closure-verify`;
+  - (б) логи backend: подняты `BlockDistillReconcileCron` (каждые 30 мин), `TaskReconcileCron` (03:00), `GoalEmbedWorker` (очередь `core.goal-embed`); нет ошибок от удалённой `core.idea-clusterer`;
+  - (в) FREE-тариф: `GET /api/v1/knowledge/entities/:id/graph` и `/blocks/:id/links` → 403 `entitlement_required` (платный `feature.graph` больше не обходится); на платном — 200;
+  - (г) `/search` при штатном эмбеддинге работает; при рассинхроне размерности модели — не 500, а деградация на BM25 (WARN в логах);
+  - (д) сигнал «сделал задачу X» из разговора → кандидат `task_closure` в очереди подтверждений (Issue НЕ закрыта); supersede решения → связанные задачи помечены `task_review` (не закрыты/не отменены).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🐛 2026-06-16 — QA-багфиксы кабинета (пакет по итогам полного обхода)
+
+> Контракт: ветка `fix/qa-cabinet-bugfix-2026-06-16`, коммиты `e42b4ec3` (фронт), `9fa1ea12` (навигация настроек), `cf20473c` (бэкенд). ТЗ: `plans/tz/2026-06-16-qa-cabinet-bugfix-pack.md`.
+>
+> **Зачем для прода:** устранены видимые пользователю дефекты (сырой Markdown/таблицы в AI-отчётах встреч, биллинг «tier_standard», остатки бренда Z→Кора, англицизмы, склонения числительных, дубли навигации настроек, технический мусор в /actions) + критичный ночной ERROR 42P01 (`idea_blocks`).
+
+- **Backfill (НОВЫЙ, в STEPS):** `docker compose exec backend bun run scripts/backfill-rename-z-sources.ts` — переименование дефолтных `Source` «Встречи Z»→«Встречи», «Трекер Z»→«Трекер» у существующих Org. Идемпотентен (повтор → 0). Зарегистрирован в `apply-prod-deploy.ts` (`phase:'backfill'`, `skipBootstrap:true`) → прогон `--mode update` выполнит автоматически.
+- **Миграций / новых ENV / seed / patch — НЕТ.** Фикс `idea_blocks` — только raw SQL в коде (`domain-expander.cron.ts` → таблица `"IdeaBlock"`, колонка `tags`), схема НЕ менялась.
+- **Docker rebuild backend+frontend ОБЯЗАТЕЛЕН** (код фронта и бэка).
+- **Smoke:** (а) AI-отчёт встречи `/meetings/<id>/result` — Markdown и таблица «Возражения» рендерятся форматированными (не сырой `| col |`); (б) `/settings/billing` — тариф «Стандартный» (не «tier_standard»); (в) прод-логи в 04:00 UTC — нет ERROR `relation "idea_blocks" does not exist`.
+
+---
+
 ### 🧠 2026-06-15 — Помощник = единый мозг каналов: дедуп понимания/синтеза + единый промпт chat-v2 + таблицы (цепочка из 5 ТЗ)
 
-> Контракт: ветка `feature/dialog-chat-assistant-chain`, коммиты `3f63f7c1` (ТЗ#1 dialog-layer), `13b0cd9c`+`5e3498f9` (ТЗ#2A/2B chat-v2), `f49e7212` (ТЗ#3 concierge), `33ae43aa` (ТЗ#4 channels-sync), `4e9f1fec` (ТЗ#5 cabinet) + доп-фиксы `dfb82a6f` (Ф7 intent-questions), `b207743d` (issue-move). ТЗ: `plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md`, `plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md`, `plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md`, `plans/tz/2026-06-11-assistant-channels-telegram-max.md` (синхр. каналов), `plans/tz/2026-06-15-cabinet-assistant-clone-selector.md`, `plans/tz/2026-06-15-intent-questions-are-not-commitments.md`, `plans/tz/2026-06-15-issue-move-to-project.md`. second-brain: `01_projects/conversational-channels.md`, `02_architecture/module-map.md`, `01_projects/api-layer.md`, `01_projects/tracker.md`, `01_projects/frontend-pages.md`. Реестр флагов / крутилок — `docs/operations/feature-flags.md`.
+> Контракт: ветка `feature/dialog-chat-assistant-chain`, коммиты `3f63f7c1` (ТЗ#1 dialog-layer), `13b0cd9c`+`5e3498f9` (ТЗ#2A/2B chat-v2), `f49e7212` (ТЗ#3 concierge), `33ae43aa` (ТЗ#4 channels-sync), `4e9f1fec` (ТЗ#5 cabinet) + доп-фиксы `dfb82a6f` (Ф7 intent-questions), `b207743d` (issue-move). ТЗ: `plans/archive/2026-06-14-dialog-layer-unified-query-understanding.md`, `plans/archive/2026-06-15-chat-v2-unified-answer-prompt.md`, `plans/archive/2026-06-14-assistant-router-dedup-and-prompt.md`, `plans/archive/2026-06-11-assistant-channels-telegram-max.md` (синхр. каналов), `plans/archive/2026-06-15-cabinet-assistant-clone-selector.md`, `plans/archive/2026-06-15-intent-questions-are-not-commitments.md`, `plans/archive/2026-06-15-issue-move-to-project.md`. second-brain: `01_projects/conversational-channels.md`, `02_architecture/module-map.md`, `01_projects/api-layer.md`, `01_projects/tracker.md`, `01_projects/frontend-pages.md`. Реестр флагов / крутилок — `docs/operations/feature-flags.md`.
 >
 > **Зачем для прода:** помощник перестаёт быть «вторым мозгом» — понимание запроса и синтез считаются ОДИН раз, внутри chat-v2 (убран дубль помощник↔chat-v2). chat-v2 переведён на один промпт-ответчик без режимов + человеческий русский контекст + умные таблицы как параллельный источник. Помощник — развилка + руки: `ask_chat_v2` терминальный, новые инструменты `create_task`/`search_tasks`/`ingest_note` вместо `search_knowledge`. Постановка задач из Telegram переведена на помощника (интенты `task`/`show_tasks` убраны из классификатора). В кабинете — селектор «помощник / клон должности» на `/chat`.
 >
@@ -192,7 +291,7 @@ docker compose run --rm --no-deps backend \
 
 #### Доп-фиксы поверх цепочки (2 коммита)
 
-> Контракт: та же ветка `feature/dialog-chat-assistant-chain`, коммиты `dfb82a6f` (Ф7 intent-questions), `b207743d` (issue-move-to-project). ТЗ: `plans/tz/2026-06-15-intent-questions-are-not-commitments.md`, `plans/tz/2026-06-15-issue-move-to-project.md`. second-brain: `01_projects/api-layer.md`, `01_projects/tracker.md`.
+> Контракт: та же ветка `feature/dialog-chat-assistant-chain`, коммиты `dfb82a6f` (Ф7 intent-questions), `b207743d` (issue-move-to-project). ТЗ: `plans/archive/2026-06-15-intent-questions-are-not-commitments.md`, `plans/archive/2026-06-15-issue-move-to-project.md`. second-brain: `01_projects/api-layer.md`, `01_projects/tracker.md`.
 
 - **Ф7 — вопросы/команды сотрудников ≠ кандидаты в задачи — ПРОД-ОПЕРАЦИЙ НЕТ.** Калибровка LLM-классификатора интента: константа `NOT_A_TASK_DISCRIMINATOR` в хвосте SYSTEM-промптов (`common.ts` → `telegram-task-parser.service.ts` главный источник + `tasks-unified.ts` встречи/ChatBox); ChatBox теперь пишет в `Task`, не в `IntakeIssue`. Промпт — code-fallback/registry (не seed). Миграций/ENV/seed/patch нет. `smoke-tasks-unified-battery.ts` — полевой smoke (в `apply-prod-deploy.ts` STEPS НЕ регистрируется). Достаточно `docker compose up -d --build backend`. **Smoke:** написать боту «какие у меня задачи?» → НЕ появляется кандидат в очереди «Кандидаты в задачи» (читается как вопрос/команда, не обещание).
 - **issue-move — перенос задачи в другой проект — МИГРАЦИЙ НЕТ** (новый эндпоинт `POST /api/v1/issues/:id/move` на существующих моделях `Issue`). RBAC `issue`/`write`; ре-аллокация `sequenceId`/`identifier`, ремап `state` по category, `board`=дефолт, `cycle`=null; запрет переноса задач с подзадачами; WS `IssueMovedToProjectEvent` + метрика `issue_moved_to_project_total`. Фронт: `ProjectPickerDialog` (`src/ui/tracker`) + строка «Проект · Перенести» в `IssueSidebar`. Seed/patch/backfill/ENV нет. **Rebuild backend+frontend:** `docker compose up -d --build backend frontend`. **Smoke:** (а) Swagger `/api/docs` содержит `POST /api/v1/issues/:id/move`; (б) перенос задачи из проекта «Входящие» в другой проект меняет её префикс/`identifier` на целевой, она исчезает из «Входящих» и появляется в целевом проекте.
@@ -203,7 +302,7 @@ docker compose run --rm --no-deps backend \
 
 ### 🛠️ 2026-06-14 — Мастер-фиксы кабинета: рефералка + хаб «Оцифровано» (A/B/C)
 
-> Контракт: ветка `feature/cabinet-master-fixes`, коммиты `dfb79211..fd0e8eeb` (8 коммитов). ТЗ: `plans/tz/2026-06-14-cabinet-master-fixes-referral-and-hub.md` (части A/B/C). second-brain: `01_projects/director-dashboard.md`, `01_projects/api-layer.md`, `01_projects/frontend-pages.md`. Реестр флагов — `docs/operations/feature-flags.md`.
+> Контракт: ветка `feature/cabinet-master-fixes`, коммиты `dfb79211..fd0e8eeb` (8 коммитов). ТЗ: `plans/archive/2026-06-14-cabinet-master-fixes-referral-and-hub.md` (части A/B/C). second-brain: `01_projects/director-dashboard.md`, `01_projects/api-layer.md`, `01_projects/frontend-pages.md`. Реестр флагов — `docs/operations/feature-flags.md`.
 >
 > **Зачем для прода:** доработка кабинета по итогам аудита. (A) светлая тема доведена до конца — тема-зависимые токены поверхностей вместо белых оверлеев в modern-примитивах и ~24 файлах кабинета; ack «✓ Записано в память компании» на чек-ине; бейдж «Спросил руководитель» в Ленте Коры; синхронизация `/intake` с очередью решений; виджет «Висят без ответа ≥3 дней» на /week; CSV-экспорт «Скачать для планёрки»; merge отделов переносит FK (Metric/Interaction/OrgUnit/Entity); петля next-step→Issue с `IntakeIssue.sourceBlockIds`. (B) пункт меню «Партнёрка» (/referrals) вернулся в кабинет, persistent role-баннер «N из 3» вместо промо-полоски, редизайн кабинета рефералки на modern/, новый эндпоинт прогресса вознаграждения. (C) пункт меню «Оцифровано» (/regulations) — хаб с 4 типами норм + вкладкой шаблонов процессов + провенанс-цитатами + summary-виджетом на «Сегодня».
 >
@@ -230,7 +329,7 @@ docker compose run --rm --no-deps backend \
 
 ### 🗂️ 2026-06-13 — Редизайн кабинета: ритмы (Сегодня/Неделя/Месяц) + очередь решений + Лента Коры (Ф0–Ф10)
 
-> Контракт: ветка `feature/cabinet-redesign-rhythms`, 23 коммита. ТЗ: `plans/tz/2026-06-13-cabinet-redesign-rhythms-and-decision-queue.md` (Ф0–Ф10). second-brain: `05_история/2026-06-13-cabinet-redesign-implementation.md`, `01_projects/director-dashboard.md`. Реестр флагов — `docs/operations/feature-flags.md`.
+> Контракт: ветка `feature/cabinet-redesign-rhythms`, 23 коммита. ТЗ: `plans/archive/2026-06-13-cabinet-redesign-rhythms-and-decision-queue.md` (Ф0–Ф10). second-brain: `05_история/2026-06-13-cabinet-redesign-implementation.md`, `01_projects/director-dashboard.md`. Реестр флагов — `docs/operations/feature-flags.md`.
 >
 > **Зачем для прода:** кабинет перестроен от «свалки меню + противоречивых дашбордов» к модели ритмов (Сегодня / Неделя / Месяц) + сквозной очереди решений «Требует вас». Единый источник навигации (десктоп+мобилка), новый экран «Сегодня» (VerdictBar + лента дня + чек-ин-плашка), очередь решений с inline-резолвом, /week табы, /month + PPTX-экспорт, авто-название встреч, поиск по памяти, мастер дедупа отделов, drill-down план-факта по людям, Лента Коры (`/feed/cora` + контроль вопросов), silence-детектор тем, светлая тема.
 >
@@ -264,7 +363,7 @@ docker compose run --rm --no-deps backend \
 
 ### 🤖 2026-06-12 — Единый помощник в каналах (Telegram/MAX) + автономизация подтверждений (W0–W4)
 
-> Контракт: ветка `feature/assistant-channels-and-autonomy`, коммиты `cb285350..90f02a6e` (10 коммитов + фиксы ревью). ТЗ: `plans/tz/2026-06-11-assistant-channels-telegram-max.md` (Ф1–Ф6) + `plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md` (W0–W4). second-brain: `01_projects/conversational-channels.md`, `02_architecture/module-map.md`, `02_architecture/data-model.md`, `01_projects/workers-queues.md`, `01_projects/ai-jobs.md`.
+> Контракт: ветка `feature/assistant-channels-and-autonomy`, коммиты `cb285350..90f02a6e` (10 коммитов + фиксы ревью). ТЗ: `plans/archive/2026-06-11-assistant-channels-telegram-max.md` (Ф1–Ф6) + `plans/archive/2026-06-11-autonomy-remove-manual-confirmations.md` (W0–W4). second-brain: `01_projects/conversational-channels.md`, `02_architecture/module-map.md`, `02_architecture/data-model.md`, `01_projects/workers-queues.md`, `01_projects/ai-jobs.md`.
 >
 > **Зачем для прода:** (ТЗ-1) Telegram/MAX становятся окнами ЕДИНОГО мозга помощника: solicited-ответ AI-чата возвращается в канал-источник + ack на заметку (стоп-молчание); рендер 10+ проактивных eventType в обоих ботах; native function-calling (встроенный вызов инструментов) в concierge; service-auth путь ToolRouter (loopback); свободный текст/голос → ConciergeService (`assistant_turn`, память диалога per-binding в Redis 24ч); канальный whitelist self/manager + текстовое подтверждение мутаций. (ТЗ-2) гасим спам ручных подтверждений: одна сводка напоминаний в день (09:00), ночной LLM-арбитр конфликтов знаний, гейт ценности probe + маршрутизация NUDGE в дайджест, OwnerResolver (лестница владельца поля), intake авто-приём задач из всех каналов (порог 0.75, дефолт-проект «Входящие»).
 >
@@ -294,7 +393,7 @@ docker compose run --rm --no-deps backend \
 
 ### 🧬 2026-06-12 — Слой метода клона (clone-persona-method-layer, Э0–ВАЛ)
 
-> Контракт: ветка `feature/clone-persona-method-layer`, коммиты `6e8b470f..41289726` (8 фаз). ТЗ: `plans/tz/2026-06-11-clone-persona-method-layer.md`. second-brain: `01_projects/skill-and-clone.md` §«Доработки 2026-06-12», `02_architecture/data-model.md` §«Слой метода клона», `01_projects/ai-jobs.md`, `01_projects/workers-queues.md`, `01_projects/api-layer.md` §Clones.
+> Контракт: ветка `feature/clone-persona-method-layer`, коммиты `6e8b470f..41289726` (8 фаз). ТЗ: `plans/archive/2026-06-11-clone-persona-method-layer.md`. second-brain: `01_projects/skill-and-clone.md` §«Доработки 2026-06-12», `02_architecture/data-model.md` §«Слой метода клона», `01_projects/ai-jobs.md`, `01_projects/workers-queues.md`, `01_projects/api-layer.md` §Clones.
 >
 > **Зачем для прода:** клон роли получает слой МЕТОДА работы. (Э0.1) grounding-гейт `clone-respond` — factual-ответ без опоры на наблюдения заменяется честным отказом (`'ungrounded'`), каждый вопрос клону пишется в журнал `CloneQueryLog` + новый `GET /api/v1/clones/query-log`. (Э1) ночной Reflection-синтез принципов роли (`RolePrinciple`, cron 05:30) + детектор ценностей/мотивации из trade-off. (Э2) активация PracticeSkill в ответах клона + детектор конструктивных маркеров процесса. (Э3) CDM-интервью носителя через probe (до 5 вопросов + cooldown 7 дн.). (ИНТ) persona-compile v2 — секционная сборка всех слоёв (пустые секции опускаются — деградация к v1). (ВАЛ) воскресная поведенческая A/B-оценка persona v1-vs-v2 (LLM-судья; только наблюдение, ничего не блокирует).
 >
@@ -551,7 +650,7 @@ docker compose run --rm --no-deps backend \
 
 ### 🛟 2026-06-09 — Встроенная служба поддержки + закрытый контур + самообучающийся клон (Ф1–Ф4)
 
-> Контракт: `plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md` (Фазы 1–4). Коммиты Ф1 `356cc032`+`d8ffbdf3` · Ф2 `4cb444ed` · Ф3 `ae0fca83`+`24bf7e0f`+`9d396cd4` · Ф4 `14c4e6dc`.
+> Контракт: `plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md` (Фазы 1–4). Коммиты Ф1 `356cc032`+`d8ffbdf3` · Ф2 `4cb444ed` · Ф3 `ae0fca83`+`24bf7e0f`+`9d396cd4` · Ф4 `14c4e6dc`.
 >
 > **Зачем для прода:** клиент Коры из своего кабинета задаёт вопрос → обращение приходит в единый вендор-деск → сотрудник отвечает → ответы копятся в закрытый контур памяти → из него собирается клон техподдержки (черновики человеку, обучение на правках, ночной куратор контура). Ф5 (авто-отправка клиенту) и Ф6 (тон-адаптер) — **отложены**. **Миграции БД ЕСТЬ** (3 шт., аддитивные, авто). **Новые ENV ЕСТЬ** (2 kill-switch, default ON). **Деск НЕ заработает, пока владелец не задаст AdminSetting `support.vendor_org_id` + entitlement `feature.support_desk` для вендор-Org** (см. Шаг 1).
 
@@ -580,6 +679,42 @@ docker compose run --rm --no-deps backend \
   - Изоляция контура: `POST /support/tickets` от пользователя другой Org создаёт `Issue` в вендор-Org (`supportCustomerOrgId` = его tenant); черновик клона цитирует ТОЛЬКО блоки support-контура.
 
 Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🔌 2026-06-09 — Bitrix24: установка интеграции + жизненный цикл токена
+
+> Контракт: `plans/archive/2026-06-09-bitrix24-integration-install.md`. Ветка `bitrix`.
+>
+> **Зачем для прода:** подключение портала Bitrix24 к компании (оба способа —
+> OAuth-коннект из Коры + установка из Маркета `ONAPPINSTALL`), шифрованное
+> хранение `access+refresh` per-org, refresh по требованию, проверка соединения,
+> отключение. Синк данных — отдельный следующий этап. **Миграция БД ЕСТЬ**
+> (аддитивная, авто). **Новые ENV — опциональны** (без них стартует; подключение
+> даёт `bitrix_misconfigured`).
+
+- **Шаг 1 — ENV / kill-switch** (опциональны):
+  - `BITRIX_CLIENT_ID` / `BITRIX_CLIENT_SECRET` — OAuth-креды тиражного приложения
+    (из партнёрского кабинета Bitrix24). Без них фича не подключается, но backend
+    стартует. `redirect_uri` НЕ в ENV — `{PUBLIC_HOST_URL}/api/v1/bitrix/oauth/callback`.
+  - `BITRIX_OAUTH_BASE_URL` (default `https://oauth.bitrix.info`) — сервер авторизации.
+  - `bitrix.enabled` (AdminSetting, **default true**, kill-switch ON) — приём событий
+    установки. Выкл → install-handler 200 no-op. Code-fallback `true`, seed не нужен.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260609112355_bitrix_integration`):
+  `+ table BitrixIntegration` (FK → `Org`, 2 индекса, unique по `memberId`) +
+  `+ enum BitrixIntegrationStatus`. Аддитивна (CREATE TABLE/TYPE), без потери данных.
+  Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: модуль `bitrix` — 3 контроллера,
+  API-клиент, сервис, RBAC-ресурс `bitrix`, фича `feature.bitrix`; frontend: секция
+  Bitrix24 на `/settings/integrations` + страница `/bitrix/install`):
+  `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - `curl -s localhost:3000/api/docs-json | grep -c bitrix` → теги `bitrix` присутствуют.
+  - В UI `/settings/integrations` видна секция «Bitrix24» (если задан `BITRIX_CLIENT_ID`).
+  - **Вне кода:** зарегистрировать тиражное приложение в партнёрском кабинете
+    (client_id/secret → ENV; handler URL = `/bitrix/install`; install event →
+    `/api/v1/bitrix/install/event`; redirect_uri → `/api/v1/bitrix/oauth/callback`),
+    финализировать `scope` (минимум `crm,user,profile`).
 
 ---
 
@@ -767,7 +902,7 @@ docker compose run --rm --no-deps backend \
 
 ### 📄 2026-06-09 — ТЗ-4 Ф1+Ф10: новые форматы документов + смысловой тип/привязки + AI-подсказка привязки
 
-> Контракт: `plans/tz/2026-06-08-manual-document-upload-and-import-tz.md` (Ф1 схема/парсер/мультифайл/дедуп/привязка + Ф10 AI-подсказка). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`.
+> Контракт: `plans/archive/2026-06-08-manual-document-upload-and-import-tz.md` (Ф1 схема/парсер/мультифайл/дедуп/привязка + Ф10 AI-подсказка). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`.
 >
 > **Зачем для прода:** канал `/documents` расширен — новые форматы (xlsx/pptx/html/rtf/odt/csv), мультифайл-загрузка + дедуп `contentHash` + явная привязка (тема/проект/должность → граф) + смысловой тип `docType`; LLM-подсказка привязки (human-in-the-loop). **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых ENV нет** (флаги/крутилки — AdminSetting с code-fallback). Библиотеки `officeparser` + `exceljs` (уже в `package.json`). ⚠ `officeparser` имеет `postinstall` — проверить нативную сборку на прод-Docker.
 
@@ -809,7 +944,7 @@ docker compose run --rm --no-deps backend \
 
 ### 🎙️ 2026-06-08 — ТЗ-5: ручная загрузка встреч с диаризацией и разметкой спикеров
 
-> Контракт: `plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md` (Ф1–Ф6). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`.
+> Контракт: `plans/archive/2026-06-08-meeting-upload-diarized-speaker-mapping.md` (Ф1–Ф6). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`.
 >
 > **Зачем для прода:** новый канал — пользователь грузит готовое видео/аудио встречи (≤2 ГБ, любой формат) → ingest (ffmpeg-нормализация) → диаризация (Vox) → ручная разметка говорящих (сотрудник/внешний/исключить/слить) → AI-анализ как у обычной встречи. Новые BullMQ-очереди `meeting.upload-ingest` / `meeting.upload-transcribe` + воркеры. **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых обязательных ENV нет** (рубильник и квота — с code-fallback).
 
@@ -1277,7 +1412,7 @@ docker compose logs -f migrate     # увидишь блок ">>> [schema] АВ�
 
 ### 🪵 2026-06-03 — Логирование: процессные контуры (pipeline) + сквозной traceId + мост Nest Logger → БД
 
-План: [plans/tz/2026-06-03-logging-pipelines-coverage.md](../../plans/tz/2026-06-03-logging-pipelines-coverage.md). Модуль `backend/src/modules/logging`.
+План: [plans/archive/2026-06-03-logging-pipelines-coverage.md](../../plans/archive/2026-06-03-logging-pipelines-coverage.md). Модуль `backend/src/modules/logging`.
 
 **Что выкатывается:**
 - Новый enum `SystemLogPipeline` + поле `SystemLog.pipeline?` + 2 индекса (`[pipeline, createdAt]`, `[traceId, createdAt]`).
@@ -1316,7 +1451,7 @@ docker compose logs -f migrate     # увидишь блок ">>> [schema] АВ�
 - **Заметка (долг):** опц. будущий backfill `CardVersion.trustTier` (existing → `auto` при `createdByUserId IS NULL`) — пока отложен, дефолт `human` безопасен.
 ### 🎯 2026-06-02 — Goals OKR v2 (Граф целей): специалист 3-14 + авто-прогресс + пульс + дерево
 
-**Контекст.** Достройка модуля `goals` до «графа целей» (Цель → измеримые Key Results): авто-добыча из встреч (специалист `3-14-goals`), авто-прогресс KR (cron), еженедельный пульс (cron + доставка), дерево + мост к гипотезам. Принцип M0 — ручной контроль первичен, авто не перетирает `manualOverride`-поля. Изменения схемы **аддитивны** (только новые модели/поля/enum/FK). ТЗ — `plans/tz/2026-06-02-goals-okr-v2.md`.
+**Контекст.** Достройка модуля `goals` до «графа целей» (Цель → измеримые Key Results): авто-добыча из встреч (специалист `3-14-goals`), авто-прогресс KR (cron), еженедельный пульс (cron + доставка), дерево + мост к гипотезам. Принцип M0 — ручной контроль первичен, авто не перетирает `manualOverride`-поля. Изменения схемы **аддитивны** (только новые модели/поля/enum/FK). ТЗ — `plans/archive/2026-06-02-goals-okr-v2.md`.
 
 - **Шаг 1 — ENV/AdminSetting** — **новых ENV нет.** Два тумблера через `AdminSetting` (не ENV, memory `feedback_admin_settings_not_env_or_code`), засеиваются сидером (Шаг 7): `goals.pulse.enabled` (default **true**) и `goals.pulse.deliver_to_telegram` (default **false**). Менять в админке настроек под super_admin.
 - **Шаг 4 — Prisma** — **обязательно** (аддитивно, опасных изменений нет): `docker compose exec backend bun run prisma:push`.
@@ -1361,7 +1496,7 @@ docker compose logs -f migrate     # увидишь блок ">>> [schema] АВ�
 
 ### ✍️ 2026-06-04 — Поправить карточку: исправить/оспорить провизорную (E1 backend + E2 frontend)
 
-План: [plans/tz/2026-06-03-knowledge-card-correct.md](../../plans/tz/2026-06-03-knowledge-card-correct.md). Достройка поверх C1 (метка доверия). Ветка `feature/action-center-trust-ladder`.
+План: [plans/archive/2026-06-03-knowledge-card-correct.md](../../plans/archive/2026-06-03-knowledge-card-correct.md). Достройка поверх C1 (метка доверия). Ветка `feature/action-center-trust-ladder`.
 
 **Что выкатывается:**
 - E1 — новые REST на существующих модулях: `POST /api/v1/regulations/:id/{dispute,correct}` и `POST /api/v1/decisions/:id/{dispute,correct}`. `correct` от owner/admin применяет правку сразу (новая `CardVersion` `trustTier='human'` + `currentVersionId` + контент таблицы); от рядового — предложение в очередь курации (`CurationService.submitProposal` → `CurationItem(pending, via='user_correction')`). `dispute` → `recordDecision('mark_as_misleading')`. Обучающие сигналы: correct→`correct`, dispute→`misleading`.
@@ -1442,7 +1577,7 @@ docker compose logs -f migrate     # увидишь блок ">>> [schema] АВ�
 - **Новая npm-зависимость** `exceljs@^4.4.0` (парсинг XLSX/CSV) — попадает в образ при rebuild (она в package.json + bun.lock). **Особых prod-действий нет** (не native-модуль).
 - **Шаг 11 — Docker rebuild** — обязателен (backend: парсер/импорт-сервис + exceljs; frontend: диалог «Из файла»): `docker compose up -d --build backend frontend`.
 - **Шаг 12 — Smoke**: на `/tables` кнопка «Из файла» → загрузить тестовый Excel/CSV → приходит превью схемы (+ блок слияния, если есть похожая таблица) → «Создать новую» → таблица со строками появляется. Загрузка PDF → понятная ошибка «формат пока не поддерживается».
-- **Примечание (долг):** парсинг in-process на `exceljs` — временное Node-решение (владелец 2026-06-02 решил пока не поднимать Python-микросервис DCS). PDF/сканы/HTML не поддержаны до появления DCS (см. `plans/tz/2026-05-31-document-ingest-universal.md`).
+- **Примечание (долг):** парсинг in-process на `exceljs` — временное Node-решение (владелец 2026-06-02 решил пока не поднимать Python-микросервис DCS). PDF/сканы/HTML не поддержаны до появления DCS (см. `plans/archive/2026-05-31-document-ingest-universal.md`).
 
 ---
 
@@ -1551,7 +1686,7 @@ docker compose logs -f migrate     # увидишь блок ">>> [schema] АВ�
 
 ### 🎬 2026-06-01 — Авто-сидинг демо при регистрации + авто-cleanup при оплате + фикс 403/404 дашборда
 
-План: [plans/tz/2026-05-31-demo-auto-seed-and-cleanup.md](../../plans/tz/2026-05-31-demo-auto-seed-and-cleanup.md).
+План: [plans/archive/2026-05-31-demo-auto-seed-and-cleanup.md](../../plans/archive/2026-05-31-demo-auto-seed-and-cleanup.md).
 
 **Что выкатывается:**
 - Backend: 2 новые BullMQ-очереди `onboarding.demo-seed` / `onboarding.demo-cleanup` + воркеры + `SubscriptionActivatedListener` (слушает `billing.subscription.activated_paid`/`_bonus`). `completeWelcome` ставит seed-job и редиректит на `/onboarding/welcome/complete`. Новый `GET /api/v1/orgs/:orgId/demo-seed-status`.
@@ -1588,8 +1723,8 @@ docker compose logs -f migrate     # увидишь блок ">>> [schema] АВ�
 ### 🌊 2026-05-31 — Волна 2: Z-Admin Тариф (один tier_standard) + Партнёрский кабинет
 
 Планы:
-- [plans/tz/2026-05-31-admin-plans-collapse-to-standard.md](../../plans/tz/2026-05-31-admin-plans-collapse-to-standard.md)
-- [plans/tz/2026-05-31-referrals-cabinet-revamp.md](../../plans/tz/2026-05-31-referrals-cabinet-revamp.md)
+- [plans/archive/2026-05-31-admin-plans-collapse-to-standard.md](../../plans/archive/2026-05-31-admin-plans-collapse-to-standard.md)
+- [plans/archive/2026-05-31-referrals-cabinet-revamp.md](../../plans/archive/2026-05-31-referrals-cabinet-revamp.md)
 
 **ТЗ №3 — admin-plans-collapse-to-standard:**
 - Backend: `/api/v1/admin/orgs/plans` CRUD → один `GET /current` (PlanSnapshotDto). `SeatService` и `MeetingsBalanceService` стали `async`, читают 6 ключей `billing.*` из AdminSetting через `getDynamic` с code-fallback. Активные `Subscription.monthlyPriceKopecks` НЕ пересчитываются при правке прайса.
@@ -1720,7 +1855,7 @@ p.referral.count({where:{contractAcceptedAt: null}})
 
 ### 🌊 2026-05-31 — Волна 3 Блок C: Smart Tables MVP-старт (Фазы 0+1)
 
-План: [plans/tz/2026-05-31-smart-tables.md](../../plans/tz/2026-05-31-smart-tables.md) — реализованы Фазы 0+1 из 14.
+План: [plans/archive/2026-05-31-smart-tables.md](../../plans/archive/2026-05-31-smart-tables.md) — реализованы Фазы 0+1 из 14.
 
 **Сделано:**
 - Backend: 5 новых Prisma-моделей (`Table`, `TableProperty`, `TableRow`, `TableView`, `TableAutomation`) + 3 enum'а (`TablePropType` 24 значения, `TableViewType` 9, `TableViewVisibility` 3) + обратная relation `Org.tables`.
@@ -1858,7 +1993,7 @@ curl -i -X POST -H 'Cookie:<session>' -H 'X-Org-Id:<orgId>' \
 
 ### 🌊 2026-05-31 — Волна 3 Блок B: document-ingest Фаза 0 smoke-test (RESEARCH, без прод-выкатки)
 
-План: [plans/tz/2026-05-31-document-ingest-universal.md](../../plans/tz/2026-05-31-document-ingest-universal.md) §Фаза 0.
+План: [plans/archive/2026-05-31-document-ingest-universal.md](../../plans/archive/2026-05-31-document-ingest-universal.md) §Фаза 0.
 
 **Сделано:** smoke-test финального стека (Docling 2.96 + RapidOCR + PP-OCRv5 eslav-веса) на 5 публичных фикстурах. Все гейты §0.3 либо пройдены, либо имеют архитектурное решение в Фазе 1.
 
@@ -1866,7 +2001,7 @@ curl -i -X POST -H 'Cookie:<session>' -H 'X-Org-Id:<orgId>' \
 - `backend/test/fixtures/documents/{README.md, download-fixtures.sh, .gitignore}` — фикстуры скачиваются локально (бинарники не в git).
 - `infra/document-conversion/smoke/{Dockerfile, docker-compose.yml, run.py}` — smoke-CLI, запускается локально через docker.
 - `plans/analysis/2026-05-31-document-conversion-stack.md` — дополнен разделом «Smoke-test results» с цифрами.
-- `plans/tz/2026-05-31-document-ingest-universal.md` — статус «Фаза 0 закрыт 2026-05-31».
+- `plans/archive/2026-05-31-document-ingest-universal.md` — статус «Фаза 0 закрыт 2026-05-31».
 
 **Локально воспроизвести** (для другой машины разработчика):
 ```bash
@@ -1959,7 +2094,7 @@ docker compose run --rm smoke
 
 ### 🌊 2026-05-31 — Единая per-user квота AI-чата (Concierge + клоны)
 
-План: [plans/tz/2026-05-31-ai-chat-quota-unified-per-user.md](../../plans/tz/2026-05-31-ai-chat-quota-unified-per-user.md).
+План: [plans/archive/2026-05-31-ai-chat-quota-unified-per-user.md](../../plans/archive/2026-05-31-ai-chat-quota-unified-per-user.md).
 
 **Сделано:** новый глобальный модуль `ai-chat-quota` (`AiChatQuotaService` + `AiChatQuotaController`) — один счётчик `ai_chat_messages_per_day` на пользователя, считает Concierge + клоны вместе; лимит зависит от роли в Org (admin/member). Concierge и Clones переключены на него. UI-эндпоинт `GET /api/v1/me/ai-chat/quota` для индикатора «осталось N сообщений сегодня». Старый Redis-ключ `clone:ask:*` и ENV `CLONE_ASK_PER_USER_PER_DAY` оставлены как deprecated code-fallback (удалим в следующем выкате после rollback-окна).
 
@@ -2002,7 +2137,7 @@ docker compose run --rm smoke
 
 ### 🌊 2026-05-31 — Z-Admin standalone route group (frontend only)
 
-План: [plans/tz/2026-05-31-z-admin-standalone-route-group.md](../../plans/tz/2026-05-31-z-admin-standalone-route-group.md).
+План: [plans/archive/2026-05-31-z-admin-standalone-route-group.md](../../plans/archive/2026-05-31-z-admin-standalone-route-group.md).
 
 **Изменения:** только frontend — перенос /admin/* в свою route-группу
 `app/(admin)/admin/*` + новый `AdminAuthGuard`. Backend/БД/ENV — без изменений.

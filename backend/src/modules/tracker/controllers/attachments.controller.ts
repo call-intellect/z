@@ -14,34 +14,18 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import {
-  ApiBearerAuth,
-  ApiBody,
-  ApiConsumes,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
-import {
-  AttachmentsService,
-  type AttachmentResponseDto,
-} from '../services/attachments.service';
+import { AttachmentsService, type AttachmentResponseDto } from '../services/attachments.service';
 
-/**
- * Минимальный тип файла, который multer кладёт в req. Лежит локально —
- * чтобы не ломать сборку без `@types/multer` (он опциональный peer-dep).
- */
 interface MulterFile {
   fieldname: string;
   originalname: string;
@@ -57,20 +41,6 @@ const UploadAttachmentSchema = z
   .strict();
 type UploadAttachmentDto = z.infer<typeof UploadAttachmentSchema>;
 
-/**
- * REST `/api/v1/issues/:id/attachments` + `/api/v1/attachments/:id`.
- *
- * Загрузка — multipart/form-data, поле `file`. Optional поле `commentId` в
- * body — если приложение относится к комментарию (а не задаче в целом).
- *
- * Лимит размера и валидация MIME — в `AttachmentsService` (25 MB,
- * картинки/документы/архивы/text/audio/video).
- *
- * RBAC:
- *   - upload   → `issue.update`
- *   - download → `issue.read`
- *   - delete   → `issue.update`
- */
 @ApiTags('tracker / issues / attachments')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -151,8 +121,6 @@ export class AttachmentsController {
     await this.requireWrite(user.id, t);
     await this.svc.delete(id, t, user.id);
   }
-
-  // ── helpers ──
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

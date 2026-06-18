@@ -22,7 +22,7 @@ second-brain/
 ├── 01_projects/                          ← заметки по каждому модулю/фиче
 │   ├── meeting-types.md                  (9 типов встреч)
 │   ├── ai-analysis-by-type.md            (шаблоны AI по типу)
-│   ├── roles-and-permissions.md          (Host vs Guest)
+│   ├── rbac-access-control.md            (RBAC: 5 ролей, матрица доступа)
 │   ├── recording.md                      (запись + retention)
 │   ├── capacity-and-infra.md             (мощности, метрики)
 │   └── crossmark-integration.md          (как Crossmark встраивает Z)

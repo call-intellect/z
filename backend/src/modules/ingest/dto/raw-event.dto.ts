@@ -5,10 +5,6 @@ import type {
   SourceType,
 } from '@prisma/client';
 
-/**
- * DomainModel представления `RawEvent` для отдачи через API.
- * Сериализуется в JSON напрямую (Date → ISO-строки).
- */
 export interface RawEventResponseDto {
   id: string;
   tenantId: string;
@@ -19,13 +15,8 @@ export interface RawEventResponseDto {
   occurredAt: string;
   receivedAt: string;
   payloadStorage: RawEventPayloadStorage;
-  /**
-   * Inline-payload, если `payloadStorage = inline`. Для `s3` — `null`,
-   * клиент должен использовать `payloadDownloadUrl` (presigned).
-   */
   payload: unknown | null;
   payloadS3Key: string | null;
-  /** Если `payloadStorage = s3` — presigned URL на скачивание (TTL дефолтный). */
   payloadDownloadUrl: string | null;
   payloadChecksum: string;
   payloadSizeBytes: number;
@@ -35,13 +26,6 @@ export interface RawEventResponseDto {
   processedAt: string | null;
 }
 
-/**
- * Краткий ответ POST /api/v1/ingest.
- *
- *   - `idempotent = true` — клиент повторил вызов с тем же `idempotencyKey`,
- *     был возвращён существующий `RawEvent`.
- *   - `idempotent = false` — событие создано впервые.
- */
 export interface IngestResponseDto {
   rawEventId: string;
   idempotent: boolean;

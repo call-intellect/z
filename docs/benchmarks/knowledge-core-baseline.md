@@ -12,7 +12,7 @@ Status: **TODO**. Golden-set встреч и метрики ещё не подг
 
 ## Golden-set W2.1 (новая регресс-инфраструктура)
 
-Источник: ТЗ `plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md`,
+Источник: ТЗ `plans/archive/2026-05-25-knowledge-core-temporal-and-graph-quality.md`,
 §W2.1.
 
 ### Текущий baseline
@@ -68,7 +68,7 @@ bun run golden:knowledge-core:update    # обновить expected после �
 
 ### Источники истины
 
-- ТЗ: `plans/tz/2026-05-10-knowledge-core-tz.md`, раздел «Фаза 2 → Шаг 6».
+- ТЗ: `plans/archive/2026-05-10-knowledge-core-tz.md`, раздел «Фаза 2 → Шаг 6».
 - Архитектура: `second-brain/02_architecture/knowledge-core.md`.
 - Скелет: `backend/scripts/benchmark-knowledge-core.ts` — печатает структурные
   метрики Org. Реальный harness golden-set'а нужно писать поверх него.

@@ -24,14 +24,12 @@ describe('isPresentParticipant', () => {
   });
 
   it('сценарий бага: «позвал двоих → показало 5» схлопывается до 3', () => {
-    // хост + 2 не-пришедших приглашённых + 2 реально вошедших гостя.
-    // Сырой .length === 5; present-only === 3 (хост + 2 гостя).
     const participants = [
-      { invitationStatus: 'none' }, // host
-      { invitationStatus: 'invited' }, // invitee1 — не пришёл
-      { invitationStatus: 'invited' }, // invitee2 — не пришёл
-      { invitationStatus: 'none' }, // guest1 — вошёл
-      { invitationStatus: 'none' }, // guest2 — вошёл
+      { invitationStatus: 'none' },
+      { invitationStatus: 'invited' },
+      { invitationStatus: 'invited' },
+      { invitationStatus: 'none' },
+      { invitationStatus: 'none' },
     ];
 
     expect(participants.length).toBe(5);

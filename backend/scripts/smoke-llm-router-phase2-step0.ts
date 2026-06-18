@@ -1,30 +1,3 @@
-/**
- * Smoke-скрипт Шага 0 Фазы 2: LlmRouter с DeepSeek primary + JSON Schema strict.
- *
- * Что проверяем:
- *   1. `LlmRouterService.call({ taskType: 'block-distill', responseFormat: text })`
- *      возвращает непустой текст; `modelUsed` начинается с `deepseek:` или
- *      `openai-via-proxy:` (fallback) или `ollama:` (fallback fallback).
- *   2. Тот же call с `responseFormat: json_schema strict YesNoAnswer` —
- *      DeepSeek возвращает валидный JSON `{answer:"yes"|"no"}`.
- *   3. В `AiUsageLog` появилась запись с правильным `provider`/`model`/
- *      `taskType`/`tenantId`/`cachedTokens >= 0`/`costUsd > 0` (если price
- *      есть в LlmModelPrice).
- *
- * Требует:
- *   - DEEPSEEK_API_KEY (реальный, иначе fallback пройдёт на openai/ollama).
- *   - DATABASE_URL.
- *
- * Запуск:
- *   bun run scripts/smoke-llm-router-phase2-step0.ts
- *
- * Cleanup: удаляются AiUsageLog по test orgId. Org/User не трогаем —
- * могут быть другие данные в локальной БД.
- *
- * Скрипт намеренно поднимает урезанный Nest-контекст (без HTTP, без воркеров),
- * чтобы получить реальный `LlmRouterService` со всеми DI-зависимостями.
- */
-
 import 'reflect-metadata';
 
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -49,7 +22,6 @@ import { OpenAiProxyService } from '../src/modules/ai/services/openai-proxy.serv
 const prisma = createPrismaClient();
 
 async function ensureTestOrg(): Promise<{ orgId: string; tag: string }> {
-  // Берём первый существующий Org (иначе создаём новый smoke-org).
   const existing = await prisma.org.findFirst({ where: { deletedAt: null } });
   if (existing) {
     return { orgId: existing.id, tag: 'existing' };
@@ -115,7 +87,6 @@ async function main(): Promise<void> {
 
   await router.refreshCache();
 
-  // 1. Простой text-вызов.
   // eslint-disable-next-line no-console
   console.log('→ Test 1: responseFormat=text');
   const r1 = await router.call({
@@ -139,15 +110,14 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`✓ Test 1: modelUsed=${r1.modelUsed}, text=${JSON.stringify(r1.text.slice(0, 80))}`);
 
-  // 2. JSON Schema strict.
   // eslint-disable-next-line no-console
   console.log('→ Test 2: responseFormat=json_schema strict');
   const r2 = await router.call({
     taskType: 'block-distill',
     tenantId: orgId,
-    systemPrompt:
-      'You produce structured JSON answers strictly conforming to the given schema.',
-    userMessage: 'Is the sky blue on a sunny day? Respond with {"answer":"yes"} or {"answer":"no"}.',
+    systemPrompt: 'You produce structured JSON answers strictly conforming to the given schema.',
+    userMessage:
+      'Is the sky blue on a sunny day? Respond with {"answer":"yes"} or {"answer":"no"}.',
     responseFormat: {
       type: 'json_schema',
       name: 'YesNoAnswer',
@@ -170,7 +140,9 @@ async function main(): Promise<void> {
   try {
     parsed = JSON.parse(r2.text);
   } catch (err) {
-    throw new Error(`Test 2 fail: невалидный JSON: ${r2.text}; err=${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(
+      `Test 2 fail: невалидный JSON: ${r2.text}; err=${err instanceof Error ? err.message : String(err)}`,
+    );
   }
   if (
     typeof parsed !== 'object' ||
@@ -183,14 +155,15 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`✓ Test 2: modelUsed=${r2.modelUsed}, parsed=${JSON.stringify(parsed)}`);
 
-  // 3. Проверка AiUsageLog.
   const logs = await prisma.aiUsageLog.findMany({
     where: { tenantId: orgId, taskType: 'block-distill' },
     orderBy: { createdAt: 'desc' },
     take: 10,
   });
   if (logs.length < 2) {
-    throw new Error(`Test 3 fail: ожидали >=2 AiUsageLog записи для tenantId=${orgId}, нашли ${logs.length}`);
+    throw new Error(
+      `Test 3 fail: ожидали >=2 AiUsageLog записи для tenantId=${orgId}, нашли ${logs.length}`,
+    );
   }
   for (const log of logs.slice(0, 2)) {
     if (log.tenantId !== orgId) throw new Error('Test 3 fail: log.tenantId != orgId');
@@ -204,7 +177,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log('✓ Test 3: AiUsageLog OK');
 
-  // ─── Cleanup: удаляем только наши записи в AiUsageLog. ───
   await prisma.aiUsageLog.deleteMany({
     where: { tenantId: orgId, taskType: 'block-distill' },
   });

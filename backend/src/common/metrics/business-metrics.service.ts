@@ -268,6 +268,8 @@ export class BusinessMetricsService implements OnModuleInit {
   private blockerSynthesisRecurringTotal!: Counter<'status'>;
   private decisionStalledTotal!: Counter<string>;
   private decisionThroughputPercent!: Gauge<'tenant_top'>;
+  // ── task-dedup Ф3 — доля ложных закрытий (reopen после accepted-кандидата) ──
+  private taskClosureReopenRate!: Gauge<'tenant_top'>;
   private promiseCascadeAlertTotal!: Counter<string>;
   // ── Редизайн кабинета Ф8.1/Ф8.2 — риск-алерты + петля решений ──
   // theme_silence — surface риска «тема молчит N недель» (severity ∈
@@ -1807,6 +1809,15 @@ export class BusinessMetricsService implements OnModuleInit {
     this.decisionThroughputPercent = this.getOrCreateGauge({
       name: 'decision_throughput_percent',
       help: 'TZ-1 Ф3.B — доля решений, доведённых до actualOutcomes, % (несущая метрика витрины Ф5).',
+      labelNames: ['tenant_top'] as const,
+    });
+    // task-dedup (2026-06-16, Ф3) — доля ложных закрытий: задачи, закрытые через
+    // accepted-кандидат TaskClosureCandidate и затем переоткрытые (completedAt
+    // обнулён). Пересчитывается reconcile-cron'ом per-Org. Алёрт при превышении
+    // taskClosure.reopenRateAlert (бьёт по доверию авто-закрытию).
+    this.taskClosureReopenRate = this.getOrCreateGauge({
+      name: 'task_closure_reopen_rate',
+      help: 'task-dedup Ф3 — доля accepted-кандидатов на закрытие, чья задача была переоткрыта (0..1) по tenant_top.',
       labelNames: ['tenant_top'] as const,
     });
     // ── Редизайн кабинета Ф8.1/Ф8.2 — риск-алерты + петля решений ──
@@ -4918,6 +4929,15 @@ export class BusinessMetricsService implements OnModuleInit {
     this.decisionThroughputPercent.set(
       { tenant_top: args.tenantTop },
       Math.min(100, Math.max(0, args.value)),
+    );
+  }
+
+  /** Gauge `task_closure_reopen_rate{tenant_top}` (0..1) — task-dedup Ф3. */
+  setTaskClosureReopenRate(args: { tenantTop: string; value: number }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.taskClosureReopenRate.set(
+      { tenant_top: args.tenantTop },
+      Math.min(1, Math.max(0, args.value)),
     );
   }
 

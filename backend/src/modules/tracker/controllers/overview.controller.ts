@@ -9,10 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -24,15 +21,6 @@ import { IntegrationsStatusService } from '../services/integrations-status.servi
 import { OverviewService } from '../services/overview.service';
 import { WorkloadService } from '../services/workload.service';
 
-/**
- * Tracker Project Overview (2026-05-27) — REST для трёх новых вкладок:
- *  - `GET /api/v1/projects/:projectId/overview` — агрегат «обзор».
- *  - `GET /api/v1/projects/:projectId/workload` — таблица «участник × состояние».
- *  - `GET /api/v1/projects/:projectId/integrations-status` — состояние интеграций.
- *
- * Все три — read-only под TenantGuard + RBAC `project.read`.
- * Контракт: plans/tz/2026-05-27-tracker-project-overview.md.
- */
 @ApiTags('tracker / overview')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -91,8 +79,6 @@ export class OverviewController {
       userId: user.id,
     });
   }
-
-  // ── helpers ──
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

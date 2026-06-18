@@ -1,47 +1,43 @@
-'use client';
+"use client";
 
-import dynamic from 'next/dynamic';
-import Link from 'next/link';
-import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import useSWR from 'swr';
-import { useShallow } from 'zustand/react/shallow';
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import useSWR from "swr";
+import { useShallow } from "zustand/react/shallow";
 
-import { ApiError } from '@/api/api-error';
-import { tablesApi } from '@/api/tables.api';
-import { useAuth } from '@/contexts/auth-context';
+import { ApiError } from "@/api/api-error";
+import { tablesApi } from "@/api/tables.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   propertyFromApi,
   rowFromApi,
   tableFromApi,
   type TablePropType,
-} from '@/domain/table';
-import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+} from "@/domain/table";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-import { EmptyState } from './components/EmptyState';
-import { PendingPatchesPanel } from './components/PendingPatchesPanel';
-import { RowDetail } from './components/RowDetail';
-import { TableHeader } from './components/TableHeader';
+import { EmptyState } from "./components/EmptyState";
+import { PendingPatchesPanel } from "./components/PendingPatchesPanel";
+import { RowDetail } from "./components/RowDetail";
+import { TableHeader } from "./components/TableHeader";
 import {
   selectRowHeightPx,
   selectVisibleProperties,
   selectVisibleRows,
   useTableStore,
-} from './store/tableStore';
+} from "./store/tableStore";
 
-/**
- * `GridView` использует `@glideapps/glide-data-grid`, который работает на
- * Canvas → не подходит для SSR. Импортируем динамически с `ssr: false`.
- */
 const GridView = dynamic(
-  () => import('./components/GridView').then((m) => m.GridView),
+  () => import("./components/GridView").then((m) => m.GridView),
   {
     ssr: false,
     loading: () => (
@@ -68,25 +64,28 @@ export function TableClient({ tableId }: { tableId: string }) {
 
 function Content({ orgId, tableId }: { orgId: string; tableId: string }) {
   const tableSwr = useSWR(
-    ['table', orgId, tableId],
+    ["table", orgId, tableId],
     () => tablesApi.byId(orgId, tableId),
     { revalidateOnFocus: false },
   );
   const propsSwr = useSWR(
-    ['table-properties', orgId, tableId],
+    ["table-properties", orgId, tableId],
     () => tablesApi.listProperties(orgId, tableId),
     { revalidateOnFocus: false },
   );
   const rowsSwr = useSWR(
-    ['table-rows', orgId, tableId],
-    () => tablesApi.listRows(orgId, tableId, { limit: 1000, archived: 'active' }),
+    ["table-rows", orgId, tableId],
+    () =>
+      tablesApi.listRows(orgId, tableId, { limit: 1000, archived: "active" }),
     { revalidateOnFocus: false },
   );
 
-  const isLoading = tableSwr.isLoading || propsSwr.isLoading || rowsSwr.isLoading;
+  const isLoading =
+    tableSwr.isLoading || propsSwr.isLoading || rowsSwr.isLoading;
   const error = tableSwr.error ?? propsSwr.error ?? rowsSwr.error;
 
-  // Hydrate store при первой успешной загрузке всех трёх SWR'ов.
+  useRegisterBreadcrumb(tableSwr.data ? { label: tableSwr.data.name } : null);
+
   const hydrate = useTableStore((s) => s.hydrate);
   const reset = useTableStore((s) => s.reset);
   const loadPendingPatches = useTableStore((s) => s.loadPendingPatches);
@@ -103,7 +102,6 @@ function Content({ orgId, tableId }: { orgId: string; tableId: string }) {
       rows: rowsSwr.data.items.map(rowFromApi),
     });
     hydratedKey.current = key;
-    // Очередь подтверждений правок (Фаза 3) — после гидрата, тихо.
     void loadPendingPatches();
   }, [
     orgId,
@@ -123,10 +121,6 @@ function Content({ orgId, tableId }: { orgId: string; tableId: string }) {
     [reset],
   );
 
-  // Хлебные крошки: имя таблицы из уже загруженного объекта (TableApi.name —
-  // поля `title` у таблицы нет).
-  useRegisterBreadcrumb(tableSwr.data ? { label: tableSwr.data.name } : null);
-
   if (isLoading) {
     return (
       <div className="mx-auto w-full max-w-7xl space-y-4 px-6 py-8">
@@ -137,7 +131,7 @@ function Content({ orgId, tableId }: { orgId: string; tableId: string }) {
   }
 
   if (error) {
-    if (error instanceof ApiError && error.code === 'http_404') {
+    if (error instanceof ApiError && error.code === "http_404") {
       return (
         <div className="mx-auto w-full max-w-4xl px-6 py-8">
           <AdminEmpty
@@ -153,7 +147,7 @@ function Content({ orgId, tableId }: { orgId: string; tableId: string }) {
           message={
             error instanceof Error
               ? error.message
-              : 'Не удалось загрузить таблицу.'
+              : "Не удалось загрузить таблицу."
           }
           onRetry={() => {
             void tableSwr.mutate();
@@ -172,7 +166,6 @@ function Loaded() {
   const table = useTableStore((s) => s.table);
   const tableId = useTableStore((s) => s.tableId);
   const allProperties = useTableStore((s) => s.properties);
-  // View-aware: учитывает hiddenProps / propOrder / sorts из active view.
   const properties = useTableStore(useShallow(selectVisibleProperties));
   const rows = useTableStore(useShallow(selectVisibleRows));
   const allRows = useTableStore((s) => s.rows);
@@ -186,7 +179,6 @@ function Loaded() {
   const reorderColumn = useTableStore((s) => s.reorderColumn);
   const reorderRow = useTableStore((s) => s.reorderRow);
 
-  // ─── Очередь подтверждений + провенанс (Фаза 3) ────────────────────
   const pendingPatches = useTableStore((s) => s.pendingPatches);
   const pendingCount = useTableStore((s) => s.pendingCount);
   const approvePatch = useTableStore((s) => s.approvePatch);
@@ -198,10 +190,7 @@ function Loaded() {
   const setRowCellLocal = useTableStore((s) => s.setRowCellLocal);
   const [pendingOpen, setPendingOpen] = useState(false);
 
-  // ─── Карточка строки (Фаза 2) ──────────────────────────────────────
   const [openRowId, setOpenRowId] = useState<string | null>(null);
-  // Карточка ищет в полном списке (allRows) — даже если строка скрыта view-
-  // фильтром или сорт сдвинул индекс, ссылка по id всё равно работает.
   const openRow = allRows.find((r) => r.id === openRowId) ?? null;
   const onOpenRow = (rowId: string) => setOpenRowId(rowId);
   const onCloseRow = () => setOpenRowId(null);
@@ -212,7 +201,6 @@ function Loaded() {
     void updatePageContent(rowId, json);
   };
 
-  // Stable ref для AddColumnButton: пробрасываем addColumn без unwrap.
   const onAddColumn = async (type: TablePropType, name: string) => {
     await addColumn(type, name);
   };
@@ -221,11 +209,7 @@ function Loaded() {
     await addRow();
   };
 
-  const onCellEdited = (
-    rowId: string,
-    propertyId: string,
-    value: unknown,
-  ) => {
+  const onCellEdited = (rowId: string, propertyId: string, value: unknown) => {
     void updateCell(rowId, propertyId, value);
   };
 
@@ -241,11 +225,9 @@ function Loaded() {
     void reorderRow(r.id, to);
   };
 
-  // Trigger AddColumnButton из EmptyState — простая прокрутка к кнопке
-  // (отдельный popover-controlled state не делаем, чтобы не плодить prop-drilling).
   const headerRef = useRef<HTMLDivElement>(null);
   const onAddColumnClick = () => {
-    headerRef.current?.scrollIntoView({ behavior: 'smooth' });
+    headerRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   if (!table) return null;
@@ -301,9 +283,7 @@ function Loaded() {
         </div>
       )}
 
-      {/* Карточка строки (Фаза 2) — отрисовываем все свойства, включая скрытые
-          view-фильтром, чтобы можно было править любое поле из карточки.
-          Provenance (Фаза 3): карточка сама грузит источники авто-правок. */}
+      {}
       {tableId ? (
         <RowDetail
           open={openRowId !== null}
@@ -321,7 +301,7 @@ function Loaded() {
         />
       ) : null}
 
-      {/* Очередь подтверждений правок (Фаза 3, Event-to-Cells). */}
+      {}
       <PendingPatchesPanel
         open={pendingOpen}
         onClose={() => setPendingOpen(false)}

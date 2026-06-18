@@ -18,45 +18,21 @@ import {
   isTierKey,
 } from './tier-config';
 
-/**
- * Resolved entitlement: tier + флаги фич + значения квот после применения override'ов.
- * Это «горячая» структура, которую читают guards и quota call-sites.
- */
 export interface ResolvedEntitlement {
   tier: TierKey;
   features: Record<FeatureKey, boolean>;
   quotas: Record<QuotaKey, number>;
-  /** Override-карты (для отображения в UI/Z-Admin). */
   featureOverrides: Partial<Record<FeatureKey, boolean>>;
   quotaOverrides: Partial<Record<QuotaKey, number>>;
   notes: string | null;
-  /** Кто стоит за tier'ом до применения fail-safe (для UI). */
   rawTier: string;
-  /** True — если в БД оказался незнакомый tier и сработала fail-safe деградация. */
   failedSafe: boolean;
 }
 
-/**
- * EntitlementService — единая точка определения «что доступно Org» (Фаза 12).
- *
- * См. plans/2026-05-10-phase-12-execution.md §Шаг 3.
- *
- * Алгоритм `getEntitlement`:
- *   1. Cache lookup `entitlement:<tenantId>` в Redis (TTL 300s).
- *   2. Miss → `prisma.orgEntitlement.findUnique`.
- *   3. Если записи нет — fail-safe `tier_standard` + log warn.
- *   4. Если в БД незнакомый tier — fail-safe `tier_standard` + log warn (не падаем).
- *   5. Merge: `features = {...TIER_CONFIG[tier].features, ...featureOverrides}`,
- *             `quotas  = {...TIER_CONFIG[tier].quotas,  ...quotaOverrides}`.
- *   6. Cache write TTL 300 сек.
- *
- * Все мутирующие методы инвалидируют кэш.
- */
 @Injectable()
 export class EntitlementService {
   private readonly logger = new Logger(EntitlementService.name);
 
-  /** TTL кэша Redis. 5 минут — компромисс между свежестью и нагрузкой. */
   private static readonly CACHE_TTL_SECONDS = 300;
 
   constructor(
@@ -65,13 +41,9 @@ export class EntitlementService {
     @Inject(AuditLogService) private readonly audit: AuditLogService,
   ) {}
 
-  // ──────────────────────────── public API ────────────────────────────
-
-  /** Получить resolved-entitlement для Org с учётом cache + override'ов. */
   async getEntitlement(tenantId: string): Promise<ResolvedEntitlement> {
     const cacheKey = this.cacheKey(tenantId);
 
-    // 1. Cache lookup.
     try {
       const cached = await this.redis.client.get(cacheKey);
       if (cached) {
@@ -79,7 +51,6 @@ export class EntitlementService {
         return parsed;
       }
     } catch (err) {
-      // Если Redis сбоит — продолжаем без кэша (fail-open для UX).
       this.logger.warn(
         `EntitlementService.getEntitlement cache read fail для ${tenantId}: ${
           err instanceof Error ? err.message : String(err)
@@ -87,7 +58,6 @@ export class EntitlementService {
       );
     }
 
-    // 2. БД.
     const record = await this.prisma.orgEntitlement.findUnique({
       where: { tenantId },
     });
@@ -107,7 +77,6 @@ export class EntitlementService {
       );
     }
 
-    // 3. Cache write (best-effort).
     try {
       await this.redis.client.set(
         cacheKey,
@@ -126,20 +95,17 @@ export class EntitlementService {
     return resolved;
   }
 
-  /** True — если фича доступна для данной Org (учёт override'ов). */
   async hasFeature(tenantId: string, feature: FeatureKey): Promise<boolean> {
     const ent = await this.getEntitlement(tenantId);
     return ent.features[feature] === true;
   }
 
-  /** Значение квоты с учётом override'ов. Никогда не отрицательное. */
   async getQuota(tenantId: string, quota: QuotaKey): Promise<number> {
     const ent = await this.getEntitlement(tenantId);
     const v = ent.quotas[quota];
     return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0;
   }
 
-  /** Сбросить кэш (используется после mutate). */
   async invalidate(tenantId: string): Promise<void> {
     try {
       await this.redis.client.del(this.cacheKey(tenantId));
@@ -152,10 +118,6 @@ export class EntitlementService {
     }
   }
 
-  /**
-   * Сменить tier Org. Upsert + инвалидация кэша + audit-лог `TIER_CHANGED`.
-   * `reason` обязателен (фиксируется в audit для compliance).
-   */
   async setTier(
     tenantId: string,
     tier: TierKey,
@@ -188,11 +150,6 @@ export class EntitlementService {
     });
   }
 
-  /**
-   * Записать `notes` (ручной комментарий super_admin'а в Z-Admin).
-   * Если записи `OrgEntitlement` нет — создаётся с дефолтным tier из схемы.
-   * Не пишет AuditLog (notes — UI-вспомогательное поле, не security event).
-   */
   async setNotes(tenantId: string, notes: string | null): Promise<void> {
     await this.prisma.orgEntitlement.upsert({
       where: { tenantId },
@@ -202,10 +159,6 @@ export class EntitlementService {
     await this.invalidate(tenantId);
   }
 
-  /**
-   * Установить per-Org override на конкретную фичу или квоту.
-   * `value === null` → удалить override.
-   */
   async setOverride(
     tenantId: string,
     kind: 'feature' | 'quota',
@@ -230,7 +183,6 @@ export class EntitlementService {
       }
     }
 
-    // Загружаем существующие override'ы (нужно для merge / удаления).
     const existing = await this.prisma.orgEntitlement.findUnique({
       where: { tenantId },
     });
@@ -259,10 +211,8 @@ export class EntitlementService {
       where: { tenantId },
       create: {
         tenantId,
-        featureOverrides:
-          featureOverridesJson === Prisma.DbNull ? undefined : featureOverridesJson,
-        quotaOverrides:
-          quotaOverridesJson === Prisma.DbNull ? undefined : quotaOverridesJson,
+        featureOverrides: featureOverridesJson === Prisma.DbNull ? undefined : featureOverridesJson,
+        quotaOverrides: quotaOverridesJson === Prisma.DbNull ? undefined : quotaOverridesJson,
       },
       update: {
         featureOverrides: featureOverridesJson,
@@ -286,8 +236,6 @@ export class EntitlementService {
     });
   }
 
-  // ──────────────────────────── helpers ────────────────────────────
-
   private cacheKey(tenantId: string): string {
     return `entitlement:${tenantId}`;
   }
@@ -299,9 +247,6 @@ export class EntitlementService {
     return {};
   }
 
-  /**
-   * Собрать ResolvedEntitlement из БД-записи. На неизвестном tier'е fall back.
-   */
   private resolveFromDb(
     rawTier: string,
     featureOverridesRaw: unknown,
@@ -356,8 +301,6 @@ export class EntitlementService {
     quotaOverrides: Partial<Record<QuotaKey, number>> | null,
     notes: string | null = null,
   ): ResolvedEntitlement {
-    // ТЗ 2026-05-27 (billing-tochka-referral-dadata-z): fail-safe деградирует
-    // на целевой `tier_standard` (все фичи `true`), а не на legacy `tier_basic`.
     return {
       tier: 'tier_standard',
       features: { ...TIER_CONFIG.tier_standard.features },
@@ -370,9 +313,7 @@ export class EntitlementService {
     };
   }
 
-  private normalizeFeatureOverrides(
-    raw: unknown,
-  ): Partial<Record<FeatureKey, boolean>> {
+  private normalizeFeatureOverrides(raw: unknown): Partial<Record<FeatureKey, boolean>> {
     const out: Partial<Record<FeatureKey, boolean>> = {};
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
     for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {

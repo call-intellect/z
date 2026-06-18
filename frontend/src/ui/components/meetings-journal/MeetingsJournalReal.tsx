@@ -1,16 +1,10 @@
-'use client';
+"use client";
 
-/**
- * Production-версия журнала встреч (master-detail).
- * Слева — список с фильтрами, поиском, группировкой по датам и
- * массовыми действиями. Справа — детальная карточка выбранной встречи.
- */
-
-import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import useSWR from 'swr';
-import { motion, AnimatePresence } from 'motion/react';
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import useSWR from "swr";
+import { motion, AnimatePresence } from "motion/react";
 import {
   ArrowUpRight,
   Calendar,
@@ -32,42 +26,38 @@ import {
   Users,
   UserSquare2,
   X,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { meetingsApi } from '@/api/meetings.api';
-import { tagsApi } from '@/api/tags.api';
-import { exportsApi } from '@/api/exports.api';
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { meetingsApi } from "@/api/meetings.api";
+import { tagsApi } from "@/api/tags.api";
+import { exportsApi } from "@/api/exports.api";
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   meetingSummaryFromApi,
   meetingDurationSeconds,
   isJoinableStatus,
   meetingStatusView,
   MEETING_TYPE_LABEL_RU,
-} from '@/domain/meeting';
-import { pickPrimarySummary } from '@/domain/ai-result';
-import { tagFromApi, type TagDomain } from '@/domain/tag';
-import { pickPrimaryTasks } from '@/domain/task';
-import { useIsMobile } from '@/hooks/useMediaQuery';
-import { useMeetingTasks } from '@/hooks/use-meeting-tasks';
+} from "@/domain/meeting";
+import { pickPrimarySummary } from "@/domain/ai-result";
+import { tagFromApi, type TagDomain } from "@/domain/tag";
+import { pickPrimaryTasks } from "@/domain/task";
+import { useIsMobile } from "@/hooks/useMediaQuery";
+import { useMeetingTasks } from "@/hooks/use-meeting-tasks";
 import {
   MEETING_STATUSES,
   MEETING_TYPES,
   type MeetingStatus,
   type MeetingType,
-} from '@/domain/enums';
+} from "@/domain/enums";
 
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Checkbox } from '@/ui/shadcn/checkbox';
-import { Input } from '@/ui/shadcn/input';
-import { Separator } from '@/ui/shadcn/separator';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/ui/shadcn/popover';
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Checkbox } from "@/ui/shadcn/checkbox";
+import { Input } from "@/ui/shadcn/input";
+import { Separator } from "@/ui/shadcn/separator";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { Popover, PopoverContent, PopoverTrigger } from "@/ui/shadcn/popover";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -76,46 +66,49 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/ui/shadcn/dropdown-menu';
-import { toast } from '@/ui/shadcn/toast';
-import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
-import { cn } from '@/ui/shadcn/lib/utils';
-import { InviteDialog } from '@/ui/shared/InviteDialog';
-import { copyToClipboard } from '@/lib/copy-to-clipboard';
+} from "@/ui/shadcn/dropdown-menu";
+import { toast } from "@/ui/shadcn/toast";
+import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
+import { cn } from "@/ui/shadcn/lib/utils";
+import { InviteDialog } from "@/ui/shared/InviteDialog";
+import { copyToClipboard } from "@/lib/copy-to-clipboard";
 
-import { fmtDurationCompact } from '@/ui/components/meeting-result-v2/format-utils';
+import { fmtDurationCompact } from "@/ui/components/meeting-result-v2/format-utils";
+import { MeetingSummaryRender } from "@/ui/components/meeting-result-v2/MeetingSummaryRender";
 
 const STATUS_LABEL: Partial<Record<MeetingStatus, string>> = {
-  scheduled: 'Запланирована',
-  active: 'Идёт',
-  completed: 'Завершена',
-  recording_processing: 'Обработка записи',
-  recording_ready: 'Запись готова',
-  transcription_processing: 'Транскрипция',
-  transcription_ready: 'Транскрипция готова',
-  ai_processing: 'Готовим отчёт',
-  ai_ready: 'Готово',
-  failed: 'Ошибка',
-  // Запись в порядке, упала только AI-ветка (транскрибация/отчёт).
-  ai_failed: 'Отчёт не готов',
-  // Загруженная запись распознана — ждём подписи говорящих (ТЗ-5 Ф5).
-  awaiting_speakers: 'Подпишите говорящих',
+  scheduled: "Запланирована",
+  active: "Идёт",
+  completed: "Завершена",
+  recording_processing: "Обработка записи",
+  recording_ready: "Запись готова",
+  transcription_processing: "Транскрипция",
+  transcription_ready: "Транскрипция готова",
+  ai_processing: "Готовим отчёт",
+  ai_ready: "Готово",
+  failed: "Ошибка",
+  ai_failed: "Отчёт не готов",
+  awaiting_speakers: "Подпишите говорящих",
 };
 
-type Group = 'today' | 'week' | 'earlier';
+type Group = "today" | "week" | "earlier";
 const GROUP_LABEL: Record<Group, string> = {
-  today: 'Сегодня',
-  week: 'На неделе',
-  earlier: 'Ранее',
+  today: "Сегодня",
+  week: "На неделе",
+  earlier: "Ранее",
 };
 
 function classifyGroup(d: Date): Group {
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  if (d >= startOfToday) return 'today';
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  );
+  if (d >= startOfToday) return "today";
   const weekAgo = new Date(startOfToday.getTime() - 6 * 24 * 60 * 60 * 1000);
-  if (d >= weekAgo) return 'week';
-  return 'earlier';
+  if (d >= weekAgo) return "week";
+  return "earlier";
 }
 
 function useDebouncedValue<T>(value: T, delay = 250): T {
@@ -130,27 +123,27 @@ function useDebouncedValue<T>(value: T, delay = 250): T {
 async function copyMeetingLink(meetingId: string): Promise<void> {
   const url = `${window.location.origin}/m/${meetingId}`;
   const ok = await copyToClipboard(url);
-  if (ok) toast.success('Ссылка скопирована');
-  else toast.error('Не удалось скопировать ссылку');
+  if (ok) toast.success("Ссылка скопирована");
+  else toast.error("Не удалось скопировать ссылку");
 }
 
 export function MeetingsJournalReal() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const selectedId = searchParams.get('selected');
+  const selectedId = searchParams.get("selected");
   const isMobile = useIsMobile();
 
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 250);
   const [typeFilters, setTypeFilters] = useState<MeetingType[]>([]);
   const [statusFilters, setStatusFilters] = useState<MeetingStatus[]>([]);
   const [tagFilters, setTagFilters] = useState<string[]>([]);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const { ask, dialog: confirmDialog } = useConfirmDialog();
 
-  const { data: tagsData } = useSWR('tags-list', () => tagsApi.list(), {
+  const { data: tagsData } = useSWR("tags-list", () => tagsApi.list(), {
     revalidateOnFocus: false,
   });
   const allTags: TagDomain[] = useMemo(
@@ -160,11 +153,11 @@ export function MeetingsJournalReal() {
 
   const queryKey = useMemo(
     () => [
-      'meetings-list-v2',
+      "meetings-list-v2",
       debouncedSearch,
-      typeFilters.join(','),
-      statusFilters.join(','),
-      tagFilters.join(','),
+      typeFilters.join(","),
+      statusFilters.join(","),
+      tagFilters.join(","),
       dateFrom,
       dateTo,
     ],
@@ -193,7 +186,11 @@ export function MeetingsJournalReal() {
   );
 
   const grouped = useMemo(() => {
-    const out: Record<Group, typeof items> = { today: [], week: [], earlier: [] };
+    const out: Record<Group, typeof items> = {
+      today: [],
+      week: [],
+      earlier: [],
+    };
     for (const m of items) {
       const ref = m.startedAt ?? m.createdAt;
       out[classifyGroup(ref)].push(m);
@@ -203,14 +200,11 @@ export function MeetingsJournalReal() {
 
   const onSelect = (id: string) => {
     if (isMobile) {
-      // На мобильном detail-панель не помещается рядом со списком — открываем
-      // полноценную страницу результата встречи. Кнопка «Назад» возвращает к
-      // списку.
       router.push(`/meetings/${encodeURIComponent(id)}/result`);
       return;
     }
     const params = new URLSearchParams(searchParams.toString());
-    params.set('selected', id);
+    params.set("selected", id);
     router.replace(`/meetings?${params.toString()}`);
   };
 
@@ -227,7 +221,8 @@ export function MeetingsJournalReal() {
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
 
-  const allCheckedOnPage = items.length > 0 && items.every((m) => checked.has(m.id));
+  const allCheckedOnPage =
+    items.length > 0 && items.every((m) => checked.has(m.id));
   const toggleAll = () => {
     if (allCheckedOnPage) {
       setChecked(new Set());
@@ -240,7 +235,7 @@ export function MeetingsJournalReal() {
     if (checked.size === 0) return;
     const ok = await ask({
       title: `Удалить ${checked.size} встреч?`,
-      confirmLabel: 'Удалить',
+      confirmLabel: "Удалить",
       destructive: true,
     });
     if (!ok) return;
@@ -251,38 +246,37 @@ export function MeetingsJournalReal() {
       setChecked(new Set());
       void mutate();
     } catch (e) {
-      const msg = humanizeApiError(e, 'Ошибка удаления');
+      const msg = humanizeApiError(e, "Ошибка удаления");
       toast.error(msg);
     }
   };
 
   const onDeleteOne = async (id: string) => {
     const ok = await ask({
-      title: 'Удалить встречу?',
+      title: "Удалить встречу?",
       description:
-        'Встреча и её запись исчезнут из списка. Восстановить её самостоятельно нельзя.',
-      confirmLabel: 'Удалить',
+        "Встреча и её запись исчезнут из списка. Восстановить её самостоятельно нельзя.",
+      confirmLabel: "Удалить",
       destructive: true,
     });
     if (!ok) return;
     try {
       await meetingsApi.softDelete(id);
-      toast.success('Встреча удалена');
+      toast.success("Встреча удалена");
       setChecked((prev) => {
         const next = new Set(prev);
         next.delete(id);
         return next;
       });
-      // Если удалили встречу, открытую в detail-панели — сбрасываем выбор.
       if (selectedId === id) {
         const params = new URLSearchParams(searchParams.toString());
-        params.delete('selected');
+        params.delete("selected");
         const qs = params.toString();
-        router.replace(`/meetings${qs ? `?${qs}` : ''}`);
+        router.replace(`/meetings${qs ? `?${qs}` : ""}`);
       }
       void mutate();
     } catch (e) {
-      const msg = humanizeApiError(e, 'Ошибка удаления');
+      const msg = humanizeApiError(e, "Ошибка удаления");
       toast.error(msg);
     }
   };
@@ -291,13 +285,11 @@ export function MeetingsJournalReal() {
     if (checked.size === 0) return;
     const ids = [...checked];
     try {
-      await Promise.all(
-        ids.map((id) => tagsApi.setForMeeting(id, { tagIds })),
-      );
+      await Promise.all(ids.map((id) => tagsApi.setForMeeting(id, { tagIds })));
       toast.success(`Теги обновлены у ${ids.length}`);
       setChecked(new Set());
     } catch (e) {
-      const msg = humanizeApiError(e, 'Ошибка');
+      const msg = humanizeApiError(e, "Ошибка");
       toast.error(msg);
     }
   };
@@ -313,21 +305,25 @@ export function MeetingsJournalReal() {
         meetingIds: [...checked],
         ...opts,
       });
-      toast.success('Экспорт запущен. Готовый ZIP появится в /settings/exports.');
+      toast.success(
+        "Экспорт запущен. Готовый ZIP появится в /settings/exports.",
+      );
       setChecked(new Set());
     } catch (e) {
-      const msg = humanizeApiError(e, 'Ошибка экспорта');
+      const msg = humanizeApiError(e, "Ошибка экспорта");
       toast.error(msg);
     }
   };
 
   return (
     <div className="grid h-[calc(100vh-var(--header-h,0px))] grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)]">
-      {/* Master / list */}
+      {}
       <div className="flex h-full min-h-0 flex-col border-r border-border-subtle bg-bg-elevated">
         <div className="flex flex-col gap-3 px-5 pb-4 pt-6">
           <div className="flex items-center justify-between">
-            <h1 className="text-xl font-semibold tracking-tight">Мои встречи</h1>
+            <h1 className="text-xl font-semibold tracking-tight">
+              Мои встречи
+            </h1>
             <div className="flex items-center gap-2">
               <Badge variant="secondary">{data?.total ?? items.length}</Badge>
               <DropdownMenu>
@@ -339,13 +335,13 @@ export function MeetingsJournalReal() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuItem
-                    onSelect={() => router.push('/meetings/create')}
+                    onSelect={() => router.push("/meetings/create")}
                   >
                     <Plus size={14} />
                     Создать встречу
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    onSelect={() => router.push('/meetings/upload')}
+                    onSelect={() => router.push("/meetings/upload")}
                   >
                     <Upload size={14} />
                     Загрузить запись
@@ -429,7 +425,7 @@ export function MeetingsJournalReal() {
               </Button>
             </div>
           ) : (
-            (['today', 'week', 'earlier'] as Group[]).map((group) => {
+            (["today", "week", "earlier"] as Group[]).map((group) => {
               const groupItems = grouped[group];
               if (groupItems.length === 0) return null;
               return (
@@ -467,7 +463,7 @@ export function MeetingsJournalReal() {
         </div>
       </div>
 
-      {/* Detail — на mobile скрыт, выбор открывает /meetings/[id]/result */}
+      {}
       <div className="hidden h-full min-h-0 flex-col overflow-hidden bg-bg-base lg:flex">
         <AnimatePresence mode="wait">
           {selectedId ? (
@@ -491,8 +487,6 @@ export function MeetingsJournalReal() {
   );
 }
 
-// ─────────────── List row ───────────────
-
 function MeetingRowCard({
   item,
   active,
@@ -513,22 +507,20 @@ function MeetingRowCard({
   const date = item.startedAt ?? item.createdAt;
   const typeLabel = MEETING_TYPE_LABEL_RU[item.type] ?? item.type;
   const joinable = isJoinableStatus(item.status);
-  const statusView = meetingStatusView(item.status);
   const isProcessing =
-    item.status === 'recording_processing' ||
-    item.status === 'transcription_processing' ||
-    item.status === 'ai_processing';
-  const isFailed = item.status === 'failed';
-  // Запись есть, но AI-отчёт не сформирован — мягкий «warning», не «danger».
-  const isAiFailed = item.status === 'ai_failed';
-  // Загруженная запись распознана — ждём подписи говорящих (ТЗ-5 Ф5).
-  const isAwaitingSpeakers = item.status === 'awaiting_speakers';
+    item.status === "recording_processing" ||
+    item.status === "transcription_processing" ||
+    item.status === "ai_processing";
+  const isFailed = item.status === "failed";
+  const isAiFailed = item.status === "ai_failed";
+  const isAwaitingSpeakers = item.status === "awaiting_speakers";
+  const statusView = meetingStatusView(item.status);
 
   return (
     <div
       className={cn(
-        'group relative flex w-full flex-col gap-1.5 rounded-md px-3 py-3 text-left transition-colors',
-        active ? 'bg-bg-overlay' : 'hover:bg-bg-overlay/60',
+        "group relative flex w-full flex-col gap-1.5 rounded-md px-3 py-3 text-left transition-colors",
+        active ? "bg-bg-overlay" : "hover:bg-bg-overlay/60",
       )}
     >
       {active && (
@@ -613,14 +605,19 @@ function MeetingRowCard({
         <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
           {typeLabel}
         </Badge>
-        <Badge className={cn('px-1.5 py-0 text-[10px]', statusView.chipClass)}>
+        <Badge className={cn("px-1.5 py-0 text-[10px]", statusView.chipClass)}>
           {statusView.label}
         </Badge>
         <span className="inline-flex items-center gap-1">
           <Clock size={10} strokeWidth={1.75} />
           <span className="font-mono">{fmtDurationCompact(durMs)}</span>
         </span>
-        <span>{date.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}</span>
+        <span>
+          {date.toLocaleString("ru-RU", {
+            dateStyle: "short",
+            timeStyle: "short",
+          })}
+        </span>
       </div>
       {joinable && (
         <div className="flex flex-wrap items-center gap-2 pl-6 pt-1">
@@ -666,8 +663,6 @@ function MeetingRowCard({
   );
 }
 
-// ─────────────── Filter chips ───────────────
-
 function FilterChips({
   typeFilters,
   statusFilters,
@@ -711,14 +706,14 @@ function FilterChips({
           <button
             type="button"
             className={cn(
-              'inline-flex shrink-0 snap-start items-center gap-1.5 rounded-xs border px-2.5 py-1 text-xs transition-colors',
+              "inline-flex shrink-0 snap-start items-center gap-1.5 rounded-xs border px-2.5 py-1 text-xs transition-colors",
               typeActive
-                ? 'border-accent-border bg-accent-muted text-accent'
-                : 'border-border-subtle bg-bg-overlay text-fg-secondary hover:text-fg-primary',
+                ? "border-accent-border bg-accent-muted text-accent"
+                : "border-border-subtle bg-bg-overlay text-fg-secondary hover:text-fg-primary",
             )}
           >
             <Filter size={11} strokeWidth={1.75} />
-            {typeActive ? `${typeFilters.length} тип(ов)` : 'Тип'}
+            {typeActive ? `${typeFilters.length} тип(ов)` : "Тип"}
             {typeActive && (
               <X
                 size={11}
@@ -752,14 +747,14 @@ function FilterChips({
           <button
             type="button"
             className={cn(
-              'inline-flex shrink-0 snap-start items-center gap-1.5 rounded-xs border px-2.5 py-1 text-xs transition-colors',
+              "inline-flex shrink-0 snap-start items-center gap-1.5 rounded-xs border px-2.5 py-1 text-xs transition-colors",
               statusActive
-                ? 'border-accent-border bg-accent-muted text-accent'
-                : 'border-border-subtle bg-bg-overlay text-fg-secondary hover:text-fg-primary',
+                ? "border-accent-border bg-accent-muted text-accent"
+                : "border-border-subtle bg-bg-overlay text-fg-secondary hover:text-fg-primary",
             )}
           >
             <Filter size={11} strokeWidth={1.75} />
-            {statusActive ? `${statusFilters.length} статусов` : 'Статус'}
+            {statusActive ? `${statusFilters.length} статусов` : "Статус"}
             {statusActive && (
               <X
                 size={11}
@@ -793,14 +788,14 @@ function FilterChips({
           <button
             type="button"
             className={cn(
-              'inline-flex shrink-0 snap-start items-center gap-1.5 rounded-xs border px-2.5 py-1 text-xs transition-colors',
+              "inline-flex shrink-0 snap-start items-center gap-1.5 rounded-xs border px-2.5 py-1 text-xs transition-colors",
               dateActive
-                ? 'border-accent-border bg-accent-muted text-accent'
-                : 'border-border-subtle bg-bg-overlay text-fg-secondary hover:text-fg-primary',
+                ? "border-accent-border bg-accent-muted text-accent"
+                : "border-border-subtle bg-bg-overlay text-fg-secondary hover:text-fg-primary",
             )}
           >
             <Calendar size={11} strokeWidth={1.75} />
-            {dateActive ? 'Дата ✓' : 'Любая дата'}
+            {dateActive ? "Дата ✓" : "Любая дата"}
           </button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-72 space-y-3">
@@ -824,8 +819,8 @@ function FilterChips({
             variant="ghost"
             size="sm"
             onClick={() => {
-              setDateFrom('');
-              setDateTo('');
+              setDateFrom("");
+              setDateTo("");
             }}
           >
             Сбросить
@@ -838,14 +833,14 @@ function FilterChips({
           <button
             type="button"
             className={cn(
-              'inline-flex shrink-0 snap-start items-center gap-1.5 rounded-xs border px-2.5 py-1 text-xs transition-colors',
+              "inline-flex shrink-0 snap-start items-center gap-1.5 rounded-xs border px-2.5 py-1 text-xs transition-colors",
               tagActive
-                ? 'border-accent-border bg-accent-muted text-accent'
-                : 'border-border-subtle bg-bg-overlay text-fg-secondary hover:text-fg-primary',
+                ? "border-accent-border bg-accent-muted text-accent"
+                : "border-border-subtle bg-bg-overlay text-fg-secondary hover:text-fg-primary",
             )}
           >
             <TagIcon size={11} strokeWidth={1.75} />
-            {tagActive ? `${tagFilters.length} тег(ов)` : 'Теги'}
+            {tagActive ? `${tagFilters.length} тег(ов)` : "Теги"}
             {tagActive && (
               <X
                 size={11}
@@ -885,8 +880,6 @@ function FilterChips({
   );
 }
 
-// ─────────────── Bulk actions ───────────────
-
 function BulkActionsToolbar({
   count,
   allTags,
@@ -912,7 +905,12 @@ function BulkActionsToolbar({
   return (
     <div className="ml-auto flex items-center gap-1.5 rounded border border-border-subtle bg-bg-card px-2 py-1 text-xs">
       <span className="font-mono text-accent">{count}</span>
-      <Button variant="ghost" size="sm" onClick={onDelete} className="h-6 px-2 text-xs">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onDelete}
+        className="h-6 px-2 text-xs"
+      >
         <Trash2 size={11} />
         Удалить
       </Button>
@@ -1016,8 +1014,6 @@ function BulkActionsToolbar({
   );
 }
 
-// ─────────────── Detail pane ───────────────
-
 function DetailEmpty() {
   return (
     <div className="grid h-full place-items-center px-6 py-16 text-center text-fg-tertiary">
@@ -1031,7 +1027,7 @@ function DetailEmpty() {
 
 function MeetingDetailPane({ meetingId }: { meetingId: string }) {
   const { data, isLoading, error } = useSWR(
-    ['meeting-result-mini', meetingId],
+    ["meeting-result-mini", meetingId],
     () => meetingsApi.result(meetingId),
     { revalidateOnFocus: false },
   );
@@ -1052,7 +1048,9 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
     return (
       <div className="grid h-full place-items-center px-6 py-16 text-center">
         <div>
-          <div className="text-sm text-fg-secondary">Не удалось загрузить детали</div>
+          <div className="text-sm text-fg-secondary">
+            Не удалось загрузить детали
+          </div>
         </div>
       </div>
     );
@@ -1063,26 +1061,23 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
   const participants = data.participants ?? [];
   const recording = data.recording;
   const aiResult = data.aiResult;
-  // Р6: единый селектор канонической сводки (summaryFast ?? summary),
-  // чтобы превью журнала совпадало со страницей результата (конец «дубля сводок»).
   const summary = pickPrimarySummary(aiResult)?.markdown ?? null;
-  // S6-03: задачи из таблицы Task (тот же источник, что страница результата),
-  // а НЕ из устаревшего пустого aiResult.tasks. pickPrimaryTasks объединяет fast+main.
   const tasks = pickPrimaryTasks(taskRows);
 
   const durMs =
-    typeof meeting.durationMs === 'number'
+    typeof meeting.durationMs === "number"
       ? meeting.durationMs
       : recording?.durationSeconds
         ? recording.durationSeconds * 1000
         : null;
 
-  const typeLabel = MEETING_TYPE_LABEL_RU[meeting.type as MeetingType] ?? meeting.type;
+  const typeLabel =
+    MEETING_TYPE_LABEL_RU[meeting.type as MeetingType] ?? meeting.type;
   const isProcessing =
-    meeting.status === 'recording_processing' ||
-    meeting.status === 'transcription_processing' ||
-    meeting.status === 'ai_processing';
-  const isFailed = meeting.status === 'failed';
+    meeting.status === "recording_processing" ||
+    meeting.status === "transcription_processing" ||
+    meeting.status === "ai_processing";
+  const isFailed = meeting.status === "failed";
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -1111,7 +1106,9 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
             {meeting.startedAt && (
               <>
                 <span className="text-fg-tertiary">·</span>
-                <span>{new Date(meeting.startedAt).toLocaleString('ru-RU')}</span>
+                <span>
+                  {new Date(meeting.startedAt).toLocaleString("ru-RU")}
+                </span>
               </>
             )}
           </div>
@@ -1157,11 +1154,12 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
             <div className="flex flex-col gap-6">
               {summary ? (
                 <section>
-                  <SectionHeader icon={<Sparkles size={14} />} title="Краткое содержание" />
+                  <SectionHeader
+                    icon={<Sparkles size={14} />}
+                    title="Краткое содержание"
+                  />
                   <div className="rounded-lg border border-border-subtle bg-bg-card p-5">
-                    <p className="m-0 text-sm leading-relaxed text-fg-primary">
-                      {summary}
-                    </p>
+                    <MeetingSummaryRender markdown={summary} />
                   </div>
                 </section>
               ) : (
@@ -1183,7 +1181,7 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
                         className="rounded-full border border-border-subtle bg-bg-card px-3 py-1 text-sm text-fg-secondary"
                       >
                         {p.name}
-                        {p.role === 'host' && (
+                        {p.role === "host" && (
                           <span className="ml-1 rounded bg-accent-muted px-1 text-[10px] text-accent">
                             ведущий
                           </span>
@@ -1213,10 +1211,10 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
                   ) : (
                     <ul className="flex flex-col">
                       {tasks.slice(0, 5).map((t) => {
-                        const title = t.title || '—';
+                        const title = t.title || "—";
                         const assignee = t.assignee ?? undefined;
                         const due = t.dueDate
-                          ? t.dueDate.toLocaleDateString('ru-RU')
+                          ? t.dueDate.toLocaleDateString("ru-RU")
                           : undefined;
                         return (
                           <li
@@ -1235,7 +1233,9 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
                               {(assignee || due) && (
                                 <div className="mt-1 flex items-center gap-2 text-xs text-fg-tertiary">
                                   {assignee && (
-                                    <span className="font-mono">{assignee}</span>
+                                    <span className="font-mono">
+                                      {assignee}
+                                    </span>
                                   )}
                                   {due && (
                                     <>
@@ -1280,9 +1280,15 @@ function DetailProcessing() {
   return (
     <div className="grid place-items-center py-24 text-center">
       <div className="mb-4 grid h-12 w-12 place-items-center rounded-full bg-accent-muted">
-        <Sparkles size={20} className="animate-pulse text-accent" strokeWidth={1.5} />
+        <Sparkles
+          size={20}
+          className="animate-pulse text-accent"
+          strokeWidth={1.5}
+        />
       </div>
-      <div className="text-base font-medium text-fg-primary">Кора обрабатывает запись</div>
+      <div className="text-base font-medium text-fg-primary">
+        Кора обрабатывает запись
+      </div>
       <div className="mt-1 max-w-sm text-sm text-fg-secondary">
         Транскрипция и анализ занимают 2–4 минуты.
       </div>
@@ -1300,7 +1306,8 @@ function DetailFailed() {
         Не удалось обработать запись
       </div>
       <div className="mt-1 max-w-sm text-sm text-fg-secondary">
-        Обработка прервалась. Откройте полную страницу и нажмите «Регенерировать».
+        Обработка прервалась. Откройте полную страницу и нажмите
+        «Регенерировать».
       </div>
     </div>
   );
@@ -1327,4 +1334,3 @@ function SectionHeader({
     </div>
   );
 }
-

@@ -1,24 +1,3 @@
-/**
- * TZ-1 Фаза 2 (daily-value-engine) — промпт `personal-brief-hint`.
- *
- * Назначение: ТОЛЬКО «1 подсказка дня» в персональном брифе «Твой день». Сам
- * бриф (задачи/обещания/блокеры/что-обещали-тебе) — структурный (SQL+шаблон),
- * БЕЗ LLM. Поиск «кто знает X» — embeddings (text-embedding-3-small), не chat-LLM.
- *
- * Code-fallback (без PromptRegistry) — как `customer-risk-digest`: систему
- * передаём прямо в `LlmRouterService.call`, поэтому отдельный seed в
- * `seed-prompt-templates.ts` НЕ нужен; маршрут (цепочка моделей) регистрируется
- * в `seed-llm-task-routes-default.ts`. Если LLM упал — сервис использует
- * детерминированный `buildPersonalBriefFallbackHint`.
- *
- * Совместимость с prompt caching (mandatory):
- *   - SYSTEM стабильный (ниже) — не меняем от вызова к вызову.
- *   - Переменные данные (список задач/блокеров) — в КОНЦЕ user-сообщения.
- *   - Без выдуманных фактов, без ₽/часов.
- */
-
-export const PERSONAL_BRIEF_HINT_PROMPT_VERSION = 'prompt-v1';
-
 export const PERSONAL_BRIEF_HINT_TASK_TYPE = 'personal-brief-hint';
 
 export const PERSONAL_BRIEF_HINT_SYSTEM_PROMPT = [
@@ -34,36 +13,21 @@ export const PERSONAL_BRIEF_HINT_SYSTEM_PROMPT = [
   '  - Длина — одно предложение, максимум ~200 символов. Без markdown, без списков.',
 ].join('\n');
 
-/** Вход для промпта (только то, что нужно LLM для формулировки). */
 export interface PersonalBriefHintPromptInput {
-  /** Сколько задач на сегодня/просрочено. */
   taskCount: number;
   overdueTaskCount: number;
-  /** Сколько моих обещаний со сроком сегодня/просрочено. */
   promiseCount: number;
-  /** Сколько открытых блокеров. */
   blockerCount: number;
-  /** Сколько обещаний дано мне. */
   promisedToMeCount: number;
-  /** Короткие заголовки топ-задач (до 3). */
   topTaskTitles: string[];
-  /** Короткие тексты топ-блокеров (до 2). */
   topBlockerTexts: string[];
-  /** Имя носителя знания по блокеру (если найден) — для «спроси у Ивана». */
   knowsWhoExpertName?: string | null;
 }
 
-/**
- * Сборка user-сообщения: переменные данные В КОНЦЕ — для prompt caching.
- */
-export function buildPersonalBriefHintUserMessage(
-  input: PersonalBriefHintPromptInput,
-): string {
+export function buildPersonalBriefHintUserMessage(input: PersonalBriefHintPromptInput): string {
   const lines: string[] = [];
   lines.push('Сводка дня сотрудника:');
-  lines.push(
-    `  задачи: ${input.taskCount} (из них просрочено ${input.overdueTaskCount})`,
-  );
+  lines.push(`  задачи: ${input.taskCount} (из них просрочено ${input.overdueTaskCount})`);
   lines.push(`  мои обещания на сегодня/просроченные: ${input.promiseCount}`);
   lines.push(`  открытые блокеры: ${input.blockerCount}`);
   lines.push(`  обещано мне: ${input.promisedToMeCount}`);
@@ -80,22 +44,12 @@ export function buildPersonalBriefHintUserMessage(
     }
   }
   if (input.knowsWhoExpertName) {
-    lines.push(
-      `  по блокеру может помочь: ${truncate(input.knowsWhoExpertName, 80)}`,
-    );
+    lines.push(`  по блокеру может помочь: ${truncate(input.knowsWhoExpertName, 80)}`);
   }
   return lines.join('\n');
 }
 
-/**
- * Детерминированный fallback-текст подсказки (если LLM недоступна). Без ₽.
- * Используется и как «сухой» вариант, и при пустом ответе LLM.
- */
-export function buildPersonalBriefFallbackHint(
-  input: PersonalBriefHintPromptInput,
-): string {
-  // Приоритет: просроченные задачи → блокеры (со skill-помощью) → задачи дня →
-  // обещания → обещано мне → нейтральная фраза.
+export function buildPersonalBriefFallbackHint(input: PersonalBriefHintPromptInput): string {
   if (input.overdueTaskCount > 0) {
     return `Сначала разберись с просроченным: задач в просрочке ${input.overdueTaskCount}.`.slice(
       0,
@@ -115,16 +69,10 @@ export function buildPersonalBriefFallbackHint(
     );
   }
   if (input.taskCount > 0) {
-    return `На сегодня ${input.taskCount} задач — начни с самой важной.`.slice(
-      0,
-      200,
-    );
+    return `На сегодня ${input.taskCount} задач — начни с самой важной.`.slice(0, 200);
   }
   if (input.promiseCount > 0) {
-    return `Не забудь про свои обещания на сегодня (${input.promiseCount}).`.slice(
-      0,
-      200,
-    );
+    return `Не забудь про свои обещания на сегодня (${input.promiseCount}).`.slice(0, 200);
   }
   if (input.promisedToMeCount > 0) {
     return `Тебе обещали ${input.promisedToMeCount} — можно мягко напомнить коллегам.`.slice(

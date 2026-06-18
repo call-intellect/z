@@ -3,24 +3,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { TypedConfigService } from '../../../../common/config/index';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 
-import type {
-  ProtocolAdapterProviderInfo,
-  ProtocolKind,
-} from './protocol-adapter.types';
+import type { ProtocolAdapterProviderInfo, ProtocolKind } from './protocol-adapter.types';
 
-/**
- * SBA α-10 wave 3 — резолв LlmProvider записи из БД в
- * ProtocolAdapterProviderInfo для адаптера.
- *
- * Кэширует записи в памяти на 60 секунд (как и LlmRouter.priceCache),
- * чтобы не бить БД на каждый LLM-вызов.
- *
- * Fallback: если в БД нет записи для провайдера (например, в test'е сидов
- * нет, либо feature-flag только что включили) — формируем info из ENV
- * cfg.ai.<name> (anthropic / openai-via-proxy / deepseek / ollama / minimax).
- * Это нужно, чтобы переход на registry не ломал прод даже если seed не
- * прогнан.
- */
 interface ProviderCacheEntry {
   info: ProtocolAdapterProviderInfo;
   protocolKind: ProtocolKind;
@@ -77,10 +61,6 @@ export class ProviderInfoResolver {
       const info: ProtocolAdapterProviderInfo = {
         name: row.name,
         baseUrl: row.baseUrl,
-        // ВНИМАНИЕ: schema хранит зашифрованный ключ. Расшифровка делается на
-        // уровне crypto-сервиса; на wave 3 мы пока пробрасываем как есть.
-        // Для adapter registry feature-flag=true в проде апи-ключи берутся
-        // из ENV (см. ENV fallback ниже).
         apiKey: row.apiKeyEncrypted,
         ...(row.defaultHeaders &&
         typeof row.defaultHeaders === 'object' &&
@@ -99,7 +79,6 @@ export class ProviderInfoResolver {
       return { info, protocolKind: entry.protocolKind };
     }
 
-    // Fallback: формируем info из ENV.
     const envInfo = this.buildFromEnv(name);
     if (envInfo) {
       const entry: ProviderCacheEntry = {
@@ -113,9 +92,6 @@ export class ProviderInfoResolver {
     return null;
   }
 
-  /**
-   * Инвалидация кэша (вызывается из admin при изменении LlmProvider).
-   */
   invalidate(): void {
     this.cache.clear();
   }

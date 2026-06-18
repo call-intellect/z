@@ -1,18 +1,4 @@
-/**
- * Pulse Wave 6 — единый агрегатор паттернов для главной директора.
- *
- * Источник правды:
- *   `backend/src/modules/dashboard/dto/pulse-patterns.dto.ts`
- *
- * Контракт: `GET /api/v1/dashboard/pulse-patterns?period=week|month`.
- *
- * Слоистая модель: ApiDto → DomainModel (см. skill `frontend-rules`). Все
- * Date-поля парсятся в Date один раз на границе.
- */
-
-// ─── API DTO (зеркало backend) ──────────────────────────────────────────────
-
-export type PulsePatternsPeriod = 'week' | 'month';
+export type PulsePatternsPeriod = "week" | "month";
 
 export interface PulsePatternBusFactorItemApi {
   categoryName: string;
@@ -136,8 +122,6 @@ export interface PulsePatternsApi {
   irreversibleDecisions: PulsePatternIrreversibleDecisionsApi;
 }
 
-// ─── Domain ─────────────────────────────────────────────────────────────────
-
 export interface PulsePatternLowRoiMeetingDomain {
   meetingId: string;
   title: string;
@@ -171,9 +155,9 @@ export interface PulsePatternsDomain {
   };
 }
 
-// ─── Mapper ─────────────────────────────────────────────────────────────────
-
-export function pulsePatternsFromApi(api: PulsePatternsApi): PulsePatternsDomain {
+export function pulsePatternsFromApi(
+  api: PulsePatternsApi,
+): PulsePatternsDomain {
   return {
     period: api.period,
     generatedAt: new Date(api.generatedAt),

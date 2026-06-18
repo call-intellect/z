@@ -7,24 +7,11 @@ import {
   isOverBudget,
 } from './notification-budget.service';
 
-/**
- * TZ-1 Фаза 0 (daily-value-engine) — NotificationBudgetService unit-тесты.
- *
- * Покрываем:
- *   - Чистые хелперы decideQuietHours / isOverBudget (включая окно через полночь,
- *     байпасы critical/priority1, граничные значения лимита).
- *   - tryConsume: граница бюджета (limit-1 allowed, limit blocked), байпас
- *     critical, байпас priorityTier===1, тихие часы, opt-out, external user.
- *
- * Детерминизм: время и TZ передаются явно (Person.timezone='UTC', now —
- * фиксированный UTC), Prisma/cfg/metrics — моки. Без сети и без реальных часов.
- */
-
 describe('decideQuietHours (pure)', () => {
   it('обычное окно [9..18): внутри → true, снаружи → false', () => {
     expect(decideQuietHours(10, 9, 18)).toBe(true);
     expect(decideQuietHours(9, 9, 18)).toBe(true);
-    expect(decideQuietHours(18, 9, 18)).toBe(false); // верхняя граница исключена
+    expect(decideQuietHours(18, 9, 18)).toBe(false);
     expect(decideQuietHours(8, 9, 18)).toBe(false);
   });
 
@@ -61,11 +48,6 @@ describe('isOverBudget (pure)', () => {
 });
 
 describe('NotificationBudgetService.tryConsume', () => {
-  /**
-   * Билдер мока. ledgerSentCount — текущее значение sentCount у upsert'нутой
-   * записи (имитирует уже потраченное за день). prefs — то, что вернёт
-   * findFirst по in_app binding.preferences.
-   */
   function build(overrides: {
     person?: { id: string; timezone: string | null } | null;
     ledgerSentCount?: number;
@@ -75,9 +57,7 @@ describe('NotificationBudgetService.tryConsume', () => {
     prefs?: Record<string, unknown> | null;
   }) {
     const person =
-      overrides.person === undefined
-        ? { id: 'p1', timezone: 'UTC' }
-        : overrides.person;
+      overrides.person === undefined ? { id: 'p1', timezone: 'UTC' } : overrides.person;
 
     const updateLedger = vi.fn().mockResolvedValue({});
     const prisma = {
@@ -85,11 +65,11 @@ describe('NotificationBudgetService.tryConsume', () => {
         findFirst: vi.fn().mockResolvedValue(person),
       },
       channelBinding: {
-        findFirst: vi.fn().mockResolvedValue(
-          overrides.prefs === undefined
-            ? null
-            : { preferences: overrides.prefs },
-        ),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue(
+            overrides.prefs === undefined ? null : { preferences: overrides.prefs },
+          ),
       },
       notificationBudgetLedger: {
         update: updateLedger,
@@ -130,19 +110,13 @@ describe('NotificationBudgetService.tryConsume', () => {
       incNotificationDeferredToDigest: vi.fn(),
     };
 
-    const svc = new NotificationBudgetService(
-      prisma as never,
-      cfg as never,
-      metrics as never,
-    );
+    const svc = new NotificationBudgetService(prisma as never, cfg as never, metrics as never);
     return { svc, prisma, cfg, metrics, updateLedger };
   }
 
-  /** 2026-06-08 12:00:00 UTC — вне тихих часов 22..8. */
   function noonUtc(): Date {
     return new Date(Date.UTC(2026, 5, 8, 12, 0, 0, 0));
   }
-  /** 2026-06-08 23:00:00 UTC — внутри тихих часов 22..8. */
   function nightUtc(): Date {
     return new Date(Date.UTC(2026, 5, 8, 23, 0, 0, 0));
   }

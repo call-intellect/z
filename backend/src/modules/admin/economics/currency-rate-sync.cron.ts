@@ -8,21 +8,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { CurrencyRateService } from './currency-rate.service';
 
-/**
- * SBA α-10 wave 3 — CurrencyRateSyncCron.
- *
- * Daily 07:00 UTC — fetch'ит курс USD→RUB от ЦБ РФ
- * (https://www.cbr-xml-daily.ru/daily_json.js, override через ENV
- * CURRENCY_RATE_API_URL). Парсит { Valute: { USD: { Value: number } } }.
- *
- * Upsert по unique [base, quote, rateDate, source]. Idempotent.
- *
- * При недоступности API:
- *   - logger.warn
- *   - metrics.incCurrencyRateSync('failed')
- *   - cached CurrencyRateService.getCurrentUsdRubRate() вернёт fallback
- *     из ENV CURRENCY_RATE_FALLBACK_USD_RUB (default 90).
- */
 @Injectable()
 export class CurrencyRateSyncCron {
   private readonly logger = new Logger(CurrencyRateSyncCron.name);
@@ -40,7 +25,7 @@ export class CurrencyRateSyncCron {
   async runScheduled(): Promise<void> {
     try {
       const result = await this.runOnce();
-      this.logger.log(result, 'currency-rate-sync.cron: проход завершён');
+      this.logger.debug(result, 'currency-rate-sync.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -79,11 +64,7 @@ export class CurrencyRateSyncCron {
     }
 
     const rateDateOnly = new Date(
-      Date.UTC(
-        rateDate.getUTCFullYear(),
-        rateDate.getUTCMonth(),
-        rateDate.getUTCDate(),
-      ),
+      Date.UTC(rateDate.getUTCFullYear(), rateDate.getUTCMonth(), rateDate.getUTCDate()),
     );
 
     try {
@@ -124,16 +105,9 @@ export class CurrencyRateSyncCron {
     };
   }
 
-  /**
-   * Public для тестов — позволяет передавать mock URL и не использовать
-   * глобальный fetch напрямую.
-   */
   async fetchFromApi(url: string): Promise<{ rate: number; rateDate: Date }> {
     const controller = new AbortController();
-    const timeout = setTimeout(
-      () => controller.abort(),
-      CurrencyRateSyncCron.FETCH_TIMEOUT_MS,
-    );
+    const timeout = setTimeout(() => controller.abort(), CurrencyRateSyncCron.FETCH_TIMEOUT_MS);
     let resp: Response;
     try {
       resp = await fetch(url, { signal: controller.signal });

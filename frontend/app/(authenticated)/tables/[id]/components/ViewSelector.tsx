@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import {
   Check,
@@ -12,19 +12,19 @@ import {
   SlidersHorizontal,
   Users,
   X as XIcon,
-} from 'lucide-react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
-import useSWR from 'swr';
+} from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
 
-import { tableViewsApi } from '@/api/tables.api';
-import { useAuth } from '@/contexts/auth-context';
+import { tableViewsApi } from "@/api/tables.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   tableViewFromApi,
   VIEW_VISIBILITY_LABEL_RU,
   type TableViewDomain,
-} from '@/domain/table';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/table";
+import { Button } from "@/ui/shadcn/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,32 +32,18 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/ui/shadcn/dropdown-menu';
+} from "@/ui/shadcn/dropdown-menu";
 
-import { useTableStore } from '../store/tableStore';
-import { SaveViewDialog } from './SaveViewDialog';
+import { useTableStore } from "../store/tableStore";
+import { SaveViewDialog } from "./SaveViewDialog";
 
-/**
- * Селектор сохраняемых видов (Saved Views) — Фаза 3 smart-tables.
- *
- *   1. Загружает список доступных view'ов через SWR (`tableViewsApi.list`)
- *      и пробрасывает в store через `setViews`.
- *   2. Активный view определяется по `?view=<id>` в URL.
- *   3. При выборе из дропдауна обновляет URL через `router.push`.
- *   4. Кнопка «+ Новый вид» открывает `SaveViewDialog` (создаёт view из
- *      текущего draftConfig'а).
- *   5. Кнопка «Сохранить вид» появляется, если есть unsaved changes
- *      относительно applied view. «×» — удалить вид (доступно для своих).
- *
- * UI-копи: только русский (см. memory `feedback_admin_ui_russian_only`).
- */
 export function ViewSelector({ tableId }: { tableId: string }) {
   const { currentOrgId, user } = useAuth();
   const currentUserId = user?.id ?? null;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const viewIdFromUrl = searchParams?.get('view') ?? null;
+  const viewIdFromUrl = searchParams?.get("view") ?? null;
 
   const setViews = useTableStore((s) => s.setViews);
   const applyView = useTableStore((s) => s.applyView);
@@ -74,10 +60,10 @@ export function ViewSelector({ tableId }: { tableId: string }) {
   const setHiddenProperty = useTableStore((s) => s.setHiddenProperty);
   const setRowHeight = useTableStore((s) => s.setRowHeight);
   const hiddenSet = new Set(draftConfig.hiddenProps ?? []);
-  const currentRowHeight = draftConfig.rowHeight ?? 'default';
+  const currentRowHeight = draftConfig.rowHeight ?? "default";
 
   const viewsSwr = useSWR(
-    currentOrgId ? ['table-views', currentOrgId, tableId] : null,
+    currentOrgId ? ["table-views", currentOrgId, tableId] : null,
     () =>
       currentOrgId
         ? tableViewsApi.list(currentOrgId, tableId)
@@ -85,14 +71,12 @@ export function ViewSelector({ tableId }: { tableId: string }) {
     { revalidateOnFocus: false },
   );
 
-  // Кладём views в store при изменении SWR-ответа.
   useEffect(() => {
     if (!viewsSwr.data) return;
     const list: TableViewDomain[] = viewsSwr.data.items.map(tableViewFromApi);
     setViews(list);
   }, [viewsSwr.data, setViews]);
 
-  // Применяем view из URL, как только store узнал про список.
   useEffect(() => {
     applyView(viewIdFromUrl);
   }, [viewIdFromUrl, viewsInStore.length, applyView]);
@@ -101,13 +85,13 @@ export function ViewSelector({ tableId }: { tableId: string }) {
 
   const activeLabel = useMemo(() => {
     if (currentView) return currentView.name;
-    return 'Все колонки';
+    return "Все колонки";
   }, [currentView]);
 
   function navigateToView(viewId: string | null) {
-    const params = new URLSearchParams(searchParams?.toString() ?? '');
-    if (viewId) params.set('view', viewId);
-    else params.delete('view');
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (viewId) params.set("view", viewId);
+    else params.delete("view");
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);
   }
@@ -118,7 +102,7 @@ export function ViewSelector({ tableId }: { tableId: string }) {
   async function onDeleteCurrent() {
     if (!currentView) return;
     if (
-      typeof window !== 'undefined' &&
+      typeof window !== "undefined" &&
       !window.confirm(`Удалить вид «${currentView.name}»?`)
     ) {
       return;
@@ -182,7 +166,7 @@ export function ViewSelector({ tableId }: { tableId: string }) {
                     className="inline-flex items-center gap-1 rounded-sm bg-bg-overlay px-1.5 py-0.5 text-xs text-fg-tertiary"
                     title={VIEW_VISIBILITY_LABEL_RU[v.visibility]}
                   >
-                    {v.visibility === 'personal' ? (
+                    {v.visibility === "personal" ? (
                       <Eye className="h-3 w-3" aria-hidden />
                     ) : (
                       <Users className="h-3 w-3" aria-hidden />
@@ -237,7 +221,10 @@ export function ViewSelector({ tableId }: { tableId: string }) {
                 >
                   <span className="flex h-4 w-4 items-center justify-center">
                     {isHidden ? (
-                      <EyeOff className="h-4 w-4 text-fg-tertiary" aria-hidden />
+                      <EyeOff
+                        className="h-4 w-4 text-fg-tertiary"
+                        aria-hidden
+                      />
                     ) : (
                       <Eye className="h-4 w-4" aria-hidden />
                     )}
@@ -245,8 +232,8 @@ export function ViewSelector({ tableId }: { tableId: string }) {
                   <span
                     className={
                       isHidden
-                        ? 'flex-1 truncate text-fg-tertiary line-through'
-                        : 'flex-1 truncate'
+                        ? "flex-1 truncate text-fg-tertiary line-through"
+                        : "flex-1 truncate"
                     }
                   >
                     {p.name}
@@ -258,7 +245,7 @@ export function ViewSelector({ tableId }: { tableId: string }) {
 
           <DropdownMenuSeparator />
           <DropdownMenuLabel>Плотность строк</DropdownMenuLabel>
-          {(['compact', 'default', 'tall'] as const).map((rh) => (
+          {(["compact", "default", "tall"] as const).map((rh) => (
             <DropdownMenuItem
               key={rh}
               onSelect={(e) => {
@@ -273,11 +260,11 @@ export function ViewSelector({ tableId }: { tableId: string }) {
                 ) : null}
               </span>
               <span className="flex-1">
-                {rh === 'compact'
-                  ? 'Компактная'
-                  : rh === 'tall'
-                    ? 'Просторная'
-                    : 'Обычная'}
+                {rh === "compact"
+                  ? "Компактная"
+                  : rh === "tall"
+                    ? "Просторная"
+                    : "Обычная"}
               </span>
             </DropdownMenuItem>
           ))}
@@ -289,10 +276,7 @@ export function ViewSelector({ tableId }: { tableId: string }) {
           className="inline-flex items-center gap-1.5 rounded-sm bg-warning/15 px-2 py-1 text-xs text-warning"
           aria-live="polite"
         >
-          <span
-            className="h-1.5 w-1.5 rounded-full bg-warning"
-            aria-hidden
-          />
+          <span className="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden />
           Изменения не сохранены
         </span>
       ) : null}
@@ -345,7 +329,6 @@ export function ViewSelector({ tableId }: { tableId: string }) {
         open={saveDialogOpen}
         onOpenChange={setSaveDialogOpen}
         onSaved={(view) => {
-          // После создания — переходим на новый view и обновляем SWR.
           navigateToView(view.id);
           void viewsSwr.mutate();
         }}

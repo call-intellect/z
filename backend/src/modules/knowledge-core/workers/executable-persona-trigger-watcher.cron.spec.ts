@@ -19,7 +19,11 @@ import { ExecutablePersonaTriggerWatcherCron } from './executable-persona-trigge
 describe('ExecutablePersonaTriggerWatcherCron.runOnce', () => {
   function makeCron(opts: {
     profiles: Array<{ id: string; tenantId: string }>;
-    findFirstLatest: (profileId: string) => { snapshotAt: Date } | null;
+    findFirstLatest: (
+      profileId: string,
+    ) =>
+      | { snapshotAt: Date; status?: string; includedTraitIds?: string[] }
+      | null;
     findCriticalMisleading: (
       profileId: string,
     ) => { id: string; misleadingFlaggedAt: Date } | null;
@@ -33,6 +37,11 @@ describe('ExecutablePersonaTriggerWatcherCron.runOnce', () => {
       | { built: false; reason: string };
     traitDeltaThreshold?: number;
     maxAgeHours?: number;
+    /** Б31 — текущие active SkillTrait.id по слою для computeCurrentInputTraitIds. */
+    findManyTraitsByLayer?: (
+      profileId: string,
+      layer: string,
+    ) => Array<{ id: string }>;
   }): {
     cron: ExecutablePersonaTriggerWatcherCron;
     triggerRebuild: ReturnType<typeof vi.fn>;
@@ -69,6 +78,17 @@ describe('ExecutablePersonaTriggerWatcherCron.runOnce', () => {
         ),
         count: vi.fn(async ({ where }: { where: { profileId: string } }) =>
           opts.newTraitsCount(where.profileId),
+        ),
+        // Б31 — computeCurrentInputTraitIds делает findMany по каждому layer.
+        findMany: vi.fn(
+          async ({
+            where,
+          }: {
+            where: { profileId: string; layer: string };
+          }) =>
+            opts.findManyTraitsByLayer
+              ? opts.findManyTraitsByLayer(where.profileId, where.layer)
+              : [],
         ),
       },
     };
@@ -195,6 +215,61 @@ describe('ExecutablePersonaTriggerWatcherCron.runOnce', () => {
     expect(r.triggeredMaxAge).toBe(0);
     expect(triggerRebuild).not.toHaveBeenCalled();
     expect(incPersonaRebuildTriggered).not.toHaveBeenCalled();
+  });
+
+  it('Б31 max_age но тот же набор черт (includedTraitIds == текущие) → БЕЗ LLM-rebuild, skippedMaxAgeUnchanged++', async () => {
+    const oldSnapshotAt = new Date(Date.now() - 50 * 60 * 60 * 1000); // 50ч → max_age
+    const { cron, triggerRebuild, incPersonaRebuildTriggered } = makeCron({
+      profiles: [{ id: 'p1', tenantId: 't1' }],
+      // Активный snapshot с зафиксированным набором черт.
+      findFirstLatest: () => ({
+        snapshotAt: oldSnapshotAt,
+        status: 'active',
+        includedTraitIds: ['tr_skill_1', 'tr_skill_2', 'tr_value_1'],
+      }),
+      findCriticalMisleading: () => null,
+      newTraitsCount: () => 0, // нет новых → trait_delta не сработает, идём в max_age
+      findNewestTrait: () => null,
+      // Текущий вход ИДЕНТИЧЕН includedTraitIds (порядок не важен — сравнение по множеству).
+      findManyTraitsByLayer: (_p, layer) => {
+        if (layer === 'skill') return [{ id: 'tr_skill_2' }, { id: 'tr_skill_1' }];
+        if (layer === 'value') return [{ id: 'tr_value_1' }];
+        return [];
+      },
+      maxAgeHours: 48,
+    });
+    const r = await cron.runOnce();
+    // LLM-compile НЕ дёрнут — вход не изменился.
+    expect(triggerRebuild).not.toHaveBeenCalled();
+    expect(incPersonaRebuildTriggered).not.toHaveBeenCalled();
+    expect(r.triggeredMaxAge).toBe(0);
+    expect(r.skippedMaxAgeUnchanged).toBe(1);
+  });
+
+  it('Б31 max_age и набор черт ИЗМЕНИЛСЯ → rebuild как раньше', async () => {
+    const oldSnapshotAt = new Date(Date.now() - 50 * 60 * 60 * 1000);
+    const { cron, triggerRebuild, incPersonaRebuildTriggered } = makeCron({
+      profiles: [{ id: 'p1', tenantId: 't1' }],
+      findFirstLatest: () => ({
+        snapshotAt: oldSnapshotAt,
+        status: 'active',
+        includedTraitIds: ['tr_skill_1'],
+      }),
+      findCriticalMisleading: () => null,
+      newTraitsCount: () => 0,
+      findNewestTrait: () => null,
+      // Текущий вход отличается (добавилась tr_skill_9).
+      findManyTraitsByLayer: (_p, layer) =>
+        layer === 'skill' ? [{ id: 'tr_skill_1' }, { id: 'tr_skill_9' }] : [],
+      maxAgeHours: 48,
+    });
+    const r = await cron.runOnce();
+    expect(r.triggeredMaxAge).toBe(1);
+    expect(r.skippedMaxAgeUnchanged).toBe(0);
+    expect(triggerRebuild).toHaveBeenCalledWith(
+      expect.objectContaining({ profileId: 'p1', reason: 'threshold' }),
+    );
+    expect(incPersonaRebuildTriggered).toHaveBeenCalledWith({ reason: 'max_age' });
   });
 
   it('locked: VersioningService возвращает built=false reason=locked → skippedLocked++', async () => {

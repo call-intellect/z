@@ -1,9 +1,3 @@
-/**
- * Smoke-тест агента `idea-cluster-merge` на DeepSeek-V4-Pro.
- * См. backend/src/modules/knowledge-core/prompts/idea-cluster-merge.prompt.ts.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-idea-cluster-merge.ts
- */
 import {
   client,
   computeCost,

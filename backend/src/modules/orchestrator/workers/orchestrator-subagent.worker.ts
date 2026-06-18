@@ -8,38 +8,19 @@ import {
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
-
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
-import type {
-  OrchestratorAgentType,
-  OrchestratorPlanStep,
-} from '../orchestrator.types';
+import type { OrchestratorAgentType, OrchestratorPlanStep } from '../orchestrator.types';
 import {
   ORCHESTRATOR_SUBAGENTS_QUEUE,
   type OrchestratorSubagentJobData,
 } from '../services/orchestrator-subagent.queue';
 import { SubagentSpawnerService } from '../services/subagent-spawner.service';
 
-/**
- * SBA δ-1 — `OrchestratorSubagentWorker`.
- *
- * Consumer очереди `orchestrator.subagents`. На каждый job:
- *   1) загружает OrchestratorSubagentJob из БД;
- *   2) переводит status='running' + startedAt;
- *   3) вызывает соответствующую стратегию через SubagentSpawnerService.executeStrategyDirectly;
- *   4) сохраняет resultJson + status='done'/'failed' + completedAt;
- *   5) инкрементит метрику orchestrator_subagents_total{agent_type,result}.
- *
- * Concurrency=3 — параллельные subagent'ы одного run'а должны вращаться
- * одновременно (5 max per run × несколько runs).
- */
 @Injectable()
-export class OrchestratorSubagentWorker
-  implements OnModuleInit, OnModuleDestroy
-{
+export class OrchestratorSubagentWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OrchestratorSubagentWorker.name);
   private worker: Worker<OrchestratorSubagentJobData> | null = null;
 
@@ -72,9 +53,7 @@ export class OrchestratorSubagentWorker
         `subagent job failed jobId=${job?.id ?? 'unknown'}: ${err instanceof Error ? err.message : String(err)}`,
       );
     });
-    this.logger.log(
-      `OrchestratorSubagentWorker запущен (${ORCHESTRATOR_SUBAGENTS_QUEUE})`,
-    );
+    this.logger.debug(`OrchestratorSubagentWorker запущен (${ORCHESTRATOR_SUBAGENTS_QUEUE})`);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -91,10 +70,7 @@ export class OrchestratorSubagentWorker
       where: { id: subagentJobId },
     });
     if (!subagent) {
-      this.logger.warn(
-        { subagentJobId },
-        'subagent job не найден в БД — skip',
-      );
+      this.logger.warn({ subagentJobId }, 'subagent job не найден в БД — skip');
       return;
     }
     if (subagent.status === 'done' || subagent.status === 'failed') {
@@ -134,10 +110,7 @@ export class OrchestratorSubagentWorker
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.logger.warn(
-        { subagentJobId, err: msg },
-        'subagent execution failed',
-      );
+      this.logger.warn({ subagentJobId, err: msg }, 'subagent execution failed');
       await this.prisma.orchestratorSubagentJob.update({
         where: { id: subagentJobId },
         data: {
@@ -150,7 +123,7 @@ export class OrchestratorSubagentWorker
         agentType,
         result: 'failed',
       });
-      throw err; // BullMQ retry
+      throw err;
     }
   }
 }

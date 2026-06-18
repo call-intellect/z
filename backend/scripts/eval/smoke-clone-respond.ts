@@ -1,12 +1,3 @@
-/**
- * Smoke-тест taskType=clone-respond.
- * Источник промпта: backend/src/modules/knowledge-core/prompts/clone-respond.prompt.ts
- *
- * Выход — plain text. Анти-deepfake пункт 6: «< 2 reasoning-блоков → отказ».
- * В фикстуре даём 2 блока, чтобы модель отвечала, а не отказывалась.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-clone-respond.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -21,9 +12,7 @@ const MODEL = 'deepseek-v4-pro';
 const PRICE_IN = 0.435 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
 
-const SCRIPT_DIR = path
-  .dirname(new URL(import.meta.url).pathname)
-  .replace(/^\/([A-Za-z]):/, '$1:');
+const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
 const FIXTURE_PATH = path.resolve(
   SCRIPT_DIR,
   `../../test/eval/smoke-all-agents/fixtures/${TASK_TYPE}.json`,
@@ -58,8 +47,6 @@ async function main(): Promise<void> {
   console.log(`=== smoke ${TASK_TYPE} ===`);
   const fixture: Fixture = JSON.parse(await fs.readFile(FIXTURE_PATH, 'utf-8'));
 
-  // F1 cache-friendly (2026-06-10): SYSTEM стабилен по режиму; roleName /
-  // bearerName / personaPrompt едут в user через CLONE_RESPOND_USER_TEMPLATE.
   const systemPrompt = buildCloneRespondSystemPrompt();
   const userMessage = CLONE_RESPOND_USER_TEMPLATE({
     question: fixture.question,

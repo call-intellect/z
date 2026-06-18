@@ -4,30 +4,12 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { CommitmentReliabilityService } from '../../dashboard/services/commitment-reliability.service';
 
-/**
- * PersonPulseService (Pulse Wave 3 §3.4 + §3.6 + §3.8).
- *
- * Read-only агрегат для карточки сотрудника `/persons/:id/pulse`. Собирает
- * данные нескольких источников:
- *   - Person.engagementScore / engagementScoreAt (Engagement-Scorer cron, §3.3).
- *   - Person.hrSuggestionsJson (HR-Recommender cron, §3.7).
- *   - DailyCheckIn за 30 дней (sentiment + qualityScore от Reflection-Quality-Scorer §3.5).
- *   - CommitmentReliabilityService (обещания за 14 дней, §1.1).
- *
- * Кэш — Redis с TTL 5 минут. Ошибки Redis не валят запрос — считаем live.
- */
-
-/** Точка mood-trend графика (один DailyCheckIn за день). */
 export interface PersonPulseMoodPointDto {
-  /** YYYY-MM-DD (локальная дата чек-ина). */
   date: string;
-  /** Настроение: 'green' | 'yellow' | 'red' | null если LLM не определил. */
   sentiment: 'green' | 'yellow' | 'red' | null;
-  /** Качество рефлексии 0..1 (Reflection-Quality-Scorer). null до прогона. */
   qualityScore: number | null;
 }
 
-/** Одна HR-рекомендация (из `Person.hrSuggestionsJson.recommendations`). */
 export interface PersonPulseHrSuggestionDto {
   type: 'praise' | 'compensation_review' | 'workload_check' | 'development' | 'urgent_talk';
   text: string;
@@ -35,13 +17,6 @@ export interface PersonPulseHrSuggestionDto {
   confidence: number;
 }
 
-/**
- * Pulse Wave 4 §4.5 — один активный risk-flag из `Person.riskFlagsJson.flags`.
- *
- * `type` — литерал строкой (см. список в `burnout-risk-detector.cron.ts`).
- * `baseline` / `current` — числа в шкале, специфичной для типа (проценты для
- * sentiment, абсолютные count'ы для остальных).
- */
 export interface PersonPulseRiskFlagDto {
   type: string;
   severity: 'low' | 'medium' | 'high';
@@ -50,48 +25,26 @@ export interface PersonPulseRiskFlagDto {
   explanation: string;
 }
 
-/** Главное DTO endpoint'а `GET /api/v1/persons/:id/pulse`. */
 export interface PersonPulseDto {
   personId: string;
   personName: string;
   email: string;
-  /**
-   * User.id, к которому привязан Person (после accept'а приглашения). Используется
-   * для фильтра ленты «Вопросы AI этому человеку» (`PersonProbeQuestionsSection`,
-   * см. `activityFeedApi.list({viewedUserId})`). NULL — Person ещё не
-   * зарегистрировался; вопросы AI отправляются только зарегистрированным.
-   */
   viewedUserId: string | null;
   departmentName: string | null;
-  /** true если этот Person — глава своего primaryDepartment'а. */
   isHead: boolean;
-  /** @deprecated v1 placeholder — интеграция с calendar отложена (vNext). Всегда null, на UI не выводится. */
   lastOneOnOneAt: string | null;
-  /** Engagement score 0..1 (Engagement-Scorer cron). null до первого прогона. */
   engagementScore: number | null;
   engagementScoreAt: string | null;
-  /** HR Recommender suggestions (weekly). null до первого weekly-прогона. */
   hrSuggestions: PersonPulseHrSuggestionDto[] | null;
   hrSuggestionsGeneratedAt: string | null;
-  /** Mood trend за 30 дней. */
   moodTrend30d: PersonPulseMoodPointDto[];
-  /** Кол-во чек-инов за 30 дней (числитель регулярности). */
   checkInsTotal30d: number;
-  /** Ожидаемое кол-во дней (30, знаменатель регулярности). */
   checkInsExpectedDays: number;
-  /** Reliability обещаний адресованных этому человеку, 0..100%. */
   promisesReliabilityPercent: number;
-  /** Дельта reliability vs предыдущее окно той же длины. null если знаменатель прошлого окна = 0. */
   promisesDelta14d: number | null;
   promisesKept14d: number;
   promisesBroken14d: number;
   promisesOverdue14d: number;
-  /**
-   * Pulse Wave 4 §4.5 — активные risk-флаги (Burnout-Risk-Detector cron).
-   * Пустой массив если флагов нет; никогда не null (нет «не считалось» —
-   * cron daily гарантирует свежесть). `riskFlagsGeneratedAt` = null до
-   * первого прогона cron'а.
-   */
   riskFlags: PersonPulseRiskFlagDto[];
   riskFlagsGeneratedAt: string | null;
 }
@@ -108,20 +61,9 @@ export class PersonPulseService {
     private readonly commits: CommitmentReliabilityService,
   ) {}
 
-  /**
-   * Главный публичный метод. Кэш на 5 минут per (tenantId, personId).
-   * Бросает NotFoundException если Person не существует / не в tenant'е /
-   * soft-deleted.
-   */
   async getPulse(args: {
     tenantId: string;
     personId: string;
-    /**
-     * ТЗ-E Фаза 2 (self-режим). true — карточку открыл сам сотрудник
-     * (`Person.userId === currentUser.id`). В self-режиме служебная аналитика
-     * руководителя (HR-резюме) не отдаётся — defense-in-depth поверх скрытия на
-     * UI. Кэш-ключ раздельный, чтобы self-вариант не перетёр manager-вариант.
-     */
     forSelf?: boolean;
   }): Promise<PersonPulseDto> {
     const cacheKey = `person_pulse:${args.tenantId}:${args.personId}:${
@@ -136,13 +78,10 @@ export class PersonPulseService {
         id: true,
         name: true,
         email: true,
-        // User.id, к которому привязан Person (после accept'а приглашения).
-        // Нужен для фильтра ленты «Вопросы AI этому человеку» на карточке.
         userId: true,
         engagementScore: true,
         engagementScoreAt: true,
         hrSuggestionsJson: true,
-        // Pulse Wave 4 §4.5 — активные risk-флаги (Burnout-Risk-Detector cron).
         riskFlagsJson: true,
         primaryDepartment: {
           select: { id: true, name: true, headPersonId: true },
@@ -189,15 +128,9 @@ export class PersonPulseService {
     }));
 
     const parsedHr = this.parseHrSuggestions(person.hrSuggestionsJson);
-    // ТЗ-E Фаза 2: в self-режиме HR-резюме (служебная аналитика руководителя)
-    // не отдаём — defense-in-depth поверх скрытия секции на UI.
     const hrSuggestions = args.forSelf ? null : parsedHr.hrSuggestions;
-    const hrSuggestionsGeneratedAt = args.forSelf
-      ? null
-      : parsedHr.hrSuggestionsGeneratedAt;
-    const { riskFlags, riskFlagsGeneratedAt } = this.parseRiskFlags(
-      person.riskFlagsJson,
-    );
+    const hrSuggestionsGeneratedAt = args.forSelf ? null : parsedHr.hrSuggestionsGeneratedAt;
+    const { riskFlags, riskFlagsGeneratedAt } = this.parseRiskFlags(person.riskFlagsJson);
 
     const result: PersonPulseDto = {
       personId: person.id,
@@ -206,12 +139,9 @@ export class PersonPulseService {
       viewedUserId: person.userId ?? null,
       departmentName: person.primaryDepartment?.name ?? null,
       isHead:
-        person.primaryDepartment !== null &&
-        person.primaryDepartment.headPersonId === person.id,
-      /** @deprecated v1 placeholder — интеграция с calendar отложена (vNext). Всегда null, на UI не выводится. */
+        person.primaryDepartment !== null && person.primaryDepartment.headPersonId === person.id,
       lastOneOnOneAt: null,
-      engagementScore:
-        person.engagementScore === null ? null : Number(person.engagementScore),
+      engagementScore: person.engagementScore === null ? null : Number(person.engagementScore),
       engagementScoreAt: person.engagementScoreAt?.toISOString() ?? null,
       hrSuggestions,
       hrSuggestionsGeneratedAt,
@@ -231,19 +161,11 @@ export class PersonPulseService {
     return result;
   }
 
-  // ─────────────────────────── private ──────────────────────────────
-
-  private normalizeSentiment(
-    raw: string | null,
-  ): 'green' | 'yellow' | 'red' | null {
+  private normalizeSentiment(raw: string | null): 'green' | 'yellow' | 'red' | null {
     if (raw === 'green' || raw === 'yellow' || raw === 'red') return raw;
     return null;
   }
 
-  /**
-   * Парсит `Person.hrSuggestionsJson`. Терпим к мусору — если структура
-   * сломана, возвращаем null. Формат — см. `HrRecommenderCron`.
-   */
   private parseHrSuggestions(raw: unknown): {
     hrSuggestions: PersonPulseHrSuggestionDto[] | null;
     hrSuggestionsGeneratedAt: string | null;
@@ -255,8 +177,7 @@ export class PersonPulseService {
       recommendations?: unknown;
       generatedAt?: unknown;
     };
-    const generatedAt =
-      typeof obj.generatedAt === 'string' ? obj.generatedAt : null;
+    const generatedAt = typeof obj.generatedAt === 'string' ? obj.generatedAt : null;
     if (!Array.isArray(obj.recommendations)) {
       return { hrSuggestions: null, hrSuggestionsGeneratedAt: generatedAt };
     }
@@ -279,9 +200,7 @@ export class PersonPulseService {
         ? r.signals.filter((s): s is string => typeof s === 'string')
         : [];
       const confidence =
-        typeof r.confidence === 'number' && Number.isFinite(r.confidence)
-          ? r.confidence
-          : 0;
+        typeof r.confidence === 'number' && Number.isFinite(r.confidence) ? r.confidence : 0;
       result.push({ type, text, signals, confidence });
     }
     return {
@@ -290,10 +209,6 @@ export class PersonPulseService {
     };
   }
 
-  /**
-   * Парсит `Person.riskFlagsJson`. Терпим к мусору — если структура сломана,
-   * возвращаем пустой массив. Формат — см. `BurnoutRiskDetectorCron`.
-   */
   private parseRiskFlags(raw: unknown): {
     riskFlags: PersonPulseRiskFlagDto[];
     riskFlagsGeneratedAt: string | null;
@@ -302,8 +217,7 @@ export class PersonPulseService {
       return { riskFlags: [], riskFlagsGeneratedAt: null };
     }
     const obj = raw as { flags?: unknown; generatedAt?: unknown };
-    const generatedAt =
-      typeof obj.generatedAt === 'string' ? obj.generatedAt : null;
+    const generatedAt = typeof obj.generatedAt === 'string' ? obj.generatedAt : null;
     if (!Array.isArray(obj.flags)) {
       return { riskFlags: [], riskFlagsGeneratedAt: generatedAt };
     }
@@ -313,18 +227,12 @@ export class PersonPulseService {
       const r = item as Record<string, unknown>;
       const type = typeof r.type === 'string' ? r.type : null;
       const sev = r.severity;
-      const severity =
-        sev === 'low' || sev === 'medium' || sev === 'high' ? sev : null;
+      const severity = sev === 'low' || sev === 'medium' || sev === 'high' ? sev : null;
       const baseline =
-        typeof r.baseline === 'number' && Number.isFinite(r.baseline)
-          ? r.baseline
-          : null;
+        typeof r.baseline === 'number' && Number.isFinite(r.baseline) ? r.baseline : null;
       const current =
-        typeof r.current === 'number' && Number.isFinite(r.current)
-          ? r.current
-          : null;
-      const explanation =
-        typeof r.explanation === 'string' ? r.explanation : null;
+        typeof r.current === 'number' && Number.isFinite(r.current) ? r.current : null;
+      const explanation = typeof r.explanation === 'string' ? r.explanation : null;
       if (!type || !severity || baseline === null || current === null || !explanation) {
         continue;
       }
@@ -346,17 +254,9 @@ export class PersonPulseService {
     }
   }
 
-  private async tryWriteCache(
-    key: string,
-    dto: PersonPulseDto,
-  ): Promise<void> {
+  private async tryWriteCache(key: string, dto: PersonPulseDto): Promise<void> {
     try {
-      await this.redis.client.set(
-        key,
-        JSON.stringify(dto),
-        'EX',
-        PersonPulseService.CACHE_TTL_SEC,
-      );
+      await this.redis.client.set(key, JSON.stringify(dto), 'EX', PersonPulseService.CACHE_TTL_SEC);
     } catch (err) {
       this.logger.warn(
         `Redis set failed for ${key}: ${err instanceof Error ? err.message : String(err)}`,

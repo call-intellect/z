@@ -198,7 +198,7 @@ references:
 - [ ] Расширение `AiUsageLog` применено, миграция прошла, таблица содержит все новые поля.
 - [ ] Таблица `LlmModelPrice` создана и наполнена актуальными ценами для всех моделей primary-стэка по политике 2026-05 (см. `llm-models-playbook.md` §2.1 и §12): `deepseek-v4-pro`, `deepseek-v4-flash`, `deepseek-v3.2`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `text-embedding-3-small`, `bge-m3` (нулевая цена), `qwen3:30b-a3b-instruct-2507` (нулевая цена). Опциональные A/B-кандидаты: `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`, `MiniMax-M2.7`, `gemini-3-pro` — добавляются с актуальными ценами, но НЕ ставятся в дефолтные `LlmTaskRoute.providers`.
 - [ ] Существующие LLM-вызовы (старый AI-pipeline до Фазы 1 ещё работает) — после деплоя пишут полную стоимость в `AiUsageLog`. Проверка: после тестовой встречи в `AiUsageLog` есть записи с непустыми `costUsd`, `inputTokens`, `outputTokens`, `model`.
-- [ ] Обновлены `second-brain/01_projects/auth-and-accounts.md` (роли расширены) + новый файл `second-brain/01_projects/orgs-and-rbac.md`.
+- [ ] Обновлены `second-brain/01_projects/auth-and-accounts.md` (роли расширены) + новый файл `second-brain/01_projects/rbac-access-control.md`.
 
 ### Риски
 
@@ -341,7 +341,7 @@ references:
    - Создать тестовую встречу под юзером A, проверить что в `AiUsageLog` после AI-обработки есть запись с `tenantId`, `model`, `costUsd`, `inputTokens`, `outputTokens`.
 2. **second-brain обновления:**
    - Обновить [second-brain/01_projects/auth-and-accounts.md](second-brain/01_projects/auth-and-accounts.md) — раздел «Org и роли», описать новую модель и SignupForm с companyName.
-   - Создать [second-brain/01_projects/orgs-and-rbac.md](second-brain/01_projects/orgs-and-rbac.md) — модель Org/Membership/OrgInvitation, RBAC через Casbin, visibilityMode (open/strict), super_admin (вне Membership).
+   - Создать [second-brain/01_projects/rbac-access-control.md](second-brain/01_projects/rbac-access-control.md) — модель Org/Membership/OrgInvitation, RBAC через Casbin, visibilityMode (open/strict), super_admin (вне Membership).
    - Создать [second-brain/01_projects/llm-router.md](second-brain/01_projects/llm-router.md) — описать архитектуру LlmRouter после расширения: taskType-based маршрутизация, `LlmModelPrice` версионируется, `LlmTaskRoute.experiment` для A/B, обязательный `tenantId` в `AiUsageLog`.
    - Обновить [second-brain/02_architecture/data-model.md](second-brain/02_architecture/data-model.md) — добавить раздел про Org/Membership/OrgInvitation/LlmModelPrice + расширения AiUsageLog/LlmTaskRoute.
    - Обновить [second-brain/02_architecture/module-map.md](second-brain/02_architecture/module-map.md) — добавить модули `orgs`, `rbac`.

@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 import {
   AlertCircle,
   Banknote,
@@ -11,27 +11,16 @@ import {
   TrendingUp,
   Users,
   Wallet,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { billingApi } from '@/api/billing.api';
-import type { BillingOverviewApi } from '@/api/types/billing';
-import { formatRubles } from '@/domain/billing';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+import { ApiError } from "@/api/api-error";
+import { billingApi } from "@/api/billing.api";
+import type { BillingOverviewApi } from "@/api/types/billing";
+import { formatRubles } from "@/domain/billing";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-/**
- * `/admin/billing-overview` — глобальные метрики биллинга (super_admin).
- *
- * Метрики:
- *   - MRR / ARR (по ACTIVE/paid подпискам, monthlyPriceKopecks × N)
- *   - Распределение подписок по статусам (ACTIVE/PAST_DUE/SUSPENDED/...)
- *   - Сумма paid-инвойсов за всё время / за текущий месяц
- *   - Реф-выплаты: pending + paid за месяц
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §11.4.
- */
 export function AdminBillingOverviewClient() {
   const [data, setData] = useState<BillingOverviewApi | null>(null);
   const [loading, setLoading] = useState(true);
@@ -44,7 +33,7 @@ export function AdminBillingOverviewClient() {
       const res = await billingApi.adminGetOverview();
       setData(res);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Ошибка загрузки');
+      setError(e instanceof ApiError ? e.message : "Ошибка загрузки");
     } finally {
       setLoading(false);
     }
@@ -73,7 +62,7 @@ export function AdminBillingOverviewClient() {
       <div className="p-6 max-w-6xl">
         <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-900">
           <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-          <div className="text-sm">{error ?? 'Нет данных'}</div>
+          <div className="text-sm">{error ?? "Нет данных"}</div>
         </div>
       </div>
     );
@@ -88,10 +77,10 @@ export function AdminBillingOverviewClient() {
             Биллинг overview
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Снимок биллинга на{' '}
-            {new Date(data.asOf).toLocaleString('ru-RU', {
-              dateStyle: 'long',
-              timeStyle: 'short',
+            Снимок биллинга на{" "}
+            {new Date(data.asOf).toLocaleString("ru-RU", {
+              dateStyle: "long",
+              timeStyle: "short",
             })}
           </p>
         </div>
@@ -101,7 +90,7 @@ export function AdminBillingOverviewClient() {
         </Button>
       </div>
 
-      {/* Главные числа: MRR / ARR / Месяц / Всего */}
+      {}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard
           icon={<Banknote className="w-5 h-5" />}
@@ -129,7 +118,7 @@ export function AdminBillingOverviewClient() {
         />
       </div>
 
-      {/* Подписки по статусам */}
+      {}
       <div className="rounded-lg border bg-card p-6">
         <h2 className="text-lg font-medium mb-4">Подписки по статусам</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -142,7 +131,7 @@ export function AdminBillingOverviewClient() {
                 <span className="text-green-800">
                   {data.subscriptions.activePaid} paid
                 </span>
-                {' · '}
+                {" · "}
                 <span className="text-blue-800">
                   {data.subscriptions.activeBonus} bonus
                 </span>
@@ -188,7 +177,7 @@ export function AdminBillingOverviewClient() {
         </div>
       </div>
 
-      {/* Инвойсы */}
+      {}
       <div className="rounded-lg border bg-card p-6">
         <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
           <FileText className="w-5 h-5" />
@@ -197,12 +186,15 @@ export function AdminBillingOverviewClient() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
           <SimpleField label="Issued" value={data.invoices.totalIssued} />
           <SimpleField label="Paid (всего)" value={data.invoices.totalPaid} />
-          <SimpleField label="Paid (этот месяц)" value={data.invoices.paidThisMonth} />
+          <SimpleField
+            label="Paid (этот месяц)"
+            value={data.invoices.paidThisMonth}
+          />
           <SimpleField label="Void" value={data.invoices.totalVoid} />
         </div>
       </div>
 
-      {/* Реф-программа */}
+      {}
       <div className="rounded-lg border bg-card p-6">
         <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
           <Sparkles className="w-5 h-5" />

@@ -27,36 +27,14 @@ import type {
   TrustTierDto,
 } from '../dto/regulations.dto';
 
-/**
- * RegulationsService (SBA α-7).
- *
- * Объединяет 3 Prisma-таблицы (`Regulation`, `Process`, `Policy`) под одним
- * REST API `/api/v1/regulations`. Запросы фильтруются по `tenantId` через
- * TenantGuard на уровне контроллера.
- *
- * Все методы кидают `BadRequest` / `NotFound` с сообщениями на русском.
- */
 @Injectable()
 export class RegulationsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    /**
-     * Action Center E1 «поправить карточку знаний» (2026-06-04) — dispute /
-     * correct → обучающий сигнал + предложение правки в очередь курации.
-     */
     @Inject(CurationService) private readonly curation: CurationService,
-    /**
-     * Эмит `card-version.created` для cache invalidation (best-effort).
-     * @Optional — EventEmitter глобальный, защищаемся от регрессий и unit-тестов.
-     */
     @Optional()
     @Inject(EventEmitter2)
     private readonly events: EventEmitter2 | null = null,
-    /**
-     * Ф6 knowledge-access (R12) — гейт проекций (regulation/process/policy) по
-     * группам спрашивающего. @Optional — spec-и конструируют сервис позиционно;
-     * null → гейт off.
-     */
     @Optional()
     @Inject(KnowledgeAccessResolver)
     private readonly accessResolver: KnowledgeAccessResolver | null = null,
@@ -68,15 +46,6 @@ export class RegulationsService {
     private readonly metrics: BusinessMetricsService | null = null,
   ) {}
 
-  /**
-   * Ф6 knowledge-access — гейт проекций по доступу спрашивающего. Группы
-   * проекции выводятся ON-READ из sourceBlockIds (Ф3 материализовал
-   * IdeaBlockAccess блоков). off → выдача байт-в-байт; shadow → только метрика;
-   * enforce → отфильтровываем недоступные. ВАЖНО про пагинацию: при enforce
-   * страница может стать короче, total остаётся посчитанным до фильтра —
-   * лёгкий over-count; приемлемый трейд-офф on-read подхода. Все 3 типа
-   * (regulation/process/policy) под одной surface-меткой 'regulations'.
-   */
   private async gateProjections<T extends { id: string; sourceBlockIds: string[] }>(
     items: T[],
     args: { tenantId: string; userId?: string },
@@ -90,11 +59,10 @@ export class RegulationsService {
       userId: args.userId,
     });
     if (accessCtx.isBypass) return items;
-    const { accessibleIds, denied } =
-      await this.accessResolver.partitionProjectionsByAccess(
-        accessCtx,
-        items.map((i) => ({ id: i.id, sourceBlockIds: i.sourceBlockIds ?? [] })),
-      );
+    const { accessibleIds, denied } = await this.accessResolver.partitionProjectionsByAccess(
+      accessCtx,
+      items.map((i) => ({ id: i.id, sourceBlockIds: i.sourceBlockIds ?? [] })),
+    );
     if (enf === 'enforce') {
       this.metrics?.incAccessDenied({ surface: 'regulations' }, denied);
       return items.filter((i) => accessibleIds.has(i.id));
@@ -102,8 +70,6 @@ export class RegulationsService {
     this.metrics?.incAccessShadowDiff({ surface: 'regulations' }, denied);
     return items;
   }
-
-  // ───────────────────────────── list ─────────────────────────────
 
   async list(args: {
     tenantId: string;
@@ -114,8 +80,6 @@ export class RegulationsService {
     const skip = (q.page - 1) * q.limit;
     const take = q.limit;
 
-    // Если задан конкретный kind — запрашиваем только одну таблицу
-    // (быстрее + честный page/total).
     if (q.kind === 'process') {
       return this.listProcesses({ ...args, skip, take });
     }
@@ -129,58 +93,45 @@ export class RegulationsService {
       return this.listRegulations({ ...args, skip, take, restrictCategory: q.kind });
     }
 
-    // Без фильтра kind — мерджим все три, но честно (через 3 отдельных count'а
-    // и page/limit на агрегате). Это упрощённый pageinator: фактически берём
-    // первые `limit` записей по `updatedAt DESC` со всех таблиц, а total —
-    // сумма всех трёх. Точная глобальная сортировка по offset'у в пределах
-    // одного запроса достижима через UNION ALL SQL — это упрощение α-7.
-    const [regs, procs, pols, regsCount, procsCount, polsCount] =
-      await Promise.all([
-        this.prisma.regulation.findMany({
-          where: this.regulationsWhere(args.tenantId, q),
-          orderBy: { updatedAt: 'desc' },
-          take: q.limit * q.page,
-          include: { currentVersion: { select: { trustTier: true } } },
-        }),
-        this.prisma.process.findMany({
-          where: this.processesWhere(args.tenantId, q),
-          orderBy: { updatedAt: 'desc' },
-          take: q.limit * q.page,
-          include: { currentVersion: { select: { trustTier: true } } },
-        }),
-        this.prisma.policy.findMany({
-          where: this.policiesWhere(args.tenantId, q),
-          orderBy: { updatedAt: 'desc' },
-          take: q.limit * q.page,
-          include: { currentVersion: { select: { trustTier: true } } },
-        }),
-        this.prisma.regulation.count({
-          where: this.regulationsWhere(args.tenantId, q),
-        }),
-        this.prisma.process.count({
-          where: this.processesWhere(args.tenantId, q),
-        }),
-        this.prisma.policy.count({
-          where: this.policiesWhere(args.tenantId, q),
-        }),
-      ]);
+    const [regs, procs, pols, regsCount, procsCount, polsCount] = await Promise.all([
+      this.prisma.regulation.findMany({
+        where: this.regulationsWhere(args.tenantId, q),
+        orderBy: { updatedAt: 'desc' },
+        take: q.limit * q.page,
+        include: { currentVersion: { select: { trustTier: true } } },
+      }),
+      this.prisma.process.findMany({
+        where: this.processesWhere(args.tenantId, q),
+        orderBy: { updatedAt: 'desc' },
+        take: q.limit * q.page,
+        include: { currentVersion: { select: { trustTier: true } } },
+      }),
+      this.prisma.policy.findMany({
+        where: this.policiesWhere(args.tenantId, q),
+        orderBy: { updatedAt: 'desc' },
+        take: q.limit * q.page,
+        include: { currentVersion: { select: { trustTier: true } } },
+      }),
+      this.prisma.regulation.count({
+        where: this.regulationsWhere(args.tenantId, q),
+      }),
+      this.prisma.process.count({
+        where: this.processesWhere(args.tenantId, q),
+      }),
+      this.prisma.policy.count({
+        where: this.policiesWhere(args.tenantId, q),
+      }),
+    ]);
 
-    // Ф6 — гейт каждого типа ДО маппинга (на сырых записях с sourceBlockIds).
     const [visRegs, visProcs, visPols] = await Promise.all([
       this.gateProjections(regs, { tenantId: args.tenantId, userId: args.userId }),
       this.gateProjections(procs, { tenantId: args.tenantId, userId: args.userId }),
       this.gateProjections(pols, { tenantId: args.tenantId, userId: args.userId }),
     ]);
     const merged = [
-      ...visRegs.map((r) =>
-        this.regulationToListItem(r, r.currentVersion?.trustTier ?? 'human'),
-      ),
-      ...visProcs.map((p) =>
-        this.processToListItem(p, p.currentVersion?.trustTier ?? 'human'),
-      ),
-      ...visPols.map((p) =>
-        this.policyToListItem(p, p.currentVersion?.trustTier ?? 'human'),
-      ),
+      ...visRegs.map((r) => this.regulationToListItem(r, r.currentVersion?.trustTier ?? 'human')),
+      ...visProcs.map((p) => this.processToListItem(p, p.currentVersion?.trustTier ?? 'human')),
+      ...visPols.map((p) => this.policyToListItem(p, p.currentVersion?.trustTier ?? 'human')),
     ];
     merged.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
     const items = merged.slice(skip, skip + take);
@@ -216,7 +167,6 @@ export class RegulationsService {
       }),
       this.prisma.regulation.count({ where }),
     ]);
-    // Ф6 — гейт доступа по проекционным группам.
     const visible = await this.gateProjections(items, {
       tenantId: args.tenantId,
       userId: args.userId,
@@ -250,15 +200,12 @@ export class RegulationsService {
       }),
       this.prisma.process.count({ where }),
     ]);
-    // Ф6 — гейт доступа по проекционным группам.
     const visible = await this.gateProjections(items, {
       tenantId: args.tenantId,
       userId: args.userId,
     });
     return {
-      items: visible.map((p) =>
-        this.processToListItem(p, p.currentVersion?.trustTier ?? 'human'),
-      ),
+      items: visible.map((p) => this.processToListItem(p, p.currentVersion?.trustTier ?? 'human')),
       total,
       page: args.query.page,
       limit: args.query.limit,
@@ -284,15 +231,12 @@ export class RegulationsService {
       }),
       this.prisma.policy.count({ where }),
     ]);
-    // Ф6 — гейт доступа по проекционным группам.
     const visible = await this.gateProjections(items, {
       tenantId: args.tenantId,
       userId: args.userId,
     });
     return {
-      items: visible.map((p) =>
-        this.policyToListItem(p, p.currentVersion?.trustTier ?? 'human'),
-      ),
+      items: visible.map((p) => this.policyToListItem(p, p.currentVersion?.trustTier ?? 'human')),
       total,
       page: args.query.page,
       limit: args.query.limit,
@@ -300,13 +244,6 @@ export class RegulationsService {
     };
   }
 
-  /**
-   * A12 (Волна 6) — список инструкций (отдельная таблица `instructions`).
-   * Маппинг в тот же RegulationListItem-shape (kind='instruction'). Версии
-   * инструкций (CardVersion) пока не пишутся специалистом 3.1 →
-   * trustTier='human' по умолчанию. Гейт доступа (Ф6) применяется так же,
-   * как к regulation/process/policy.
-   */
   private async listInstructions(args: {
     tenantId: string;
     userId?: string;
@@ -336,8 +273,6 @@ export class RegulationsService {
       totalPages: Math.max(1, Math.ceil(total / args.query.limit)),
     };
   }
-
-  // ───────────────────────────── get by id ─────────────────────────────
 
   async getByIdAndKind(args: {
     tenantId: string;
@@ -370,14 +305,11 @@ export class RegulationsService {
       if (!instruction) this.notFound(args.kind, args.id);
       return this.instructionToDetail(instruction);
     }
-    // regulation / standard
     const reg = await this.prisma.regulation.findFirst({
       where: {
         id: args.id,
         tenantId: args.tenantId,
-        ...(args.kind === 'standard'
-          ? { category: 'standard' }
-          : { category: 'regulation' }),
+        ...(args.kind === 'standard' ? { category: 'standard' } : { category: 'regulation' }),
       },
       include: { currentVersion: { select: { trustTier: true } } },
     });
@@ -385,16 +317,11 @@ export class RegulationsService {
     return this.regulationToDetail(reg, reg.currentVersion?.trustTier ?? 'human');
   }
 
-  // ───────────────────────────── history ─────────────────────────────
-
   async getHistory(args: {
     tenantId: string;
     id: string;
     kind: RegulationKindDto;
   }): Promise<RegulationHistoryResponse> {
-    // A12 — версии инструкций (CardVersion) пока не пишутся специалистом 3.1.
-    // Возвращаем пустую timeline вместо чтения по resourceType='regulation'
-    // (которое дало бы чужие версии или пусто). История инструкций — след. волна.
     if (args.kind === 'instruction') return { items: [] };
     const resourceType = this.resourceTypeForKind(args.kind);
     const versions = await this.prisma.cardVersion.findMany({
@@ -419,35 +346,14 @@ export class RegulationsService {
     };
   }
 
-  // ───────────────────────────── sources (C3) ─────────────────────────────
-
-  /**
-   * C3 (хаб «Оцифровано») — провенанс карточки: цитаты-первоисточники.
-   *
-   * Цепочка: `<card>.sourceBlockIds[]` → `IdeaBlock` (tenant-скоуп) →
-   * `IdeaBlockEvidence.quote` → `RawEvent` → `Meeting` (best-effort title/date).
-   *
-   * Гранулярность — по evidence (одна запись = одна цитата), а не по блоку:
-   * один блок может иметь несколько свидетельств из разных встреч. Пустой
-   * `sourceBlockIds` или отсутствие evidence → `{ items: [] }`.
-   *
-   * tenant-скоуп ОБЯЗАТЕЛЕН: и карточка, и блоки фильтруются по `tenantId`
-   * (evidence наследует tenant через свой блок, доп. фильтр на встрече по tenant).
-   */
   async getSources(args: {
     tenantId: string;
     id: string;
     kind: RegulationKindDto;
   }): Promise<RegulationSourcesResponse> {
-    // 1) sourceBlockIds карточки (с tenant-скоупом и 404 при отсутствии).
-    const sourceBlockIds = await this.getSourceBlockIds(
-      args.tenantId,
-      args.id,
-      args.kind,
-    );
+    const sourceBlockIds = await this.getSourceBlockIds(args.tenantId, args.id, args.kind);
     if (sourceBlockIds.length === 0) return { items: [] };
 
-    // 2) Блоки этого tenant'а из sourceBlockIds (отсекаем чужие/удалённые id).
     const blocks = await this.prisma.ideaBlock.findMany({
       where: { id: { in: sourceBlockIds }, tenantId: args.tenantId },
       select: { id: true },
@@ -455,7 +361,6 @@ export class RegulationsService {
     const blockIds = blocks.map((b) => b.id);
     if (blockIds.length === 0) return { items: [] };
 
-    // 3) Свидетельства (цитаты) этих блоков + их RawEvent.
     const evidence = await this.prisma.ideaBlockEvidence.findMany({
       where: { blockId: { in: blockIds } },
       orderBy: { createdAt: 'asc' },
@@ -469,8 +374,6 @@ export class RegulationsService {
     });
     if (evidence.length === 0) return { items: [] };
 
-    // 4) Резолв встреч batch'ем (best-effort): RawEvent(sourceType='meeting',
-    //    sourceExternalId=meetingId) → Meeting (tenant-скоуп) → title/date.
     const meetingIds = new Set<string>();
     for (const ev of evidence) {
       if (ev.rawEvent.sourceType === 'meeting' && ev.rawEvent.sourceExternalId) {
@@ -496,18 +399,12 @@ export class RegulationsService {
       items: evidence.map((ev) => {
         const meetingId =
           ev.rawEvent.sourceType === 'meeting' ? ev.rawEvent.sourceExternalId : null;
-        // Best-effort: встреча резолвится → отдаём {id,title,date}; иначе null
-        // (не-meeting источник или встреча не найдена в этом tenant'е).
-        const meeting = meetingId ? meetingById.get(meetingId) ?? null : null;
+        const meeting = meetingId ? (meetingById.get(meetingId) ?? null) : null;
         return { blockId: ev.blockId, quote: ev.quote, meeting };
       }),
     };
   }
 
-  /**
-   * Вернуть `sourceBlockIds` карточки под kind (tenant-скоуп). 404 при отсутствии.
-   * Прямой select (не дёргаем getByIdAndKind целиком — нужно лишь одно поле).
-   */
   private async getSourceBlockIds(
     tenantId: string,
     id: string,
@@ -537,14 +434,11 @@ export class RegulationsService {
       if (!rec) this.notFound(kind, id);
       return rec.sourceBlockIds;
     }
-    // regulation / standard
     const rec = await this.prisma.regulation.findFirst({
       where: {
         id,
         tenantId,
-        ...(kind === 'standard'
-          ? { category: 'standard' }
-          : { category: 'regulation' }),
+        ...(kind === 'standard' ? { category: 'standard' } : { category: 'regulation' }),
       },
       select: { sourceBlockIds: true },
     });
@@ -552,13 +446,6 @@ export class RegulationsService {
     return rec.sourceBlockIds;
   }
 
-  // ───────────────────────────── summary (C4) ─────────────────────────────
-
-  /**
-   * C4 (хаб «Оцифровано») — сводка: счётчики 4 типов карточек + недельный
-   * прирост (карточки всех 4 типов, созданные за последние 7 дней). Все
-   * запросы — параллельно (`Promise.all`), tenant-скоуп обязателен.
-   */
   async getSummary(tenantId: string): Promise<RegulationSummaryResponse> {
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const recent = { createdAt: { gte: weekAgo } };
@@ -581,8 +468,6 @@ export class RegulationsService {
       this.prisma.instruction.count({ where: { tenantId, ...recent } }),
       this.prisma.policy.count({ where: { tenantId, ...recent } }),
     ]);
-    // Ф5 — kill-switch редизайна (дефолт ON). cfg может быть null (юнит-тесты) →
-    // optional chain короткозамыкается в undefined → ?? true.
     const redesignEnabled =
       (await this.cfg?.getDynamic<boolean>(
         'knowledge_base.redesign.enabled',
@@ -599,8 +484,6 @@ export class RegulationsService {
     };
   }
 
-  // ───────────────────────────── supersede / confirm ─────────────────────────────
-
   async supersede(args: {
     tenantId: string;
     id: string;
@@ -615,7 +498,6 @@ export class RegulationsService {
         },
       });
     }
-    // Проверяем, что обе записи существуют в этом tenant'е.
     const existing = await this.prisma.regulation.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
       select: { id: true },
@@ -637,7 +519,6 @@ export class RegulationsService {
         },
       });
     }
-    // Помечаем `existing` как `deprecated`, `successor.supersedesId = existing.id`.
     await this.prisma.$transaction([
       this.prisma.regulation.update({
         where: { id: args.id },
@@ -693,7 +574,6 @@ export class RegulationsService {
       });
       return { ok: true, lastConfirmedAt: now.toISOString() };
     }
-    // regulation / standard
     const exists = await this.prisma.regulation.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
       select: { id: true },
@@ -706,12 +586,6 @@ export class RegulationsService {
     return { ok: true, lastConfirmedAt: now.toISOString() };
   }
 
-  // ─────────────────────── dispute / correct (E1) ───────────────────
-  /**
-   * Action Center E1 «поправить карточку знаний» (2026-06-04) — «Это неверно».
-   * Флаг без правки → обучающий сигнал `misleading` через
-   * `CurationService.recordDecision(mark_as_misleading)`.
-   */
   async dispute(args: {
     tenantId: string;
     id: string;
@@ -719,16 +593,12 @@ export class RegulationsService {
     reason?: string;
     actorUserId: string;
   }): Promise<{ ok: true }> {
-    // A12 — dispute/correct для инструкций идут через ту же инфру версий
-    // (CurationItem/CardVersion) — отложено на следующую волну (нет triage
-    // инструкций). Явный отказ вместо неверного 404 из regulation-ветки.
     if (args.kind === 'instruction') {
       throw new BadRequestException({
         ok: false,
         error: {
           code: 'instruction_action_unsupported',
-          message:
-            'Оспаривание/исправление инструкций появится в следующей версии.',
+          message: 'Оспаривание/исправление инструкций появится в следующей версии.',
         },
       });
     }
@@ -744,12 +614,6 @@ export class RegulationsService {
     return { ok: true };
   }
 
-  /**
-   * Action Center E1 — «Исправить». owner/admin (`canApplyDirectly=true`) →
-   * применяем сразу (новая человеко-проверенная CardVersion + currentVersionId).
-   * read-only → правка уходит предложением в очередь курации (анти-вандализм),
-   * без 403.
-   */
   async correct(args: {
     tenantId: string;
     id: string;
@@ -764,14 +628,12 @@ export class RegulationsService {
     actorUserId: string;
     canApplyDirectly: boolean;
   }): Promise<{ ok: true; applied: boolean }> {
-    // A12 — исправление инструкций (через CardVersion) отложено на след. волну.
     if (args.kind === 'instruction') {
       throw new BadRequestException({
         ok: false,
         error: {
           code: 'instruction_action_unsupported',
-          message:
-            'Исправление инструкций появится в следующей версии.',
+          message: 'Исправление инструкций появится в следующей версии.',
         },
       });
     }
@@ -790,7 +652,6 @@ export class RegulationsService {
       return { ok: true, applied: false };
     }
 
-    // Apply: собираем update data ТОЛЬКО из полей, применимых к kind.
     const p = args.correctedPayload;
 
     if (resourceType === 'process') {
@@ -820,7 +681,10 @@ export class RegulationsService {
         after: args.correctedPayload,
       });
     } else if (resourceType === 'policy') {
-      const before = { name: existing.name, contentMd: (existing as { contentMd?: string }).contentMd ?? null };
+      const before = {
+        name: existing.name,
+        contentMd: (existing as { contentMd?: string }).contentMd ?? null,
+      };
       const data: Prisma.PolicyUpdateInput = {};
       if (p.name !== undefined) data.name = p.name;
       if (p.contentMd !== undefined) data.contentMd = p.contentMd;
@@ -848,7 +712,6 @@ export class RegulationsService {
         after: args.correctedPayload,
       });
     } else {
-      // regulation / standard
       const before = {
         name: existing.name,
         contentMd: (existing as { contentMd?: string }).contentMd ?? null,
@@ -884,13 +747,9 @@ export class RegulationsService {
       });
     }
 
-    // Клиент перечитывает карточку через GET — тело апдейта не возвращаем.
     return { ok: true, applied: true };
   }
 
-  /**
-   * Обучающий сэмпл approve_with_edits (label='correct') через recordDecision.
-   */
   private async recordCorrectionSample(args: {
     tenantId: string;
     resourceType: 'regulation' | 'process' | 'policy';
@@ -911,26 +770,26 @@ export class RegulationsService {
     });
   }
 
-  /** kind → CardVersion.resourceType ('standard' маппится в 'regulation'). */
-  private kindToResourceType(
-    kind: RegulationKindDto,
-  ): 'regulation' | 'process' | 'policy' {
+  private kindToResourceType(kind: RegulationKindDto): 'regulation' | 'process' | 'policy' {
     if (kind === 'process') return 'process';
     if (kind === 'policy') return 'policy';
     return 'regulation';
   }
 
-  /**
-   * Вернуть запись из таблицы под kind (или кинуть 404).
-   * Для regulation/standard учитывает category.
-   */
   private async findByKind(
     tenantId: string,
     id: string,
     kind: RegulationKindDto,
   ): Promise<
     | { id: string; name: string; description: string | null; scope: string | null }
-    | { id: string; name: string; contentMd: string; statement: string | null; category: string; scope: string | null }
+    | {
+        id: string;
+        name: string;
+        contentMd: string;
+        statement: string | null;
+        category: string;
+        scope: string | null;
+      }
     | { id: string; name: string; contentMd: string; severity: string; scope: string | null }
   > {
     if (kind === 'process') {
@@ -951,21 +810,13 @@ export class RegulationsService {
       where: {
         id,
         tenantId,
-        ...(kind === 'standard'
-          ? { category: 'standard' }
-          : { category: 'regulation' }),
+        ...(kind === 'standard' ? { category: 'standard' } : { category: 'regulation' }),
       },
     });
     if (!rec) this.notFound(kind, id);
     return rec;
   }
 
-  /**
-   * Записать новую CardVersion для regulation/process/policy. По образцу
-   * `DecisionsService.writeCardVersion`: уникальный constraint на
-   * (resourceType, resourceId, version) — next version считаем сами;
-   * trustTier НЕ передаём (дефолт схемы — 'human').
-   */
   private async writeRegulationCardVersion(args: {
     tenantId: string;
     resourceType: 'regulation' | 'process' | 'policy';
@@ -996,7 +847,6 @@ export class RegulationsService {
         createdByUserId: args.actorUserId,
       },
     });
-    // Сделаем эту версию текущей в соответствующей таблице.
     if (args.resourceType === 'process') {
       await this.prisma.process.update({
         where: { id: args.resourceId },
@@ -1013,7 +863,6 @@ export class RegulationsService {
         data: { currentVersionId: created.id },
       });
     }
-    // Best-effort эмит для CacheInvalidationService.
     try {
       this.events?.emit('card-version.created', {
         tenantId: args.tenantId,
@@ -1021,17 +870,10 @@ export class RegulationsService {
         resourceType: args.resourceType,
         resourceId: args.resourceId,
       });
-    } catch {
-      // emit ошибся — не валим apply (best-effort).
-    }
+    } catch {}
   }
 
-  // ───────────────────────────── helpers ─────────────────────────────
-
-  private regulationsWhere(
-    tenantId: string,
-    q: ListRegulationsQuery,
-  ): Prisma.RegulationWhereInput {
+  private regulationsWhere(tenantId: string, q: ListRegulationsQuery): Prisma.RegulationWhereInput {
     const where: Prisma.RegulationWhereInput = { tenantId };
     if (q.status) where.status = q.status;
     if (q.scope) where.scope = { contains: q.scope, mode: 'insensitive' };
@@ -1045,10 +887,7 @@ export class RegulationsService {
     return where;
   }
 
-  private processesWhere(
-    tenantId: string,
-    q: ListRegulationsQuery,
-  ): Prisma.ProcessWhereInput {
+  private processesWhere(tenantId: string, q: ListRegulationsQuery): Prisma.ProcessWhereInput {
     const where: Prisma.ProcessWhereInput = { tenantId };
     if (q.status) where.status = q.status;
     if (q.scope) where.scope = { contains: q.scope, mode: 'insensitive' };
@@ -1061,10 +900,7 @@ export class RegulationsService {
     return where;
   }
 
-  private policiesWhere(
-    tenantId: string,
-    q: ListRegulationsQuery,
-  ): Prisma.PolicyWhereInput {
+  private policiesWhere(tenantId: string, q: ListRegulationsQuery): Prisma.PolicyWhereInput {
     const where: Prisma.PolicyWhereInput = { tenantId };
     if (q.status) where.status = q.status;
     if (q.scope) where.scope = { contains: q.scope, mode: 'insensitive' };
@@ -1093,8 +929,6 @@ export class RegulationsService {
     }
     return where;
   }
-
-  // mappers
 
   private regulationToListItem(
     r: Awaited<ReturnType<PrismaService['regulation']['findFirst']>> extends null | infer T
@@ -1168,11 +1002,6 @@ export class RegulationsService {
     };
   }
 
-  /**
-   * A12 (Волна 6) — маппер Instruction → RegulationListItem-shape.
-   * status → extractionStatus: active→exists; deprecated/archived→discussed.
-   * trustTier='human' (версии инструкций пока не пишутся).
-   */
   private instructionToListItem(
     i: NonNullable<Awaited<ReturnType<PrismaService['instruction']['findFirst']>>>,
   ): RegulationListItemDto {
@@ -1224,9 +1053,7 @@ export class RegulationsService {
 
   private processToDetail(
     p: NonNullable<
-      Awaited<
-        ReturnType<typeof this.prisma.process.findFirst>
-      > & {
+      Awaited<ReturnType<typeof this.prisma.process.findFirst>> & {
         steps: Array<{
           id: string;
           order: number;

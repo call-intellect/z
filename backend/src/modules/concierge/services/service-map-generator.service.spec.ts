@@ -2,14 +2,6 @@ import { describe, expect, it, beforeAll } from 'vitest';
 
 import { ServiceMapGeneratorService } from './service-map-generator.service';
 
-/**
- * SBA γ-2 — smoke-тест ServiceMapGeneratorService.
- *
- * Проверяем что:
- *   - onModuleInit() заполняет ненулевой список tools;
- *   - findTool() возвращает entry по имени;
- *   - buildToolUsePromptFragment() возвращает валидный JSON.
- */
 describe('ServiceMapGeneratorService', () => {
   const svc = new ServiceMapGeneratorService();
   beforeAll(() => {
@@ -122,24 +114,15 @@ describe('ServiceMapGeneratorService', () => {
     const t = svc.findTool('find_free_slot');
     expect(t?.method).toBe('POST');
     expect(t?.path).toBe('/api/v1/events/find-free-slot');
-    expect(t?.parameters.required).toEqual([
-      'participantUserIds',
-      'durationMin',
-    ]);
+    expect(t?.parameters.required).toEqual(['participantUserIds', 'durationMin']);
   });
 
-  // Семантически безопасные POST: readOnly=true → confirm не нужен,
-  // undo-log не пишется (find_free_slot — чистый расчёт; ask_chat_v2 —
-  // «задать вопрос», отмена бессмысленна). Мутирующие — без маркера.
   it('readOnly: find_free_slot и ask_chat_v2 помечены, мутирующие — нет', () => {
     expect(svc.findTool('find_free_slot')?.readOnly).toBe(true);
     expect(svc.findTool('ask_chat_v2')?.readOnly).toBe(true);
-    // Настоящие мутации маркера не имеют.
     expect(svc.findTool('create_event')?.readOnly).toBeUndefined();
     expect(svc.findTool('infer_table_schema')?.readOnly).toBeUndefined();
   });
-
-  // ───────────────── ТЗ 2026-06-14 (assistant-router) — состав реестра ─────────────────
 
   it('search_knowledge УДАЛЁН из реестра помощника', () => {
     expect(svc.findTool('search_knowledge')).toBeNull();
@@ -154,7 +137,6 @@ describe('ServiceMapGeneratorService', () => {
     expect(t?.rbacResource).toBe('issue');
     expect(t?.rbacAction).toBe('write');
     expect(t?.parameters.required).toEqual(['title']);
-    // Мутирующий без undoableVia → потребует подтверждения (Ф6/web).
     expect(t?.undoableVia).toBeUndefined();
     expect(t?.readOnly).toBeUndefined();
     expect(t?.description).toContain('Используй');
@@ -176,7 +158,6 @@ describe('ServiceMapGeneratorService', () => {
     expect(t).not.toBeNull();
     expect(t?.method).toBe('POST');
     expect(t?.path).toBe('/api/v1/me/notifications/free-note');
-    // self-scoped — без rbacResource; readOnly чтобы не требовать подтверждения.
     expect(t?.rbacResource).toBeUndefined();
     expect(t?.readOnly).toBe(true);
     expect(t?.parameters.required).toEqual(['text']);
@@ -205,8 +186,6 @@ describe('ServiceMapGeneratorService', () => {
     expect(t?.rbacAction).toBe('delete');
     expect(t?.parameters.required).toEqual(['id']);
   });
-
-  // ───────────────────── Pulse Wave 5 §5.5 — Concierge tools ─────────────────────
 
   it('exposes Pulse Wave 5 director tools', () => {
     const tools = svc.getTools();
@@ -244,23 +223,14 @@ describe('ServiceMapGeneratorService', () => {
     expect(t?.parameters.required).toEqual(['personId']);
   });
 
-  // Ф6 assistant-channels (2026-06-11) — фикс бага: старый путь дашборда
-  // не существовал (404); реальный роут —
-  // GET /dashboard/operations/open-commitments, query строго по
-  // OpenCommitmentsQuerySchema (.strict(): только days/limit, оба опц.).
   it('list_overdue_promises — GET /dashboard/operations/open-commitments, dashboard_operations.read', () => {
     const t = svc.findTool('list_overdue_promises');
     expect(t?.method).toBe('GET');
     expect(t?.path).toBe('/api/v1/dashboard/operations/open-commitments');
     expect(t?.rbacResource).toBe('dashboard_operations');
     expect(t?.rbacAction).toBe('read');
-    // days/limit опц. — required не должен быть выставлен.
     expect(t?.parameters.required ?? []).toEqual([]);
-    // Параметры соответствуют OpenCommitmentsQuerySchema (strict).
-    expect(Object.keys(t?.parameters.properties ?? {}).sort()).toEqual([
-      'days',
-      'limit',
-    ]);
+    expect(Object.keys(t?.parameters.properties ?? {}).sort()).toEqual(['days', 'limit']);
   });
 
   it('get_sprint_status — GET /cycles/:cycleId/dashboard, cycle.read, cycleId required', () => {
@@ -288,28 +258,19 @@ describe('ServiceMapGeneratorService', () => {
     expect(t?.rbacAction).toBe('read');
   });
 
-  // ───────────────── Ф6 — канальное сужение (whitelist per-call) ─────────────────
-
   it('Ф6: toLlmTools(names) сужает список до whitelist, без аргумента — все tools', () => {
     const all = svc.toLlmTools();
     expect(all).toHaveLength(svc.getTools().length);
 
     const narrowed = svc.toLlmTools(['list_tasks', 'ask_chat_v2']);
-    expect(narrowed.map((t) => t.name).sort()).toEqual([
-      'ask_chat_v2',
-      'list_tasks',
-    ]);
+    expect(narrowed.map((t) => t.name).sort()).toEqual(['ask_chat_v2', 'list_tasks']);
   });
 
   it('Ф6: buildToolUsePromptFragment(names) сужает legacy-фрагмент; неизвестные имена игнорируются', () => {
-    const fragment = svc.buildToolUsePromptFragment([
-      'list_meetings',
-      'tool_kotorogo_net',
-    ]);
+    const fragment = svc.buildToolUsePromptFragment(['list_meetings', 'tool_kotorogo_net']);
     const parsed = JSON.parse(fragment) as Array<{ name: string }>;
     expect(parsed.map((t) => t.name)).toEqual(['list_meetings']);
 
-    // Без аргумента — прежнее поведение (все tools).
     const full = JSON.parse(svc.buildToolUsePromptFragment()) as unknown[];
     expect(full.length).toBe(svc.getTools().length);
   });

@@ -1,20 +1,8 @@
-/**
- * Юнит-тесты `DumpService.createDump` (Ф9 «владелец без Person»,
- * `plans/tz/2026-06-04-razblokirovka-konveyera.md`).
- *
- * Покрытие:
- *   - ensurePersonForUser нашёл/создал Person → дамп идёт через Document-путь
- *     (createTextDocumentAndPublish, uploaderPersonId), НЕ legacy ingest;
- *   - ensurePersonForUser бросил → graceful fallback на legacy ingest
- *     (не валим дамп).
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import { DumpService } from './dump.service';
 
-function build(overrides: {
-  ensure?: () => Promise<{ id: string }>;
-}) {
+function build(overrides: { ensure?: () => Promise<{ id: string }> }) {
   const prisma = {
     person: { findFirst: vi.fn() },
     document: {
@@ -39,9 +27,7 @@ function build(overrides: {
   const cfg = {};
   const coreQueue = { enqueueDumpCreated: vi.fn(async () => undefined) };
   const persons = {
-    ensurePersonForUser: vi.fn(
-      overrides.ensure ?? (async () => ({ id: 'person-1' })),
-    ),
+    ensurePersonForUser: vi.fn(overrides.ensure ?? (async () => ({ id: 'person-1' }))),
   };
 
   const svc = new DumpService(
@@ -71,13 +57,11 @@ describe('DumpService.createDump — Ф9 Document-путь', () => {
       tenantId: 'org-1',
       userId: 'u-1',
     });
-    // Document создан с uploaderId = personId.
     expect(prisma.document.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ uploaderId: 'person-1' }),
       }),
     );
-    // Legacy ingest-путь не задействован.
     expect(ingest.ingest).not.toHaveBeenCalled();
     expect(res.documentId).toBe('doc-1');
   });
@@ -96,7 +80,6 @@ describe('DumpService.createDump — Ф9 Document-путь', () => {
       text: 'мысль',
     });
 
-    // Document НЕ создан, ушли в legacy RawEvent.
     expect(prisma.document.create).not.toHaveBeenCalled();
     expect(ingest.ingest).toHaveBeenCalledOnce();
     expect(res.rawEventId).toBe('raw-1');

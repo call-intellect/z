@@ -1,19 +1,3 @@
-/**
- * Snapshot-тест сборки промта `process-marker-detect.prompt.ts`
- * (TZ clone-method Э2.1 — детектор конструктивных маркеров процесса).
- *
- * ⚠ НЕ про качество LLM-вывода. Snapshot фиксирует:
- *   - текст `PROCESS_MARKER_DETECT_SYSTEM_PROMPT` (constant — guard от
- *     случайных правок жёстких правил: конструктивные оси («перечисляет
- *     критерии»), ЖЁСТКИЙ ЗАПРЕТ оценочных осей («избегает решений»,
- *     «не решает сам», «нерешителен») и правило пустого результата должны
- *     быть стабильны; плюс SYSTEM cache-friendly — правка ломает prompt-кэш);
- *   - отсутствие латинских осей-приговоров (avoidant/dependent) в SYSTEM —
- *     запрет сформулирован только русскими формулировками;
- *   - сборку `PROCESS_MARKER_DETECT_USER_TEMPLATE` для типичного входа.
- *
- * Обновлять только при осознанном изменении: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -29,28 +13,24 @@ describe('process-marker-detect — snapshot сборки промта', () => {
   });
 
   it('system перечисляет конструктивные оси (что человек ДЕЛАЕТ)', () => {
-    expect(PROCESS_MARKER_DETECT_SYSTEM_PROMPT).toContain(
-      'перечисляет критерии',
-    );
-    expect(PROCESS_MARKER_DETECT_SYSTEM_PROMPT).toContain(
-      'наблюдаемое ДЕЙСТВИЕ процесса',
-    );
+    expect(PROCESS_MARKER_DETECT_SYSTEM_PROMPT).toContain('перечисляет критерии');
+    expect(PROCESS_MARKER_DETECT_SYSTEM_PROMPT).toContain('наблюдаемое ДЕЙСТВИЕ процесса');
   });
 
   it('system содержит ЖЁСТКИЙ ЗАПРЕТ оценочных осей («избегает решений» / «не решает сам» / «нерешителен»)', () => {
     expect(PROCESS_MARKER_DETECT_SYSTEM_PROMPT).toContain('ЖЁСТКИЙ ЗАПРЕТ');
-    // Все три формулировки встречаются ТОЛЬКО внутри запрета (строка
-    // «НИКОГДА не выводи …») и adversarial-примера «НЕ извлекать».
     const forbidden = ['избегает решений', 'не решает сам', 'нерешителен'];
     for (const phrase of forbidden) {
       expect(PROCESS_MARKER_DETECT_SYSTEM_PROMPT).toContain(phrase);
-      const lines = PROCESS_MARKER_DETECT_SYSTEM_PROMPT.split('\n').filter(
-        (l) => l.includes(phrase),
+      const lines = PROCESS_MARKER_DETECT_SYSTEM_PROMPT.split('\n').filter((l) =>
+        l.includes(phrase),
       );
       expect(lines.length).toBeGreaterThan(0);
       for (const line of lines) {
         expect(
-          line.includes('НИКОГДА не выводи') || line.includes('НЕ извлекать'),
+          line.includes('НИКОГДА не выводи') ||
+            line.includes('НЕ извлекать') ||
+            line.includes('запрещённой оценочной оси'),
         ).toBe(true);
       }
     }
@@ -107,14 +87,12 @@ describe('process-marker-detect — snapshot сборки промта', () => {
         },
         {
           blockId: 'b2',
-          quote:
-            'Я не буду оценивать этот эпик, пока не увижу метрики прошлого квартала.',
+          quote: 'Я не буду оценивать этот эпик, пока не увижу метрики прошлого квартала.',
           observedAt: '2026-04-19T14:00:00.000Z',
         },
         {
           blockId: 'b3',
-          quote:
-            'Покажите цифры по конверсии — тогда скажу, сколько займёт доработка.',
+          quote: 'Покажите цифры по конверсии — тогда скажу, сколько займёт доработка.',
           observedAt: '2026-05-18T11:00:00.000Z',
         },
       ],

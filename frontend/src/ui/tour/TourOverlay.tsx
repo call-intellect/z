@@ -1,26 +1,13 @@
-'use client';
+"use client";
 
-/**
- * TourOverlay — связка Backdrop + Tooltip. Рендерится из TourProvider.
- * Виден только когда есть `active` тур.
- *
- * Обработчики:
- *   - ESC → skip (по ТЗ §"Доступность").
- *   - primaryAction.kind === 'next' → next() (на последнем шаге complete).
- *   - primaryAction.kind === 'complete' → complete().
- *   - secondaryAction.kind === 'skip' → skip().
- *   - primaryAction.kind === 'prev' → prev().
- *   - primaryAction.kind === 'navigate' → router.push(href) + next().
- */
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
-import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-
-import { useTourContext } from './TourProvider';
-import { TourBackdrop } from './TourBackdrop';
-import { TourTooltip } from './TourTooltip';
-import { TourCompletionModal } from './TourCompletionModal';
-import type { TourId, TourStepAction } from './types';
+import { useTourContext } from "./TourProvider";
+import { TourBackdrop } from "./TourBackdrop";
+import { TourTooltip } from "./TourTooltip";
+import { TourCompletionModal } from "./TourCompletionModal";
+import type { TourId, TourStepAction } from "./types";
 
 export function TourOverlay() {
   const { active, next, prev, skip, complete } = useTourContext();
@@ -28,19 +15,16 @@ export function TourOverlay() {
   const lastTourIdRef = useRef<TourId | null>(null);
   const [justCompleted, setJustCompleted] = useState<TourId | null>(null);
 
-  // Запоминаем текущий tourId пока тур активен.
   useEffect(() => {
     if (active) {
       lastTourIdRef.current = active.definition.id;
     }
   }, [active]);
 
-  // Когда тур завершается (active → null), показываем completion modal.
   useEffect(() => {
     if (!active && lastTourIdRef.current) {
       const tourId = lastTourIdRef.current;
-      // Не показываем модал для project/meeting туров — только welcome/overview.
-      if (tourId === 'welcome' || tourId === 'overview') {
+      if (tourId === "welcome" || tourId === "overview") {
         setJustCompleted(tourId);
       }
       lastTourIdRef.current = null;
@@ -50,19 +34,21 @@ export function TourOverlay() {
   useEffect(() => {
     if (!active) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         e.preventDefault();
         void skip();
       }
     };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
   }, [active, skip]);
 
   const dismissModal = () => setJustCompleted(null);
 
   if (justCompleted) {
-    return <TourCompletionModal tourId={justCompleted} onDismiss={dismissModal} />;
+    return (
+      <TourCompletionModal tourId={justCompleted} onDismiss={dismissModal} />
+    );
   }
 
   if (!active) return null;
@@ -72,19 +58,19 @@ export function TourOverlay() {
 
   const onAction = (action: TourStepAction) => {
     switch (action.kind) {
-      case 'next':
+      case "next":
         next();
         break;
-      case 'prev':
+      case "prev":
         prev();
         break;
-      case 'skip':
+      case "skip":
         void skip();
         break;
-      case 'complete':
+      case "complete":
         void complete();
         break;
-      case 'navigate':
+      case "navigate":
         if (action.href) router.push(action.href);
         next();
         break;

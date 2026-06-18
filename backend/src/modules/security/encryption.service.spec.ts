@@ -37,7 +37,6 @@ describe('EncryptionService', () => {
     const svc = new EncryptionService(makeCfg());
     const ct = svc.encrypt('hello');
     const parts = ct.split('.');
-    // Меняем последний байт ciphertext.
     const ctRaw = Buffer.from(parts[1] as string, 'base64');
     const lastByte = ctRaw[ctRaw.length - 1] ?? 0;
     ctRaw[ctRaw.length - 1] = lastByte ^ 0xff;

@@ -9,19 +9,8 @@ import type { LivekitEventsHandler } from './livekit-events.handler';
 import type { LivekitSignatureVerifier } from './livekit-signature.verifier';
 import { LivekitWebhooksService } from './livekit-webhooks.service';
 
-/**
- * ТЗ-2 Фаза 3: ack-first обработка вебхуков за флагом
- * `LIVEKIT_WEBHOOK_ACK_FIRST_ENABLED` (дефолт OFF).
- *
- * Проверяем:
- *   (a) флаг OFF (дефолт) → eventsHandler.handle вызван (как раньше);
- *   (b) флаг ON → eventsHandler.handle тоже вызван (фоном, verify/dedup ДО);
- *   (c) невалидная подпись → throw НЕЗАВИСИМО от флага, handle НЕ вызван.
- */
-
 interface MakeOpts {
   ackFirst: boolean;
-  /** Если true — verifier.verify бросает (имитация невалидной подписи). */
   verifyThrows?: boolean;
 }
 
@@ -31,7 +20,11 @@ function makeService(opts: MakeOpts): {
   eventsHandler: { handle: ReturnType<typeof vi.fn> };
   seenCreate: ReturnType<typeof vi.fn>;
 } {
-  const event = { event: 'room_finished', id: 'evt-1', room: { name: 'm-1' } } as unknown as WebhookEvent;
+  const event = {
+    event: 'room_finished',
+    id: 'evt-1',
+    room: { name: 'm-1' },
+  } as unknown as WebhookEvent;
 
   const verifier = {
     verify: vi.fn(() => {
@@ -41,7 +34,7 @@ function makeService(opts: MakeOpts): {
   };
 
   const seenCreate = vi.fn(async () => ({ eventId: 'evt-1' }));
-  const meetingFindUnique = vi.fn(async () => null); // нет встречи → MeetingEvent не пишем
+  const meetingFindUnique = vi.fn(async () => null);
   const prisma = {
     webhookSeenEvent: { create: seenCreate },
     meeting: { findUnique: meetingFindUnique },
@@ -85,10 +78,8 @@ describe('LivekitWebhooksService — ack-first флаг', () => {
   it('(b) флаг ON → eventsHandler.handle вызван (фоном), verify+dedup отработали ДО', async () => {
     const { service, verifier, eventsHandler, seenCreate } = makeService({ ackFirst: true });
     await service.handle(Buffer.from('{}'), 'auth');
-    // verify и дедуп — синхронны и выполнены до фоновой обработки.
     expect(verifier.verify).toHaveBeenCalledTimes(1);
     expect(seenCreate).toHaveBeenCalledTimes(1);
-    // handle всё равно вызван (в фоне, но синхронно стартует в той же микротаске).
     expect(eventsHandler.handle).toHaveBeenCalledTimes(1);
   });
 

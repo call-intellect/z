@@ -13,17 +13,6 @@ import { MeetingsCrossmarkController } from './meetings.crossmark.controller';
 import { MeetingsRepository } from './meetings.repository';
 import { MeetingsService } from './meetings.service';
 
-/**
- * Глобальный Meetings-модуль. `MeetingsService` нужен в Webhooks, Recordings,
- * AI-pipeline — поэтому экспортирован.
- *
- * `IdempotencyInterceptor` объявлен как provider (не глобально), чтобы
- * `@UseInterceptors(IdempotencyInterceptor)` мог его инстанцировать через DI.
- *
- * `HostControlsService` — mute/kick/finish/lower-hand для хоста (Фаза 3.4–3.5).
- * `IdleMeetingCron` — раз в минуту проходит по active-встречам и закрывает
- * пустые room'ы (Фаза 3.6).
- */
 @Global()
 @Module({
   imports: [MeetingsBalanceModule],

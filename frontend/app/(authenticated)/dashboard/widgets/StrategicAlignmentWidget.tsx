@@ -1,28 +1,19 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { AlertTriangle, ArrowRight, Target } from 'lucide-react';
+import Link from "next/link";
+import { AlertTriangle, ArrowRight, Target } from "lucide-react";
 
 import {
   alignmentTextColor,
   formatAlignment,
   formatDelta,
-} from '@/domain/goal';
-import type { DirectorDashboardStrategicAlignmentDomain } from '@/domain/director-dashboard';
-import { Badge } from '@/ui/shadcn/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/domain/goal";
+import type { DirectorDashboardStrategicAlignmentDomain } from "@/domain/director-dashboard";
+import { Badge } from "@/ui/shadcn/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-/**
- * Виджет «Согласованность стратегии» (Phase 9 frontend, дашборд директора).
- *
- * Отображает взвешенный средний alignment по активным целям Org + список
- * целей с резким падением (`alertGoals`).
- *
- * Источник: `DirectorDashboardDto.strategicAlignment` (опц. поле, заполняется
- * только когда у Org заведены цели — Phase 9 backend).
- */
 export function StrategicAlignmentWidget({
   data,
   loading,
@@ -103,7 +94,7 @@ function Body({ data }: { data: DirectorDashboardStrategicAlignmentDomain }) {
         <Link
           href="/goals"
           className={cn(
-            'text-5xl font-semibold tabular-nums leading-none transition-opacity hover:opacity-80',
+            "text-5xl font-semibold tabular-nums leading-none transition-opacity hover:opacity-80",
             alignmentTextColor(score),
           )}
           title="Открыть страницу целей"
@@ -111,8 +102,12 @@ function Body({ data }: { data: DirectorDashboardStrategicAlignmentDomain }) {
           {formatAlignment(score)}
         </Link>
         <span className="text-xs text-fg-tertiary">
-          / 100 — взвешенное среднее по {data.goalsCount}{' '}
-          {pluralizeRu(data.goalsCount, ['активной цели', 'активным целям', 'активным целям'])}
+          / 100 — взвешенное среднее по {data.goalsCount}{" "}
+          {pluralizeRu(data.goalsCount, [
+            "активной цели",
+            "активным целям",
+            "активным целям",
+          ])}
         </span>
       </div>
 
@@ -120,8 +115,8 @@ function Body({ data }: { data: DirectorDashboardStrategicAlignmentDomain }) {
         <div className="flex flex-col gap-1.5 rounded-lg border border-danger/30 bg-danger/5 p-3">
           <div className="flex items-center gap-1.5 text-xs font-medium text-danger">
             <AlertTriangle size={12} />
-            Резкое падение по {data.alertGoals.length}{' '}
-            {pluralizeRu(data.alertGoals.length, ['цели', 'целям', 'целям'])}
+            Резкое падение по {data.alertGoals.length}{" "}
+            {pluralizeRu(data.alertGoals.length, ["цели", "целям", "целям"])}
           </div>
           <ul className="flex flex-col gap-1">
             {data.alertGoals.map((g) => (
@@ -134,14 +129,14 @@ function Body({ data }: { data: DirectorDashboardStrategicAlignmentDomain }) {
                   <span className="flex shrink-0 items-center gap-2 text-xs">
                     <span
                       className={cn(
-                        'tabular-nums font-semibold',
+                        "tabular-nums font-semibold",
                         alignmentTextColor(g.score),
                       )}
                     >
                       {g.score}
                     </span>
                     <span className="text-danger tabular-nums">
-                      {formatDelta(g.delta) ?? ''}
+                      {formatDelta(g.delta) ?? ""}
                     </span>
                   </span>
                 </Link>
@@ -151,7 +146,7 @@ function Body({ data }: { data: DirectorDashboardStrategicAlignmentDomain }) {
         </div>
       ) : (
         <p className="text-xs text-fg-tertiary">
-          Целей с резким падением нет.{' '}
+          Целей с резким падением нет.{" "}
           <Link href="/goals" className="text-accent hover:underline">
             Открыть цели
           </Link>

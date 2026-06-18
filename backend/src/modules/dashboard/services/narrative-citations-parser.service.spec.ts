@@ -5,11 +5,6 @@ import {
   type CitationSource,
 } from './narrative-citations-parser.service';
 
-/**
- * Юнит-тесты `NarrativeCitationsParserService` (Pulse Wave 1 §1.4).
- *
- * Парсер не имеет внешних зависимостей — чистая функция-стейтлесс.
- */
 describe('NarrativeCitationsParserService', () => {
   let parser: NarrativeCitationsParserService;
 
@@ -30,9 +25,7 @@ describe('NarrativeCitationsParserService', () => {
   });
 
   it('валидный маркер темы → [1] + один citation с URL', () => {
-    const sources: CitationSource[] = [
-      { type: 'theme', id: 'abc123', label: 'T1' },
-    ];
+    const sources: CitationSource[] = [{ type: 'theme', id: 'abc123', label: 'T1' }];
     const result = parser.parse('Foo [theme:abc123] bar', sources);
 
     expect(result.text).toBe('Foo [1] bar');
@@ -68,9 +61,7 @@ describe('NarrativeCitationsParserService', () => {
   });
 
   it('один маркер дважды → одна citation, обе замены имеют тот же [1]', () => {
-    const sources: CitationSource[] = [
-      { type: 'theme', id: 'aaa111', label: 'Тема X' },
-    ];
+    const sources: CitationSource[] = [{ type: 'theme', id: 'aaa111', label: 'Тема X' }];
     const result = parser.parse(
       '[theme:aaa111] первое упоминание, [theme:aaa111] второе.',
       sources,
@@ -82,9 +73,7 @@ describe('NarrativeCitationsParserService', () => {
   });
 
   it('галлюцинированный маркер (id не в sources) → стрипается, в citations не попадает', () => {
-    const sources: CitationSource[] = [
-      { type: 'theme', id: 'real01', label: 'Реальная' },
-    ];
+    const sources: CitationSource[] = [{ type: 'theme', id: 'real01', label: 'Реальная' }];
     const result = parser.parse(
       'Реальный факт [theme:real01], а вот выдуманный [theme:fakefake123].',
       sources,
@@ -125,32 +114,24 @@ describe('NarrativeCitationsParserService', () => {
   });
 
   it('косметика пробелов: пробел перед точкой убирается', () => {
-    const sources: CitationSource[] = [
-      { type: 'theme', id: 'abc123', label: 'T' },
-    ];
+    const sources: CitationSource[] = [{ type: 'theme', id: 'abc123', label: 'T' }];
     const result = parser.parse('Foo [theme:abc123] .', sources);
     expect(result.text).toBe('Foo [1].');
   });
 
   it('косметика: множественные пробелы схлопываются и trim по краям', () => {
-    const sources: CitationSource[] = [
-      { type: 'theme', id: 'abc123', label: 'T' },
-    ];
-    // После замены маркера на [1] остаётся двойной пробел вокруг.
+    const sources: CitationSource[] = [{ type: 'theme', id: 'abc123', label: 'T' }];
     const result = parser.parse('  Foo   [theme:abc123]  bar  ', sources);
     expect(result.text).toBe('Foo [1] bar');
   });
 
   it('label берётся из sources, не из текста', () => {
-    const sources: CitationSource[] = [
-      { type: 'mtg', id: 'meet01', label: 'Встреча: ретро' },
-    ];
+    const sources: CitationSource[] = [{ type: 'mtg', id: 'meet01', label: 'Встреча: ретро' }];
     const result = parser.parse('Встреча состоялась [mtg:meet01].', sources);
     expect(result.citations[0]!.label).toBe('Встреча: ретро');
   });
 
   it('короткий id (<6 chars) → regex не матчит, маркер остаётся в тексте', () => {
-    // Защита: regex требует {6,64} символов в id.
     const result = parser.parse('Текст [theme:abc] хвост', [
       { type: 'theme', id: 'abc', label: 'X' },
     ]);

@@ -1,15 +1,5 @@
 'use client';
 
-/**
- * IncompleteSetupBanner — плашка «Настройка компании: N из 6» на дашборде.
- * Показывается если Org.setupCompletedAt === null.
- *
- * ТЗ 2026-05-29 onboarding-v2 §5.7.
- * Фикс 2026-06-17: прогресс берём с бэка (GET /orgs/:orgId/setup-progress —
- * «timestamp ИЛИ факт существования сущности»), а не по полям Org.*CompletedAt,
- * иначе отделы/сотрудники, заведённые вне мастера, давали «0 из 6».
- */
-
 import { useState, useEffect } from 'react';
 import useSWR from 'swr';
 import { X } from 'lucide-react';
@@ -22,7 +12,6 @@ import { onboardingApi, type SetupProgressApi } from '@/api/onboarding.api';
 
 const DISMISS_KEY = 'onboarding.banner.dismissed';
 
-// Маппинг 6 вех setup-progress → русские лейблы «Осталось» (порядок сохранить).
 const SETUP_STEPS: { key: keyof SetupProgressApi['steps']; label: string }[] = [
   { key: 'welcome', label: 'познакомить Кору с компанией' },
   { key: 'companyInfo', label: 'заполнить данные компании' },
@@ -52,7 +41,6 @@ export function IncompleteSetupBanner() {
 
   if (setupCompletedAt || dismissed || !org || isSuperAdmin) return null;
 
-  // Пока прогресс не пришёл — не мигаем «0 из 6».
   const progress = progressSwr.data;
   if (!progress) return null;
 

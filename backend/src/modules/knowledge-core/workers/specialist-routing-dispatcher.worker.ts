@@ -32,41 +32,12 @@ import { Specialist36IdeasWorker } from './specialist-3-6-ideas.worker';
 import { Specialist37SkillWorker } from './specialist-3-7-skill.worker';
 import { SprintHelperWorker } from './sprint-helper.worker';
 
-/**
- * Минимальный контракт хендлера специалиста: один метод `handle(job)`,
- * который выполняет логику ОДНОГО специалиста. jobName-маршрутизация на этом
- * уровне уже выполнена диспетчером — хендлеру достаются только «свои» jobs.
- */
 interface SpecialistHandler {
   handle(job: Job): Promise<void>;
 }
 
-/**
- * Ф2 МТЗ «разблокировка конвейера» — диспетчер очереди `core.specialist-routing`.
- *
- * **Почему это нужно.** Раньше на одной очереди `core.specialist-routing`
- * поднималось 14 конкурирующих `new Worker(...)` (по одному в каждом
- * специалист-воркере). BullMQ отдаёт каждый job ОДНОМУ случайному воркеру из
- * конкурирующих consumer'ов, а каждый воркер делал `if (job.name !== MY_NAME)
- * return;` — silent return → job completed → ретрая нет → ~13/14 блоков молча
- * терялись.
- *
- * BullMQ НЕ поддерживает «per-jobName consumer» на общей очереди: named
- * processor реализуется ОДНИМ Worker'ом с диспетчеризацией по `job.name`
- * (Map / switch) внутри. Это и делает этот класс — единственный Worker на
- * очереди, который по `job.name` делегирует в нужный handler-Injectable.
- *
- * Неизвестный `job.name` → **throw** (а не silent return): job попадает в
- * `failed` и виден, а не теряется как «completed».
- *
- * concurrency=4 — один Worker вместо прежних 14×(1..2). Баланс throughput vs
- * LLM rate-limit на малом тенанте: специалисты внутри ходят в LLM-прокси,
- * поэтому не задираем параллелизм.
- */
 @Injectable()
-export class SpecialistRoutingDispatcherWorker
-  implements OnModuleInit, OnModuleDestroy
-{
+export class SpecialistRoutingDispatcherWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SpecialistRoutingDispatcherWorker.name);
   private worker: Worker | null = null;
   private readonly handlers = new Map<string, SpecialistHandler>();
@@ -106,53 +77,32 @@ export class SpecialistRoutingDispatcherWorker
   ) {}
 
   onModuleInit(): void {
-    // Карта jobName → handler. Имена берём из static-констант каждого
-    // специалиста (источник правды — RouterService.SPECIALIST.* / static
-    // SPECIALIST_NAME | JOB_NAME), а не из строковых литералов.
     const register = (name: string, handler: SpecialistHandler): void => {
       if (this.handlers.has(name)) {
-        throw new Error(
-          `specialist-routing: дубликат jobName '${name}' в карте диспетчера`,
-        );
+        throw new Error(`specialist-routing: дубликат jobName '${name}' в карте диспетчера`);
       }
       this.handlers.set(name, handler);
     };
 
     register(Specialist31RegulationsWorker.SPECIALIST_NAME, this.regulations);
-    register(
-      Specialist32KnowledgeCloneWorker.SPECIALIST_NAME,
-      this.knowledgeClone,
-    );
+    register(Specialist32KnowledgeCloneWorker.SPECIALIST_NAME, this.knowledgeClone);
     register(Specialist33DecisionsWorker.SPECIALIST_NAME, this.decisions);
-    register(
-      Specialist34ProjectCustomerWorker.SPECIALIST_NAME,
-      this.projectCustomer,
-    );
+    register(Specialist34ProjectCustomerWorker.SPECIALIST_NAME, this.projectCustomer);
     register(Specialist35InsightsWorker.SPECIALIST_NAME, this.insights);
     register(Specialist36IdeasWorker.SPECIALIST_NAME, this.ideas);
     register(Specialist37SkillWorker.SPECIALIST_NAME, this.skill);
     register(Specialist38HelpfulnessWorker.SPECIALIST_NAME, this.helpfulness);
     register(ExperimentDetectorWorker.SPECIALIST_NAME, this.experiments);
-    register(
-      PersonalRelationBuilderWorker.SPECIALIST_NAME,
-      this.personalRelation,
-    );
+    register(PersonalRelationBuilderWorker.SPECIALIST_NAME, this.personalRelation);
     register(ProcessDetectorWorker.SPECIALIST_NAME, this.processDetector);
     register(RoleMapBuilderWorker.SPECIALIST_NAME, this.roleMap);
     register(Specialist314GoalsWorker.SPECIALIST_NAME, this.goals);
     register(SprintHelperWorker.JOB_NAME, this.sprintHelper);
 
-    // РОВНО ОДИН Worker на очереди core.specialist-routing.
-    this.worker = new Worker(
-      CORE_QUEUE_NAMES.SPECIALIST_ROUTING,
-      (job) => this.dispatch(job),
-      {
-        connection: this.redis.client,
-        // concurrency=4: один воркер вместо 14×2; баланс throughput vs
-        // LLM rate-limit на малом тенанте.
-        concurrency: 4,
-      },
-    );
+    this.worker = new Worker(CORE_QUEUE_NAMES.SPECIALIST_ROUTING, (job) => this.dispatch(job), {
+      connection: this.redis.client,
+      concurrency: 4,
+    });
     this.worker.on('failed', (job, err) => {
       this.logger.warn(
         {
@@ -165,7 +115,7 @@ export class SpecialistRoutingDispatcherWorker
         'specialist-routing: job failed (повтор по политике BullMQ)',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `SpecialistRoutingDispatcherWorker запущен (${CORE_QUEUE_NAMES.SPECIALIST_ROUTING}, handlers=${this.handlers.size})`,
     );
   }
@@ -177,13 +127,7 @@ export class SpecialistRoutingDispatcherWorker
     }
   }
 
-  /**
-   * Резолвит meetingId блока: evidence -> rawEvent(sourceType='meeting').sourceExternalId.
-   * null если не из встречи.
-   */
-  private async resolveMeetingId(
-    blockId: string | undefined,
-  ): Promise<string | null> {
+  private async resolveMeetingId(blockId: string | undefined): Promise<string | null> {
     if (!blockId) return null;
     const ev = await this.prisma.ideaBlockEvidence.findMany({
       where: { blockId },
@@ -192,35 +136,20 @@ export class SpecialistRoutingDispatcherWorker
     if (ev.length === 0) return null;
     const raw = await this.prisma.rawEvent.findFirst({
       where: { id: { in: ev.map((e) => e.rawEventId) }, sourceType: 'meeting' },
-      orderBy: { occurredAt: 'desc' }, // самая свежая встреча-источник
+      orderBy: { occurredAt: 'desc' },
       select: { sourceExternalId: true },
     });
     return raw?.sourceExternalId ?? null;
   }
 
-  /**
-   * Делегирование job'а нужному специалисту по `job.name`. Неизвестный
-   * jobName → throw (попадает в `failed`, виден; не теряется как completed).
-   *
-   * Ф0b «agent-chain-overhaul» — каждый специалист исполняется в pipeline-
-   * контексте `KNOWLEDGE_GRAPH` с traceId=`mtg_<meetingId>` (если блок из
-   * встречи). Это делает milestone start/done/failed и любые LogService-логи
-   * внутри специалиста видимыми в трассе встречи (`diag chain --trace mtg_*`).
-   * Контрол-флоу НЕ меняется: ошибка по-прежнему пробрасывается → BullMQ retry.
-   */
   private async dispatch(job: Job): Promise<void> {
     const handler = this.handlers.get(job.name);
     if (!handler) {
-      throw new Error(
-        `specialist-routing: неизвестный jobName '${job.name}'`,
-      );
+      throw new Error(`specialist-routing: неизвестный jobName '${job.name}'`);
     }
     const blockId = (job.data as { blockId?: string })?.blockId;
-    // Резолв meetingId не должен ронять обработку → проглатываем ошибку.
     const meetingId = await this.resolveMeetingId(blockId).catch(() => null);
-    const traceId = meetingId
-      ? traceForMeeting(meetingId)
-      : deriveTraceFromJob(job);
+    const traceId = meetingId ? traceForMeeting(meetingId) : deriveTraceFromJob(job);
     await this.pipe.run(
       {
         pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,

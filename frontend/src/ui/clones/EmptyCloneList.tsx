@@ -1,18 +1,10 @@
-'use client';
+"use client";
 
-/**
- * EmptyCloneList — пустые состояния маркетплейса клонов (ТЗ §5.1).
- *
- * Два варианта:
- *   - kind="org_empty"  — в Org вообще нет клонов (ещё не собрался ни один).
- *   - kind="search"     — фильтрация по поисковому запросу ничего не нашла.
- */
-
-import { Bot, SearchX } from 'lucide-react';
-import type { ReactElement } from 'react';
+import { Bot, SearchX } from "lucide-react";
+import type { ReactElement } from "react";
 
 export interface EmptyCloneListProps {
-  kind: 'org_empty' | 'search';
+  kind: "org_empty" | "search";
   searchQuery?: string;
 }
 
@@ -20,7 +12,7 @@ export function EmptyCloneList({
   kind,
   searchQuery,
 }: EmptyCloneListProps): ReactElement {
-  if (kind === 'search') {
+  if (kind === "search") {
     return (
       <div className="rounded-md border border-dashed border-border-subtle bg-bg-card p-8 text-center">
         <SearchX className="mx-auto mb-3 h-8 w-8 text-fg-tertiary" />

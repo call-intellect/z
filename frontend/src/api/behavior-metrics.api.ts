@@ -1,16 +1,10 @@
-/**
- * API DTO для behavior-metrics (Фаза B §8).
- *
- * Источник правды — backend/src/modules/behavior-metrics/.
- */
-
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
 export type BehaviorMetricsStatusApi =
-  | 'pending'
-  | 'ready'
-  | 'failed'
-  | 'low_confidence';
+  | "pending"
+  | "ready"
+  | "failed"
+  | "low_confidence";
 
 export type BehaviorMeetingMetricsApi = {
   totalDurationMs: number;
@@ -75,12 +69,12 @@ export const behaviorMetricsApi = {
     meetingType?: string;
   }) => {
     const qs = new URLSearchParams();
-    if (params.from) qs.set('from', params.from);
-    if (params.to) qs.set('to', params.to);
-    if (params.meetingType) qs.set('meetingType', params.meetingType);
+    if (params.from) qs.set("from", params.from);
+    if (params.to) qs.set("to", params.to);
+    if (params.meetingType) qs.set("meetingType", params.meetingType);
     const suffix = qs.toString();
     return apiClient.get<BehaviorOrgAggregateResponseApi>(
-      `/api/v1/org/behavior-metrics/aggregate${suffix ? `?${suffix}` : ''}`,
+      `/api/v1/org/behavior-metrics/aggregate${suffix ? `?${suffix}` : ""}`,
     );
   },
 };

@@ -1,27 +1,3 @@
-/**
- * quick-host-link.ts — быстрый способ создать встречу через Crossmark API
- * и получить deep-link для входа в кабинет хоста.
- *
- * Usage:
- *   bun run scripts/quick-host-link.ts [external_id] [email] [name] [type]
- *
- * Defaults:
- *   external_id = host-1
- *   email       = host@local.dev
- *   name        = Иван Петров
- *   type        = sales
- *
- * Что делает:
- *   1. Берёт первый не-revoked IntegrationKey из БД (или печатает подсказку
- *      запустить scripts/create-integration-key.ts).
- *   2. Подписывает запрос HMAC и POST'ит в /integrations/crossmark/v1/meetings.
- *   3. Печатает deep-link, по которому можно сразу открыть кабинет.
- *
- * NB: скрипт читает hash ключа из БД, но плотный ключ (для подписи) нужно
- *      передать через ENV `CROSSMARK_KEY`. После создания первого ключа
- *      команда `scripts/create-integration-key.ts demo` печатает его в stdout —
- *      сохрани и подсунь в `CROSSMARK_KEY=...`.
- */
 import { createHmac } from 'node:crypto';
 
 const PARTNER_KEY = process.env['CROSSMARK_KEY'];
@@ -54,7 +30,7 @@ async function main(): Promise<void> {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${PARTNER_KEY}`,
+      Authorization: `Bearer ${PARTNER_KEY}`,
       'X-Crossmark-Signature': signature,
       'X-Crossmark-Timestamp': ts,
     },

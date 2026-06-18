@@ -1,16 +1,6 @@
-'use client';
+"use client";
 
-/**
- * `/admin/platform/flags` — список и редактирование FeatureFlag.
- * Фаза 8 редизайна Z-Admin.
- *
- * Вкладки (AdminTabs):
- *   - Список: таблица всех FeatureFlag.
- *   - По Org: группировка overrides по tenantId (read-only с подсказкой).
- *   - История переключений (заглушка): отдельный эндпоинт пока не реализован.
- */
-
-import { useMemo, useState } from 'react';
+import { useMemo, useState } from "react";
 import {
   Edit3,
   History as HistoryIcon,
@@ -18,37 +8,37 @@ import {
   Plus,
   Trash2,
   Users,
-} from 'lucide-react';
-import { toast } from 'sonner';
+} from "lucide-react";
+import { toast } from "sonner";
 
-import { adminFeatureFlagsApi } from '@/api/admin-feature-flags.api';
-import { ApiError } from '@/api/api-error';
+import { adminFeatureFlagsApi } from "@/api/admin-feature-flags.api";
+import { ApiError } from "@/api/api-error";
 import {
   featureFlagListFromApi,
   type FeatureFlagDomain,
   FEATURE_FLAG_CATEGORIES,
-} from '@/domain/admin-feature-flag';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
-import { DangerAction } from '@/ui/components/admin/AdminDangerZone';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Switch } from '@/ui/shadcn/switch';
+} from "@/domain/admin-feature-flag";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminTabs, type AdminTabDef } from "@/ui/components/admin/AdminTabs";
+import { DangerAction } from "@/ui/components/admin/AdminDangerZone";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Switch } from "@/ui/shadcn/switch";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
-import { FlagEditDialog } from './FlagEditDialog';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
+import { FlagEditDialog } from "./FlagEditDialog";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 const TABS: AdminTabDef[] = [
-  { value: 'list', label: 'Список', icon: List },
-  { value: 'by-org', label: 'По Org', icon: Users },
-  { value: 'history', label: 'История переключений', icon: HistoryIcon },
+  { value: "list", label: "Список", icon: List },
+  { value: "by-org", label: "По Org", icon: Users },
+  { value: "history", label: "История переключений", icon: HistoryIcon },
 ];
 
 const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
@@ -59,7 +49,7 @@ export function FeatureFlagsClient() {
   const [editing, setEditing] = useState<FeatureFlagDomain | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
-  const q = useAdminQuery('admin-platform-flags', async () => {
+  const q = useAdminQuery("admin-platform-flags", async () => {
     const res = await adminFeatureFlagsApi.list();
     return featureFlagListFromApi(res);
   });
@@ -77,7 +67,7 @@ export function FeatureFlagsClient() {
       q.refetch();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось переключить флаг',
+        e instanceof ApiError ? e.message : "Не удалось переключить флаг",
       );
     }
   };
@@ -89,7 +79,7 @@ export function FeatureFlagsClient() {
       q.refetch();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось удалить флаг',
+        e instanceof ApiError ? e.message : "Не удалось удалить флаг",
       );
       throw e;
     }
@@ -99,8 +89,8 @@ export function FeatureFlagsClient() {
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'Платформа' },
-        { label: 'Feature flags' },
+        { label: "Платформа" },
+        { label: "Feature flags" },
       ]}
       title="Feature flags"
       description="Глобальные дефолты и Org-overrides для фич Z. Изменения сразу попадают в LRU-кэш всех процессов через Redis pub/sub."
@@ -125,7 +115,7 @@ export function FeatureFlagsClient() {
       {!q.isLoading && q.data ? (
         <AdminTabs tabs={TABS} defaultTab="list">
           {(active) => {
-            if (active === 'list') {
+            if (active === "list") {
               return q.data!.items.length === 0 ? (
                 <AdminEmpty
                   title="Флагов пока нет"
@@ -140,7 +130,7 @@ export function FeatureFlagsClient() {
                 />
               );
             }
-            if (active === 'by-org') {
+            if (active === "by-org") {
               return <ByOrgTab flags={q.data!.items} />;
             }
             return (
@@ -156,7 +146,7 @@ export function FeatureFlagsClient() {
       <FlagEditDialog
         flag={editing}
         open={editing !== null || createOpen}
-        mode={editing !== null ? 'edit' : 'create'}
+        mode={editing !== null ? "edit" : "create"}
         onOpenChange={(open) => {
           if (!open) {
             setEditing(null);
@@ -172,8 +162,6 @@ export function FeatureFlagsClient() {
     </AdminSection>
   );
 }
-
-// ─────────────────────────── List tab ───────────────────────────
 
 function FlagsTable({
   rows,
@@ -205,7 +193,7 @@ function FlagsTable({
             <tr
               key={f.key}
               className="border-t border-border-subtle align-top hover:bg-bg-overlay"
-              title={`Дефолт: ${f.defaultValue ? 'вкл' : 'выкл'}; overrides: ${f.orgOverridesCount}`}
+              title={`Дефолт: ${f.defaultValue ? "вкл" : "выкл"}; overrides: ${f.orgOverridesCount}`}
             >
               <td className="px-3 py-3">
                 <code className="rounded bg-bg-overlay px-1.5 py-0.5 text-[11px] font-medium text-fg-primary">
@@ -213,7 +201,7 @@ function FlagsTable({
                 </code>
               </td>
               <td className="px-3 py-3 max-w-[280px] text-xs text-fg-secondary">
-                {f.description || '—'}
+                {f.description || "—"}
               </td>
               <td className="px-3 py-3 text-xs">
                 <Badge variant="secondary" className="text-[10px]">
@@ -231,9 +219,7 @@ function FlagsTable({
                 {f.orgOverridesCount}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-xs">
-                {f.rolloutPercent === null
-                  ? '—'
-                  : `${f.rolloutPercent}%`}
+                {f.rolloutPercent === null ? "—" : `${f.rolloutPercent}%`}
               </td>
               <td className="px-3 py-3 text-right">
                 <div className="flex items-center justify-end gap-1">
@@ -264,14 +250,9 @@ function FlagsTable({
   );
 }
 
-// ─────────────────────────── By-org tab ───────────────────────────
-
 function ByOrgTab({ flags }: { flags: FeatureFlagDomain[] }) {
   const grouped = useMemo(() => {
-    const map = new Map<
-      string,
-      Array<{ key: string; value: boolean }>
-    >();
+    const map = new Map<string, Array<{ key: string; value: boolean }>>();
     for (const f of flags) {
       for (const [orgId, value] of Object.entries(f.orgOverrides ?? {})) {
         const arr = map.get(orgId) ?? [];
@@ -279,9 +260,7 @@ function ByOrgTab({ flags }: { flags: FeatureFlagDomain[] }) {
         map.set(orgId, arr);
       }
     }
-    return Array.from(map.entries()).sort((a, b) =>
-      a[0].localeCompare(b[0]),
-    );
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [flags]);
 
   if (grouped.length === 0) {
@@ -312,10 +291,10 @@ function ByOrgTab({ flags }: { flags: FeatureFlagDomain[] }) {
             {entries.map((it) => (
               <Badge
                 key={it.key}
-                variant={it.value ? 'success' : 'warning'}
+                variant={it.value ? "success" : "warning"}
                 className="text-[10px] font-mono"
               >
-                {it.key}: {it.value ? 'вкл' : 'выкл'}
+                {it.key}: {it.value ? "вкл" : "выкл"}
               </Badge>
             ))}
           </div>

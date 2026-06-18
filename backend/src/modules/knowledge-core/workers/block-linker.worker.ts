@@ -8,45 +8,18 @@ import {
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
-
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
-import {
-  type BlockLinkerJobData,
-  CORE_QUEUE_NAMES,
-} from '../../core-queue/queues';
+import { type BlockLinkerJobData, CORE_QUEUE_NAMES } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { BlockLinkService } from '../services/block-link.service';
 import { TemporalConflictService } from '../services/temporal-conflict.service';
 
-/**
- * SBA α-4 — порог confidence, выше которого `relationType='contradicts'`
- * link автоматически эскалируется в `ConflictService.report(...)`. Ниже —
- * это «слабый» сигнал противоречия (остаётся только как link).
- */
 const CONFLICT_AUTO_ESCALATE_CONFIDENCE = 0.85;
 
-/**
- * Block-linker worker (`core.block-linker` consumer, Фаза 3).
- *
- * Триггер: `enqueueBlockLinker(blockId)` в `BlockDistillWorker` после
- * mark canonical / mergeInto. На Фазе 2 jobs накапливались — теперь
- * разгребаются в этом воркере.
- *
- * Шаги:
- *   1. findUnique IdeaBlock(blockId). Если null или status !== 'canonical' → skip.
- *   2. Гейт: count(canonical в Org) >= LINKER_MIN_BLOCKS. Иначе skip + лог.
- *   3. KNN top-K кандидатов (BlockLinkService.findLinkCandidates).
- *   4. По каждому кандидату — LLM-арбитр (последовательно, чтобы не словить
- *      rate limit). Если verdict valid и confidence >= LINK_MIN_CONFIDENCE →
- *      upsert IdeaBlockLink.
- *   5. Любая ошибка LLM → продолжаем со следующим кандидатом, не валим job.
- *
- * Concurrency=2 — по аналогии с distill.
- */
 @Injectable()
 export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BlockLinkerWorker.name);
@@ -80,14 +53,10 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
     );
     this.worker.on('failed', (job, err) => {
       this.onJobFailed(job ?? null, err).catch((e) => {
-        this.logger.error(
-          `onJobFailed: ${e instanceof Error ? e.message : String(e)}`,
-        );
+        this.logger.error(`onJobFailed: ${e instanceof Error ? e.message : String(e)}`);
       });
     });
-    this.logger.log(
-      `BlockLinkerWorker запущен (${CORE_QUEUE_NAMES.BLOCK_LINKER})`,
-    );
+    this.logger.debug(`BlockLinkerWorker запущен (${CORE_QUEUE_NAMES.BLOCK_LINKER})`);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -96,8 +65,6 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
       this.worker = null;
     }
   }
-
-  // ─────────────────────────── core ────────────────────────────────────────
 
   private async process(job: Job<BlockLinkerJobData>): Promise<void> {
     const { blockId } = job.data;
@@ -116,16 +83,14 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Org-Admin Фаза 7: проверка тумблера.
     await this.gate.checkOrThrow(block.tenantId, 'block-linker');
 
-    // Гейт по объёму: меньше LINKER_MIN_BLOCKS canonical в Org — связывать нечего.
     const minBlocks = this.cfg.knowledgeCore.linkerMinBlocks;
     const canonicalCount = await this.prisma.ideaBlock.count({
       where: { tenantId: block.tenantId, status: 'canonical' },
     });
     if (canonicalCount < minBlocks) {
-      this.logger.log(
+      this.logger.debug(
         { blockId, tenantId: block.tenantId, canonicalCount, threshold: minBlocks },
         'block-linker: канонических блоков меньше порога — skip',
       );
@@ -151,13 +116,7 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
         if (verdict.relationType === null) continue;
         if (verdict.confidence < minConfidence) continue;
 
-        const confidenceDecimal = new Prisma.Decimal(
-          verdict.confidence.toFixed(3),
-        );
-        // Agents v2 Фаза A1 — bi-temporal. validFrom/validUntil из LLM-hint
-        // (если LLM смог распарсить временной указатель из блоков). Если
-        // hint'ов нет — null; TemporalConflictService потом проставит
-        // validFrom = NOW() если возникнет конфликт.
+        const confidenceDecimal = new Prisma.Decimal(verdict.confidence.toFixed(3));
         const validFrom = parseIsoHint(verdict.validFromHint);
         const validUntil = parseIsoHint(verdict.validUntilHint);
 
@@ -173,6 +132,14 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
             confidence: confidenceDecimal,
             explanation: verdict.explanation,
             status: 'active',
+            // Б16 — единый контракт «оживления» ребра: re-upsert по тому же
+            // (from,to,relationType) сбрасывает soft-delete, как это делает
+            // fact-supersede.service (applyContradicts/applySupersedes). Без
+            // этого состояние ребра зависело от того, какой воркер сработал:
+            // fact-supersede оживлял удалённое ребро, а linker — нет. Теперь
+            // оживление детерминировано независимо от источника upsert'а.
+            deletedAt: null,
+            deletedBy: null,
             // Обновляем temporal-поля только если LLM явно их вернул
             // (не затираем существующие значения null'ом).
             ...(validFrom !== null ? { validFrom } : {}),
@@ -193,8 +160,6 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
         });
         createdCount += 1;
 
-        // Agents v2 Фаза A1 — best-effort: закрыть противоречащие existing
-        // open-links того же (from,to). Не валит job на ошибке.
         try {
           await this.temporalConflict.onNewBlockLink(upserted);
         } catch (err) {
@@ -207,8 +172,6 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
           );
         }
 
-        // SBA α-4 — эскалация в Слой 4: высокоуверенный `contradicts` →
-        // `ConflictItem`. Best-effort: ошибка не валит link-job.
         if (
           verdict.relationType === 'contradicts' &&
           verdict.confidence >= CONFLICT_AUTO_ESCALATE_CONFIDENCE
@@ -251,7 +214,7 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    this.logger.log(
+    this.logger.debug(
       {
         blockId: block.id,
         tenantId: block.tenantId,
@@ -262,10 +225,7 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  private async onJobFailed(
-    job: Job<BlockLinkerJobData> | null,
-    err: Error,
-  ): Promise<void> {
+  private async onJobFailed(job: Job<BlockLinkerJobData> | null, err: Error): Promise<void> {
     if (!job) return;
     if (job.attemptsMade < (job.opts.attempts ?? 5)) return;
     this.logger.error(
@@ -275,17 +235,10 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
   }
 }
 
-/**
- * Agents v2 Фаза A1 — узкий парсер ISO-hint'ов от LLM. Принимает строку
- * вида `YYYY-MM-DD` / `YYYY-MM` / `YYYY` и возвращает Date (полночь UTC).
- * При любой проблеме (null, undefined, мусор) — возвращает null, чтобы
- * не валить upsert.
- */
 function parseIsoHint(hint: string | null | undefined): Date | null {
   if (!hint) return null;
   const trimmed = hint.trim();
   if (trimmed.length === 0) return null;
-  // Полная ISO-дата.
   let iso: string;
   if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
     iso = trimmed.length === 10 ? `${trimmed}T00:00:00.000Z` : trimmed;

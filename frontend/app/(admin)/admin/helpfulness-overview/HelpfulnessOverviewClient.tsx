@@ -1,24 +1,7 @@
-'use client';
+"use client";
 
-/**
- * `/admin/helpfulness-overview` — служебная панель Specialist 3.8.
- *
- * Состав (по ТЗ §«Frontend → /admin/helpfulness-overview»):
- *   - Карта помощников: таблица с топ-помощниками + темами экспертизы.
- *     НЕ «топ-10 худших» — только позитивные счётчики.
- *   - Pending-spotlights: список ждущих одобрения со взаимодействием
- *     «Одобрить» / «Скрыть».
- *   - Приватные сигналы (`unanswered`): закрытый блок только для admin.
- *     НЕ публикуется нигде кроме этой страницы.
- *
- * Защита:
- *   - Backend: `helpfulness_trait:write` (owner/admin/руководитель).
- *   - Frontend: проверяем `currentOrgRole in [owner, admin]` для скрытия
- *     контента до загрузки auth-context'а (избегаем flicker).
- */
-
-import { useState } from 'react';
-import useSWR, { mutate } from 'swr';
+import { useState } from "react";
+import useSWR, { mutate } from "swr";
 import {
   AlertTriangle,
   Check,
@@ -28,12 +11,12 @@ import {
   Loader2,
   ShieldAlert,
   Users,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { helpfulnessApi } from '@/api/helpfulness.api';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
+import { ApiError } from "@/api/api-error";
+import { helpfulnessApi } from "@/api/helpfulness.api";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
 import {
   mapListSpotlights,
   mapTeamMap,
@@ -42,20 +25,19 @@ import {
   type HelpfulnessSpotlight,
   type TeamHelperRow,
   type UnansweredQuestionRow,
-} from '@/domain/helpfulness';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+} from "@/domain/helpfulness";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-const TEAM_MAP_KEY = ['admin/helpfulness/team-map'];
-const PENDING_SPOTLIGHTS_KEY = ['admin/helpfulness/pending-spotlights'];
-const UNANSWERED_KEY = ['admin/helpfulness/unanswered'];
+const TEAM_MAP_KEY = ["admin/helpfulness/team-map"];
+const PENDING_SPOTLIGHTS_KEY = ["admin/helpfulness/pending-spotlights"];
+const UNANSWERED_KEY = ["admin/helpfulness/unanswered"];
 
 export function HelpfulnessOverviewClient() {
   const { currentOrgRole, currentOrgId, isLoading: authLoading } = useAuth();
-  const canSee =
-    currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const canSee = currentOrgRole === "owner" || currentOrgRole === "admin";
 
   if (authLoading) return null;
 
@@ -92,10 +74,9 @@ export function HelpfulnessOverviewClient() {
           Помощь в команде
         </h1>
         <p className="text-sm text-fg-tertiary">
-          Служебная панель: карта помощников, спотлайты на одобрение и
-          приватные сигналы. Никаких рейтингов «худших» здесь не показывается —
-          мы видим только позитивные паттерны и точки внимания для разговора с
-          командой.
+          Служебная панель: карта помощников, спотлайты на одобрение и приватные
+          сигналы. Никаких рейтингов «худших» здесь не показывается — мы видим
+          только позитивные паттерны и точки внимания для разговора с командой.
         </p>
       </header>
 
@@ -108,8 +89,6 @@ export function HelpfulnessOverviewClient() {
   );
 }
 
-// ─────────────────────────── Pending spotlights ─────────────────────────────
-
 function PendingSpotlightsSection() {
   const [actingId, setActingId] = useState<string | null>(null);
 
@@ -117,7 +96,7 @@ function PendingSpotlightsSection() {
     PENDING_SPOTLIGHTS_KEY,
     async () => {
       const res = await helpfulnessApi.getFeedSpotlights({
-        status: 'pending',
+        status: "pending",
         page: 1,
         limit: 50,
       });
@@ -130,12 +109,14 @@ function PendingSpotlightsSection() {
     setActingId(s.id);
     try {
       await helpfulnessApi.approveSpotlight(s.id);
-      toast.success('Спотлайт одобрен и опубликован.');
+      toast.success("Спотлайт одобрен и опубликован.");
       await mutate(PENDING_SPOTLIGHTS_KEY);
     } catch (e) {
-      toast.error(e instanceof ApiError
-            ? e.message
-            : 'Не удалось одобрить — попробуйте ещё раз.');
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Не удалось одобрить — попробуйте ещё раз.",
+      );
     } finally {
       setActingId(null);
     }
@@ -145,12 +126,14 @@ function PendingSpotlightsSection() {
     setActingId(s.id);
     try {
       await helpfulnessApi.hideSpotlight(s.id);
-      toast.success('Спотлайт скрыт.');
+      toast.success("Спотлайт скрыт.");
       await mutate(PENDING_SPOTLIGHTS_KEY);
     } catch (e) {
-      toast.error(e instanceof ApiError
-            ? e.message
-            : 'Не удалось скрыть — попробуйте ещё раз.');
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Не удалось скрыть — попробуйте ещё раз.",
+      );
     } finally {
       setActingId(null);
     }
@@ -204,13 +187,13 @@ function PendingSpotlightsSection() {
                     {SPOTLIGHT_STATUS_LABEL[s.status]}
                   </Badge>
                   <span className="font-medium text-fg-secondary">
-                    {s.helperName ?? 'Коллега'}
+                    {s.helperName ?? "Коллега"}
                   </span>
                   {s.topicHint && <span>· {s.topicHint}</span>}
                   <span>· {s.helpCount} помощей</span>
                   <span>
-                    · {s.period.from.toLocaleDateString('ru-RU')} —{' '}
-                    {s.period.to.toLocaleDateString('ru-RU')}
+                    · {s.period.from.toLocaleDateString("ru-RU")} —{" "}
+                    {s.period.to.toLocaleDateString("ru-RU")}
                   </span>
                 </div>
                 <p className="mb-3 text-sm text-fg-primary">{s.message}</p>
@@ -248,8 +231,6 @@ function PendingSpotlightsSection() {
   );
 }
 
-// ─────────────────────────── Team map ───────────────────────────────────────
-
 function TeamMapSection() {
   const { data, error, isLoading } = useSWR(
     TEAM_MAP_KEY,
@@ -275,8 +256,8 @@ function TeamMapSection() {
       <CardContent className="space-y-3">
         <p className="text-xs text-fg-tertiary">
           Кто и как помогает в команде — счётчики по 5 публичным типам
-          активности. Это инструмент признания и поиска «социального клея», а
-          не KPI и не основание для оценки сотрудника.
+          активности. Это инструмент признания и поиска «социального клея», а не
+          KPI и не основание для оценки сотрудника.
         </p>
 
         {isLoading && <Skeleton className="h-40 w-full" />}
@@ -313,7 +294,7 @@ function TeamMapSection() {
                     className="border-b border-border-subtle/50"
                   >
                     <td className="py-2 pr-3 font-medium text-fg-primary">
-                      {row.name ?? 'Без имени'}
+                      {row.name ?? "Без имени"}
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums">
                       {row.lastWeekHelpCount}
@@ -331,7 +312,7 @@ function TeamMapSection() {
                       {row.emotionalSupportCount}
                     </td>
                     <td className="py-2 pr-3 text-xs text-fg-tertiary">
-                      {row.topTopics.slice(0, 3).join(' · ') || '—'}
+                      {row.topTopics.slice(0, 3).join(" · ") || "—"}
                     </td>
                   </tr>
                 ))}
@@ -343,8 +324,6 @@ function TeamMapSection() {
     </Card>
   );
 }
-
-// ─────────────────────────── Unanswered (PRIVATE) ───────────────────────────
 
 function UnansweredSection() {
   const { data, error, isLoading } = useSWR(
@@ -372,8 +351,8 @@ function UnansweredSection() {
           <span>
             Эти данные видны только администратору и руководителю команды. Они
             никогда не публикуются в ленте, не отображаются на странице
-            сотрудника и не используются как основание для оценки. Цель —
-            помочь руководителю заметить ситуацию и поговорить с командой.
+            сотрудника и не используются как основание для оценки. Цель — помочь
+            руководителю заметить ситуацию и поговорить с командой.
           </span>
         </div>
 
@@ -403,16 +382,18 @@ function UnansweredSection() {
               >
                 <div className="mb-1 flex flex-wrap items-center gap-1.5 text-xs text-fg-tertiary">
                   <span className="font-medium text-fg-secondary">
-                    {row.recipientName ?? 'Сотрудник'}
+                    {row.recipientName ?? "Сотрудник"}
                   </span>
                   <span>не получил(а) ответ от</span>
                   <span className="font-medium text-fg-secondary">
-                    {row.helperName ?? 'коллеги'}
+                    {row.helperName ?? "коллеги"}
                   </span>
                   {row.topicHint && (
                     <span className="truncate">· {row.topicHint}</span>
                   )}
-                  <span>· {row.lastObservedAt.toLocaleDateString('ru-RU')}</span>
+                  <span>
+                    · {row.lastObservedAt.toLocaleDateString("ru-RU")}
+                  </span>
                 </div>
                 {row.evidenceQuote && (
                   <blockquote className="border-l-2 border-border-subtle pl-2 text-xs italic text-fg-tertiary">
@@ -428,5 +409,4 @@ function UnansweredSection() {
   );
 }
 
-// keep imports used in future polish
 void Eye;

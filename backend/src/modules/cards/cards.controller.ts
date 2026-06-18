@@ -12,49 +12,20 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Card, Meeting } from '@prisma/client';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { pickPrimarySummary } from '../ai/utils/pick-primary-summary';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 
 import { CardsService } from './cards.service';
-import {
-  type CreateCardDto,
-  CreateCardSchema,
-} from './dto/create-card.dto';
-import {
-  type ListCardsQuery,
-  ListCardsQuerySchema,
-} from './dto/list-cards.dto';
-import {
-  type UpdateCardDto,
-  UpdateCardSchema,
-} from './dto/update-card.dto';
+import { type CreateCardDto, CreateCardSchema } from './dto/create-card.dto';
+import { type ListCardsQuery, ListCardsQuerySchema } from './dto/list-cards.dto';
+import { type UpdateCardDto, UpdateCardSchema } from './dto/update-card.dto';
 
-/**
- * Внутренний REST API карточек.
- *
- *   GET    /api/v1/cards                                — список с фильтрами
- *   GET    /api/v1/cards/:id                            — карточка
- *   GET    /api/v1/cards/:id/meetings                   — лента встреч карточки
- *   POST   /api/v1/cards                                — создать
- *   PATCH  /api/v1/cards/:id                            — обновить
- *   DELETE /api/v1/cards/:id                            — soft-delete
- *   POST   /api/v1/cards/:id/restore                    — восстановить (в grace 30d)
- *   POST   /api/v1/cards/:id/meetings/:meetingId        — прикрепить встречу
- *   DELETE /api/v1/cards/:id/meetings/:meetingId        — отвязать встречу
- */
 @ApiTags('cards')
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard)
@@ -110,12 +81,9 @@ export class CardsController {
   }> {
     const card = await this.cards.getById(id, user.id);
     if (!card.tenantId) {
-      // Legacy: до backfill tenant'а — нет смысла искать темы.
       return { items: [] };
     }
 
-    // 1) Собираем блоки карточки: через meetings (RawEvent.sourceExternalId)
-    //    + через card.entityId / relatedEntityIds.
     const meetingIds = (
       await this.prisma.meeting.findMany({
         where: { cardId: card.id, deletedAt: null },
@@ -155,7 +123,6 @@ export class CardsController {
     }
     if (blockIdSet.size === 0) return { items: [] };
 
-    // 2) Находим темы, связанные с этими блоками, и считаем сколько общих.
     const themeRows = await this.prisma.themeIdeaBlock.findMany({
       where: {
         blockId: { in: [...blockIdSet] },
@@ -167,9 +134,7 @@ export class CardsController {
     for (const r of themeRows) {
       counts.set(r.themeId, (counts.get(r.themeId) ?? 0) + 1);
     }
-    const top = [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3);
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
     if (top.length === 0) return { items: [] };
 
     const themes = await this.prisma.theme.findMany({
@@ -211,14 +176,10 @@ export class CardsController {
     limit: number;
     total: number;
   }> {
-    // Owner-проверка карточки.
     await this.cards.getById(id, user.id);
 
     const page = Math.max(1, Number.parseInt(pageRaw ?? '1', 10) || 1);
-    const limit = Math.min(
-      100,
-      Math.max(1, Number.parseInt(limitRaw ?? '20', 10) || 20),
-    );
+    const limit = Math.min(100, Math.max(1, Number.parseInt(limitRaw ?? '20', 10) || 20));
     const skip = (page - 1) * limit;
 
     const where = { cardId: id, deletedAt: null, ownerId: user.id };
@@ -229,7 +190,6 @@ export class CardsController {
         skip,
         take: limit,
         include: {
-          // Р6: тянем summaryFast + legacy summary для pickPrimarySummary.
           aiResult: {
             select: { summaryFast: true, summary: true },
           },
@@ -272,10 +232,7 @@ export class CardsController {
   @Delete('cards/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Soft-delete карточки (30-дневный grace)' })
-  async delete(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<void> {
+  async delete(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload): Promise<void> {
     await this.cards.softDelete(id, user.id);
   }
 
@@ -316,8 +273,6 @@ export class CardsController {
   ): Promise<void> {
     await this.cards.unlinkMeeting(id, meetingId, user.id);
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────────
 
   private mapCard(c: Card): {
     id: string;

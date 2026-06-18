@@ -8,7 +8,7 @@ related:
   - curation
   - chat-v2
 related_plans:
-  - plans/tz/2026-06-14-cabinet-master-fixes-referral-and-hub.md
+  - plans/archive/2026-06-14-cabinet-master-fixes-referral-and-hub.md
 ---
 
 # SBA α-7 — Specialist 3.1 (Regulations) — первая видимая ценность Слоя 3

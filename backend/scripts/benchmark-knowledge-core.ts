@@ -1,28 +1,3 @@
-/**
- * Knowledge-core benchmark — скелет.
- *
- * Состояние: SKELETON / TODO. Полный бенчмарк (golden-set + сравнение с
- * chunk-based RAG) — отдельная задача (см. docs/benchmarks/knowledge-core-baseline.md).
- *
- * Что умеет сейчас: для существующего Org печатает структурные метрики ядра:
- *   - count(IdeaBlock total / canonical / merged_into)
- *   - count(Entity total / merged_into)
- *   - count(IdeaBlockEvidence)
- *   - count(IdeaBlockEntity)
- *   - сжатие = canonical_blocks / total_blocks_ever_created
- *
- * Запуск (из backend/):
- *   tsx scripts/benchmark-knowledge-core.ts <orgId>
- *
- * Полный бенчмарк (фаза 6 / vNext):
- *   - golden-set из 5-10 встреч с ручными «ожидаемыми ответами» на 3-5
- *     вопросов каждой;
- *   - запуск POST /api/v1/knowledge/search для каждого вопроса;
- *   - метрика: top-3 hit rate (% вопросов где правильный блок в top-3);
- *   - сравнение с старым chunk RAG (chat.service на MeetingTranscriptChunk);
- *   - результаты в docs/benchmarks/knowledge-core-baseline.md.
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -79,8 +54,7 @@ async function main(): Promise<void> {
     prisma.rawEvent.count({ where: { tenantId: orgId } }),
   ]);
 
-  const compressionRatio =
-    blocksTotal > 0 ? (blocksCanonical / blocksTotal).toFixed(3) : 'n/a';
+  const compressionRatio = blocksTotal > 0 ? (blocksCanonical / blocksTotal).toFixed(3) : 'n/a';
 
   // eslint-disable-next-line no-console
   console.log(
@@ -93,8 +67,6 @@ async function main(): Promise<void> {
           canonical: blocksCanonical,
           merged_into: blocksMerged,
           archived: blocksArchived,
-          /** canonical / total — доля «выживших» после distill. Чем меньше,
-           *  тем эффективнее merge. На пустой Org → 'n/a'. */
           canonicalRatio: compressionRatio,
         },
         entities: {

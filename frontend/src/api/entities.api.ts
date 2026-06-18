@@ -1,35 +1,22 @@
-/**
- * API-клиент knowledge-core entities (ТЗ 2026-05-26 §3).
- *
- * Контракт: `backend/src/modules/knowledge-core/api/entities.controller.ts`.
- *
- * Эндпоинты:
- *   - GET  /api/v1/knowledge/entities             — список с фильтрами.
- *   - GET  /api/v1/knowledge/entities/:id         — деталка + блоки.
- *   - GET  /api/v1/knowledge/entities/:id/links   — типизированные связи.
- *
- * RBAC: `entity:read` (manager+).
- */
-
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
 export type EntityTypeApi =
-  | 'person'
-  | 'customer'
-  | 'vendor'
-  | 'project'
-  | 'product'
-  | 'document'
-  | 'goal'
-  | 'event'
-  | 'topic'
-  | 'location'
-  | 'technology'
-  | 'metric'
-  | 'market'
-  | 'org_unit'
-  | 'client'
-  | 'custom';
+  | "person"
+  | "customer"
+  | "vendor"
+  | "project"
+  | "product"
+  | "document"
+  | "goal"
+  | "event"
+  | "topic"
+  | "location"
+  | "technology"
+  | "metric"
+  | "market"
+  | "org_unit"
+  | "client"
+  | "custom";
 
 export interface EntityItemApi {
   id: string;
@@ -97,14 +84,16 @@ export interface ListEntitiesRequest {
   offset?: number;
 }
 
-function qs(params: Record<string, string | number | boolean | undefined>): string {
+function qs(
+  params: Record<string, string | number | boolean | undefined>,
+): string {
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === null) continue;
     sp.set(k, String(v));
   }
   const s = sp.toString();
-  return s ? `?${s}` : '';
+  return s ? `?${s}` : "";
 }
 
 export const entitiesApi = {

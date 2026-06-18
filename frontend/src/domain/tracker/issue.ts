@@ -43,6 +43,8 @@ export interface IssueApi {
   checklistTotalCount: number;
   checklistDoneCount: number;
   aiSuggestions?: IssueAiSuggestionsApi | null;
+  /** Org-wide list (2026-06-18) — категория статуса (только GET /api/v1/issues). */
+  stateCategory?: IssueStateCategory | null;
   childrenCount?: number;
 }
 
@@ -181,6 +183,8 @@ export interface Issue {
   deletedAt: Date | null;
   assigneeUserIds: string[];
   labelIds: string[];
+  /** Org-wide list (2026-06-18) — категория статуса для группировки на доске «Все проекты». */
+  stateCategory: IssueStateCategory | null;
   childrenCount: number | null;
   checklistTotalCount: number;
   checklistDoneCount: number;
@@ -330,6 +334,7 @@ export function issueFromApi(api: IssueApi): Issue {
     deletedAt: parseDate(api.deletedAt),
     assigneeUserIds: api.assigneeUserIds ?? [],
     labelIds: api.labelIds ?? [],
+    stateCategory: api.stateCategory ?? null,
     childrenCount:
       typeof api.childrenCount === "number" ? api.childrenCount : null,
     checklistTotalCount: api.checklistTotalCount ?? 0,

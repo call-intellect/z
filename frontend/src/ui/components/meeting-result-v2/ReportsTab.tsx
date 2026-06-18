@@ -1,18 +1,5 @@
 'use client';
 
-/**
- * Вкладка «Отчёты» страницы результата встречи (Фаза E §8).
- *
- * Содержит:
- *   - список карточек отчётов (primary первым, бейдж «Основной»);
- *   - кнопку «+ Добавить отчёт» (disabled, если у Org нет фичи
- *     `feature.multi_reports_per_meeting`);
- *   - модалку выбора шаблона (tabs «Системные» / «Мои шаблоны») и кнопку
- *     «Сгенерировать»;
- *   - просмотр полного отчёта в drawer'е (модалка с output);
- *   - SWR-polling каждые 5 сек пока есть pending/running.
- */
-
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -56,8 +43,6 @@ export function ReportsTab({ meetingId }: ReportsTabProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Master-detail: по умолчанию выбран основной отчёт (или из URL ?report=);
-  // держим валидный выбор при изменении списка (удаление / догрузка отчётов).
   useEffect(() => {
     if (reports.length === 0) {
       if (selectedId !== null) setSelectedId(null);
@@ -159,8 +144,6 @@ export function ReportsTab({ meetingId }: ReportsTabProps) {
     </div>
   );
 }
-
-// ──────────────────────────── Card ────────────────────────────
 
 function ReportCard({
   meetingId,
@@ -315,8 +298,6 @@ function ReportCard({
   );
 }
 
-// ──────────────────────────── Add dialog ────────────────────────────
-
 function AddReportDialog({
   open,
   onClose,
@@ -469,8 +450,6 @@ function AddReportDialog({
   );
 }
 
-// ─────────────────────────── Detail dialog ───────────────────────────
-
 function ReportInlinePanel({
   meetingId,
   reportId,
@@ -483,7 +462,6 @@ function ReportInlinePanel({
   const report = reports.find((r) => r.id === reportId) ?? null;
   const isReady = report?.status === 'ready';
 
-  // Грузим detail напрямую (без SWR): панель живёт, пока выбран готовый отчёт.
   const [data, setData] = useState<Awaited<
     ReturnType<typeof meetingReportsApi.detail>
   > | null>(null);
@@ -555,13 +533,6 @@ function ReportInlinePanel({
   );
 }
 
-/**
- * Динамический рендер output отчёта: верхний уровень — пары «ключ: значение» с
- * русскими заголовками (`structuredFieldLabel`); значения человекочитаемо через
- * общий `StructuredFieldValue` (НЕ сырой JSON, пустые секции скрыты). Безопасный
- * fallback: у разных шаблонов структура разная, UI не знает её заранее
- * (ТЗ §11 «Несогласованность output-schema», 2026-06-06 Фаза 5 S6-04).
- */
 function ReportOutputRenderer({ output }: { output: unknown | null }) {
   if (output === null || output === undefined) {
     return <div className="text-sm text-fg-secondary">Пустой отчёт.</div>;
@@ -592,7 +563,6 @@ function ReportOutputRenderer({ output }: { output: unknown | null }) {
 }
 
 function formatDate(d: Date): string {
-  // Простая локальная дата без зависимостей: 12.05.2026 в 14:30
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = d.getFullYear();

@@ -1,24 +1,4 @@
-/**
- * API-клиент календарного представления (Calendar MVP, Фаза 2).
- *
- * Контракт: `backend/src/modules/events/`.
- *
- * Эндпоинты:
- *   - POST   /api/v1/events
- *   - PATCH  /api/v1/events/:id
- *   - DELETE /api/v1/events/:id           (soft-cancel)
- *   - POST   /api/v1/events/:id/make-online (прицепить видеокомнату)
- *   - POST   /api/v1/events/:id/rsvp
- *   - GET    /api/v1/me/calendar?from=&to=
- *   - GET    /api/v1/users/:userId/calendar?from=&to=
- *   - POST   /api/v1/events/find-free-slot
- *
- * Защита: `CookieAuthGuard + TenantGuard`, RBAC `event_card.{read|write|delete}`.
- */
-
 import { apiClient } from './api-client';
-
-// ─────────────────────────── Enums ───────────────────────────────────
 
 export type EventKindApi =
   | 'meeting'
@@ -38,8 +18,6 @@ export type RsvpStatusApi = 'pending' | 'accepted' | 'declined' | 'tentative';
 export type RsvpActionApi = 'accepted' | 'declined' | 'tentative';
 export type EventParticipantRoleApi = 'organizer' | 'required' | 'optional';
 export type ReminderChannelApi = 'push' | 'email' | 'telegram';
-
-// ─────────────────────────── Response shapes ─────────────────────────
 
 export interface EventParticipantApi {
   id: string;
@@ -67,22 +45,9 @@ export interface EventApi {
   endAt: string | null;
   durationMin: number | null;
   location: string | null;
-  /**
-   * ТЗ assistant-calendar-master Ф5/Ф8 — «о ком встреча»: клиент/контрагент или
-   * компания. Отдельно от `location` (место проведения).
-   */
   counterparty: string | null;
-  /**
-   * ТЗ assistant-calendar-master Ф6/Ф8 — формат встречи (онлайн ⇔ есть
-   * видеокомната). Отделён от `kind` (тип). true → создана LiveKit-комната.
-   */
   online: boolean;
   relatedMeetingId: string | null;
-  /**
-   * Calendar MVP Polish (P1, 2026-05-25). Публичная ссылка на LiveKit-комнату,
-   * созданную автоматически для kind=meeting. null — для других kind или если
-   * создание комнаты упало (фолбэк не блокирует событие).
-   */
   joinUrl: string | null;
   createdAt: string;
   updatedAt: string;
@@ -90,7 +55,6 @@ export interface EventApi {
   participantsPersonIds: string[];
   outcomeSummary: string | null;
   metadata: Record<string, unknown> | null;
-  // Calendar MVP поля
   ownerId: string | null;
   description: string | null;
   allDay: boolean;
@@ -123,8 +87,6 @@ export interface CalendarResponseApi {
   items: CalendarItemApi[];
 }
 
-// ─────────────────────────── Request shapes ──────────────────────────
-
 export interface ParticipantInputApi {
   userId?: string;
   personId?: string;
@@ -139,7 +101,7 @@ export interface ReminderInputApi {
 
 export interface CreateEventRequestApi {
   title: string;
-  startAt: string; // ISO-8601
+  startAt: string;
   endAt?: string;
   kind: EventKindApi;
   visibility?: EventVisibilityApi;
@@ -185,8 +147,6 @@ export interface FindFreeSlotResponseApi {
   found: boolean;
 }
 
-// ─────────────────────────── API client ──────────────────────────────
-
 function buildRangeQuery(
   from?: string,
   to?: string,
@@ -201,17 +161,11 @@ function buildRangeQuery(
 }
 
 export const calendarApi = {
-  /**
-   * Мой календарь (события + задачи с dueDate).
-   * @param projectId — Calendar MVP Polish (P3, 2026-05-25): серверный
-   *   фильтр по проекту; раньше клиент фильтровал у себя.
-   */
   getMyCalendar: (from?: string, to?: string, projectId?: string) =>
     apiClient.get<CalendarResponseApi>(
       `/api/v1/me/calendar${buildRangeQuery(from, to, projectId)}`,
     ),
 
-  /** Календарь другого пользователя (personal-события маскированы). */
   getUserCalendar: (
     userId: string,
     from?: string,
@@ -234,10 +188,6 @@ export const calendarApi = {
   cancelEvent: (id: string) =>
     apiClient.del<void>(`/api/v1/events/${encodeURIComponent(id)}`),
 
-  /**
-   * ТЗ assistant-calendar-master Ф6/Ф8 — прицепить видеокомнату к офлайн-встрече
-   * задним числом: бэк создаёт LiveKit-комнату и переключает `online=true`.
-   */
   makeEventOnline: (id: string) =>
     apiClient.post<EventApi>(
       `/api/v1/events/${encodeURIComponent(id)}/make-online`,

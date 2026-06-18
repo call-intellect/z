@@ -1,15 +1,3 @@
-/**
- * W2 autonomy (2026-06-12) — ProbeService.suggest: гейт ценности
- * (dropped_low_value), NUDGE-реклассификация (routed_to_digest) и включённый
- * cold-start (окно прогрева после первого probe в Org).
- *
- * Ф4 (2026-06-17) — семантический дедуп вопросов по эмбеддингу (pgvector):
- * близкий вектор → dropped:'dedup'; далёкий/пусто → проходит; флаг OFF →
- * семантика не применяется; embed упал → graceful.
- *
- * Детерминизм: Redis/Prisma/Queue/Cfg/Metrics/Embeddings мокированы (стиль
- * probe-service-queued-digest.spec.ts).
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/typed-config.service';
@@ -24,11 +12,8 @@ import { ProbeService } from './probe.service';
 function makeService(over?: {
   coldStartModeHours?: number;
   earliestProbeAgeHours?: number | null;
-  /** Возвращаемое embed (фиксированный вектор) либо ошибка (throw). */
   embedResult?: number[] | 'throw';
-  /** Ряды семантического KNN-запроса ($queryRawUnsafe). */
   semanticRows?: Array<{ id: string; distance: number }>;
-  /** Переопределение значений getDynamic по ключу. */
   dynamicOverrides?: Record<string, unknown>;
 }): {
   service: ProbeService;
@@ -52,11 +37,9 @@ function makeService(over?: {
       ? null
       : { createdAt: new Date(Date.now() - earliestAge * 3600 * 1000) },
   );
-  // Ф4 — KNN-запрос семантического дедупа. По умолчанию пусто (нет соседей).
   const queryRawUnsafe = vi
     .fn()
     .mockResolvedValue(over?.semanticRows ?? []);
-  // Ф4 — запись questionEmbedding после create.
   const executeRawUnsafe = vi.fn().mockResolvedValue(1);
   const prisma = {
     probeEvent: { create, findFirst },
@@ -66,8 +49,6 @@ function makeService(over?: {
 
   const redis = {
     client: {
-      // dedup SET NX → '1' (не дубль); GET → null (бюджет свободен,
-      // cooldown/engagement отсутствуют).
       set: vi.fn().mockResolvedValue('1'),
       get: vi.fn().mockResolvedValue(null),
     },
@@ -86,9 +67,6 @@ function makeService(over?: {
       expiryDays: 14,
       coldStartModeHours: over?.coldStartModeHours ?? 0,
     },
-    // getDynamic возвращает default (adaptiveFatigue=true, minValuePriority=30,
-    // semanticDedupEnabled=true, threshold=0.92, windowHours=72), если ключ не
-    // переопределён в dynamicOverrides.
     getDynamic: vi
       .fn()
       .mockImplementation(async (key: string, _env, def: unknown) =>
@@ -98,7 +76,6 @@ function makeService(over?: {
       ),
   } as unknown as TypedConfigService;
 
-  // Ф4 — embedding-сервис. Дефолт: фиксированный 3-мерный вектор.
   const embed = vi.fn().mockImplementation(async () => {
     if (over?.embedResult === 'throw') {
       throw new Error('embed boom');
@@ -142,7 +119,7 @@ describe('ProbeService.suggest — W2 гейт ценности + NUDGE + cold-s
       reason: 'idea.status_unclear',
       payload: { message: 'Малоценный вопрос' },
       recipientCandidates: ['user-1'],
-      priorityHint: 0.2, // → priority 20
+      priorityHint: 0.2,
     });
 
     expect('dropped' in res && res.dropped).toBe('low_value');
@@ -164,7 +141,7 @@ describe('ProbeService.suggest — W2 гейт ценности + NUDGE + cold-s
       reason: 'commitment.followup',
       payload: { message: 'Напоминание по обещанию' },
       recipientCandidates: ['user-1'],
-      priorityHint: 0.5, // → priority 50 ≥ 30 (гейт ценности пройден)
+      priorityHint: 0.5,
     });
 
     expect('ok' in res && res.ok).toBe(true);
@@ -172,10 +149,8 @@ describe('ProbeService.suggest — W2 гейт ценности + NUDGE + cold-s
       data: { status: string; expiresAt?: Date };
     };
     expect(created.data.status).toBe('routed_to_digest');
-    // L-2 — digest-статус получает expiresAt (тот же расчёт, что у pending).
     expect(created.data.expiresAt).toBeInstanceOf(Date);
     expect(created.data.expiresAt!.getTime()).toBeGreaterThan(Date.now());
-    // Дайджест-cron подберёт — dispatcher НЕ ставится в очередь.
     expect(env.enqueue).not.toHaveBeenCalled();
   });
 
@@ -183,7 +158,7 @@ describe('ProbeService.suggest — W2 гейт ценности + NUDGE + cold-s
     const res = await env.service.suggest({
       tenantId: 'org-1',
       emittedByService: '3-1-regulations',
-      reason: 'regulation.missing_owner', // immediate, не NUDGE
+      reason: 'regulation.missing_owner',
       payload: { message: 'У регламента нет владельца' },
       recipientCandidates: ['user-1'],
       priorityHint: 0.5,
@@ -224,16 +199,13 @@ describe('ProbeService.suggest — W2 гейт ценности + NUDGE + cold-s
       priorityHint: 0.5,
     });
 
-    // L-3 — не терминальный drop, а отложка: придёт дайджестом после прогрева.
     expect('ok' in res && res.ok).toBe(true);
     const created = e.create.mock.calls[0]![0] as {
       data: { status: string; priority: number; expiresAt?: Date };
     };
     expect(created.data.status).toBe('routed_to_digest');
     expect(created.data.priority).toBe(50);
-    // L-2 — digest-статус стареет (expiresAt задан).
     expect(created.data.expiresAt).toBeInstanceOf(Date);
-    // Метрика идёт со status='routed_to_digest', не dropped_cold_start.
     expect(e.incProbeEvent).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'routed_to_digest' }),
     );
@@ -256,17 +228,14 @@ describe('ProbeService.suggest — Ф4 семантический дедуп в�
     });
 
     expect('dropped' in res && res.dropped).toBe('dedup');
-    // Эмбеддинг посчитан, KNN-запрос выполнен.
     expect(e.embed).toHaveBeenCalledTimes(1);
     expect(e.queryRawUnsafe).toHaveBeenCalledTimes(1);
-    // Та же ветка метрик, что и content-hash dedup.
     expect(e.incProbeDedupDropped).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'regulation.missing_owner' }),
     );
     expect(e.incProbeEvent).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'dropped_dedup' }),
     );
-    // Дубль не создаётся и не ставится в очередь.
     expect(e.create).not.toHaveBeenCalled();
     expect(e.enqueue).not.toHaveBeenCalled();
   });
@@ -287,9 +256,7 @@ describe('ProbeService.suggest — Ф4 семантический дедуп в�
     expect('ok' in res && res.ok).toBe(true);
     const created = e.create.mock.calls[0]![0] as { data: { status: string } };
     expect(created.data.status).toBe('pending');
-    // По семантике НЕ дроп.
     expect(e.incProbeDedupDropped).not.toHaveBeenCalled();
-    // questionEmbedding записан после create.
     expect(e.executeRawUnsafe).toHaveBeenCalledWith(
       expect.stringContaining('questionEmbedding'),
       expect.stringContaining('['),
@@ -316,7 +283,6 @@ describe('ProbeService.suggest — Ф4 семантический дедуп в�
   it('флаг semanticDedupEnabled OFF → семантика не применяется (embed/KNN не зван)', async () => {
     const e = makeService({
       dynamicOverrides: { 'probe.semanticDedupEnabled': false },
-      // даже если бы был близкий сосед — он не должен запрашиваться.
       semanticRows: [{ id: 'probe-near', distance: 0.01 }],
     });
     const res = await e.service.suggest({
@@ -331,10 +297,8 @@ describe('ProbeService.suggest — Ф4 семантический дедуп в�
     expect('ok' in res && res.ok).toBe(true);
     const created = e.create.mock.calls[0]![0] as { data: { status: string } };
     expect(created.data.status).toBe('pending');
-    // Семантика выключена — embedding-сервис и KNN не трогаются.
     expect(e.embed).not.toHaveBeenCalled();
     expect(e.queryRawUnsafe).not.toHaveBeenCalled();
-    // И эмбеддинг не пишется (нечего писать).
     expect(e.executeRawUnsafe).not.toHaveBeenCalled();
   });
 
@@ -352,10 +316,8 @@ describe('ProbeService.suggest — Ф4 семантический дедуп в�
     expect('ok' in res && res.ok).toBe(true);
     const created = e.create.mock.calls[0]![0] as { data: { status: string } };
     expect(created.data.status).toBe('pending');
-    // embed позван (и упал), но KNN не выполнялся (вектора нет).
     expect(e.embed).toHaveBeenCalledTimes(1);
     expect(e.queryRawUnsafe).not.toHaveBeenCalled();
-    // Эмбеддинг не записан (нет вектора).
     expect(e.executeRawUnsafe).not.toHaveBeenCalled();
   });
 
@@ -365,7 +327,7 @@ describe('ProbeService.suggest — Ф4 семантический дедуп в�
       tenantId: 'org-1',
       emittedByService: '3-1-regulations',
       reason: 'regulation.missing_owner',
-      payload: { contextCardId: 'card-1' }, // без текста
+      payload: { contextCardId: 'card-1' },
       recipientCandidates: ['user-1'],
       priorityHint: 0.5,
     });

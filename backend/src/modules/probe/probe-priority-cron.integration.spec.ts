@@ -1,22 +1,3 @@
-/**
- * SBA β-5 closing-loop (sub-TZ 2026-05-23) — integration-тест для
- * `ProbeResponseHandler` + `ProbePriorityCron`.
- *
- * Сценарий DoD §15:
- *   1. Есть ProbeEvent (status='pending', dispatchedNotificationId=N).
- *   2. Пользователь ответил → Notification.respondedAt стал задан.
- *      ProbeResponseHandler.handle(...) вызывается с probe-eventType:
- *        - инкрементит probe_response_total / probe_closed_total;
- *        - создаёт RawEvent через ConversationalIngestAdapter (kind=
- *          'notification_response').
- *   3. expiresAt < now → cron запускается.
- *   4. Probe НЕ должен попасть в expired (т.к. respondedAt IS NOT NULL).
- *
- * "Интеграция" — в смысле "ProbeResponseHandler + ConversationalIngestAdapter
- * + ProbePriorityCron работают вместе через DI, реальная БД не используется".
- * Все Prisma-методы мокированы.
- */
-
 import type { Notification, ProbeEvent, RawEvent } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -58,7 +39,7 @@ function buildScenario(): ScenarioState {
     priority: 50,
     createdAt: nowMinus(48),
     dispatchedAt: nowMinus(40),
-    expiresAt: nowMinus(1), // уже истёк
+    expiresAt: nowMinus(1),
   } as unknown as ProbeEvent;
 
   const notification: Notification = {
@@ -75,7 +56,7 @@ function buildScenario(): ScenarioState {
     responsePayload: { choice: 'Да' },
     expiresAt: null,
     createdAt: nowMinus(40),
-    respondedAt: new Date(), // ← ключ closing-loop
+    respondedAt: new Date(),
   } as unknown as Notification;
 
   return { probe, notification };
@@ -141,7 +122,6 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
           {
             id: state.probe.id,
             dispatchedNotificationId: state.probe.dispatchedNotificationId,
-            // Probe Ф5 re-ask — cron теперь читает доп. поля для переспроса.
             reason: state.probe.reason,
             tenantId: state.probe.tenantId,
             contentHash: state.probe.contentHash,
@@ -160,7 +140,6 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
             }
             return { count: 0 };
           }),
-        // Probe Ф5 re-ask — создание переспроса (best-effort).
         create: vi
           .fn()
           .mockResolvedValue({ id: 'probe-reask-1' }),
@@ -188,21 +167,15 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
       incProbeResponseClassified: vi.fn(),
       incProbeResponseUnclear: vi.fn(),
       incProbeOutcome: vi.fn(),
-      // Probe Ф5 re-ask — createReask пишет incProbeEvent(status='pending').
       incProbeEvent: vi.fn(),
     } as unknown as BusinessMetricsService;
 
     ingestAdapter = new ConversationalIngestAdapter(prisma, ingestSvc);
   });
 
-  // Probe Фаза 5 — ProbePriorityCron теперь пишет engagement-снимок и cooldown
-  // темы в Redis + читает probe.topicCooldownHours; мокаем оба зависимостями.
   const redisMock = {
     client: { set: vi.fn().mockResolvedValue('OK') },
   } as unknown as RedisService;
-  // probe.reaskEnabled читается getDynamic — по умолчанию ВЫКЛ в этих старых
-  // closing-loop сценариях, чтобы поведение «истёк → expired (+ignored)»
-  // оставалось прежним (re-ask проверяется отдельным spec'ом).
   const cfgMock = {
     getDynamic: vi.fn().mockImplementation(
       async (key: string, _env: unknown, fallback: unknown) => {
@@ -212,14 +185,10 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
       },
     ),
   } as unknown as TypedConfigService;
-  // Probe Ф5 re-ask — cron ставит переспрос через CoreQueueService.
   const queueMock = {
     enqueueProbeEvent: vi.fn().mockResolvedValue({ jobId: 'probe_reask-1' }),
   } as unknown as CoreQueueService;
 
-  // Agents v2 Фаза 0.1: handler теперь требует LlmRouter + TypedConfig.
-  // Здесь classify по умолчанию выключаем (responseClassifyEnabled=false),
-  // чтобы старые сценарии работали как раньше.
   function buildHandler(args?: {
     classifyEnabled?: boolean;
     minConfidence?: number;
@@ -266,7 +235,6 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
 
     await handler.handle(event);
 
-    // Метрики
     expect(metrics.incProbeResponse).toHaveBeenCalledWith({
       eventType: 'probe.question',
       kind: 'in_app',
@@ -276,7 +244,6 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
       source: 'in_app',
     });
 
-    // RawEvent создан
     expect(ingestSvc.ingest).toHaveBeenCalledTimes(1);
     expect(createdRawEvent).not.toBeNull();
     expect(createdRawEvent!.sourceExternalId).toBe('resp:notif-1');
@@ -307,19 +274,16 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
   });
 
   it('cron: respondedAt IS NOT NULL → probe НЕ помечается expired', async () => {
-    // Notification.respondedAt уже задан в scenario (закрыт пользователем).
     const cron = new ProbePriorityCron(prisma, metrics, redisMock, cfgMock, queueMock);
 
     await cron.sweep();
 
-    // updateMany по expired НЕ должен звать (т.к. кандидат отфильтрован).
     expect(prisma.probeEvent.updateMany).not.toHaveBeenCalled();
     expect(metrics.incProbeExpired).not.toHaveBeenCalled();
     expect(state.probe.status).toBe('pending');
   });
 
   it('cron: respondedAt IS NULL → probe помечается expired (метрика incProbeExpired)', async () => {
-    // Снимаем «ответ» — имитируем случай, когда пользователь так и не ответил.
     state.notification.respondedAt = null;
 
     const cron = new ProbePriorityCron(prisma, metrics, redisMock, cfgMock, queueMock);

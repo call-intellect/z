@@ -8,20 +8,6 @@ import type { MeetingsService } from '../../meetings/meetings.service';
 
 import { EventsService } from './events.service';
 
-/**
- * Юнит-тесты EventsService — Calendar MVP (2026-05-25).
- *
- * Покрывают:
- *   1.  create — создаёт Entity + Event + дефолтные reminders (для kind=meeting).
- *   2.  create с visibility='personal' — без эмита event.created.
- *   3.  update — owner может, чужой не может.
- *   4.  update — organizer (через EventParticipant.role='organizer') может.
- *   5.  softDelete — выставляет deletedAt + status='cancelled'.
- *   6.  rsvp — обновляет EventParticipant.rsvp.
- *   7.  rsvp — non-participant получает ForbiddenException.
- *   8.  getMyCalendar — миксует Events + Issues.
- *   9.  getUserCalendar — personal-события другого user маскируются как «Занято».
- */
 describe('EventsService', () => {
   let prisma: PrismaService;
   let entityResolver: EntityResolutionService;
@@ -44,7 +30,6 @@ describe('EventsService', () => {
   let entityFindOrCreate: ReturnType<typeof vi.fn>;
   let incCreated: ReturnType<typeof vi.fn>;
 
-  // Ф3 — резолв таймзоны человека (Person.timezone → Org.timezone → Moscow).
   let personFindFirst: ReturnType<typeof vi.fn>;
   let membershipFindFirst: ReturnType<typeof vi.fn>;
 
@@ -103,7 +88,6 @@ describe('EventsService', () => {
     participantFindFirst = vi.fn();
     participantUpdate = vi.fn();
 
-    // По умолчанию профиль/TZ человека не задан → резолв упадёт на Moscow.
     personFindFirst = vi.fn().mockResolvedValue(null);
     membershipFindFirst = vi.fn().mockResolvedValue(null);
 
@@ -192,7 +176,6 @@ describe('EventsService', () => {
       });
       txEventCreate.mockResolvedValue({ id: 'e-new' });
       txEventFindUnique.mockResolvedValue(created);
-      // P1: MeetingsService.createForCalendarEvent → eventUpdate (relatedMeetingId + metadata).
       eventUpdate.mockResolvedValue({
         ...created,
         relatedMeetingId: 'm-1',
@@ -611,21 +594,17 @@ describe('EventsService', () => {
     });
 
     it('makeEventOnline на офлайн-событии → online ставится, createForCalendarEvent вызван; повторно на online+room → НЕ вызван (идемпотентность)', async () => {
-      // Офлайн-событие: online:false, relatedMeetingId:null.
       eventFindUnique
         .mockResolvedValueOnce(
           makeEvent({ id: 'e-1', online: false, relatedMeetingId: null }),
         )
-        // Финальный re-fetch после attachLivekitRoom.
         .mockResolvedValueOnce(
           makeEvent({ id: 'e-1', online: true, relatedMeetingId: 'm-1' }),
         );
       eventUpdate
-        // update online:true.
         .mockResolvedValueOnce(
           makeEvent({ id: 'e-1', online: true, relatedMeetingId: null }),
         )
-        // attachLivekitRoom → event.update (relatedMeetingId + metadata).
         .mockResolvedValueOnce(
           makeEvent({
             id: 'e-1',
@@ -644,7 +623,6 @@ describe('EventsService', () => {
       expect(dto.online).toBe(true);
       expect(dto.relatedMeetingId).toBe('m-1');
 
-      // Идемпотентность: уже online + есть комната → ничего не делаем.
       meetingsCreateForCalendarEvent.mockClear();
       eventFindUnique.mockResolvedValueOnce(
         makeEvent({ id: 'e-1', online: true, relatedMeetingId: 'x' }),
@@ -708,10 +686,8 @@ describe('EventsService', () => {
     });
 
     it('getMyCalendar без from/to: окно = локальные сутки UTC+7 (Asia/Novosibirsk)', async () => {
-      // Фиксируем «сейчас» = 2026-06-18 09:30 UTC = 16:30 чт в Новосибирске.
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-06-18T09:30:00.000Z'));
-      // У человека TZ Новосибирск.
       personFindFirst.mockResolvedValue({ timezone: 'Asia/Novosibirsk' });
       eventFindMany.mockResolvedValue([]);
       issueFindMany.mockResolvedValue([]);
@@ -724,7 +700,6 @@ describe('EventsService', () => {
           where: { startAt: { gte: Date; lt: Date } };
         }
       ).where;
-      // 00:00 18-го новосиб. = 2026-06-17T17:00:00Z; +24ч.
       expect(where.startAt.gte.toISOString()).toBe('2026-06-17T17:00:00.000Z');
       expect(where.startAt.lt.toISOString()).toBe('2026-06-18T17:00:00.000Z');
     });

@@ -40,26 +40,11 @@ import type {
   UpdateEventDto,
 } from '../dto/events.dto';
 
-/** Event с догруженными связями (participants + reminders) — то, что отдаём в DTO. */
 type EventWithRelations = Event & {
   participants: EventParticipant[];
   reminders: EventReminder[];
 };
 
-/**
- * EventsService — управление событиями графа знаний + календарём пользователя
- * (Calendar MVP 2026-05-25).
- *
- * CRUD-операции:
- *   - `create` — Entity{type=event} + Event + participants + reminders +
- *     (если kind=meeting → TODO интеграция с MeetingsService).
- *   - `update` / `softDelete` — права на основе owner/organizer.
- *   - `rsvp` — обновление статуса участника.
- *
- * Календарь:
- *   - `getMyCalendar` — собственные события + назначенные задачи.
- *   - `getUserCalendar` — события другого user (personal маскируются «Занято»).
- */
 @Injectable()
 export class EventsService {
   private readonly logger = new Logger(EventsService.name);
@@ -75,8 +60,6 @@ export class EventsService {
     private readonly meetings: MeetingsService | undefined,
     @Optional() @Inject(EventEmitter2) private readonly eventEmitter?: EventEmitter2,
   ) {}
-
-  // ─────────────────────────── read API (read-only, legacy α-3) ────────
 
   async list(args: {
     tenantId: string;
@@ -132,18 +115,6 @@ export class EventsService {
     return this.toDetail(e);
   }
 
-  // ─────────────────────────── CRUD (Calendar MVP) ─────────────────────
-
-  /**
-   * Создание события. Шаги:
-   *   1. Резолвим/создаём Entity{type=event} (через EntityResolutionService).
-   *   2. Создаём Event + EventParticipant'ы (включая organizer = ownerId).
-   *   3. Если reminders не переданы — для kind ∈ {meeting,call,offline_meeting}
-   *      создаём дефолтные: за 15 мин + за 1 день, channel='telegram', всем.
-   *   4. TODO: kind=meeting → MeetingsService.create + Event.relatedMeetingId.
-   *   5. Если visibility != personal — emit('event.created') для будущей
-   *      интеграции в knowledge-core RawEvent.
-   */
   async create(args: {
     tenantId: string;
     ownerId: string;
@@ -151,12 +122,9 @@ export class EventsService {
   }): Promise<EventDto> {
     const { tenantId, ownerId, data } = args;
 
-    // Ф3 — дефолт таймзоны события = TZ организатора (Person→Org→Moscow),
-    // т.к. Zod-дефолт 'Europe/Moscow' убран из CreateEventSchema.
     const timezone =
       data.timezone ?? (await this.resolvePersonTimezone(ownerId, tenantId));
 
-    // 1. Entity{type=event}.
     const { entity } = await this.entityResolver.findOrCreateEntity({
       tenantId,
       type: 'event',
@@ -164,8 +132,6 @@ export class EventsService {
       metadata: { source: 'calendar_user', kind: data.kind },
     });
 
-    // 2. Транзакция: Event + participants + reminders.
-    // `let` — ниже переприсваивается результатом attachLivekitRoom при online=true.
     let created = await this.prisma.$transaction(async (tx) => {
       const event = await tx.event.create({
         data: {
@@ -190,14 +156,11 @@ export class EventsService {
           rrule: data.rrule ?? null,
           visibility: data.visibility,
           projectId: data.projectId ?? null,
-          // Ф6 — формат встречи (онлайн → видеокомната), развязан с kind (тип).
           online: data.online,
-          // Ф5 — контрагент/клиент («о ком» встреча), отдельно от location (место).
           counterparty: data.counterparty?.trim() ?? null,
         },
       });
 
-      // Organizer всегда — owner.
       const participantRows: Prisma.EventParticipantCreateManyInput[] = [
         {
           eventId: event.id,
@@ -209,7 +172,6 @@ export class EventsService {
       ];
       if (data.participants?.length) {
         for (const p of data.participants) {
-          // Не дублируем owner'а, если он в participants.
           if (p.userId === ownerId) continue;
           const role: EventParticipantRole = p.optional ? 'optional' : p.role;
           participantRows.push({
@@ -224,7 +186,6 @@ export class EventsService {
         await tx.eventParticipant.createMany({ data: participantRows });
       }
 
-      // Reminders: переданные либо дефолтные.
       const reminderRows: Prisma.EventReminderCreateManyInput[] = [];
       if (data.reminders?.length) {
         for (const r of data.reminders) {
@@ -240,7 +201,6 @@ export class EventsService {
         data.kind === 'call' ||
         data.kind === 'offline_meeting'
       ) {
-        // Дефолтные: за 15 минут + за 1 день. Канал telegram, всем участникам.
         reminderRows.push(
           {
             eventId: event.id,
@@ -260,7 +220,6 @@ export class EventsService {
         await tx.eventReminder.createMany({ data: reminderRows });
       }
 
-      // Re-fetch со связями для DTO.
       const full = await tx.event.findUnique({
         where: { id: event.id },
         include: { participants: true, reminders: true },
@@ -268,11 +227,6 @@ export class EventsService {
       return full!;
     });
 
-    // 3. online=true → создать LiveKit Meeting + записать meeting.id в
-    //    Event.relatedMeetingId. joinUrl кладём в Event.metadata, чтобы UI
-    //    мог показать кнопку «Войти во встречу». Видеокомната зависит от
-    //    формата (online), а не от типа (kind): очное «совещание» (kind=meeting,
-    //    online=false) комнату НЕ плодит. DRY: общая логика в attachLivekitRoom.
     if (data.online) {
       created = await this.attachLivekitRoom({
         tenantId,
@@ -283,7 +237,6 @@ export class EventsService {
       });
     }
 
-    // 4. Доменное событие (для будущей RawEvent-интеграции в knowledge-core).
     if (data.visibility !== 'personal') {
       this.tryEmit('event.created', {
         tenantId,
@@ -293,7 +246,6 @@ export class EventsService {
       });
     }
 
-    // 5. Метрика.
     this.metrics.incCalendarEventCreated({
       tenant: tenantId,
       kind: data.kind,
@@ -303,11 +255,6 @@ export class EventsService {
     return this.toDetail(created);
   }
 
-  /**
-   * Ф6 — сделать офлайн-событие онлайн: online=true + создать видеокомнату
-   * (если ещё нет). Идемпотентно: повторный вызов на уже online+relatedMeetingId
-   * комнату НЕ пересоздаёт. RBAC (event_card.write) проверяет контроллер.
-   */
   async makeEventOnline(args: {
     tenantId: string;
     eventId: string;
@@ -324,11 +271,9 @@ export class EventsService {
         error: { code: 'event_not_found', message: 'Событие не найдено' },
       });
     }
-    // Идемпотентность: уже онлайн и комната есть — ничего не делаем.
     if (event.online && event.relatedMeetingId) {
       return this.toDetail(event);
     }
-    // Ставим online=true (если ещё нет) и создаём комнату (если ещё нет).
     let current: EventWithRelations = event;
     if (!event.online) {
       current = await this.prisma.event.update({
@@ -346,8 +291,6 @@ export class EventsService {
         event: current,
       });
     }
-    // Перечитываем со связями для корректного DTO (attachLivekitRoom мог вернуть
-    // версию со включёнными participants/reminders, но подстрахуемся).
     const full = await this.prisma.event.findUnique({
       where: { id: eventId },
       include: { participants: true, reminders: true },
@@ -355,10 +298,6 @@ export class EventsService {
     return this.toDetail(full ?? current);
   }
 
-  /**
-   * Обновление. Только owner или organizer (EventParticipant.role='organizer')
-   * могут менять; RBAC-проверка `event_card.write` уже сделана в controller'е.
-   */
   async update(args: {
     tenantId: string;
     eventId: string;
@@ -392,8 +331,6 @@ export class EventsService {
     if (data.rrule !== undefined) patch.rrule = data.rrule;
     if (data.status !== undefined) patch.status = data.status;
     if (data.projectId !== undefined) patch.projectId = data.projectId;
-    // Ф6 — формат (online) и Ф5 — контрагент. Видеокомнату по смене online здесь
-    // НЕ создаём (для этого отдельный makeEventOnline + эндпоинт make-online).
     if (data.online !== undefined) patch.online = data.online;
     if (data.counterparty !== undefined)
       patch.counterparty = data.counterparty?.trim() ?? null;
@@ -426,10 +363,6 @@ export class EventsService {
     return this.toDetail(updated);
   }
 
-  /**
-   * Soft delete: deletedAt=now, status=cancelled. Связанный Meeting (если
-   * есть) тоже отменяется (TODO: вызов MeetingsService.cancelScheduled).
-   */
   async softDelete(args: {
     tenantId: string;
     eventId: string;
@@ -481,10 +414,6 @@ export class EventsService {
     this.tryEmit('event.deleted', { tenantId, eventId });
   }
 
-  /**
-   * RSVP участника. Пользователь должен иметь EventParticipant.userId =
-   * actorUserId (не organizer, любая роль). Идемпотентно перезаписывает.
-   */
   async rsvp(args: {
     tenantId: string;
     eventId: string;
@@ -533,18 +462,14 @@ export class EventsService {
     return this.participantToDto(updated);
   }
 
-  // ─────────────────────────── /me/calendar ────────────────────────────
-
   async getMyCalendar(args: {
     tenantId: string;
     userId: string;
     from?: Date;
     to?: Date;
-    /** Calendar MVP Polish (P3) — серверная фильтрация по проекту. */
     projectId?: string;
   }): Promise<CalendarResponseDto> {
     const { tenantId, userId, projectId } = args;
-    // Ф3 — дефолтное окно «сегодня» считаем в таймзоне самого пользователя.
     const tz = await this.resolvePersonTimezone(userId, tenantId);
     const { from, to } = this.resolveCalendarWindow(args.from, args.to, tz);
 
@@ -561,7 +486,7 @@ export class EventsService {
     ]);
 
     const items: CalendarItemDto[] = [
-      ...events.map((e) => this.toCalendarEventItem(e, /*mask*/ false)),
+      ...events.map((e) => this.toCalendarEventItem(e, false)),
       ...issues.map((i) => this.toCalendarIssueItem(i)),
     ];
 
@@ -575,18 +500,12 @@ export class EventsService {
     return { items };
   }
 
-  /**
-   * Календарь другого пользователя. Если targetUserId === currentUserId —
-   * то же, что getMyCalendar. Иначе personal-события возвращаются с маской
-   * «Занято» (показывает занятость без деталей).
-   */
   async getUserCalendar(args: {
     tenantId: string;
     currentUserId: string;
     targetUserId: string;
     from?: Date;
     to?: Date;
-    /** Calendar MVP Polish (P3) — серверная фильтрация по проекту. */
     projectId?: string;
   }): Promise<CalendarResponseDto> {
     const { tenantId, currentUserId, targetUserId, projectId } = args;
@@ -599,8 +518,6 @@ export class EventsService {
         ...(projectId ? { projectId } : {}),
       });
     }
-    // Ф3 — окно «сегодня» в таймзоне ЦЕЛЕВОГО пользователя (чей календарь
-    // показываем).
     const tz = await this.resolvePersonTimezone(targetUserId, tenantId);
     const { from, to } = this.resolveCalendarWindow(args.from, args.to, tz);
     const [events, issues] = await Promise.all([
@@ -609,7 +526,7 @@ export class EventsService {
         userId: targetUserId,
         from,
         to,
-        includePersonal: true, // подгружаем, но ниже замаскируем
+        includePersonal: true,
         projectId,
       }),
       this.fetchIssuesForUser({
@@ -623,7 +540,7 @@ export class EventsService {
 
     const items: CalendarItemDto[] = [
       ...events.map((e) =>
-        this.toCalendarEventItem(e, /*mask*/ e.visibility === 'personal'),
+        this.toCalendarEventItem(e, e.visibility === 'personal'),
       ),
       ...issues.map((i) => this.toCalendarIssueItem(i)),
     ];
@@ -635,16 +552,6 @@ export class EventsService {
     return { items };
   }
 
-  // ─────────────────────────── helpers (private) ───────────────────────
-
-  /**
-   * Возвращает сырые Event'ы и Issue'ы пользователя в окне [from, to] —
-   * для генерации ICS-feed (`/api/v1/calendar/:userId.ics`). В отличие от
-   * `getMyCalendar`, здесь не нужен tenant — feed строится по конкретному
-   * user'у (его tenant вычисляется отдельно или не учитывается, т.к. token
-   * привязан к user'у). Включает personal-события (это собственный feed
-   * пользователя).
-   */
   async getEventsForFeed(args: {
     userId: string;
     from: Date;
@@ -683,10 +590,6 @@ export class EventsService {
     return { events, issues };
   }
 
-  /**
-   * Внутренний метод для FindFreeSlotService — возвращает busy-окна для
-   * заданного пользователя (Events + Issues с dueDate).
-   */
   async fetchBusyWindowsForUser(args: {
     tenantId: string;
     userId: string;
@@ -737,17 +640,9 @@ export class EventsService {
     if (!from && to) {
       return { from: new Date(to.getTime() - 24 * 60 * 60_000), to };
     }
-    // Default — сегодняшние сутки [00:00, +24ч) в ТАЙМЗОНЕ человека (Ф3).
-    // Раньше считалось через setUTCHours(0) (UTC) → для UTC+7 «сегодня»
-    // возвращало вчера+завтра. Теперь окно строится по локальному дню.
     return localDayWindowUtc(new Date(), timezone ?? 'Europe/Moscow');
   }
 
-  /**
-   * Ф3 — таймзона человека для расчёта «сегодняшнего» окна календаря.
-   * Person.timezone → Org.timezone (через Membership) → 'Europe/Moscow'.
-   * (Параллель резолву из FindFreeSlotService, но в другом сервисе.)
-   */
   private async resolvePersonTimezone(
     userId: string,
     tenantId: string,
@@ -772,7 +667,6 @@ export class EventsService {
     from: Date;
     to: Date;
     includePersonal: boolean;
-    /** Calendar MVP Polish (P3) — фильтр по проекту, серверный. */
     projectId?: string;
   }): Promise<
     (Event & { participants: EventParticipant[]; reminders: EventReminder[] })[]
@@ -800,7 +694,6 @@ export class EventsService {
     userId: string;
     from: Date;
     to: Date;
-    /** Calendar MVP Polish (P3) — фильтр по проекту, серверный. */
     projectId?: string;
   }): Promise<(Issue & { project: Project | null })[]> {
     const { tenantId, userId, from, to, projectId } = args;
@@ -847,8 +740,6 @@ export class EventsService {
     }
   }
 
-  // ─────────────────────────── mappers ─────────────────────────────────
-
   private toListItem(e: Event): EventListItemDto {
     return {
       id: e.id,
@@ -861,7 +752,6 @@ export class EventsService {
       location: e.location,
       relatedMeetingId: e.relatedMeetingId,
       joinUrl: this.extractJoinUrl(e.metadata),
-      // Ф6 — формат встречи (онлайн) и Ф5 — контрагент/клиент («о ком»).
       online: e.online,
       counterparty: e.counterparty,
       createdAt: e.createdAt.toISOString(),
@@ -870,22 +760,12 @@ export class EventsService {
     };
   }
 
-  /**
-   * Достаёт `joinUrl` из `Event.metadata` (см. Calendar MVP Polish P1).
-   * Защищаемся от того, что metadata может быть null, массивом или иметь
-   * не-строковое поле joinUrl.
-   */
   private extractJoinUrl(meta: unknown): string | null {
     if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null;
     const v = (meta as Record<string, unknown>).joinUrl;
     return typeof v === 'string' && v.length > 0 ? v : null;
   }
 
-  /**
-   * Merge нового объекта в existing metadata (Json | null) без потери
-   * остальных полей. Используется при дописывании `joinUrl` после успешного
-   * создания LiveKit-комнаты.
-   */
   private mergeMetadata(
     current: unknown,
     patch: Record<string, unknown>,
@@ -897,12 +777,6 @@ export class EventsService {
     return { ...base, ...patch };
   }
 
-  /**
-   * Ф6 — создать LiveKit Meeting для онлайн-события и прицепить к нему:
-   * relatedMeetingId + metadata.joinUrl. Возвращает обновлённый Event (или
-   * исходный — при отсутствии MeetingsService / сбое LiveKit, чтобы событие
-   * не потерялось). DRY: зовётся из create (online=true) и makeEventOnline.
-   */
   private async attachLivekitRoom(args: {
     tenantId: string;
     ownerUserId: string;
@@ -1003,7 +877,6 @@ export class EventsService {
     mask: boolean,
   ): CalendarItemDto {
     if (mask) {
-      // Personal event чужого пользователя — отдаём только границы и заглушку.
       const masked: Event = {
         ...e,
         title: 'Занято',

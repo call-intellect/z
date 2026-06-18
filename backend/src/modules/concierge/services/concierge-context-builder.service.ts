@@ -4,18 +4,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { buildNowContextLine } from '../../operations/utils/local-date';
 import type { PageContextDto } from '../dto/concierge.dto';
 
-/**
- * SBA γ-2 — ConciergeContextBuilderService.
- *
- * Формирует context-блок для system prompt LLM из:
- *   - pageContext (route, currentEntityId, extras);
- *   - короткий recent activity (последние действия пользователя — на MVP
- *     просто счётчики/имена);
- *   - identity (имя/email user, имя/slug Org).
- *
- * Возвращает строку, готовую к подмешиванию в system prompt. Кардинальность
- * data — ограничена ~2KB чтобы не съедать tool-use лимит токенов.
- */
 @Injectable()
 export class ConciergeContextBuilderService {
   private readonly logger = new Logger(ConciergeContextBuilderService.name);
@@ -30,14 +18,7 @@ export class ConciergeContextBuilderService {
     const parts: string[] = [];
     const now = new Date();
 
-    // Identity + «Сейчас…» (дата/время/TZ — точка отсчёта для «сегодня/завтра»).
-    // Таймзона ЧЕЛОВЕКА резолвится Person.timezone → Org.timezone → Moscow
-    // (паттерн EventsService/find-free-slot.resolveOrganizerTimezone). У модели
-    // User поля timezone НЕТ — таймзона живёт на Person (аватар в Org) и Org.
     let resolvedTimezone: string | null = null;
-    // Ф4 (2026-06-18) автоспрос: добавляем подсказку про таймзону, ТОЛЬКО если
-    // identity-резолв прошёл и личная TZ Person пуста. При сбое identity (catch)
-    // флаг остаётся false → подсказку НЕ добавляем (не угадываем «пусто»).
     let identityResolved = false;
     let personTimezoneConfirmed = false;
     try {
@@ -58,7 +39,6 @@ export class ConciergeContextBuilderService {
         select: { timezone: true },
       });
       resolvedTimezone = person?.timezone ?? org?.timezone ?? null;
-      // person здесь непустой ⟺ у Person задана timezone (фильтр not:null выше).
       personTimezoneConfirmed = Boolean(person?.timezone);
       if (user) {
         parts.push(`Пользователь: ${user.name} (${user.email})`);
@@ -72,13 +52,8 @@ export class ConciergeContextBuilderService {
         `build: identity lookup failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-    // «Сейчас…» — первой строкой контекста (даже если identity упал → дефолтная TZ).
     parts.unshift(buildNowContextLine(now, resolvedTimezone));
 
-    // Автоспрос таймзоны (Ф4): если личная TZ не подтверждена — подскажи LLM
-    // уточнить её ОДИН раз и сохранить. (Не спамим: после сохранения
-    // Person.timezone станет not-null и подсказка исчезнет; в рамках разговора
-    // LLM не повторяет.) При сбое identity не добавляем (identityResolved=false).
     if (identityResolved && !personTimezoneConfirmed) {
       parts.splice(
         1,
@@ -87,7 +62,6 @@ export class ConciergeContextBuilderService {
       );
     }
 
-    // PageContext.
     if (args.pageContext) {
       const pc = args.pageContext;
       if (pc.clientPath) {
@@ -97,7 +71,6 @@ export class ConciergeContextBuilderService {
         parts.push(
           `Открыт ресурс: ${pc.currentEntityKind} (id=${pc.currentEntityId})`,
         );
-        // Подмешиваем краткую информацию о сущности, если знаем тип.
         const detail = await this.tryFetchEntityDetail(
           args.tenantId,
           pc.currentEntityKind,
@@ -109,7 +82,6 @@ export class ConciergeContextBuilderService {
         const flat = Object.entries(pc.extras)
           .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
           .join(', ');
-        // обрезаем чтобы не раздувать prompt
         parts.push(`Контекст страницы: ${flat.slice(0, 500)}`);
       }
     }
@@ -117,10 +89,6 @@ export class ConciergeContextBuilderService {
     return parts.join('\n');
   }
 
-  /**
-   * Безопасно достать «1-строку» о ресурсе для prompt'а. На MVP — только
-   * meeting/card; иначе null.
-   */
   private async tryFetchEntityDetail(
     tenantId: string,
     kind: string,

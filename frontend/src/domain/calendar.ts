@@ -1,14 +1,3 @@
-/**
- * Domain-модели календаря (Calendar MVP, Фаза 2).
- *
- * Маппит ApiDto из `@/api/calendar.api` в UI-удобный вид:
- *   - даты Date вместо строк
- *   - kind с человекочитаемой меткой
- *   - флаг `isOnline` берётся из `Event.online` (формат встречи), НЕ из `kind`
- *
- * Не путать с `EventApi`/`EventDto` (ApiDto). UI работает только с этими типами.
- */
-
 import type {
   CalendarItemApi,
   EventApi,
@@ -20,8 +9,6 @@ import type {
   ReminderChannelApi,
   RsvpStatusApi,
 } from '@/api/calendar.api';
-
-// ─────────────────────────── Метки на русском ────────────────────────
 
 export const EVENT_KIND_LABELS: Record<EventKindApi, string> = {
   meeting: 'Встреча',
@@ -49,7 +36,6 @@ export const RSVP_LABELS: Record<RsvpStatusApi, string> = {
   tentative: 'Возможно',
 };
 
-/** Цвета плашки события по kind. Используются Tailwind-классы фона/границы. */
 export interface EventKindStyle {
   bg: string;
   border: string;
@@ -120,8 +106,6 @@ export const EVENT_KIND_STYLES: Record<EventKindApi, EventKindStyle> = {
   },
 };
 
-// ─────────────────────────── Domain types ────────────────────────────
-
 export interface CalendarParticipantDomain {
   id: string;
   userId: string | null;
@@ -144,14 +128,9 @@ export interface CalendarEventDomain {
   startAt: Date;
   endAt: Date | null;
   durationMin: number | null;
-  /**
-   * Формат встречи: онлайн (есть видеокомната) ⇔ `Event.online`. НЕ выводится
-   * из `kind` — очная встреча типа `meeting` может быть офлайн (online=false).
-   */
   isOnline: boolean;
   ownerId: string | null;
   location: string | null;
-  /** «О ком встреча»: клиент/контрагент или компания (отдельно от `location`). */
   counterparty: string | null;
   description: string | null;
   visibility: EventVisibilityApi;
@@ -162,13 +141,7 @@ export interface CalendarEventDomain {
   rrule: string | null;
   timezone: string;
   allDay: boolean;
-  /**
-   * Calendar MVP Polish (P1, 2026-05-25). URL для подключения к LiveKit-комнате
-   * связанной встречи. Заполнен только для онлайн-встреч (`online=true`, если
-   * автосоздание Meeting не упало). UI показывает кнопку «Войти во встречу».
-   */
   joinUrl: string | null;
-  /** Полный ApiDto — нужен EventForm-у при редактировании. */
   raw: EventApi;
 }
 
@@ -184,8 +157,6 @@ export interface CalendarIssueDomain {
 }
 
 export type CalendarTimelineItem = CalendarEventDomain | CalendarIssueDomain;
-
-// ─────────────────────────── Мапперы ─────────────────────────────────
 
 function mapParticipant(p: EventParticipantApi): CalendarParticipantDomain {
   return {

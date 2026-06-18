@@ -8,32 +8,10 @@ import type { FindFreeSlotResponse } from '../dto/events.dto';
 
 import { EventsService } from './events.service';
 
-/**
- * Ф3 (ТЗ assistant-calendar-master) — дефолты рабочих часов (AdminSetting /
- * getDynamic). Служат code-fallback'ом, если AdminSetting не отвечает (а также
- * в unit-тестах с cfg-моком без `getDynamic`). Дублируют seed дефолтных
- * рабочих часов/дней (Ф4-seed); НЕ источник правды, а страховка.
- */
 const DEFAULT_WORK_START_HOUR = 9;
 const DEFAULT_WORK_END_HOUR = 18;
-const DEFAULT_WORKING_DAYS = [1, 2, 3, 4, 5]; // Пн..Пт (0=вс..6=сб)
+const DEFAULT_WORKING_DAYS = [1, 2, 3, 4, 5];
 
-/**
- * Calendar MVP (2026-05-25) — поиск общего свободного слота среди
- * нескольких пользователей.
- *
- * Алгоритм:
- *   1. Окно = [now, now + withinDays × 24h].
- *   2. Для каждого user'а собираем busy-окна: Event.startAt-endAt (где user
- *      owner ИЛИ participant) + Issue.dueDate (как 30-минутный busy-block).
- *      Делегируем сбор `EventsService.fetchBusyWindowsForUser`.
- *   3. Сортируем + сливаем перекрытия (объединение интервалов).
- *   4. Если `workingHoursOnly` — фильтруем gap'ы по рабочим часам/дням профиля
- *      организатора (берём первого user'а; Ф3 — не хардкод Пн-Пт 9-18, а
- *      Person.workStartHour/workEndHour/workingDays + дефолты AdminSetting) в
- *      его timezone.
- *   5. Возвращаем первый gap длиной ≥ durationMin.
- */
 @Injectable()
 export class FindFreeSlotService {
   private readonly logger = new Logger(FindFreeSlotService.name);
@@ -60,7 +38,6 @@ export class FindFreeSlotService {
     const from = new Date();
     const to = new Date(from.getTime() + withinDays * 24 * 60 * 60_000);
 
-    // 1. Соберём busy-окна по каждому участнику.
     const allBusy: Array<{ start: Date; end: Date }> = [];
     for (const userId of args.participantUserIds) {
       const windows = await this.events.fetchBusyWindowsForUser({
@@ -79,20 +56,14 @@ export class FindFreeSlotService {
       }
     }
 
-    // 2. Сортируем + сливаем перекрытия.
     const merged = this.mergeIntervals(allBusy);
 
-    // 3. Профиль организатора (= первый user): TZ + рабочие часы/дни.
-    //    Ф3 — больше не хардкодим Пн-Пт 9-18; берём из Person (+ дефолты
-    //    AdminSetting). MVP: профиль первого участника.
     const organizer = await this.resolveOrganizerProfile(
       args.participantUserIds[0]!,
       args.tenantId,
     );
     const organizerTz = organizer.timezone;
 
-    // 4. Идём по gap'ам [from..busy1.start], [busy1.end..busy2.start], ...
-    //    [busyN.end..to], ищем первый длинный достаточно.
     const gaps: Array<{ start: Date; end: Date }> = [];
     let cursor = from;
     for (const b of merged) {
@@ -138,17 +109,6 @@ export class FindFreeSlotService {
     return { slotStartAt: null, slotEndAt: null, found: false };
   }
 
-  /**
-   * Найти первый подгап в `gap`, который попадает в рабочие часы/дни локальной
-   * `timezone` и длится ≥ `durationMs`. Двигаемся по часам — берём минимально
-   * допустимый старт.
-   *
-   * Ф3 — рабочие часы/дни приходят параметрами (профиль организатора), а НЕ
-   * хардкодом Пн-Пт 9-18. Реализация: разбиваем gap по дням локальной TZ; для
-   * каждого дня — если он рабочий (`workingDays.includes(dow)`), проверяем
-   * пересечение [day workStartHour, day workEndHour] с gap'ом; первый
-   * подходящий подгап ≥ durationMs возвращаем.
-   */
   private firstWorkingHoursSubGap(args: {
     gap: { start: Date; end: Date };
     durationMs: number;
@@ -160,7 +120,7 @@ export class FindFreeSlotService {
     const { gap, durationMs, timezone, workStartHour, workEndHour, workingDays } =
       args;
     let cursor = new Date(gap.start);
-    const MAX_DAYS = 14; // safety: гэп не длиннее ~14 суток имеет смысл сканировать
+    const MAX_DAYS = 14;
     for (let day = 0; day < MAX_DAYS; day++) {
       if (cursor >= gap.end) return null;
 
@@ -181,7 +141,6 @@ export class FindFreeSlotService {
           };
         }
       }
-      // Двигаемся на начало следующего календарного дня (по local TZ).
       cursor = new Date(startOfDayUtc.getTime() + 24 * 60 * 60_000);
     }
     return null;
@@ -207,15 +166,6 @@ export class FindFreeSlotService {
     return out;
   }
 
-  /**
-   * Ф3 — резолвим РАБОЧИЙ ПРОФИЛЬ организатора (= первый user в списке):
-   * таймзона + рабочие часы/дни. Источники:
-   *   - timezone: Person.timezone → Org.timezone → 'Europe/Moscow'
-   *     (делегируем `resolveOrganizerTimezone`);
-   *   - workStartHour/workEndHour/workingDays: из Person, иначе дефолты
-   *     AdminSetting (getDynamic) с code-fallback.
-   * `workingDays = []` (поле не задано) трактуем как «дефолт».
-   */
   private async resolveOrganizerProfile(
     userId: string,
     tenantId: string,
@@ -251,13 +201,6 @@ export class FindFreeSlotService {
     return { timezone, workStartHour, workEndHour, workingDays };
   }
 
-  /**
-   * Резолвим timezone организатора (= первый user в списке).
-   * Источники, в порядке приоритета:
-   *   1. Person.timezone (связанный с user через userId, в рамках tenant'а).
-   *   2. Org.timezone (первая Org user'а).
-   *   3. 'Europe/Moscow' по умолчанию.
-   */
   private async resolveOrganizerTimezone(
     userId: string,
     tenantId: string,
@@ -276,10 +219,6 @@ export class FindFreeSlotService {
     return membership?.org?.timezone ?? 'Europe/Moscow';
   }
 
-  /**
-   * Дефолтный рабочий час (start/end) из AdminSetting (getDynamic).
-   * Defensive try/catch — cfg-мок в тестах может не иметь `getDynamic`.
-   */
   private async getWorkHourDefault(
     key: 'work_hours_default_start' | 'work_hours_default_end',
     fallback: number,
@@ -292,10 +231,6 @@ export class FindFreeSlotService {
     }
   }
 
-  /**
-   * Дефолтные рабочие дни (0=вс..6=сб) из AdminSetting (getDynamic).
-   * Defensive try/catch — cfg-мок в тестах может не иметь `getDynamic`.
-   */
   private async getWorkingDaysDefault(): Promise<number[]> {
     try {
       const v = await this.cfg.getDynamic<number[]>(

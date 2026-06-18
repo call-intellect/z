@@ -1,14 +1,3 @@
-/**
- * Agents v2 Фаза 0.2 (2026-05-30) — ProbeDispatcherWorker.
- *
- * Unit-тест: после успешного `formulate()` worker сохраняет
- * formulatedQuestion в `ProbeEvent.payload`, чтобы потом
- * `ProbeResponseHandler` мог отдать его LLM-классификатору
- * (`probe-response-classify`) вместо reason/message-fallback'a.
- *
- * Все Prisma/LLM/Conversational/Probe/Metrics/Cfg мокированы (без БД, без сети).
- */
-
 import type { Job } from 'bullmq';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -35,10 +24,6 @@ interface Mocks {
   llmCall: ReturnType<typeof vi.fn>;
 }
 
-/**
- * Дефолтный priority=80 — выше порога immediatePushMinPriority (70, Autonomy
- * W0 Ф0.2), чтобы тесты dispatch-пути не задевал priority-гейт.
- */
 function buildProbe(
   payload: Record<string, unknown>,
   priority = 80,
@@ -68,29 +53,12 @@ function makeMocks(args: {
   llmThrow?: Error;
   probePriority?: number;
   reason?: string;
-  /**
-   * Probe Фаза 2 — ответ LLM-судьи качества (`probe-quality-judge`), вызов
-   * ИДЁТ ВТОРЫМ после probe-formulate. По умолчанию `{ok:true}` (вопрос
-   * полноценный, исходный сохраняется), чтобы старые dispatch-тесты не задевал
-   * регенерат. Передай свой judgeResponse/judgeThrow для тестов Ф2.
-   */
   judgeResponse?: { text: string };
   judgeThrow?: Error;
   qualityJudgeEnabled?: boolean;
-  /**
-   * Probe Фаза 3 — список кандидатов-получателей (после rate-limit). По
-   * умолчанию ['user-1'] (один → выбор тривиален, старые тесты не задеты).
-   */
   candidates?: string[];
-  /** Probe Фаза 3 — engagement-снимки в Redis (userId → rate-строка). */
   engagement?: Record<string, string>;
-  /** Probe Фаза 3 — флаг probe.engagementRoutingEnabled (дефолт ON через fallback). */
   engagementRoutingEnabled?: boolean;
-  /**
-   * Probe Фаза 3 — kind первого NotificationDelivery (mock findFirst). null →
-   * findFirst вернёт null (fallback метрики 'in_app'). undefined → findFirst
-   * возвращает null по умолчанию.
-   */
   deliveryKind?: string | null;
 }): Mocks {
   const probe = buildProbe(args.probePayload, args.probePriority, args.reason);
@@ -99,8 +67,6 @@ function makeMocks(args: {
     data: Record<string, unknown>;
   }> = [];
 
-  // Probe Фаза 3 — kind первого NotificationDelivery. findFirst возвращает
-  // запись с channel.kind, если deliveryKind задан непустым; иначе null.
   const deliveryKind = args.deliveryKind ?? null;
   const prisma = {
     probeEvent: {
@@ -123,14 +89,12 @@ function makeMocks(args: {
     },
   } as unknown as PrismaService;
 
-  // Очередь LLM-вызовов: [0] probe-formulate, [1] probe-quality-judge.
   const llmCall = vi.fn();
   if (args.llmThrow) {
     llmCall.mockRejectedValueOnce(args.llmThrow);
   } else if (args.llmResponse) {
     llmCall.mockResolvedValueOnce(args.llmResponse);
   }
-  // Второй вызов — судья качества (если флаг не выключен и reason не CDM).
   if (args.judgeThrow) {
     llmCall.mockRejectedValueOnce(args.judgeThrow);
   } else {
@@ -170,9 +134,6 @@ function makeMocks(args: {
       responseClassifyMinConfidence: 0.5,
     },
     aiFeatures: { promptInjectionGuardEnabled: false },
-    // Динамические крутилки (probe.immediatePushMinPriority=70,
-    // probe.topicCooldownHours=48) — мок отдаёт переданный fallback. Для
-    // probe.qualityJudgeEnabled можно переопределить через qualityJudgeEnabled.
     getDynamic: vi
       .fn()
       .mockImplementation(
@@ -194,12 +155,10 @@ function makeMocks(args: {
       ),
   } as unknown as TypedConfigService;
 
-  // Probe Фаза 3 — engagement-снимки в Redis по ключу probe:engagement:<userId>.
   const engagement = args.engagement ?? {};
   const redis = {
     client: {
       get: vi.fn().mockImplementation(async (key: string) => {
-        // ключ вида probe:engagement:<userId>
         const userId = key.replace('probe:engagement:', '');
         return engagement[userId] ?? null;
       }),
@@ -232,7 +191,6 @@ function makeWorker(m: Mocks): ProbeDispatcherWorker {
   );
 }
 
-/** process — приватный; вызываем через bracket-access как в integration spec. */
 async function runProcess(
   worker: ProbeDispatcherWorker,
   probeEventId: string,
@@ -266,9 +224,7 @@ describe('ProbeDispatcherWorker — Agents v2 Фаза 0.2', () => {
     const worker = makeWorker(mocks);
     await runProcess(worker, 'probe-disp-1');
 
-    // 2 LLM-вызова: probe-formulate + probe-quality-judge (Ф2, флаг ON).
     expect(mocks.llmCall).toHaveBeenCalledTimes(2);
-    // Должен быть ровно один update — на status='dispatched'.
     expect(mocks.updateCalls).toHaveLength(1);
     const updateData = mocks.updateCalls[0]!.data;
     expect(updateData.status).toBe('dispatched');
@@ -278,7 +234,6 @@ describe('ProbeDispatcherWorker — Agents v2 Фаза 0.2', () => {
     expect(newPayload.formulatedQuestion).toBe(
       'Вы согласовали миграцию на DeepSeek с финдиректором?',
     );
-    // Старые поля из payload не теряются.
     expect(newPayload.message).toBe(
       'Решение по миграции на DeepSeek просрочено на 2 дня.',
     );
@@ -307,7 +262,6 @@ describe('ProbeDispatcherWorker — Agents v2 Фаза 0.2', () => {
       string,
       unknown
     >;
-    // formulatedQuestion = fallback = suggestedQuestion.
     expect(newPayload.formulatedQuestion).toBe(
       'Вы согласовали с финдиректором?',
     );
@@ -406,11 +360,6 @@ describe('ProbeDispatcherWorker — Autonomy W0 Ф0.2: priority-гейт нем�
   });
 });
 
-/**
- * TZ clone-method Э3.1 — CDM-вопрос НЕ переформулируется: он уже построен
- * LLM `cdm-case-interview` строго по методике критических решений (открытый,
- * не наводящий); прогон через probe-formulate мог бы сделать его наводящим.
- */
 describe('ProbeDispatcherWorker — CDM-интервью (clone-method Э3.1)', () => {
   it('reason=skill.cdm_interview + suggestedQuestion → LLM probe-formulate НЕ вызывается, вопрос уходит КАК ЕСТЬ', async () => {
     const cdmQuestion =
@@ -428,9 +377,7 @@ describe('ProbeDispatcherWorker — CDM-интервью (clone-method Э3.1)', 
     const worker = makeWorker(mocks);
     await runProcess(worker, 'probe-disp-1');
 
-    // LLM probe-formulate не дёргался.
     expect(mocks.llmCall).not.toHaveBeenCalled();
-    // Вопрос сохранён без изменений.
     expect(mocks.updateCalls).toHaveLength(1);
     const newPayload = mocks.updateCalls[0]!.data.payload as Record<
       string,
@@ -462,11 +409,6 @@ describe('ProbeDispatcherWorker — CDM-интервью (clone-method Э3.1)', 
   });
 });
 
-/**
- * Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки + один регенерат.
- * Судья вызывается ВТОРЫМ LLM-вызовом после probe-formulate. При браке и валидном
- * rewrite → отправляется регенерат; иначе/при сбое → исходный (best-effort).
- */
 describe('ProbeDispatcherWorker — Probe Фаза 2: LLM-судья качества', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -493,7 +435,6 @@ describe('ProbeDispatcherWorker — Probe Фаза 2: LLM-судья качес�
     const worker = makeWorker(mocks);
     await runProcess(worker, 'probe-disp-1');
 
-    // sendNotification получил rewrite, а не исходный вопрос.
     expect(
       vi.mocked(mocks.conversational.sendNotification),
     ).toHaveBeenCalledWith(
@@ -503,7 +444,6 @@ describe('ProbeDispatcherWorker — Probe Фаза 2: LLM-судья качес�
         }),
       }),
     );
-    // В payload ProbeEvent сохранён тот же rewrite.
     expect(mocks.updateCalls[0]!.data.payload).toEqual(
       expect.objectContaining({
         formulatedQuestion: 'Кто отвечает за это решение?',
@@ -606,7 +546,6 @@ describe('ProbeDispatcherWorker — Probe Фаза 2: LLM-судья качес�
     const worker = makeWorker(mocks);
     await runProcess(worker, 'probe-disp-1');
 
-    // Только один LLM-вызов (probe-formulate); судья не дёргался.
     expect(mocks.llmCall).toHaveBeenCalledTimes(1);
     expect(
       vi.mocked(mocks.conversational.sendNotification),
@@ -623,10 +562,6 @@ describe('ProbeDispatcherWorker — Probe Фаза 2: LLM-судья качес�
   });
 });
 
-/**
- * Probe Фаза 3 (2026-06-17) — выбор получателя по engagement + реальный kind
- * метрики доставки.
- */
 describe('ProbeDispatcherWorker — Probe Фаза 3: выбор получателя по engagement', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -658,7 +593,6 @@ describe('ProbeDispatcherWorker — Probe Фаза 3: выбор получат�
     const mocks = makeMocks({
       probePayload: { message: 'контекст' },
       llmResponse: FORMULATE,
-      // оба снимка отсутствуют в Redis → нейтраль 0.5 для обоих.
       candidates: ['user-zzz', 'user-aaa'],
       engagement: {},
     });
@@ -677,7 +611,6 @@ describe('ProbeDispatcherWorker — Probe Фаза 3: выбор получат�
       probePayload: { message: 'контекст' },
       llmResponse: FORMULATE,
       candidates: ['user-first', 'user-high'],
-      // у второго выше engagement, но флаг OFF — берём первого.
       engagement: { 'user-first': '0.1', 'user-high': '0.9' },
       engagementRoutingEnabled: false,
     });
@@ -720,12 +653,6 @@ describe('ProbeDispatcherWorker — Probe Фаза 3: выбор получат�
   });
 });
 
-/**
- * Probe Ф5 re-ask (2026-06-17) — пометка переспроса в USER `probe-formulate`.
- * При payload.reaskCount≥1 в КОНЕЦ USER (cache-friendly) добавляется мягкая
- * пометка «это повторный вопрос»; без reaskCount — пометки нет. SYSTEM не
- * меняется (cache-friendly, проверяем что вопрос всё равно формулируется).
- */
 describe('ProbeDispatcherWorker — Probe Ф5: пометка переспроса в USER formulate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -748,7 +675,6 @@ describe('ProbeDispatcherWorker — Probe Ф5: пометка переспрос
     const worker = makeWorker(mocks);
     await runProcess(worker, 'probe-disp-1');
 
-    // Первый LLM-вызов — probe-formulate; проверяем его userMessage.
     const formulateCall = mocks.llmCall.mock.calls[0]![0] as {
       taskType: string;
       userMessage: string;

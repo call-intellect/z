@@ -18,27 +18,6 @@ import {
 import { QueryGate } from '@/ui/components/shared/QueryGate';
 import { EmptyState } from '@/ui/components/shared/EmptyState';
 
-/**
- * «Лента Коры» как переиспользуемый виджет (ТЗ 2026-06-17 встройки ленты в
- * дашборды, Ф1 — вынос из страничного `FeedClient.tsx`).
- *
- * Живая лента-новости компании с анализом: идеи, сигналы, блокеры, решения,
- * конфликты, активность + вопросы Коры и вопросы людей. Переключатель-чипы
- * фильтруют по типу; счётчики — из `counters`. Под-вкладка «Контроль» (вопросы
- * Коры — кто ответил / молчит / не видел / протух) видна только при `canControl`
- * (владелец / админ / COO). Сортировка карточек — как пришла с бэка (по severity).
- *
- * Auth-гейт сюда НЕ входит — `orgId` и `canControl` считает вызывающая страница
- * и передаёт пропсами.
- *
- * variant:
- *  - `'full'`    — полная страничная раскладка: лимит 60, окно 30 дн, полная
- *    шапка, секция «Контроль» при `canControl`.
- *  - `'compact'` — для дашборда: начальный лимит `defaultLimit ?? 8`, компактная
- *    шапка и кнопка «Вся лента» внизу, которая разворачивает виджет на месте
- *    (поднимает лимит до 60 и сбрасывает фильтр в «Всё»).
- */
-
 const TONE_CHIP: Record<CoraFeedTone, string> = {
   info: 'bg-chip-info-bg text-chip-info-fg',
   warning: 'bg-chip-warning-bg text-chip-warning-fg',
@@ -51,10 +30,8 @@ const TONE_DOT: Record<CoraFeedTone, string> = {
   danger: 'bg-chip-danger-fg',
 };
 
-/** Окно ленты в днях по умолчанию (свежие новости компании). */
 const FEED_WINDOW_DAYS = 30;
 const FEED_LIMIT = 60;
-/** Начальный лимит компактного виджета (для дашборда). */
 const COMPACT_DEFAULT_LIMIT = 8;
 
 function formatRelative(date: Date): string {
@@ -70,12 +47,9 @@ function formatRelative(date: Date): string {
 }
 
 function formatScore(score: number): string {
-  // payload.score приходит 0..1; рендерим как проценты.
   const pct = score <= 1 ? Math.round(score * 100) : Math.round(score);
   return `${pct}%`;
 }
-
-// ─── Виджет ──────────────────────────────────────────────────────────────────
 
 export function CoraFeedWidget({
   orgId,
@@ -91,15 +65,11 @@ export function CoraFeedWidget({
   const isCompact = variant === 'compact';
 
   const [filter, setFilter] = useState<CoraFeedFilter>('all');
-  // Лимит ленты. В full всегда FEED_LIMIT; в compact стартует с компактного
-  // значения и поднимается до FEED_LIMIT по кнопке «Вся лента».
   const [limit, setLimit] = useState<number>(
     isCompact ? (defaultLimit ?? COMPACT_DEFAULT_LIMIT) : FEED_LIMIT,
   );
-  // Развёрнут ли компактный виджет «на месте».
   const expanded = limit >= FEED_LIMIT;
 
-  // Лента Коры.
   const feedSwr = useSWR(
     ['cora-feed', orgId, filter, limit] as const,
     async ([, , type, lim]) => {
@@ -112,8 +82,6 @@ export function CoraFeedWidget({
     },
   );
 
-  // Контроль вопросов Коры (probe/control) — грузим только при наличии прав
-  // и когда пользователь смотрит на вопросы Коры.
   const controlActive = canControl && filter === 'probe_question';
   const controlSwr = useSWR(
     controlActive ? (['probe-control', orgId] as const) : null,
@@ -126,7 +94,6 @@ export function CoraFeedWidget({
     },
   );
 
-  // markSeen при первом успешном заходе в ленту (обнуляет unread на бэке).
   const [seen, setSeen] = useState(false);
   const [seenPending, setSeenPending] = useState(false);
   const unreadCount = feedSwr.data?.unreadCount ?? 0;
@@ -140,7 +107,6 @@ export function CoraFeedWidget({
         setSeen(true);
         await feedSwr.mutate();
       } catch {
-        // тихо — отметка прочтения не критична для просмотра ленты
       } finally {
         setSeenPending(false);
       }
@@ -148,7 +114,6 @@ export function CoraFeedWidget({
     [orgId, seenPending, feedSwr],
   );
 
-  // Авто-отметка прочтения один раз, когда лента загрузилась и есть unread.
   useEffect(() => {
     if (!seen && !seenPending && unreadCount > 0 && feedSwr.data) {
       void markSeen();
@@ -159,8 +124,6 @@ export function CoraFeedWidget({
   const counters = feedSwr.data?.counters ?? {};
   const items = feedSwr.data?.items ?? [];
 
-  // «Вся лента» (только compact, пока не развёрнут): поднять лимит до полного
-  // и сбросить активный чип-фильтр в «Всё» — разворот на месте, без перехода.
   const expandToFull = () => {
     setLimit(FEED_LIMIT);
     setFilter('all');
@@ -172,7 +135,6 @@ export function CoraFeedWidget({
         isCompact ? 'w-full' : 'mx-auto w-full max-w-4xl px-4 py-8'
       }
     >
-      {/* Шапка */}
       {isCompact ? (
         <header className="mb-4 flex flex-wrap items-center gap-2">
           <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-chip-info-bg text-chip-info-fg">
@@ -222,7 +184,6 @@ export function CoraFeedWidget({
         </header>
       )}
 
-      {/* Переключатель-чипы */}
       <div className="mb-5 flex flex-wrap gap-2">
         {CORA_FILTER_CHIPS.map((chip) => {
           const count =
@@ -255,7 +216,6 @@ export function CoraFeedWidget({
         })}
       </div>
 
-      {/* Контроль вопросов Коры — отдельная секция при выбранном чипе */}
       {controlActive ? (
         <ControlSection
           isLoading={controlSwr.isLoading}
@@ -268,7 +228,6 @@ export function CoraFeedWidget({
         />
       ) : null}
 
-      {/* Лента карточек (Б-6: loading / empty / error) */}
       <QueryGate
         isLoading={feedSwr.isLoading}
         error={feedSwr.error}
@@ -290,7 +249,6 @@ export function CoraFeedWidget({
         </div>
       </QueryGate>
 
-      {/* «Вся лента» — разворот компактного виджета на месте */}
       {isCompact && !expanded ? (
         <div className="mt-4 flex justify-center">
           <button
@@ -306,14 +264,11 @@ export function CoraFeedWidget({
   );
 }
 
-// ─── Сводка-счётчики в шапке ────────────────────────────────────────────────
-
 function CountersSummary({
   counters,
 }: {
   counters: Record<string, number>;
 }) {
-  // Компактная строка: «+N сигналов, M блокеров, K идей …».
   const parts: string[] = [];
   const push = (key: string, one: string, few: string, many: string) => {
     const n = counters[key];
@@ -338,8 +293,6 @@ function CountersSummary({
   );
 }
 
-// ─── Карточка ленты ──────────────────────────────────────────────────────────
-
 function FeedCard({ item }: { item: CoraFeedItem }) {
   return (
     <article
@@ -350,7 +303,6 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
       }`}
     >
       <div className="flex items-start gap-3">
-        {/* Индикатор unread */}
         <span
           aria-hidden="true"
           className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
@@ -364,7 +316,6 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
             >
               {item.typeLabel}
             </span>
-            {/* R9 — подсветка «спросил руководитель» на вопросах людей */}
             {item.type === 'open_question' && item.askedByManager ? (
               <span className="inline-flex items-center rounded-full bg-chip-info-bg px-2 py-0.5 text-[10px] font-medium text-chip-info-fg">
                 Спросил руководитель
@@ -381,7 +332,6 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
             {item.title}
           </h3>
 
-          {/* Инсайт «оценка%→рекомендация→срок», если payload несёт */}
           {item.insight ? (
             <p className="mt-1.5 text-xs text-fg-secondary">
               {item.insight.score !== undefined ? (
@@ -403,7 +353,6 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
             <p className="mt-1.5 text-xs text-fg-secondary">{item.analysis}</p>
           ) : null}
 
-          {/* Мета */}
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-fg-tertiary">
             <span>{formatRelative(item.createdAtDate)}</span>
             {item.meetingId ? (
@@ -428,8 +377,6 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
     </article>
   );
 }
-
-// ─── Секция «Контроль» (вопросы Коры) ────────────────────────────────────────
 
 function ControlSection({
   isLoading,

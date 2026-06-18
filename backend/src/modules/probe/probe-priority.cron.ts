@@ -14,19 +14,6 @@ import {
   probeTopicCooldownRedisKey,
 } from './probe-fatigue.util';
 
-/**
- * SBA β-5 — ProbePriorityCron (Layer 6).
- *
- * Каждые 15 минут:
- *   1. Пересчитывает engagement_rate per-user (отвечено за 30д / отправлено
- *      за 30д) и выставляет gauge `probe_recipient_engagement_rate{user_id}`.
- *   2. Помечает истёкшие ProbeEvent (`expiresAt < now` AND status ∈
- *      pending | queued_digest | routed_to_digest — L-2) статусом 'expired'
- *      (+ метрика probe_expired_total).
- *
- * Cron-выражение в декораторе литералом (NestJS @Cron не читает ENV). Если
- * `PROBE_PRIORITY_REFRESH_CRON` отличается — заменить декоратор.
- */
 @Injectable()
 export class ProbePriorityCron {
   private readonly logger = new Logger(ProbePriorityCron.name);
@@ -50,14 +37,6 @@ export class ProbePriorityCron {
         now.getTime() - ProbePriorityCron.LOOKBACK_DAYS * 24 * 3600 * 1000,
       );
 
-      // 1. Истёкшие ProbeEvent → expired.
-      // SBA β-5 closing-loop (sub-TZ 2026-05-23): дополнительно фильтруем
-      // probe'ы, у которых dispatchedNotificationId уже отвечен
-      // (`Notification.respondedAt IS NOT NULL`). Так мы избегаем гонки
-      // «истёк по таймеру, хотя ответ только что пришёл» — закрытый probe
-      // не должен пере-помечаться `expired`.
-      // L-2 (2026-06-12): digest-статусы (queued_digest / routed_to_digest)
-      // тоже стареют — иначе протухший вопрос вечно ждал бы дайджеста.
       const expiredCandidates = await this.prisma.probeEvent.findMany({
         where: {
           status: { in: ['pending', 'queued_digest', 'routed_to_digest'] },
@@ -66,11 +45,9 @@ export class ProbePriorityCron {
         select: {
           id: true,
           dispatchedNotificationId: true,
-          // Probe Фаза 5 — для исход-сигнала (ignored) и cooldown темы.
           reason: true,
           tenantId: true,
           contentHash: true,
-          // Probe Ф5 re-ask (2026-06-17) — поля для создания переспроса.
           payload: true,
           recipientCandidates: true,
           priority: true,
@@ -84,7 +61,7 @@ export class ProbePriorityCron {
             where: { id: cand.dispatchedNotificationId },
             select: { respondedAt: true },
           });
-          if (n?.respondedAt) continue; // уже закрыт пользователем — пропускаем
+          if (n?.respondedAt) continue;
         }
         expirable.push({
           id: cand.id,
@@ -98,18 +75,6 @@ export class ProbePriorityCron {
         });
       }
 
-      // Probe Ф5 re-ask (2026-06-17, решение владельца Р3): прежде чем закрыть
-      // неотвеченный probe как ignored, делаем РОВНО ОДИН переспрос,
-      // переформулировав. Учёт попытки — в payload (`reaskCount`,
-      // `originalProbeEventId`), без новой колонки. Делим истёкшие на:
-      //   - reaskGroup  — первый раз без ответа (reaskCount 0/нет) И флаг ON →
-      //                   создаём переформулированный переспрос, исходный
-      //                   помечаем terminal `expired` БЕЗ ignored-метрики (он не
-      //                   проигнорирован, а переспрошен);
-      //   - closeGroup  — переспрос уже был (reaskCount≥1) ИЛИ флаг OFF →
-      //                   прежнее поведение: `expired` + outcome=ignored.
-      // Оба истекают (incProbeExpired для всех) — переспрошенный исходный тоже
-      // «истёк».
       const reaskEnabled = await this.readReaskEnabled();
       const reaskGroup: ExpirableProbe[] = [];
       const closeGroup: ExpirableProbe[] = [];
@@ -124,28 +89,16 @@ export class ProbePriorityCron {
         const expired = await this.prisma.probeEvent.updateMany({
           where: {
             id: { in: expirable.map((e) => e.id) },
-            // L-2 — те же статусы, что в выборке (идемпотентность гонок).
             status: { in: ['pending', 'queued_digest', 'routed_to_digest'] },
           },
           data: { status: 'expired' },
         });
         expiredCount = expired.count;
         for (let i = 0; i < expired.count; i++) this.metrics.incProbeExpired();
-        // Probe Фаза 5 (R10): закрываемый без ответа = исход «ignored» (сигнал
-        // калибровки Фазы 2). Тему ставим на cooldown — не доставать человека
-        // тем же вопросом в течение probe.topicCooldownHours. ВАЖНО: только
-        // closeGroup — переспрошенные (reaskGroup) НЕ ignored.
         await this.recordIgnoredOutcomes(closeGroup);
-        // Переспрос: создаём новый pending-probe (переформулировку сделает
-        // dispatcher по пометке reaskCount в payload) + enqueue.
         for (const e of reaskGroup) await this.createReask(e);
       }
 
-      // 2. engagement_rate per recipient.
-      // Считаем по probe-уведомлениям (eventType='probe.question') за 30 дней.
-      // SBA β-5 closing-loop: `respondedAt IS NULL` в знаменателе НЕ
-      // вычитаем — знаменатель = «всего отправлено», числитель = «отвечено»
-      // (`responseStatus='answered'`, что эквивалентно `respondedAt IS NOT NULL`).
       const sent = await this.prisma.notification.groupBy({
         by: ['recipientUserId'],
         where: {
@@ -172,8 +125,6 @@ export class ProbePriorityCron {
         });
         const rate = answeredCount / sentCount;
         this.metrics.setProbeRecipientEngagementRate({ userId, rate });
-        // Probe Фаза 5 — снимок engagement в Redis: filterByRateLimit режет
-        // бюджет низко-отзывчивым (adaptive fatigue). Best-effort.
         try {
           await this.redis.client.set(
             probeEngagementRedisKey(userId),
@@ -182,7 +133,7 @@ export class ProbePriorityCron {
             PROBE_ENGAGEMENT_TTL_SEC,
           );
         } catch {
-          // Redis down — adaptive просто не применится (graceful).
+          /* eslint-disable-next-line no-empty */
         }
         usersDone += 1;
       }
@@ -199,13 +150,6 @@ export class ProbePriorityCron {
     }
   }
 
-  /**
-   * Probe Фаза 5 — для каждого истёкшего без ответа probe:
-   *   - метрика `probe_outcome_total{outcome=ignored, reason}` (калибровка Фазы 2);
-   *   - cooldown темы (`contentHash`) в Redis на `probe.topicCooldownHours` —
-   *     не доставать человека тем же вопросом сразу после игнора.
-   * Best-effort: ошибки Redis/настроек не валят sweep.
-   */
   private async recordIgnoredOutcomes(
     expired: ExpirableProbe[],
   ): Promise<void> {
@@ -229,19 +173,14 @@ export class ProbePriorityCron {
             ttlSec,
           );
         } catch {
-          // Redis down — cooldown просто не применится (graceful).
+          /* eslint-disable-next-line no-empty */
         }
       }
     } catch {
-      // настройка недоступна — пропускаем cooldown.
+      /* eslint-disable-next-line no-empty */
     }
   }
 
-  /**
-   * Probe Ф5 re-ask (2026-06-17) — флаг `probe.reaskEnabled` (AdminSetting,
-   * тип А, дефолт ON). getDynamic может упасть (БД/Redis) → ON (паттерн
-   * остальных probe-крутилок), чтобы переспрос работал по умолчанию.
-   */
   private async readReaskEnabled(): Promise<boolean> {
     try {
       return await this.cfg.getDynamic<boolean>(
@@ -254,7 +193,6 @@ export class ProbePriorityCron {
     }
   }
 
-  /** Текущее число переспросов из payload (`reaskCount`), дефолт 0. */
   private readReaskCount(payload: Prisma.JsonValue): number {
     if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
       const raw = (payload as Record<string, unknown>).reaskCount;
@@ -264,19 +202,6 @@ export class ProbePriorityCron {
     return 0;
   }
 
-  /**
-   * Probe Ф5 re-ask (2026-06-17) — создать переспрос истёкшего probe.
-   *
-   * Новый `ProbeEvent` (status='pending') наследует reason / получателей /
-   * contentHash / priority / emittedByService исходного; в payload — пометка
-   * `reaskCount=1` + `originalProbeEventId` (по ней dispatcher переформулирует
-   * вопрос мягко, со ссылкой на прошлый). Сразу enqueue в dispatcher.
-   *
-   * Переспрос создаётся НАПРЯМУЮ здесь (минуя `ProbeService.suggest`), что
-   * сознательно обходит suggest-гейты — в т.ч. topic-cooldown: переспрос
-   * порождён системой (а не новым специалистом), глушить его cooldown'ом нельзя.
-   * Best-effort: ошибка создания/enqueue одного переспроса не валит весь sweep.
-   */
   private async createReask(src: ExpirableProbe): Promise<void> {
     try {
       const basePayload =
@@ -323,19 +248,11 @@ export class ProbePriorityCron {
     }
   }
 
-  /**
-   * Срок жизни переспроса (как у pending в ProbeService): now + probe.expiryDays.
-   * Считаем по той же крутилке, что и основной probe-путь — единый контракт.
-   */
   private computeExpiresAt(): Date {
     return new Date(Date.now() + this.cfg.probe.expiryDays * 24 * 3600 * 1000);
   }
 }
 
-/**
- * Probe Ф5 re-ask (2026-06-17) — поля истёкшего probe, которых достаточно
- * и для ignored-исхода/cooldown, и для создания переспроса.
- */
 interface ExpirableProbe {
   id: string;
   reason: string;

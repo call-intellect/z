@@ -165,11 +165,6 @@ export const DIALOG_CLASSIFY_JSON_SCHEMA: Record<string, unknown> = {
         'daily_plan_morning',
         'daily_report_evening',
         'note',
-        // ТЗ 2026-06-14 channels-sync — task/show_tasks убраны (enum 9→7):
-        // постановку/показ задач из каналов закрывает AI-помощник.
-        // ТЗ 2026-06-17 probe-phase2 Ф1 — probe_reply добавлен в КОНЕЦ enum
-        // (cache-friendly: новый элемент в хвосте), доступен только когда в
-        // USER пришёл блок «Открытый вопрос Коры тебе сейчас».
         'probe_reply',
       ],
     },
@@ -183,17 +178,6 @@ export const DIALOG_CLASSIFY_JSON_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
 };
 
-/**
- * Префикс «Сообщение пользователя: » — стабильный, не править. Переменная
- * часть (`args.question`) — то, что меняется между вызовами
- * (см. правило cache-friendliness в Приложении А ТЗ).
- *
- * ТЗ 2026-06-17 probe-phase2 Ф1 — опц. `openProbeQuestion`: текст последнего
- * неотвеченного вопроса Коры пользователю. Блок добавляется в КОНЕЦ USER
- * (cache-friendly: стабильный SYSTEM не трогаем, переменные — в хвосте).
- * Если блока нет — модель не вправе выбрать интент `probe_reply`
- * (ловушка в SYSTEM). Префикс блока стабильный, переменна лишь подстановка.
- */
 export function buildClassifyUserPrompt(args: {
   question: string;
   openProbeQuestion?: string;

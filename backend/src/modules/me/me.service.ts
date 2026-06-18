@@ -43,27 +43,15 @@ export interface MeProfileDto {
   roleProfile: MeProfileRoleProfileDto | null;
 }
 
-/**
- * ТЗ 2026-06-18 (assistant-calendar-master) Ф4 — рабочий профиль пользователя:
- * «когда и в каком поясе человек работает». Поля живут на `Person` (NULL/[] =
- * брать дефолт из AdminSetting); эффективные значения собираются здесь.
- */
 export interface MeWorkProfileDto {
-  /** Эффективная таймзона (Person ?? Org ?? AdminSetting default). */
   timezone: string;
-  /** Эффективный час начала рабочего дня 0..23 (Person ?? default 9). */
   workStartHour: number;
-  /** Эффективный час конца рабочего дня 0..23 (Person ?? default 18). */
   workEndHour: number;
-  /** Эффективные рабочие дни (Person ?? default [1..5]); 0=вс..6=сб. */
   workingDays: number[];
-  /** Задана ли таймзона пользователем явно (UX: «моё» vs «дефолт»). */
   timezoneIsCustom: boolean;
-  /** Заданы ли рабочие часы/дни пользователем явно. */
   hoursAreCustom: boolean;
 }
 
-/** Частичный патч рабочего профиля (любое поле опционально). */
 export interface MeWorkProfilePatch {
   timezone?: string;
   workStartHour?: number;
@@ -71,10 +59,6 @@ export interface MeWorkProfilePatch {
   workingDays?: number[];
 }
 
-/**
- * Сервис «обо мне» в контексте текущей Org. Возвращает связанный Person,
- * активную должность и карту должности — для UI ЛК.
- */
 @Injectable()
 export class MeService {
   private readonly logger = new Logger(MeService.name);
@@ -84,9 +68,6 @@ export class MeService {
     @Optional()
     @Inject(RoleMapBuilderService)
     private readonly roleMapBuilder: RoleMapBuilderService | null = null,
-    // @Optional — TypedConfigService @Global, но в unit-тестах getProfile его
-    // не передают. Ф4 (рабочий профиль) читает дефолты через getDynamic; при
-    // отсутствии cfg падаем на code-fallback (см. workProfileDefaults).
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg: TypedConfigService | null = null,
@@ -182,14 +163,6 @@ export class MeService {
     }
   }
 
-  // ─────────────────── Ф4 (2026-06-18) — рабочий профиль ───────────────────
-
-  /**
-   * Эффективный рабочий профиль текущего пользователя: личные поля Person
-   * перекрывают дефолты из AdminSetting (с code-fallback, если cfg/админка
-   * недоступны). Таймзона: Person ?? Org ?? default. `*IsCustom`-флаги нужны
-   * UI, чтобы отличить «заданное пользователем» от дефолта.
-   */
   async getWorkProfile(args: {
     tenantId: string;
     userId: string;
@@ -206,7 +179,6 @@ export class MeService {
 
     const defaults = await this.workProfileDefaults();
 
-    // Таймзона: Person → Org → дефолт.
     const orgTimezone =
       person?.timezone == null
         ? (
@@ -241,13 +213,6 @@ export class MeService {
     };
   }
 
-  /**
-   * Сохранить рабочий профиль (частично). Person обязан существовать в этой Org
-   * (как в upsertConsent — иначе BadRequest `person_not_found`). Валидация:
-   * таймзона через `isValidTimezone`, часы 0..23 и `workEndHour > workStartHour`
-   * (если оба заданы), `workingDays` — уникальные int 0..6. Возвращает свежий
-   * эффективный профиль.
-   */
   async updateWorkProfile(args: {
     tenantId: string;
     userId: string;
@@ -279,9 +244,6 @@ export class MeService {
       });
     }
 
-    // Эффективные часы для проверки «конец > начало»: берём из патча, иначе
-    // из уже сохранённого значения Person (нельзя сохранить заведомо
-    // противоречивую пару, даже если в патче только одно поле).
     const effStart =
       patch.workStartHour !== undefined
         ? patch.workStartHour
@@ -337,11 +299,6 @@ export class MeService {
     });
   }
 
-  /**
-   * Дефолты рабочего профиля из AdminSetting (calendar/work_hours), с
-   * code-fallback. Каждый ключ читается в своём try/catch — сбой одного не
-   * рушит остальные; при отсутствии cfg (unit-тесты) сразу code-fallback.
-   */
   private async workProfileDefaults(): Promise<{
     timezone: string;
     startHour: number;

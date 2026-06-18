@@ -1,7 +1,3 @@
-/**
- * Probe-система Фаза 2 (2026-06-11) — окно по типу пробела + recheck.
- * Детерминизм: probeWindow — чистая функция; recheck — с мок-Prisma.
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../common/prisma/prisma.service';

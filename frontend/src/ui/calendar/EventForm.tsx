@@ -1,16 +1,5 @@
 'use client';
 
-/**
- * EventForm — модалка создания / редактирования события календаря.
- *
- * Если `eventId` передан — режим редактирования; кнопка «Удалить» показывается.
- * При сохранении вызывает `calendarApi.createEvent` / `updateEvent`,
- * после успеха зовёт `onSaved()` (триггерит revalidate SWR).
- *
- * Поля: title, kind, startAt, endAt, location, description, visibility,
- * participants (упрощённый ввод email-ов через запятую — MVP).
- */
-
 import { useEffect, useMemo, useState, type JSX } from 'react';
 import { toast } from 'sonner';
 
@@ -60,12 +49,6 @@ const KIND_OPTIONS: EventKindApi[] = [
 
 const VISIBILITY_OPTIONS: EventVisibilityApi[] = ['company', 'team', 'personal'];
 
-// ─────────────────────── Повторяемость (RFC-5545) ────────────────────
-
-/**
- * Пресеты повторяемости. `value` — строка RFC-5545 (пустая = не повторять).
- * Бэк принимает любой валидный RRULE; UI ограничен набором MVP-пресетов.
- */
 const RRULE_PRESETS: ReadonlyArray<{ value: string; label: string }> = [
   { value: '', label: 'Не повторять' },
   { value: 'FREQ=DAILY', label: 'Каждый день' },
@@ -75,13 +58,8 @@ const RRULE_PRESETS: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'FREQ=YEARLY', label: 'Каждый год' },
 ];
 
-/** Спецзначение для select, когда rrule не совпал ни с одним пресетом. */
 const RRULE_CUSTOM_SENTINEL = '__custom__';
 
-/**
- * Нормализует RRULE к каноническому виду пресета для сравнения:
- * убирает префикс `RRULE:`, регистр, пробелы и сортирует пары `KEY=VAL`.
- */
 function normalizeRrule(rrule: string): string {
   const cleaned = rrule
     .trim()
@@ -92,7 +70,6 @@ function normalizeRrule(rrule: string): string {
   return cleaned.split(';').filter(Boolean).sort().join(';');
 }
 
-/** Подбирает пресет по существующему rrule. '' если не повторять/не совпал. */
 function matchRrulePreset(rrule: string | null | undefined): string {
   if (!rrule || !rrule.trim()) return '';
   const norm = normalizeRrule(rrule);
@@ -103,8 +80,6 @@ function matchRrulePreset(rrule: string | null | undefined): string {
   }
   return RRULE_CUSTOM_SENTINEL;
 }
-
-// ─────────────────────────── Напоминания ─────────────────────────────
 
 const REMINDER_OFFSET_OPTIONS: ReadonlyArray<{
   value: number;
@@ -140,22 +115,14 @@ interface ReminderDraft {
   channel: ReminderChannelApi;
 }
 
-// ─────────────────────────── Часовые пояса ───────────────────────────
-// Список TIMEZONE_OPTIONS и DEFAULT_TIMEZONE вынесены в общий модуль
-// `@/ui/calendar/timezone-options` (используются и в настройках рабочего профиля).
-
-/** Единый класс для нативных select (повторяет стиль поля «Тип события»). */
 const SELECT_CLASS =
   'flex h-10 w-full rounded-md border border-border-subtle bg-bg-overlay px-3 text-sm text-fg-primary focus:outline-none focus:ring-2 focus:ring-accent';
 
 export interface EventFormProps {
   open: boolean;
   onClose: () => void;
-  /** Существующее событие (режим редактирования). */
   event?: CalendarEventDomain | null;
-  /** Дата/время, на которое создаётся новое событие (для default startAt). */
   defaultStartAt?: Date;
-  /** Опц. projectId — событие сразу привязывается к проекту. */
   projectId?: string;
   onSaved: () => void;
 }
@@ -163,43 +130,22 @@ export interface EventFormProps {
 interface FormState {
   title: string;
   kind: EventKindApi;
-  startAt: string; // datetime-local значение
+  startAt: string;
   endAt: string;
   location: string;
-  /**
-   * ТЗ assistant-calendar-master Ф8 — «о ком встреча»: клиент/контрагент или
-   * компания. Отдельно от `location` (место проведения).
-   */
   counterparty: string;
-  /**
-   * ТЗ assistant-calendar-master Ф8 — формат встречи. true → создаётся
-   * видеокомната (онлайн); false → очная встреча без комнаты.
-   */
   online: boolean;
   description: string;
   visibility: EventVisibilityApi;
-  /** Calendar MVP Фаза P4 — структурированный список участников. */
   participants: ParticipantPickerValue[];
-  /** Редизайн Ф6 — событие на весь день (скрывает время). */
   allDay: boolean;
-  /** Редизайн Ф6 — часовой пояс события (IANA). */
   timezone: string;
-  /**
-   * Редизайн Ф6 — выбранный пресет повторяемости (RFC-5545).
-   * Пусто = не повторять; RRULE_CUSTOM_SENTINEL = заданное вручную значение.
-   */
   rrulePreset: string;
-  /**
-   * Редизайн Ф6 — исходный rrule события (для сохранения при редактировании,
-   * если пользователь не трогал нераспознанное «Другое» значение).
-   */
   rruleRaw: string;
-  /** Редизайн Ф6 — черновики напоминаний (отправляются только при создании). */
   reminders: ReminderDraft[];
 }
 
 function toLocalInputValue(d: Date): string {
-  // datetime-local требует формат YYYY-MM-DDTHH:mm без timezone-суффикса.
   const pad = (n: number): string => String(n).padStart(2, '0');
   const yyyy = d.getFullYear();
   const mm = pad(d.getMonth() + 1);
@@ -210,19 +156,13 @@ function toLocalInputValue(d: Date): string {
 }
 
 function fromLocalInputValue(v: string): Date {
-  // new Date("YYYY-MM-DDTHH:mm") интерпретируется как локальное время.
   return new Date(v);
 }
 
-/** Выделяет дату (YYYY-MM-DD) из значения datetime-local (для режима «весь день»). */
 function dateOnly(v: string): string {
   return v.slice(0, 10);
 }
 
-/**
- * Меняет дату в datetime-local-значении, сохраняя время.
- * Если времени ещё нет (был режим «весь день») — ставит 00:00.
- */
 function withDate(prev: string, date: string): string {
   if (!date) return prev;
   const time = prev.slice(11, 16) || '00:00';
@@ -246,13 +186,11 @@ function buildDefaultState(
       online: event.isOnline,
       description: event.description ?? '',
       visibility: event.visibility,
-      // В edit-режиме participants не редактируются (имена не приходят в EventDto).
       participants: [],
       allDay: event.allDay,
       timezone: event.timezone || DEFAULT_TIMEZONE,
       rrulePreset: matchRrulePreset(event.rrule),
       rruleRaw: event.rrule ?? '',
-      // Напоминания в edit-режиме показываются read-only из EventDto.
       reminders: event.reminders.map((r) => ({
         offsetMin: r.offsetMin,
         channel: r.channel,
@@ -260,7 +198,6 @@ function buildDefaultState(
     };
   }
   const base = defaultStartAt ?? new Date();
-  // Округляем до ближайших 30 минут вперёд.
   const rounded = new Date(base);
   rounded.setMinutes(Math.ceil(rounded.getMinutes() / 30) * 30, 0, 0);
   const endDefault = new Date(rounded.getTime() + 30 * 60 * 1000);
@@ -320,7 +257,6 @@ export function EventForm({
     setState((s) => ({ ...s, [key]: value }));
   }
 
-  /** Добавляет новое напоминание (только в режиме создания). */
   function addReminder(): void {
     setState((s) =>
       s.reminders.length >= MAX_REMINDERS
@@ -348,10 +284,6 @@ export function EventForm({
     }));
   }
 
-  /**
-   * Разрешает выбранный пресет повторяемости в строку RFC-5545.
-   * Для нераспознанного «Другое» сохраняем исходное значение rruleRaw.
-   */
   function resolveRrule(): string {
     if (state.rrulePreset === RRULE_CUSTOM_SENTINEL) return state.rruleRaw;
     return state.rrulePreset;
@@ -424,7 +356,6 @@ export function EventForm({
             : null,
           allDay: state.allDay,
           timezone: state.timezone,
-          // Пусто → null (снять повторяемость); update принимает rrule, но НЕ reminders.
           rrule: rrule ? rrule : null,
         };
         await calendarApi.updateEvent(event.id, patch);
@@ -450,7 +381,6 @@ export function EventForm({
         };
         const participants = buildParticipantsPayload();
         if (participants.length > 0) body.participants = participants;
-        // Напоминания принимаются только при создании события.
         if (state.reminders.length > 0) {
           body.reminders = state.reminders.map<ReminderInputApi>((r) => ({
             offsetMin: r.offsetMin,
@@ -493,12 +423,6 @@ export function EventForm({
     }
   }
 
-  /**
-   * ТЗ assistant-calendar-master Ф8 — «Сделать онлайн»: к уже сохранённой
-   * офлайн-встрече прицепляем видеокомнату (бэк создаёт LiveKit-комнату и
-   * переключает `online=true`). Доступно только при редактировании
-   * существующего события, которое сейчас офлайн.
-   */
   async function handleMakeOnline(): Promise<void> {
     if (!event || makingOnline) return;
     setMakingOnline(true);
@@ -711,8 +635,6 @@ export function EventForm({
             </div>
           </div>
 
-          {/* Редизайн Ф6 — напоминания. При создании редактируемы, при
-              редактировании показываются read-only (бэк не принимает их в update). */}
           <div>
             <div className="flex items-center justify-between">
               <Label>Напоминания</Label>
@@ -847,8 +769,6 @@ export function EventForm({
             </p>
           )}
 
-          {/* Calendar MVP Polish P1: для встреч с автосозданной LiveKit-комнатой
-              показываем явную кнопку «Войти во встречу». Открываем в новой вкладке. */}
           {isEdit && event && event.joinUrl && (
             <a
               href={event.joinUrl}
@@ -860,8 +780,6 @@ export function EventForm({
             </a>
           )}
 
-          {/* ТЗ assistant-calendar-master Ф8: для офлайн-встречи можно докинуть
-              видеокомнату задним числом (бэк создаёт LiveKit-комнату). */}
           {isEdit && event && !state.online && (
             <Button
               type="button"

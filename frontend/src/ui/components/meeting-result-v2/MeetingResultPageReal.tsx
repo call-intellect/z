@@ -1,22 +1,5 @@
 'use client';
 
-/**
- * Production-версия страницы результата AI-встречи.
- *
- * Использует тот же визуальный язык, что и
- * `__design-reference__/MeetingResultPage.reference.tsx`,
- * но с реальными данными из API:
- *
- *   - useMeeting (детальная встреча + опрос статусов)
- *   - useMeetingChapters / Tasks / Highlights
- *   - useMeetingChat (стейт-машина чата)
- *
- * Layout: 3 колонки. Левый sidebar — глобальный (через AppShell),
- * центральная — плеер + tabs, правая — AI-чат (коллапсируемая).
- *
- * TODO M7: cleanup старого `meeting-result/*`.
- */
-
 import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
@@ -157,32 +140,17 @@ export type MeetingResultPageRealProps = {
 };
 
 export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps) {
-  // ТЗ 2026-05-27 onboarding-tour — авто-запуск тура «meeting» при первом
-  // открытии страницы результата встречи. Если уже завершён/пропущен — no-op.
   useTour('meeting');
 
-  // Базовая встреча.
   const {
     meeting,
     isLoading: meetingLoading,
     mutate: mutateMeeting,
   } = useMeeting(meetingId);
 
-  /**
-   * ТЗ-2 Фаза 4 — честный UI обработки. `aiProcessing` истинно, пока встреча
-   * НЕ дошла до финального AI-статуса (`ai_ready` / `ai_failed` / `failed`).
-   * Пока он истинен — показываем баннер «Отчёт готовится» и держим поллинг.
-   *
-   * Поллинг самой встречи (а значит — обновление `meeting.status`) обеспечивает
-   * внутренний `refreshInterval` хука `useMeeting` на время AI-обработки;
-   * здесь же мы поллим SWR результата, чтобы отчёт подтянулся, как только будет
-   * готов. Когда статус становится финальным → `aiProcessing=false` →
-   * `refreshInterval=0` → поллинг встаёт.
-   */
   const aiProcessing =
     !!meeting && !['ai_ready', 'ai_failed', 'failed'].includes(meeting.status);
 
-  // Детальный «result» с aiResult и recording info.
   const {
     data: result,
     isLoading: resultLoading,
@@ -219,32 +187,18 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
     [result],
   );
 
-  /**
-   * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — приоритетная сводка для UI:
-   * fast → v2 → legacy. Возвращает `{ markdown, source }` либо `null`.
-   */
   const primarySummary = useMemo(
     () => pickPrimarySummary(aiResult),
     [aiResult],
   );
 
-  /**
-   * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — приоритетные главы:
-   * если есть fast → только fast, иначе v2 + legacy.
-   */
   const primaryChapters = useMemo(
     () => pickPrimaryChapters(chapters),
     [chapters],
   );
 
-  /**
-   * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — приоритетные задачи:
-   * если есть fast → только fast, иначе v2 + legacy + ручные.
-   */
   const primaryTasks = useMemo(() => pickPrimaryTasks(tasks), [tasks]);
 
-  // Presigned URL — отдельный endpoint; null-ключ отключает запрос до готовности.
-  // Хук должен быть ДО любых early return'ов (Rules of Hooks).
   const isRecordingReady = result?.recording?.hasRecording === true;
   const { data: downloadData } = useSWR(
     isRecordingReady ? ['recording-download', meetingId] : null,
@@ -258,7 +212,6 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
     setCurrentMs(ms);
   };
 
-  // Скелетон — только истинная первичная загрузка (встречи ещё нет).
   if (meetingLoading && !meeting) {
     return <MeetingResultSkeleton />;
   }
@@ -279,18 +232,12 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
     );
   }
 
-  // ТЗ-2 Фаза 4 — пока встреча обрабатывается и отчёта ещё нет, показываем
-  // честный баннер «Отчёт готовится» вместо бесконечного скелетона/пустоты.
-  // Поллинг (refreshInterval выше) сам подтянет отчёт и сменит экран.
   if (aiProcessing && !result) {
     return <ReportProcessingBanner title={meeting.title} />;
   }
 
   const recording = result?.recording;
 
-  // Длительность в миллисекундах: приоритет — meeting.durationMs, fallback — recording.
-  // S6-12: meeting.durationMs может быть 0 (FSM не проставил) при реальной
-  // записи — тогда берём длительность из recording, а не показываем «—»/«0м».
   const durationMs =
     meeting.durationMs && meeting.durationMs > 0
       ? meeting.durationMs
@@ -305,7 +252,6 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
         chatOpen ? 'lg:grid-cols-[minmax(0,1fr)_400px]' : 'lg:grid-cols-1',
       )}
     >
-      {/* Center column */}
       <div className="flex min-w-0 flex-col gap-5">
         <MeetingHeader
           meeting={meeting}
@@ -317,11 +263,6 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
           }}
         />
 
-        {/*
-         * Развязка записи от AI-статуса: если AI-ветка упала (`ai_failed`) или
-         * встреча в `failed`, но запись готова — показываем НЕнавязчивый баннер
-         * и НЕ прячем плеер ниже.
-         */}
         <AiFailedBanner
           status={meeting.status}
           hasRecording={isRecordingReady}
@@ -437,12 +378,6 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
                   tasksCount={primaryTasks.length}
                   highlightsCount={highlights.length}
                 />
-                {/*
-                 * Zoom-модель (commercial-reliability pack, 2026-05-30, Фаза 3):
-                 * хост видит участников встречи и может переименовать гостей
-                 * (тех, у кого `isRegisteredUser=false`). Зарегистрированных
-                 * нельзя — их имя из User.name.
-                 */}
                 {result?.participants && (
                   <div className="mt-4">
                     <ParticipantsSection
@@ -452,15 +387,12 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
                     />
                   </div>
                 )}
-                {/* Фаза A.3 — Кнопка обратной связи 👍/👎 на AI-отчёт. */}
                 <div className="mt-4">
                   <FeedbackButton meetingId={meetingId} />
                 </div>
-                {/* Фаза C — AI-оценка качества встречи (ПОСЛЕ AI-отчёта, ПЕРЕД поведением). Видна только хосту/org-admin: backend возвращает 403 для остальных, секция автоматически скрывается. */}
                 <div className="mt-6">
                   <MeetingQualityScoreSection meetingId={meetingId} />
                 </div>
-                {/* Фаза B — Поведение участников (рядом с summary). */}
                 <div className="mt-6">
                   <MeetingBehaviorSection meetingId={meetingId} />
                 </div>
@@ -500,7 +432,6 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
         </Tabs>
       </div>
 
-      {/* Right column — AI chat (сворачиваемая; по умолчанию свёрнута) */}
       <MeetingChatPanel
         meetingId={meetingId}
         open={chatOpen}
@@ -525,8 +456,6 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
   );
 }
 
-// ─────────────── Header ───────────────
-
 function MeetingHeader({
   meeting,
   durationMs,
@@ -543,7 +472,6 @@ function MeetingHeader({
   const { ask, dialog: confirmDialog } = useConfirmDialog();
   const [visibilityOpen, setVisibilityOpen] = useState(false);
 
-  // Список юзерских и системных шаблонов для regenerate sub-menu.
   const { data: templatesData } = useSWR(
     'templates-list',
     () => templatesApi.list(),
@@ -614,7 +542,6 @@ function MeetingHeader({
     }
   };
 
-  // ТЗ 2026-06-06 knowledge-access (Ф7) — пометить закрытость встречи постфактум.
   const onSetClosedGroup = async (value: ClosedGroupKind | 'none') => {
     const label =
       CLOSED_GROUP_OPTIONS.find((o) => o.value === value)?.label ?? '';
@@ -792,11 +719,6 @@ function MeetingHeader({
 }
 
 function ProcessingBanner({ meeting }: { meeting: MeetingDomain }) {
-  // Консолидация отчётов (ТЗ 2026-06-11 §1.2.1): главы/задачи теперь делает
-  // единый meeting-report-fast, отдельных воркеров chapters/tasks больше нет —
-  // их статусы (chaptersStatus/tasksStatus) более не выставляются и убраны из
-  // условия (иначе спиннер висел бы вечно). Остаётся embeddingsStatus
-  // (transcript-index жив).
   const states = [meeting.embeddingsStatus];
   const inProgress = states.some((s) => s === 'queued' || s === 'processing');
   if (!inProgress) return null;
@@ -808,17 +730,6 @@ function ProcessingBanner({ meeting }: { meeting: MeetingDomain }) {
   );
 }
 
-/**
- * Баннер «AI-отчёт не сформирован». Показывается, когда AI-ветка упала, но
- * запись доступна — чтобы не прятать готовое видео и при этом честно сообщить
- * о сбое отчёта.
- *
- *  - `ai_failed`        — упала ТОЛЬКО AI-ветка, запись в порядке.
- *  - `failed` + запись  — та же болезнь: показываем баннер, но НЕ прячем плеер.
- *
- * При `failed` без записи баннер не нужен (там нечего показывать — этим занят
- * отдельный экран ошибки).
- */
 function AiFailedBanner({
   status,
   hasRecording,
@@ -870,8 +781,6 @@ function AiFailedBanner({
     </div>
   );
 }
-
-// ─────────────── Highlights strip ───────────────
 
 function HighlightsStrip({
   highlights,
@@ -941,7 +850,6 @@ function HighlightCard({
       if (highlight.renderStatus !== 'ready') {
         const res = await highlightsApi.renderMp4(highlight.id);
         if (res.status === 'ready') {
-          // ничего, переход дальше через download
         } else {
           toast.success('Рендер MP4 запущен. Скоро появится ссылка для скачивания.');
           onMutate();
@@ -1019,8 +927,6 @@ function RenderStatusBadge({
   return <span className={cn('font-mono text-[10px] uppercase tracking-wider', v.cls)}>{v.label}</span>;
 }
 
-// ─────────────── Tabs ───────────────
-
 function OverviewTab({
   meeting,
   durationMs,
@@ -1034,10 +940,6 @@ function OverviewTab({
 }: {
   meeting: MeetingDomain;
   durationMs: number | null;
-  /**
-   * Результат `pickPrimarySummary`: `{ markdown, source: 'fast'|'legacy' }`
-   * либо `null` если ни одного варианта нет.
-   */
   primarySummary: { markdown: string; source: 'fast' | 'legacy' } | null;
   followUpEmail: string | null;
   structuredData: unknown;
@@ -1053,21 +955,11 @@ function OverviewTab({
     { label: 'Длительность', value: fmtDurationCompact(durationMs) },
   ];
 
-  /**
-   * Ф5а — «следующие шаги» отчёта выносим отдельной секцией с кнопкой «В задачу»
-   * (вместо generic-грида StructuredDataCard, где они исключены NEXT_STEP_KEYS).
-   */
   const nextSteps = useMemo(
     () => collectNextSteps(structuredData),
     [structuredData],
   );
 
-  /**
-   * Волна 4, B1.4 — клиентский протокол. Backend кладёт нейтральный текст для
-   * отправки клиенту в `structuredData.client_protocol_md` (markdown-строка).
-   * Рендерим его отдельной секцией «Протокол для клиента» (ниже), а из общего
-   * generic-грида `StructuredDataCard` ключ исключён, чтобы не дублировать.
-   */
   const clientProtocolMd =
     structuredData &&
     typeof structuredData === 'object' &&
@@ -1083,11 +975,6 @@ function OverviewTab({
       {primarySummary && (
         <Card>
           <CardHeader title="Краткое содержание" />
-          {/*
-           * `fast` и `v2` приходят как markdown. `legacy` исторически приходит
-           * как plain-text, но markdown-рендер совместим (отсутствие разметки
-           * выглядит как обычный текст).
-           */}
           <MeetingSummaryRender markdown={primarySummary.markdown} />
         </Card>
       )}
@@ -1116,7 +1003,6 @@ function OverviewTab({
   );
 }
 
-/** Русская плюрализация: pluralRu(1,'реплика','реплики','реплик') → 'реплика'. */
 function pluralRu(n: number, one: string, few: string, many: string): string {
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -1145,26 +1031,15 @@ function StatsRow({ stats }: { stats: Array<{ label: string; value: string | num
   );
 }
 
-/** Ключи отчёта с отдельным (не-generic) рендером — вынимаются из общего грида. */
 const STRUCTURED_SPECIAL_KEYS = new Set([
   'data_quality',
   'churn_risk_quote',
   'ideas',
   'proposals',
-  // Волна 4, B1.4 — клиентский протокол рендерится ОТДЕЛЬНОЙ секцией
-  // «Протокол для клиента» (ClientProtocolCard) над StructuredDataCard, поэтому
-  // из общего generic-грида он исключён, чтобы не дублироваться.
   'client_protocol_md',
-  // Ф5а — «следующие шаги» рендерятся отдельной секцией NextStepsSection с
-  // кнопкой «В задачу» (над StructuredDataCard), поэтому из generic-грида
-  // исключены, чтобы не дублироваться.
   ...NEXT_STEP_KEYS,
 ]);
 
-/**
- * data_quality (строка) — приглушённый блок-бейдж «Качество данных» ВНЕ грида.
- * Это НЕ оценка качества встречи (QualityScore) — это полнота входных данных отчёта.
- */
 function DataQualityBadge({ value }: { value: unknown }) {
   return (
     <div className="rounded-lg border border-border-subtle bg-bg-base px-4 py-3">
@@ -1181,7 +1056,6 @@ function DataQualityBadge({ value }: { value: unknown }) {
   );
 }
 
-/** churn_risk_quote (строка) — выделенная цитата риска оттока. */
 function ChurnRiskQuote({ value }: { value: unknown }) {
   return (
     <Card>
@@ -1195,7 +1069,6 @@ function ChurnRiskQuote({ value }: { value: unknown }) {
   );
 }
 
-/** ideas / proposals (массивы) — отдельная секция с лампочкой, отличная от Задач. */
 function IdeasSection({ entries }: { entries: Array<[string, unknown]> }) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1286,12 +1159,6 @@ function FollowUpCard({ text }: { text: string }) {
   );
 }
 
-/**
- * Волна 4, B1.4 — клиентский протокол. Нейтральный текст для отправки клиенту
- * (markdown), который backend кладёт в `structuredData.client_protocol_md`.
- * Отдельная секция со своей кнопкой «Скопировать» (по образцу FollowUpCard),
- * markdown-рендер через тот же `MeetingSummaryRender`, что и краткое содержание.
- */
 function ClientProtocolCard({ markdown }: { markdown: string }) {
   const [copied, setCopied] = useState(false);
   const onCopy = async () => {
@@ -1845,8 +1712,6 @@ function RoomChatTab({ messages }: { messages: RoomMessageDomain[] }) {
     );
   }, [messages, query]);
 
-  // Группировка подряд идущих сообщений одного автора (по `authorIdentity`,
-  // fallback — `authorName`).
   const groups = useMemo(() => {
     const out: Array<{ author: string; key: string; items: RoomMessageDomain[] }> = [];
     for (const m of filtered) {
@@ -1924,8 +1789,6 @@ function RoomChatTab({ messages }: { messages: RoomMessageDomain[] }) {
   );
 }
 
-// ─────────────── Participants (Zoom-rename) ───────────────
-
 type ParticipantRowDto = {
   id: string;
   name: string;
@@ -1933,10 +1796,6 @@ type ParticipantRowDto = {
   isRegisteredUser: boolean;
 };
 
-/**
- * Список участников встречи. Для хоста — inline-edit имени гостя
- * (`isRegisteredUser=false`). Зарегистрированных не редактируем.
- */
 function ParticipantsSection({
   meetingId,
   participants,
@@ -2069,13 +1928,6 @@ function ParticipantRow({
   );
 }
 
-// ─────────────── Processing banner (отчёт готовится) ───────────────
-
-/**
- * ТЗ-2 Фаза 4 — баннер на весь экран результата, пока встреча ещё не дошла до
- * финального AI-статуса и отчёта пока нет. Заменяет бесконечный скелетон —
- * страница сама обновится поллингом, когда отчёт будет готов.
- */
 function ReportProcessingBanner({ title }: { title?: string }) {
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
@@ -2096,8 +1948,6 @@ function ReportProcessingBanner({ title }: { title?: string }) {
   );
 }
 
-// ─────────────── Skeleton ───────────────
-
 function MeetingResultSkeleton() {
   return (
     <div className="grid grid-cols-1 gap-6 px-4 py-6 lg:px-8">
@@ -2110,8 +1960,6 @@ function MeetingResultSkeleton() {
     </div>
   );
 }
-
-// ─────────────── Primitives ───────────────
 
 function Card({ children }: { children: React.ReactNode }) {
   return (

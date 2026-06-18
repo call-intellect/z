@@ -81,10 +81,6 @@ export function isWithinQuietHours(
   return nowMin >= startMin || nowMin < endMin;
 }
 
-/**
- * Локальный день недели (полное русское название, напр. «среда») для TZ.
- * Невалидная TZ → fallback Moscow (как остальные хелперы).
- */
 export function getLocalWeekday(now: Date, timezone: string | null | undefined): string {
   const tz = timezone && timezone.length > 0 ? timezone : DEFAULT_TIMEZONE;
   try {
@@ -94,9 +90,6 @@ export function getLocalWeekday(now: Date, timezone: string | null | undefined):
   }
 }
 
-/**
- * Локальное время HH:mm для TZ (через getLocalMinutesOfDay — единый источник).
- */
 export function getLocalTime(now: Date, timezone: string | null | undefined): string {
   const total = getLocalMinutesOfDay(now, timezone);
   const h = Math.floor(total / 60);
@@ -104,12 +97,6 @@ export function getLocalTime(now: Date, timezone: string | null | undefined): st
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-/**
- * Готовая строка «Сейчас…» для контекста AI-помощника (USER-блок). Даёт
- * модели точку отсчёта, чтобы разрешать «сегодня/завтра/в среду» в дату и
- * понимать время в таймзоне пользователя. Чистая (now передаётся аргументом) —
- * тестируется детерминированно.
- */
 export function buildNowContextLine(now: Date, timezone: string | null | undefined): string {
   const tz = timezone && timezone.length > 0 ? timezone : DEFAULT_TIMEZONE;
   const date = getLocalDate(now, tz);
@@ -118,14 +105,6 @@ export function buildNowContextLine(now: Date, timezone: string | null | undefin
   return `Сейчас: ${date} (${weekday}), ${time} по таймзоне пользователя (${tz}). «сегодня» = эта дата, «завтра» = эта дата +1 день; любое относительное время («в 10:00», «через час») понимай в этой таймзоне.`;
 }
 
-/**
- * UTC-момент 00:00 локального дня для TZ + день недели (0=вс..6=сб).
- * Через Intl (en-CA, hour/minute/second). Невалидная TZ → fallback UTC.
- * (Вынесено из find-free-slot.service.ts:localDayBounds — единый источник.)
- *
- * Для TZ без DST (например «Europe/Moscow», «Asia/Novosibirsk») — точно; для
- * TZ с DST возможна ошибка ≤1 час в момент перехода (для календаря приемлемо).
- */
 export function localDayBoundsUtc(
   moment: Date,
   timezone: string | null | undefined,
@@ -148,7 +127,6 @@ export function localDayBoundsUtc(
     let hh = Number(get('hour'));
     const mm = Number(get('minute'));
     const ss = Number(get('second'));
-    // Edge-case: Intl возвращает "24" в полночь в некоторых runtime'ах.
     if (hh === 24) hh = 0;
     const wdMap: Record<string, number> = {
       Sun: 0,
@@ -170,7 +148,6 @@ export function localDayBoundsUtc(
   }
 }
 
-/** UTC-момент начала локальных суток (00:00 в TZ). */
 export function startOfLocalDayUtc(
   now: Date,
   timezone: string | null | undefined,
@@ -178,7 +155,6 @@ export function startOfLocalDayUtc(
   return localDayBoundsUtc(now, timezone).startOfDayUtc;
 }
 
-/** Окно «локальные сутки» [00:00, +24ч) в UTC для TZ. */
 export function localDayWindowUtc(
   now: Date,
   timezone: string | null | undefined,
@@ -187,9 +163,6 @@ export function localDayWindowUtc(
   return { from, to: new Date(from.getTime() + 24 * 60 * 60_000) };
 }
 
-/**
- * Проверить, что строка таймзоны валидна (Intl поддерживает).
- */
 export function isValidTimezone(tz: string): boolean {
   try {
     new Intl.DateTimeFormat('en', { timeZone: tz });

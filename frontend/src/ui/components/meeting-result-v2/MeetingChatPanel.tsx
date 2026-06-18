@@ -1,11 +1,5 @@
 'use client';
 
-/**
- * AI-чат по конкретной встрече. Правая колонка на странице результата.
- * Поддерживает коллапс (persist в localStorage), suggested prompts,
- * citations с кликабельным переходом в плеер.
- */
-
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronRight, RefreshCw, Send, Sparkles } from 'lucide-react';
@@ -25,9 +19,7 @@ const SUGGESTED_PROMPTS = [
 
 export type MeetingChatPanelProps = {
   meetingId: string;
-  /** Открыта ли колонка чата (состояние поднято в родитель). */
   open: boolean;
-  /** Запрос на смену видимости (открыть/свернуть). */
   onOpenChange: (open: boolean) => void;
   onSeek?: (ms: number) => void;
 };
@@ -44,7 +36,6 @@ export function MeetingChatPanel({
   const { messages, thinking, send, retry, historyLoading } =
     useMeetingChat(meetingId);
 
-  // Автоскролл вниз на новые сообщения / typing.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -76,7 +67,6 @@ export function MeetingChatPanel({
       className="sticky top-24 flex h-[calc(100vh-7rem)] flex-col overflow-hidden rounded-xl border border-border-subtle bg-bg-card"
       aria-label="Чат по встрече"
     >
-      {/* Header */}
       <div className="flex items-center gap-2.5 border-b border-border-subtle px-4 py-3">
         <div className="grid h-7 w-7 place-items-center rounded-md bg-accent-muted text-accent">
           <Sparkles size={14} strokeWidth={1.75} />
@@ -97,7 +87,6 @@ export function MeetingChatPanel({
         </button>
       </div>
 
-      {/* History */}
       <ScrollArea className="flex-1">
         <div ref={scrollRef} className="flex flex-col gap-4 px-4 py-5">
           {historyLoading && messages.length === 0 ? (
@@ -135,7 +124,6 @@ export function MeetingChatPanel({
         </div>
       </ScrollArea>
 
-      {/* Input */}
       <div className="border-t border-border-subtle p-3">
         {messages.length === 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">

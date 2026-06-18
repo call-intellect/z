@@ -54,21 +54,11 @@ const NotificationPreferencesSchema = z
 
 type NotificationPreferencesBody = z.infer<typeof NotificationPreferencesSchema>;
 
-/**
- * ТЗ 2026-06-18 (assistant-calendar-master) Ф4 — body для
- * PATCH /me/work-profile. Все поля опциональны (частичное обновление); должно
- * быть передано хотя бы одно. Хранятся на Person текущего пользователя; их
- * читают расчёты «сегодня/рабочее время» и помощник (set_my_work_profile).
- */
 const WorkProfilePatchSchema = z
   .object({
-    /** IANA-таймзона (валидируется в сервисе через isValidTimezone). */
     timezone: z.string().trim().min(1).max(64).optional(),
-    /** Час начала рабочего дня 0..23. */
     workStartHour: z.number().int().min(0).max(23).optional(),
-    /** Час конца рабочего дня 0..23. */
     workEndHour: z.number().int().min(0).max(23).optional(),
-    /** Рабочие дни: 0=вс..6=сб (до 7 значений). */
     workingDays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
   })
   .strict()
@@ -78,13 +68,6 @@ const WorkProfilePatchSchema = z
 
 type WorkProfileBody = z.infer<typeof WorkProfilePatchSchema>;
 
-/**
- * `GET /api/v1/me/profile` — кто я в контексте текущей Org (X-Org-Id).
- *
- * Pulse Wave 4 §4.1-4.2 — Compliance endpoints:
- *   - `POST/GET /api/v1/me/consents` — управление согласиями 152-ФЗ.
- *   - `GET     /api/v1/me/privacy/access-log` — кто открывал мою карточку.
- */
 @ApiTags('me')
 @Controller('api/v1/me')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -106,11 +89,6 @@ export class MeController {
     return this.svc.getProfile({ tenantId: t, userId: user.id });
   }
 
-  /**
-   * ТЗ 2026-06-18 (assistant-calendar-master) Ф4 — мой рабочий профиль
-   * (эффективная таймзона + рабочие часы + рабочие дни). Поля живут на Person;
-   * NULL/[] заменяются дефолтами из AdminSetting.
-   */
   @Get('work-profile')
   @ApiOperation({
     summary:
@@ -124,11 +102,6 @@ export class MeController {
     return this.svc.getWorkProfile({ tenantId: t, userId: user.id });
   }
 
-  /**
-   * ТЗ 2026-06-18 (assistant-calendar-master) Ф4 — сохранить рабочий профиль
-   * (частично): таймзона / рабочие часы / рабочие дни. Этот же эндпоинт дёргает
-   * помощник через инструмент `set_my_work_profile`.
-   */
   @Patch('work-profile')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -148,9 +121,6 @@ export class MeController {
     });
   }
 
-  /**
-   * Pulse Wave 4 §4.1 — текущее состояние согласий 152-ФЗ.
-   */
   @Get('consents')
   @ApiOperation({ summary: 'Мои активные согласия 152-ФЗ (последняя запись per dataType)' })
   @ApiOkResponse({ description: '{ items: ConsentRecordDto[] }' })

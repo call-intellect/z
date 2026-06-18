@@ -14,28 +14,6 @@ import {
   GRAD,
 } from '@/ui/components/dashboard/modern';
 
-/**
- * A11.4 — виджет «Активность команды» на экране «Сегодня».
- *
- * Показывает последние действия команды — «кто что сделал»: признания
- * (recognition), задачи (task) и решения (decision). Это НЕ деньги и НЕ оценка
- * человека — твёрдая лента активности.
- *
- * Источник — «Лента Коры» (`GET /api/v1/feed/cora?type=activity`), где
- * `activity` на бэке = `ActivityFeedItem(feedType in recognition|task)` —
- * именно «кто что сделал» (см. cora-feed.service.ts collectActivity). Это
- * чистейший существующий источник под задачу — отдельный бэкенд не нужен.
- *
- * Три состояния (Б-6):
- *   - loading — тихий placeholder без чисел;
- *   - пусто — нейтральная подсказка (канал есть, но пока тихо);
- *   - есть данные — топ-5 с тоном по severity + опц. клик в источник-встречу.
- *
- * Сбой загрузки не валит экран — виджет молчит (SWR shouldRetryOnError:false),
- * как и соседние «мягкие» блоки «Сегодня».
- */
-
-/** Тон точки/чипа по severity ленты (парные токены). */
 function activityTone(item: CoraFeedItem): { dot: string; chipBg: string } {
   if (item.tone === 'danger') {
     return { dot: CHART.red, chipBg: 'var(--chip-danger-bg)' };
@@ -76,12 +54,10 @@ export function TeamActivityWidget({ orgId }: { orgId: string | null }) {
       </div>
 
       {isLoading ? (
-        // Loading / молчаливый сбой — без чисел.
         <p className="text-sm" style={{ color: CHART.faint }}>
           Собираем активность команды…
         </p>
       ) : isEmpty ? (
-        // Пусто — нейтральная подсказка, канал есть, но пока тихо.
         <div className="flex flex-col items-start gap-2">
           <p className="text-sm" style={{ color: CHART.dim }}>
             — Действия команды появятся, когда Кора зафиксирует задачи, признания
@@ -99,8 +75,6 @@ export function TeamActivityWidget({ orgId }: { orgId: string | null }) {
         <ul className="space-y-1">
           {items.map((item) => {
             const tone = activityTone(item);
-            // Если есть встреча-источник — элемент кликабелен в неё; иначе
-            // (отдельной страницы /feed больше нет) показываем неактивный блок.
             const meetingHref = item.meetingId
               ? `/meetings/${encodeURIComponent(item.meetingId)}`
               : null;

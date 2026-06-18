@@ -71,6 +71,29 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🗓️ 2026-06-18 — Помощник × календарь: дубли / даты-таймзоны / контрагент-vs-место / онлайн-пометка (8 фаз)
+
+> Контракт: ветка `feature/assistant-calendar-fixes`, коммиты `25e316d6..00a9858a` (9: Ф1 дедуп+ACK `25e316d6`; Ф2 «Сейчас»/TZ `9213df40`+фикс `a15733b8`; Ф7 описания `18303af1`; миграция `c7f26742`; Ф6+Ф5 online/counterparty `ba7ce495`; Ф3 окно дня в TZ `85d47d26`; Ф4 рабочий профиль `4a1a11f9`; Ф8 фронт `00a9858a`). ТЗ: `plans/tz/2026-06-18-assistant-calendar-master.md`. Диагностика: `plans/analysis/2026-06-18-telegram-assistant-calendar-bugs-diagnosis.md`. second-brain: `02_architecture/data-model.md`, `01_projects/{api-layer,frontend-pages,workers-queues,conversational-channels,concierge-agent,calendar}.md`. Реестр флагов — `docs/operations/feature-flags.md` (`ASSISTANT_INBOUND_ASYNC_ENABLED`).
+>
+> **Зачем для прода:** помощник в Telegram/MAX (1) слал по 5 дублей ответа на одно сообщение (webhook ждал 14-15с concierge-loop до 200 → ретраи доставки) — чиним дедупом `update_id`/`mid` + ранним ACK через очередь; (2) не понимал «завтра/сегодня» (не знал дату/TZ) — добавили «Сейчас…» в контекст; (3) «сегодня» для UTC+7 возвращало вчера+завтра — окно дня теперь по таймзоне человека; (4) офлайн-встречи плодили `failed` видеокомнаты — видео только при `online=true`. Плюс: контрагент vs место (`counterparty`), рабочий профиль человека (таймзона+часы+дни) с настройкой и автоспросом.
+>
+> **1 миграция (авто, аддитивная).** **1 новый ENV-флаг (kill-switch ON, действий владельца НЕ требует).** **1 seed (в STEPS).** **1 новая BullMQ-очередь (in-process).** **Docker rebuild backend+frontend обязателен.**
+
+- **Шаг 1 — ENV (новый kill-switch, ON по умолчанию, действий владельца НЕ требует):** `ASSISTANT_INBOUND_ASYNC_ENABLED` (zBool, default `true`) — ранний ACK входящих помощника через BullMQ-очередь `assistant.inbound`; OFF → синхронная обработка как раньше (аварийный откат, если очередь деградировала). Дедуп `update_id`/`mid` (Redis SET NX) работает НЕЗАВИСИМО от флага. Реестр — `docs/operations/feature-flags.md`. Новых обязательных ENV нет (backend стартует без правок `.env`).
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up`; аддитивная, без потери данных, backfill не нужен): миграция `20260618120000_person_work_profile_event_online_counterparty` — `Person.workStartHour/workEndHour Int?`, `Person.workingDays Int[] @default([])` (рабочий профиль); `Event.online Boolean @default(false)` (формат: видеокомната только при true); `Event.counterparty VarChar(300)?` (контрагент/клиент, НЕ место). **В STEPS агрегатора регистрировать НЕ нужно** (миграция схемы).
+- **Шаг 7 — Seed (1 прогон AdminSetting, идемпотентный, уже в STEPS `phase:'seed-base'`):** `seed-admin-setting-work-hours.ts` — дефолты рабочего профиля `work_hours_default_start=9`, `work_hours_default_end=18`, `work_days_default=[1,2,3,4,5]`, `default_timezone=Europe/Moscow` (уважает admin-override). Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (новая очередь+воркер `assistant.inbound`, дедуп в webhook-контроллерах Telegram/MAX, «Сейчас»/TZ в контексте, окно дня + find_free_slot в TZ, `online`/`counterparty` в events, новый эндпоинт make-online + инструменты помощника `make_event_online`/`set_my_work_profile`; фронт — `WorkProfileSection` в настройках, тумблер «Онлайн»/поле «Контрагент»/кнопка «Сделать онлайн» в форме события): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) **дедуп:** один и тот же апдейт боту дважды (или повтор доставки прокси) → ОДИН ответ, не 5; в логах `telegram webhook: enqueued (early-ack)` с `ackMs` < 1000; webhook отвечает 200 сразу;
+  - (б) **новая очередь жива:** в логах старта backend `AssistantInboundWorker запущен (concurrency=4)` и `AssistantInboundQueueService: очередь assistant.inbound готова`;
+  - (в) **«завтра/сегодня»:** боту «запиши встречу завтра в 10:00 с N» → событие создаётся на корректную дату без переспроса и без 400; «какие у меня сегодня встречи» (для пользователя с заданной TZ) → только сегодняшние локальные сутки;
+  - (г) **онлайн только по пометке:** «встреча с N на заводе завтра» → событие БЕЗ видеокомнаты (`Event.online=false`, не `failed`); «онлайн-созвон с N завтра» → с комнатой; `POST /api/v1/events/:id/make-online` создаёт комнату к офлайн-событию;
+  - (д) **рабочий профиль:** Swagger `/api/docs` содержит `GET/PATCH /api/v1/me/work-profile` и `POST /api/v1/events/:id/make-online`; в «Настройки → Профиль» виден блок «Рабочее время» (таймзона/часы/дни); `GET /admin/settings` содержит `work_hours_default_start=9` и др.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🧩 2026-06-18 — Батч из 5 ТЗ: probe-система Ф2 + хлебные крошки + Лента в дашборды + задачи встречи в трекере + баннер онбординга
 
 > Контракт: ветка `feature/knowledge-base-redesign-formatter`, 16 коммитов (A `2d7fd244` баннер; B `73836b7c` задачи встречи→трекер; D `8ef49108`+`eb0f7dee` хлебные крошки; C `9aa3945e`+`10dbbe35` Лента Коры в дашборды; E `9430383f`/`cf9c3878`/`b7b32e64`/`855197a4`/`553c93e9`/`ea27594e` probe Ф1–Ф6). ТЗ: `plans/tz/2026-06-17-fix-incomplete-setup-banner-progress.md`, `plans/tz/2026-06-16-intake-issue-linked-meeting-ids-fix.md`, `plans/tz/2026-06-17-cabinet-breadcrumbs-and-mobile-back.md`, `plans/tz/2026-06-17-cora-feed-into-dashboards.md`, `plans/tz/2026-06-17-probe-system-phase2.md`. second-brain: `01_projects/probe-agent.md`, `03_processes/probe-question-flow.md`, `01_projects/ai-jobs.md`, `02_architecture/data-model.md`, `01_projects/frontend-contexts-hooks.md`, `01_projects/frontend-pages.md`. Реестр флагов — `docs/operations/feature-flags.md` (новые probe.*-рубильники).

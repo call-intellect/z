@@ -1745,4 +1745,21 @@ enum SkillTraitLayer {
 - Исход: `answeredGrounded Boolean` + `refusalReason String?` (`'ungrounded'` — пост-LLM grounding-гейт Э0.1, и др.).
 - Индекс `@@index([tenantId, cloneTargetId, createdAt])`.
 
+## Рабочий профиль Person + онлайн/контрагент Event (2026-06-18)
+
+**Источник:** ТЗ [`plans/tz/2026-06-18-assistant-calendar-master.md`](../../plans/tz/2026-06-18-assistant-calendar-master.md) (помощник × календарь, Фазы 4–6). Ветка `feature/assistant-calendar-fixes`. Миграция **`20260618120000_person_work_profile_event_online_counterparty`** (аддитивная: 5 nullable/default-колонок). Полная карта — [[../01_projects/calendar]]; эндпоинты — [[../01_projects/api-layer]] §me; UI — [[../01_projects/frontend-pages]].
+
+### `Person` += рабочий профиль (когда человек работает)
+
+- **`workStartHour Int?`** / **`workEndHour Int?`** — рабочие часы человека (локальные, 0..23). NULL → дефолт из `AdminSetting` (`work_hours_default_start=9` / `work_hours_default_end=18`).
+- **`workingDays Int[] @default([])`** — рабочие дни недели (0=вс … 6=сб). `[]` → дефолт `AdminSetting work_days_default=[1,2,3,4,5]` (пн–пт).
+- `Person.timezone` (уже было, IANA) теперь — основа цепочки таймзоны человека: **`Person.timezone → Org.timezone → Europe/Moscow`** (у `User` поля `timezone` НЕТ). Используется помощником для «сегодня»/окна дня и `find_free_slot`.
+
+Заполняется через `GET/PATCH /api/v1/me/work-profile` (UI «Настройки → Профиль → Рабочее время») и инструмент помощника `set_my_work_profile`; когда `Person.timezone` пуст — помощник проактивно спрашивает таймзону (контекст-подсказка).
+
+### `Event` += online / counterparty
+
+- **`online Boolean @default(false)`** — формат события: `true` → создаётся видеокомната LiveKit (привязка `relatedMeetingId` через `attachLivekitRoom`). **Развязан с `kind`** — раньше комната создавалась по `kind==='meeting'`, теперь именно по `online===true`. Идемпотентный перевод офлайн→онлайн: `POST /api/v1/events/:id/make-online` (`EventsService.makeEventOnline`) + tool `make_event_online`.
+- **`counterparty String? @db.VarChar(300)`** — контрагент/клиент встречи (с кем / какая компания), **отдельно от `location`** (место). Правило закреплено в описании инструмента `create_event` помощника.
+
 [[../index|← index]]

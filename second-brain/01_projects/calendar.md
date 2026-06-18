@@ -161,6 +161,25 @@ Cardinality риск (известный, общий для tracker/calendar): l
 
 **Новый общий UI-компонент:** [ParticipantPicker.tsx](../../frontend/src/ui/shared/ParticipantPicker.tsx) — переиспользуем для трекера/прав доступа/чатов в будущем.
 
+## Доработки 2026-06-18 (помощник × календарь)
+
+**Источник:** ТЗ [`plans/tz/2026-06-18-assistant-calendar-master.md`](../../plans/tz/2026-06-18-assistant-calendar-master.md) (8 фаз, ветка `feature/assistant-calendar-fixes`, коммиты `25e316d6..00a9858a`). Миграция `20260618120000_person_work_profile_event_online_counterparty`. Схема/поля — [[../02_architecture/data-model]]; эндпоинты — [[api-layer]]; UI — [[frontend-pages]].
+
+**Онлайн-формат развязан с `kind` (Ф6).** Новое поле **`Event.online Boolean @default(false)`** — именно оно теперь определяет создание видеокомнаты LiveKit (раньше комната создавалась по `kind==='meeting'`). Идемпотентный перевод офлайн→онлайн:
+- `POST /api/v1/events/:id/make-online` → `EventsService.makeEventOnline` (создаёт/привязывает Meeting через общий `attachLivekitRoom`, DRY с путём создания).
+- Инструмент помощника `make_event_online`.
+- Маппер `frontend/src/domain/calendar.ts`: `isOnline = api.online` (раньше выводился из `kind`).
+
+**Контрагент vs место (Ф5).** Новое поле **`Event.counterparty String? @db.VarChar(300)`** — «с кем / какая компания», **отдельно** от `location` (физическое место). Правило закреплено в описании инструмента `create_event`. В `EventForm` — отдельное поле «Клиент/контрагент».
+
+**Окно дня и `find_free_slot` в таймзоне человека (Ф2/Ф3).** Помощник считает «сегодня»/«на неделе» по локальным суткам человека: таймзона по цепочке `Person.timezone → Org.timezone → Europe/Moscow`. `resolveCalendarWindow(from,to,timezone)` + `find_free_slot` берёт рабочие часы из `Person.workStartHour/workEndHour/workingDays` (дефолты — `AdminSetting work_hours_default_*` / `work_days_default`); `create_event` по умолчанию ставит таймзону организатора. Утилиты — `operations/utils/local-date.ts`.
+
+**Рабочий профиль человека (Ф4).** Новые поля `Person.workStartHour Int?` / `workEndHour Int?` / `workingDays Int[] @default([])` (0=вс..6=сб). Управление — `GET/PATCH /api/v1/me/work-profile` (UI «Настройки → Профиль → Рабочее время», `WorkProfileSection`) и инструмент `set_my_work_profile`; когда `Person.timezone` пуст — помощник проактивно спрашивает таймзону. Seed дефолтов — `seed-admin-setting-work-hours.ts`.
+
+**Различение list-инструментов (Ф7).** В `service-map-generator.service.ts` уточнены описания: `list_meetings` — журнал встреч **без фильтра даты**; `list_my_events` — события **календаря/сегодня в TZ**.
+
+**Приём входящих помощника (Ф1).** Дедуп Telegram `update_id` / MAX `mid` + ранний ACK через очередь `assistant.inbound` — см. [[conversational-channels]] §«Дедуп входящих + ранний ACK» и [[workers-queues]].
+
 ## План реализации
 
 - Базовый ТЗ: [`plans/tz/2026-05-25-calendar-mvp.md`](../../plans/tz/2026-05-25-calendar-mvp.md) — три фазы (1+2 закрыты).

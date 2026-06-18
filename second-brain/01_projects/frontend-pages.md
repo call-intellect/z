@@ -353,6 +353,23 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 
 Источник: [plans/tz/2026-06-05-frontend-detail-pages-and-ui-honesty.md](../../plans/tz/2026-06-05-frontend-detail-pages-and-ui-honesty.md) Ф1 (коммит `521f7553`). ТЗ оценивало 22 страницы, по факту после merge `dev` их оказалось 26 — чинился весь класс с acceptance-грепом.
 
+## Видеовстречи — фиксы живой комнаты + редизайн просмотра/журнала (2026-06-18)
+
+**Источник:** [`plans/tz/2026-06-17-meeting-room-three-bugs-fix.md`](../../plans/tz/2026-06-17-meeting-room-three-bugs-fix.md) (Ф1–Ф3) + [`plans/tz/2026-06-17-meeting-review-and-journal-redesign.md`](../../plans/tz/2026-06-17-meeting-review-and-journal-redesign.md) (Ф1–Ф5). Ветка `feature/meeting-fixes-and-result-redesign`. Полностью frontend-only (бэк / БД / ENV не затронуты — выкат = только rebuild фронта).
+
+**Живая комната (`meeting-room/`, 3 фикса):**
+- **Чат доставляет сообщения live:** убран форс уникального `topic` в `useChat().send()` (`ChatPanel.tsx`) — теперь дефолтный `lk.chat` совпадает с приёмником text-stream; дедуп по `attributes.clientMessageId` сохранён. Раньше каждое сообщение слалось на `chat-<id>`, который никто не слушал → другие участники его не видели.
+- **Камера в сетке не обрезает кадр:** класс `kora-video-grid` + правило `object-fit: contain` в `globals.css` распространены на `GridLayout` (≥2 уч.), не только на solo. Допустимы тёмные поля (приоритет «не резать лицо»).
+- **Демонстрация экрана читаема:** на `<TrackToggle source=ScreenShare>` (`ControlsBar.tsx`) добавлены `captureOptions={{ contentHint: 'detail' }}` + `publishOptions.screenShareEncoding = ScreenSharePresets.h1080fps30` (~5 Мбит/с). Simulcast не отключаем.
+
+**Просмотр встречи (`/meetings/[id]/result`, `meeting-result-v2/`) — единое окно без модалок:**
+- **Плеер** — компактный sticky (`max-w-[80vh]` ⇒ высота ≤45vh, `sticky top-4`) + кнопка «Свернуть/Развернуть видео» (`playerCollapsed`). Скелетон приведён к новому одноколоночному дефолту.
+- **Отчёты** — master-detail inline вместо модалки: список-рейл слева (карточка-кнопка выбора, active-подсветка), выбранный отчёт справа во всю ширину (`ReportInlinePanel`, скролл на уровне страницы). Удалён `ReportDetailDialog` / `max-h-[60vh]`. `Modal` остался только в `AddReportDialog` (форма выбора шаблона).
+- **AI-чат** — правая колонка сворачиваемая, по умолчанию свёрнута: корневой грид условный (`chatOpen` → `lg:grid-cols-1` vs `…_400px`), свёрнутый вид = плавающая кнопка «Открыть AI-чат». Состояние поднято в `MeetingResultPageReal` (один источник правды); `MeetingChatPanel` стал управляемым (`open`/`onOpenChange`), внутренний collapse + localStorage убраны.
+- **Глубокие ссылки:** `?tab=<overview|reports|chapters|transcript|chat|tasks>` и `?report=<id>` синхронизированы с URL (`useSearchParams` + `router.replace(scroll:false)`); `router.replace` только в обработчиках событий — без цикла ре-рендера.
+
+**Журнал (`/meetings`):** статус каждой строки — словом-чипом через централизованный `meetingStatusView` (парные токены `chipClass`); кнопка «⋮» (в т.ч. «Удалить») видна на десктопе без наведения (был `md:opacity-0`).
+
 ## Трекер + Встречи — финальная сессия (2026-06-06)
 
 **Источник:** [`plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md`](../../plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md) (фазы A1-A7, B1-B5). Ветка `sergdev`. Фронт-only по большинству пунктов; B5 — новый бэк-эндпоинт.

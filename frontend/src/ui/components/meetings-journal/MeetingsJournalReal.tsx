@@ -42,6 +42,7 @@ import {
   meetingSummaryFromApi,
   meetingDurationSeconds,
   isJoinableStatus,
+  meetingStatusView,
   MEETING_TYPE_LABEL_RU,
 } from '@/domain/meeting';
 import { pickPrimarySummary } from '@/domain/ai-result';
@@ -512,6 +513,7 @@ function MeetingRowCard({
   const date = item.startedAt ?? item.createdAt;
   const typeLabel = MEETING_TYPE_LABEL_RU[item.type] ?? item.type;
   const joinable = isJoinableStatus(item.status);
+  const statusView = meetingStatusView(item.status);
   const isProcessing =
     item.status === 'recording_processing' ||
     item.status === 'transcription_processing' ||
@@ -582,7 +584,7 @@ function MeetingRowCard({
               type="button"
               onClick={(e) => e.stopPropagation()}
               aria-label="Действия со встречей"
-              className="-mr-1 -mt-0.5 shrink-0 rounded p-1 text-fg-tertiary opacity-100 transition-colors hover:bg-bg-overlay hover:text-fg-primary focus-visible:opacity-100 data-[state=open]:bg-bg-overlay data-[state=open]:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+              className="-mr-1 -mt-0.5 shrink-0 rounded p-1 text-fg-tertiary opacity-100 transition-colors hover:bg-bg-overlay hover:text-fg-primary focus-visible:opacity-100 data-[state=open]:bg-bg-overlay data-[state=open]:opacity-100"
             >
               <MoreVertical size={14} strokeWidth={1.75} />
             </button>
@@ -611,11 +613,9 @@ function MeetingRowCard({
         <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
           {typeLabel}
         </Badge>
-        {item.status === 'active' && (
-          <Badge className="bg-chip-info-bg px-1.5 py-0 text-[10px] text-chip-info-fg">
-            Идёт
-          </Badge>
-        )}
+        <Badge className={cn('px-1.5 py-0 text-[10px]', statusView.chipClass)}>
+          {statusView.label}
+        </Badge>
         <span className="inline-flex items-center gap-1">
           <Clock size={10} strokeWidth={1.75} />
           <span className="font-mono">{fmtDurationCompact(durMs)}</span>

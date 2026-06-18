@@ -82,6 +82,28 @@ describe('ServiceMapGeneratorService', () => {
     expect(Object.keys(props)).toContain('counterparty');
   });
 
+  // ───────── Ф4 (2026-06-18) — рабочий профиль (set_my_work_profile) ─────────
+
+  it('set_my_work_profile — PATCH /me/work-profile, self-scoped (без RBAC), readOnly', () => {
+    const t = svc.findTool('set_my_work_profile');
+    expect(t).not.toBeNull();
+    expect(t?.method).toBe('PATCH');
+    expect(t?.path).toBe('/api/v1/me/work-profile');
+    // self-scoped /me/* — без rbacResource (как ingest_note); readOnly чтобы не
+    // требовать подтверждения в канале.
+    expect(t?.rbacResource).toBeUndefined();
+    expect(t?.readOnly).toBe(true);
+    const props = t?.parameters.properties ?? {};
+    expect(Object.keys(props).sort()).toEqual([
+      'timezone',
+      'workEndHour',
+      'workStartHour',
+      'workingDays',
+    ]);
+    // Все поля опциональны — required не выставлен.
+    expect(t?.parameters.required ?? []).toEqual([]);
+  });
+
   it('list_my_events is a read tool on /me/calendar', () => {
     const t = svc.findTool('list_my_events');
     expect(t?.method).toBe('GET');

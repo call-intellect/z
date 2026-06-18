@@ -82,3 +82,31 @@ describe('ConciergeContextBuilderService.build — строка «Сейчас�
     expect(result).toContain('(Europe/Moscow)');
   });
 });
+
+/**
+ * Ф4 (2026-06-18) — автоспрос таймзоны. Подсказка про неподтверждённую личную
+ * TZ должна появляться, ТОЛЬКО если identity-резолв прошёл и у Person нет
+ * timezone. При заданной TZ — её нет; при сбое identity — её нет.
+ */
+const HINT_SUBSTRING = 'Личная таймзона пользователя не подтверждена';
+
+describe('ConciergeContextBuilderService.build — автоспрос таймзоны (Ф4)', () => {
+  it('Person.timezone=null → контекст содержит подсказку про set_my_work_profile', async () => {
+    const svc = buildService({ personTimezone: null, orgTimezone: null });
+    const result = await svc.build(ARGS);
+    expect(result).toContain(HINT_SUBSTRING);
+    expect(result).toContain('set_my_work_profile');
+  });
+
+  it('Person.timezone задан → подсказки НЕТ', async () => {
+    const svc = buildService({ personTimezone: 'Asia/Novosibirsk' });
+    const result = await svc.build(ARGS);
+    expect(result).not.toContain(HINT_SUBSTRING);
+  });
+
+  it('сбой identity → подсказки НЕТ (не угадываем «пусто»)', async () => {
+    const svc = buildService({ userFindThrows: true });
+    const result = await svc.build(ARGS);
+    expect(result).not.toContain(HINT_SUBSTRING);
+  });
+});

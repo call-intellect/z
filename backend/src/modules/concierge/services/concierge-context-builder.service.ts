@@ -35,6 +35,11 @@ export class ConciergeContextBuilderService {
     // (паттерн EventsService/find-free-slot.resolveOrganizerTimezone). У модели
     // User поля timezone НЕТ — таймзона живёт на Person (аватар в Org) и Org.
     let resolvedTimezone: string | null = null;
+    // Ф4 (2026-06-18) автоспрос: добавляем подсказку про таймзону, ТОЛЬКО если
+    // identity-резолв прошёл и личная TZ Person пуста. При сбое identity (catch)
+    // флаг остаётся false → подсказку НЕ добавляем (не угадываем «пусто»).
+    let identityResolved = false;
+    let personTimezoneConfirmed = false;
     try {
       const user = await this.prisma.user.findUnique({
         where: { id: args.userId },
@@ -53,12 +58,15 @@ export class ConciergeContextBuilderService {
         select: { timezone: true },
       });
       resolvedTimezone = person?.timezone ?? org?.timezone ?? null;
+      // person здесь непустой ⟺ у Person задана timezone (фильтр not:null выше).
+      personTimezoneConfirmed = Boolean(person?.timezone);
       if (user) {
         parts.push(`Пользователь: ${user.name} (${user.email})`);
       }
       if (org) {
         parts.push(`Организация: ${org.name} (${org.slug})`);
       }
+      identityResolved = true;
     } catch (err) {
       this.logger.warn(
         `build: identity lookup failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -66,6 +74,18 @@ export class ConciergeContextBuilderService {
     }
     // «Сейчас…» — первой строкой контекста (даже если identity упал → дефолтная TZ).
     parts.unshift(buildNowContextLine(now, resolvedTimezone));
+
+    // Автоспрос таймзоны (Ф4): если личная TZ не подтверждена — подскажи LLM
+    // уточнить её ОДИН раз и сохранить. (Не спамим: после сохранения
+    // Person.timezone станет not-null и подсказка исчезнет; в рамках разговора
+    // LLM не повторяет.) При сбое identity не добавляем (identityResolved=false).
+    if (identityResolved && !personTimezoneConfirmed) {
+      parts.splice(
+        1,
+        0,
+        'Личная таймзона пользователя не подтверждена (используется дефолт компании). Если запрос про время/встречи/календарь — один раз уточни его часовой пояс (город или UTC±) и сохрани через set_my_work_profile; не переспрашивай, если уже спрашивал в этом диалоге.',
+      );
+    }
 
     // PageContext.
     if (args.pageContext) {

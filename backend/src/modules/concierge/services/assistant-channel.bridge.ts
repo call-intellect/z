@@ -90,6 +90,7 @@ export const CHANNEL_TOOL_WHITELIST_SELF: readonly string[] = [
   'create_task',
   'search_tasks',
   'ingest_note',
+  'set_my_work_profile',
   'ask_chat_v2',
 ];
 

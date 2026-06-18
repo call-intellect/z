@@ -398,6 +398,42 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         rbacResource: 'event_card',
         rbacAction: 'read',
       },
+      // ТЗ 2026-06-18 (assistant-calendar-master) Ф4 — сохранить рабочий профиль
+      // СЕБЕ (self-эндпоинт PATCH /me/work-profile, меняет только свой Person).
+      // Self-scoped → без rbacResource (как ingest_note); readOnly:true чтобы
+      // НЕ требовать текстового подтверждения в канале — сохранение своего
+      // профиля не рискованная мутация.
+      {
+        name: 'set_my_work_profile',
+        description:
+          'Сохранить рабочий профиль пользователя: его часовой пояс (timezone в формате IANA, например Asia/Novosibirsk), и/или рабочие часы (workStartHour/workEndHour 0–23), рабочие дни (workingDays: массив 0=вс..6=сб). Используй, когда человек назвал свой город/часовой пояс или рабочее время — особенно если до этого таймзона была не подтверждена. Город переведи в IANA-таймзону сам (Новосибирск→Asia/Novosibirsk, Москва→Europe/Moscow).',
+        method: 'PATCH',
+        path: '/api/v1/me/work-profile',
+        parameters: {
+          type: 'object',
+          properties: {
+            timezone: {
+              type: 'string',
+              description: 'IANA-таймзона, напр. Asia/Novosibirsk. Опц.',
+            },
+            workStartHour: {
+              type: 'number',
+              description: 'Час начала рабочего дня 0–23. Опц.',
+            },
+            workEndHour: {
+              type: 'number',
+              description: 'Час конца рабочего дня 0–23. Опц.',
+            },
+            workingDays: {
+              type: 'array',
+              description: 'Рабочие дни: 0=вс..6=сб. Опц.',
+            },
+          },
+        },
+        // self-scoped /me/* — без rbacResource (как ingest_note); readOnly чтобы
+        // не требовать подтверждения в канале.
+        readOnly: true,
+      },
       {
         name: 'list_user_events',
         description:

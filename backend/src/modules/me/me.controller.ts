@@ -37,7 +37,11 @@ import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { IpHashingService } from '../security/ip-hashing.service';
 
-import { MeService, type MeProfileDto } from './me.service';
+import {
+  MeService,
+  type MeProfileDto,
+  type MeWorkProfileDto,
+} from './me.service';
 
 interface AccessLogItemDto {
   accessedAt: string;
@@ -66,6 +70,30 @@ const NotificationPreferencesSchema = z
 type NotificationPreferencesBody = z.infer<typeof NotificationPreferencesSchema>;
 
 /**
+ * ТЗ 2026-06-18 (assistant-calendar-master) Ф4 — body для
+ * PATCH /me/work-profile. Все поля опциональны (частичное обновление); должно
+ * быть передано хотя бы одно. Хранятся на Person текущего пользователя; их
+ * читают расчёты «сегодня/рабочее время» и помощник (set_my_work_profile).
+ */
+const WorkProfilePatchSchema = z
+  .object({
+    /** IANA-таймзона (валидируется в сервисе через isValidTimezone). */
+    timezone: z.string().trim().min(1).max(64).optional(),
+    /** Час начала рабочего дня 0..23. */
+    workStartHour: z.number().int().min(0).max(23).optional(),
+    /** Час конца рабочего дня 0..23. */
+    workEndHour: z.number().int().min(0).max(23).optional(),
+    /** Рабочие дни: 0=вс..6=сб (до 7 значений). */
+    workingDays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, {
+    message: 'Передайте хотя бы одно поле',
+  });
+
+type WorkProfileBody = z.infer<typeof WorkProfilePatchSchema>;
+
+/**
  * `GET /api/v1/me/profile` — кто я в контексте текущей Org (X-Org-Id).
  *
  * Pulse Wave 4 §4.1-4.2 — Compliance endpoints:
@@ -91,6 +119,48 @@ export class MeController {
   ): Promise<MeProfileDto> {
     const t = this.requireTenant(tenantId);
     return this.svc.getProfile({ tenantId: t, userId: user.id });
+  }
+
+  /**
+   * ТЗ 2026-06-18 (assistant-calendar-master) Ф4 — мой рабочий профиль
+   * (эффективная таймзона + рабочие часы + рабочие дни). Поля живут на Person;
+   * NULL/[] заменяются дефолтами из AdminSetting.
+   */
+  @Get('work-profile')
+  @ApiOperation({
+    summary:
+      'Мой рабочий профиль: таймзона, рабочие часы и дни (с дефолтами компании)',
+  })
+  async getWorkProfile(
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<MeWorkProfileDto> {
+    const t = this.requireTenant(tenantId);
+    return this.svc.getWorkProfile({ tenantId: t, userId: user.id });
+  }
+
+  /**
+   * ТЗ 2026-06-18 (assistant-calendar-master) Ф4 — сохранить рабочий профиль
+   * (частично): таймзона / рабочие часы / рабочие дни. Этот же эндпоинт дёргает
+   * помощник через инструмент `set_my_work_profile`.
+   */
+  @Patch('work-profile')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Сохранить мой рабочий профиль: таймзона, рабочие часы и дни',
+  })
+  @ApiOkResponse({ description: 'Обновлённый эффективный рабочий профиль' })
+  async updateWorkProfile(
+    @Body(new ZodValidationPipe(WorkProfilePatchSchema)) body: WorkProfileBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<MeWorkProfileDto> {
+    const t = this.requireTenant(tenantId);
+    return this.svc.updateWorkProfile({
+      tenantId: t,
+      userId: user.id,
+      patch: body,
+    });
   }
 
   /**

@@ -17,6 +17,7 @@ import {
 import { useAuth } from "@/contexts/auth-context";
 import { TierGate } from "@/ui/components/TierGate";
 import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 import {
   Select,
@@ -31,6 +32,10 @@ const CREATE_VALUE = "__create__";
 
 function errMessage(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback;
+}
+
+function currentValue(member: ChatboxMemberView): string {
+  return member.linkedPersonId ?? NONE_VALUE;
 }
 
 export function ChatboxManagersClient() {
@@ -61,6 +66,39 @@ function ChatboxManagersContent() {
   const personOptions: { id: string; name: string }[] = (
     persons?.items ?? []
   ).map((p) => ({ id: p.id, name: p.fullName || "(без имени)" }));
+
+  const [pending, setPending] = useState<Record<string, string>>({});
+  const [applying, setApplying] = useState(false);
+
+  const list = members ?? [];
+  const changed = list.filter((m) => {
+    const v = pending[m.id];
+    return v !== undefined && v !== currentValue(m);
+  });
+
+  const handleApply = async () => {
+    setApplying(true);
+    let ok = 0;
+    for (const m of changed) {
+      const v = pending[m.id];
+      try {
+        if (v === CREATE_VALUE) {
+          await chatboxApi.createMemberPerson(m.id);
+        } else {
+          await chatboxApi.linkMember(m.id, v === NONE_VALUE ? null : v);
+        }
+        ok += 1;
+      } catch (e) {
+        toast.error(
+          errMessage(e, `Не удалось обновить связь: ${m.displayName}`),
+        );
+      }
+    }
+    if (ok > 0) toast.success(`Сопоставление применено: ${ok}`);
+    setPending({});
+    await mutate();
+    setApplying(false);
+  };
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-6">
@@ -97,7 +135,7 @@ function ChatboxManagersContent() {
         </div>
       )}
 
-      {!membersLoading && !membersError && members && members.length === 0 && (
+      {!membersLoading && !membersError && list.length === 0 && (
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-sm text-fg-secondary">
@@ -114,20 +152,34 @@ function ChatboxManagersContent() {
         </Card>
       )}
 
-      {!membersLoading && !membersError && members && members.length > 0 && (
+      {!membersLoading && !membersError && list.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Менеджеры ({members.length})</CardTitle>
+            <CardTitle>Менеджеры ({list.length})</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {members.map((member) => (
-              <MemberRow
-                key={member.id}
-                member={member}
-                personOptions={personOptions}
-                onLinked={() => void mutate()}
-              />
-            ))}
+            {list.map((member) => {
+              const value = pending[member.id] ?? currentValue(member);
+              return (
+                <MemberRow
+                  key={member.id}
+                  member={member}
+                  personOptions={personOptions}
+                  value={value}
+                  dirty={value !== currentValue(member)}
+                  disabled={applying}
+                  onChange={(v) =>
+                    setPending((p) => ({ ...p, [member.id]: v }))
+                  }
+                />
+              );
+            })}
+
+            <ApplyBar
+              count={changed.length}
+              applying={applying}
+              onApply={() => void handleApply()}
+            />
           </CardContent>
         </Card>
       )}
@@ -135,59 +187,45 @@ function ChatboxManagersContent() {
   );
 }
 
+function ApplyBar({
+  count,
+  applying,
+  onApply,
+}: {
+  count: number;
+  applying: boolean;
+  onApply: () => void;
+}) {
+  return (
+    <div className="sticky bottom-0 -mx-3 -mb-3 mt-1 flex items-center justify-between gap-3 border-t border-border-subtle bg-bg-card/95 px-3 py-3 backdrop-blur">
+      <span className="text-xs text-fg-tertiary">
+        {count > 0
+          ? `Несохранённых изменений: ${count}`
+          : "Выберите сопоставление — изменения применятся по кнопке"}
+      </span>
+      <Button onClick={onApply} disabled={applying || count === 0} size="sm">
+        {applying && <Loader2 size={14} className="animate-spin" />}
+        Применить{count > 0 ? ` (${count})` : ""}
+      </Button>
+    </div>
+  );
+}
+
 function MemberRow({
   member,
   personOptions,
-  onLinked,
+  value,
+  dirty,
+  disabled,
+  onChange,
 }: {
   member: ChatboxMemberView;
   personOptions: { id: string; name: string }[];
-  onLinked: () => void;
+  value: string;
+  dirty: boolean;
+  disabled: boolean;
+  onChange: (value: string) => void;
 }) {
-  const [saving, setSaving] = useState(false);
-  const [creating, setCreating] = useState(false);
-
-  const handleCreate = async () => {
-    setCreating(true);
-    try {
-      await chatboxApi.createMemberPerson(member.id);
-      toast.success("Сотрудник создан и связан");
-      onLinked();
-    } catch (e) {
-      if (e instanceof ApiError && e.code === "chatbox_member_already_linked") {
-        toast.error("Менеджер уже связан с сотрудником");
-      } else {
-        toast.error(errMessage(e, "Не удалось создать сотрудника"));
-      }
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const handleChange = async (value: string) => {
-    if (value === CREATE_VALUE) {
-      await handleCreate();
-      return;
-    }
-    const personId = value === NONE_VALUE ? null : value;
-    setSaving(true);
-    try {
-      await chatboxApi.linkMember(member.id, personId);
-      toast.success("Связь обновлена");
-      onLinked();
-    } catch (e) {
-      if (e instanceof ApiError && e.code === "chatbox_member_not_found") {
-        toast.error("Менеджер не найден");
-      } else if (e instanceof ApiError && e.code === "person_not_found") {
-        toast.error("Сотрудник не найден");
-      } else {
-        toast.error(errMessage(e, "Не удалось обновить связь"));
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
@@ -198,6 +236,11 @@ function MemberRow({
           <Badge variant={chatboxLinkModeBadgeVariant(member.linkMode)}>
             {member.linkModeLabel}
           </Badge>
+          {dirty && (
+            <Badge variant="secondary" className="text-accent">
+              изменено
+            </Badge>
+          )}
         </div>
         <div className="mt-0.5 truncate text-xs text-fg-tertiary">
           {member.email ?? "—"}
@@ -212,11 +255,7 @@ function MemberRow({
 
       {}
       <div className="flex items-center gap-2 sm:w-72 sm:shrink-0">
-        <Select
-          value={member.linkedPersonId ?? NONE_VALUE}
-          onValueChange={(v) => void handleChange(v)}
-          disabled={saving || creating}
-        >
+        <Select value={value} onValueChange={onChange} disabled={disabled}>
           <SelectTrigger className="flex-1">
             <SelectValue placeholder="Действие" />
           </SelectTrigger>
@@ -232,9 +271,6 @@ function MemberRow({
             </SelectItem>
           </SelectContent>
         </Select>
-        {(saving || creating) && (
-          <Loader2 size={16} className="animate-spin text-fg-tertiary" />
-        )}
       </div>
     </div>
   );

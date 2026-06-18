@@ -15,6 +15,7 @@ import {
 import { bitrixLinkModeLabel } from "@/domain/bitrix";
 import { TierGate } from "@/ui/components/TierGate";
 import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 import {
   Select,
@@ -39,6 +40,10 @@ function linkModeBadgeVariant(
   return "outline";
 }
 
+function currentValue(user: BitrixUserApi): string {
+  return user.linkedPersonId ?? NONE_VALUE;
+}
+
 export function BitrixManagersClient() {
   return (
     <TierGate feature="feature.bitrix">
@@ -54,6 +59,42 @@ function BitrixManagersContent() {
 
   const users = data?.users ?? [];
   const personOptions = data?.personCandidates ?? [];
+
+  const [pending, setPending] = useState<Record<string, string>>({});
+  const [applying, setApplying] = useState(false);
+
+  const changed = users.filter((u) => {
+    const v = pending[u.externalId];
+    return v !== undefined && v !== currentValue(u);
+  });
+
+  const handleApply = async () => {
+    setApplying(true);
+    let ok = 0;
+    let fail = 0;
+    for (const u of changed) {
+      const v = pending[u.externalId];
+      try {
+        if (v === CREATE_VALUE) {
+          await bitrixApi.linkUser(u.externalId, "create");
+        } else if (v === NONE_VALUE) {
+          await bitrixApi.linkUser(u.externalId, "unlink");
+        } else {
+          await bitrixApi.linkUser(u.externalId, "link", v);
+        }
+        ok += 1;
+      } catch (e) {
+        fail += 1;
+        toast.error(
+          errMessage(e, `Не удалось обновить связь: ${u.name ?? u.externalId}`),
+        );
+      }
+    }
+    if (ok > 0) toast.success(`Сопоставление применено: ${ok}`);
+    setPending({});
+    await mutate();
+    setApplying(false);
+  };
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-6">
@@ -113,14 +154,28 @@ function BitrixManagersContent() {
             <CardTitle>Сотрудники ({users.length})</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {users.map((user) => (
-              <UserRow
-                key={user.externalId}
-                user={user}
-                personOptions={personOptions}
-                onLinked={() => void mutate()}
-              />
-            ))}
+            {users.map((user) => {
+              const value = pending[user.externalId] ?? currentValue(user);
+              return (
+                <UserRow
+                  key={user.externalId}
+                  user={user}
+                  personOptions={personOptions}
+                  value={value}
+                  dirty={value !== currentValue(user)}
+                  disabled={applying}
+                  onChange={(v) =>
+                    setPending((p) => ({ ...p, [user.externalId]: v }))
+                  }
+                />
+              );
+            })}
+
+            <ApplyBar
+              count={changed.length}
+              applying={applying}
+              onApply={() => void handleApply()}
+            />
           </CardContent>
         </Card>
       )}
@@ -128,44 +183,45 @@ function BitrixManagersContent() {
   );
 }
 
+function ApplyBar({
+  count,
+  applying,
+  onApply,
+}: {
+  count: number;
+  applying: boolean;
+  onApply: () => void;
+}) {
+  return (
+    <div className="sticky bottom-0 -mx-3 -mb-3 mt-1 flex items-center justify-between gap-3 border-t border-border-subtle bg-bg-card/95 px-3 py-3 backdrop-blur">
+      <span className="text-xs text-fg-tertiary">
+        {count > 0
+          ? `Несохранённых изменений: ${count}`
+          : "Выберите сопоставление — изменения применятся по кнопке"}
+      </span>
+      <Button onClick={onApply} disabled={applying || count === 0} size="sm">
+        {applying && <Loader2 size={14} className="animate-spin" />}
+        Применить{count > 0 ? ` (${count})` : ""}
+      </Button>
+    </div>
+  );
+}
+
 function UserRow({
   user,
   personOptions,
-  onLinked,
+  value,
+  dirty,
+  disabled,
+  onChange,
 }: {
   user: BitrixUserApi;
   personOptions: BitrixPersonOptionApi[];
-  onLinked: () => void;
+  value: string;
+  dirty: boolean;
+  disabled: boolean;
+  onChange: (value: string) => void;
 }) {
-  const [saving, setSaving] = useState(false);
-
-  const handleChange = async (value: string) => {
-    setSaving(true);
-    try {
-      if (value === CREATE_VALUE) {
-        await bitrixApi.linkUser(user.externalId, "create");
-        toast.success("Сотрудник создан и связан");
-      } else if (value === NONE_VALUE) {
-        await bitrixApi.linkUser(user.externalId, "unlink");
-        toast.success("Связь снята");
-      } else {
-        await bitrixApi.linkUser(user.externalId, "link", value);
-        toast.success("Связь обновлена");
-      }
-      onLinked();
-    } catch (e) {
-      if (e instanceof ApiError && e.code === "bitrix_user_not_found") {
-        toast.error("Сотрудник Bitrix24 не найден");
-      } else if (e instanceof ApiError && e.code === "person_not_found") {
-        toast.error("Сотрудник (Person) не найден");
-      } else {
-        toast.error(errMessage(e, "Не удалось обновить связь"));
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const displayName = user.name?.trim() || user.email || user.externalId;
 
   return (
@@ -183,6 +239,11 @@ function UserRow({
               неактивен
             </Badge>
           )}
+          {dirty && (
+            <Badge variant="secondary" className="text-accent">
+              изменено
+            </Badge>
+          )}
         </div>
         <div className="mt-0.5 truncate text-xs text-fg-tertiary">
           {user.email ?? "—"}
@@ -197,11 +258,7 @@ function UserRow({
 
       {}
       <div className="flex items-center gap-2 sm:w-72 sm:shrink-0">
-        <Select
-          value={user.linkedPersonId ?? NONE_VALUE}
-          onValueChange={(v) => void handleChange(v)}
-          disabled={saving}
-        >
+        <Select value={value} onValueChange={onChange} disabled={disabled}>
           <SelectTrigger className="flex-1">
             <SelectValue placeholder="Действие" />
           </SelectTrigger>
@@ -217,9 +274,6 @@ function UserRow({
             </SelectItem>
           </SelectContent>
         </Select>
-        {saving && (
-          <Loader2 size={16} className="animate-spin text-fg-tertiary" />
-        )}
       </div>
     </div>
   );

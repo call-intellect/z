@@ -1,10 +1,22 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { localDayBoundsUtc } from '../../operations/utils/local-date';
 import type { FindFreeSlotResponse } from '../dto/events.dto';
 
 import { EventsService } from './events.service';
+
+/**
+ * Ф3 (ТЗ assistant-calendar-master) — дефолты рабочих часов (AdminSetting /
+ * getDynamic). Служат code-fallback'ом, если AdminSetting не отвечает (а также
+ * в unit-тестах с cfg-моком без `getDynamic`). Дублируют seed дефолтных
+ * рабочих часов/дней (Ф4-seed); НЕ источник правды, а страховка.
+ */
+const DEFAULT_WORK_START_HOUR = 9;
+const DEFAULT_WORK_END_HOUR = 18;
+const DEFAULT_WORKING_DAYS = [1, 2, 3, 4, 5]; // Пн..Пт (0=вс..6=сб)
 
 /**
  * Calendar MVP (2026-05-25) — поиск общего свободного слота среди
@@ -16,8 +28,10 @@ import { EventsService } from './events.service';
  *      owner ИЛИ participant) + Issue.dueDate (как 30-минутный busy-block).
  *      Делегируем сбор `EventsService.fetchBusyWindowsForUser`.
  *   3. Сортируем + сливаем перекрытия (объединение интервалов).
- *   4. Если `workingHoursOnly` — фильтруем gap'ы по Пн-Пт 9:00-18:00 в
- *      timezone организатора (берём первого user'а в списке).
+ *   4. Если `workingHoursOnly` — фильтруем gap'ы по рабочим часам/дням профиля
+ *      организатора (берём первого user'а; Ф3 — не хардкод Пн-Пт 9-18, а
+ *      Person.workStartHour/workEndHour/workingDays + дефолты AdminSetting) в
+ *      его timezone.
  *   5. Возвращаем первый gap длиной ≥ durationMin.
  */
 @Injectable()
@@ -29,6 +43,7 @@ export class FindFreeSlotService {
     @Inject(EventsService) private readonly events: EventsService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   async findFreeSlot(args: {
@@ -67,10 +82,14 @@ export class FindFreeSlotService {
     // 2. Сортируем + сливаем перекрытия.
     const merged = this.mergeIntervals(allBusy);
 
-    // 3. Timezone организатора.
-    const organizerTz = await this.resolveOrganizerTimezone(
+    // 3. Профиль организатора (= первый user): TZ + рабочие часы/дни.
+    //    Ф3 — больше не хардкодим Пн-Пт 9-18; берём из Person (+ дефолты
+    //    AdminSetting). MVP: профиль первого участника.
+    const organizer = await this.resolveOrganizerProfile(
       args.participantUserIds[0]!,
+      args.tenantId,
     );
+    const organizerTz = organizer.timezone;
 
     // 4. Идём по gap'ам [from..busy1.start], [busy1.end..busy2.start], ...
     //    [busyN.end..to], ищем первый длинный достаточно.
@@ -92,6 +111,9 @@ export class FindFreeSlotService {
             gap: g,
             durationMs,
             timezone: organizerTz,
+            workStartHour: organizer.workStartHour,
+            workEndHour: organizer.workEndHour,
+            workingDays: organizer.workingDays,
           })
         : g.end.getTime() - g.start.getTime() >= durationMs
           ? { start: g.start, end: new Date(g.start.getTime() + durationMs) }
@@ -117,30 +139,39 @@ export class FindFreeSlotService {
   }
 
   /**
-   * Найти первый подгап в `gap`, который попадает в Пн-Пт 9:00-18:00 локальной
+   * Найти первый подгап в `gap`, который попадает в рабочие часы/дни локальной
    * `timezone` и длится ≥ `durationMs`. Двигаемся по часам — берём минимально
    * допустимый старт.
    *
-   * Реализация: разбиваем gap по дням локальной TZ; для каждого дня — если он
-   * Пн-Пт, проверяем пересечение [day 9:00, day 18:00] с gap'ом; первый
+   * Ф3 — рабочие часы/дни приходят параметрами (профиль организатора), а НЕ
+   * хардкодом Пн-Пт 9-18. Реализация: разбиваем gap по дням локальной TZ; для
+   * каждого дня — если он рабочий (`workingDays.includes(dow)`), проверяем
+   * пересечение [day workStartHour, day workEndHour] с gap'ом; первый
    * подходящий подгап ≥ durationMs возвращаем.
    */
   private firstWorkingHoursSubGap(args: {
     gap: { start: Date; end: Date };
     durationMs: number;
     timezone: string;
+    workStartHour: number;
+    workEndHour: number;
+    workingDays: number[];
   }): { start: Date; end: Date } | null {
-    const { gap, durationMs, timezone } = args;
+    const { gap, durationMs, timezone, workStartHour, workEndHour, workingDays } =
+      args;
     let cursor = new Date(gap.start);
     const MAX_DAYS = 14; // safety: гэп не длиннее ~14 суток имеет смысл сканировать
     for (let day = 0; day < MAX_DAYS; day++) {
       if (cursor >= gap.end) return null;
 
-      const { startOfDayUtc, dayOfWeek } = this.localDayBounds(cursor, timezone);
-      // Понедельник=1 ... Пятница=5.
-      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-        const workStart = new Date(startOfDayUtc.getTime() + 9 * 60 * 60_000);
-        const workEnd = new Date(startOfDayUtc.getTime() + 18 * 60 * 60_000);
+      const { startOfDayUtc, dayOfWeek } = localDayBoundsUtc(cursor, timezone);
+      if (workingDays.includes(dayOfWeek)) {
+        const workStart = new Date(
+          startOfDayUtc.getTime() + workStartHour * 60 * 60_000,
+        );
+        const workEnd = new Date(
+          startOfDayUtc.getTime() + workEndHour * 60 * 60_000,
+        );
         const subStart = cursor > workStart ? cursor : workStart;
         const subEnd = gap.end < workEnd ? gap.end : workEnd;
         if (subEnd.getTime() - subStart.getTime() >= durationMs) {
@@ -154,58 +185,6 @@ export class FindFreeSlotService {
       cursor = new Date(startOfDayUtc.getTime() + 24 * 60 * 60_000);
     }
     return null;
-  }
-
-  /**
-   * Возвращает UTC-момент 00:00 локального дня + day-of-week (0=Sunday).
-   * Реализация через Intl.DateTimeFormat (без зависимости от tz-библиотеки).
-   *
-   * Для timezones типа "Europe/Moscow" без DST даёт точный результат; для
-   * TZ с DST (например, "Europe/Berlin") возможна ошибка в момент перехода —
-   * для MVP-календаря приемлемо (расхождение ≤ 1 час раз в полгода).
-   */
-  private localDayBounds(
-    moment: Date,
-    timezone: string,
-  ): { startOfDayUtc: Date; dayOfWeek: number } {
-    try {
-      const fmt = new Intl.DateTimeFormat('en-CA', {
-        timeZone: timezone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        weekday: 'short',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-      });
-      const parts = fmt.formatToParts(moment);
-      const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-      const y = Number(get('year'));
-      const m = Number(get('month'));
-      const d = Number(get('day'));
-      const hh = Number(get('hour'));
-      const mm = Number(get('minute'));
-      const ss = Number(get('second'));
-      const wd = get('weekday'); // Mon, Tue, Wed...
-      const wdMap: Record<string, number> = {
-        Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
-      };
-      const dayOfWeek = wdMap[wd] ?? 0;
-      // Сколько ms прошло с локальной полуночи?
-      const sinceMidnight = ((hh * 60 + mm) * 60 + ss) * 1000;
-      const startOfDayUtc = new Date(moment.getTime() - sinceMidnight);
-      void y;
-      void m;
-      void d;
-      return { startOfDayUtc, dayOfWeek };
-    } catch {
-      // Fallback на UTC, если timezone невалидна.
-      const startOfDayUtc = new Date(moment);
-      startOfDayUtc.setUTCHours(0, 0, 0, 0);
-      return { startOfDayUtc, dayOfWeek: moment.getUTCDay() };
-    }
   }
 
   private mergeIntervals(
@@ -229,15 +208,62 @@ export class FindFreeSlotService {
   }
 
   /**
+   * Ф3 — резолвим РАБОЧИЙ ПРОФИЛЬ организатора (= первый user в списке):
+   * таймзона + рабочие часы/дни. Источники:
+   *   - timezone: Person.timezone → Org.timezone → 'Europe/Moscow'
+   *     (делегируем `resolveOrganizerTimezone`);
+   *   - workStartHour/workEndHour/workingDays: из Person, иначе дефолты
+   *     AdminSetting (getDynamic) с code-fallback.
+   * `workingDays = []` (поле не задано) трактуем как «дефолт».
+   */
+  private async resolveOrganizerProfile(
+    userId: string,
+    tenantId: string,
+  ): Promise<{
+    timezone: string;
+    workStartHour: number;
+    workEndHour: number;
+    workingDays: number[];
+  }> {
+    const person = await this.prisma.person.findFirst({
+      where: { userId, tenantId },
+      select: {
+        timezone: true,
+        workStartHour: true,
+        workEndHour: true,
+        workingDays: true,
+      },
+    });
+
+    const timezone = await this.resolveOrganizerTimezone(userId, tenantId);
+
+    const workStartHour =
+      person?.workStartHour ??
+      (await this.getWorkHourDefault('work_hours_default_start', DEFAULT_WORK_START_HOUR));
+    const workEndHour =
+      person?.workEndHour ??
+      (await this.getWorkHourDefault('work_hours_default_end', DEFAULT_WORK_END_HOUR));
+    const workingDays =
+      person?.workingDays && person.workingDays.length > 0
+        ? person.workingDays
+        : await this.getWorkingDaysDefault();
+
+    return { timezone, workStartHour, workEndHour, workingDays };
+  }
+
+  /**
    * Резолвим timezone организатора (= первый user в списке).
    * Источники, в порядке приоритета:
-   *   1. Person.timezone (связанный с user через ownerUserId).
+   *   1. Person.timezone (связанный с user через userId, в рамках tenant'а).
    *   2. Org.timezone (первая Org user'а).
    *   3. 'Europe/Moscow' по умолчанию.
    */
-  private async resolveOrganizerTimezone(userId: string): Promise<string> {
+  private async resolveOrganizerTimezone(
+    userId: string,
+    tenantId: string,
+  ): Promise<string> {
     const person = await this.prisma.person.findFirst({
-      where: { userId, timezone: { not: null } },
+      where: { userId, tenantId, timezone: { not: null } },
       select: { timezone: true },
     });
     if (person?.timezone) return person.timezone;
@@ -248,5 +274,38 @@ export class FindFreeSlotService {
       orderBy: { joinedAt: 'asc' },
     });
     return membership?.org?.timezone ?? 'Europe/Moscow';
+  }
+
+  /**
+   * Дефолтный рабочий час (start/end) из AdminSetting (getDynamic).
+   * Defensive try/catch — cfg-мок в тестах может не иметь `getDynamic`.
+   */
+  private async getWorkHourDefault(
+    key: 'work_hours_default_start' | 'work_hours_default_end',
+    fallback: number,
+  ): Promise<number> {
+    try {
+      const v = await this.cfg.getDynamic<number>(key, undefined, fallback);
+      return Number.isFinite(v) ? v : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  /**
+   * Дефолтные рабочие дни (0=вс..6=сб) из AdminSetting (getDynamic).
+   * Defensive try/catch — cfg-мок в тестах может не иметь `getDynamic`.
+   */
+  private async getWorkingDaysDefault(): Promise<number[]> {
+    try {
+      const v = await this.cfg.getDynamic<number[]>(
+        'work_days_default',
+        undefined,
+        DEFAULT_WORKING_DAYS,
+      );
+      return Array.isArray(v) && v.length > 0 ? v : DEFAULT_WORKING_DAYS;
+    } catch {
+      return DEFAULT_WORKING_DAYS;
+    }
   }
 }

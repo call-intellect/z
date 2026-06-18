@@ -22,6 +22,7 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { EntityResolutionService } from '../../knowledge-core/services/entity-resolution.service';
 import { MeetingsService } from '../../meetings/meetings.service';
+import { localDayWindowUtc } from '../../operations/utils/local-date';
 import type {
   CalendarItemDto,
   CalendarResponseDto,
@@ -150,6 +151,11 @@ export class EventsService {
   }): Promise<EventDto> {
     const { tenantId, ownerId, data } = args;
 
+    // Ф3 — дефолт таймзоны события = TZ организатора (Person→Org→Moscow),
+    // т.к. Zod-дефолт 'Europe/Moscow' убран из CreateEventSchema.
+    const timezone =
+      data.timezone ?? (await this.resolvePersonTimezone(ownerId, tenantId));
+
     // 1. Entity{type=event}.
     const { entity } = await this.entityResolver.findOrCreateEntity({
       tenantId,
@@ -180,7 +186,7 @@ export class EventsService {
           description: data.description ?? null,
           location: data.location?.trim() ?? null,
           allDay: data.allDay,
-          timezone: data.timezone,
+          timezone,
           rrule: data.rrule ?? null,
           visibility: data.visibility,
           projectId: data.projectId ?? null,
@@ -538,7 +544,9 @@ export class EventsService {
     projectId?: string;
   }): Promise<CalendarResponseDto> {
     const { tenantId, userId, projectId } = args;
-    const { from, to } = this.resolveCalendarWindow(args.from, args.to);
+    // Ф3 — дефолтное окно «сегодня» считаем в таймзоне самого пользователя.
+    const tz = await this.resolvePersonTimezone(userId, tenantId);
+    const { from, to } = this.resolveCalendarWindow(args.from, args.to, tz);
 
     const [events, issues] = await Promise.all([
       this.fetchEventsForUser({
@@ -591,7 +599,10 @@ export class EventsService {
         ...(projectId ? { projectId } : {}),
       });
     }
-    const { from, to } = this.resolveCalendarWindow(args.from, args.to);
+    // Ф3 — окно «сегодня» в таймзоне ЦЕЛЕВОГО пользователя (чей календарь
+    // показываем).
+    const tz = await this.resolvePersonTimezone(targetUserId, tenantId);
+    const { from, to } = this.resolveCalendarWindow(args.from, args.to, tz);
     const [events, issues] = await Promise.all([
       this.fetchEventsForUser({
         tenantId,
@@ -717,20 +728,42 @@ export class EventsService {
   private resolveCalendarWindow(
     from?: Date,
     to?: Date,
+    timezone?: string,
   ): { from: Date; to: Date } {
     if (from && to) return { from, to };
-    const now = new Date();
     if (from && !to) {
       return { from, to: new Date(from.getTime() + 24 * 60 * 60_000) };
     }
     if (!from && to) {
       return { from: new Date(to.getTime() - 24 * 60 * 60_000), to };
     }
-    // Default — сегодня 00:00 — завтра 00:00 (UTC).
-    const start = new Date(now);
-    start.setUTCHours(0, 0, 0, 0);
-    const end = new Date(start.getTime() + 24 * 60 * 60_000);
-    return { from: start, to: end };
+    // Default — сегодняшние сутки [00:00, +24ч) в ТАЙМЗОНЕ человека (Ф3).
+    // Раньше считалось через setUTCHours(0) (UTC) → для UTC+7 «сегодня»
+    // возвращало вчера+завтра. Теперь окно строится по локальному дню.
+    return localDayWindowUtc(new Date(), timezone ?? 'Europe/Moscow');
+  }
+
+  /**
+   * Ф3 — таймзона человека для расчёта «сегодняшнего» окна календаря.
+   * Person.timezone → Org.timezone (через Membership) → 'Europe/Moscow'.
+   * (Параллель резолву из FindFreeSlotService, но в другом сервисе.)
+   */
+  private async resolvePersonTimezone(
+    userId: string,
+    tenantId: string,
+  ): Promise<string> {
+    const person = await this.prisma.person.findFirst({
+      where: { userId, tenantId, timezone: { not: null } },
+      select: { timezone: true },
+    });
+    if (person?.timezone) return person.timezone;
+
+    const membership = await this.prisma.membership.findFirst({
+      where: { userId },
+      select: { org: { select: { timezone: true } } },
+      orderBy: { joinedAt: 'asc' },
+    });
+    return membership?.org?.timezone ?? 'Europe/Moscow';
   }
 
   private async fetchEventsForUser(args: {

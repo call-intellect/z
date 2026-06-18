@@ -152,6 +152,75 @@ export function buildNowContextLine(now: Date, timezone: string | null | undefin
 }
 
 /**
+ * UTC-момент 00:00 локального дня для TZ + день недели (0=вс..6=сб).
+ * Через Intl (en-CA, hour/minute/second). Невалидная TZ → fallback UTC.
+ * (Вынесено из find-free-slot.service.ts:localDayBounds — единый источник.)
+ *
+ * Для TZ без DST (например «Europe/Moscow», «Asia/Novosibirsk») — точно; для
+ * TZ с DST возможна ошибка ≤1 час в момент перехода (для календаря приемлемо).
+ */
+export function localDayBoundsUtc(
+  moment: Date,
+  timezone: string | null | undefined,
+): { startOfDayUtc: Date; dayOfWeek: number } {
+  const tz = timezone && timezone.length > 0 ? timezone : DEFAULT_TIMEZONE;
+  try {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(moment);
+    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+    let hh = Number(get('hour'));
+    const mm = Number(get('minute'));
+    const ss = Number(get('second'));
+    // Edge-case: Intl возвращает "24" в полночь в некоторых runtime'ах.
+    if (hh === 24) hh = 0;
+    const wdMap: Record<string, number> = {
+      Sun: 0,
+      Mon: 1,
+      Tue: 2,
+      Wed: 3,
+      Thu: 4,
+      Fri: 5,
+      Sat: 6,
+    };
+    const dayOfWeek = wdMap[get('weekday')] ?? 0;
+    const sinceMidnight = ((hh * 60 + mm) * 60 + ss) * 1000;
+    const startOfDayUtc = new Date(moment.getTime() - sinceMidnight);
+    return { startOfDayUtc, dayOfWeek };
+  } catch {
+    const startOfDayUtc = new Date(moment);
+    startOfDayUtc.setUTCHours(0, 0, 0, 0);
+    return { startOfDayUtc, dayOfWeek: moment.getUTCDay() };
+  }
+}
+
+/** UTC-момент начала локальных суток (00:00 в TZ). */
+export function startOfLocalDayUtc(
+  now: Date,
+  timezone: string | null | undefined,
+): Date {
+  return localDayBoundsUtc(now, timezone).startOfDayUtc;
+}
+
+/** Окно «локальные сутки» [00:00, +24ч) в UTC для TZ. */
+export function localDayWindowUtc(
+  now: Date,
+  timezone: string | null | undefined,
+): { from: Date; to: Date } {
+  const from = startOfLocalDayUtc(now, timezone);
+  return { from, to: new Date(from.getTime() + 24 * 60 * 60_000) };
+}
+
+/**
  * Проверить, что строка таймзоны валидна (Intl поддерживает).
  */
 export function isValidTimezone(tz: string): boolean {

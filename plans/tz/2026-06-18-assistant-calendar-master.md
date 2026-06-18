@@ -82,7 +82,7 @@ MAX-адаптер, опц. новый BullMQ-процессор, `env.schema.ts
 
 ---
 
-## Фаза 3 — Окно «сегодня»/диапазоны и `find_free_slot` в таймзоне человека (баг «сегодня») `[ ]`
+## Фаза 3 — Окно «сегодня»/диапазоны и `find_free_slot` в таймзоне человека (баг «сегодня») `[x]`
 **Причина:** `resolveCalendarWindow` дефолтит окно через `setUTCHours` (UTC)
 ([events.service.ts:683-700](../../backend/src/modules/events/services/events.service.ts#L683-L700)); `find_free_slot`
 хардкодит Пн-Пт 9-18 ([find-free-slot.service.ts:142-143](../../backend/src/modules/events/services/find-free-slot.service.ts#L142-L143)).

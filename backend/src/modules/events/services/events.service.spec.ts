@@ -1,5 +1,5 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -43,6 +43,10 @@ describe('EventsService', () => {
 
   let entityFindOrCreate: ReturnType<typeof vi.fn>;
   let incCreated: ReturnType<typeof vi.fn>;
+
+  // Ф3 — резолв таймзоны человека (Person.timezone → Org.timezone → Moscow).
+  let personFindFirst: ReturnType<typeof vi.fn>;
+  let membershipFindFirst: ReturnType<typeof vi.fn>;
 
   let meetingsCreateForCalendarEvent: ReturnType<typeof vi.fn>;
   let meetingsCancelScheduled: ReturnType<typeof vi.fn>;
@@ -99,6 +103,10 @@ describe('EventsService', () => {
     participantFindFirst = vi.fn();
     participantUpdate = vi.fn();
 
+    // По умолчанию профиль/TZ человека не задан → резолв упадёт на Moscow.
+    personFindFirst = vi.fn().mockResolvedValue(null);
+    membershipFindFirst = vi.fn().mockResolvedValue(null);
+
     const $transaction = vi.fn().mockImplementation(async (cb: unknown) => {
       const tx = {
         event: {
@@ -125,6 +133,8 @@ describe('EventsService', () => {
       issue: {
         findMany: issueFindMany,
       },
+      person: { findFirst: personFindFirst },
+      membership: { findFirst: membershipFindFirst },
     } as unknown as PrismaService;
 
     meetingsCreateForCalendarEvent = vi
@@ -689,6 +699,53 @@ describe('EventsService', () => {
         where: Record<string, unknown>;
       };
       expect(eventArgs.where.projectId).toBeUndefined();
+    });
+  });
+
+  describe('Ф3 — дефолтное окно «сегодня» в таймзоне человека', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('getMyCalendar без from/to: окно = локальные сутки UTC+7 (Asia/Novosibirsk)', async () => {
+      // Фиксируем «сейчас» = 2026-06-18 09:30 UTC = 16:30 чт в Новосибирске.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-06-18T09:30:00.000Z'));
+      // У человека TZ Новосибирск.
+      personFindFirst.mockResolvedValue({ timezone: 'Asia/Novosibirsk' });
+      eventFindMany.mockResolvedValue([]);
+      issueFindMany.mockResolvedValue([]);
+
+      await svc.getMyCalendar({ tenantId: 't-1', userId: 'u-me' });
+
+      expect(eventFindMany).toHaveBeenCalledOnce();
+      const where = (
+        eventFindMany.mock.calls[0]![0] as {
+          where: { startAt: { gte: Date; lt: Date } };
+        }
+      ).where;
+      // 00:00 18-го новосиб. = 2026-06-17T17:00:00Z; +24ч.
+      expect(where.startAt.gte.toISOString()).toBe('2026-06-17T17:00:00.000Z');
+      expect(where.startAt.lt.toISOString()).toBe('2026-06-18T17:00:00.000Z');
+    });
+
+    it('профиль без TZ → fallback Moscow (UTC+3): 00:00 = 2026-06-17T21:00:00Z', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-06-18T09:30:00.000Z'));
+      personFindFirst.mockResolvedValue(null);
+      membershipFindFirst.mockResolvedValue(null);
+      eventFindMany.mockResolvedValue([]);
+      issueFindMany.mockResolvedValue([]);
+
+      await svc.getMyCalendar({ tenantId: 't-1', userId: 'u-me' });
+
+      const where = (
+        eventFindMany.mock.calls[0]![0] as {
+          where: { startAt: { gte: Date; lt: Date } };
+        }
+      ).where;
+      expect(where.startAt.gte.toISOString()).toBe('2026-06-17T21:00:00.000Z');
+      expect(where.startAt.lt.toISOString()).toBe('2026-06-18T21:00:00.000Z');
     });
   });
 

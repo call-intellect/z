@@ -65,6 +65,35 @@ function chatboxSyncLabel(scope: ChatboxSyncScope, since?: string): string {
   return SYNC_SCOPES.find((s) => s.scope === scope)?.label ?? "Данные";
 }
 
+const KNOWN_SYNC_SCOPES: readonly ChatboxSyncScope[] = [
+  "all",
+  "customers",
+  "managers",
+  "chats",
+];
+
+function chatboxSyncProgress(
+  scope: ChatboxSyncScope,
+  counts: {
+    chats: number;
+    messages: number;
+    customers: number;
+    members: number;
+  },
+): string {
+  const n = (v: number) => v.toLocaleString("ru-RU");
+  switch (scope) {
+    case "managers":
+      return `менеджеров в памяти: ${n(counts.members)}`;
+    case "customers":
+      return `клиентов в памяти: ${n(counts.customers)}`;
+    case "chats":
+      return `чатов: ${n(counts.chats)} · сообщений: ${n(counts.messages)}`;
+    default:
+      return `${n(counts.chats)} чатов · ${n(counts.customers)} клиентов · ${n(counts.members)} менеджеров`;
+  }
+}
+
 const CHAT_PERIOD_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: "1", label: "Последний 1 день" },
   { value: "7", label: "Последние 7 дней" },
@@ -171,24 +200,26 @@ function ConnectedView({
     null,
   );
   const [deleting, setDeleting] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [activeSyncLabel, setActiveSyncLabel] = useState<string | null>(null);
+  const [optimisticScope, setOptimisticScope] =
+    useState<ChatboxSyncScope | null>(null);
   const [chatPeriod, setChatPeriod] = useState("90");
-  const syncBaselineRef = useRef<string | null>(null);
-  const syncStartMsRef = useRef<number>(0);
+  const optimisticStartMsRef = useRef<number>(0);
+  const sawRunningRef = useRef(false);
+  const prevRunningRef = useRef(false);
   const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const { data: syncStatus, mutate: mutateStatus } = useSWR(
     ["chatbox-sync-status"],
     () => chatboxApi.syncStatus(),
     {
-      refreshInterval: (latest) =>
-        syncing ||
-        (latest && "runningScopes" in latest
-          ? (latest.runningScopes?.length ?? 0) > 0
-          : false)
-          ? 2500
-          : 0,
+      revalidateOnFocus: true,
+      refreshInterval: (latest) => {
+        const running =
+          latest && "runningScopes" in latest
+            ? (latest.runningScopes?.length ?? 0) > 0
+            : false;
+        return optimisticScope !== null || running ? 2500 : 0;
+      },
     },
   );
 
@@ -196,23 +227,42 @@ function ConnectedView({
     syncStatus && "runningScopes" in syncStatus
       ? (syncStatus.runningScopes?.length ?? 0) > 0
       : false;
+  const rawServerScope =
+    syncStatus && "activeSyncScope" in syncStatus
+      ? (syncStatus.activeSyncScope ?? null)
+      : null;
+  const serverScope = KNOWN_SYNC_SCOPES.includes(
+    rawServerScope as ChatboxSyncScope,
+  )
+    ? (rawServerScope as ChatboxSyncScope)
+    : null;
+
+  const syncing = serverSyncing || optimisticScope !== null;
+  const activeScope = serverScope ?? optimisticScope;
 
   useEffect(() => {
-    if (!syncing) return;
-    const curFull =
-      syncStatus && "lastFullSyncAt" in syncStatus
-        ? syncStatus.lastFullSyncAt
-        : null;
-    const done =
-      (curFull && curFull !== syncBaselineRef.current) ||
-      Date.now() - syncStartMsRef.current > 240_000;
-    if (done && !serverSyncing) {
-      setSyncing(false);
-      setActiveSyncLabel(null);
-      toast.success("Синхронизация завершена");
+    if (optimisticScope === null) return;
+    if (serverSyncing) {
+      setOptimisticScope(null);
+      return;
+    }
+    if (Date.now() - optimisticStartMsRef.current > 10_000) {
+      setOptimisticScope(null);
+      void mutateStatus();
       onChanged();
     }
-  }, [syncing, syncStatus, onChanged, serverSyncing]);
+  }, [optimisticScope, serverSyncing, syncStatus, mutateStatus, onChanged]);
+
+  useEffect(() => {
+    if (serverSyncing) sawRunningRef.current = true;
+    if (prevRunningRef.current && !serverSyncing && sawRunningRef.current) {
+      sawRunningRef.current = false;
+      toast.success("Синхронизация завершена");
+      void mutateStatus();
+      onChanged();
+    }
+    prevRunningRef.current = serverSyncing;
+  }, [serverSyncing, mutateStatus, onChanged]);
 
   const statusTone =
     integration.status === "connected"
@@ -244,13 +294,8 @@ function ConnectedView({
     setSyncingScope(scope);
     try {
       await chatboxApi.sync(scope, since);
-      syncBaselineRef.current =
-        syncStatus && "lastFullSyncAt" in syncStatus
-          ? syncStatus.lastFullSyncAt
-          : null;
-      syncStartMsRef.current = Date.now();
-      setActiveSyncLabel(chatboxSyncLabel(scope, since));
-      setSyncing(true);
+      optimisticStartMsRef.current = Date.now();
+      setOptimisticScope(scope);
       void mutateStatus();
       toast.success(
         since
@@ -351,24 +396,20 @@ function ConnectedView({
             ))}
           </div>
 
-          {(syncing || serverSyncing) && (
+          {syncing && (
             <div
               className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl px-3 py-2.5 text-sm"
               style={{ background: STATUS_TONE.ok.bg }}
             >
               <Loader2 size={14} className="animate-spin text-accent" />
               <span className="font-medium text-fg-primary">
-                {activeSyncLabel
-                  ? `Синхронизируем: ${activeSyncLabel}…`
+                {activeScope
+                  ? `Синхронизируем: ${chatboxSyncLabel(activeScope)}…`
                   : "Идёт синхронизация…"}
               </span>
-              {syncStatus && "counts" in syncStatus && (
+              {syncStatus && "counts" in syncStatus && activeScope && (
                 <span className="text-fg-secondary">
-                  собрано: {syncStatus.counts.chats.toLocaleString("ru-RU")}{" "}
-                  чатов · {syncStatus.counts.messages.toLocaleString("ru-RU")}{" "}
-                  сообщений ·{" "}
-                  {syncStatus.counts.customers.toLocaleString("ru-RU")} клиентов
-                  · {syncStatus.counts.sessions.toLocaleString("ru-RU")} сессий
+                  {chatboxSyncProgress(activeScope, syncStatus.counts)}
                 </span>
               )}
             </div>
@@ -447,7 +488,7 @@ function ConnectedView({
       {}
       <GlassCard className="space-y-3">
         <CardTitle icon={<Users size={16} />} grad={GRAD.teal}>
-          Связи с сотрудниками
+          Связи с людьми
         </CardTitle>
         <p className="max-w-[68ch] text-sm text-fg-secondary">
           Свяжите менеджеров и клиентов Чат бокса с людьми компании, чтобы Кора

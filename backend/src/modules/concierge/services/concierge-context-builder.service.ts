@@ -31,17 +31,28 @@ export class ConciergeContextBuilderService {
     const now = new Date();
 
     // Identity + «Сейчас…» (дата/время/TZ — точка отсчёта для «сегодня/завтра»).
-    let userTimezone: string | null = null;
+    // Таймзона ЧЕЛОВЕКА резолвится Person.timezone → Org.timezone → Moscow
+    // (паттерн EventsService/find-free-slot.resolveOrganizerTimezone). У модели
+    // User поля timezone НЕТ — таймзона живёт на Person (аватар в Org) и Org.
+    let resolvedTimezone: string | null = null;
     try {
       const user = await this.prisma.user.findUnique({
         where: { id: args.userId },
-        select: { name: true, email: true, timezone: true },
+        select: { name: true, email: true },
       });
       const org = await this.prisma.org.findUnique({
         where: { id: args.tenantId },
-        select: { name: true, slug: true },
+        select: { name: true, slug: true, timezone: true },
       });
-      userTimezone = user?.timezone ?? null;
+      const person = await this.prisma.person.findFirst({
+        where: {
+          userId: args.userId,
+          tenantId: args.tenantId,
+          timezone: { not: null },
+        },
+        select: { timezone: true },
+      });
+      resolvedTimezone = person?.timezone ?? org?.timezone ?? null;
       if (user) {
         parts.push(`Пользователь: ${user.name} (${user.email})`);
       }
@@ -54,7 +65,7 @@ export class ConciergeContextBuilderService {
       );
     }
     // «Сейчас…» — первой строкой контекста (даже если identity упал → дефолтная TZ).
-    parts.unshift(buildNowContextLine(now, userTimezone));
+    parts.unshift(buildNowContextLine(now, resolvedTimezone));
 
     // PageContext.
     if (args.pageContext) {

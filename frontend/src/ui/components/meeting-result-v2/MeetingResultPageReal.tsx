@@ -193,6 +193,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
   const [currentMs, setCurrentMs] = useState(0);
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [playerCollapsed, setPlayerCollapsed] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [highlightOpen, setHighlightOpen] = useState(false);
 
@@ -281,7 +282,12 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
         : null;
 
   return (
-    <div className="grid grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_400px] lg:px-8">
+    <div
+      className={cn(
+        'grid grid-cols-1 gap-6 px-4 py-6 lg:px-8',
+        chatOpen ? 'lg:grid-cols-[minmax(0,1fr)_400px]' : 'lg:grid-cols-1',
+      )}
+    >
       {/* Center column */}
       <div className="flex min-w-0 flex-col gap-5">
         <MeetingHeader
@@ -465,8 +471,13 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
         </Tabs>
       </div>
 
-      {/* Right column — AI chat */}
-      <MeetingChatPanel meetingId={meetingId} onSeek={onSeek} />
+      {/* Right column — AI chat (сворачиваемая; по умолчанию свёрнута) */}
+      <MeetingChatPanel
+        meetingId={meetingId}
+        open={chatOpen}
+        onOpenChange={setChatOpen}
+        onSeek={onSeek}
+      />
 
       <ShareDialog
         meetingId={meetingId}

@@ -16,8 +16,6 @@ import { AiTypingDots } from '@/ui/components/ai/AiTypingDots';
 import { ScrollArea } from '@/ui/shadcn/scroll-area';
 import { cn } from '@/ui/shadcn/lib/utils';
 
-const COLLAPSE_KEY = 'z:ai-chat-collapsed';
-
 const SUGGESTED_PROMPTS = [
   'Что мы решили?',
   'Какие риски обсудили?',
@@ -27,36 +25,21 @@ const SUGGESTED_PROMPTS = [
 
 export type MeetingChatPanelProps = {
   meetingId: string;
+  /** Открыта ли колонка чата (состояние поднято в родитель). */
+  open: boolean;
+  /** Запрос на смену видимости (открыть/свернуть). */
+  onOpenChange: (open: boolean) => void;
   onSeek?: (ms: number) => void;
 };
 
-export function MeetingChatPanel({ meetingId, onSeek }: MeetingChatPanelProps) {
-  const [collapsed, setCollapsed] = useState(false);
+export function MeetingChatPanel({
+  meetingId,
+  open,
+  onOpenChange,
+  onSeek,
+}: MeetingChatPanelProps) {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  // Восстанавливаем состояние коллапса из localStorage при mount.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const stored = window.localStorage.getItem(COLLAPSE_KEY);
-      if (stored === '1') setCollapsed(true);
-    } catch {
-      // ignore (private mode)
-    }
-  }, []);
-
-  const toggleCollapsed = () => {
-    setCollapsed((c) => {
-      const next = !c;
-      try {
-        window.localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0');
-      } catch {
-        // ignore
-      }
-      return next;
-    });
-  };
 
   const { messages, thinking, send, retry, historyLoading } =
     useMeetingChat(meetingId);
@@ -75,13 +58,13 @@ export function MeetingChatPanel({ meetingId, onSeek }: MeetingChatPanelProps) {
     void send(text);
   };
 
-  if (collapsed) {
+  if (!open) {
     return (
       <button
         type="button"
-        aria-label="Открыть помощника"
-        onClick={toggleCollapsed}
-        className="sticky top-24 grid h-14 w-14 place-items-center self-start rounded-xl border border-accent-border bg-accent-muted text-accent transition-colors hover:bg-accent-muted-strong"
+        aria-label="Открыть AI-чат"
+        onClick={() => onOpenChange(true)}
+        className="fixed bottom-6 right-6 z-30 grid h-14 w-14 place-items-center rounded-full border border-accent-border bg-accent-muted text-accent shadow-glow-mint transition-colors hover:bg-accent-muted-strong"
       >
         <Sparkles size={20} strokeWidth={1.75} />
       </button>
@@ -106,8 +89,8 @@ export function MeetingChatPanel({ meetingId, onSeek }: MeetingChatPanelProps) {
         </div>
         <button
           type="button"
-          aria-label="Свернуть"
-          onClick={toggleCollapsed}
+          aria-label="Свернуть AI-чат"
+          onClick={() => onOpenChange(false)}
           className="grid h-8 w-8 place-items-center rounded-md text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary"
         >
           <ChevronRight size={16} />

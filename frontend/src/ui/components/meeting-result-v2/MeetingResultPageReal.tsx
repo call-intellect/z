@@ -2074,14 +2074,13 @@ function ReportProcessingBanner({ title }: { title?: string }) {
 
 function MeetingResultSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_400px] lg:px-8">
+    <div className="grid grid-cols-1 gap-6 px-4 py-6 lg:px-8">
       <div className="flex flex-col gap-4">
         <Skeleton className="h-9 w-2/3" />
-        <Skeleton className="aspect-video w-full rounded-xl" />
+        <Skeleton className="mx-auto aspect-video w-full max-w-[80vh] rounded-xl" />
         <Skeleton className="h-10 w-full" />
         <Skeleton className="h-72 w-full" />
       </div>
-      <Skeleton className="h-[520px] w-full rounded-xl" />
     </div>
   );
 }

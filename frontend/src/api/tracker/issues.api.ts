@@ -35,6 +35,25 @@ export interface ListIssuesRequest {
   limit?: number;
 }
 
+/**
+ * Query сквозного списка задач org (`GET /api/v1/issues`). Зеркало backend
+ * `ListOrgIssuesQuerySchema`. `projectId` отсутствует → все проекты.
+ */
+export interface ListOrgIssuesRequest {
+  projectId?: string;
+  assigneeUserId?: string;
+  stateCategory?: IssueStateCategory;
+  priority?: IssuePriority;
+  cycleId?: string;
+  labelId?: string;
+  q?: string;
+  includeArchived?: boolean;
+  includeDeleted?: boolean;
+  includeChildrenCount?: boolean;
+  page?: number;
+  limit?: number;
+}
+
 export interface CreateIssueRequest {
   title: string;
   description?: string | null;
@@ -157,10 +176,31 @@ export const issuesApi = {
       headers: orgHeaders(orgId),
     }),
 
+  // Сквозной список задач всей организации (рабочий стол «Задачи»).
+  listOrg: (orgId: string, req: ListOrgIssuesRequest = {}) =>
+    apiClient.get<ListIssuesResponseApi>(
+      `/api/v1/issues${buildQuery({ ...req })}`,
+      { headers: orgHeaders(orgId) },
+    ),
+
   transition: (orgId: string, issueId: string, body: TransitionIssueRequest) =>
     apiClient.post<IssueApi>(
       `/api/v1/issues/${encodeURIComponent(issueId)}/transitions`,
       body,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  // Перевод задачи в статус её проекта по КАТЕГОРИИ (DnD на доске «Все проекты»).
+  // Backend резолвит конкретный статус по (projectId задачи, category).
+  transitionToCategory: (
+    orgId: string,
+    issueId: string,
+    category: IssueStateCategory,
+    reason?: string | null,
+  ) =>
+    apiClient.post<IssueApi>(
+      `/api/v1/issues/${encodeURIComponent(issueId)}/transition-to-category`,
+      { category, reason: reason ?? null },
       { headers: orgHeaders(orgId) },
     ),
 

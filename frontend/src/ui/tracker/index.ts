@@ -4,6 +4,7 @@ export { IssueStateBadge } from "./IssueStateBadge";
 export { IssuePriorityIcon } from "./IssuePriorityIcon";
 export { AssigneeAvatar, AssigneeAvatarGroup } from "./AssigneeAvatar";
 export { Board } from "./Board";
+export { OrgBoard } from "./OrgBoard";
 export { QuickAdd } from "./QuickAdd";
 export { IssueHeader } from "./IssueHeader";
 export { IssueSidebar } from "./IssueSidebar";

@@ -1314,6 +1314,7 @@ tracker/
    - WebhookDispatcher.dispatch(tenantId, 'issue.created', payload) → queue jobs для active webhooks с events.includes('issue.created')
    - WebhookDeliveryWorker берёт job → HMAC sign → fetch URL с timeout 30s → IssueWebhookLog запись → retry или success
    - **Sprint 3:** EventEmitter `tracker.event_occurred` → TrackerAdapter → RawEvent с signalType='task_created' → core.raw-events очередь → knowledge-core pipeline (block-ingest → распознавание сущностей → специалисты)
+   - **tasks-unified-workspace (2026-06-18):** новый `OrgIssuesController` (`controllers/org-issues.controller.ts`, зарегистрирован в `tracker.module.ts`) — сквозной `GET /api/v1/issues` (задачи всей org одним запросом; видимость по роли / `Org.visibilityMode` через `RbacService.loadContext` — руководитель/`open` видят всё, `manager`+`strict` только свои; поле `stateCategory` в ответе) + `POST /api/v1/issues/:id/transition-to-category` (DnD доски «Все проекты»: резолв статуса проекта по категории как в `moveToProject` → делегирует в `transitionState`, не дублируя activity/ingest). Сервис: `IssuesService.findAllAcrossProjects` / `transitionToCategory`. Фронт: рабочий стол `/projects` (`TasksWorkspaceClient`), хук `useOrgIssues`, доска `OrgBoard`.
 
 2. **Цикл (Cycle) complete:**
    - POST /api/v1/cycles/:id/complete → CyclesService.complete

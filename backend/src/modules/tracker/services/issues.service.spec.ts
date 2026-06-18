@@ -1040,3 +1040,224 @@ describe('IssuesService — moveToProject', () => {
     });
   });
 });
+
+/**
+ * Фаза 2 ТЗ tasks-unified-workspace (К5) — DnD на доске «Все проекты».
+ * `transitionToCategory` резолвит статус проекта по КАТЕГОРИИ (первый по
+ * sequence, иначе defaultStateId) и делегирует в `transitionState`.
+ */
+describe('IssuesService — transitionToCategory', () => {
+  type CatOpts = {
+    /** Текущая задача (requireIssue). */
+    existing: Partial<Issue>;
+    /** Результат issueState.findFirst при резолве категории. null → нет. */
+    categoryStateMatch?: { id: string } | null;
+    /** Результат project.findUnique (fallback на defaultStateId). */
+    projectDefaultStateId?: string | null;
+    /**
+     * Если задан — issueState.findFirst отдаёт это значение ВСЕМ вызовам
+     * (нужно кейсу 5: transitionToCategory читает .id, реальный
+     * transitionState читает .category из того же мока).
+     */
+    issueStateUnified?: { id: string; category: string } | null;
+  };
+
+  function buildService(opts: CatOpts) {
+    const issueUpdate = vi.fn().mockImplementation(async ({ data }) => ({
+      id: 'i1',
+      ...data,
+    }));
+
+    // requireIssue (без include) + assemble (с include) ходят в один
+    // issue.findFirst. Отдаём existing с пустыми связями — assemble через
+    // toResponseFromInclude обращается к assignees/labels.
+    const issueFindFirst = vi.fn().mockImplementation(async () => {
+      const last = issueUpdate.mock.calls.at(-1)?.[0]?.data ?? {};
+      return {
+        ...opts.existing,
+        ...last,
+        assignees: [],
+        labels: [],
+      };
+    });
+
+    // issueState.findFirst используется и в transitionToCategory (резолв
+    // category), и внутри реального transitionState (валидация stateId).
+    const issueStateFindFirst = vi
+      .fn()
+      .mockResolvedValue(
+        opts.issueStateUnified ?? opts.categoryStateMatch ?? null,
+      );
+
+    const projectFindUnique = vi
+      .fn()
+      .mockResolvedValue(
+        opts.projectDefaultStateId !== undefined
+          ? { defaultStateId: opts.projectDefaultStateId }
+          : null,
+      );
+
+    const activityRecord = vi.fn().mockResolvedValue('act_cat');
+
+    const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          issue: { update: issueUpdate },
+        }),
+      issue: { findFirst: issueFindFirst },
+      issueState: { findFirst: issueStateFindFirst },
+      project: { findUnique: projectFindUnique },
+    } as unknown as PrismaService;
+
+    const activity = {
+      record: activityRecord,
+    } as unknown as ActivityRecorderService;
+    const projects = {} as unknown as ProjectsService;
+    const events = {
+      publishActivity: vi.fn(),
+      publishIssueUpdated: vi.fn(),
+    } as unknown as TrackerEventsService;
+    const webhooks = {
+      dispatch: vi.fn().mockResolvedValue(undefined),
+    } as unknown as WebhookDispatcher;
+    const emitter = {} as unknown as TrackerEmitterService;
+    const metrics =
+      {} as unknown as import('../../../common/metrics/business-metrics.service').BusinessMetricsService;
+
+    const service = new IssuesService(
+      prisma,
+      activity,
+      projects,
+      events,
+      webhooks,
+      emitter,
+      undefined, // embedQueue
+      undefined, // inferFieldsSvc
+      undefined, // goalSuggestSvc
+      undefined, // holiday
+      undefined, // boards
+      metrics,
+    );
+
+    return {
+      service,
+      issueUpdate,
+      issueStateFindFirst,
+      projectFindUnique,
+      activityRecord,
+    };
+  }
+
+  const BASE: Partial<Issue> = {
+    id: 'i1',
+    tenantId: 'org_1',
+    projectId: 'p1',
+    identifier: 'P1-1',
+    sequenceId: 1,
+    title: 'Задача',
+    parentId: null,
+    stateId: 's_old',
+    cycleId: null,
+    boardId: null,
+    completedAt: null,
+    linkedMeetingIds: [],
+    sourceBlockIds: [],
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+    archivedAt: null,
+    deletedAt: null,
+  };
+
+  it('started — резолвит первый по sequence статус категории и делегирует в transitionState', async () => {
+    const { service, issueStateFindFirst } = buildService({
+      existing: { ...BASE, stateId: 's_old' },
+      categoryStateMatch: { id: 's_started' },
+    });
+    const transitionStateSpy = vi
+      .spyOn(service, 'transitionState')
+      .mockResolvedValue({ id: 'i1' } as never);
+
+    await service.transitionToCategory('i1', 'started', 'org_1', 'u1');
+
+    expect(issueStateFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { projectId: 'p1', category: 'started' },
+        orderBy: { sequence: 'asc' },
+      }),
+    );
+    expect(transitionStateSpy).toHaveBeenCalledWith(
+      'i1',
+      { stateId: 's_started', reason: null },
+      'org_1',
+      'u1',
+    );
+  });
+
+  it('идемпотентность — уже в нужном статусе → assemble, без transitionState', async () => {
+    const { service } = buildService({
+      existing: { ...BASE, stateId: 's_started' },
+      categoryStateMatch: { id: 's_started' },
+    });
+    const transitionStateSpy = vi.spyOn(service, 'transitionState');
+    const assembleSpy = vi
+      .spyOn(service as unknown as { assemble: () => Promise<unknown> }, 'assemble')
+      .mockResolvedValue({ id: 'i1' });
+
+    await service.transitionToCategory('i1', 'started', 'org_1', 'u1');
+
+    expect(assembleSpy).toHaveBeenCalled();
+    expect(transitionStateSpy).not.toHaveBeenCalled();
+  });
+
+  it('нет статуса категории и нет defaultStateId → 400 no_state_for_category', async () => {
+    const { service } = buildService({
+      existing: { ...BASE, stateId: 's_old' },
+      categoryStateMatch: null,
+      projectDefaultStateId: null,
+    });
+    const transitionStateSpy = vi.spyOn(service, 'transitionState');
+
+    await expect(
+      service.transitionToCategory('i1', 'cancelled', 'org_1', 'u1'),
+    ).rejects.toMatchObject({
+      response: { error: { code: 'no_state_for_category' } },
+    });
+    expect(transitionStateSpy).not.toHaveBeenCalled();
+  });
+
+  it('нет статуса категории → fallback на defaultStateId проекта', async () => {
+    const { service } = buildService({
+      existing: { ...BASE, stateId: 's_old' },
+      categoryStateMatch: null,
+      projectDefaultStateId: 's_def',
+    });
+    const transitionStateSpy = vi
+      .spyOn(service, 'transitionState')
+      .mockResolvedValue({ id: 'i1' } as never);
+
+    await service.transitionToCategory('i1', 'backlog', 'org_1', 'u1');
+
+    expect(transitionStateSpy).toHaveBeenCalledWith(
+      'i1',
+      { stateId: 's_def', reason: null },
+      'org_1',
+      'u1',
+    );
+  });
+
+  it('completed — полный путь через реальный transitionState проставляет completedAt', async () => {
+    const { service, issueUpdate, activityRecord } = buildService({
+      existing: { ...BASE, stateId: 's_old', completedAt: null, projectId: 'p1' },
+      // Один мок для обоих вызовов issueState.findFirst:
+      // transitionToCategory читает .id, transitionState читает .category.
+      issueStateUnified: { id: 's_done', category: 'completed' },
+    });
+
+    await service.transitionToCategory('i1', 'completed', 'org_1', 'u1');
+
+    // transitionState прошёл полностью: записал activity + update с completedAt.
+    expect(activityRecord).toHaveBeenCalledTimes(1);
+    const updateData = issueUpdate.mock.calls.at(0)?.[0]?.data;
+    expect(updateData?.completedAt).toBeInstanceOf(Date);
+  });
+});

@@ -38,6 +38,18 @@ export interface IssueResponseDto {
   checklistDoneCount: number;
   aiSuggestions?: IssueAiSuggestionsDto | null;
   childrenCount?: number;
+  /**
+   * Org-wide list (2026-06-18) — категория статуса задачи. Заполняется ТОЛЬКО
+   * эндпоинтом `GET /api/v1/issues` (фронт группирует кросс-проектные карточки
+   * по 5 колонкам-категориям). На прочих эндпоинтах поле отсутствует.
+   */
+  stateCategory?:
+    | 'backlog'
+    | 'unstarted'
+    | 'started'
+    | 'completed'
+    | 'cancelled'
+    | null;
 }
 
 export interface IssueChildResponseDto {

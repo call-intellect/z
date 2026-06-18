@@ -1,11 +1,11 @@
-import type { Metadata } from 'next';
+import type { Metadata } from "next";
 
-import { ProjectsListClient } from './ProjectsListClient';
+import { TasksWorkspaceClient } from "./TasksWorkspaceClient";
 
 export const metadata: Metadata = {
-  title: 'Проекты',
+  title: "Задачи",
 };
 
 export default function ProjectsPage() {
-  return <ProjectsListClient />;
+  return <TasksWorkspaceClient />;
 }

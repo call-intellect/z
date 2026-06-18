@@ -51,6 +51,10 @@ import {
   TransitionIssueStateSchema,
   type TransitionIssueStateDto,
 } from '../dto/issues/transition-state.dto';
+import {
+  TransitionToCategorySchema,
+  type TransitionToCategoryDto,
+} from '../dto/issues/transition-to-category.dto';
 import { UpdateIssueSchema, type UpdateIssueDto } from '../dto/issues/update-issue.dto';
 import { IssueMeetingsService } from '../services/issue-meetings.service';
 import { IssuesService } from '../services/issues.service';
@@ -179,6 +183,32 @@ export class IssuesController {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
     return this.svc.transitionState(id, body, t, user.id);
+  }
+
+  @Post('issues/:id/transition-to-category')
+  @RequireSubscription()
+  @ApiOperation({
+    summary:
+      'Перевести задачу в статус её проекта по категории (DnD «Все проекты»). ' +
+      'Резолвит первый статус нужной category в проекте задачи (иначе ' +
+      'defaultStateId), делегирует в transitionState.',
+  })
+  async transitionToCategory(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(TransitionToCategorySchema))
+    body: TransitionToCategoryDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<IssueResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.svc.transitionToCategory(
+      id,
+      body.category,
+      t,
+      user.id,
+      body.reason ?? null,
+    );
   }
 
   @Post('issues/:id/move')

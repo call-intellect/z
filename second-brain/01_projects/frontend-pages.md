@@ -83,7 +83,7 @@ CTA «Создать встречу» (Plus + ссылка на `/meetings/creat
 
 | Путь | Назначение |
 |---|---|
-| `/projects` | Список проектов (фильтры, поиск) |
+| `/projects` | **Рабочий стол «Задачи»** (`TasksWorkspaceClient`, ТЗ 2026-06-18 tasks-unified-workspace): проект = фильтр, не отдельный экран. Виды Доска (`OrgBoard` «Все проекты» с DnD по 5 категориям / `Board` одного проекта) · Список · Спринты (`useSprints`→`/sprints/[id]`) · Входящие (`IntakeBoard`, только руководителю) · Архив. Селектор проекта, фильтр команды (руководителю), фильтр спринта, поиск, «+ Новая задача», «Открыть проект →». URL-стейт `?view/?project/?assignee/?cycle/?q`. *(Старый `ProjectsListClient` удалён.)* |
 | `/projects/[slug]` | Master-detail проекта (Board / Backlog / Cycles / Settings) |
 | `/projects/[slug]/settings` | Настройки проекта (members, states, **email-inbox T5**) |
 | `/issues` | Список задач (фильтр по assignee, state, label, cycle) |

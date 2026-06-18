@@ -45,9 +45,11 @@ export class BitrixSyncWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   async process(job: Job<BitrixSyncJobData>): Promise<void> {
-    const { tenantId, scope } = job.data;
-    this.logger.log(`BitrixSync старт: tenant=${tenantId} scope=${scope} job=${job.id}`);
-    const result = await this.syncService.syncByScope(tenantId, scope);
+    const { tenantId, scope, since } = job.data;
+    this.logger.log(
+      `BitrixSync старт: tenant=${tenantId} scope=${scope} since=${since ?? '-'} job=${job.id}`,
+    );
+    const result = await this.syncService.syncByScope(tenantId, scope, since);
     this.logger.log(
       `BitrixSync готово: tenant=${tenantId} scope=${scope} ${JSON.stringify(result)}`,
     );

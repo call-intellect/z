@@ -7,6 +7,7 @@ export type BitrixSyncScope = 'all' | 'users' | 'dialogs' | 'crm';
 export interface BitrixSyncJobData {
   tenantId: string;
   scope: BitrixSyncScope;
+  since?: string;
 }
 
 export const BITRIX_SYNC_JOB_OPTIONS: JobsOptions = {

@@ -265,7 +265,7 @@ export class BitrixSyncService {
     return owner?.userId ?? null;
   }
 
-  async syncDialogs(tenantId: string): Promise<number> {
+  async syncDialogs(tenantId: string, since?: Date): Promise<number> {
     if (!(await this.isEnabled())) return 0;
     const row = await this.requireRow(tenantId);
     const params: BitrixImRecentParams = {};
@@ -297,56 +297,84 @@ export class BitrixSyncService {
           syncedAt: new Date(),
         },
       });
-      await this.syncDialogMessages(tenantId, row, dialog.id, dialogId);
+      await this.syncDialogMessages(tenantId, row, dialog.id, dialogId, since);
       synced += 1;
     }
     return synced;
   }
+
+  private static readonly DIALOG_BACKFILL_MAX_PAGES = 25;
+  private static readonly DIALOG_BACKFILL_PAGE_SIZE = 200;
 
   private async syncDialogMessages(
     tenantId: string,
     row: BitrixIntegration,
     dialogDbId: string,
     dialogExternalId: string,
+    since?: Date,
   ): Promise<void> {
-    const params: BitrixImMessagesParams = {
-      DIALOG_ID: dialogExternalId,
-      LIMIT: 100,
-    };
-    const res = await this.integration.callApi<BitrixImMessagesResult>(
-      row,
-      'im.dialog.messages.get',
-      params,
-    );
-    const messages = res?.messages ?? [];
-    if (messages.length === 0) return;
+    const limit = since ? BitrixSyncService.DIALOG_BACKFILL_PAGE_SIZE : 100;
+    const maxPages = since ? BitrixSyncService.DIALOG_BACKFILL_MAX_PAGES : 1;
 
+    let lastId: number | undefined;
     let lastTs: Date | null = null;
-    for (const m of messages) {
-      const externalId = str(m.id);
-      if (!externalId) continue;
-      const ts = m.date ? new Date(m.date) : new Date();
-      if (!lastTs || ts > lastTs) lastTs = ts;
-      const data = {
-        tenantId,
-        dialogId: dialogDbId,
-        authorExternalId: str(m.author_id),
-        authorName: null as string | null,
-        text: str(m.text),
-        externalCreatedAt: ts,
-        raw: m as unknown as Prisma.InputJsonValue,
+    let upserted = false;
+
+    for (let page = 0; page < maxPages; page += 1) {
+      const params: BitrixImMessagesParams = {
+        DIALOG_ID: dialogExternalId,
+        LIMIT: limit,
       };
-      await this.prisma.bitrixMessage.upsert({
-        where: { tenantId_externalId: { tenantId, externalId } },
-        create: { externalId, ...data },
-        update: { text: data.text, raw: data.raw },
-      });
+      if (lastId !== undefined) params.LAST_ID = lastId;
+
+      const res = await this.integration.callApi<BitrixImMessagesResult>(
+        row,
+        'im.dialog.messages.get',
+        params,
+      );
+      const messages = res?.messages ?? [];
+      if (messages.length === 0) break;
+
+      let minId: number | null = null;
+      let reachedSince = false;
+      for (const m of messages) {
+        const externalId = str(m.id);
+        if (!externalId) continue;
+        const idNum = typeof m.id === 'number' ? m.id : Number(m.id);
+        if (Number.isFinite(idNum)) minId = minId === null ? idNum : Math.min(minId, idNum);
+        const ts = m.date ? new Date(m.date) : new Date();
+        if (since && ts < since) {
+          reachedSince = true;
+          continue;
+        }
+        if (!lastTs || ts > lastTs) lastTs = ts;
+        const data = {
+          tenantId,
+          dialogId: dialogDbId,
+          authorExternalId: str(m.author_id),
+          authorName: null as string | null,
+          text: str(m.text),
+          externalCreatedAt: ts,
+          raw: m as unknown as Prisma.InputJsonValue,
+        };
+        await this.prisma.bitrixMessage.upsert({
+          where: { tenantId_externalId: { tenantId, externalId } },
+          create: { externalId, ...data },
+          update: { text: data.text, raw: data.raw },
+        });
+        upserted = true;
+      }
+
+      if (reachedSince || messages.length < limit || minId === null) break;
+      lastId = minId;
     }
 
-    await this.prisma.bitrixDialog.update({
-      where: { id: dialogDbId },
-      data: { lastMessageAt: lastTs },
-    });
+    if (upserted) {
+      await this.prisma.bitrixDialog.update({
+        where: { id: dialogDbId },
+        data: { lastMessageAt: lastTs },
+      });
+    }
     await this.rebuildDialogSessions(tenantId, dialogDbId);
   }
 
@@ -580,7 +608,10 @@ export class BitrixSyncService {
   async syncByScope(
     tenantId: string,
     scope: 'all' | 'users' | 'dialogs' | 'crm',
+    since?: string,
   ): Promise<Record<string, number>> {
+    const sinceDate =
+      since && !Number.isNaN(new Date(since).getTime()) ? new Date(since) : undefined;
     switch (scope) {
       case 'all':
         return this.fullSync(tenantId);
@@ -590,7 +621,7 @@ export class BitrixSyncService {
         return { users };
       }
       case 'dialogs': {
-        const dialogs = await this.syncDialogs(tenantId);
+        const dialogs = await this.syncDialogs(tenantId, sinceDate);
         await this.markSynced(tenantId, 'incremental');
         await this.enqueuePendingAnalysisIfEnabled(tenantId);
         return { dialogs };

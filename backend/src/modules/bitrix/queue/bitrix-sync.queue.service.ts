@@ -47,28 +47,42 @@ export class BitrixSyncQueueService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async enqueue(tenantId: string, scope: BitrixSyncScope): Promise<{ jobId: string }> {
+  async enqueue(
+    tenantId: string,
+    scope: BitrixSyncScope,
+    since?: string,
+  ): Promise<{ jobId: string }> {
     const queue = this.requireQueue();
-    const jobId = `bitrix-sync-${tenantId}-${scope}`;
+    const jobId = since
+      ? `bitrix-sync-${tenantId}-${scope}-backfill`
+      : `bitrix-sync-${tenantId}-${scope}`;
     await queue.remove(jobId).catch(() => undefined);
-    await queue.add('sync', { tenantId, scope }, { jobId });
-    this.logger.log(`enqueue: tenant=${tenantId} scope=${scope} jobId=${jobId}`);
+    await queue.add('sync', { tenantId, scope, since }, { jobId });
+    this.logger.log(
+      `enqueue: tenant=${tenantId} scope=${scope} since=${since ?? '-'} jobId=${jobId}`,
+    );
     return { jobId };
   }
 
   async getRunningScopes(tenantId: string): Promise<BitrixSyncScope[]> {
     const queue = this.requireQueue();
-    const states = await Promise.all(
-      BitrixSyncQueueService.SCOPES.map(async (scope) => ({
+    const probes: { scope: BitrixSyncScope; jobId: string }[] =
+      BitrixSyncQueueService.SCOPES.map((scope) => ({
         scope,
-        state: await queue
-          .getJobState(`bitrix-sync-${tenantId}-${scope}`)
-          .catch(() => 'unknown'),
+        jobId: `bitrix-sync-${tenantId}-${scope}`,
+      }));
+    probes.push({ scope: 'dialogs', jobId: `bitrix-sync-${tenantId}-dialogs-backfill` });
+    const states = await Promise.all(
+      probes.map(async ({ scope, jobId }) => ({
+        scope,
+        state: await queue.getJobState(jobId).catch(() => 'unknown'),
       })),
     );
-    return states
-      .filter((s) => BitrixSyncQueueService.RUNNING_STATES.has(s.state))
-      .map((s) => s.scope);
+    const running = new Set<BitrixSyncScope>();
+    for (const s of states) {
+      if (BitrixSyncQueueService.RUNNING_STATES.has(s.state)) running.add(s.scope);
+    }
+    return [...running];
   }
 
   private requireQueue(): Queue<BitrixSyncJobData> {

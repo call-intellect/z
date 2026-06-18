@@ -91,9 +91,11 @@ export const bitrixApi = {
       {},
     ),
 
-  sync: (scope: BitrixSyncScope) =>
+  sync: (scope: BitrixSyncScope, since?: string) =>
     apiClient.post<{ ok: true; jobId: string; scope: BitrixSyncScope }>(
-      "/api/v1/bitrix/integration/sync?scope=" + encodeURIComponent(scope),
+      "/api/v1/bitrix/integration/sync?scope=" +
+        encodeURIComponent(scope) +
+        (since ? "&since=" + encodeURIComponent(since) : ""),
       {},
     ),
 

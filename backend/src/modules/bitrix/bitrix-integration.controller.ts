@@ -200,6 +200,7 @@ export class BitrixIntegrationController {
   })
   async sync(
     @Query('scope') scopeRaw: string | undefined,
+    @Query('since') sinceRaw: string | undefined,
     @CurrentUser() user: CurrentUserPayload,
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<{ ok: true; jobId: string; scope: BitrixSyncScope }> {
@@ -209,7 +210,9 @@ export class BitrixIntegrationController {
     const scope: BitrixSyncScope = BITRIX_SYNC_SCOPES.includes(scopeRaw as BitrixSyncScope)
       ? (scopeRaw as BitrixSyncScope)
       : 'all';
-    const { jobId } = await this.syncQueue.enqueue(t, scope);
+    const since =
+      sinceRaw && !Number.isNaN(new Date(sinceRaw).getTime()) ? sinceRaw : undefined;
+    const { jobId } = await this.syncQueue.enqueue(t, scope, since);
     return { ok: true, jobId, scope };
   }
 

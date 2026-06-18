@@ -33,11 +33,27 @@ import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
 import { Button } from "@/ui/shadcn/button";
 import { Input } from "@/ui/shadcn/input";
 import { Label } from "@/ui/shadcn/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/ui/shadcn/select";
 import { Switch } from "@/ui/shadcn/switch";
 
 function errMessage(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback;
 }
+
+const DIALOG_PERIOD_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "7", label: "Последние 7 дней" },
+  { value: "30", label: "Последний 1 месяц" },
+  { value: "90", label: "Последние 3 месяца" },
+  { value: "180", label: "Последние 6 месяцев" },
+  { value: "365", label: "Последний год" },
+  { value: "all", label: "Вся история" },
+];
 
 function formatDate(d: Date | null): string {
   return d ? d.toLocaleString("ru-RU") : "—";
@@ -235,6 +251,7 @@ function ConnectedView({
   const [optimisticScope, setOptimisticScope] =
     useState<BitrixSyncScope | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [dialogPeriod, setDialogPeriod] = useState("90");
   const optimisticStartMsRef = useRef<number>(0);
   const sawRunningRef = useRef(false);
   const prevRunningRef = useRef(false);
@@ -311,19 +328,33 @@ function ConnectedView({
     }
   };
 
-  const handleSync = async (scope: BitrixSyncScope) => {
+  const handleSync = async (scope: BitrixSyncScope, since?: string) => {
     setSyncingScope(scope);
     try {
-      await bitrixApi.sync(scope);
+      await bitrixApi.sync(scope, since);
       optimisticStartMsRef.current = Date.now();
       setOptimisticScope(scope);
       void mutateStatus();
-      toast.success(`Запущена синхронизация: ${syncScopeLabel(scope)}`);
+      toast.success(
+        since
+          ? "Запущена подтяжка диалогов за период"
+          : `Запущена синхронизация: ${syncScopeLabel(scope)}`,
+      );
     } catch (e) {
       toast.error(errMessage(e, "Не удалось запустить синхронизацию"));
     } finally {
       setSyncingScope(null);
     }
+  };
+
+  const handleBackfillDialogs = () => {
+    const since =
+      dialogPeriod === "all"
+        ? new Date(0).toISOString()
+        : new Date(
+            Date.now() - Number(dialogPeriod) * 24 * 60 * 60 * 1000,
+          ).toISOString();
+    void handleSync("dialogs", since);
   };
 
   const handleDelete = async () => {
@@ -422,6 +453,51 @@ function ConnectedView({
               )}
             </div>
           )}
+        </div>
+
+        {}
+        <div className="space-y-2.5 border-t border-border-subtle pt-5">
+          <span className="text-xs font-medium uppercase tracking-wide text-fg-tertiary">
+            Забрать диалоги за период
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={dialogPeriod}
+              onValueChange={setDialogPeriod}
+              disabled={syncingScope !== null || syncing || serverSyncing}
+            >
+              <SelectTrigger className="w-[220px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DIALOG_PERIOD_OPTIONS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBackfillDialogs()}
+              disabled={syncingScope !== null || syncing || serverSyncing}
+            >
+              {syncingScope === "dialogs" ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Plug size={14} />
+              )}
+              Забрать диалоги
+            </Button>
+          </div>
+          <p className="max-w-[68ch] text-xs leading-relaxed text-fg-tertiary">
+            Новые диалоги подтягиваются автоматически раз в сутки. Здесь — добрать
+            прошлые за выбранный период, если при установке пропустили.
+            {analysisEnabled
+              ? " Забранные диалоги уйдут в AI-анализ (без повторов уже разобранных)."
+              : " Сейчас AI-анализ выключен: диалоги просто зеркалятся."}
+          </p>
         </div>
 
         {}

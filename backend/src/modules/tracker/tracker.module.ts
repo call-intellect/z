@@ -16,6 +16,7 @@ import { LabelsController } from './controllers/labels.controller';
 import { MeInboxController } from './controllers/me-inbox.controller';
 import { MeTasksController } from './controllers/me-tasks.controller';
 import { MyMentionsController } from './controllers/my-mentions.controller';
+import { OrgIssuesController } from './controllers/org-issues.controller';
 import { OverviewController } from './controllers/overview.controller';
 import { ProjectDocumentsController } from './controllers/project-documents.controller';
 import { ProjectsController } from './controllers/projects.controller';
@@ -91,6 +92,10 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     HolidaysController,
     ImportsController,
     MeInboxController,
+    // tasks-unified-workspace Ф1 (2026-06-18): GET /api/v1/issues — сквозной
+    // список задач всей организации (рабочий стол «Задачи») с видимостью
+    // по роли/visibilityMode.
+    OrgIssuesController,
     MeTasksController,
     MyMentionsController,
     StatesController,

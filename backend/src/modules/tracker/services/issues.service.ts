@@ -25,6 +25,7 @@ import type {
   MyInboxResponseDto,
 } from '../dto/issues/issue-response.dto';
 import type { ListIssuesQuery } from '../dto/issues/list-issues-query.dto';
+import type { ListOrgIssuesQuery } from '../dto/issues/list-org-issues-query.dto';
 import type { MyInboxQuery } from '../dto/issues/my-inbox-query.dto';
 import type { TransitionIssueStateDto } from '../dto/issues/transition-state.dto';
 import type { UpdateIssueDto } from '../dto/issues/update-issue.dto';
@@ -479,6 +480,103 @@ export class IssuesService {
           return { ...base, childrenCount: childrenCountByParent.get(i.id) ?? 0 };
         }
         return base;
+      }),
+      total,
+      page: query.page,
+      limit: query.limit,
+    };
+  }
+
+  /**
+   * Сквозной список задач всей организации (`GET /api/v1/issues`). В отличие
+   * от `findAll` (per-project) и `findMyInbox` (только assignee=self) — отдаёт
+   * задачи ВСЕХ проектов tenant'а с видимостью по роли/visibilityMode (Р3/Р4):
+   *   - руководитель (isLeadership) ИЛИ visibilityMode=open → видит все (read);
+   *     учитывается фильтр `assigneeUserId`.
+   *   - manager + strict → форсится self-scope (assignee=self ИЛИ создатель),
+   *     `assigneeUserId` игнорируется (нельзя подсмотреть чужое).
+   * Каждый item несёт `stateCategory` (для группировки по 5 колонкам на фронте).
+   */
+  async findAllAcrossProjects(
+    tenantId: string,
+    userId: string,
+    query: ListOrgIssuesQuery,
+    ctx: { isLeadership: boolean; visibility: 'open' | 'strict' },
+  ): Promise<ListIssuesResponse> {
+    const where: Prisma.IssueWhereInput = { tenantId };
+    if (!query.includeDeleted) where.deletedAt = null;
+    if (!query.includeArchived) where.archivedAt = null;
+    if (query.projectId) where.projectId = query.projectId;
+    if (query.stateCategory) where.state = { category: query.stateCategory };
+    if (query.priority) where.priority = query.priority;
+    if (query.cycleId) where.cycleId = query.cycleId;
+    if (query.labelId) where.labels = { some: { labelId: query.labelId } };
+    if (query.q) {
+      where.OR = [
+        { title: { contains: query.q, mode: 'insensitive' } },
+        { descriptionStripped: { contains: query.q, mode: 'insensitive' } },
+        { identifier: { contains: query.q, mode: 'insensitive' } },
+      ];
+    }
+    // Р3/Р4 видимость:
+    const seesAll = ctx.isLeadership || ctx.visibility === 'open';
+    if (seesAll) {
+      if (query.assigneeUserId) {
+        where.assignees = { some: { userId: query.assigneeUserId } };
+      }
+    } else {
+      // manager + strict → только свои (assignee=self ИЛИ создатель).
+      // Отдельный where.AND, чтобы НЕ затереть where.OR от поиска `q`.
+      where.AND = [
+        {
+          OR: [
+            { assignees: { some: { userId } } },
+            { createdById: userId },
+          ],
+        },
+      ];
+    }
+    const [items, total] = await Promise.all([
+      this.prisma.issue.findMany({
+        where,
+        orderBy: [{ updatedAt: 'desc' }],
+        take: query.limit,
+        skip: (query.page - 1) * query.limit,
+        include: {
+          assignees: { select: { userId: true } },
+          labels: { select: { labelId: true } },
+          state: { select: { category: true } },
+        },
+      }),
+      this.prisma.issue.count({ where }),
+    ]);
+    // childrenCount — копия блока из findAll (по запросу includeChildrenCount).
+    let childrenCountByParent: Map<string, number> | null = null;
+    if (query.includeChildrenCount && items.length > 0) {
+      const parentIds = items.map((i) => i.id);
+      const grouped = await this.prisma.issue.groupBy({
+        by: ['parentId'],
+        where: { tenantId, parentId: { in: parentIds }, deletedAt: null },
+        _count: { _all: true },
+      });
+      childrenCountByParent = new Map();
+      for (const row of grouped) {
+        if (row.parentId) {
+          childrenCountByParent.set(row.parentId, row._count._all);
+        }
+      }
+    }
+    return {
+      items: items.map((i) => {
+        const base = this.toResponseFromInclude(i);
+        const stateCategory =
+          ((i as { state?: { category: string } | null }).state
+            ?.category as IssueResponseDto['stateCategory']) ?? null;
+        const withCat = { ...base, stateCategory };
+        if (childrenCountByParent) {
+          return { ...withCat, childrenCount: childrenCountByParent.get(i.id) ?? 0 };
+        }
+        return withCat;
       }),
       total,
       page: query.page,

@@ -24,6 +24,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
+  ChevronUp,
   Circle,
   Clock,
   Copy,
@@ -191,6 +192,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
   const player = useVideoPlayer();
   const [currentMs, setCurrentMs] = useState(0);
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [playerCollapsed, setPlayerCollapsed] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [highlightOpen, setHighlightOpen] = useState(false);
 
@@ -302,15 +304,34 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
           hasRecording={isRecordingReady}
         />
 
-        <MeetingPlayer
-          videoUrl={safeVideoUrl}
-          durationMs={durationMs}
-          chapters={primaryChapters}
-          highlights={highlights}
-          playerRef={player.playerRef}
-          onTimeUpdate={(ms) => setCurrentMs(ms)}
-          title={meeting.title}
-        />
+        <div className="sticky top-4 z-10 flex flex-col gap-2 rounded-xl bg-bg-base/80 py-1 backdrop-blur supports-[backdrop-filter]:bg-bg-base/60">
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setPlayerCollapsed((c) => !c)}
+              aria-label={playerCollapsed ? 'Развернуть видео' : 'Свернуть видео'}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-fg-secondary transition-colors hover:bg-bg-overlay hover:text-fg-primary"
+            >
+              {playerCollapsed ? (
+                <ChevronDown size={14} strokeWidth={1.75} />
+              ) : (
+                <ChevronUp size={14} strokeWidth={1.75} />
+              )}
+              {playerCollapsed ? 'Развернуть видео' : 'Свернуть видео'}
+            </button>
+          </div>
+          {!playerCollapsed && (
+            <MeetingPlayer
+              videoUrl={safeVideoUrl}
+              durationMs={durationMs}
+              chapters={primaryChapters}
+              highlights={highlights}
+              playerRef={player.playerRef}
+              onTimeUpdate={(ms) => setCurrentMs(ms)}
+              title={meeting.title}
+            />
+          )}
+        </div>
 
         <HighlightsStrip
           highlights={highlights}

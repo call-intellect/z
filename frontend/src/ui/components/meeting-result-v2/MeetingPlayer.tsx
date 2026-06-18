@@ -47,7 +47,7 @@ export function MeetingPlayer({
 
   if (!videoUrl) {
     return (
-      <div className="relative aspect-video overflow-hidden rounded-xl border border-border-subtle bg-bg-card">
+      <div className="relative mx-auto aspect-video w-full max-w-[80vh] overflow-hidden rounded-xl border border-border-subtle bg-bg-card">
         <div className="grid h-full place-items-center text-center">
           <div className="px-6">
             <div className="mb-2 text-base font-medium text-fg-primary">
@@ -63,7 +63,7 @@ export function MeetingPlayer({
   }
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-border-subtle bg-bg-card">
+    <div className="relative mx-auto w-full max-w-[80vh] overflow-hidden rounded-xl border border-border-subtle bg-bg-card">
       {/* Маркеры глав/хайлайтов — тонкой полосой НАД видео (нативный скраббер не оверлеить). */}
       <PlayerMarkers
         chapters={chapters}
@@ -80,7 +80,7 @@ export function MeetingPlayer({
         preload="auto"
         playsInline
         onTimeUpdate={(e) => onTimeUpdate?.(e.currentTarget.currentTime * 1000)}
-        className="aspect-video w-full bg-black"
+        className="aspect-video max-h-[45vh] w-full bg-black object-contain"
         aria-label={title ?? 'Запись встречи'}
       />
     </div>

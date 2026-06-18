@@ -51,7 +51,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import useSWR from 'swr';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 
 import { meetingsApi } from '@/api/meetings.api';
 import { templatesApi } from '@/api/templates.api';
@@ -143,6 +143,15 @@ type TabKey =
   | 'chat'
   | 'tasks';
 
+const TAB_KEYS: readonly TabKey[] = [
+  'overview',
+  'reports',
+  'chapters',
+  'transcript',
+  'chat',
+  'tasks',
+];
+
 export type MeetingResultPageRealProps = {
   meetingId: string;
 };
@@ -190,8 +199,16 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
   const { messages: roomMessages } = useMeetingRoomMessages(meetingId);
 
   const player = useVideoPlayer();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [currentMs, setCurrentMs] = useState(0);
-  const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [activeTab, setActiveTab] = useState<TabKey>(() => {
+    const tab = searchParams.get('tab');
+    if (tab && TAB_KEYS.includes(tab as TabKey)) return tab as TabKey;
+    if (searchParams.get('report')) return 'reports';
+    return 'overview';
+  });
   const [playerCollapsed, setPlayerCollapsed] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -346,7 +363,18 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
           onMutate={mutateHighlights}
         />
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabKey)}>
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => {
+            const next = v as TabKey;
+            setActiveTab(next);
+            const params = new URLSearchParams(searchParams.toString());
+            params.set('tab', next);
+            router.replace(`${pathname}?${params.toString()}`, {
+              scroll: false,
+            });
+          }}
+        >
           <TabsList>
             <TabsTrigger value="overview" data-tour-target="meeting.ai-report">
               <FileText size={14} strokeWidth={1.75} />

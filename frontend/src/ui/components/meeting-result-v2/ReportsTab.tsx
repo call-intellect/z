@@ -14,6 +14,7 @@
  */
 
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 import { meetingReportsApi } from '@/api/meeting-reports.api';
@@ -48,11 +49,15 @@ export function ReportsTab({ meetingId }: ReportsTabProps) {
     useEntitlement('feature.multi_reports_per_meeting');
   const { max: tierLimit } = useQuota('multi_reports_limit_per_meeting');
 
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Master-detail: по умолчанию выбран основной отчёт; держим валидный выбор
-  // при изменении списка (удаление / догрузка отчётов).
+  // Master-detail: по умолчанию выбран основной отчёт (или из URL ?report=);
+  // держим валидный выбор при изменении списка (удаление / догрузка отчётов).
   useEffect(() => {
     if (reports.length === 0) {
       if (selectedId !== null) setSelectedId(null);
@@ -60,10 +65,12 @@ export function ReportsTab({ meetingId }: ReportsTabProps) {
     }
     const stillThere = selectedId && reports.some((r) => r.id === selectedId);
     if (!stillThere) {
+      const fromUrl = searchParams.get('report');
+      const urlValid = fromUrl && reports.some((r) => r.id === fromUrl);
       const primary = reports.find((r) => r.kind === 'primary') ?? reports[0];
-      setSelectedId(primary.id);
+      setSelectedId(urlValid ? fromUrl : primary.id);
     }
-  }, [reports, selectedId]);
+  }, [reports, selectedId, searchParams]);
 
   const additionalCount = useMemo(
     () => reports.filter((r) => r.kind === 'additional').length,
@@ -78,6 +85,13 @@ export function ReportsTab({ meetingId }: ReportsTabProps) {
     : limitReached
       ? `На вашем тарифе доступно ${tierLimit} дополнительных отчётов на встречу`
       : '';
+
+  const selectReport = (id: string) => {
+    setSelectedId(id);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('report', id);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -121,7 +135,7 @@ export function ReportsTab({ meetingId }: ReportsTabProps) {
                 report={r}
                 onMutate={mutate}
                 active={r.id === selectedId}
-                onSelect={() => setSelectedId(r.id)}
+                onSelect={() => selectReport(r.id)}
               />
             ))}
           </div>

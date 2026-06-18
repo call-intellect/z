@@ -30,6 +30,7 @@ import { toast } from 'sonner';
 import { ConfirmDialog } from '@/ui/components/shared/ConfirmDialog';
 import { Button } from '@/ui/components/shared/Button';
 import { Modal } from '@/ui/components/shared/Modal';
+import { cn } from '@/ui/shadcn/lib/utils';
 import {
   structuredFieldLabel,
   isEmptyStructuredValue,
@@ -48,7 +49,21 @@ export function ReportsTab({ meetingId }: ReportsTabProps) {
   const { max: tierLimit } = useQuota('multi_reports_limit_per_meeting');
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Master-detail: по умолчанию выбран основной отчёт; держим валидный выбор
+  // при изменении списка (удаление / догрузка отчётов).
+  useEffect(() => {
+    if (reports.length === 0) {
+      if (selectedId !== null) setSelectedId(null);
+      return;
+    }
+    const stillThere = selectedId && reports.some((r) => r.id === selectedId);
+    if (!stillThere) {
+      const primary = reports.find((r) => r.kind === 'primary') ?? reports[0];
+      setSelectedId(primary.id);
+    }
+  }, [reports, selectedId]);
 
   const additionalCount = useMemo(
     () => reports.filter((r) => r.kind === 'additional').length,
@@ -97,16 +112,24 @@ export function ReportsTab({ meetingId }: ReportsTabProps) {
           У этой встречи пока нет отчётов.
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {reports.map((r) => (
-            <ReportCard
-              key={r.id}
-              meetingId={meetingId}
-              report={r}
-              onMutate={mutate}
-              onOpen={() => setDetailId(r.id)}
-            />
-          ))}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+          <div className="flex flex-col gap-3">
+            {reports.map((r) => (
+              <ReportCard
+                key={r.id}
+                meetingId={meetingId}
+                report={r}
+                onMutate={mutate}
+                active={r.id === selectedId}
+                onSelect={() => setSelectedId(r.id)}
+              />
+            ))}
+          </div>
+          <ReportInlinePanel
+            meetingId={meetingId}
+            reportId={selectedId}
+            reports={reports}
+          />
         </div>
       )}
 
@@ -119,12 +142,6 @@ export function ReportsTab({ meetingId }: ReportsTabProps) {
           mutate();
         }}
       />
-
-      <ReportDetailDialog
-        meetingId={meetingId}
-        reportId={detailId}
-        onClose={() => setDetailId(null)}
-      />
     </div>
   );
 }
@@ -135,15 +152,16 @@ function ReportCard({
   meetingId,
   report,
   onMutate,
-  onOpen,
+  active,
+  onSelect,
 }: {
   meetingId: string;
   report: ReportListItemDomain;
   onMutate: () => void;
-  onOpen: () => void;
+  active: boolean;
+  onSelect: () => void;
 }) {
   const isPrimary = report.kind === 'primary';
-  const isReady = report.status === 'ready';
   const isFailed = report.status === 'failed';
   const isInProgress = report.status === 'pending' || report.status === 'running';
 
@@ -187,44 +205,58 @@ function ReportCard({
   };
 
   return (
-    <article className="rounded-lg border border-border-subtle bg-bg-card p-4 shadow-sm">
-      <header className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h4 className="truncate text-sm font-semibold text-fg-primary">
-              {report.templateName}
-            </h4>
-            {isPrimary && (
-              <span
-                title="Сгенерирован автоматически по типу встречи"
-                className="inline-flex items-center rounded-full bg-chip-info-bg px-2 py-0.5 text-xs font-medium text-chip-info-fg"
-              >
-                Основной
-              </span>
-            )}
-          </div>
-          <div className="mt-1 text-xs text-fg-secondary">
-            {formatDate(report.createdAt)} ·{' '}
-            <span
-              className={
-                isFailed
-                  ? 'text-danger'
-                  : isInProgress
-                    ? 'text-warning'
-                    : 'text-fg-secondary'
-              }
-            >
-              {reportStatusLabel(report.status)}
-            </span>
-          </div>
-        </div>
-      </header>
-
-      {report.outputPreview && (
-        <p className="mt-3 line-clamp-3 text-sm text-fg-secondary">
-          {report.outputPreview}
-        </p>
+    <article
+      className={cn(
+        'rounded-lg border bg-bg-card p-4 shadow-sm transition-colors',
+        active
+          ? 'border-accent ring-1 ring-accent'
+          : 'border-border-subtle hover:border-border',
       )}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        className="block w-full text-left"
+      >
+        <header className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h4 className="truncate text-sm font-semibold text-fg-primary">
+                {report.templateName}
+              </h4>
+              {isPrimary && (
+                <span
+                  title="Сгенерирован автоматически по типу встречи"
+                  className="inline-flex items-center rounded-full bg-chip-info-bg px-2 py-0.5 text-xs font-medium text-chip-info-fg"
+                >
+                  Основной
+                </span>
+              )}
+            </div>
+            <div className="mt-1 text-xs text-fg-secondary">
+              {formatDate(report.createdAt)} ·{' '}
+              <span
+                className={
+                  isFailed
+                    ? 'text-danger'
+                    : isInProgress
+                      ? 'text-warning'
+                      : 'text-fg-secondary'
+                }
+              >
+                {reportStatusLabel(report.status)}
+              </span>
+            </div>
+          </div>
+        </header>
+
+        {report.outputPreview && (
+          <p className="mt-3 line-clamp-3 text-sm text-fg-secondary">
+            {report.outputPreview}
+          </p>
+        )}
+      </button>
+
       {isFailed && report.errorMessage && (
         <p className="mt-3 text-sm text-danger">
           {report.errorMessage === 'cost_limit'
@@ -233,16 +265,8 @@ function ReportCard({
         </p>
       )}
 
-      <footer className="mt-3 flex flex-wrap items-center gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={!isReady}
-          onClick={onOpen}
-        >
-          Открыть
-        </Button>
-        {!isPrimary && (
+      {!isPrimary && (
+        <footer className="mt-3 flex flex-wrap items-center gap-2">
           <Button
             variant="ghost"
             size="sm"
@@ -252,8 +276,6 @@ function ReportCard({
           >
             Перегенерировать
           </Button>
-        )}
-        {!isPrimary && (
           <Button
             variant="ghost"
             size="sm"
@@ -263,8 +285,8 @@ function ReportCard({
           >
             Удалить
           </Button>
-        )}
-      </footer>
+        </footer>
+      )}
 
       <ConfirmDialog
         open={removeOpen}
@@ -435,23 +457,26 @@ function AddReportDialog({
 
 // ─────────────────────────── Detail dialog ───────────────────────────
 
-function ReportDetailDialog({
+function ReportInlinePanel({
   meetingId,
   reportId,
-  onClose,
+  reports,
 }: {
   meetingId: string;
   reportId: string | null;
-  onClose: () => void;
+  reports: ReportListItemDomain[];
 }) {
-  // Используем напрямую api без SWR — модалка живёт коротко.
+  const report = reports.find((r) => r.id === reportId) ?? null;
+  const isReady = report?.status === 'ready';
+
+  // Грузим detail напрямую (без SWR): панель живёт, пока выбран готовый отчёт.
   const [data, setData] = useState<Awaited<
     ReturnType<typeof meetingReportsApi.detail>
   > | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!reportId) {
+    if (!reportId || !isReady) {
       setData(null);
       return;
     }
@@ -471,15 +496,36 @@ function ReportDetailDialog({
     return () => {
       cancelled = true;
     };
-  }, [meetingId, reportId]);
+  }, [meetingId, reportId, isReady]);
+
+  if (!report) {
+    return (
+      <div className="rounded-lg border border-border-subtle bg-bg-card p-6 text-sm text-fg-secondary">
+        Выберите отчёт слева, чтобы открыть его здесь.
+      </div>
+    );
+  }
+
+  if (!isReady) {
+    return (
+      <div className="rounded-lg border border-border-subtle bg-bg-card p-6 text-sm text-fg-secondary">
+        {report.status === 'failed'
+          ? 'Этот отчёт не удалось сформировать.'
+          : 'Отчёт ещё готовится — откроется, как только будет готов.'}
+      </div>
+    );
+  }
 
   return (
-    <Modal
-      open={reportId !== null}
-      onClose={onClose}
-      title={data?.templateName ?? 'Отчёт'}
-      className="max-w-3xl"
-    >
+    <div className="rounded-lg border border-border-subtle bg-bg-card p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-base font-semibold text-fg-primary">
+          {data?.templateName ?? report.templateName}
+        </h4>
+        {data && (
+          <ReportActions output={data.output} title={data.templateName} />
+        )}
+      </div>
       {loading ? (
         <div className="py-6 text-center text-sm text-fg-secondary">
           Загружаем отчёт…
@@ -489,21 +535,9 @@ function ReportDetailDialog({
           Не удалось загрузить отчёт.
         </div>
       ) : (
-        <div className="max-h-[60vh] overflow-y-auto">
-          <ReportOutputRenderer output={data.output} />
-        </div>
+        <ReportOutputRenderer output={data.output} />
       )}
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-        {data ? (
-          <ReportActions output={data.output} title={data.templateName} />
-        ) : (
-          <span />
-        )}
-        <Button variant="secondary" onClick={onClose}>
-          Закрыть
-        </Button>
-      </div>
-    </Modal>
+    </div>
   );
 }
 

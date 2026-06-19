@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { ArrowLeft, Loader2, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -64,6 +64,21 @@ function BitrixManagersContent() {
 
   const [pending, setPending] = useState<Record<string, string>>({});
   const [applying, setApplying] = useState(false);
+  const suggestionsApplied = useRef(false);
+
+  useEffect(() => {
+    if (!data || suggestionsApplied.current) return;
+    suggestionsApplied.current = true;
+    const suggestions: Record<string, string> = {};
+    for (const user of data.users) {
+      if (user.linkedPersonId) continue;
+      const match = data.personCandidates.find(
+        (p) => p.email && user.email && p.email.toLowerCase() === user.email.toLowerCase(),
+      );
+      if (match) suggestions[user.externalId] = match.id;
+    }
+    if (Object.keys(suggestions).length > 0) setPending(suggestions);
+  }, [data]);
 
   const changed = users.filter((u) => {
     const v = pending[u.externalId];
@@ -93,6 +108,7 @@ function BitrixManagersContent() {
       }
     }
     if (ok > 0) toast.success(`Сопоставление применено: ${ok}`);
+    suggestionsApplied.current = false;
     setPending({});
     await mutate();
     setApplying(false);

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { ArrowLeft, Loader2, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -65,14 +65,30 @@ function ChatboxManagersContent() {
     () => personsDomainApi.list(currentOrgId!, { relationship: "employee" }),
   );
 
-  const personOptions: { id: string; name: string }[] = (
+  const personOptions: { id: string; name: string; email: string | null }[] = (
     persons?.items ?? []
   )
     .filter((p) => p.userId !== null)
-    .map((p) => ({ id: p.id, name: p.fullName || "(без имени)" }));
+    .map((p) => ({ id: p.id, name: p.fullName || "(без имени)", email: p.email ?? null }));
 
   const [pending, setPending] = useState<Record<string, string>>({});
   const [applying, setApplying] = useState(false);
+  const suggestionsApplied = useRef(false);
+
+  useEffect(() => {
+    if (!members || !persons || suggestionsApplied.current) return;
+    suggestionsApplied.current = true;
+    const opts = (persons.items ?? []).filter((p) => p.userId !== null);
+    const suggestions: Record<string, string> = {};
+    for (const m of members) {
+      if (m.linkedPersonId) continue;
+      const match = opts.find(
+        (p) => p.email && m.email && p.email.toLowerCase() === m.email.toLowerCase(),
+      );
+      if (match) suggestions[m.id] = match.id;
+    }
+    if (Object.keys(suggestions).length > 0) setPending(suggestions);
+  }, [members, persons]);
 
   const list = members ?? [];
   const changed = list.filter((m) => {
@@ -99,6 +115,7 @@ function ChatboxManagersContent() {
       }
     }
     if (ok > 0) toast.success(`Сопоставление применено: ${ok}`);
+    suggestionsApplied.current = false;
     setPending({});
     await mutate();
     setApplying(false);

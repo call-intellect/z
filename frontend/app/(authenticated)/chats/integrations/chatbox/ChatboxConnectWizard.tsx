@@ -175,7 +175,7 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
       for (const m of list) init[m.id] = m.linkedPerson ? "keep" : "create";
       setActions(init);
     } catch (e) {
-      toast.error(errMessage(e, "Не удалось синхронизировать сотрудников"));
+      toast.error(errMessage(e, "Не удалось получить менеджеров"));
     } finally {
       setMemberSyncing(false);
     }
@@ -319,7 +319,7 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
                   ) : (
                     <Users size={14} />
                   )}
-                  Синхронизировать сотрудников
+                  Получить менеджеров
                 </Button>
               </div>
             ) : members.length === 0 ? (

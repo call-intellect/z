@@ -64,10 +64,10 @@ const SYNC_SCOPES: ReadonlyArray<{
   label: string;
   icon: typeof Users;
 }> = [
-  { scope: "users", label: "Сотрудники", icon: Users },
-  { scope: "dialogs", label: "Диалоги", icon: Plug },
-  { scope: "crm", label: "CRM", icon: Building2 },
-  { scope: "all", label: "Всё", icon: RefreshCw },
+  { scope: "users", label: "Получить сотрудников", icon: Users },
+  { scope: "dialogs", label: "Получить диалоги", icon: Plug },
+  { scope: "crm", label: "Получить CRM", icon: Building2 },
+  { scope: "all", label: "Получить всё", icon: RefreshCw },
 ];
 
 function syncScopeLabel(scope: BitrixSyncScope): string {
@@ -414,7 +414,7 @@ function ConnectedView({
 
         <div className="space-y-2.5">
           <span className="text-xs font-medium uppercase tracking-wide text-fg-tertiary">
-            Синхронизировать вручную
+            Получить данные
           </span>
           <div className="flex flex-wrap gap-2">
             {SYNC_SCOPES.map(({ scope, label, icon: Icon }) => (

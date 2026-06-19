@@ -55,8 +55,8 @@ const SYNC_SCOPES: ReadonlyArray<{
   label: string;
   icon: typeof Users;
 }> = [
-  { scope: "customers", label: "Клиенты", icon: Contact },
-  { scope: "managers", label: "Менеджеры", icon: Users },
+  { scope: "customers", label: "Получить клиентов", icon: Contact },
+  { scope: "managers", label: "Получить менеджеров", icon: Users },
 ];
 
 function chatboxSyncLabel(scope: ChatboxSyncScope, since?: string): string {
@@ -375,7 +375,7 @@ function ConnectedView({
         {}
         <div className="space-y-2.5">
           <span className="text-xs font-medium uppercase tracking-wide text-fg-tertiary">
-            Синхронизировать вручную
+            Получить данные
           </span>
           <div className="flex flex-wrap gap-2">
             {SYNC_SCOPES.map(({ scope, label, icon: Icon }) => (

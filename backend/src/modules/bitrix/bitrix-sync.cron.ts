@@ -18,7 +18,7 @@ export class BitrixSyncCron {
     private readonly adminSettings: AdminSettingsService,
   ) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { name: 'BitrixSyncCron.runDaily' })
   async runDaily(): Promise<void> {
     try {
       const enabled = (await this.adminSettings.get<boolean>('bitrix.enabled', true)) ?? true;

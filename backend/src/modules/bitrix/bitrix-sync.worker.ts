@@ -2,12 +2,14 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
 import { RedisService } from '../../common/redis/redis.service';
+import { IntegrationSyncLogService } from '../integrations-observability/integration-sync-log.service';
 
 import { BitrixSyncService } from './bitrix-sync.service';
 import { BITRIX_SYNC_QUEUE, type BitrixSyncJobData } from './queue/bitrix-sync.queue';
@@ -20,6 +22,9 @@ export class BitrixSyncWorker implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(BitrixSyncService) private readonly syncService: BitrixSyncService,
+    @Optional()
+    @Inject(IntegrationSyncLogService)
+    private readonly syncLog?: IntegrationSyncLogService,
   ) {}
 
   onModuleInit(): void {
@@ -49,9 +54,23 @@ export class BitrixSyncWorker implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `BitrixSync старт: tenant=${tenantId} scope=${scope} since=${since ?? '-'} job=${job.id}`,
     );
-    const result = await this.syncService.syncByScope(tenantId, scope, since);
-    this.logger.log(
-      `BitrixSync готово: tenant=${tenantId} scope=${scope} ${JSON.stringify(result)}`,
-    );
+    const run =
+      (await this.syncLog?.begin({
+        tenantId,
+        provider: 'bitrix',
+        kind: 'sync',
+        scope,
+        refId: job.id != null ? String(job.id) : null,
+      })) ?? null;
+    try {
+      const result = await this.syncService.syncByScope(tenantId, scope, since);
+      await this.syncLog?.succeed(run, result);
+      this.logger.log(
+        `BitrixSync готово: tenant=${tenantId} scope=${scope} ${JSON.stringify(result)}`,
+      );
+    } catch (err) {
+      await this.syncLog?.fail(run, err);
+      throw err;
+    }
   }
 }

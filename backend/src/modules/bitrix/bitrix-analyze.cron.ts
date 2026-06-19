@@ -23,7 +23,7 @@ export class BitrixAnalyzeCron {
     private readonly ingest: BitrixIngestService,
   ) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { name: 'BitrixAnalyzeCron.sweep' })
   async sweep(): Promise<void> {
     try {
       const enabled = (await this.adminSettings.get<boolean>('bitrix.enabled', true)) ?? true;

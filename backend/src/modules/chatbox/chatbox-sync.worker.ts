@@ -10,6 +10,7 @@ import { type Job, Worker } from 'bullmq';
 
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { RedisService } from '../../common/redis/redis.service';
+import { IntegrationSyncLogService } from '../integrations-observability/integration-sync-log.service';
 
 import { ChatboxSyncService } from './chatbox-sync.service';
 import { CHATBOX_SYNC_QUEUE, type ChatboxSyncJobData } from './queue/chatbox-sync.queue';
@@ -26,6 +27,9 @@ export class ChatboxSyncWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
+    @Optional()
+    @Inject(IntegrationSyncLogService)
+    private readonly syncLog?: IntegrationSyncLogService,
   ) {}
 
   onModuleInit(): void {
@@ -55,8 +59,16 @@ export class ChatboxSyncWorker implements OnModuleInit, OnModuleDestroy {
     this.logger.debug(
       `ChatboxSync старт: tenant=${tenantId} scope=${scope} since=${since ?? '-'} job=${job.id}`,
     );
+    const run =
+      (await this.syncLog?.begin({
+        tenantId,
+        provider: 'chatbox',
+        kind: 'sync',
+        scope,
+        refId: job.id != null ? String(job.id) : null,
+      })) ?? null;
     try {
-      let result: Record<string, number> | void;
+      let result: Record<string, number> | undefined;
       if (scope === 'incremental') {
         result = await this.syncService.incrementalSync(tenantId);
       } else {
@@ -69,11 +81,13 @@ export class ChatboxSyncWorker implements OnModuleInit, OnModuleDestroy {
         scope,
         tsSeconds: Math.floor(Date.now() / 1000),
       });
+      await this.syncLog?.succeed(run, result);
       this.logger.debug(
         `ChatboxSync готово: tenant=${tenantId} scope=${scope} ${JSON.stringify(result)}`,
       );
     } catch (err) {
       this.metrics?.incChatboxSync({ scope, status: 'failed' });
+      await this.syncLog?.fail(run, err);
       throw err;
     }
   }

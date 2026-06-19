@@ -484,6 +484,8 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | GET | `/admin/integrations/bots` | Conversational боты |
 | GET | `/admin/integrations/webhooks` | подписки на вебхуки |
 | GET | `/admin/integrations/livekit` | LiveKit-инспектор |
+| GET | `/admin/integrations/sources/overview` | Bitrix/ChatBox: статус всех org, прогоны за 24ч — `AdminIntegrationsController` (2026-06-19) |
+| GET | `/admin/integrations/sources/runs` | История прогонов `IntegrationSyncRun`, cursor-пагинация, фильтры provider/kind/status |
 
 ### Media (Фаза 7)
 | Метод | Путь | Назначение |

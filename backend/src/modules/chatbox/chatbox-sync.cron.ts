@@ -18,7 +18,7 @@ export class ChatboxSyncCron {
     private readonly adminSettings: AdminSettingsService,
   ) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { name: 'ChatboxSyncCron.runDaily' })
   async runDaily(): Promise<void> {
     try {
       const enabled = (await this.adminSettings.get<boolean>('chatbox.enabled', true)) ?? true;

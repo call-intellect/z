@@ -144,6 +144,13 @@ export class ChatboxMembersService {
       },
     });
 
+    if (personId !== null) {
+      await this.prisma.person.updateMany({
+        where: { id: personId, tenantId, relationship: 'external', deletedAt: null },
+        data: { relationship: 'employee' },
+      });
+    }
+
     const personMap = await this.resolvePersons(tenantId, [updated.linkedPersonId]);
 
     return {

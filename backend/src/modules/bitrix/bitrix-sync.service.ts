@@ -646,6 +646,13 @@ export class BitrixSyncService {
       }
     }
 
+    if (linkedPersonId && mode !== 'unlink') {
+      await this.prisma.person.updateMany({
+        where: { id: linkedPersonId, tenantId, relationship: 'external', deletedAt: null },
+        data: { relationship: 'employee' },
+      });
+    }
+
     const updated = await this.prisma.bitrixUser.update({
       where: { id: user.id },
       data: { linkedPersonId, linkMode: mode === 'unlink' ? 'none' : 'manual' },

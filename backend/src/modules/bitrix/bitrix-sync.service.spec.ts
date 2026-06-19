@@ -15,7 +15,7 @@ function makeService(over: { prisma?: Record<string, unknown> } = {}): {
 } {
   const prisma = {
     bitrixUser: { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
-    person: { findMany: vi.fn(), findFirst: vi.fn() },
+    person: { findMany: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn() },
     membership: { findFirst: vi.fn() },
     ...over.prisma,
   };
@@ -152,6 +152,12 @@ describe('BitrixSyncService.linkUser', () => {
         tenantId: 't1',
         userId: 'owner1',
         body: expect.objectContaining({ name: 'Иван', email: 'i@x.ru' }),
+      }),
+    );
+    expect(prisma.person.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'pNew', relationship: 'external' }),
+        data: { relationship: 'employee' },
       }),
     );
     expect(prisma.bitrixUser.update).toHaveBeenCalledWith(

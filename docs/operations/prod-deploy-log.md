@@ -125,6 +125,24 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔗 2026-06-19 — Сопоставление сотрудников/клиентов: «Получить» вместо автосвязки + 3-колоночный UI + чистка мёртвого кода + relationship-фикс
+
+> Коммиты: `f70c1485`, `be5aad82`, `d312ec5c`, `b51df5d3`, `0e54f989`, `2a0f22ca`, `9499a271`, `66543dc7`, `f09e8436`, `e165ca75` + текущий push (relationship-фикс + бэкфилл). second-brain: реестр не-сделанного.
+>
+> **Зачем для прода:** синк интеграций САМ автосопоставлял и автосоздавал persons (→ команда=1, а в сопоставлении 9 фантомов с неверными email-матчами). Убрали автосвязку из ВСЕХ потоков (bitrix users, chatbox members/customers/channelClients) — теперь «Получить» только тянет записи, сопоставление вручную на странице (с email-подсказкой, 3 колонки Источник\|Предложение\|Действие). Вырезали ~674 строки осиротевших auto-методов. **Фикс:** при ручном связывании/создании из Bitrix-юзеров и Chatbox-менеджеров person теперь становится `employee` (был дефолт `external` → не попадал в «Сотрудники компании»); клиенты chatbox остаются `external`.
+
+- **Шаг 8 — Backfill (1 прогон, идемпотентный, уже в STEPS `phase:'backfill'`, `skipBootstrap:true`):** `backfill-integration-persons-to-employee.ts` — persons, связанные с `bitrixUser`/`chatboxMember` (linkedPersonId), переводит `external → employee` (чинит уже созданные «внешними» карточки Bitrix-сотрудников и Chatbox-менеджеров). НЕ трогает клиентов. Идемпотентен (повтор → 0). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **(опц., разовый сброс — НЕ в авто-STEPS, деструктивен для ручных связей):** `docker compose exec backend bun run scripts/patch-reset-phantom-manager-links.ts` — сбрасывает ВСЕ привязки (`linkedPersonId=null, linkMode='none'`) в 4 таблицах (`bitrixUser`, `chatboxMember`, `chatboxCustomer`, `chatboxChannelClient`), чтобы вычистить фантомные авто-связи. Запускать осознанно (затрёт и ручные привязки) — после него пересопоставить на странице.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend` (бэк: убрана автосвязка + relationship-фикс; фронт: 3-колоночный UI + email-подсказки + кнопки «Получить»).
+- **Шаг 12 — Smoke** (после выката):
+  - (а) **«Получить» не сопоставляет:** на чистом тенанте `POST /api/v1/chatbox/integration/sync {scope:'all'}` → менеджеры/клиенты появились, но все `linkMode='none'`, `linkedPersonId=null`;
+  - (б) **создание = сотрудник:** на странице сопоставления Bitrix выбрать «Создать нового сотрудника» → Применить → созданная Person имеет `relationship='employee'`, видна в «Команде» под фильтром «Только сотрудники»;
+  - (в) **email-подсказка:** менеджер с email, совпадающим с Person, при загрузке страницы предзаполнен (бейдж «по email»), но в БД ничего не записано до «Применить».
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🗓️ 2026-06-18 — Помощник × календарь: дубли / даты-таймзоны / контрагент-vs-место / онлайн-пометка (8 фаз)
 
 > Контракт: ветка `feature/assistant-calendar-fixes`, коммиты `25e316d6..00a9858a` (9: Ф1 дедуп+ACK `25e316d6`; Ф2 «Сейчас»/TZ `9213df40`+фикс `a15733b8`; Ф7 описания `18303af1`; миграция `c7f26742`; Ф6+Ф5 online/counterparty `ba7ce495`; Ф3 окно дня в TZ `85d47d26`; Ф4 рабочий профиль `4a1a11f9`; Ф8 фронт `00a9858a`). ТЗ: `plans/tz/2026-06-18-assistant-calendar-master.md`. Диагностика: `plans/analysis/2026-06-18-telegram-assistant-calendar-bugs-diagnosis.md`. second-brain: `02_architecture/data-model.md`, `01_projects/{api-layer,frontend-pages,workers-queues,conversational-channels,concierge-agent,calendar}.md`. Реестр флагов — `docs/operations/feature-flags.md` (`ASSISTANT_INBOUND_ASYNC_ENABLED`).

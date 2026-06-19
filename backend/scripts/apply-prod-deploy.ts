@@ -633,6 +633,12 @@ const STEPS: Step[] = [
     skipBootstrap: true,
   },
   {
+    phase: 'backfill',
+    script: 'scripts/backfill-integration-persons-to-employee.ts',
+    hint: 'persons, связанные с Bitrix-юзерами/Chatbox-менеджерами: external → employee',
+    skipBootstrap: true,
+  },
+  {
     phase: 'migrate',
     script: 'scripts/migrate-telegram-channels-to-global.ts',
     skipBootstrap: true,

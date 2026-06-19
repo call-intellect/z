@@ -16,6 +16,7 @@ describe('ChatboxMembersService', () => {
     person: {
       findMany: ReturnType<typeof vi.fn>;
       findFirst: ReturnType<typeof vi.fn>;
+      updateMany: ReturnType<typeof vi.fn>;
     };
   };
   let service: ChatboxMembersService;
@@ -30,6 +31,7 @@ describe('ChatboxMembersService', () => {
       person: {
         findMany: vi.fn(),
         findFirst: vi.fn(),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     };
     const personsMock = {
@@ -147,6 +149,12 @@ describe('ChatboxMembersService', () => {
         expect.objectContaining({
           where: { id: 'm1' },
           data: { linkedPersonId: 'p1', linkMode: 'manual' },
+        }),
+      );
+      expect(prismaMock.person.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'p1', relationship: 'external' }),
+          data: { relationship: 'employee' },
         }),
       );
       expect(res).toEqual(

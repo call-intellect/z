@@ -71,6 +71,21 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🐛 2026-06-19 — Фикс зависания экрана цели + уведомление об обновлении фронта
+
+> Коммит: `0a676e56`. Изменены только frontend-файлы — backend, миграции, ENV не затронуты.
+>
+> **Зачем:** (1) после редактирования цели экран зависал — помогал только разлогин. Причина: SWR с `revalidateOnFocus` по умолчанию триггерил рефетч при открытии диалога, `goal`-объект в deps `useEffect` создавал бесконечный цикл setState → React error #185, страница падала в error boundary. (2) пользователи продолжали работать на старом клиентском бандле после сборки нового контейнера — добавляем polling `/api/version` с Sonner-тостом и очисткой SW-кэшей.
+
+- **Шаг 11 — Docker rebuild, только frontend:** `docker compose up -d --build frontend`. Backend не перебирать.
+- **Шаг 12 — Smoke:**
+  - (а) **цель не зависает:** создать цель → открыть детальный экран → нажать «Редактировать» → изменить и сохранить → экран обновляется, не падает в error boundary;
+  - (б) **версия-эндпоинт:** `GET /api/version` → `{"version":"<строка>"}` (или проверить через браузер — в DevTools Network после открытия приложения).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🧹 2026-06-19 — ChatBox: убрать приём вебхуков (только суточный забор по AccessToken)
 
 > Контракт: ТЗ `plans/tz/2026-06-19-chatbox-remove-webhooks.md`. second-brain: `01_projects/chatbox-integration.md`, `02_architecture/module-map.md` + `data-model.md`, `01_projects/api-layer.md`.

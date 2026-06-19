@@ -165,9 +165,6 @@ export class ChatboxSyncService {
       });
     }
 
-    await this.autoLinkCustomerTable(tenantId);
-    await this.autoCreateCustomersUnlinked(tenantId);
-
     return customers.length;
   }
 
@@ -223,9 +220,6 @@ export class ChatboxSyncService {
         update: data,
       });
     }
-
-    await this.autoLinkChannelClientTable(tenantId);
-    await this.autoCreateChannelClientsUnlinked(tenantId);
 
     return clients.length;
   }

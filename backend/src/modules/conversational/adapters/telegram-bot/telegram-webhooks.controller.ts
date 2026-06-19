@@ -289,7 +289,7 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
     }
 
     const dedupeId = updateId != null && Number.isFinite(updateId)
-      ? `${args.channel.id}:${updateId}`
+      ? `${args.channel.id}_${updateId}`
       : undefined;
     if (this.cfg.bot.assistantInboundAsyncEnabled) {
       try {

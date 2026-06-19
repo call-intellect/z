@@ -1629,29 +1629,20 @@ export class Specialist31Service {
         });
         order = (last?.order ?? 0) + 1;
       }
-      const existing = await this.prisma.processStep.findUnique({
+      await this.prisma.processStep.upsert({
         where: { processId_order: { processId: args.processId, order } },
-        select: { id: true },
+        update: {
+          name: args.hint.stepName,
+          description: args.hint.stepDescription ?? undefined,
+        },
+        create: {
+          tenantId: args.tenantId,
+          processId: args.processId,
+          name: args.hint.stepName,
+          order,
+          description: args.hint.stepDescription ?? null,
+        },
       });
-      if (existing) {
-        await this.prisma.processStep.update({
-          where: { id: existing.id },
-          data: {
-            name: args.hint.stepName,
-            description: args.hint.stepDescription ?? undefined,
-          },
-        });
-      } else {
-        await this.prisma.processStep.create({
-          data: {
-            tenantId: args.tenantId,
-            processId: args.processId,
-            name: args.hint.stepName,
-            order,
-            description: args.hint.stepDescription ?? null,
-          },
-        });
-      }
     } catch (err) {
       this.logger.debug(
         {
@@ -1709,8 +1700,10 @@ export class Specialist31Service {
               data: { description: step.description, order },
             });
           } else {
-            await this.prisma.processStep.create({
-              data: {
+            await this.prisma.processStep.upsert({
+              where: { processId_order: { processId: args.processId, order } },
+              update: { name: title, description: step.description },
+              create: {
                 tenantId: args.tenantId,
                 processId: args.processId,
                 name: title,

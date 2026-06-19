@@ -131,7 +131,7 @@ export class MaxWebhooksController {
 
     if (!inbound) return { ok: true };
 
-    const dedupeId = mid ? `${channel.id}:${mid}` : undefined;
+    const dedupeId = mid ? `${channel.id}_${mid}` : undefined;
     if (this.cfg.bot.assistantInboundAsyncEnabled) {
       // Ранний ACK: enqueue + сразу 200 (обработка фоновым воркером
       // assistant.inbound). При сбое enqueue — синхронный fallback.

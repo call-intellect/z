@@ -680,7 +680,7 @@ export class BitrixSyncService {
     }
 
     const personCandidates = await this.prisma.person.findMany({
-      where: { tenantId, deletedAt: null },
+      where: { tenantId, deletedAt: null, userId: { not: null } },
       orderBy: { name: 'asc' },
       take: 500,
       select: { id: true, name: true, email: true },

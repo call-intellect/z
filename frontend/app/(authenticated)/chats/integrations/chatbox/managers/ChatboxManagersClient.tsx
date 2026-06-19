@@ -67,7 +67,9 @@ function ChatboxManagersContent() {
 
   const personOptions: { id: string; name: string }[] = (
     persons?.items ?? []
-  ).map((p) => ({ id: p.id, name: p.fullName || "(без имени)" }));
+  )
+    .filter((p) => p.userId !== null)
+    .map((p) => ({ id: p.id, name: p.fullName || "(без имени)" }));
 
   const [pending, setPending] = useState<Record<string, string>>({});
   const [applying, setApplying] = useState(false);

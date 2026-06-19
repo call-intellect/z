@@ -130,7 +130,7 @@ function ChatboxCustomersContent() {
           c.email &&
           p.email.toLowerCase() === c.email.toLowerCase(),
       );
-      if (match) suggestions[c.id] = match.id;
+      suggestions[c.id] = match ? match.id : CREATE_VALUE;
     }
     if (Object.keys(suggestions).length > 0) setPending(suggestions);
   }, [customers, persons]);

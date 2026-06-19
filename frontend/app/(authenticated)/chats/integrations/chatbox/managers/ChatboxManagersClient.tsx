@@ -35,9 +35,7 @@ function errMessage(e: unknown, fallback: string): string {
 }
 
 function currentValue(member: ChatboxMemberView): string {
-  if (member.linkedPersonId) return member.linkedPersonId;
-  if (member.linkMode === "none" || member.linkMode === "manual") return CREATE_VALUE;
-  return NONE_VALUE;
+  return member.linkedPersonId ?? NONE_VALUE;
 }
 
 type PersonOption = { id: string; name: string; email: string | null };
@@ -131,7 +129,7 @@ function ChatboxManagersContent() {
           m.email &&
           p.email.toLowerCase() === m.email.toLowerCase(),
       );
-      if (match) suggestions[m.id] = match.id;
+      suggestions[m.id] = match ? match.id : CREATE_VALUE;
     }
     if (Object.keys(suggestions).length > 0) setPending(suggestions);
   }, [members, persons]);

@@ -41,9 +41,7 @@ function linkModeBadgeVariant(
 }
 
 function currentValue(user: BitrixUserApi): string {
-  if (user.linkedPersonId) return user.linkedPersonId;
-  if (user.linkMode === "none" || user.linkMode === "manual") return CREATE_VALUE;
-  return NONE_VALUE;
+  return user.linkedPersonId ?? NONE_VALUE;
 }
 
 type PersonOption = { id: string; name: string | null; email: string | null };
@@ -123,7 +121,7 @@ function BitrixManagersContent() {
           user.email &&
           p.email.toLowerCase() === user.email.toLowerCase(),
       );
-      if (match) suggestions[user.externalId] = match.id;
+      suggestions[user.externalId] = match ? match.id : CREATE_VALUE;
     }
     if (Object.keys(suggestions).length > 0) setPending(suggestions);
   }, [data]);

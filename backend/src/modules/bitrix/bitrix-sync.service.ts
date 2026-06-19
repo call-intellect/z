@@ -195,6 +195,8 @@ export class BitrixSyncService {
       }
       if (c.linkedPersonId === null) {
         unlinkedAfterEmail.push({ id: c.id, name: c.name });
+      } else {
+        usedPersonIds.add(c.linkedPersonId);
       }
     }
 
@@ -743,20 +745,32 @@ export class BitrixSyncService {
         });
       }
       const email = user.email?.trim() || null;
-      const created = await this.persons.create({
-        tenantId,
-        userId: ownerUserId,
-        body: {
-          name: user.name?.trim() || email || 'Без имени',
-          ...(email ? { email } : {}),
-        },
-      });
-      linkedPersonId = created.id;
+      let foundPersonId: string | null = null;
+      if (email) {
+        const existing = await this.prisma.person.findFirst({
+          where: { tenantId, email: { equals: email, mode: 'insensitive' }, deletedAt: null },
+          select: { id: true },
+        });
+        foundPersonId = existing?.id ?? null;
+      }
+      if (foundPersonId) {
+        linkedPersonId = foundPersonId;
+      } else {
+        const created = await this.persons.create({
+          tenantId,
+          userId: ownerUserId,
+          body: {
+            name: user.name?.trim() || email || 'Без имени',
+            ...(email ? { email } : {}),
+          },
+        });
+        linkedPersonId = created.id;
+      }
     }
 
     const updated = await this.prisma.bitrixUser.update({
       where: { id: user.id },
-      data: { linkedPersonId, linkMode: 'manual' },
+      data: { linkedPersonId, linkMode: mode === 'unlink' ? 'none' : 'manual' },
       select: {
         externalId: true,
         name: true,

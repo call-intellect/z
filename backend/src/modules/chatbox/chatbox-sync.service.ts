@@ -297,27 +297,35 @@ export class ChatboxSyncService {
       }
     }
 
+    const usedPersonIds = new Set<string>();
     const unlinkedAfterEmail: { id: string; name: string | null }[] = [];
     for (const c of candidates) {
       const key = c.email?.trim().toLowerCase();
       const personId = key ? personByEmail.get(key) : undefined;
       if (personId) {
-        if (c.linkedPersonId === personId) continue;
+        if (c.linkedPersonId === personId) {
+          usedPersonIds.add(personId);
+          continue;
+        }
         await this.prisma.chatboxMember.update({
           where: { id: c.id },
           data: { linkedPersonId: personId, linkMode: 'auto' },
         });
         await this.upgradePersonToEmployee(tenantId, personId);
+        usedPersonIds.add(personId);
         continue;
       }
       if (c.linkedPersonId === null) {
         unlinkedAfterEmail.push({ id: c.id, name: c.name });
+      } else {
+        usedPersonIds.add(c.linkedPersonId);
       }
     }
 
     await this.autoLinkByName({
       tenantId,
       rows: unlinkedAfterEmail,
+      usedPersonIds,
       update: (id, personId) =>
         this.prisma.chatboxMember.update({
           where: { id },
@@ -329,6 +337,7 @@ export class ChatboxSyncService {
   private async autoLinkByName(args: {
     tenantId: string;
     rows: { id: string; name: string | null }[];
+    usedPersonIds: Set<string>;
     update: (id: string, personId: string) => Promise<unknown>;
   }): Promise<void> {
     if (args.rows.length === 0) return;
@@ -339,6 +348,8 @@ export class ChatboxSyncService {
       if (!name) continue;
       const personId = await this.entityResolution.resolvePersonByHint(args.tenantId, name);
       if (!personId) continue;
+      if (args.usedPersonIds.has(personId)) continue;
+      args.usedPersonIds.add(personId);
       await args.update(row.id, personId);
     }
   }
@@ -416,23 +427,31 @@ export class ChatboxSyncService {
       }
     }
 
+    const usedPersonIds = new Set<string>();
     const unlinkedAfterEmail: { id: string; name: string | null }[] = [];
     for (const c of candidates) {
       const key = c.email?.trim().toLowerCase();
       const personId = key ? personByEmail.get(key) : undefined;
       if (personId) {
-        if (c.linkedPersonId === personId) continue;
+        if (c.linkedPersonId === personId) {
+          usedPersonIds.add(personId);
+          continue;
+        }
         await args.update(c.id, personId);
+        usedPersonIds.add(personId);
         continue;
       }
       if (c.linkedPersonId === null) {
         unlinkedAfterEmail.push({ id: c.id, name: c.name });
+      } else {
+        usedPersonIds.add(c.linkedPersonId);
       }
     }
 
     await this.autoLinkByName({
       tenantId: args.tenantId,
       rows: unlinkedAfterEmail,
+      usedPersonIds,
       update: args.update,
     });
   }

@@ -14,6 +14,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import type { DialogTurn } from '../ai/services/prompts/common';
 import { TaskExtractionService } from '../ai/services/task-extraction.service';
+import { IntegrationSyncLogService } from '../integrations-observability/integration-sync-log.service';
 
 import { ChatboxIngestService } from './chatbox-ingest.service';
 import {
@@ -44,6 +45,9 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
+    @Optional()
+    @Inject(IntegrationSyncLogService)
+    private readonly syncLog?: IntegrationSyncLogService,
   ) {}
 
   onModuleInit(): void {
@@ -74,6 +78,13 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       `ChatboxAnalyze старт: tenant=${tenantId} session=${sessionId} job=${job.id}`,
     );
 
+    const run =
+      (await this.syncLog?.begin({
+        tenantId,
+        provider: 'chatbox',
+        kind: 'analyze',
+        refId: sessionId,
+      })) ?? null;
     try {
       await this.prisma.chatboxChatSession.updateMany({
         where: { id: sessionId, tenantId },
@@ -90,6 +101,7 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
 
       const res = await this.ingest.ingestSession(tenantId, sessionId);
       if (res === null) {
+        await this.syncLog?.skip(run, 'session open/empty');
         this.logger.debug(
           `ChatboxAnalyze: session=${sessionId} ещё открыта/нет — остаётся pending`,
         );
@@ -104,6 +116,7 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
           rawEventId: res.rawEventId,
         },
       });
+      await this.syncLog?.succeed(run, { rawEventId: res.rawEventId });
       this.metrics?.incChatboxAnalyze({ status: 'success' });
       this.logger.debug(`ChatboxAnalyze готово: session=${sessionId} rawEventId=${res.rawEventId}`);
 
@@ -120,6 +133,7 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         );
       }
     } catch (err) {
+      await this.syncLog?.fail(run, err);
       await this.prisma.chatboxChatSession
         .updateMany({
           where: { id: sessionId, tenantId },

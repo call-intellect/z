@@ -35,7 +35,9 @@ function errMessage(e: unknown, fallback: string): string {
 }
 
 function currentValue(member: ChatboxMemberView): string {
-  return member.linkedPersonId ?? NONE_VALUE;
+  if (member.linkedPersonId) return member.linkedPersonId;
+  if (member.linkMode === "none") return CREATE_VALUE;
+  return NONE_VALUE;
 }
 
 export function ChatboxManagersClient() {
@@ -226,6 +228,15 @@ function MemberRow({
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
+  const allOptions =
+    member.linkedPersonId &&
+    !personOptions.some((p) => p.id === member.linkedPersonId)
+      ? [
+          { id: member.linkedPersonId, name: member.linkedPersonName ?? "(без имени)" },
+          ...personOptions,
+        ]
+      : personOptions;
+
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
@@ -261,7 +272,7 @@ function MemberRow({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NONE_VALUE}>— Не связывать —</SelectItem>
-            {personOptions.map((p) => (
+            {allOptions.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 {p.name}
               </SelectItem>

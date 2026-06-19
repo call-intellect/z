@@ -331,6 +331,12 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         icon: Video,
         matchPrefix: "/admin/integrations/livekit",
       },
+      {
+        href: "/admin/integrations/sources",
+        label: "Bitrix / ChatBox",
+        icon: DatabaseZap,
+        matchPrefix: "/admin/integrations/sources",
+      },
     ],
   },
 

@@ -9,6 +9,8 @@ import { Queue } from 'bullmq';
 
 import { RedisService } from '../../../../common/redis/redis.service';
 import { QUEUE_NAMES } from '../../../ai/queues';
+import { BITRIX_QUEUE_NAMES } from '../../../bitrix/queues';
+import { CHATBOX_QUEUE_NAMES } from '../../../chatbox/queues';
 import { CORE_QUEUE_NAMES } from '../../../core-queue/queues';
 import { TRACKER_QUEUE_NAMES } from '../../../tracker/queues';
 
@@ -48,6 +50,8 @@ export class WorkersAdminService implements OnModuleDestroy {
       ...Object.values(QUEUE_NAMES),
       ...Object.values(CORE_QUEUE_NAMES),
       ...Object.values(TRACKER_QUEUE_NAMES),
+      ...Object.values(BITRIX_QUEUE_NAMES),
+      ...Object.values(CHATBOX_QUEUE_NAMES),
     ];
   }
 

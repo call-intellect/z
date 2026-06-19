@@ -12,6 +12,7 @@ import { DocumentImportWorker } from '../documents/document-import.worker';
 import { DocumentsModule } from '../documents/documents.module';
 import { DocumentIngestAdapter } from '../ingest/adapters/document/document.adapter';
 import { TextIngestAdapter } from '../ingest/adapters/text/text.adapter';
+import { IntegrationObservabilityModule } from '../integrations-observability/integration-observability.module';
 import { BlockDistillReconcileCron } from '../knowledge-core/workers/block-distill-reconcile.cron';
 import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.worker';
 import { BlockIngestWorker } from '../knowledge-core/workers/block-ingest.worker';
@@ -98,6 +99,7 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     ChatboxModule,
     BitrixModule,
     DocumentsModule,
+    IntegrationObservabilityModule,
   ],
   providers: [
     VoxService,

@@ -10362,6 +10362,34 @@ model CronRunHistory {
   @@index([cronName, startedAt])
 }
 
+/// IntegrationSyncRun — журнал прогонов источников (Bitrix/ChatBox): забор (sync)
+/// и AI-анализ (analyze) по каждому job. Закрывает дыру наблюдаемости — детальный
+/// результат прогона ранее жил только в pino-stdout.
+/// Источник правды: plans/tz/2026-06-19-integration-sync-observability.md
+model IntegrationSyncRun {
+  id         String    @id @default(cuid())
+  tenantId   String
+  /// "bitrix" | "chatbox"
+  provider   String
+  /// "sync" | "analyze"
+  kind       String
+  /// sync: all/users/dialogs/crm/incremental/customers/managers/chats ; analyze: null
+  scope      String?
+  /// sync: jobId ; analyze: sessionId
+  refId      String?
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  durationMs Int?
+  /// "running" | "success" | "failed" | "skipped"
+  status     String
+  /// counts забранного: { users: 2, dialogs: 5, ... } | analyze: { rawEventId, tasks }
+  counts     Json?
+  error      String?
+
+  @@index([tenantId, provider, startedAt])
+  @@index([provider, kind, status, startedAt])
+}
+
 /// W2.3 KC-Temporal (2026-05-25) — LlmPreferenceSample.
 ///
 /// Каждое исправление пользователя через CurationDecision (mark_as_misleading,

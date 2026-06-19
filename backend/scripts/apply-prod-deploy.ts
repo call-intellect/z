@@ -180,6 +180,11 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-integration-crons.ts',
+    hint: 'строки CronSchedule для bitrix/chatbox sync+analyze кранов и prune (трекинг истории кронов); create-if-missing, админские правки расписания не трогает',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-knowledge-groups.ts',
     hint: 'группы доступа: Руководство/Совет + department-группы + leadership-членство (Ф2 knowledge-access)',
   },

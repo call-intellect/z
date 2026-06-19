@@ -91,6 +91,25 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔍 2026-06-19 — Observability Bitrix/ChatBox: таблица прогонов, именованные cron, admin-страница
+
+> Контракт: `plans/tz/2026-06-19-integration-sync-observability.md`. Коммит: текущий push `dev`. second-brain: `02_architecture/module-map.md` §ChatBox + §Bitrix, `01_projects/api-layer.md`, `01_projects/workers-queues.md`.
+>
+> **Зачем:** в логах не было никаких записей по прогонам синка/анализа. Добавляем `IntegrationSyncRun` — per-run запись со статусом, длительностью, счётчиками и ошибкой. Все 4 воркера оборачивают свою работу. Очереди bitrix/chatbox теперь видны в admin-панели. Новая страница `/admin/integrations/sources` — обзорный дашборд.
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up`): миграция `20260619130000_integration_sync_run` — новая таблица `IntegrationSyncRun` (10 колонок + 2 индекса). Аддитивная, без потери данных. **В STEPS агрегатора регистрировать НЕ нужно** (миграция схемы).
+- **Шаг 7 — Seed (идемпотентный, уже в STEPS `phase:'seed-base'`):** `seed-integration-crons.ts` — регистрирует 5 `CronSchedule`-строк (BitrixSyncCron.runDaily, ChatboxSyncCron.runDaily, BitrixAnalyzeCron.sweep, ChatboxAnalyzeCron.sweep, IntegrationSyncLogPruneCron.run). Пропускает, если уже есть. Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend` (новый модуль `integrations-observability`, именованные @Cron, новый admin-контроллер, очереди в реестре).
+- **Шаг 12 — Smoke** (после выката):
+  - (а) **таблица существует:** `docker compose exec backend bun run -e "const {createPrismaClient}=await import('./scripts/_lib/prisma.js');const p=createPrismaClient();console.log(await p.integrationSyncRun.count())"` → 0 (таблица пустая, скоро наполнится);
+  - (б) **cron'ы зарегистрированы:** `GET /api/v1/admin/platform/crons` → должны появиться `BitrixSyncCron.runDaily`, `ChatboxSyncCron.runDaily`, `BitrixAnalyzeCron.sweep`, `ChatboxAnalyzeCron.sweep` (swagger `/api/docs`);
+  - (в) **очереди видны в панели:** `GET /api/v1/admin/workers/queues` → в списке есть `bitrix.sync`, `bitrix.analyze`, `chatbox.sync`, `chatbox.analyze`;
+  - (г) **admin sources API:** `GET /api/v1/admin/integrations/sources/overview` → 200 с массивом (тестовая авторизация через super_admin cookie).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🗓️ 2026-06-18 — Помощник × календарь: дубли / даты-таймзоны / контрагент-vs-место / онлайн-пометка (8 фаз)
 
 > Контракт: ветка `feature/assistant-calendar-fixes`, коммиты `25e316d6..00a9858a` (9: Ф1 дедуп+ACK `25e316d6`; Ф2 «Сейчас»/TZ `9213df40`+фикс `a15733b8`; Ф7 описания `18303af1`; миграция `c7f26742`; Ф6+Ф5 online/counterparty `ba7ce495`; Ф3 окно дня в TZ `85d47d26`; Ф4 рабочий профиль `4a1a11f9`; Ф8 фронт `00a9858a`). ТЗ: `plans/tz/2026-06-18-assistant-calendar-master.md`. Диагностика: `plans/analysis/2026-06-18-telegram-assistant-calendar-bugs-diagnosis.md`. second-brain: `02_architecture/data-model.md`, `01_projects/{api-layer,frontend-pages,workers-queues,conversational-channels,concierge-agent,calendar}.md`. Реестр флагов — `docs/operations/feature-flags.md` (`ASSISTANT_INBOUND_ASYNC_ENABLED`).

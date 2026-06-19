@@ -41,7 +41,9 @@ function linkModeBadgeVariant(
 }
 
 function currentValue(user: BitrixUserApi): string {
-  return user.linkedPersonId ?? NONE_VALUE;
+  if (user.linkedPersonId) return user.linkedPersonId;
+  if (user.linkMode === "none") return CREATE_VALUE;
+  return NONE_VALUE;
 }
 
 export function BitrixManagersClient() {
@@ -224,6 +226,15 @@ function UserRow({
 }) {
   const displayName = user.name?.trim() || user.email || user.externalId;
 
+  const allOptions =
+    user.linkedPersonId &&
+    !personOptions.some((p) => p.id === user.linkedPersonId)
+      ? [
+          { id: user.linkedPersonId, name: user.linkedPersonName, email: null },
+          ...personOptions,
+        ]
+      : personOptions;
+
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
@@ -264,7 +275,7 @@ function UserRow({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NONE_VALUE}>— Не связывать —</SelectItem>
-            {personOptions.map((p) => (
+            {allOptions.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 {p.name?.trim() || p.email || "(без имени)"}
               </SelectItem>

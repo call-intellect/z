@@ -1901,7 +1901,7 @@ mail-inbound/
 | `admin/orgs/plans/` | CRUD `Plan` (тарифы продукта) | 4 |
 | `admin/orgs/entitlements/` | Глобальный обзор overrides по Org | 4 |
 | `admin/content/` | `meeting-types`, `email-templates`, `system-messages`, `global-channels`, `copy-strings` | 5 |
-| `admin/integrations/` | Conversational боты, webhooks, integration keys, LiveKit | 6 |
+| `admin/integrations/` | Conversational боты, webhooks, integration keys, LiveKit; **+ /sources (overview + runs) — 2026-06-19** | 6 |
 | `admin/media/` | `RetentionPolicy` UI + S3 stats / provider switch | 7 |
 | `admin/platform/` | Feature flags, limits, security, maintenance | 8 |
 
@@ -2295,6 +2295,7 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - `chatbox-sync.cron.ts` — раз в сутки (полночь) ставит incremental-sync по AccessToken для всех не-`disconnected` интеграций. Единственный способ забора (приём вебхуков убран 2026-06-19).
 - `chatbox-analyze.cron.ts` — каждые 5 мин подбирает сессии `analysisStatus='pending'` с `endedAt!=null`.
 - Оба cron'а уважают kill-switch `AdminSetting chatbox.enabled`.
+- **2026-06-19 — observability:** все 4 воркера (`bitrix-sync/analyze`, `chatbox-sync/analyze`) оборачивают исполнение вызовами `IntegrationSyncLogService.begin/succeed/fail/skip` → таблица `IntegrationSyncRun` (best-effort, без throw). @Cron теперь именованные (name:) → попадают в `CronSchedule`/`CronRunHistory`. Очереди `bitrix.sync/analyze` и `chatbox.sync/analyze` зарегистрированы в `getKnownQueueNames()` → видны в admin/platform/workers.
 
 ### Прочее
 - RBAC-ресурс `chatbox` в `policy.csv` (owner: r/w/d/manage; admin: r/w/manage; manager: read).

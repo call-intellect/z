@@ -16,7 +16,6 @@ import { ChatboxMembersService } from './chatbox-members.service';
 import { ChatboxSessionService } from './chatbox-session.service';
 import { ChatboxSyncCron } from './chatbox-sync.cron';
 import { ChatboxSyncService } from './chatbox-sync.service';
-import { ChatboxWebhookController } from './chatbox-webhook.controller';
 import { CrossSourceTaskDedupeService } from './cross-source-task-dedupe.service';
 import { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
 import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
@@ -25,7 +24,6 @@ import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
   imports: [PersonsModule],
   controllers: [
     ChatboxIntegrationController,
-    ChatboxWebhookController,
     ChatboxChatsController,
     ChatboxMembersController,
     ChatboxCustomersController,

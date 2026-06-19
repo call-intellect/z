@@ -1,9 +1,6 @@
-import { randomBytes } from 'node:crypto';
-
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import type { ChatboxIntegration } from '@prisma/client';
 
-import { TypedConfigService } from '../../common/config/index';
 import { CryptoService } from '../../common/crypto/crypto.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
@@ -50,7 +47,6 @@ export class ChatboxIntegrationService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CryptoService) private readonly crypto: CryptoService,
     @Inject(ChatboxApiClient) private readonly client: ChatboxApiClient,
-    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   async getIntegration(tenantId: string): Promise<ChatboxIntegrationResponseDto | null> {
@@ -113,7 +109,7 @@ export class ChatboxIntegrationService {
       ? this.crypto.encrypt(plainToken)
       : (existing?.tokenEnc ?? this.crypto.encrypt(plainToken));
 
-    const saved = await this.prisma.chatboxIntegration.upsert({
+    await this.prisma.chatboxIntegration.upsert({
       where: { tenantId },
       create: {
         tenantId,
@@ -135,8 +131,6 @@ export class ChatboxIntegrationService {
         lastError: null,
       },
     });
-
-    await this.reconcileWebhook(tenantId, plainToken, dto.workspaceId, saved);
 
     await this.ensureChatboxSource(tenantId);
 
@@ -174,13 +168,6 @@ export class ChatboxIntegrationService {
   }
 
   async remove(tenantId: string): Promise<{ ok: true }> {
-    const row = await this.prisma.chatboxIntegration.findUnique({
-      where: { tenantId },
-    });
-    if (row?.webhookExternalId) {
-      const token = this.crypto.decrypt(row.tokenEnc);
-      await this.removeWebhook(token, row.workspaceId, row.webhookExternalId);
-    }
     await this.prisma.chatboxIntegration.deleteMany({ where: { tenantId } });
     await this.prisma.source
       .updateMany({
@@ -212,94 +199,6 @@ export class ChatboxIntegrationService {
       token: this.crypto.decrypt(row.tokenEnc),
       integrationId: row.id,
     };
-  }
-
-  private buildWebhookUrl(tenantId: string, secret: string): string {
-    return `${this.cfg.publicHostUrl}/api/v1/webhooks/chatbox/${tenantId}/${secret}`;
-  }
-
-  private async reconcileWebhook(
-    tenantId: string,
-    token: string,
-    workspaceId: string,
-    row: ChatboxIntegration,
-  ): Promise<void> {
-    if (row.syncMode === 'realtime') {
-      try {
-        const { webhookExternalId, webhookSecret } = await this.ensureWebhook(
-          tenantId,
-          token,
-          workspaceId,
-          row,
-        );
-        await this.prisma.chatboxIntegration.update({
-          where: { tenantId },
-          data: { webhookExternalId, webhookSecret },
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Не удалось создать webhook';
-        this.logger.warn(
-          `reconcileWebhook: создание webhook не удалось для tenant=${tenantId}: ${message}`,
-        );
-        await this.prisma.chatboxIntegration
-          .update({
-            where: { tenantId },
-            data: { status: 'error', lastError: message },
-          })
-          .catch(() => undefined);
-      }
-      return;
-    }
-
-    if (row.webhookExternalId) {
-      await this.removeWebhook(token, workspaceId, row.webhookExternalId);
-      await this.prisma.chatboxIntegration
-        .update({
-          where: { tenantId },
-          data: { webhookExternalId: null, webhookSecret: null },
-        })
-        .catch(() => undefined);
-    }
-  }
-
-  private async ensureWebhook(
-    tenantId: string,
-    token: string,
-    workspaceId: string,
-    row: ChatboxIntegration,
-  ): Promise<{ webhookExternalId: string; webhookSecret: string }> {
-    if (row.webhookExternalId && row.webhookSecret) {
-      return {
-        webhookExternalId: row.webhookExternalId,
-        webhookSecret: row.webhookSecret,
-      };
-    }
-    const secret = randomBytes(24).toString('hex');
-    const wh = await this.client.createWebhook(token, workspaceId, {
-      url: this.buildWebhookUrl(tenantId, secret),
-      events: [
-        'CHAT_CREATED',
-        'CHAT_CLOSED',
-        'MESSAGE_CREATED',
-        'MESSAGE_UPDATED',
-        'CHANNEL_CLIENT_CREATED',
-      ],
-      description: 'Кора (Z) — синхронизация чатов',
-    });
-    return { webhookExternalId: wh.id, webhookSecret: secret };
-  }
-
-  private async removeWebhook(
-    token: string,
-    workspaceId: string,
-    webhookExternalId: string,
-  ): Promise<void> {
-    try {
-      await this.client.deleteWebhook(token, workspaceId, webhookExternalId);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`removeWebhook: не удалось снять webhook ${webhookExternalId}: ${message}`);
-    }
   }
 
   private sanitize(row: ChatboxIntegration): ChatboxIntegrationResponseDto {

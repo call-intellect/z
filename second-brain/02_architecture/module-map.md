@@ -2279,11 +2279,12 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - `chatbox-integration.controller.ts` — `GET/PUT/DELETE /chatbox/integration`, `POST .../workspaces`, `POST .../sync`, `GET .../sync/status` (RBAC `chatbox`, `CookieAuthGuard + TenantGuard`).
 - `chatbox-chats.controller.ts` — `GET /chatbox/chats`, `GET /:id`, `GET /:id/messages`, `POST /:id/messages` (исходящая отправка).
 - `chatbox-members.controller.ts` — `GET /chatbox/members`, `PUT /:id/link` (маппинг менеджера на `Person`).
-- `chatbox-webhook.controller.ts` — `@ApiExcludeController`, `POST /webhooks/chatbox/:tenantId/:secret` (без cookie-auth, `timingSafeEqual`, всегда 200 — образец `max-webhooks.controller.ts`).
+
+> **2026-06-19 — приём вебхуков убран.** Контроллера `chatbox-webhook.controller.ts` больше нет; забор данных только суточный по AccessToken (`chatbox-sync.cron.ts`). Старые внешние вебхуки на стороне ChatBox снимает `scripts/backfill-chatbox-unregister-webhooks.ts`. См. [[../../plans/tz/2026-06-19-chatbox-remove-webhooks]].
 
 ### Сервисы
-- `chatbox-api.client.ts` — типизированный клиент ChatBox (Bearer-токен, `listWorkspaces/listChannels/listChats/getChat/listMessages/sendMessage/listChannelClients/listCustomers/listMembers/createWebhook/deleteWebhook`, backoff, маппинг 401→`chatbox_token_invalid`).
-- `chatbox-integration.service.ts` — шифрование токена, выбор воркспейса, регистрация/снятие webhook.
+- `chatbox-api.client.ts` — типизированный клиент ChatBox (Bearer-токен, `listWorkspaces/listChannels/listChats/getChat/listMessages/sendMessage/listChannelClients/listCustomers/listMembers`, backoff, маппинг 401→`chatbox_token_invalid`).
+- `chatbox-integration.service.ts` — шифрование токена, выбор воркспейса, upsert конфига.
 - `chatbox-sync.service.ts` — upsert ChatBox→Кора по `@@unique([tenantId, externalId])` (идемпотентно), автосвязка менеджеров по email; `chatbox-session.service.ts` — сегментация сообщений на сессии (idle-gap из `AdminSetting`).
 - `chatbox-chats.service.ts` — чтение чатов/сообщений + исходящая отправка (privacy: без super_admin bypass на текст переписки).
 - `chatbox-members.service.ts` — автосвязка/ручной маппинг `linkedPersonId`.
@@ -2291,14 +2292,14 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 ### Воркеры / cron (in-process, `WorkersModule`)
 - Очереди `chatbox.sync` (синк-job'ы) + `chatbox.analyze` (`chatbox-analyze.worker.ts` — закрытая сессия → LLM-summary → `done`/`failed` + `rawEventId`).
-- `chatbox-sync.cron.ts` — раскладывает incremental-sync по org согласно `syncMode` (hourly/daily) + поллинг-фолбэк для realtime.
+- `chatbox-sync.cron.ts` — раз в сутки (полночь) ставит incremental-sync по AccessToken для всех не-`disconnected` интеграций. Единственный способ забора (приём вебхуков убран 2026-06-19).
 - `chatbox-analyze.cron.ts` — каждые 5 мин подбирает сессии `analysisStatus='pending'` с `endedAt!=null`.
 - Оба cron'а уважают kill-switch `AdminSetting chatbox.enabled`.
 
 ### Прочее
 - RBAC-ресурс `chatbox` в `policy.csv` (owner: r/w/d/manage; admin: r/w/manage; manager: read).
 - Feature-flag тарифа `feature.chatbox` (`tier-config.ts`, дефолт OFF).
-- ENV `CHATBOX_API_BASE_URL` (default `https://app.agent-lia.ru`); webhook использует существующий `PUBLIC_HOST_URL`, токен — `CRYPTO_MASTER_KEY`.
+- ENV `CHATBOX_API_BASE_URL` (default `https://app.agent-lia.ru`); токен — `CRYPTO_MASTER_KEY`.
 
 [[../index|← index]]
 

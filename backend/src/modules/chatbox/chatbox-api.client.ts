@@ -85,18 +85,6 @@ export interface ChatboxApiMember {
   createdAt: string;
 }
 
-export interface ChatboxApiWebhook {
-  id: string;
-  url: string;
-  events: string[];
-  description?: string | null;
-  isActive: boolean;
-  workspaceId: string;
-  channelId?: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export type ChatboxPaginated<T, K extends string> = {
   total: number;
 } & { [P in K]: T[] };
@@ -243,44 +231,6 @@ export class ChatboxApiClient {
       'GET',
       `/workspaces/${encodeURIComponent(ws)}/members`,
       params,
-    );
-  }
-
-  async listWebhooks(
-    token: string,
-    ws: string,
-  ): Promise<ChatboxPaginated<ChatboxApiWebhook, 'webhooks'>> {
-    return this.call<ChatboxPaginated<ChatboxApiWebhook, 'webhooks'>>(
-      token,
-      'GET',
-      `/workspaces/${encodeURIComponent(ws)}/webhooks`,
-    );
-  }
-
-  async createWebhook(
-    token: string,
-    ws: string,
-    body: {
-      url: string;
-      events: string[];
-      description?: string;
-      channelId?: string;
-    },
-  ): Promise<ChatboxApiWebhook> {
-    return this.call<ChatboxApiWebhook>(
-      token,
-      'POST',
-      `/workspaces/${encodeURIComponent(ws)}/webhooks`,
-      undefined,
-      body,
-    );
-  }
-
-  async deleteWebhook(token: string, ws: string, webhookId: string): Promise<void> {
-    await this.call<unknown>(
-      token,
-      'DELETE',
-      `/workspaces/${encodeURIComponent(ws)}/webhooks/${encodeURIComponent(webhookId)}`,
     );
   }
 

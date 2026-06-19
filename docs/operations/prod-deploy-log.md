@@ -71,6 +71,26 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🧹 2026-06-19 — ChatBox: убрать приём вебхуков (только суточный забор по AccessToken)
+
+> Контракт: ТЗ `plans/tz/2026-06-19-chatbox-remove-webhooks.md`. second-brain: `01_projects/chatbox-integration.md`, `02_architecture/module-map.md` + `data-model.md`, `01_projects/api-layer.md`.
+>
+> **Зачем для прода:** вебхук ChatBox давал постоянный 403 `chatbox_webhook_invalid_secret` при рассинхроне секрета URL↔БД (кейс «Ооо луа», удары каждые 1-2 мин). Вебхук был лишь триггером «иди синкани» — данные всё равно тянутся по AccessToken. Убираем приём вебхуков целиком; единственный способ забора — суточный `chatbox-sync.cron.ts` (полночь). Фронт не менялся.
+>
+> **1 миграция (авто, дроп 2 колонок + нормализация enum).** **1 новый backfill (в STEPS) — снимает внешние вебхуки на стороне ChatBox.** **Docker rebuild только backend.**
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up`): миграция `20260619120000_chatbox_remove_webhooks` — `UPDATE "ChatboxIntegration" SET "syncMode"='daily' WHERE "syncMode"<>'daily'` (нормализация legacy `hourly`/`realtime`), затем `DROP COLUMN "webhookExternalId"`, `DROP COLUMN "webhookSecret"`. ⚠ **Destructive (DROP COLUMN)**, но колонки больше не читаются кодом (webhook-контур удалён). Enum `ChatboxSyncMode` и поле `syncMode` сохранены. **В STEPS агрегатора регистрировать НЕ нужно** (миграция схемы). **Порядок гарантирован:** SCHEMA PHASE (дроп колонок) идёт ДО Шага 8 — поэтому backfill ниже НЕ читает дропнутые колонки, а находит вебхуки через ChatBox API.
+- **Шаг 8 — Backfill (1 прогон, идемпотентный, уже в STEPS `phase:'backfill'`, `skipBootstrap:true`):** `backfill-chatbox-unregister-webhooks.ts` — для каждой `ChatboxIntegration` идёт в ChatBox API (`GET /workspaces/{ws}/webhooks` по AccessToken), находит наши вебхуки (по URL `/api/v1/webhooks/chatbox/` или описанию «Кора») и снимает их (`DELETE`). Не читает дропнутые колонки (только `tokenEnc`+`workspaceId`). Не падает на ошибке отдельного орга (401/таймаут → пропуск, log). Идемпотентен (повтор → 0 совпадений). Сначала dry-run для проверки: `docker compose exec backend bun run scripts/backfill-chatbox-unregister-webhooks.ts --dry-run`, затем агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Требует ENV `CHATBOX_API_BASE_URL` (default `https://app.agent-lia.ru`) + `CRYPTO_MASTER_KEY`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend` (удалён контроллер `chatbox-webhook.controller.ts` + webhook-методы; фронта изменения не касаются).
+- **Шаг 12 — Smoke** (после выката):
+  - (а) **роут вебхука исчез:** `POST /api/v1/webhooks/chatbox/<любой>/<любой>` → 404 (раньше был 403/200);
+  - (б) **суточный синк жив:** в логах старта backend есть `ChatboxSyncCron`; ручной триггер `POST /api/v1/chatbox/integration/sync {scope:'all'}` для тестового орга наполняет чаты;
+  - (в) **внешние вебхуки сняты:** `backfill-chatbox-unregister-webhooks.ts` отчитался `deleted>0` (или `matched=0`, если ChatBox их уже отключил); в логах ChatBox прекратились удары по `/webhooks/chatbox/...`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🗓️ 2026-06-18 — Помощник × календарь: дубли / даты-таймзоны / контрагент-vs-место / онлайн-пометка (8 фаз)
 
 > Контракт: ветка `feature/assistant-calendar-fixes`, коммиты `25e316d6..00a9858a` (9: Ф1 дедуп+ACK `25e316d6`; Ф2 «Сейчас»/TZ `9213df40`+фикс `a15733b8`; Ф7 описания `18303af1`; миграция `c7f26742`; Ф6+Ф5 online/counterparty `ba7ce495`; Ф3 окно дня в TZ `85d47d26`; Ф4 рабочий профиль `4a1a11f9`; Ф8 фронт `00a9858a`). ТЗ: `plans/tz/2026-06-18-assistant-calendar-master.md`. Диагностика: `plans/analysis/2026-06-18-telegram-assistant-calendar-bugs-diagnosis.md`. second-brain: `02_architecture/data-model.md`, `01_projects/{api-layer,frontend-pages,workers-queues,conversational-channels,concierge-agent,calendar}.md`. Реестр флагов — `docs/operations/feature-flags.md` (`ASSISTANT_INBOUND_ASYNC_ENABLED`).

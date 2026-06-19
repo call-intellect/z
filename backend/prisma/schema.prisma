@@ -294,11 +294,12 @@ enum DataClass {
   private
 }
 
-/// ChatBox-интеграция — режим синхронизации.
+/// ChatBox-интеграция — режим синхронизации. По факту используется только daily
+/// (суточный ChatboxSyncCron по AccessToken); hourly/realtime — legacy без поведения.
 enum ChatboxSyncMode {
   hourly
   daily
-  realtime // webhook + редкий поллинг-фолбэк
+  realtime
 }
 
 /// ChatBox-интеграция — состояние подключения.
@@ -11507,8 +11508,6 @@ model ChatboxIntegration {
   analysisEnabled       Boolean                  @default(false)
   status                ChatboxIntegrationStatus @default(connected)
   lastError             String?                  @db.Text
-  webhookExternalId     String?
-  webhookSecret         String?
   lastFullSyncAt        DateTime?
   lastIncrementalSyncAt DateTime?
   createdAt             DateTime                 @default(now())

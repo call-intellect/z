@@ -571,7 +571,7 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | POST | `/api/v1/chatbox/chats/:id/messages` | отправить ответ от менеджера `{text}` → ChatBox API | write |
 | GET | `/api/v1/chatbox/members` | менеджеры + текущая связка с Person | read |
 | PUT | `/api/v1/chatbox/members/:id/link` | ручной маппинг `{personId\|null}` | manage |
-| POST | `/api/v1/webhooks/chatbox/:tenantId/:secret` | **inbound webhook ChatBox** (`@ApiExcludeController`, без cookie-auth, `timingSafeEqual`, всегда 200) | — |
+| ~~POST~~ | ~~`/api/v1/webhooks/chatbox/:tenantId/:secret`~~ | **удалён 2026-06-19** — приём вебхуков ChatBox убран, забор только суточным синком по AccessToken ([[../../plans/tz/2026-06-19-chatbox-remove-webhooks]]) | — |
 
 **Privacy-инвариант:** super_admin **не** получает bypass на чтение текста переписки (`ChatboxMessage.text`). Коды ошибок machine-readable: `chatbox_token_invalid`, `chatbox_workspace_not_found`, `chatbox_not_configured`, `chatbox_chat_not_found`, `chatbox_send_failed`, `chatbox_member_not_found`, `person_not_found`. Swagger-тег `chatbox`.
 

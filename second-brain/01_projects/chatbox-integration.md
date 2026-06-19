@@ -29,8 +29,8 @@ relates_to:
 ChatBox API (app.agent-lia.ru)
    │  токен (AES-GCM в ChatboxIntegration.tokenEnc) + workspaceId
    ▼
-синк (BullMQ chatbox.sync + ручной POST .../sync)   ◄── realtime: webhook /webhooks/chatbox/:tenantId/:secret
-   │  upsert по @@unique([tenantId, externalId])      └─ поллинг-фолбэк (cron hourly/daily)
+синк (BullMQ chatbox.sync + ручной POST .../sync)   ◄── суточный cron (полночь) по AccessToken
+   │  upsert по @@unique([tenantId, externalId])
    ▼
 зеркало в БД (Channel / Customer / ChannelClient / Member / Chat / Message)
    │  сегментация по idle-gap (AdminSetting chatbox.session.idle_gap_hours, дефолт 12) ИЛИ CHAT_CLOSED
@@ -45,12 +45,12 @@ knowledge-core (block-ingest подхватывает RawEvent сам, без и
 Ответ менеджера: POST /chatbox/chats/:id/messages → ChatboxApiClient.sendMessage → ChatboxMessage(isOutboundFromKora=true)
 ```
 
-- **Realtime** = webhook ChatBox + редкий поллинг-фолбэк (вебхуки теряются — добор поллингом). Режимы синка: `hourly` / `daily` / `realtime`.
+- **Забор данных** = только суточный `chatbox-sync.cron.ts` (полночь) по AccessToken + ручной `POST .../sync`. Приём вебхуков убран 2026-06-19 (см. «Обновления» ниже). Поле `syncMode` оставлено, но по факту всегда `daily`.
 - **Мост в knowledge-core** — лениво создаётся один `Source(type='chatbox', name='ChatBox')` на org; одна сессия → один `RawEvent` (идемпотентность по `idempotencyKey`, повтор не плодит).
 
 ## Ключевые сущности и связи
 
-- **`ChatboxIntegration`** — конфиг org (один на org): `tokenEnc` (AES-256-GCM, никогда не plain в API), `workspaceId`, `syncMode`, `status`, `webhookSecret`/`webhookExternalId`, метки последних синков.
+- **`ChatboxIntegration`** — конфиг org (один на org): `tokenEnc` (AES-256-GCM, никогда не plain в API), `workspaceId`, `syncMode` (де-факто всегда `daily`), `status`, метки последних синков. Колонки `webhookSecret`/`webhookExternalId` удалены 2026-06-19.
 - **`ChatboxCustomer` ↔ `ChatboxChannelClient`** — **мультимессенджер-объединение клиента.** `Customer(1) ↔ ChannelClient(N)`: один человек, пишущий из Telegram и WhatsApp, — это один `Customer` с несколькими `ChannelClient`. Ключ объединения готовый (`customerId` от ChatBox) — не изобретаем склейку, переиспользуем апстрим.
 - **`ChatboxChat` ↔ `ChatboxChatSession`** — чат зеркалится 1:1 (один `Chat` = один ChatBox `chat.id`), а для LLM режется на **сессии-сегменты**. Новая сессия при паузе > порога ИЛИ при `CHAT_CLOSED`; `previousSessionId` связывает сессии в цепочку; анализ учитывает summary предыдущих.
 - **`ChatboxMessage`** — зеркало сообщений (sender/content типы, `*Url` медиа без скачивания, `isOutboundFromKora`).
@@ -63,7 +63,7 @@ knowledge-core (block-ingest подхватывает RawEvent сам, без и
 |---|---|---|
 | Р1 | **Один ChatBox-workspace на org.** После ввода токена `GET /workspaces`, владелец выбирает один. `@@unique([tenantId])`. | Токен реселлерский (видит ~100 чужих воркспейсов) — тянуть всё опасно (утечка чужих данных). |
 | Р2 | **Чаты — зеркало 1:1, сессии-сегменты для LLM** (новая сессия при паузе > порога ИЛИ `CHAT_CLOSED`, `previousSessionId`). | В ChatBox чат остаётся ACTIVE и копит сообщения сутками. «Новый чат на следующий день» моделируем сессией, а не новой записью — сохраняет связность треда. |
-| Р3 | **Realtime = webhook + поллинг-фолбэк.** | Webhook даёт мгновенность, поллинг — надёжность (вебхуки теряются). |
+| Р3 | ~~**Realtime = webhook + поллинг-фолбэк.**~~ **Отменено 2026-06-19** — приём вебхуков убран, остался только суточный забор по AccessToken (вебхуки давали 403 при рассинхроне секрета, мгновенность не стоила операционной боли). | Было: webhook = мгновенность, поллинг = надёжность. Стало: суточного синка достаточно. |
 | Р4 | **Менеджеры: автосвязка `Member.email` → `Person`** (по совпадению email в той же org), остаток — ручной маппинг в UI. | Единая карточка сотрудника; email — стабильный ключ. |
 
 ## Privacy / безопасность
@@ -72,7 +72,7 @@ knowledge-core (block-ingest подхватывает RawEvent сам, без и
 - Каждый запрос tenant-scoped (`TenantGuard` + RBAC-ресурс `chatbox`).
 - `dataClass='sensitive'` на ingest — клиентская переписка.
 - **super_admin НЕ получает bypass на чтение текста переписки** (`ChatboxMessage.text`) — отдельный privacy-инвариант (R12).
-- Kill-switch `AdminSetting chatbox.enabled` (дефолт true; false → синк-кроны и webhook молча no-op).
+- Kill-switch `AdminSetting chatbox.enabled` (дефолт true; false → синк-крон молча no-op).
 - Feature-flag тарифа `feature.chatbox` (дефолт OFF) гейтит и API, и пункт меню.
 
 ## Обновления (2026-06-08, ветка `chatboxFix`)
@@ -89,9 +89,18 @@ knowledge-core (block-ingest подхватывает RawEvent сам, без и
 
 **Не сделано (vNext):** профиль/страница клиента (`ChatboxCustomer`) — сейчас клиент в сообщении только имя+бейдж, кликнуть некуда (нет роута карточки клиента).
 
+## Обновления (2026-06-19, приём вебхуков убран)
+
+ТЗ — [[../../plans/tz/2026-06-19-chatbox-remove-webhooks]]. Полностью удалён webhook-контур ChatBox: единственный способ забора — суточный `chatbox-sync.cron.ts` (полночь) по AccessToken.
+
+- **Удалено:** `chatbox-webhook.controller.ts` (приёмник `POST /webhooks/chatbox/:tenantId/:secret`), методы `reconcileWebhook`/`ensureWebhook`/`removeWebhook`/`buildWebhookUrl` в `chatbox-integration.service.ts`, методы `createWebhook`/`deleteWebhook`/`listWebhooks` + интерфейс `ChatboxApiWebhook` в API-клиенте.
+- **БД:** миграция `20260619120000_chatbox_remove_webhooks` дропает колонки `webhookSecret`/`webhookExternalId` и нормализует legacy `syncMode` (`hourly`/`realtime`) → `daily`. Enum `ChatboxSyncMode` и поле `syncMode` оставлены (де-факто только `daily`).
+- **Прод-чистка:** `scripts/backfill-chatbox-unregister-webhooks.ts` снимает уже зарегистрированные вебхуки на стороне ChatBox через API (находит по URL `/api/v1/webhooks/chatbox/` или описанию «Кора»), идемпотентно, не падает на ошибке отдельного орга. Зарегистрирован в `apply-prod-deploy.ts` STEPS (`backfill`).
+- **Причина:** вебхуки давали постоянный 403 `chatbox_webhook_invalid_secret` при рассинхроне секрета URL ↔ БД (кейс «Ооо луа»), а суточного забора по токену достаточно — мгновенность не стоила операционной боли. Фронт не менялся (визард и так хардкодит `daily`, realtime в UI не предлагался).
+
 ## Границы MVP / что в vNext
 
-**Входит:** API-клиент, CRUD интеграции, движок синка + сессии, cron + inbound webhook, мост в knowledge-core + LLM-summary (гейт `analysisEnabled`), исходящая отправка текста, веб-просмотр чатов с бейджами, автосвязка/маппинг менеджеров + создание Person из менеджера.
+**Входит:** API-клиент, CRUD интеграции, движок синка + сессии, суточный cron забора по AccessToken, мост в knowledge-core + LLM-summary (гейт `analysisEnabled`), исходящая отправка текста, веб-просмотр чатов с бейджами, автосвязка/маппинг менеджеров + создание Person из менеджера.
 
 **Не входит (vNext, см. ТЗ §«Не входит» и реестр [[../04_не-сделано/README|не-сделано]]):**
 - Создание чата с нуля из Коры (`POST /chats` ChatBox) — только отправка в существующий.

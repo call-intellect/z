@@ -1548,7 +1548,7 @@ enum SourceType { meeting chat phone_call bot email web_form external conversati
 
 ### 8 моделей домена (все tenant-scoped, upsert по `@@unique([tenantId, externalId])`)
 
-- **`ChatboxIntegration`** — конфиг org, **один на org** (`@@unique([tenantId])`): `tokenEnc` (AES-256-GCM, никогда не plain), `workspaceId`/`workspaceName`, `syncMode` (enum), `status` (enum), `webhookExternalId`/`webhookSecret`, `lastFullSyncAt`/`lastIncrementalSyncAt`/`lastError`. Relation `org → Org` (Cascade).
+- **`ChatboxIntegration`** — конфиг org, **один на org** (`@@unique([tenantId])`): `tokenEnc` (AES-256-GCM, никогда не plain), `workspaceId`/`workspaceName`, `syncMode` (enum, де-факто всегда `daily`), `status` (enum), `lastFullSyncAt`/`lastIncrementalSyncAt`/`lastError`. Relation `org → Org` (Cascade). Колонки `webhookExternalId`/`webhookSecret` удалены 2026-06-19 (миграция `20260619120000_chatbox_remove_webhooks` — приём вебхуков убран, забор только суточным синком).
 - **`ChatboxChannel`** — канал/мессенджер воркспейса: `channelType` (**String**, не enum — ChatBox добавляет типы без релиза), `title`, `isActive`, `raw Json?`.
 - **`ChatboxCustomer`** — унифицированный контакт: `name/phone/email/externalCrmId`, `raw`. Relation `clients ChatboxChannelClient[]` — ключ **мультимессенджер-объединения клиента**.
 - **`ChatboxChannelClient`** — identity клиента в конкретном мессенджере: `customerId?` (FK → `ChatboxCustomer`, `onDelete: SetNull`), `channelType`, `messengerUserId`, контакты, `isBlocked`. `@@index([tenantId, customerId])`.

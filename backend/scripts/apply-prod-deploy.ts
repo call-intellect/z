@@ -611,6 +611,12 @@ const STEPS: Step[] = [
   },
   {
     phase: 'backfill',
+    script: 'scripts/backfill-chatbox-unregister-webhooks.ts',
+    hint: 'снять внешние ChatBox-вебхуки через API (приём вебхуков удалён, только суточный синк)',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'backfill',
     script: 'scripts/backfill-task-source-type.ts',
     hint: "Task.sourceType='meeting' где пусто (chatbox-tasks Ф5)",
     skipBootstrap: true,

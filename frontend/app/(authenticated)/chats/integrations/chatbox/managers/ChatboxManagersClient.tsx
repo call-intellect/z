@@ -36,7 +36,7 @@ function errMessage(e: unknown, fallback: string): string {
 
 function currentValue(member: ChatboxMemberView): string {
   if (member.linkedPersonId) return member.linkedPersonId;
-  if (member.linkMode === "none") return CREATE_VALUE;
+  if (member.linkMode === "none" || member.linkMode === "manual") return CREATE_VALUE;
   return NONE_VALUE;
 }
 

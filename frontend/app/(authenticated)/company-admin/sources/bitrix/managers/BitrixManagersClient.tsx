@@ -42,7 +42,7 @@ function linkModeBadgeVariant(
 
 function currentValue(user: BitrixUserApi): string {
   if (user.linkedPersonId) return user.linkedPersonId;
-  if (user.linkMode === "none") return CREATE_VALUE;
+  if (user.linkMode === "none" || user.linkMode === "manual") return CREATE_VALUE;
   return NONE_VALUE;
 }
 

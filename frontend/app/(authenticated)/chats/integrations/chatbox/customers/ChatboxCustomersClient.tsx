@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { ArrowLeft, Contact, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -38,6 +38,51 @@ function currentValue(customer: ChatboxCustomerView): string {
   return customer.linkedPersonId ?? NONE_VALUE;
 }
 
+type PersonOption = { id: string; name: string; email: string | null };
+
+function MatchCell({
+  value,
+  sourceEmail,
+  options,
+}: {
+  value: string;
+  sourceEmail: string | null;
+  options: PersonOption[];
+}) {
+  if (value === NONE_VALUE) {
+    return <span className="text-sm text-fg-tertiary">— Не связывать —</span>;
+  }
+  if (value === CREATE_VALUE) {
+    return (
+      <span className="text-sm font-medium text-accent">
+        ＋ Создать нового клиента
+      </span>
+    );
+  }
+  const person = options.find((p) => p.id === value);
+  const isEmailMatch =
+    person?.email &&
+    sourceEmail &&
+    person.email.toLowerCase() === sourceEmail.toLowerCase();
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-1.5">
+        <span className="truncate text-sm font-medium text-fg-primary">
+          {person?.name || "(без имени)"}
+        </span>
+        {isEmailMatch && (
+          <Badge variant="secondary" className="shrink-0 text-xs">
+            по email
+          </Badge>
+        )}
+      </div>
+      {person?.email && (
+        <div className="truncate text-xs text-fg-tertiary">{person.email}</div>
+      )}
+    </div>
+  );
+}
+
 export function ChatboxCustomersClient() {
   return (
     <TierGate feature="feature.chatbox">
@@ -63,12 +108,32 @@ function ChatboxCustomersContent() {
     () => personsDomainApi.list(currentOrgId!, { relationship: "external" }),
   );
 
-  const personOptions: { id: string; name: string }[] = (
-    persons?.items ?? []
-  ).map((p) => ({ id: p.id, name: p.fullName || "(без имени)" }));
+  const personOptions: PersonOption[] = (persons?.items ?? []).map((p) => ({
+    id: p.id,
+    name: p.fullName || "(без имени)",
+    email: p.email ?? null,
+  }));
 
   const [pending, setPending] = useState<Record<string, string>>({});
   const [applying, setApplying] = useState(false);
+  const suggestionsApplied = useRef(false);
+
+  useEffect(() => {
+    if (!customers || !persons || suggestionsApplied.current) return;
+    suggestionsApplied.current = true;
+    const suggestions: Record<string, string> = {};
+    for (const c of customers) {
+      if (c.linkedPersonId) continue;
+      const match = (persons.items ?? []).find(
+        (p) =>
+          p.email &&
+          c.email &&
+          p.email.toLowerCase() === c.email.toLowerCase(),
+      );
+      if (match) suggestions[c.id] = match.id;
+    }
+    if (Object.keys(suggestions).length > 0) setPending(suggestions);
+  }, [customers, persons]);
 
   const list = customers ?? [];
   const changed = list.filter((c) => {
@@ -93,13 +158,14 @@ function ChatboxCustomersContent() {
       }
     }
     if (ok > 0) toast.success(`Сопоставление применено: ${ok}`);
+    suggestionsApplied.current = false;
     setPending({});
     await mutate();
     setApplying(false);
   };
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-6">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6">
       <header className="mb-6">
         <Link
           href="/chats/integrations/chatbox"
@@ -137,7 +203,7 @@ function ChatboxCustomersContent() {
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-sm text-fg-secondary">
-              Клиентов нет — синхронизируйте их на{" "}
+              Клиентов нет — нажмите «Получить клиентов» на{" "}
               <Link
                 href="/chats/integrations/chatbox"
                 className="text-accent hover:underline"
@@ -155,29 +221,35 @@ function ChatboxCustomersContent() {
           <CardHeader>
             <CardTitle>Клиенты ({list.length})</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {list.map((customer) => {
-              const value = pending[customer.id] ?? currentValue(customer);
-              return (
-                <CustomerRow
-                  key={customer.id}
-                  customer={customer}
-                  personOptions={personOptions}
-                  value={value}
-                  dirty={value !== currentValue(customer)}
-                  disabled={applying}
-                  onChange={(v) =>
-                    setPending((p) => ({ ...p, [customer.id]: v }))
-                  }
-                />
-              );
-            })}
-
-            <ApplyBar
-              count={changed.length}
-              applying={applying}
-              onApply={() => void handleApply()}
-            />
+          <CardContent>
+            <div className="mb-3 hidden grid-cols-[2fr_2fr_1.5fr] gap-4 px-3 text-xs font-semibold uppercase tracking-wide text-fg-tertiary sm:grid">
+              <span>Из Чат бокса</span>
+              <span>Предложение</span>
+              <span>Действие</span>
+            </div>
+            <div className="space-y-2">
+              {list.map((customer) => {
+                const value = pending[customer.id] ?? currentValue(customer);
+                return (
+                  <CustomerRow
+                    key={customer.id}
+                    customer={customer}
+                    personOptions={personOptions}
+                    value={value}
+                    dirty={value !== currentValue(customer)}
+                    disabled={applying}
+                    onChange={(v) =>
+                      setPending((p) => ({ ...p, [customer.id]: v }))
+                    }
+                  />
+                );
+              })}
+              <ApplyBar
+                count={changed.length}
+                applying={applying}
+                onApply={() => void handleApply()}
+              />
+            </div>
           </CardContent>
         </Card>
       )}
@@ -218,47 +290,63 @@ function CustomerRow({
   onChange,
 }: {
   customer: ChatboxCustomerView;
-  personOptions: { id: string; name: string }[];
+  personOptions: PersonOption[];
   value: string;
   dirty: boolean;
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
+  const allOptions: PersonOption[] =
+    customer.linkedPersonId &&
+    !personOptions.some((p) => p.id === customer.linkedPersonId)
+      ? [
+          {
+            id: customer.linkedPersonId,
+            name: customer.linkedPersonName ?? "(без имени)",
+            email: null,
+          },
+          ...personOptions,
+        ]
+      : personOptions;
+
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+    <div
+      className={`grid grid-cols-1 gap-3 rounded-lg border p-3 sm:grid-cols-[2fr_2fr_1.5fr] sm:gap-4 sm:items-center ${
+        dirty
+          ? "border-accent/40 bg-accent/5"
+          : "border-border-subtle bg-bg-card"
+      }`}
+    >
       <div className="min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <span className="truncate text-sm font-medium text-fg-primary">
             {customer.displayName}
           </span>
           <Badge variant={chatboxLinkModeBadgeVariant(customer.linkMode)}>
             {customer.linkModeLabel}
           </Badge>
-          {dirty && (
-            <Badge variant="secondary" className="text-accent">
-              изменено
-            </Badge>
-          )}
         </div>
         <div className="mt-0.5 truncate text-xs text-fg-tertiary">
           {customer.email ?? customer.phone ?? "—"}
         </div>
-        {customer.linkedPersonName && (
-          <div className="mt-0.5 truncate text-xs text-fg-secondary">
-            Клиент: {customer.linkedPersonName}
-          </div>
-        )}
       </div>
 
-      {}
-      <div className="flex items-center gap-2 sm:w-72 sm:shrink-0">
+      <div className="flex min-w-0 items-center">
+        <MatchCell
+          value={value}
+          sourceEmail={customer.email}
+          options={allOptions}
+        />
+      </div>
+
+      <div className="flex items-center">
         <Select value={value} onValueChange={onChange} disabled={disabled}>
-          <SelectTrigger className="flex-1">
-            <SelectValue placeholder="Действие" />
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Выбрать действие" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NONE_VALUE}>— Не связывать —</SelectItem>
-            {personOptions.map((p) => (
+            {allOptions.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 {p.name}
               </SelectItem>

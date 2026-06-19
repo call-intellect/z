@@ -46,6 +46,51 @@ function currentValue(user: BitrixUserApi): string {
   return NONE_VALUE;
 }
 
+type PersonOption = { id: string; name: string | null; email: string | null };
+
+function MatchCell({
+  value,
+  userEmail,
+  options,
+}: {
+  value: string;
+  userEmail: string | null;
+  options: PersonOption[];
+}) {
+  if (value === NONE_VALUE) {
+    return <span className="text-sm text-fg-tertiary">— Не связывать —</span>;
+  }
+  if (value === CREATE_VALUE) {
+    return (
+      <span className="text-sm font-medium text-accent">
+        ＋ Создать нового сотрудника
+      </span>
+    );
+  }
+  const person = options.find((p) => p.id === value);
+  const isEmailMatch =
+    person?.email &&
+    userEmail &&
+    person.email.toLowerCase() === userEmail.toLowerCase();
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-1.5">
+        <span className="truncate text-sm font-medium text-fg-primary">
+          {person?.name?.trim() || person?.email || "(без имени)"}
+        </span>
+        {isEmailMatch && (
+          <Badge variant="secondary" className="shrink-0 text-xs">
+            по email
+          </Badge>
+        )}
+      </div>
+      {person?.email && (
+        <div className="truncate text-xs text-fg-tertiary">{person.email}</div>
+      )}
+    </div>
+  );
+}
+
 export function BitrixManagersClient() {
   return (
     <TierGate feature="feature.bitrix">
@@ -73,7 +118,10 @@ function BitrixManagersContent() {
     for (const user of data.users) {
       if (user.linkedPersonId) continue;
       const match = data.personCandidates.find(
-        (p) => p.email && user.email && p.email.toLowerCase() === user.email.toLowerCase(),
+        (p) =>
+          p.email &&
+          user.email &&
+          p.email.toLowerCase() === user.email.toLowerCase(),
       );
       if (match) suggestions[user.externalId] = match.id;
     }
@@ -88,7 +136,6 @@ function BitrixManagersContent() {
   const handleApply = async () => {
     setApplying(true);
     let ok = 0;
-    let fail = 0;
     for (const u of changed) {
       const v = pending[u.externalId];
       try {
@@ -101,7 +148,6 @@ function BitrixManagersContent() {
         }
         ok += 1;
       } catch (e) {
-        fail += 1;
         toast.error(
           errMessage(e, `Не удалось обновить связь: ${u.name ?? u.externalId}`),
         );
@@ -115,7 +161,7 @@ function BitrixManagersContent() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-6">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6">
       <header className="mb-6">
         <Link
           href="/company-admin/sources/bitrix"
@@ -153,14 +199,14 @@ function BitrixManagersContent() {
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-sm text-fg-secondary">
-              Сотрудников нет — синхронизируйте их на{" "}
+              Сотрудников нет — нажмите «Получить сотрудников» на{" "}
               <Link
                 href="/company-admin/sources/bitrix"
                 className="text-accent hover:underline"
               >
                 странице интеграции
-              </Link>{" "}
-              (кнопка «Сотрудники»).
+              </Link>
+              .
             </p>
           </CardContent>
         </Card>
@@ -171,29 +217,35 @@ function BitrixManagersContent() {
           <CardHeader>
             <CardTitle>Сотрудники ({users.length})</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {users.map((user) => {
-              const value = pending[user.externalId] ?? currentValue(user);
-              return (
-                <UserRow
-                  key={user.externalId}
-                  user={user}
-                  personOptions={personOptions}
-                  value={value}
-                  dirty={value !== currentValue(user)}
-                  disabled={applying}
-                  onChange={(v) =>
-                    setPending((p) => ({ ...p, [user.externalId]: v }))
-                  }
-                />
-              );
-            })}
-
-            <ApplyBar
-              count={changed.length}
-              applying={applying}
-              onApply={() => void handleApply()}
-            />
+          <CardContent>
+            <div className="mb-3 hidden grid-cols-[2fr_2fr_1.5fr] gap-4 px-3 text-xs font-semibold uppercase tracking-wide text-fg-tertiary sm:grid">
+              <span>Из Bitrix24</span>
+              <span>Предложение</span>
+              <span>Действие</span>
+            </div>
+            <div className="space-y-2">
+              {users.map((user) => {
+                const value = pending[user.externalId] ?? currentValue(user);
+                return (
+                  <UserRow
+                    key={user.externalId}
+                    user={user}
+                    personOptions={personOptions}
+                    value={value}
+                    dirty={value !== currentValue(user)}
+                    disabled={applying}
+                    onChange={(v) =>
+                      setPending((p) => ({ ...p, [user.externalId]: v }))
+                    }
+                  />
+                );
+              })}
+              <ApplyBar
+                count={changed.length}
+                applying={applying}
+                onApply={() => void handleApply()}
+              />
+            </div>
           </CardContent>
         </Card>
       )}
@@ -242,9 +294,8 @@ function UserRow({
 }) {
   const displayName = user.name?.trim() || user.email || user.externalId;
 
-  const allOptions =
-    user.linkedPersonId &&
-    !personOptions.some((p) => p.id === user.linkedPersonId)
+  const allOptions: PersonOption[] =
+    user.linkedPersonId && !personOptions.some((p) => p.id === user.linkedPersonId)
       ? [
           { id: user.linkedPersonId, name: user.linkedPersonName, email: null },
           ...personOptions,
@@ -252,9 +303,15 @@ function UserRow({
       : personOptions;
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+    <div
+      className={`grid grid-cols-1 gap-3 rounded-lg border p-3 sm:grid-cols-[2fr_2fr_1.5fr] sm:gap-4 sm:items-center ${
+        dirty
+          ? "border-accent/40 bg-accent/5"
+          : "border-border-subtle bg-bg-card"
+      }`}
+    >
       <div className="min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <span className="truncate text-sm font-medium text-fg-primary">
             {displayName}
           </span>
@@ -266,28 +323,21 @@ function UserRow({
               неактивен
             </Badge>
           )}
-          {dirty && (
-            <Badge variant="secondary" className="text-accent">
-              изменено
-            </Badge>
-          )}
         </div>
         <div className="mt-0.5 truncate text-xs text-fg-tertiary">
           {user.email ?? "—"}
           {user.position ? ` · ${user.position}` : ""}
         </div>
-        {user.linkedPersonName && (
-          <div className="mt-0.5 truncate text-xs text-fg-secondary">
-            Сотрудник: {user.linkedPersonName}
-          </div>
-        )}
       </div>
 
-      {}
-      <div className="flex items-center gap-2 sm:w-72 sm:shrink-0">
+      <div className="flex min-w-0 items-center">
+        <MatchCell value={value} userEmail={user.email} options={allOptions} />
+      </div>
+
+      <div className="flex items-center">
         <Select value={value} onValueChange={onChange} disabled={disabled}>
-          <SelectTrigger className="flex-1">
-            <SelectValue placeholder="Действие" />
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Выбрать действие" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NONE_VALUE}>— Не связывать —</SelectItem>

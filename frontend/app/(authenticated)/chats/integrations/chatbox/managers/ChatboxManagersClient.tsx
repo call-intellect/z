@@ -40,6 +40,51 @@ function currentValue(member: ChatboxMemberView): string {
   return NONE_VALUE;
 }
 
+type PersonOption = { id: string; name: string; email: string | null };
+
+function MatchCell({
+  value,
+  sourceEmail,
+  options,
+}: {
+  value: string;
+  sourceEmail: string | null;
+  options: PersonOption[];
+}) {
+  if (value === NONE_VALUE) {
+    return <span className="text-sm text-fg-tertiary">— Не связывать —</span>;
+  }
+  if (value === CREATE_VALUE) {
+    return (
+      <span className="text-sm font-medium text-accent">
+        ＋ Создать нового сотрудника
+      </span>
+    );
+  }
+  const person = options.find((p) => p.id === value);
+  const isEmailMatch =
+    person?.email &&
+    sourceEmail &&
+    person.email.toLowerCase() === sourceEmail.toLowerCase();
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-1.5">
+        <span className="truncate text-sm font-medium text-fg-primary">
+          {person?.name || "(без имени)"}
+        </span>
+        {isEmailMatch && (
+          <Badge variant="secondary" className="shrink-0 text-xs">
+            по email
+          </Badge>
+        )}
+      </div>
+      {person?.email && (
+        <div className="truncate text-xs text-fg-tertiary">{person.email}</div>
+      )}
+    </div>
+  );
+}
+
 export function ChatboxManagersClient() {
   return (
     <TierGate feature="feature.chatbox">
@@ -65,9 +110,7 @@ function ChatboxManagersContent() {
     () => personsDomainApi.list(currentOrgId!, { relationship: "employee" }),
   );
 
-  const personOptions: { id: string; name: string; email: string | null }[] = (
-    persons?.items ?? []
-  )
+  const personOptions: PersonOption[] = (persons?.items ?? [])
     .filter((p) => p.userId !== null)
     .map((p) => ({ id: p.id, name: p.fullName || "(без имени)", email: p.email ?? null }));
 
@@ -83,7 +126,10 @@ function ChatboxManagersContent() {
     for (const m of members) {
       if (m.linkedPersonId) continue;
       const match = opts.find(
-        (p) => p.email && m.email && p.email.toLowerCase() === m.email.toLowerCase(),
+        (p) =>
+          p.email &&
+          m.email &&
+          p.email.toLowerCase() === m.email.toLowerCase(),
       );
       if (match) suggestions[m.id] = match.id;
     }
@@ -122,7 +168,7 @@ function ChatboxManagersContent() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-6">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6">
       <header className="mb-6">
         <Link
           href="/chats/integrations/chatbox"
@@ -160,7 +206,7 @@ function ChatboxManagersContent() {
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-sm text-fg-secondary">
-              Менеджеров нет — синхронизируйте их на{" "}
+              Менеджеров нет — нажмите «Получить менеджеров» на{" "}
               <Link
                 href="/chats/integrations/chatbox"
                 className="text-accent hover:underline"
@@ -178,29 +224,35 @@ function ChatboxManagersContent() {
           <CardHeader>
             <CardTitle>Менеджеры ({list.length})</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {list.map((member) => {
-              const value = pending[member.id] ?? currentValue(member);
-              return (
-                <MemberRow
-                  key={member.id}
-                  member={member}
-                  personOptions={personOptions}
-                  value={value}
-                  dirty={value !== currentValue(member)}
-                  disabled={applying}
-                  onChange={(v) =>
-                    setPending((p) => ({ ...p, [member.id]: v }))
-                  }
-                />
-              );
-            })}
-
-            <ApplyBar
-              count={changed.length}
-              applying={applying}
-              onApply={() => void handleApply()}
-            />
+          <CardContent>
+            <div className="mb-3 hidden grid-cols-[2fr_2fr_1.5fr] gap-4 px-3 text-xs font-semibold uppercase tracking-wide text-fg-tertiary sm:grid">
+              <span>Из Чат бокса</span>
+              <span>Предложение</span>
+              <span>Действие</span>
+            </div>
+            <div className="space-y-2">
+              {list.map((member) => {
+                const value = pending[member.id] ?? currentValue(member);
+                return (
+                  <MemberRow
+                    key={member.id}
+                    member={member}
+                    personOptions={personOptions}
+                    value={value}
+                    dirty={value !== currentValue(member)}
+                    disabled={applying}
+                    onChange={(v) =>
+                      setPending((p) => ({ ...p, [member.id]: v }))
+                    }
+                  />
+                );
+              })}
+              <ApplyBar
+                count={changed.length}
+                applying={applying}
+                onApply={() => void handleApply()}
+              />
+            </div>
           </CardContent>
         </Card>
       )}
@@ -241,53 +293,51 @@ function MemberRow({
   onChange,
 }: {
   member: ChatboxMemberView;
-  personOptions: { id: string; name: string }[];
+  personOptions: PersonOption[];
   value: string;
   dirty: boolean;
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
-  const allOptions =
-    member.linkedPersonId &&
-    !personOptions.some((p) => p.id === member.linkedPersonId)
+  const allOptions: PersonOption[] =
+    member.linkedPersonId && !personOptions.some((p) => p.id === member.linkedPersonId)
       ? [
-          { id: member.linkedPersonId, name: member.linkedPersonName ?? "(без имени)" },
+          { id: member.linkedPersonId, name: member.linkedPersonName ?? "(без имени)", email: null },
           ...personOptions,
         ]
       : personOptions;
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+    <div
+      className={`grid grid-cols-1 gap-3 rounded-lg border p-3 sm:grid-cols-[2fr_2fr_1.5fr] sm:gap-4 sm:items-center ${
+        dirty
+          ? "border-accent/40 bg-accent/5"
+          : "border-border-subtle bg-bg-card"
+      }`}
+    >
       <div className="min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <span className="truncate text-sm font-medium text-fg-primary">
             {member.displayName}
           </span>
           <Badge variant={chatboxLinkModeBadgeVariant(member.linkMode)}>
             {member.linkModeLabel}
           </Badge>
-          {dirty && (
-            <Badge variant="secondary" className="text-accent">
-              изменено
-            </Badge>
-          )}
         </div>
         <div className="mt-0.5 truncate text-xs text-fg-tertiary">
           {member.email ?? "—"}
           {member.role ? ` · ${member.role}` : ""}
         </div>
-        {member.linkedPersonName && (
-          <div className="mt-0.5 truncate text-xs text-fg-secondary">
-            Сотрудник: {member.linkedPersonName}
-          </div>
-        )}
       </div>
 
-      {}
-      <div className="flex items-center gap-2 sm:w-72 sm:shrink-0">
+      <div className="flex min-w-0 items-center">
+        <MatchCell value={value} sourceEmail={member.email} options={allOptions} />
+      </div>
+
+      <div className="flex items-center">
         <Select value={value} onValueChange={onChange} disabled={disabled}>
-          <SelectTrigger className="flex-1">
-            <SelectValue placeholder="Действие" />
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Выбрать действие" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NONE_VALUE}>— Не связывать —</SelectItem>

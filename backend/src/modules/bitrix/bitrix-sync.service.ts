@@ -10,7 +10,6 @@ import type { BitrixIntegration, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AdminSettingsService } from '../admin/settings/admin-settings.service';
-import { EntityResolutionService } from '../knowledge-core/services/entity-resolution.service';
 import { PersonsService } from '../persons/services/persons.service';
 
 import type {
@@ -56,8 +55,6 @@ export class BitrixSyncService {
     private readonly integration: BitrixIntegrationService,
     @Inject(AdminSettingsService)
     private readonly adminSettings: AdminSettingsService,
-    @Inject(EntityResolutionService)
-    private readonly entityResolution: EntityResolutionService,
     @Inject(PersonsService) private readonly persons: PersonsService,
     @Optional()
     @Inject(BitrixAnalyzeQueueService)
@@ -66,10 +63,6 @@ export class BitrixSyncService {
 
   private async isEnabled(): Promise<boolean> {
     return (await this.adminSettings.get<boolean>('bitrix.enabled', true)) ?? true;
-  }
-
-  private async isNameFuzzyEnabled(): Promise<boolean> {
-    return (await this.adminSettings.get<boolean>('bitrix.match.name_fuzzy_enabled', true)) ?? true;
   }
 
   private async requireRow(tenantId: string): Promise<BitrixIntegration> {
@@ -149,119 +142,6 @@ export class BitrixSyncService {
     }
 
     return users.length;
-  }
-
-  private async autoLinkUsers(tenantId: string): Promise<void> {
-    const candidates = await this.prisma.bitrixUser.findMany({
-      where: { tenantId, linkMode: { not: 'manual' } },
-      select: { id: true, email: true, name: true, linkedPersonId: true },
-    });
-    if (candidates.length === 0) return;
-
-    const emails = [
-      ...new Set(candidates.map((c) => c.email?.trim()).filter((e): e is string => !!e)),
-    ];
-    const personByEmail = new Map<string, string>();
-    if (emails.length > 0) {
-      const persons = await this.prisma.person.findMany({
-        where: { tenantId, email: { in: emails, mode: 'insensitive' } },
-        select: { id: true, email: true },
-      });
-      for (const p of persons) {
-        const key = p.email.trim().toLowerCase();
-        if (!personByEmail.has(key)) personByEmail.set(key, p.id);
-      }
-    }
-
-    const usedPersonIds = new Set<string>();
-    const unlinkedAfterEmail: { id: string; name: string | null }[] = [];
-    for (const c of candidates) {
-      const key = c.email?.trim().toLowerCase();
-      const personId = key ? personByEmail.get(key) : undefined;
-      if (personId) {
-        if (c.linkedPersonId === personId) {
-          usedPersonIds.add(personId);
-          continue;
-        }
-        await this.prisma.bitrixUser.update({
-          where: { id: c.id },
-          data: { linkedPersonId: personId, linkMode: 'auto' },
-        });
-        await this.upgradePersonToEmployee(tenantId, personId);
-        usedPersonIds.add(personId);
-        continue;
-      }
-      if (c.linkedPersonId === null) {
-        unlinkedAfterEmail.push({ id: c.id, name: c.name });
-      } else {
-        usedPersonIds.add(c.linkedPersonId);
-      }
-    }
-
-    if (unlinkedAfterEmail.length > 0 && (await this.isNameFuzzyEnabled())) {
-      for (const row of unlinkedAfterEmail) {
-        const name = row.name?.trim();
-        if (!name) continue;
-        const personId = await this.entityResolution.resolvePersonByHint(tenantId, name);
-        if (!personId) continue;
-        if (usedPersonIds.has(personId)) continue;
-        await this.prisma.bitrixUser.update({
-          where: { id: row.id },
-          data: { linkedPersonId: personId, linkMode: 'auto' },
-        });
-        await this.upgradePersonToEmployee(tenantId, personId);
-        usedPersonIds.add(personId);
-      }
-    }
-  }
-
-  private async upgradePersonToEmployee(tenantId: string, personId: string): Promise<void> {
-    await this.prisma.person.updateMany({
-      where: { id: personId, tenantId, relationship: 'external', deletedAt: null },
-      data: { relationship: 'employee' },
-    });
-  }
-
-  private async autoCreateUsersUnlinked(tenantId: string): Promise<void> {
-    const ownerUserId = await this.resolveOwnerUserId(tenantId);
-    if (!ownerUserId) return;
-    const rows = await this.prisma.bitrixUser.findMany({
-      where: { tenantId, linkedPersonId: null, linkMode: { not: 'manual' } },
-      select: { id: true, email: true, name: true },
-    });
-    for (const r of rows) {
-      const email = r.email?.trim() || null;
-      const name = r.name?.trim() || null;
-      if (!email && !name) continue;
-      try {
-        let personId: string | null = null;
-        if (email) {
-          const existing = await this.prisma.person.findFirst({
-            where: { tenantId, email, deletedAt: null },
-            select: { id: true },
-          });
-          personId = existing?.id ?? null;
-        }
-        if (!personId) {
-          const created = await this.persons.create({
-            tenantId,
-            userId: ownerUserId,
-            body: { name: name ?? email ?? 'Без имени', ...(email ? { email } : {}) },
-          });
-          personId = created.id;
-        }
-        await this.upgradePersonToEmployee(tenantId, personId);
-        await this.prisma.bitrixUser.update({
-          where: { id: r.id },
-          data: { linkedPersonId: personId, linkMode: 'auto' },
-        });
-      } catch (err) {
-        this.logger.warn(
-          { rowId: r.id, err: err instanceof Error ? err.message : String(err) },
-          'bitrix autoCreate: не удалось создать/связать — пропуск',
-        );
-      }
-    }
   }
 
   private async resolveOwnerUserId(tenantId: string): Promise<string | null> {

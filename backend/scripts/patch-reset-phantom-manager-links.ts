@@ -7,13 +7,25 @@ async function main() {
     where: { linkedPersonId: { not: null } },
     data: { linkedPersonId: null, linkMode: 'none' },
   });
-  console.log(`Bitrix: сброшено ${bitrix.count} записей`);
+  console.log(`Bitrix (сотрудники): сброшено ${bitrix.count} записей`);
 
-  const chatbox = await prisma.chatboxMember.updateMany({
+  const members = await prisma.chatboxMember.updateMany({
     where: { linkedPersonId: { not: null } },
     data: { linkedPersonId: null, linkMode: 'none' },
   });
-  console.log(`Chatbox: сброшено ${chatbox.count} записей`);
+  console.log(`Chatbox (менеджеры): сброшено ${members.count} записей`);
+
+  const customers = await prisma.chatboxCustomer.updateMany({
+    where: { linkedPersonId: { not: null } },
+    data: { linkedPersonId: null, linkMode: 'none' },
+  });
+  console.log(`Chatbox (клиенты): сброшено ${customers.count} записей`);
+
+  const channelClients = await prisma.chatboxChannelClient.updateMany({
+    where: { linkedPersonId: { not: null } },
+    data: { linkedPersonId: null, linkMode: 'none' },
+  });
+  console.log(`Chatbox (собеседники каналов): сброшено ${channelClients.count} записей`);
 
   console.log('Готово.');
 }

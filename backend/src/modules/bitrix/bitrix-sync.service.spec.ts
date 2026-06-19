@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { AdminSettingsService } from '../admin/settings/admin-settings.service';
-import type { EntityResolutionService } from '../knowledge-core/services/entity-resolution.service';
 import type { PersonsService } from '../persons/services/persons.service';
 
 import type { BitrixIntegrationService } from './bitrix-integration.service';
@@ -25,7 +24,6 @@ function makeService(over: { prisma?: Record<string, unknown> } = {}): {
     prisma as unknown as PrismaService,
     {} as unknown as BitrixIntegrationService,
     {} as unknown as AdminSettingsService,
-    {} as unknown as EntityResolutionService,
     persons as unknown as PersonsService,
     undefined,
   );
@@ -100,7 +98,7 @@ describe('BitrixSyncService.linkUser', () => {
     expect(res.linkedPersonName).toBe('Иван Иванов');
   });
 
-  it('mode=unlink → linkedPersonId=null, linkMode=manual', async () => {
+  it('mode=unlink → linkedPersonId=null, linkMode=none', async () => {
     const { service, prisma } = makeService();
     prisma.bitrixUser.findUnique.mockResolvedValue({
       id: 'u1',
@@ -113,7 +111,7 @@ describe('BitrixSyncService.linkUser', () => {
       email: null,
       position: null,
       active: true,
-      linkMode: 'manual',
+      linkMode: 'none',
       linkedPersonId: null,
     });
 
@@ -121,7 +119,7 @@ describe('BitrixSyncService.linkUser', () => {
 
     expect(prisma.bitrixUser.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: { linkedPersonId: null, linkMode: 'manual' },
+        data: { linkedPersonId: null, linkMode: 'none' },
       }),
     );
     expect(res.linkedPersonName).toBeNull();

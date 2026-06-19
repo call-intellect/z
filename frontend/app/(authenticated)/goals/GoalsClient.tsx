@@ -539,7 +539,7 @@ function CreateGoalDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Создать цель</DialogTitle>
         </DialogHeader>
@@ -659,17 +659,20 @@ function EditGoalDialog({
   const { persons } = usePersons(orgId);
 
   const lastGoalIdRef = useRef<string | null>(null);
+  const goalRef = useRef(goal);
+  goalRef.current = goal;
   useEffect(() => {
-    if (open && lastGoalIdRef.current !== goal.id) {
-      lastGoalIdRef.current = goal.id;
-      setName(goal.name);
-      setDescription(goal.description);
-      setTargetDate(goal.targetDate ? formatDateInput(goal.targetDate) : "");
-      setStatus(goal.status);
-      setWeight(String(goal.weight));
-      setOwnerPersonId(goal.ownerPersonId ?? "__none__");
-    }
-  }, [open, goal]);
+    if (!open) return;
+    const g = goalRef.current;
+    if (lastGoalIdRef.current === g.id) return;
+    lastGoalIdRef.current = g.id;
+    setName(g.name);
+    setDescription(g.description);
+    setTargetDate(g.targetDate ? formatDateInput(g.targetDate) : "");
+    setStatus(g.status);
+    setWeight(String(g.weight));
+    setOwnerPersonId(g.ownerPersonId ?? "__none__");
+  }, [open]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -730,7 +733,7 @@ function EditGoalDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Редактировать цель</DialogTitle>
         </DialogHeader>

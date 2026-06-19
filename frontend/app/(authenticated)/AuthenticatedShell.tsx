@@ -6,6 +6,7 @@ import { useEffect, type ReactNode } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { EntitlementProvider } from "@/contexts/entitlement-context";
 import { SubscriptionProvider } from "@/contexts/subscription-context";
+import { useVersionCheck } from "@/hooks/useVersionCheck";
 import { AppShell } from "@/ui/components/app-shell/AppShell";
 import { BreadcrumbProvider } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 import { AssistantSidebar } from "@/ui/components/dashboard/AssistantSidebar";
@@ -22,6 +23,7 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
     profileCompletedAt,
     isSuperAdmin,
   } = useAuth();
+  useVersionCheck();
   const pathname = usePathname();
   const router = useRouter();
 

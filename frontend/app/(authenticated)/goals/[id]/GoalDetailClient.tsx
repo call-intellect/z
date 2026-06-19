@@ -106,6 +106,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
       const api = await goalsApi.get(orgId, id);
       return goalDetailFromApi(api);
     },
+    { revalidateOnFocus: false },
   );
 
   useRegisterBreadcrumb(data ? { label: data.name } : null);
@@ -846,7 +847,7 @@ function KeyResultDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>
             {isEdit
@@ -1551,7 +1552,7 @@ function AddThemesDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Добавить темы</DialogTitle>
         </DialogHeader>

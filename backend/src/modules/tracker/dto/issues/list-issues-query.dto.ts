@@ -18,7 +18,7 @@ export const ListIssuesQuerySchema = z
     q: z.string().max(200).optional(),
     includeChildrenCount: z.coerce.boolean().default(false),
     page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(50),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
   })
   .strict();
 export type ListIssuesQuery = z.infer<typeof ListIssuesQuerySchema>;

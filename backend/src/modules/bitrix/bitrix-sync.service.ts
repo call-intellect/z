@@ -175,17 +175,22 @@ export class BitrixSyncService {
       }
     }
 
+    const usedPersonIds = new Set<string>();
     const unlinkedAfterEmail: { id: string; name: string | null }[] = [];
     for (const c of candidates) {
       const key = c.email?.trim().toLowerCase();
       const personId = key ? personByEmail.get(key) : undefined;
       if (personId) {
-        if (c.linkedPersonId === personId) continue;
+        if (c.linkedPersonId === personId) {
+          usedPersonIds.add(personId);
+          continue;
+        }
         await this.prisma.bitrixUser.update({
           where: { id: c.id },
           data: { linkedPersonId: personId, linkMode: 'auto' },
         });
         await this.upgradePersonToEmployee(tenantId, personId);
+        usedPersonIds.add(personId);
         continue;
       }
       if (c.linkedPersonId === null) {
@@ -199,11 +204,13 @@ export class BitrixSyncService {
         if (!name) continue;
         const personId = await this.entityResolution.resolvePersonByHint(tenantId, name);
         if (!personId) continue;
+        if (usedPersonIds.has(personId)) continue;
         await this.prisma.bitrixUser.update({
           where: { id: row.id },
           data: { linkedPersonId: personId, linkMode: 'auto' },
         });
         await this.upgradePersonToEmployee(tenantId, personId);
+        usedPersonIds.add(personId);
       }
     }
   }

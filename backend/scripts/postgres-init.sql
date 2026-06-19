@@ -891,3 +891,9 @@ BEGIN
     END IF;
   END IF;
 END $$;
+
+-- Partial index для cron-запроса на concierge_conversations без summary.
+-- Ускоряет SELECT ... WHERE summary IS NULL AND archivedAt IS NULL ORDER BY lastMessageAt.
+CREATE INDEX IF NOT EXISTS "idx_concierge_conversations_pending_summary"
+  ON "concierge_conversations" ("lastMessageAt")
+  WHERE "summary" IS NULL AND "archivedAt" IS NULL;

@@ -1709,7 +1709,9 @@ export class LlmRouterService implements OnModuleInit {
           provider: entry.provider,
           status: isLast ? 'failed' : 'fallback',
         });
-        this.logger.warn(
+        const isValidateFailure = err instanceof LlmInvalidOutputError;
+        const logLevel = isLast || !isValidateFailure ? 'warn' : 'debug';
+        this.logger[logLevel](
           {
             taskType: params.taskType,
             provider: entry.provider,

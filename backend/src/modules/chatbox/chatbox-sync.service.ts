@@ -260,9 +260,6 @@ export class ChatboxSyncService {
       });
     }
 
-    await this.autoLinkMembers(tenantId);
-    await this.autoCreateMembersUnlinked(tenantId);
-
     return members.length;
   }
 

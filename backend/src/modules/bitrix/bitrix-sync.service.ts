@@ -148,8 +148,6 @@ export class BitrixSyncService {
       });
     }
 
-    await this.autoLinkUsers(tenantId);
-    await this.autoCreateUsersUnlinked(tenantId);
     return users.length;
   }
 

@@ -6,6 +6,7 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { ConversationalService } from '../conversational/conversational.service';
 
 import { ProbeDigestCron } from './probe-digest.cron';
+import type { ProbeFormulationService } from './probe-formulation.service';
 
 interface Row {
   id: string;
@@ -29,10 +30,20 @@ function makeRow(over: Partial<Row> & { id: string }): Row {
   };
 }
 
-function makeCron(args: { rowsByCall: Row[][]; sendOk?: boolean }): {
+function makeCron(args: {
+  rowsByCall: Row[][];
+  sendOk?: boolean;
+  formulateEnabled?: boolean;
+  gateAsk?: boolean;
+  formulationThrows?: boolean;
+}): {
   cron: ProbeDigestCron;
   sendNotification: ReturnType<typeof vi.fn>;
   updateMany: ReturnType<typeof vi.fn>;
+  update: ReturnType<typeof vi.fn>;
+  gate: ReturnType<typeof vi.fn>;
+  formulate: ReturnType<typeof vi.fn>;
+  judgeQuality: ReturnType<typeof vi.fn>;
 } {
   let call = 0;
   const findMany = vi.fn().mockImplementation(async () => {
@@ -41,8 +52,9 @@ function makeCron(args: { rowsByCall: Row[][]; sendOk?: boolean }): {
     return rows;
   });
   const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+  const update = vi.fn().mockResolvedValue({});
   const prisma = {
-    probeEvent: { findMany, updateMany },
+    probeEvent: { findMany, updateMany, update },
   } as unknown as PrismaService;
 
   const sendNotification = vi.fn().mockImplementation(async () => {
@@ -54,18 +66,40 @@ function makeCron(args: { rowsByCall: Row[][]; sendOk?: boolean }): {
   } as unknown as ConversationalService;
 
   const cfg = {
-    getDynamic: vi.fn().mockImplementation(async (key: string, _e, def: unknown) => def),
+    getDynamic: vi.fn().mockImplementation(async (key: string, _e, def: unknown) => {
+      if (key === 'probe.digestFormulateEnabled') {
+        return args.formulateEnabled ?? false;
+      }
+      return def;
+    }),
   } as unknown as TypedConfigService;
 
   const metrics = {
     incProbeEvent: vi.fn(),
     incProbeDispatched: vi.fn(),
+    incProbeValueGate: vi.fn(),
   } as unknown as BusinessMetricsService;
 
+  const gate = vi.fn().mockImplementation(async () => {
+    if (args.formulationThrows) throw new Error('llm down');
+    return { ask: args.gateAsk ?? true, reason: 'test' };
+  });
+  const formulate = vi.fn().mockResolvedValue({ question: 'LLM-вопрос?' });
+  const judgeQuality = vi.fn().mockResolvedValue('LLM-вопрос?');
+  const formulation = {
+    gate,
+    formulate,
+    judgeQuality,
+  } as unknown as ProbeFormulationService;
+
   return {
-    cron: new ProbeDigestCron(prisma, conversational, cfg, metrics),
+    cron: new ProbeDigestCron(prisma, conversational, cfg, metrics, formulation),
     sendNotification,
     updateMany,
+    update,
+    gate,
+    formulate,
+    judgeQuality,
   };
 }
 
@@ -194,5 +228,73 @@ describe('ProbeDigestCron.collectAndSend', () => {
     });
     await e.cron.collectAndSend();
     expect(e.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('Ф5: digestFormulateEnabled=false → детерминированный путь, LLM не зовётся', async () => {
+    const e = makeCron({
+      rowsByCall: [[makeRow({ id: 'd1' })]],
+      formulateEnabled: false,
+    });
+    await e.cron.collectAndSend();
+    expect(e.gate).not.toHaveBeenCalled();
+    expect(e.formulate).not.toHaveBeenCalled();
+    const arg = e.sendNotification.mock.calls[0]![0] as {
+      payload: { items: Array<{ question: string }> };
+    };
+    expect(arg.payload.items[0]!.question).toBe('Вопрос d1?');
+  });
+
+  it('Ф5: digestFormulateEnabled=true → gate→formulate→judge, formulatedQuestion в payload', async () => {
+    const e = makeCron({
+      rowsByCall: [[makeRow({ id: 'd2' })]],
+      formulateEnabled: true,
+      gateAsk: true,
+    });
+    await e.cron.collectAndSend();
+    expect(e.gate).toHaveBeenCalledTimes(1);
+    expect(e.formulate).toHaveBeenCalledTimes(1);
+    expect(e.judgeQuality).toHaveBeenCalledTimes(1);
+    const arg = e.sendNotification.mock.calls[0]![0] as {
+      payload: { items: Array<{ question: string }> };
+    };
+    expect(arg.payload.items[0]!.question).toBe('LLM-вопрос?');
+    const persist = e.update.mock.calls.find(
+      (c) => (c[0] as { data?: { payload?: unknown } }).data?.payload,
+    );
+    expect(persist).toBeDefined();
+    expect(
+      (persist![0] as { data: { payload: { formulatedQuestion: string } } }).data
+        .payload.formulatedQuestion,
+    ).toBe('LLM-вопрос?');
+  });
+
+  it('Ф5: gate ask=false → item исключён из дайджеста, probe помечен dropped_low_value', async () => {
+    const e = makeCron({
+      rowsByCall: [
+        [makeRow({ id: 'k1' }), makeRow({ id: 'k2' })],
+      ],
+      formulateEnabled: true,
+      gateAsk: false,
+    });
+    await e.cron.collectAndSend();
+    expect(e.sendNotification).not.toHaveBeenCalled();
+    const dropCall = e.update.mock.calls.find(
+      (c) => (c[0] as { data?: { status?: string } }).data?.status === 'dropped_low_value',
+    );
+    expect(dropCall).toBeDefined();
+  });
+
+  it('Ф5: LLM упал по item → детерминированный фолбэк, дайджест отправлен', async () => {
+    const e = makeCron({
+      rowsByCall: [[makeRow({ id: 'f1' })]],
+      formulateEnabled: true,
+      formulationThrows: true,
+    });
+    await e.cron.collectAndSend();
+    expect(e.sendNotification).toHaveBeenCalledTimes(1);
+    const arg = e.sendNotification.mock.calls[0]![0] as {
+      payload: { items: Array<{ question: string }> };
+    };
+    expect(arg.payload.items[0]!.question).toBe('Вопрос f1?');
   });
 });

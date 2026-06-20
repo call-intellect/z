@@ -25,6 +25,12 @@ import {
   PROBE_QUALITY_JUDGE_SYSTEM_PROMPT,
   PROBE_QUALITY_JUDGE_USER,
 } from './prompts/probe-quality-judge.prompt';
+import {
+  PROBE_VALUE_GATE_JSON_SCHEMA,
+  PROBE_VALUE_GATE_SCHEMA_NAME,
+  PROBE_VALUE_GATE_SYSTEM_PROMPT,
+  PROBE_VALUE_GATE_USER,
+} from './prompts/probe-value-gate.prompt';
 
 interface FormulatedProbe {
   question: string;
@@ -34,6 +40,11 @@ interface ProbeQualityVerdict {
   ok: boolean;
   issues?: string[];
   rewrite?: string;
+}
+
+interface ProbeValueGateVerdict {
+  ask: boolean;
+  reason: string;
 }
 
 @Injectable()
@@ -46,6 +57,73 @@ export class ProbeFormulationService {
     private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
+
+  async gate(probe: ProbeEvent): Promise<ProbeValueGateVerdict> {
+    let enabled: boolean;
+    try {
+      enabled = await this.cfg.getDynamic<boolean>(
+        'probe.valueGateEnabled',
+        undefined,
+        true,
+      );
+    } catch {
+      enabled = true;
+    }
+    if (!enabled) return { ask: true, reason: 'gate_disabled' };
+
+    const payload = (probe.payload ?? {}) as Record<string, unknown>;
+    try {
+      const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
+      const reasonLabel =
+        PROBE_REASON_LABEL[probe.reason] ?? PROBE_REASON_LABEL_DEFAULT;
+      const objectName =
+        this.toStringOrUndef(payload.objectName) ??
+        this.toStringOrUndef(payload.contextCardTitle);
+      const objectKindRu = this.toStringOrUndef(payload.objectKindRu);
+      const message = this.toStringOrUndef(payload.message);
+      const guarded = applyInputGuards(
+        PROBE_VALUE_GATE_SYSTEM_PROMPT,
+        PROBE_VALUE_GATE_USER({
+          reasonLabel,
+          objectName,
+          objectKindRu,
+          message,
+        }),
+        { enabled: guardOn, injection: true },
+      );
+      const result = await this.llm.call({
+        taskType: 'probe-value-gate',
+        systemPrompt: guarded.system,
+        userMessage: guarded.user,
+        tenantId: probe.tenantId,
+        responseFormat: {
+          type: 'json_schema',
+          name: PROBE_VALUE_GATE_SCHEMA_NAME,
+          schema: PROBE_VALUE_GATE_JSON_SCHEMA,
+          strict: true,
+        },
+        sourceRef: { type: 'probe', id: probe.id },
+        dataClass: this.extractDataClass(payload),
+      });
+      const parsed = JSON.parse(result.text) as ProbeValueGateVerdict;
+      if (parsed && typeof parsed.ask === 'boolean') {
+        return {
+          ask: parsed.ask,
+          reason: typeof parsed.reason === 'string' ? parsed.reason : '',
+        };
+      }
+      return { ask: true, reason: 'gate_error' };
+    } catch (err) {
+      this.logger.debug(
+        {
+          probeEventId: probe.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'probe-dispatcher: probe-value-gate упал — пропускаю вопрос (fail-open)',
+      );
+      return { ask: true, reason: 'gate_error' };
+    }
+  }
 
   async formulate(probe: ProbeEvent): Promise<FormulatedProbe> {
     const payload = (probe.payload ?? {}) as Record<string, unknown>;

@@ -71,6 +71,19 @@ const SEEDS: TaskRouteSeed[] = [
     ],
   },
   {
+    taskType: 'probe-value-gate',
+    playbookSection: '§2.1 probe value-gate (2026-06-20)',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      {
+        tier: 'secondary',
+        providerName: 'openai-via-proxy',
+        model: 'gpt-5.4-mini',
+      },
+      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
+    ],
+  },
+  {
     taskType: 'idea-status-summarize',
     playbookSection: '§2.1 short summarize + β-5 §11',
     chain: [

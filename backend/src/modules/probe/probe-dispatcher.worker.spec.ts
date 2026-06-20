@@ -61,6 +61,9 @@ function makeMocks(args: {
   engagement?: Record<string, string>;
   engagementRoutingEnabled?: boolean;
   deliveryKind?: string | null;
+  valueGateEnabled?: boolean;
+  gateResponse?: { text: string };
+  gateThrow?: Error;
 }): Mocks {
   const probe = buildProbe(args.probePayload, args.probePriority, args.reason);
   const updateCalls: Array<{
@@ -91,6 +94,15 @@ function makeMocks(args: {
   } as unknown as PrismaService;
 
   const llmCall = vi.fn();
+  if (args.valueGateEnabled === true) {
+    if (args.gateThrow) {
+      llmCall.mockRejectedValueOnce(args.gateThrow);
+    } else {
+      llmCall.mockResolvedValueOnce(
+        args.gateResponse ?? { text: JSON.stringify({ ask: true, reason: 'ok' }) },
+      );
+    }
+  }
   if (args.llmThrow) {
     llmCall.mockRejectedValueOnce(args.llmThrow);
   } else if (args.llmResponse) {
@@ -121,6 +133,7 @@ function makeMocks(args: {
     incProbeRateLimitDropped: vi.fn(),
     incProbeExpired: vi.fn(),
     incProbeQualityJudged: vi.fn(),
+    incProbeValueGate: vi.fn(),
   } as unknown as BusinessMetricsService;
 
   const cfg = {
@@ -139,6 +152,9 @@ function makeMocks(args: {
       .fn()
       .mockImplementation(
         async (key: string, _env: unknown, fallback: unknown) => {
+          if (key === 'probe.valueGateEnabled') {
+            return args.valueGateEnabled ?? false;
+          }
           if (
             key === 'probe.qualityJudgeEnabled' &&
             args.qualityJudgeEnabled !== undefined
@@ -697,5 +713,98 @@ describe('ProbeDispatcherWorker — Probe Ф5: пометка переспрос
       userMessage: string;
     };
     expect(formulateCall.userMessage).not.toContain(REASK_HINT);
+  });
+});
+
+describe('ProbeDispatcherWorker — Probe Ф4: гейт ценности (value-gate)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('флаг probe.valueGateEnabled=false → gate БЕЗ LLM-вызова (нет probe-value-gate), обычный dispatch', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: { text: JSON.stringify({ question: 'Кто отвечает за это?' }) },
+      valueGateEnabled: false,
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(mocks.llmCall).toHaveBeenCalledTimes(2);
+    const taskTypes = mocks.llmCall.mock.calls.map(
+      (c) => (c[0] as { taskType: string }).taskType,
+    );
+    expect(taskTypes).not.toContain('probe-value-gate');
+    expect(taskTypes[0]).toBe('probe-formulate');
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledTimes(1);
+  });
+
+  it('гейт ask=false → status=dropped_low_value, без formulate/judge/sendNotification', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'отчёт' },
+      llmResponse: { text: JSON.stringify({ question: 'Не должно вызваться?' }) },
+      valueGateEnabled: true,
+      gateResponse: {
+        text: JSON.stringify({ ask: false, reason: 'пустой объект' }),
+      },
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(mocks.llmCall).toHaveBeenCalledTimes(1);
+    const gateCall = mocks.llmCall.mock.calls[0]![0] as { taskType: string };
+    expect(gateCall.taskType).toBe('probe-value-gate');
+    expect(mocks.updateCalls).toHaveLength(1);
+    expect(mocks.updateCalls[0]!.data.status).toBe('dropped_low_value');
+    expect(
+      vi.mocked(mocks.metrics.incProbeValueGate),
+    ).toHaveBeenCalledWith({ verdict: 'skip' });
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).not.toHaveBeenCalled();
+  });
+
+  it('гейт ask=true → метрика ask + обычный путь (formulate→judge→dispatch)', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: {
+        text: JSON.stringify({ question: 'Кто отвечает за этот склад?' }),
+      },
+      valueGateEnabled: true,
+      gateResponse: { text: JSON.stringify({ ask: true, reason: 'есть объект' }) },
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.metrics.incProbeValueGate),
+    ).toHaveBeenCalledWith({ verdict: 'ask' });
+    expect(mocks.updateCalls[0]!.data.status).toBe('dispatched');
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledTimes(1);
+  });
+
+  it('гейт LLM упал → fail-open ask=true, вопрос задаётся (dispatch)', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: {
+        text: JSON.stringify({ question: 'Кто отвечает за это решение?' }),
+      },
+      valueGateEnabled: true,
+      gateThrow: new Error('gate proxy 500'),
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.metrics.incProbeValueGate),
+    ).toHaveBeenCalledWith({ verdict: 'ask' });
+    expect(mocks.updateCalls[0]!.data.status).toBe('dispatched');
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledTimes(1);
   });
 });

@@ -1582,6 +1582,18 @@ function buildSettings(): SettingSeed[] {
       'low',
       'Один переспрос при истечении неотвеченного probe: вопрос переформулируется и задаётся ещё раз перед закрытием как ignored (kill-switch, ON). Выкл → истёкший probe сразу закрывается без переспроса',
     ],
+    [
+      'probe.valueGateEnabled',
+      envBool('PROBE_VALUE_GATE_ENABLED', true),
+      'low',
+      'LLM-гейт ценности уточняющего вопроса (probe): перед формулировкой решает, стоит ли вообще беспокоить человека — пустой пробел (нет объекта/сути) роняется как dropped_low_value (kill-switch, ON). Выкл → вопрос формулируется всегда (старое поведение). Сбой LLM → fail-open (вопрос задаётся)',
+    ],
+    [
+      'probe.digestFormulateEnabled',
+      envBool('PROBE_DIGEST_FORMULATE_ENABLED', true),
+      'low',
+      'Формулировка вопросов дайджеста probe через общий LLM-сервис (gate→formulate→judge) вместо детерминированного шаблона (kill-switch, ON). Выкл → детерминированный путь Ф1 (deriveDigestQuestion), без LLM. Сбой LLM по item → best-effort фолбэк на детерминированный вопрос',
+    ],
   ];
   for (const [key, value, severity, description] of probe) {
     out.push({ key, value, category: 'platform', section: 'probe', severity, description });

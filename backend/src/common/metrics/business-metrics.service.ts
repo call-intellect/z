@@ -642,6 +642,8 @@ export class BusinessMetricsService implements OnModuleInit {
   private probeOutcomeTotal!: Counter<'outcome' | 'reason'>;
   // ── Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки вопроса ──
   private probeQualityJudgedTotal!: Counter<'verdict'>;
+  // ── Probe Фаза 4 (2026-06-20) — LLM-гейт ценности probe-вопроса ──
+  private probeValueGateTotal!: Counter<'verdict'>;
   // ── W2 autonomy (2026-06-12) — OwnerResolver («лестница владельца») ──
   private ownerResolutionTotal!: Counter<'outcome'>;
   // ── Ф5/Ф6 assistant-channels (2026-06-12) — мост «каналы → помощник» ──
@@ -2694,6 +2696,12 @@ export class BusinessMetricsService implements OnModuleInit {
     this.probeQualityJudgedTotal = this.getOrCreateCounter({
       name: 'probe_quality_judged_total',
       help: 'Probe Фаза 2 — вердикт LLM-судьи качества формулировки probe-вопроса: ok (вопрос полноценный) | rewritten (взят регенерат судьи) | kept_on_fail (судья упал/невалидный rewrite → отправлен исходный).',
+      labelNames: ['verdict'] as const,
+    });
+    // ── Probe Фаза 4 (2026-06-20) — LLM-гейт ценности probe-вопроса ──
+    this.probeValueGateTotal = this.getOrCreateCounter({
+      name: 'probe_value_gate_total',
+      help: 'Probe Фаза 4 — вердикт LLM-гейта ценности probe-вопроса: ask (вопрос стоит задать) | skip (пробел пустой → не беспокоим человека).',
       labelNames: ['verdict'] as const,
     });
     // ── W2 autonomy (2026-06-12) — OwnerResolver («лестница владельца») ──
@@ -6264,6 +6272,10 @@ export class BusinessMetricsService implements OnModuleInit {
     verdict: 'ok' | 'rewritten' | 'kept_on_fail';
   }): void {
     this.probeQualityJudgedTotal.inc({ verdict: args.verdict });
+  }
+
+  incProbeValueGate(args: { verdict: 'skip' | 'ask' }): void {
+    this.probeValueGateTotal.inc({ verdict: args.verdict });
   }
 
   // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract ────────────────

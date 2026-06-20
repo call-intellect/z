@@ -133,6 +133,8 @@ const registry = new Map<string, ZodTypeAny>([
   // Probe Фаза 5 (2026-06-17) — kill-switch одного переспроса (re-ask) при
   // истечении неотвеченного probe (переформулировать и спросить ещё раз). ON.
   ['probe.reaskEnabled', z.boolean()],
+  ['probe.valueGateEnabled', z.boolean()],
+  ['probe.digestFormulateEnabled', z.boolean()],
 
   ['blocker_synthesis.lookback_days', POSITIVE_INT],
   ['blocker_synthesis.recurring_days', POSITIVE_INT],

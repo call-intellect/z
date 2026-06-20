@@ -1,12 +1,13 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { type DataClass } from '@prisma/client';
+import { type DataClass, type ProbeEvent } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ConversationalService } from '../conversational/conversational.service';
 
+import { ProbeFormulationService } from './probe-formulation.service';
 import { PROBE_REASON_FALLBACK, PROBE_REASON_FALLBACK_DEFAULT } from './probe-reason-labels';
 import { deriveDigestQuestion } from './probe-text.util';
 import { buildProbeDigestSummary, type ProbeDigestItem } from './prompts/probe-digest.prompt';
@@ -30,6 +31,8 @@ export class ProbeDigestCron {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(ProbeFormulationService)
+    private readonly formulation: ProbeFormulationService,
   ) {}
 
   @Cron('0 * * * *')
@@ -50,6 +53,16 @@ export class ProbeDigestCron {
 
   async collectAndSend(): Promise<void> {
     const touchCap = await this.cfg.getDynamic<number>('probe.digestTouchCap', undefined, 5);
+    let formulateEnabled: boolean;
+    try {
+      formulateEnabled = await this.cfg.getDynamic<boolean>(
+        'probe.digestFormulateEnabled',
+        undefined,
+        true,
+      );
+    } catch {
+      formulateEnabled = true;
+    }
 
     const queued = await this.prisma.probeEvent.findMany({
       where: {
@@ -90,14 +103,19 @@ export class ProbeDigestCron {
 
     let sentDigests = 0;
     for (const group of groups.values()) {
-      const chosen = group.rows.slice(0, Math.max(1, touchCap));
-      const items: ProbeDigestItem[] = chosen.map((row) => ({
-        question: this.deriveQuestion(row),
-        objectTitle: this.contextTitle(row),
-        probeEventId: row.id,
-      }));
+      const candidateRows = group.rows.slice(0, Math.max(1, touchCap));
+
+      const surviving: Array<{ row: Row; item: ProbeDigestItem }> = [];
+      for (const row of candidateRows) {
+        const built = await this.buildItem(row, formulateEnabled);
+        if (built) surviving.push({ row, item: built });
+      }
+      if (surviving.length === 0) continue;
+
+      const survivingRows = surviving.map((s) => s.row);
+      const items = surviving.map((s) => s.item);
       const summary = buildProbeDigestSummary(items);
-      const dataClass = this.maxDataClass(chosen);
+      const dataClass = this.maxDataClass(survivingRows);
 
       try {
         const notif = await this.conversational.sendNotification({
@@ -118,7 +136,7 @@ export class ProbeDigestCron {
 
         await this.prisma.probeEvent.updateMany({
           where: {
-            id: { in: chosen.map((r) => r.id) },
+            id: { in: survivingRows.map((r) => r.id) },
             status: { in: ['queued_digest', 'routed_to_digest'] },
           },
           data: {
@@ -128,7 +146,7 @@ export class ProbeDigestCron {
             dispatchedNotificationId: notif.id,
           },
         });
-        for (const row of chosen) {
+        for (const row of survivingRows) {
           this.metrics.incProbeEvent({
             emittedByService: 'probe-digest',
             reason: row.reason,
@@ -163,6 +181,78 @@ export class ProbeDigestCron {
       PROBE_REASON_FALLBACK,
       PROBE_REASON_FALLBACK_DEFAULT,
     );
+  }
+
+  private async buildItem(
+    row: {
+      id: string;
+      reason: string;
+      payload: unknown;
+    },
+    formulateEnabled: boolean,
+  ): Promise<ProbeDigestItem | null> {
+    const objectTitle = this.contextTitle(row);
+    const payload = (row.payload ?? {}) as Record<string, unknown>;
+    const alreadyFormulated =
+      typeof payload.formulatedQuestion === 'string' &&
+      payload.formulatedQuestion.length > 0;
+
+    if (!formulateEnabled || alreadyFormulated) {
+      return {
+        question: this.deriveQuestion(row),
+        objectTitle,
+        probeEventId: row.id,
+      };
+    }
+
+    const probe = row as unknown as ProbeEvent;
+    try {
+      const verdict = await this.formulation.gate(probe);
+      if (verdict.ask === false) {
+        await this.prisma.probeEvent.update({
+          where: { id: row.id },
+          data: { status: 'dropped_low_value' },
+        });
+        this.metrics.incProbeValueGate({ verdict: 'skip' });
+        this.metrics.incProbeEvent({
+          emittedByService: 'probe-digest',
+          reason: row.reason,
+          status: 'dropped_low_value',
+        });
+        return null;
+      }
+      this.metrics.incProbeValueGate({ verdict: 'ask' });
+
+      const formulated = await this.formulation.formulate(probe);
+      const question = await this.formulation.judgeQuality(
+        probe,
+        formulated.question,
+      );
+
+      await this.prisma.probeEvent.update({
+        where: { id: row.id },
+        data: { payload: { ...payload, formulatedQuestion: question } },
+      });
+
+      return {
+        question,
+        objectTitle,
+        probeEventId: row.id,
+      };
+    } catch (err) {
+      this.logger.warn(
+        {
+          probeEventId: row.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'probe-digest: формулировка через LLM упала — детерминированный фолбэк (best-effort)',
+      );
+      return {
+        question: this.deriveQuestion(row),
+        objectTitle,
+        probeEventId: row.id,
+      };
+    }
   }
 
   private contextTitle(row: { payload: unknown }): string | undefined {

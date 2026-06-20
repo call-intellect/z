@@ -142,6 +142,7 @@ export type LlmTaskType =
   // При браке (ok=false) и валидном rewrite — один регенерат. Best-effort:
   // судья упал → шлём исходный. См. probe/prompts/probe-quality-judge.prompt.ts.
   | 'probe-quality-judge'
+  | 'probe-value-gate'
   // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate.
   // Зонтичный taskType для debate-decision-supersede (учёт/seed/budget).
   // Реальные LLM-вызовы идут через три stance-specific taskType'а ниже,
@@ -714,6 +715,7 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'probe-response-classify',
   // Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки probe-вопроса.
   'probe-quality-judge',
+  'probe-value-gate',
   // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate.
   'debate-decision-supersede',
   'debate-decision-supersede-critic',

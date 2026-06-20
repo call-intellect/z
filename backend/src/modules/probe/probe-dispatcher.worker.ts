@@ -186,6 +186,25 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    const verdict = await this.formulation.gate(probe);
+    if (verdict.ask === false) {
+      await this.prisma.probeEvent.update({
+        where: { id: probe.id },
+        data: { status: 'dropped_low_value' },
+      });
+      this.metrics.incProbeValueGate({ verdict: 'skip' });
+      this.metrics.incProbeEvent({
+        emittedByService: probe.emittedByService,
+        reason: probe.reason,
+        status: 'dropped_low_value',
+      });
+      this.logger.log(
+        `probe dropped_low_value: id=${probe.id} reason=${probe.reason} (гейт ценности: ${verdict.reason})`,
+      );
+      return;
+    }
+    this.metrics.incProbeValueGate({ verdict: 'ask' });
+
     const formulated = await this.formulation.formulate(probe);
 
     const finalQuestion =

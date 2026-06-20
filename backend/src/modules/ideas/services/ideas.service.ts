@@ -454,6 +454,7 @@ export class IdeasService {
       statusReason: i.statusReason,
       confidence: Number(i.confidence),
       dataClass: i.dataClass,
+      realizedAsDecisionId: i.realizedAsDecisionId,
     };
   }
 

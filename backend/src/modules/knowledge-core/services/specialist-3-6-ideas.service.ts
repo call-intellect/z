@@ -404,6 +404,41 @@ export class Specialist36Service {
     return updated ?? { ...existing, status: args.newStatus };
   }
 
+  async markRealizedByDecision(args: {
+    tenantId: string;
+    ideaId: string;
+    decisionId: string;
+    reason?: string | null;
+  }): Promise<{ linked: boolean; statusAdvanced: boolean }> {
+    const existing = await this.prisma.idea.findFirst({
+      where: { id: args.ideaId, tenantId: args.tenantId },
+      select: { id: true, status: true, realizedAsDecisionId: true },
+    });
+    if (!existing) return { linked: false, statusAdvanced: false };
+    if (existing.realizedAsDecisionId) {
+      return { linked: false, statusAdvanced: false };
+    }
+    const shouldAdvance =
+      existing.status === 'captured' || existing.status === 'in_discussion';
+    const res = await this.prisma.idea.updateMany({
+      where: { id: existing.id, tenantId: args.tenantId, realizedAsDecisionId: null },
+      data: {
+        realizedAsDecisionId: args.decisionId,
+        ...(shouldAdvance
+          ? {
+              status: 'accepted',
+              statusChangedAt: new Date(),
+              statusReason: args.reason ?? 'realized_by_decision',
+            }
+          : {}),
+      },
+    });
+    return {
+      linked: res.count > 0,
+      statusAdvanced: res.count > 0 && shouldAdvance,
+    };
+  }
+
   // ─────────────────────────── KNN / update ─────────────────────────────
 
   private async findMatchingIdea(args: {

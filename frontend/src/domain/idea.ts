@@ -84,6 +84,7 @@ export interface IdeaDetail extends IdeaListItem {
   statusReason: string | null;
   confidence: number;
   dataClass: string;
+  realizedAsDecisionId: string | null;
 }
 
 export interface IdeaCluster {
@@ -138,6 +139,7 @@ export function mapIdeaDetail(api: IdeaDetailApi): IdeaDetail {
     statusReason: api.statusReason,
     confidence: api.confidence,
     dataClass: api.dataClass,
+    realizedAsDecisionId: api.realizedAsDecisionId ?? null,
   };
 }
 

@@ -6299,6 +6299,8 @@ model Decision {
   appliedPolicy   DecisionPolicy?    @relation("DecisionAppliedPolicy", fields: [appliedPolicyId], references: [id], onDelete: SetNull)
   /// TZ-1 Фаза 3.B — связи решение↔задача (join DecisionTaskLink).
   taskLinks       DecisionTaskLink[] @relation("DecisionTaskLinkDecision")
+  /// ТЗ idea-vs-decision (2026-06-20) — идеи, повышенные в это решение (realized_as).
+  realizedFromIdeas Idea[]           @relation("IdeaRealizedAsDecision")
 
   @@index([tenantId, status])
   @@index([tenantId, decidedAt])
@@ -6509,6 +6511,11 @@ model Idea {
   goalId String?
   goal   Goal?   @relation("IdeaGoal", fields: [goalId], references: [id], onDelete: SetNull)
 
+  /// ТЗ idea-vs-decision (2026-06-20, форма 5a) — идея повышена в это решение
+  /// (realized_as) при акте принятия/сверке. NULL — ещё не реализована.
+  realizedAsDecisionId String?
+  realizedAs           Decision? @relation("IdeaRealizedAsDecision", fields: [realizedAsDecisionId], references: [id], onDelete: SetNull)
+
   org            Org          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   cluster        IdeaCluster? @relation(fields: [clusterId], references: [id], onDelete: SetNull)
   currentVersion CardVersion? @relation("IdeaCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
@@ -6519,6 +6526,7 @@ model Idea {
   @@index([tenantId, clusterId])
   @@index([currentVersionId])
   @@index([tenantId, goalId])
+  @@index([tenantId, realizedAsDecisionId])
   @@map("ideas")
 }
 

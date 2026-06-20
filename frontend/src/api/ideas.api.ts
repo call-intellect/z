@@ -42,6 +42,7 @@ export interface IdeaDetailApi extends IdeaListItemApi {
   statusReason: string | null;
   confidence: number;
   dataClass: string;
+  realizedAsDecisionId: string | null;
 }
 
 export interface IdeasListResponseApi {

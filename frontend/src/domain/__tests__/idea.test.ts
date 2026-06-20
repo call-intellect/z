@@ -28,6 +28,7 @@ const baseDetail: IdeaDetailApi = {
   statusReason: null,
   confidence: 0.8,
   dataClass: "internal",
+  realizedAsDecisionId: null,
 };
 
 describe("mapIdeaListItem — goalId", () => {
@@ -57,5 +58,23 @@ describe("mapIdeaDetail — goalId", () => {
   it("сохраняет goalId=null", () => {
     const out = mapIdeaDetail({ ...baseDetail, goalId: null });
     expect(out.goalId).toBeNull();
+  });
+});
+
+describe("mapIdeaDetail — realizedAsDecisionId", () => {
+  it("пробрасывает строковый realizedAsDecisionId", () => {
+    const out = mapIdeaDetail({ ...baseDetail, realizedAsDecisionId: "dec_7" });
+    expect(out.realizedAsDecisionId).toBe("dec_7");
+  });
+
+  it("сохраняет realizedAsDecisionId=null", () => {
+    const out = mapIdeaDetail(baseDetail);
+    expect(out.realizedAsDecisionId).toBeNull();
+  });
+
+  it("дефолт null, если realizedAsDecisionId отсутствует (старый бэк)", () => {
+    const { realizedAsDecisionId: _omit, ...without } = baseDetail;
+    const out = mapIdeaDetail(without as IdeaDetailApi);
+    expect(out.realizedAsDecisionId).toBeNull();
   });
 });

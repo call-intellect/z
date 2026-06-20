@@ -71,6 +71,7 @@ export interface IdeaDetailDto extends IdeaListItemDto {
   statusReason: string | null;
   confidence: number;
   dataClass: string;
+  realizedAsDecisionId: string | null;
 }
 
 export const ChangeIdeaStatusBodySchema = z

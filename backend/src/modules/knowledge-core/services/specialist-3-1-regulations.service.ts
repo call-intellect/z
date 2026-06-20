@@ -134,7 +134,10 @@ export class Specialist31Service {
         return;
       }
     }
-    await this.upsertProcess(block, draft);
+    this.metrics.incCoreSpecialistSkipped({
+      specialist: 'regulation',
+      reason: 'process_canonical_template',
+    });
   }
 
   async processPolicyBlock(

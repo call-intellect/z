@@ -366,7 +366,7 @@ function RegulationsListContent() {
   // пока summary грузится, опираемся на total текущего (нефильтрованного) списка.
   const summaryTotal = summary
     ? summary.regulations +
-      summary.processes +
+      summary.processTemplates +
       summary.instructions +
       summary.policies
     : data.total;
@@ -787,7 +787,7 @@ function RegulationsListContent() {
                 Регламенты: {summary.regulations}
               </Chip>
               <Chip variant="lavender" size="sm">
-                Процессы: {summary.processes}
+                Процессы: {summary.processTemplates}
               </Chip>
               <Chip variant="sand" size="sm">
                 Инструкции: {summary.instructions}
@@ -854,7 +854,14 @@ function RegulationsListContent() {
           <button
             key={f.value}
             type="button"
-            onClick={() => setKindFilter(f.value)}
+            onClick={() => {
+              if (f.value === 'process') {
+                setSelected(null);
+                setTopTab('process-templates');
+                return;
+              }
+              setKindFilter(f.value);
+            }}
             className={cn(
               'rounded-full border px-3 py-1 text-xs transition',
               kindFilter === f.value
@@ -904,7 +911,7 @@ function RegulationsListContent() {
       kind: 'process',
       label: 'Процессы',
       icon: '🔄',
-      count: summary?.processes ?? 0,
+      count: summary?.processTemplates ?? 0,
     },
     {
       kind: 'instruction',
@@ -1001,15 +1008,24 @@ function RegulationsListContent() {
               key={t.kind}
               type="button"
               onClick={() => {
+                if (t.kind === 'process') {
+                  setSelected(null);
+                  setTopTab('process-templates');
+                  return;
+                }
                 setKindFilter(t.kind);
                 setSelected(null);
                 setTopTab('regulations');
               }}
               className={cn(
                 'mt-0.5 flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-sm transition',
-                topTab === 'regulations' && kindFilter === t.kind
-                  ? 'bg-accent/15 text-fg-primary'
-                  : 'text-fg-secondary hover:bg-bg-overlay/40',
+                t.kind === 'process'
+                  ? topTab === 'process-templates'
+                    ? 'bg-accent/15 text-fg-primary'
+                    : 'text-fg-secondary hover:bg-bg-overlay/40'
+                  : topTab === 'regulations' && kindFilter === t.kind
+                    ? 'bg-accent/15 text-fg-primary'
+                    : 'text-fg-secondary hover:bg-bg-overlay/40',
                 t.count === 0 && 'opacity-60',
               )}
             >

@@ -452,6 +452,7 @@ export class RegulationsService {
     const [
       regulations,
       processes,
+      processTemplates,
       instructions,
       policies,
       regWeek,
@@ -461,6 +462,9 @@ export class RegulationsService {
     ] = await Promise.all([
       this.prisma.regulation.count({ where: { tenantId } }),
       this.prisma.process.count({ where: { tenantId } }),
+      this.prisma.processTemplate.count({
+        where: { tenantId, deletedAt: null, status: 'active' },
+      }),
       this.prisma.instruction.count({ where: { tenantId } }),
       this.prisma.policy.count({ where: { tenantId } }),
       this.prisma.regulation.count({ where: { tenantId, ...recent } }),
@@ -477,6 +481,7 @@ export class RegulationsService {
     return {
       regulations,
       processes,
+      processTemplates,
       instructions,
       policies,
       weekDelta: regWeek + procWeek + instrWeek + polWeek,

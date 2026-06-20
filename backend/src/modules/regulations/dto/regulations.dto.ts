@@ -149,6 +149,7 @@ export interface RegulationSourcesResponse {
 export interface RegulationSummaryResponse {
   regulations: number;
   processes: number;
+  processTemplates: number;
   instructions: number;
   policies: number;
   weekDelta: number;

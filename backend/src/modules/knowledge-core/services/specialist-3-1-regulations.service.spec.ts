@@ -463,3 +463,89 @@ describe('Specialist31Service.upsertInstruction — Ф3 дедуп через а
     );
   });
 });
+
+function makeProcessStepService() {
+  const metrics = { incCoreSpecialistSkipped: vi.fn() } as any;
+
+  const service = new Specialist31Service(
+    {} as any,
+    {} as any,
+    { embedQuery: vi.fn().mockResolvedValue(null) } as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    metrics,
+    undefined as any,
+    undefined as any,
+    undefined as any,
+  );
+
+  const upsertProcess = vi.fn().mockResolvedValue(undefined);
+  const upsertRegulation = vi.fn().mockResolvedValue(undefined);
+  const upsertPolicy = vi.fn().mockResolvedValue(undefined);
+  const upsertInstruction = vi.fn().mockResolvedValue(undefined);
+  vi.spyOn(service as any, 'upsertProcess').mockImplementation(upsertProcess);
+  vi.spyOn(service as any, 'upsertRegulation').mockImplementation(upsertRegulation);
+  vi.spyOn(service as any, 'upsertPolicy').mockImplementation(upsertPolicy);
+  vi.spyOn(service as any, 'upsertInstruction').mockImplementation(upsertInstruction);
+
+  return {
+    service,
+    metrics,
+    upsertProcess,
+    upsertRegulation,
+    upsertPolicy,
+    upsertInstruction,
+  };
+}
+
+function makeStepBlock() {
+  return {
+    id: 'b1',
+    tenantId: 't1',
+    dataClass: 'internal',
+    evidence: [],
+    entities: [],
+  } as any;
+}
+
+describe('Specialist31Service.processProcessStepBlock — Ф4 единый конвейер', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('Кейс 1: draft.kind=process → Process НЕ создаётся, canonical ProcessTemplate (skip-метрика)', async () => {
+    const { service, metrics, upsertProcess } = makeProcessStepService();
+    vi.spyOn(service as any, 'extractDraft').mockResolvedValue({
+      kind: 'process',
+      name: 'P',
+      statement: 'S',
+      confidence: 0.9,
+    });
+
+    await (service as any).processProcessStepBlock(makeStepBlock());
+
+    expect(upsertProcess).not.toHaveBeenCalled();
+    expect(metrics.incCoreSpecialistSkipped).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'process_canonical_template' }),
+    );
+  });
+
+  it('Кейс 2: draft.kind=regulation → reclass на upsertRegulation, upsertProcess НЕ вызван', async () => {
+    const { service, upsertProcess, upsertRegulation } = makeProcessStepService();
+    vi.spyOn(service as any, 'extractDraft').mockResolvedValue({
+      kind: 'regulation',
+      name: 'R',
+      statement: 'S',
+      confidence: 0.9,
+    });
+
+    await (service as any).processProcessStepBlock(makeStepBlock());
+
+    expect(upsertRegulation).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'b1' }),
+      expect.objectContaining({ kind: 'regulation' }),
+    );
+    expect(upsertProcess).not.toHaveBeenCalled();
+  });
+});

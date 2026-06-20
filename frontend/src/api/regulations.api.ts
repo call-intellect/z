@@ -89,6 +89,7 @@ export interface RegulationSourcesApi {
 export interface RegulationSummaryApi {
   regulations: number;
   processes: number;
+  processTemplates: number;
   instructions: number;
   policies: number;
   weekDelta: number;

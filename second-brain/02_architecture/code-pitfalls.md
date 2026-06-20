@@ -681,4 +681,22 @@ ChatBox одинаково (`bitrix-sync.queue.service.ts`, `chatbox-sync.queue.
 `accessExpiresAt` протухает за ~1ч → **`BITRIX_CLIENT_ID/SECRET` обязательны** для
 refresh, иначе интеграция «умирает» после первого часа (синк падает `bitrix_misconfigured`).
 
+## CSS-цвета: oklch() без fallback ломает UI на старых движках (2026-06-20)
+
+Все токены (`src/ui/tokens.css`, ~191 значение) и инлайн-стили заданы в `oklch()`.
+**Tailwind v4 (`@tailwindcss/postcss`) by design не генерит rgb/hex fallback** —
+его минимальная цель Chrome 111+ / Safari 16.4+ / Firefox 128+. На движках без
+поддержки `oklch()` (старый Android System WebView, **in-app браузеры мессенджеров
+Telegram/VK/WhatsApp**, старый Safari/Chrome) `var(--bg-card)` / `var(--accent)`
+резолвятся в невалид → элементы теряют цвет, страница «еле видна» (карточка
+сливается с фоном, акцентная кнопка тёмная). Симптом «у некоторых хорошо, у
+некоторых нет» = вопрос версии движка, не пользователя; бьёт **весь сайт**, но
+заметнее всего на первом экране по ссылке (signup).
+
+Fallback даёт PostCSS-плагин `@csstools/postcss-oklab-function` (`preserve: true`)
+ПОСЛЕ `@tailwindcss/postcss` в `frontend/postcss.config.mjs`. v5+ покрывает и
+custom properties (`--x:rgb(...)` перед `--x:oklch(...)` + `@supports`-блок) —
+проверять эмпирически мини-тестом, старые версии трогали только прямые `color:`.
+Воспроизведение причины — поломка oklch-переменных в свежем Chrome + скриншот.
+
 [[../index|← index]]

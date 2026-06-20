@@ -17,7 +17,7 @@ export function SupportWidget() {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "fixed bottom-24 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full",
+          "fixed bottom-20 left-6 z-40 flex h-12 w-12 items-center justify-center rounded-full md:bottom-6",
           "bg-bg-card text-fg-secondary shadow-lg ring-1 ring-border-subtle transition-transform hover:scale-105 hover:text-fg-primary",
         )}
         aria-label="Служба поддержки"
@@ -28,7 +28,7 @@ export function SupportWidget() {
 
       {}
       {open && (
-        <div className="fixed bottom-40 right-6 z-40 flex w-[360px] max-w-[calc(100vw-2rem)] flex-col rounded-lg border border-border-subtle bg-bg-base shadow-2xl">
+        <div className="fixed bottom-36 left-6 z-40 flex w-[360px] max-w-[calc(100vw-2rem)] flex-col rounded-lg border border-border-subtle bg-bg-base shadow-2xl md:bottom-20">
           <div className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
             <div className="flex items-center gap-2">
               <LifeBuoy size={16} className="text-accent" />

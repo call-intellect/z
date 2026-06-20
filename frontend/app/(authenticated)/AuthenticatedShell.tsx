@@ -9,7 +9,6 @@ import { SubscriptionProvider } from "@/contexts/subscription-context";
 import { useVersionCheck } from "@/hooks/useVersionCheck";
 import { AppShell } from "@/ui/components/app-shell/AppShell";
 import { BreadcrumbProvider } from "@/ui/components/breadcrumbs/BreadcrumbContext";
-import { AssistantSidebar } from "@/ui/components/dashboard/AssistantSidebar";
 import { Skeleton } from "@/ui/shadcn/skeleton";
 import { TourProvider, WelcomeTourAutoStart } from "@/ui/tour";
 
@@ -98,7 +97,6 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
             <AppShell>{children}</AppShell>
           </BreadcrumbProvider>
           <WelcomeTourAutoStart />
-          <AssistantSidebar />
         </TourProvider>
       </SubscriptionProvider>
     </EntitlementProvider>

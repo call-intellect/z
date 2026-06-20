@@ -46,6 +46,7 @@ export class Specialist31Service {
 
   static readonly SPECIALIST_NAME = '3-1-regulations';
   private static readonly KNN_TOP_K = 5;
+  private static readonly DEDUPE_ARBITER_MAX_TOKENS = 2500;
   private static readonly MIN_EXTRACT_CONFIDENCE = 0.4;
 
   constructor(
@@ -195,6 +196,7 @@ export class Specialist31Service {
         },
         sourceRef: { type: 'idea_block', id: block.id },
         dataClass: block.dataClass,
+        maxTokens: 4096,
       });
     } catch (err) {
       this.metrics.incCoreSpecialistExtractionFailure({
@@ -1411,77 +1413,92 @@ export class Specialist31Service {
       },
       candidates: args.candidates,
     });
-    let result: LlmCallResult;
-    try {
-      result = await this.llm.call({
-        taskType: 'regulation-dedupe',
-        systemPrompt: guardOnDedupe
-          ? withInjectionGuard(REGULATION_DEDUPE_SYSTEM_PROMPT)
-          : REGULATION_DEDUPE_SYSTEM_PROMPT,
-        userMessage: guardOnDedupe ? wrapUserData(rawUserDedupe) : rawUserDedupe,
-        tenantId: args.tenantId,
-        responseFormat: {
-          type: 'json_schema',
-          name: REGULATION_DEDUPE_SCHEMA_NAME,
-          schema: REGULATION_DEDUPE_JSON_SCHEMA,
-          strict: true,
-        },
-        sourceRef: { type: 'idea_block', id: args.blockId },
-        dataClass: args.dataClass,
-      });
-    } catch (err) {
-      this.metrics.incCoreSpecialistExtractionFailure({
-        type: 'regulation',
-        reason: 'arbiter_skip',
-      });
-      this.logger.warn(
-        {
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let result: LlmCallResult;
+      try {
+        result = await this.llm.call({
+          taskType: 'regulation-dedupe',
+          systemPrompt: guardOnDedupe
+            ? withInjectionGuard(REGULATION_DEDUPE_SYSTEM_PROMPT)
+            : REGULATION_DEDUPE_SYSTEM_PROMPT,
+          userMessage: guardOnDedupe ? wrapUserData(rawUserDedupe) : rawUserDedupe,
           tenantId: args.tenantId,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        'specialist-3-1.dedupeArbiter: LLM упал — fallback к decision="new"',
-      );
-      return { decision: 'new', targetId: null, reasoning: 'arbiter_skipped' };
+          responseFormat: {
+            type: 'json_schema',
+            name: REGULATION_DEDUPE_SCHEMA_NAME,
+            schema: REGULATION_DEDUPE_JSON_SCHEMA,
+            strict: true,
+          },
+          sourceRef: { type: 'idea_block', id: args.blockId },
+          dataClass: args.dataClass,
+          maxTokens: Specialist31Service.DEDUPE_ARBITER_MAX_TOKENS,
+        });
+      } catch (err) {
+        this.logger.warn(
+          {
+            tenantId: args.tenantId,
+            attempt,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'specialist-3-1.dedupeArbiter: LLM упал — ретрай/фоллбэк',
+        );
+        continue;
+      }
+
+      if (result.modelUsed) {
+        this.metrics.incCoreSpecialistLlmTokens({
+          type: 'regulation',
+          model: result.modelUsed,
+          tier: result.tier ?? 'primary',
+          tokens: (result.inputTokens ?? 0) + (result.outputTokens ?? 0),
+        });
+      }
+
+      let verdict: DedupeVerdict;
+      try {
+        verdict = JSON.parse(result.text) as DedupeVerdict;
+      } catch {
+        this.logger.warn(
+          {
+            tenantId: args.tenantId,
+            attempt,
+            textSample: result.text.slice(0, 300),
+          },
+          'specialist-3-1.dedupeArbiter: JSON.parse упал — ретрай/фоллбэк',
+        );
+        continue;
+      }
+
+      const candidateIds = new Set(args.candidates.map((c) => c.id));
+      if (verdict.decision !== 'new' && verdict.targetId && !candidateIds.has(verdict.targetId)) {
+        this.logger.warn(
+          {
+            tenantId: args.tenantId,
+            targetId: verdict.targetId,
+            candidateIds: [...candidateIds],
+          },
+          'specialist-3-1.dedupeArbiter: targetId не в candidates — fallback к "new"',
+        );
+        return {
+          decision: 'new',
+          targetId: null,
+          reasoning: 'targetId_not_in_candidates',
+        };
+      }
+
+      return verdict;
     }
 
-    if (result.modelUsed) {
-      this.metrics.incCoreSpecialistLlmTokens({
-        type: 'regulation',
-        model: result.modelUsed,
-        tier: result.tier ?? 'primary',
-        tokens: (result.inputTokens ?? 0) + (result.outputTokens ?? 0),
-      });
-    }
-
-    let verdict: DedupeVerdict;
-    try {
-      verdict = JSON.parse(result.text) as DedupeVerdict;
-    } catch {
-      this.metrics.incCoreSpecialistExtractionFailure({
-        type: 'regulation',
-        reason: 'arbiter_json_parse',
-      });
-      return { decision: 'new', targetId: null, reasoning: 'arbiter_parse_failed' };
-    }
-
-    const candidateIds = new Set(args.candidates.map((c) => c.id));
-    if (verdict.decision !== 'new' && verdict.targetId && !candidateIds.has(verdict.targetId)) {
-      this.logger.warn(
-        {
-          tenantId: args.tenantId,
-          targetId: verdict.targetId,
-          candidateIds: [...candidateIds],
-        },
-        'specialist-3-1.dedupeArbiter: targetId не в candidates — fallback к "new"',
-      );
-      return {
-        decision: 'new',
-        targetId: null,
-        reasoning: 'targetId_not_in_candidates',
-      };
-    }
-
-    return verdict;
+    this.metrics.incCoreSpecialistExtractionFailure({
+      type: 'regulation',
+      reason: 'dedupe_fallback_new',
+    });
+    this.logger.warn(
+      { tenantId: args.tenantId },
+      'specialist-3-1.dedupeArbiter: невалидный ответ после ретрая — fail-open decision="new" (гарант от дублей — крон-консолидатор)',
+    );
+    return { decision: 'new', targetId: null, reasoning: 'dedupe_fallback_new' };
   }
 
   private async triageProposed(args: {

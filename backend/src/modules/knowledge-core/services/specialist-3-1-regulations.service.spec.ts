@@ -310,3 +310,63 @@ describe('Specialist31Service.extractDraft — Ф1 гейты чья-норма/
     expect(metrics.incCoreSpecialistSkipped).not.toHaveBeenCalled();
   });
 });
+
+function makeDedupeService() {
+  const llm = { call: vi.fn().mockRejectedValue(new Error('boom')) } as any;
+  const embedder = { embedQuery: vi.fn().mockResolvedValue(null) } as any;
+  const curation = { triage: vi.fn() } as any;
+  const conflicts = {} as any;
+  const probes = {} as any;
+  const metrics = {
+    incCoreSpecialistExtractionFailure: vi.fn(),
+    incCoreSpecialistLlmTokens: vi.fn(),
+  } as any;
+
+  const service = new Specialist31Service(
+    {} as any,
+    llm,
+    embedder,
+    curation,
+    conflicts,
+    probes,
+    metrics,
+    undefined as any,
+    undefined as any,
+    undefined as any,
+  );
+
+  vi.spyOn(service as any, 'isPromptInjectionGuardEnabled').mockReturnValue(false);
+
+  return { service, metrics, llm, curation };
+}
+
+describe('Specialist31Service.dedupeArbiter — Ф2 ретрай + fail-open без человека', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('LLM падает дважды → decision="new" fail-open, метрика dedupe_fallback_new, без очереди к человеку', async () => {
+    const { service, metrics, llm, curation } = makeDedupeService();
+
+    const out = await (service as any).dedupeArbiter({
+      tenantId: 't1',
+      draft: { kind: 'regulation', name: 'A', statement: 'B', scope: null },
+      candidates: [{ id: 'c1', name: 'A', statement: 'B', scope: null }],
+      dataClass: 'internal',
+      blockId: 'b1',
+    });
+
+    expect(out).toEqual(
+      expect.objectContaining({
+        decision: 'new',
+        targetId: null,
+        reasoning: 'dedupe_fallback_new',
+      }),
+    );
+    expect(llm.call).toHaveBeenCalledTimes(2);
+    expect(metrics.incCoreSpecialistExtractionFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'regulation', reason: 'dedupe_fallback_new' }),
+    );
+    expect(curation.triage).not.toHaveBeenCalled();
+  });
+});

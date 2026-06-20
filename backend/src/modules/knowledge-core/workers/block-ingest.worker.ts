@@ -227,6 +227,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
 
       const indexToBlockId = new Map<number, string>();
       const blockIds: string[] = [];
+      let persistFailures = 0;
       const decisionBlockIds = new Set<string>();
       const ideaEmbeddingByBlockId = new Map<string, number[] | null>();
 
@@ -262,6 +263,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           if (block.signalType === 'idea') {
             ideaEmbeddingByBlockId.set(blockId, vector ?? null);
           }
+        } else {
+          persistFailures += 1;
         }
       }
 
@@ -618,6 +621,26 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           // Б9 [K10] — enqueueIdeaClusterer убран: очередь core.idea-clusterer
           // удалена (без consumer'а), кластеризация идёт по @Cron (IdeaClustererCron).
         }
+      }
+
+      if (extraction.failedWindows > 0) {
+        this.metrics.incCorePartialLoss({
+          reason: 'extraction_window_failed',
+          count: extraction.failedWindows,
+        });
+      }
+      if (persistFailures > 0) {
+        this.metrics.incCorePartialLoss({
+          reason: 'persist_null',
+          count: persistFailures,
+        });
+      }
+      if (extraction.failedWindows > 0 && blockIds.length === 0) {
+        this.logger.error(
+          { rawEventId, failedWindows: extraction.failedWindows },
+          'block-ingest: все окна извлечения провалились, 0 блоков — RawEvent НЕ ingested (failed для видимости/ретрая)',
+        );
+        systemFailure = true;
       }
 
       if (systemFailure) {

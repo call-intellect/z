@@ -155,6 +155,104 @@ function buildDocAttributionWorker() {
   return { worker, updateMany, createMany };
 }
 
+function emptyTyped() {
+  return {
+    processes: [],
+    decisions: [],
+    regulations: [],
+    policies: [],
+    metrics: [],
+    tools: [],
+  };
+}
+
+function buildProcessWorker(extraction: {
+  blocks: ExtractedBlock[];
+  blocksInOrder: ExtractedBlock[];
+  typed: ReturnType<typeof emptyTyped>;
+  failedWindows: number;
+}) {
+  const rawEvent = {
+    id: 'raw-1',
+    tenantId: 'tenant-1',
+    sourceType: 'meeting',
+    sourceExternalId: 'meeting:abc',
+    occurredAt: new Date('2026-06-20T10:00:00.000Z'),
+    dataClass: 'internal',
+    processingStatus: 'received',
+    payloadStorage: 'inline',
+    payload: { title: 'Встреча' },
+  };
+  const rawEventUpdate = vi.fn(async (args: { where: any; data: any }) => ({
+    id: args.where.id,
+    ...args.data,
+  }));
+  const prisma = {
+    rawEvent: {
+      findUnique: vi.fn(async () => rawEvent),
+      update: rawEventUpdate,
+    },
+    ideaBlock: { findMany: vi.fn(async () => []) },
+  } as any;
+  const segments = { buildSegments: vi.fn(() => []) } as any;
+  const extractor = { extractFull: vi.fn(async () => extraction) } as any;
+  const embeddings = { embedBlocks: vi.fn(async () => []) } as any;
+  const gate = { checkOrThrow: vi.fn(async () => undefined) } as any;
+  const incCorePartialLoss = vi.fn();
+  const metrics = { incCorePartialLoss } as any;
+  const cfg = {
+    getDynamic: vi.fn(async () => true),
+    extraction: { typedEntityMinConfidence: 0.5 },
+    knowledgeCore: { ideaDirectPathEnabled: false },
+  } as any;
+  const worker = new BlockIngestWorker(
+    {} as any,
+    prisma,
+    {} as any,
+    segments,
+    extractor,
+    embeddings,
+    {} as any,
+    {} as any,
+    gate,
+    {} as any,
+    metrics,
+    {} as any,
+    cfg,
+    {} as any,
+  );
+  return { worker, rawEventUpdate, incCorePartialLoss, extractor };
+}
+
+describe('BlockIngestWorker.process — частичная/полная потеря (ТЗ#2 Ф4)', () => {
+  it('failedWindows>0 и 0 блоков → RawEvent НЕ помечен ingested (throw→failed) + метрика extraction_window_failed', async () => {
+    const { worker, rawEventUpdate, incCorePartialLoss } = buildProcessWorker({
+      blocks: [],
+      blocksInOrder: [],
+      typed: emptyTyped(),
+      failedWindows: 2,
+    });
+
+    await expect(
+      (worker as any).process({ data: { rawEventId: 'raw-1' } }),
+    ).rejects.toThrow();
+
+    const ingestedCalls = rawEventUpdate.mock.calls.filter(
+      (c) => (c[0] as { data?: { processingStatus?: string } })?.data?.processingStatus === 'ingested',
+    );
+    expect(ingestedCalls).toHaveLength(0);
+
+    const failedCalls = rawEventUpdate.mock.calls.filter(
+      (c) => (c[0] as { data?: { processingStatus?: string } })?.data?.processingStatus === 'failed',
+    );
+    expect(failedCalls.length).toBeGreaterThan(0);
+
+    expect(incCorePartialLoss).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'extraction_window_failed', count: 2 }),
+    );
+  });
+});
+
 describe('BlockIngestWorker.applyDocumentAttribution — ТЗ-4 Ф4', () => {
   const docEvent = {
     id: 'raw-doc-1',

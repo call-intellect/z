@@ -171,6 +171,8 @@ export interface ExtractedWindow {
    * undefined, если LLM/кэш её не вернул. Пока не агрегируется в extractFull.
    */
   dataQuality?: ExtractedDataQuality | undefined;
+  /** Окно исчерпало 2 попытки без валидного результата (потеря). */
+  failed?: boolean;
 }
 
 /**
@@ -383,13 +385,20 @@ export class BlockExtractionService {
     blocks: ExtractedBlock[];
     blocksInOrder: ExtractedBlock[];
     typed: ExtractedTypedEntities;
+    failedWindows: number;
   }> {
     const windowSize = this.cfg.knowledgeCore.blockIngestWindowSegments;
     if (args.segments.length === 0) {
-      return { blocks: [], blocksInOrder: [], typed: this.emptyTyped() };
+      return {
+        blocks: [],
+        blocksInOrder: [],
+        typed: this.emptyTyped(),
+        failedWindows: 0,
+      };
     }
     const inOrder: ExtractedBlock[] = [];
     const typed = this.emptyTyped();
+    let failedWindows = 0;
     const minConfidence = this.cfg.extraction.typedEntityMinConfidence;
 
     for (let i = 0; i < args.segments.length; i += windowSize) {
@@ -402,6 +411,7 @@ export class BlockExtractionService {
         segments: slice,
         dataClass: args.dataClass,
       });
+      if (win.failed) failedWindows += 1;
       const baseOffset = inOrder.length;
       inOrder.push(...win.blocks);
       for (const p of win.typed.processes) {
@@ -432,7 +442,7 @@ export class BlockExtractionService {
     const sorted = [...inOrder].sort(
       (a, b) => a.evidenceStartMs - b.evidenceStartMs,
     );
-    return { blocks: sorted, blocksInOrder: inOrder, typed };
+    return { blocks: sorted, blocksInOrder: inOrder, typed, failedWindows };
   }
 
   // ─────────────────────────── window ──────────────────────────────────────
@@ -497,7 +507,7 @@ export class BlockExtractionService {
       { rawEventId: args.rawEventId, windowIndex: args.windowIndex },
       'block-ingest: окно не извлеклось после 2 попыток — пропуск',
     );
-    return { blocks: [], typed: this.emptyTyped() };
+    return { blocks: [], typed: this.emptyTyped(), failed: true };
   }
 
   /**

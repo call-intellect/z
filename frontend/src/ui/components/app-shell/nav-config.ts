@@ -191,6 +191,14 @@ const WORK_SECTION: NavConfigSection = {
       matchPrefix: "/regulations",
     },
     {
+      href: "/goals",
+      label: "Цели",
+      icon: Target,
+      matchPrefix: "/goals",
+      roles: LEADERSHIP_ROLES,
+      gateFeature: "feature.goals_strategy",
+    },
+    {
       href: "/structure",
       label: SECTION_LABELS.structure,
       icon: Users,

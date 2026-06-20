@@ -11,6 +11,7 @@ import {
   Minus,
   Network,
   Plus,
+  Share2,
   Sparkles,
   Target,
 } from "lucide-react";
@@ -44,6 +45,7 @@ import {
   type GoalStatus,
 } from "@/domain/goal";
 import { GoalsTreeView } from "./GoalsTreeView";
+import { GoalsMapView } from "@/ui/components/goals/GoalsMapView";
 import { GlassCard, MODERN_PAGE_BG } from "@/ui/components/dashboard/modern";
 import { Badge } from "@/ui/shadcn/badge";
 import { Button } from "@/ui/shadcn/button";
@@ -68,7 +70,7 @@ import { Textarea } from "@/ui/shadcn/textarea";
 import { cn } from "@/ui/shadcn/lib/utils";
 
 type StatusFilter = GoalStatus | "all";
-type ViewMode = "list" | "tree";
+type ViewMode = "list" | "tree" | "map";
 
 const STATUS_TABS: Array<{ value: StatusFilter; label: string }> = [
   { value: "all", label: "Все" },
@@ -202,6 +204,20 @@ export function GoalsClient() {
               <Network size={14} />
               Дерево
             </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("map")}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-sm px-3 py-1 transition-colors",
+                viewMode === "map"
+                  ? "bg-accent text-accent-fg"
+                  : "text-fg-secondary hover:text-fg-primary",
+              )}
+              aria-pressed={viewMode === "map"}
+            >
+              <Share2 size={14} />
+              Карта
+            </button>
           </div>
         </div>
 
@@ -215,6 +231,8 @@ export function GoalsClient() {
           <div className="flex items-center gap-2 text-sm text-fg-tertiary">
             <Loader2 size={14} className="animate-spin" /> Загрузка…
           </div>
+        ) : viewMode === "map" ? (
+          <GoalsMapView goals={goals} />
         ) : viewMode === "tree" ? (
           goals.length === 0 ? (
             <EmptyState isOwner={isOwner} />

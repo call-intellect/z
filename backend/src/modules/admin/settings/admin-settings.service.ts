@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -13,6 +14,14 @@ import IORedis, { type Redis } from 'ioredis';
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+
+import {
+  MIN_REASON_LENGTH,
+  getSchemaForKey,
+  hasSchemaForKey,
+} from './admin-setting-schema-registry';
+
+const REASON_REQUIRED_SEVERITIES = new Set(['high', 'destructive']);
 
 const CHANNEL = 'admin:setting:invalidate';
 const CACHE_MAX = 1000;
@@ -127,10 +136,43 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async set(key: string, value: unknown, options: SetOptions = {}): Promise<void> {
+    if (hasSchemaForKey(key)) {
+      const parsed = getSchemaForKey(key).safeParse(value);
+      if (!parsed.success) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'admin_setting_invalid_value',
+            message: 'Невалидное значение настройки',
+            key,
+            issues: parsed.error.issues,
+          },
+        });
+      }
+    }
+
     const existing = await this.prisma.adminSetting.findUnique({
       where: { key },
-      select: { value: true, updatedAt: true },
+      select: { value: true, updatedAt: true, severity: true },
     });
+
+    if (!existing && !hasSchemaForKey(key)) {
+      this.logger.warn(`set() для незарегистрированного ключа ${key}`);
+    }
+
+    if (existing && REASON_REQUIRED_SEVERITIES.has(existing.severity)) {
+      const reason = options.reason?.trim() ?? '';
+      if (reason.length < MIN_REASON_LENGTH) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'admin_setting_reason_required',
+            message: `Для настройки этого уровня требуется причина изменения (не короче ${MIN_REASON_LENGTH} символов)`,
+            key,
+          },
+        });
+      }
+    }
 
     if (options.expectedUpdatedAt && existing) {
       const expected = options.expectedUpdatedAt.getTime();

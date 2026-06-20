@@ -1,5 +1,7 @@
 import { z, type ZodTypeAny } from 'zod';
 
+export const MIN_REASON_LENGTH = 10;
+
 const POSITIVE_INT = z.number().int().positive();
 const NON_NEGATIVE_INT = z.number().int().nonnegative();
 const UNIT_INTERVAL = z.number().min(0).max(1);

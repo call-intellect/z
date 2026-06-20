@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
@@ -24,7 +24,10 @@ vi.mock('ioredis', () => {
 import { AdminSettingsService } from './admin-settings.service';
 
 interface MockStore {
-  settings: Map<string, { value: unknown; updatedAt: Date; updatedBy: string | null }>;
+  settings: Map<
+    string,
+    { value: unknown; updatedAt: Date; updatedBy: string | null; severity?: string }
+  >;
   history: Array<{
     key: string;
     prevValue: unknown;
@@ -77,7 +80,7 @@ function buildService(): {
       updatedAt: row.updatedAt,
       category: 'platform',
       section: 'misc',
-      severity: 'low',
+      severity: row.severity ?? 'low',
       schemaId: null,
       description: null,
       updatedBy: row.updatedBy,
@@ -114,6 +117,7 @@ function buildService(): {
         value: args.data.value ?? cur.value,
         updatedAt: new Date(cur.updatedAt.getTime() + 1),
         updatedBy: (args.data.updatedBy as string | null) ?? cur.updatedBy,
+        ...(cur.severity ? { severity: cur.severity } : {}),
       });
       return rowFromStore(args.where.key);
     }),
@@ -277,6 +281,107 @@ describe('AdminSettingsService', () => {
     const parsed = JSON.parse(payload) as { key?: string; value?: unknown };
     expect(parsed.key).toBe('limits.bar');
     expect(parsed.value).toEqual({ a: 1, b: 'x' });
+  });
+});
+
+describe('AdminSettingsService — серверная валидация set()', () => {
+  it('зарегистрированный ключ с валидным значением — set проходит', async () => {
+    const { svc, store } = buildService();
+    await svc.set('knowledge.distillMergeThreshold', 0.5, { userId: 'u' });
+    expect(store.settings.get('knowledge.distillMergeThreshold')?.value).toBe(0.5);
+    expect(store.history.length).toBe(1);
+  });
+
+  it('зарегистрированный UNIT_INTERVAL-ключ с невалидным значением (5) — BadRequest, БД не тронута', async () => {
+    const { svc, store } = buildService();
+    await expect(
+      svc.set('knowledge.distillMergeThreshold', 5, { userId: 'u' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(store.settings.has('knowledge.distillMergeThreshold')).toBe(false);
+    expect(store.history.length).toBe(0);
+  });
+
+  it('severity=high и reason пустой — BadRequest', async () => {
+    const { svc, store } = buildService();
+    store.settings.set('limits.high', {
+      value: 1,
+      updatedAt: new Date(),
+      updatedBy: null,
+      severity: 'high',
+    });
+    await expect(svc.set('limits.high', 2, { userId: 'u' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(store.settings.get('limits.high')?.value).toBe(1);
+  });
+
+  it('severity=high и reason слишком короткий — BadRequest', async () => {
+    const { svc, store } = buildService();
+    store.settings.set('limits.high', {
+      value: 1,
+      updatedAt: new Date(),
+      updatedBy: null,
+      severity: 'high',
+    });
+    await expect(
+      svc.set('limits.high', 2, { userId: 'u', reason: 'кор' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(store.settings.get('limits.high')?.value).toBe(1);
+  });
+
+  it('severity=high и reason достаточной длины — set проходит', async () => {
+    const { svc, store } = buildService();
+    store.settings.set('limits.high', {
+      value: 1,
+      updatedAt: new Date(),
+      updatedBy: null,
+      severity: 'high',
+    });
+    await svc.set('limits.high', 2, {
+      userId: 'u',
+      reason: 'обоснованная причина изменения',
+    });
+    expect(store.settings.get('limits.high')?.value).toBe(2);
+  });
+
+  it('severity=destructive и reason пустой — BadRequest', async () => {
+    const { svc, store } = buildService();
+    store.settings.set('limits.destr', {
+      value: 1,
+      updatedAt: new Date(),
+      updatedBy: null,
+      severity: 'destructive',
+    });
+    await expect(svc.set('limits.destr', 2, { userId: 'u' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('severity=low и reason пустой — set проходит (reason-gate не срабатывает)', async () => {
+    const { svc, store } = buildService();
+    store.settings.set('limits.low', {
+      value: 1,
+      updatedAt: new Date(),
+      updatedBy: null,
+      severity: 'low',
+    });
+    await svc.set('limits.low', 2, { userId: 'u' });
+    expect(store.settings.get('limits.low')?.value).toBe(2);
+  });
+
+  it('незарегистрированный ключ без строки в БД — не кидает, пишет warn', async () => {
+    const { svc, store } = buildService();
+    const warnSpy = vi
+      .spyOn(
+        (svc as unknown as { logger: { warn: (...a: unknown[]) => void } }).logger,
+        'warn',
+      )
+      .mockImplementation(() => undefined);
+    await svc.set('totally.unregistered.key', { anything: true }, { userId: 'u' });
+    expect(store.settings.get('totally.unregistered.key')?.value).toEqual({ anything: true });
+    expect(warnSpy).toHaveBeenCalledWith(
+      'set() для незарегистрированного ключа totally.unregistered.key',
+    );
   });
 });
 

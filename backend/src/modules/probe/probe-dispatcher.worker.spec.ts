@@ -10,6 +10,7 @@ import type { ConversationalService } from '../conversational/conversational.ser
 import type { ProbeEventJobData } from '../core-queue/queues';
 
 import { ProbeDispatcherWorker } from './probe-dispatcher.worker';
+import { ProbeFormulationService } from './probe-formulation.service';
 import type { ProbeService } from './probe.service';
 
 interface Mocks {
@@ -180,14 +181,15 @@ function makeMocks(args: {
 }
 
 function makeWorker(m: Mocks): ProbeDispatcherWorker {
+  const formulation = new ProbeFormulationService(m.llm, m.metrics, m.cfg);
   return new ProbeDispatcherWorker(
     m.redis,
     m.prisma,
-    m.llm,
     m.conversational,
     m.probeService,
     m.metrics,
     m.cfg,
+    formulation,
   );
 }
 

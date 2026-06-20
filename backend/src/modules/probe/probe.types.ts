@@ -7,6 +7,8 @@ export interface ProbeSuggestPayload {
   contextCardId?: string;
   contextCardKind?: string;
   contextCardTitle?: string;
+  objectName?: string;
+  objectKindRu?: string;
   suggestedQuestion?: string;
   dataClass?: DataClass;
   actionUrl?: string;

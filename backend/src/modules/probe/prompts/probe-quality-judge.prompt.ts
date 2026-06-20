@@ -1,29 +1,3 @@
-/**
- * Probe Фаза 2 (2026-06-17) — Probe-Quality-Judge.
- *
- * После того как `probe-formulate` сформулировал короткий уточняющий вопрос
- * человеку (см. `knowledge-core/prompts/probe-formulate.prompt.ts`), этот
- * промпт — лёгкий судья КАЧЕСТВА формулировки. Он ловит брак до отправки:
- * пустой / расплывчатый / с кодом-латиницей / двойной вопрос / на который
- * нельзя ответить человеку / слишком длинный. При браке отдаёт один
- * улучшенный вариант (`rewrite`).
- *
- * Используется в `ProbeDispatcherWorker.process` (после `formulate()`, перед
- * `sendNotification`):
- *   - `ok=true` — вопрос полноценный, шлём как есть.
- *   - `ok=false` и `rewrite` непустой и проходит детерминированный маркер-чек
- *     (нет латиницы/длинных id, ≤400, ровно один «?») — шлём `rewrite`.
- *   - LLM-провал / невалидный rewrite — best-effort: шлём ИСХОДНЫЙ вопрос
- *     (судья не блокирует доставку), метрика `kept_on_fail`.
- * Один проход, без цикла регенераций.
- *
- * Совместимость с prompt caching:
- *   - SYSTEM стабилен (критерии + few-shot + self-check, без переменных) →
- *     cache hit у DeepSeek / OpenAI-via-proxy с экономией ≈99%.
- *   - Единственные переменные данные (сам вопрос) — в КОНЦЕ USER. Префикс
- *     SYSTEM + начало USER стабильны, поэтому KV-cache переиспользуется.
- */
-
 export const PROBE_QUALITY_JUDGE_SYSTEM_PROMPT = [
   'Ты — Кора. Тебе дают короткий уточняющий вопрос, который система собирается задать человеку.',
   'Твоя задача — оценить КАЧЕСТВО формулировки и при браке предложить один улучшенный вариант.',
@@ -36,6 +10,8 @@ export const PROBE_QUALITY_JUDGE_SYSTEM_PROMPT = [
   '4. Ровно один главный вопрос — не два-три, склеенных в одно сообщение.',
   '5. На него реально может ответить человек (а не «спроси у базы» / не риторический).',
   '6. Не длиннее 400 символов и содержит ровно один знак «?».',
+  '7. Если у пробела есть конкретный объект (его имя дано отдельно), а в вопросе',
+  '   этого имени нет — это брак: ok=false, rewrite должен называть объект по имени.',
   '',
   'Если хоть один пункт нарушен — ok=false, перечисли коды проблем в issues и',
   'дай rewrite: тот же смысл, но исправленный, на русском, ≤200 символов, ровно',
@@ -44,7 +20,8 @@ export const PROBE_QUALITY_JUDGE_SYSTEM_PROMPT = [
   '',
   'Коды проблем (issues): empty (пустой/мусор), vague (расплывчато),',
   'has_code_or_english (код/латиница/идентификаторы), multiple_questions (несколько',
-  'вопросов сразу), not_answerable (человек не может ответить), too_long (длинно).',
+  'вопросов сразу), not_answerable (человек не может ответить), too_long (длинно),',
+  'missing_object (не назван конкретный объект, имя которого дано).',
   '',
   'Примеры (плохо → хорошо):',
   '— «Уточни по cardId clx9f2a по entity owner?» (has_code_or_english, vague)',
@@ -58,14 +35,19 @@ export const PROBE_QUALITY_JUDGE_SYSTEM_PROMPT = [
   'Верни JSON строго по схеме на русском, без пояснений вне JSON.',
 ].join('\n');
 
-export const PROBE_QUALITY_JUDGE_USER = (args: { question: string }): string => {
-  // Единственные переменные данные — сам вопрос — в самом конце USER, чтобы
-  // префикс SYSTEM + начало USER оставались стабильными для prompt caching.
-  return [
+export const PROBE_QUALITY_JUDGE_USER = (args: {
+  question: string;
+  objectName?: string;
+}): string => {
+  const lines = [
     'Оцени качество формулировки вопроса ниже. Верни JSON по схеме probe_quality_judge_v1.',
     '',
-    `Вопрос: ${args.question}`,
-  ].join('\n');
+  ];
+  if (args.objectName) {
+    lines.push(`Объект, который должен быть назван: «${args.objectName}»`);
+  }
+  lines.push(`Вопрос: ${args.question}`);
+  return lines.join('\n');
 };
 
 export const PROBE_QUALITY_JUDGE_SCHEMA_NAME = 'probe_quality_judge_v1';
@@ -87,6 +69,7 @@ export const PROBE_QUALITY_JUDGE_JSON_SCHEMA: Record<string, unknown> = {
           'multiple_questions',
           'not_answerable',
           'too_long',
+          'missing_object',
         ],
       },
     },

@@ -48,12 +48,14 @@ export class Specialist33ProbeService {
     try {
       const recipients = await this.findOrgAdminsUserIds(args.tenantId);
       if (recipients.length === 0) return;
-      const message = `Решение «${args.decisionStatement.slice(0, 120)}» очень похоже на ${args.competingIds.length} существующее(их). Проверить, не дублирующая ли это версия?`;
+      const stmt = args.decisionStatement.slice(0, 120);
+      const message = `Решение «${stmt}» очень похоже на ${args.competingIds.length} существующее(их). Проверить, не дублирующая ли это версия?`;
       await this.emit({
         tenantId: args.tenantId,
         decisionId: args.decisionId,
         reason: 'decision.competing_versions',
         message,
+        objectName: stmt,
         recipients,
         suggestedActions: ['Объединить с существующим', 'Создать как новое решение'],
       });
@@ -110,6 +112,7 @@ export class Specialist33ProbeService {
       decisionId: decision.id,
       reason: 'decision.missing_decider',
       message,
+      objectName: stmt,
       recipients,
       suggestedActions: ['Указать автора решения', 'Архивировать'],
     });
@@ -139,6 +142,7 @@ export class Specialist33ProbeService {
       decisionId: decision.id,
       reason: 'decision.no_deadline_critical',
       message,
+      objectName: stmt,
       recipients,
       suggestedActions: ['Указать срок исполнения', 'Снять метку «критичное»'],
     });
@@ -167,6 +171,7 @@ export class Specialist33ProbeService {
           decisionId: d.id,
           reason: 'decision.overdue',
           message,
+          objectName: stmt,
           recipients,
           suggestedActions: ['Отметить как реализованным', 'Перенести срок', 'Отменить решение'],
         });
@@ -204,6 +209,7 @@ export class Specialist33ProbeService {
           decisionId: d.id,
           reason: 'decision.outcome_unknown',
           message,
+          objectName: stmt,
           recipients,
           suggestedActions: ['Записать фактический результат', 'Отметить как неуспешное'],
         });
@@ -308,6 +314,7 @@ export class Specialist33ProbeService {
     decisionId: string;
     reason: string;
     message: string;
+    objectName: string;
     recipients: readonly string[];
     suggestedActions?: readonly string[];
   }): Promise<void> {
@@ -323,7 +330,9 @@ export class Specialist33ProbeService {
             suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
             contextCardId: args.decisionId,
             contextCardKind: 'decision',
-            contextCardTitle: args.message.slice(0, 100),
+            contextCardTitle: args.objectName.slice(0, 100),
+            objectName: args.objectName,
+            objectKindRu: 'решение',
             actionUrl,
             dataClass: 'sensitive',
           },

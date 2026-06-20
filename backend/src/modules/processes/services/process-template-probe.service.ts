@@ -103,6 +103,8 @@ export class ProcessTemplateProbeService {
             contextCardId: args.template.id,
             contextCardKind: 'process_template',
             contextCardTitle: args.template.name,
+            objectName: args.template.name,
+            objectKindRu: 'процесс',
             actionUrl,
             dataClass: 'internal',
           },

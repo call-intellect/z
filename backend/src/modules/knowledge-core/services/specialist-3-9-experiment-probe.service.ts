@@ -52,6 +52,7 @@ export class Specialist39ExperimentProbeService {
         experimentId: exp.id,
         reason: 'experiment.result_without_lesson',
         message,
+        objectName: name,
         recipients,
         suggestedActions: [
           'Записать что сработало',
@@ -95,6 +96,7 @@ export class Specialist39ExperimentProbeService {
           experimentId: exp.id,
           reason: 'experiment.no_owner',
           message,
+          objectName: name,
           recipients,
           suggestedActions: ['Назначить ответственного', 'Перевести в paused'],
           priorityHint: 0.4,
@@ -234,6 +236,7 @@ export class Specialist39ExperimentProbeService {
           experimentId: exp.id,
           reason: 'experiment.running_too_long',
           message,
+          objectName: name,
           recipients,
           suggestedActions: [
             'Записать промежуточный результат',
@@ -292,6 +295,7 @@ export class Specialist39ExperimentProbeService {
     experimentId: string;
     reason: string;
     message: string;
+    objectName: string;
     recipients: readonly string[];
     suggestedActions?: readonly string[];
     priorityHint: number;
@@ -308,7 +312,9 @@ export class Specialist39ExperimentProbeService {
             suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
             contextCardId: args.experimentId,
             contextCardKind: 'experiment',
-            contextCardTitle: args.message.slice(0, 100),
+            contextCardTitle: args.objectName.slice(0, 100),
+            objectName: args.objectName,
+            objectKindRu: 'эксперимент',
             actionUrl,
             dataClass: 'internal',
           },

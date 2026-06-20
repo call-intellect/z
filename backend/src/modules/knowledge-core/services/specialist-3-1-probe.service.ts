@@ -209,6 +209,7 @@ export class Specialist31ProbeService {
               resourceId: args.resourceId,
               reason: 'regulation.missing_owner',
               message,
+              objectName: args.resourceName,
               recipients: admins,
               suggestedActions: ['Назначить ответственного', 'Архивировать'],
             });
@@ -235,6 +236,7 @@ export class Specialist31ProbeService {
       resourceId: args.resourceId,
       reason: 'regulation.missing_owner',
       message,
+      objectName: args.resourceName,
       recipients: admins,
       suggestedActions: ['Назначить ответственного', 'Архивировать'],
     });
@@ -260,6 +262,7 @@ export class Specialist31ProbeService {
       resourceId: proc.id,
       reason: 'regulation.process_no_steps',
       message,
+      objectName: proc.name,
       recipients,
       suggestedActions: ['Добавить шаги процесса', 'Описать вручную'],
     });
@@ -306,6 +309,7 @@ export class Specialist31ProbeService {
       resourceId: args.resourceId,
       reason: 'regulation.stale',
       message,
+      objectName: args.resourceName,
       recipients,
       suggestedActions: ['Подтвердить актуальность', 'Обновить вручную'],
     });
@@ -339,6 +343,7 @@ export class Specialist31ProbeService {
       resourceId: args.resourceId,
       reason: 'regulation.scope_unclear',
       message,
+      objectName: args.resourceName,
       recipients: admins,
       suggestedActions: ['Указать область действия', 'Сузить до отдела/роли'],
     });
@@ -350,6 +355,7 @@ export class Specialist31ProbeService {
     resourceId: string;
     reason: string;
     message: string;
+    objectName: string;
     recipients: readonly string[];
     suggestedActions?: readonly string[];
   }): Promise<void> {
@@ -365,7 +371,9 @@ export class Specialist31ProbeService {
             suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
             contextCardId: args.resourceId,
             contextCardKind: args.resourceType,
-            contextCardTitle: args.message.slice(0, 100),
+            contextCardTitle: args.objectName.slice(0, 100),
+            objectName: args.objectName,
+            objectKindRu: this.kindLabelNominative(args.resourceType),
             actionUrl,
             dataClass: 'internal',
           },
@@ -551,6 +559,21 @@ export class Specialist31ProbeService {
         return 'процесса';
       case 'policy':
         return 'политики';
+      default:
+        return kind;
+    }
+  }
+
+  private kindLabelNominative(
+    kind: 'regulation' | 'process' | 'policy',
+  ): string {
+    switch (kind) {
+      case 'regulation':
+        return 'регламент';
+      case 'process':
+        return 'процесс';
+      case 'policy':
+        return 'политика';
       default:
         return kind;
     }

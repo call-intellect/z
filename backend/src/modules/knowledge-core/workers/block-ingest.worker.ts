@@ -1282,6 +1282,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         contextCardId: entity.id,
         contextCardKind: 'entity',
         contextCardTitle: entity.canonicalName,
+        objectName: entity.canonicalName,
         dataClass: 'internal',
       },
       recipientCandidates: recipients,

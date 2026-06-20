@@ -10,6 +10,7 @@ import type { ConversationalService } from '../conversational/conversational.ser
 import type { ProbeEventJobData } from '../core-queue/queues';
 
 import { ProbeDispatcherWorker } from './probe-dispatcher.worker';
+import { ProbeFormulationService } from './probe-formulation.service';
 import type { ProbeService } from './probe.service';
 
 function buildProbe() {
@@ -82,14 +83,15 @@ function makeWorker(args: { decisionFindFirst: ReturnType<typeof vi.fn> }): {
 
   const redis = { client: {} } as unknown as RedisService;
 
+  const formulation = new ProbeFormulationService(llm, metrics, cfg);
   const worker = new ProbeDispatcherWorker(
     redis,
     prisma,
-    llm,
     conversational,
     probeService,
     metrics,
     cfg,
+    formulation,
   );
   return { worker, updateCalls, sendNotification, llmCall };
 }

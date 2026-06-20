@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../common/config/index';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 
 import {
   PROVENANCE_ACCESS_MASK,
   ProvenanceService,
 } from '../knowledge-core/services/provenance.service';
+import type { S3Service } from '../recordings/s3.service';
 
 import {
   KnowledgeAccessResolver,
@@ -569,7 +571,16 @@ describe('ProvenanceService.resolve — инвариант доступа (Ф1)'
       document: { findMany: vi.fn(async () => []) },
     } as unknown as PrismaService;
 
-    const provenance = new ProvenanceService(servicePrisma, resolver);
+    const s3 = {
+      presignGet: vi.fn(async () => ({
+        url: 'https://s3.example/presigned',
+        expiresAt: new Date('2026-06-21T00:10:00.000Z'),
+      })),
+    } as unknown as S3Service;
+    const cfg = {
+      getDynamic: vi.fn(async (_k: string, _e: unknown, def: unknown) => def),
+    } as unknown as TypedConfigService;
+    const provenance = new ProvenanceService(servicePrisma, resolver, s3, cfg);
     const nodes = await provenance.resolve('decision', 'd-1', {
       tenantId: 't-1',
       userId: 'u-outsider',

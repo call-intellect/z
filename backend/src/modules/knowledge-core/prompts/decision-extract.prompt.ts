@@ -17,6 +17,7 @@
 import {
   withAsrNote,
   withConfidenceCalibration,
+  withDecisionDiscriminator,
   withEdgeCasePolicy,
 } from '../../ai/services/prompts/common';
 
@@ -25,6 +26,7 @@ import { signalTypeLabel } from './signal-type-label';
 export const DECISION_EXTRACT_SYSTEM_PROMPT = withAsrNote(
   withEdgeCasePolicy(
   withConfidenceCalibration(
+    withDecisionDiscriminator(
     [
     'Ты — knowledge-инженер реестра решений компании «Кора». Тебе дают один блок знания из встречи или документа, где зафиксировано решение либо его обоснование.',
     '',
@@ -71,6 +73,7 @@ export const DECISION_EXTRACT_SYSTEM_PROMPT = withAsrNote(
     '',
     'Верни строго JSON по схеме decision_extract_v1. Никакого текста вне JSON.',
     ].join('\n'),
+    ),
   ),
   ),
 );

@@ -174,16 +174,6 @@ export class Specialist33Service {
       const personSubjectIds = await this.resolvePersonSubjects(block.id);
       const sourceBlockIds = [block.id];
 
-      // Б3/Б48 source-block dedup (эталон specialist-3-6-ideas.service.ts:129-169):
-      // если Decision уже материализован из ЭТОГО блока (block-ingest direct-path
-      // создал «тонкий» Decision с sourceIdeaBlockId=blockId ИЛИ прошлый прогон
-      // специалиста при re-dispatch) — НЕ создаём дубль. Без этого guard'а
-      // createNewDecision пишет sourceIdeaBlockId=block.id → P2002 на @unique →
-      // внешний catch инкрементит метрику и return без re-throw → богатое решение
-      // теряется. notIn по статусам НЕ ставим намеренно: @unique sourceIdeaBlockId
-      // конфликтует независимо от статуса существующего Decision (в т.ч.
-      // superseded/rejected/cancelled), поэтому guard обязан ловить ЛЮБОЙ Decision
-      // с этим sourceIdeaBlockId, иначе terminal-Decision снова уронит P2002.
       const alreadyMaterialized = await this.prisma.decision.findFirst({
         where: {
           tenantId: block.tenantId,
@@ -445,7 +435,7 @@ export class Specialist33Service {
     } catch (err) {
       this.metrics.incCoreSpecialistExtractionFailure({
         type: 'decision',
-        reason: 'db_error',
+        reason: this.isSourceBlockUniqueViolation(err) ? 'db_conflict' : 'db_error',
       });
       this.logger.error(
         {
@@ -970,39 +960,87 @@ export class Specialist33Service {
         : Prisma.JsonNull;
 
     const db = args.tx ?? this.prisma;
-    return db.decision.create({
-      data: {
-        tenantId: args.block.tenantId,
-        // legacy text-поле — первые 1000 символов (для обратной совместимости).
-        text: args.draft.statement.slice(0, 1_000),
-        statement: args.draft.statement,
-        rationale: args.draft.rationale ?? null,
-        alternatives:
-          args.draft.alternatives && args.draft.alternatives.length > 0
-            ? (args.draft.alternatives as unknown as Prisma.InputJsonValue)
-            : Prisma.JsonNull,
+    const create = (): Promise<Decision> =>
+      db.decision.create({
+        data: {
+          tenantId: args.block.tenantId,
+          text: args.draft.statement.slice(0, 1_000),
+          statement: args.draft.statement,
+          rationale: args.draft.rationale ?? null,
+          alternatives:
+            args.draft.alternatives && args.draft.alternatives.length > 0
+              ? (args.draft.alternatives as unknown as Prisma.InputJsonValue)
+              : Prisma.JsonNull,
+          decidedByPersonIds: args.decidedByPersonIds,
+          decidedAt: args.decidedAt,
+          deadline: args.deadline,
+          status: args.status,
+          supersedesId: args.supersedesId ?? null,
+          affectsEntityIds: args.affectsEntityIds,
+          sourceBlockIds: args.sourceBlockIds,
+          sourceIdeaBlockId: args.block.id,
+          personSubjectIds: args.personSubjectIds,
+          confidence: new Prisma.Decimal(
+            Math.max(0, Math.min(1, args.draft.confidence)),
+          ),
+          dataClass: finalDc,
+          dataClassAudit: audit,
+          decidedByPersonId: args.decidedByPersonIds[0] ?? null,
+          validFrom: args.validFrom ?? args.decidedAt ?? null,
+          raisedCount: 1,
+          lastRaisedAt: new Date(),
+        },
+      });
+
+    if (args.tx) return create();
+
+    try {
+      return await create();
+    } catch (err) {
+      if (!this.isSourceBlockUniqueViolation(err)) throw err;
+      this.metrics.incCoreSpecialistExtractionFailure({
+        type: 'decision',
+        reason: 'db_conflict',
+      });
+      const existing = await this.prisma.decision.findFirst({
+        where: {
+          tenantId: args.block.tenantId,
+          sourceIdeaBlockId: args.block.id,
+        },
+      });
+      if (!existing) throw err;
+      this.logs.write({
+        level: 'INFO',
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: 'specialist-3-3-decisions',
+        action: 'merged',
+        message: `P2002 sourceIdeaBlockId из блока ${args.block.id} — обогащаю существующий ${existing.id}`,
+        orgId: args.block.tenantId,
+        details: {
+          type: 'decision',
+          intoId: existing.id,
+          blockId: args.block.id,
+          reason: 'p2002_recovery',
+        },
+      });
+      return this.mergeIntoExisting({
+        existing,
+        draft: args.draft,
         decidedByPersonIds: args.decidedByPersonIds,
-        decidedAt: args.decidedAt,
-        deadline: args.deadline,
-        status: args.status,
-        supersedesId: args.supersedesId ?? null,
         affectsEntityIds: args.affectsEntityIds,
         sourceBlockIds: args.sourceBlockIds,
-        sourceIdeaBlockId: args.block.id,
         personSubjectIds: args.personSubjectIds,
-        confidence: new Prisma.Decimal(
-          Math.max(0, Math.min(1, args.draft.confidence)),
-        ),
-        dataClass: finalDc,
-        dataClassAudit: audit,
-        // Если в блоке есть один decidedByPerson — заполняем legacy-поле.
-        decidedByPersonId: args.decidedByPersonIds[0] ?? null,
-        validFrom: args.validFrom ?? args.decidedAt ?? null,
-        // Pulse Wave 1 §1.2 — счётчик «сколько раз решение поднималось».
-        raisedCount: 1,
-        lastRaisedAt: new Date(),
-      },
-    });
+      });
+    }
+  }
+
+  private isSourceBlockUniqueViolation(err: unknown): boolean {
+    if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
+    if (err.code !== 'P2002') return false;
+    const target = (err.meta as { target?: unknown } | undefined)?.target;
+    if (Array.isArray(target)) return target.includes('sourceIdeaBlockId');
+    if (typeof target === 'string') return target.includes('sourceIdeaBlockId');
+    return true;
   }
 
   private async mergeIntoExisting(args: {

@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Specialist33Service } from './specialist-3-3-decisions.service';
@@ -275,6 +276,53 @@ describe('Specialist33Service.processBlock — source-block dedup + supersedes t
       }),
     );
     expect(m.prisma.decision.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('Б3 повторный фикс: create роняет P2002 (гонка) → re-find + merge, потеря НЕ происходит, метрика db_conflict', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(block());
+    m.llm.call.mockResolvedValue({ text: draftJson() });
+    m.prisma.decision.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: EXISTING_ID,
+        tenantId: TENANT,
+        statement: 'Берём CRM X',
+        rationale: null,
+        alternatives: null,
+        sourceBlockIds: [BLOCK_ID],
+        decidedByPersonIds: [],
+        affectsEntityIds: [],
+        personSubjectIds: [],
+      });
+    m.prisma.decision.findMany.mockResolvedValue([]);
+    const p2002 = new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed on the fields: (`sourceIdeaBlockId`)',
+      { code: 'P2002', clientVersion: 'test', meta: { target: ['sourceIdeaBlockId'] } },
+    );
+    m.prisma.decision.create.mockRejectedValueOnce(p2002);
+
+    await expect(
+      svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID }),
+    ).resolves.toBeUndefined();
+
+    expect(m.prisma.decision.create).toHaveBeenCalledTimes(1);
+    expect(m.metrics.incCoreSpecialistExtractionFailure).toHaveBeenCalledWith({
+      type: 'decision',
+      reason: 'db_conflict',
+    });
+    expect(m.prisma.decision.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: EXISTING_ID } }),
+    );
+    expect(m.logs.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'merged',
+        details: expect.objectContaining({
+          intoId: EXISTING_ID,
+          blockId: BLOCK_ID,
+          reason: 'p2002_recovery',
+        }),
+      }),
+    );
   });
 
   it('Б49: supersedes → create нового и update(старый superseded) в одном $transaction', async () => {

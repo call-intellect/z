@@ -125,6 +125,18 @@ const IssueMentionPayloadSchema = z
   })
   .strict();
 
+const IssueAssignedPayloadSchema = z
+  .object({
+    issueId: z.string().min(1).max(80),
+    issueIdentifier: z.string().max(40).optional(),
+    issueTitle: z.string().min(1).max(500),
+    byUserId: z.string().min(1).max(80),
+    byName: z.string().min(1).max(200),
+    dueDate: z.string().max(40).nullable().optional(),
+    actionUrl: z.string().max(2_000).optional(),
+  })
+  .strict();
+
 const OperationsWeeklyDigestPayloadSchema = z
   .object({
     digestId: z.string().min(1).max(80),
@@ -266,6 +278,7 @@ const registry = new Map<string, z.ZodTypeAny>([
   ['goals.pulse', GoalsPulsePayloadSchema],
   ['operations.monthly_recap', OperationsMonthlyRecapPayloadSchema],
   ['issue.mention', IssueMentionPayloadSchema],
+  ['issue.assigned', IssueAssignedPayloadSchema],
   ['event.reminder', EventReminderPayloadSchema],
   ['clone.access_granted', CloneAccessGrantedPayloadSchema],
   ['checkin.ack', CheckinAckPayloadSchema],

@@ -21,6 +21,7 @@ import { TelegramWebhooksController } from './adapters/telegram-bot/telegram-web
 import { ChannelRegistry } from './channel-registry';
 import { ConversationalController } from './conversational.controller';
 import { ConversationalService } from './conversational.service';
+import { IssueAssignmentNotifierService } from './issue-assignment-notifier.service';
 import { ConversationalLinkCodeService } from './link-code.service';
 import { NotificationBudgetService } from './notification-budget.service';
 import { AssistantInboundQueueService } from './queue/assistant-inbound-queue.service';
@@ -123,6 +124,7 @@ export class ConversationalFreeNoteBridge implements OnModuleInit {
     MaxApiClient,
     MaxBotChannelAdapter,
     ConversationalFreeNoteBridge,
+    IssueAssignmentNotifierService,
   ],
   exports: [
     ConversationalService,

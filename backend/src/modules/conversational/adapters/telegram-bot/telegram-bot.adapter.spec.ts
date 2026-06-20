@@ -1302,6 +1302,19 @@ describe('TelegramBotChannelAdapter.renderText — видимые брифы (Ф
       ['Вас упомянули в задаче', 'KOR-42', 'Посмотри, пожалуйста, оценку'],
     ],
     [
+      'issue.assigned',
+      {
+        issueId: 'i-1',
+        issueIdentifier: 'INB-5',
+        issueTitle: 'Протестировать бота',
+        byUserId: 'u-1',
+        byName: 'Настя',
+        dueDate: '2026-06-20',
+        actionUrl: '/issues/i-1',
+      },
+      ['Вам поставили задачу', 'INB-5', 'Протестировать бота', 'Настя', '20 июня'],
+    ],
+    [
       'idea.status_changed',
       {
         ideaId: 'id-1',

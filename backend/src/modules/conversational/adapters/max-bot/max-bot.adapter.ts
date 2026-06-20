@@ -13,6 +13,7 @@ import { CryptoService } from '../../../../common/crypto/crypto.service';
 import { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 import { RedisService } from '../../../../common/redis/redis.service';
+import { formatRuDate } from '../../../../common/utils/format-ru-date';
 import { VoxService } from '../../../ai/services/vox.service';
 import { QueryClassifierService } from '../../../dialog-layer/services/query-classifier.service';
 import { DocumentsService } from '../../../documents/documents.service';
@@ -852,6 +853,19 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
         const head = ref ? `Вас упомянули в задаче ${ref}` : 'Вас упомянули в задаче';
         const tail = snippet ? `\n\n${snippet}` : '';
         return `${head}${tail}`.slice(0, 4000);
+      }
+      case 'issue.assigned': {
+        const ref = (payload['issueIdentifier'] as string | undefined) ?? '';
+        const title = (payload['issueTitle'] as string | undefined) ?? '';
+        const by = (payload['byName'] as string | undefined) ?? '';
+        const due = (payload['dueDate'] as string | undefined) ?? '';
+        const url = (payload['actionUrl'] as string | undefined) ?? '';
+        const head = ref ? `Вам поставили задачу ${ref}` : 'Вам поставили задачу';
+        const t = title ? `\n\n«${title}»` : '';
+        const who = by ? `\nПоставил(а): ${by}` : '';
+        const when = due ? `\nСрок: ${formatRuDate(due)}` : '';
+        const link = url ? `\n\nОткрыть:\n${url}` : '';
+        return `${head}${t}${who}${when}${link}`.slice(0, 4000);
       }
       case 'support.ticket_created': {
         const num = String(payload['ticketNumber'] ?? '');

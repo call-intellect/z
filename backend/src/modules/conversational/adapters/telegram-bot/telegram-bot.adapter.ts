@@ -13,6 +13,7 @@ import { CryptoService } from '../../../../common/crypto/crypto.service';
 import { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 import { RedisService } from '../../../../common/redis/redis.service';
+import { formatRuDate } from '../../../../common/utils/format-ru-date';
 import { AccountsService } from '../../../accounts/accounts.service';
 import { VoxService } from '../../../ai/services/vox.service';
 import { QueryClassifierService } from '../../../dialog-layer/services/query-classifier.service';
@@ -1151,6 +1152,21 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
           : '<b>Вас упомянули в задаче</b>';
         const tail = snippet ? `\n\n${escapeHtml(snippet)}` : '';
         return `${head}${tail}`.slice(0, 4000);
+      }
+      case 'issue.assigned': {
+        const ref = (payload['issueIdentifier'] as string | undefined) ?? '';
+        const title = (payload['issueTitle'] as string | undefined) ?? '';
+        const by = (payload['byName'] as string | undefined) ?? '';
+        const due = (payload['dueDate'] as string | undefined) ?? '';
+        const url = (payload['actionUrl'] as string | undefined) ?? '';
+        const head = ref
+          ? `<b>Вам поставили задачу ${escapeHtml(ref)}</b>`
+          : '<b>Вам поставили задачу</b>';
+        const t = title ? `\n\n«${escapeHtml(title)}»` : '';
+        const who = by ? `\nПоставил(а): ${escapeHtml(by)}` : '';
+        const when = due ? `\nСрок: ${escapeHtml(formatRuDate(due))}` : '';
+        const link = url ? `\n\nОткрыть:\n${escapeHtml(url)}` : '';
+        return `${head}${t}${who}${when}${link}`.slice(0, 4000);
       }
       case 'support.ticket_created': {
         const num = String(payload['ticketNumber'] ?? '');

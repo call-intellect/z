@@ -1431,6 +1431,7 @@ export class TypedConfigService {
         undefined,
         0.75,
       ),
+      assignmentNotificationsEnabled: Boolean(this.get('ASSIGNMENT_NOTIFICATIONS_ENABLED') ?? true),
     } as const;
   }
 

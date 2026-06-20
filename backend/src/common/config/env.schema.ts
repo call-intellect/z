@@ -255,6 +255,7 @@ const AiFeatureFlagsSchema = z.object({
   REGULATION_GATE_STRICT_ENABLED: zBool(true),
   CHATBOX_TASK_EXTRACTION_ENABLED: zBool(true),
   TASKS_CROSS_SOURCE_DEDUPE_ENABLED: zBool(true),
+  ASSIGNMENT_NOTIFICATIONS_ENABLED: zBool(true),
 });
 
 const HashingSchema = z.object({

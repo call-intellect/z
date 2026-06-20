@@ -72,6 +72,7 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   'goals.pulse': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
   'operations.monthly_recap': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
   'issue.mention': ['in_app', 'telegram_bot', 'max_bot'],
+  'issue.assigned': ['in_app', 'telegram_bot', 'max_bot'],
   'event.reminder': ['in_app', 'telegram_bot', 'max_bot'],
   'checkin.ack': ['telegram_bot', 'max_bot', 'in_app'],
   'note.ack': ['in_app', 'telegram_bot', 'max_bot'],

@@ -20,6 +20,7 @@ import {
 import { issuesApi } from "@/api/tracker/issues.api";
 import { humanizeApiError } from "@/api/api-error";
 import { useProjects } from "@/hooks/tracker/useProjects";
+import { ProvenanceChip } from "@/ui/components/provenance/ProvenanceChip";
 import { IssuePriorityIcon } from "./IssuePriorityIcon";
 import { AssigneeAvatarGroup } from "./AssigneeAvatar";
 import { StartMeetingButton } from "./StartMeetingButton";
@@ -92,7 +93,15 @@ export function IssueSidebar({
         <ParentTaskSelector issue={issue} orgId={orgId} />
       </Row>
 
-      <div className="mt-2 border-t border-border-subtle pt-3">
+      <div className="mt-2 flex flex-col gap-3 border-t border-border-subtle pt-3">
+        {issue.sourceBlockIds.length > 0 ? (
+          <ProvenanceChip
+            orgId={orgId}
+            entityType="issue"
+            entityId={issue.id}
+            title={issue.title}
+          />
+        ) : null}
         <StartMeetingButton orgId={orgId} issueId={issue.id} />
       </div>
     </aside>

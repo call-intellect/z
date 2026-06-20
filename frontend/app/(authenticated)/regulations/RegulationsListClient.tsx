@@ -1239,13 +1239,18 @@ function SourcesAccordion({
                   </blockquote>
                   {s.meeting ? (
                     <Link
-                      href={`/meetings/${s.meeting.id}`}
+                      href={s.deepLink ?? `/meetings/${s.meeting.id}`}
                       className="mt-1 inline-flex items-center gap-1 text-xs text-accent hover:underline"
                     >
                       {s.meeting.title}
                       <span className="text-fg-tertiary">
                         · {s.meeting.date.toLocaleDateString('ru-RU')}
                       </span>
+                      {s.startMs !== null ? (
+                        <span className="text-fg-tertiary">
+                          · перейти к моменту
+                        </span>
+                      ) : null}
                     </Link>
                   ) : (
                     <span className="mt-1 block text-xs text-fg-tertiary">

@@ -149,21 +149,29 @@ export function mapProcessStep(api: ProcessStepApi): ProcessStepDomain {
 export interface RegulationSource {
   blockId: string;
   quote: string;
+  startMs: number | null;
   meeting: { id: string; title: string; date: Date } | null;
+  deepLink: string | null;
 }
 
 export function mapRegulationSource(
   api: RegulationSourceItemApi,
 ): RegulationSource {
+  const startMs = api.startMs ?? null;
+  const meeting = api.meeting
+    ? {
+        id: api.meeting.id,
+        title: api.meeting.title,
+        date: new Date(api.meeting.date),
+      }
+    : null;
   return {
     blockId: api.blockId,
     quote: api.quote,
-    meeting: api.meeting
-      ? {
-          id: api.meeting.id,
-          title: api.meeting.title,
-          date: new Date(api.meeting.date),
-        }
+    startMs,
+    meeting,
+    deepLink: meeting
+      ? `/meetings/${meeting.id}?t=${Math.max(0, Math.round((startMs ?? 0) / 1000))}`
       : null,
   };
 }

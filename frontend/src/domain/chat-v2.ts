@@ -160,6 +160,15 @@ export function formatTimestamp(ms: number): string {
   return `${pad(m)}:${pad(s)}`;
 }
 
+export function citationDeepLink(citation: ChatV2Citation): string | null {
+  if (citation.documentId) return `/documents/${citation.documentId}`;
+  if (citation.meetingId) {
+    const sec = Math.max(0, Math.round((citation.startMs ?? 0) / 1000));
+    return `/meetings/${citation.meetingId}?t=${sec}`;
+  }
+  return null;
+}
+
 export type AssistantTarget =
   | { kind: "assistant" }
   | { kind: "clone"; roleId: string; roleName: string };

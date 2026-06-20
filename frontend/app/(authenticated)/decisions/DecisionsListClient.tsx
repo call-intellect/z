@@ -21,6 +21,7 @@ import {
 import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 import { TrustBadge } from "@/ui/components/shared/TrustBadge";
 import { CardCorrectionActions } from "@/ui/components/knowledge/CardCorrectionActions";
+import { ProvenanceChip } from "@/ui/components/provenance/ProvenanceChip";
 import { Input } from "@/ui/shadcn/input";
 
 import {
@@ -72,7 +73,7 @@ function DecisionsListContent({
 }: {
   initialSelectedId?: string;
 }) {
-  const { currentOrgRole } = useAuth();
+  const { currentOrgId, currentOrgRole } = useAuth();
   const canApplyDirectly = ["owner", "admin"].includes(currentOrgRole ?? "");
   const [data, setData] = useState<DecisionsListResponseApi | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -449,14 +450,18 @@ function DecisionsListContent({
               ) : null}
 
               <section className="text-xs text-fg-tertiary">
-                <div>
-                  Источники:{" "}
-                  {detail.sourceBlockIds.length > 0
-                    ? `${detail.sourceBlockIds.length} блок(ов) знаний`
-                    : "—"}
-                </div>
+                {detail.sourceBlockIds.length > 0 ? (
+                  <ProvenanceChip
+                    orgId={currentOrgId}
+                    entityType="decision"
+                    entityId={detail.id}
+                    title={detail.statement}
+                  />
+                ) : (
+                  <div>Создано вручную — источника нет</div>
+                )}
                 {detail.confidence !== null ? (
-                  <div>
+                  <div className="mt-2">
                     Уверенность извлечения:{" "}
                     {(detail.confidence * 100).toFixed(0)}%
                   </div>

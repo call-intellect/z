@@ -27,6 +27,7 @@ export interface ProvenanceNodeApi {
   endMs: number | null;
   occurredAt: string | null;
   confidence: number | null;
+  needsReview: boolean;
   accessFiltered: boolean;
 }
 

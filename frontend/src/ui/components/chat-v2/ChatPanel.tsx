@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { MessageCircle, Send } from "lucide-react";
 import { useState, type FormEvent, type ReactElement } from "react";
 
@@ -8,7 +9,11 @@ import {
   type ChatV2ModeApi,
   type ChatV2ScopeApi,
 } from "@/api/chat-v2.api";
-import { formatTimestamp, type ChatV2Citation } from "@/domain/chat-v2";
+import {
+  citationDeepLink,
+  formatTimestamp,
+  type ChatV2Citation,
+} from "@/domain/chat-v2";
 import { AssistantMarkdown } from "./AssistantMarkdown";
 
 export interface ChatPanelProps {
@@ -161,20 +166,34 @@ function ChatBubble({ message }: { message: LocalMessage }): ReactElement {
             <div className="text-xs font-medium text-fg-tertiary">
               Источники:
             </div>
-            {message.citations.map((c, idx) => (
-              <div
-                key={`${c.meetingId}-${c.startMs}-${idx}`}
-                className="rounded bg-surface px-2 py-1 text-xs"
-              >
-                <div className="font-medium">
-                  {c.meetingTitle}{" "}
-                  <span className="text-fg-tertiary">
-                    [{formatTimestamp(c.startMs)}]
-                  </span>
+            {message.citations.map((c, idx) => {
+              const href = citationDeepLink(c);
+              const inner = (
+                <>
+                  <div className="font-medium">
+                    {c.meetingTitle}{" "}
+                    <span className="text-fg-tertiary">
+                      [{formatTimestamp(c.startMs)}]
+                    </span>
+                  </div>
+                  <div className="text-fg-secondary italic">"{c.snippet}"</div>
+                </>
+              );
+              const key = `${c.meetingId}-${c.startMs}-${idx}`;
+              return href ? (
+                <Link
+                  key={key}
+                  href={href}
+                  className="block rounded bg-surface px-2 py-1 text-xs transition-colors hover:bg-bg-hover"
+                >
+                  {inner}
+                </Link>
+              ) : (
+                <div key={key} className="rounded bg-surface px-2 py-1 text-xs">
+                  {inner}
                 </div>
-                <div className="text-fg-secondary italic">"{c.snippet}"</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : null}
       </div>

@@ -29,6 +29,7 @@ export const ProvenanceNodeDto = z.object({
   endMs: z.number().nullable(),
   occurredAt: z.string().nullable(),
   confidence: z.number().nullable(),
+  needsReview: z.boolean(),
   accessFiltered: z.boolean(),
 });
 

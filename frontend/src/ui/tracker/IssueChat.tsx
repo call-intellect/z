@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   Loader2,
   MessageCircle,
@@ -23,6 +24,7 @@ import { ApiError } from "@/api/api-error";
 import { Button } from "@/ui/shadcn/button";
 import { toast } from "sonner";
 import {
+  citationDeepLink,
   formatTimestamp,
   type ChatV2Citation,
   type ChatV2Mode,
@@ -487,20 +489,37 @@ function ChatBubble({
             <div className="text-[11px] font-medium text-fg-tertiary">
               Источники:
             </div>
-            {message.citations.map((c, idx) => (
-              <div
-                key={`${c.meetingId}-${c.startMs}-${idx}`}
-                className="rounded bg-bg-elevated px-2 py-1 text-[11px]"
-              >
-                <div className="font-medium text-fg-primary">
-                  {c.meetingTitle}{" "}
-                  <span className="text-fg-tertiary">
-                    [{formatTimestamp(c.startMs)}]
-                  </span>
+            {message.citations.map((c, idx) => {
+              const href = citationDeepLink(c);
+              const key = `${c.meetingId}-${c.startMs}-${idx}`;
+              const inner = (
+                <>
+                  <div className="font-medium text-fg-primary">
+                    {c.meetingTitle}{" "}
+                    <span className="text-fg-tertiary">
+                      [{formatTimestamp(c.startMs)}]
+                    </span>
+                  </div>
+                  <div className="italic text-fg-secondary">"{c.snippet}"</div>
+                </>
+              );
+              return href ? (
+                <Link
+                  key={key}
+                  href={href}
+                  className="block rounded bg-bg-elevated px-2 py-1 text-[11px] transition-colors hover:bg-bg-hover"
+                >
+                  {inner}
+                </Link>
+              ) : (
+                <div
+                  key={key}
+                  className="rounded bg-bg-elevated px-2 py-1 text-[11px]"
+                >
+                  {inner}
                 </div>
-                <div className="italic text-fg-secondary">"{c.snippet}"</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : null}
       </div>

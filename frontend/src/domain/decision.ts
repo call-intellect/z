@@ -8,6 +8,7 @@ import type {
   DecisionVersionItemApi,
   TrustTierApi,
 } from "@/api/decisions.api";
+import type { ProvenanceRef } from "@/domain/provenance";
 
 export type DecisionStatus = DecisionStatusApi;
 export type TrustTier = TrustTierApi;
@@ -53,6 +54,7 @@ export interface DecisionListItem {
   affectsEntityIds: string[];
   confidence: number | null;
   trustTier: TrustTier;
+  provenancePreview?: ProvenanceRef | null;
   updatedAt: Date;
   createdAt: Date;
 }
@@ -102,6 +104,7 @@ export function mapDecisionListItem(
     affectsEntityIds: dto.affectsEntityIds,
     confidence: dto.confidence,
     trustTier: dto.trustTier ?? "human",
+    provenancePreview: null,
     updatedAt: new Date(dto.updatedAt),
     createdAt: new Date(dto.createdAt),
   };

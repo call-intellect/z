@@ -35,6 +35,7 @@ export interface ProvenanceRef {
   startMs: number | null;
   endMs: number | null;
   confidence: number | null;
+  needsReview: boolean;
   accessFiltered: boolean;
 }
 
@@ -61,6 +62,7 @@ export function mapProvenanceNode(api: ProvenanceNodeApi): ProvenanceRef {
     startMs: api.startMs,
     endMs: api.endMs,
     confidence: api.confidence,
+    needsReview: api.needsReview ?? false,
     accessFiltered: api.accessFiltered,
   };
 }

@@ -37,6 +37,7 @@ export interface ProvenanceNode {
   endMs: number | null;
   occurredAt: string | null;
   confidence: number | null;
+  needsReview: boolean;
   accessFiltered: boolean;
 }
 
@@ -220,6 +221,7 @@ export class ProvenanceService {
           endMs: null,
           occurredAt: null,
           confidence: null,
+          needsReview: false,
           accessFiltered: true,
         });
         continue;
@@ -242,6 +244,7 @@ export class ProvenanceService {
         endMs: ev.endMs ?? null,
         occurredAt: ev.sourceTimestamp?.toISOString() ?? null,
         confidence: null,
+        needsReview: false,
         accessFiltered: false,
       });
     }

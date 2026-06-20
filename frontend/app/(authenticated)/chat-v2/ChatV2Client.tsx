@@ -39,6 +39,7 @@ import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
 import {
   chatV2ConversationStatusLabel,
   chatV2ScopeLabel,
+  citationDeepLink,
   cloneAnswerToChatV2Message,
   formatTimestamp,
   toChatV2Conversation,
@@ -661,6 +662,18 @@ function MessageView({ message }: { message: ChatV2Message }): ReactElement {
                       className="text-accent hover:underline"
                     >
                       Документ: {c.documentName ?? "без названия"}
+                    </Link>
+                  </div>
+                ) : citationDeepLink(c) ? (
+                  <div className="font-medium">
+                    <Link
+                      href={citationDeepLink(c) as string}
+                      className="text-accent hover:underline"
+                    >
+                      {c.meetingTitle}{" "}
+                      <span className="text-fg-tertiary">
+                        [{formatTimestamp(c.startMs)}]
+                      </span>
                     </Link>
                   </div>
                 ) : (

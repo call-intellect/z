@@ -729,6 +729,12 @@ function buildSettings(): SettingSeed[] {
       'high',
       'Kill-switch записи в граф AGE (false = только Postgres)',
     ],
+    [
+      'provenance.confidence_review_threshold',
+      envFloat('PROVENANCE_CONFIDENCE_REVIEW_THRESHOLD', 0.6),
+      'low',
+      'Порог уверенности (0-1) ниже которого источник-документ помечается как требующий проверки (needsReview) в панели «Откуда это». Для источников-встреч не применяется.',
+    ],
   ];
   for (const [key, value, severity, description] of knowledge) {
     out.push({ key, value, category: 'ai', section: 'knowledge-core', severity, description });

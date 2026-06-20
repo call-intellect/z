@@ -79,6 +79,7 @@ export interface RegulationHistoryResponseApi {
 export interface RegulationSourceItemApi {
   blockId: string;
   quote: string;
+  startMs: number | null;
   meeting: { id: string; title: string; date: string } | null;
 }
 

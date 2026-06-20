@@ -107,6 +107,7 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['goals.author_coverage_min', UNIT_INTERVAL],
   ['reliability.min_denominator', POSITIVE_INT],
+  ['provenance.confidence_review_threshold', UNIT_INTERVAL],
   ['probe.reply_latency_rise.factor', z.number().positive()],
   ['probe.workload_overload.load_percent', POSITIVE_INT],
   ['probe.meeting_noshows.count', POSITIVE_INT],

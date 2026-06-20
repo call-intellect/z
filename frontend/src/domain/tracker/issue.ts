@@ -1,3 +1,5 @@
+import type { ProvenanceRef } from "@/domain/provenance";
+
 import {
   parseIssuePriority,
   type IssuePriority,
@@ -188,6 +190,7 @@ export interface Issue {
   childrenCount: number | null;
   checklistTotalCount: number;
   checklistDoneCount: number;
+  provenancePreview?: ProvenanceRef | null;
   isOverdue: boolean;
   isCompleted: boolean;
   isArchived: boolean;
@@ -339,6 +342,7 @@ export function issueFromApi(api: IssueApi): Issue {
       typeof api.childrenCount === "number" ? api.childrenCount : null,
     checklistTotalCount: api.checklistTotalCount ?? 0,
     checklistDoneCount: api.checklistDoneCount ?? 0,
+    provenancePreview: null,
     isOverdue: computeIsOverdue(dueDate, completedAt),
     isCompleted: completedAt !== null,
     isArchived: api.archivedAt !== null,

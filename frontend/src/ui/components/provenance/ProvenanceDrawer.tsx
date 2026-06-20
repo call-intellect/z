@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, FileSearch, Loader2, Lock } from "lucide-react";
+import { ArrowUpRight, FileSearch, Loader2, Lock, Volume2 } from "lucide-react";
 
 import {
   Sheet,
@@ -15,6 +16,7 @@ import {
   provenanceCoverageLabel,
   type ProvenanceRef,
 } from "@/domain/provenance";
+import { provenanceApi } from "@/api/provenance.api";
 import type { ProvenanceEntityTypeApi } from "@/api/provenance.api";
 
 type Props = {
@@ -102,6 +104,7 @@ export function ProvenanceDrawer({
                 <ProvenanceNodeCard
                   key={`${node.blockId}-${idx}`}
                   node={node}
+                  orgId={orgId}
                 />
               ))}
             </ul>
@@ -112,7 +115,13 @@ export function ProvenanceDrawer({
   );
 }
 
-function ProvenanceNodeCard({ node }: { node: ProvenanceRef }) {
+function ProvenanceNodeCard({
+  node,
+  orgId,
+}: {
+  node: ProvenanceRef;
+  orgId: string | null | undefined;
+}) {
   if (node.accessFiltered) {
     return (
       <li className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-overlay p-3 text-sm text-fg-tertiary">
@@ -165,6 +174,67 @@ function ProvenanceNodeCard({ node }: { node: ProvenanceRef }) {
           Перейти к первоисточнику
         </Link>
       ) : null}
+
+      {node.source.type === "voice_note" && node.hasAudio && node.rawEventId ? (
+        <VoiceNotePlayer orgId={orgId} rawEventId={node.rawEventId} />
+      ) : null}
     </li>
+  );
+}
+
+function VoiceNotePlayer({
+  orgId,
+  rawEventId,
+}: {
+  orgId: string | null | undefined;
+  rawEventId: string;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  if (failed) return null;
+
+  if (url) {
+    return (
+      <audio
+        controls
+        src={url}
+        className="mt-2 h-9 w-full"
+        aria-label="Оригинал голосового сообщения"
+      />
+    );
+  }
+
+  const onClick = async () => {
+    if (!orgId) {
+      setFailed(true);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await provenanceApi.voiceNoteAudio(orgId, rawEventId);
+      setUrl(res.url);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={loading}
+      className="mt-2 inline-flex items-center gap-1.5 text-xs text-accent hover:underline disabled:opacity-60"
+    >
+      {loading ? (
+        <Loader2 size={12} className="animate-spin" aria-hidden />
+      ) : (
+        <Volume2 size={12} strokeWidth={1.75} aria-hidden />
+      )}
+      Послушать оригинал
+    </button>
   );
 }

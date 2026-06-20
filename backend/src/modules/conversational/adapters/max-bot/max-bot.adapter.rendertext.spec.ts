@@ -8,6 +8,7 @@ import type { RedisService } from '../../../../common/redis/redis.service';
 import type { VoxService } from '../../../ai/services/vox.service';
 import type { QueryClassifierService } from '../../../dialog-layer/services/query-classifier.service';
 import type { DocumentsService } from '../../../documents/documents.service';
+import type { S3Service } from '../../../recordings/s3.service';
 import type { ChannelRegistry } from '../../channel-registry';
 import type { ConversationalLinkCodeService } from '../../link-code.service';
 
@@ -24,6 +25,7 @@ function makeAdapter(): MaxBotChannelAdapter {
     {} as unknown as ConversationalLinkCodeService,
     {} as unknown as BusinessMetricsService,
     {} as unknown as VoxService,
+    {} as unknown as S3Service,
     {} as unknown as DocumentsService,
     {} as unknown as QueryClassifierService,
     {} as unknown as TypedConfigService,

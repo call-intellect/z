@@ -217,6 +217,8 @@ _(пусто — все доставки в Telegram авторизованы в
 | `concierge.clarify_min_confidence` | 80 | Порог самооценки понимания запроса (0–100), ниже которого помощник задаёт ОДИН уточняющий вопрос вместо действия (крен «лучше переспросить»). Подкреплён жёстким код-гардом: изменяющее действие без обязательного поля → уточнять всегда. AdminSetting (super_admin) | Помощник-уточнитель (ТЗ assistant-router-dedup) |
 | `chat_v2.table_context_max_rows` | 20 | Потолок строк умных таблиц, отдаваемых синтезатору chat-v2 как «Данные из таблиц» (таблицы — параллельный с графом источник). AdminSetting (super_admin). Сид `seed-admin-setting-chat-v2-tables.ts` | Умные таблицы как источник chat-v2 (ТЗ chat-v2-unified-answer-prompt §7 B) |
 | `chat_v2.table_context_max_tables` | 2 | Максимум таблиц, из которых chat-v2 тянет строки в один ответ. AdminSetting (super_admin). Сид `seed-admin-setting-chat-v2-tables.ts` | Умные таблицы как источник chat-v2 (ТЗ chat-v2-unified-answer-prompt §7 B) |
+| `provenance.voiceNoteAudioRetentionDays` | 90 | Сколько дней хранить оригинал аудио голосового сообщения (voice_note) в S3 до автоудаления ночным cron `VoiceNoteAudioRetentionCron`. AdminSetting (super_admin), getDynamic, code-fallback `90`. Сид `seed-admin-setting-voice-note-retention.ts` | Провенанс «Послушать оригинал» (Ф B3) |
+| `provenance.voiceNoteAudioPresignTtlSeconds` | 600 | Срок жизни presigned-ссылки (сек) на аудио голосового сообщения в дровере «Откуда это». AdminSetting (super_admin), getDynamic, code-fallback `600`. Сид `seed-admin-setting-voice-note-retention.ts` | Провенанс «Послушать оригинал» (Ф B3) |
 
 ---
 

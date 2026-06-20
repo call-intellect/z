@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { S3Service } from '../../recordings/s3.service';
 import type { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 
 import {
@@ -102,6 +104,8 @@ function buildService(opts: {
   prisma: Partial<Record<string, unknown>>;
   isBypass?: boolean;
   accessibleIds?: Set<string>;
+  s3?: Partial<S3Service>;
+  cfg?: Partial<TypedConfigService>;
 }): ProvenanceService {
   const accessResolver = {
     resolveAccessibleGroups: vi.fn(async () => ({
@@ -117,9 +121,21 @@ function buildService(opts: {
       }),
     ),
   } as unknown as KnowledgeAccessResolver;
+  const s3 = (opts.s3 ?? {
+    presignGet: vi.fn(async () => ({
+      url: 'https://s3.example/presigned',
+      expiresAt: new Date('2026-06-21T00:10:00.000Z'),
+    })),
+    delete: vi.fn(async () => undefined),
+  }) as unknown as S3Service;
+  const cfg = (opts.cfg ?? {
+    getDynamic: vi.fn(async (_k: string, _e: unknown, def: unknown) => def),
+  }) as unknown as TypedConfigService;
   return new ProvenanceService(
     opts.prisma as unknown as PrismaService,
     accessResolver,
+    s3,
+    cfg,
   );
 }
 
@@ -347,5 +363,103 @@ describe('ProvenanceService.resolve — последняя миля', () => {
       userId: 'u-1',
     });
     expect(nodes).toEqual([]);
+  });
+});
+
+describe('ProvenanceService.resolveVoiceNoteAudioUrl (B3 — Послушать оригинал)', () => {
+  const viewer = { tenantId: 't-1', userId: 'u-1' };
+
+  it('нет RawEvent → not_found', async () => {
+    const prisma = {
+      rawEvent: { findFirst: vi.fn(async () => null) },
+      ideaBlockEvidence: { findMany: vi.fn(async () => []) },
+    };
+    const svc = buildService({ prisma });
+    const res = await svc.resolveVoiceNoteAudioUrl('raw-x', viewer);
+    expect(res.status).toBe('not_found');
+  });
+
+  it('RawEvent без audioS3Key → not_found', async () => {
+    const prisma = {
+      rawEvent: {
+        findFirst: vi.fn(async () => ({
+          id: 'raw-1',
+          payload: { kind: 'free_note', metadata: { source: 'telegram_bot' } },
+        })),
+      },
+      ideaBlockEvidence: { findMany: vi.fn(async () => []) },
+    };
+    const svc = buildService({ prisma });
+    const res = await svc.resolveVoiceNoteAudioUrl('raw-1', viewer);
+    expect(res.status).toBe('not_found');
+  });
+
+  it('нет доступа к блоку-владельцу → forbidden', async () => {
+    const prisma = {
+      rawEvent: {
+        findFirst: vi.fn(async () => ({
+          id: 'raw-1',
+          payload: { metadata: { audioS3Key: 'voice-notes/t-1/a.ogg' } },
+        })),
+      },
+      ideaBlockEvidence: {
+        findMany: vi.fn(async () => [{ blockId: 'b-1' }]),
+      },
+    };
+    const svc = buildService({
+      prisma,
+      isBypass: false,
+      accessibleIds: new Set<string>(),
+    });
+    const res = await svc.resolveVoiceNoteAudioUrl('raw-1', viewer);
+    expect(res.status).toBe('forbidden');
+  });
+
+  it('есть доступ и audioS3Key → ok с presigned url', async () => {
+    const presignGet = vi.fn(async () => ({
+      url: 'https://s3.example/voice.ogg?sig=1',
+      expiresAt: new Date('2026-06-21T00:10:00.000Z'),
+    }));
+    const prisma = {
+      rawEvent: {
+        findFirst: vi.fn(async () => ({
+          id: 'raw-1',
+          payload: { metadata: { audioS3Key: 'voice-notes/t-1/a.ogg' } },
+        })),
+      },
+      ideaBlockEvidence: {
+        findMany: vi.fn(async () => [{ blockId: 'b-1' }]),
+      },
+    };
+    const svc = buildService({
+      prisma,
+      isBypass: true,
+      s3: { presignGet } as unknown as Partial<S3Service>,
+    });
+    const res = await svc.resolveVoiceNoteAudioUrl('raw-1', viewer);
+    expect(res.status).toBe('ok');
+    if (res.status === 'ok') {
+      expect(res.url).toBe('https://s3.example/voice.ogg?sig=1');
+    }
+    expect(presignGet).toHaveBeenCalledWith(
+      'voice-notes/t-1/a.ogg',
+      600,
+      expect.objectContaining({ responseContentType: 'audio/ogg' }),
+    );
+  });
+
+  it('audioS3Key есть, но у RawEvent нет evidence-блоков → ok (без гейта блока)', async () => {
+    const prisma = {
+      rawEvent: {
+        findFirst: vi.fn(async () => ({
+          id: 'raw-1',
+          payload: { metadata: { audioS3Key: 'voice-notes/t-1/a.ogg' } },
+        })),
+      },
+      ideaBlockEvidence: { findMany: vi.fn(async () => []) },
+    };
+    const svc = buildService({ prisma, isBypass: false });
+    const res = await svc.resolveVoiceNoteAudioUrl('raw-1', viewer);
+    expect(res.status).toBe('ok');
   });
 });

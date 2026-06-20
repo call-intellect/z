@@ -10,6 +10,7 @@ import type { AccountsService } from '../../../accounts/accounts.service';
 import type { VoxService } from '../../../ai/services/vox.service';
 import type { QueryClassifierService } from '../../../dialog-layer/services/query-classifier.service';
 import type { DocumentsService } from '../../../documents/documents.service';
+import type { S3Service } from '../../../recordings/s3.service';
 import type { ChannelRegistry } from '../../channel-registry';
 import type { ConversationalLinkCodeService } from '../../link-code.service';
 
@@ -118,6 +119,10 @@ function makeAdapter(opts: {
     upload: vi.fn().mockResolvedValue({ id: 'doc-1', status: 'uploaded' }),
   } as unknown as DocumentsService;
 
+  const s3 = {
+    putObject: vi.fn().mockResolvedValue(undefined),
+  } as unknown as S3Service;
+
   const classifier = {
     classify: opts.classifyThrows
       ? vi.fn().mockRejectedValue(new Error('llm down'))
@@ -171,6 +176,7 @@ function makeAdapter(opts: {
     linkCode,
     metrics,
     vox,
+    s3,
     documents,
     classifier,
     cfg,

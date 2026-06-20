@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Get,
   Inject,
+  NotFoundException,
   Optional,
   Param,
   UseGuards,
@@ -90,5 +91,36 @@ export class ProvenanceController {
         meetings: meetingRefIds.size,
       },
     };
+  }
+
+  @Get('voice-note/:rawEventId/audio')
+  @ApiOperation({
+    summary: 'Presigned-ссылка на оригинал голосового сообщения источника',
+  })
+  async voiceNoteAudio(
+    @Param('rawEventId') rawEventId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ url: string; expiresAt: string }> {
+    if (!tenantId) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'tenant_required', message: 'Org не определена' },
+      });
+    }
+
+    const result = await this.provenance.resolveVoiceNoteAudioUrl(rawEventId, {
+      tenantId,
+      userId: user.id,
+    });
+
+    if (result.status === 'not_found') {
+      throw new NotFoundException({ code: 'voice_note_audio_not_found' });
+    }
+    if (result.status === 'forbidden') {
+      throw new ForbiddenException({ code: 'voice_note_audio_forbidden' });
+    }
+
+    return { url: result.url, expiresAt: result.expiresAt.toISOString() };
   }
 }

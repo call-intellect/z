@@ -31,6 +31,7 @@ export const ProvenanceNodeDto = z.object({
   confidence: z.number().nullable(),
   needsReview: z.boolean(),
   accessFiltered: z.boolean(),
+  hasAudio: z.boolean(),
 });
 
 export const ProvenanceResponseDto = z.object({

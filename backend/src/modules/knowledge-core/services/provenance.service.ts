@@ -1,7 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
+import { S3Service } from '../../recordings/s3.service';
 
 export type ProvenanceSourceType =
   | 'meeting'
@@ -50,6 +52,7 @@ export interface ProvenanceNode {
   confidence: number | null;
   needsReview: boolean;
   accessFiltered: boolean;
+  hasAudio: boolean;
 }
 
 export interface ViewerContext {
@@ -58,6 +61,13 @@ export interface ViewerContext {
 }
 
 export const PROVENANCE_ACCESS_MASK = 'Источник скрыт правами доступа';
+
+export const VOICE_NOTE_AUDIO_TTL_SECONDS = 600;
+
+export type VoiceNoteAudioResult =
+  | { status: 'ok'; url: string; expiresAt: Date }
+  | { status: 'not_found' }
+  | { status: 'forbidden' };
 
 const TYPE_LABEL: Record<ProvenanceSourceType, string> = {
   meeting: 'Встреча',
@@ -115,6 +125,8 @@ export class ProvenanceService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(KnowledgeAccessResolver)
     private readonly accessResolver: KnowledgeAccessResolver,
+    @Inject(S3Service) private readonly s3: S3Service,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   buildDeepLink(args: {
@@ -231,6 +243,14 @@ export class ProvenanceService {
       rawEventIds,
     );
 
+    const audioRawEventIds = [...sourceByRawEvent.entries()]
+      .filter(([, s]) => s.type === 'voice_note')
+      .map(([id]) => id);
+    const hasAudioByRawEvent = await this.resolveHasAudio(
+      viewer.tenantId,
+      audioRawEventIds,
+    );
+
     const chatSessionIds = [...sourceByRawEvent.values()]
       .filter((s) => s.type === 'chat' && s.refId)
       .map((s) => s.refId as string);
@@ -270,6 +290,7 @@ export class ProvenanceService {
           confidence: null,
           needsReview: false,
           accessFiltered: true,
+          hasAudio: false,
         });
         continue;
       }
@@ -301,9 +322,81 @@ export class ProvenanceService {
         confidence: null,
         needsReview: false,
         accessFiltered: false,
+        hasAudio:
+          baseSource.type === 'voice_note' &&
+          hasAudioByRawEvent.has(ev.rawEventId),
       });
     }
     return nodes;
+  }
+
+  private async resolveHasAudio(
+    tenantId: string,
+    rawEventIds: string[],
+  ): Promise<Set<string>> {
+    const out = new Set<string>();
+    const ids = [...new Set(rawEventIds.filter(Boolean))];
+    if (ids.length === 0) return out;
+    const rows = await this.prisma.rawEvent.findMany({
+      where: { id: { in: ids }, tenantId },
+      select: { id: true, payload: true },
+    });
+    for (const r of rows) {
+      if (this.extractAudioS3Key(r.payload)) out.add(r.id);
+    }
+    return out;
+  }
+
+  async resolveVoiceNoteAudioUrl(
+    rawEventId: string,
+    viewer: ViewerContext,
+  ): Promise<VoiceNoteAudioResult> {
+    const rawEvent = await this.prisma.rawEvent.findFirst({
+      where: { id: rawEventId, tenantId: viewer.tenantId },
+      select: { id: true, payload: true },
+    });
+    if (!rawEvent) return { status: 'not_found' };
+
+    const audioS3Key = this.extractAudioS3Key(rawEvent.payload);
+    if (!audioS3Key) return { status: 'not_found' };
+
+    const evidences = await this.prisma.ideaBlockEvidence.findMany({
+      where: { rawEventId },
+      select: { blockId: true },
+    });
+    const blockIds = [...new Set(evidences.map((e) => e.blockId))];
+
+    if (blockIds.length > 0) {
+      const ctx = await this.accessResolver.resolveAccessibleGroups({
+        tenantId: viewer.tenantId,
+        userId: viewer.userId,
+      });
+      const part = await this.accessResolver.partitionProjectionsByAccess(
+        ctx,
+        blockIds.map((id) => ({ id, sourceBlockIds: [id] })),
+      );
+      if (part.accessibleIds.size === 0) return { status: 'forbidden' };
+    }
+
+    const ttl =
+      (await this.cfg.getDynamic<number>(
+        'provenance.voiceNoteAudioPresignTtlSeconds',
+        undefined,
+        VOICE_NOTE_AUDIO_TTL_SECONDS,
+      )) ?? VOICE_NOTE_AUDIO_TTL_SECONDS;
+
+    const { url, expiresAt } = await this.s3.presignGet(audioS3Key, ttl, {
+      responseContentType: 'audio/ogg',
+    });
+    return { status: 'ok', url, expiresAt };
+  }
+
+  private extractAudioS3Key(payload: unknown): string | null {
+    if (!payload || typeof payload !== 'object') return null;
+    const metadata = (payload as { metadata?: unknown }).metadata;
+    if (!metadata || typeof metadata !== 'object') return null;
+    const key = (metadata as { audioS3Key?: unknown }).audioS3Key;
+    return typeof key === 'string' && key.length > 0 ? key : null;
   }
 
   async computePreviewSnapshot(

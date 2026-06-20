@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import type {
   Channel,
@@ -17,6 +19,7 @@ import { formatRuDate } from '../../../../common/utils/format-ru-date';
 import { VoxService } from '../../../ai/services/vox.service';
 import { QueryClassifierService } from '../../../dialog-layer/services/query-classifier.service';
 import { DocumentsService } from '../../../documents/documents.service';
+import { S3Service } from '../../../recordings/s3.service';
 import { ChannelRegistry } from '../../channel-registry';
 import { ConversationalLinkCodeService } from '../../link-code.service';
 import type { ConversationalJson, IChannel, InboundMessage } from '../../types/channel.types';
@@ -50,6 +53,7 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     @Inject(VoxService) private readonly vox: VoxService,
+    @Inject(S3Service) private readonly s3: S3Service,
     @Inject(DocumentsService) private readonly documents: DocumentsService,
     @Inject(QueryClassifierService)
     private readonly classifier: QueryClassifierService,
@@ -446,6 +450,11 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       return null;
     }
 
+    const audioS3Key = await this.saveVoiceNoteAudio({
+      tenantId: args.tenantId,
+      buffer,
+    });
+
     const startedAt = Date.now();
     let transcript: string;
     try {
@@ -487,7 +496,12 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
         userId: args.binding.userId,
         tenantId: args.tenantId,
         text: transcript,
-        metadata: { source: 'max_bot', kind: 'voice', chatId: args.chatId },
+        metadata: {
+          source: 'max_bot',
+          kind: 'voice',
+          chatId: args.chatId,
+          ...(audioS3Key ? { audioS3Key } : {}),
+        },
         originChannelBindingId: args.binding.id,
       };
     }
@@ -511,7 +525,12 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       userId: args.binding.userId,
       tenantId: args.tenantId,
       text: transcript,
-      metadata: { source: 'max_bot', kind: 'voice', chatId: args.chatId },
+      metadata: {
+        source: 'max_bot',
+        kind: 'voice',
+        chatId: args.chatId,
+        ...(audioS3Key ? { audioS3Key } : {}),
+      },
       originChannelBindingId: args.binding.id,
     };
   }
@@ -616,6 +635,30 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
 
   private isAssistantRoutingEnabled(): boolean {
     return this.cfg.bot.assistantChannelRoutingEnabled === true;
+  }
+
+  private async saveVoiceNoteAudio(args: {
+    tenantId: string;
+    buffer: Buffer;
+  }): Promise<string | null> {
+    const key = `voice-notes/${args.tenantId}/${randomUUID()}.ogg`;
+    try {
+      await this.s3.putObject({
+        key,
+        body: args.buffer,
+        contentType: 'audio/ogg',
+      });
+      return key;
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'max voice: S3 сохранение оригинала не удалось — продолжаю без аудио',
+      );
+      return null;
+    }
   }
 
   private async checkVoiceRateLimit(args: { userId: string }): Promise<boolean> {

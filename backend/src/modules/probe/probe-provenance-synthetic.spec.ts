@@ -12,6 +12,7 @@ import {
   PROVENANCE_ACCESS_MASK,
   ProvenanceService,
 } from '../knowledge-core/services/provenance.service';
+import type { S3Service } from '../recordings/s3.service';
 import { KnowledgeAccessResolver } from '../rbac/knowledge-access-resolver.service';
 import { RbacService } from '../rbac/rbac.service';
 
@@ -314,8 +315,18 @@ describe('СИНТЕТИКА — провенанс резолвит источ�
       document: { findMany: vi.fn(async () => []) },
     } as unknown as PrismaService;
 
+    const s3 = {
+      presignGet: vi.fn(async () => ({
+        url: 'https://s3.example/presigned',
+        expiresAt: new Date('2026-06-21T00:10:00.000Z'),
+      })),
+    } as unknown as S3Service;
+    const cfg = {
+      getDynamic: vi.fn(async (_k: string, _e: unknown, def: unknown) => def),
+    } as unknown as TypedConfigService;
+
     return {
-      svc: new ProvenanceService(servicePrisma, resolver),
+      svc: new ProvenanceService(servicePrisma, resolver, s3, cfg),
       member: { tenantId: 't-1', userId: 'u-1' },
     };
   }

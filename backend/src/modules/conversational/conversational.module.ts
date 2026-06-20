@@ -2,6 +2,7 @@ import { Global, Inject, Injectable, Logger, Module, type OnModuleInit } from '@
 
 import { AccountsModule } from '../accounts/accounts.module';
 import { DocumentsModule } from '../documents/documents.module';
+import { S3Service } from '../recordings/s3.service';
 import { TrackerModule } from '../tracker/tracker.module';
 
 import { ConversationalIngestAdapter } from './adapters/conversational-ingest.adapter';
@@ -100,6 +101,7 @@ export class ConversationalFreeNoteBridge implements OnModuleInit {
   imports: [DocumentsModule, TrackerModule, AccountsModule],
   controllers: [ConversationalController, TelegramWebhooksController, MaxWebhooksController],
   providers: [
+    S3Service,
     ChannelRegistry,
     ConversationalLinkCodeService,
     ConversationalQueueService,

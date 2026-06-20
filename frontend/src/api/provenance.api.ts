@@ -29,11 +29,17 @@ export interface ProvenanceNodeApi {
   confidence: number | null;
   needsReview: boolean;
   accessFiltered: boolean;
+  hasAudio?: boolean;
 }
 
 export interface ProvenanceResponseApi {
   nodes: ProvenanceNodeApi[];
   coverage: { blocks: number; meetings: number };
+}
+
+export interface VoiceNoteAudioApi {
+  url: string;
+  expiresAt: string;
 }
 
 export const provenanceApi = {
@@ -44,6 +50,12 @@ export const provenanceApi = {
   ) =>
     apiClient.get<ProvenanceResponseApi>(
       `/api/v1/provenance/${entityType}/${encodeURIComponent(entityId)}`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  voiceNoteAudio: (orgId: string, rawEventId: string) =>
+    apiClient.get<VoiceNoteAudioApi>(
+      `/api/v1/provenance/voice-note/${encodeURIComponent(rawEventId)}/audio`,
       { headers: orgHeaders(orgId) },
     ),
 };

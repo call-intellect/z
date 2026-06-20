@@ -29,6 +29,7 @@ export interface ProvenanceSource {
 
 export interface ProvenanceRef {
   blockId: string;
+  rawEventId: string | null;
   source: ProvenanceSource;
   quote: string;
   attribution: "quoted" | "inferred";
@@ -37,6 +38,7 @@ export interface ProvenanceRef {
   confidence: number | null;
   needsReview: boolean;
   accessFiltered: boolean;
+  hasAudio: boolean;
 }
 
 export interface Provenance {
@@ -51,6 +53,7 @@ function toSourceType(t: string): ProvenanceSourceType {
 export function mapProvenanceNode(api: ProvenanceNodeApi): ProvenanceRef {
   return {
     blockId: api.blockId,
+    rawEventId: api.rawEventId ?? null,
     source: {
       type: toSourceType(api.source.type),
       refId: api.source.refId,
@@ -64,6 +67,7 @@ export function mapProvenanceNode(api: ProvenanceNodeApi): ProvenanceRef {
     confidence: api.confidence,
     needsReview: api.needsReview ?? false,
     accessFiltered: api.accessFiltered,
+    hasAudio: api.hasAudio ?? false,
   };
 }
 
@@ -86,6 +90,7 @@ export function mapPreviewToProvenanceRef(
   const ref = previewSourceRef ?? null;
   return {
     blockId: ref?.blockId ?? ref?.evidenceId ?? "",
+    rawEventId: null,
     source: {
       type: toSourceType(ref?.sourceType ?? "meeting"),
       refId: ref?.refId ?? null,
@@ -99,6 +104,7 @@ export function mapPreviewToProvenanceRef(
     confidence: null,
     needsReview: false,
     accessFiltered: false,
+    hasAudio: false,
   };
 }
 

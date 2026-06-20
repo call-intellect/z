@@ -183,6 +183,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-voice-note-retention.ts',
+    hint: 'provenance.voiceNoteAudioRetentionDays=90 + voiceNoteAudioPresignTtlSeconds=600 (провенанс Ф B3 «Послушать оригинал»)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-document-attribution.ts',
     hint: 'documents.ai_attribution.enabled kill-switch (ТЗ-4 Ф10 LLM-подсказка атрибуции документа: docType + тема)',
   },

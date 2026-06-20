@@ -76,6 +76,7 @@ import { DataClassAuditSnapshotCron } from './workers/dataclass-audit-snapshot.c
 import { ExecutablePersonaTriggerWatcherCron } from './workers/executable-persona-trigger-watcher.cron';
 import { SignalTypeStatsCron } from './workers/signal-type-stats.cron';
 import { TemporalProbeCron } from './workers/temporal-probe.cron';
+import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retention.cron';
 
 @Global()
 @Module({
@@ -138,6 +139,7 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     TemporalProbeService,
     ConfidenceCalibrationCron,
     TemporalProbeCron,
+    VoiceNoteAudioRetentionCron,
     SignalTypeStatsCron,
     DataClassAuditSnapshotCron,
     EntityLinkService,

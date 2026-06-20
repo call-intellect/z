@@ -639,6 +639,12 @@ const STEPS: Step[] = [
     skipBootstrap: true,
   },
   {
+    phase: 'backfill',
+    script: 'scripts/backfill-regulation-consolidate.ts',
+    hint: 'разовая консолидация дублей регламентов + миграция legacy Process→ProcessTemplate (cosine>0.85) (R17 Ф5b)',
+    skipBootstrap: true,
+  },
+  {
     phase: 'migrate',
     script: 'scripts/migrate-telegram-channels-to-global.ts',
     skipBootstrap: true,

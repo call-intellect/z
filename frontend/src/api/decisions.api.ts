@@ -1,4 +1,5 @@
 import { apiClient } from "./api-client";
+import type { PreviewSourceRefApi } from "@/domain/provenance";
 
 export type DecisionStatusApi =
   | "proposed"
@@ -25,6 +26,8 @@ export interface DecisionListItemApi {
   affectsEntityIds: string[];
   confidence: number | null;
   trustTier: TrustTierApi;
+  previewQuote?: string | null;
+  previewSourceRef?: PreviewSourceRefApi | null;
   updatedAt: string;
   createdAt: string;
 }

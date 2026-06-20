@@ -4,6 +4,7 @@ import Link from "next/link";
 import { cn } from "@/ui/shadcn/lib/utils";
 import { dueDateLabel, type Issue } from "@/domain/tracker";
 import { pluralRu } from "@/domain/contribution";
+import { ProvenancePreviewSnippet } from "@/ui/components/provenance/ProvenancePreviewSnippet";
 import { IssuePriorityIcon } from "./IssuePriorityIcon";
 import { AssigneeAvatarGroup } from "./AssigneeAvatar";
 
@@ -90,6 +91,13 @@ export function IssueCard({
           </span>
         </div>
       )}
+
+      {!compact && issue.provenancePreview ? (
+        <ProvenancePreviewSnippet
+          preview={issue.provenancePreview}
+          className="mt-1"
+        />
+      ) : null}
     </Link>
   );
 }

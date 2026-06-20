@@ -14,6 +14,10 @@ import type {
   RegulationVersionItemApi,
   TrustTierApi,
 } from "@/api/regulations.api";
+import {
+  mapPreviewToProvenanceRef,
+  type ProvenanceRef,
+} from "@/domain/provenance";
 
 export type RegulationKind = RegulationKindApi;
 export type RegulationStatus = RegulationStatusApi;
@@ -70,6 +74,7 @@ export interface RegulationListItem {
   confidence: number | null;
   trustTier: TrustTier;
   extractionStatus: ExtractionStatus | null;
+  provenancePreview?: ProvenanceRef | null;
   lastConfirmedAt: Date | null;
   updatedAt: Date;
   createdAt: Date;
@@ -116,6 +121,10 @@ export function mapRegulationListItem(
     ...api,
     trustTier: api.trustTier ?? "human",
     extractionStatus: api.extractionStatus ?? null,
+    provenancePreview: mapPreviewToProvenanceRef(
+      api.previewQuote,
+      api.previewSourceRef,
+    ),
     lastConfirmedAt: api.lastConfirmedAt ? new Date(api.lastConfirmedAt) : null,
     updatedAt: new Date(api.updatedAt),
     createdAt: new Date(api.createdAt),

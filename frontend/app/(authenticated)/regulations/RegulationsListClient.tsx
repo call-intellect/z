@@ -43,6 +43,8 @@ import {
 import { ProcessTemplatesClient } from '@app/(authenticated)/processes/ProcessTemplatesClient';
 import { Chip } from '@/ui/components/shared/Chip';
 import { TrustBadge } from '@/ui/components/shared/TrustBadge';
+import { ProvenancePreviewSnippet } from '@/ui/components/provenance/ProvenancePreviewSnippet';
+import { mapPreviewToProvenanceRef } from '@/domain/provenance';
 import { ConfirmDialog } from '@/ui/components/shared/ConfirmDialog';
 import { EmptyState } from '@/ui/components/shared/EmptyState';
 import {
@@ -440,6 +442,13 @@ function RegulationsListContent() {
                   {new Date(r.updatedAt).toLocaleDateString('ru-RU')}
                 </div>
               </button>
+              <ProvenancePreviewSnippet
+                preview={mapPreviewToProvenanceRef(
+                  r.previewQuote,
+                  r.previewSourceRef,
+                )}
+                className="mt-1 px-4 pb-3"
+              />
             </li>
           );
         })}

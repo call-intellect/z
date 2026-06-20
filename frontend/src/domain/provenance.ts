@@ -67,6 +67,41 @@ export function mapProvenanceNode(api: ProvenanceNodeApi): ProvenanceRef {
   };
 }
 
+export interface PreviewSourceRefApi {
+  evidenceId?: string | null;
+  blockId?: string | null;
+  sourceType?: string | null;
+  refId?: string | null;
+  startMs?: number | null;
+  deepLink?: string | null;
+  attribution?: "quoted" | "inferred" | null;
+  label?: string | null;
+}
+
+export function mapPreviewToProvenanceRef(
+  previewQuote: string | null | undefined,
+  previewSourceRef: PreviewSourceRefApi | null | undefined,
+): ProvenanceRef | null {
+  if (!previewQuote && !previewSourceRef) return null;
+  const ref = previewSourceRef ?? null;
+  return {
+    blockId: ref?.blockId ?? ref?.evidenceId ?? "",
+    source: {
+      type: toSourceType(ref?.sourceType ?? "meeting"),
+      refId: ref?.refId ?? null,
+      label: ref?.label ?? "",
+      deepLink: ref?.deepLink ?? null,
+    },
+    quote: previewQuote ?? "",
+    attribution: ref?.attribution ?? "quoted",
+    startMs: ref?.startMs ?? null,
+    endMs: null,
+    confidence: null,
+    needsReview: false,
+    accessFiltered: false,
+  };
+}
+
 export function mapProvenance(api: ProvenanceResponseApi): Provenance {
   return {
     nodes: (api.nodes ?? []).map(mapProvenanceNode),

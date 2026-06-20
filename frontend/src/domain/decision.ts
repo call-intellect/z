@@ -8,7 +8,10 @@ import type {
   DecisionVersionItemApi,
   TrustTierApi,
 } from "@/api/decisions.api";
-import type { ProvenanceRef } from "@/domain/provenance";
+import {
+  mapPreviewToProvenanceRef,
+  type ProvenanceRef,
+} from "@/domain/provenance";
 
 export type DecisionStatus = DecisionStatusApi;
 export type TrustTier = TrustTierApi;
@@ -104,7 +107,10 @@ export function mapDecisionListItem(
     affectsEntityIds: dto.affectsEntityIds,
     confidence: dto.confidence,
     trustTier: dto.trustTier ?? "human",
-    provenancePreview: null,
+    provenancePreview: mapPreviewToProvenanceRef(
+      dto.previewQuote,
+      dto.previewSourceRef,
+    ),
     updatedAt: new Date(dto.updatedAt),
     createdAt: new Date(dto.createdAt),
   };

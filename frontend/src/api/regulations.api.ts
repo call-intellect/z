@@ -1,4 +1,5 @@
 import { apiClient } from "./api-client";
+import type { PreviewSourceRefApi } from "@/domain/provenance";
 
 export type RegulationKindApi =
   | "regulation"
@@ -30,6 +31,8 @@ export interface RegulationListItemApi {
   confidence: number | null;
   trustTier: TrustTierApi;
   extractionStatus?: ExtractionStatusApi | null;
+  previewQuote?: string | null;
+  previewSourceRef?: PreviewSourceRefApi | null;
   lastConfirmedAt: string | null;
   updatedAt: string;
   createdAt: string;

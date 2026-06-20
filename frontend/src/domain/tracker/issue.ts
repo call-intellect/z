@@ -1,4 +1,8 @@
-import type { ProvenanceRef } from "@/domain/provenance";
+import {
+  mapPreviewToProvenanceRef,
+  type PreviewSourceRefApi,
+  type ProvenanceRef,
+} from "@/domain/provenance";
 
 import {
   parseIssuePriority,
@@ -45,6 +49,8 @@ export interface IssueApi {
   checklistTotalCount: number;
   checklistDoneCount: number;
   aiSuggestions?: IssueAiSuggestionsApi | null;
+  previewQuote?: string | null;
+  previewSourceRef?: PreviewSourceRefApi | null;
   /** Org-wide list (2026-06-18) — категория статуса (только GET /api/v1/issues). */
   stateCategory?: IssueStateCategory | null;
   childrenCount?: number;
@@ -342,7 +348,10 @@ export function issueFromApi(api: IssueApi): Issue {
       typeof api.childrenCount === "number" ? api.childrenCount : null,
     checklistTotalCount: api.checklistTotalCount ?? 0,
     checklistDoneCount: api.checklistDoneCount ?? 0,
-    provenancePreview: null,
+    provenancePreview: mapPreviewToProvenanceRef(
+      api.previewQuote,
+      api.previewSourceRef,
+    ),
     isOverdue: computeIsOverdue(dueDate, completedAt),
     isCompleted: completedAt !== null,
     isArchived: api.archivedAt !== null,

@@ -22,6 +22,8 @@ import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbCon
 import { TrustBadge } from "@/ui/components/shared/TrustBadge";
 import { CardCorrectionActions } from "@/ui/components/knowledge/CardCorrectionActions";
 import { ProvenanceChip } from "@/ui/components/provenance/ProvenanceChip";
+import { ProvenancePreviewSnippet } from "@/ui/components/provenance/ProvenancePreviewSnippet";
+import { mapPreviewToProvenanceRef } from "@/domain/provenance";
 import { Input } from "@/ui/shadcn/input";
 
 import {
@@ -285,6 +287,13 @@ function DecisionsListContent({
                         </div>
                       </div>
                     </button>
+                    <ProvenancePreviewSnippet
+                      preview={mapPreviewToProvenanceRef(
+                        d.previewQuote,
+                        d.previewSourceRef,
+                      )}
+                      className="mt-1 px-4 pb-3"
+                    />
                   </li>
                 );
               })}

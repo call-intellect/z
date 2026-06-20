@@ -411,7 +411,7 @@ HNSW индекс на `embedding` через `vector_cosine_ops` + GIN на `se
 ```
 IdeaBlockEvidence { id, blockId → IdeaBlock, rawEventId → RawEvent,
                     sourceType, sourceTimestamp?, quote @Text,
-                    startMs?, endMs?, createdAt }
+                    startMs?, endMs?, sourceMessageExternalId?, createdAt }
 ```
 
 N:1 к IdeaBlock — один блок может агрегировать множество свидетельств.
@@ -419,6 +419,10 @@ N:1 к IdeaBlock — один блок может агрегировать мн�
 `updateMany`.
 
 **Провенанс — денорм-снимок (2026-06-20, миграция `20260620113751_provenance_preview_snapshot`):** для рендера СПИСКОВ без join вглубь (анти-N+1; полный резолв — on-demand через `ProvenanceService.resolve` с фильтром прав зрителя). `Decision`/`Issue`/`Regulation` получили `previewQuote String? @db.Text` + `previewSourceRef Json?` (`{evidenceId, blockId, sourceType, refId, startMs, deepLink, attribution, label}`); `Task` — только `previewSourceRef` (цитата уже в `sourceQuote`/`sourceStartMs`). Заполняет `backfill-provenance-preview.ts` из первого `IdeaBlockEvidence` (идемпотентно). `attribution` = `primarySource==='report' ? 'inferred' : 'quoted'`. Подробно — [[knowledge-core]] / [[module-map]] (`ProvenanceService`).
+
+**Деноль-снимок теперь читается list-DTO (2026-06-20, provenance-probe-followups A1):** `previewQuote`/`previewSourceRef` (Decision/Issue/Regulation/Task) выводятся в DTO списков решений/регламентов/задач — фронт рисует сниппет цитаты-источника прямо на карточке списка без on-demand резолва (полный `ProvenanceService.resolve` остаётся по клику «Откуда это»).
+
+**Поле `sourceMessageExternalId String?`** (2026-06-20, миграция `20260620181013_add_evidence_source_message`, provenance-probe-followups B1) — внешний id конкретного сообщения чата, из которого взято свидетельство. Аддитивно (nullable, backfill не обязателен). Нужно для chatbox deep-link на сообщение: `ProvenanceService.buildDeepLink` строит `/chats/<chatId>?m=<msg>` (раньше вёл только на чат целиком). Заполняется на ingest chatbox-evidence; исторические записи — `null` (deep-link на чат без якоря сообщения).
 
 ### Entity
 

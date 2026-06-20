@@ -227,8 +227,11 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 | Метод | Путь | Назначение |
 |---|---|---|
 | GET | `/api/v1/provenance/:entityType/:entityId` | Цепочка первоисточника сущности (decision/issue/task/regulation/instruction/block/notification), отфильтрованная по правам зрителя (viewer из guard): `{ nodes[]{blockId, source{type,refId,label,deepLink}, quote, attribution, startMs, accessFiltered, needsReview}, coverage }`. `entityType` вне enum → 400 `invalid_entity_type`. Закрытый блок → `accessFiltered:true`, quote+label+deepLink скрыты. |
+| GET | `/api/v1/provenance/voice-note/:rawEventId/audio` | **(2026-06-20, provenance-probe-followups B3)** Presigned-аудио голосового сообщения (Telegram/MAX, хранится в S3 `voice-notes/`). `CookieAuth` + `Tenant` + проверка доступа зрителя к блоку-владельцу свидетельства. Нет аудио / истёк retention (`provenance.voiceNoteAudioRetentionDays`=90) → 404; нет доступа к блоку → 403. TTL ссылки — `provenance.voiceNoteAudioPresignTtlSeconds` (600). Плеер — в дровере «Откуда это». |
 
 `GET /api/v1/knowledge/blocks/:id` — каждый `evidence` теперь несёт `source: ProvenanceSourceRef` (deep-link к моменту). `GET /api/v1/raw-events/:id` — ослаблен: owner/admin → полный payload, рядовой с доступом к блоку → нормализованный фрагмент без сырого payload.
+
+DTO списков решений/регламентов/задач (2026-06-20, A1) несут `previewQuote`/`previewSourceRef` (денорм-снимок провенанса) — фронт рисует сниппет цитаты на карточках без on-demand резолва. Chatbox-источник теперь deep-link'ает на конкретное сообщение `/chats/<chatId>?m=<msg>` (B1, поле `IdeaBlockEvidence.sourceMessageExternalId`); документ — `/documents/<id>?q=<цитата>` с подсветкой (B4). Новый источник `phone_call` (Mango, B5) наполняет граф из записей звонков.
 
 **Гейт графа на платную `feature.graph` (knowledge-core MASTER G1, 2026-06-16).** Раньше `KnowledgeGraphController` (`/graph/*`) был гейтнут `@RequireEntitlement('feature.graph')`, а entity-/block-centric выходы графа — нет (обход paywall'а). Закрыто: `@RequireEntitlement('feature.graph')` навешан на
 - `GET /api/v1/knowledge/entities/:id/graph` (entity-centric граф) и `GET /api/v1/knowledge/entities/:id/links`,

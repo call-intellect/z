@@ -71,6 +71,26 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### ⚙️ 2026-06-20 — Крутилки из ENV/кода → AdminSetting (config-knobs Шаги 2–8) + продолжение провенанса (provenance-probe-followups A1–A4 / B1–B5)
+
+> dev. ТЗ: `plans/tz/2026-06-20-config-knobs-to-admin-settings.md` (Шаги 2–8), `plans/tz/2026-06-20-provenance-probe-followups.md` (Блок A + Блок B). second-brain: `02_architecture/data-model.md` (`IdeaBlockEvidence.sourceMessageExternalId`), `02_architecture/module-map.md` (новые сервис/cron/адаптер), `01_projects/admin.md` (~100 крутилок), `01_projects/api-layer.md` (эндпоинт аудио голосового). Все крутилки переведены с code-/ENV-fallback — **дефолт = текущее поведение**, действий владельца НЕ требуют (kill-switch'и ON; owner-параметров нет). Реестр флагов — `docs/operations/feature-flags.md`.
+>
+> **Зачем для прода:** (1) ~100 порогов/лимитов/флагов/часов вынесены из ENV/кода в `AdminSetting` (редактируются super_admin live, history+audit) + серверный гейт классификации новых ENV; (2) продолжение провенанса — deep-link к сообщению чата (новая колонка), линковка fast-задач встреч к IdeaBlock, аудио голосовых (Telegram/MAX) в S3 + presigned-эндпоинт + retention-cron, подсветка цитаты на странице документа, `phone_call`-ingest Mango.
+
+- **Шаг 1 — ENV (новые под-схемы в `env.schema.ts`, ВСЕ с дефолтами = текущее поведение — ставить в прод-`.env` НЕ обязательно):** Concierge/Orchestrator/Router/WorkerKnobs-fallback'и + `MAIL_INBOX_POLL_CRON` (bootstrap-чтение `@Cron` в whitelist). Прямой `process.env.*` мимо `env.schema.ts` теперь валит гард-тест (`no-direct-process-env.guard.spec.ts`), новая неклассифицированная ENV — `env-classification.guard.spec.ts`. Backend стартует без правок `.env`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` на `docker compose up`; аддитивная, без потери данных, backfill не обязателен): миграция `20260620181013_add_evidence_source_message` — `IdeaBlockEvidence.sourceMessageExternalId String?` (deep-link к конкретному сообщению чата `/chats/<chatId>?m=<msg>`). **В STEPS регистрировать НЕ нужно** (миграция схемы).
+- **Шаг 7 — Seed (идемпотентные, уже в STEPS `phase:'seed-base'`):** новые сиды AdminSetting (~100 ключей) — `seed-admin-setting-orchestrator.ts` (3), `seed-admin-setting-router-fallback.ts` (3), `seed-admin-setting-worker-knobs.ts` (7), `seed-admin-setting-retention-logging.ts` (21), `seed-admin-setting-limits.ts` (36: limits/share/aiChatQuota/smartTables), `seed-admin-setting-probe-curation.ts` (13), `seed-admin-setting-llm-models-and-gray.ts` (25: модели LLM + рубильники + часы дайджестов), `seed-admin-setting-voice-note-retention.ts` (`provenance.voiceNoteAudioRetentionDays`=90 / `voiceNoteAudioPresignTtlSeconds`=600); `seed-admin-setting-concierge.ts` дополнен (12). Все уважают admin-override (повтор → no-op для отредактированных). Доезжают агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Авто-выкат всего блока:** `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (миграция авто + сиды в STEPS).
+- **Шаг 12 — Smoke** (после выката):
+  - Swagger `/api/docs`: `GET /api/v1/provenance/voice-note/:rawEventId/audio` → presigned-редирект/URL аудио голосового (под CookieAuth+Tenant); чужой блок → 403; нет аудио → 404.
+  - Новый cron в образе: `docker compose exec backend grep -rq "VoiceNoteAudioRetentionCron" src/` → найдено; в логах старта — регистрация cron уборки аудио голосовых.
+  - `phone_call` Mango-вебхук: вызов вебхука Mango → создаётся `RawEvent(Source.type='phone_call')`, payload структурный (не сырой JSON-шум), транскрипт уходит в граф.
+  - Крутилки видны в админке настроек (super_admin) — выборочно проверить группы concierge/router/retention/limits/модели; правка значения отражается live (где применимо).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🔎 2026-06-20 — Провенанс «Откуда это» + умный probe (provenance Ф0–Ф5 + probe Ф1–Ф6)
 
 > dev (9 коммитов `fab510be`..`841ba213`). ТЗ: `plans/tz/2026-06-20-provenance-source-traceability-tz.md`, `plans/tz/2026-06-20-probe-smart-questions-module.md`. Промпт-правки (probe-formulate B / value-gate / judge) — code-constant (выкат сборкой), ship-and-observe. Живой LLM-бенч и визуальная qa в песочнице не прогнаны (нет сети) — наблюдать на проде.

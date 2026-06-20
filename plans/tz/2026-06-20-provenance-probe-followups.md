@@ -267,4 +267,16 @@ supersedes_partially:
 
 **К выполнению (рекомендуемый порядок):** Блок A (A1, A3, A4 — параллельно; A2 — отдельно) → Блок B по решениям владельца Р-1…Р-4. Блок A и B1/B2 можно делать без новых решений; B3 — с дефолтным retention; B4/B5 — после Р-1/Р-3. Брать скиллом `tz-orchestrator` по парному orchestrator-prompt.
 
-_(заполняет tz-orchestrator после реализации: что сделано, коммиты, что осталось.)_
+**Реализовано (Блок A + Блок B).**
+- **A1:** list-DTO решений/регламентов/задач несут `previewQuote`/`previewSourceRef`; фронт-сниппет цитаты на карточках (`ProvenancePreviewSnippet`).
+- **A2:** chat-v2 резолвит источник через `ProvenanceService` (убран дубль резолва).
+- **A3:** specialist-3-4 кладёт чистый `objectName` карточки.
+- **A4:** email-payload несёт `fullText` (не зашумляет граф).
+- **B1:** новая колонка `IdeaBlockEvidence.sourceMessageExternalId` (миграция `20260620181013_add_evidence_source_message`, аддитивно); chatbox deep-link `/chats/<chatId>?m=<msg>`.
+- **B2:** `TaskEvidenceLinkerService` — матчит fast-задачу встречи к `IdeaBlock` по цитате.
+- **B3:** аудио голосовых (Telegram/MAX) в S3 (`voice-notes/`); эндпоинт `GET /api/v1/provenance/voice-note/:rawEventId/audio` (presigned, 404/403); cron `VoiceNoteAudioRetentionCron`; крутилки `provenance.voiceNoteAudioRetentionDays`(90)/`voiceNoteAudioPresignTtlSeconds`(600); плеер в `ProvenanceDrawer`.
+- **B4:** deep-link документа `/documents/<id>?q=<цитата>` + подсветка на странице документа — **вариант (б)**. **B4(а) page-aware** (`unpdf`, page+offset в evidence, `?page=N`, превью страницы) — остаётся **vNext** (отдельная под-фаза `provenance-document-page-anchor`).
+- **B5:** `PhoneCallIngestAdapter` (Mango): запись из S3 → Vox ASR → структурный payload; починен Mango-вебхук (был сырой JSON-шум).
+
+**Прод-операции:** миграция (авто), сиды AdminSetting (в STEPS), backfill `backfill-provenance-preview.ts` (в STEPS). Применение — `apply-prod-deploy.ts --mode update`. Smoke — эндпоинт аудио, cron, `phone_call`-вебхук (см. `docs/operations/prod-deploy-log.md`).
+**Осталось (vNext):** B4(а) page-aware document anchor.

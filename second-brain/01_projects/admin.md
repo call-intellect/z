@@ -82,6 +82,21 @@ intake), чтобы окно и пороги не рассинхронились
 | `goals.themeAutolinkLlmEnabled` | — | включён ли дополнительный LLM-арбитр для авто-привязки Goal↔Theme поверх детерминированного провенанса. Ф4.2. |
 | `aiFeatures.summaryAgentEnabled` | `true` | kill-switch summary-агента (Ф5). Дублируется ENV `SUMMARY_AGENT_ENABLED`. При OFF потребители падают на `summaryV2 ?? summary` через `pickPrimarySummary`. |
 
+### Массовый перенос крутилок из ENV/кода в AdminSetting (2026-06-20, config-knobs Шаги 2–8)
+
+ТЗ [`plans/tz/2026-06-20-config-knobs-to-admin-settings.md`](../../plans/tz/2026-06-20-config-knobs-to-admin-settings.md). ~100 крутилок (порог · лимит · флаг · час доставки · debounce/TTL · retention · rate-limit · вес · выбор модели) переведены из code-/ENV-fallback в `AdminSetting` — редактируются super_admin live (history + audit), читаются через `resolveSync`/`getDynamic` (admin → ENV → code-fallback). Все с дефолтом = текущее поведение (действий владельца НЕ требуют). Зарегистрированы в `admin-setting-schema-registry.ts`, засижены отдельными `seed-admin-setting-*` (в `apply-prod-deploy` STEPS, `phase:'seed-base'`, уважают admin-override). Группы:
+
+- **Concierge (12)** + **Orchestrator (3)** + **Router-fallback (3)** — пороги/лимиты/таймауты помощника, оркестратора и LLM-роутера (ранее прямые `process.env.*`).
+- **Воркеры (7)** — knobs BullMQ-воркеров knowledge-core.
+- **Retention / logging (21)** — окна хранения и уровни/детализация логов.
+- **Limits / share / aiChatQuota / smartTables (36)** — лимиты тарифов, шаринга, квоты AI-чата, лимиты Smart Tables.
+- **Probe / curation (13)** — пороги probe-гейта и курации.
+- **Модели LLM + рубильники + часы дайджестов (25)** — выбор модели по taskType, kill-switch'и, часы доставки дайджестов.
+
+Развязаны 27 прямых `process.env.*` (concierge/orchestrator/router/воркеры) на `resolveSync`/`getDynamic`; 3 bootstrap-чтения (`LOG_LEVEL`/`NODE_ENV`/`@Cron MAIL_INBOX_POLL_CRON`) оставлены в whitelist.
+
+**Серверный гейт (Шаги 2–3):** новая ENV без классификации (`env-classification.ts` → `KEEP_ENV_KEYS`/`ADMIN_FALLBACK_ENV_KEYS`) валит CI (гард-тесты `env-classification.guard.spec.ts` + `no-direct-process-env.guard.spec.ts`); `AdminSettingsService.set()` валидирует значение по Zod-реестру и требует `reason` (≥10 символов) для severity `high`/`destructive`. Остаток (~240 редких ENV + хардкоды, Шаги 9–10) — осознанно по востребованию; гейт держит инвариант, новые крутилки сюда уже не добавляются мимо реестра.
+
 ## Поверхности курации (detail-страницы)
 
 С 2026-06-03 (Action Center, Фаза C3) у курации появились собственные

@@ -9,7 +9,9 @@ covers: React-контексты и кросс-компонентные патт
 Точечный реестр кросс-компонентных механизмов фронтенда (`frontend/src/contexts`,
 `frontend/src/hooks` и связанные событийные шины). Пополняется по факту.
 
-## Единый плавающий помощник кабинета (2026-06-06)
+## Единый плавающий помощник кабинета (2026-06-06 → пересмотрено 2026-06-20)
+
+> ⚠️ **Пересмотрено 2026-06-20** (см. §«Яркий FAB-помощник + сигналы колокольчика» ниже): теперь единственный плавающий вход — `ConciergeFloatingButton` (вернулась видимая кнопка, чат в 1 клик), а `AssistantSidebar` **удалён**. Запись ниже — исторический контекст промежуточного состояния 2026-06-06.
 
 В кабинете теперь **одна** плавающая кнопка-помощник — «Помощник компании»
 (`frontend/src/ui/components/dashboard/AssistantSidebar.tsx`). Раньше на экране
@@ -22,6 +24,27 @@ covers: React-контексты и кросс-компонентные патт
   «Помощник компании», чтобы онбординг-тур указывал на единственный видимый вход.
 - Опечатка «Концьерж» → «Помощник компании» в nav-help / турах.
 - Источник: [plans/tz/2026-06-05-frontend-detail-pages-and-ui-honesty.md](../../plans/tz/2026-06-05-frontend-detail-pages-and-ui-honesty.md) Ф3 (коммит `d9730afb`).
+
+## Яркий FAB-помощник + сигналы колокольчика (2026-06-20)
+
+Развёрнут промежуточный шаг 2026-06-06: вернулась **видимая** яркая кнопка
+`ConciergeFloatingButton` (чат-помощник в 1 клик), `AssistantSidebar` **удалён**,
+цель тура `welcome.concierge` перенесена на FAB. Колокольчик `PendingActionsBell`
+стал единственным кликабельным центром уведомлений.
+
+- **`frontend/src/hooks/useAssistantSignals.ts`** — хук сигналов колокольчика:
+  тянет `proactiveApi.list` + срочный `activityFeedApi.list` (insight,
+  `severity ∈ {critical, high}`) и сводит в единый ряд `BellRow[]` вместе с
+  pending-actions (один счётчик `pendingTotal + signalsCount`). Каждый ряд несёт
+  обязательный `actionUrl` (иначе скрывается — без сырых слагов).
+- **`frontend/src/domain/assistant-signals.ts`** — чистые мапперы:
+  `PROACTIVE_RULE_LABEL` (человекочитаемые метки 8 правил proactive),
+  `PROACTIVE_RULE_ROUTE` (фронт-зеркало маршрутов watcher как fallback к
+  `payload.actionUrl`), `FEED_TYPE_ROUTE` (маршрут по типу feed-сигнала).
+  Вынесены отдельно для тестируемости (гард-тест паритета: каждый `ruleType` →
+  метка определена).
+- Источник: [plans/tz/2026-06-20-assistant-fab-notifications-and-clone-picker.md](../../plans/tz/2026-06-20-assistant-fab-notifications-and-clone-picker.md)
+  (Ф1). См. также [[frontend-pages]].
 
 ## Пэйвол на 403 — `api-client` interceptor → `subscription:required` (2026-06-06)
 

@@ -4,6 +4,21 @@ import type { OrchestratorStreamEvent } from '../orchestrator.types';
 
 import { OrchestratorService } from './orchestrator.service';
 
+const mkCfgStub = () => ({
+  resolveSync<T>(_adminKey: string, envKey: string, def: T): T {
+    const raw = process.env[envKey];
+    if (raw === undefined || raw === '') return def;
+    if (typeof def === 'boolean') {
+      return (['true', '1', 'yes', 'on'].includes(raw.trim().toLowerCase()) as unknown) as T;
+    }
+    if (typeof def === 'number') {
+      const n = Number(raw);
+      return ((Number.isFinite(n) ? n : def) as unknown) as T;
+    }
+    return (raw as unknown) as T;
+  },
+});
+
 const mkPrismaMock = () => {
   const run = {
     id: 'run_1',
@@ -61,6 +76,7 @@ describe('OrchestratorService (δ-1)', () => {
       {} as never,
       {} as never,
       { incOrchestratorRun: vi.fn(), observeOrchestratorRunDurationSeconds: vi.fn() } as any,
+      mkCfgStub() as any,
     );
     const events: OrchestratorStreamEvent[] = [];
     for await (const ev of svc.run({
@@ -130,6 +146,7 @@ describe('OrchestratorService (δ-1)', () => {
       synthesis as any,
       verification as any,
       metrics as any,
+      mkCfgStub() as any,
     );
 
     const events: OrchestratorStreamEvent[] = [];

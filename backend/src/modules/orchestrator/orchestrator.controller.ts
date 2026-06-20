@@ -15,6 +15,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 
+import { TypedConfigService } from '../../common/config/index';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
@@ -39,6 +40,7 @@ export class OrchestratorController {
     private readonly orchestrator: OrchestratorService,
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   @Post('runs')
@@ -296,7 +298,7 @@ export class OrchestratorController {
     tenantId: string,
     resourceOwnerId?: string | null,
   ): Promise<void> {
-    const limits = readOrchestratorLimits();
+    const limits = readOrchestratorLimits(this.cfg);
     if (!limits.enabled) {
       throw new ForbiddenException({
         ok: false,

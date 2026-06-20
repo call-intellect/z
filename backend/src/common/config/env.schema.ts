@@ -393,6 +393,41 @@ const RouterSchema = z.object({
   ROUTER_MAX_SPECIALISTS_PER_BLOCK: z.coerce.number().int().positive().default(4),
   SPECIALISTS_COMBINED_ENABLED: z.coerce.boolean().default(true),
   SPECIALISTS_COMBINED_DELAY_MS: z.coerce.number().int().nonnegative().default(90_000),
+  ROUTER_FALLBACK_NEGATIVE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
+  ROUTER_LLM_FALLBACK_ENABLED: zBool(false),
+  ROUTER_FALLBACK_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
+});
+
+const ConciergeSchema = z.object({
+  CONCIERGE_ENABLED: zBool(true),
+  CONCIERGE_DIALOG_LAYER_ENABLED: zBool(true),
+  CONCIERGE_PRM_SHADOW_ENABLED: zBool(false),
+  CONCIERGE_PRM_ENABLED: zBool(false),
+  CONCIERGE_NATIVE_TOOLS_ENABLED: zBool(true),
+  CONCIERGE_PRM_TOP_K: z.coerce.number().int().positive().default(3),
+  CONCIERGE_PRM_SHADOW_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(1.0),
+  CONCIERGE_DAILY_MESSAGES_LIMIT: z.coerce.number().int().positive().default(100),
+  CONCIERGE_MONTHLY_MESSAGES_LIMIT: z.coerce.number().int().positive().default(3000),
+  CONCIERGE_SSE_HEARTBEAT_SECONDS: z.coerce.number().int().positive().default(15),
+  CONCIERGE_PRE_RETRIEVAL_TOP_K: z.coerce.number().int().positive().default(12),
+  CONCIERGE_PRE_RETRIEVAL_TIMEOUT_MS: z.coerce.number().int().positive().default(3000),
+  CONCIERGE_LOOPBACK_BASE_URL: z.string().optional(),
+});
+
+const OrchestratorSchema = z.object({
+  ORCHESTRATOR_ENABLED: zBool(false),
+  ORCHESTRATOR_MAX_SUBAGENTS_PER_RUN: z.coerce.number().int().positive().default(5),
+  ORCHESTRATOR_RUN_TIMEOUT_MINUTES: z.coerce.number().int().positive().default(15),
+});
+
+const WorkerKnobsSchema = z.object({
+  AXIS_CLASSIFY_ENABLED: zBool(true),
+  ROLE_PROFILE_MIN_BLOCKS: z.coerce.number().int().positive().default(5),
+  CONSISTENCY_CHECKER_DEDUP_TTL_SECONDS: z.coerce.number().int().positive().default(14_400),
+  CONSISTENCY_CHECKER_ENABLED: zBool(true),
+  COMPLETENESS_SCANNER_ENABLED: zBool(true),
+  GOAL_ALIGNMENT_LOW_ENABLED: zBool(true),
+  TELEGRAM_DIGEST_HOUR_LOCAL: z.coerce.number().int().min(0).max(23).default(9),
 });
 
 const ConversationalSchema = z.object({
@@ -811,7 +846,10 @@ export const EnvSchema: z.ZodTypeAny = (RuntimeSchema as unknown as any)
   .merge(AiChatQuotaSchema)
   .merge(SmartTablesSchema)
   .merge(LoggingSchema)
-  .merge(SharedDemoOrgSchema);
+  .merge(SharedDemoOrgSchema)
+  .merge(ConciergeSchema)
+  .merge(OrchestratorSchema)
+  .merge(WorkerKnobsSchema);
 
 export type Env = z.infer<typeof EnvSchema>;
 

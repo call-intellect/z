@@ -1351,44 +1351,18 @@ export class TypedConfigService {
   }
 
   get concierge() {
-    const enabledRaw = process.env.CONCIERGE_ENABLED;
-    const enabled =
-      enabledRaw === undefined ||
-      enabledRaw === '' ||
-      ['true', '1', 'yes', 'on'].includes(enabledRaw.trim().toLowerCase());
-    const parseInt = (raw: string | undefined, fallback: number): number => {
-      if (!raw) return fallback;
-      const n = Number(raw);
-      return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
-    };
-    const dialogLayerRaw = process.env.CONCIERGE_DIALOG_LAYER_ENABLED;
-    const dialogLayerEnabled =
-      dialogLayerRaw === undefined ||
-      dialogLayerRaw === '' ||
-      ['true', '1', 'yes', 'on'].includes(dialogLayerRaw.trim().toLowerCase());
-    const parseBoolDefaultFalse = (raw: string | undefined): boolean => {
-      if (raw === undefined || raw === '') return false;
-      return ['true', '1', 'yes', 'on'].includes(raw.trim().toLowerCase());
-    };
-    const parseFloatPositive = (raw: string | undefined, fallback: number): number => {
-      if (!raw) return fallback;
-      const n = Number(raw);
-      return Number.isFinite(n) && n >= 0 ? n : fallback;
-    };
-    const prmShadowEnabled = parseBoolDefaultFalse(process.env.CONCIERGE_PRM_SHADOW_ENABLED);
-    const prmEnabled = parseBoolDefaultFalse(process.env.CONCIERGE_PRM_ENABLED);
-    const prmTopK = parseInt(process.env.CONCIERGE_PRM_TOP_K, 3);
-    const prmShadowSampleRateRaw = parseFloatPositive(
-      process.env.CONCIERGE_PRM_SHADOW_SAMPLE_RATE,
-      1.0,
+    const prmShadowSampleRate = Math.min(
+      Math.max(
+        this.resolveSync<number>(
+          'concierge.prmShadowSampleRate',
+          'CONCIERGE_PRM_SHADOW_SAMPLE_RATE',
+          1.0,
+        ),
+        0,
+      ),
+      1,
     );
-    const prmShadowSampleRate = Math.min(Math.max(prmShadowSampleRateRaw, 0), 1);
-    const nativeToolsRaw = process.env.CONCIERGE_NATIVE_TOOLS_ENABLED;
-    const nativeToolsEnabled =
-      nativeToolsRaw === undefined ||
-      nativeToolsRaw === '' ||
-      ['true', '1', 'yes', 'on'].includes(nativeToolsRaw.trim().toLowerCase());
-    const loopbackBaseUrlRaw = process.env.CONCIERGE_LOOPBACK_BASE_URL?.trim();
+    const loopbackBaseUrlRaw = (this.get('CONCIERGE_LOOPBACK_BASE_URL') as string | undefined)?.trim();
     let loopbackBaseUrl = 'http://127.0.0.1:3000';
     if (loopbackBaseUrlRaw) {
       try {
@@ -1397,18 +1371,50 @@ export class TypedConfigService {
       } catch {}
     }
     return {
-      enabled,
-      dailyMessagesLimit: parseInt(process.env.CONCIERGE_DAILY_MESSAGES_LIMIT, 100),
-      monthlyMessagesLimit: parseInt(process.env.CONCIERGE_MONTHLY_MESSAGES_LIMIT, 3000),
-      sseHeartbeatSeconds: parseInt(process.env.CONCIERGE_SSE_HEARTBEAT_SECONDS, 15),
-      dialogLayerEnabled,
-      preRetrievalTopK: parseInt(process.env.CONCIERGE_PRE_RETRIEVAL_TOP_K, 12),
-      preRetrievalTimeoutMs: parseInt(process.env.CONCIERGE_PRE_RETRIEVAL_TIMEOUT_MS, 3000),
-      prmShadowEnabled,
-      prmEnabled,
-      prmTopK,
+      enabled: this.resolveSync<boolean>('concierge.enabled', 'CONCIERGE_ENABLED', true),
+      dailyMessagesLimit: this.resolveSync<number>(
+        'concierge.dailyMessagesLimit',
+        'CONCIERGE_DAILY_MESSAGES_LIMIT',
+        100,
+      ),
+      monthlyMessagesLimit: this.resolveSync<number>(
+        'concierge.monthlyMessagesLimit',
+        'CONCIERGE_MONTHLY_MESSAGES_LIMIT',
+        3000,
+      ),
+      sseHeartbeatSeconds: this.resolveSync<number>(
+        'concierge.sseHeartbeatSeconds',
+        'CONCIERGE_SSE_HEARTBEAT_SECONDS',
+        15,
+      ),
+      dialogLayerEnabled: this.resolveSync<boolean>(
+        'concierge.dialogLayerEnabled',
+        'CONCIERGE_DIALOG_LAYER_ENABLED',
+        true,
+      ),
+      preRetrievalTopK: this.resolveSync<number>(
+        'concierge.preRetrievalTopK',
+        'CONCIERGE_PRE_RETRIEVAL_TOP_K',
+        12,
+      ),
+      preRetrievalTimeoutMs: this.resolveSync<number>(
+        'concierge.preRetrievalTimeoutMs',
+        'CONCIERGE_PRE_RETRIEVAL_TIMEOUT_MS',
+        3000,
+      ),
+      prmShadowEnabled: this.resolveSync<boolean>(
+        'concierge.prmShadowEnabled',
+        'CONCIERGE_PRM_SHADOW_ENABLED',
+        false,
+      ),
+      prmEnabled: this.resolveSync<boolean>('concierge.prmEnabled', 'CONCIERGE_PRM_ENABLED', false),
+      prmTopK: this.resolveSync<number>('concierge.prmTopK', 'CONCIERGE_PRM_TOP_K', 3),
       prmShadowSampleRate,
-      nativeToolsEnabled,
+      nativeToolsEnabled: this.resolveSync<boolean>(
+        'concierge.nativeToolsEnabled',
+        'CONCIERGE_NATIVE_TOOLS_ENABLED',
+        true,
+      ),
       loopbackBaseUrl,
     } as const;
   }

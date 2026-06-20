@@ -71,7 +71,7 @@ export class AxisClassifierService {
     tenantId: string;
     signalType: SignalType;
   }): Promise<{ created: number; static: number; llm: number }> {
-    const enabled = this.isAxisClassifyEnabled();
+    const enabled = await this.isAxisClassifyEnabled();
     const stats = { created: 0, static: 0, llm: 0 };
     if (!enabled) {
       return stats;
@@ -339,10 +339,13 @@ export class AxisClassifierService {
     }
   }
 
-  private isAxisClassifyEnabled(): boolean {
-    const raw = process.env['AXIS_CLASSIFY_ENABLED'];
-    if (raw == null || raw === '') return true;
-    return raw === 'true' || raw === '1';
+  private async isAxisClassifyEnabled(): Promise<boolean> {
+    if (!this.cfg) return true;
+    return this.cfg.getDynamic<boolean>(
+      'knowledge.axisClassifyEnabled',
+      'AXIS_CLASSIFY_ENABLED',
+      true,
+    );
   }
 }
 

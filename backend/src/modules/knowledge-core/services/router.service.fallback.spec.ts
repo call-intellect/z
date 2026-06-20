@@ -116,6 +116,18 @@ function makeFallbackDeps(opts: { redis: ReturnType<typeof makeRedisMock> }) {
   const cfg = {
     router: { maxSpecialistsPerBlock: 4 },
     aiFeatures: { promptInjectionGuardEnabled: false },
+    resolveSync<T>(_adminKey: string, envKey: string | undefined, def: T): T {
+      const raw = envKey ? process.env[envKey] : undefined;
+      if (raw == null || raw === '') return def;
+      if (typeof def === 'boolean') {
+        return ((raw === 'true' || raw === '1') as unknown) as T;
+      }
+      if (typeof def === 'number') {
+        const n = Number(raw);
+        return ((Number.isFinite(n) && n > 0 ? Math.floor(n) : def) as unknown) as T;
+      }
+      return (raw as unknown) as T;
+    },
   };
   // LLM всегда падает → ветка llm_error.
   const llm = {

@@ -3,21 +3,11 @@ import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { ProbeService } from '../../probe/probe.service';
-
-const DEFAULT_DEDUP_TTL_SECONDS = 14_400;
-function readDedupTtl(): number {
-  const raw = process.env.CONSISTENCY_CHECKER_DEDUP_TTL_SECONDS;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : DEFAULT_DEDUP_TTL_SECONDS;
-}
-function readEnabled(): boolean {
-  const raw = String(process.env.CONSISTENCY_CHECKER_ENABLED ?? '').toLowerCase();
-  return !['false', '0', 'no', 'off'].includes(raw);
-}
 
 interface ViolationRow {
   entityId: string;
@@ -59,6 +49,7 @@ export class ConsistencyCheckerService {
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Optional()
     @Inject(ProbeService)
     private readonly probe?: ProbeService,
@@ -322,7 +313,11 @@ export class ConsistencyCheckerService {
   }
 
   private async dedupAcquire(tenantId: string, rule: RuleId, entityId: string): Promise<boolean> {
-    const ttl = readDedupTtl();
+    const ttl = await this.cfg.getDynamic<number>(
+      'curation.consistencyCheckerDedupTtlSeconds',
+      'CONSISTENCY_CHECKER_DEDUP_TTL_SECONDS',
+      14_400,
+    );
     const key = `consistency:dedup:${tenantId}:${rule}:${this.hash(entityId)}`;
     try {
       const res = await this.redis.client.set(key, '1', 'EX', ttl, 'NX');
@@ -415,11 +410,17 @@ export class ConsistencyCheckerCron {
     private readonly checker: ConsistencyCheckerService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   @Cron('0 */4 * * *')
   async runScheduled(): Promise<void> {
-    if (!readEnabled()) {
+    const enabled = await this.cfg.getDynamic<boolean>(
+      'curation.consistencyCheckerEnabled',
+      'CONSISTENCY_CHECKER_ENABLED',
+      true,
+    );
+    if (!enabled) {
       this.logger.debug('consistency-checker: выключен через ENV — пропуск');
       return;
     }

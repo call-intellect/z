@@ -62,7 +62,7 @@ export class TelegramDigestCron {
     errors: number;
     skippedHour: number;
   }> {
-    const digestHourLocal = this.resolveDigestHourLocal();
+    const digestHourLocal = await this.resolveDigestHourLocal();
 
     const bindings = await this.prisma.channelBinding.findMany({
       where: {
@@ -216,13 +216,15 @@ export class TelegramDigestCron {
     };
   }
 
-  private resolveDigestHourLocal(): number {
-    const raw = process.env.TELEGRAM_DIGEST_HOUR_LOCAL;
-    if (!raw) return TelegramDigestCron.DEFAULT_DIGEST_HOUR_LOCAL;
-    const parsed = Number.parseInt(raw, 10);
+  private async resolveDigestHourLocal(): Promise<number> {
+    const parsed = await this.cfg.getDynamic<number>(
+      'conversational.telegramDigestHourLocal',
+      'TELEGRAM_DIGEST_HOUR_LOCAL',
+      TelegramDigestCron.DEFAULT_DIGEST_HOUR_LOCAL,
+    );
     if (!Number.isFinite(parsed) || parsed < 0 || parsed > 23) {
       this.logger.warn(
-        { raw },
+        { raw: parsed },
         'telegram-digest-cron: TELEGRAM_DIGEST_HOUR_LOCAL невалиден, fallback 9',
       );
       return TelegramDigestCron.DEFAULT_DIGEST_HOUR_LOCAL;
@@ -451,5 +453,3 @@ function pluralizeIssues(n: number): string {
   if (mod10 >= 2 && mod10 <= 4) return 'задачи';
   return 'задач';
 }
-
-void TypedConfigService;

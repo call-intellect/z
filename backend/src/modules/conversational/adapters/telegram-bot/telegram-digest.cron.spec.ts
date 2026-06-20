@@ -68,7 +68,17 @@ function makeConv(): ConversationalService {
 }
 
 function makeCfg(): TypedConfigService {
-  return {} as unknown as TypedConfigService;
+  return {
+    async getDynamic<T>(_adminKey: string, envKey: string | undefined, def: T): Promise<T> {
+      const raw = envKey ? process.env[envKey] : undefined;
+      if (raw === undefined || raw === '') return def;
+      if (typeof def === 'number') {
+        const n = Number(raw);
+        return ((Number.isFinite(n) ? n : def) as unknown) as T;
+      }
+      return (raw as unknown) as T;
+    },
+  } as unknown as TypedConfigService;
 }
 
 function makeCron(

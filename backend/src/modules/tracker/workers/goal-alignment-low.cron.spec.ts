@@ -1,11 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 import type { ProbeService } from '../../probe/probe.service';
 
 import { GoalAlignmentLowCron } from './goal-alignment-low.cron';
+
+const cfgStub = {
+  getDynamic: async <T>(_k: string, _e: string | undefined, def: T): Promise<T> => def,
+  resolveSync: <T>(_k: string, _e: string | undefined, def: T): T => def,
+} as unknown as TypedConfigService;
 
 describe('GoalAlignmentLowCron', () => {
   let prisma: PrismaService;
@@ -49,7 +55,7 @@ describe('GoalAlignmentLowCron', () => {
     } as unknown as BusinessMetricsService;
     probe = { suggest: probeSuggest } as unknown as ProbeService;
 
-    cron = new GoalAlignmentLowCron(prisma, redis, metrics, probe);
+    cron = new GoalAlignmentLowCron(prisma, redis, metrics, cfgStub, probe);
   });
 
   it('Org с 0 пользователей — 0 probes (early return)', async () => {
@@ -118,7 +124,7 @@ describe('GoalAlignmentLowCron', () => {
   });
 
   it('ProbeService недоступен — не падает, 0 emits', async () => {
-    cron = new GoalAlignmentLowCron(prisma, redis, metrics);
+    cron = new GoalAlignmentLowCron(prisma, redis, metrics, cfgStub);
     issueCount.mockResolvedValueOnce(10).mockResolvedValueOnce(9);
     const res = await cron.run();
     expect(res.emitted).toBe(0);

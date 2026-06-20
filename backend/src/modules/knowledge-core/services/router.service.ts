@@ -707,41 +707,28 @@ export class RouterService {
     return `routerfallback:err:${cacheKey.slice('routerfallback:'.length)}`;
   }
 
-  /**
-   * Б54 (K6) — TTL negative-маркера при llm_error. Короткий (default 60с):
-   * достаточно, чтобы погасить шторм блоков в окне сбоя, но не «залипнуть»
-   * после восстановления провайдера. env ROUTER_FALLBACK_NEGATIVE_TTL_SECONDS.
-   * TODO(env-refactor): перенести в TypedConfig после фикса TS2589 в EnvSchema
-   * (см. getRouterFallbackTtlSeconds).
-   */
   private getRouterFallbackNegativeTtlSeconds(): number {
-    const raw = process.env['ROUTER_FALLBACK_NEGATIVE_TTL_SECONDS'];
-    if (raw == null || raw === '') return 60;
-    const num = Number(raw);
-    if (!Number.isFinite(num) || num <= 0) return 60;
-    return Math.floor(num);
+    return this.cfg.resolveSync<number>(
+      'router.fallbackNegativeTtlSeconds',
+      'ROUTER_FALLBACK_NEGATIVE_TTL_SECONDS',
+      60,
+    );
   }
 
-  /**
-   * TODO(env-refactor): после фикса TS2589 в EnvSchema перенести в TypedConfig.
-   * Default = false (prod safe). Включается в staging для постепенного rollout'а.
-   */
   private isLlmFallbackEnabled(): boolean {
-    const raw = process.env['ROUTER_LLM_FALLBACK_ENABLED'];
-    if (raw == null || raw === '') return false;
-    return raw === 'true' || raw === '1';
+    return this.cfg.resolveSync<boolean>(
+      'router.llmFallbackEnabled',
+      'ROUTER_LLM_FALLBACK_ENABLED',
+      false,
+    );
   }
 
-  /**
-   * TODO(env-refactor): после фикса TS2589 в EnvSchema перенести в TypedConfig.
-   * Default = 86400 (24h). Защищает от спайков LLM-вызовов.
-   */
   private getRouterFallbackTtlSeconds(): number {
-    const raw = process.env['ROUTER_FALLBACK_CACHE_TTL_SECONDS'];
-    if (raw == null || raw === '') return 86400;
-    const num = Number(raw);
-    if (!Number.isFinite(num) || num <= 0) return 86400;
-    return Math.floor(num);
+    return this.cfg.resolveSync<number>(
+      'router.fallbackCacheTtlSeconds',
+      'ROUTER_FALLBACK_CACHE_TTL_SECONDS',
+      86_400,
+    );
   }
 
   /**

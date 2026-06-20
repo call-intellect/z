@@ -1,6 +1,7 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, type RoleProfileStatus } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
 import type {
@@ -10,15 +11,6 @@ import type {
   RoleProfileRebuildResponseDto,
 } from '../dto/role-profiles.dto';
 
-const DEFAULT_MIN_BLOCKS = 5;
-
-function readMinBlocks(): number {
-  const raw = process.env.ROLE_PROFILE_MIN_BLOCKS;
-  if (!raw) return DEFAULT_MIN_BLOCKS;
-  const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : DEFAULT_MIN_BLOCKS;
-}
-
 @Injectable()
 export class RoleProfilesService {
   private readonly logger = new Logger(RoleProfilesService.name);
@@ -26,7 +18,13 @@ export class RoleProfilesService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
+
+  private readMinBlocks(): number {
+    const n = this.cfg.resolveSync<number>('roleProfiles.minBlocks', 'ROLE_PROFILE_MIN_BLOCKS', 5);
+    return Number.isFinite(n) && n > 0 ? n : 5;
+  }
 
   async list(args: {
     tenantId: string;
@@ -95,7 +93,7 @@ export class RoleProfilesService {
     return {
       ...this.toListItem(rp),
       summary: rp.summaryCache,
-      minBlocks: readMinBlocks(),
+      minBlocks: this.readMinBlocks(),
       currentBlocks,
     };
   }

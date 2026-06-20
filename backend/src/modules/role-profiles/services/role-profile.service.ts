@@ -26,9 +26,7 @@ export class RoleProfileService {
   ) {}
 
   get minBlocks(): number {
-    const raw =
-      (this.cfg as unknown as { roleProfile?: { minBlocks?: number } }).roleProfile?.minBlocks ??
-      Number(process.env['ROLE_PROFILE_MIN_BLOCKS'] ?? 5);
+    const raw = this.cfg.resolveSync<number>('roleProfiles.minBlocks', 'ROLE_PROFILE_MIN_BLOCKS', 5);
     return Number.isFinite(raw) && raw > 0 ? raw : 5;
   }
 

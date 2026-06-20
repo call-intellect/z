@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { readOrchestratorLimits } from '../orchestrator.config';
@@ -35,10 +36,11 @@ export class OrchestratorService {
     private readonly verification: VerificationService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   async *run(input: OrchestratorRunInput): AsyncIterable<OrchestratorStreamEvent> {
-    const limits = readOrchestratorLimits();
+    const limits = readOrchestratorLimits(this.cfg);
     if (!limits.enabled) {
       yield {
         type: 'error',

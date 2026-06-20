@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
@@ -11,11 +12,6 @@ const DEFAULT_PERIOD_DAYS = 14;
 const DEFAULT_MIN_ISSUES = 5;
 const DEFAULT_LOW_RATIO = 0.8;
 const DEFAULT_DEDUP_TTL_SECONDS = 86_400;
-
-function readEnabled(): boolean {
-  const raw = String(process.env.GOAL_ALIGNMENT_LOW_ENABLED ?? '').toLowerCase();
-  return !['false', '0', 'no', 'off'].includes(raw);
-}
 
 interface CandidateUser {
   userId: string;
@@ -37,6 +33,7 @@ export class GoalAlignmentLowCron {
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Optional()
     @Inject(ProbeService)
     private readonly probe?: ProbeService,
@@ -44,7 +41,12 @@ export class GoalAlignmentLowCron {
 
   @Cron('0 6 * * 1')
   async runScheduled(): Promise<void> {
-    if (!readEnabled()) {
+    const enabled = await this.cfg.getDynamic<boolean>(
+      'tracker.goalAlignmentLowEnabled',
+      'GOAL_ALIGNMENT_LOW_ENABLED',
+      true,
+    );
+    if (!enabled) {
       this.logger.debug('goal-alignment-low: выключен через ENV — пропуск');
       return;
     }

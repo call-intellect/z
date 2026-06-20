@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { readOrchestratorLimits } from '../orchestrator.config';
 import {
@@ -15,10 +16,13 @@ import {
 export class PlanningService {
   private readonly logger = new Logger(PlanningService.name);
 
-  constructor(@Inject(LlmRouterService) private readonly llm: LlmRouterService) {}
+  constructor(
+    @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+  ) {}
 
   async plan(args: { task: string; tenantId: string; userId: string }): Promise<OrchestratorPlan> {
-    const limits = readOrchestratorLimits();
+    const limits = readOrchestratorLimits(this.cfg);
     const max = limits.maxSubagentsPerRun;
 
     const systemPrompt = [

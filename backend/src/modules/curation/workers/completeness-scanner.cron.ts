@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import type { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
@@ -328,12 +329,15 @@ export class CompletenessScannerCron {
   constructor(
     @Inject(CompletenessScannerService)
     private readonly scanner: CompletenessScannerService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   @Cron('0 */6 * * *')
   async runScheduled(): Promise<void> {
-    const enabled = !['false', '0', 'no', 'off'].includes(
-      String(process.env.COMPLETENESS_SCANNER_ENABLED ?? '').toLowerCase(),
+    const enabled = await this.cfg.getDynamic<boolean>(
+      'curation.completenessScannerEnabled',
+      'COMPLETENESS_SCANNER_ENABLED',
+      true,
     );
     if (!enabled) {
       this.logger.debug('completeness-scanner: выключен через ENV — пропуск');

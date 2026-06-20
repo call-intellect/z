@@ -6,6 +6,8 @@ const ProbeQuestionPayloadSchema = z
     context: z.string().max(8_000).optional(),
     options: z.array(z.string().min(1).max(200)).max(20).optional(),
     askedBy: z.string().max(100).optional(),
+    blockId: z.string().max(80).optional(),
+    quote: z.string().max(4_000).optional(),
   })
   .strict();
 

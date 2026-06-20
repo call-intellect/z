@@ -252,6 +252,8 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           question: finalQuestion,
           askedBy: probe.emittedByService,
           context: typeof payload.message === 'string' ? payload.message : undefined,
+          blockId: this.toStringOrUndef(payload.contextBlockId),
+          quote: typeof payload.contextQuote === 'string' ? payload.contextQuote : undefined,
         },
         dataClass,
         contextBlockId: this.toStringOrUndef(payload.contextBlockId),

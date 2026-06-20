@@ -5,7 +5,9 @@ export type PendingActionSourceApi =
   | "curation"
   | "conflict"
   | "intake"
-  | "probe";
+  | "probe"
+  | "task_closure"
+  | "task_review";
 
 export type PendingActionSeverityApi = "normal" | "urgent";
 
@@ -64,11 +66,27 @@ export interface CurationDetailApi {
   cite?: PendingActionCiteApi;
 }
 
+export interface TaskClosureDetailApi {
+  kind: "task_closure";
+  taskTitle: string;
+  rationale?: string;
+  evidenceQuote?: string;
+  confidence?: number;
+}
+
+export interface TaskReviewDetailApi {
+  kind: "task_review";
+  taskTitle: string;
+  reason?: string;
+}
+
 export type PendingActionDetailApi =
   | ProbeDetailApi
   | ConflictDetailApi
   | IntakeDetailApi
-  | CurationDetailApi;
+  | CurationDetailApi
+  | TaskClosureDetailApi
+  | TaskReviewDetailApi;
 
 export interface PendingActionItemApi {
   source: PendingActionSourceApi;

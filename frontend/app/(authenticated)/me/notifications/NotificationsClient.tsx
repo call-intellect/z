@@ -275,6 +275,8 @@ function NotificationDetail({
     resourceType?: string;
     title?: string;
     body?: string;
+    blockId?: string;
+    quote?: string;
   };
 
   const isProbeQuestion = n.eventType === "probe.question";
@@ -372,6 +374,17 @@ function NotificationDetail({
           </div>
         )}
         {payload.body && <p className="whitespace-pre-wrap">{payload.body}</p>}
+
+        {isProbeQuestion && payload.quote && (
+          <div>
+            <div className="text-xs uppercase text-muted-foreground">
+              По поводу
+            </div>
+            <p className="whitespace-pre-wrap italic text-muted-foreground">
+              «{payload.quote}»
+            </p>
+          </div>
+        )}
 
         {n.needsResponse && isProbeQuestion && probeQuestion && (
           <div className="space-y-2">

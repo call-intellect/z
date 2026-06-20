@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -211,6 +211,26 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
     player.seekTo(ms);
     setCurrentMs(ms);
   };
+
+  const seekedFromUrlRef = useRef(false);
+  useEffect(() => {
+    if (seekedFromUrlRef.current) return;
+    const t = searchParams.get('t');
+    if (!t) return;
+    const sec = Number(t);
+    if (!Number.isFinite(sec) || sec < 0) return;
+    if (!safeVideoUrl) return;
+    const el = player.playerRef.current;
+    if (!el) return;
+    seekedFromUrlRef.current = true;
+    const ms = sec * 1000;
+    const doSeek = () => {
+      player.seekTo(ms);
+      setCurrentMs(ms);
+    };
+    if (el.readyState >= 1) doSeek();
+    else el.addEventListener('loadedmetadata', doSeek, { once: true });
+  }, [searchParams, safeVideoUrl, player]);
 
   if (meetingLoading && !meeting) {
     return <MeetingResultSkeleton />;

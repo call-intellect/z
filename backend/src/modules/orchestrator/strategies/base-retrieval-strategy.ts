@@ -83,6 +83,7 @@ export abstract class BaseRetrievalStrategy implements SubagentStrategy {
     }
 
     let blocksContext = '';
+    const evidenceByBlockId = new Map<string, string>();
     if (blockIds.length > 0) {
       const blocks = await this.prisma.ideaBlock.findMany({
         where: { id: { in: blockIds }, tenantId: args.tenantId, ...(accessWhere ?? {}) },
@@ -91,6 +92,11 @@ export abstract class BaseRetrievalStrategy implements SubagentStrategy {
           name: true,
           criticalQuestion: true,
           trustedAnswer: true,
+          evidence: {
+            select: { quote: true, startMs: true },
+            take: 1,
+            orderBy: [{ startMs: 'asc' }],
+          },
         },
         take: 20,
       });
@@ -100,6 +106,12 @@ export abstract class BaseRetrievalStrategy implements SubagentStrategy {
             `- [${b.id}] ${b.name}\n  Q: ${b.criticalQuestion.slice(0, 200)}\n  A: ${b.trustedAnswer.slice(0, 400)}`,
         )
         .join('\n');
+      for (const b of blocks) {
+        const q = b.evidence?.[0]?.quote;
+        if (typeof q === 'string' && q.trim().length > 0) {
+          evidenceByBlockId.set(b.id, q.trim());
+        }
+      }
     }
 
     const systemPrompt = this.buildSystemPrompt(args.step);
@@ -160,10 +172,13 @@ export abstract class BaseRetrievalStrategy implements SubagentStrategy {
       };
     }
 
-    return this.tryParseResult(raw);
+    return this.tryParseResult(raw, evidenceByBlockId);
   }
 
-  protected tryParseResult(raw: string): OrchestratorSubagentResult {
+  protected tryParseResult(
+    raw: string,
+    evidenceByBlockId?: Map<string, string>,
+  ): OrchestratorSubagentResult {
     let obj: unknown;
     try {
       obj = JSON.parse(raw);
@@ -193,8 +208,8 @@ export abstract class BaseRetrievalStrategy implements SubagentStrategy {
     const citations = Array.isArray(o.citations)
       ? o.citations
           .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
-          .map((c) => ({
-            type:
+          .map((c) => {
+            const type =
               (c['type'] as string) === 'entity'
                 ? ('entity' as const)
                 : (c['type'] as string) === 'meeting'
@@ -203,12 +218,16 @@ export abstract class BaseRetrievalStrategy implements SubagentStrategy {
                     ? ('card' as const)
                     : (c['type'] as string) === 'document'
                       ? ('document' as const)
-                      : ('block' as const),
-            id: String(c['id'] ?? '').slice(0, 128),
-            ...(typeof c['snippet'] === 'string'
-              ? { snippet: (c['snippet'] as string).slice(0, 400) }
-              : {}),
-          }))
+                      : ('block' as const);
+            const id = String(c['id'] ?? '').slice(0, 128);
+            const snippet =
+              type === 'block' ? evidenceByBlockId?.get(id) : undefined;
+            return {
+              type,
+              id,
+              ...(snippet ? { snippet: snippet.slice(0, 400) } : {}),
+            };
+          })
           .filter((c) => c.id.length > 0)
           .slice(0, 20)
       : [];

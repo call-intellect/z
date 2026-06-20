@@ -42,12 +42,61 @@ describe("mapPendingAction", () => {
   });
 
   it("каждый источник имеет RU-лейбл и chip-вариант", () => {
-    (["curation", "conflict", "intake", "probe"] as const).forEach((s) => {
+    (
+      [
+        "curation",
+        "conflict",
+        "intake",
+        "probe",
+        "task_closure",
+        "task_review",
+      ] as const
+    ).forEach((s) => {
       expect(PENDING_SOURCE_LABEL[s]).toBeTruthy();
       expect(PENDING_SOURCE_CHIP[s]).toBeTruthy();
       const d = mapPendingAction(makeItem({ source: s }));
       expect(d.sourceLabel).toBe(PENDING_SOURCE_LABEL[s]);
     });
+  });
+
+  it("task_closure: detail доходит до домена (evidenceQuote не теряется)", () => {
+    const d = mapPendingAction(
+      makeItem({
+        source: "task_closure",
+        resourceType: "task_closure_candidate",
+        detail: {
+          kind: "task_closure",
+          taskTitle: "Подготовить смету для Акме",
+          rationale: "Прозвучало «смету отправил»",
+          evidenceQuote: "Смету по Акме я уже отправил вчера вечером",
+          confidence: 0.92,
+        },
+      }),
+    );
+    expect(d.detail?.kind).toBe("task_closure");
+    if (d.detail?.kind === "task_closure") {
+      expect(d.detail.evidenceQuote).toBe(
+        "Смету по Акме я уже отправил вчера вечером",
+      );
+      expect(d.detail.confidencePct).toBe(92);
+    }
+  });
+
+  it("task_review: detail доходит до домена", () => {
+    const d = mapPendingAction(
+      makeItem({
+        source: "task_review",
+        detail: {
+          kind: "task_review",
+          taskTitle: "Внедрить новый прайс",
+          reason: "Связанное решение отменено",
+        },
+      }),
+    );
+    expect(d.detail?.kind).toBe("task_review");
+    if (d.detail?.kind === "task_review") {
+      expect(d.detail.reason).toBe("Связанное решение отменено");
+    }
   });
 
   it("RU-лейблы без латиницы", () => {

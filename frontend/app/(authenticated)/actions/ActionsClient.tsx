@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
+  CheckCircle2,
   ExternalLink,
   GitMerge,
   HelpCircle,
@@ -418,6 +419,99 @@ function CurationCard({ action, onConfirm, onOpen }: CardProps) {
   );
 }
 
+function TaskClosureCard({ action, onSnooze, onOpen }: CardProps) {
+  const d = action.detail?.kind === "task_closure" ? action.detail : undefined;
+  const taskTitle = d?.taskTitle ?? action.title;
+  const confidence = d?.confidencePct;
+
+  return (
+    <GlassCard className="flex flex-col gap-3 p-5">
+      <CardTitle icon={<CheckCircle2 size={17} />} grad={GRAD.teal}>
+        {taskTitle}
+      </CardTitle>
+
+      {d?.rationale && (
+        <p className="text-sm leading-relaxed text-fg-secondary">
+          {d.rationale}
+        </p>
+      )}
+
+      {d?.evidenceQuote && (
+        <div className="rounded-xl border border-border-subtle bg-bg-overlay/40 p-4">
+          <p className="text-[13px] italic leading-relaxed text-fg-secondary">
+            «{d.evidenceQuote}»
+          </p>
+        </div>
+      )}
+
+      {confidence != null && (
+        <div className="flex items-center gap-2.5">
+          <span className="whitespace-nowrap text-xs text-fg-tertiary">
+            Уверенность Коры
+          </span>
+          <Progress value={confidence} className="h-2 flex-1" />
+          <span className="text-[13px] font-semibold text-fg-primary">
+            {confidence}%
+          </span>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <WaitChip ageDays={action.ageDays} />
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" className="gap-1" onClick={() => onOpen(action)}>
+          <ExternalLink size={14} />
+          Открыть в трекере
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => void onSnooze(action, 72)}
+        >
+          Позже
+        </Button>
+      </div>
+    </GlassCard>
+  );
+}
+
+function TaskReviewCard({ action, onSnooze, onOpen }: CardProps) {
+  const d = action.detail?.kind === "task_review" ? action.detail : undefined;
+  const taskTitle = d?.taskTitle ?? action.title;
+
+  return (
+    <GlassCard className="flex flex-col gap-3 p-5">
+      <CardTitle icon={<HelpCircle size={17} />} grad={GRAD.violet}>
+        {taskTitle}
+      </CardTitle>
+
+      {d?.reason && (
+        <p className="text-sm leading-relaxed text-fg-secondary">{d.reason}</p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <WaitChip ageDays={action.ageDays} />
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" className="gap-1" onClick={() => onOpen(action)}>
+          <ExternalLink size={14} />
+          Проверить в трекере
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => void onSnooze(action, 72)}
+        >
+          Позже
+        </Button>
+      </div>
+    </GlassCard>
+  );
+}
+
 function GroupHeader({
   label,
   hint,
@@ -457,6 +551,8 @@ export function ActionsClient() {
       conflict: by("conflict"),
       intake: by("intake"),
       curation: by("curation"),
+      task_closure: by("task_closure"),
+      task_review: by("task_review"),
     };
   }, [items]);
 
@@ -666,6 +762,46 @@ export function ActionsClient() {
                 <div className="flex flex-col gap-3">
                   {groups.curation.map((it) => (
                     <CurationCard
+                      key={`${it.source}:${it.resourceId}`}
+                      action={it}
+                      {...cardProps}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+
+            {}
+            {groups.task_closure.length > 0 && (
+              <>
+                <GroupHeader
+                  label="Задачи к закрытию"
+                  hint="Кора услышала, что это сделано — проверьте и закройте в трекере"
+                  variant="success"
+                />
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {groups.task_closure.map((it) => (
+                    <TaskClosureCard
+                      key={`${it.source}:${it.resourceId}`}
+                      action={it}
+                      {...cardProps}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+
+            {}
+            {groups.task_review.length > 0 && (
+              <>
+                <GroupHeader
+                  label="Задачи под вопросом"
+                  hint="Связанное решение изменилось — проверьте, актуальна ли задача"
+                  variant="warning"
+                />
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {groups.task_review.map((it) => (
+                    <TaskReviewCard
                       key={`${it.source}:${it.resourceId}`}
                       action={it}
                       {...cardProps}

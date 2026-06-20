@@ -14,6 +14,7 @@ import {
   REASONING_CHAIN_TAG_PREFIX,
   TABLE_TAG_PREFIX,
 } from './chat-v2.service';
+import type { ProvenanceService } from './provenance.service';
 
 interface ContextBlockLike {
   id: string;
@@ -76,6 +77,10 @@ function makeService(): ChatV2Service {
     partitionBlockIdsByAccess: vi.fn(),
   } as unknown as KnowledgeAccessResolver;
 
+  const provenance = {
+    resolveByRawEventIds: vi.fn(async () => new Map()),
+  } as unknown as ProvenanceService;
+
   return new ChatV2Service(
     prisma,
     cfg,
@@ -83,6 +88,7 @@ function makeService(): ChatV2Service {
     retrieval,
     metrics,
     accessResolver,
+    provenance,
     undefined,
     undefined,
   );

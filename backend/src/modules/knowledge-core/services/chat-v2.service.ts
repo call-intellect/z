@@ -27,6 +27,7 @@ import {
 import { ChatV2TableContextService } from './chat-v2-table-context.service';
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { ACTIVE_LINK_FILTER } from './link-read-filter';
+import { ProvenanceService } from './provenance.service';
 import { ReasoningChainService } from './reasoning-chain.service';
 
 /**
@@ -565,6 +566,8 @@ export class ChatV2Service {
     // RbacModule @Global, поэтому импорт не нужен.
     @Inject(KnowledgeAccessResolver)
     private readonly accessResolver: KnowledgeAccessResolver,
+    @Inject(ProvenanceService)
+    private readonly provenance: ProvenanceService,
     // W4.1 — DataClassPolicyService для shadow-compare (см. ТЗ §W4.1).
     @Optional()
     @Inject(DataClassPolicyService)
@@ -1047,15 +1050,16 @@ export class ChatV2Service {
       if (!firstByBlock.has(ev.blockId)) firstByBlock.set(ev.blockId, ev);
     }
 
-    // Через RawEvent → meetingId, через Meeting → title.
     const rawEventIds = [...new Set(evidenceRows.map((e) => e.rawEventId))];
-    const rawEvents = await this.prisma.rawEvent.findMany({
-      where: { id: { in: rawEventIds } },
-      select: { id: true, sourceExternalId: true },
-    });
+    const sourceMap = await this.provenance.resolveByRawEventIds(
+      tenantId,
+      rawEventIds,
+    );
     const rawIdToMeetingId = new Map<string, string>();
-    for (const r of rawEvents) {
-      if (r.sourceExternalId) rawIdToMeetingId.set(r.id, r.sourceExternalId);
+    for (const [rawId, src] of sourceMap) {
+      if (src.type === 'meeting' && src.refId) {
+        rawIdToMeetingId.set(rawId, src.refId);
+      }
     }
 
     const meetingIds = [...new Set([...rawIdToMeetingId.values()])];

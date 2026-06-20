@@ -8,6 +8,7 @@ import type {
 } from '../../rbac/knowledge-access-resolver.service';
 
 import { ChatV2Service } from './chat-v2.service';
+import type { ProvenanceService } from './provenance.service';
 
 interface BlockRow {
   id: string;
@@ -47,6 +48,10 @@ function buildService(opts: {
     incAccessShadowDiff: incShadow,
   } as unknown as BusinessMetricsService;
 
+  const provenance = {
+    resolveByRawEventIds: vi.fn(async () => new Map()),
+  } as unknown as ProvenanceService;
+
   const service = new ChatV2Service(
     prisma,
     {} as never,
@@ -54,6 +59,7 @@ function buildService(opts: {
     {} as never,
     metrics,
     accessResolver,
+    provenance,
   );
   return { service, partitionSpy, incDenied, incShadow, blockFindMany };
 }

@@ -5,6 +5,7 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import type { ChatV2Citation } from './chat-v2.service';
 import { ChatV2Service } from './chat-v2.service';
+import type { ProvenanceService } from './provenance.service';
 
 interface BlockRow {
   id: string;
@@ -61,7 +62,30 @@ function buildService(opts: {
 
   const accessResolver = {} as never;
 
-  return new ChatV2Service(prisma, {} as never, {} as never, {} as never, metrics, accessResolver);
+  const sourceMap = new Map<string, { type: string; refId: string | null; label: string; deepLink: string | null }>();
+  for (const r of opts.rawEvents ?? []) {
+    if (r.sourceExternalId) {
+      sourceMap.set(r.id, {
+        type: 'meeting',
+        refId: r.sourceExternalId,
+        label: '',
+        deepLink: null,
+      });
+    }
+  }
+  const provenance = {
+    resolveByRawEventIds: vi.fn(async () => sourceMap),
+  } as unknown as ProvenanceService;
+
+  return new ChatV2Service(
+    prisma,
+    {} as never,
+    {} as never,
+    {} as never,
+    metrics,
+    accessResolver,
+    provenance,
+  );
 }
 
 type ContextBlockLike = {

@@ -8,6 +8,7 @@ import type { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolv
 
 import type { ChatV2RetrievalService } from './chat-v2-retrieval.service';
 import { ChatV2Service, type ChatV2Input, type ChatV2Stage } from './chat-v2.service';
+import type { ProvenanceService } from './provenance.service';
 
 function makeService(): {
   svc: ChatV2Service;
@@ -54,6 +55,10 @@ function makeService(): {
     partitionBlockIdsByAccess: vi.fn(),
   } as unknown as KnowledgeAccessResolver;
 
+  const provenance = {
+    resolveByRawEventIds: vi.fn(async () => new Map()),
+  } as unknown as ProvenanceService;
+
   const svc = new ChatV2Service(
     prisma,
     cfg,
@@ -61,6 +66,7 @@ function makeService(): {
     retrieval,
     metrics,
     accessResolver,
+    provenance,
     undefined,
     undefined,
   );

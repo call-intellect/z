@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
@@ -178,6 +182,7 @@ describe('IdeasService — Ф6 гейт проекций на list', () => {
       prisma,
       {} as unknown as Specialist36Service,
       { log: vi.fn() } as unknown as AuditLogService,
+      null,
       accessResolver,
       cfg,
       metrics,
@@ -213,5 +218,135 @@ describe('IdeasService — Ф6 гейт проекций на list', () => {
     const res = await svc.list({ tenantId: 't-1', userId: 'u-1', query });
     expect(res.items.map((i) => i.id)).toEqual(['i-open', 'i-council']);
     expect(partitionSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('IdeasService.promoteToGoal (ТЗ goals-map Ф4)', () => {
+  const fullIdea = (over: Record<string, unknown> = {}) => ({
+    id: 'idea-1',
+    tenantId: 't1',
+    kind: 'internal',
+    status: 'captured',
+    statement: 'Сделать тёмную тему интерфейса',
+    rationale: 'клиенты просят',
+    weight: 1,
+    supporterCount: 1,
+    supporters: [],
+    clusterId: null,
+    firstProposedAt: new Date('2026-06-01T10:00:00Z'),
+    lastDiscussedAt: new Date('2026-06-01T10:00:00Z'),
+    createdByUserId: 'u1',
+    goalId: null,
+    sourceBlockIds: [],
+    personSubjectIds: [],
+    statusChangedAt: null,
+    statusChangedByUserId: null,
+    statusReason: null,
+    confidence: 0.5,
+    dataClass: 'internal',
+    realizedAsDecisionId: null,
+    ...over,
+  });
+
+  function build(ideaRow: Record<string, unknown> | null) {
+    const goalCreate = vi.fn(async (_args: unknown) => ({ id: 'goal-new' }));
+    const ideaUpdate = vi.fn(async (_args: unknown) => ({}));
+    const tx = { goal: { create: goalCreate }, idea: { update: ideaUpdate } };
+    const findFirst = vi
+      .fn()
+      .mockResolvedValueOnce(ideaRow)
+      .mockResolvedValue(
+        ideaRow ? { ...ideaRow, goalId: 'goal-new', status: 'accepted' } : null,
+      );
+    const prisma = {
+      idea: { findFirst, update: vi.fn() },
+      goal: {
+        findFirst: vi.fn(
+          async (): Promise<{ id: string } | null> => ({ id: 'parent-1' }),
+        ),
+      },
+      $transaction: vi.fn(async (cb: (t: typeof tx) => unknown) => cb(tx)),
+    };
+    const audit = { log: vi.fn(async () => undefined) };
+    const svc = new IdeasService(
+      prisma as unknown as PrismaService,
+      {} as unknown as Specialist36Service,
+      audit as unknown as AuditLogService,
+    );
+    return { svc, prisma, goalCreate, ideaUpdate, audit };
+  }
+
+  it('создаёт Goal{source:manual,active}, привязывает idea, captured→accepted', async () => {
+    const { svc, goalCreate, ideaUpdate, audit } = build(
+      fullIdea({ status: 'captured', goalId: null }),
+    );
+    const res = await svc.promoteToGoal({
+      tenantId: 't1',
+      ideaId: 'idea-1',
+      userId: 'u1',
+    });
+    expect(res.goalId).toBe('goal-new');
+    expect(goalCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          source: 'manual',
+          promotionState: 'active',
+          horizon: 'quarterly',
+          createdById: 'u1',
+        }),
+      }),
+    );
+    expect(ideaUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          goalId: 'goal-new',
+          status: 'accepted',
+          statusReason: 'promoted_to_goal',
+        }),
+      }),
+    );
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'idea.promoted_to_goal' }),
+    );
+  });
+
+  it('повторный promote (goalId уже стоит) → 409, цель не создаётся', async () => {
+    const { svc, goalCreate } = build(fullIdea({ goalId: 'goal-existing' }));
+    await expect(
+      svc.promoteToGoal({ tenantId: 't1', ideaId: 'idea-1', userId: 'u1' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(goalCreate).not.toHaveBeenCalled();
+  });
+
+  it('idea не найдена → 404', async () => {
+    const { svc } = build(null);
+    await expect(
+      svc.promoteToGoal({ tenantId: 't1', ideaId: 'x', userId: 'u1' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('status in_progress → цель создаётся, статус НЕ меняется', async () => {
+    const { svc, ideaUpdate } = build(
+      fullIdea({ status: 'in_progress', goalId: null }),
+    );
+    await svc.promoteToGoal({ tenantId: 't1', ideaId: 'idea-1', userId: 'u1' });
+    const arg = ideaUpdate.mock.calls[0]?.[0] as unknown as
+      | { data: Record<string, unknown> }
+      | undefined;
+    expect(arg?.data.goalId).toBe('goal-new');
+    expect(arg?.data.status).toBeUndefined();
+  });
+
+  it('parentGoalId не существует → 400', async () => {
+    const { svc, prisma } = build(fullIdea({ goalId: null }));
+    prisma.goal.findFirst.mockResolvedValue(null);
+    await expect(
+      svc.promoteToGoal({
+        tenantId: 't1',
+        ideaId: 'idea-1',
+        userId: 'u1',
+        parentGoalId: 'ghost',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

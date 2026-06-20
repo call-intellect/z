@@ -153,6 +153,26 @@ export const ideasApi = {
     );
   },
 
+  async promoteToGoal(
+    orgId: string,
+    ideaId: string,
+    body: {
+      horizon?:
+        | "strategic"
+        | "annual"
+        | "quarterly"
+        | "monthly"
+        | "sprint";
+      parentGoalId?: string | null;
+    } = {},
+  ): Promise<{ goalId: string; idea: IdeaDetailApi }> {
+    return apiClient.post<{ goalId: string; idea: IdeaDetailApi }>(
+      `/api/v1/ideas/${encodeURIComponent(ideaId)}/promote-to-goal`,
+      body,
+      { headers: orgHeaders(orgId) },
+    );
+  },
+
   async withdraw(id: string): Promise<{ ok: true }> {
     return apiClient.post<{ ok: true }>(
       `/api/v1/me/ideas/${encodeURIComponent(id)}/withdraw`,

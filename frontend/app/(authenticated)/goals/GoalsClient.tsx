@@ -20,6 +20,8 @@ import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
 
 import { ApiError, humanizeApiError } from "@/api/api-error";
 import { goalsApi } from "@/api/goals.api";
+import { ideasApi } from "@/api/ideas.api";
+import { mapIdeaListItem } from "@/domain/idea";
 import { usePersons } from "@/hooks/usePersons";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -112,6 +114,21 @@ export function GoalsClient() {
   );
 
   const goals = useMemo(() => data ?? [], [data]);
+
+  const ideasKey =
+    currentOrgId && viewMode === "map"
+      ? (["goals-map-ideas", currentOrgId] as const)
+      : null;
+
+  const { data: ideasData, mutate: mutateIdeas } = useSWR(
+    ideasKey,
+    async () => {
+      const res = await ideasApi.list({ limit: 100 });
+      return res.items.map(mapIdeaListItem);
+    },
+  );
+
+  const ideas = useMemo(() => ideasData ?? [], [ideasData]);
 
   const filteredGoals = useMemo(() => {
     if (!debouncedSearch) return goals;
@@ -232,7 +249,15 @@ export function GoalsClient() {
             <Loader2 size={14} className="animate-spin" /> Загрузка…
           </div>
         ) : viewMode === "map" ? (
-          <GoalsMapView goals={goals} />
+          <GoalsMapView
+            goals={goals}
+            ideas={ideas}
+            orgId={currentOrgId}
+            onChanged={() => {
+              void mutate();
+              void mutateIdeas();
+            }}
+          />
         ) : viewMode === "tree" ? (
           goals.length === 0 ? (
             <EmptyState isOwner={isOwner} />

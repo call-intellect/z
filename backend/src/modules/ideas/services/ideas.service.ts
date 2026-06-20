@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   Logger,
@@ -12,6 +13,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AuditLogService } from '../../audit/audit-log.service';
+import { CoreQueueService } from '../../core-queue/core-queue.service';
 import { Specialist36Service } from '../../knowledge-core/services/specialist-3-6-ideas.service';
 import { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import {
@@ -25,9 +27,11 @@ import {
   type ListIdeasQuery,
   type ListIdeasResponse,
   type MyIdeasQuery,
+  type PromoteIdeaToGoalResponse,
   type TopIdeasQuery,
   type TopIdeasResponse,
 } from '../dto/ideas.dto';
+
 import {
   DEFAULT_IDEAS_FRESHNESS_DAYS,
   DEFAULT_IDEAS_RERANK_WEIGHTS,
@@ -44,6 +48,9 @@ export class IdeasService {
     @Inject(Specialist36Service)
     private readonly specialist36: Specialist36Service,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
+    @Optional()
+    @Inject(CoreQueueService)
+    private readonly coreQueue: CoreQueueService | null = null,
     @Optional()
     @Inject(KnowledgeAccessResolver)
     private readonly accessResolver: KnowledgeAccessResolver | null = null,
@@ -312,6 +319,93 @@ export class IdeasService {
     return { ok: true, goalId: args.goalId };
   }
 
+  async promoteToGoal(args: {
+    tenantId: string;
+    ideaId: string;
+    userId: string;
+    horizon?: 'strategic' | 'annual' | 'quarterly' | 'monthly' | 'sprint';
+    parentGoalId?: string | null;
+  }): Promise<PromoteIdeaToGoalResponse> {
+    const idea = await this.prisma.idea.findFirst({
+      where: { id: args.ideaId, tenantId: args.tenantId },
+    });
+    if (!idea) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'idea_not_found', message: 'Идея не найдена' },
+      });
+    }
+    if (idea.goalId !== null) {
+      throw new ConflictException({
+        ok: false,
+        error: {
+          code: 'idea_already_linked',
+          message: 'Идея уже привязана к цели — сначала отвяжите',
+        },
+      });
+    }
+    if (args.parentGoalId) {
+      const parent = await this.prisma.goal.findFirst({
+        where: { id: args.parentGoalId, tenantId: args.tenantId },
+        select: { id: true },
+      });
+      if (!parent) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'parent_goal_not_found',
+            message: 'Родительская цель не найдена',
+          },
+        });
+      }
+    }
+    const advanceStatus =
+      idea.status === 'captured' || idea.status === 'in_discussion';
+    const goal = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.goal.create({
+        data: {
+          tenantId: args.tenantId,
+          name: idea.statement.slice(0, 200),
+          description: idea.rationale ?? '',
+          source: 'manual',
+          promotionState: 'active',
+          horizon: args.horizon ?? 'quarterly',
+          ...(args.parentGoalId ? { parentGoalId: args.parentGoalId } : {}),
+          createdById: args.userId,
+        },
+        select: { id: true },
+      });
+      await tx.idea.update({
+        where: { id: idea.id },
+        data: {
+          goalId: created.id,
+          ...(advanceStatus
+            ? {
+                status: 'accepted',
+                statusChangedAt: new Date(),
+                statusChangedByUserId: args.userId,
+                statusReason: 'promoted_to_goal',
+              }
+            : {}),
+        },
+      });
+      return created;
+    });
+    void this.coreQueue
+      ?.enqueueGoalEmbed({ tenantId: args.tenantId, goalId: goal.id })
+      .catch(() => undefined);
+    void this.audit.log({
+      userId: args.userId,
+      action: 'idea.promoted_to_goal',
+      resourceId: idea.id,
+      metadata: { ideaId: idea.id, goalId: goal.id },
+    });
+    const updated = await this.prisma.idea.findFirst({
+      where: { id: idea.id, tenantId: args.tenantId },
+    });
+    return { goalId: goal.id, idea: this.toDetail(updated ?? idea) };
+  }
+
   async support(args: {
     tenantId: string;
     id: string;
@@ -440,6 +534,7 @@ export class IdeasService {
       firstProposedAt: i.firstProposedAt.toISOString(),
       lastDiscussedAt: i.lastDiscussedAt.toISOString(),
       createdByUserId: i.createdByUserId,
+      goalId: i.goalId,
     };
   }
 

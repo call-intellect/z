@@ -37,6 +37,7 @@ export interface IdeaListItemDto {
   firstProposedAt: string;
   lastDiscussedAt: string;
   createdByUserId: string | null;
+  goalId: string | null;
 }
 export interface ListIdeasResponse {
   items: IdeaListItemDto[];
@@ -88,6 +89,21 @@ export const LinkIdeaGoalSchema = z
   })
   .strict();
 export type LinkIdeaGoalBody = z.infer<typeof LinkIdeaGoalSchema>;
+
+export const PromoteIdeaToGoalSchema = z
+  .object({
+    horizon: z
+      .enum(['strategic', 'annual', 'quarterly', 'monthly', 'sprint'])
+      .optional(),
+    parentGoalId: z.string().min(1).nullable().optional(),
+  })
+  .strict();
+export type PromoteIdeaToGoalBody = z.infer<typeof PromoteIdeaToGoalSchema>;
+
+export interface PromoteIdeaToGoalResponse {
+  goalId: string;
+  idea: IdeaDetailDto;
+}
 
 export const MyIdeasQuerySchema = z
   .object({

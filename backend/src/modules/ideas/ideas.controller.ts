@@ -34,6 +34,9 @@ import {
   type ListIdeasResponse,
   MyIdeasQuerySchema,
   type MyIdeasQuery,
+  PromoteIdeaToGoalSchema,
+  type PromoteIdeaToGoalBody,
+  type PromoteIdeaToGoalResponse,
   TopIdeasQuerySchema,
   type TopIdeasQuery,
   type TopIdeasResponse,
@@ -144,6 +147,29 @@ export class IdeasController {
     });
   }
 
+  @Post('ideas/:id/promote-to-goal')
+  @ApiOperation({
+    summary: 'Сделать идею целью — создать новую цель из идеи (owner / admin)',
+  })
+  async promoteToGoal(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(PromoteIdeaToGoalSchema))
+    body: PromoteIdeaToGoalBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<PromoteIdeaToGoalResponse> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    await this.requireWriteGoal(user.id, t);
+    return this.svc.promoteToGoal({
+      tenantId: t,
+      ideaId: id,
+      userId: user.id,
+      horizon: body.horizon,
+      parentGoalId: body.parentGoalId ?? null,
+    });
+  }
+
   @Post('ideas/:id/support')
   @ApiOperation({ summary: 'Поддержать идею (member)' })
   async support(
@@ -212,6 +238,19 @@ export class IdeasController {
         error: {
           code: 'forbidden',
           message: 'Только owner / admin могут изменять идеи',
+        },
+      });
+    }
+  }
+
+  private async requireWriteGoal(userId: string, tenantId: string): Promise<void> {
+    const ok = await this.rbac.canWrite(userId, tenantId, 'goal');
+    if (!ok) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden',
+          message: 'Только owner может создавать цели',
         },
       });
     }

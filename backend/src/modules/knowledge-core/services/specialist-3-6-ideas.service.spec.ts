@@ -296,3 +296,161 @@ describe('Specialist36Service.changeStatus — G6 condition-UPDATE', () => {
     expect((res as { status: string }).status).toBe('rejected');
   });
 });
+
+function buildRealizedSvc(): {
+  svc: Specialist36Service;
+  prisma: {
+    idea: { findFirst: ReturnType<typeof vi.fn>; updateMany: ReturnType<typeof vi.fn> };
+    $queryRawUnsafe: ReturnType<typeof vi.fn>;
+  };
+  embedder: { embedQuery: ReturnType<typeof vi.fn> };
+} {
+  const prisma = {
+    idea: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
+    $queryRawUnsafe: vi.fn().mockResolvedValue([]),
+  };
+  const embedder = { embedQuery: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]) };
+  const cfg = { ideas: { clusterThreshold: 0.85 } };
+  const svc = new Specialist36Service(
+    prisma as never,
+    {} as never,
+    embedder as never,
+    {} as never,
+    {} as never,
+    cfg as never,
+    {} as never,
+    { write: vi.fn() } as never,
+  );
+  return { svc, prisma, embedder };
+}
+
+describe('markRealizedByDecision (Ф5 realized_as)', () => {
+  it('линкует idea и переводит captured → accepted', async () => {
+    const { svc, prisma } = buildRealizedSvc();
+    prisma.idea.findFirst.mockResolvedValue({
+      id: IDEA_ID,
+      status: 'captured',
+      realizedAsDecisionId: null,
+    });
+    const res = await svc.markRealizedByDecision({
+      tenantId: TENANT,
+      ideaId: IDEA_ID,
+      decisionId: 'dec-1',
+    });
+    expect(res).toEqual({ linked: true, statusAdvanced: true });
+    expect(prisma.idea.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ realizedAsDecisionId: null }),
+        data: expect.objectContaining({
+          realizedAsDecisionId: 'dec-1',
+          status: 'accepted',
+        }),
+      }),
+    );
+  });
+
+  it('идемпотентно: уже realized → linked=false, без записи', async () => {
+    const { svc, prisma } = buildRealizedSvc();
+    prisma.idea.findFirst.mockResolvedValue({
+      id: IDEA_ID,
+      status: 'accepted',
+      realizedAsDecisionId: 'dec-prev',
+    });
+    const res = await svc.markRealizedByDecision({
+      tenantId: TENANT,
+      ideaId: IDEA_ID,
+      decisionId: 'dec-2',
+    });
+    expect(res.linked).toBe(false);
+    expect(prisma.idea.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('idea вне captured/in_discussion (in_progress) — линк без смены статуса', async () => {
+    const { svc, prisma } = buildRealizedSvc();
+    prisma.idea.findFirst.mockResolvedValue({
+      id: IDEA_ID,
+      status: 'in_progress',
+      realizedAsDecisionId: null,
+    });
+    const res = await svc.markRealizedByDecision({
+      tenantId: TENANT,
+      ideaId: IDEA_ID,
+      decisionId: 'dec-3',
+    });
+    expect(res).toEqual({ linked: true, statusAdvanced: false });
+    const callArg = prisma.idea.updateMany.mock.calls[0]?.[0] as {
+      data: Record<string, unknown>;
+    };
+    expect(callArg.data.realizedAsDecisionId).toBe('dec-3');
+    expect(callArg.data.status).toBeUndefined();
+  });
+
+  it('idea не найдена → linked=false', async () => {
+    const { svc, prisma } = buildRealizedSvc();
+    prisma.idea.findFirst.mockResolvedValue(null);
+    const res = await svc.markRealizedByDecision({
+      tenantId: TENANT,
+      ideaId: 'missing',
+      decisionId: 'dec-4',
+    });
+    expect(res.linked).toBe(false);
+    expect(prisma.idea.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('reconcileIdeaForDecision (Ф6 сверка)', () => {
+  it('находит близкую idea (sim ≥ порог) и линкует', async () => {
+    const { svc, prisma } = buildRealizedSvc();
+    prisma.$queryRawUnsafe.mockResolvedValue([{ id: 'idea-x', distance: 0.05 }]);
+    prisma.idea.findFirst.mockResolvedValue({
+      id: 'idea-x',
+      status: 'captured',
+      realizedAsDecisionId: null,
+    });
+    const res = await svc.reconcileIdeaForDecision({
+      tenantId: TENANT,
+      decisionId: 'dec-5',
+      decisionText: 'Перейти на тёмную тему',
+    });
+    expect(res).toEqual({ matched: true, ideaId: 'idea-x' });
+  });
+
+  it('нет близкой (sim < порог) → matched=false, без линковки', async () => {
+    const { svc, prisma } = buildRealizedSvc();
+    prisma.$queryRawUnsafe.mockResolvedValue([{ id: 'idea-y', distance: 0.5 }]);
+    const res = await svc.reconcileIdeaForDecision({
+      tenantId: TENANT,
+      decisionId: 'dec-6',
+      decisionText: 'Совсем другое решение',
+    });
+    expect(res.matched).toBe(false);
+    expect(prisma.idea.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('пустой KNN → matched=false', async () => {
+    const { svc, prisma } = buildRealizedSvc();
+    prisma.$queryRawUnsafe.mockResolvedValue([]);
+    const res = await svc.reconcileIdeaForDecision({
+      tenantId: TENANT,
+      decisionId: 'dec-7',
+      decisionText: 'Нет похожих идей',
+    });
+    expect(res.matched).toBe(false);
+    expect(prisma.idea.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('пустой decisionText → matched=false без embed/KNN', async () => {
+    const { svc, prisma, embedder } = buildRealizedSvc();
+    const res = await svc.reconcileIdeaForDecision({
+      tenantId: TENANT,
+      decisionId: 'dec-8',
+      decisionText: '   ',
+    });
+    expect(res.matched).toBe(false);
+    expect(embedder.embedQuery).not.toHaveBeenCalled();
+    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+});

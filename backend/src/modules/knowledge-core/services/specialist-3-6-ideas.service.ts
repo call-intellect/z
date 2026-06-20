@@ -439,6 +439,60 @@ export class Specialist36Service {
     };
   }
 
+  async reconcileIdeaForDecision(args: {
+    tenantId: string;
+    decisionId: string;
+    decisionText: string;
+  }): Promise<{ matched: boolean; ideaId: string | null }> {
+    const text = args.decisionText.trim().slice(0, 2_000);
+    if (!text) return { matched: false, ideaId: null };
+    let embedding: number[] | null;
+    try {
+      embedding = await this.embedder.embedQuery(text);
+    } catch {
+      return { matched: false, ideaId: null };
+    }
+    if (!embedding) return { matched: false, ideaId: null };
+    const threshold = this.cfg.ideas.clusterThreshold;
+    try {
+      const vec = `[${embedding.join(',')}]`;
+      const rows = await this.prisma.$queryRawUnsafe<
+        Array<{ id: string; distance: number }>
+      >(
+        `SELECT "id", ("embedding" <=> $2::vector) AS distance
+         FROM "ideas"
+         WHERE "tenantId" = $1
+           AND "embedding" IS NOT NULL
+           AND "realizedAsDecisionId" IS NULL
+           AND "status" IN ('captured','in_discussion')
+         ORDER BY "embedding" <=> $2::vector
+         LIMIT ${Specialist36Service.KNN_TOP_K}`,
+        args.tenantId,
+        vec,
+      );
+      const best = rows[0];
+      if (!best) return { matched: false, ideaId: null };
+      const sim = 1 - Number(best.distance);
+      if (sim < threshold) return { matched: false, ideaId: null };
+      const res = await this.markRealizedByDecision({
+        tenantId: args.tenantId,
+        ideaId: best.id,
+        decisionId: args.decisionId,
+        reason: 'reconciled_with_decision',
+      });
+      return { matched: res.linked, ideaId: res.linked ? best.id : null };
+    } catch (err) {
+      this.logger.debug(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-6.reconcileIdeaForDecision: KNN/link упал — пропускаю',
+      );
+      return { matched: false, ideaId: null };
+    }
+  }
+
   // ─────────────────────────── KNN / update ─────────────────────────────
 
   private async findMatchingIdea(args: {

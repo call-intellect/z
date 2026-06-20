@@ -45,6 +45,7 @@ import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { EntityResolutionService } from './entity-resolution.service';
 import { Specialist33ProbeService } from './specialist-3-3-probe.service';
+import { Specialist36Service } from './specialist-3-6-ideas.service';
 
 /**
  * SBA β-3 — Specialist33Service.
@@ -105,6 +106,9 @@ export class Specialist33Service {
     @Optional()
     @Inject(MultiAgentDebateService)
     private readonly debate?: MultiAgentDebateService,
+    @Optional()
+    @Inject(Specialist36Service)
+    private readonly specialist36?: Specialist36Service,
   ) {}
 
   /**
@@ -426,6 +430,13 @@ export class Specialist33Service {
             blockId: block.id,
           },
         });
+        if (this.specialist36) {
+          await this.specialist36.reconcileIdeaForDecision({
+            tenantId: block.tenantId,
+            decisionId: decision.id,
+            decisionText: draft.statement,
+          });
+        }
       }
 
       // Probe-events (на новый и на merge — но только trigger'ы про текущее

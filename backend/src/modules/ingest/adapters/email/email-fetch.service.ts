@@ -136,6 +136,7 @@ export class EmailFetchService {
               date: occurredAt.toISOString(),
               folder: config.folder,
               text: parsed.text ?? null,
+              fullText: [parsed.subject, parsed.text].filter(Boolean).join('\n\n'),
               html: typeof parsed.html === 'string' ? parsed.html : null,
               attachments: attachmentsMeta,
             };

@@ -96,6 +96,47 @@ describe('SegmentBuilderService — free_note (Фаза 10)', () => {
 });
 
 /**
+ * Фаза A4 (доводка провенанса) — email-payload кладёт тело письма в `fullText`
+ * (subject + text). До фикса EmailFetchService писал только `text`, а
+ * tryGetFullText ищет `fullText` → весь JSON письма (messageId/from/html/…)
+ * уходил в buildFallback и в LLM как шум. Тест фиксирует, что в текст сегмента
+ * попадает только subject+body, а служебные ключи не протекают.
+ */
+describe('SegmentBuilderService — email payload (Фаза A4)', () => {
+  const makeSvc = (maxTokens = 2000) =>
+    new SegmentBuilderService(
+      {
+        knowledgeCore: { blockIngestMaxTokensPerSegment: maxTokens },
+      } as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
+    );
+
+  it('email-payload с fullText → 1 сегмент с subject+body (без JSON-обёртки)', () => {
+    const svc = makeSvc();
+    const payload = {
+      messageId: 'm1',
+      from: { name: 'Алиса', address: 'alice@example.com' },
+      to: [{ name: 'Боб', address: 'bob@example.com' }],
+      cc: [],
+      subject: 'Тема',
+      date: '2026-06-20T00:00:00.000Z',
+      folder: 'INBOX',
+      text: 'Тело письма',
+      fullText: 'Тема\n\nТело письма',
+      html: null,
+      attachments: [],
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.text).toBe('Тема\n\nТело письма');
+    expect(segments[0]!.text).not.toContain('messageId');
+    expect(segments[0]!.text).not.toContain('{');
+    expect(segments[0]!.speakers).toEqual([]);
+  });
+});
+
+/**
  * Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md §2.1):
  * payload `{ kind:'meeting_report', reportFacts, reportSummaryMarkdown, chapters }`
  * разворачивается в ГРАНУЛЯРНЫЕ сегменты — по одному на факт/главу + один на

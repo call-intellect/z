@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef } from "react";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import useSWR from "swr";
 
@@ -219,9 +220,7 @@ function Detail({
                 Ошибка парсинга. Проверьте файл и попробуйте загрузить ещё раз.
               </p>
             ) : document.status === "parsed" && parsedText ? (
-              <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap text-sm leading-relaxed text-fg-primary">
-                {parsedText}
-              </pre>
+              <HighlightedText text={parsedText} />
             ) : (
               <div className="flex items-center gap-2 text-sm text-fg-tertiary">
                 <Loader2 size={14} className="animate-spin" />
@@ -327,6 +326,84 @@ function Detail({
         </div>
       </div>
     </div>
+  );
+}
+
+function normalizeForMatch(value: string): string {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function findQuoteRange(
+  text: string,
+  query: string,
+): { start: number; end: number } | null {
+  const normalizedQuery = normalizeForMatch(query);
+  if (!normalizedQuery) return null;
+
+  const normalizedChars: string[] = [];
+  const sourceIndex: number[] = [];
+  let prevWasSpace = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]!;
+    if (/\s/.test(ch)) {
+      if (normalizedChars.length === 0 || prevWasSpace) continue;
+      normalizedChars.push(" ");
+      sourceIndex.push(i);
+      prevWasSpace = true;
+    } else {
+      normalizedChars.push(ch.toLowerCase());
+      sourceIndex.push(i);
+      prevWasSpace = false;
+    }
+  }
+  while (normalizedChars.length > 0 && normalizedChars[normalizedChars.length - 1] === " ") {
+    normalizedChars.pop();
+    sourceIndex.pop();
+  }
+
+  const haystack = normalizedChars.join("");
+  const at = haystack.indexOf(normalizedQuery);
+  if (at < 0) return null;
+  const start = sourceIndex[at]!;
+  const end = sourceIndex[at + normalizedQuery.length - 1]! + 1;
+  return { start, end };
+}
+
+function HighlightedText({ text }: { text: string }) {
+  const searchParams = useSearchParams();
+  const query = searchParams.get("q") ?? "";
+  const markRef = useRef<HTMLElement | null>(null);
+
+  const range = useMemo(
+    () => (query ? findQuoteRange(text, query) : null),
+    [text, query],
+  );
+
+  useEffect(() => {
+    if (range && markRef.current) {
+      markRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [range]);
+
+  if (!range) {
+    return (
+      <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap text-sm leading-relaxed text-fg-primary">
+        {text}
+      </pre>
+    );
+  }
+
+  return (
+    <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap text-sm leading-relaxed text-fg-primary">
+      {text.slice(0, range.start)}
+      <mark
+        ref={markRef}
+        className="rounded bg-accent-muted px-0.5 text-accent-fg"
+      >
+        {text.slice(range.start, range.end)}
+      </mark>
+      {text.slice(range.end)}
+    </pre>
   );
 }
 

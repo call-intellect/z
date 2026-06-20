@@ -5,9 +5,58 @@ import type { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolv
 
 import {
   buildProvenanceDeepLink,
+  documentAnchorParam,
   PROVENANCE_ACCESS_MASK,
   ProvenanceService,
 } from './provenance.service';
+
+describe('documentAnchorParam (B4 — якорь цитаты в документе)', () => {
+  it('пустой quote → пустая строка (без ?q=)', () => {
+    expect(documentAnchorParam('')).toBe('');
+    expect(documentAnchorParam(null)).toBe('');
+    expect(documentAnchorParam(undefined)).toBe('');
+  });
+
+  it('короткая цитата → целиком encodeURIComponent', () => {
+    expect(documentAnchorParam('Клиент просит скидку')).toBe(
+      encodeURIComponent('Клиент просит скидку'),
+    );
+  });
+
+  it('длинная цитата → обрезка ~60 символов по границе слова + кодирование', () => {
+    const quote =
+      'Переходим на недельные спринты с обязательным демо каждую пятницу в конце дня';
+    const param = documentAnchorParam(quote);
+    const decoded = decodeURIComponent(param);
+    expect(decoded.length).toBeLessThanOrEqual(60);
+    expect(quote.startsWith(decoded)).toBe(true);
+    expect(decoded.endsWith(' ')).toBe(false);
+  });
+
+  it('нормализует переносы и лишние пробелы', () => {
+    expect(documentAnchorParam('  Клиент\n\nпросит   скидку ')).toBe(
+      encodeURIComponent('Клиент просит скидку'),
+    );
+  });
+});
+
+describe('buildProvenanceDeepLink — документ с якорем ?q=', () => {
+  it('document с quote → /documents/:id?q=<encoded>', () => {
+    expect(
+      buildProvenanceDeepLink({
+        sourceType: 'document',
+        externalId: 'd1',
+        quote: 'Клиент просит скидку',
+      }),
+    ).toBe(`/documents/d1?q=${encodeURIComponent('Клиент просит скидку')}`);
+  });
+
+  it('document без quote → /documents/:id (graceful)', () => {
+    expect(
+      buildProvenanceDeepLink({ sourceType: 'document', externalId: 'd1' }),
+    ).toBe('/documents/d1');
+  });
+});
 
 describe('buildProvenanceDeepLink (RC-6 — мс → сек)', () => {
   it('meeting: startMs делится на 1000 в ?t=<sec>', () => {
@@ -222,6 +271,51 @@ describe('ProvenanceService.resolve — последняя миля', () => {
       userId: 'u-1',
     });
     expect(nodes[0]!.source.deepLink).toBe('/chats/chat-9');
+  });
+
+  it('document-источник: deepLink на документ с якорем цитаты ?q=', async () => {
+    const prisma = {
+      decision: {
+        findFirst: vi.fn(async () => ({ sourceBlockIds: ['b-1'] })),
+      },
+      ideaBlock: {
+        findMany: vi.fn(async () => [{ id: 'b-1', primarySource: 'transcript' }]),
+      },
+      ideaBlockEvidence: {
+        findMany: vi.fn(async () => [
+          {
+            blockId: 'b-1',
+            rawEventId: 'raw-1',
+            quote: 'Регламент возврата применяется к заказам старше 30 дней',
+            startMs: null,
+            endMs: null,
+            sourceTimestamp: new Date('2026-03-10T09:00:00.000Z'),
+            sourceMessageExternalId: null,
+          },
+        ]),
+      },
+      rawEvent: {
+        findMany: vi.fn(async () => [
+          { id: 'raw-1', sourceType: 'document', sourceExternalId: 'doc:doc-7' },
+        ]),
+      },
+      meeting: { findMany: vi.fn(async () => []) },
+      document: {
+        findMany: vi.fn(async () => [{ id: 'doc-7', name: 'Регламент возвратов' }]),
+      },
+    };
+    const svc = buildService({ prisma, isBypass: true });
+    const nodes = await svc.resolve('decision', 'd-1', {
+      tenantId: 't-1',
+      userId: 'u-1',
+    });
+    expect(nodes).toHaveLength(1);
+    const n = nodes[0]!;
+    expect(n.source.type).toBe('document');
+    expect(n.source.refId).toBe('doc-7');
+    expect(n.source.deepLink).not.toBeNull();
+    expect(n.source.deepLink!.startsWith('/documents/doc-7?q=')).toBe(true);
+    expect(decodeURIComponent(n.source.deepLink!.split('?q=')[1]!).length).toBeLessThanOrEqual(60);
   });
 
   it('блок недоступен зрителю → accessFiltered, quote/label/deepLink замаскированы', async () => {

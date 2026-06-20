@@ -68,11 +68,27 @@ const TYPE_LABEL: Record<ProvenanceSourceType, string> = {
   phone_call: 'Звонок',
 };
 
+const DOCUMENT_ANCHOR_MAX_CHARS = 60;
+
+export function documentAnchorParam(quote: string | null | undefined): string {
+  if (!quote) return '';
+  const normalized = quote.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  if (normalized.length <= DOCUMENT_ANCHOR_MAX_CHARS) {
+    return encodeURIComponent(normalized);
+  }
+  const head = normalized.slice(0, DOCUMENT_ANCHOR_MAX_CHARS);
+  const lastSpace = head.lastIndexOf(' ');
+  const trimmed = lastSpace > 0 ? head.slice(0, lastSpace) : head;
+  return encodeURIComponent(trimmed);
+}
+
 export function buildProvenanceDeepLink(args: {
   sourceType: ProvenanceSourceType;
   externalId: string;
   startMs?: number | null;
   messageExternalId?: string | null;
+  quote?: string | null;
 }): string | null {
   if (!args.externalId) return null;
   if (args.sourceType === 'meeting') {
@@ -80,7 +96,10 @@ export function buildProvenanceDeepLink(args: {
     return `/meetings/${args.externalId}?t=${sec}`;
   }
   if (args.sourceType === 'document') {
-    return `/documents/${args.externalId}`;
+    const anchor = documentAnchorParam(args.quote);
+    return anchor
+      ? `/documents/${args.externalId}?q=${anchor}`
+      : `/documents/${args.externalId}`;
   }
   if (args.sourceType === 'chat') {
     return args.messageExternalId
@@ -103,6 +122,7 @@ export class ProvenanceService {
     externalId: string;
     startMs?: number | null;
     messageExternalId?: string | null;
+    quote?: string | null;
   }): string | null {
     return buildProvenanceDeepLink(args);
   }
@@ -266,6 +286,7 @@ export class ProvenanceService {
             externalId: deepLinkExternalId,
             startMs: ev.startMs,
             messageExternalId: ev.sourceMessageExternalId,
+            quote: ev.quote,
           })
         : null;
       nodes.push({
@@ -330,6 +351,7 @@ export class ProvenanceService {
           externalId: deepLinkExternalId,
           startMs: ev.startMs,
           messageExternalId: ev.sourceMessageExternalId,
+          quote: ev.quote,
         })
       : null;
 

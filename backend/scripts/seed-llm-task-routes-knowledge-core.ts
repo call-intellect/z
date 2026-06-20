@@ -1,4 +1,3 @@
-import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
@@ -35,9 +34,8 @@ const ROUTES: RouteSeed[] = [
   {
     taskType: 'block-ingest',
     providers: [
-      { provider: 'deepseek', model: 'deepseek-v4-flash' },
-      { provider: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { provider: 'ollama', model: 'qwen3:30b-a3b-instruct-2507' },
+      { provider: 'deepseek', model: 'deepseek-v4-pro' },
+      { provider: 'openai-via-proxy', model: 'gpt-5.4' },
     ],
     isActive: true,
   },

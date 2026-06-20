@@ -124,8 +124,8 @@ const ROUTES: TaskRouteSeed[] = [
     group: 'knowledge-core',
     playbookSection: '§2.1 block-ingest',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
-      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' },
+      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4' },
       { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },

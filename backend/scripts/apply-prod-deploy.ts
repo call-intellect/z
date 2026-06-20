@@ -276,6 +276,12 @@ const STEPS: Step[] = [
     script: 'scripts/patch-normalize-llm-chains-deepseek-openai-kie.ts',
     hint: 'нормализация к deepseek→openai→kie, вывод gpt-4o (БЕЗ --force: steady-state)',
   },
+  {
+    phase: 'patch',
+    script: 'scripts/patch-block-ingest-capable-model.ts',
+    hint: 'block-ingest развилка idea↔decision → deepseek-v4-pro/gpt-5.4 (ТЗ idv Ф2; БЕЗ --force: уважает админ-правки)',
+    skipBootstrap: true,
+  },
 
   { phase: 'patch', script: 'scripts/patch-rename-client-to-customer.ts', skipBootstrap: true },
   {

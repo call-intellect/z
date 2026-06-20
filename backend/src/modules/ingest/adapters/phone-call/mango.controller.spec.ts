@@ -1,10 +1,9 @@
 import { ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { IngestService } from '../../ingest.service';
-
 import { MangoCallWebhookController } from './mango.controller';
 import type { MangoAdapterService } from './mango.service';
+import type { PhoneCallIngestAdapter } from './phone-call.adapter';
 
 const validEvent = {
   entry: 'call',
@@ -24,8 +23,6 @@ function build(
   opts: {
     verifyOk?: boolean;
     extensionFilter?: string[];
-    downloadThrows?: boolean;
-    recordingUrl?: string | null;
     ingestIdempotent?: boolean;
   } = {},
 ) {
@@ -37,29 +34,29 @@ function build(
       config: { extensions: opts.extensionFilter ?? [] },
     })),
     verifySignature: vi.fn(() => opts.verifyOk !== false),
-    downloadRecording: vi.fn(async () => {
-      if (opts.downloadThrows) throw new Error('s3 down');
-      return 'tenants/t-1/calls/cid-1.mp3';
-    }),
   } as unknown as MangoAdapterService;
 
-  const ingest = {
-    ingest: vi.fn(async () => ({ idempotent: opts.ingestIdempotent ?? false })),
-  } as unknown as IngestService;
+  const adapter = {
+    ingestCall: vi.fn(async () => ({
+      rawEvent: { id: 're-1' },
+      idempotent: opts.ingestIdempotent ?? false,
+    })),
+  } as unknown as PhoneCallIngestAdapter;
 
-  const ctrl = new MangoCallWebhookController(mango, ingest);
-  return { ctrl, mango, ingest };
+  const ctrl = new MangoCallWebhookController(mango, adapter);
+  return { ctrl, mango, adapter };
 }
 
 describe('MangoCallWebhookController', () => {
-  it('happy: 200 + ingest вызывается с правильным payload', async () => {
-    const { ctrl, ingest } = build({ verifyOk: true });
+  it('happy: 200 + adapter.ingestCall вызывается с callId и source', async () => {
+    const { ctrl, adapter } = build({ verifyOk: true });
     const res = await ctrl.receive('src-1', validBody as never);
     expect(res.ok).toBe(true);
-    expect(ingest.ingest).toHaveBeenCalledOnce();
-    const arg = (ingest.ingest as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-    expect(arg.tenantId).toBe('t-1');
-    expect(arg.sourceExternalId).toBe('mango:cid-1');
+    expect(adapter.ingestCall).toHaveBeenCalledOnce();
+    const arg = (adapter.ingestCall as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(arg.source.tenantId).toBe('t-1');
+    expect(arg.event.callId).toBe('cid-1');
+    expect(arg.event.from.extension).toBe('101');
   });
 
   it('403 invalid_mango_payload если json отсутствует', async () => {
@@ -91,24 +88,24 @@ describe('MangoCallWebhookController', () => {
   });
 
   it('200 ok (skip) для non-call entry', async () => {
-    const { ctrl, ingest } = build({ verifyOk: true });
+    const { ctrl, adapter } = build({ verifyOk: true });
     const body = {
       json: JSON.stringify({ entry: 'sms', call_id: 'x' }),
       sign: 'ok',
     };
     const res = await ctrl.receive('src-1', body as never);
     expect(res).toEqual({ ok: true });
-    expect(ingest.ingest).not.toHaveBeenCalled();
+    expect(adapter.ingestCall).not.toHaveBeenCalled();
   });
 
   it('200 ok (skip) если расширение не в whitelist', async () => {
-    const { ctrl, ingest } = build({
+    const { ctrl, adapter } = build({
       verifyOk: true,
       extensionFilter: ['999'],
     });
     const res = await ctrl.receive('src-1', validBody as never);
     expect(res).toEqual({ ok: true });
-    expect(ingest.ingest).not.toHaveBeenCalled();
+    expect(adapter.ingestCall).not.toHaveBeenCalled();
   });
 
   it('200 ok + idempotent=true при повторном вызове', async () => {
@@ -124,23 +121,5 @@ describe('MangoCallWebhookController', () => {
       sign: 'ok',
     };
     await expect(ctrl.receive('src-1', body as never)).rejects.toBeInstanceOf(ForbiddenException);
-  });
-
-  it('downloadRecording fail НЕ ломает webhook (recordS3Key=null)', async () => {
-    const { ctrl, ingest } = build({
-      verifyOk: true,
-      downloadThrows: true,
-    });
-    const body = {
-      json: JSON.stringify({
-        ...validEvent,
-        recording_url: 'https://mango.cdn/rec.mp3',
-      }),
-      sign: 'ok',
-    };
-    const res = await ctrl.receive('src-1', body as never);
-    expect(res.ok).toBe(true);
-    const arg = (ingest.ingest as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-    expect(arg.payload.recordS3Key).toBeNull();
   });
 });

@@ -85,6 +85,11 @@ export class MangoAdapterService {
     return key;
   }
 
+  async readRecording(input: { tenantId: string; callId: string }): Promise<Buffer> {
+    const key = `phone-calls/${input.tenantId}/${input.callId}.mp3`;
+    return this.s3.getObject(key);
+  }
+
   test(source: Source): SourceTestResultDto {
     if (source.type !== 'phone_call') {
       return { ok: false, errorMessage: 'Source не phone_call' };

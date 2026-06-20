@@ -6,6 +6,7 @@ import { S3Service } from '../recordings/s3.service';
 import { MeetingIngestAdapter } from './adapters/meeting.adapter';
 import { MangoCallWebhookController } from './adapters/phone-call/mango.controller';
 import { MangoAdapterService } from './adapters/phone-call/mango.service';
+import { PhoneCallIngestAdapter } from './adapters/phone-call/phone-call.adapter';
 import { ReportIngestListener } from './adapters/report-ingest.listener';
 import { ReportIngestAdapter } from './adapters/report.adapter';
 import { TelegramWebhookController } from './adapters/telegram/telegram.controller';
@@ -36,6 +37,7 @@ import { DocumentParserService } from './parsers/document-parser.service';
     ReportIngestListener,
     TelegramAdapterService,
     MangoAdapterService,
+    PhoneCallIngestAdapter,
     DumpService,
     IngestTokenGuard,
     S3Service,
@@ -49,6 +51,7 @@ import { DocumentParserService } from './parsers/document-parser.service';
     ReportIngestAdapter,
     TelegramAdapterService,
     MangoAdapterService,
+    PhoneCallIngestAdapter,
     DumpService,
     DocumentParserService,
     TrackerAdapter,

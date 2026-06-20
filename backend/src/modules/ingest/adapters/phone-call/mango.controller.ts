@@ -11,9 +11,8 @@ import {
 } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
 
-import { IngestService } from '../../ingest.service';
-
 import { MangoAdapterService } from './mango.service';
+import { PhoneCallIngestAdapter } from './phone-call.adapter';
 
 @ApiExcludeController()
 @Controller('api/v1/ingest/calls/mango')
@@ -22,7 +21,7 @@ export class MangoCallWebhookController {
 
   constructor(
     @Inject(MangoAdapterService) private readonly mango: MangoAdapterService,
-    @Inject(IngestService) private readonly ingest: IngestService,
+    @Inject(PhoneCallIngestAdapter) private readonly adapter: PhoneCallIngestAdapter,
   ) {}
 
   @Post(':sourceId')
@@ -86,43 +85,25 @@ export class MangoCallWebhookController {
       });
     }
 
-    let recordS3Key: string | null = null;
-    if (event.recording_url) {
-      try {
-        recordS3Key = await this.mango.downloadRecording({
-          tenantId: source.tenantId,
-          callId,
-          recordUrl: event.recording_url,
-        });
-      } catch (err) {
-        this.logger.warn(
-          { sourceId, callId, err: err instanceof Error ? err.message : String(err) },
-          'mango: не удалось скачать запись',
-        );
-      }
-    }
-
     const occurredAtSec = event.timestamp ?? event.start_time ?? Math.floor(Date.now() / 1000);
     const occurredAt = new Date(occurredAtSec * 1000);
 
-    const payload = {
-      callId,
-      from: event.from ?? null,
-      to: event.to ?? null,
-      durationSec: event.duration ?? event.talk_duration ?? null,
-      direction: event.direction ?? null,
-      recordingUrlExternal: event.recording_url ?? null,
-      recordS3Key,
-      raw: event,
-    };
-
-    const result = await this.ingest.ingest({
-      tenantId: source.tenantId,
-      sourceId: source.id,
-      sourceExternalId: `mango:${callId}`,
-      occurredAt,
-      payload,
-      dataClass: source.dataClass,
+    const result = await this.adapter.ingestCall({
+      source: {
+        id: source.id,
+        tenantId: source.tenantId,
+        dataClass: source.dataClass,
+      },
+      event: {
+        callId,
+        occurredAt,
+        from: event.from ?? null,
+        to: event.to ?? null,
+        direction: event.direction ?? null,
+        durationSec: event.duration ?? event.talk_duration ?? null,
+        recordingUrlExternal: event.recording_url ?? null,
+        raw: event,
+      },
     });
     return { ok: true, idempotent: result.idempotent };
   }

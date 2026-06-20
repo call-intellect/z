@@ -28,6 +28,7 @@ import { TeamTemplatesController } from './controllers/team-templates.controller
 import { TrackerWebhooksController } from './controllers/webhooks.controller';
 import { TrackerGateway } from './gateways/tracker.gateway';
 import { ActivityRecorderService } from './services/activity-recorder.service';
+import { AssigneeResolverService } from './services/assignee-resolver.service';
 import { AttachmentsService } from './services/attachments.service';
 import { BoardsService } from './services/boards.service';
 import { ChecklistsService } from './services/checklists.service';
@@ -108,6 +109,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
   ],
   providers: [
     ActivityRecorderService,
+    AssigneeResolverService,
     ProjectsService,
     ProjectsFromTemplateService,
     HolidayService,

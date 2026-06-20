@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import type { RbacService } from '../../rbac/rbac.service';
+import { PostAssignTaskBodySchema } from '../dto/issues/post-assign-task.dto';
 import { PostMeTaskBodySchema, type PostMeTaskBodyDto } from '../dto/issues/post-me-task.dto';
 import type { MeTasksService } from '../services/me-tasks.service';
 
@@ -72,5 +73,54 @@ describe('MeTasksController POST /me/tasks', () => {
       BadRequestException,
     );
     expect(canWrite).not.toHaveBeenCalled();
+  });
+});
+
+describe('MeTasksController POST /me/tasks/assign', () => {
+  let svc: MeTasksService;
+  let rbac: RbacService;
+  let controller: MeTasksController;
+  let assignTask: ReturnType<typeof vi.fn>;
+  let canWrite: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    assignTask = vi.fn(async () => ({
+      id: 'issue_1',
+      title: 'Задача',
+      projectId: 'proj_inbox',
+      status: 'backlog',
+      assignee: { userId: 'assignee_1', name: 'Айназ' },
+    }));
+    canWrite = vi.fn(async () => true);
+    svc = { assignTask } as unknown as MeTasksService;
+    rbac = { canWrite } as unknown as RbacService;
+    controller = new MeTasksController(svc, rbac);
+  });
+
+  it('(а) делегирует в сервис с body/tenant/userId, проверяет issue:write', async () => {
+    const body = { title: 'Протестировать бота', assigneeName: 'Айназ' };
+    const res = await controller.assignTask(body, USER, TENANT);
+    expect(canWrite).toHaveBeenCalledWith(USER.id, TENANT, 'issue');
+    expect(assignTask).toHaveBeenCalledWith(body, TENANT, USER.id);
+    expect(res.assignee.name).toBe('Айназ');
+  });
+
+  it('(б) пустой assigneeName → 400 (Zod)', () => {
+    const pipe = new ZodValidationPipe(PostAssignTaskBodySchema);
+    expect(() => pipe.transform({ title: 'X', assigneeName: '' })).toThrow(BadRequestException);
+  });
+
+  it('(в) RBAC запрет → 403, сервис не вызван', async () => {
+    canWrite.mockResolvedValueOnce(false);
+    await expect(
+      controller.assignTask({ title: 'X', assigneeName: 'Айназ' }, USER, TENANT),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(assignTask).not.toHaveBeenCalled();
+  });
+
+  it('(г) tenant не определён → 400', async () => {
+    await expect(
+      controller.assignTask({ title: 'X', assigneeName: 'Айназ' }, USER, undefined),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

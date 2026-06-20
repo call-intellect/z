@@ -16,6 +16,11 @@ import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
 import {
+  PostAssignTaskBodySchema,
+  type PostAssignTaskBodyDto,
+  type PostAssignTaskResponseDto,
+} from '../dto/issues/post-assign-task.dto';
+import {
   PostMeTaskBodySchema,
   type PostMeTaskBodyDto,
   type PostMeTaskResponseDto,
@@ -55,6 +60,33 @@ export class MeTasksController {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
     return this.svc.createSelfTask(body, t, user.id);
+  }
+
+  @Post('me/tasks/assign')
+  @ApiOperation({
+    summary: 'Поставить задачу другому сотруднику по имени (проект «Входящие»)',
+    description:
+      'Создаёт задачу в общей папке «Входящие» с исполнителем = сотрудник, ' +
+      'найденный по имени (assigneeName), и шлёт ему уведомление в бот/кабинет. ' +
+      'Требует право issue:write (есть у рядового member/manager). Предусловие ' +
+      'инструмента помощника assign_task.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Созданная задача: { id, title, projectId, status, assignee }',
+  })
+  @ApiResponse({ status: 400, description: 'Validation error / tenant_required' })
+  @ApiResponse({ status: 403, description: 'Недостаточно прав на создание задач' })
+  @ApiResponse({ status: 404, description: 'assignee_not_found — сотрудник не найден по имени' })
+  @ApiResponse({ status: 409, description: 'assignee_ambiguous — несколько одноимённых сотрудников' })
+  async assignTask(
+    @Body(new ZodValidationPipe(PostAssignTaskBodySchema)) body: PostAssignTaskBodyDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<PostAssignTaskResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.svc.assignTask(body, t, user.id);
   }
 
   private requireTenant(tenantId: string | undefined): string {

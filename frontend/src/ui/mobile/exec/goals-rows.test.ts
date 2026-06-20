@@ -27,6 +27,8 @@ function goal(over: Partial<GoalDomain> = {}): GoalDomain {
     promotionState: "active",
     progressStatus: "on_track",
     parentGoalId: null,
+    isPrimary: false,
+    horizon: "quarterly",
     ownerPersonId: null,
     ownerPersonName: null,
     blocksCount: null,

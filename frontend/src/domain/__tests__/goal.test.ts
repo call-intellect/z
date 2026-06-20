@@ -103,6 +103,8 @@ const baseGoal: GoalListItemApi = {
   promotionState: "suggested",
   progressStatus: "at_risk",
   parentGoalId: "goal_root",
+  isPrimary: false,
+  horizon: "annual",
   ownerPersonId: null,
   ownerPersonName: null,
   blocksCount: null,
@@ -123,6 +125,19 @@ describe("goalFromApi (Goals OKR v2 поля)", () => {
       progressStatus: "weird" as GoalListItemApi["progressStatus"],
     });
     expect(out.progressStatus).toBe("on_track");
+  });
+
+  it("пробрасывает isPrimary/horizon (карта целей)", () => {
+    const out = goalFromApi({ ...baseGoal, isPrimary: true, horizon: "strategic" });
+    expect(out.isPrimary).toBe(true);
+    expect(out.horizon).toBe("strategic");
+  });
+
+  it("дефолт isPrimary=false/horizon=quarterly при отсутствии (старый бэк)", () => {
+    const { isPrimary: _p, horizon: _h, ...without } = baseGoal;
+    const out = goalFromApi(without as GoalListItemApi);
+    expect(out.isPrimary).toBe(false);
+    expect(out.horizon).toBe("quarterly");
   });
 });
 

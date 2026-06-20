@@ -152,6 +152,8 @@ export interface GoalListItemDto {
   promotionState: 'suggested' | 'active' | 'dismissed';
   progressStatus: 'on_track' | 'at_risk' | 'stalled' | 'achieved' | 'dropped';
   parentGoalId: string | null;
+  isPrimary: boolean;
+  horizon: 'strategic' | 'annual' | 'quarterly' | 'monthly' | 'sprint';
   ownerPersonId: string | null;
   ownerPersonName: string | null;
   blocksCount: number | null;

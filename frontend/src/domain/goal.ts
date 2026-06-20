@@ -235,6 +235,8 @@ export type GoalListItemApi = {
   promotionState: "suggested" | "active" | "dismissed";
   progressStatus: "on_track" | "at_risk" | "stalled" | "achieved" | "dropped";
   parentGoalId: string | null;
+  isPrimary: boolean;
+  horizon: GoalHorizon;
   ownerPersonId: string | null;
   ownerPersonName: string | null;
   blocksCount: number | null;
@@ -309,6 +311,8 @@ export type GoalDomain = {
   promotionState: GoalPromotionState;
   progressStatus: GoalProgressStatus;
   parentGoalId: string | null;
+  isPrimary: boolean;
+  horizon: GoalHorizon;
   ownerPersonId: string | null;
   ownerPersonName: string | null;
   blocksCount: number | null;
@@ -397,6 +401,8 @@ export function goalFromApi(api: GoalListItemApi): GoalDomain {
     promotionState: parsePromotionState(api.promotionState),
     progressStatus: parseProgressStatus(api.progressStatus),
     parentGoalId: api.parentGoalId,
+    isPrimary: api.isPrimary ?? false,
+    horizon: api.horizon ?? "quarterly",
     ownerPersonId: api.ownerPersonId ?? null,
     ownerPersonName: api.ownerPersonName ?? null,
     blocksCount: api.blocksCount ?? null,

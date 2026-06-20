@@ -664,6 +664,8 @@ export class GoalsService {
       promotionState: 'suggested' | 'active' | 'dismissed';
       progressStatus: 'on_track' | 'at_risk' | 'stalled' | 'achieved' | 'dropped';
       parentGoalId: string | null;
+      isPrimary: boolean;
+      horizon: 'strategic' | 'annual' | 'quarterly' | 'monthly' | 'sprint';
       ownerPersonId: string | null;
       ownerPerson: { name: string } | null;
       cachedBlocksCount: number | null;
@@ -688,6 +690,8 @@ export class GoalsService {
       promotionState: g.promotionState,
       progressStatus: g.progressStatus,
       parentGoalId: g.parentGoalId,
+      isPrimary: g.isPrimary,
+      horizon: g.horizon,
       ownerPersonId: g.ownerPersonId ?? null,
       ownerPersonName: g.ownerPerson?.name ?? null,
       blocksCount: g.cachedBlocksCount ?? null,

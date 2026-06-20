@@ -87,6 +87,8 @@ export class Specialist34ProbeService {
       cardId: card.id,
       reason: 'card.missing_owner',
       message,
+      objectName: card.name,
+      objectKindRu: this.kindLabel(card.kind),
       recipients: admins,
       suggestedActions: ['Назначить ответственного', 'Архивировать карточку'],
     });
@@ -169,6 +171,8 @@ export class Specialist34ProbeService {
       cardId: card.id,
       reason: 'card.missing_deadline',
       message,
+      objectName: card.name,
+      objectKindRu: this.kindLabel(card.kind),
       recipients: [card.ownerId],
       suggestedActions: ['Указать дедлайн', 'Добавить milestone'],
     });
@@ -198,6 +202,8 @@ export class Specialist34ProbeService {
       cardId: card.id,
       reason: 'card.merge_suggestion',
       message,
+      objectName: card.name,
+      objectKindRu: this.kindLabel(card.kind),
       recipients: admins,
       suggestedActions: ['Слить карточки', 'Оставить отдельно'],
     });
@@ -235,6 +241,8 @@ export class Specialist34ProbeService {
       cardId: card.id,
       reason: 'card.outdated_summary',
       message,
+      objectName: card.name,
+      objectKindRu: this.kindLabel(card.kind),
       recipients: [card.ownerId],
       suggestedActions: ['Запустить rollup', 'Подтвердить вручную'],
     });
@@ -245,6 +253,8 @@ export class Specialist34ProbeService {
     cardId: string;
     reason: string;
     message: string;
+    objectName?: string;
+    objectKindRu?: string;
     recipients: readonly string[];
     suggestedActions?: readonly string[];
   }): Promise<void> {
@@ -260,7 +270,9 @@ export class Specialist34ProbeService {
             suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
             contextCardId: args.cardId,
             contextCardKind: 'card',
-            contextCardTitle: args.message.slice(0, 100),
+            contextCardTitle: (args.objectName ?? args.message).slice(0, 100),
+            objectName: args.objectName ?? undefined,
+            objectKindRu: args.objectKindRu ?? 'карточка',
             actionUrl,
             dataClass: 'internal',
           },

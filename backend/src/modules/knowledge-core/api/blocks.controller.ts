@@ -25,6 +25,7 @@ import {
 } from '../../rbac/knowledge-access-resolver.service';
 import { RbacService } from '../../rbac/rbac.service';
 import { ACTIVE_LINK_FILTER } from '../services/link-read-filter';
+import { ProvenanceService } from '../services/provenance.service';
 import { ReasoningChainService } from '../services/reasoning-chain.service';
 
 import type { BlockDetailDto } from './dto/block.dto';
@@ -45,6 +46,8 @@ export class KnowledgeBlocksController {
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(ReasoningChainService)
     private readonly reasoningChain: ReasoningChainService,
+    @Inject(ProvenanceService)
+    private readonly provenance: ProvenanceService,
     @Optional()
     @Inject(KnowledgeAccessResolver)
     private readonly accessResolver: KnowledgeAccessResolver | null = null,
@@ -162,6 +165,12 @@ export class KnowledgeBlocksController {
       }),
     ]);
 
+    const evidenceRawEventIds = [...new Set(evidence.map((e) => e.rawEventId).filter(Boolean))];
+    const sourceByRawEvent = await this.provenance.resolveByRawEventIds(
+      tenantId,
+      evidenceRawEventIds,
+    );
+
     return {
       block: this.mapBlock(target),
       evidence: evidence.map(
@@ -173,6 +182,7 @@ export class KnowledgeBlocksController {
           quote: e.quote,
           startMs: e.startMs,
           endMs: e.endMs,
+          source: sourceByRawEvent.get(e.rawEventId) ?? null,
         }),
       ),
       entities: entityRows.map(

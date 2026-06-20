@@ -252,6 +252,7 @@ export class SearchService {
           quote: r.quote,
           startMs: r.startMs,
           endMs: r.endMs,
+          source: null,
         });
         map.set(r.blockId, list);
       }

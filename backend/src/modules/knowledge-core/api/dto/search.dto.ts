@@ -27,6 +27,13 @@ export interface BlockSearchItemDto {
   updatedAt: string;
 }
 
+export interface EvidenceSourceRefDto {
+  type: string;
+  refId: string | null;
+  label: string;
+  deepLink: string | null;
+}
+
 export interface EvidenceItemDto {
   id: string;
   rawEventId: string;
@@ -35,6 +42,7 @@ export interface EvidenceItemDto {
   quote: string;
   startMs: number | null;
   endMs: number | null;
+  source: EvidenceSourceRefDto | null;
 }
 
 export interface EntityItemDto {

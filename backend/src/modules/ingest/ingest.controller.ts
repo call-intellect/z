@@ -20,6 +20,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
+import { KnowledgeAccessResolver } from '../rbac/knowledge-access-resolver.service';
 import { RbacService } from '../rbac/rbac.service';
 import { S3Service } from '../recordings/s3.service';
 
@@ -80,7 +81,26 @@ export class RawEventsController {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(S3Service) private readonly s3: S3Service,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(KnowledgeAccessResolver)
+    private readonly accessResolver: KnowledgeAccessResolver,
   ) {}
+
+  private async viewerHasBlockAccess(
+    tenantId: string,
+    userId: string,
+    rawEventId: string,
+  ): Promise<boolean> {
+    const evidence = await this.prisma.ideaBlockEvidence.findMany({
+      where: { rawEventId, block: { tenantId } },
+      select: { blockId: true },
+      take: 500,
+    });
+    const blockIds = [...new Set(evidence.map((e) => e.blockId))];
+    if (blockIds.length === 0) return false;
+    const ctx = await this.accessResolver.resolveAccessibleGroups({ tenantId, userId });
+    const { accessible } = await this.accessResolver.partitionBlockIdsByAccess(ctx, blockIds);
+    return accessible.length > 0;
+  }
 
   @Get(':id')
   async byId(
@@ -103,12 +123,37 @@ export class RawEventsController {
       });
     }
     const ctx = await this.rbac.loadContext(user.id, tenantId);
-    const allowed = ctx?.isSuperAdmin === true || ctx?.role === 'owner' || ctx?.role === 'admin';
-    if (!allowed) {
-      throw new ForbiddenException({
-        ok: false,
-        error: { code: 'forbidden', message: 'Только owner/admin Org может смотреть raw events' },
-      });
+    const isPrivileged =
+      ctx?.isSuperAdmin === true || ctx?.role === 'owner' || ctx?.role === 'admin';
+    if (!isPrivileged) {
+      const hasBlockAccess = await this.viewerHasBlockAccess(tenantId, user.id, event.id);
+      if (!hasBlockAccess) {
+        throw new ForbiddenException({
+          ok: false,
+          error: { code: 'forbidden', message: 'Нет доступа к источнику' },
+        });
+      }
+      const fragment: RawEventResponseDto = {
+        id: event.id,
+        tenantId: event.tenantId,
+        sourceId: event.sourceId,
+        sourceType: event.sourceType,
+        sourceExternalId: event.sourceExternalId,
+        idempotencyKey: event.idempotencyKey,
+        occurredAt: event.occurredAt.toISOString(),
+        receivedAt: event.receivedAt.toISOString(),
+        payloadStorage: event.payloadStorage,
+        payload: null,
+        payloadS3Key: null,
+        payloadDownloadUrl: null,
+        payloadChecksum: event.payloadChecksum,
+        payloadSizeBytes: event.payloadSizeBytes,
+        dataClass: event.dataClass,
+        processingStatus: event.processingStatus,
+        processingError: event.processingError,
+        processedAt: event.processedAt?.toISOString() ?? null,
+      };
+      return { rawEvent: fragment };
     }
 
     let payloadDownloadUrl: string | null = null;

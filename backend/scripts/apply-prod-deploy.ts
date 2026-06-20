@@ -657,6 +657,12 @@ const STEPS: Step[] = [
     skipBootstrap: true,
   },
   {
+    phase: 'backfill',
+    script: 'scripts/backfill-provenance-preview.ts',
+    hint: 'previewQuote+previewSourceRef для Decision/Issue/Regulation, previewSourceRef для Task (провенанс Ф2)',
+    skipBootstrap: true,
+  },
+  {
     phase: 'migrate',
     script: 'scripts/migrate-telegram-channels-to-global.ts',
     skipBootstrap: true,

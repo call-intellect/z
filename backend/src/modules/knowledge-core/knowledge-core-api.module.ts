@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { KnowledgeBlocksController } from './api/blocks.controller';
 import { KnowledgeEntitiesController } from './api/entities.controller';
 import { KnowledgeGraphController } from './api/graph.controller';
+import { ProvenanceController } from './api/provenance.controller';
 import { KnowledgeSearchController } from './api/search.controller';
 import { SprintReviewController } from './api/sprint-review.controller';
 import { KnowledgeThemesController } from './api/themes.controller';
@@ -20,6 +21,7 @@ import { KnowledgeSnapshotModule } from './snapshot.module';
     KnowledgeThemesController,
     SprintReviewController,
     GraphDiagnosticsController,
+    ProvenanceController,
   ],
 })
 export class KnowledgeCoreApiModule {}

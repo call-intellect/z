@@ -17,6 +17,7 @@ import type {
   KnowledgeAccessResolver,
 } from '../../rbac/knowledge-access-resolver.service';
 import type { RbacService } from '../../rbac/rbac.service';
+import type { ProvenanceService } from '../services/provenance.service';
 import type { ReasoningChainService } from '../services/reasoning-chain.service';
 
 import { KnowledgeBlocksController } from './blocks.controller';
@@ -61,6 +62,12 @@ function makeReasoningChainStub(): ReasoningChainService {
   } as unknown as ReasoningChainService;
 }
 
+function makeProvenanceStub(): ProvenanceService {
+  return {
+    resolveByRawEventIds: async () => new Map(),
+  } as unknown as ProvenanceService;
+}
+
 const userA: CurrentUserPayload = {
   id: `${PREFIX}-userA`,
   email: 'ownera@test.local',
@@ -103,6 +110,7 @@ describe('KnowledgeBlocksController (integration)', () => {
       prisma,
       makeRbacAllowAll(),
       makeReasoningChainStub(),
+      makeProvenanceStub(),
     );
 
     const res = await ctrl.byId(f.blockAId, userA, f.orgAId);
@@ -120,6 +128,7 @@ describe('KnowledgeBlocksController (integration)', () => {
       prisma,
       makeRbacAllowAll(),
       makeReasoningChainStub(),
+      makeProvenanceStub(),
     );
 
     await expect(ctrl.byId(f.blockAId, userB, f.orgBId)).rejects.toBeInstanceOf(NotFoundException);
@@ -129,7 +138,7 @@ describe('KnowledgeBlocksController (integration)', () => {
     if (skipIfNoDb(testCtx)) return;
     const prisma = (await getPrismaClient()) as unknown as PrismaService;
     const f = ctx.fixture!;
-    const ctrl = new KnowledgeBlocksController(prisma, makeRbacDeny(), makeReasoningChainStub());
+    const ctrl = new KnowledgeBlocksController(prisma, makeRbacDeny(), makeReasoningChainStub(), makeProvenanceStub());
 
     await expect(ctrl.byId(f.blockAId, userA, f.orgAId)).rejects.toBeInstanceOf(ForbiddenException);
   });
@@ -142,6 +151,7 @@ describe('KnowledgeBlocksController (integration)', () => {
       prisma,
       makeRbacAllowAll(),
       makeReasoningChainStub(),
+      makeProvenanceStub(),
     );
 
     await expect(ctrl.byId(f.blockAId, userA, undefined)).rejects.toBeInstanceOf(
@@ -157,6 +167,7 @@ describe('KnowledgeBlocksController (integration)', () => {
       prisma,
       makeRbacAllowAll(),
       makeReasoningChainStub(),
+      makeProvenanceStub(),
     );
 
     await expect(ctrl.byId(`${PREFIX}-missing-block`, userA, f.orgAId)).rejects.toBeInstanceOf(
@@ -172,6 +183,7 @@ describe('KnowledgeBlocksController (integration)', () => {
       prisma,
       makeRbacAllowAll(),
       makeReasoningChainStub(),
+      makeProvenanceStub(),
     );
 
     const res = await ctrl.links(f.blockAId, userA, f.orgAId);
@@ -187,6 +199,7 @@ describe('KnowledgeBlocksController (integration)', () => {
       prisma,
       makeRbacAllowAll(),
       makeReasoningChainStub(),
+      makeProvenanceStub(),
     );
 
     await expect(ctrl.links(f.blockAId, userB, f.orgBId)).rejects.toBeInstanceOf(NotFoundException);
@@ -319,6 +332,7 @@ describe('KnowledgeBlocksController.byId — Ф4 гейт (unit)', () => {
       byIdPrisma('b1'),
       gateRbac(),
       makeReasoningChainStub(),
+      makeProvenanceStub(),
       resolver,
       gateCfg('off'),
       metrics,
@@ -343,6 +357,7 @@ describe('KnowledgeBlocksController.byId — Ф4 гейт (unit)', () => {
       byIdPrisma('b1'),
       gateRbac(),
       makeReasoningChainStub(),
+      makeProvenanceStub(),
       resolver,
       gateCfg('enforce'),
       metrics,
@@ -366,6 +381,7 @@ describe('KnowledgeBlocksController.byId — Ф4 гейт (unit)', () => {
       byIdPrisma('b1'),
       gateRbac(),
       makeReasoningChainStub(),
+      makeProvenanceStub(),
       resolver,
       gateCfg('enforce'),
       metrics,
@@ -390,6 +406,7 @@ describe('KnowledgeBlocksController.byId — Ф4 гейт (unit)', () => {
       byIdPrisma('b1'),
       gateRbac(),
       makeReasoningChainStub(),
+      makeProvenanceStub(),
       resolver,
       gateCfg('shadow'),
       metrics,
@@ -415,6 +432,7 @@ describe('KnowledgeBlocksController.byId — Ф4 гейт (unit)', () => {
       byIdPrisma('b1'),
       gateRbac(),
       makeReasoningChainStub(),
+      makeProvenanceStub(),
       resolver,
       gateCfg('enforce'),
       metrics,
@@ -485,6 +503,7 @@ describe('KnowledgeBlocksController.links — Ф4 гейт (unit)', () => {
       linksPrisma(),
       gateRbac(),
       makeReasoningChainStub(),
+      makeProvenanceStub(),
       resolver,
       gateCfg('off'),
       metrics,
@@ -511,6 +530,7 @@ describe('KnowledgeBlocksController.links — Ф4 гейт (unit)', () => {
       linksPrisma(),
       gateRbac(),
       makeReasoningChainStub(),
+      makeProvenanceStub(),
       resolver,
       gateCfg('enforce'),
       metrics,
@@ -537,6 +557,7 @@ describe('KnowledgeBlocksController.links — Ф4 гейт (unit)', () => {
       linksPrisma(),
       gateRbac(),
       makeReasoningChainStub(),
+      makeProvenanceStub(),
       resolver,
       gateCfg('shadow'),
       metrics,
@@ -563,6 +584,7 @@ describe('KnowledgeBlocksController.links — Ф4 гейт (unit)', () => {
       linksPrisma(),
       gateRbac(),
       makeReasoningChainStub(),
+      makeProvenanceStub(),
       resolver,
       gateCfg('enforce'),
       metrics,
@@ -599,6 +621,7 @@ describe('KnowledgeBlocksController.reasoningChain — Ф4 гейт (unit)', () 
       chainPrisma(),
       gateRbac(),
       svc,
+      makeProvenanceStub(),
       resolver,
       gateCfg('off'),
       metrics,
@@ -622,6 +645,7 @@ describe('KnowledgeBlocksController.reasoningChain — Ф4 гейт (unit)', () 
       chainPrisma(),
       gateRbac(),
       svc,
+      makeProvenanceStub(),
       resolver,
       gateCfg('enforce'),
       metrics,
@@ -651,6 +675,7 @@ describe('KnowledgeBlocksController.reasoningChain — Ф4 гейт (unit)', () 
       chainPrisma(),
       gateRbac(),
       svc,
+      makeProvenanceStub(),
       resolver,
       gateCfg('enforce'),
       metrics,
@@ -678,6 +703,7 @@ describe('KnowledgeBlocksController.reasoningChain — Ф4 гейт (unit)', () 
       chainPrisma(),
       gateRbac(),
       svc,
+      makeProvenanceStub(),
       resolver,
       gateCfg('enforce'),
       metrics,

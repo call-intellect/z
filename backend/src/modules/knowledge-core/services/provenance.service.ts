@@ -248,6 +248,54 @@ export class ProvenanceService {
     return nodes;
   }
 
+  async computePreviewSnapshot(
+    tenantId: string,
+    blockIds: string[],
+  ): Promise<{
+    previewQuote: string | null;
+    previewSourceRef: Record<string, unknown> | null;
+  }> {
+    if (blockIds.length === 0) {
+      return { previewQuote: null, previewSourceRef: null };
+    }
+    const ev = await this.prisma.ideaBlockEvidence.findFirst({
+      where: { blockId: { in: blockIds } },
+      select: { id: true, blockId: true, rawEventId: true, quote: true, startMs: true },
+      orderBy: [{ startMs: 'asc' }, { createdAt: 'asc' }],
+    });
+    if (!ev) return { previewQuote: null, previewSourceRef: null };
+
+    const block = await this.prisma.ideaBlock.findFirst({
+      where: { id: ev.blockId, tenantId },
+      select: { primarySource: true },
+    });
+    const sourceMap = await this.resolveByRawEventIds(tenantId, [ev.rawEventId]);
+    const source = sourceMap.get(ev.rawEventId) ?? null;
+    const attribution: 'quoted' | 'inferred' =
+      block?.primarySource === 'report' ? 'inferred' : 'quoted';
+    const deepLink = source?.refId
+      ? this.buildDeepLink({
+          sourceType: source.type,
+          externalId: source.refId,
+          startMs: ev.startMs,
+        })
+      : null;
+
+    return {
+      previewQuote: ev.quote.slice(0, 500),
+      previewSourceRef: {
+        evidenceId: ev.id,
+        blockId: ev.blockId,
+        sourceType: source?.type ?? null,
+        refId: source?.refId ?? null,
+        startMs: ev.startMs ?? null,
+        deepLink,
+        attribution,
+        label: source?.label ?? null,
+      },
+    };
+  }
+
   private classify(
     sourceType: string,
     sourceExternalId: string | null,

@@ -9,6 +9,8 @@ import {
   buildTableExtractRowsPrompt,
 } from '../../ai/services/prompts/table-extract-rows.prompt';
 
+import { buildProvenanceDeepLink } from '../../knowledge-core/services/provenance.service';
+
 import { parseEntitySync, resolveEntityTypes } from './entity-sync.util';
 
 const DEFAULT_CONFIRMATION_THRESHOLD = 0.85;
@@ -161,7 +163,12 @@ export class TableEnrichService {
 
           const current = cells[fact.propertyId];
           const isEmpty = this.isEmptyCell(current);
-          const sourceLink = `/meetings/${args.meetingId}?t=${Math.max(0, Math.round(fact.timeSec))}`;
+          const sourceLink =
+      buildProvenanceDeepLink({
+        sourceType: 'meeting',
+        externalId: args.meetingId,
+        startMs: Math.round(fact.timeSec * 1000),
+      }) ?? '';
           const sourceLabel = this.factSourceLabel(meetingLabel, fact.timeSec);
 
           if (isEmpty && fact.confidence >= threshold) {

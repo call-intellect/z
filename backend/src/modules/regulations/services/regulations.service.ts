@@ -12,6 +12,10 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CurationService } from '../../curation/services/curation.service';
+import {
+  ProvenanceService,
+  type ProvenanceSourceRef,
+} from '../../knowledge-core/services/provenance.service';
 import { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import type {
   ConfirmRegulationBody,
@@ -44,6 +48,9 @@ export class RegulationsService {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService | null = null,
+    @Optional()
+    @Inject(ProvenanceService)
+    private readonly provenance: ProvenanceService | null = null,
   ) {}
 
   private async gateProjections<T extends { id: string; sourceBlockIds: string[] }>(
@@ -367,18 +374,20 @@ export class RegulationsService {
       select: {
         blockId: true,
         quote: true,
-        rawEvent: {
-          select: { sourceType: true, sourceExternalId: true },
-        },
+        startMs: true,
+        rawEventId: true,
       },
     });
     if (evidence.length === 0) return { items: [] };
 
+    const rawEventIds = [...new Set(evidence.map((e) => e.rawEventId))];
+    const sourceByRawEvent: Map<string, ProvenanceSourceRef> = this.provenance
+      ? await this.provenance.resolveByRawEventIds(args.tenantId, rawEventIds)
+      : new Map();
+
     const meetingIds = new Set<string>();
-    for (const ev of evidence) {
-      if (ev.rawEvent.sourceType === 'meeting' && ev.rawEvent.sourceExternalId) {
-        meetingIds.add(ev.rawEvent.sourceExternalId);
-      }
+    for (const ref of sourceByRawEvent.values()) {
+      if (ref.type === 'meeting' && ref.refId) meetingIds.add(ref.refId);
     }
     const meetingById = new Map<string, { id: string; title: string; date: string }>();
     if (meetingIds.size > 0) {
@@ -397,10 +406,15 @@ export class RegulationsService {
 
     return {
       items: evidence.map((ev) => {
-        const meetingId =
-          ev.rawEvent.sourceType === 'meeting' ? ev.rawEvent.sourceExternalId : null;
+        const ref = sourceByRawEvent.get(ev.rawEventId);
+        const meetingId = ref && ref.type === 'meeting' ? ref.refId : null;
         const meeting = meetingId ? (meetingById.get(meetingId) ?? null) : null;
-        return { blockId: ev.blockId, quote: ev.quote, meeting };
+        return {
+          blockId: ev.blockId,
+          quote: ev.quote,
+          startMs: ev.startMs ?? null,
+          meeting,
+        };
       }),
     };
   }

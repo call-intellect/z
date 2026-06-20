@@ -1792,6 +1792,8 @@ model Task {
   /// Фаза 5 knowledge-core: какие IdeaBlock'и породили задачу (для drill-down).
   /// Пустой массив = legacy задача, не связана с блоками.
   evidenceBlockIds String[]   @default([])
+  /// Денорм deepLink/attribution провенанса (Task уже несёт sourceQuote/sourceStartMs).
+  previewSourceRef Json?
   /// Фаза 5: метка генератора. NULL = legacy `tasks-extract.worker`,
   /// 'v2' = `meeting-analyze-v2.worker` (knowledge-core поверх блоков).
   /// Используется для A/B-сравнения и для последующего скимаринга legacy.
@@ -5994,6 +5996,10 @@ model Regulation {
   currentVersionId String?
   /// `sourceBlockIds[]` — IdeaBlock-источники последнего извлечения.
   sourceBlockIds   String[]                     @default([])
+  /// Денорм-снимок провенанса для рендера списков без join.
+  previewQuote     String?                      @db.Text
+  /// { evidenceId, blockId, sourceType, sourceExternalId, startMs?, deepLink, attribution }
+  previewSourceRef Json?
   /// `personSubjectIds[]` — Person'ы, которым регламент присвоен как subject (для γ-1 SkillProfile).
   personSubjectIds String[]                     @default([])
   dataClass        DataClass                    @default(internal)
@@ -6230,6 +6236,10 @@ model Decision {
   affectsEntityIds   String[]                     @default([])
   /// IdeaBlock'и, на которых построено решение.
   sourceBlockIds     String[]                     @default([])
+  /// Денорм-снимок провенанса для рендера списков без join (образец Task.sourceQuote).
+  previewQuote       String?                      @db.Text
+  /// { evidenceId, blockId, sourceType, sourceExternalId, startMs?, deepLink, attribution }
+  previewSourceRef   Json?
   /// Person'ы, упомянутые в блоках как subject (для γ-1 SkillProfile).
   personSubjectIds   String[]                     @default([])
   /// Уверенность извлечения [0..1] (Decimal(4,3) — 3 знака после точки).
@@ -9214,6 +9224,10 @@ model Issue {
 
   // AI metadata
   sourceBlockIds  String[] // если задача создана AI — откуда вытащил
+  /// Денорм-снимок провенанса для рендера списков без join.
+  previewQuote     String?  @db.Text
+  /// { evidenceId, blockId, sourceType, sourceExternalId, startMs?, deepLink, attribution }
+  previewSourceRef Json?
   confidence      Decimal? @db.Decimal(4, 3)
   createdManually Boolean  @default(true)
 

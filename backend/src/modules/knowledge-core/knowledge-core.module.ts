@@ -37,6 +37,7 @@ import { OwnerResolverService } from './services/owner-resolver.service';
 import { PersonaLayerValidationService } from './services/persona-layer-validation.service';
 import { PreferenceDatasetService } from './services/preference-dataset.service';
 import { ProjectionRebuilderService } from './services/projection-rebuilder.service';
+import { ProvenanceService } from './services/provenance.service';
 import { ReasoningChainService } from './services/reasoning-chain.service';
 import { RegulationConsolidatorService } from './services/regulation-consolidator.service';
 import { RoleClonePersonaVersioningHandler } from './services/role-clone-persona-versioning.handler';
@@ -141,6 +142,7 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     EntityLinkService,
     ReasoningChainService,
     ProjectionRebuilderService,
+    ProvenanceService,
     SpecialistsCombinedService,
     SprintHelperService,
     SprintReviewService,
@@ -205,6 +207,7 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     EntityLinkService,
     ReasoningChainService,
     ProjectionRebuilderService,
+    ProvenanceService,
     SpecialistsCombinedService,
     SprintHelperService,
     SprintReviewService,

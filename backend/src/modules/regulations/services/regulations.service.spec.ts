@@ -4,6 +4,10 @@ import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CurationService } from '../../curation/services/curation.service';
+import type {
+  ProvenanceService,
+  ProvenanceSourceRef,
+} from '../../knowledge-core/services/provenance.service';
 import type { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import { ListRegulationsQuerySchema } from '../dto/regulations.dto';
 
@@ -414,12 +418,14 @@ describe('RegulationsService — C4 getSummary', () => {
   it('считает 4 типа + weekDelta (сумма созданных за 7 дней) с tenant-фильтром', async () => {
     const regCount = vi.fn().mockResolvedValueOnce(10).mockResolvedValueOnce(2);
     const procCount = vi.fn().mockResolvedValueOnce(5).mockResolvedValueOnce(1);
+    const procTemplateCount = vi.fn().mockResolvedValue(4);
     const instrCount = vi.fn().mockResolvedValueOnce(3).mockResolvedValueOnce(0);
     const polCount = vi.fn().mockResolvedValueOnce(7).mockResolvedValueOnce(4);
 
     const prisma = {
       regulation: { count: regCount },
       process: { count: procCount },
+      processTemplate: { count: procTemplateCount },
       instruction: { count: instrCount },
       policy: { count: polCount },
     } as unknown as PrismaService;
@@ -430,6 +436,7 @@ describe('RegulationsService — C4 getSummary', () => {
     expect(res).toEqual({
       regulations: 10,
       processes: 5,
+      processTemplates: 4,
       instructions: 3,
       policies: 7,
       weekDelta: 2 + 1 + 0 + 4,
@@ -459,20 +466,26 @@ describe('RegulationsService — C3 getSources', () => {
     evidence?: Array<{
       blockId: string;
       quote: string;
-      rawEvent: { sourceType: string; sourceExternalId: string | null };
+      startMs?: number | null;
+      rawEventId: string;
     }>;
     meetings?: Array<{ id: string; title: string; startedAt: Date | null; createdAt: Date }>;
+    sourceRefs?: Array<[string, ProvenanceSourceRef]>;
   }): {
     svc: RegulationsService;
     regFindFirst: ReturnType<typeof vi.fn>;
     blockFindMany: ReturnType<typeof vi.fn>;
     evidenceFindMany: ReturnType<typeof vi.fn>;
     meetingFindMany: ReturnType<typeof vi.fn>;
+    resolveByRawEventIds: ReturnType<typeof vi.fn>;
   } {
     const regFindFirst = vi.fn().mockResolvedValue({ sourceBlockIds: opts.sourceBlockIds });
     const blockFindMany = vi.fn().mockResolvedValue(opts.blocks ?? []);
     const evidenceFindMany = vi.fn().mockResolvedValue(opts.evidence ?? []);
     const meetingFindMany = vi.fn().mockResolvedValue(opts.meetings ?? []);
+    const resolveByRawEventIds = vi
+      .fn()
+      .mockResolvedValue(new Map(opts.sourceRefs ?? []));
 
     const prisma = {
       regulation: { findFirst: regFindFirst },
@@ -480,9 +493,27 @@ describe('RegulationsService — C3 getSources', () => {
       ideaBlockEvidence: { findMany: evidenceFindMany },
       meeting: { findMany: meetingFindMany },
     } as unknown as PrismaService;
+    const provenance = {
+      resolveByRawEventIds,
+    } as unknown as ProvenanceService;
 
-    const svc = new RegulationsService(prisma, {} as unknown as CurationService);
-    return { svc, regFindFirst, blockFindMany, evidenceFindMany, meetingFindMany };
+    const svc = new RegulationsService(
+      prisma,
+      {} as unknown as CurationService,
+      null,
+      null,
+      null,
+      null,
+      provenance,
+    );
+    return {
+      svc,
+      regFindFirst,
+      blockFindMany,
+      evidenceFindMany,
+      meetingFindMany,
+      resolveByRawEventIds,
+    };
   }
 
   it('пустой sourceBlockIds → {items:[]} (без запроса блоков/evidence)', async () => {
@@ -502,15 +533,24 @@ describe('RegulationsService — C3 getSources', () => {
         {
           blockId: 'b-1',
           quote: 'Мы решили перейти на недельные спринты',
-          rawEvent: { sourceType: 'meeting', sourceExternalId: 'm-1' },
+          startMs: 5000,
+          rawEventId: 'raw-1',
         },
         {
           blockId: 'b-2',
           quote: 'Из чата без встречи',
-          rawEvent: { sourceType: 'chat', sourceExternalId: 'c-9' },
+          startMs: null,
+          rawEventId: 'raw-2',
         },
       ],
       meetings: [{ id: 'm-1', title: 'Планёрка', startedAt, createdAt: new Date('2026-03-01') }],
+      sourceRefs: [
+        [
+          'raw-1',
+          { type: 'meeting', refId: 'm-1', label: 'Встреча «Планёрка»', deepLink: '/meetings/m-1?t=5' },
+        ],
+        ['raw-2', { type: 'chat', refId: 'c-9', label: 'Сообщение в чате', deepLink: null }],
+      ],
     });
 
     const res = await svc.getSources({ tenantId: 't-1', id: 'r-1', kind: 'regulation' });
@@ -519,9 +559,10 @@ describe('RegulationsService — C3 getSources', () => {
       {
         blockId: 'b-1',
         quote: 'Мы решили перейти на недельные спринты',
+        startMs: 5000,
         meeting: { id: 'm-1', title: 'Планёрка', date: startedAt.toISOString() },
       },
-      { blockId: 'b-2', quote: 'Из чата без встречи', meeting: null },
+      { blockId: 'b-2', quote: 'Из чата без встречи', startMs: null, meeting: null },
     ]);
 
     expect(regFindFirst).toHaveBeenCalledWith(
@@ -554,14 +595,18 @@ describe('RegulationsService — C3 getSources', () => {
         {
           blockId: 'b-1',
           quote: 'Цитата с неразрешённой встречей',
-          rawEvent: { sourceType: 'meeting', sourceExternalId: 'm-missing' },
+          startMs: null,
+          rawEventId: 'raw-1',
         },
       ],
       meetings: [],
+      sourceRefs: [
+        ['raw-1', { type: 'meeting', refId: 'm-missing', label: 'Встреча', deepLink: null }],
+      ],
     });
     const res = await svc.getSources({ tenantId: 't-1', id: 'r-1', kind: 'regulation' });
     expect(res.items).toEqual([
-      { blockId: 'b-1', quote: 'Цитата с неразрешённой встречей', meeting: null },
+      { blockId: 'b-1', quote: 'Цитата с неразрешённой встречей', startMs: null, meeting: null },
     ]);
   });
 });

@@ -3,6 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 
 import {
+  PROVENANCE_ACCESS_MASK,
+  ProvenanceService,
+} from '../knowledge-core/services/provenance.service';
+
+import {
   KnowledgeAccessResolver,
   type KnowledgeAccessContext,
 } from './knowledge-access-resolver.service';
@@ -506,5 +511,77 @@ describe('KnowledgeAccessResolver.partitionProjectionsByAccess (Ф6)', () => {
     );
     expect(res.accessibleIds.has('d-mix')).toBe(false);
     expect(res.denied).toBe(1);
+  });
+});
+
+describe('ProvenanceService.resolve — инвариант доступа (Ф1)', () => {
+  it('источник закрыт: блок в closed-группе, зритель не член → accessFiltered + маскировка (название встречи не утекает)', async () => {
+    const resolverPrisma = {
+      ideaBlockAccess: {
+        findMany: vi.fn(async () => [
+          {
+            blockId: 'b-council',
+            groupId: 'g-council',
+            group: { isClosed: true, kind: 'council' },
+          },
+        ]),
+      },
+    } as unknown as PrismaService;
+    const rbacReal = Object.create(RbacService.prototype) as RbacService;
+    const resolver = new KnowledgeAccessResolver(resolverPrisma, rbacReal);
+    vi.spyOn(resolver, 'resolveAccessibleGroups').mockResolvedValue({
+      deptGroupIds: [],
+      closedGroupIds: [],
+      isBypass: false,
+    });
+
+    const servicePrisma = {
+      decision: {
+        findFirst: vi.fn(async () => ({ sourceBlockIds: ['b-council'] })),
+      },
+      ideaBlock: {
+        findMany: vi.fn(async () => [
+          { id: 'b-council', primarySource: 'transcript' },
+        ]),
+      },
+      ideaBlockEvidence: {
+        findMany: vi.fn(async () => [
+          {
+            blockId: 'b-council',
+            rawEventId: 'raw-1',
+            quote: 'Секретная цифра выручки',
+            startMs: 1000,
+            endMs: 2000,
+            sourceTimestamp: new Date('2026-03-10T09:00:00.000Z'),
+          },
+        ]),
+      },
+      rawEvent: {
+        findMany: vi.fn(async () => [
+          { id: 'raw-1', sourceType: 'meeting', sourceExternalId: 'm-secret' },
+        ]),
+      },
+      meeting: {
+        findMany: vi.fn(async () => [
+          { id: 'm-secret', title: 'Закрытая планёрка совета' },
+        ]),
+      },
+      document: { findMany: vi.fn(async () => []) },
+    } as unknown as PrismaService;
+
+    const provenance = new ProvenanceService(servicePrisma, resolver);
+    const nodes = await provenance.resolve('decision', 'd-1', {
+      tenantId: 't-1',
+      userId: 'u-outsider',
+    });
+
+    expect(nodes).toHaveLength(1);
+    const n = nodes[0]!;
+    expect(n.accessFiltered).toBe(true);
+    expect(n.quote).toBe(PROVENANCE_ACCESS_MASK);
+    expect(n.source.label).toBe(PROVENANCE_ACCESS_MASK);
+    expect(n.source.label).not.toContain('Закрытая планёрка');
+    expect(n.source.deepLink).toBeNull();
+    expect(n.startMs).toBeNull();
   });
 });

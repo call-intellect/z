@@ -139,6 +139,7 @@ export interface RegulationSourceMeetingDto {
 export interface RegulationSourceItemDto {
   blockId: string;
   quote: string;
+  startMs: number | null;
   meeting: RegulationSourceMeetingDto | null;
 }
 

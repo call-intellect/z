@@ -5,11 +5,15 @@ import { usePathname } from "next/navigation";
 import { Sparkles, X } from "lucide-react";
 
 import { ConciergeChat } from "./ConciergeChat";
+import { ConciergeClonesTab } from "./ConciergeClonesTab";
 
 export const CONCIERGE_OPEN_EVENT = "concierge:open";
 
+type ConciergeMode = "company" | "clones";
+
 export function ConciergeFloatingButton() {
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<ConciergeMode>("company");
   const [prefill, setPrefill] = useState<string | undefined>(undefined);
   const pathname = usePathname();
 
@@ -49,11 +53,41 @@ export function ConciergeFloatingButton() {
               <X size={16} />
             </button>
           </div>
-          <ConciergeChat
-            pageContext={{ clientPath: pathname ?? undefined }}
-            className="flex flex-1 flex-col"
-            {...(prefill ? { initialInput: prefill } : {})}
-          />
+          <div className="flex border-b border-border-subtle">
+            <button
+              type="button"
+              aria-current={mode === "company" ? "true" : undefined}
+              onClick={() => setMode("company")}
+              className={
+                mode === "company"
+                  ? "flex-1 px-3 py-2 text-sm font-medium bg-accent/15 text-accent-fg"
+                  : "flex-1 px-3 py-2 text-sm text-fg-secondary hover:text-fg-primary"
+              }
+            >
+              Помощник компании
+            </button>
+            <button
+              type="button"
+              aria-current={mode === "clones" ? "true" : undefined}
+              onClick={() => setMode("clones")}
+              className={
+                mode === "clones"
+                  ? "flex-1 px-3 py-2 text-sm font-medium bg-accent/15 text-accent-fg"
+                  : "flex-1 px-3 py-2 text-sm text-fg-secondary hover:text-fg-primary"
+              }
+            >
+              Клоны ролей
+            </button>
+          </div>
+          {mode === "company" ? (
+            <ConciergeChat
+              pageContext={{ clientPath: pathname ?? undefined }}
+              className="flex flex-1 flex-col"
+              {...(prefill ? { initialInput: prefill } : {})}
+            />
+          ) : (
+            <ConciergeClonesTab />
+          )}
         </div>
       )}
     </>

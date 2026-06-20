@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Check, Clock, ExternalLink } from "lucide-react";
+import { Bell, Check, Clock, ExternalLink, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/ui/shadcn/button";
@@ -13,11 +13,13 @@ import { cn } from "@/ui/shadcn/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { usePendingActionsCount } from "@/hooks/usePendingActionsCount";
 import { usePendingActions } from "@/hooks/usePendingActions";
+import { useAssistantSignals } from "@/hooks/useAssistantSignals";
 import {
   formatPendingAge,
   pendingSeverityBadgeVariant,
   type PendingAction,
 } from "@/domain/pending-action";
+import type { BellRow } from "@/domain/assistant-signals";
 
 export function PendingActionsBell({ className }: { className?: string }) {
   const router = useRouter();
@@ -36,11 +38,41 @@ export function PendingActionsBell({ className }: { className?: string }) {
     Boolean(currentOrgId) && open,
   );
 
-  const badge = total > 99 ? "99+" : String(total);
+  const {
+    proactiveRows,
+    signalRows,
+    signalsCount,
+    hasUrgentSignal,
+    dismiss,
+  } = useAssistantSignals(currentOrgId, Boolean(currentOrgId));
+
+  const grandTotal = total + signalsCount;
+  const badge = grandTotal > 99 ? "99+" : String(grandTotal);
+  const showUrgentDot = hasUrgent || hasUrgentSignal;
+  const isEmpty =
+    !isLoading &&
+    !error &&
+    items.length === 0 &&
+    proactiveRows.length === 0 &&
+    signalRows.length === 0;
 
   const handleOpen = (action: PendingAction) => {
     setOpen(false);
     router.push(action.actionUrl);
+  };
+
+  const handleRowOpen = (row: BellRow) => {
+    setOpen(false);
+    router.push(row.actionUrl);
+  };
+
+  const handleDismiss = async (row: BellRow) => {
+    const id = row.key.slice(row.group.length + 1);
+    try {
+      await dismiss(id);
+    } catch {
+      toast.error("Не удалось скрыть.");
+    }
   };
 
   const handleSnooze = async (action: PendingAction) => {
@@ -75,10 +107,12 @@ export function PendingActionsBell({ className }: { className?: string }) {
           variant="ghost"
           size="icon"
           className={cn("relative", className)}
-          aria-label={total > 0 ? `Подтверждения: ${total}` : "Подтверждения"}
+          aria-label={
+            grandTotal > 0 ? `Уведомления: ${grandTotal}` : "Уведомления"
+          }
         >
           <Bell size={18} />
-          {total > 0 && (
+          {grandTotal > 0 && (
             <span
               className={cn(
                 "absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-none",
@@ -89,7 +123,7 @@ export function PendingActionsBell({ className }: { className?: string }) {
               {badge}
             </span>
           )}
-          {hasUrgent && (
+          {showUrgentDot && (
             <span
               className="absolute right-1 top-1 h-2 w-2 rounded-full bg-danger ring-2 ring-bg-surface"
               aria-hidden
@@ -101,9 +135,9 @@ export function PendingActionsBell({ className }: { className?: string }) {
       <PopoverContent align="end" className="w-80 p-0">
         <div className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
           <span className="text-sm font-semibold text-fg-primary">
-            Подтверждения
+            Уведомления
           </span>
-          {total > 0 && <Badge variant="secondary">{badge}</Badge>}
+          {grandTotal > 0 && <Badge variant="secondary">{badge}</Badge>}
         </div>
 
         <div className="max-h-80 overflow-y-auto">
@@ -119,9 +153,15 @@ export function PendingActionsBell({ className }: { className?: string }) {
             </div>
           )}
 
-          {!isLoading && !error && items.length === 0 && (
+          {isEmpty && (
             <div className="px-4 py-8 text-center text-sm text-fg-tertiary">
               Всё разобрано
+            </div>
+          )}
+
+          {!isLoading && !error && items.length > 0 && (
+            <div className="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-fg-tertiary">
+              Подтверждения
             </div>
           )}
 
@@ -186,6 +226,87 @@ export function PendingActionsBell({ className }: { className?: string }) {
                 </li>
               ))}
             </ul>
+          )}
+
+          {!error && proactiveRows.length > 0 && (
+            <>
+              <div className="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-fg-tertiary">
+                Требует внимания
+              </div>
+              <ul className="flex flex-col">
+                {proactiveRows.map((row) => (
+                  <li
+                    key={row.key}
+                    className="border-b border-border-subtle bg-bg-card px-4 py-3 last:border-b-0"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="min-w-0 flex-1 text-sm font-medium text-fg-primary">
+                        {row.title}
+                      </p>
+                      {row.severity === "urgent" && (
+                        <Badge variant="danger">Срочно</Badge>
+                      )}
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 gap-1 px-2 text-xs"
+                        onClick={() => handleRowOpen(row)}
+                      >
+                        <ExternalLink size={12} />
+                        Открыть
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 gap-1 px-2 text-xs text-fg-tertiary"
+                        onClick={() => void handleDismiss(row)}
+                      >
+                        <X size={12} />
+                        Скрыть
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {!error && signalRows.length > 0 && (
+            <>
+              <div className="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-fg-tertiary">
+                Сигналы
+              </div>
+              <ul className="flex flex-col">
+                {signalRows.map((row) => (
+                  <li
+                    key={row.key}
+                    className="border-b border-border-subtle bg-bg-card px-4 py-3 last:border-b-0"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="min-w-0 flex-1 text-sm font-medium text-fg-primary">
+                        {row.title}
+                      </p>
+                      {row.severity === "urgent" && (
+                        <Badge variant="danger">Срочно</Badge>
+                      )}
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 gap-1 px-2 text-xs"
+                        onClick={() => handleRowOpen(row)}
+                      >
+                        <ExternalLink size={12} />
+                        Открыть
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </div>
 

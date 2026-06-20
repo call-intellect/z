@@ -22,6 +22,7 @@ import {
   type IdeaStatus,
 } from "@/domain/idea";
 import { ideasApi } from "@/api/ideas.api";
+import { goalsApi, type SuggestParentApi } from "@/api/goals.api";
 import { humanizeApiError } from "@/api/api-error";
 
 type NodeTone =
@@ -438,35 +439,17 @@ export function GoalsMapView({
           )}
         </div>
         {selected && (
-          <aside className="absolute right-0 top-0 z-10 flex h-full w-72 flex-col gap-3 overflow-y-auto border-l border-border-subtle bg-bg-card/95 p-4 backdrop-blur">
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="text-sm font-semibold text-fg-primary">
-                {selected.name}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setSelectedId(null)}
-                className="shrink-0 rounded px-1.5 text-fg-tertiary hover:text-fg-primary"
-                aria-label="Закрыть"
-              >
-                ×
-              </button>
-            </div>
-            <div className="flex flex-col gap-1 text-xs">
-              <span className="text-fg-tertiary">Статус</span>
-              <span className="font-medium text-fg-secondary">
-                {GOAL_PROGRESS_STATUS_LABELS[selected.progressStatus]}
-              </span>
-            </div>
-            {selectedAlignment && (
-              <div className="flex flex-col gap-1 text-xs">
-                <span className="text-fg-tertiary">Связь со стратегией</span>
-                <span className="font-medium text-fg-secondary">
-                  {ALIGNMENT_LABEL[selectedAlignment]}
-                </span>
-              </div>
-            )}
-          </aside>
+          <GoalPanel
+            goal={selected}
+            goals={goals}
+            alignment={selectedAlignment}
+            orgId={orgId}
+            onClose={() => setSelectedId(null)}
+            onChanged={() => {
+              setSelectedId(null);
+              onChanged?.();
+            }}
+          />
         )}
         {!selected && selectedIdea && (
           <IdeaPanel
@@ -482,6 +465,153 @@ export function GoalsMapView({
         )}
       </div>
     </div>
+  );
+}
+
+function GoalPanel({
+  goal,
+  goals,
+  alignment,
+  orgId,
+  onClose,
+  onChanged,
+}: {
+  goal: GoalDomain;
+  goals: readonly GoalDomain[];
+  alignment: GoalAlignment | null;
+  orgId?: string;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState<"suggest" | "link" | null>(null);
+  const [suggestion, setSuggestion] = useState<SuggestParentApi | null>(null);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
+  const isOrphan = alignment === "orphan";
+  const canAct = Boolean(orgId);
+
+  const suggestedGoal =
+    suggestion?.suggestedParentGoalId != null
+      ? (goals.find((g) => g.id === suggestion.suggestedParentGoalId) ?? null)
+      : null;
+
+  async function handleSuggest() {
+    if (!orgId || busy) return;
+    setBusy("suggest");
+    setSuggestError(null);
+    try {
+      const result = await goalsApi.suggestParent(orgId, goal.id);
+      setSuggestion(result);
+    } catch (err) {
+      setSuggestError(
+        humanizeApiError(err, "Не удалось подобрать родителя"),
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleMakeChild() {
+    if (!orgId || busy) return;
+    const parentId = suggestion?.suggestedParentGoalId;
+    if (!parentId) return;
+    setBusy("link");
+    try {
+      await goalsApi.update(orgId, goal.id, { parentGoalId: parentId });
+      toast.success("Цель стала подцелью");
+      onChanged();
+    } catch (err) {
+      toast.error(humanizeApiError(err, "Не удалось сделать подцелью"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <aside className="absolute right-0 top-0 z-10 flex h-full w-72 flex-col gap-3 overflow-y-auto border-l border-border-subtle bg-bg-card/95 p-4 backdrop-blur">
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="text-sm font-semibold text-fg-primary">{goal.name}</h3>
+        <button
+          type="button"
+          onClick={onClose}
+          className="shrink-0 rounded px-1.5 text-fg-tertiary hover:text-fg-primary"
+          aria-label="Закрыть"
+        >
+          ×
+        </button>
+      </div>
+      <div className="flex flex-col gap-1 text-xs">
+        <span className="text-fg-tertiary">Статус</span>
+        <span className="font-medium text-fg-secondary">
+          {GOAL_PROGRESS_STATUS_LABELS[goal.progressStatus]}
+        </span>
+      </div>
+      {alignment && (
+        <div className="flex flex-col gap-1 text-xs">
+          <span className="text-fg-tertiary">Связь со стратегией</span>
+          <span className="font-medium text-fg-secondary">
+            {ALIGNMENT_LABEL[alignment]}
+          </span>
+        </div>
+      )}
+      {isOrphan && orgId && (
+        <div className="mt-1 flex flex-col gap-2 border-t border-border-subtle pt-3">
+          <span className="text-xs font-medium text-fg-secondary">
+            Эта цель висит вне стратегии
+          </span>
+          <button
+            type="button"
+            onClick={() => void handleSuggest()}
+            disabled={!canAct || busy !== null}
+            className="w-full rounded-md border border-border-subtle bg-bg-card px-3 py-1.5 text-xs font-medium text-fg-primary transition-colors hover:bg-bg-subtle disabled:opacity-60"
+          >
+            {busy === "suggest" ? "Кора думает…" : "Куда относится?"}
+          </button>
+          {suggestError && (
+            <p className="text-xs text-chip-danger-fg">{suggestError}</p>
+          )}
+          {suggestion && !suggestError && (
+            <div className="flex flex-col gap-2">
+              {suggestion.verdict === "child_of" &&
+              suggestion.suggestedParentGoalId ? (
+                <>
+                  <div className="flex flex-col gap-1 text-xs">
+                    <span className="text-fg-tertiary">
+                      Кора предлагает родителя
+                    </span>
+                    <span className="font-medium text-fg-secondary">
+                      {suggestedGoal?.name ?? "Цель не найдена в карте"}
+                    </span>
+                  </div>
+                  {suggestion.reasoning && (
+                    <p className="text-xs text-fg-tertiary">
+                      {suggestion.reasoning}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void handleMakeChild()}
+                    disabled={!canAct || busy !== null || !suggestedGoal}
+                    className="w-full rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-fg transition-colors hover:bg-accent/90 disabled:opacity-60"
+                  >
+                    {busy === "link" ? "Привязываем…" : "Сделать подцелью"}
+                  </button>
+                </>
+              ) : suggestion.verdict === "duplicate" ? (
+                <div className="flex flex-col gap-1 rounded-md border border-chip-warning-fg/40 bg-chip-warning-bg px-3 py-2 text-xs text-chip-warning-fg">
+                  <span className="font-medium">Похоже на дубль</span>
+                  {suggestion.reasoning && <span>{suggestion.reasoning}</span>}
+                </div>
+              ) : (
+                <p className="text-xs text-fg-tertiary">
+                  Кора не нашла подходящего родителя — цель выглядит
+                  самостоятельной.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </aside>
   );
 }
 

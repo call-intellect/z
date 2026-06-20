@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import {
   type DataClass,
   type Goal,
@@ -695,6 +701,8 @@ export class Specialist314GoalsService {
       verdict: 'standalone',
       targetId: null,
       parentId: null,
+      confidence: null,
+      reasoning: null,
     };
 
     const guardOn = this.isPromptInjectionGuardEnabled();
@@ -763,19 +771,120 @@ export class Specialist314GoalsService {
     }
 
     const candidateIds = new Set(args.candidates.map((c) => c.id));
+    const confidence = parsed.confidence ?? null;
+    const reasoning = parsed.reasoning ?? null;
     if (parsed.verdict === 'duplicate') {
       if (parsed.targetId && candidateIds.has(parsed.targetId)) {
-        return { verdict: 'duplicate', targetId: parsed.targetId, parentId: null };
+        return {
+          verdict: 'duplicate',
+          targetId: parsed.targetId,
+          parentId: null,
+          confidence,
+          reasoning,
+        };
       }
       return standalone;
     }
     if (parsed.verdict === 'child_of') {
       if (parsed.parentId && candidateIds.has(parsed.parentId)) {
-        return { verdict: 'child_of', targetId: null, parentId: parsed.parentId };
+        return {
+          verdict: 'child_of',
+          targetId: null,
+          parentId: parsed.parentId,
+          confidence,
+          reasoning,
+        };
       }
       return standalone;
     }
-    return standalone;
+    return {
+      verdict: 'standalone',
+      targetId: null,
+      parentId: null,
+      confidence,
+      reasoning,
+    };
+  }
+
+  async suggestParentForGoal(args: {
+    tenantId: string;
+    goalId: string;
+  }): Promise<{
+    suggestedParentGoalId: string | null;
+    verdict: 'duplicate' | 'child_of' | 'standalone';
+    candidates: Array<{ goalId: string; name: string }>;
+    reasoning: string | null;
+    confidence: number | null;
+  }> {
+    const goal = await this.prisma.goal.findFirst({
+      where: { id: args.goalId, tenantId: args.tenantId },
+      select: { id: true, name: true, description: true, horizon: true },
+    });
+    if (!goal) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'goal_not_found', message: 'Цель не найдена' },
+      });
+    }
+    const exclude = await this.collectGoalAndDescendants(
+      args.tenantId,
+      args.goalId,
+    );
+    const queryText = `${goal.name} ${goal.description ?? ''}`.trim();
+    const candidates = (
+      await this.knnCandidates({ tenantId: args.tenantId, queryText })
+    ).filter((c) => !exclude.has(c.id));
+    if (candidates.length === 0) {
+      return {
+        suggestedParentGoalId: null,
+        verdict: 'standalone',
+        candidates: [],
+        reasoning: 'Похожих целей не найдено — цель выглядит самостоятельной.',
+        confidence: null,
+      };
+    }
+    const verdict = await this.hierarchyArbiter({
+      tenantId: args.tenantId,
+      draft: {
+        statement: goal.name,
+        description: goal.description,
+        horizon: goal.horizon,
+        measurable: null,
+        confidence: 1,
+      },
+      candidates,
+      dataClass: 'internal' as DataClass,
+      blockId: goal.id,
+    });
+    return {
+      suggestedParentGoalId:
+        verdict.verdict === 'child_of' ? verdict.parentId : null,
+      verdict: verdict.verdict,
+      candidates: candidates.map((c) => ({ goalId: c.id, name: c.name })),
+      reasoning: verdict.reasoning,
+      confidence: verdict.confidence,
+    };
+  }
+
+  private async collectGoalAndDescendants(
+    tenantId: string,
+    goalId: string,
+  ): Promise<Set<string>> {
+    const result = new Set<string>([goalId]);
+    let frontier = [goalId];
+    let depth = 0;
+    while (frontier.length > 0 && depth < 50) {
+      const children = await this.prisma.goal.findMany({
+        where: { tenantId, parentGoalId: { in: frontier } },
+        select: { id: true },
+      });
+      const next = children.map((c) => c.id).filter((id) => !result.has(id));
+      if (next.length === 0) break;
+      next.forEach((id) => result.add(id));
+      frontier = next;
+      depth += 1;
+    }
+    return result;
   }
 
   // ─────────────────────────── apply verdict ───────────────────────────
@@ -949,4 +1058,6 @@ interface HierarchyVerdict {
   verdict: 'duplicate' | 'child_of' | 'standalone';
   targetId: string | null;
   parentId: string | null;
+  confidence: number | null;
+  reasoning: string | null;
 }

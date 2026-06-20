@@ -66,6 +66,21 @@ export type SupersedeGoalRequest = {
   weight?: number;
 };
 
+export type SuggestParentVerdict = "duplicate" | "child_of" | "standalone";
+
+export type SuggestParentCandidateApi = {
+  goalId: string;
+  name: string;
+};
+
+export type SuggestParentApi = {
+  suggestedParentGoalId: string | null;
+  verdict: SuggestParentVerdict;
+  candidates: SuggestParentCandidateApi[];
+  reasoning: string | null;
+  confidence: number | null;
+};
+
 export const goalsApi = {
   list: (orgId: string, req: ListGoalsRequest = {}) =>
     apiClient.get<GoalListApi>(`/api/v1/goals${buildQuery({ ...req })}`, {
@@ -163,6 +178,13 @@ export const goalsApi = {
     }>(
       `/api/v1/goals/${encodeURIComponent(goalId)}/priority`,
       { priority },
+      { headers: orgHeaders(orgId) },
+    ),
+
+  suggestParent: (orgId: string, goalId: string) =>
+    apiClient.post<SuggestParentApi>(
+      `/api/v1/goals/${encodeURIComponent(goalId)}/suggest-parent`,
+      {},
       { headers: orgHeaders(orgId) },
     ),
 };

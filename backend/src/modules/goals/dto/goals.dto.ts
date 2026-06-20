@@ -167,6 +167,19 @@ export interface GoalDetailDto extends GoalListItemDto {
   keyResults: GoalKeyResultDto[];
 }
 
+export interface GoalParentCandidateDto {
+  goalId: string;
+  name: string;
+}
+
+export interface SuggestParentResponse {
+  suggestedParentGoalId: string | null;
+  verdict: 'duplicate' | 'child_of' | 'standalone';
+  candidates: GoalParentCandidateDto[];
+  reasoning: string | null;
+  confidence: number | null;
+}
+
 export interface GoalIssueProgressSnapshotDto {
   goalId: string;
   tenantId: string;

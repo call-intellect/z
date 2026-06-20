@@ -8,6 +8,7 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
+  Optional,
   Param,
   Patch,
   Post,
@@ -21,6 +22,7 @@ import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 import { RequireEntitlement } from '../entitlements/require-entitlement.decorator';
+import { Specialist314GoalsService } from '../knowledge-core/services/specialist-3-14-goals.service';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
@@ -32,6 +34,7 @@ import {
   ListGoalsQuerySchema,
   SetGoalPrioritySchema,
   SupersedeGoalSchema,
+  type SuggestParentResponse,
   UpdateGoalSchema,
   UpdateKeyResultSchema,
   type AddThemesDto,
@@ -60,6 +63,9 @@ export class GoalsController {
     @Inject(GoalKeyResultsService)
     private readonly keyResults: GoalKeyResultsService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Optional()
+    @Inject(Specialist314GoalsService)
+    private readonly specialist314: Specialist314GoalsService | null = null,
   ) {}
 
   @Get()
@@ -138,6 +144,30 @@ export class GoalsController {
       goalId: id,
       priority: body.priority,
     });
+  }
+
+  @Post(':id/suggest-parent')
+  @ApiOperation({
+    summary:
+      'ТЗ карты целей — Кора предлагает родителя для orphan-цели (read-only, KNN + арбитр)',
+  })
+  async suggestParent(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<SuggestParentResponse> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    if (!this.specialist314) {
+      return {
+        suggestedParentGoalId: null,
+        verdict: 'standalone',
+        candidates: [],
+        reasoning: 'Подсказка временно недоступна.',
+        confidence: null,
+      };
+    }
+    return this.specialist314.suggestParentForGoal({ tenantId: t, goalId: id });
   }
 
   @Delete(':id')

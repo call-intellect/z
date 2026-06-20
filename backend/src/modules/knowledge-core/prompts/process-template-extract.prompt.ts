@@ -54,6 +54,11 @@ export const PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT = withAsrNote(
     'ПРИМЕР 4 (дубль существующего). В existingTemplates уже есть «Онбординг нового клиента», в блоках снова описан тот же процесс.',
     'ХОРОШО: верни шаблон с тем же name «Онбординг нового клиента» (система объединит как новую версию), не выдумывай новое имя.',
     '',
+    '# Чья это норма и существенность (для КАЖДОГО шаблона)',
+    'ownerCompany (обязательно): «наша» — процесс НАШЕЙ компании; «клиент» — собеседник описывает СВОЙ бизнес (на продаже/работе с клиентом/партнёрстве); «гость»; «неизвестно». Сохраняется только «наша».',
+    'isKeepableOrgNorm (обязательно): false для инструкций по кнопкам самого продукта «Кора» (notabilityReason="product_demo"), тривиальных (trivial_ui) и разовых (one_off) действий; true — реальный повторяемый процесс нашей компании (notabilityReason=null).',
+    'Если в USER указан контекст внешней встречи — по умолчанию ownerCompany ≠ «наша», пока явно не сказано, что процесс именно нашей компании.',
+    '',
     '# Перед тем как вернуть ответ — самопроверка',
     '1. Каждый шаблон — повторяемый процесс, а не разовое поручение?',
     '2. Дубли существующих шаблонов используют их name (не плодят новые)?',
@@ -81,6 +86,7 @@ export const PROCESS_TEMPLATE_EXTRACT_USER_TEMPLATE = (args: {
     name: string;
     summary: string | null;
   }>;
+  meetingExternalLikely?: boolean;
 }): string => {
   const blocksText = args.blocks
     .map((b, i) => {
@@ -105,6 +111,9 @@ export const PROCESS_TEMPLATE_EXTRACT_USER_TEMPLATE = (args: {
         .join('\n')
     : '(пока шаблонов нет)';
   return [
+    ...(args.meetingExternalLikely
+      ? ['Контекст встречи: продажа/работа с клиентом/партнёрство — вторая сторона часто описывает СВОЙ бизнес; внимательно определи ownerCompany.']
+      : []),
     'Существующие шаблоны процессов:',
     existingText,
     '',
@@ -126,10 +135,26 @@ export const PROCESS_TEMPLATE_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['name', 'steps', 'confidence'],
+        required: ['name', 'steps', 'confidence', 'ownerCompany', 'isKeepableOrgNorm'],
         properties: {
           name: { type: 'string', minLength: 3, maxLength: 300 },
           summary: { type: ['string', 'null'], maxLength: 2_000 },
+          ownerCompany: {
+            type: 'string',
+            enum: ['наша', 'клиент', 'гость', 'неизвестно'],
+            description:
+              'Чей процесс. Только «наша» сохраняется. На продаже/работе с клиентом вторая сторона описывает СВОЙ бизнес → «клиент»/«гость».',
+          },
+          isKeepableOrgNorm: {
+            type: 'boolean',
+            description:
+              'true — реальный повторяемый процесс нашей компании; false — инструкция по UI самого продукта «Кора», тривиальное или разовое действие.',
+          },
+          notabilityReason: {
+            type: ['string', 'null'],
+            enum: [null, 'product_demo', 'trivial_ui', 'one_off'],
+            description: 'Почему НЕ процесс компании (если isKeepableOrgNorm=false).',
+          },
           category: {
             type: ['string', 'null'],
             enum: [

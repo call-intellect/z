@@ -508,6 +508,11 @@ export class TypedConfigService {
         'REGULATION_GATE_STRICT_ENABLED',
         true,
       ),
+      regulationMinMaterializeConfidence: this.resolveSync<number>(
+        'aiFeatures.regulationMinMaterializeConfidence',
+        undefined,
+        0.6,
+      ),
       chatboxTaskExtractionEnabled: this.resolveSync<boolean>(
         'chatbox.taskExtraction.enabled',
         'CHATBOX_TASK_EXTRACTION_ENABLED',

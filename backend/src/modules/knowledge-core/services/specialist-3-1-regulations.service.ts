@@ -164,6 +164,9 @@ export class Specialist31Service {
       .map((e) => e.quote)
       .filter((q) => q && q.length > 0);
 
+    const ownerCompanyPrior = await this.resolveOwnerCompanyPrior(block.id);
+    const meetingExternalLikely = await this.resolveMeetingExternalLikely(block.id);
+
     const guardOnExtract = this.isPromptInjectionGuardEnabled();
     const rawUserExtract = REGULATION_EXTRACT_USER_TEMPLATE({
       blockName: block.name,
@@ -172,6 +175,8 @@ export class Specialist31Service {
       signalType: block.signalType,
       tags: block.tags,
       evidenceQuotes: quotes,
+      ownerCompanyPrior,
+      meetingExternalLikely,
     });
     let result: LlmCallResult;
     try {
@@ -246,7 +251,28 @@ export class Specialist31Service {
       });
       return null;
     }
-    if ((parsed.confidence ?? 0) < Specialist31Service.MIN_EXTRACT_CONFIDENCE) {
+    if (ownerCompanyPrior === 'клиент' || (parsed.ownerCompany && parsed.ownerCompany !== 'наша')) {
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: 'regulation',
+        reason: 'not_our_org',
+      });
+      return null;
+    }
+    if (parsed.isKeepableOrgNorm === false) {
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: 'regulation',
+        reason: 'not_keepable',
+      });
+      return null;
+    }
+    const minMaterializeConfidence = (() => {
+      try {
+        return this.cfg?.aiFeatures.regulationMinMaterializeConfidence ?? 0.6;
+      } catch {
+        return 0.6;
+      }
+    })();
+    if ((parsed.confidence ?? 0) < minMaterializeConfidence) {
       this.logger.debug(
         { blockId: block.id, confidence: parsed.confidence },
         'specialist-3-1.extractDraft: confidence слишком низкий — skip',
@@ -1614,6 +1640,53 @@ export class Specialist31Service {
     return [...new Set(persons.map((p) => p.id))];
   }
 
+  private async resolveOwnerCompanyPrior(blockId: string): Promise<'клиент' | 'неизвестно'> {
+    const hasEmployeeSubject = await this.prisma.ideaBlockEntity.findFirst({
+      where: {
+        blockId,
+        role: 'subject',
+        entity: {
+          type: 'person',
+          persons: { some: { relationship: 'employee', deletedAt: null } },
+        },
+      },
+      select: { entityId: true },
+    });
+    if (hasEmployeeSubject) return 'неизвестно';
+    const hasExternal = await this.prisma.ideaBlockEntity.findFirst({
+      where: {
+        blockId,
+        role: { in: ['subject', 'mentioned'] },
+        entity: {
+          type: 'person',
+          persons: { some: { relationship: 'external', deletedAt: null } },
+        },
+      },
+      select: { entityId: true },
+    });
+    return hasExternal ? 'клиент' : 'неизвестно';
+  }
+
+  private async resolveMeetingExternalLikely(blockId: string): Promise<boolean> {
+    const ev = await this.prisma.ideaBlockEvidence.findMany({
+      where: { blockId },
+      select: { rawEventId: true },
+    });
+    if (ev.length === 0) return false;
+    const raw = await this.prisma.rawEvent.findFirst({
+      where: { id: { in: ev.map((e) => e.rawEventId) }, sourceType: 'meeting' },
+      orderBy: { occurredAt: 'desc' },
+      select: { sourceExternalId: true },
+    });
+    if (!raw?.sourceExternalId) return false;
+    const meeting = await this.prisma.meeting.findUnique({
+      where: { id: raw.sourceExternalId },
+      select: { type: true },
+    });
+    if (!meeting) return false;
+    return ['sales', 'customer_success', 'partner', 'custdev'].includes(meeting.type);
+  }
+
   private async upsertSingleProcessStep(args: {
     tenantId: string;
     processId: string;
@@ -1874,6 +1947,9 @@ export interface RegulationDraft {
     stepDescription?: string | null;
   } | null;
   isOrgNorm?: boolean | null;
+  ownerCompany?: 'наша' | 'клиент' | 'гость' | 'неизвестно' | null;
+  isKeepableOrgNorm?: boolean | null;
+  notabilityReason?: 'product_demo' | 'trivial_ui' | 'one_off' | null;
   extractionStatus?: 'существует' | 'нужен' | 'обсуждается' | null;
   roles?: string[];
   evidenceQuote?: string | null;

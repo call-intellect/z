@@ -69,6 +69,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['graph.ageEnabled', z.boolean()],
 
   ['aiFeatures.summaryAgentEnabled', z.boolean()],
+  ['aiFeatures.regulationMinMaterializeConfidence', UNIT_INTERVAL],
   ['aiFeatures.clientProtocolEnabled', z.boolean()],
 
   ['llm.cacheSmokeEnabled', z.boolean()],

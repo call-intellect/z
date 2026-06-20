@@ -38,6 +38,8 @@ describe('regulation-extract — snapshot сборки промта', () => {
       evidenceQuotes: [
         'Все договоры с подрядчиком сначала уходят юристу на проверку, юрист отвечает в течение 3 рабочих дней.',
       ],
+      ownerCompanyPrior: 'неизвестно',
+      meetingExternalLikely: false,
     });
     expect(user).toMatchSnapshot('user');
   });

@@ -177,3 +177,136 @@ describe('Specialist31Service.upsertRegulation — Ф1 форматтер на �
     expect(prismaMock.cardVersion.create).not.toHaveBeenCalled();
   });
 });
+
+function makeExtractBlock(overrides?: Record<string, unknown>) {
+  return {
+    id: 'b1',
+    tenantId: TENANT,
+    dataClass: 'internal',
+    name: 'Блок',
+    criticalQuestion: 'Как делаем?',
+    trustedAnswer: 'Так и так.',
+    signalType: 'regulation',
+    tags: [],
+    evidence: [{ quote: 'Цитата' }],
+    ...overrides,
+  } as any;
+}
+
+function makeExtractService(args: {
+  llmText: string;
+  ownerCompanyPrior: 'наша' | 'клиент' | 'гость' | 'неизвестно';
+  meetingExternalLikely?: boolean;
+}) {
+  const llm = {
+    call: vi
+      .fn()
+      .mockResolvedValue({ text: args.llmText, modelUsed: 'm', tier: 'primary' }),
+  } as any;
+  const embedder = { embedQuery: vi.fn().mockResolvedValue(null) } as any;
+  const curation = {} as any;
+  const conflicts = {} as any;
+  const probes = {} as any;
+  const metrics = {
+    incCoreSpecialistExtractionFailure: vi.fn(),
+    incCoreSpecialistLlmTokens: vi.fn(),
+    incCoreSpecialistSkipped: vi.fn(),
+    observeCoreSpecialistPipelineDuration: vi.fn(),
+  } as any;
+
+  const service = new Specialist31Service(
+    {} as any,
+    llm,
+    embedder,
+    curation,
+    conflicts,
+    probes,
+    metrics,
+    undefined as any,
+    undefined as any,
+    undefined as any,
+  );
+
+  vi.spyOn(service as any, 'resolveOwnerCompanyPrior').mockResolvedValue(
+    args.ownerCompanyPrior,
+  );
+  vi.spyOn(service as any, 'resolveMeetingExternalLikely').mockResolvedValue(
+    args.meetingExternalLikely ?? false,
+  );
+  vi.spyOn(service as any, 'isPromptInjectionGuardEnabled').mockReturnValue(false);
+
+  return { service, metrics, llm };
+}
+
+describe('Specialist31Service.extractDraft — Ф1 гейты чья-норма/существенность', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('Кейс 1: приор «клиент» → null + incCoreSpecialistSkipped(not_our_org), даже при extractionStatus=нужен', async () => {
+    const draft = {
+      kind: 'regulation',
+      name: 'Норма клиента',
+      statement: 'Описание нормы клиента.',
+      ownerCompany: 'клиент',
+      isKeepableOrgNorm: true,
+      extractionStatus: 'нужен',
+      confidence: 0.9,
+    };
+    const { service, metrics } = makeExtractService({
+      llmText: JSON.stringify(draft),
+      ownerCompanyPrior: 'клиент',
+    });
+
+    const out = await (service as any).extractDraft(makeExtractBlock());
+
+    expect(out).toBeNull();
+    expect(metrics.incCoreSpecialistSkipped).toHaveBeenCalledWith(
+      expect.objectContaining({ specialist: 'regulation', reason: 'not_our_org' }),
+    );
+  });
+
+  it('Кейс 2: isKeepableOrgNorm=false при confidence=0.9 → null + incCoreSpecialistSkipped(not_keepable)', async () => {
+    const draft = {
+      kind: 'instruction',
+      name: 'Как нажать кнопку',
+      statement: 'Нажмите кнопку, чтобы добавить ярлык.',
+      ownerCompany: 'наша',
+      isKeepableOrgNorm: false,
+      notabilityReason: 'product_demo',
+      confidence: 0.9,
+    };
+    const { service, metrics } = makeExtractService({
+      llmText: JSON.stringify(draft),
+      ownerCompanyPrior: 'неизвестно',
+    });
+
+    const out = await (service as any).extractDraft(makeExtractBlock());
+
+    expect(out).toBeNull();
+    expect(metrics.incCoreSpecialistSkipped).toHaveBeenCalledWith(
+      expect.objectContaining({ specialist: 'regulation', reason: 'not_keepable' }),
+    );
+  });
+
+  it('Кейс 3: наша норма, isKeepableOrgNorm=true, confidence=0.9 → draft не null', async () => {
+    const draft = {
+      kind: 'regulation',
+      name: 'Наша норма',
+      statement: 'Описание нашей нормы компании.',
+      ownerCompany: 'наша',
+      isKeepableOrgNorm: true,
+      confidence: 0.9,
+    };
+    const { service, metrics } = makeExtractService({
+      llmText: JSON.stringify(draft),
+      ownerCompanyPrior: 'неизвестно',
+    });
+
+    const out = await (service as any).extractDraft(makeExtractBlock());
+
+    expect(out).not.toBeNull();
+    expect(out.name).toBe('Наша норма');
+    expect(metrics.incCoreSpecialistSkipped).not.toHaveBeenCalled();
+  });
+});

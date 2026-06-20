@@ -61,6 +61,7 @@ export class ProcessExtractionService {
     let llmResult: LlmCallResult;
     const start = Date.now();
     const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
+    const meetingExternalLikely = await this.resolveBatchMeetingExternalLikely(args.blockIds);
     const guarded = applyInputGuards(
       PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT,
       PROCESS_TEMPLATE_EXTRACT_USER_TEMPLATE({
@@ -72,6 +73,7 @@ export class ProcessExtractionService {
           quotes: b.quotes,
         })),
         existingTemplates,
+        meetingExternalLikely,
       }),
       { enabled: guardOn, injection: true },
     );
@@ -182,6 +184,12 @@ export class ProcessExtractionService {
     sourceBlockIds: readonly string[];
   }): Promise<'new' | 'updated' | 'skipped'> {
     if (!args.template?.name || !Array.isArray(args.template.steps)) {
+      return 'skipped';
+    }
+    if (args.template.ownerCompany && args.template.ownerCompany !== 'наша') {
+      return 'skipped';
+    }
+    if (args.template.isKeepableOrgNorm === false) {
       return 'skipped';
     }
     const name = args.template.name.trim().slice(0, 300);
@@ -330,6 +338,30 @@ export class ProcessExtractionService {
     }));
   }
 
+  private async resolveBatchMeetingExternalLikely(
+    blockIds: readonly string[],
+  ): Promise<boolean> {
+    const firstBlockId = blockIds[0];
+    if (!firstBlockId) return false;
+    const ev = await this.prisma.ideaBlockEvidence.findMany({
+      where: { blockId: firstBlockId },
+      select: { rawEventId: true },
+    });
+    if (ev.length === 0) return false;
+    const raw = await this.prisma.rawEvent.findFirst({
+      where: { id: { in: ev.map((e) => e.rawEventId) }, sourceType: 'meeting' },
+      orderBy: { occurredAt: 'desc' },
+      select: { sourceExternalId: true },
+    });
+    if (!raw?.sourceExternalId) return false;
+    const meeting = await this.prisma.meeting.findUnique({
+      where: { id: raw.sourceExternalId },
+      select: { type: true },
+    });
+    if (!meeting) return false;
+    return ['sales', 'customer_success', 'partner', 'custdev'].includes(meeting.type);
+  }
+
   private maxDataClass(
     blocks: ReadonlyArray<{ dataClass: IdeaBlock['dataClass'] }>,
   ): IdeaBlock['dataClass'] {
@@ -352,6 +384,9 @@ interface ExtractedTemplate {
   summary?: string | null;
   category?: string | null;
   scope?: string | null;
+  ownerCompany?: 'наша' | 'клиент' | 'гость' | 'неизвестно' | null;
+  isKeepableOrgNorm?: boolean | null;
+  notabilityReason?: 'product_demo' | 'trivial_ui' | 'one_off' | null;
   confidence: number;
   steps: Array<{
     order: number;

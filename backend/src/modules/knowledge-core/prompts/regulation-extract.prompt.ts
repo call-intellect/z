@@ -72,6 +72,28 @@ export const REGULATION_EXTRACT_SYSTEM_PROMPT = withAsrNote(
     'Блок «Онбординг как в Google» (регламент, правило). Цитаты: «Хорошо бы когда-нибудь описать онбординг так, как это делают в Google».',
     'Вывод: {"kind":"regulation","name":"Онбординг по образцу Google (не норма)","statement":"Недостаточно сигнала: упомянута чужая практика и гипотетика, это не действующая норма компании.","extractionStatus":null,"roles":[],"evidenceQuote":null,"scope":null,"ownerHint":null,"severity":null,"category":null,"processStepHint":null,"isOrgNorm":false,"confidence":0.15}.',
     '',
+    '# Чья это норма (ownerCompany — обязательное поле)',
+    'Фиксируем ТОЛЬКО норму нашей компании «Кора». В USER тебе дают тип встречи и приор «чья сторона».',
+    '- наша — норма/процесс/инструкция НАШЕЙ компании («как делаем МЫ»).',
+    '- клиент — собеседник рассказывает про СВОЮ компанию (на продаже, работе с клиентом, партнёрстве, интервью вторая сторона описывает свой бизнес) → это НЕ наша норма.',
+    '- гость — внешний участник без отношения к нам.',
+    '- неизвестно — по тексту нельзя определить, чью практику описывают.',
+    'Если приор = «клиент» или указан контекст внешней встречи — по умолчанию ownerCompany ≠ «наша», пока в тексте ЯВНО не сказано, что это практика именно нашей компании. Материализуется только ownerCompany = «наша».',
+    '',
+    '# Существенность (isKeepableOrgNorm — обязательное поле)',
+    'Инструкции по нажатию кнопок в самом продукте «Кора» (например «как добавить ярлык на экран», «как оплатить картой», «как перейти в раздел», «куда нажать») — это документация продукта, а НЕ норма компании → isKeepableOrgNorm=false, notabilityReason="product_demo".',
+    'Тривиальное общеизвестное действие без специфики компании → isKeepableOrgNorm=false, notabilityReason="trivial_ui".',
+    'Разовое действие «на один раз», не повторяемая практика → isKeepableOrgNorm=false, notabilityReason="one_off".',
+    'Реальная повторяемая норма/процесс/инструкция нашей компании, которую стоит хранить → isKeepableOrgNorm=true, notabilityReason=null.',
+    'Важно: «используем инструмент X в нашей работе» (наш регламент поверх стороннего сервиса) — это НОРМА (isKeepableOrgNorm=true). product_demo — только про кнопки САМОГО продукта «Кора».',
+    '',
+    '# Дерево выбора kind (применяй сверху вниз, бери первое совпадение)',
+    '1. Есть последовательность шагов с ПЕРЕДАЧЕЙ работы между разными ролями → process.',
+    '2. Пошаговое «как сделать X» для ОДНОЙ роли без передачи между ролями → instruction.',
+    '3. Правило-принцип без пошаговой процедуры (что можно/нельзя и на каких условиях) → policy.',
+    '4. Формальный норматив/требование компании с проверкой и ответственными → regulation.',
+    'Одна и та же норма ВСЕГДА выбирает ОДИН kind — не расщепляй её по таблицам/разделам.',
+    '',
     '# Перед тем как вернуть ответ — самопроверка',
     '1. Это повторяемая норма компании, а не разовое поручение/чужая практика/гипотетика (isOrgNorm)?',
     '2. kind верный (instruction — одна роль без передачи; process — работа идёт между ролями)?',
@@ -93,6 +115,8 @@ export const REGULATION_EXTRACT_USER_TEMPLATE = (args: {
   signalType: string;
   tags: readonly string[];
   evidenceQuotes: readonly string[];
+  ownerCompanyPrior: string;
+  meetingExternalLikely: boolean;
 }): string => {
   const quotes = args.evidenceQuotes.length
     ? args.evidenceQuotes.map((q, i) => `  ${i + 1}. «${q}»`).join('\n')
@@ -101,6 +125,10 @@ export const REGULATION_EXTRACT_USER_TEMPLATE = (args: {
   return [
     `Блок «${args.blockName}».`,
     `Тип сигнала: ${signalTypeLabel(args.signalType)}.`,
+    `Приор «чья сторона» (по данным базы): ${args.ownerCompanyPrior}.`,
+    ...(args.meetingExternalLikely
+      ? ['Контекст встречи: продажа/работа с клиентом/партнёрство/интервью — на таких встречах вторая сторона часто рассказывает про СВОЮ компанию. Внимательно определи ownerCompany.']
+      : []),
     `Вопрос: ${args.criticalQuestion}`,
     `Ответ: ${args.trustedAnswer}`,
     `Теги: ${tags}`,
@@ -119,11 +147,27 @@ export const REGULATION_EXTRACT_USER_TEMPLATE = (args: {
 export const REGULATION_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
-  required: ['kind', 'name', 'statement', 'isOrgNorm', 'confidence'],
+  required: ['kind', 'name', 'statement', 'isOrgNorm', 'confidence', 'ownerCompany', 'isKeepableOrgNorm'],
   properties: {
     kind: {
       type: 'string',
       enum: ['regulation', 'process', 'policy', 'standard', 'instruction'],
+    },
+    ownerCompany: {
+      type: 'string',
+      enum: ['наша', 'клиент', 'гость', 'неизвестно'],
+      description:
+        'Чья норма. Только «наша» материализуется. На продаже/работе с клиентом вторая сторона рассказывает про СВОЮ компанию → «клиент»/«гость».',
+    },
+    isKeepableOrgNorm: {
+      type: 'boolean',
+      description:
+        'true — реальная повторяемая норма нашей компании, которую стоит хранить; false — инструкция по UI самого продукта «Кора», тривиальное или разовое действие.',
+    },
+    notabilityReason: {
+      type: ['string', 'null'],
+      enum: [null, 'product_demo', 'trivial_ui', 'one_off'],
+      description: 'Почему НЕ норма (если isKeepableOrgNorm=false).',
     },
     name: { type: 'string', minLength: 3, maxLength: 300 },
     statement: { type: 'string', minLength: 5, maxLength: 4_000 },

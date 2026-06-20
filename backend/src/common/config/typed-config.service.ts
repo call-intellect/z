@@ -924,6 +924,7 @@ export class TypedConfigService {
   get specialistsCombined() {
     return {
       enabled: this.get('SPECIALISTS_COMBINED_ENABLED'),
+      delayMs: this.get('SPECIALISTS_COMBINED_DELAY_MS'),
     } as const;
   }
 

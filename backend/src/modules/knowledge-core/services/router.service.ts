@@ -79,6 +79,23 @@ export class RouterService {
     GOALS: '3-14-goals',
   } as const;
 
+  /// Специалисты, которых одним проходом извлекает объединённый разборщик
+  /// (combined, SPECIALISTS_COMBINED_ENABLED). При включённом combined эти 9 НЕ
+  /// диспатчатся раздельно. Вне набора — три multi-step специалиста
+  /// (project-customer, personal-relation, goals): они делают резолюцию/иерархию
+  /// сверх извлечения и в single-pass combined не сворачиваются.
+  static readonly COMBINED_COVERED: ReadonlySet<string> = new Set<string>([
+    RouterService.SPECIALIST.DECISIONS,
+    RouterService.SPECIALIST.REGULATIONS,
+    RouterService.SPECIALIST.INSIGHTS,
+    RouterService.SPECIALIST.IDEAS,
+    RouterService.SPECIALIST.SKILL,
+    RouterService.SPECIALIST.KNOWLEDGE_CLONE,
+    RouterService.SPECIALIST.PROCESS_DETECTOR,
+    RouterService.SPECIALIST.EXPERIMENT_TRACKER,
+    RouterService.SPECIALIST.HELPFULNESS,
+  ]);
+
   /**
    * Приоритет специалистов для анти-fan-out trim'а. Чем меньше число — тем
    * важнее. См. §10.0 sub-ТЗ: «decisions > regulations > insights > ideas >
@@ -166,6 +183,10 @@ export class RouterService {
         'RouterService: matchSpecialists упал — пропускаем dispatch',
       );
       return { dispatched: [], fanOutBeforeTrim: 0 };
+    }
+
+    if (this.cfg.specialistsCombined.enabled) {
+      targets = targets.filter((t) => !RouterService.COMBINED_COVERED.has(t));
     }
 
     const fanOutBeforeTrim = targets.length;

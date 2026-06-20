@@ -194,6 +194,29 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         );
       });
 
+    if (this.cfg.specialistsCombined.enabled) {
+      const meetingId = await this.resolveMeetingIdForBlock(
+        block.id,
+        block.tenantId,
+      );
+      if (meetingId) {
+        await this.coreQueue
+          .enqueueSpecialistsCombined(meetingId, {
+            delayMs: this.cfg.specialistsCombined.delayMs,
+          })
+          .catch((err) => {
+            this.logger.warn(
+              {
+                blockId: block.id,
+                meetingId,
+                err: err instanceof Error ? err.message : String(err),
+              },
+              'block-distill: enqueueSpecialistsCombined упал — combined-разбор отложен',
+            );
+          });
+      }
+    }
+
     this.emitIdeaBlockUpdated({
       tenantId: block.tenantId,
       blockId: block.id,
@@ -214,6 +237,22 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         );
       }
     }
+  }
+
+  private async resolveMeetingIdForBlock(
+    blockId: string,
+    tenantId: string,
+  ): Promise<string | null> {
+    const ev = await this.prisma.ideaBlockEvidence.findFirst({
+      where: { blockId },
+      select: { rawEventId: true },
+    });
+    if (!ev?.rawEventId) return null;
+    const raw = await this.prisma.rawEvent.findFirst({
+      where: { id: ev.rawEventId, tenantId, sourceType: 'meeting' },
+      select: { sourceExternalId: true },
+    });
+    return raw?.sourceExternalId ?? null;
   }
 
   private async mergeInto(args: {

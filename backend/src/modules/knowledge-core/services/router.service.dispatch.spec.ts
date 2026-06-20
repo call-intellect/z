@@ -8,7 +8,7 @@ import type { CoreQueueService } from '../../core-queue/core-queue.service';
 
 import { RouterService } from './router.service';
 
-function makeMocks(opts: { hasEmployeeSubject: boolean }) {
+function makeMocks(opts: { hasEmployeeSubject: boolean; combinedEnabled?: boolean }) {
   const findFirst = vi.fn(async () => (opts.hasEmployeeSubject ? { entityId: 'ent-emp-1' } : null));
   const prisma = {
     ideaBlockEntity: { findFirst },
@@ -36,6 +36,10 @@ function makeMocks(opts: { hasEmployeeSubject: boolean }) {
   const cfg = {
     router: { maxSpecialistsPerBlock: 4 },
     aiFeatures: { promptInjectionGuardEnabled: false },
+    specialistsCombined: {
+      enabled: opts.combinedEnabled ?? false,
+      delayMs: 90_000,
+    },
   } as unknown as TypedConfigService;
 
   return {
@@ -107,5 +111,41 @@ describe('RouterService.dispatch — Фаза 0.5 (expertise/experience/competen
       return arg0.specialistName;
     });
     expect(calls).toEqual(expect.arrayContaining(['3-7-skill', '3-2-knowledge-clone']));
+  });
+});
+
+describe('RouterService.dispatch — гибрид combined (skip 9 покрытых, keep 3 multi-step)', () => {
+  beforeEach(() => {
+    delete process.env['ROUTER_LLM_FALLBACK_ENABLED'];
+  });
+
+  it('combined ON: decision → DECISIONS покрыт combined → 0 раздельных', async () => {
+    const m = makeMocks({ hasEmployeeSubject: false, combinedEnabled: true });
+    const router = new RouterService(m.prisma, m.coreQueue, m.metrics, m.cfg);
+    const result = await router.dispatch(makeBlock('decision'));
+    expect(result.dispatched).toEqual([]);
+    expect(m.enqueueSpecialistRouting).not.toHaveBeenCalled();
+  });
+
+  it('combined ON: commitment → GOALS (multi-step) остаётся раздельным', async () => {
+    const m = makeMocks({ hasEmployeeSubject: false, combinedEnabled: true });
+    const router = new RouterService(m.prisma, m.coreQueue, m.metrics, m.cfg);
+    const result = await router.dispatch(makeBlock('commitment'));
+    expect(result.dispatched).toEqual([RouterService.SPECIALIST.GOALS]);
+    expect(m.enqueueSpecialistRouting).toHaveBeenCalledTimes(1);
+  });
+
+  it('combined ON: team_friction → INSIGHTS убран, PERSONAL_RELATION остаётся (фильтр по специалисту)', async () => {
+    const m = makeMocks({ hasEmployeeSubject: false, combinedEnabled: true });
+    const router = new RouterService(m.prisma, m.coreQueue, m.metrics, m.cfg);
+    const result = await router.dispatch(makeBlock('team_friction'));
+    expect(result.dispatched).toEqual([RouterService.SPECIALIST.PERSONAL_RELATION]);
+  });
+
+  it('combined OFF: decision → DECISIONS диспатчится как обычно', async () => {
+    const m = makeMocks({ hasEmployeeSubject: false, combinedEnabled: false });
+    const router = new RouterService(m.prisma, m.coreQueue, m.metrics, m.cfg);
+    const result = await router.dispatch(makeBlock('decision'));
+    expect(result.dispatched).toEqual([RouterService.SPECIALIST.DECISIONS]);
   });
 });

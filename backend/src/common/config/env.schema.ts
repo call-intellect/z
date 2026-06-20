@@ -391,7 +391,8 @@ const ShareSchema = z.object({
 const RouterSchema = z.object({
   ROUTER_DISPATCH_CONCURRENCY: z.coerce.number().int().positive().default(4),
   ROUTER_MAX_SPECIALISTS_PER_BLOCK: z.coerce.number().int().positive().default(4),
-  SPECIALISTS_COMBINED_ENABLED: z.coerce.boolean().default(false),
+  SPECIALISTS_COMBINED_ENABLED: z.coerce.boolean().default(true),
+  SPECIALISTS_COMBINED_DELAY_MS: z.coerce.number().int().nonnegative().default(90_000),
 });
 
 const ConversationalSchema = z.object({

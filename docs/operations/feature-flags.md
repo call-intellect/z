@@ -1,5 +1,7 @@
 # Реестр флагов — Z / Кора
 
+> **Критерий «секрет vs крутилка» и реестр переноса ENV→AdminSetting** — [analysis 2026-06-20-config-env-vs-admin-settings-audit](../../plans/analysis/2026-06-20-config-env-vs-admin-settings-audit.md). Крутилки (пороги/лимиты/флаги/часы) идут в `AdminSetting`, в ENV — только секреты/инфра; прямой `process.env.*` мимо `env.schema.ts` запрещён (CLAUDE.md принцип 9).
+
 > **Правило (CLAUDE.md принцип 8 «Ship-On»): выкатываем включённым.**
 > Готовая фича идёт в прод СРАЗУ включённой. «Дефолт OFF, владелец включит потом» и фаза «понаблюдаем → включим» — **запрещены**: не готова включиться, значит не готова к выкату.
 >
@@ -157,7 +159,9 @@ _(пусто — все доставки в Telegram авторизованы в
 
 Это не «забытые», а незрелые. По Ship-On: когда дозреют — выкатятся сразу включёнными. Сейчас трогать не нужно.
 
-`MAIL_INBOX_ENABLED` (задачи из писем) · `CLONE_V2_ENABLED` · `SPECIALISTS_COMBINED_ENABLED` · `BITEMPORAL_ENABLED` / `BITEMPORAL_SUPERSEDE_ENABLED` (версионирование знаний во времени) · `PROMPT_EVOLUTION_ENABLED` (авто-эволюция промптов, GEPA).
+`MAIL_INBOX_ENABLED` (задачи из писем) · `CLONE_V2_ENABLED` · `BITEMPORAL_ENABLED` / `BITEMPORAL_SUPERSEDE_ENABLED` (версионирование знаний во времени) · `PROMPT_EVOLUTION_ENABLED` (авто-эволюция промптов, GEPA).
+
+> **`SPECIALISTS_COMBINED_ENABLED` — дозрел, выкачен ВКЛЮЧЁННЫМ (kill-switch, default ON, 2026-06-20).** Гибрид: объединённый разборщик берёт 9 single-pass-специалистов одним LLM-вызовом, а 3 multi-step (project-customer, personal-relation, goals) остаются раздельными (их резолюция/иерархия не сворачивается в один проход). `router.dispatch` при ON убирает 9 покрытых (`RouterService.COMBINED_COVERED`), `block-distill.worker` ставит combined per-meeting с барьером-паузой `SPECIALISTS_COMBINED_DELAY_MS` (default 90с) + дедуп по встрече; combined идемпотентен. Рубильник — выключить при инциденте (вернётся на раздельных, без потери типов).
 
 ### Флаг миграции (default OFF до переключения источника данных)
 

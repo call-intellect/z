@@ -38,8 +38,14 @@ branch: feature/idv-and-goals-map → dev
 - **`tsc --noEmit` иногда падает OOM (code 134, V8 allocation)** на большом backend — транзиентно; `NODE_OPTIONS="--max-old-space-size=8192"` снимает.
 - **writer-слой уже идемпотентен** (T5/T2): не дублировал dedup; Ф5/Ф6 — аддитивная связь `realized_as` поверх готового каркаса.
 
-# Открытые хвосты
+# Combined-разборщик включён ВКЛЮЧЁННЫМ (гибрид, владелец потребовал Ship-On)
 
-- **combined-специалист (idv Ф7)** — право переноса idea↔decision дописано в промпт, но `SPECIALISTS_COMBINED_ENABLED` глобально НЕ включён: включение меняет обработку всех 8 типов сущностей конвейера (не только idea/decision) — это решение владельца с отдельной приёмкой всего конвейера, вне scope разводки.
+После выката владелец потребовал включить combined-разборщик глобально, без ручных действий. При попытке включить вскрылось:
+- **producer combined не подключён** — метод `enqueueSpecialistsCombined` нигде не вызывался: combined-worker написан, но в конвейер не встроен (флаг сам по себе ничего не активировал);
+- **combined покрывает 9 из 12 специалистов** — вне его: goals(3-14), project-customer(3-4), personal-relation(3-12). «Просто заменить всех» = потеря этих 3 типов; «параллельно» = ×2 стоимость на 8 типах.
+
+**Решение — гибрид (доказано таблицей вариантов):** combined берёт 9 single-pass-извлекателей одним вызовом; 3 multi-step (резолюция/KNN/иерархия сверх извлечения) остаются раздельными — их нельзя свернуть в один проход без потери логики. Реализация: `RouterService.COMBINED_COVERED` (9) + фильтр в `dispatch` (при ON убрать 9, оставить 3); `block-distill.worker` ставит combined per-meeting с барьером-паузой `SPECIALISTS_COMBINED_DELAY_MS` + дедуп по встрече (поздние блоки до-запускают сами, combined идемпотентен — отдельный reconcile не нужен); флаг `SPECIALISTS_COMBINED_ENABLED` default true. Фильтр — по специалисту-получателю, НЕ по signalType (один сигнал `fact` идёт и к combined-covered knowledge-clone, и к keep project-customer). 4 unit-теста на гибрид. Урок: «включить флаг» ≠ «фича работает» — проверяй, вызывается ли producer и покрывает ли подсистема весь объём.
+
+# Прочие открытые хвосты
 - **suggest-parent без отдельного unit-теста** — тонкая read-only обёртка над уже протестированными `knnCandidates`/`hierarchyArbiter` + простой BFS-обход потомков; приёмка статическая (read-only код-факт + typecheck/build).
 - Боевая проверка эффекта (дубли→0, рост доли решений, idea:decision-перекос) — ship-and-observe через `diag graph` после выката.

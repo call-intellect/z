@@ -493,6 +493,12 @@ const STEPS: Step[] = [
   },
   {
     phase: 'backfill',
+    script: 'scripts/backfill-decisions-from-signals.ts',
+    hint: 'Переэкстракция decision-сигнальных блоков без Decision (ТЗ decision-materialization-idempotency Ф6) — идемпотентно через 3-3',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'backfill',
     script: 'scripts/backfill-rename-z-sources.ts',
     hint: 'Source «Встречи Z»→«Встречи», «Трекер Z»→«Трекер» (бренд Z→Кора)',
     skipBootstrap: true,

@@ -113,6 +113,34 @@ docker compose exec backend sh -c "grep -rl regulation-consolidator src/modules/
 
 ---
 
+### 🧱 2026-06-20 — Надёжность усвоения знаний: идемпотентные писатели + partial-loss + бэкофилл решений
+
+> Контракт: ветка `dev` (коммиты `6e344b59`/`f899dcb4`/`3fcaa2df`/`c8bb549f`/`5657f5b2`). ТЗ: `plans/tz/2026-06-20-decision-materialization-idempotency-fix.md` + `plans/tz/2026-06-20-knowledge-core-silent-loss-reliability.md` + `plans/tz/2026-06-17-intake-issue-linked-meeting-ids-fix.md`. second-brain: `02_architecture/knowledge-core.md`. Реестр тестов — `docs/testing/test-inventory.md`.
+>
+> **Зачем для прода:** класс «тихая потеря» в слое записи графа знаний — извлечённая сущность не доходила до базы без ошибки и без повтора. Чиним: (1) три писателя Decision (specialist-3-3 / specialists-combined / graph.service) приведены к идемпотентному `create+catch(P2002)→merge` — гонку лечит не проверка, а сериализация на `@unique`; (2) писатели 3-5/3-6/3-14 пробрасывают реальную ошибку записи → BullMQ retry (повтор идемпотентен по guard), а не глушат её; (3) block-ingest больше не помечает `RawEvent ingested` при потере извлечения, тотальная потеря → `RawEvent failed` (видимо, reconcile-cron добирает).
+>
+> **Миграций Prisma НЕТ** — Ф4 (снять `@unique sourceIdeaBlockId`) **осознанно НЕ делалась**: после идемпотентного `create+catch` уникальность работает как точка сериализации трёх писателей Decision, снятие вернуло бы кросс-писательские дубли. **Docker rebuild backend обязателен.** Накопленные пустые реестры решений схлопнёт только разовый backfill (Шаг 8).
+
+- **Шаг 1 — ENV / AdminSetting** — новых обязательных ENV нет; новых owner-флагов нет. Новая метрика для мониторинга `core_partial_loss_total{reason="extraction_window_failed"|"persist_null"}` (рост = потеря в block-ingest) + `db_conflict` в метриках специалистов (recoverable-конфликт, НЕ ошибка).
+- **Шаг 8 — Backfill (1 прогон, идемпотентный, уже в STEPS `phase:'backfill'`, `skipBootstrap`):** `backfill-decisions-from-signals.ts` — переэкстракция canonical decision-сигнальных блоков (`decision`/`rationale`/`decision_basis`) без материализованного Decision через `router.dispatch`→3-3, идемпотентно (Ф1 guard+merge, дублей не создаст). Сначала dry-run:
+  ```bash
+  docker compose exec backend bun run scripts/backfill-decisions-from-signals.ts --dry-run
+  ```
+  По конкретной org (опц. `--limit N`):
+  ```bash
+  docker compose exec backend bun run scripts/backfill-decisions-from-signals.ts --org <orgId>
+  ```
+  Затем агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Идемпотентен (повтор → no-op).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Фронта изменения не касаются.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) **метрика partial-loss есть в образе:** `docker compose exec backend grep -rq "core_partial_loss_total" src/` → найдено;
+  - (б) **после прогона backfill:** у активных тенантов с decision-сигналами `Decision > 0` (раньше реестр был пуст); `diag graph` больше не флагует «⚠ РАСХОЖДЕНИЕ»;
+  - (в) **наблюдение:** `core_partial_loss_total` не растёт устойчиво (всплеск = потеря в block-ingest, разбирать).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📨 2026-06-20 — Помощник ставит задачу на другого + уведомление исполнителю + человекочитаемое подтверждение
 
 > Контракт: ветка `feature/assistant-assign-task-notify`. ТЗ: `plans/tz/2026-06-20-assistant-assign-task-to-others-and-notify.md`. second-brain: `01_projects/api-layer.md`, `01_projects/concierge-agent.md`, `01_projects/conversational-channels.md`, `02_architecture/module-map.md`. Реестр флагов — `docs/operations/feature-flags.md` (`ASSIGNMENT_NOTIFICATIONS_ENABLED`).

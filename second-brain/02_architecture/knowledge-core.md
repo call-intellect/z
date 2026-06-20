@@ -738,6 +738,18 @@ resourceType). Метрики: `curation_provisional_total`, `curation_audit_sam
 
 Полный реестр изменений AI-пайплайна — [[../01_projects/ai-jobs]] §«Устойчивость JSON-арбитра графа».
 
+## Инвариант надёжной записи: класс «тихая потеря» закрыт (2026-06-20)
+
+**Источник:** ТЗ `plans/tz/2026-06-20-decision-materialization-idempotency-fix.md` + `plans/tz/2026-06-20-knowledge-core-silent-loss-reliability.md` (коммиты `6e344b59`/`f899dcb4`/`3fcaa2df`/`c8bb549f`/`5657f5b2`). Реестр тестов — [`docs/testing/test-inventory.md`](../../docs/testing/test-inventory.md).
+
+Раньше извлечённая сущность могла **не дойти до базы** без ошибки и без повтора (гонка/сбой записи проглатывались внешним catch как «успех»). Инвариант надёжной записи слоя специалистов теперь держится тремя гардами:
+
+- **Идемпотентный писатель сущности.** Для `Decision` (несёт legacy `@unique sourceIdeaBlockId`) все три писателя — `graph.service.upsertDecision`, `specialist-3-3.createNewDecision`, `specialists-combined.persistDecisions` — делают `create` + `catch(P2002)` → re-find по `{tenantId, sourceIdeaBlockId}` → merge в существующий. `@unique` **оставлен осознанно** (миграции на снятие нет): после `create+catch` он работает как точка сериализации трёх писателей (кто проиграл гонку — обогащает существующий Decision), снятие вернуло бы кросс-писательские дубли. Для `Idea`/`Insight`/`Goal` (неуникальный `sourceBlockIds[]`) идемпотентность держит guard `findFirst` по `sourceBlockIds`. Cross-tenant коллизия → `ConflictException`, не тихий P2002.
+- **Внешний catch писателя ПРОБРАСЫВАЕТ реальную ошибку.** `specialist-3-5/3-6/3-14` во внешнем `catch processBlock` различают recoverable-конфликт (`db_conflict` — метрика, не ошибка) и реальную ошибку записи — реальную **бросают** (`throw err`) → BullMQ retry; повтор идемпотентен по guard. Молчаливый `return`/`continue` на ошибке записи убран.
+- **block-ingest не лжёт об «ingested».** При потере извлечения (LLM-окно вернуло пусто → `failedWindows`; `persistBlock` вернул `null` → `persistFailures`) пишется метрика `core_partial_loss_total{reason=extraction_window_failed|persist_null}`, событие НЕ помечается полностью `ingested`. Тотальная потеря (`failedWindows>0` и 0 блоков) → `RawEvent failed` (видимо), reconcile-cron (`block-distill-reconcile.cron`) добирает застрявшие блоки и canonical-без-проекций.
+
+Бэкофилл пустых реестров решений — `backend/scripts/backfill-decisions-from-signals.ts` (re-dispatch decision-сигнальных блоков без Decision, идемпотентно). Логика гонки/идемпотентности покрыта детерминированными unit-гардами; real-DB e2e гонки (2 параллельных dispatch на живой БД) — CI-гейт (dev-postgres без Apache AGE), строка в [[../04_не-сделано/README]].
+
 ## Группы доступа к знаниям при ingest + расширение провенанса (knowledge-access, 2026-06-06)
 
 **Источник:** [`plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md`](../../plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md). Полная модель доступа и резолвер — [[../01_projects/rbac-access-control]]; разведение с `dataClass` — [[security-and-152fz]] §6.

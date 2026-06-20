@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-to-implement
+status: реализовано (в dev, 73836b7c)
 feature: intake-issue-linked-meeting-ids-fix
 date: 2026-06-17
 owner: svmazur
@@ -106,7 +106,7 @@ relates_to:
 
 ## Фазы
 
-### Фаза 1 — Schema: поле `meetingId` в `IntakeIssue` `[ ]`
+### Фаза 1 — Schema: поле `meetingId` в `IntakeIssue` `[x]`
 
 **Цель:** Добавить одно nullable поле в модель, создать миграцию.
 
@@ -148,7 +148,7 @@ bun run prisma:generate
 
 ---
 
-### Фаза 2 — Хранение meetingId в IntakeIssue при создании `[ ]`
+### Фаза 2 — Хранение meetingId в IntakeIssue при создании `[x]`
 
 **Цель:** Обе точки создания IntakeIssue теперь пишут `meetingId`.
 
@@ -189,7 +189,7 @@ bun run prisma:generate
 
 ---
 
-### Фаза 3 — `CreateIssueDto` + `IssuesService.create()` принимают `linkedMeetingIds` `[ ]`
+### Фаза 3 — `CreateIssueDto` + `IssuesService.create()` принимают `linkedMeetingIds` `[x]`
 
 **Цель:** Внутреннее поле `linkedMeetingIds` проходит через DTO в БД.
 
@@ -230,7 +230,7 @@ bun run prisma:generate
 
 ---
 
-### Фаза 4 — `IntakeAutoTriageWorker` передаёт `linkedMeetingIds` при создании Issue `[ ]`
+### Фаза 4 — `IntakeAutoTriageWorker` передаёт `linkedMeetingIds` при создании Issue `[x]`
 
 **Цель:** При авто-приёме meeting-intake Issue получает корректный `linkedMeetingIds`.
 
@@ -261,7 +261,7 @@ bun run prisma:generate
 
 ---
 
-### Фаза 5 — Backfill существующих Issues `[ ]`
+### Фаза 5 — Backfill существующих Issues `[x]`
 
 **Цель:** Восстановить `linkedMeetingIds` для Issues, созданных из `intake.service.ts` до фикса.
 
@@ -366,17 +366,17 @@ main();
 
 ## DoD
 
-- [ ] `bun run typecheck` зелёный (включая `.spec.ts` файлы)
-- [ ] `bun run lint` зелёный
-- [ ] `bun run build` зелёный
-- [ ] `bunx vitest run backend/src/modules/tracker/services/issues.service.spec.ts` зелёный
-- [ ] Файл миграции создан в `prisma/migrations/`
-- [ ] `apply-prod-deploy.ts` STEPS обновлён (backfill)
-- [ ] `docs/operations/prod-deploy-log.md` обновлён (Шаг 4 + Шаг 8)
-- [ ] `second-brain/` обновлён (если затронута архитектура knowledge-core)
+- [x] `bun run typecheck` зелёный (включая `.spec.ts` файлы)
+- [x] `bun run lint` зелёный
+- [x] `bun run build` зелёный
+- [x] `bunx vitest run backend/src/modules/tracker/services/issues.service.spec.ts` зелёный
+- [x] Файл миграции создан в `prisma/migrations/` (`add_intake_issue_meeting_id`)
+- [x] `apply-prod-deploy.ts` STEPS обновлён (backfill `backfill-meeting-linked-ids`)
+- [x] `docs/operations/prod-deploy-log.md` обновлён (Шаг 4 + Шаг 8)
+- [x] `second-brain/` обновлён (если затронута архитектура knowledge-core)
 
 ---
 
 ## Итог
 
-_(Заполняется после реализации)_
+**Реализовано целиком (в dev, коммит `73836b7c`).** Проход A («`meetingId` в `IntakeIssue`», не парсинг `externalId`): миграция `add_intake_issue_meeting_id` (поле `IntakeIssue.meetingId` + `@@index`), хранение `meetingId` в обеих точках создания IntakeIssue, internal-поле `linkedMeetingIds` в `CreateIssueDto` + запись в `IssuesService.create()`, прокидка `linkedMeetingIds: [intake.meetingId]` из `IntakeAutoTriageWorker.autoAccept()`, частичный идемпотентный backfill `backfill-meeting-linked-ids.ts` (только `externalId LIKE 'meeting:%'`) с регистрацией в `apply-prod-deploy.ts` STEPS. Встречные Issue теперь видны в секции «Задачи» карточки встречи при `meetingTasksToTrackerOnly=true`. DTO/сервисы/воркер/тесты — в коммите.

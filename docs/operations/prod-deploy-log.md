@@ -71,6 +71,22 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔎 2026-06-20 — Провенанс «Откуда это» + умный probe (provenance Ф0–Ф5 + probe Ф1–Ф6)
+
+> dev (9 коммитов `fab510be`..`841ba213`). ТЗ: `plans/tz/2026-06-20-provenance-source-traceability-tz.md`, `plans/tz/2026-06-20-probe-smart-questions-module.md`. Промпт-правки (probe-formulate B / value-gate / judge) — code-constant (выкат сборкой), ship-and-observe. Живой LLM-бенч и визуальная qa в песочнице не прогнаны (нет сети) — наблюдать на проде.
+
+- **Шаг 1 — AdminSetting (новые крутилки/рубильники, code-default есть — действий владельца НЕ требуют):** `provenance.confidence_review_threshold` (0.6), `probe.valueGateEnabled` (true, kill-switch), `probe.digestFormulateEnabled` (true, kill-switch). Доезжают перепрогоном агрегатора (Шаг 7 — `seed-admin-settings.ts` уже в STEPS, уважает admin-override). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` на `docker compose up`; аддитивная, без потери данных, backfill для колонок не обязателен — есть Шаг 8): миграция `20260620113751_provenance_preview_snapshot` — `previewQuote TEXT?` + `previewSourceRef JSONB?` на `decisions`/`Issue`/`regulations`, `previewSourceRef JSONB?` на `Task` (денорм-снимок провенанса для рендера списков). **В STEPS регистрировать НЕ нужно** (миграция схемы).
+- **Шаг 7 — Seed (идемпотентный, уже в STEPS):** `seed-llm-task-routes-ideas-and-probe.ts` — новый route `probe-value-gate` (deepseek-v4-flash→gpt-5.4-mini→qwen3:30b); `seed-admin-settings.ts` — 3 крутилки выше. Доезжают `apply-prod-deploy.ts --mode update`.
+- **Шаг 8 — Backfill (1 прогон, идемпотентный, уже в STEPS `phase:'backfill'`, `skipBootstrap:true`):** `backfill-provenance-preview.ts` — заполняет `previewQuote`/`previewSourceRef` существующим Decision/Issue/Regulation/Task из первого `IdeaBlockEvidence` (фильтр `IS NULL` → повтор no-op). Dry-run: `docker compose exec backend bun run scripts/backfill-provenance-preview.ts --dry-run`; авто — агрегатором.
+- **Авто-выкат всего блока:** `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 12 — Smoke** (после выката):
+  - Swagger `/api/docs`: `GET /api/v1/provenance/decision/<id>` → `{nodes[], coverage}`; `entityType=foo` → 400 `invalid_entity_type`; `GET /api/v1/knowledge/blocks/:id` — у evidence есть `source.deepLink`.
+  - Кабинет: карточка Решения → «Откуда это» → дровер с цитатой → «Перейти к первоисточнику» → `/meetings/:id?t=<sec>` (плеер на моменте); карточка без источника → «создано вручную».
+  - probe: route `probe-value-gate` виден в админке `/admin/ai-models`; метрика `probe_value_gate_total{verdict}` в `/metrics` после прогона дайджеста/диспетчера.
+
+---
+
 ### 🔀 2026-06-20 — Разводка idea↔decision + Карта целей (ТЗ idv Ф1–7 + goals-map Ф1–5)
 
 > Ветка `feature/idv-and-goals-map` → dev (10 коммитов `a148b755`..`2264c3aa`). ТЗ: `plans/tz/2026-06-20-idea-vs-decision-disambiguation.md` (Ф1–7), `plans/tz/2026-06-20-goals-map-and-ideas-tz.md` (Ф1–5). Промпт-правки idea/decision/block-ingest/combined — code-constant (выкат сборкой, seed/patch НЕ нужен). Философия — ship-and-observe.

@@ -137,7 +137,8 @@ LiveKit чистит атрибуты автоматически при disconne
     timingSafeEqual.
   - `ingest.controller.ts` — `POST /api/v1/ingest` (под `IngestTokenGuard`,
     для внешних адаптеров) и `GET /api/v1/raw-events/:id` (под
-    `CookieAuthGuard+TenantGuard`, только owner/admin Org).
+    `CookieAuthGuard+TenantGuard`; провенанс Ф2 2026-06-20 ослабил: owner/admin → полный ответ,
+    рядовой с доступом к блоку-владельцу → нормализованный фрагмент БЕЗ сырого payload, иначе 403).
   - DTO: `IngestEventDto`, `RawEventResponseDto`.
   - Глобальный модуль (нужен и в HTTP-side, и в WorkersModule).
 
@@ -2488,5 +2489,9 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 ### Новые модули (Фаза 2 — отчёт→граф)
 - `ingest/adapters/report.adapter.ts` (`ReportIngestAdapter`), `ingest/report-fact-mapper.ts` (per-type раскладка), `listeners/report-ingest.listener.ts` (`ReportIngestListener` `@OnEvent('meeting.report-fast-ready')`), ветка `payload.kind==='meeting_report'` в `segment-builder.service.ts`. Гарды A/B в `block-ingest.worker`/`block-merge.service`/`block-distill.worker`. Подробно — [[knowledge-core]].
+
+### Провенанс «Откуда это» + умный probe (2026-06-20)
+- **`knowledge-core/services/provenance.service.ts`** (`ProvenanceService`) — единый резолвер первоисточника: `resolveByRawEventIds` (батч rawEvent→source+deepLink, multi-type), `buildProvenanceDeepLink` (мс→`?t=<sec>`), `resolve(entityType, entityId, viewer)` (полная цепочка с deny-by-default фильтром через `KnowledgeAccessResolver.partitionProjectionsByAccess` — у закрытого блока маскируются и quote, и label/refId/deepLink), `computePreviewSnapshot` (денорм). Контроллер `api/provenance.controller.ts` — `GET /api/v1/provenance/:entityType/:entityId`. Frontend — `ui/components/provenance/` (Drawer/Popover/Chip), domain `ProvenanceRef`, hook `useProvenance`.
+- **`probe/probe-formulation.service.ts`** (`ProbeFormulationService`) — единая точка формулировки probe для push И дайджеста: `gate()` (ценностный гейт `probe-value-gate`), `formulate()` (proven B), `judgeQuality()` (судья видит объект). Чистые хелперы — `probe/probe-text.util.ts`.
 
 [[../index|← index]]

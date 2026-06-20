@@ -1,5 +1,7 @@
 # ТЗ: probe.question — убрать дублирующий блок «Контекст» с сырым `payload.message`
 
+> ✅ **СУПЕРСЕДНУТ и РЕАЛИЗОВАН (2026-06-20)** — поглощён provenance Ф0.2 (`plans/tz/2026-06-20-provenance-source-traceability-tz.md`), коммит `fab510be`: probe.question payload несёт `blockId`+`quote`, `NotificationsClient` рендерит блок «По поводу: «{quote}»» вместо сырого `payload.message`. Этот файл — исторический.
+
 > **Что это.** Отдельный контракт на **единственный незакрытый остаток** подсистемы
 > «Уведомления / probe» (пункт **E** анализа [`2026-06-10-notifications-probe-subsystem.md`](../analysis/2026-06-10-notifications-probe-subsystem.md)).
 > Остальное (§3 Ф1–Ф3 — адресация, человеческие тексты, русские заголовки) **уже реализовано**

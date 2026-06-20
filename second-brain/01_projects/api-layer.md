@@ -223,6 +223,13 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 
 См. [`knowledge-core.md`](../02_architecture/knowledge-core.md) — `/api/v1/knowledge/blocks`, `/entities`, `/themes`, `/graph/*`, `/search`.
 
+**Провенанс «Откуда это» (2026-06-20, ТЗ provenance-source-traceability):**
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/api/v1/provenance/:entityType/:entityId` | Цепочка первоисточника сущности (decision/issue/task/regulation/instruction/block/notification), отфильтрованная по правам зрителя (viewer из guard): `{ nodes[]{blockId, source{type,refId,label,deepLink}, quote, attribution, startMs, accessFiltered, needsReview}, coverage }`. `entityType` вне enum → 400 `invalid_entity_type`. Закрытый блок → `accessFiltered:true`, quote+label+deepLink скрыты. |
+
+`GET /api/v1/knowledge/blocks/:id` — каждый `evidence` теперь несёт `source: ProvenanceSourceRef` (deep-link к моменту). `GET /api/v1/raw-events/:id` — ослаблен: owner/admin → полный payload, рядовой с доступом к блоку → нормализованный фрагмент без сырого payload.
+
 **Гейт графа на платную `feature.graph` (knowledge-core MASTER G1, 2026-06-16).** Раньше `KnowledgeGraphController` (`/graph/*`) был гейтнут `@RequireEntitlement('feature.graph')`, а entity-/block-centric выходы графа — нет (обход paywall'а). Закрыто: `@RequireEntitlement('feature.graph')` навешан на
 - `GET /api/v1/knowledge/entities/:id/graph` (entity-centric граф) и `GET /api/v1/knowledge/entities/:id/links`,
 - `GET /api/v1/knowledge/blocks/:id/links` и `GET /api/v1/knowledge/blocks/:id/reasoning-chain` (BFS по логическим связям).

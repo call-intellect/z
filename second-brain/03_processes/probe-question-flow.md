@@ -216,6 +216,7 @@ ProbeDispatcherWorker.process
 
 | Дата | Что изменилось | Коммит/рефлексия |
 |---|---|---|
+| 2026-06-20 | Умный модуль (Ф1–Ф6): единый `ProbeFormulationService` (gate→formulate→judge) для push И дайджеста; **ценностный гейт** `probe-value-gate` перед формулировкой (ask=false → `dropped_low_value`, метрика `probe_value_gate_total`); промпт формулировки = proven B («НАЗОВИ ОБЪЕКТ»), эмиттеры кладут чистый `objectName`; судья видит объект; стоп-кран дайджеста (humanize message + гард паритета FALLBACK, без пустых вопросов); флаги `probe.valueGateEnabled`/`probe.digestFormulateEnabled` (kill-switch ON) | `dc6a2377`..`ee3a3f3c`, ТЗ probe-smart-questions-module |
 | 2026-06-18 | Фаза 2 (Ф1–Ф6): `probe_reply` (свободный ответ), LLM-судья качества `probe-quality-judge`, выбор получателя по отзывчивости (+реальный `kind`), семантический дедуп через pgvector, re-ask, повод `attribution.unresolved_at_ingest`. Закрыты gap'ы round-robin/хардкод kind/embedding-дедуп | `9430383f`..`ea27594e`, ТЗ probe-system-phase2 |
 | 2026-05-29 | Карточка создана. Зафиксированы gap'ы по cold-start и хардкод label'у. | этот документ |
 | 2026-05-23 | β-5 sub-TZ closing-loop: `RawEvent(kind='notification_response')`, `probe_closed_total`, защита cron'а от гонки expired | plans/tz/2026-05-23-sba-beta-5-probe-closing-loop.md |

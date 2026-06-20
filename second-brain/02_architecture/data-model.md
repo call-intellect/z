@@ -418,6 +418,8 @@ N:1 к IdeaBlock — один блок может агрегировать мн�
 При merge блока всё его evidence переносится на canonical через
 `updateMany`.
 
+**Провенанс — денорм-снимок (2026-06-20, миграция `20260620113751_provenance_preview_snapshot`):** для рендера СПИСКОВ без join вглубь (анти-N+1; полный резолв — on-demand через `ProvenanceService.resolve` с фильтром прав зрителя). `Decision`/`Issue`/`Regulation` получили `previewQuote String? @db.Text` + `previewSourceRef Json?` (`{evidenceId, blockId, sourceType, refId, startMs, deepLink, attribution, label}`); `Task` — только `previewSourceRef` (цитата уже в `sourceQuote`/`sourceStartMs`). Заполняет `backfill-provenance-preview.ts` из первого `IdeaBlockEvidence` (идемпотентно). `attribution` = `primarySource==='report' ? 'inferred' : 'quoted'`. Подробно — [[knowledge-core]] / [[module-map]] (`ProvenanceService`).
+
 ### Entity
 
 ```

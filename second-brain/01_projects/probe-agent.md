@@ -235,6 +235,16 @@ PROBE_COLD_START_MODE_HOURS=24
 - Quiet hours defer (re-enqueue с delay до конца quiet hours).
 - Реальная активация cold-start mode после deploy.
 
+## Умный модуль уточняющих вопросов (2026-06-20, ТЗ probe-smart-questions-module)
+
+Вопросы всегда называют конкретный объект и никогда не пустые. Единый `ProbeFormulationService` (`probe/probe-formulation.service.ts`) — конвейер **gate → formulate → judge** для push И дайджеста:
+- **Ценностный гейт** `probe-value-gate` (LLM `{ask, reason}`) ПЕРЕД формулировкой: пустой пробел (нет объекта/сути, ответ виден, общее слово) → `dropped_low_value`, метрика `probe_value_gate_total{verdict}`; сбой LLM → fail-open (не глушим). Флаг `probe.valueGateEnabled` (kill-switch ON).
+- **Формулировка** = proven B (жёсткое «НАЗОВИ ОБЪЕКТ»); структурные эмиттеры (3-1/3-3/3-6/3-9, block-ingest, process-template) кладут чистый `objectName` в payload (фикс класса Д5).
+- **Судья качества** видит `objectName` — бракует вопрос, потерявший имя объекта.
+- **Стоп-кран дайджеста**: `deriveDigestQuestion` (humanize message) + машинный гард паритета `PROBE_REASON_LABEL ⊆ PROBE_REASON_FALLBACK` (фикс Д4, +12 ключей); дайджест формулирует через сервис за флагом `probe.digestFormulateEnabled` (OFF/сбой → детерминированный путь).
+
+Процесс — [[../03_processes/probe-question-flow]] (changelog 2026-06-20).
+
 ## См. также
 
 - [[ideas]] — главный потребитель Probe-Agent в β-5.

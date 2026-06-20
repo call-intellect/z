@@ -1,3 +1,5 @@
+import { ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GraphService } from './graph.service';
@@ -164,5 +166,78 @@ describe('GraphService Ф5 — kill-switch (ageEnabled=false → cypher no-op)',
     await svc.addNode({ tenantId: 'tenant-1', type: 'role', id: 'r1' });
 
     expect(mock.state.cypherCalls).toHaveLength(0);
+  });
+});
+
+describe('GraphService upsertDecision — анти-потеря при @unique sourceIdeaBlockId', () => {
+  function p2002SourceIdeaBlock(): Prisma.PrismaClientKnownRequestError {
+    return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: 'x',
+      meta: { target: ['sourceIdeaBlockId'] },
+    });
+  }
+
+  it('гонка писателей: create роняет P2002 → re-find того же тенанта → created:false, без throw', async () => {
+    const txClient = {
+      decision: {
+        findUnique: vi.fn(async () => null),
+        create: vi.fn(async () => {
+          throw p2002SourceIdeaBlock();
+        }),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (cb: (tx: any) => Promise<unknown>) => cb(txClient)),
+      decision: {
+        findFirst: vi.fn(async () => ({ id: 'dec-existing' })),
+      },
+      $queryRawUnsafe: vi.fn(async () => []),
+    };
+    const svc = new GraphService(prisma as any, buildCfg(true));
+
+    const res = await svc.upsertEntity({
+      tenantId: 'tenant-1',
+      type: 'decision',
+      data: {
+        text: 'Решили запускать',
+        decidedAt: new Date('2026-06-01T00:00:00.000Z'),
+        sourceIdeaBlockId: 'block-1',
+      },
+    });
+
+    expect(res).toMatchObject({ created: false, id: 'dec-existing' });
+    expect(prisma.decision.findFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it('cross-tenant: findUnique вернул Decision другого тенанта → ConflictException, create НЕ вызывается', async () => {
+    const txClient = {
+      decision: {
+        findUnique: vi.fn(async () => ({ id: 'x', tenantId: 'other-tenant' })),
+        create: vi.fn(async () => ({ id: 'should-not-happen' })),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (cb: (tx: any) => Promise<unknown>) => cb(txClient)),
+      decision: {
+        findFirst: vi.fn(async () => null),
+      },
+      $queryRawUnsafe: vi.fn(async () => []),
+    };
+    const svc = new GraphService(prisma as any, buildCfg(true));
+
+    await expect(
+      svc.upsertEntity({
+        tenantId: 'tenant-1',
+        type: 'decision',
+        data: {
+          text: 'Решили запускать',
+          decidedAt: new Date('2026-06-01T00:00:00.000Z'),
+          sourceIdeaBlockId: 'block-1',
+        },
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(txClient.decision.create).not.toHaveBeenCalled();
   });
 });

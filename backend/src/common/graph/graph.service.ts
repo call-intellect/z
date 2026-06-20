@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
 import { type EntityLinkType, type LinkCreatedBy, Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../config';
@@ -688,36 +688,72 @@ export class GraphService {
         ? (data['sourceIdeaBlockId'] as string)
         : (sourceProvenance?.ideaBlockId ?? null);
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      if (sourceIdeaBlockId) {
-        const existing = await tx.decision.findUnique({
-          where: { sourceIdeaBlockId },
-          select: { id: true, tenantId: true },
-        });
-        if (existing && existing.tenantId === tenantId) {
-          return { id: existing.id, created: false };
+    let result: { id: string; created: boolean };
+    try {
+      result = await this.prisma.$transaction(async (tx) => {
+        if (sourceIdeaBlockId) {
+          const existing = await tx.decision.findUnique({
+            where: { sourceIdeaBlockId },
+            select: { id: true, tenantId: true },
+          });
+          if (existing) {
+            if (existing.tenantId === tenantId) {
+              return { id: existing.id, created: false };
+            }
+            this.logger.warn(
+              {
+                sourceIdeaBlockId,
+                existingTenantId: existing.tenantId,
+                tenantId,
+              },
+              'upsertDecision: sourceIdeaBlockId другого тенанта — отказ создания (анти-P2002 cross-tenant)',
+            );
+            throw new ConflictException(
+              'upsertEntity(decision): sourceIdeaBlockId принадлежит другому тенанту',
+            );
+          }
         }
-      }
-      const created = await tx.decision.create({
-        data: {
-          tenantId,
-          text,
-          rationale: typeof data['rationale'] === 'string' ? (data['rationale'] as string) : null,
-          decidedAt,
-          decidedByPersonId:
-            typeof data['decidedByPersonId'] === 'string'
-              ? (data['decidedByPersonId'] as string)
-              : null,
-          sourceMeetingId:
-            typeof data['sourceMeetingId'] === 'string'
-              ? (data['sourceMeetingId'] as string)
-              : null,
-          sourceIdeaBlockId,
-        },
-        select: { id: true },
+        const created = await tx.decision.create({
+          data: {
+            tenantId,
+            text,
+            rationale: typeof data['rationale'] === 'string' ? (data['rationale'] as string) : null,
+            decidedAt,
+            decidedByPersonId:
+              typeof data['decidedByPersonId'] === 'string'
+                ? (data['decidedByPersonId'] as string)
+                : null,
+            sourceMeetingId:
+              typeof data['sourceMeetingId'] === 'string'
+                ? (data['sourceMeetingId'] as string)
+                : null,
+            sourceIdeaBlockId,
+          },
+          select: { id: true },
+        });
+        return { id: created.id, created: true };
       });
-      return { id: created.id, created: true };
-    });
+    } catch (err) {
+      if (
+        sourceIdeaBlockId &&
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002' &&
+        this.isUniqueTarget(err, 'sourceIdeaBlockId')
+      ) {
+        const existing = await this.prisma.decision.findFirst({
+          where: { tenantId, sourceIdeaBlockId },
+          select: { id: true },
+        });
+        if (!existing) throw err;
+        this.logger.warn(
+          { sourceIdeaBlockId, tenantId },
+          'upsertDecision: P2002 sourceIdeaBlockId — гонка писателей, возвращаю существующий Decision (без потери)',
+        );
+        result = { id: existing.id, created: false };
+      } else {
+        throw err;
+      }
+    }
 
     try {
       await this.runCypherMergeNode(this.prisma, tenantId, 'decision', result.id);
@@ -732,6 +768,15 @@ export class GraphService {
     }
 
     return result;
+  }
+
+  private isUniqueTarget(
+    err: Prisma.PrismaClientKnownRequestError,
+    field: string,
+  ): boolean {
+    const target = err.meta?.['target'];
+    if (Array.isArray(target)) return target.includes(field);
+    return typeof target === 'string' && target.includes(field);
   }
 }
 

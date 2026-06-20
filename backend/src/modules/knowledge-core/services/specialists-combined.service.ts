@@ -289,6 +289,21 @@ export class SpecialistsCombinedService {
         });
         created += 1;
       } catch (err) {
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002' &&
+          this.isSourceIdeaBlockUniqueViolation(err)
+        ) {
+          this.metrics?.incCoreSpecialistExtractionFailure({
+            type: 'decision',
+            reason: 'db_conflict',
+          });
+          this.logger.debug(
+            { sourceBlockId: d.sourceBlockId },
+            'specialists-combined.decisions: P2002 sourceIdeaBlockId — решение уже создано другим писателем, дедуп',
+          );
+          continue;
+        }
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`decision[${d.sourceBlockId}]: ${msg}`);
         this.logger.warn(
@@ -756,6 +771,14 @@ export class SpecialistsCombinedService {
     if (value < 0) return 0;
     if (value > 1) return 1;
     return value;
+  }
+
+  private isSourceIdeaBlockUniqueViolation(
+    err: Prisma.PrismaClientKnownRequestError,
+  ): boolean {
+    const target = err.meta?.['target'];
+    if (Array.isArray(target)) return target.includes('sourceIdeaBlockId');
+    return typeof target === 'string' && target.includes('sourceIdeaBlockId');
   }
 
   /**

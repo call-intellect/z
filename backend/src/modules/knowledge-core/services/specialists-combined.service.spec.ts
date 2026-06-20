@@ -73,6 +73,7 @@ function makeMetricsMock() {
     incCoreSpecialistCards: vi.fn(),
     incCoreSpecialistLlmTokens: vi.fn(),
     incCoreSpecialistSkipped: vi.fn(),
+    incCoreSpecialistExtractionFailure: vi.fn(),
   };
 }
 
@@ -354,6 +355,33 @@ describe('SpecialistsCombinedService.extractAll', () => {
       specialist: 'decision',
       reason: 'source_block_dedup',
     });
+  });
+
+  it('P2002 sourceIdeaBlockId при create decision → дедуп, не ошибка, метрика db_conflict', async () => {
+    const prisma = makePrismaMock();
+    prisma.decision.findFirst.mockResolvedValue(null);
+    prisma.decision.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'x',
+        meta: { target: ['sourceIdeaBlockId'] },
+      }),
+    );
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      decisions: [{ sourceBlockId: 'blk_1', statement: 'Решили X', confidence: 0.9 }],
+    });
+    const metrics = makeMetricsMock();
+    const svc = new SpecialistsCombinedService(prisma as any, llm as any, metrics as any);
+
+    const result = await svc.extractAll({ ...argsTemplate() });
+
+    expect(prisma.decision.create).toHaveBeenCalledTimes(1);
+    expect(result.created.decisions).toBe(0);
+    expect(result.errors.some((e) => e.includes('decision[blk_1]'))).toBe(false);
+    expect(metrics.incCoreSpecialistExtractionFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'decision', reason: 'db_conflict' }),
+    );
   });
 
   // ─────────────────── Б57 (K4): провенанс через set:union ───────────────────

@@ -370,3 +370,96 @@ describe('Specialist31Service.dedupeArbiter — Ф2 ретрай + fail-open б�
     expect(curation.triage).not.toHaveBeenCalled();
   });
 });
+
+describe('Specialist31Service.upsertInstruction — Ф3 дедуп через арбитр', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('verdict merge с targetId → апдейт существующей инструкции + CardVersion(merge), без создания второй карточки', async () => {
+    const existingInstruction = {
+      id: 'i1',
+      name: 'Инструкция',
+      contentMd: 'старое тело',
+      statement: 'старое',
+      scope: null,
+      sourceBlockIds: [] as string[],
+      version: 1,
+      currentVersionId: null,
+    };
+    const prismaMock: any = {
+      instruction: {
+        findUnique: vi.fn().mockResolvedValue(existingInstruction),
+        upsert: vi.fn(),
+        update: vi.fn().mockResolvedValue({ id: 'i1' }),
+      },
+      cardVersion: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({ id: 'cv1' }),
+      },
+    };
+    prismaMock.$transaction = vi.fn(async (cb: any) => cb(prismaMock));
+
+    const service = new Specialist31Service(
+      prismaMock,
+      {} as any,
+      { embedQuery: vi.fn().mockResolvedValue(null) } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { incCoreSpecialistExtractionFailure: vi.fn() } as any,
+      undefined as any,
+      undefined as any,
+      undefined as any,
+    );
+
+    vi.spyOn(service as any, 'knnCandidates').mockResolvedValue([
+      { id: 'i1', name: 'Инструкция', statement: 'старое', scope: null },
+    ]);
+    vi.spyOn(service as any, 'dedupeArbiter').mockResolvedValue({
+      decision: 'merge',
+      targetId: 'i1',
+      reasoning: 'дубль',
+    });
+    vi.spyOn(service as any, 'resolveOwnerPersonHint').mockResolvedValue(null);
+    vi.spyOn(service as any, 'resolvePersonSubjects').mockResolvedValue([]);
+    vi.spyOn(service as any, 'deriveDataClassForPersist').mockReturnValue({
+      dataClass: 'internal',
+      dataClassAudit: null,
+    } as any);
+    vi.spyOn(service as any, 'tryWriteInstructionEmbedding').mockResolvedValue(undefined);
+    vi.spyOn(service as any, 'nextCardVersion').mockResolvedValue(2);
+    vi.spyOn(service as any, 'tryCompileContent').mockResolvedValue({
+      contentMd: 'слитое тело',
+      steps: [],
+      signals: [],
+      changeReason: 'r',
+    } as any);
+
+    const draft = {
+      kind: 'instruction',
+      name: 'Инструкция',
+      statement: 'новое',
+      confidence: 0.9,
+      scope: null,
+      roles: [],
+      extractionStatus: 'существует',
+    } as any;
+    const block = { id: 'b2', tenantId: 't1', dataClass: 'internal' } as any;
+
+    await (service as any).upsertInstruction(block, draft);
+
+    expect(prismaMock.instruction.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'i1' } }),
+    );
+    expect(prismaMock.instruction.upsert).not.toHaveBeenCalled();
+    expect(prismaMock.cardVersion.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          resourceType: 'instruction',
+          changeReason: 'merge',
+        }),
+      }),
+    );
+  });
+});

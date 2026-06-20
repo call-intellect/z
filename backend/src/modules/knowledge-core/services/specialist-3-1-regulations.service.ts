@@ -79,6 +79,14 @@ export class Specialist31Service {
     }
   }
 
+  private regulationDedupeTopK(): number {
+    try {
+      return this.cfg?.knowledgeCore.regulationDedupeTopK ?? 12;
+    } catch {
+      return 12;
+    }
+  }
+
   async processRegulationBlock(
     block: IdeaBlock & {
       evidence: IdeaBlockEvidence[];
@@ -1086,6 +1094,20 @@ export class Specialist31Service {
 
   private async upsertInstruction(block: IdeaBlock, draft: RegulationDraft): Promise<void> {
     try {
+      const candidates = await this.knnCandidates({
+        tenantId: block.tenantId,
+        table: 'instruction',
+        nameQuery: `${draft.name} ${draft.statement}`,
+      });
+
+      const verdict = await this.dedupeArbiter({
+        tenantId: block.tenantId,
+        draft,
+        candidates,
+        dataClass: block.dataClass,
+        blockId: block.id,
+      });
+
       const ownerPersonId = await this.resolveOwnerPersonHint(block.tenantId, draft.ownerHint);
       const sourceBlockIds = [block.id];
       const personSubjectIds = await this.resolvePersonSubjects(block.id);
@@ -1098,83 +1120,152 @@ export class Specialist31Service {
       const forRole = this.deriveForRole(draft);
       const status = this.mapExtractionStatusToProcessStatus(draft.extractionStatus);
 
-      // Ф1 — компилятор для instruction (раньше НЕ вызывался вообще). Режим
-      // СОЗДАНИЕ; fallback (null) → legacy сырой statement.
-      const compiled = await this.tryCompileContent({
-        kind: 'instruction',
-        tenantId: block.tenantId,
-        name: draft.name,
-        existingContentMd: '',
-        newStatement: draft.statement,
-        block,
-      });
-      const bodyMd = compiled?.contentMd ?? draft.statement;
-      let instruction = await this.prisma.instruction.upsert({
-        where: {
-          tenantId_name: { tenantId: block.tenantId, name: draft.name },
-        },
-        update: {
-          contentMd: bodyMd,
-          statement: draft.statement,
-          scope: draft.scope ?? undefined,
-          forRole: forRole ?? undefined,
-          status,
-          ownerPersonId: ownerPersonId ?? undefined,
-          sourceBlockIds: { set: this.union(sourceBlockIds, []) },
-          personSubjectIds: { set: this.union(personSubjectIds, []) },
-          dataClass: dcRes.dataClass,
-          dataClassAudit: dcRes.dataClassAudit,
-          confidence: draft.confidence ?? null,
-        },
-        create: {
+      const createNew = async (): Promise<{ id: string }> => {
+        const compiled = await this.tryCompileContent({
+          kind: 'instruction',
           tenantId: block.tenantId,
           name: draft.name,
-          contentMd: bodyMd,
-          statement: draft.statement,
-          scope: draft.scope ?? null,
-          forRole: forRole ?? null,
-          status,
-          ownerPersonId: ownerPersonId ?? null,
-          sourceBlockIds,
-          personSubjectIds,
-          dataClass: dcRes.dataClass,
-          dataClassAudit: dcRes.dataClassAudit,
-          confidence: draft.confidence ?? null,
-        },
-      });
-      // Ф1 — v1-снимок CardVersion (instruction имеет version + currentVersionId,
-      // как regulation).
-      if (compiled) {
-        const persisted = instruction;
-        const newVersion = await this.nextCardVersion(
-          block.tenantId,
-          'instruction',
-          persisted.id,
-        );
-        instruction = await this.prisma.$transaction(async (tx) => {
-          const cv = await tx.cardVersion.create({
-            data: {
-              tenantId: block.tenantId,
-              resourceType: 'instruction',
-              resourceId: persisted.id,
-              version: newVersion,
-              payload: {
-                contentMd: compiled.contentMd,
-                steps: compiled.steps,
-                signals: compiled.signals,
-                changeReasonText: compiled.changeReason,
-              } as unknown as Prisma.InputJsonValue,
-              changeReason: 'create',
-              trustTier: 'auto',
-              previousVersionId: persisted.currentVersionId,
-              createdByUserId: null,
-            },
-          });
-          return tx.instruction.update({
-            where: { id: persisted.id },
-            data: { currentVersionId: cv.id, version: newVersion },
-          });
+          existingContentMd: '',
+          newStatement: draft.statement,
+          block,
         });
+        const bodyMd = compiled?.contentMd ?? draft.statement;
+        let created = await this.prisma.instruction.upsert({
+          where: {
+            tenantId_name: { tenantId: block.tenantId, name: draft.name },
+          },
+          update: {
+            contentMd: bodyMd,
+            statement: draft.statement,
+            scope: draft.scope ?? undefined,
+            forRole: forRole ?? undefined,
+            status,
+            ownerPersonId: ownerPersonId ?? undefined,
+            sourceBlockIds: { set: this.union(sourceBlockIds, []) },
+            personSubjectIds: { set: this.union(personSubjectIds, []) },
+            dataClass: dcRes.dataClass,
+            dataClassAudit: dcRes.dataClassAudit,
+            confidence: draft.confidence ?? null,
+          },
+          create: {
+            tenantId: block.tenantId,
+            name: draft.name,
+            contentMd: bodyMd,
+            statement: draft.statement,
+            scope: draft.scope ?? null,
+            forRole: forRole ?? null,
+            status,
+            ownerPersonId: ownerPersonId ?? null,
+            sourceBlockIds,
+            personSubjectIds,
+            dataClass: dcRes.dataClass,
+            dataClassAudit: dcRes.dataClassAudit,
+            confidence: draft.confidence ?? null,
+          },
+        });
+        if (compiled) {
+          const persisted = created;
+          const newVersion = await this.nextCardVersion(
+            block.tenantId,
+            'instruction',
+            persisted.id,
+          );
+          created = await this.prisma.$transaction(async (tx) => {
+            const cv = await tx.cardVersion.create({
+              data: {
+                tenantId: block.tenantId,
+                resourceType: 'instruction',
+                resourceId: persisted.id,
+                version: newVersion,
+                payload: {
+                  contentMd: compiled.contentMd,
+                  steps: compiled.steps,
+                  signals: compiled.signals,
+                  changeReasonText: compiled.changeReason,
+                } as unknown as Prisma.InputJsonValue,
+                changeReason: 'create',
+                trustTier: 'auto',
+                previousVersionId: persisted.currentVersionId,
+                createdByUserId: null,
+              },
+            });
+            return tx.instruction.update({
+              where: { id: persisted.id },
+              data: { currentVersionId: cv.id, version: newVersion },
+            });
+          });
+        }
+        return created;
+      };
+
+      let instruction: { id: string };
+      const mergeLike = verdict.decision === 'merge' || verdict.decision === 'extension';
+
+      if (verdict.decision === 'new' || !verdict.targetId || !mergeLike) {
+        instruction = await createNew();
+      } else {
+        const existing = await this.prisma.instruction.findUnique({
+          where: { id: verdict.targetId },
+        });
+        if (!existing) {
+          instruction = await createNew();
+        } else {
+          const compiled = await this.tryCompileContent({
+            kind: 'instruction',
+            tenantId: block.tenantId,
+            name: existing.name,
+            existingContentMd: existing.contentMd,
+            newStatement: draft.statement,
+            block,
+          });
+          if (compiled) {
+            const newVersion = (existing.version ?? 1) + 1;
+            instruction = await this.prisma.$transaction(async (tx) => {
+              const cv = await tx.cardVersion.create({
+                data: {
+                  tenantId: block.tenantId,
+                  resourceType: 'instruction',
+                  resourceId: existing.id,
+                  version: newVersion,
+                  payload: {
+                    contentMd: compiled.contentMd,
+                    steps: compiled.steps,
+                    signals: compiled.signals,
+                    changeReasonText: compiled.changeReason,
+                  } as unknown as Prisma.InputJsonValue,
+                  changeReason: verdict.decision === 'merge' ? 'merge' : 'extension',
+                  trustTier: 'auto',
+                  previousVersionId: existing.currentVersionId,
+                  createdByUserId: null,
+                },
+              });
+              return tx.instruction.update({
+                where: { id: existing.id },
+                data: {
+                  statement: draft.statement,
+                  contentMd: compiled.contentMd,
+                  scope: draft.scope ?? existing.scope ?? undefined,
+                  sourceBlockIds: {
+                    set: this.union(existing.sourceBlockIds, sourceBlockIds),
+                  },
+                  currentVersionId: cv.id,
+                  version: newVersion,
+                  confidence: draft.confidence ?? undefined,
+                },
+              });
+            });
+          } else {
+            instruction = await this.prisma.instruction.update({
+              where: { id: existing.id },
+              data: {
+                statement: draft.statement,
+                sourceBlockIds: {
+                  set: this.union(existing.sourceBlockIds, sourceBlockIds),
+                },
+              },
+            });
+          }
+        }
       }
 
       await this.tryWriteInstructionEmbedding({
@@ -1237,7 +1328,7 @@ export class Specialist31Service {
 
   private async knnCandidates(args: {
     tenantId: string;
-    table: 'regulation' | 'process' | 'policy';
+    table: 'regulation' | 'process' | 'policy' | 'instruction';
     nameQuery: string;
   }): Promise<KnnCandidate[]> {
     const queryText = args.nameQuery.trim().slice(0, 1_000);
@@ -1279,13 +1370,14 @@ export class Specialist31Service {
 
   private async knnByEmbedding(args: {
     tenantId: string;
-    table: 'regulation' | 'process' | 'policy';
+    table: 'regulation' | 'process' | 'policy' | 'instruction';
     embedding: number[];
   }): Promise<KnnCandidate[]> {
     const tableMap: Record<string, string> = {
       regulation: '"regulations"',
       process: '"processes"',
       policy: '"policies"',
+      instruction: '"instructions"',
     };
     const table = tableMap[args.table];
     if (!table) return [];
@@ -1308,18 +1400,18 @@ export class Specialist31Service {
       return [];
     }
     const vec = guard.literal;
-    // Raw SQL: cosine distance (1 - cos similarity). LIMIT KNN_TOP_K.
+    // Raw SQL: cosine distance (1 - cos similarity). LIMIT regulationDedupeTopK.
     const rows = await this.prisma.$queryRawUnsafe<
       Array<{ id: string; name: string; statement: string | null; scope: string | null }>
     >(
       `SELECT "id", "name",
-              ${args.table === 'regulation' ? '"statement"' : args.table === 'process' ? '"description" AS "statement"' : '"contentMd" AS "statement"'},
+              ${args.table === 'process' ? '"description" AS "statement"' : args.table === 'policy' ? '"contentMd" AS "statement"' : '"statement"'},
               ${args.table === 'policy' ? 'NULL::text AS "scope"' : '"scope"'}
        FROM ${table}
        WHERE "tenantId" = $1
          AND "embedding" IS NOT NULL
        ORDER BY "embedding" <=> $2::vector
-       LIMIT ${Specialist31Service.KNN_TOP_K}`,
+       LIMIT ${Number(this.regulationDedupeTopK())}`,
       args.tenantId,
       vec,
     );
@@ -1333,7 +1425,7 @@ export class Specialist31Service {
 
   private async knnByNameLike(args: {
     tenantId: string;
-    table: 'regulation' | 'process' | 'policy';
+    table: 'regulation' | 'process' | 'policy' | 'instruction';
     nameQuery: string;
   }): Promise<KnnCandidate[]> {
     const firstWords = args.nameQuery
@@ -1350,7 +1442,7 @@ export class Specialist31Service {
           name: { contains: firstWords, mode: 'insensitive' },
         },
         select: { id: true, name: true, statement: true, scope: true, contentMd: true },
-        take: Specialist31Service.KNN_TOP_K,
+        take: this.regulationDedupeTopK(),
       });
       return rows.map((r) => ({
         id: r.id,
@@ -1366,12 +1458,28 @@ export class Specialist31Service {
           name: { contains: firstWords, mode: 'insensitive' },
         },
         select: { id: true, name: true, description: true, scope: true },
-        take: Specialist31Service.KNN_TOP_K,
+        take: this.regulationDedupeTopK(),
       });
       return rows.map((r) => ({
         id: r.id,
         name: r.name,
         statement: r.description ?? '',
+        scope: r.scope ?? null,
+      }));
+    }
+    if (args.table === 'instruction') {
+      const rows = await this.prisma.instruction.findMany({
+        where: {
+          tenantId: args.tenantId,
+          name: { contains: firstWords, mode: 'insensitive' },
+        },
+        select: { id: true, name: true, statement: true, contentMd: true, scope: true },
+        take: this.regulationDedupeTopK(),
+      });
+      return rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        statement: r.statement ?? r.contentMd ?? '',
         scope: r.scope ?? null,
       }));
     }
@@ -1381,7 +1489,7 @@ export class Specialist31Service {
         name: { contains: firstWords, mode: 'insensitive' },
       },
       select: { id: true, name: true, contentMd: true, scope: true },
-      take: Specialist31Service.KNN_TOP_K,
+      take: this.regulationDedupeTopK(),
     });
     void pattern;
     return rows.map((r) => ({

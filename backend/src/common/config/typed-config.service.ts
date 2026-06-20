@@ -603,6 +603,11 @@ export class TypedConfigService {
       distillMergeThreshold: this.get('DISTILL_MERGE_THRESHOLD'),
       distillDebounceMs: this.get('DISTILL_DEBOUNCE_MS'),
       distillKnnTopK: this.get('DISTILL_KNN_TOP_K'),
+      regulationDedupeTopK: this.resolveSync<number>(
+        'knowledge.regulationDedupeTopK',
+        'REGULATION_DEDUPE_TOP_K',
+        12,
+      ),
       entityMergeThreshold: this.get('ENTITY_MERGE_THRESHOLD'),
       entityResolverCron: this.get('ENTITY_RESOLVER_CRON'),
       blockIngestWindowSegments: this.get('BLOCK_INGEST_WINDOW_SEGMENTS'),

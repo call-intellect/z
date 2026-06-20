@@ -28,6 +28,7 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['knowledge.distillDebounceMs', POSITIVE_INT],
   ['knowledge.distillKnnTopK', POSITIVE_INT],
+  ['knowledge.regulationDedupeTopK', POSITIVE_INT],
   ['knowledge.blockIngestWindowSegments', POSITIVE_INT],
   ['knowledge.blockIngestMaxTokensPerSegment', POSITIVE_INT],
   ['knowledge.linkerMinBlocks', POSITIVE_INT],

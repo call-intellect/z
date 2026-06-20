@@ -4,6 +4,7 @@ import { type ConciergeConversation, type ConciergeMessage, Prisma } from '@pris
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { formatRuDate } from '../../../common/utils/format-ru-date';
 import { AiChatQuotaService } from '../../ai-chat-quota/ai-chat-quota.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
@@ -92,7 +93,30 @@ const CONFIRM_TOOL_RU_NAMES: Record<string, string> = {
   ask_role_clone: 'спросить клон должности',
   find_free_slot: 'найти общий свободный слот',
   infer_table_schema: 'предложить схему новой таблицы',
+  create_task: 'поставить задачу себе',
+  assign_task: 'поставить задачу сотруднику',
 };
+
+const PARAM_RU_LABELS: Record<string, string> = {
+  title: 'задача',
+  description: 'детали',
+  dueDate: 'срок',
+  assigneeName: 'кому',
+  question: 'вопрос',
+  text: 'текст',
+  type: 'тип',
+  startAt: 'начало',
+  endAt: 'конец',
+  kind: 'вид',
+  location: 'место',
+  counterparty: 'с кем',
+};
+
+const DATE_PARAM_KEYS = new Set<string>(['dueDate', 'startAt', 'endAt']);
+
+function humanizeToolName(toolName: string): string {
+  return toolName.replace(/_/g, ' ').trim();
+}
 
 @Injectable()
 export class ConciergeService {
@@ -566,13 +590,16 @@ export class ConciergeService {
   }
 
   private buildConfirmPreview(toolName: string, params: Record<string, unknown>): string {
-    const ruName = CONFIRM_TOOL_RU_NAMES[toolName] ?? toolName;
-    const keyParams = Object.entries(params)
+    const ruName = CONFIRM_TOOL_RU_NAMES[toolName] ?? humanizeToolName(toolName);
+    const parts = Object.entries(params)
       .filter(([, v]) => v !== undefined && v !== null && v !== '')
-      .slice(0, 3)
+      .slice(0, 4)
       .map(([k, v]) => {
+        const label = PARAM_RU_LABELS[k] ?? k;
         let s: string;
-        if (typeof v === 'string') {
+        if (DATE_PARAM_KEYS.has(k) && typeof v === 'string') {
+          s = formatRuDate(v);
+        } else if (typeof v === 'string') {
           s = v;
         } else {
           try {
@@ -581,9 +608,9 @@ export class ConciergeService {
             s = String(v);
           }
         }
-        return `${k}: ${s.slice(0, 80)}`;
+        return `${label} — ${s.slice(0, 80)}`;
       });
-    return keyParams.length > 0 ? `${ruName} (${keyParams.join(', ')})` : ruName;
+    return parts.length > 0 ? `${ruName}: ${parts.join(', ')}` : ruName;
   }
 
   private isNativeToolsEnabled(): boolean {

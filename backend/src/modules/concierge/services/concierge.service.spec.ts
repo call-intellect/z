@@ -790,3 +790,24 @@ describe('ServiceMapGeneratorService.toLlmTools() — полнота', () => {
     expect('required' in (listMeetings?.input_schema ?? {})).toBe(false);
   });
 });
+
+describe('ConciergeService.buildConfirmPreview — человекочитаемый preview', () => {
+  it('create_task{title,description,dueDate} → без сырых англ. ключей и имени инструмента', () => {
+    const { svc } = buildConciergeService({});
+    const preview = (
+      svc as unknown as {
+        buildConfirmPreview(toolName: string, params: Record<string, unknown>): string;
+      }
+    ).buildConfirmPreview('create_task', {
+      title: 'Тестирование бота',
+      description: 'детали задачи',
+      dueDate: '2026-06-19',
+    });
+    expect(preview).not.toContain('title:');
+    expect(preview).not.toContain('description:');
+    expect(preview).not.toContain('dueDate:');
+    expect(preview).not.toContain('create_task');
+    expect(preview).toContain('поставить задачу себе');
+    expect(preview).toContain('19 июня');
+  });
+});

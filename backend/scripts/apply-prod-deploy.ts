@@ -191,6 +191,16 @@ const STEPS: Step[] = [
     script: 'scripts/seed-admin-setting-knowledge-base-redesign.ts',
     hint: 'knowledge_base.redesign.enabled kill-switch (Ф5 редизайн раздела «База знаний»)',
   },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-retention-logging.ts',
+    hint: 'retention.* (10) + logging.* (11) (config Шаг 5 — крутилки хранения и логов в AdminSetting)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-limits.ts',
+    hint: 'limits.* + share.* + aiChatQuota.* + smartTables.* (config Шаг 6 — лимиты и квоты в AdminSetting)',
+  },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
   {

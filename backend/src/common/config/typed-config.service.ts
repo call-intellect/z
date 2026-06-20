@@ -45,17 +45,45 @@ export class TypedConfigService {
 
   get logging() {
     return {
-      dbLoggingEnabled: this.get('LOG_DB_ENABLED'),
-      minLevel: this.get('LOG_DB_MIN_LEVEL'),
-      batchSize: this.get('LOG_DB_BATCH_SIZE'),
-      flushIntervalMs: this.get('LOG_DB_FLUSH_INTERVAL_MS'),
-      maxBufferSize: this.get('LOG_DB_MAX_BUFFER'),
-      retentionDays: this.get('LOG_DB_RETENTION_DAYS'),
-      logStackTraces: this.get('LOG_DB_STACK_TRACES'),
-      requestBodyLogging: this.get('LOG_DB_REQUEST_BODY'),
-      responseBodyLogging: this.get('LOG_DB_RESPONSE_BODY'),
-      logSuccessfulRequests: this.get('LOG_DB_SUCCESS_REQUESTS'),
-      slowRequestThresholdMs: this.get('LOG_DB_SLOW_REQUEST_MS'),
+      dbLoggingEnabled: this.resolveSync<boolean>('logging.dbLoggingEnabled', 'LOG_DB_ENABLED', true),
+      minLevel: this.resolveSync<string>('logging.minLevel', 'LOG_DB_MIN_LEVEL', 'INFO'),
+      batchSize: this.resolveSync<number>('logging.batchSize', 'LOG_DB_BATCH_SIZE', 50),
+      flushIntervalMs: this.resolveSync<number>(
+        'logging.flushIntervalMs',
+        'LOG_DB_FLUSH_INTERVAL_MS',
+        5_000,
+      ),
+      maxBufferSize: this.resolveSync<number>('logging.maxBufferSize', 'LOG_DB_MAX_BUFFER', 5_000),
+      retentionDays: this.resolveSync<number>(
+        'logging.retentionDays',
+        'LOG_DB_RETENTION_DAYS',
+        30,
+      ),
+      logStackTraces: this.resolveSync<boolean>(
+        'logging.logStackTraces',
+        'LOG_DB_STACK_TRACES',
+        true,
+      ),
+      requestBodyLogging: this.resolveSync<boolean>(
+        'logging.requestBodyLogging',
+        'LOG_DB_REQUEST_BODY',
+        false,
+      ),
+      responseBodyLogging: this.resolveSync<boolean>(
+        'logging.responseBodyLogging',
+        'LOG_DB_RESPONSE_BODY',
+        false,
+      ),
+      logSuccessfulRequests: this.resolveSync<boolean>(
+        'logging.logSuccessfulRequests',
+        'LOG_DB_SUCCESS_REQUESTS',
+        false,
+      ),
+      slowRequestThresholdMs: this.resolveSync<number>(
+        'logging.slowRequestThresholdMs',
+        'LOG_DB_SLOW_REQUEST_MS',
+        2_000,
+      ),
     } as const;
   }
 
@@ -832,14 +860,39 @@ export class TypedConfigService {
   }
 
   get smartTables() {
+    const importMaxFileMb = this.resolveSync<number>(
+      'smartTables.importMaxFileMb',
+      'TABLE_IMPORT_MAX_FILE_MB',
+      25,
+    );
     return {
-      maxRowsPerTable: this.get('TABLE_MAX_ROWS_PER_TABLE') as number,
-      maxPropsPerTable: this.get('TABLE_MAX_PROPS_PER_TABLE') as number,
-      maxTablesPerOrg: this.get('TABLE_MAX_TABLES_PER_ORG') as number,
-      maxCellSizeBytes: this.get('TABLE_MAX_CELL_SIZE_BYTES') as number,
-      importMaxFileMb: this.get('TABLE_IMPORT_MAX_FILE_MB') as number,
-      importMaxFileBytes: (this.get('TABLE_IMPORT_MAX_FILE_MB') as number) * 1024 * 1024,
-      importMaxRows: this.get('TABLE_IMPORT_MAX_ROWS') as number,
+      maxRowsPerTable: this.resolveSync<number>(
+        'smartTables.maxRowsPerTable',
+        'TABLE_MAX_ROWS_PER_TABLE',
+        100_000,
+      ),
+      maxPropsPerTable: this.resolveSync<number>(
+        'smartTables.maxPropsPerTable',
+        'TABLE_MAX_PROPS_PER_TABLE',
+        200,
+      ),
+      maxTablesPerOrg: this.resolveSync<number>(
+        'smartTables.maxTablesPerOrg',
+        'TABLE_MAX_TABLES_PER_ORG',
+        1_000,
+      ),
+      maxCellSizeBytes: this.resolveSync<number>(
+        'smartTables.maxCellSizeBytes',
+        'TABLE_MAX_CELL_SIZE_BYTES',
+        1_048_576,
+      ),
+      importMaxFileMb,
+      importMaxFileBytes: importMaxFileMb * 1024 * 1024,
+      importMaxRows: this.resolveSync<number>(
+        'smartTables.importMaxRows',
+        'TABLE_IMPORT_MAX_ROWS',
+        5_000,
+      ),
     } as const;
   }
 
@@ -1139,10 +1192,22 @@ export class TypedConfigService {
   }
 
   get aiChatQuota() {
-    const csv = this.get('AI_CHAT_ADMIN_ROLES') as string;
+    const csv = this.resolveSync<string>(
+      'aiChatQuota.adminRoles',
+      'AI_CHAT_ADMIN_ROLES',
+      'owner,admin,coo',
+    );
     return {
-      dailyLimitAdmin: this.get('AI_CHAT_DAILY_LIMIT_ADMIN') as number,
-      dailyLimitMember: this.get('AI_CHAT_DAILY_LIMIT_MEMBER') as number,
+      dailyLimitAdmin: this.resolveSync<number>(
+        'aiChatQuota.dailyLimitAdmin',
+        'AI_CHAT_DAILY_LIMIT_ADMIN',
+        50,
+      ),
+      dailyLimitMember: this.resolveSync<number>(
+        'aiChatQuota.dailyLimitMember',
+        'AI_CHAT_DAILY_LIMIT_MEMBER',
+        20,
+      ),
       adminRoles: csv
         .split(',')
         .map((r) => r.trim())

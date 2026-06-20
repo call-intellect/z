@@ -6,6 +6,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   LOGGING_SETTINGS_KEY,
   type LoggingRuntimeSettings,
+  type SystemLogLevel,
   normalizeLoggingSettings,
 } from './log.constants';
 
@@ -79,7 +80,7 @@ export class LogSettingsService implements OnModuleInit, OnModuleDestroy {
     const c = this.config.logging;
     return {
       dbLoggingEnabled: c.dbLoggingEnabled,
-      minLevel: c.minLevel,
+      minLevel: c.minLevel as SystemLogLevel,
       batchSize: c.batchSize,
       flushIntervalMs: c.flushIntervalMs,
       maxBufferSize: c.maxBufferSize,

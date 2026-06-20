@@ -169,6 +169,28 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         rbacAction: 'write',
       },
       {
+        name: 'assign_task',
+        description:
+          'Используй для постановки задачи ДРУГОМУ сотруднику (не себе). Когда просят «поставь задачу на <имя>», «поручи <имя>…». Передай assigneeName именем, как назвал пользователь. Если суть/срок неясны — переспроси ДО вызова.',
+        method: 'POST',
+        path: '/api/v1/me/tasks/assign',
+        parameters: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Краткая суть задачи.' },
+            assigneeName: {
+              type: 'string',
+              description: 'Имя сотрудника-исполнителя, как назвал пользователь (например «Айназ»).',
+            },
+            description: { type: 'string', description: 'Подробности. Опц.' },
+            dueDate: { type: 'string', description: 'Срок ISO-8601 (2026-06-20). Опц.' },
+          },
+          required: ['title', 'assigneeName'],
+        },
+        rbacResource: 'issue',
+        rbacAction: 'write',
+      },
+      {
         name: 'search_tasks',
         description:
           'Используй для показа/поиска МОИХ задач в трекере (мои открытые дела, задачи на мне). Возвращает задачи с идентификаторами.',

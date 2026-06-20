@@ -35,6 +35,7 @@ export const CHANNEL_TOOL_WHITELIST_SELF: readonly string[] = [
   'create_meeting',
   'find_free_slot',
   'create_task',
+  'assign_task',
   'search_tasks',
   'ingest_note',
   'set_my_work_profile',

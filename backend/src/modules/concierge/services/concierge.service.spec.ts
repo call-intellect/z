@@ -810,4 +810,21 @@ describe('ConciergeService.buildConfirmPreview — человекочитаем�
     expect(preview).toContain('поставить задачу себе');
     expect(preview).toContain('19 июня');
   });
+
+  it('assign_task{assigneeName,title} → «кому» + имя, без сырого assigneeName/assign_task', () => {
+    const { svc } = buildConciergeService({});
+    const preview = (
+      svc as unknown as {
+        buildConfirmPreview(toolName: string, params: Record<string, unknown>): string;
+      }
+    ).buildConfirmPreview('assign_task', {
+      title: 'Протестировать бота',
+      assigneeName: 'Айназ',
+    });
+    expect(preview).toContain('кому');
+    expect(preview).toContain('Айназ');
+    expect(preview).not.toContain('assigneeName');
+    expect(preview).not.toContain('assign_task');
+    expect(preview).toContain('поставить задачу сотруднику');
+  });
 });

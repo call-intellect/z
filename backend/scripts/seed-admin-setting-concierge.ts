@@ -34,6 +34,108 @@ const SEEDS: SettingSeed[] = [
     description:
       'Порог самооценки понимания (0–100): ниже — помощник переспрашивает. Лучше переспросить, чем ошибиться. По умолчанию 80.',
   },
+  {
+    key: 'concierge.enabled',
+    value: true,
+    category: 'ai',
+    section: 'concierge',
+    severity: 'high',
+    description:
+      'Рубильник помощника-консьержа: при выкл помощник недоступен. По умолчанию вкл (Ship-On).',
+  },
+  {
+    key: 'concierge.dialogLayerEnabled',
+    value: true,
+    category: 'ai',
+    section: 'concierge',
+    severity: 'medium',
+    description:
+      'Слой понимания/синтеза запроса помощника (dialog-layer). По умолчанию вкл.',
+  },
+  {
+    key: 'concierge.nativeToolsEnabled',
+    value: true,
+    category: 'ai',
+    section: 'concierge',
+    severity: 'medium',
+    description:
+      'Native function-calling в помощнике (инструменты уходят провайдеру вместо regex-эмуляции в тексте). По умолчанию вкл.',
+  },
+  {
+    key: 'concierge.prmShadowEnabled',
+    value: false,
+    category: 'ai',
+    section: 'concierge',
+    severity: 'low',
+    description:
+      'Теневой режим PRM-реранкера помощника (считает, но не влияет на ответ). По умолчанию выкл.',
+  },
+  {
+    key: 'concierge.prmEnabled',
+    value: false,
+    category: 'ai',
+    section: 'concierge',
+    severity: 'medium',
+    description:
+      'Боевой PRM-реранкер кандидатов помощника. По умолчанию выкл.',
+  },
+  {
+    key: 'concierge.prmTopK',
+    value: 3,
+    category: 'ai',
+    section: 'concierge',
+    severity: 'low',
+    description: 'Сколько верхних кандидатов берёт PRM-реранкер помощника. По умолчанию 3.',
+  },
+  {
+    key: 'concierge.prmShadowSampleRate',
+    value: 1.0,
+    category: 'ai',
+    section: 'concierge',
+    severity: 'low',
+    description:
+      'Доля запросов (0–1), на которых считается теневой PRM помощника. По умолчанию 1.0.',
+  },
+  {
+    key: 'concierge.dailyMessagesLimit',
+    value: 100,
+    category: 'ai',
+    section: 'concierge',
+    severity: 'medium',
+    description: 'Дневной лимит сообщений помощнику на пользователя. По умолчанию 100.',
+  },
+  {
+    key: 'concierge.monthlyMessagesLimit',
+    value: 3000,
+    category: 'ai',
+    section: 'concierge',
+    severity: 'medium',
+    description: 'Месячный лимит сообщений помощнику на пользователя. По умолчанию 3000.',
+  },
+  {
+    key: 'concierge.sseHeartbeatSeconds',
+    value: 15,
+    category: 'ai',
+    section: 'concierge',
+    severity: 'low',
+    description: 'Интервал heartbeat SSE-потока помощника (сек). По умолчанию 15.',
+  },
+  {
+    key: 'concierge.preRetrievalTopK',
+    value: 12,
+    category: 'ai',
+    section: 'concierge',
+    severity: 'low',
+    description: 'Сколько блоков подтягивается в pre-retrieval помощника. По умолчанию 12.',
+  },
+  {
+    key: 'concierge.preRetrievalTimeoutMs',
+    value: 3000,
+    category: 'ai',
+    section: 'concierge',
+    severity: 'low',
+    description: 'Таймаут pre-retrieval помощника (мс). По умолчанию 3000.',
+  },
 ];
 
 interface Counters {

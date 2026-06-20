@@ -114,7 +114,22 @@ const STEPS: Step[] = [
   {
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-concierge.ts',
-    hint: 'concierge.history_pairs=4 + concierge.clarify_min_confidence=80 — крутилки помощника (ТЗ 2026-06-14 assistant-router)',
+    hint: 'concierge.history_pairs + clarify_min_confidence + 12 крутилок/рубильников помощника (enabled/dialogLayer/nativeTools/prm*/лимиты/SSE/pre-retrieval) — config-knobs-to-admin-settings',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-orchestrator.ts',
+    hint: 'orchestrator.{enabled(OFF),maxSubagentsPerRun,runTimeoutMinutes} — крутилки оркестратора (config-knobs-to-admin-settings)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-router-fallback.ts',
+    hint: 'router.{fallbackNegativeTtlSeconds,llmFallbackEnabled(OFF),fallbackCacheTtlSeconds} — крутилки фолбэка роутера специалистов (config-knobs-to-admin-settings)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-worker-knobs.ts',
+    hint: 'knowledge.axisClassifyEnabled + roleProfiles.minBlocks + curation.consistencyChecker* + curation.completenessScannerEnabled + tracker.goalAlignmentLowEnabled + conversational.telegramDigestHourLocal — крутилки воркеров (config-knobs-to-admin-settings)',
   },
   {
     phase: 'seed-base',

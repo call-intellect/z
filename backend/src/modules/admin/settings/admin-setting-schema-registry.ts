@@ -212,6 +212,35 @@ const registry = new Map<string, ZodTypeAny>([
   ['pendingActions.reminderStepHours', POSITIVE_INT],
   ['pendingActions.urgentAgeDays', POSITIVE_INT],
   ['pendingActions.reminderLeadDays', POSITIVE_INT],
+
+  ['concierge.enabled', z.boolean()],
+  ['concierge.dialogLayerEnabled', z.boolean()],
+  ['concierge.nativeToolsEnabled', z.boolean()],
+  ['concierge.prmShadowEnabled', z.boolean()],
+  ['concierge.prmEnabled', z.boolean()],
+  ['concierge.prmTopK', POSITIVE_INT],
+  ['concierge.prmShadowSampleRate', UNIT_INTERVAL],
+  ['concierge.dailyMessagesLimit', POSITIVE_INT],
+  ['concierge.monthlyMessagesLimit', POSITIVE_INT],
+  ['concierge.sseHeartbeatSeconds', POSITIVE_INT],
+  ['concierge.preRetrievalTopK', POSITIVE_INT],
+  ['concierge.preRetrievalTimeoutMs', POSITIVE_INT],
+
+  ['router.fallbackNegativeTtlSeconds', POSITIVE_INT],
+  ['router.llmFallbackEnabled', z.boolean()],
+  ['router.fallbackCacheTtlSeconds', POSITIVE_INT],
+
+  ['orchestrator.enabled', z.boolean()],
+  ['orchestrator.maxSubagentsPerRun', POSITIVE_INT],
+  ['orchestrator.runTimeoutMinutes', POSITIVE_INT],
+
+  ['knowledge.axisClassifyEnabled', z.boolean()],
+  ['roleProfiles.minBlocks', POSITIVE_INT],
+  ['curation.consistencyCheckerDedupTtlSeconds', POSITIVE_INT],
+  ['curation.consistencyCheckerEnabled', z.boolean()],
+  ['curation.completenessScannerEnabled', z.boolean()],
+  ['tracker.goalAlignmentLowEnabled', z.boolean()],
+  ['conversational.telegramDigestHourLocal', z.number().int().min(0).max(23)],
 ]);
 
 export function getSchemaForKey(key: string): ZodTypeAny {

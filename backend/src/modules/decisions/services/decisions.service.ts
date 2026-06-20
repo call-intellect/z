@@ -14,6 +14,7 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
+import type { ProvenancePreviewRef } from '../../knowledge-core/services/provenance.service';
 import { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import type {
   ChangeStatusBody,
@@ -487,6 +488,8 @@ export class DecisionsService {
       affectsEntityIds: d.affectsEntityIds,
       confidence: d.confidence !== null ? Number(d.confidence) : null,
       trustTier,
+      previewQuote: d.previewQuote ?? null,
+      previewSourceRef: (d.previewSourceRef as ProvenancePreviewRef | null) ?? null,
       updatedAt: d.updatedAt.toISOString(),
       createdAt: d.createdAt.toISOString(),
     };

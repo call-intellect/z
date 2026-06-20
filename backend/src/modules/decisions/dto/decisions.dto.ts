@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import type { ProvenancePreviewRef } from '../../knowledge-core/services/provenance.service';
+
 export const DecisionStatusSchema = z.enum([
   'proposed',
   'approved',
@@ -98,6 +100,8 @@ export interface DecisionListItemDto {
   affectsEntityIds: string[];
   confidence: number | null;
   trustTier: TrustTierDto;
+  previewQuote: string | null;
+  previewSourceRef: ProvenancePreviewRef | null;
   updatedAt: string;
   createdAt: string;
 }

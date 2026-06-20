@@ -47,6 +47,8 @@ describe('TrackerEventsService', () => {
       meetingId: null,
       linkedMeetingIds: [],
       sourceBlockIds: [],
+      previewQuote: null,
+      previewSourceRef: null,
       confidence: null,
       createdManually: true,
       externalSource: null,

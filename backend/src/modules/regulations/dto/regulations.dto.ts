@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import type { ProvenancePreviewRef } from '../../knowledge-core/services/provenance.service';
+
 export const RegulationKindSchema = z.enum([
   'regulation',
   'process',
@@ -86,6 +88,8 @@ export interface RegulationListItemDto {
   extractionStatus?: ExtractionStatusDto | null;
   forRole?: string | null;
   trustTier: TrustTierDto;
+  previewQuote: string | null;
+  previewSourceRef: ProvenancePreviewRef | null;
   lastConfirmedAt: string | null;
   updatedAt: string;
   createdAt: string;

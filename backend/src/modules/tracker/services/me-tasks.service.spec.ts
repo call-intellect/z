@@ -39,6 +39,8 @@ function makeIssueResponse(overrides: Partial<IssueResponseDto>): IssueResponseD
     meetingId: null,
     linkedMeetingIds: [],
     sourceBlockIds: [],
+    previewQuote: null,
+    previewSourceRef: null,
     confidence: null,
     createdManually: true,
     externalSource: 'assistant',

@@ -13,6 +13,7 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CurationService } from '../../curation/services/curation.service';
 import {
+  type ProvenancePreviewRef,
   ProvenanceService,
   type ProvenanceSourceRef,
 } from '../../knowledge-core/services/provenance.service';
@@ -967,6 +968,8 @@ export class RegulationsService {
       ownerPersonId: r.ownerPersonId ?? null,
       confidence: r.confidence ?? null,
       trustTier,
+      previewQuote: r.previewQuote ?? null,
+      previewSourceRef: (r.previewSourceRef as ProvenancePreviewRef | null) ?? null,
       lastConfirmedAt: r.lastConfirmedAt ? r.lastConfirmedAt.toISOString() : null,
       updatedAt: r.updatedAt.toISOString(),
       createdAt: r.createdAt.toISOString(),
@@ -991,6 +994,8 @@ export class RegulationsService {
       ownerPersonId: p.ownerPersonId ?? null,
       confidence: p.confidence ?? null,
       trustTier,
+      previewQuote: null,
+      previewSourceRef: null,
       lastConfirmedAt: p.lastConfirmedAt ? p.lastConfirmedAt.toISOString() : null,
       updatedAt: p.updatedAt.toISOString(),
       createdAt: p.createdAt.toISOString(),
@@ -1015,6 +1020,8 @@ export class RegulationsService {
       ownerPersonId: p.ownerPersonId ?? null,
       confidence: p.confidence ?? null,
       trustTier,
+      previewQuote: null,
+      previewSourceRef: null,
       lastConfirmedAt: p.lastConfirmedAt ? p.lastConfirmedAt.toISOString() : null,
       updatedAt: p.updatedAt.toISOString(),
       createdAt: p.createdAt.toISOString(),
@@ -1038,6 +1045,8 @@ export class RegulationsService {
       extractionStatus: i.status === 'active' ? 'exists' : 'discussed',
       forRole: i.forRole ?? null,
       trustTier: 'human',
+      previewQuote: null,
+      previewSourceRef: null,
       lastConfirmedAt: i.lastConfirmedAt ? i.lastConfirmedAt.toISOString() : null,
       updatedAt: i.updatedAt.toISOString(),
       createdAt: i.createdAt.toISOString(),

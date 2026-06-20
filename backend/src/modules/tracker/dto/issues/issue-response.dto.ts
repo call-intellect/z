@@ -1,3 +1,5 @@
+import type { ProvenancePreviewRef } from '../../../knowledge-core/services/provenance.service';
+
 export interface IssueResponseDto {
   id: string;
   tenantId: string;
@@ -22,6 +24,8 @@ export interface IssueResponseDto {
   meetingId: string | null;
   linkedMeetingIds: string[];
   sourceBlockIds: string[];
+  previewQuote: string | null;
+  previewSourceRef: ProvenancePreviewRef | null;
   confidence: string | null;
   createdManually: boolean;
   externalSource: string | null;

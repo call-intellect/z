@@ -27,6 +27,17 @@ export interface ProvenanceSourceRef {
   deepLink: string | null;
 }
 
+export interface ProvenancePreviewRef {
+  evidenceId: string | null;
+  blockId: string | null;
+  sourceType: ProvenanceSourceType | string | null;
+  refId: string | null;
+  startMs: number | null;
+  deepLink: string | null;
+  attribution: 'quoted' | 'inferred' | null;
+  label: string | null;
+}
+
 export interface ProvenanceNode {
   blockId: string;
   rawEventId: string;
@@ -256,7 +267,7 @@ export class ProvenanceService {
     blockIds: string[],
   ): Promise<{
     previewQuote: string | null;
-    previewSourceRef: Record<string, unknown> | null;
+    previewSourceRef: ProvenancePreviewRef | null;
   }> {
     if (blockIds.length === 0) {
       return { previewQuote: null, previewSourceRef: null };

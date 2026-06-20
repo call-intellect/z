@@ -12,6 +12,7 @@ import { Prisma, type Issue } from '@prisma/client';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
+import type { ProvenancePreviewRef } from '../../knowledge-core/services/provenance.service';
 import type { CreateIssueDto } from '../dto/issues/create-issue.dto';
 import type {
   IssueActivityDto,
@@ -1997,6 +1998,8 @@ export class IssuesService {
       meetingId: issue.meetingId,
       linkedMeetingIds: issue.linkedMeetingIds,
       sourceBlockIds: issue.sourceBlockIds,
+      previewQuote: issue.previewQuote ?? null,
+      previewSourceRef: (issue.previewSourceRef as ProvenancePreviewRef | null) ?? null,
       confidence: issue.confidence?.toString() ?? null,
       createdManually: issue.createdManually,
       externalSource: issue.externalSource,

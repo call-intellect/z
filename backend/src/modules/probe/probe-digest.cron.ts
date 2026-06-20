@@ -8,6 +8,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { ConversationalService } from '../conversational/conversational.service';
 
 import { PROBE_REASON_FALLBACK, PROBE_REASON_FALLBACK_DEFAULT } from './probe-reason-labels';
+import { deriveDigestQuestion } from './probe-text.util';
 import { buildProbeDigestSummary, type ProbeDigestItem } from './prompts/probe-digest.prompt';
 
 @Injectable()
@@ -156,10 +157,11 @@ export class ProbeDigestCron {
 
   private deriveQuestion(row: { reason: string; payload: unknown }): string {
     const payload = (row.payload ?? {}) as Record<string, unknown>;
-    const formulated = this.str(payload.formulatedQuestion);
-    const suggested = this.str(payload.suggestedQuestion);
-    return (
-      formulated ?? suggested ?? PROBE_REASON_FALLBACK[row.reason] ?? PROBE_REASON_FALLBACK_DEFAULT
+    return deriveDigestQuestion(
+      row.reason,
+      payload,
+      PROBE_REASON_FALLBACK,
+      PROBE_REASON_FALLBACK_DEFAULT,
     );
   }
 

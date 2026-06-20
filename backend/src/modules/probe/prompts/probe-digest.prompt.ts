@@ -20,7 +20,10 @@ export function buildProbeDigestSummary(items: readonly ProbeDigestItem[]): stri
       ? 'Кора просит уточнить один момент:'
       : `Кора собрала ${items.length} ${pluralizeVopros(items.length)} — ответьте, когда будет минута:`;
   const lines = items.map((it, i) => {
-    const obj = it.objectTitle ? ` (${it.objectTitle})` : '';
+    const title = it.objectTitle?.trim();
+    const showObj =
+      !!title && title.length <= 60 && !it.question.includes(title);
+    const obj = showObj ? ` (${title})` : '';
     return `${i + 1}. ${it.question}${obj}`;
   });
   return `${head}\n${lines.join('\n')}`;

@@ -99,4 +99,22 @@ export const PROBE_REASON_FALLBACK: Record<string, string> = {
   'commitment.silence_escalation': 'По вашему обещанию давно нет новостей. Как с ним сейчас?',
   'attribution.unresolved_at_ingest':
     'К какому отделу, проекту или клиенту это относится?',
+  'insight.linked_decision_question':
+    'Этот инсайт связан с решением. Что предлагаете с ним сделать?',
+  'process_template.missing_input_artifact':
+    'Что нужно на входе этого шага процесса?',
+  'process_template.missing_output_artifact':
+    'Какой результат должен давать этот шаг процесса?',
+  'helpfulness.new_expertise_helper_detected':
+    'Заметили, что вы помогли коллеге в этой теме. Это ваша зона экспертизы?',
+  'helpfulness.unrecognized_high_contributor':
+    'Вы часто помогаете команде. В чём вам легче всего помогать?',
+  'helpfulness.mentor_emerging':
+    'Похоже, к вам обращаются за советом. По каким темам?',
+  'consistency_violation.R1': 'Здесь есть расхождение в данных. Какой вариант верный?',
+  'consistency_violation.R2': 'Здесь есть расхождение в данных. Какой вариант верный?',
+  'consistency_violation.R3': 'Здесь есть расхождение в данных. Какой вариант верный?',
+  'consistency_violation.R4': 'Здесь есть расхождение в данных. Какой вариант верный?',
+  'consistency_violation.R5': 'Здесь есть расхождение в данных. Какой вариант верный?',
+  'consistency_violation.R6': 'Здесь есть расхождение в данных. Какой вариант верный?',
 };

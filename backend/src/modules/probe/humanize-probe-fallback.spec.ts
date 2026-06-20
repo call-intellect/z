@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { humanizeProbeFallback } from './probe-dispatcher.worker';
+import { humanizeProbeFallback } from './probe-text.util';
 
 describe('humanizeProbeFallback', () => {
   it('вырезает cuid-подобный токен из сообщения', () => {

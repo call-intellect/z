@@ -140,7 +140,7 @@ export class TypedConfigService {
       password: this.get('MAIL_PASSWORD'),
       from: this.get('MAIL_FROM'),
       fromName: this.get('MAIL_FROM_NAME'),
-      dryRun: this.get('MAIL_DRY_RUN'),
+      dryRun: this.resolveSync<boolean>('mail.dryRun', 'MAIL_DRY_RUN', false),
     } as const;
   }
 
@@ -210,14 +210,14 @@ export class TypedConfigService {
     return {
       anthropic: {
         apiKey: this.get('ANTHROPIC_API_KEY'),
-        model: this.get('ANTHROPIC_MODEL'),
+        model: this.resolveSync<string>('ai.anthropic.model', 'ANTHROPIC_MODEL', 'claude-sonnet-4-6'),
         useProxy: this.get('ANTHROPIC_USE_PROXY'),
         proxyUrl: this.get('ANTHROPIC_PROXY_URL'),
       },
       vox: {
         apiUrl: this.get('VOX_API_URL'),
         apiToken: this.get('VOX_API_TOKEN'),
-        model: this.get('VOX_MODEL'),
+        model: this.resolveSync<string>('ai.vox.model', 'VOX_MODEL', 'v3_rnnt'),
         language: this.get('VOX_LANGUAGE'),
         punctuationMode: this.get('VOX_PUNCTUATION_MODE'),
         pollIntervalMs: this.get('VOX_POLL_INTERVAL_MS'),
@@ -230,7 +230,11 @@ export class TypedConfigService {
       deepseek: {
         apiKey: this.get('DEEPSEEK_API_KEY'),
         baseUrl: this.get('DEEPSEEK_BASE_URL'),
-        defaultModel: this.get('DEEPSEEK_DEFAULT_MODEL'),
+        defaultModel: this.resolveSync<string>(
+          'ai.deepseek.defaultModel',
+          'DEEPSEEK_DEFAULT_MODEL',
+          'deepseek-v4-flash',
+        ),
         forceToolChoiceEnabled: this.resolveSync<boolean>(
           'ai.deepseek.forceToolChoiceEnabled',
           'LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED',
@@ -246,7 +250,11 @@ export class TypedConfigService {
         baseUrl: this.get('MINIMAX_BASE_URL'),
       },
       mainReport: {
-        primary: this.get('LLM_MAIN_REPORT_PRIMARY'),
+        primary: this.resolveSync<'minimax' | 'deepseek'>(
+          'ai.mainReport.primary',
+          'LLM_MAIN_REPORT_PRIMARY',
+          'deepseek',
+        ),
       },
       grsai: {
         apiKey: this.get('GRSAI_API_KEY'),
@@ -791,8 +799,12 @@ export class TypedConfigService {
     return {
       enabled: this.get('PROMPT_EVOLUTION_ENABLED') as boolean,
       maxMetricCalls: this.get('GEPA_MAX_METRIC_CALLS') as number,
-      reflectionLm: this.get('GEPA_REFLECTION_LM') as string,
-      taskLm: this.get('GEPA_TASK_LM') as string,
+      reflectionLm: this.resolveSync<string>(
+        'gepa.reflectionLm',
+        'GEPA_REFLECTION_LM',
+        'deepseek-v4-pro',
+      ),
+      taskLm: this.resolveSync<string>('gepa.taskLm', 'GEPA_TASK_LM', 'deepseek-v4-pro'),
       abTrafficShare: this.get('GEPA_AB_TRAFFIC_SHARE') as number,
       abMinInvocationsBeforeDecision: this.get('GEPA_AB_MIN_INVOCATIONS_BEFORE_DECISION') as number,
       abPromoteThreshold: this.get('GEPA_AB_PROMOTE_THRESHOLD') as number,
@@ -1005,7 +1017,11 @@ export class TypedConfigService {
         0.6,
       ),
       criticalTypesDefault: this.get('CURATION_CRITICAL_TYPES_DEFAULT') as readonly string[],
-      itemExpiryDays: this.get('CURATION_ITEM_EXPIRY_DAYS'),
+      itemExpiryDays: this.resolveSync<number>(
+        'knowledge.curationItemExpiryDays',
+        'CURATION_ITEM_EXPIRY_DAYS',
+        30,
+      ),
       provisionalThresholdDefault: this.resolveSync<number>(
         'knowledge.curationProvisionalThresholdDefault',
         undefined,
@@ -1055,8 +1071,16 @@ export class TypedConfigService {
         20,
       ),
       staleDetectorCron: this.get('CARD_STALE_DETECTOR_CRON'),
-      staleMonthsThreshold: this.get('CARD_STALE_MONTHS_THRESHOLD'),
-      staleDynamicScoreThreshold: this.get('CARD_STALE_DYNAMIC_SCORE_THRESHOLD'),
+      staleMonthsThreshold: this.resolveSync<number>(
+        'knowledge.curationStaleMonthsThreshold',
+        'CARD_STALE_MONTHS_THRESHOLD',
+        6,
+      ),
+      staleDynamicScoreThreshold: this.resolveSync<number>(
+        'knowledge.curationStaleDynamicScoreThreshold',
+        'CARD_STALE_DYNAMIC_SCORE_THRESHOLD',
+        0.3,
+      ),
     } as const;
   }
 
@@ -1119,17 +1143,49 @@ export class TypedConfigService {
 
   get probe() {
     return {
-      dedupTtlHours: this.get('PROBE_DEDUP_TTL_HOURS'),
-      rateLimitPerHour: this.get('PROBE_RATE_LIMIT_PER_USER_PER_HOUR'),
-      rateLimitPerDay: this.get('PROBE_RATE_LIMIT_PER_USER_PER_DAY'),
-      expiryDays: this.get('PROBE_EXPIRY_DAYS'),
+      dedupTtlHours: this.resolveSync<number>('probe.dedupTtlHours', 'PROBE_DEDUP_TTL_HOURS', 72),
+      rateLimitPerHour: this.resolveSync<number>(
+        'probe.rateLimitPerHour',
+        'PROBE_RATE_LIMIT_PER_USER_PER_HOUR',
+        5,
+      ),
+      rateLimitPerDay: this.resolveSync<number>(
+        'probe.rateLimitPerDay',
+        'PROBE_RATE_LIMIT_PER_USER_PER_DAY',
+        20,
+      ),
+      expiryDays: this.resolveSync<number>('probe.expiryDays', 'PROBE_EXPIRY_DAYS', 14),
       priorityRefreshCron: this.get('PROBE_PRIORITY_REFRESH_CRON'),
-      quietHoursDefaultTzOffsetMin: this.get('PROBE_QUIET_HOURS_DEFAULT_TZ_OFFSET_MIN'),
-      coldStartModeHours: this.get('PROBE_COLD_START_MODE_HOURS'),
-      responseClassifyEnabled: this.get('PROBE_RESPONSE_CLASSIFY_ENABLED'),
-      subjectAddressingEnabled: this.get('PROBE_SUBJECT_ADDRESSING_ENABLED'),
-      voiceInputEnabled: this.get('PROBE_VOICE_INPUT_ENABLED'),
-      responseClassifyMinConfidence: this.get('PROBE_RESPONSE_CLASSIFY_MIN_CONFIDENCE'),
+      quietHoursDefaultTzOffsetMin: this.resolveSync<number>(
+        'probe.quietHoursDefaultTzOffsetMin',
+        'PROBE_QUIET_HOURS_DEFAULT_TZ_OFFSET_MIN',
+        180,
+      ),
+      coldStartModeHours: this.resolveSync<number>(
+        'probe.coldStartModeHours',
+        'PROBE_COLD_START_MODE_HOURS',
+        24,
+      ),
+      responseClassifyEnabled: this.resolveSync<boolean>(
+        'probe.responseClassifyEnabled',
+        'PROBE_RESPONSE_CLASSIFY_ENABLED',
+        true,
+      ),
+      subjectAddressingEnabled: this.resolveSync<boolean>(
+        'probe.subjectAddressingEnabled',
+        'PROBE_SUBJECT_ADDRESSING_ENABLED',
+        true,
+      ),
+      voiceInputEnabled: this.resolveSync<boolean>(
+        'probe.voiceInputEnabled',
+        'PROBE_VOICE_INPUT_ENABLED',
+        true,
+      ),
+      responseClassifyMinConfidence: this.resolveSync<number>(
+        'probe.responseClassifyMinConfidence',
+        'PROBE_RESPONSE_CLASSIFY_MIN_CONFIDENCE',
+        0.5,
+      ),
     } as const;
   }
 
@@ -1357,20 +1413,44 @@ export class TypedConfigService {
   get betaOps() {
     return {
       dailyCheckInEnabled: this.get('DAILY_CHECKIN_ENABLED'),
-      morningLocalHour: Number(this.get('DAILY_CHECKIN_MORNING_LOCAL_HOUR') ?? 9),
-      eveningLocalHour: Number(this.get('DAILY_CHECKIN_EVENING_LOCAL_HOUR') ?? 18),
+      morningLocalHour: this.resolveSync<number>(
+        'betaOps.morningLocalHour',
+        'DAILY_CHECKIN_MORNING_LOCAL_HOUR',
+        9,
+      ),
+      eveningLocalHour: this.resolveSync<number>(
+        'betaOps.eveningLocalHour',
+        'DAILY_CHECKIN_EVENING_LOCAL_HOUR',
+        18,
+      ),
       operationsDashboardCacheTtlSeconds: Number(
         this.get('OPERATIONS_DASHBOARD_CACHE_TTL_SECONDS') ?? 300,
       ),
       sentimentEnabled: this.get('COO_SENTIMENT_ENABLED') !== false,
       checkinGraphIngestEnabled: this.get('CHECKIN_GRAPH_INGEST_ENABLED') !== false,
       weeklyDigestEnabled: this.get('COO_WEEKLY_DIGEST_ENABLED') !== false,
-      weeklyDigestLocalHour: Number(this.get('COO_WEEKLY_DIGEST_LOCAL_HOUR') ?? 8),
-      weeklyDigestLocalDay: Number(this.get('COO_WEEKLY_DIGEST_LOCAL_DAY') ?? 1),
+      weeklyDigestLocalHour: this.resolveSync<number>(
+        'betaOps.weeklyDigestLocalHour',
+        'COO_WEEKLY_DIGEST_LOCAL_HOUR',
+        8,
+      ),
+      weeklyDigestLocalDay: this.resolveSync<number>(
+        'betaOps.weeklyDigestLocalDay',
+        'COO_WEEKLY_DIGEST_LOCAL_DAY',
+        1,
+      ),
       dailyDigestEnabled: this.get('COO_DAILY_DIGEST_ENABLED') !== false,
-      dailyDigestHourUtc: Number(this.get('COO_DAILY_DIGEST_HOUR_UTC') ?? 22),
+      dailyDigestHourUtc: this.resolveSync<number>(
+        'betaOps.dailyDigestHourUtc',
+        'COO_DAILY_DIGEST_HOUR_UTC',
+        22,
+      ),
       commitmentFollowupEnabled: this.get('COMMITMENT_FOLLOWUP_ENABLED') !== false,
-      commitmentFollowupLocalHour: Number(this.get('COMMITMENT_FOLLOWUP_LOCAL_HOUR') ?? 9),
+      commitmentFollowupLocalHour: this.resolveSync<number>(
+        'betaOps.commitmentFollowupLocalHour',
+        'COMMITMENT_FOLLOWUP_LOCAL_HOUR',
+        9,
+      ),
       commitmentFallbackDueWorkdays: Number(this.get('COMMITMENT_FALLBACK_DUE_WORKDAYS') ?? 5),
       commitmentEscalationDays: Number(this.get('COMMITMENT_ESCALATION_DAYS') ?? 3),
       commitmentMaxRetries: Number(this.get('COMMITMENT_MAX_RETRIES') ?? 2),

@@ -201,6 +201,16 @@ const STEPS: Step[] = [
     script: 'scripts/seed-admin-setting-limits.ts',
     hint: 'limits.* + share.* + aiChatQuota.* + smartTables.* (config Шаг 6 — лимиты и квоты в AdminSetting)',
   },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-probe-curation.ts',
+    hint: 'probe.* (10) + knowledge.curation{ItemExpiryDays,StaleMonthsThreshold,StaleDynamicScoreThreshold} (config Шаг 7 — probe + остаток курации в AdminSetting)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-llm-models-and-gray.ts',
+    hint: 'ai.{anthropic.model,vox.model,deepseek.defaultModel} + gepa.{reflectionLm,taskLm} + ai.mainReport.primary kill-switch + mail.dryRun + operations.daily_digest.deliver_to_webpush + betaOps.*LocalHour/Day часы дайджестов (config Шаг 8 — GRAY: модели LLM, рубильники, часы)',
+  },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
   {

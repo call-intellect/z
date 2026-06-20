@@ -138,6 +138,17 @@ const registry = new Map<string, ZodTypeAny>([
   ['probe.valueGateEnabled', z.boolean()],
   ['probe.digestFormulateEnabled', z.boolean()],
 
+  ['probe.dedupTtlHours', POSITIVE_INT],
+  ['probe.rateLimitPerHour', POSITIVE_INT],
+  ['probe.rateLimitPerDay', POSITIVE_INT],
+  ['probe.expiryDays', POSITIVE_INT],
+  ['probe.quietHoursDefaultTzOffsetMin', z.number().int()],
+  ['probe.coldStartModeHours', NON_NEGATIVE_INT],
+  ['probe.responseClassifyEnabled', z.boolean()],
+  ['probe.subjectAddressingEnabled', z.boolean()],
+  ['probe.voiceInputEnabled', z.boolean()],
+  ['probe.responseClassifyMinConfidence', UNIT_INTERVAL],
+
   ['blocker_synthesis.lookback_days', POSITIVE_INT],
   ['blocker_synthesis.recurring_days', POSITIVE_INT],
   ['blocker_synthesis.impact.base', NON_NEGATIVE_INT],
@@ -304,6 +315,23 @@ const registry = new Map<string, ZodTypeAny>([
   ['smartTables.maxCellSizeBytes', POSITIVE_INT],
   ['smartTables.importMaxFileMb', POSITIVE_INT],
   ['smartTables.importMaxRows', POSITIVE_INT],
+
+  ['ai.anthropic.model', z.string().min(1)],
+  ['ai.vox.model', z.string().min(1)],
+  ['ai.deepseek.defaultModel', z.string().min(1)],
+  ['gepa.reflectionLm', z.string().min(1)],
+  ['gepa.taskLm', z.string().min(1)],
+
+  ['ai.mainReport.primary', z.enum(['minimax', 'deepseek'])],
+  ['mail.dryRun', z.boolean()],
+  ['operations.daily_digest.deliver_to_webpush', z.boolean()],
+
+  ['betaOps.morningLocalHour', z.number().int().min(0).max(23)],
+  ['betaOps.eveningLocalHour', z.number().int().min(0).max(23)],
+  ['betaOps.weeklyDigestLocalHour', z.number().int().min(0).max(23)],
+  ['betaOps.weeklyDigestLocalDay', z.number().int().min(0).max(6)],
+  ['betaOps.dailyDigestHourUtc', z.number().int().min(0).max(23)],
+  ['betaOps.commitmentFollowupLocalHour', z.number().int().min(0).max(23)],
 ]);
 
 export function getSchemaForKey(key: string): ZodTypeAny {

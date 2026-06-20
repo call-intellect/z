@@ -750,6 +750,23 @@ resourceType). Метрики: `curation_provisional_total`, `curation_audit_sam
 
 Бэкофилл пустых реестров решений — `backend/scripts/backfill-decisions-from-signals.ts` (re-dispatch decision-сигнальных блоков без Decision, идемпотентно). Логика гонки/идемпотентности покрыта детерминированными unit-гардами; real-DB e2e гонки (2 параллельных dispatch на живой БД) — CI-гейт (dev-postgres без Apache AGE), строка в [[../04_не-сделано/README]].
 
+## Граница «идея ↔ решение» + связь realized_as (2026-06-20)
+
+**Источник:** ТЗ [`plans/tz/2026-06-20-idea-vs-decision-disambiguation.md`](../../plans/tz/2026-06-20-idea-vs-decision-disambiguation.md). Анализ — [`plans/analysis/2026-06-20-idea-vs-decision-disambiguation.md`](../../plans/analysis/2026-06-20-idea-vs-decision-disambiguation.md).
+
+Раньше конвейер путал предложение (idea) и принятый выбор (decision): один и тот же эпизод оседал и как idea, и как decision (дубль), а принятые решения иногда терялись. Развели по **акту принятия** на двух уровнях.
+
+- **Различитель на экстракции — фиксация выбора.** В `block-ingest.prompt.ts` секция «Граница „идея ↔ решение"»: предложение/намерение без фиксации («давайте», «предлагаю», отложенное «вернёмся позже») → `signalType=idea`/`suggestion`; зафиксированный выбор («решили», «договорились», «принято», в т.ч. «решили НЕ делать») → `signalType=decision`. Анти-дубль: предложение И его принятие про одно и то же в окне → ровно ОДИН блок `decision`, без параллельного `idea`. Общий хелпер `withDecisionDiscriminator` (`DECISION_DISCRIMINATOR`) подключён в `block-ingest`, `decision-extract`, `specialists-combined`; `idea-extract.prompt.ts` получил отказной гейт «уже приняли» → `isIdea=false` на принятых решениях.
+- **Capable-модель на развилке.** Маршрут `block-ingest` поднят с cheap до capable (`deepseek-v4-pro` primary, `gpt-5.4` secondary) — патч `backend/scripts/patch-block-ingest-capable-model.ts` (skip admin-edited без `--force`, деактивирует деградировавшие tier-записи). Различение idea/decision требует более сильной модели, чем простое извлечение блоков.
+- **`specialists-combined`** (под флагом `SPECIALISTS_COMBINED_ENABLED`, глобально НЕ включён — переключатель) получил право переноса idea↔decision: чек-лист §6 проверяет, что граница решена по акту принятия без дубля в оба массива.
+
+### Связь realized_as: идея → решение (форма 5a)
+
+Когда идея позже реализуется в решение — не плодим дубль, а **повышаем** идею в Decision со ссылкой:
+- Новое поле `Idea.realizedAsDecisionId` (relation `IdeaRealizedAsDecision` → `Decision`, `onDelete: SetNull`, `@@index([tenantId, realizedAsDecisionId])`) + обратная `Decision.realizedFromIdeas`. Миграция `20260620120000_idea_realized_as_decision`.
+- **`Specialist36Service.markRealizedByDecision`** — идемпотентная привязка идеи к решению (`updateMany WHERE realizedAsDecisionId IS NULL` — повтор no-op) + FSM: статус `captured`/`in_discussion` → `accepted`.
+- **`Specialist36Service.reconcileIdeaForDecision`** — при материализации Decision (вызывается из `specialist-3-3-decisions`) делает KNN-сверку по `Idea.embedding` (только `realizedAsDecisionId IS NULL`, статус `captured`/`in_discussion`); при сходстве выше порога — `markRealizedByDecision`. Закрывает кейс «идея и её решение пришли разными блоками».
+
 ## Группы доступа к знаниям при ingest + расширение провенанса (knowledge-access, 2026-06-06)
 
 **Источник:** [`plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md`](../../plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md). Полная модель доступа и резолвер — [[../01_projects/rbac-access-control]]; разведение с `dataClass` — [[security-and-152fz]] §6.

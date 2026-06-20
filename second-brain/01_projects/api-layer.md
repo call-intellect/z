@@ -136,6 +136,19 @@ CRUD `POST/PATCH/DELETE/list/getUsage` упразднены. Модель `Plan`
 | POST | `/api/v1/ideas/:id/goal` | Привязать гипотезу к цели (`Idea.goalId`). Валидация goal+tenant, audit. «Двигает цель». | owner/admin |
 | PATCH | `/api/v1/cycles/:id` (расширен) | Принимает `primaryGoalId` — «этот спринт продвигает цель X» (валидация goal). | по RBAC спринтов |
 
+### Карта целей + слой идей (2026-06-20)
+
+ТЗ — [`plans/tz/2026-06-20-goals-map-and-ideas-tz.md`](../../plans/tz/2026-06-20-goals-map-and-ideas-tz.md). Полная заметка — [[goals-and-strategic-alignment]] §«Карта целей + слой идей». Схема НЕ менялась (`isPrimary`/`horizon` уже были), миграций нет.
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| POST | `/api/v1/ideas/:id/promote-to-goal` | **«Принять идею → цель»** — создаёт `Goal{source:'manual',promotionState:'active'}` из `idea.statement`/`rationale` (без LLM), проставляет `idea.goalId` + (если `captured`/`in_discussion`) `idea.status='accepted'`. `409 idea_already_linked` при уже привязанной идее. | `idea` read + `goal` write (owner/admin) |
+| POST | `/api/v1/goals/:id/suggest-parent` | **Подсказка родителя для orphan-цели** — read-only (в БД ничего не пишет): KNN по `Goal.embedding` (ILIKE-fallback) + арбитр `goal-hierarchy-link`, исключает саму цель и потомков. Ответ `{parentGoalId\|null, reason, confidence}`. Подтверждение — `PATCH /goals/:id {parentGoalId}`. | `goal` read |
+
+**Расширение DTO (без новых эндпоинтов):**
+- `GET /api/v1/goals` — `GoalListItemDto` += `isPrimary`, `horizon` (центр + кольца радиал-карты).
+- `GET /api/v1/ideas` — `IdeaListItemDto` += `goalId` (ребро идея→цель на карте).
+
 **Дашборд директора (`GET /api/v1/dashboard/director`)** — `DirectorDashboardDto` расширен опц. блоками:
 - `goalsTree?` — дерево active-целей (parent→children) с per-KR `progressPercent` и `progressStatus`.
 - `goalsPulse?` — счётчики недели по `progressStatus` (✅ выполнено / 🟢 в движении / 🟡 риск / 🔴 застряло / ⚪ выпало) + `newThisWeek`.

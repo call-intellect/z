@@ -317,13 +317,23 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 
 | Путь / компонент | Что показывает |
 |---|---|
-| `/goals` (`GoalsClient.tsx`) | **Переключатель «Список / Дерево».** В режиме «Дерево» — `GoalsTreeView` (рекурсивное дерево «главная → подцели», чип `progressStatus` парными токенами, per-KR прогресс-бар). Маркер «Предложено Корой» для `promotionState='suggested'` + кнопка «Принять цель». |
+| `/goals` (`GoalsClient.tsx`) | **Переключатель «Список / Дерево / Карта»** (`ViewMode = list\|tree\|map`, вкладка «Карта» добавлена 2026-06-20). В режиме «Дерево» — `GoalsTreeView` (рекурсивное дерево «главная → подцели», чип `progressStatus` парными токенами, per-KR прогресс-бар). Маркер «Предложено Корой» для `promotionState='suggested'` + кнопка «Принять цель». |
 | `/goals/[id]` (`GoalDetailClient.tsx`) | Секция «Ключевые результаты» (CRUD KR, ручной ввод `currentValue`, прогресс-бар на парных токенах, `krProgressBarColor`); диалог «Сделать подцелью…» (reparent, перевод 400-ошибки цикла в понятный текст); диалог «Заменить цель» (supersede → `router.push` на новую). |
 | Карточка идеи (`/ideas...`) | Секция **«Двигает цель»** — привязка гипотезы к цели через общий `GoalPickerDialog` (`POST /ideas/:id/goal`). Гейт owner/admin. |
 | Дашборд спринта | Блок **«Продвигает цель»** — выбор `primaryGoalId` через `GoalPickerDialog`. |
 | Дашборд CEO (`DirectorDashboardClient.tsx`) | Виджет **«Пульс целей»** (`GoalsPulseWidget` — 5 счётчиков по `progressStatus` парными токенами) + дерево целей (`GoalsTreeView`) рядом со `StrategicAlignmentWidget`. Данные из `DirectorDashboardDto.goalsPulse?` / `goalsTree?`. |
 
 **Мапперы (`domain/goal.ts`):** `goalKeyResultFromApi`, `krProgressBarColor`, `progressStatusChipClasses`, `progressStatusTone` (ChartTone не имеет info/sand → `achieved→accent`, `dropped→neutral`), `buildTree`. Цвета — только парные токены `bg-{color}` + `text-{color}-fg` (memory `feedback_paired_color_tokens`).
+
+### Вкладка «Карта» + слой идей (2026-06-20)
+
+**Источник:** ТЗ [`plans/tz/2026-06-20-goals-map-and-ideas-tz.md`](../../plans/tz/2026-06-20-goals-map-and-ideas-tz.md). Полная заметка — [[goals-and-strategic-alignment]] §«Карта целей + слой идей».
+
+- **`GoalsMapView.tsx`** (`frontend/src/ui/components/goals/`) — радиальная strategy-map на `react-force-graph-2d` (`dagMode='radialout'`, динамический импорт; fallback-заглушка «нужен `bun install`»): центр — главная цель (`Goal.isPrimary`), подцели кольцами по `horizon`, orphan отлетает на край. Цвета — парные токены `--chip-*-fg`.
+- **`domain/goal-map.ts`** — `computeGoalAlignment` (`aligned`/`top_level`/`orphan`, защита от циклов) + `buildGoalGraph`.
+- **Слой идей** — переключатель «Показать идеи» (по умолчанию ВЫКЛ): узлы-идеи другим цветом, рёбра по `Idea.goalId`, зона «идеи без цели». Действие **«Принять идею → цель»** (`POST /ideas/:id/promote-to-goal`) из панели идеи на карте.
+- **AI-подсказка** на orphan-узле «Куда относится?» → `POST /goals/:id/suggest-parent` (read-only, имя предложенной цели + причина) → подтверждение через `PATCH /goals/:id {parentGoalId}`.
+- **Сайдбар:** пункт `/goals` «Цели» добавлен в `nav-config.ts` (`WORK_SECTION`).
 
 ## Команда + карточка сотрудника (2026-06-04)
 

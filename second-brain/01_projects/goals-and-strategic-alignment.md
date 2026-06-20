@@ -181,6 +181,18 @@ Quota: `MAX_GOAL_RECOMPUTE_PER_DAY=5` (per-user, отклонение от ТЗ 
 - **Русификация UI** — из видимого текста целей убраны `cron`/`snapshot`/`timeline`/`₽` (Timeline→«История движения к цели», snapshots→«замеры», «cron'а 04:00»→«Кора рассчитывает каждую ночь», placeholder «встреч, %, ₽»→«встреч, задач, %»). Имена компонентов/пропсов (`TimelineChart`/`SnapshotRow`) — контракт, не трогали.
 - Пороги светофора — code-fallback в `domain/goal.ts`; вынос в AdminSetting → vNext. Ф5 (голосовая постановка цели) — vNext.
 
+## Карта целей + слой идей (2026-06-20)
+
+**Источник:** ТЗ [`plans/tz/2026-06-20-goals-map-and-ideas-tz.md`](../../plans/tz/2026-06-20-goals-map-and-ideas-tz.md). Колонок Prisma НЕ добавлялось — `isPrimary`/`horizon` уже были, миграций нет.
+
+Новая вкладка **«Карта»** в `/goals` — радиальная strategy-map: главная цель (`Goal.isPrimary`) в центре, подцели кольцами по `horizon`, orphan-цели (без родителя и не главная) отлетают на край.
+
+- **DTO:** `isPrimary` + `horizon` добавлены в `GoalListItemDto`/`GoalDomain` (центр + кольца карты); `goalId` добавлен в `IdeaListItemDto` (ребро идея→цель).
+- **Frontend:** `frontend/src/domain/goal-map.ts` — `computeGoalAlignment` (классификация `aligned`/`top_level`/`orphan` с защитой от циклов) + `buildGoalGraph`. Компонент `GoalsMapView.tsx` на `react-force-graph-2d` (`dagMode='radialout'`, динамический импорт), цвета через парные токены `--chip-*-fg`; вкладка «Карта» в `GoalsClient` (`ViewMode = list|tree|map`). Пункт `/goals` добавлен в сайдбар (`nav-config.ts`, `WORK_SECTION`, label «Цели»).
+- **Слой идей** (переключатель «Показать идеи», по умолчанию ВЫКЛ): узлы-идеи другим цветом, рёбра по `Idea.goalId`, зона «идеи без цели».
+- **«Принять идею → цель»:** `POST /ideas/:id/promote-to-goal` (`IdeasService.promoteToGoal`) — создаёт `Goal{source:'manual', promotionState:'active'}` из `idea.statement`/`rationale` (без LLM), проставляет `idea.goalId` и (если `captured`/`in_discussion`) `idea.status='accepted'`; `409 idea_already_linked` при уже привязанной идее. Привязка к существующей цели — прежний `linkGoal` (`POST /ideas/:id/goal`). RBAC: `goal` write (owner/admin).
+- **AI-подсказка родителя для orphan:** `POST /goals/:id/suggest-parent` (`Specialist314Service.suggestParentForGoal`, read-only — в БД ничего не пишет) — KNN по `Goal.embedding` (ILIKE-fallback) + арбитр `goal-hierarchy-link`, исключает саму цель и её потомков; отдаёт предложенного родителя + причину + `confidence`. Подтверждение — ручное через `PATCH /goals/:id {parentGoalId}`. RBAC: `goal` read.
+
 ## Связанные документы (v2)
 
 - [`02_architecture/data-model.md`](../02_architecture/data-model.md) — модели Goal/GoalKeyResult/Checkpoint/WeeklyGoalsPulseDigest.

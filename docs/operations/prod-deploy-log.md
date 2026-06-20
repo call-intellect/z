@@ -71,6 +71,22 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔀 2026-06-20 — Разводка idea↔decision + Карта целей (ТЗ idv Ф1–7 + goals-map Ф1–5)
+
+> Ветка `feature/idv-and-goals-map` → dev (10 коммитов `a148b755`..`2264c3aa`). ТЗ: `plans/tz/2026-06-20-idea-vs-decision-disambiguation.md` (Ф1–7), `plans/tz/2026-06-20-goals-map-and-ideas-tz.md` (Ф1–5). Промпт-правки idea/decision/block-ingest/combined — code-constant (выкат сборкой, seed/patch НЕ нужен). Философия — ship-and-observe.
+
+- **Шаг 1 — ENV** — новых ENV нет.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up`; аддитивная, без потери данных, backfill не нужен): миграция `20260620120000_idea_realized_as_decision` — `Idea.realizedAsDecisionId TEXT?` + FK на `decisions(id)` ON DELETE SET NULL + индекс `(tenantId, realizedAsDecisionId)`. Связь idea→decision (форма 5a, переход не дубль). **В STEPS агрегатора регистрировать НЕ нужно** (миграция схемы).
+- **Шаг 6 — Patch (уже в STEPS `phase:'patch'`, `skipBootstrap:true`):** `docker compose exec backend bun run scripts/patch-block-ingest-capable-model.ts` — развилка block-ingest на capable (`deepseek-v4-pro` primary, `gpt-5.4` secondary; деактивирует деградированные flash/qwen tier-записи). Идемпотентен, уважает `editedByAdmin` без `--force`. Также обновлены сиды `seed-llm-task-routes-default.ts` (фаза `seed-llm-default`) и legacy `seed-llm-task-routes-knowledge-core.ts` — на новых инсталляциях block-ingest сразу capable.
+- **Авто-выкат всего блока:** `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (миграция авто + patch в STEPS).
+- **Шаг 12 — Smoke** (после выката):
+  - Swagger `/api/docs`: `POST /api/v1/ideas/:id/promote-to-goal` (создаёт Goal из идеи; 409 при повторе), `POST /api/v1/goals/:id/suggest-parent` (read-only подсказка родителя).
+  - `GET /api/v1/goals?status=all` → `items[].isPrimary` (boolean) и `items[].horizon` (enum); `GET /api/v1/ideas` → `items[].goalId`.
+  - Кабинет: `/goals` вкладка «Карта» рисует главную цель в центре, orphan отлетает; слой идей по кнопке «Показать идеи»; «Принять идею → цель» и «Куда относится?» работают; пункт «Цели» появился в сайдбаре.
+  - diag graph по новым встречам: дубль idea+decision на один предмет → 0; решения не теряются (нет `gap decision:N→0`); idea↔decision одной встречи связываются (realized_as).
+
+---
+
 ### 🛠️ 2026-06-20 — починка модуля регламентов (Ф1–Ф5)
 
 > Контракт: ветка `feature/regulations-process-fix` (6 коммитов `2b8b4e1f`/`e0c1dcf0`/`d55d7cb6`/`680bb366`/`49f151f2`/`08558fb5`). ТЗ: `plans/tz/2026-06-20-regulations-process-module-fix.md`. second-brain: `02_architecture/knowledge-core.md`, `01_projects/workers-queues.md`, `01_projects/ai-jobs.md`. Реестр флагов — `docs/operations/feature-flags.md` (`aiFeatures.regulationConsolidatorEnabled`).

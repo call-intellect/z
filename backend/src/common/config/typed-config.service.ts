@@ -513,6 +513,11 @@ export class TypedConfigService {
         undefined,
         0.6,
       ),
+      regulationConsolidatorEnabled: this.resolveSync<boolean>(
+        'aiFeatures.regulationConsolidatorEnabled',
+        undefined,
+        true,
+      ),
       chatboxTaskExtractionEnabled: this.resolveSync<boolean>(
         'chatbox.taskExtraction.enabled',
         'CHATBOX_TASK_EXTRACTION_ENABLED',
@@ -610,6 +615,7 @@ export class TypedConfigService {
       ),
       entityMergeThreshold: this.get('ENTITY_MERGE_THRESHOLD'),
       entityResolverCron: this.get('ENTITY_RESOLVER_CRON'),
+      regulationConsolidatorCron: this.get('REGULATION_CONSOLIDATOR_CRON'),
       blockIngestWindowSegments: this.get('BLOCK_INGEST_WINDOW_SEGMENTS'),
       blockIngestMaxTokensPerSegment: this.get('BLOCK_INGEST_MAX_TOKENS_PER_SEGMENT'),
       searchCosineWeight: this.get('SEARCH_COSINE_WEIGHT'),

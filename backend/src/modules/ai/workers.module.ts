@@ -38,6 +38,8 @@ import { PersonaLayerValidationCron } from '../knowledge-core/workers/persona-la
 import { ProcessDetectorWorker } from '../knowledge-core/workers/process-detector.worker';
 import { ProcessTemplateCompletenessCron } from '../knowledge-core/workers/process-template-completeness.cron';
 import { ReframingCron } from '../knowledge-core/workers/reframing.cron';
+import { RegulationConsolidatorCronService } from '../knowledge-core/workers/regulation-consolidator.cron';
+import { RegulationConsolidatorWorker } from '../knowledge-core/workers/regulation-consolidator.worker';
 import { RolePrincipleSynthesisCron } from '../knowledge-core/workers/role-principle-synthesis.cron';
 import { SkillManagerDigestCron } from '../knowledge-core/workers/skill-manager-digest.cron';
 import { SkillProfileRebuildWorker } from '../knowledge-core/workers/skill-profile-rebuild.worker';
@@ -128,6 +130,8 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     BlockDistillWorker,
     EntityResolverWorker,
     EntityResolverCronService,
+    RegulationConsolidatorWorker,
+    RegulationConsolidatorCronService,
     BlockLinkerWorker,
     EntityGraphBuilderCron,
     GraphMaterializationVerifyCron,

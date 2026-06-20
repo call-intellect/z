@@ -306,6 +306,7 @@ const KnowledgeCoreSchema = z.object({
   DISTILL_KNN_TOP_K: z.coerce.number().int().positive().default(5),
   ENTITY_MERGE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.88),
   ENTITY_RESOLVER_CRON: z.string().min(1).default('*/5 * * * *'),
+  REGULATION_CONSOLIDATOR_CRON: z.string().min(1).default('*/30 * * * *'),
   BLOCK_INGEST_WINDOW_SEGMENTS: z.coerce.number().int().positive().default(5),
   BLOCK_INGEST_MAX_TOKENS_PER_SEGMENT: z.coerce.number().int().positive().default(2000),
   SEARCH_COSINE_WEIGHT: z.coerce.number().min(0).max(1).default(0.7),

@@ -38,6 +38,7 @@ import { PersonaLayerValidationService } from './services/persona-layer-validati
 import { PreferenceDatasetService } from './services/preference-dataset.service';
 import { ProjectionRebuilderService } from './services/projection-rebuilder.service';
 import { ReasoningChainService } from './services/reasoning-chain.service';
+import { RegulationConsolidatorService } from './services/regulation-consolidator.service';
 import { RoleClonePersonaVersioningHandler } from './services/role-clone-persona-versioning.handler';
 import { RolePrincipleSynthesisService } from './services/role-principle-synthesis.service';
 import { RouterService } from './services/router.service';
@@ -84,6 +85,7 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     BlockExtractionService,
     KnowledgeEmbeddingService,
     EntityResolutionService,
+    RegulationConsolidatorService,
     BlockMergeService,
     EntityMergeService,
     BlockLinkService,
@@ -153,6 +155,7 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     BlockExtractionService,
     KnowledgeEmbeddingService,
     EntityResolutionService,
+    RegulationConsolidatorService,
     BlockMergeService,
     EntityMergeService,
     BlockLinkService,

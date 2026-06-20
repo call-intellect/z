@@ -33,6 +33,7 @@ import {
   type RebuildKnowledgeProfileJobData,
   type RebuildSkillProfileJobData,
   type RecognitionFormulateJobData,
+  type RegulationConsolidatorJobData,
   type RoleProfileJobData,
   type SpecialistRoutingJobData,
   type SprintHelperJobData,
@@ -183,6 +184,14 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     const payload: EntityResolverJobData = { entityId };
     await q.add('entity-resolver', this.stamp(payload), { jobId });
     this.logger.debug(`enqueue core.entity-resolver entityId=${entityId}`);
+  }
+
+  async enqueueRegulationConsolidator(type: string, cardId: string): Promise<void> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.REGULATION_CONSOLIDATOR);
+    const jobId = `regconsolidate_${type}_${cardId}`;
+    const payload: RegulationConsolidatorJobData = { type, cardId };
+    await q.add('regulation-consolidator', this.stamp(payload), { jobId });
+    this.logger.debug(`enqueue core.regulation-consolidator type=${type} cardId=${cardId}`);
   }
 
   /**

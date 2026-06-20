@@ -194,6 +194,7 @@ export const CORE_QUEUE_NAMES = {
    * BullMQ не создаёт дубль) + hash-skip внутри воркера.
    */
   GOAL_EMBED: 'core.goal-embed',
+  REGULATION_CONSOLIDATOR: 'core.regulation-consolidator',
 } as const;
 
 export type CoreQueueName = (typeof CORE_QUEUE_NAMES)[keyof typeof CORE_QUEUE_NAMES];
@@ -499,6 +500,11 @@ export interface EventReminderJobData {
 export interface GoalEmbedJobData {
   tenantId: string;
   goalId: string;
+}
+
+export interface RegulationConsolidatorJobData {
+  type: string;
+  cardId: string;
 }
 
 export interface RecognitionFormulateJobData {

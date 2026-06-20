@@ -1612,6 +1612,22 @@ export class Specialist31Service {
     return { decision: 'new', targetId: null, reasoning: 'dedupe_fallback_new' };
   }
 
+  async judgeDuplicate(args: {
+    tenantId: string;
+    draft: { kind: RegulationDraft['kind']; name: string; statement: string; scope: string | null };
+    candidates: KnnCandidate[];
+    dataClass: 'public' | 'internal' | 'sensitive' | 'private';
+    blockId: string;
+  }): Promise<DedupeVerdict> {
+    return this.dedupeArbiter({
+      tenantId: args.tenantId,
+      draft: { ...args.draft, confidence: 1 } as RegulationDraft,
+      candidates: args.candidates,
+      dataClass: args.dataClass,
+      blockId: args.blockId,
+    });
+  }
+
   private async triageProposed(args: {
     tenantId: string;
     resourceType: 'regulation' | 'process' | 'policy';
@@ -2084,14 +2100,14 @@ export interface RegulationDraft {
   confidence: number;
 }
 
-interface KnnCandidate {
+export interface KnnCandidate {
   id: string;
   name: string;
   statement: string;
   scope: string | null;
 }
 
-interface DedupeVerdict {
+export interface DedupeVerdict {
   decision: 'new' | 'merge' | 'extension' | 'contradicts';
   targetId: string | null;
   reasoning: string;

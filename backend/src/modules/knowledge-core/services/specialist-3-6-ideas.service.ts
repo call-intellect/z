@@ -333,8 +333,9 @@ export class Specialist36Service {
           blockId: block.id,
           err: err instanceof Error ? err.message : String(err),
         },
-        'specialist-3-6.processBlock: внутренняя ошибка — пропускаю блок',
+        'specialist-3-6.processBlock: ошибка записи — пробрасываю для повтора (BullMQ retry)',
       );
+      throw err;
     }
   }
 

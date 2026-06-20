@@ -413,8 +413,9 @@ export class Specialist314GoalsService {
           blockId: block.id,
           err: err instanceof Error ? err.message : String(err),
         },
-        'specialist-3-14.processBlock: внутренняя ошибка — пропускаю блок',
+        'specialist-3-14.processBlock: ошибка записи — пробрасываю для повтора (BullMQ retry)',
       );
+      throw err;
     }
   }
 

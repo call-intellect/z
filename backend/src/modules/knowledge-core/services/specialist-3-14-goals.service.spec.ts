@@ -448,4 +448,28 @@ describe('Specialist314GoalsService.processBlock', () => {
 
     expect(m.prisma.goal.create).not.toHaveBeenCalled();
   });
+
+  it('ошибка записи goal.create → processBlock пробрасывает (BullMQ retry) + метрика db_error', async () => {
+    m.llm.call.mockResolvedValueOnce(
+      llmResult({
+        isGoal: true,
+        statement: 'Провести 100 встреч за квартал',
+        description: null,
+        horizon: 'quarterly',
+        measurable: null,
+        confidence: 0.6,
+      }),
+    );
+    m.prisma.goal.findMany.mockResolvedValue([]);
+    m.prisma.goal.create.mockRejectedValue(new Error('db down'));
+
+    await expect(
+      svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID }),
+    ).rejects.toThrow('db down');
+
+    expect(m.prisma.goal.create).toHaveBeenCalledTimes(1);
+    expect(m.metrics.incCoreSpecialistExtractionFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'goal', reason: 'db_error' }),
+    );
+  });
 });

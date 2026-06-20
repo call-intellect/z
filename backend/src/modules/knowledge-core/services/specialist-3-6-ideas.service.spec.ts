@@ -114,6 +114,71 @@ describe('Specialist36Service.processBlock — direct-path dedup guard', () => {
     );
   });
 
+  it('ошибка записи idea.create → processBlock пробрасывает (BullMQ retry) + метрика db_error', async () => {
+    const metrics = {
+      incCoreSpecialistExtractionFailure: vi.fn(),
+      observeCoreSpecialistPipelineDuration: vi.fn(),
+      incCoreSpecialistLlmTokens: vi.fn(),
+      incCoreSpecialistCards: vi.fn(),
+    };
+    const llm = {
+      call: vi.fn().mockResolvedValue({
+        text: JSON.stringify({
+          isIdea: true,
+          kind: 'internal',
+          statement: 'Сделать тёмную тему',
+          rationale: 'просили пользователи',
+          confidence: 0.7,
+        }),
+        modelUsed: 'deepseek:deepseek-v4-pro',
+        tier: 'primary',
+        inputTokens: 10,
+        outputTokens: 10,
+      }),
+    };
+    const embedder = { embedQuery: vi.fn().mockResolvedValue(null) };
+    const curation = { triage: vi.fn().mockResolvedValue(undefined) };
+    const cfg = {
+      aiFeatures: { promptInjectionGuardEnabled: false },
+      ideas: { clusterThreshold: 0.8 },
+      dataClassPolicy: { enforcement: 'off' },
+    };
+    const events = { emit: vi.fn() };
+
+    const prisma = {
+      ideaBlock: { findUnique: vi.fn().mockResolvedValue(block()) },
+      idea: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn().mockRejectedValue(new Error('db down')),
+        update: vi.fn(),
+      },
+      ideaBlockEntity: { findMany: vi.fn().mockResolvedValue([]) },
+      person: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+    const logs = { write: vi.fn() };
+
+    const svcLocal = new Specialist36Service(
+      prisma as never,
+      llm as never,
+      embedder as never,
+      curation as never,
+      metrics as never,
+      cfg as never,
+      events as never,
+      logs as never,
+    );
+
+    await expect(
+      svcLocal.processBlock({ tenantId: TENANT, blockId: BLOCK_ID }),
+    ).rejects.toThrow('db down');
+
+    expect(prisma.idea.create).toHaveBeenCalledTimes(1);
+    expect(metrics.incCoreSpecialistExtractionFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'idea', reason: 'db_error' }),
+    );
+  });
+
   it('findFirst=null → guard НЕ срабатывает (идёт в обычный KNN-путь)', async () => {
     m.prisma.ideaBlock.findUnique.mockResolvedValue(block());
     m.prisma.idea.findFirst.mockResolvedValue(null);

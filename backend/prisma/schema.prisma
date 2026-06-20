@@ -3523,15 +3523,16 @@ model IdeaBlockAxisLabel {
 /// Один блок может иметь много свидетельств из разных встреч/чатов/звонков.
 /// quote — текстовая цитата, startMs/endMs — таймкоды (если применимо к источнику).
 model IdeaBlockEvidence {
-  id              String     @id @default(cuid())
-  blockId         String
-  rawEventId      String
-  sourceType      SourceType
-  sourceTimestamp DateTime?
-  quote           String     @db.Text
-  startMs         Int?
-  endMs           Int?
-  createdAt       DateTime   @default(now())
+  id                      String     @id @default(cuid())
+  blockId                 String
+  rawEventId              String
+  sourceType              SourceType
+  sourceTimestamp         DateTime?
+  quote                   String     @db.Text
+  startMs                 Int?
+  endMs                   Int?
+  sourceMessageExternalId String?
+  createdAt               DateTime   @default(now())
 
   block    IdeaBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
   rawEvent RawEvent  @relation(fields: [rawEventId], references: [id], onDelete: Cascade)

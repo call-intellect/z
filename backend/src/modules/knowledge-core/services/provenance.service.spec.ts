@@ -28,8 +28,20 @@ describe('buildProvenanceDeepLink (RC-6 — мс → сек)', () => {
     );
   });
 
-  it('chat → null (нет deep-link во второй волне)', () => {
-    expect(buildProvenanceDeepLink({ sourceType: 'chat', externalId: 'c1' })).toBeNull();
+  it('chat без messageExternalId → /chats/:chatId (graceful на чат)', () => {
+    expect(buildProvenanceDeepLink({ sourceType: 'chat', externalId: 'chat-1' })).toBe(
+      '/chats/chat-1',
+    );
+  });
+
+  it('chat с messageExternalId → /chats/:chatId?m=:messageExternalId', () => {
+    expect(
+      buildProvenanceDeepLink({
+        sourceType: 'chat',
+        externalId: 'chat-1',
+        messageExternalId: 'msg 42/7',
+      }),
+    ).toBe('/chats/chat-1?m=msg%2042%2F7');
   });
 
   it('пустой externalId → null', () => {
@@ -127,6 +139,89 @@ describe('ProvenanceService.resolve — последняя миля', () => {
       userId: 'u-1',
     });
     expect(nodes[0]!.attribution).toBe('inferred');
+  });
+
+  it('chatbox-источник: deepLink на чат с якорем ?m=<messageExternalId>', async () => {
+    const prisma = {
+      decision: {
+        findFirst: vi.fn(async () => ({ sourceBlockIds: ['b-1'] })),
+      },
+      ideaBlock: {
+        findMany: vi.fn(async () => [{ id: 'b-1', primarySource: 'transcript' }]),
+      },
+      ideaBlockEvidence: {
+        findMany: vi.fn(async () => [
+          {
+            blockId: 'b-1',
+            rawEventId: 'raw-1',
+            quote: 'Клиент просит скидку',
+            startMs: 1000,
+            endMs: 1900,
+            sourceTimestamp: new Date('2026-03-10T09:00:00.000Z'),
+            sourceMessageExternalId: 'tg-555',
+          },
+        ]),
+      },
+      rawEvent: {
+        findMany: vi.fn(async () => [
+          { id: 'raw-1', sourceType: 'chatbox', sourceExternalId: 'session-1' },
+        ]),
+      },
+      meeting: { findMany: vi.fn(async () => []) },
+      document: { findMany: vi.fn(async () => []) },
+      chatboxChatSession: {
+        findMany: vi.fn(async () => [{ id: 'session-1', chatId: 'chat-9' }]),
+      },
+    };
+    const svc = buildService({ prisma, isBypass: true });
+    const nodes = await svc.resolve('decision', 'd-1', {
+      tenantId: 't-1',
+      userId: 'u-1',
+    });
+    expect(nodes).toHaveLength(1);
+    const n = nodes[0]!;
+    expect(n.source.type).toBe('chat');
+    expect(n.source.deepLink).toBe('/chats/chat-9?m=tg-555');
+  });
+
+  it('chatbox-источник без sourceMessageExternalId → graceful /chats/:chatId', async () => {
+    const prisma = {
+      decision: {
+        findFirst: vi.fn(async () => ({ sourceBlockIds: ['b-1'] })),
+      },
+      ideaBlock: {
+        findMany: vi.fn(async () => [{ id: 'b-1', primarySource: 'transcript' }]),
+      },
+      ideaBlockEvidence: {
+        findMany: vi.fn(async () => [
+          {
+            blockId: 'b-1',
+            rawEventId: 'raw-1',
+            quote: 'Клиент просит скидку',
+            startMs: 1000,
+            endMs: 1900,
+            sourceTimestamp: new Date('2026-03-10T09:00:00.000Z'),
+            sourceMessageExternalId: null,
+          },
+        ]),
+      },
+      rawEvent: {
+        findMany: vi.fn(async () => [
+          { id: 'raw-1', sourceType: 'chatbox', sourceExternalId: 'session-1' },
+        ]),
+      },
+      meeting: { findMany: vi.fn(async () => []) },
+      document: { findMany: vi.fn(async () => []) },
+      chatboxChatSession: {
+        findMany: vi.fn(async () => [{ id: 'session-1', chatId: 'chat-9' }]),
+      },
+    };
+    const svc = buildService({ prisma, isBypass: true });
+    const nodes = await svc.resolve('decision', 'd-1', {
+      tenantId: 't-1',
+      userId: 'u-1',
+    });
+    expect(nodes[0]!.source.deepLink).toBe('/chats/chat-9');
   });
 
   it('блок недоступен зрителю → accessFiltered, quote/label/deepLink замаскированы', async () => {

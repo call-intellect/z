@@ -38,6 +38,7 @@ import {
 import { KnowledgeEmbeddingService } from '../services/embedding.service';
 import { EntityResolutionService } from '../services/entity-resolution.service';
 import { SegmentBuilderService, type Segment } from '../services/segment-builder.service';
+import { TaskEvidenceLinkerService } from '../services/task-evidence-linker.service';
 
 const REASONING_SUBJECT_SIGNAL_TYPES: ReadonlySet<string> = new Set([
   'reasoning',
@@ -130,6 +131,9 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(ProbeService)
     private readonly probeService?: ProbeService,
+    @Optional()
+    @Inject(TaskEvidenceLinkerService)
+    private readonly taskEvidenceLinker?: TaskEvidenceLinkerService,
   ) {}
 
   onModuleInit(): void {
@@ -704,6 +708,22 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             );
           });
       }
+
+      if (
+        this.taskEvidenceLinker &&
+        event.sourceType === 'meeting' &&
+        event.sourceExternalId &&
+        blockIds.length > 0
+      ) {
+        await this.taskEvidenceLinker
+          .linkForMeeting({ tenantId: event.tenantId, meetingId: event.sourceExternalId })
+          .catch((err) => {
+            this.logger.warn(
+              { rawEventId, err: err instanceof Error ? err.message : String(err) },
+              'block-ingest: привязка задач к блокам-источникам не удалась — пропуск (graceful)',
+            );
+          });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(
@@ -929,6 +949,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             quote: block.evidenceQuote,
             startMs: block.evidenceStartMs,
             endMs: block.evidenceEndMs,
+            sourceMessageExternalId: this.resolveEvidenceMessageId(block, args.segments),
           },
         });
         const propertySpansValue = this.buildPropertySpans(block, evidence.id);
@@ -1368,6 +1389,21 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       });
     }
     return spans;
+  }
+
+  private resolveEvidenceMessageId(
+    block: ExtractedBlock,
+    segments: Segment[] | undefined,
+  ): string | null {
+    if (!Array.isArray(segments) || segments.length === 0) return null;
+    const seg =
+      segments.find(
+        (s) =>
+          s.endMs > 0 &&
+          block.evidenceStartMs >= s.startMs &&
+          block.evidenceStartMs <= s.endMs,
+      ) ?? null;
+    return seg?.messageExternalId ?? null;
   }
 
   private async linkCommitmentRecipient(args: {

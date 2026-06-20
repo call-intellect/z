@@ -72,6 +72,7 @@ export function buildProvenanceDeepLink(args: {
   sourceType: ProvenanceSourceType;
   externalId: string;
   startMs?: number | null;
+  messageExternalId?: string | null;
 }): string | null {
   if (!args.externalId) return null;
   if (args.sourceType === 'meeting') {
@@ -80,6 +81,11 @@ export function buildProvenanceDeepLink(args: {
   }
   if (args.sourceType === 'document') {
     return `/documents/${args.externalId}`;
+  }
+  if (args.sourceType === 'chat') {
+    return args.messageExternalId
+      ? `/chats/${args.externalId}?m=${encodeURIComponent(args.messageExternalId)}`
+      : `/chats/${args.externalId}`;
   }
   return null;
 }
@@ -96,6 +102,7 @@ export class ProvenanceService {
     sourceType: ProvenanceSourceType;
     externalId: string;
     startMs?: number | null;
+    messageExternalId?: string | null;
   }): string | null {
     return buildProvenanceDeepLink(args);
   }
@@ -189,6 +196,7 @@ export class ProvenanceService {
         startMs: true,
         endMs: true,
         sourceTimestamp: true,
+        sourceMessageExternalId: true,
       },
       orderBy: [{ startMs: 'asc' }, { createdAt: 'asc' }],
     });
@@ -201,6 +209,14 @@ export class ProvenanceService {
     const sourceByRawEvent = await this.resolveByRawEventIds(
       viewer.tenantId,
       rawEventIds,
+    );
+
+    const chatSessionIds = [...sourceByRawEvent.values()]
+      .filter((s) => s.type === 'chat' && s.refId)
+      .map((s) => s.refId as string);
+    const chatIdBySession = await this.resolveChatIdsBySession(
+      viewer.tenantId,
+      chatSessionIds,
     );
 
     const nodes: ProvenanceNode[] = [];
@@ -238,11 +254,18 @@ export class ProvenanceService {
         continue;
       }
 
-      const deepLink = baseSource.refId
+      const chatId =
+        baseSource.type === 'chat' && baseSource.refId
+          ? (chatIdBySession.get(baseSource.refId) ?? null)
+          : null;
+      const deepLinkExternalId =
+        baseSource.type === 'chat' ? chatId : baseSource.refId;
+      const deepLink = deepLinkExternalId
         ? this.buildDeepLink({
             sourceType: baseSource.type,
-            externalId: baseSource.refId,
+            externalId: deepLinkExternalId,
             startMs: ev.startMs,
+            messageExternalId: ev.sourceMessageExternalId,
           })
         : null;
       nodes.push({
@@ -274,7 +297,14 @@ export class ProvenanceService {
     }
     const ev = await this.prisma.ideaBlockEvidence.findFirst({
       where: { blockId: { in: blockIds } },
-      select: { id: true, blockId: true, rawEventId: true, quote: true, startMs: true },
+      select: {
+        id: true,
+        blockId: true,
+        rawEventId: true,
+        quote: true,
+        startMs: true,
+        sourceMessageExternalId: true,
+      },
       orderBy: [{ startMs: 'asc' }, { createdAt: 'asc' }],
     });
     if (!ev) return { previewQuote: null, previewSourceRef: null };
@@ -287,11 +317,19 @@ export class ProvenanceService {
     const source = sourceMap.get(ev.rawEventId) ?? null;
     const attribution: 'quoted' | 'inferred' =
       block?.primarySource === 'report' ? 'inferred' : 'quoted';
-    const deepLink = source?.refId
+    let chatId: string | null = null;
+    if (source?.type === 'chat' && source.refId) {
+      const map = await this.resolveChatIdsBySession(tenantId, [source.refId]);
+      chatId = map.get(source.refId) ?? null;
+    }
+    const deepLinkExternalId =
+      source?.type === 'chat' ? chatId : (source?.refId ?? null);
+    const deepLink = deepLinkExternalId
       ? this.buildDeepLink({
-          sourceType: source.type,
-          externalId: source.refId,
+          sourceType: source!.type,
+          externalId: deepLinkExternalId,
           startMs: ev.startMs,
+          messageExternalId: ev.sourceMessageExternalId,
         })
       : null;
 
@@ -308,6 +346,21 @@ export class ProvenanceService {
         label: source?.label ?? null,
       },
     };
+  }
+
+  private async resolveChatIdsBySession(
+    tenantId: string,
+    sessionIds: string[],
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const ids = [...new Set(sessionIds.filter(Boolean))];
+    if (ids.length === 0) return out;
+    const sessions = await this.prisma.chatboxChatSession.findMany({
+      where: { tenantId, id: { in: ids } },
+      select: { id: true, chatId: true },
+    });
+    for (const s of sessions) out.set(s.id, s.chatId);
+    return out;
   }
 
   private classify(
@@ -328,6 +381,7 @@ export class ProvenanceService {
       case 'phone_call':
         return { type: 'phone_call', refId: sourceExternalId };
       case 'chat':
+      case 'chatbox':
         return { type: 'chat', refId: sourceExternalId };
       case 'conversational':
         return { type: 'voice_note', refId: sourceExternalId };

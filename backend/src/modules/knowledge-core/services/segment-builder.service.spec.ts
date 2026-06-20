@@ -377,6 +377,7 @@ describe('SegmentBuilderService — authorPersonId (chatbox per-message)', () =>
             endSec: 0.9,
             speakerParticipantId: null,
             authorPersonId: null,
+            messageExternalId: 'msg-1',
           },
           {
             speaker: 'Менеджер [N]',
@@ -385,6 +386,7 @@ describe('SegmentBuilderService — authorPersonId (chatbox per-message)', () =>
             endSec: 1.9,
             speakerParticipantId: null,
             authorPersonId: 'p-manager',
+            messageExternalId: 'msg-2',
           },
         ],
       },
@@ -398,6 +400,8 @@ describe('SegmentBuilderService — authorPersonId (chatbox per-message)', () =>
     ).toBe(true);
     expect(segments[0]!.authorPersonId).toBeNull();
     expect(segments[1]!.authorPersonId).toBe('p-manager');
+    expect(segments[0]!.messageExternalId).toBe('msg-1');
+    expect(segments[1]!.messageExternalId).toBe('msg-2');
   });
 
   it('meeting turns (без authorPersonId) → сегменты БЕЗ поля authorPersonId (undefined, не null)', () => {
@@ -425,6 +429,10 @@ describe('SegmentBuilderService — authorPersonId (chatbox per-message)', () =>
       Object.prototype.hasOwnProperty.call(segments[0]!, 'authorPersonId'),
     ).toBe(false);
     expect(segments[0]!.authorPersonId).toBeUndefined();
+    expect(
+      Object.prototype.hasOwnProperty.call(segments[0]!, 'messageExternalId'),
+    ).toBe(false);
+    expect(segments[0]!.messageExternalId).toBeUndefined();
   });
 });
 

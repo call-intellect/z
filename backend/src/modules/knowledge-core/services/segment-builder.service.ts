@@ -25,6 +25,7 @@ export interface Segment {
    * пишется (fail-closed). Свойство присутствует ТОЛЬКО у chatbox-сегментов.
    */
   authorPersonId?: string | null;
+  messageExternalId?: string | null;
 }
 
 /** Структура turn'а в transcript meeting-payload. См. MeetingIngestAdapter. */
@@ -40,6 +41,7 @@ interface MeetingTurn {
    * Person.id (string=сотрудник) либо null (клиент). undefined для встреч.
    */
   authorPersonId?: string | null;
+  messageExternalId?: string | null;
 }
 
 interface MeetingTranscript {
@@ -294,6 +296,9 @@ export class SegmentBuilderService {
           // (иначе встречи получили бы authorPersonId=null вместо undefined).
           ...(group[0]?.authorPersonId !== undefined
             ? { authorPersonId: group[0].authorPersonId }
+            : {}),
+          ...(buffer[0]?.messageExternalId !== undefined
+            ? { messageExternalId: buffer[0].messageExternalId }
             : {}),
         });
         buffer = [];

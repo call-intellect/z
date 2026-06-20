@@ -228,6 +228,7 @@ export class ChatboxIngestService {
       where: { tenantId, sessionId },
       orderBy: { externalCreatedAt: 'asc' },
       select: {
+        externalId: true,
         senderType: true,
         senderName: true,
         text: true,
@@ -297,6 +298,7 @@ export class ChatboxIngestService {
       endSec: i + 0.9,
       speakerParticipantId: null,
       authorPersonId: m.senderType === 'CLIENT' ? null : (responsible?.personId ?? null),
+      messageExternalId: m.externalId,
     }));
 
     const payload = {

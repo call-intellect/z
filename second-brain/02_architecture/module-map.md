@@ -1583,6 +1583,15 @@ backend/src/modules/tracker/
 - `services/me-tasks.service.ts` — создание self-задачи; `ensureInboxProjectId` вынесен в `ProjectsService` (общий с intake-приёмом).
 - Инструмент `create_task` помощника → этот эндпоинт; `search_tasks` → `GET /api/v1/me/inbox`. Закрывает бот-интент «поставить задачу» через агента (см. [[../01_projects/conversational-channels]] §«Помощник = единый мозг каналов»).
 
+### Tracker `/me/tasks/assign` — задача ДРУГОМУ + уведомление исполнителю (2026-06-20)
+
+Чтобы помощник ставил задачу на другого сотрудника по имени (инструмент `assign_task`). Два новых сервиса в разных модулях, связанных через событие — без цикла зависимостей:
+
+- `tracker/services/assignee-resolver.service.ts` — `AssigneeResolverService`: резолв имя→user по `tenantId` + активный `Membership` (совпадение exact→startsWith→contains, дедуп по userId). `assignee_not_found` / `assignee_ambiguous` → 404/409. Используется `MeTasksService` в `POST /api/v1/me/tasks/assign` (проект «Входящие», RBAC `issue`/`write`); после создания задачи — явный эмит `issue.assignee_changed(action=added)`.
+- `conversational/issue-assignment-notifier.service.ts` — `IssueAssignmentNotifierService`: listener `@OnEvent(TrackerEmitterService.EVENT_NAME)` (фильтрует `type=issue.assignee_changed`, только `action=added`) → шлёт исполнителю единое уведомление `issue.assigned` (бот/кабинет) через `ConversationalService.sendNotification`. Self-skip (не уведомляет автора-же-исполнителя), fire-and-forget, kill-switch `ASSIGNMENT_NOTIFICATIONS_ENABLED` (default ON).
+
+**Поток:** tracker эмит `issue.assignee_changed` → conversational listener → `sendNotification('issue.assigned')`. Listener живёт в `ConversationalModule` (а не в tracker), т.к. conversational уже импортит tracker — обратный импорт дал бы цикл. Один listener покрывает **оба** пути назначения: UI-путь `addAssignee` и помощника (`assign_task`).
+
 ### PWA frontend (Wave 2 F2)
 
 ```

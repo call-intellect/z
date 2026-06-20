@@ -71,6 +71,25 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📨 2026-06-20 — Помощник ставит задачу на другого + уведомление исполнителю + человекочитаемое подтверждение
+
+> Контракт: ветка `feature/assistant-assign-task-notify`. ТЗ: `plans/tz/2026-06-20-assistant-assign-task-to-others-and-notify.md`. second-brain: `01_projects/api-layer.md`, `01_projects/concierge-agent.md`, `01_projects/conversational-channels.md`, `02_architecture/module-map.md`. Реестр флагов — `docs/operations/feature-flags.md` (`ASSIGNMENT_NOTIFICATIONS_ENABLED`).
+>
+> **Зачем для прода:** (1) помощник умел ставить задачу только СЕБЕ — добавлен инструмент `assign_task` и эндпоинт `POST /api/v1/me/tasks/assign` (задача ДРУГОМУ по имени в «Входящие»); (2) исполнитель не узнавал о назначенной задаче — единый listener `IssueAssignmentNotifierService` шлёт `issue.assigned` в бот/кабинет (покрывает и UI-путь `addAssignee`, и помощника); (3) текст подтверждения помощника содержал сырые англ. ключи — `buildConfirmPreview` теперь даёт русский текст (util `formatRuDate`, `CONFIRM_TOOL_RU_NAMES`, `PARAM_RU_LABELS`).
+>
+> **Миграций НЕ требуется.** **Seed НЕ требуется.** **1 новый ENV-флаг (kill-switch ON, действий владельца НЕ требует).** **Docker rebuild backend обязателен.**
+
+- **Шаг 1 — ENV (новый kill-switch, ON по умолчанию, действий владельца НЕ требует):** `ASSIGNMENT_NOTIFICATIONS_ENABLED` (zBool, default `true`) — гасит ТОЛЬКО отправку уведомления `issue.assigned` исполнителю; OFF → задача всё равно создаётся и назначается, тишина только в канале. Новых обязательных ENV нет (backend стартует без правок `.env`). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 11 — Docker rebuild** — обязателен (новый эндпоинт `POST /api/v1/me/tasks/assign` + `AssigneeResolverService`, listener `IssueAssignmentNotifierService` на `issue.assignee_changed`, новый eventType `issue.assigned` + рендер в адаптерах Telegram/MAX, инструмент помощника `assign_task`, человекочитаемый preview подтверждения): `docker compose up -d --build backend`. Фронта изменения не касаются.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) **эндпоинт виден:** Swagger `/api/docs` содержит `POST /api/v1/me/tasks/assign`;
+  - (б) **новый eventType в образе:** `docker compose exec backend grep -rq "issue.assigned" src/modules/conversational` → найдено (Zod-схема + рендер);
+  - (в) **сквозной путь:** боту/помощнику «поставь задачу N сделать X» → задача создаётся в «Входящие» на сотрудника N, исполнитель получает уведомление «Вам поставили задачу …»; неизвестное имя → внятный отказ (`assignee_not_found`), неоднозначное → переспрос (`assignee_ambiguous`).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🐛 2026-06-19 — Фикс зависания экрана цели + уведомление об обновлении фронта
 
 > Коммит: `0a676e56`. Изменены только frontend-файлы — backend, миграции, ENV не затронуты.

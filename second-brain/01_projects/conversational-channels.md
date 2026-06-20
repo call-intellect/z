@@ -350,6 +350,14 @@ Payload schema в `event-payload.registry.ts`:
 ```
 Default policy в `EVENT_TYPE_CHANNEL_POLICY` — `['telegram_bot', 'max_bot', 'in_app']`. Caller обычно перебивает через `preferredChannelKinds=[originChannelKind]`. Рендер в `telegram-bot.adapter.ts:renderText` через `formatCheckinAck(payload)` — 4 шаблона (см. `backend/src/modules/conversational/adapters/telegram-bot/format-checkin-ack.ts`).
 
+### Новый event-type `issue.assigned` (2026-06-20)
+
+Уведомление исполнителю о поставленной на него задаче. Эмитит `IssueAssignmentNotifierService` (listener `@OnEvent('issue.assignee_changed')`, только `action=added`) — покрывает и UI-путь `addAssignee`, и помощника (инструмент `assign_task`, `POST /api/v1/me/tasks/assign`). Self-skip (автор=исполнитель → тишина), fire-and-forget, kill-switch `ASSIGNMENT_NOTIFICATIONS_ENABLED` (default ON — гасит только отправку).
+
+- **Payload schema** в `event-payload.registry.ts`: `{ issueId, title, assignedByName?, projectName?, dueDate? }` (Zod).
+- **Default policy** в `EVENT_TYPE_CHANNEL_POLICY` — `['in_app', 'telegram_bot', 'max_bot']`. `dataClass` — `internal`.
+- **Рендер:** «Вам поставили задачу …» в `telegram-bot.adapter.ts` (HTML) и `max-bot.adapter.ts` (plain).
+
 ### Новый метод `ConversationalService.markAsAnsweredByCheckin`
 
 Симметричен `respondToProbe`, но **БЕЗ эмиссии `notification.responded`**. Иначе `CheckinResponseHandler.handle` (cron-path) сработает повторно с пустым rawText, что обнулит реальные plans/dones/blockers через lowConfidence-логику.

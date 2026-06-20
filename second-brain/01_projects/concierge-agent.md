@@ -43,13 +43,17 @@ Static в `backend/src/modules/concierge/services/service-map-generator.service.
 - **Встречи**: `list_meetings` (журнал встреч **без фильтра даты**), `create_meeting`, `cancel_meeting` (LiveKit-комнаты).
 - **Календарь**: `create_event`, `list_my_events` (события **календаря/сегодня в TZ человека** — отличие от `list_meetings` прописано в описаниях, ТЗ 2026-06-18 Ф7), `list_user_events`, `find_free_slot`, `delete_event`, `make_event_online` (сделать событие онлайн → видеокомната LiveKit, ТЗ 2026-06-18 Ф6).
 - **Знания**: `ask_chat_v2` — единственный терминальный путь к памяти компании (прежний `search_knowledge` удалён). Его ответ (текст + цитаты) отдаётся пользователю как есть.
-- **Задачи трекера**: `create_task` (поставить задачу себе в «Входящие»), `search_tasks` (мои задачи трекера); `ingest_note` (занести мысль/факт в память). `list_tasks` — legacy действия-задачи из встреч.
+- **Задачи трекера**: `create_task` (поставить задачу себе в «Входящие»), `assign_task` (поставить задачу ДРУГОМУ сотруднику по имени — отдельный от `create_task`, `POST /api/v1/me/tasks/assign`, обязательны `title`+`assigneeName`, в whitelist self, мутация → требует подтверждения), `search_tasks` (мои задачи трекера); `ingest_note` (занести мысль/факт в память). `list_tasks` — legacy действия-задачи из встреч.
 - **Клоны**: `ask_role_clone`, `list_clones`.
 - **Pulse/директор**: `get_person_pulse`, `list_overdue_promises`, `get_sprint_status`, `get_team_health`, `list_ignored_probe_questions`.
 - **Smart-tables**: `infer_table_schema` (превью схемы таблицы, без создания).
 - **Профиль**: `set_my_work_profile` — выставить свой рабочий профиль (таймзона/часы/дни на `Person`, ТЗ 2026-06-18 Ф4); помощник проактивно спрашивает таймзону, когда `Person.timezone` пуст.
 
 RBAC проверяется внутри `ToolRouterService` от `userId` — concierge **не** bypassit permissions. Мутирующие tool-call'ы фиксируются в `ConciergeUndoLog`, откат через `POST /undo/:logId`.
+
+## Человекочитаемый preview подтверждения (2026-06-20)
+
+Перед мутацией помощник показывает текст подтверждения на русском без сырых англ. ключей. `buildConfirmPreview` (`concierge.service.ts`) переводит имя инструмента через `CONFIRM_TOOL_RU_NAMES` и параметры через `PARAM_RU_LABELS`; даты прогоняются через util `backend/src/common/utils/format-ru-date.ts` (`formatRuDate`: `2026-06-20`→«20 июня»). Например, `assign_task` показывает «Поставить задачу …, исполнитель …, срок 20 июня» вместо `title`/`assigneeName`/`dueDate`.
 
 ## Метрики (Prometheus)
 

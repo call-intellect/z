@@ -304,6 +304,9 @@ Golden-харнесс на инфре `combat-harness` (без Nest, prod-guard)
 ### Ф4.2 — авто-привязка Goal↔Theme
 - **`GoalThemeLinkerService`** + `GoalThemeLinkerCron` (`@Cron` 30 мин) + on-event из специалиста `3-14-goals` — детерминированная привязка Goal↔Theme по провенансу (общие `sourceBlockIds`) + co-mention; пишет `GoalTheme(source='ai')`. Метрика `goal_theme_autolink_total{method}`. Тумблеры `AdminSetting.goals.themeAutolinkMinWeight` / `goals.themeAutolinkLlmEnabled`. LLM-арбитр Goal↔Task (Ф4.1) отложен (golden-предусловие).
 
+### Консолидатор дублей регламентов (2026-06-20)
+- **`RegulationConsolidatorCronService`** (`@Cron('*/30 * * * *')`, per-Org × 4 типа: regulation/process/policy/instruction; окно `updatedAt` 7д, TICK_LIMIT=50) ставит в очередь `core.regulation-consolidator` (`RegulationConsolidatorWorker`, concurrency=1). Схлопывает дубли **внутри одного типа** через LLM-арбитр `regulation-dedupe` (deepseek-v4-pro) → `CardVersion(changeReason:'consolidate')` + deprecate проигравшей. **Защита ручных правок:** не трогает карточку с `currentVersion.trustTier='human'`; negative-cache (Redis-пары) + человеко-решение `CurationDecision` reject/split исключают пару навсегда. kill-switch `aiFeatures.regulationConsolidatorEnabled` (ON), ENV `REGULATION_CONSOLIDATOR_CRON`. См. [[workers-queues]], [[../02_architecture/knowledge-core]] §«Починка модуля регламентов».
+
 ### Ф5 — консолидация summary
 - **`pickPrimarySummary`** (`summaryFast ?? summaryV2 ?? summary`) у всех потребителей — единая точка выбора актуального summary встречи. Флаг summary-агента `aiFeatures.summaryAgentEnabled` (ENV `SUMMARY_AGENT_ENABLED` + AdminSetting, дефолт TRUE; при OFF потребители падают на `summaryV2 ?? summary`).
 

@@ -128,6 +128,31 @@ specialist-3-1-regulations.worker (consumer core.specialist-routing, jobName='3-
    └─ Параллельно живёт legacy block-ingest.worker (Phase 0b extraction) — не переписываем,
      обогащаем existing записи через merge-арбитра.
 
+   * Починка модуля регламентов/процессов/инструкций (2026-06-20, ветка feature/regulations-process-fix):
+     ├─ Гейт «чья норма» в Specialist31Service.extractDraft: экстракторы regulation-extract /
+     │    process-template-extract несут ownerCompany (наша/клиент/гость/неизвестно — материализуется
+     │    только «наша») + isKeepableOrgNorm/notabilityReason (демо-кнопки самой Коры / тривиальное /
+     │    разовое → не норма) + явное дерево выбора kind. Гибридный приор «чья сторона»
+     │    (resolveOwnerCompanyPrior по Person.relationship='external' без employee-субъекта) → skip
+     │    not_our_org (в т.ч. при extractionStatus «нужен»/«обсуждается»); isKeepableOrgNorm=false →
+     │    skip not_keepable. Порог материализации — дин. ключ aiFeatures.regulationMinMaterializeConfidence (0.6).
+     ├─ Надёжность dedupeArbiter: явный maxTokens=2500 (против обрезки JSON) + один ретрай +
+     │    fail-open (decision:'new' + метрика incCoreSpecialistExtractionFailure(reason:'dedupe_fallback_new'),
+     │    БЕЗ очереди к человеку). extractDraft maxTokens=4096. Маршрут regulation-dedupe→deepseek-v4-pro.
+     ├─ KNN_TOP_K → дин. ключ knowledgeCore.regulationDedupeTopK (fallback 12).
+     ├─ upsertInstruction теперь проходит дедуп через арбитр (knnCandidates({table:'instruction'}) →
+     │    dedupeArbiter → new/merge/extension), как регламенты.
+     ├─ Процессы: каноничен ProcessTemplate от ProcessDetector — processProcessStepBlock при kind='process'
+     │    БОЛЬШЕ НЕ создаёт Process-карточку (skip-метрика process_canonical_template); ветки переклассификации
+     │    (regulation/policy/instruction) сохранены, router не тронут. regulations.getSummary отдаёт
+     │    processTemplates (count активных ProcessTemplate); хаб /regulations вход «Процессы» → ProcessTemplatesClient.
+     └─ Крон-консолидатор дублей ВНУТРИ типа: RegulationConsolidatorService + RegulationConsolidatorCronService
+        (@Cron('*/30 * * * *'), per-Org × 4 типа) + RegulationConsolidatorWorker (очередь
+        core.regulation-consolidator) — арбитр → CardVersion(changeReason:'consolidate') + deprecate loser.
+        Защита: НЕ трогает карточку с currentVersion.trustTier='human'; negative-cache (Redis) +
+        человеко-решение CurationDecision reject/split исключают пару навсегда. kill-switch
+        aiFeatures.regulationConsolidatorEnabled (ON). См. [[../01_projects/workers-queues]], [[../01_projects/ai-jobs]].
+
 specialist-3-2-knowledge-clone.worker (consumer core.specialist-routing, jobName='3-2-knowledge-clone')
    ├─ SBA β-2 — Specialist 3.2 (Knowledge Clone) — фундамент SkillProfile γ-1.
    ├─ Триггер: блок canonical с signalType ∈ {'fact', 'knowledge_gap'} И упомянут Person (relationship='employee')

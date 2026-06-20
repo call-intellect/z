@@ -71,6 +71,48 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🛠️ 2026-06-20 — починка модуля регламентов (Ф1–Ф5)
+
+> Контракт: ветка `feature/regulations-process-fix` (6 коммитов `2b8b4e1f`/`e0c1dcf0`/`d55d7cb6`/`680bb366`/`49f151f2`/`08558fb5`). ТЗ: `plans/tz/2026-06-20-regulations-process-module-fix.md`. second-brain: `02_architecture/knowledge-core.md`, `01_projects/workers-queues.md`, `01_projects/ai-jobs.md`. Реестр флагов — `docs/operations/feature-flags.md` (`aiFeatures.regulationConsolidatorEnabled`).
+>
+> **Зачем для прода:** две корневые болезни — чужое (клиент/гость) попадало в наши нормы и навал дублей карточек (121 при ~15-20 реальных). Чиним: гейт «чья норма» + существенность + стабилизация `kind`; fail-open арбитр дедупа без очереди к человеку; дедуп инструкций через арбитр; `ProcessTemplate` каноничен (Process больше не плодится); крон-консолидатор схлопывает накопленные дубли внутри типа.
+>
+> **Миграций Prisma НЕТ.** **Docker rebuild backend обязателен** (новый воркер/cron). Накопленные дубли схлопнёт только разовый backfill (Шаг 8) + тики крона.
+
+**Шаг 1 — ENV + AdminSetting (новые крутилки/рубильник, code-default есть — действий владельца НЕ требуют):**
+- Новый ENV `REGULATION_CONSOLIDATOR_CRON` (zString, default `*/30 * * * *`) — расписание крон-консолидатора.
+- Kill-switch `aiFeatures.regulationConsolidatorEnabled` (true, admin code-fallback, БЕЗ ENV).
+- Дин. ключи `aiFeatures.regulationMinMaterializeConfidence` (0.6) — порог материализации нормы; `knowledge.regulationDedupeTopK` (12) — top-K KNN-кандидатов дедупа.
+- Backend стартует без правок `.env`. Строка флага — в `docs/operations/feature-flags.md`.
+
+**Шаг 6 — Patch (уже в STEPS `phase:'patch'`):**
+- `patch-mass-migrate-to-deepseek-pro.ts` (`regulation-dedupe`→deepseek-v4-pro) доезжает агрегатором:
+  ```bash
+  docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update
+  ```
+
+**Шаг 8 — Backfill (1 прогон, идемпотентный, уже в STEPS `phase:'backfill'`, `skipBootstrap`):**
+- `backfill-regulation-consolidate.ts` — разовая консолидация дублей по всем org + миграция legacy `Process→ProcessTemplate` (cosine>0.85, `Process`→`deprecated`, не удаляет).
+- Сначала dry-run:
+  ```bash
+  docker compose exec backend bun run scripts/backfill-regulation-consolidate.ts --dry-run
+  ```
+- По конкретной org (например «Ооо луа»):
+  ```bash
+  docker compose exec backend bun run scripts/backfill-regulation-consolidate.ts --org cmpndk2tw000101mwmixvacuj
+  ```
+- Затем агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Идемпотентен (повтор → 0).
+
+**Шаг 12 — Smoke (после выката):**
+```bash
+docker compose exec backend sh -c "grep -rl regulation-consolidator src/modules/ai/workers.module.ts"
+```
+- В логах старт: `RegulationConsolidatorWorker запущен (core.regulation-consolidator)`.
+- Метрики: `core_specialist_skipped_total{specialist="regulation",reason="not_our_org"|"not_keepable"|"process_canonical_template"}` и `{specialist="regulation-consolidator",reason="merged"|"skipped_human"}`.
+- На «Ооо луа» число `Process`(active) сократилось (было 74).
+
+---
+
 ### 📨 2026-06-20 — Помощник ставит задачу на другого + уведомление исполнителю + человекочитаемое подтверждение
 
 > Контракт: ветка `feature/assistant-assign-task-notify`. ТЗ: `plans/tz/2026-06-20-assistant-assign-task-to-others-and-notify.md`. second-brain: `01_projects/api-layer.md`, `01_projects/concierge-agent.md`, `01_projects/conversational-channels.md`, `02_architecture/module-map.md`. Реестр флагов — `docs/operations/feature-flags.md` (`ASSIGNMENT_NOTIFICATIONS_ENABLED`).

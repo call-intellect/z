@@ -30,6 +30,7 @@ export interface ListIssuesRequest {
   includeArchived?: boolean;
   includeDeleted?: boolean;
   includeChildrenCount?: boolean;
+  includeEngagementCount?: boolean;
   q?: string;
   page?: number;
   limit?: number;
@@ -50,6 +51,7 @@ export interface ListOrgIssuesRequest {
   includeArchived?: boolean;
   includeDeleted?: boolean;
   includeChildrenCount?: boolean;
+  includeEngagementCount?: boolean;
   page?: number;
   limit?: number;
 }

@@ -474,13 +474,30 @@ export class IssuesService {
         }
       }
     }
+    let engagementByIssue: Map<
+      string,
+      { comments: number; attachments: number }
+    > | null = null;
+    if (query.includeEngagementCount && items.length > 0) {
+      engagementByIssue = await this.loadEngagementCounts(
+        items.map((i) => i.id),
+      );
+    }
     return {
       items: items.map((i) => {
-        const base = this.toResponseFromInclude(i);
+        let dto = this.toResponseFromInclude(i);
         if (childrenCountByParent) {
-          return { ...base, childrenCount: childrenCountByParent.get(i.id) ?? 0 };
+          dto = { ...dto, childrenCount: childrenCountByParent.get(i.id) ?? 0 };
         }
-        return base;
+        if (engagementByIssue) {
+          const e = engagementByIssue.get(i.id);
+          dto = {
+            ...dto,
+            commentCount: e?.comments ?? 0,
+            attachmentCount: e?.attachments ?? 0,
+          };
+        }
+        return dto;
       }),
       total,
       page: query.page,
@@ -567,22 +584,69 @@ export class IssuesService {
         }
       }
     }
+    let engagementByIssue: Map<
+      string,
+      { comments: number; attachments: number }
+    > | null = null;
+    if (query.includeEngagementCount && items.length > 0) {
+      engagementByIssue = await this.loadEngagementCounts(
+        items.map((i) => i.id),
+      );
+    }
     return {
       items: items.map((i) => {
         const base = this.toResponseFromInclude(i);
         const stateCategory =
           ((i as { state?: { category: string } | null }).state
             ?.category as IssueResponseDto['stateCategory']) ?? null;
-        const withCat = { ...base, stateCategory };
+        let dto: IssueResponseDto = { ...base, stateCategory };
         if (childrenCountByParent) {
-          return { ...withCat, childrenCount: childrenCountByParent.get(i.id) ?? 0 };
+          dto = { ...dto, childrenCount: childrenCountByParent.get(i.id) ?? 0 };
         }
-        return withCat;
+        if (engagementByIssue) {
+          const e = engagementByIssue.get(i.id);
+          dto = {
+            ...dto,
+            commentCount: e?.comments ?? 0,
+            attachmentCount: e?.attachments ?? 0,
+          };
+        }
+        return dto;
       }),
       total,
       page: query.page,
       limit: query.limit,
     };
+  }
+
+  /** Д4 — opt-in счётчики обсуждения/файлов для бейджей широкого вида карточки. */
+  private async loadEngagementCounts(
+    issueIds: string[],
+  ): Promise<Map<string, { comments: number; attachments: number }>> {
+    const map = new Map<string, { comments: number; attachments: number }>();
+    if (issueIds.length === 0) return map;
+    for (const id of issueIds) map.set(id, { comments: 0, attachments: 0 });
+    const [commentGroups, attachmentGroups] = await Promise.all([
+      this.prisma.issueComment.groupBy({
+        by: ['issueId'],
+        where: { issueId: { in: issueIds }, deletedAt: null },
+        _count: { _all: true },
+      }),
+      this.prisma.issueAttachment.groupBy({
+        by: ['issueId'],
+        where: { issueId: { in: issueIds } },
+        _count: { _all: true },
+      }),
+    ]);
+    for (const g of commentGroups) {
+      const entry = map.get(g.issueId);
+      if (entry) entry.comments = g._count._all;
+    }
+    for (const g of attachmentGroups) {
+      const entry = map.get(g.issueId);
+      if (entry) entry.attachments = g._count._all;
+    }
+    return map;
   }
 
   /**

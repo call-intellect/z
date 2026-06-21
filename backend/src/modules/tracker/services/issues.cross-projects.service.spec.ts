@@ -136,6 +136,7 @@ const baseQuery: ListOrgIssuesQuery = {
   includeArchived: false,
   includeDeleted: false,
   includeChildrenCount: false,
+  includeEngagementCount: false,
   page: 1,
   limit: 100,
 };

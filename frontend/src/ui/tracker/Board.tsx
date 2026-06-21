@@ -40,6 +40,8 @@ import {
 } from "@/domain/tracker";
 import { IssueCard } from "./IssueCard";
 import { QuickAdd } from "./QuickAdd";
+import { CardDensityToggle } from "./CardDensityToggle";
+import { useCardDensity } from "@/hooks/tracker/useCardDensity";
 import { cn } from "@/ui/shadcn/lib/utils";
 
 const COL_PREFIX = "col:";
@@ -68,9 +70,11 @@ export function Board({
   boardId?: string;
   resolveCategory?: (issue: Issue) => IssueStateCategory;
 }) {
+  const { density, setDensity, compact } = useCardDensity();
   const { issues, isLoading, error, mutate } = useIssues(orgId, projectId, {
     limit: 100,
     includeChildrenCount: true,
+    includeEngagementCount: !compact,
     boardId,
   });
   const { states, isLoading: statesLoading } = useStates(orgId, projectId);
@@ -362,45 +366,51 @@ export function Board({
   }
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={pointerWithin}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      onDragCancel={handleDragCancel}
-    >
-      <div className="flex gap-3 overflow-x-auto pb-2">
-        {columns.map((col, colIndex) => {
-          const list = byColumn.get(col.key) ?? [];
-          const showQuickAdd =
-            col.category === "backlog" || col.category === "unstarted";
-          return (
-            <BoardColumn
-              key={col.key}
-              column={col}
-              issues={list}
-              pendingIssueId={pendingTransitionIssueId}
-              quickAdd={
-                showQuickAdd ? (
-                  <QuickAdd
-                    onSubmit={handleCreate}
-                    buttonLabel="Задача"
-                    placeholder="Что нужно сделать?"
-                  />
-                ) : null
-              }
-              disabled={creating}
-              tourTarget={colIndex === 0 ? "project.board-column" : undefined}
-            />
-          );
-        })}
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-end">
+        <CardDensityToggle density={density} onChange={setDensity} />
       </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={pointerWithin}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {columns.map((col, colIndex) => {
+            const list = byColumn.get(col.key) ?? [];
+            const showQuickAdd =
+              col.category === "backlog" || col.category === "unstarted";
+            return (
+              <BoardColumn
+                key={col.key}
+                column={col}
+                issues={list}
+                compact={compact}
+                pendingIssueId={pendingTransitionIssueId}
+                quickAdd={
+                  showQuickAdd ? (
+                    <QuickAdd
+                      onSubmit={handleCreate}
+                      buttonLabel="Задача"
+                      placeholder="Что нужно сделать?"
+                    />
+                  ) : null
+                }
+                disabled={creating}
+                tourTarget={colIndex === 0 ? "project.board-column" : undefined}
+              />
+            );
+          })}
+        </div>
 
-      {}
-      <DragOverlay dropAnimation={null}>
-        {activeIssue ? <IssueCard issue={activeIssue} compact /> : null}
-      </DragOverlay>
-    </DndContext>
+        {}
+        <DragOverlay dropAnimation={null}>
+          {activeIssue ? <IssueCard issue={activeIssue} compact /> : null}
+        </DragOverlay>
+      </DndContext>
+    </div>
   );
 }
 
@@ -417,6 +427,7 @@ interface BoardColumnSpec {
 function BoardColumn({
   column,
   issues,
+  compact,
   pendingIssueId,
   quickAdd,
   disabled,
@@ -424,6 +435,7 @@ function BoardColumn({
 }: {
   column: BoardColumnSpec;
   issues: Issue[];
+  compact: boolean;
   pendingIssueId: string | null;
   quickAdd?: React.ReactNode;
   disabled?: boolean;
@@ -471,6 +483,7 @@ function BoardColumn({
             <SortableIssueCard
               key={issue.id}
               issue={issue}
+              compact={compact}
               disabled={!column.accept}
               pending={pendingIssueId === issue.id}
             />
@@ -505,10 +518,12 @@ function BoardColumnSkeleton({ title }: { title: string }) {
 
 function SortableIssueCard({
   issue,
+  compact,
   disabled,
   pending,
 }: {
   issue: Issue;
+  compact: boolean;
   disabled?: boolean;
   pending?: boolean;
 }) {
@@ -534,7 +549,7 @@ function SortableIssueCard({
       className={cn("touch-none", pending && "opacity-60")}
       aria-grabbed={isDragging}
     >
-      <IssueCard issue={issue} />
+      <IssueCard issue={issue} compact={compact} />
     </div>
   );
 }

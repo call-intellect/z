@@ -43,6 +43,7 @@ export function useIssues(
           req.includeArchived ?? false,
           req.includeDeleted ?? false,
           req.includeChildrenCount ?? false,
+          req.includeEngagementCount ?? false,
           req.q ?? "",
           req.page ?? 1,
           req.limit ?? 50,

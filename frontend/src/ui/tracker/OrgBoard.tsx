@@ -52,6 +52,8 @@ import {
   type IssueStateCategory,
 } from '@/domain/tracker';
 import { IssueCard } from './IssueCard';
+import { CardDensityToggle } from './CardDensityToggle';
+import { useCardDensity } from '@/hooks/tracker/useCardDensity';
 import { cn } from '@/ui/shadcn/lib/utils';
 
 // ─── Резолвер колонки ───────────────────────────────────────────────────────
@@ -96,7 +98,11 @@ export function OrgBoard({
   /** Фильтры сквозного списка (проект/исполнитель/приоритет/поиск). */
   req?: ListOrgIssuesRequest;
 }) {
-  const { issues, isLoading, error, mutate } = useOrgIssues(orgId, req);
+  const { density, setDensity, compact } = useCardDensity();
+  const { issues, isLoading, error, mutate } = useOrgIssues(orgId, {
+    ...req,
+    includeEngagementCount: !compact,
+  });
 
   // Локальная оптимистика: issueId → целевая категория (карточка «прыгает»
   // мгновенно до прихода ре-валидированных данных).
@@ -229,29 +235,35 @@ export function OrgBoard({
   }
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={pointerWithin}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      onDragCancel={handleDragCancel}
-    >
-      <div className="flex gap-3 overflow-x-auto pb-2">
-        {ISSUE_STATE_CATEGORY_VALUES.map((cat) => (
-          <OrgBoardColumn
-            key={cat}
-            category={cat}
-            issues={byColumn.get(cat) ?? []}
-            pendingIssueIds={pendingMoves}
-          />
-        ))}
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-end">
+        <CardDensityToggle density={density} onChange={setDensity} />
       </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={pointerWithin}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {ISSUE_STATE_CATEGORY_VALUES.map((cat) => (
+            <OrgBoardColumn
+              key={cat}
+              category={cat}
+              issues={byColumn.get(cat) ?? []}
+              compact={compact}
+              pendingIssueIds={pendingMoves}
+            />
+          ))}
+        </div>
 
-      {/* Floating overlay над курсором/пальцем — карточка, которую тащим. */}
-      <DragOverlay dropAnimation={null}>
-        {activeIssue ? <IssueCard issue={activeIssue} compact /> : null}
-      </DragOverlay>
-    </DndContext>
+        {/* Floating overlay над курсором/пальцем — карточка, которую тащим. */}
+        <DragOverlay dropAnimation={null}>
+          {activeIssue ? <IssueCard issue={activeIssue} compact /> : null}
+        </DragOverlay>
+      </DndContext>
+    </div>
   );
 }
 
@@ -260,10 +272,12 @@ export function OrgBoard({
 function OrgBoardColumn({
   category,
   issues,
+  compact,
   pendingIssueIds,
 }: {
   category: IssueStateCategory;
   issues: Issue[];
+  compact: boolean;
   /** issueId → целевая категория (для индикации «в процессе перевода»). */
   pendingIssueIds: Map<string, IssueStateCategory>;
 }) {
@@ -289,6 +303,7 @@ function OrgBoardColumn({
           <OrgBoardCard
             key={issue.id}
             issue={issue}
+            compact={compact}
             pending={pendingIssueIds.has(issue.id)}
           />
         ))}
@@ -324,9 +339,11 @@ function OrgBoardColumnSkeleton({ title }: { title: string }) {
 
 function OrgBoardCard({
   issue,
+  compact,
   pending,
 }: {
   issue: Issue;
+  compact: boolean;
   pending?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging, transform } =
@@ -352,7 +369,7 @@ function OrgBoardCard({
       )}
       aria-grabbed={isDragging}
     >
-      <IssueCard issue={issue} />
+      <IssueCard issue={issue} compact={compact} />
     </div>
   );
 }

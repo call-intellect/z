@@ -44,6 +44,8 @@ export interface IssueResponseDto {
   labelIds: string[];
   checklistTotalCount: number;
   checklistDoneCount: number;
+  commentCount?: number | null;
+  attachmentCount?: number | null;
   aiSuggestions?: IssueAiSuggestionsDto | null;
   childrenCount?: number;
   /**

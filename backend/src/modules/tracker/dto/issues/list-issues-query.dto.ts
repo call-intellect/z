@@ -17,6 +17,7 @@ export const ListIssuesQuerySchema = z
     includeDeleted: z.coerce.boolean().default(false),
     q: z.string().max(200).optional(),
     includeChildrenCount: z.coerce.boolean().default(false),
+    includeEngagementCount: z.coerce.boolean().default(false),
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(200).default(50),
   })

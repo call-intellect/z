@@ -55,6 +55,7 @@ export function useOrgIssues(
         req.includeArchived ?? false,
         req.includeDeleted ?? false,
         req.includeChildrenCount ?? false,
+        req.includeEngagementCount ?? false,
         req.page ?? 1,
         req.limit ?? 100,
       ] as const)

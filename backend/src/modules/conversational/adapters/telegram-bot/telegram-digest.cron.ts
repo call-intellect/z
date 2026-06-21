@@ -189,6 +189,7 @@ export class TelegramDigestCron {
           dataClass: 'internal',
           preferredChannelKinds: ['telegram_bot'],
           critical: false,
+          priorityTier: 1,
         });
         this.metrics.incTelegramDigestSent({ tenantTop, result: 'sent' });
         sent++;

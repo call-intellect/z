@@ -125,6 +125,7 @@ export class DailyCheckInPromptCron {
             question,
           },
           dataClass: 'internal',
+          priorityTier: 1,
         });
 
         await this.checkinService.createPromptPlaceholder({

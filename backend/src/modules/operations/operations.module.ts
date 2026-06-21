@@ -27,6 +27,7 @@ import { CommitmentsService } from './services/commitments.service';
 import { CustomerRiskRadarService } from './services/customer-risk-radar.service';
 import { DailyCheckInService } from './services/daily-checkin.service';
 import { DailyDigestService } from './services/daily-digest.service';
+import { DaySignalAggregatorService } from './services/day-signal-aggregator.service';
 import { DaySignalDetectorService } from './services/day-signal-detector.service';
 import { DaySignalExtractorService } from './services/day-signal-extractor.service';
 import { DecisionImplementationService } from './services/decision-implementation.service';
@@ -55,6 +56,7 @@ import { CheckinSentimentBatchCron } from './workers/checkin-sentiment-batch.cro
 import { CommitmentFollowupCron } from './workers/commitment-followup.cron';
 import { CustomerRiskRadarCron } from './workers/customer-risk-radar.cron';
 import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
+import { DaySignalAggregatorCron } from './workers/day-signal-aggregator.cron';
 import { DecisionImplementationCron } from './workers/decision-implementation.cron';
 import { ExecMorningPushCron } from './workers/exec-morning-push.cron';
 import { KnowledgeAtRiskCron } from './workers/knowledge-at-risk.cron';
@@ -95,6 +97,8 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     DailyCheckInService,
     DaySignalDetectorService,
     DaySignalExtractorService,
+    DaySignalAggregatorService,
+    DaySignalAggregatorCron,
     OperationsDashboardService,
     PersonalRelationService,
     GoalCascadeService,

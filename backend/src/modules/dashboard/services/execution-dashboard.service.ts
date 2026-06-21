@@ -1,0 +1,391 @@
+import { Inject, Injectable } from '@nestjs/common';
+
+import { TypedConfigService } from '../../../common/config/index';
+import { PrismaService } from '../../../common/prisma/prisma.service';
+import type {
+  DashboardLayoutResponse,
+  DigestTrendResponse,
+  GoalVectorByPersonResponse,
+  GoalVectorPersonRow,
+  IssueChainsResponse,
+  IssueChainRow,
+  LoadByPersonResponse,
+  LoadByPersonRow,
+} from '../dto/execution-dashboard.dto';
+
+type DashboardRole = 'owner' | 'coo' | 'member';
+type DashboardRhythm = 'today' | 'week' | 'month';
+
+export interface GoalVectorPersonAggregate {
+  personId: string;
+  personName: string;
+  netScore: number;
+  proScore: number;
+  contraScore: number;
+  tasksDone: number;
+  tasksOpen: number;
+}
+
+export function directionFromNet(net: number): 'up' | 'side' | 'down' {
+  if (net > 0.5) return 'up';
+  if (net < -0.5) return 'down';
+  return 'side';
+}
+
+export function buildGoalVectorRows(
+  people: GoalVectorPersonAggregate[],
+): GoalVectorPersonRow[] {
+  return people
+    .map((p) => ({
+      personId: p.personId,
+      personName: p.personName,
+      netScore: p.netScore,
+      proScore: p.proScore,
+      contraScore: p.contraScore,
+      tasksDone: p.tasksDone,
+      tasksOpen: p.tasksOpen,
+      direction: directionFromNet(p.netScore),
+    }))
+    .sort((a, b) => b.netScore - a.netScore);
+}
+
+export function computeDeltas(
+  current: Record<string, unknown> | null,
+  previous: Record<string, unknown> | null,
+): Record<string, number> {
+  const deltas: Record<string, number> = {};
+  if (!current || !previous) return deltas;
+  for (const key of Object.keys(current)) {
+    const cur = current[key];
+    const prev = previous[key];
+    if (typeof cur === 'number' && typeof prev === 'number') {
+      deltas[key] = cur - prev;
+    }
+  }
+  return deltas;
+}
+
+function startOfUtcDay(now: Date): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+function startOfIsoWeekUtc(now: Date): Date {
+  const day = startOfUtcDay(now);
+  const dow = day.getUTCDay();
+  const diff = dow === 0 ? -6 : 1 - dow;
+  return new Date(day.getTime() + diff * 24 * 3_600_000);
+}
+
+@Injectable()
+export class ExecutionDashboardService {
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+  ) {}
+
+  async getLayout(args: {
+    role: DashboardRole;
+    rhythm: DashboardRhythm;
+  }): Promise<DashboardLayoutResponse> {
+    const { role, rhythm } = args;
+    const layout = await this.cfg.getDynamic<string[] | null>(
+      `dashboard.preset.${role}.${rhythm}`,
+      undefined,
+      null,
+    );
+    const valid =
+      Array.isArray(layout) && layout.every((item) => typeof item === 'string') ? layout : null;
+    return { role, rhythm, layout: valid };
+  }
+
+  async getGoalVectorByPerson(args: {
+    tenantId: string;
+    goalId?: string;
+    period: 'day' | 'week' | 'month';
+    now: Date;
+  }): Promise<GoalVectorByPersonResponse> {
+    const { tenantId, period, now } = args;
+
+    const goalId = await this.resolveGoalId(tenantId, args.goalId);
+    if (!goalId) {
+      return { goalId: null, goalTitle: null, rows: [] };
+    }
+
+    const goal = await this.prisma.goal.findFirst({
+      where: { tenantId, id: goalId },
+      select: { id: true, name: true },
+    });
+    const goalTitle = goal?.name ?? null;
+
+    const contribSince =
+      period === 'month'
+        ? new Date(now.getTime() - 28 * 24 * 3_600_000)
+        : startOfIsoWeekUtc(now);
+
+    const contributions = await this.prisma.personGoalContribution.findMany({
+      where: { tenantId, goalId, weekStart: { gte: contribSince } },
+      select: {
+        personId: true,
+        proScore: true,
+        contraScore: true,
+        netScore: true,
+      },
+    });
+
+    const byPerson = new Map<
+      string,
+      { proScore: number; contraScore: number; netScore: number }
+    >();
+    for (const c of contributions) {
+      const prev = byPerson.get(c.personId) ?? { proScore: 0, contraScore: 0, netScore: 0 };
+      prev.proScore += Number(c.proScore.toString());
+      prev.contraScore += Number(c.contraScore.toString());
+      prev.netScore += Number(c.netScore.toString());
+      byPerson.set(c.personId, prev);
+    }
+
+    const assignees = await this.prisma.issueAssignee.findMany({
+      where: { issue: { tenantId, goalId } },
+      select: { userId: true },
+    });
+    const assigneeUserIds = [...new Set(assignees.map((a) => a.userId))];
+
+    const personsByUserId = new Map<string, { id: string; name: string }>();
+    if (assigneeUserIds.length > 0) {
+      const persons = await this.prisma.person.findMany({
+        where: { tenantId, userId: { in: assigneeUserIds } },
+        select: { id: true, name: true, userId: true },
+      });
+      for (const p of persons) {
+        if (p.userId) personsByUserId.set(p.userId, { id: p.id, name: p.name });
+      }
+    }
+
+    const personIds = new Set<string>(byPerson.keys());
+    for (const p of personsByUserId.values()) personIds.add(p.id);
+    if (personIds.size === 0) {
+      return { goalId, goalTitle, rows: [] };
+    }
+
+    const personMeta = await this.prisma.person.findMany({
+      where: { tenantId, id: { in: [...personIds] } },
+      select: { id: true, name: true, userId: true },
+    });
+    const nameByPersonId = new Map<string, string>();
+    const userIdByPersonId = new Map<string, string | null>();
+    for (const p of personMeta) {
+      nameByPersonId.set(p.id, p.name);
+      userIdByPersonId.set(p.id, p.userId);
+    }
+
+    const doneSince =
+      period === 'day'
+        ? startOfUtcDay(now)
+        : period === 'week'
+          ? startOfIsoWeekUtc(now)
+          : new Date(now.getTime() - 28 * 24 * 3_600_000);
+
+    const tasksByUserId = new Map<string, { open: number; done: number }>();
+    if (assigneeUserIds.length > 0) {
+      const [openAssignees, doneAssignees] = await Promise.all([
+        this.prisma.issueAssignee.findMany({
+          where: { issue: { tenantId, goalId, completedAt: null } },
+          select: { userId: true },
+        }),
+        this.prisma.issueAssignee.findMany({
+          where: { issue: { tenantId, goalId, completedAt: { gte: doneSince } } },
+          select: { userId: true },
+        }),
+      ]);
+      for (const a of openAssignees) {
+        const prev = tasksByUserId.get(a.userId) ?? { open: 0, done: 0 };
+        prev.open += 1;
+        tasksByUserId.set(a.userId, prev);
+      }
+      for (const a of doneAssignees) {
+        const prev = tasksByUserId.get(a.userId) ?? { open: 0, done: 0 };
+        prev.done += 1;
+        tasksByUserId.set(a.userId, prev);
+      }
+    }
+
+    const aggregates: GoalVectorPersonAggregate[] = [];
+    for (const personId of personIds) {
+      const contrib = byPerson.get(personId) ?? { proScore: 0, contraScore: 0, netScore: 0 };
+      const userId = userIdByPersonId.get(personId) ?? null;
+      const tasks = userId ? (tasksByUserId.get(userId) ?? { open: 0, done: 0 }) : { open: 0, done: 0 };
+      aggregates.push({
+        personId,
+        personName: nameByPersonId.get(personId) ?? 'Без имени',
+        netScore: contrib.netScore,
+        proScore: contrib.proScore,
+        contraScore: contrib.contraScore,
+        tasksDone: tasks.done,
+        tasksOpen: tasks.open,
+      });
+    }
+
+    return { goalId, goalTitle, rows: buildGoalVectorRows(aggregates) };
+  }
+
+  private async resolveGoalId(tenantId: string, requested?: string): Promise<string | null> {
+    if (requested) return requested;
+    const primary = await this.prisma.goal.findFirst({
+      where: { tenantId, isPrimary: true },
+      select: { id: true },
+    });
+    if (primary) return primary.id;
+    const top = await this.prisma.personGoalContribution.groupBy({
+      by: ['goalId'],
+      where: { tenantId },
+      _sum: { netScore: true },
+      orderBy: { _sum: { netScore: 'desc' } },
+      take: 1,
+    });
+    return top[0]?.goalId ?? null;
+  }
+
+  async getIssueChains(args: {
+    tenantId: string;
+    limit: number;
+  }): Promise<IssueChainsResponse> {
+    const { tenantId, limit } = args;
+    const relations = await this.prisma.issueRelation.findMany({
+      where: {
+        relationType: { in: ['blocks', 'blocked_by'] },
+        source: { tenantId },
+        target: { completedAt: null },
+      },
+      select: {
+        relationType: true,
+        source: { select: { id: true, identifier: true, title: true } },
+        target: { select: { id: true, identifier: true, title: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+
+    const chains: IssueChainRow[] = relations.map((r) => ({
+      sourceIssueId: r.source.id,
+      sourceIdentifier: r.source.identifier,
+      sourceTitle: r.source.title,
+      targetIssueId: r.target.id,
+      targetIdentifier: r.target.identifier,
+      targetTitle: r.target.title,
+      relationType: r.relationType as 'blocks' | 'blocked_by',
+    }));
+    return { chains };
+  }
+
+  async getLoadByPerson(args: { tenantId: string }): Promise<LoadByPersonResponse> {
+    const { tenantId } = args;
+    const [overloadThreshold, idleThreshold] = await Promise.all([
+      this.cfg.getDynamic<number>('dashboard.load.overload_threshold', undefined, 8),
+      this.cfg.getDynamic<number>('dashboard.load.idle_threshold', undefined, 2),
+    ]);
+
+    const grouped = await this.prisma.issueAssignee.groupBy({
+      by: ['userId'],
+      where: { issue: { tenantId, completedAt: null } },
+      _count: { _all: true },
+    });
+    if (grouped.length === 0) return { rows: [] };
+
+    const userIds = grouped.map((g) => g.userId);
+    const persons = await this.prisma.person.findMany({
+      where: { tenantId, userId: { in: userIds } },
+      select: { name: true, userId: true },
+    });
+    const nameByUserId = new Map<string, string>();
+    for (const p of persons) {
+      if (p.userId) nameByUserId.set(p.userId, p.name);
+    }
+
+    const rows: LoadByPersonRow[] = grouped
+      .map((g) => {
+        const activeTasks = g._count._all;
+        const level: 'overload' | 'normal' | 'idle' =
+          activeTasks > overloadThreshold
+            ? 'overload'
+            : activeTasks <= idleThreshold
+              ? 'idle'
+              : 'normal';
+        return {
+          userId: g.userId,
+          personName: nameByUserId.get(g.userId) ?? 'Без имени',
+          activeTasks,
+          level,
+        };
+      })
+      .sort((a, b) => b.activeTasks - a.activeTasks);
+    return { rows };
+  }
+
+  async getOperationsTrend(args: {
+    period: 'day' | 'week';
+    tenantId: string;
+    now: Date;
+  }): Promise<DigestTrendResponse> {
+    const { period, tenantId, now } = args;
+    const { current, previous } =
+      period === 'day'
+        ? await this.fetchDailyTrend(tenantId, now)
+        : await this.fetchWeeklyTrend(tenantId, now);
+    return { period, current, previous, deltas: computeDeltas(current, previous) };
+  }
+
+  private async fetchDailyTrend(
+    tenantId: string,
+    now: Date,
+  ): Promise<{
+    current: Record<string, unknown> | null;
+    previous: Record<string, unknown> | null;
+  }> {
+    const todayLocal = startOfUtcDay(now).toISOString().slice(0, 10);
+    const prevLocal = new Date(startOfUtcDay(now).getTime() - 24 * 3_600_000)
+      .toISOString()
+      .slice(0, 10);
+    const [cur, prev] = await Promise.all([
+      this.prisma.dailyOperationsDigest.findUnique({
+        where: { tenantId_dateLocal: { tenantId, dateLocal: todayLocal } },
+        select: { metricsJson: true },
+      }),
+      this.prisma.dailyOperationsDigest.findUnique({
+        where: { tenantId_dateLocal: { tenantId, dateLocal: prevLocal } },
+        select: { metricsJson: true },
+      }),
+    ]);
+    return { current: toMetricsRecord(cur?.metricsJson), previous: toMetricsRecord(prev?.metricsJson) };
+  }
+
+  private async fetchWeeklyTrend(
+    tenantId: string,
+    now: Date,
+  ): Promise<{
+    current: Record<string, unknown> | null;
+    previous: Record<string, unknown> | null;
+  }> {
+    const weekStart = startOfIsoWeekUtc(now).toISOString().slice(0, 10);
+    const prevWeekStart = new Date(startOfIsoWeekUtc(now).getTime() - 7 * 24 * 3_600_000)
+      .toISOString()
+      .slice(0, 10);
+    const [cur, prev] = await Promise.all([
+      this.prisma.weeklyOperationsDigest.findUnique({
+        where: { tenantId_weekStart: { tenantId, weekStart } },
+        select: { metricsJson: true },
+      }),
+      this.prisma.weeklyOperationsDigest.findUnique({
+        where: { tenantId_weekStart: { tenantId, weekStart: prevWeekStart } },
+        select: { metricsJson: true },
+      }),
+    ]);
+    return { current: toMetricsRecord(cur?.metricsJson), previous: toMetricsRecord(prev?.metricsJson) };
+  }
+}
+
+function toMetricsRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+}

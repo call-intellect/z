@@ -479,6 +479,7 @@ export class OperationsDashboardService {
         text?: string;
         severity?: string;
         ownerHint?: string;
+        sourceBlockId?: string;
       }>) {
         if (!b || typeof b.text !== 'string') continue;
         const severity = normalizeSeverity(b.severity);
@@ -490,7 +491,7 @@ export class OperationsDashboardService {
           ownerPersonId: row.personId,
           ownerPersonName: row.person?.name ?? null,
           createdAt: row.createdAt.toISOString(),
-          sourceBlockId: null,
+          sourceBlockId: typeof b.sourceBlockId === 'string' ? b.sourceBlockId : null,
           sourceCheckInId: row.id,
         });
         if (out.length >= limit) break;

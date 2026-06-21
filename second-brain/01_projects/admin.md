@@ -97,6 +97,22 @@ intake), чтобы окно и пороги не рассинхронились
 
 **Серверный гейт (Шаги 2–3):** новая ENV без классификации (`env-classification.ts` → `KEEP_ENV_KEYS`/`ADMIN_FALLBACK_ENV_KEYS`) валит CI (гард-тесты `env-classification.guard.spec.ts` + `no-direct-process-env.guard.spec.ts`); `AdminSettingsService.set()` валидирует значение по Zod-реестру и требует `reason` (≥10 символов) для severity `high`/`destructive`. Остаток (~240 редких ENV + хардкоды, Шаги 9–10) — осознанно по востребованию; гейт держит инвариант, новые крутилки сюда уже не добавляются мимо реестра.
 
+### UI крутилок — 7 admin-страниц настроек + общий scaffold (2026-06-21, ветка `feature/three-tz-tails-finalization`)
+
+Перенесённые в `AdminSetting` крутилки (126 camelCase-ключей из реестра) получили редактируемые UI-поверхности для super_admin. Общий каркас — `frontend/src/ui/components/admin/DomainSettings.tsx`: экспортирует `DomainSettingsClient` (рендер группы полей + reason-gate перед сохранением high/destructive), типы `SettingSpec` (описание одной крутилки) и `SettingsGroup` (группа). Каждая страница — тонкая обёртка над `DomainSettingsClient` со своим набором ключей.
+
+| Путь | Раздел | Ключей |
+|---|---|---|
+| `/admin/ai/concierge` | Помощник | 12 |
+| `/admin/ai/orchestrator` | Оркестратор и маршрутизатор | 6 |
+| `/admin/ai/models` | Модели LLM и часы | 14 |
+| `/admin/probe` | Probe и курация | 30 |
+| `/admin/platform/worker-knobs` | Рубильники воркеров | 7 |
+| `/admin/platform/retention-logging` | Хранение и логи | 21 |
+| `/admin/platform/quotas` | Квоты пользователей | 36 |
+
+Все 7 пунктов добавлены в admin-навигацию (`frontend/app/(admin)/admin/navigation.ts`). Бэкенд-контракт не менялся — страницы ходят в существующие `GET/POST /api/v1/admin/settings*` (severity `high`/`destructive` → `reason` обязателен). Перенос самих ключей — раздел выше («Массовый перенос крутилок…»). Реестр страниц — [[frontend-pages]] §Admin.
+
 ## Поверхности курации (detail-страницы)
 
 С 2026-06-03 (Action Center, Фаза C3) у курации появились собственные

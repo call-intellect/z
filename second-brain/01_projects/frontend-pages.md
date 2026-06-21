@@ -166,6 +166,20 @@ CTA «Создать встречу» (Plus + ссылка на `/meetings/creat
 | `/admin/feedback` | **Канал обратной связи + AI-кластеризация (2026-05-25)** — дашборд блоков `FeedbackTopic` с процентами по items, действия rename/merge/archive, ручной запуск ночного прогона. Только super_admin. |
 | `/admin/feedback/[topicId]` | Детальная карточка блока + items + диалоги действий (Phase 8). |
 
+### Настройки-крутилки — 7 страниц (2026-06-21, ветка `feature/three-tz-tails-finalization`)
+
+Редактируемые поверхности для 126 camelCase-крутилок из `AdminSetting` (super_admin). Общий каркас — `frontend/src/ui/components/admin/DomainSettings.tsx` (`DomainSettingsClient` / `SettingSpec` / `SettingsGroup`, reason-gate). 7 пунктов в admin-навигации. Детали и таблица ключей — [[admin]] §«UI крутилок».
+
+| Путь | Назначение |
+|---|---|
+| `/admin/ai/concierge` | **Помощник** — 12 крутилок (пороги/лимиты/таймауты помощника). |
+| `/admin/ai/orchestrator` | **Оркестратор и маршрутизатор** — 6 крутилок. |
+| `/admin/ai/models` | **Модели LLM и часы** — 14 крутилок (выбор модели + часы дайджестов). |
+| `/admin/probe` | **Probe и курация** — 30 крутилок. |
+| `/admin/platform/worker-knobs` | **Рубильники воркеров** — 7 крутилок BullMQ-воркеров. |
+| `/admin/platform/retention-logging` | **Хранение и логи** — 21 крутилка (retention + уровни логов). |
+| `/admin/platform/quotas` | **Квоты пользователей** — 36 крутилок (лимиты тарифов/шаринга/AI-чата/Smart Tables). |
+
 ## Feedback (пользовательская часть, 2026-05-25)
 
 | Путь | Назначение |

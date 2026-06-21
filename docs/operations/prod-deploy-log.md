@@ -71,6 +71,27 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-21 — Хвосты трёх ТЗ: deep-link сообщения чата (Ф1) + UI крутилок (Ф2) + page-aware документ (Ф4)
+
+> Ветка `feature/three-tz-tails-finalization`. Коммиты: Ф1 `237b48b5`; Ф2 `40ef424d`+`19c091f5`; Ф4 `af7d4cb6`+`8010c92d`. second-brain: `02_architecture/data-model.md` (`Document.pageCount`/`pageOffsets`), `01_projects/admin.md` (7 страниц настроек + scaffold `DomainSettings`), `01_projects/frontend-pages.md` (7 admin-роутов), `01_projects/api-layer.md` (`ChatMessageDto.externalId`, page-aware doc-deeplink).
+>
+> **Зачем для прода:** (1) Ф1 — `ChatMessageDto.externalId` + `/chats/[id]?m=<externalId>` (скролл+подсветка сообщения); (2) Ф2 — 7 admin-страниц настроек (126 camelCase-крутилок из реестра) поверх общего scaffold `DomainSettings`, без изменения бэкенд-контракта; (3) Ф4 — PDF-парсер `pdf-parse → unpdf` (постранично), page-aware провенанс-deeplink документа `/documents/<id>?page=N&q=<цитата>`.
+>
+> **1 миграция (авто, аддитивная).** **Замена зависимости backend (`pdf-parse → unpdf`).** **Docker rebuild backend+frontend.** **Seed/patch/backfill/новых ENV — нет.**
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up`; аддитивная, без потери данных, backfill для колонок не требуется): миграция `20260621033206_document_page_aware` — `ALTER TABLE "documents" ADD COLUMN "pageCount" INT` + `ADD COLUMN "pageOffsets" INT[] DEFAULT '{}'` (число страниц и смещения начала страниц в `parsedText` для page-aware deeplink). **В STEPS агрегатора регистрировать НЕ нужно** (миграция схемы).
+- **Замена зависимости (Ф4):** в `backend/package.json` удалён `pdf-parse`, добавлен `unpdf` (постраничный парсинг PDF). Подхватывается пересборкой образа `docker compose up -d --build backend` — отдельных команд не требует.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (новая зависимость `unpdf`, page-aware провенанс, `DocumentDto.pageCount/pageOffsets`, `ChatMessageDto.externalId`); frontend (7 admin-страниц настроек + scaffold `DomainSettings`, deep-link `/chats/[id]?m=`, `/documents/<id>?page=N`).
+- **Ф1/Ф2 — отдельных prod-операций НЕ требуют** (миграций/seed/ENV нет — только пересборка фронта/бэка).
+- **Шаг 12 — Smoke** (после выката):
+  - Swagger `/api/docs`: `GET /api/v1/documents/:id` → `DocumentDto` несёт `pageCount`/`pageOffsets`; сообщение чата (`ChatMessageDto`) несёт `externalId`.
+  - Кабинет: 7 пунктов настроек в admin-навигации (`/admin/ai/concierge`, `/admin/ai/orchestrator`, `/admin/ai/models`, `/admin/probe`, `/admin/platform/worker-knobs`, `/admin/platform/retention-logging`, `/admin/platform/quotas`) открываются, правка значения с `reason` для high/destructive сохраняется.
+  - Провенанс: цитата из документа → deep-link `/documents/<id>?page=N&q=<цитата>` ведёт на нужную страницу с подсветкой; цитата из чата → `/chats/<chatId>?m=<externalId>` скроллит и подсвечивает сообщение.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### ⚙️ 2026-06-20 — Крутилки из ENV/кода → AdminSetting (config-knobs Шаги 2–8) + продолжение провенанса (provenance-probe-followups A1–A4 / B1–B5)
 
 > dev. ТЗ: `plans/tz/2026-06-20-config-knobs-to-admin-settings.md` (Шаги 2–8), `plans/tz/2026-06-20-provenance-probe-followups.md` (Блок A + Блок B). second-brain: `02_architecture/data-model.md` (`IdeaBlockEvidence.sourceMessageExternalId`), `02_architecture/module-map.md` (новые сервис/cron/адаптер), `01_projects/admin.md` (~100 крутилок), `01_projects/api-layer.md` (эндпоинт аудио голосового). Все крутилки переведены с code-/ENV-fallback — **дефолт = текущее поведение**, действий владельца НЕ требуют (kill-switch'и ON; owner-параметров нет). Реестр флагов — `docs/operations/feature-flags.md`.

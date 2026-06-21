@@ -1682,6 +1682,13 @@ enum SkillTraitStatus {
   - `importBatchId String?` — связь с `DocumentImport` (`@@index([importBatchId])`).
   - Новые индексы `@@index([tenantId, docType])`, `@@index([tenantId, attachedThemeId])`.
 
+### Page-aware документ-якорь (миграция `20260621033206_document_page_aware`)
+
+- **`Document` расширён** (аддитивно, без потери данных):
+  - `pageCount Int?` — число страниц распарсенного документа.
+  - `pageOffsets Int[] @default([])` — смещения начала каждой страницы в `parsedText` (по индексу = номер страницы). Парсер сменён `pdf-parse → unpdf` (постранично), что и питает эти поля.
+- **Зачем:** провенанс-deeplink документа теперь page-aware — `/documents/<id>?page=N&q=<цитата>`, номер страницы цитаты вычисляется из `pageOffsets`. `DocumentDto` отдаёт `pageCount`/`pageOffsets`.
+
 ### Массовый импорт документов (S3.2 ТЗ-4 Ф7–Ф9, миграция `20260608210000_document_import`)
 
 - **Новый enum `DocumentImportSource`** (`schema.prisma:940`): `upload_zip` / `notion` / `confluence`.

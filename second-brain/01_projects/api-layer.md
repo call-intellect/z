@@ -233,6 +233,10 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 
 DTO списков решений/регламентов/задач (2026-06-20, A1) несут `previewQuote`/`previewSourceRef` (денорм-снимок провенанса) — фронт рисует сниппет цитаты на карточках без on-demand резолва. Chatbox-источник теперь deep-link'ает на конкретное сообщение `/chats/<chatId>?m=<msg>` (B1, поле `IdeaBlockEvidence.sourceMessageExternalId`); документ — `/documents/<id>?q=<цитата>` с подсветкой (B4). Новый источник `phone_call` (Mango, B5) наполняет граф из записей звонков.
 
+**Page-aware deep-link сообщения и документа (2026-06-21, ветка `feature/three-tz-tails-finalization`):**
+- **Ф1.** `ChatMessageDto` несёт поле `externalId`; страница `/chats/[id]` читает `?m=<externalId>` → скролл + подсветка нужного сообщения (раньше deep-link приводил на чат без позиционирования).
+- **Ф4.** Провенанс-deeplink документа стал page-aware — `/documents/<id>?page=N&q=<цитата>`; номер страницы цитаты вычисляется из `pageOffsets`. `DocumentDto` отдаёт `pageCount`/`pageOffsets` (PDF-парсер сменён `pdf-parse → unpdf`, постранично; миграция `20260621033206_document_page_aware`, см. [[../02_architecture/data-model]] §«Page-aware документ-якорь»).
+
 **Гейт графа на платную `feature.graph` (knowledge-core MASTER G1, 2026-06-16).** Раньше `KnowledgeGraphController` (`/graph/*`) был гейтнут `@RequireEntitlement('feature.graph')`, а entity-/block-centric выходы графа — нет (обход paywall'а). Закрыто: `@RequireEntitlement('feature.graph')` навешан на
 - `GET /api/v1/knowledge/entities/:id/graph` (entity-centric граф) и `GET /api/v1/knowledge/entities/:id/links`,
 - `GET /api/v1/knowledge/blocks/:id/links` и `GET /api/v1/knowledge/blocks/:id/reasoning-chain` (BFS по логическим связям).

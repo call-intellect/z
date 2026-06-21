@@ -65,6 +65,7 @@ export function scoreExtraction(golden: GoldenTask[], extracted: string[]): Extr
     let found = false;
     for (let i = 0; i < extractedNorm.length; i++) {
       const eNorm = extractedNorm[i];
+      if (eNorm === undefined) continue;
       if (titlesMatch(gNorm, eNorm) && keyFactsPresent(g.keyFacts, eNorm)) {
         found = true;
         matchedExtractedIdx.add(i);
@@ -77,7 +78,8 @@ export function scoreExtraction(golden: GoldenTask[], extracted: string[]): Extr
 
   const spurious: string[] = [];
   for (let i = 0; i < extracted.length; i++) {
-    if (!matchedExtractedIdx.has(i)) spurious.push(extracted[i]);
+    const e = extracted[i];
+    if (e !== undefined && !matchedExtractedIdx.has(i)) spurious.push(e);
   }
 
   const uniqueCount = uniqueByNorm(extracted).length;

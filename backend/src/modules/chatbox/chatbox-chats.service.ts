@@ -286,6 +286,7 @@ export class ChatboxChatsService {
 
     const items: ChatMessageDto[] = messages.map((m) => ({
       id: m.id,
+      externalId: m.externalId,
       senderType: m.senderType,
       senderName: m.senderName ?? null,
       senderPersonId:

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   ChevronDown,
   ChevronLeft,
@@ -85,6 +86,9 @@ export function ChatDetailClient({ chatId }: { chatId: string }) {
 }
 
 function ChatDetailContent({ chatId }: { chatId: string }) {
+  const searchParams = useSearchParams();
+  const targetMsg = searchParams.get("m");
+
   const integrationSwr = useSWR(["chatbox-integration-mini"], () =>
     chatboxApi.getIntegration(),
   );
@@ -114,8 +118,10 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
   const [msgError, setMsgError] = useState<unknown>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const loadingMoreRef = useRef(false);
+  const anchorLoadsRef = useRef(0);
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
@@ -139,7 +145,7 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
         const items = res.items.map(mapMessage).reverse();
         setMessages(items);
         setHasMore(res.total > items.length);
-        scrollToBottom();
+        if (!targetMsg) scrollToBottom();
       } catch (e) {
         if (!cancelled) setMsgError(e);
       } finally {
@@ -149,7 +155,7 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [chatId, scrollToBottom]);
+  }, [chatId, scrollToBottom, targetMsg]);
 
   const loadOlder = useCallback(async () => {
     if (loadingMoreRef.current || !hasMore) return;
@@ -176,6 +182,25 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
       setLoadingMore(false);
     }
   }, [chatId, hasMore, messages.length]);
+
+  useEffect(() => {
+    if (!targetMsg || msgLoading) return;
+    const found = messages.some((m) => m.externalId === targetMsg);
+    if (found) {
+      const el = document.getElementById(`msg-${targetMsg}`);
+      if (el) {
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        setHighlightId(targetMsg);
+        const timer = setTimeout(() => setHighlightId(null), 2200);
+        return () => clearTimeout(timer);
+      }
+      return;
+    }
+    if (hasMore && anchorLoadsRef.current < 12) {
+      anchorLoadsRef.current += 1;
+      void loadOlder();
+    }
+  }, [targetMsg, msgLoading, messages, hasMore, loadOlder]);
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -384,7 +409,10 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
           return (
             <Fragment key={m.id}>
               {newSession && <SessionDivider />}
-              <MessageBubble message={m} />
+              <MessageBubble
+                message={m}
+                highlighted={highlightId === m.externalId}
+              />
             </Fragment>
           );
         })}
@@ -728,7 +756,13 @@ function MessageAttachment({ message }: { message: ChatboxMessageView }) {
   );
 }
 
-function MessageBubble({ message }: { message: ChatboxMessageView }) {
+function MessageBubble({
+  message,
+  highlighted,
+}: {
+  message: ChatboxMessageView;
+  highlighted: boolean;
+}) {
   const isManager =
     message.isOutboundFromKora || message.senderRole === "manager";
 
@@ -739,11 +773,15 @@ function MessageBubble({ message }: { message: ChatboxMessageView }) {
   const badgeClass = isManager
     ? "bg-accent-fg/15 text-accent-fg"
     : "bg-bg-card text-fg-secondary";
+  const highlightClass = highlighted
+    ? "ring-2 ring-accent ring-offset-2 ring-offset-bg-card transition-shadow"
+    : "";
 
   return (
     <div className={`flex ${isManager ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${bubbleClass}`}
+        id={`msg-${message.externalId}`}
+        className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${bubbleClass} ${highlightClass}`}
       >
         <div className="mb-1 flex items-center gap-1.5">
           {message.senderPersonId ? (

@@ -129,6 +129,7 @@ export type ChatboxContentTypeApi =
 
 export type ChatboxMessageApi = {
   id: string;
+  externalId: string;
   senderType: ChatboxSenderTypeApi;
   senderName: string | null;
   senderPersonId: string | null;

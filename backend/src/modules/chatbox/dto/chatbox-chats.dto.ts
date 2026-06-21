@@ -75,6 +75,7 @@ export interface ChatDetailDto {
 
 export interface ChatMessageDto {
   id: string;
+  externalId: string;
   senderType: string;
   senderName: string | null;
   senderPersonId: string | null;

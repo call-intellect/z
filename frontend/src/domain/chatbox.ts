@@ -191,6 +191,7 @@ export type ChatboxChatDetailView = ChatboxChatView & {
 
 export type ChatboxMessageView = {
   id: string;
+  externalId: string;
   senderType: ChatboxSenderTypeApi;
   senderRole: ChatboxSenderRole;
   senderName: string;
@@ -380,6 +381,7 @@ export function mapMemorySummary(
 export function mapMessage(api: ChatboxMessageApi): ChatboxMessageView {
   return {
     id: api.id,
+    externalId: api.externalId,
     senderType: api.senderType,
     senderRole: senderRoleOf(api.senderType),
     senderName: api.senderName ?? "",

@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { useIssue } from "@/hooks/tracker/useIssue";
 import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 import {
+  IssueActivityDigest,
   IssueActivityFeed,
   IssueAttachments,
   IssueBreadcrumb,
@@ -98,6 +99,7 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
           <section className="flex flex-col gap-2">
             <h2 className="text-sm font-medium text-fg-primary">Прогресс</h2>
             <IssueProgress orgId={currentOrgId} issueId={issue.id} />
+            <IssueActivityDigest orgId={currentOrgId} issueId={issue.id} />
           </section>
 
           <section className="flex flex-col gap-2">

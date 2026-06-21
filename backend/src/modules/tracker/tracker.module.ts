@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
 
+import { ActivityDigestController } from './controllers/activity-digest.controller';
 import { AttachmentsController } from './controllers/attachments.controller';
 import { BoardsController } from './controllers/boards.controller';
 import { ChecklistsController } from './controllers/checklists.controller';
@@ -42,6 +43,7 @@ import { ImportService } from './services/import.service';
 import { IntakeAutoTriageQueueService } from './services/intake-auto-triage-queue.service';
 import { IntakeService } from './services/intake.service';
 import { IntegrationsStatusService } from './services/integrations-status.service';
+import { IssueActivityDigestService } from './services/issue-activity-digest.service';
 import { IssueGoalSuggestService } from './services/issue-goal-suggest.service';
 import { IssueInferFieldsService } from './services/issue-infer-fields.service';
 import { IssueMeetingsService } from './services/issue-meetings.service';
@@ -89,6 +91,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     IntakeController,
     CommentsController,
     ProgressUpdatesController,
+    ActivityDigestController,
     LabelsController,
     TrackerWebhooksController,
     TeamTemplatesController,
@@ -113,6 +116,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
   ],
   providers: [
     ActivityRecorderService,
+    IssueActivityDigestService,
     AssigneeResolverService,
     ProjectsService,
     ProjectsFromTemplateService,

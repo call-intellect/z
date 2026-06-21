@@ -89,6 +89,25 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-21 — Трекер Волна 2 Ф8b: AI-сводка изменений по задаче (catch-up)
+
+> ТЗ `plans/tz/2026-06-20-tracker-card-redesign-and-progress.md` Фаза 8b (R17b, Д5). On-demand, эфемерно — БЕЗ Prisma-модели и миграции.
+>
+> **Зачем:** одной кнопкой «Что произошло по задаче» получить русскую сводку изменений с прошлого захода (агрегат `IssueActivity` + новые комментарии/обновления прогресса → LLM `issue-activity-digest`). Не Q&A (это `IssueChat`), а дайджест дельты.
+>
+> **Новый LLM taskType + 1 крутилка-рубильник (seed, уже в STEPS). Docker rebuild backend+frontend. Миграций/ENV/patch/backfill нет.**
+
+- **Шаг 7 — Seed (идемпотентный, уже в STEPS `phase:'seed-base'`):** `seed-admin-setting-tracker.ts` дополнен ключом `tracker.activityDigestEnabled` (boolean, default **true**, Ship-On kill-switch). Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Отдельной строки STEPS не нужно — сид уже зарегистрирован.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (новый taskType `issue-activity-digest` в `ALL_LLM_TASK_TYPES` → DEFAULT-цепочка DeepSeek/OpenAI-proxy, новый эндпоинт `GET /api/v1/issues/:id/activity-digest`); frontend (кнопка «Что произошло по задаче» в детали задачи, секция «Прогресс»).
+- **Шаг 12 — Smoke** (после выката):
+  - Swagger `/api/docs`: `GET /api/v1/issues/:id/activity-digest` (тег `tracker`) → `{ summary, points[], hasChanges, since }`; чужой tenant → `tenant_required`/403.
+  - Кабинет: открыть задачу с историей (смена статуса + закрытый чек-пункт) → «Что произошло по задаче» → осмысленная русская сводка с датами; задача без изменений → «ничего не менялось» (без вызова LLM).
+  - Рубильник: `tracker.activityDigestEnabled=false` в админке → эндпоинт отдаёт 200 с «функция выключена», без вызова LLM.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-21 — Хвосты трёх ТЗ: deep-link сообщения чата (Ф1) + UI крутилок (Ф2) + page-aware документ (Ф4)
 
 > Ветка `feature/three-tz-tails-finalization`. Коммиты: Ф1 `237b48b5`; Ф2 `40ef424d`+`19c091f5`; Ф4 `af7d4cb6`+`8010c92d`. second-brain: `02_architecture/data-model.md` (`Document.pageCount`/`pageOffsets`), `01_projects/admin.md` (7 страниц настроек + scaffold `DomainSettings`), `01_projects/frontend-pages.md` (7 admin-роутов), `01_projects/api-layer.md` (`ChatMessageDto.externalId`, page-aware doc-deeplink).

@@ -43,6 +43,15 @@ const SEEDS: SettingSeed[] = [
     description:
       'Кадэнс (cron) воркера авто-черновика прогресса. По умолчанию ежедневно в 07:00 UTC.',
   },
+  {
+    key: 'tracker.activityDigestEnabled',
+    value: true,
+    category: 'tracker',
+    section: 'workers',
+    severity: 'high',
+    description:
+      'Рубильник AI-сводки изменений по задаче (catch-up «что произошло»). По умолчанию вкл (Ship-On).',
+  },
 ];
 
 interface Counters {

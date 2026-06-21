@@ -59,6 +59,7 @@ import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
 import { DaySignalAggregatorCron } from './workers/day-signal-aggregator.cron';
 import { DecisionImplementationCron } from './workers/decision-implementation.cron';
 import { ExecMorningPushCron } from './workers/exec-morning-push.cron';
+import { MeetingCheckinListener } from './workers/meeting-checkin.listener';
 import { KnowledgeAtRiskCron } from './workers/knowledge-at-risk.cron';
 import { OnboardingRampCron } from './workers/onboarding-ramp.cron';
 import { OperationsDailyDigestCron } from './workers/operations-daily-digest.cron';
@@ -99,6 +100,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     DaySignalExtractorService,
     DaySignalAggregatorService,
     DaySignalAggregatorCron,
+    MeetingCheckinListener,
     OperationsDashboardService,
     PersonalRelationService,
     GoalCascadeService,

@@ -22,7 +22,19 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
   const { currentOrgId, user } = useAuth();
   const { issue, isLoading, error, mutate } = useIssue(currentOrgId, issueId);
 
-  useRegisterBreadcrumb(issue ? { label: issue.title } : null);
+  useRegisterBreadcrumb(
+    issue
+      ? {
+          label: issue.title,
+          ...(issue.projectSlug
+            ? {
+                parentHref: `/projects/${issue.projectSlug}/board`,
+                parentLabel: issue.projectName ?? undefined,
+              }
+            : {}),
+        }
+      : null,
+  );
 
   if (isLoading) {
     return (

@@ -4,6 +4,8 @@ export interface IssueResponseDto {
   id: string;
   tenantId: string;
   projectId: string;
+  projectSlug?: string | null;
+  projectName?: string | null;
   identifier: string;
   sequenceId: number;
   title: string;

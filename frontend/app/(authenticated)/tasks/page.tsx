@@ -1,11 +1,5 @@
-import type { Metadata } from 'next';
-
-import { TasksClient } from './TasksClient';
-
-export const metadata: Metadata = {
-  title: 'Задачи',
-};
+import { redirect } from 'next/navigation';
 
 export default function TasksPage() {
-  return <TasksClient />;
+  redirect('/projects');
 }

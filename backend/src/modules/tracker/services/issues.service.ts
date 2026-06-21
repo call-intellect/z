@@ -1956,6 +1956,7 @@ export class IssuesService {
       include: {
         assignees: { select: { userId: true } },
         labels: { select: { labelId: true } },
+        project: { select: { slug: true, name: true } },
       },
     });
     if (!issue) {
@@ -1971,12 +1972,15 @@ export class IssuesService {
     issue: Issue & {
       assignees: Array<{ userId: string }>;
       labels: Array<{ labelId: string }>;
+      project?: { slug: string; name: string } | null;
     },
   ): IssueResponseDto {
     return {
       id: issue.id,
       tenantId: issue.tenantId,
       projectId: issue.projectId,
+      projectSlug: issue.project?.slug ?? null,
+      projectName: issue.project?.name ?? null,
       identifier: issue.identifier,
       sequenceId: issue.sequenceId,
       title: issue.title,

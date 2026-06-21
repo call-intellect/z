@@ -14,6 +14,8 @@ export interface IssueApi {
   id: string;
   tenantId: string;
   projectId: string;
+  projectSlug?: string | null;
+  projectName?: string | null;
   identifier: string;
   sequenceId: number;
   title: string;
@@ -159,6 +161,8 @@ export interface Issue {
   id: string;
   tenantId: string;
   projectId: string;
+  projectSlug: string | null;
+  projectName: string | null;
   identifier: string;
   sequenceId: number;
   title: string;
@@ -311,6 +315,8 @@ export function issueFromApi(api: IssueApi): Issue {
     id: api.id,
     tenantId: api.tenantId,
     projectId: api.projectId,
+    projectSlug: api.projectSlug ?? null,
+    projectName: api.projectName ?? null,
     identifier: api.identifier,
     sequenceId: api.sequenceId,
     title: api.title,

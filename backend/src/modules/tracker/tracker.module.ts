@@ -6,6 +6,7 @@ import { AttachmentsController } from './controllers/attachments.controller';
 import { BoardsController } from './controllers/boards.controller';
 import { ChecklistsController } from './controllers/checklists.controller';
 import { CommentsController } from './controllers/comments.controller';
+import { ProgressUpdatesController } from './controllers/progress-updates.controller';
 import { CyclesController } from './controllers/cycles.controller';
 import { DocumentUploadsController } from './controllers/document-uploads.controller';
 import { HolidaysController } from './controllers/holidays.controller';
@@ -33,6 +34,7 @@ import { AttachmentsService } from './services/attachments.service';
 import { BoardsService } from './services/boards.service';
 import { ChecklistsService } from './services/checklists.service';
 import { CommentsService } from './services/comments.service';
+import { ProgressUpdatesService } from './services/progress-updates.service';
 import { CycleMeetingsService } from './services/cycle-meetings.service';
 import { CyclesService } from './services/cycles.service';
 import { HolidayService } from './services/holiday.service';
@@ -85,6 +87,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     CyclesController,
     IntakeController,
     CommentsController,
+    ProgressUpdatesController,
     LabelsController,
     TrackerWebhooksController,
     TeamTemplatesController,
@@ -124,6 +127,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     CyclesService,
     IntakeService,
     CommentsService,
+    ProgressUpdatesService,
     LabelsService,
     WebhooksService,
     RelationsService,
@@ -169,6 +173,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     MeetingExtractActionsService,
     IntakeService,
     CommentsService,
+    ProgressUpdatesService,
     IntakeAutoTriageQueueService,
     HolidayService,
     SprintAnalystService,

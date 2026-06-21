@@ -66,6 +66,10 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.meetingTasksToTrackerOnly', z.boolean()],
   ['knowledge.ideaDirectPathEnabled', z.boolean()],
 
+  ['companyProfile.autoSummaryEnabled', z.boolean()],
+  ['companyProfile.summaryRebuildHours', POSITIVE_INT],
+  ['companyProfile.summaryMinSourceBlocks', POSITIVE_INT],
+
   ['meetings.taskDedupeEnabled', z.boolean()],
   ['meetings.taskDedupeThreshold', UNIT_INTERVAL],
 

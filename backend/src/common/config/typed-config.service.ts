@@ -1232,6 +1232,26 @@ export class TypedConfigService {
     } as const;
   }
 
+  get companyProfile() {
+    return {
+      autoSummaryEnabled: this.resolveSync<boolean>(
+        'companyProfile.autoSummaryEnabled',
+        undefined,
+        true,
+      ),
+      summaryRebuildHours: this.resolveSync<number>(
+        'companyProfile.summaryRebuildHours',
+        undefined,
+        24,
+      ),
+      summaryMinSourceBlocks: this.resolveSync<number>(
+        'companyProfile.summaryMinSourceBlocks',
+        undefined,
+        8,
+      ),
+    } as const;
+  }
+
   get skill() {
     return {
       minObservations: this.get('SKILL_MIN_OBSERVATIONS'),

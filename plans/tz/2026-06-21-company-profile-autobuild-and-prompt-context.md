@@ -104,7 +104,7 @@ async applyAutoSummary(args: {
 
 ## Фазы
 
-### Фаза 1 — Поле summary + AdminSetting `[ ]`
+### Фаза 1 — Поле summary + AdminSetting `[x]`
 **Файлы:** `schema.prisma` (+`summaryJson`,`summaryPinned`); миграция; DTO `company-profile.dto.ts` (+summary в `CompanyProfileDto` и `UpdateCompanyProfileSchema` + `summaryPinned`); `company-profile.service.ts` (`toDto`/`update` поддерживают summary+pinned, `applyAutoSummary`); `admin-setting-schema-registry.ts` (+3 ключа)+сид.
 **Что НЕ входит:** компилятор, подстановка.
 **Acceptance:** `grep summaryJson schema.prisma`; миграция создаётся; `update({summary, summaryPinned})` сохраняет; `applyAutoSummary` при `pinned=true` → `{applied:false,reason:'pinned'}` (unit); typecheck/generate зелёные; сид идемпотентен.

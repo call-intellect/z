@@ -63,6 +63,15 @@ export class CompanyProfileService {
     if (args.body.stage !== undefined) {
       data.stage = args.body.stage ?? null;
     }
+    if (args.body.summary !== undefined) {
+      data.summaryJson =
+        args.body.summary === null
+          ? (Prisma.JsonNull as unknown as Prisma.InputJsonValue)
+          : (args.body.summary as unknown as Prisma.InputJsonValue);
+    }
+    if (args.body.summaryPinned !== undefined) {
+      data.summaryPinned = args.body.summaryPinned;
+    }
     const updated = await this.prisma.companyProfile.update({
       where: { tenantId: args.tenantId },
       data,
@@ -96,6 +105,40 @@ export class CompanyProfileService {
         lastMaturityCalcAt: new Date(),
       },
     });
+  }
+
+  async applyAutoSummary(args: {
+    tenantId: string;
+    contentMd: string;
+    sourceBlockIds: string[];
+    confidence: number;
+  }): Promise<{ applied: boolean; reason: string }> {
+    const existing = await this.prisma.companyProfile.findUnique({
+      where: { tenantId: args.tenantId },
+      select: { id: true, summaryPinned: true },
+    });
+    if (existing?.summaryPinned) {
+      return { applied: false, reason: 'pinned' };
+    }
+    const summaryJson = {
+      contentMd: args.contentMd,
+      generatedAt: new Date().toISOString(),
+    } as unknown as Prisma.InputJsonValue;
+    await this.prisma.companyProfile.upsert({
+      where: { tenantId: args.tenantId },
+      create: {
+        tenantId: args.tenantId,
+        summaryJson,
+        sourceBlockIds: args.sourceBlockIds,
+        confidence: new Prisma.Decimal(args.confidence),
+      },
+      update: {
+        summaryJson,
+        sourceBlockIds: args.sourceBlockIds,
+        confidence: new Prisma.Decimal(args.confidence),
+      },
+    });
+    return { applied: true, reason: 'updated' };
   }
 
   async rebuildCompleteness(args: {
@@ -166,6 +209,8 @@ export class CompanyProfileService {
       stage: p.stage,
       sourceBlockIds: p.sourceBlockIds,
       confidence: p.confidence ? Number(p.confidence) : null,
+      summary: extractSummary(p.summaryJson),
+      summaryPinned: p.summaryPinned,
       createdAt: p.createdAt.toISOString(),
       updatedAt: p.updatedAt.toISOString(),
     };
@@ -176,6 +221,17 @@ function extractContentMd(json: Prisma.JsonValue | null): string | null {
   if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
   const v = (json as Record<string, unknown>).contentMd;
   return typeof v === 'string' ? v : null;
+}
+
+function extractSummary(json: Prisma.JsonValue | null): CompanyProfileDto['summary'] | null {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+  const obj = json as Record<string, unknown>;
+  const contentMd = obj.contentMd;
+  if (typeof contentMd !== 'string') return null;
+  return {
+    contentMd,
+    ...(typeof obj.generatedAt === 'string' ? { generatedAt: obj.generatedAt } : {}),
+  };
 }
 
 function extractMission(json: Prisma.JsonValue | null): CompanyProfileDto['mission'] | null {

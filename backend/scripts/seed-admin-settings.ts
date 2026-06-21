@@ -1677,6 +1677,30 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'ai', section: 'subject-memory', severity, description });
   }
 
+  const companyProfile: Array<[string, unknown, Severity, string]> = [
+    [
+      'companyProfile.autoSummaryEnabled',
+      envBool('COMPANY_PROFILE_AUTO_SUMMARY_ENABLED', true),
+      'medium',
+      'Авто-компилятор краткого описания «чем компания занимается» из графа знаний (kill-switch, ON). Выкл → summary только ручной',
+    ],
+    [
+      'companyProfile.summaryRebuildHours',
+      envInt('COMPANY_PROFILE_SUMMARY_REBUILD_HOURS', 24),
+      'low',
+      'Интервал пересчёта авто-summary компании (часы)',
+    ],
+    [
+      'companyProfile.summaryMinSourceBlocks',
+      envInt('COMPANY_PROFILE_SUMMARY_MIN_SOURCE_BLOCKS', 8),
+      'low',
+      'Минимум блоков графа, чтобы строить summary (иначе cold-start — пропуск, остаётся ручной ввод)',
+    ],
+  ];
+  for (const [key, value, severity, description] of companyProfile) {
+    out.push({ key, value, category: 'ai', section: 'company-profile', severity, description });
+  }
+
   const daySignals: Array<[string, unknown, Severity, string]> = [
     [
       'daySignals.enabled',

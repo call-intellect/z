@@ -8,6 +8,13 @@ const MissionInputSchema = z
   })
   .strict();
 
+const SummaryInputSchema = z
+  .object({
+    contentMd: z.string().trim().min(1).max(8000),
+    generatedAt: z.string().datetime().optional(),
+  })
+  .strict();
+
 const VisionInputSchema = z
   .object({
     contentMd: z.string().trim().min(1).max(8000),
@@ -34,6 +41,8 @@ export const UpdateCompanyProfileSchema = z
     strategy: StrategyInputSchema.nullable().optional(),
     targetMarketIds: z.array(z.string().min(1).max(120)).max(50).optional(),
     stage: z.enum(['early_stage', 'growth', 'scale', 'enterprise']).nullable().optional(),
+    summary: SummaryInputSchema.nullable().optional(),
+    summaryPinned: z.boolean().optional(),
   })
   .refine((data) => Object.values(data).some((v) => v !== undefined), {
     message: 'Хотя бы одно поле должно быть указано',
@@ -67,6 +76,11 @@ export interface CompanyProfileDto {
   stage: string | null;
   sourceBlockIds: string[];
   confidence: number | null;
+  summary: {
+    contentMd: string;
+    generatedAt?: string;
+  } | null;
+  summaryPinned: boolean;
   createdAt: string;
   updatedAt: string;
 }

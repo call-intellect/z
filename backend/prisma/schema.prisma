@@ -5596,6 +5596,10 @@ model CompanyProfile {
   sourceBlockIds     String[]  @default([])
   /// Confidence от extraction-LLM (для агентского билда из встреч).
   confidence         Decimal?  @db.Decimal(4, 3)
+  /// Краткое описание «чем компания занимается»: { contentMd, generatedAt }.
+  summaryJson        Json?
+  /// true → summary закреплён владельцем; авто-компилятор НЕ перетирает.
+  summaryPinned      Boolean   @default(false)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

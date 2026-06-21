@@ -813,6 +813,7 @@ erDiagram
 - **IssueRecurrence / IssueTemplate** (Ф11, миграция `20260621073857_issue_recurrence_templates`):
   - `IssueRecurrence` — материализация задачи по расписанию: `rrule String` (сериализованный `{ freq:'daily'|'weekly'|'monthly', interval, byweekday? }`, **без библиотеки rrule**), `config Json` (снимок задачи), `nextRunAt`, `lastRunAt?`, `enabled @default(true)`, `projectId`, индекс `@@index([tenantId, enabled, nextRunAt])`. Cron `RecurrenceMaterializeCron` (`@Cron('0 6 * * *')`, kill-switch `tracker.recurrenceEnabled`): `nextRunAt<=now & enabled` → `Issue` из config → сдвиг `nextRunAt` по rrule → `lastRunAt`; идемпотентность по дате `lastRunAt` + Redis-dedup.
   - `IssueTemplate` — заготовка задачи для ручного создания: `config Json` (title/description/checklist/labels/priority/estimate/assigneeRole?), `projectId?`=null на всю Org, индекс `@@index([tenantId, projectId])`. Создание задачи из шаблона — `POST /api/v1/issue-templates/:id/instantiate` (через `IssueMaterializeService`).
+- **IssueWorklog** (Ф12, миграция `20260621080305_issue_worklog`) — датированный учёт минут: `minutes Int`, `startedAt DateTime` (дата работы), `description?`, `userId`; индексы `@@index([tenantId, issueId, startedAt])` + `@@index([userId, startedAt])`, FK Cascade. Доступен ТОЛЬКО при `Project.timeTrackingEnabled` (иначе 403 `time_tracking_disabled`); запись `IssueActivity verb='time_logged'`. Без денег/ставок (vNext).
 
 ### IntakeIssue (входящие задачи перед триажем)
 - `tenantId, projectId?` (если уже определён, иначе AI suggest).

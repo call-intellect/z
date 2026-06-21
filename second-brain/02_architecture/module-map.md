@@ -2503,4 +2503,12 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **`ingest/adapters/phone-call.adapter.ts`** (`PhoneCallIngestAdapter`, B5) — Mango: запись звонка из S3 → Vox ASR → структурный payload `{ kind:'phone_call', callId, participants, recordingS3Key, fullText, … }` → `IngestService.ingest` (`Source.type='phone_call'`). Mango-вебхук починен (был сырой JSON-шум вместо структурного события).
 - **`common/config/env-classification.ts`** (config-knobs Шаг 2) — `KEEP_ENV_KEYS` (секреты/connection/bootstrap, остаются в ENV) + `ADMIN_FALLBACK_ENV_KEYS` (ENV как fallback к AdminSetting). Гард-тесты `env-classification.guard.spec.ts` (новая ENV без классификации валит CI) и `no-direct-process-env.guard.spec.ts` (прямой `process.env.*` вне whitelist запрещён). Серверная валидация — `AdminSettingsService.set()` (Zod по реестру + reason-gate для severity high/destructive, `MIN_REASON_LENGTH=10`).
 
+### Трекер — редизайн + датированный прогресс + паритет (ТЗ `tracker-card-redesign-and-progress`, 2026-06-21)
+
+- Контроллеры (`modules/tracker/controllers`): `progress-updates` (лента/CRUD/confirm прогресса), `activity-digest` (catch-up), `issue-fields` (кастом-поля Ф9), `automation-rules` (Ф10), `issue-templates`+`issue-recurrences` (Ф11), `worklogs` (Ф12).
+- Сервисы: `progress-updates.service`, `issue-activity-digest.service`, `issue-fields.service`+`issue-field-validation.util`, `automation-rules.service`+`automation-engine.service` (движок `@OnEvent('tracker.event_occurred')` + guard анти-рекурсии appliedRuleIds/MAX_DEPTH), `issue-templates`/`issue-recurrences`/`issue-materialize.service`, `worklogs.service`.
+- Воркеры/cron: `progress-auto-draft.cron` (авто-черновик прогресса из графа, LLM `issue-progress-draft`), `recurrence-materialize.cron` (материализация повторений).
+- pending-actions: провайдер `progress-draft.provider` (черновик прогресса в колокольчике исполнителю задачи).
+- Эндпоинты — [[../01_projects/api-layer]]; модели — [[data-model]]; крутилки/страница `/admin/tracker` — [[../01_projects/admin]] + `docs/operations/feature-flags.md`.
+
 [[../index|← index]]

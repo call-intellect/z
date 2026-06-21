@@ -579,4 +579,10 @@ LLM-judge текстового подтверждения мутаций в ка
 - **Action Center:** в `pending-actions` добавлены 2 read-провайдера (`TaskClosurePendingProvider` / `TaskReviewPendingProvider`) + ярлыки `resource-type-ru.ts` (`task_closure_candidate` → «задача к закрытию», `issue_review` → «задача под вопросом»).
 - **Статус:** в коде, ждут прод-выката. Прод-операции: миграции (авто `migrate deploy`) + сиды маршрутов `task-dedup-arbiter` / `task-closure-verify` + `postgres-init.sql` (HNSW Goal) + backfill `backfill-goal-embeddings.ts` — все в `apply-prod-deploy.ts` STEPS.
 
+## Трекер — авто-черновик прогресса + catch-up (ТЗ `tracker-card-redesign-and-progress`, 2026-06-21)
+
+- **`issue-progress-draft`** (новый taskType, DEFAULT-цепочка DeepSeek/OpenAI-proxy): воркер `progress-auto-draft.cron` (07:00 UTC, kill-switch `tracker.progressAutoDraftEnabled`) собирает дельта-сигналы задачи (закрытые чек-пункты + `status_changed` + упоминания в графе через `TaskClosureCandidate`) → формулирует черновик → `IssueProgressUpdate(authorType='ai_agent', draftState='pending')`. **НЕ авто-постинг** (Р2): человек подтверждает (лента в детали / колокольчик). Провенанс-снимок через `ProvenanceService.computePreviewSnapshot`. Промпт cache-friendly (стабильный SYSTEM, сигналы в хвосте user). Дедуп Redis SETNX + проверка существующего pending.
+- **`issue-activity-digest`** (новый taskType): `issue-activity-digest.service` — on-demand сводка «что произошло по задаче» (кнопка в детали, отдельно от IssueChat); агрегаты `IssueActivity`+комментарии+прогресс в хвост user; Redis-кэш; пустая история/OFF → ответ без вызова LLM; kill-switch `tracker.activityDigestEnabled`.
+- Не-AI (для полноты): `automation-engine` (правила «если—то» Ф10) — событийный, не LLM.
+
 [[../index|← index]]

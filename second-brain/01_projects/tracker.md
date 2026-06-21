@@ -38,11 +38,28 @@
 | `IssueWebhook` | Outgoing webhooks (secretKey префикс `kora_wh_`) |
 | `IssueWebhookLog` | Лог доставки (success/fail, retry, response) |
 | `TeamTemplate` | 10 шаблонов команд (sales/development/installation/marketing/management/customer_support/hr/finance/operations/product) |
+| `IssueProgressUpdate` | **(2026-06-21, Волна 2)** Датированное обновление прогресса (health on_track/at_risk/off_track + body + done/next); авто-черновик `authorType=ai_agent`/`draftState=pending` из графа; колонки-снимок провенанса `previewQuote`/`previewSourceRef` |
+| `IssueFieldDef` / `IssueFieldValue` | **(Ф9)** Кастом-поля задачи: дефиниция (`config Json`, per-project/Org, фракционный `order`) + значение per `(issueId, fieldId)` |
+| `IssueAutomationRule` | **(Ф10)** Правила «если—то» (`trigger`/`conditions`/`actions` Json); движок на событии `tracker.event_occurred` + guard анти-рекурсии (appliedRuleIds + MAX_DEPTH) |
+| `IssueRecurrence` / `IssueTemplate` | **(Ф11)** Повторяющиеся задачи (`rrule` freq/interval + cron материализации `recurrence-materialize`) + шаблоны задач |
+| `IssueWorklog` | **(Ф12)** Учёт минут (`minutes`/`startedAt`) под флагом `Project.timeTrackingEnabled` |
 
 **Расширения:**
 - `Meeting.linkedIssueId` — для видеовстреч из задачи (`POST /issues/:id/start-meeting`).
 - `Goal.linkedIssues[]` — стратегическое согласование с Фазы 1.
 - `MeetingType.task_discussion` — новое значение enum.
+
+## 2026-06-21 — Редизайн карточки + датированный прогресс + паритет (Волны 0-3)
+
+ТЗ `plans/tz/2026-06-20-tracker-card-redesign-and-progress.md` (реализован, запушен `b1e9d3bc..a29b1516`). Подробности прод-выката — `docs/operations/prod-deploy-log.md` (блоки Трекер 2026-06-21).
+
+- **Карточка/лицо (Волна 1):** `IssueCard` компакт-дефолт, 5 сигналов (чип-приоритет цвет+иконка+текст, прогресс-бар, дедлайн-чип срочности, чип источника «из встречи/решения» бренд-цветом, исполнитель), 2-строчный заголовок; тумблер «Компактно/Широко» (`useCardDensity`, localStorage, дефолт компакт) на Board+OrgBoard; широкий вид = превью описания + сниппет цитаты-источника + бейджи 💬/📎 (opt-in `includeEngagementCount`→`_count`). Sidebar: «Срок начала»/«Выполнена» + названия спринта/цели (не cuid). Крошка `/issues/[id]` → доска проекта (`projectSlug`/`projectName` в detail-DTO). Гант ON по умолчанию (`gantViewEnabled` default true + backfill).
+- **Датированный прогресс (Волна 2):** сущность `IssueProgressUpdate`; воркер `progress-auto-draft.cron` (kill-switch) собирает дельта-сигналы (закрытые чек-пункты + `status_changed` + упоминания в графе через `TaskClosureCandidate`) → LLM `issue-progress-draft` → черновик `pending` (**НЕ авто-постинг — Р2**); провенанс-снимок через `ProvenanceService.computePreviewSnapshot`; в детали — лента+форма+подтверждение черновика; черновик всплывает в колокольчике (pending-source `progress_draft`, видим **исполнителю** задачи); catch-up `issue-activity-digest` (кнопка «Что произошло по задаче», on-demand, без хранения).
+- **Паритет (Волна 3):** кастом-поля (`IssueFieldDef/Value`, валидация по type/config) · автоматизации (`IssueAutomationRule` + `automation-engine` на `tracker.event_occurred` + guard анти-рекурсии) · повторения+шаблоны (`recurrence-materialize.cron`, свой rrule-парсер daily/weekly/monthly) · worklog (`IssueWorklog` под `Project.timeTrackingEnabled`).
+- **Новые REST:** `issues/:id/progress-updates`(+`progress-updates/:id/confirm`), `issues/:id/activity-digest`, `issues/:id/field-values`+`projects/:id/field-defs`, `automation-rules`, `templates`(+`/instantiate`)+`recurrences`, `issues/:id/worklogs`.
+- **Новые воркеры/cron/движки:** `progress-auto-draft.cron` (07:00 UTC), `recurrence-materialize.cron` (06:00 UTC), `automation-engine` (`@OnEvent tracker.event_occurred`).
+- **Новые LLM-taskType:** `issue-progress-draft`, `issue-activity-digest` (оба DEFAULT-цепочка DeepSeek/OpenAI-proxy; промпт-файлы cache-friendly).
+- **Крутилки (страница `/admin/tracker`, каркас DomainSettings, все ON/Ship-On):** `tracker.progressAutoDraft{Enabled,MinSignals,Cron}`, `tracker.activityDigestEnabled`, `tracker.automationsEnabled`, `tracker.recurrence{Enabled,CronCadence}` (реестр — `docs/operations/feature-flags.md`).
 
 ## SignalType — расширение для ingest
 

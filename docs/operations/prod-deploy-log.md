@@ -89,6 +89,27 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-21 — Трекер Волна 2 core (Ф5/Ф6/Ф7/R17a): датированный прогресс + авто-черновик из графа + колокольчик
+
+> ТЗ `plans/tz/2026-06-20-tracker-card-redesign-and-progress.md` Волна 2. Коммиты: Ф5 `30fb0759`; Ф6 `970e22ac`; Ф7 `f062e779`; Ф8-фронт `fc6e5e0d`; R17a `2393ac51`.
+>
+> **Зачем:** first-class «датированное обновление прогресса» (Asana/Linear-стиль), авто-черновик из графа знаний (обгон), без авто-публикации (только pending → человек подтверждает), черновик всплывает в колокольчике исполнителю.
+>
+> **1 миграция (авто) + 1 seed (авто в STEPS) + 2 новых LLM-taskType (DEFAULT-цепочка) + новый pending-source. Docker rebuild backend+frontend. Новых ENV нет.**
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy`): `20260621055928_issue_progress_update` — таблица `IssueProgressUpdate` (датированный прогресс + колонки-снимок провенанса `previewQuote`/`previewSourceRef` Д1). Аддитивная, без потери данных. **В STEPS не регистрируется** (миграция схемы).
+- **Шаг 7 — Seed (идемпотентный, уже в STEPS `phase:'seed-base'`):** `seed-admin-setting-tracker.ts` — крутилки `tracker.progressAutoDraft{Enabled,MinSignals,Cron}` + `tracker.activityDigestEnabled` (Ф8b) + `tracker.automationsEnabled` (Ф10) + `tracker.recurrence{Enabled,CronCadence}` (Ф11). Все default ON/значения = текущее поведение. Доезжает `apply-prod-deploy.ts --mode update`.
+- **LLM taskType (без отдельной операции):** `issue-progress-draft` (Ф7) — регистрируется в коде (`ALL_LLM_TASK_TYPES`), маршрут не нужен → DEFAULT-цепочка DeepSeek/OpenAI-proxy. Промпт-файл в репозитории.
+- **Шаг 12 — Smoke (после выката):**
+  - Swagger `/api/docs`: `GET/POST /api/v1/issues/:id/progress-updates`, `PATCH/POST confirm/DELETE /api/v1/progress-updates/:id` присутствуют.
+  - Новый cron `progress-auto-draft` (ежедневно 07:00 UTC) виден в логах планировщика; kill-switch `tracker.progressAutoDraftEnabled` в `/admin/tracker`.
+  - Колокольчик (`GET /api/v1/pending-actions`): источник `progress_draft` появляется у исполнителя при наличии pending-черновика (`draftState=pending`, `authorType=ai_agent`); подтверждение убирает его.
+  - Инвариант: авто-публикации нет — воркер создаёт только `draftState=pending`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-21 — Трекер Волна 2 Ф8b: AI-сводка изменений по задаче (catch-up)
 
 > ТЗ `plans/tz/2026-06-20-tracker-card-redesign-and-progress.md` Фаза 8b (R17b, Д5). On-demand, эфемерно — БЕЗ Prisma-модели и миграции.

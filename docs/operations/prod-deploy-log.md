@@ -71,6 +71,30 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-21 — Универсальный фиксатор чек-инов (детектор план/отчёт из всех каналов) — Ф8 крутилки
+
+> ТЗ `plans/tz/2026-06-21-universal-daily-checkin-fixator-tz.md` Фаза 8 (config+docs). Фиксатор детектирует план/отчёт сотрудника из всех каналов (встречи, Bitrix, чаты, почта, заметки) и пишет чек-ин — продакшен-код сервисов читает крутилки через `cfg.getDynamic`.
+>
+> **Зачем:** дневной cron-агрегатор (`DaySignalAggregatorCron`) собирает сообщения сотрудника за день и фиксирует чек-ин; мост встреч (`MeetingCheckinListener`) на `meeting.ai_ready` фиксирует чек-ин из встречи. Управляется крутилками AdminSetting (рубильник + порог детектора + локальный час обработки).
+>
+> **1 миграция (авто, аддитивная) + 3 крутилки AdminSetting (seed, уже в STEPS) + 1 новый LLM-route + новый @Cron + новый listener. Docker rebuild backend. Новых ENV нет (daySignals.* — чистые AdminSetting).**
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260621104106_daily_checkin_universal_sources` — расширение enum `DailyCheckInSource` (+`meeting`/`bitrix`/`chatbox`/`email`/`phone_call`) + `ADD COLUMN sourceContributions JSONB` на `daily_check_ins`. Аддитивная, без потери данных. **В STEPS не регистрируется** (миграция схемы).
+- **Шаг 7 — Seed (идемпотентный, оба уже в STEPS `phase:'seed-base'`):**
+  - `docker compose exec backend bun run scripts/seed-admin-settings.ts` — новые ключи `daySignals.detectThreshold` (0.7) / `daySignals.processLocalHour` (21) / `daySignals.enabled` (true, kill-switch ON). Чистые AdminSetting (без ENV).
+  - `docker compose exec backend bun run scripts/seed-llm-task-routes-day-signal.ts` — маршрут `day-signal-detect` (deepseek-v4-flash→openai-proxy→ollama).
+  - Доезжают агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Отдельных строк STEPS не нужно — оба сида уже зарегистрированы.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Новый @Cron `DaySignalAggregatorCron`, новый listener `MeetingCheckinListener` на `meeting.ai_ready`, новый taskType `day-signal-detect`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый @Cron `DaySignalAggregatorCron` виден в логах планировщика (`grep DaySignalAggregator`).
+  - Новый taskType `day-signal-detect` имеет маршрут: `docker compose exec backend bun run scripts/diag-routes.ts` (или `/admin/ai-models/day-signal-detect`) → deepseek-v4-flash→openai-proxy→ollama.
+  - Новый listener `MeetingCheckinListener` на `meeting.ai_ready` (`grep MeetingCheckinListener`); по готовности AI-отчёта встречи фиксируется чек-ин с `source=meeting`.
+  - Крутилки `daySignals.{enabled,detectThreshold,processLocalHour}` видны в админке AdminSetting.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-21 — Модульные дашборды исполнения (3 ритма: реестр виджетов + ролевые пресеты + canvas)
 
 > ТЗ `plans/tz/2026-06-21-modular-execution-dashboards.md` (реализован целиком). Коммиты: Ф1 `9ee6d531`; Ф2 `4e5d3748`; Ф3 `1b9ed454`; Ф4+Ф5 `f244ada6`.

@@ -151,6 +151,10 @@ const registry = new Map<string, ZodTypeAny>([
   ['probe.voiceInputEnabled', z.boolean()],
   ['probe.responseClassifyMinConfidence', UNIT_INTERVAL],
 
+  ['daySignals.detectThreshold', UNIT_INTERVAL],
+  ['daySignals.processLocalHour', z.number().int().min(0).max(23)],
+  ['daySignals.enabled', z.boolean()],
+
   ['blocker_synthesis.lookback_days', POSITIVE_INT],
   ['blocker_synthesis.recurring_days', POSITIVE_INT],
   ['blocker_synthesis.impact.base', NON_NEGATIVE_INT],

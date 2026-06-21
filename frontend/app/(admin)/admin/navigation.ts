@@ -1,7 +1,9 @@
 import {
   Activity,
   AlertTriangle,
+  Archive,
   BarChart3,
+  Bot,
   Boxes,
   Brain,
   Building2,
@@ -16,6 +18,7 @@ import {
   FolderTree,
   Gauge,
   HardDrive,
+  HelpCircle,
   Inbox,
   KeyRound,
   Languages,
@@ -36,6 +39,7 @@ import {
   Settings2,
   ShieldCheck,
   Siren,
+  SlidersHorizontal,
   Sparkles,
   Tag,
   Telescope,
@@ -44,6 +48,7 @@ import {
   Users,
   Video,
   Wallet,
+  Workflow,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -170,10 +175,34 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         matchPrefix: "/admin/ai/catalog",
       },
       {
+        href: "/admin/ai/models",
+        label: "Модели LLM и часы",
+        icon: Clock,
+        matchPrefix: "/admin/ai/models",
+      },
+      {
+        href: "/admin/ai/concierge",
+        label: "Помощник",
+        icon: Bot,
+        matchPrefix: "/admin/ai/concierge",
+      },
+      {
+        href: "/admin/ai/orchestrator",
+        label: "Оркестратор и маршрутизатор",
+        icon: Workflow,
+        matchPrefix: "/admin/ai/orchestrator",
+      },
+      {
         href: "/admin/ai/prompts",
         label: "Промпты",
         icon: MessagesSquare,
         matchPrefix: "/admin/ai/prompts",
+      },
+      {
+        href: "/admin/probe",
+        label: "Probe и курация",
+        icon: HelpCircle,
+        matchPrefix: "/admin/probe",
       },
       {
         href: "/admin/experiments",
@@ -390,10 +419,28 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         matchPrefix: "/admin/platform/workers",
       },
       {
+        href: "/admin/platform/worker-knobs",
+        label: "Рубильники воркеров",
+        icon: SlidersHorizontal,
+        matchPrefix: "/admin/platform/worker-knobs",
+      },
+      {
         href: "/admin/platform/limits",
         label: "Лимиты и квоты",
         icon: Tag,
         matchPrefix: "/admin/platform/limits",
+      },
+      {
+        href: "/admin/platform/quotas",
+        label: "Квоты пользователей",
+        icon: Gauge,
+        matchPrefix: "/admin/platform/quotas",
+      },
+      {
+        href: "/admin/platform/retention-logging",
+        label: "Хранение и логи",
+        icon: Archive,
+        matchPrefix: "/admin/platform/retention-logging",
       },
       {
         href: "/admin/platform/flags",

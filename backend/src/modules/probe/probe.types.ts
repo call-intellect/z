@@ -24,6 +24,7 @@ export interface ProbeSuggestInput {
   recipientCandidates: readonly string[];
   priorityHint?: number;
   dataClass?: DataClass;
+  notBeforeAt?: Date;
 }
 
 export type ProbeSuggestResult =

@@ -1294,6 +1294,9 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     if (recipients.length === 0) return; // некому слать — молчим
 
     const title = entity.canonicalName.slice(0, 100);
+    const graceDays = await this.cfg.getDynamic<number>('probe.confirmGraceDays', undefined, 2);
+    const notBeforeAt =
+      graceDays > 0 ? new Date(Date.now() + graceDays * 24 * 3600 * 1000) : undefined;
     await this.probeService.suggest({
       tenantId: entity.tenantId,
       emittedByService: 'ingest-attribution',
@@ -1309,6 +1312,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       recipientCandidates: recipients,
       priorityHint: 0.4,
       dataClass: 'internal',
+      notBeforeAt,
     });
     this.logger.debug(
       { entityId: entity.id, type: entity.type, recipients: recipients.length },

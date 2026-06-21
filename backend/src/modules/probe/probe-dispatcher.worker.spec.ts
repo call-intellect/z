@@ -7,6 +7,7 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { RedisService } from '../../common/redis/redis.service';
 import type { LlmRouterService } from '../ai/services/llm-router.service';
 import type { ConversationalService } from '../conversational/conversational.service';
+import type { CoreQueueService } from '../core-queue/core-queue.service';
 import type { ProbeEventJobData } from '../core-queue/queues';
 
 import { ProbeDispatcherWorker } from './probe-dispatcher.worker';
@@ -21,6 +22,8 @@ interface Mocks {
   metrics: BusinessMetricsService;
   cfg: TypedConfigService;
   redis: RedisService;
+  queue: CoreQueueService;
+  enqueue: ReturnType<typeof vi.fn>;
   updateCalls: Array<{ where: unknown; data: Record<string, unknown> }>;
   llmCall: ReturnType<typeof vi.fn>;
 }
@@ -29,6 +32,7 @@ function buildProbe(
   payload: Record<string, unknown>,
   priority = 80,
   reason = 'decision.confirm_status',
+  notBeforeAt: Date | null = null,
 ) {
   return {
     id: 'probe-disp-1',
@@ -45,6 +49,7 @@ function buildProbe(
     createdAt: new Date(Date.now() - 60_000),
     dispatchedAt: null,
     expiresAt: new Date(Date.now() + 24 * 3600_000),
+    notBeforeAt,
   };
 }
 
@@ -64,8 +69,14 @@ function makeMocks(args: {
   valueGateEnabled?: boolean;
   gateResponse?: { text: string };
   gateThrow?: Error;
+  notBeforeAt?: Date | null;
 }): Mocks {
-  const probe = buildProbe(args.probePayload, args.probePriority, args.reason);
+  const probe = buildProbe(
+    args.probePayload,
+    args.probePriority,
+    args.reason,
+    args.notBeforeAt ?? null,
+  );
   const updateCalls: Array<{
     where: unknown;
     data: Record<string, unknown>;
@@ -183,6 +194,11 @@ function makeMocks(args: {
     } as unknown,
   } as unknown as RedisService;
 
+  const enqueue = vi.fn().mockResolvedValue({ jobId: 'probe_probe-disp-1' });
+  const queue = {
+    enqueueProbeEvent: enqueue,
+  } as unknown as CoreQueueService;
+
   return {
     prisma,
     llm,
@@ -191,6 +207,8 @@ function makeMocks(args: {
     metrics,
     cfg,
     redis,
+    queue,
+    enqueue,
     updateCalls,
     llmCall,
   };
@@ -206,6 +224,7 @@ function makeWorker(m: Mocks): ProbeDispatcherWorker {
     m.metrics,
     m.cfg,
     formulation,
+    m.queue,
   );
 }
 
@@ -283,6 +302,55 @@ describe('ProbeDispatcherWorker — Agents v2 Фаза 0.2', () => {
     expect(newPayload.formulatedQuestion).toBe(
       'Вы согласовали с финдиректором?',
     );
+  });
+});
+
+describe('ProbeDispatcherWorker — Probe Фаза 2: грейс notBeforeAt', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('notBeforeAt в будущем → НЕ доставляет, повторная отложенная постановка с delayMs, статус не меняется', async () => {
+    const future = new Date(Date.now() + 2 * 24 * 3600_000);
+    const mocks = makeMocks({
+      probePayload: { message: 'Грейс на дозревание' },
+      llmResponse: { text: JSON.stringify({ question: 'Не должно вызваться?' }) },
+      notBeforeAt: future,
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).not.toHaveBeenCalled();
+    expect(mocks.llmCall).not.toHaveBeenCalled();
+    expect(mocks.updateCalls).toHaveLength(0);
+    expect(mocks.enqueue).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        probeEventId: 'probe-disp-1',
+        delayMs: expect.any(Number),
+      }),
+    );
+    const arg = mocks.enqueue.mock.calls[0]![0] as { delayMs: number };
+    expect(arg.delayMs).toBeGreaterThan(0);
+  });
+
+  it('notBeforeAt в прошлом → обычный dispatch (грейс созрел)', async () => {
+    const past = new Date(Date.now() - 60_000);
+    const mocks = makeMocks({
+      probePayload: { message: 'Грейс созрел' },
+      llmResponse: { text: JSON.stringify({ question: 'Кто отвечает за это?' }) },
+      notBeforeAt: past,
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueue).not.toHaveBeenCalled();
+    expect(mocks.updateCalls[0]!.data.status).toBe('dispatched');
   });
 });
 

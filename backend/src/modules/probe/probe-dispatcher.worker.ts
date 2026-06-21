@@ -14,6 +14,7 @@ import { BusinessMetricsService } from '../../common/metrics/business-metrics.se
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { ConversationalService } from '../conversational/conversational.service';
+import { CoreQueueService } from '../core-queue/core-queue.service';
 import { CORE_QUEUE_NAMES, type ProbeEventJobData } from '../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../logging/log-pipeline';
 
@@ -44,6 +45,7 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(ProbeFormulationService)
     private readonly formulation: ProbeFormulationService,
+    @Inject(CoreQueueService) private readonly queue: CoreQueueService,
   ) {}
 
   onModuleInit(): void {
@@ -93,6 +95,23 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         data: { status: 'expired' },
       });
       this.metrics.incProbeExpired();
+      return;
+    }
+    if (probe.notBeforeAt && probe.notBeforeAt > new Date()) {
+      try {
+        await this.queue.enqueueProbeEvent({
+          probeEventId: probe.id,
+          delayMs: probe.notBeforeAt.getTime() - Date.now(),
+        });
+      } catch (err) {
+        this.logger.warn(
+          {
+            probeEventId: probe.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'probe-dispatcher: повторная отложенная постановка (notBeforeAt) не удалась',
+        );
+      }
       return;
     }
 

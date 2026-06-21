@@ -52,6 +52,8 @@ export class ProbeService {
         return { dropped: 'dedup' };
       }
 
+      const notBeforeAt = input.notBeforeAt ?? null;
+
       const contentHash = this.computeContentHash({
         reason: input.reason,
         payload: input.payload,
@@ -136,6 +138,7 @@ export class ProbeService {
               priority,
               status: 'queued_digest',
               expiresAt: this.computeExpiresAt(),
+              notBeforeAt,
             },
           });
           this.metrics.incProbeEvent({
@@ -180,6 +183,7 @@ export class ProbeService {
             priority: Math.round(this.clamp01(input.priorityHint ?? 0.4) * 100),
             status: 'routed_to_digest',
             expiresAt: this.computeExpiresAt(),
+            notBeforeAt,
           },
         });
         this.metrics.incProbeEvent({
@@ -240,6 +244,7 @@ export class ProbeService {
             priority,
             status: 'routed_to_digest',
             expiresAt: this.computeExpiresAt(),
+            notBeforeAt,
           },
         });
         this.metrics.incProbeEvent({
@@ -262,6 +267,7 @@ export class ProbeService {
           priority,
           status: 'pending',
           expiresAt,
+          notBeforeAt,
         },
       });
 
@@ -289,8 +295,15 @@ export class ProbeService {
         status: 'pending',
       });
 
+      const delayMs =
+        notBeforeAt && notBeforeAt.getTime() > Date.now()
+          ? notBeforeAt.getTime() - Date.now()
+          : 0;
       try {
-        await this.queue.enqueueProbeEvent({ probeEventId: event.id });
+        await this.queue.enqueueProbeEvent({
+          probeEventId: event.id,
+          ...(delayMs > 0 ? { delayMs } : {}),
+        });
       } catch (err) {
         this.logger.warn(
           {

@@ -7,6 +7,7 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { RedisService } from '../../common/redis/redis.service';
 import type { LlmRouterService } from '../ai/services/llm-router.service';
 import type { ConversationalService } from '../conversational/conversational.service';
+import type { CoreQueueService } from '../core-queue/core-queue.service';
 import type { ProbeEventJobData } from '../core-queue/queues';
 
 import { ProbeDispatcherWorker } from './probe-dispatcher.worker';
@@ -29,6 +30,7 @@ function buildProbe() {
     createdAt: new Date(Date.now() - 60_000),
     dispatchedAt: null,
     expiresAt: new Date(Date.now() + 24 * 3600_000),
+    notBeforeAt: null,
   };
 }
 
@@ -84,6 +86,10 @@ function makeWorker(args: { decisionFindFirst: ReturnType<typeof vi.fn> }): {
 
   const redis = { client: {} } as unknown as RedisService;
 
+  const queue = {
+    enqueueProbeEvent: vi.fn().mockResolvedValue({ jobId: 'probe_probe-recheck-1' }),
+  } as unknown as CoreQueueService;
+
   const formulation = new ProbeFormulationService(llm, metrics, cfg);
   const worker = new ProbeDispatcherWorker(
     redis,
@@ -93,6 +99,7 @@ function makeWorker(args: { decisionFindFirst: ReturnType<typeof vi.fn> }): {
     metrics,
     cfg,
     formulation,
+    queue,
   );
   return { worker, updateCalls, sendNotification, llmCall };
 }

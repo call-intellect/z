@@ -6592,6 +6592,7 @@ model ProbeEvent {
   createdAt                DateTime    @default(now())
   dispatchedAt             DateTime?
   expiresAt                DateTime?
+  notBeforeAt              DateTime?
   /// W4.2 (2026-05-25) — audit-trail вычисления dataClass probe-payload'а
   /// (для compliance — мы храним вопрос-предложение, иногда чувствительный).
   dataClassAudit           Json?

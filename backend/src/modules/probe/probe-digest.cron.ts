@@ -68,6 +68,7 @@ export class ProbeDigestCron {
       where: {
         status: { in: ['queued_digest', 'routed_to_digest'] },
         OR: [{ expiresAt: null }, { expiresAt: { gte: new Date() } }],
+        AND: [{ OR: [{ notBeforeAt: null }, { notBeforeAt: { lte: new Date() } }] }],
       },
       orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
       take: ProbeDigestCron.MAX_SCAN,

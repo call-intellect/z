@@ -172,6 +172,51 @@ describe('ProbeService.suggest — W2 гейт ценности + NUDGE + cold-s
     expect(env.enqueue).toHaveBeenCalledTimes(1);
   });
 
+  it('notBeforeAt в будущем (pending) → create с notBeforeAt + enqueue с delayMs > 0', async () => {
+    const future = new Date(Date.now() + 2 * 24 * 3600 * 1000);
+    const res = await env.service.suggest({
+      tenantId: 'org-1',
+      emittedByService: '3-1-regulations',
+      reason: 'regulation.missing_owner',
+      payload: { message: 'Грейс на дозревание' },
+      recipientCandidates: ['user-1'],
+      priorityHint: 0.5,
+      notBeforeAt: future,
+    });
+
+    expect('ok' in res && res.ok).toBe(true);
+    const created = env.create.mock.calls[0]![0] as {
+      data: { status: string; notBeforeAt: Date | null };
+    };
+    expect(created.data.status).toBe('pending');
+    expect(created.data.notBeforeAt).toBe(future);
+    expect(env.enqueue).toHaveBeenCalledTimes(1);
+    expect(env.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ delayMs: expect.any(Number) }),
+    );
+    const enqueueArg = env.enqueue.mock.calls[0]![0] as { delayMs?: number };
+    expect(enqueueArg.delayMs).toBeGreaterThan(0);
+  });
+
+  it('notBeforeAt отсутствует (pending) → create с notBeforeAt=null + enqueue без delayMs', async () => {
+    const res = await env.service.suggest({
+      tenantId: 'org-1',
+      emittedByService: '3-1-regulations',
+      reason: 'regulation.missing_owner',
+      payload: { message: 'Без грейса' },
+      recipientCandidates: ['user-1'],
+      priorityHint: 0.5,
+    });
+
+    expect('ok' in res && res.ok).toBe(true);
+    const created = env.create.mock.calls[0]![0] as {
+      data: { notBeforeAt: Date | null };
+    };
+    expect(created.data.notBeforeAt).toBeNull();
+    const enqueueArg = env.enqueue.mock.calls[0]![0] as { delayMs?: number };
+    expect(enqueueArg.delayMs).toBeUndefined();
+  });
+
   it('cold-start: первый probe СТАРШЕ окна (48ч > 24ч) → не дроп, идёт pending', async () => {
     const e = makeService({ coldStartModeHours: 24, earliestProbeAgeHours: 48 });
     const res = await e.service.suggest({

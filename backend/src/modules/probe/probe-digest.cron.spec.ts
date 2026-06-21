@@ -16,6 +16,7 @@ interface Row {
   selectedRecipientId: string | null;
   recipientCandidates: string[];
   payload: Record<string, unknown>;
+  notBeforeAt: Date | null;
 }
 
 function makeRow(over: Partial<Row> & { id: string }): Row {
@@ -26,6 +27,7 @@ function makeRow(over: Partial<Row> & { id: string }): Row {
     selectedRecipientId: null,
     recipientCandidates: ['user-1'],
     payload: { suggestedQuestion: `Вопрос ${over.id}?` },
+    notBeforeAt: null,
     ...over,
   };
 }
@@ -182,6 +184,32 @@ describe('ProbeDigestCron.collectAndSend', () => {
       payload: { items: Array<{ probeEventId: string }> };
     };
     expect(arg.payload.items.map((it) => it.probeEventId).sort()).toEqual(['n1', 'q1']);
+  });
+
+  it('Фаза 2: выборка дайджеста фильтрует по notBeforeAt (не раньше срока)', async () => {
+    const e = makeCron({
+      rowsByCall: [[makeRow({ id: 'g1' })]],
+    });
+    await e.cron.collectAndSend();
+
+    const findManyMock = (
+      e.cron as unknown as {
+        prisma: { probeEvent: { findMany: ReturnType<typeof vi.fn> } };
+      }
+    ).prisma.probeEvent.findMany;
+    const findArg = findManyMock.mock.calls[0]![0] as {
+      where: {
+        AND: Array<{ OR: Array<Record<string, unknown>> }>;
+      };
+    };
+    expect(findArg.where.AND).toEqual([
+      {
+        OR: [
+          { notBeforeAt: null },
+          { notBeforeAt: { lte: expect.any(Date) } },
+        ],
+      },
+    ]);
   });
 
   it('повторный прогон по уже отправленным = no-op (нет уведомлений)', async () => {

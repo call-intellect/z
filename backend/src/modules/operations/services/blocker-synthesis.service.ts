@@ -277,6 +277,7 @@ export class BlockerSynthesisService {
       lastSeenDateLocal: string;
       linkedInsightId: string | null;
       responsiblePersonId: string | null;
+      relatedBlockIds: string[];
     }>
   > {
     const where: Prisma.BlockerSynthesisWhereInput = {
@@ -297,11 +298,15 @@ export class BlockerSynthesisService {
         lastSeenDateLocal: true,
         linkedInsightId: true,
         responsiblePersonId: true,
+        relatedBlockIdsJson: true,
       },
     });
-    return rows.map((r) => ({
+    return rows.map(({ relatedBlockIdsJson, ...r }) => ({
       ...r,
       businessImpactScore: Number(r.businessImpactScore),
+      relatedBlockIds: Array.isArray(relatedBlockIdsJson)
+        ? (relatedBlockIdsJson as string[])
+        : [],
     }));
   }
 

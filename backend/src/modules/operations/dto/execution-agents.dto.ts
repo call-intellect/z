@@ -19,6 +19,7 @@ export interface ChronicBlockerDto {
   lastSeenDateLocal: string;
   linkedInsightId: string | null;
   responsiblePersonId: string | null;
+  relatedBlockIds: string[];
 }
 
 export interface ChronicBlockersListDto {

@@ -170,6 +170,7 @@ export interface OperationsChronicBlockerApi {
   lastSeenDateLocal: string;
   linkedInsightId: string | null;
   responsiblePersonId: string | null;
+  relatedBlockIds: string[];
 }
 
 export interface OperationsChronicBlockersApi {

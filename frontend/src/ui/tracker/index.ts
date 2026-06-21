@@ -20,6 +20,7 @@ export { IssueChat } from "./IssueChat";
 export { IssueComments } from "./IssueComments";
 export { IssueChecklists } from "./IssueChecklists";
 export { IssueProgress } from "./IssueProgress";
+export { IssueWorklog } from "./IssueWorklog";
 export { IssueActivityDigest } from "./IssueActivityDigest";
 export { IssueCustomFields } from "./IssueCustomFields";
 export { MentionAutocompletePopup } from "./MentionAutocompletePopup";

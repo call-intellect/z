@@ -32,6 +32,7 @@ import { SprintsController } from './controllers/sprints.controller';
 import { StatesController } from './controllers/states.controller';
 import { TeamTemplatesController } from './controllers/team-templates.controller';
 import { TrackerWebhooksController } from './controllers/webhooks.controller';
+import { WorklogsController } from './controllers/worklogs.controller';
 import { TrackerGateway } from './gateways/tracker.gateway';
 import { ActivityRecorderService } from './services/activity-recorder.service';
 import { AssigneeResolverService } from './services/assignee-resolver.service';
@@ -80,6 +81,7 @@ import { WebhookDispatcher } from './services/webhook-dispatcher.service';
 import { WebhookSigner } from './services/webhook-signer.service';
 import { WebhooksService } from './services/webhooks.service';
 import { WorkloadService } from './services/workload.service';
+import { WorklogsService } from './services/worklogs.service';
 import { Bitrix24ImportStrategy } from './strategies/bitrix24-import.strategy';
 import { TrelloImportStrategy } from './strategies/trello-import.strategy';
 import { YandexTrackerImportStrategy } from './strategies/yandex-tracker-import.strategy';
@@ -107,6 +109,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     ActivityDigestController,
     IssueTemplatesController,
     IssueRecurrencesController,
+    WorklogsController,
     LabelsController,
     TrackerWebhooksController,
     TeamTemplatesController,
@@ -152,6 +155,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     IssueMaterializeService,
     IssueTemplatesService,
     IssueRecurrencesService,
+    WorklogsService,
     AutomationRulesService,
     AutomationEngineService,
     LabelsService,

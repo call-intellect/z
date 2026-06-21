@@ -16,6 +16,7 @@ export interface IssueApi {
   projectId: string;
   projectSlug?: string | null;
   projectName?: string | null;
+  timeTrackingEnabled?: boolean | null;
   identifier: string;
   sequenceId: number;
   title: string;
@@ -167,6 +168,7 @@ export interface Issue {
   projectId: string;
   projectSlug: string | null;
   projectName: string | null;
+  timeTrackingEnabled: boolean | null;
   identifier: string;
   sequenceId: number;
   title: string;
@@ -325,6 +327,10 @@ export function issueFromApi(api: IssueApi): Issue {
     projectId: api.projectId,
     projectSlug: api.projectSlug ?? null,
     projectName: api.projectName ?? null,
+    timeTrackingEnabled:
+      typeof api.timeTrackingEnabled === "boolean"
+        ? api.timeTrackingEnabled
+        : null,
     identifier: api.identifier,
     sequenceId: api.sequenceId,
     title: api.title,

@@ -137,6 +137,20 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-21 — Трекер Волна 3 Ф12: учёт времени по задаче (IssueWorklog, под флагом проекта)
+
+> ТЗ `plans/tz/2026-06-20-tracker-card-redesign-and-progress.md` Фаза 12 (R21). Датированный учёт минут под существующим `Project.timeTrackingEnabled` (флаг уже в схеме, default false — это **решение владельца** на проект, не Ship-On-рубильник). Эндпоинты лога доступны и значения пишутся ТОЛЬКО если у проекта задачи `timeTrackingEnabled=true`, иначе 403 `time_tracking_disabled`; в UI секция «Учёт времени» появляется только при включённом флаге. Деньги/ставки/payroll и таймер — НЕ входят (vNext). Округление/правила в AdminSetting НЕ добавлялись (для MVP не нужны).
+>
+> **1 миграция (авто, аддитивная). Docker rebuild backend+frontend. Новых ENV/seed/patch/backfill/LLM-taskType/крутилок нет.**
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up`): `20260621080305_issue_worklog` — новая таблица `IssueWorklog` (`tenantId`, `issueId`, `userId`, `minutes Int`, `description Text?`, `startedAt DateTime` = дата работы, `createdAt`; индексы `(tenantId, issueId, startedAt)` + `(userId, startedAt)`; FK `issue onDelete Cascade`). Аддитивная (CREATE TABLE), без потери данных. **В STEPS не регистрируется** (миграция схемы). Также detail-DTO задачи (`GET /api/v1/issues/:id`) теперь отдаёт `timeTrackingEnabled` (из `project.timeTrackingEnabled`) — фронт по нему показывает/прячет секцию.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (новый контроллер `WorklogsController` — 3 эндпоинта `GET/POST /api/v1/issues/:id/worklogs` + `DELETE /api/v1/worklogs/:id`, RBAC `canRead/canWrite('issue')`, гейт `time_tracking_disabled`, `IssueActivity verb='time_logged'`; `GET` отдаёт `{ items, totalMinutes }`). Frontend (секция «Учёт времени» в детали задачи — только при `timeTrackingEnabled`: форма часы/минуты + дата + описание, список записей, сумма; слои api→domain→hook→ui).
+- **Шаг 12 — Smoke** (после выката): Swagger `/api/docs` тег `tracker / worklog` показывает 3 эндпоинта; на проекте с `timeTrackingEnabled=false` → `POST/GET .../worklogs` → 403 `time_tracking_disabled`, секции «Учёт времени» в кабинете нет; на проекте с `true` → запись пишется, сумма минут видна, удаление автором/админом работает; чужой tenant → `tenant_required`/403.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-21 — Трекер Волна 3 Ф10: пользовательские автоматизации (IssueAutomationRule)
 
 > ТЗ `plans/tz/2026-06-20-tracker-card-redesign-and-progress.md` Фаза 10 (R19). Правила «если — то» по задаче (паритет Jira Automation/Asana Rules): триггеры `status_changed|assigned|created|due_approaching|label_added`, действия `set_status|assign|add_label|set_priority|notify|create_subtask`. Движок `AutomationEngineService` подписан на `tracker.event_occurred` (EventEmitter2), применяет действия как `IssueActivity actorType='system' agentName='automation'`, защита от рекурсии по `appliedRuleIds`+`depth` (MAX_DEPTH=5).

@@ -9297,6 +9297,7 @@ model Issue {
   checklists   IssueChecklist[]
   progressUpdates IssueProgressUpdate[]
   fieldValues  IssueFieldValue[]
+  worklogs     IssueWorklog[]
 
   /// Встречи, запущенные из этой задачи (см. `Meeting.linkedIssueId`).
   meetingsFromIssue Meeting[] @relation("MeetingLinkedIssue")
@@ -9527,6 +9528,23 @@ model IssueFieldValue {
 
   @@unique([issueId, fieldId])
   @@index([tenantId, fieldId])
+}
+
+/// Запись учёта времени по задаче (датированная). Под Project.timeTrackingEnabled.
+model IssueWorklog {
+  id          String   @id @default(cuid())
+  tenantId    String
+  issueId     String
+  userId      String
+  minutes     Int
+  description String?  @db.Text
+  startedAt   DateTime /// дата работы (датированность)
+  createdAt   DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, issueId, startedAt])
+  @@index([userId, startedAt])
 }
 
 /// Пользовательское правило-автоматизация. trigger→conditions→actions как JSON.

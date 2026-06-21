@@ -2020,7 +2020,7 @@ export class IssuesService {
       include: {
         assignees: { select: { userId: true } },
         labels: { select: { labelId: true } },
-        project: { select: { slug: true, name: true } },
+        project: { select: { slug: true, name: true, timeTrackingEnabled: true } },
         cycle: { select: { name: true } },
         goal: { select: { name: true } },
       },
@@ -2038,7 +2038,7 @@ export class IssuesService {
     issue: Issue & {
       assignees: Array<{ userId: string }>;
       labels: Array<{ labelId: string }>;
-      project?: { slug: string; name: string } | null;
+      project?: { slug: string; name: string; timeTrackingEnabled?: boolean } | null;
       cycle?: { name: string } | null;
       goal?: { name: string } | null;
     },
@@ -2049,6 +2049,7 @@ export class IssuesService {
       projectId: issue.projectId,
       projectSlug: issue.project?.slug ?? null,
       projectName: issue.project?.name ?? null,
+      timeTrackingEnabled: issue.project?.timeTrackingEnabled ?? null,
       identifier: issue.identifier,
       sequenceId: issue.sequenceId,
       title: issue.title,

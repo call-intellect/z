@@ -19,6 +19,7 @@ import {
   IssueSidebar,
   IssueSimilar,
   IssueSubtasks,
+  IssueWorklog,
 } from "@/ui/tracker";
 
 export function IssueDetailClient({ issueId }: { issueId: string }) {
@@ -102,6 +103,15 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
             <IssueProgress orgId={currentOrgId} issueId={issue.id} />
             <IssueActivityDigest orgId={currentOrgId} issueId={issue.id} />
           </section>
+
+          {issue.timeTrackingEnabled ? (
+            <section className="flex flex-col gap-2">
+              <h2 className="text-sm font-medium text-fg-primary">
+                Учёт времени
+              </h2>
+              <IssueWorklog orgId={currentOrgId} issueId={issue.id} />
+            </section>
+          ) : null}
 
           <section className="flex flex-col gap-2">
             <h2 className="text-sm font-medium text-fg-primary">Поля</h2>

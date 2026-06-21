@@ -6,6 +6,7 @@ export interface IssueResponseDto {
   projectId: string;
   projectSlug?: string | null;
   projectName?: string | null;
+  timeTrackingEnabled?: boolean | null;
   identifier: string;
   sequenceId: number;
   title: string;

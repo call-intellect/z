@@ -393,7 +393,7 @@ model IssueWorklog {
 **Что входит (R21):** миграция; CRUD логов (показывать/разрешать только если `project.timeTrackingEnabled`); сумма по задаче в детали; запись `IssueActivity verb='time_logged'`. Округление/правила → AdminSetting если понадобится — тем же каркасом `DomainSettings` (`TrackerSettingsClient`, Д2), не отдельной формой.
 **Что НЕ входит:** деньги/ставки/payroll (vNext); таймер/Pomodoro (vNext).
 **Acceptance:** при `timeTrackingEnabled=false` эндпоинт лога недоступен (403/скрыт в UI); при true — лог пишется, сумма видна; spec зелёный; `prod-deploy-log.md` Шаг 4.
-**Closes:** R21.
+**Closes:** R21. — [x] **Реализовано 2026-06-21** (миграция `20260621080305_issue_worklog`; модель `IssueWorklog` + `Issue.worklogs`; гейт `time_tracking_disabled` 403 при `project.timeTrackingEnabled=false`; контроллер `WorklogsController` 3 эндпоинта `GET/POST /api/v1/issues/:id/worklogs` + `DELETE /api/v1/worklogs/:id`; сумма минут в `GET` (`{items,totalMinutes}`); `IssueActivity verb='time_logged'`; detail-DTO задачи отдаёт `timeTrackingEnabled`; FE api→domain→hook→секция «Учёт времени» только при флаге; spec 7 тестов вкл. 403 при выключенном флаге зелёный; крутилок округления НЕ добавлял — для MVP не нужны; typecheck/lint/build обеих сторон зелёные).
 
 ---
 

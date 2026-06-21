@@ -98,6 +98,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['table.import.dedup_threshold', UNIT_INTERVAL],
 
   ['tracker.autoAcceptConfidenceThreshold', UNIT_INTERVAL],
+  ['intake.autoAcceptSources', z.array(z.string())],
 
   ['goals.pulse.enabled', z.boolean()],
   ['goals.pulse.deliver_to_telegram', z.boolean()],
@@ -150,6 +151,10 @@ const registry = new Map<string, ZodTypeAny>([
   ['probe.subjectAddressingEnabled', z.boolean()],
   ['probe.voiceInputEnabled', z.boolean()],
   ['probe.responseClassifyMinConfidence', UNIT_INTERVAL],
+  ['probe.confirmGraceDays', NON_NEGATIVE_INT],
+  ['probe.suppressOnUnconfirmedAuto', z.boolean()],
+  ['probe.existenceConfirmEnabled', z.boolean()],
+  ['probe.machineFillableReasons', z.array(z.string())],
 
   ['daySignals.detectThreshold', UNIT_INTERVAL],
   ['daySignals.processLocalHour', z.number().int().min(0).max(23)],

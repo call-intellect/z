@@ -1594,6 +1594,24 @@ function buildSettings(): SettingSeed[] {
       'low',
       'Формулировка вопросов дайджеста probe через общий LLM-сервис (gate→formulate→judge) вместо детерминированного шаблона (kill-switch, ON). Выкл → детерминированный путь Ф1 (deriveDigestQuestion), без LLM. Сбой LLM по item → best-effort фолбэк на детерминированный вопрос',
     ],
+    [
+      'probe.confirmGraceDays',
+      2,
+      'low',
+      'Сколько дней Кора ждёт авто-дозаполнения (owner-resolver/агенты дописывают владельца и шаги) перед подтверждающим вопросом по машинно-закрываемому пробелу регламента/процесса. 0 = без грейса. По умолчанию 2 (диапазон 1–3).',
+    ],
+    [
+      'probe.suppressOnUnconfirmedAuto',
+      true,
+      'high',
+      'Глушить push-вопросы по машинно-закрываемым пробелам (нет владельца / нет шагов / неясен scope) на авто-извлечённых, ещё не подтверждённых человеком записях — вместо вопроса показывать тихий статус в карточке. Kill-switch, по умолчанию включён (Ship-On).',
+    ],
+    [
+      'probe.existenceConfirmEnabled',
+      true,
+      'high',
+      'Слать одно подтверждение существования регламента/процесса/политики (оставить/переименовать/назначить владельца/удалить) после грейса вместо серии gap-вопросов. Kill-switch, по умолчанию включён (Ship-On).',
+    ],
   ];
   for (const [key, value, severity, description] of probe) {
     out.push({ key, value, category: 'platform', section: 'probe', severity, description });

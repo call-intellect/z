@@ -522,8 +522,14 @@ export class TelegramTaskParserService {
       };
     }
 
-    const autoTriageEligible =
-      confidence >= TelegramTaskParserService.AUTO_TRIAGE_THRESHOLD;
+    const autoTriageThreshold = this.config
+      ? await this.config.getDynamic<number>(
+          'tracker.autoAcceptConfidenceThreshold',
+          undefined,
+          TelegramTaskParserService.AUTO_TRIAGE_THRESHOLD,
+        )
+      : TelegramTaskParserService.AUTO_TRIAGE_THRESHOLD;
+    const autoTriageEligible = confidence >= autoTriageThreshold;
 
     return {
       intakeIssueId,

@@ -115,7 +115,7 @@ async applyAutoSummary(args: {
 **Acceptance:** unit: при ≥порога блоков → `CompanyProfile.summaryJson` непуст, `sourceBlockIds` заполнены, `confidence` 0..1; при pinned → не перетёрто; при < порога → пропуск + метрика; kill-switch off → cron no-op. typecheck/lint/build.
 **Закрывает:** авто-сбор, Р1, Р4.
 
-### Фаза 3 — Подстановка capsule в chat-v2 + ассистент `[ ]`
+### Фаза 3 — Подстановка capsule в chat-v2 + ассистент `[x]`
 **Файлы:** `chat-v2.service.ts` `buildCompanyAboutSection` ([:1259](../../backend/src/modules/knowledge-core/services/chat-v2.service.ts#L1259)) — добавить `summary.contentMd` в хвост (обрезка ~600 симв.), позиция БЕЗ изменений (хвост после BASE). Ассистент: `concierge-context-builder.service.ts`/`concierge-respond.prompt.ts` — добавить тот же стабильный per-tenant хвост «## О компании» в конец SYSTEM (читает `CompanyProfileService.getRaw`). Метрика `company_capsule_injected_total{surface}`.
 **Что НЕ входит:** UI источников.
 **Acceptance:** unit chat-v2: при непустом summary — хвост содержит «Чем занимается:»; при пустом — мягко пропускается (как сейчас, fail-soft); BASE_SYSTEM_PROMPT не изменился (snapshot-спек зелёный — capsule вне BASE). Ассистент: SYSTEM содержит хвост «## О компании» при наличии профиля. Наблюдать: prompt-cache hit-rate ассистента ≥60% (Р6) — зафиксировать в метриках/проде.

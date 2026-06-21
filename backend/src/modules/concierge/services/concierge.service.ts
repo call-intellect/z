@@ -224,6 +224,10 @@ export class ConciergeService {
           this.serviceMap.buildToolUsePromptFragment(input.toolWhitelist),
         ].join('\n');
 
+    const companyTail = await this.buildCompanyAboutTail(input.tenantId);
+    const rawWithCompany = companyTail ? `${rawSystemPrompt}\n\n${companyTail}` : rawSystemPrompt;
+    if (companyTail) this.metrics.incCompanyCapsuleInjected({ surface: 'concierge' });
+
     const guardOn = this.isPromptInjectionGuardEnabled();
     if (guardOn) {
       const sanitized = sanitizeCustomPrompt(effectiveQuestion);
@@ -231,7 +235,7 @@ export class ConciergeService {
         this.metrics.incPromptInjectionAttempt?.({ source: 'chat', pattern });
       }
     }
-    const systemPrompt = guardOn ? withInjectionGuard(rawSystemPrompt) : rawSystemPrompt;
+    const systemPrompt = guardOn ? withInjectionGuard(rawWithCompany) : rawWithCompany;
     const historyTake = await this.getHistoryMessagesCount();
     const history = await this.loadRecentHistory(conversation.id, historyTake);
 
@@ -891,4 +895,38 @@ export class ConciergeService {
       return '{}';
     }
   }
+
+  private async buildCompanyAboutTail(tenantId: string): Promise<string> {
+    try {
+      const profile = await this.prisma.companyProfile.findUnique({
+        where: { tenantId },
+        select: { displayName: true, stage: true, summaryJson: true, missionJson: true },
+      });
+      if (!profile) return '';
+      const lines: string[] = [];
+      const name = profile.displayName?.trim();
+      if (name) lines.push(`Название: ${name}`);
+      const summary = conciergeExtractContentMd(profile.summaryJson);
+      if (summary) lines.push(`Чем занимается: ${summary}`);
+      const stage = profile.stage?.trim();
+      if (stage) lines.push(`Стадия: ${stage}`);
+      if (lines.length === 0) return '';
+      return ['## О компании', ...lines].join('\n');
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'concierge buildCompanyAboutTail: чтение профиля упало — секция опущена',
+      );
+      return '';
+    }
+  }
+}
+
+function conciergeExtractContentMd(json: unknown): string | null {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+  const v = (json as Record<string, unknown>).contentMd;
+  if (typeof v !== 'string') return null;
+  const trimmed = v.trim();
+  if (trimmed.length === 0) return null;
+  return trimmed.length > 600 ? `${trimmed.slice(0, 600)}…` : trimmed;
 }

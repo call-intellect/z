@@ -1267,21 +1267,22 @@ export class ChatV2Service {
     try {
       const profile = await this.prisma.companyProfile.findUnique({
         where: { tenantId },
-        select: { displayName: true, stage: true, missionJson: true },
+        select: { displayName: true, stage: true, summaryJson: true, missionJson: true },
       });
       if (!profile) return '';
       const lines: string[] = [];
       const name = profile.displayName?.trim();
       if (name) lines.push(`Название: ${name}`);
+      const summary = extractContentMdSafe(profile.summaryJson);
+      if (summary) lines.push(`Чем занимается: ${summary}`);
       const stage = profile.stage?.trim();
       if (stage) lines.push(`Стадия: ${stage}`);
       const mission = extractContentMdSafe(profile.missionJson);
       if (mission) lines.push(`Миссия: ${mission}`);
       if (lines.length === 0) return '';
+      this.metrics.incCompanyCapsuleInjected({ surface: 'chat_v2' });
       return ['## О компании', ...lines].join('\n');
     } catch (err) {
-      // «О компании» — мягкая секция: любая ошибка чтения профиля не должна
-      // ронять ответ. Просто опускаем секцию.
       this.logger.warn(
         { tenantId, err: err instanceof Error ? err.message : String(err) },
         'chat-v2 buildCompanyAbout: чтение CompanyProfile упало — секция опущена',

@@ -646,6 +646,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private probeValueGateTotal!: Counter<'verdict'>;
   private subjectMemoryRuleExtractedTotal!: Counter<'kind'>;
   private companySummaryCompileTotal!: Counter<'result'>;
+  private companyCapsuleInjectedTotal!: Counter<'surface'>;
   private subjectMemoryProbeSuppressedTotal!: Counter<'reason'>;
   private subjectMemoryRuleActivatedTotal!: Counter<never>;
   private subjectMemoryRuleRolledBackTotal!: Counter<'cause'>;
@@ -2721,6 +2722,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'company_summary_compile_total',
       help: 'Авто-профиль компании: проход компилятора summary по тенанту (result): compiled | pinned | skipped_pinned | skipped_fresh | skipped_cold_start | error.',
       labelNames: ['result'] as const,
+    });
+    this.companyCapsuleInjectedTotal = this.getOrCreateCounter({
+      name: 'company_capsule_injected_total',
+      help: 'Авто-профиль компании: краткое описание (capsule) подставлено в SYSTEM по поверхности (surface): chat_v2 | concierge.',
+      labelNames: ['surface'] as const,
     });
     this.subjectMemoryProbeSuppressedTotal = this.getOrCreateCounter({
       name: 'subject_memory_probe_suppressed_total',
@@ -6332,6 +6338,10 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incCompanySummaryCompile(args: { result: string }): void {
     this.companySummaryCompileTotal.inc({ result: args.result });
+  }
+
+  incCompanyCapsuleInjected(args: { surface: string }): void {
+    this.companyCapsuleInjectedTotal.inc({ surface: args.surface });
   }
 
   incSubjectMemoryProbeSuppressed(args: { reason: string }): void {

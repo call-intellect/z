@@ -191,6 +191,30 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         rbacAction: 'write',
       },
       {
+        name: 'suggest_assignee',
+        description:
+          'Используй, когда просят поставить задачу, но НЕ назвали конкретного исполнителя («заказать канцелярию», «нужен макет») — предложи подходящего сотрудника по компетенциям. Передай taskText сутью задачи, как сформулировал пользователь. Возвращает кандидатов; ничего не присваивает. После вызова предложи: «Предлагаю назначить: {имя} ({роль}) — {rationale}. Назначить?» и жди подтверждения, затем используй assign_task.',
+        method: 'POST',
+        path: '/api/v1/me/tasks/suggest-assignee',
+        parameters: {
+          type: 'object',
+          properties: {
+            taskText: {
+              type: 'string',
+              description: 'Суть задачи, как сформулировал пользователь (что нужно сделать).',
+            },
+            departmentId: {
+              type: 'string',
+              description: 'Идентификатор отдела для жёсткого ограничения кандидатов. Опц.',
+            },
+          },
+          required: ['taskText'],
+        },
+        rbacResource: 'issue',
+        rbacAction: 'write',
+        readOnly: true,
+      },
+      {
         name: 'search_tasks',
         description:
           'Используй для показа/поиска МОИХ задач в трекере (мои открытые дела, задачи на мне). Возвращает задачи с идентификаторами.',

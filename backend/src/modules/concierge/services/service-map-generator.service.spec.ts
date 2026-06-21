@@ -166,6 +166,18 @@ describe('ServiceMapGeneratorService', () => {
     expect(t?.description).toContain('Используй');
   });
 
+  it('suggest_assignee — POST /me/tasks/suggest-assignee, issue/write, taskText required, readOnly', () => {
+    const t = svc.findTool('suggest_assignee');
+    expect(t).not.toBeNull();
+    expect(t?.method).toBe('POST');
+    expect(t?.path).toBe('/api/v1/me/tasks/suggest-assignee');
+    expect(t?.rbacResource).toBe('issue');
+    expect(t?.rbacAction).toBe('write');
+    expect(t?.parameters.required).toEqual(['taskText']);
+    expect(t?.readOnly).toBe(true);
+    expect(t?.description).toContain('Используй');
+  });
+
   it('ingest_note — POST /me/notifications/free-note, БЕЗ rbacResource, readOnly, text required', () => {
     const t = svc.findTool('ingest_note');
     expect(t).not.toBeNull();

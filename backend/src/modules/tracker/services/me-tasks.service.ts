@@ -6,13 +6,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { PostAssignTaskBodyDto, PostAssignTaskResponseDto } from '../dto/issues/post-assign-task.dto';
 import type { PostMeTaskBodyDto, PostMeTaskResponseDto } from '../dto/issues/post-me-task.dto';
+import type { PostSuggestAssigneeResponseDto } from '../dto/issues/post-suggest-assignee.dto';
 
 import { AssigneeResolverService } from './assignee-resolver.service';
 import { IssuesService } from './issues.service';
 import { ProjectsService } from './projects.service';
+import { SkillRoutingService } from './skill-routing.service';
 import { TrackerEmitterService } from './tracker-emitter.service';
 
 @Injectable()
@@ -23,7 +26,21 @@ export class MeTasksService {
     @Inject(ProjectsService) private readonly projects: ProjectsService,
     @Inject(AssigneeResolverService) private readonly resolver: AssigneeResolverService,
     @Inject(TrackerEmitterService) private readonly emitter: TrackerEmitterService,
+    @Inject(SkillRoutingService) private readonly skillRouting: SkillRoutingService,
+    @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
   ) {}
+
+  async suggestAssignee(
+    body: { taskText: string; departmentId?: string },
+    tenantId: string,
+  ): Promise<PostSuggestAssigneeResponseDto> {
+    const suggestions = await this.skillRouting.suggestAssignee({
+      tenantId,
+      taskText: body.taskText,
+      explicitTags: body.departmentId ? { departmentId: body.departmentId } : undefined,
+    });
+    return { suggestions };
+  }
 
   async createSelfTask(
     body: PostMeTaskBodyDto,
@@ -146,6 +163,10 @@ export class MeTasksService {
         action: 'added',
         assigneeUserId: resolution.userId,
       });
+    }
+
+    if (body.viaRouting === true) {
+      this.metrics.incRoutingSuggestionAccepted();
     }
 
     return {

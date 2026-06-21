@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { IssueResponseDto } from '../dto/issues/issue-response.dto';
 
@@ -8,6 +9,7 @@ import type { AssigneeResolverService } from './assignee-resolver.service';
 import type { IssuesService } from './issues.service';
 import { MeTasksService } from './me-tasks.service';
 import type { ProjectsService } from './projects.service';
+import type { SkillRoutingService } from './skill-routing.service';
 import type { TrackerEmitterService } from './tracker-emitter.service';
 
 const TENANT = 'org_1';
@@ -87,8 +89,14 @@ describe('MeTasksService.createSelfTask', () => {
     const emitter = {
       emitIssueAssigneeChanged: vi.fn(),
     } as unknown as TrackerEmitterService;
+    const skillRouting = {
+      suggestAssignee: vi.fn(async () => []),
+    } as unknown as SkillRoutingService;
+    const metrics = {
+      incRoutingSuggestionAccepted: vi.fn(),
+    } as unknown as BusinessMetricsService;
 
-    service = new MeTasksService(prisma, issues, projects, resolver, emitter);
+    service = new MeTasksService(prisma, issues, projects, resolver, emitter, skillRouting, metrics);
   });
 
   it('(а) создаёт задачу себе в «Входящих» с исполнителем = userId', async () => {
@@ -173,6 +181,7 @@ describe('MeTasksService.assignTask', () => {
   let issueFindUnique: ReturnType<typeof vi.fn>;
   let resolverResolve: ReturnType<typeof vi.fn>;
   let emitAssigneeChanged: ReturnType<typeof vi.fn>;
+  let incRoutingSuggestionAccepted: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     issuesCreate = vi.fn(async () => makeIssueResponse({ assigneeUserIds: ['assignee_1'] }));
@@ -199,8 +208,15 @@ describe('MeTasksService.assignTask', () => {
     projects = { ensureInboxProjectId: ensureInbox } as unknown as ProjectsService;
     resolver = { resolve: resolverResolve } as unknown as AssigneeResolverService;
     emitter = { emitIssueAssigneeChanged: emitAssigneeChanged } as unknown as TrackerEmitterService;
+    incRoutingSuggestionAccepted = vi.fn();
+    const skillRouting = {
+      suggestAssignee: vi.fn(async () => []),
+    } as unknown as SkillRoutingService;
+    const metrics = {
+      incRoutingSuggestionAccepted,
+    } as unknown as BusinessMetricsService;
 
-    service = new MeTasksService(prisma, issues, projects, resolver, emitter);
+    service = new MeTasksService(prisma, issues, projects, resolver, emitter, skillRouting, metrics);
   });
 
   it('(а) resolved → создаёт задачу на исполнителя + эмитит issue.assignee_changed(added)', async () => {
@@ -247,5 +263,84 @@ describe('MeTasksService.assignTask', () => {
       service.assignTask({ title: 'X', assigneeName: 'Айназ' }, TENANT, USER),
     ).rejects.toMatchObject({ response: { error: { code: 'assignee_ambiguous' } } });
     expect(issuesCreate).not.toHaveBeenCalled();
+  });
+
+  it('(г) viaRouting=true → учёт принятого предложения (incRoutingSuggestionAccepted)', async () => {
+    await service.assignTask(
+      { title: 'Протестировать бота', assigneeName: 'Айназ', viaRouting: true },
+      TENANT,
+      USER,
+    );
+    expect(incRoutingSuggestionAccepted).toHaveBeenCalledTimes(1);
+  });
+
+  it('(д) без viaRouting → метрика принятия НЕ вызвана', async () => {
+    await service.assignTask(
+      { title: 'Протестировать бота', assigneeName: 'Айназ' },
+      TENANT,
+      USER,
+    );
+    expect(incRoutingSuggestionAccepted).not.toHaveBeenCalled();
+  });
+});
+
+describe('MeTasksService.suggestAssignee', () => {
+  let service: MeTasksService;
+  let suggestAssigneeMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    suggestAssigneeMock = vi.fn(async () => [
+      {
+        personId: 'person_1',
+        personName: 'Наташа',
+        roleName: 'Офис-менеджер',
+        departmentName: 'Администрация',
+        confidence: 0.82,
+        rationale: 'отвечает за снабжение',
+        matchPath: 'semantic' as const,
+      },
+    ]);
+
+    const prisma = {} as unknown as PrismaService;
+    const issues = {} as unknown as IssuesService;
+    const projects = {} as unknown as ProjectsService;
+    const resolver = {} as unknown as AssigneeResolverService;
+    const emitter = {} as unknown as TrackerEmitterService;
+    const skillRouting = {
+      suggestAssignee: suggestAssigneeMock,
+    } as unknown as SkillRoutingService;
+    const metrics = {
+      incRoutingSuggestionAccepted: vi.fn(),
+    } as unknown as BusinessMetricsService;
+
+    service = new MeTasksService(prisma, issues, projects, resolver, emitter, skillRouting, metrics);
+  });
+
+  it('(а) делегирует в SkillRoutingService и возвращает {suggestions}', async () => {
+    const res = await service.suggestAssignee({ taskText: 'заказать канцелярию' }, TENANT);
+
+    expect(suggestAssigneeMock).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: TENANT, taskText: 'заказать канцелярию' }),
+    );
+    expect(res).toEqual(
+      expect.objectContaining({
+        suggestions: expect.arrayContaining([
+          expect.objectContaining({ personId: 'person_1', matchPath: 'semantic' }),
+        ]),
+      }),
+    );
+  });
+
+  it('(б) departmentId → explicitTags; пустой результат → {suggestions: []}', async () => {
+    suggestAssigneeMock.mockResolvedValueOnce([]);
+    const res = await service.suggestAssignee(
+      { taskText: 'сделать макет', departmentId: 'dep_1' },
+      TENANT,
+    );
+
+    expect(suggestAssigneeMock).toHaveBeenCalledWith(
+      expect.objectContaining({ explicitTags: { departmentId: 'dep_1' } }),
+    );
+    expect(res).toEqual({ suggestions: [] });
   });
 });

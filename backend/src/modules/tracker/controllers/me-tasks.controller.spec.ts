@@ -6,6 +6,7 @@ import type { CurrentUserPayload } from '../../auth/decorators/current-user.deco
 import type { RbacService } from '../../rbac/rbac.service';
 import { PostAssignTaskBodySchema } from '../dto/issues/post-assign-task.dto';
 import { PostMeTaskBodySchema, type PostMeTaskBodyDto } from '../dto/issues/post-me-task.dto';
+import { PostSuggestAssigneeBodySchema } from '../dto/issues/post-suggest-assignee.dto';
 import type { MeTasksService } from '../services/me-tasks.service';
 
 import { MeTasksController } from './me-tasks.controller';
@@ -122,5 +123,74 @@ describe('MeTasksController POST /me/tasks/assign', () => {
     await expect(
       controller.assignTask({ title: 'X', assigneeName: 'Айназ' }, USER, undefined),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('MeTasksController POST /me/tasks/suggest-assignee', () => {
+  let svc: MeTasksService;
+  let rbac: RbacService;
+  let controller: MeTasksController;
+  let suggestAssignee: ReturnType<typeof vi.fn>;
+  let canWrite: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    suggestAssignee = vi.fn(async () => ({
+      suggestions: [
+        {
+          personId: 'person_1',
+          personName: 'Наташа',
+          roleName: 'Офис-менеджер',
+          departmentName: 'Администрация',
+          confidence: 0.82,
+          rationale: 'отвечает за снабжение',
+          matchPath: 'semantic' as const,
+        },
+      ],
+    }));
+    canWrite = vi.fn(async () => true);
+    svc = { suggestAssignee } as unknown as MeTasksService;
+    rbac = { canWrite } as unknown as RbacService;
+    controller = new MeTasksController(svc, rbac);
+  });
+
+  it('(а) делегирует в сервис, проверяет issue:write, возвращает {suggestions}', async () => {
+    const body = { taskText: 'заказать канцелярию' };
+    const res = await controller.suggestAssignee(body, USER, TENANT);
+
+    expect(canWrite).toHaveBeenCalledWith(USER.id, TENANT, 'issue');
+    expect(suggestAssignee).toHaveBeenCalledWith(body, TENANT);
+    expect(res).toEqual(
+      expect.objectContaining({
+        suggestions: expect.arrayContaining([
+          expect.objectContaining({ personId: 'person_1', matchPath: 'semantic' }),
+        ]),
+      }),
+    );
+  });
+
+  it('(б) нет уверенного кандидата → {suggestions: []}', async () => {
+    suggestAssignee.mockResolvedValueOnce({ suggestions: [] });
+    const res = await controller.suggestAssignee({ taskText: 'неясная задача' }, USER, TENANT);
+    expect(res).toEqual({ suggestions: [] });
+  });
+
+  it('(в) пустой taskText → 400 (Zod)', () => {
+    const pipe = new ZodValidationPipe(PostSuggestAssigneeBodySchema);
+    expect(() => pipe.transform({ taskText: '' })).toThrow(BadRequestException);
+  });
+
+  it('(г) RBAC запрет → 403, сервис не вызван', async () => {
+    canWrite.mockResolvedValueOnce(false);
+    await expect(
+      controller.suggestAssignee({ taskText: 'X' }, USER, TENANT),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(suggestAssignee).not.toHaveBeenCalled();
+  });
+
+  it('(д) tenant не определён → 400', async () => {
+    await expect(
+      controller.suggestAssignee({ taskText: 'X' }, USER, undefined),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(canWrite).not.toHaveBeenCalled();
   });
 });

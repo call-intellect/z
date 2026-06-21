@@ -25,6 +25,11 @@ import {
   type PostMeTaskBodyDto,
   type PostMeTaskResponseDto,
 } from '../dto/issues/post-me-task.dto';
+import {
+  PostSuggestAssigneeBodySchema,
+  type PostSuggestAssigneeBodyDto,
+  type PostSuggestAssigneeResponseDto,
+} from '../dto/issues/post-suggest-assignee.dto';
 import { MeTasksService } from '../services/me-tasks.service';
 
 @ApiTags('tracker / me')
@@ -87,6 +92,31 @@ export class MeTasksController {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
     return this.svc.assignTask(body, t, user.id);
+  }
+
+  @Post('me/tasks/suggest-assignee')
+  @ApiOperation({
+    summary: 'Предложить исполнителя для задачи без явного назначенца (по компетенциям)',
+    description:
+      'Возвращает кандидатов-исполнителей по профилю компетенций (роль / ' +
+      'отдел / навыки), отсортированных по уверенности. Ничего НЕ присваивает — ' +
+      'только предлагает; присвоение делает POST /me/tasks/assign по решению ' +
+      'человека. Требует право issue:write (есть у рядового member/manager).',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Кандидаты: { suggestions: AssigneeSuggestion[] } (пусто — нет уверенного)',
+  })
+  @ApiResponse({ status: 400, description: 'Validation error / tenant_required' })
+  @ApiResponse({ status: 403, description: 'Недостаточно прав на создание задач' })
+  async suggestAssignee(
+    @Body(new ZodValidationPipe(PostSuggestAssigneeBodySchema)) body: PostSuggestAssigneeBodyDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<PostSuggestAssigneeResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.svc.suggestAssignee(body, t);
   }
 
   private requireTenant(tenantId: string | undefined): string {

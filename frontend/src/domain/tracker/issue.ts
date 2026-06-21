@@ -91,6 +91,17 @@ export interface SimilarIssueApi {
   similarity: number;
 }
 
+export interface AssigneeSuggestionApi {
+  personId: string;
+  userId: string | null;
+  personName: string;
+  roleName: string | null;
+  departmentName: string | null;
+  confidence: number;
+  rationale: string;
+  matchPath: string;
+}
+
 export interface ListIssuesResponseApi {
   items: IssueApi[];
   total: number;

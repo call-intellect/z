@@ -1,6 +1,7 @@
 import { apiClient } from "../api-client";
 import { buildQuery, orgHeaders } from "../admin-helpers";
 import type {
+  AssigneeSuggestionApi,
   IssueActivityApi,
   IssueApi,
   IssueAttachmentApi,
@@ -220,10 +221,30 @@ export const issuesApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  addAssignee: (orgId: string, issueId: string, userId: string) =>
+  addAssignee: (
+    orgId: string,
+    issueId: string,
+    userId: string,
+    opts?: { viaRouting?: boolean },
+  ) =>
     apiClient.post<{ ok: true }>(
       `/api/v1/issues/${encodeURIComponent(issueId)}/assignees`,
-      { userId },
+      {
+        userId,
+        ...(opts?.viaRouting !== undefined
+          ? { viaRouting: opts.viaRouting }
+          : {}),
+      },
+      { headers: orgHeaders(orgId) },
+    ),
+
+  suggestAssignee: (
+    orgId: string,
+    body: { taskText: string; departmentId?: string },
+  ) =>
+    apiClient.post<{ suggestions: AssigneeSuggestionApi[] }>(
+      `/api/v1/me/tasks/suggest-assignee`,
+      body,
       { headers: orgHeaders(orgId) },
     ),
 

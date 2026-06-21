@@ -24,7 +24,9 @@ export const ListIssuesQuerySchema = z
   .strict();
 export type ListIssuesQuery = z.infer<typeof ListIssuesQuerySchema>;
 
-export const AddAssigneeSchema = z.object({ userId: z.string().min(1).max(64) }).strict();
+export const AddAssigneeSchema = z
+  .object({ userId: z.string().min(1).max(64), viaRouting: z.boolean().optional() })
+  .strict();
 export type AddAssigneeDto = z.infer<typeof AddAssigneeSchema>;
 
 export const AddLabelSchema = z.object({ labelId: z.string().min(1).max(64) }).strict();

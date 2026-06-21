@@ -1261,3 +1261,77 @@ describe('IssuesService — transitionToCategory', () => {
     expect(updateData?.completedAt).toBeInstanceOf(Date);
   });
 });
+
+describe('IssuesService.addAssignee — viaRouting метрика', () => {
+  const ISSUE: Partial<Issue> = {
+    id: 'i1',
+    tenantId: 'org_1',
+    projectId: 'p1',
+    identifier: 'P1-1',
+    deletedAt: null,
+  };
+
+  function buildService() {
+    const issueFindFirst = vi.fn().mockResolvedValue(ISSUE);
+    const assigneeFindUnique = vi.fn().mockResolvedValue(null);
+    const assigneeCreate = vi.fn().mockResolvedValue({ id: 'ia1' });
+    const activityRecord = vi.fn().mockResolvedValue('act_assign');
+    const incRoutingSuggestionAccepted = vi.fn();
+    const emitIssueAssigneeChanged = vi.fn();
+
+    const prisma = {
+      issue: { findFirst: issueFindFirst },
+      issueAssignee: { findUnique: assigneeFindUnique },
+      $transaction: async (fn: (tx: unknown) => unknown) =>
+        fn({ issueAssignee: { create: assigneeCreate } }),
+    } as unknown as PrismaService;
+
+    const activity = { record: activityRecord } as unknown as ActivityRecorderService;
+    const projects = {} as unknown as ProjectsService;
+    const events = {} as unknown as TrackerEventsService;
+    const webhooks = {} as unknown as WebhookDispatcher;
+    const emitter = {
+      emitIssueAssigneeChanged,
+    } as unknown as TrackerEmitterService;
+    const metrics = {
+      incRoutingSuggestionAccepted,
+    } as unknown as import('../../../common/metrics/business-metrics.service').BusinessMetricsService;
+
+    const service = new IssuesService(
+      prisma,
+      activity,
+      projects,
+      events,
+      webhooks,
+      emitter,
+      undefined, // embedQueue
+      undefined, // inferFieldsSvc
+      undefined, // goalSuggestSvc
+      undefined, // holiday
+      undefined, // boards
+      metrics,
+    );
+
+    return { service, incRoutingSuggestionAccepted, assigneeCreate };
+  }
+
+  it('viaRouting:true → incRoutingSuggestionAccepted вызвана один раз', async () => {
+    const { service, incRoutingSuggestionAccepted, assigneeCreate } = buildService();
+
+    await service.addAssignee('i1', 'u_assignee', 'org_1', 'u_actor', {
+      viaRouting: true,
+    });
+
+    expect(assigneeCreate).toHaveBeenCalledTimes(1);
+    expect(incRoutingSuggestionAccepted).toHaveBeenCalledTimes(1);
+  });
+
+  it('без флага → метрика не вызвана', async () => {
+    const { service, incRoutingSuggestionAccepted, assigneeCreate } = buildService();
+
+    await service.addAssignee('i1', 'u_assignee', 'org_1', 'u_actor');
+
+    expect(assigneeCreate).toHaveBeenCalledTimes(1);
+    expect(incRoutingSuggestionAccepted).not.toHaveBeenCalled();
+  });
+});

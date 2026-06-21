@@ -161,7 +161,12 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
 
         <div>
           {}
-          <IssueSidebar issue={issue} orgId={currentOrgId} onMoved={mutate} />
+          <IssueSidebar
+            issue={issue}
+            orgId={currentOrgId}
+            onMoved={mutate}
+            onAssigned={mutate}
+          />
         </div>
       </div>
     </div>

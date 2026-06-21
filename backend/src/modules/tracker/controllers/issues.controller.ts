@@ -241,7 +241,9 @@ export class IssuesController {
   ): Promise<{ ok: true }> {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
-    return this.svc.addAssignee(id, body.userId, t, user.id);
+    return this.svc.addAssignee(id, body.userId, t, user.id, {
+      viaRouting: body.viaRouting === true,
+    });
   }
 
   @Delete('issues/:id/assignees/:userId')

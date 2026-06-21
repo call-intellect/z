@@ -15,6 +15,7 @@ import {
 
 export interface AssigneeSuggestion {
   personId: string;
+  userId: string | null;
   personName: string;
   roleName: string | null;
   departmentName: string | null;
@@ -25,6 +26,7 @@ export interface AssigneeSuggestion {
 
 interface Candidate {
   personId: string;
+  userId: string | null;
   name: string;
   roleId: string | null;
   roleName: string | null;
@@ -110,6 +112,7 @@ export class SkillRoutingService {
             : 'role_prior';
         suggestions.push({
           personId: candidate.personId,
+          userId: candidate.userId,
           personName: candidate.name,
           roleName: candidate.roleName,
           departmentName: candidate.departmentName,
@@ -151,6 +154,7 @@ export class SkillRoutingService {
       where: { tenantId, deletedAt: null, relationship: 'employee' },
       select: {
         id: true,
+        userId: true,
         name: true,
         personRoles: {
           where: { validTo: null },
@@ -196,6 +200,7 @@ export class SkillRoutingService {
       }
       candidates.push({
         personId: p.id,
+        userId: p.userId ?? null,
         name: p.name,
         roleId: role.id,
         roleName: role.name,

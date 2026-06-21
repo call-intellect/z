@@ -1454,6 +1454,7 @@ export class IssuesService {
     assigneeUserId: string,
     tenantId: string,
     actorUserId: string,
+    opts?: { viaRouting?: boolean },
   ): Promise<{ ok: true }> {
     const issue = await this.requireIssue(issueId, tenantId);
     const existing = await this.prisma.issueAssignee.findUnique({
@@ -1483,6 +1484,9 @@ export class IssuesService {
         tx,
       });
     });
+    if (opts?.viaRouting === true) {
+      this.metrics?.incRoutingSuggestionAccepted();
+    }
     // Sprint 3 B1-3.1 — ingest в knowledge-core (task_reassigned).
     this.emitter.emitIssueAssigneeChanged({
       issue,

@@ -5,6 +5,7 @@ import {
   Calendar,
   CheckCircle2,
   Flag,
+  Sparkles,
   Tag,
   Target,
   Users,
@@ -16,6 +17,7 @@ import { toast } from "sonner";
 import {
   ISSUE_PRIORITY_LABELS,
   dueDateLabel,
+  type AssigneeSuggestionApi,
   type Issue,
 } from "@/domain/tracker";
 import { issuesApi } from "@/api/tracker/issues.api";
@@ -31,21 +33,31 @@ export function IssueSidebar({
   issue,
   orgId,
   onMoved,
+  onAssigned,
 }: {
   issue: Issue;
   orgId: string;
   onMoved?: () => void;
+  onAssigned?: () => void;
 }) {
   const due = dueDateLabel(issue.dueDate);
 
   return (
     <aside className="flex flex-col gap-3 rounded-md border border-border-subtle bg-bg-elevated p-4 text-sm">
       <Row icon={<Users size={14} />} label="Исполнители">
-        <AssigneeAvatarGroup
-          userIds={issue.assigneeUserIds}
-          max={6}
-          size={22}
-        />
+        {issue.assigneeUserIds.length > 0 ? (
+          <AssigneeAvatarGroup
+            userIds={issue.assigneeUserIds}
+            max={6}
+            size={22}
+          />
+        ) : (
+          <SuggestAssigneePanel
+            issue={issue}
+            orgId={orgId}
+            onAssigned={onAssigned}
+          />
+        )}
       </Row>
 
       <Row icon={<FolderInput size={14} />} label="Проект">
@@ -260,6 +272,141 @@ function ProjectMoveRow({
         onClose={() => setPickerOpen(false)}
         onPick={(projectId) => void handlePick(projectId)}
       />
+    </div>
+  );
+}
+
+function SuggestAssigneePanel({
+  issue,
+  orgId,
+  onAssigned,
+}: {
+  issue: Issue;
+  orgId: string;
+  onAssigned?: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+  const [suggestions, setSuggestions] = useState<
+    AssigneeSuggestionApi[] | null
+  >(null);
+  const [errorText, setErrorText] = useState<string | null>(null);
+
+  const taskText = issue.descriptionStripped
+    ? `${issue.title}\n${issue.descriptionStripped}`.slice(0, 2000)
+    : issue.title;
+
+  const findSuggestions = async (): Promise<void> => {
+    setLoading(true);
+    setErrorText(null);
+    try {
+      const res = await issuesApi.suggestAssignee(orgId, { taskText });
+      setSuggestions(res.suggestions);
+    } catch (e) {
+      setErrorText(humanizeApiError(e, "не удалось подобрать исполнителя"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const assign = async (userId: string): Promise<void> => {
+    setAssigning(true);
+    setErrorText(null);
+    try {
+      await issuesApi.addAssignee(orgId, issue.id, userId, {
+        viaRouting: true,
+      });
+      toast.success("Исполнитель назначен.");
+      setSuggestions(null);
+      onAssigned?.();
+    } catch (e) {
+      setErrorText(humanizeApiError(e, "не удалось назначить исполнителя"));
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  if (suggestions === null) {
+    return (
+      <div className="flex flex-col gap-1">
+        <button
+          type="button"
+          className="inline-flex w-fit items-center gap-1.5 rounded border border-accent-border bg-accent-muted px-2 py-1 text-xs font-medium text-accent hover:bg-accent-muted-strong disabled:opacity-60"
+          onClick={() => void findSuggestions()}
+          disabled={loading}
+        >
+          <Sparkles size={12} />
+          {loading ? "Подбираю…" : "Подобрать исполнителя"}
+        </button>
+        {errorText ? (
+          <span className="text-[10px] text-danger">{errorText}</span>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (suggestions.length === 0) {
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="text-xs text-fg-tertiary">
+          Подходящий исполнитель не найден.
+        </span>
+        <button
+          type="button"
+          className="w-fit text-xs text-accent hover:underline"
+          onClick={() => setSuggestions(null)}
+        >
+          Скрыть
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {suggestions.slice(0, 3).map((s) => {
+        const userId = s.userId;
+        return (
+          <div
+            key={s.personId}
+            className="flex flex-col gap-1 rounded border border-border-subtle bg-bg-card p-2"
+          >
+            <span className="text-xs text-fg-primary">
+              Предлагаю назначить:{" "}
+              <span className="font-medium">{s.personName}</span>
+              {s.roleName ? (
+                <span className="text-fg-secondary"> ({s.roleName})</span>
+              ) : null}
+            </span>
+            <span className="text-[11px] text-fg-secondary">{s.rationale}</span>
+            {userId ? (
+              <button
+                type="button"
+                className="w-fit rounded bg-accent px-2 py-1 text-xs font-medium text-accent-fg hover:bg-accent/90 disabled:opacity-60"
+                onClick={() => void assign(userId)}
+                disabled={assigning}
+              >
+                {assigning ? "Назначаю…" : "Назначить"}
+              </button>
+            ) : (
+              <span className="text-[10px] text-fg-tertiary">
+                Нельзя назначить: не принял приглашение.
+              </span>
+            )}
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        className="w-fit text-xs text-fg-tertiary hover:text-fg-secondary"
+        onClick={() => setSuggestions(null)}
+        disabled={assigning}
+      >
+        Отмена
+      </button>
+      {errorText ? (
+        <span className="text-[10px] text-danger">{errorText}</span>
+      ) : null}
     </div>
   );
 }

@@ -14,6 +14,7 @@ const DEV_ID = 'person-dev';
 
 interface PersonRow {
   id: string;
+  userId: string | null;
   name: string;
   personRoles: Array<{
     role: {
@@ -36,6 +37,7 @@ interface PersonRow {
 function officeMgrRow(departmentId: string | null = 'dep-admin'): PersonRow {
   return {
     id: OFFICE_MGR_ID,
+    userId: 'user-office',
     name: 'Наташа',
     personRoles: [
       {
@@ -54,6 +56,7 @@ function officeMgrRow(departmentId: string | null = 'dep-admin'): PersonRow {
 function devRow(departmentId: string | null = 'dep-eng'): PersonRow {
   return {
     id: DEV_ID,
+    userId: 'user-dev',
     name: 'Пётр',
     personRoles: [
       {
@@ -149,6 +152,7 @@ describe('SkillRoutingService.suggestAssignee', () => {
     expect(result[0]).toEqual(
       expect.objectContaining({
         personId: OFFICE_MGR_ID,
+        userId: 'user-office',
         personName: 'Наташа',
         roleName: 'Офис-менеджер',
         matchPath: 'semantic',

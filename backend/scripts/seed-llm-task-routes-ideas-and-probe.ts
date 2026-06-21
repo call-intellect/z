@@ -96,6 +96,32 @@ const SEEDS: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
     ],
   },
+  {
+    taskType: 'subject-memory-rule-extract',
+    playbookSection: '§2.1 capable JSON extract + learned-clarifications-memory',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' },
+      {
+        tier: 'secondary',
+        providerName: 'openai-via-proxy',
+        model: 'gpt-5.4',
+      },
+      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
+    ],
+  },
+  {
+    taskType: 'subject-memory-judge',
+    playbookSection: '§2.1 cheap judge + learned-clarifications-memory',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      {
+        tier: 'secondary',
+        providerName: 'openai-via-proxy',
+        model: 'gpt-5.4-mini',
+      },
+      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
+    ],
+  },
 ];
 
 interface SeedStats {

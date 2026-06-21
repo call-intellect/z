@@ -163,6 +163,8 @@ const registry = new Map<string, ZodTypeAny>([
   ['subjectMemory.canaryRollbackWindowHours', POSITIVE_INT],
   ['subjectMemory.ttlDays', POSITIVE_INT],
   ['subjectMemory.judgeQuorum', POSITIVE_INT],
+  ['subjectMemory.shadowToCanaryMinConfirm', NON_NEGATIVE_INT],
+  ['subjectMemory.judgeModels', z.array(z.string())],
 
   ['daySignals.detectThreshold', UNIT_INTERVAL],
   ['daySignals.processLocalHour', z.number().int().min(0).max(23)],

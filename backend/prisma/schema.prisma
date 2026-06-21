@@ -8318,6 +8318,8 @@ model SubjectMemory {
   sourceBlockIds  String[]            @default([])
   staleAfter      DateTime?
   lastAppliedAt   DateTime?
+  /// Когда правило переведено в canary — старт окна наблюдения rollback-метрики.
+  canaryAt        DateTime?
   appliedCount    Int                 @default(0)
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt

@@ -1660,6 +1660,18 @@ function buildSettings(): SettingSeed[] {
       'medium',
       'Сколько судей ансамбля должны согласиться, чтобы правило прошло из shadow в canary',
     ],
+    [
+      'subjectMemory.shadowToCanaryMinConfirm',
+      envInt('SUBJECT_MEMORY_SHADOW_TO_CANARY_MIN_CONFIRM', 0),
+      'medium',
+      'Сколько подтверждений (confirmCount) нужно правилу для перевода shadow→canary (помимо согласия judge-ансамбля). 0 = решает только judge',
+    ],
+    [
+      'subjectMemory.judgeModels',
+      ['deepseek-v4-flash', 'gpt-5.4-mini'],
+      'medium',
+      'Модели дешёвого judge-ансамбля, оценивающего правило перед переводом shadow→canary (разные провайдеры — против self-preference bias)',
+    ],
   ];
   for (const [key, value, severity, description] of subjectMemory) {
     out.push({ key, value, category: 'ai', section: 'subject-memory', severity, description });

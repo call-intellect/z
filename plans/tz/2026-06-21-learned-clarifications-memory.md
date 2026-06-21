@@ -163,7 +163,7 @@ model SubjectMemory {
 **Acceptance:** unit: правило `active` с similarity>порога → `gate()` вернул `ask:false reason:answered_by_memory` БЕЗ вызова LLM (мок llm не вызван); правило `shadow` → НЕ подавляет; счётчик растёт. Поведение `probe-value-gate` при отсутствии правила не изменилось (его спек зелёный).
 **Закрывает:** retrieve-before-ask (главная метрика «меньше переспросов»).
 
-### Фаза 4 — Контур активации shadow→canary→active + авто-rollback + judge-ансамбль `[ ]`
+### Фаза 4 — Контур активации shadow→canary→active + авто-rollback + judge-ансамбль `[x]`
 **Цель:** правило становится active только если не ухудшает внешнюю метрику; ухудшило — авто-rollback.
 **Файлы (new):** `subject-memory-activation.cron.ts` (`@Cron`, интервал из AdminSetting): (1) `shadow`→`canary` после N подтверждений и прохождения judge-ансамбля (`subject-memory-judge`, кворум `judgeQuorum`, судья ≠ генератор Р3); (2) для `canary` — сравнить rollback-метрику (доля unclear/переспросов по контексту) за `canaryRollbackWindowHours` ПОСЛЕ vs ДО: не хуже → `active`, хуже → `rolled_back` + метрика `cause`; (3) decay: `staleAfter < now` → пересмотр (confidence↓, при refute>confirm → `superseded`). Регресс-набор: хранить контрольные кейсы (RawEvent-ответы), новое правило не должно ломать ранее верные подавления.
 **Что НЕ входит:** UI.

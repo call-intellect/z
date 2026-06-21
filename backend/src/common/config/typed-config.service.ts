@@ -8,6 +8,11 @@ export interface DynamicAdminSettingsReader {
 
 export const ADMIN_SETTINGS_READER_TOKEN = 'AdminSettingsService' as const;
 
+const SUBJECT_MEMORY_DEFAULT_JUDGE_MODELS = [
+  'deepseek-v4-flash',
+  'gpt-5.4-mini',
+] as const;
+
 @Injectable()
 export class TypedConfigService {
   private readonly logger = new Logger(TypedConfigService.name);
@@ -1214,6 +1219,16 @@ export class TypedConfigService {
       ),
       ttlDays: this.resolveSync<number>('subjectMemory.ttlDays', undefined, 180),
       judgeQuorum: this.resolveSync<number>('subjectMemory.judgeQuorum', undefined, 2),
+      shadowToCanaryMinConfirm: this.resolveSync<number>(
+        'subjectMemory.shadowToCanaryMinConfirm',
+        undefined,
+        0,
+      ),
+      judgeModels: this.resolveSync<readonly string[]>(
+        'subjectMemory.judgeModels',
+        undefined,
+        SUBJECT_MEMORY_DEFAULT_JUDGE_MODELS,
+      ),
     } as const;
   }
 

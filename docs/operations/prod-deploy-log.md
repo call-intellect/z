@@ -71,6 +71,24 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-21 — Трекер: крошка→доска (Ф0.1) · чистка /tasks (Ф0.2) · карточка/sidebar/плотность (Волна 1 Ф1–Ф3) · Гант по умолчанию (Ф4)
+
+> ТЗ `plans/tz/2026-06-20-tracker-card-redesign-and-progress.md` (+ правки Д1–Д6 `b1702ab9`). Коммиты: Волна 0 `b1e9d3bc`; Ф1 `0c5ff787`; Ф2 `2d05dec2`; Ф3 `b5eb5be1`; Ф4 (этот выкат).
+>
+> **Зачем:** лицо карточки считывается <2 сек (приоритет-чип/прогресс-бар/чип источника/дедлайн-чип, 2 строки, контраст); sidebar — даты «начала/выполнена» + названия спринта/цели (не cuid); тумблер плотности «Компактно/Широко»; Гант — table-stakes по умолчанию.
+>
+> **1 миграция (авто, аддитивная) + 1 backfill (авто, идемпотентный). Docker rebuild backend+frontend. Новых ENV/seed/patch нет.**
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` на `docker compose up`): `20260621055401_gant_view_default_true` — `ALTER TABLE "Project" ALTER COLUMN "gantViewEnabled" SET DEFAULT true` (Ф4 Ship-On). Аддитивная, без потери данных. **В STEPS не регистрируется** (миграция схемы).
+- **Шаг 8 — Backfill (1 прогон, идемпотентный, уже в STEPS `phase:'backfill'`, `skipBootstrap`):** `backfill-gant-view.ts` — `gantViewEnabled false→true` существующим проектам (повтор = no-op). Доезжает `apply-prod-deploy.ts --mode update`; ручной прогон при осечке: `docker compose exec backend bun run scripts/backfill-gant-view.ts`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (issues list/detail-DTO: `projectSlug`/`projectName`/`cycleName`/`goalName` + opt-in `commentCount`/`attachmentCount` через `includeEngagementCount`). Frontend (редизайн `IssueCard`, sidebar даты+названия, тумблер плотности).
+- **Волна 0 (Ф0.1/Ф0.2) — отдельных prod-операций НЕ требует** (крошка задачи→доска через `projectSlug` в ответе; редирект `/tasks`→`/projects`).
+- **Шаг 12 — Smoke:** открыть задачу → крошка ведёт на доску проекта; sidebar: «Срок начала»/«Выполнена» + название спринта/цели (не cuid); доска: тумблер «Компактно/Широко», компакт по умолчанию; новый проект — вкладка «Гант» видна.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-21 — Хвосты трёх ТЗ: deep-link сообщения чата (Ф1) + UI крутилок (Ф2) + page-aware документ (Ф4)
 
 > Ветка `feature/three-tz-tails-finalization`. Коммиты: Ф1 `237b48b5`; Ф2 `40ef424d`+`19c091f5`; Ф4 `af7d4cb6`+`8010c92d`. second-brain: `02_architecture/data-model.md` (`Document.pageCount`/`pageOffsets`), `01_projects/admin.md` (7 страниц настроек + scaffold `DomainSettings`), `01_projects/frontend-pages.md` (7 admin-роутов), `01_projects/api-layer.md` (`ChatMessageDto.externalId`, page-aware doc-deeplink).

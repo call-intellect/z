@@ -557,6 +557,12 @@ const STEPS: Step[] = [
   },
   {
     phase: 'backfill',
+    script: 'scripts/backfill-gant-view.ts',
+    hint: 'Гант по умолчанию ON: gantViewEnabled false→true существующим проектам (Ф4 Ship-On)',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'backfill',
     script: 'scripts/backfill-system-generated-projects.ts',
     hint: 'пометить org-контейнеры «Спринт компании» systemGenerated=true (A6)',
     skipBootstrap: true,

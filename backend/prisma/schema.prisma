@@ -8865,7 +8865,7 @@ model Project {
   // Feature flags per project
   cycleViewEnabled    Boolean @default(true)
   intakeViewEnabled   Boolean @default(true)
-  gantViewEnabled     Boolean @default(false)
+  gantViewEnabled     Boolean @default(true)
   timeTrackingEnabled Boolean @default(false)
 
   /// audit (2026-06-06) — системно-сгенерированный проект-контейнер

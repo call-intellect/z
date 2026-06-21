@@ -257,6 +257,7 @@ const SOURCE_LABEL: Record<PendingActionSource, string> = {
   probe: 'Вопросы',
   task_closure: 'Задачи к закрытию',
   task_review: 'Задачи под вопросом',
+  progress_draft: 'Черновики прогресса',
 };
 
 function buildReminderBody(args: {

@@ -177,6 +177,33 @@ export class ProgressUpdatesService {
     return this.toResponse(confirmed);
   }
 
+  /** Отклонение авто-черновика Коры: pending → rejected (+ soft-delete). */
+  async reject(
+    id: string,
+    tenantId: string,
+    userId: string,
+  ): Promise<{ ok: true }> {
+    const existing = await this.requireUpdate(id, tenantId);
+    if (existing.draftState !== 'pending') {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'progress_update_not_pending',
+          message: 'Отклонять можно только черновик в статусе «ожидает»',
+        },
+      });
+    }
+    await this.prisma.issueProgressUpdate.update({
+      where: { id },
+      data: { draftState: 'rejected', deletedAt: new Date() },
+    });
+    this.logger.log(
+      { tenantId, userId, progressUpdateId: id, issueId: existing.issueId },
+      'progress-update.reject: авто-черновик отклонён',
+    );
+    return { ok: true };
+  }
+
   async softDelete(
     id: string,
     tenantId: string,

@@ -62,6 +62,14 @@ export type PendingActionDetail =
       kind: "task_review";
       taskTitle: string;
       reason?: string;
+    }
+  | {
+      kind: "progress_draft";
+      taskTitle: string;
+      health: string;
+      preview?: string;
+      evidenceQuote?: string;
+      confidencePct?: number;
     };
 
 export interface PendingAction {
@@ -94,6 +102,7 @@ export const PENDING_SOURCE_LABEL: Record<PendingActionSource, string> = {
   probe: "Вопрос Коры",
   task_closure: "Задача к закрытию",
   task_review: "Задача под вопросом",
+  progress_draft: "Черновик прогресса",
 };
 
 export type PendingChipVariant = "info" | "danger" | "lavender" | "sand";
@@ -108,6 +117,7 @@ export const PENDING_SOURCE_CHIP: Record<
   probe: "sand",
   task_closure: "info",
   task_review: "sand",
+  progress_draft: "lavender",
 };
 
 export function pendingSeverityToneClass(
@@ -231,6 +241,15 @@ export function mapPendingActionDetail(
         kind: "task_review",
         taskTitle: api.taskTitle,
         reason: api.reason,
+      };
+    case "progress_draft":
+      return {
+        kind: "progress_draft",
+        taskTitle: api.taskTitle,
+        health: api.health,
+        preview: api.preview,
+        evidenceQuote: api.evidenceQuote,
+        confidencePct: normalizeConfidencePct(api.confidence),
       };
     default:
       return undefined;

@@ -9,6 +9,7 @@ import { ConflictPendingProvider } from './providers/conflict.provider';
 import { CurationPendingProvider } from './providers/curation.provider';
 import { IntakePendingProvider } from './providers/intake.provider';
 import { ProbePendingProvider } from './providers/probe.provider';
+import { ProgressDraftPendingProvider } from './providers/progress-draft.provider';
 import { TaskClosurePendingProvider } from './providers/task-closure.provider';
 import { TaskReviewPendingProvider } from './providers/task-review.provider';
 import { PendingActionsService } from './services/pending-actions.service';
@@ -50,6 +51,8 @@ import { PendingActionsReminderCron } from './workers/pending-actions-reminder.c
     TaskClosurePendingProvider,
     // TZ task-dedup (2026-06-16, Ф4) — задачи «под вопросом» после отмены решения.
     TaskReviewPendingProvider,
+    // TZ tracker-redesign (2026-06-20, Ф8/R17a) — авто-черновики прогресса задач.
+    ProgressDraftPendingProvider,
     // Action Center B3 — повторяющееся Telegram-напоминание о pending.
     PendingActionsReminderCron,
   ],

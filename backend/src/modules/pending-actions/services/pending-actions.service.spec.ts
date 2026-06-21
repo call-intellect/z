@@ -6,11 +6,13 @@ import type { ConflictService } from '../../curation/services/conflict.service';
 import type { CurationService } from '../../curation/services/curation.service';
 import type { IntakeService } from '../../tracker/services/intake.service';
 import type { IssuesService } from '../../tracker/services/issues.service';
+import type { ProgressUpdatesService } from '../../tracker/services/progress-updates.service';
 import type { ConflictPendingProvider } from '../providers/conflict.provider';
 import type { CurationPendingProvider } from '../providers/curation.provider';
 import type { IntakePendingProvider } from '../providers/intake.provider';
 import type { PendingActionItem } from '../providers/pending-actions-provider.types';
 import type { ProbePendingProvider } from '../providers/probe.provider';
+import type { ProgressDraftPendingProvider } from '../providers/progress-draft.provider';
 import type { TaskClosurePendingProvider } from '../providers/task-closure.provider';
 import type { TaskReviewPendingProvider } from '../providers/task-review.provider';
 
@@ -46,11 +48,15 @@ describe('PendingActionsService (B0)', () => {
   let probe: ProbePendingProvider;
   let taskClosure: TaskClosurePendingProvider;
   let taskReview: TaskReviewPendingProvider;
+  let progressDraft: ProgressDraftPendingProvider;
   let curationService: CurationService;
   let conflictService: ConflictService;
   let intakeService: IntakeService;
   let conversational: ConversationalService;
   let issuesService: IssuesService;
+  let progressUpdatesService: ProgressUpdatesService;
+  let progressConfirm: ReturnType<typeof vi.fn>;
+  let progressReject: ReturnType<typeof vi.fn>;
   let curationItemFindUnique: ReturnType<typeof vi.fn>;
   let taskClosureFindUnique: ReturnType<typeof vi.fn>;
   let taskClosureUpdate: ReturnType<typeof vi.fn>;
@@ -99,6 +105,12 @@ describe('PendingActionsService (B0)', () => {
     } as unknown as ConversationalService;
     transitionState = vi.fn().mockResolvedValue({ id: 'iss-1' });
     issuesService = { transitionState } as unknown as IssuesService;
+    progressConfirm = vi.fn().mockResolvedValue({ id: 'pu-1', draftState: 'accepted' });
+    progressReject = vi.fn().mockResolvedValue({ ok: true });
+    progressUpdatesService = {
+      confirm: progressConfirm,
+      reject: progressReject,
+    } as unknown as ProgressUpdatesService;
 
     curation = {
       source: 'curation',
@@ -130,6 +142,11 @@ describe('PendingActionsService (B0)', () => {
       countForUser: vi.fn().mockResolvedValue(0),
       listForUser: vi.fn().mockResolvedValue([]),
     } as unknown as TaskReviewPendingProvider;
+    progressDraft = {
+      source: 'progress_draft',
+      countForUser: vi.fn().mockResolvedValue(0),
+      listForUser: vi.fn().mockResolvedValue([]),
+    } as unknown as ProgressDraftPendingProvider;
 
     svc = new PendingActionsService(
       prisma,
@@ -139,11 +156,13 @@ describe('PendingActionsService (B0)', () => {
       probe,
       taskClosure,
       taskReview,
+      progressDraft,
       curationService,
       conflictService,
       intakeService,
       conversational,
       issuesService,
+      progressUpdatesService,
     );
   });
 
@@ -161,6 +180,7 @@ describe('PendingActionsService (B0)', () => {
       probe: 4,
       task_closure: 0,
       task_review: 0,
+      progress_draft: 0,
     });
     expect(res.total).toBe(10);
   });
@@ -542,6 +562,38 @@ describe('PendingActionsService (B0)', () => {
       }),
     ).rejects.toThrow();
     expect(issueUpdate).not.toHaveBeenCalled();
+  });
+
+  // ──── progress_draft (TZ tracker-redesign, 2026-06-20, Ф8/R17a) ────
+
+  it('confirm progress_draft (по умолчанию) → ProgressUpdatesService.confirm («как есть»)', async () => {
+    const res = await svc.confirm({
+      tenantId: 't-1',
+      userId: 'u-1',
+      source: 'progress_draft',
+      resourceId: 'pu-1',
+    });
+    expect(res).toEqual({ ok: true });
+    expect(progressConfirm).toHaveBeenCalledTimes(1);
+    const [id, dto, tenantId, userId] = progressConfirm.mock.calls[0]!;
+    expect(id).toBe('pu-1');
+    expect(dto).toEqual({});
+    expect(tenantId).toBe('t-1');
+    expect(userId).toBe('u-1');
+    expect(progressReject).not.toHaveBeenCalled();
+  });
+
+  it('confirm progress_draft reject → ProgressUpdatesService.reject, confirm не вызван', async () => {
+    await svc.confirm({
+      tenantId: 't-1',
+      userId: 'u-1',
+      source: 'progress_draft',
+      resourceId: 'pu-2',
+      resolution: 'reject',
+    });
+    expect(progressReject).toHaveBeenCalledTimes(1);
+    expect(progressReject.mock.calls[0]!).toEqual(['pu-2', 't-1', 'u-1']);
+    expect(progressConfirm).not.toHaveBeenCalled();
   });
 
   it('confirm curation: не-light уровень → BadRequest, decide не вызван', async () => {

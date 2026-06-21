@@ -13,7 +13,8 @@ export interface PendingActionItem {
     | 'intake'
     | 'probe'
     | 'task_closure'
-    | 'task_review';
+    | 'task_review'
+    | 'progress_draft';
   resourceType: string;
   resourceId: string;
   /// Готовый к показу заголовок (RU) — РЕАЛЬНАЯ суть item'а, а не шаблон.
@@ -37,7 +38,8 @@ export type PendingActionDetail =
   | IntakePendingDetail
   | CurationPendingDetail
   | TaskClosurePendingDetail
-  | TaskReviewPendingDetail;
+  | TaskReviewPendingDetail
+  | ProgressDraftPendingDetail;
 
 /// probe: сам вопрос + контекст для ответа.
 export interface ProbePendingDetail {
@@ -100,6 +102,23 @@ export interface TaskReviewPendingDetail {
   taskTitle: string;
   /// Человеческое объяснение «почему под вопросом».
   reason?: string;
+}
+
+/// progress_draft (TZ tracker-redesign, 2026-06-20, Ф8/R17a): авто-черновик
+/// прогресса задачи (IssueProgressUpdate draftState='pending', authorType='ai_agent').
+/// Адресован исполнителю задачи — человек подтверждает/правит/отклоняет (Р2: авто-постинг запрещён).
+export interface ProgressDraftPendingDetail {
+  kind: 'progress_draft';
+  /// Заголовок задачи, по которой собран черновик прогресса.
+  taskTitle: string;
+  /// Health-оценка черновика (on_track | at_risk | off_track).
+  health: string;
+  /// Короткий предпросмотр текста черновика.
+  preview?: string;
+  /// Цитата из источника (объяснимость).
+  evidenceQuote?: string;
+  /// Откалиброванная уверенность авто-черновика (0..1), если посчитана.
+  confidence?: number;
 }
 
 /// curation: что за карточка требует проверки.

@@ -7,7 +7,8 @@ export type PendingActionSourceApi =
   | "intake"
   | "probe"
   | "task_closure"
-  | "task_review";
+  | "task_review"
+  | "progress_draft";
 
 export type PendingActionSeverityApi = "normal" | "urgent";
 
@@ -80,13 +81,23 @@ export interface TaskReviewDetailApi {
   reason?: string;
 }
 
+export interface ProgressDraftDetailApi {
+  kind: "progress_draft";
+  taskTitle: string;
+  health: string;
+  preview?: string;
+  evidenceQuote?: string;
+  confidence?: number;
+}
+
 export type PendingActionDetailApi =
   | ProbeDetailApi
   | ConflictDetailApi
   | IntakeDetailApi
   | CurationDetailApi
   | TaskClosureDetailApi
-  | TaskReviewDetailApi;
+  | TaskReviewDetailApi
+  | ProgressDraftDetailApi;
 
 export interface PendingActionItemApi {
   source: PendingActionSourceApi;

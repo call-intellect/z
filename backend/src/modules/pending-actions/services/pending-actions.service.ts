@@ -6,6 +6,7 @@ import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
 import { IntakeService } from '../../tracker/services/intake.service';
 import { IssuesService } from '../../tracker/services/issues.service';
+import { ProgressUpdatesService } from '../../tracker/services/progress-updates.service';
 import { ConflictPendingProvider } from '../providers/conflict.provider';
 import { CurationPendingProvider } from '../providers/curation.provider';
 import { IntakePendingProvider } from '../providers/intake.provider';
@@ -14,6 +15,7 @@ import type {
   PendingActionsProvider,
 } from '../providers/pending-actions-provider.types';
 import { ProbePendingProvider } from '../providers/probe.provider';
+import { ProgressDraftPendingProvider } from '../providers/progress-draft.provider';
 import { TaskClosurePendingProvider } from '../providers/task-closure.provider';
 import { TaskReviewPendingProvider } from '../providers/task-review.provider';
 
@@ -93,6 +95,9 @@ export class PendingActionsService {
     // TZ task-dedup (2026-06-16, Ф4) — задачи «под вопросом» после отмены решения.
     @Inject(TaskReviewPendingProvider)
     private readonly taskReview: TaskReviewPendingProvider,
+    // TZ tracker-redesign (2026-06-20, Ф8/R17a) — авто-черновики прогресса задач.
+    @Inject(ProgressDraftPendingProvider)
+    private readonly progressDraft: ProgressDraftPendingProvider,
     // Action Center B4 — делегат быстрого подтверждения light-curation.
     @Inject(CurationService)
     private readonly curationService: CurationService,
@@ -107,6 +112,10 @@ export class PendingActionsService {
     // (transitionState в completed-статус проекта).
     @Inject(IssuesService)
     private readonly issuesService: IssuesService,
+    // TZ tracker-redesign (2026-06-20, Ф8/R17a) — делегат подтверждения/отклонения
+    // авто-черновика прогресса (Ф6-сервис; бизнес-логику НЕ дублируем).
+    @Inject(ProgressUpdatesService)
+    private readonly progressUpdatesService: ProgressUpdatesService,
   ) {
     // Порядок фиксирован — детерминизм для bySource/тестов.
     this.providers = [
@@ -116,6 +125,7 @@ export class PendingActionsService {
       this.probe,
       this.taskClosure,
       this.taskReview,
+      this.progressDraft,
     ];
   }
 
@@ -135,6 +145,7 @@ export class PendingActionsService {
       probe: 0,
       task_closure: 0,
       task_review: 0,
+      progress_draft: 0,
     } as Record<PendingActionSource, number>;
 
     await Promise.all(
@@ -154,7 +165,8 @@ export class PendingActionsService {
       bySource.intake +
       bySource.probe +
       bySource.task_closure +
-      bySource.task_review;
+      bySource.task_review +
+      bySource.progress_draft;
     return { total, bySource };
   }
 
@@ -275,6 +287,9 @@ export class PendingActionsService {
         return { ok: true };
       case 'task_review':
         await this.confirmTaskReview(input);
+        return { ok: true };
+      case 'progress_draft':
+        await this.confirmProgressDraft(input);
         return { ok: true };
       default: {
         // exhaustive — на случай расширения source без обновления switch.
@@ -586,6 +601,39 @@ export class PendingActionsService {
     );
   }
 
+  /**
+   * progress_draft (TZ tracker-redesign, 2026-06-20, Ф8/R17a): авто-черновик
+   * прогресса задачи (IssueProgressUpdate draftState='pending').
+   *   - approve/accept → ProgressUpdatesService.confirm (pending → accepted; «как есть»).
+   *   - reject         → ProgressUpdatesService.reject (pending → rejected + soft-delete).
+   * Бизнес-логику не дублируем — делегат на Ф6-сервис; владение/идемпотентность
+   * (tenantId, draftState==='pending') проверяются внутри сервиса (наружу 403/404).
+   */
+  private async confirmProgressDraft(input: ConfirmInput): Promise<void> {
+    if (input.resolution === 'reject') {
+      await this.progressUpdatesService.reject(
+        input.resourceId,
+        input.tenantId,
+        input.userId,
+      );
+      this.logger.log(
+        { tenantId: input.tenantId, userId: input.userId, resourceId: input.resourceId },
+        'pending-actions.confirm: авто-черновик прогресса отклонён',
+      );
+      return;
+    }
+    await this.progressUpdatesService.confirm(
+      input.resourceId,
+      {},
+      input.tenantId,
+      input.userId,
+    );
+    this.logger.log(
+      { tenantId: input.tenantId, userId: input.userId, resourceId: input.resourceId },
+      'pending-actions.confirm: авто-черновик прогресса принят (как есть)',
+    );
+  }
+
   // ──────────────────────────── helpers ───────────────────────────
 
   /** Роль пользователя в tenant (Membership) или null, если не член Org. */
@@ -623,6 +671,7 @@ export class PendingActionsService {
       probe: new Set(),
       task_closure: new Set(),
       task_review: new Set(),
+      progress_draft: new Set(),
     };
     for (const r of rows) {
       const bucket = out[r.source as PendingActionSource];

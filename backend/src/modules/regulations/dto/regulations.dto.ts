@@ -103,6 +103,12 @@ export interface ProcessStepDto {
   slaMinutes: number | null;
 }
 
+export interface RegulationNeedsAttentionDto {
+  missingOwner: boolean;
+  missingSteps: boolean;
+  unclearScope: boolean;
+}
+
 export interface RegulationDetailDto extends RegulationListItemDto {
   contentMd: string;
   sourceBlockIds: string[];
@@ -110,6 +116,7 @@ export interface RegulationDetailDto extends RegulationListItemDto {
   currentVersionId: string | null;
   steps?: ProcessStepDto[];
   supersedesId?: string | null;
+  needsAttention: RegulationNeedsAttentionDto;
 }
 
 export interface ListRegulationsResponse {

@@ -11,7 +11,7 @@ import type {
 import type { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import { ListRegulationsQuerySchema } from '../dto/regulations.dto';
 
-import { RegulationsService } from './regulations.service';
+import { computeRegulationNeedsAttention, RegulationsService } from './regulations.service';
 
 const FIXED_DATE = new Date('2026-01-01');
 
@@ -37,6 +37,95 @@ function makeRegulation(over: Record<string, unknown> = {}) {
     ...over,
   };
 }
+
+describe('computeRegulationNeedsAttention — тихий статус (К4)', () => {
+  it('process без шагов и без владельца → missingOwner + missingSteps', () => {
+    const res = computeRegulationNeedsAttention({
+      kind: 'process',
+      ownerPersonId: null,
+      scope: null,
+      steps: [],
+    });
+    expect(res).toEqual({
+      missingOwner: true,
+      missingSteps: true,
+      unclearScope: false,
+    });
+  });
+
+  it('process с владельцем и шагами → все флаги false', () => {
+    const res = computeRegulationNeedsAttention({
+      kind: 'process',
+      ownerPersonId: 'p-1',
+      scope: 'Отдел продаж',
+      steps: [{ id: 's-1' }],
+    });
+    expect(res).toEqual({
+      missingOwner: false,
+      missingSteps: false,
+      unclearScope: false,
+    });
+  });
+
+  it('регламент с владельцем и областью → все флаги false', () => {
+    const res = computeRegulationNeedsAttention({
+      kind: 'regulation',
+      ownerPersonId: 'p-1',
+      scope: 'Вся компания',
+    });
+    expect(res).toEqual({
+      missingOwner: false,
+      missingSteps: false,
+      unclearScope: false,
+    });
+  });
+
+  it('регламент без области → unclearScope (missingSteps не применим)', () => {
+    const res = computeRegulationNeedsAttention({
+      kind: 'regulation',
+      ownerPersonId: 'p-1',
+      scope: null,
+    });
+    expect(res).toEqual({
+      missingOwner: false,
+      missingSteps: false,
+      unclearScope: true,
+    });
+  });
+
+  it('политика advisory без области → unclearScope=false (как в эмиттере)', () => {
+    const res = computeRegulationNeedsAttention({
+      kind: 'policy',
+      ownerPersonId: 'p-1',
+      scope: null,
+      severity: 'advisory',
+    });
+    expect(res.unclearScope).toBe(false);
+  });
+
+  it('политика mandatory без области → unclearScope=true', () => {
+    const res = computeRegulationNeedsAttention({
+      kind: 'policy',
+      ownerPersonId: 'p-1',
+      scope: null,
+      severity: 'mandatory',
+    });
+    expect(res.unclearScope).toBe(true);
+  });
+
+  it('инструкция без области → unclearScope=false (scope не проверяется)', () => {
+    const res = computeRegulationNeedsAttention({
+      kind: 'instruction',
+      ownerPersonId: null,
+      scope: null,
+    });
+    expect(res).toEqual({
+      missingOwner: true,
+      missingSteps: false,
+      unclearScope: false,
+    });
+  });
+});
 
 describe('RegulationsService — trustTier в read-DTO', () => {
   let regFindMany: ReturnType<typeof vi.fn>;

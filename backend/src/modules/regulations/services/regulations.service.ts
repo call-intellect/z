@@ -22,15 +22,37 @@ import type {
   ConfirmRegulationBody,
   ListRegulationsQuery,
   ListRegulationsResponse,
+  PolicySeverityDto,
+  ProcessStepDto,
   RegulationDetailDto,
   RegulationHistoryResponse,
   RegulationKindDto,
   RegulationListItemDto,
+  RegulationNeedsAttentionDto,
   RegulationSourcesResponse,
   RegulationSummaryResponse,
   SupersedeRegulationBody,
   TrustTierDto,
 } from '../dto/regulations.dto';
+
+export function computeRegulationNeedsAttention(args: {
+  kind: RegulationKindDto;
+  ownerPersonId: string | null;
+  scope: string | null;
+  severity?: PolicySeverityDto | null;
+  steps?: Pick<ProcessStepDto, 'id'>[] | null;
+}): RegulationNeedsAttentionDto {
+  const missingOwner = args.ownerPersonId == null;
+  const missingSteps =
+    args.kind === 'process' && (args.steps == null || args.steps.length === 0);
+  const scopeChecked = args.kind === 'regulation' || args.kind === 'policy';
+  const policyScopeRelevant =
+    args.kind !== 'policy' ||
+    args.severity === 'mandatory' ||
+    args.severity === 'blocking';
+  const unclearScope = scopeChecked && policyScopeRelevant && args.scope == null;
+  return { missingOwner, missingSteps, unclearScope };
+}
 
 @Injectable()
 export class RegulationsService {
@@ -1056,12 +1078,20 @@ export class RegulationsService {
   private instructionToDetail(
     i: NonNullable<Awaited<ReturnType<PrismaService['instruction']['findFirst']>>>,
   ): RegulationDetailDto {
+    const base = this.instructionToListItem(i);
     return {
-      ...this.instructionToListItem(i),
+      ...base,
       contentMd: i.contentMd,
       sourceBlockIds: i.sourceBlockIds,
       personSubjectIds: i.personSubjectIds,
       currentVersionId: i.currentVersionId ?? null,
+      needsAttention: computeRegulationNeedsAttention({
+        kind: base.kind,
+        ownerPersonId: base.ownerPersonId,
+        scope: base.scope,
+        severity: base.severity,
+        steps: null,
+      }),
     };
   }
 
@@ -1069,13 +1099,21 @@ export class RegulationsService {
     r: NonNullable<Awaited<ReturnType<PrismaService['regulation']['findFirst']>>>,
     trustTier: TrustTierDto,
   ): RegulationDetailDto {
+    const base = this.regulationToListItem(r, trustTier);
     return {
-      ...this.regulationToListItem(r, trustTier),
+      ...base,
       contentMd: r.contentMd,
       sourceBlockIds: r.sourceBlockIds,
       personSubjectIds: r.personSubjectIds,
       currentVersionId: r.currentVersionId ?? null,
       supersedesId: r.supersedesId ?? null,
+      needsAttention: computeRegulationNeedsAttention({
+        kind: base.kind,
+        ownerPersonId: base.ownerPersonId,
+        scope: base.scope,
+        severity: base.severity,
+        steps: null,
+      }),
     };
   }
 
@@ -1094,19 +1132,27 @@ export class RegulationsService {
     trustTier: TrustTierDto,
   ): RegulationDetailDto {
     const base = this.processToListItem(p, trustTier);
+    const steps = p.steps.map((s) => ({
+      id: s.id,
+      order: s.order,
+      name: s.name,
+      description: s.description,
+      slaMinutes: s.slaMinutes,
+    }));
     return {
       ...base,
       contentMd: p.description ?? '',
       sourceBlockIds: p.sourceBlockIds,
       personSubjectIds: p.personSubjectIds,
       currentVersionId: p.currentVersionId ?? null,
-      steps: p.steps.map((s) => ({
-        id: s.id,
-        order: s.order,
-        name: s.name,
-        description: s.description,
-        slaMinutes: s.slaMinutes,
-      })),
+      steps,
+      needsAttention: computeRegulationNeedsAttention({
+        kind: base.kind,
+        ownerPersonId: base.ownerPersonId,
+        scope: base.scope,
+        severity: base.severity,
+        steps,
+      }),
     };
   }
 
@@ -1121,6 +1167,13 @@ export class RegulationsService {
       sourceBlockIds: p.sourceBlockIds,
       personSubjectIds: p.personSubjectIds,
       currentVersionId: p.currentVersionId ?? null,
+      needsAttention: computeRegulationNeedsAttention({
+        kind: base.kind,
+        ownerPersonId: base.ownerPersonId,
+        scope: base.scope,
+        severity: base.severity,
+        steps: null,
+      }),
     };
   }
 

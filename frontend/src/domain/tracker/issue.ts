@@ -50,6 +50,8 @@ export interface IssueApi {
   labelIds: string[];
   checklistTotalCount: number;
   checklistDoneCount: number;
+  commentCount?: number | null;
+  attachmentCount?: number | null;
   aiSuggestions?: IssueAiSuggestionsApi | null;
   previewQuote?: string | null;
   previewSourceRef?: PreviewSourceRefApi | null;
@@ -200,6 +202,8 @@ export interface Issue {
   childrenCount: number | null;
   checklistTotalCount: number;
   checklistDoneCount: number;
+  commentCount: number | null;
+  attachmentCount: number | null;
   provenancePreview?: ProvenanceRef | null;
   isOverdue: boolean;
   isCompleted: boolean;
@@ -354,6 +358,9 @@ export function issueFromApi(api: IssueApi): Issue {
       typeof api.childrenCount === "number" ? api.childrenCount : null,
     checklistTotalCount: api.checklistTotalCount ?? 0,
     checklistDoneCount: api.checklistDoneCount ?? 0,
+    commentCount: typeof api.commentCount === "number" ? api.commentCount : null,
+    attachmentCount:
+      typeof api.attachmentCount === "number" ? api.attachmentCount : null,
     provenancePreview: mapPreviewToProvenanceRef(
       api.previewQuote,
       api.previewSourceRef,
@@ -446,6 +453,14 @@ export function relativeDateLabel(date: Date | null): string | null {
     return `${weeks} нед. назад`;
   }
   return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+}
+
+export function startDateLabel(startDate: Date | null): string | null {
+  if (!startDate) return null;
+  return `с ${startDate.toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "short",
+  })}`;
 }
 
 export function dueDateLabel(dueDate: Date | null): string | null {

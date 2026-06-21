@@ -13,6 +13,7 @@ import type { ProbeEventJobData } from '../core-queue/queues';
 import { ProbeDispatcherWorker } from './probe-dispatcher.worker';
 import { ProbeFormulationService } from './probe-formulation.service';
 import type { ProbeService } from './probe.service';
+import type { SubjectMemoryService } from './subject-memory/subject-memory.service';
 
 interface Mocks {
   prisma: PrismaService;
@@ -158,6 +159,12 @@ function makeMocks(args: {
       voiceInputEnabled: true,
       responseClassifyMinConfidence: 0.5,
     },
+    subjectMemory: {
+      enabled: false,
+      retrieveBeforeAskEnabled: false,
+      matchMinSimilarity: 0.82,
+      suppressMinConfidence: 0.7,
+    },
     aiFeatures: { promptInjectionGuardEnabled: false },
     getDynamic: vi
       .fn()
@@ -215,7 +222,16 @@ function makeMocks(args: {
 }
 
 function makeWorker(m: Mocks): ProbeDispatcherWorker {
-  const formulation = new ProbeFormulationService(m.llm, m.metrics, m.cfg);
+  const subjectMemory = {
+    findApplicableRule: vi.fn().mockResolvedValue(null),
+    findRelevantRules: vi.fn().mockResolvedValue([]),
+  } as unknown as SubjectMemoryService;
+  const formulation = new ProbeFormulationService(
+    m.llm,
+    m.metrics,
+    m.cfg,
+    subjectMemory,
+  );
   return new ProbeDispatcherWorker(
     m.redis,
     m.prisma,

@@ -23,6 +23,7 @@ export const PROBE_FORMULATE_USER_TEMPLATE = (args: {
   isReask?: boolean;
   objectName?: string;
   objectKindRu?: string;
+  knownRules?: readonly string[];
 }): string => {
   const lines = [`Тип ситуации: ${args.reasonLabel}`, `Суть находки: ${args.message}`];
   if (args.contextCard) {
@@ -39,6 +40,13 @@ export const PROBE_FORMULATE_USER_TEMPLATE = (args: {
   }
   if (args.objectName) {
     lines.push(`Объект: «${args.objectName}»`);
+  }
+  if (args.knownRules && args.knownRules.length > 0) {
+    lines.push(
+      '',
+      'Что уже известно о компании (НЕ переспрашивай это, учитывай при формулировке):',
+    );
+    args.knownRules.forEach((r) => lines.push(`  - ${r}`));
   }
   lines.push(
     '',

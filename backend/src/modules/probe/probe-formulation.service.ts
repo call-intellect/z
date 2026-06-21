@@ -31,6 +31,7 @@ import {
   PROBE_VALUE_GATE_SYSTEM_PROMPT,
   PROBE_VALUE_GATE_USER,
 } from './prompts/probe-value-gate.prompt';
+import { SubjectMemoryService } from './subject-memory/subject-memory.service';
 
 interface FormulatedProbe {
   question: string;
@@ -56,9 +57,38 @@ export class ProbeFormulationService {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(SubjectMemoryService)
+    private readonly subjectMemory: SubjectMemoryService,
   ) {}
 
   async gate(probe: ProbeEvent): Promise<ProbeValueGateVerdict> {
+    try {
+      if (
+        this.cfg.subjectMemory.enabled &&
+        this.cfg.subjectMemory.retrieveBeforeAskEnabled
+      ) {
+        const ruleCtx = this.buildSubjectMemoryContext(probe);
+        const rule = await this.subjectMemory.findApplicableRule(
+          probe.tenantId,
+          ruleCtx,
+        );
+        if (rule) {
+          this.metrics.incSubjectMemoryProbeSuppressed({
+            reason: 'answered_by_memory',
+          });
+          return { ask: false, reason: 'answered_by_memory' };
+        }
+      }
+    } catch (err) {
+      this.logger.debug(
+        {
+          probeEventId: probe.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'subject-memory: retrieve-before-ask упал — продолжаю обычный гейт (fail-open)',
+      );
+    }
+
     let enabled: boolean;
     try {
       enabled = await this.cfg.getDynamic<boolean>(
@@ -155,6 +185,24 @@ export class ProbeFormulationService {
         this.toStringOrUndef(payload.objectName) ??
         this.toStringOrUndef(payload.contextCardTitle);
       const objectKindRu = this.toStringOrUndef(payload.objectKindRu);
+      let knownRules: string[] = [];
+      try {
+        if (this.cfg.subjectMemory.enabled) {
+          knownRules = await this.subjectMemory.findRelevantRules(
+            probe.tenantId,
+            this.buildSubjectMemoryContext(probe),
+            3,
+          );
+        }
+      } catch (err) {
+        this.logger.debug(
+          {
+            probeEventId: probe.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'subject-memory: подсказки правил недоступны — формулирую без них (fail-soft)',
+        );
+      }
       const guarded = applyInputGuards(
         PROBE_FORMULATE_SYSTEM_PROMPT,
         PROBE_FORMULATE_USER_TEMPLATE({
@@ -168,6 +216,7 @@ export class ProbeFormulationService {
           isReask,
           objectName,
           objectKindRu,
+          knownRules,
         }),
         { enabled: guardOn, injection: true },
       );
@@ -273,6 +322,19 @@ export class ProbeFormulationService {
       this.metrics.incProbeQualityJudged({ verdict: 'kept_on_fail' });
       return question;
     }
+  }
+
+  private buildSubjectMemoryContext(probe: ProbeEvent): string {
+    const payload = (probe.payload ?? {}) as Record<string, unknown>;
+    const reasonLabel =
+      PROBE_REASON_LABEL[probe.reason] ?? PROBE_REASON_LABEL_DEFAULT;
+    const objectName =
+      this.toStringOrUndef(payload.objectName) ??
+      this.toStringOrUndef(payload.contextCardTitle);
+    const message = this.toStringOrUndef(payload.message);
+    return [reasonLabel, objectName, message]
+      .filter((x): x is string => !!x)
+      .join(' — ');
   }
 
   private extractDataClass(payload: Record<string, unknown>): DataClass {

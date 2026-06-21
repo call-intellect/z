@@ -29,6 +29,7 @@ import {
 } from './prompts/probe-value-gate.prompt';
 import { PROBE_QUALITY_JUDGE_USER } from './prompts/probe-quality-judge.prompt';
 import { buildProbeDigestSummary } from './prompts/probe-digest.prompt';
+import type { SubjectMemoryService } from './subject-memory/subject-memory.service';
 
 const log = (...a: unknown[]) => console.log('[synthetic]', ...a);
 
@@ -118,6 +119,12 @@ function stubFormulationService(): ProbeFormulationService {
   const cfg = {
     getDynamic: vi.fn(async () => true),
     aiFeatures: { promptInjectionGuardEnabled: false },
+    subjectMemory: {
+      enabled: false,
+      retrieveBeforeAskEnabled: false,
+      matchMinSimilarity: 0.82,
+      suppressMinConfidence: 0.7,
+    },
   } as unknown as TypedConfigService;
   const metrics = {
     incProbeQualityJudged: vi.fn(),
@@ -159,7 +166,11 @@ function stubFormulationService(): ProbeFormulationService {
     }),
   } as unknown as LlmRouterService;
 
-  return new ProbeFormulationService(llm, metrics, cfg);
+  const subjectMemory = {
+    findApplicableRule: vi.fn().mockResolvedValue(null),
+    findRelevantRules: vi.fn().mockResolvedValue([]),
+  } as unknown as SubjectMemoryService;
+  return new ProbeFormulationService(llm, metrics, cfg, subjectMemory);
 }
 
 describe('СИНТЕТИКА — промпты probe собираются на реалистичных данных', () => {

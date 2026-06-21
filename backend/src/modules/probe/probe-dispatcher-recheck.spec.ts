@@ -13,6 +13,7 @@ import type { ProbeEventJobData } from '../core-queue/queues';
 import { ProbeDispatcherWorker } from './probe-dispatcher.worker';
 import { ProbeFormulationService } from './probe-formulation.service';
 import type { ProbeService } from './probe.service';
+import type { SubjectMemoryService } from './subject-memory/subject-memory.service';
 
 function buildProbe() {
   return {
@@ -79,6 +80,12 @@ function makeWorker(args: { decisionFindFirst: ReturnType<typeof vi.fn> }): {
   const cfg = {
     aiFeatures: { promptInjectionGuardEnabled: false },
     probe: {},
+    subjectMemory: {
+      enabled: false,
+      retrieveBeforeAskEnabled: false,
+      matchMinSimilarity: 0.82,
+      suppressMinConfidence: 0.7,
+    },
     getDynamic: vi
       .fn()
       .mockImplementation(async (_key: string, _env: unknown, fallback: unknown) => fallback),
@@ -90,7 +97,16 @@ function makeWorker(args: { decisionFindFirst: ReturnType<typeof vi.fn> }): {
     enqueueProbeEvent: vi.fn().mockResolvedValue({ jobId: 'probe_probe-recheck-1' }),
   } as unknown as CoreQueueService;
 
-  const formulation = new ProbeFormulationService(llm, metrics, cfg);
+  const subjectMemory = {
+    findApplicableRule: vi.fn().mockResolvedValue(null),
+    findRelevantRules: vi.fn().mockResolvedValue([]),
+  } as unknown as SubjectMemoryService;
+  const formulation = new ProbeFormulationService(
+    llm,
+    metrics,
+    cfg,
+    subjectMemory,
+  );
   const worker = new ProbeDispatcherWorker(
     redis,
     prisma,

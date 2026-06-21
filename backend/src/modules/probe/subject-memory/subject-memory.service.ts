@@ -41,6 +41,106 @@ export class SubjectMemoryService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
+  async findApplicableRule(
+    tenantId: string,
+    contextText: string,
+  ): Promise<{
+    id: string;
+    kind: SubjectMemoryKind;
+    ruleText: string;
+    similarity: number;
+  } | null> {
+    if (!contextText || contextText.trim().length === 0) return null;
+    const [vec] = await this.embeddings.embed([contextText]);
+    if (!vec) return null;
+    const vecLiteral = `[${vec.join(',')}]`;
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        id: string;
+        kind: SubjectMemoryKind;
+        ruleText: string;
+        confidence: number | string;
+        similarity: number | string;
+      }>
+    >(
+      `
+      SELECT id, kind, "ruleText", confidence::float AS confidence,
+             (1 - (embedding <=> $1::vector(1536))) AS similarity
+      FROM "subject_memory"
+      WHERE "tenantId" = $2
+        AND status IN ('active', 'canary')
+        AND embedding IS NOT NULL
+      ORDER BY embedding <=> $1::vector(1536) ASC
+      LIMIT 1
+      `,
+      vecLiteral,
+      tenantId,
+    );
+    const row = rows[0];
+    if (!row) return null;
+    const similarity =
+      typeof row.similarity === 'string'
+        ? Number(row.similarity)
+        : row.similarity;
+    const confidence =
+      typeof row.confidence === 'string'
+        ? Number(row.confidence)
+        : row.confidence;
+    if (!Number.isFinite(similarity) || !Number.isFinite(confidence)) {
+      return null;
+    }
+    if (similarity < this.cfg.subjectMemory.matchMinSimilarity) return null;
+    if (confidence < this.cfg.subjectMemory.suppressMinConfidence) return null;
+    try {
+      await this.prisma.subjectMemory.update({
+        where: { id: row.id },
+        data: { appliedCount: { increment: 1 }, lastAppliedAt: new Date() },
+      });
+      this.metrics.incSubjectMemoryApply({ status: 'suppressed' });
+    } catch (err) {
+      this.logger.debug(
+        { id: row.id, err: err instanceof Error ? err.message : String(err) },
+        'subject-memory: пометка применения правила не удалась (best-effort)',
+      );
+    }
+    return { id: row.id, kind: row.kind, ruleText: row.ruleText, similarity };
+  }
+
+  async findRelevantRules(
+    tenantId: string,
+    contextText: string,
+    limit: number,
+  ): Promise<string[]> {
+    if (!contextText || contextText.trim().length === 0) return [];
+    const [vec] = await this.embeddings.embed([contextText]);
+    if (!vec) return [];
+    const vecLiteral = `[${vec.join(',')}]`;
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ ruleText: string; similarity: number | string }>
+    >(
+      `
+      SELECT "ruleText", (1 - (embedding <=> $1::vector(1536))) AS similarity
+      FROM "subject_memory"
+      WHERE "tenantId" = $2
+        AND status IN ('active', 'canary')
+        AND embedding IS NOT NULL
+      ORDER BY embedding <=> $1::vector(1536) ASC
+      LIMIT $3
+      `,
+      vecLiteral,
+      tenantId,
+      Math.max(1, Math.min(10, limit)),
+    );
+    const min = this.cfg.subjectMemory.matchMinSimilarity;
+    return rows
+      .filter((r) => {
+        const s =
+          typeof r.similarity === 'string' ? Number(r.similarity) : r.similarity;
+        return Number.isFinite(s) && s >= min;
+      })
+      .map((r) => r.ruleText);
+  }
+
   async deriveRuleFromProbeResponse(args: {
     tenantId: string;
     probeId: string;

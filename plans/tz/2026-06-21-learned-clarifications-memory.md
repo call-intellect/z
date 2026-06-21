@@ -156,7 +156,7 @@ model SubjectMemory {
 **Acceptance:** unit-тест: probe-ответ → создан `SubjectMemory{status:shadow}` с непустым `ruleText`+`embedding`; тест supersede: два правила, остаётся новое по `occurredAt`, старое `superseded`; `subject_memory_rule_extracted_total` инкрементится. typecheck/lint/build зелёные.
 **Закрывает:** R-захват сигнала, Р4, Р6.
 
-### Фаза 3 — Retrieve-before-ask в gate() `[ ]`
+### Фаза 3 — Retrieve-before-ask в gate() `[x]`
 **Цель:** при наличии активного правила probe не задаётся.
 **Файлы:** `subject-memory.service.ts` (+`findApplicableRule(tenantId, contextText)`: embed → pgvector cosine top-1 по `status IN (active,canary)` и `kind`, фильтр `similarity ≥ matchMinSimilarity && confidence ≥ suppressMinConfidence`); хук в `ProbeFormulationService.gate()` ([probe-formulation.service.ts:61](../../backend/src/modules/probe/probe-formulation.service.ts#L61)) — ДО LLM-гейта: если правило найдено → `{ask:false, reason:'answered_by_memory'}` + `subject_memory_probe_suppressed_total`. Подмешать активные правила в `PROBE_FORMULATE_USER_TEMPLATE` как блок «что уже знаем» (для случая, когда вопрос всё же задаётся).
 **Что НЕ входит:** активация (правило в shadow подавлять НЕ должно — только active/canary).

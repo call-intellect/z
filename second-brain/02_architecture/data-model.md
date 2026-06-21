@@ -951,6 +951,8 @@ sentimentDeterminedAt DateTime?
 
 ⚠ **Privacy:** поля `sentiment*` отдаются только ролям `coo` / `owner` / `admin` / `super_admin`. Маппер `stripSentimentForRole` (см. `backend/src/modules/operations/dto/daily-check-in.dto.ts`) удаляет их у остальных. В `/me/check-ins` маппер вызывается с `role=null` всегда — сотрудник своего настроения никогда не увидит.
 
+> **`DailyCheckInSource` += 5 значений + `sourceContributions` (Универсальный фиксатор, 2026-06-21).** Enum `DailyCheckInSource` расширен `meeting`/`bitrix`/`chatbox`/`email`/`phone_call` (было `cron_prompted`/`self_initiated`/`manual`) — чтобы чек-ин фиксировался из любого источника, а не только лички Telegram/веб-кабинета. Поле `DailyCheckIn.sourceContributions Json?` — массив вкладов `Array<{source, at, rank}>` для audit + merge (победитель содержимого = максимальный `sourceRank`; явный личный ответ перепиской не понижается). Миграция `20260621104106_daily_checkin_universal_sources` (аддитивная). ТЗ [`plans/tz/2026-06-21-universal-daily-checkin-fixator-tz.md`](../../plans/tz/2026-06-21-universal-daily-checkin-fixator-tz.md); детектор и cron — [[../01_projects/ai-jobs]] §«Универсальный фиксатор чек-инов», [[../01_projects/workers-queues]].
+
 **`WeeklyOperationsDigest` (новая):**
 
 ```prisma

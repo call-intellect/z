@@ -369,7 +369,7 @@ model IssueTemplate {
 **Что входит (R20):** миграции; cron материализации (`nextRunAt<=now` → создать `Issue` из `config` → сдвинуть `nextRunAt`, идемпотентность по `lastRunAt`-дате); создание задачи из шаблона (кнопка в проекте); CRUD повторений/шаблонов. Кадэнс cron → AdminSetting (`tracker.recurrenceCronCadence`) — в `TrackerSettingsClient` группа «Повторения» на каркасе `DomainSettings` (Д2), не отдельная форма.
 **Что НЕ входит:** сложный RRULE (только daily/weekly/monthly+interval в MVP); перенос вложений в копию.
 **Acceptance:** повторение с `nextRunAt` в прошлом материализует ровно одну задачу, повторный прогон в тот же день — no-op; «создать из шаблона» создаёт задачу с чек-листом из `config`; spec cron зелёный; `prod-deploy-log.md` Шаг 12.
-**Closes:** R20.
+**Closes:** R20. — [x] **Реализовано 2026-06-21** (миграция `20260621073857_issue_recurrence_templates`; модели `IssueRecurrence`/`IssueTemplate`; `RecurrenceMaterializeCron` идемпотентен по `lastRunAt`-дате + Redis-dedup; rrule свой минимальный `{freq,interval,byweekday?}` без либы; контроллеры `IssueTemplatesController` (+`/instantiate`) и `IssueRecurrencesController`; `IssueMaterializeService`; крутилки `tracker.recurrenceEnabled`/`tracker.recurrenceCronCadence` в registry+seed+TrackerSettingsClient; FE api→domain→hook→секции в настройках проекта + кнопка «Создать из шаблона»; спеки cron+materialize зелёные; typecheck/lint/build обеих сторон зелёные).
 
 ## Фаза 12 — Worklog (учёт времени под флагом проекта)
 **Цель:** датированный учёт минут под существующим `Project.timeTrackingEnabled`.

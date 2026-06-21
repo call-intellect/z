@@ -258,6 +258,8 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.progressAutoDraftCron', z.string().min(1)],
   ['tracker.activityDigestEnabled', z.boolean()],
   ['tracker.automationsEnabled', z.boolean()],
+  ['tracker.recurrenceEnabled', z.boolean()],
+  ['tracker.recurrenceCronCadence', z.string().min(1)],
   ['conversational.telegramDigestHourLocal', z.number().int().min(0).max(23)],
 
   ['retention.defaultDays', POSITIVE_INT],

@@ -8,13 +8,14 @@ import { AutomationRulesController } from './controllers/automation-rules.contro
 import { BoardsController } from './controllers/boards.controller';
 import { ChecklistsController } from './controllers/checklists.controller';
 import { CommentsController } from './controllers/comments.controller';
-import { ProgressUpdatesController } from './controllers/progress-updates.controller';
-import { IssueFieldsController } from './controllers/issue-fields.controller';
 import { CyclesController } from './controllers/cycles.controller';
 import { DocumentUploadsController } from './controllers/document-uploads.controller';
 import { HolidaysController } from './controllers/holidays.controller';
 import { ImportsController } from './controllers/imports.controller';
 import { IntakeController } from './controllers/intake.controller';
+import { IssueFieldsController } from './controllers/issue-fields.controller';
+import { IssueRecurrencesController } from './controllers/issue-recurrences.controller';
+import { IssueTemplatesController } from './controllers/issue-templates.controller';
 import { IssuesController } from './controllers/issues.controller';
 import { LabelsController } from './controllers/labels.controller';
 import { MeInboxController } from './controllers/me-inbox.controller';
@@ -22,6 +23,7 @@ import { MeTasksController } from './controllers/me-tasks.controller';
 import { MyMentionsController } from './controllers/my-mentions.controller';
 import { OrgIssuesController } from './controllers/org-issues.controller';
 import { OverviewController } from './controllers/overview.controller';
+import { ProgressUpdatesController } from './controllers/progress-updates.controller';
 import { ProjectDocumentsController } from './controllers/project-documents.controller';
 import { ProjectsController } from './controllers/projects.controller';
 import { RelationsController } from './controllers/relations.controller';
@@ -33,14 +35,12 @@ import { TrackerWebhooksController } from './controllers/webhooks.controller';
 import { TrackerGateway } from './gateways/tracker.gateway';
 import { ActivityRecorderService } from './services/activity-recorder.service';
 import { AssigneeResolverService } from './services/assignee-resolver.service';
+import { AttachmentsService } from './services/attachments.service';
 import { AutomationEngineService } from './services/automation-engine.service';
 import { AutomationRulesService } from './services/automation-rules.service';
-import { AttachmentsService } from './services/attachments.service';
 import { BoardsService } from './services/boards.service';
 import { ChecklistsService } from './services/checklists.service';
 import { CommentsService } from './services/comments.service';
-import { ProgressUpdatesService } from './services/progress-updates.service';
-import { IssueFieldsService } from './services/issue-fields.service';
 import { CycleMeetingsService } from './services/cycle-meetings.service';
 import { CyclesService } from './services/cycles.service';
 import { HolidayService } from './services/holiday.service';
@@ -49,15 +49,20 @@ import { IntakeAutoTriageQueueService } from './services/intake-auto-triage-queu
 import { IntakeService } from './services/intake.service';
 import { IntegrationsStatusService } from './services/integrations-status.service';
 import { IssueActivityDigestService } from './services/issue-activity-digest.service';
+import { IssueFieldsService } from './services/issue-fields.service';
 import { IssueGoalSuggestService } from './services/issue-goal-suggest.service';
 import { IssueInferFieldsService } from './services/issue-infer-fields.service';
+import { IssueMaterializeService } from './services/issue-materialize.service';
 import { IssueMeetingsService } from './services/issue-meetings.service';
+import { IssueRecurrencesService } from './services/issue-recurrences.service';
+import { IssueTemplatesService } from './services/issue-templates.service';
 import { IssuesService } from './services/issues.service';
 import { LabelsService } from './services/labels.service';
 import { MeTasksService } from './services/me-tasks.service';
 import { MeetingExtractActionsService } from './services/meeting-extract-actions.service';
 import { MyMentionsService } from './services/my-mentions.service';
 import { OverviewService } from './services/overview.service';
+import { ProgressUpdatesService } from './services/progress-updates.service';
 import { ProjectDocumentsService } from './services/project-documents.service';
 import { ProjectsFromTemplateService } from './services/projects-from-template.service';
 import { ProjectsService } from './services/projects.service';
@@ -84,6 +89,7 @@ import { IntakeAutoTriageWorker } from './workers/intake-auto-triage.worker';
 import { IssueOverdueDetectorCron } from './workers/issue-overdue-detector.cron';
 import { IssueStateGaugeCron } from './workers/issue-state-gauge.cron';
 import { ProgressAutoDraftCron } from './workers/progress-auto-draft.cron';
+import { RecurrenceMaterializeCron } from './workers/recurrence-materialize.cron';
 import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
 
 @Module({
@@ -99,6 +105,8 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     IssueFieldsController,
     AutomationRulesController,
     ActivityDigestController,
+    IssueTemplatesController,
+    IssueRecurrencesController,
     LabelsController,
     TrackerWebhooksController,
     TeamTemplatesController,
@@ -141,6 +149,9 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     CommentsService,
     ProgressUpdatesService,
     IssueFieldsService,
+    IssueMaterializeService,
+    IssueTemplatesService,
+    IssueRecurrencesService,
     AutomationRulesService,
     AutomationEngineService,
     LabelsService,
@@ -162,6 +173,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     IssueStateGaugeCron,
     GoalAlignmentLowCron,
     ProgressAutoDraftCron,
+    RecurrenceMaterializeCron,
     IssueInferFieldsService,
     IssueGoalSuggestService,
     MeetingExtractActionsService,

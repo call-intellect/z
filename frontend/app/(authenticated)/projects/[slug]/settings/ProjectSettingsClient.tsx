@@ -18,6 +18,7 @@ import { AssigneeAvatar } from "@/ui/tracker";
 import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
 
 import { ProjectAutomationsSection } from "./ProjectAutomationsSection";
+import { ProjectRecurrencesSection } from "./ProjectRecurrencesSection";
 
 export function ProjectSettingsClient({ slug }: { slug: string }) {
   const { currentOrgId } = useAuth();
@@ -60,6 +61,13 @@ export function ProjectSettingsClient({ slug }: { slug: string }) {
 
       {currentOrgId && project?.id ? (
         <ProjectAutomationsSection
+          orgId={currentOrgId}
+          projectId={project.id}
+        />
+      ) : null}
+
+      {currentOrgId && project?.id ? (
+        <ProjectRecurrencesSection
           orgId={currentOrgId}
           projectId={project.id}
         />

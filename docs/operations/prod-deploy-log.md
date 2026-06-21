@@ -122,6 +122,21 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-21 — Трекер Волна 3 Ф11: повторяющиеся задачи + шаблоны задач (IssueRecurrence / IssueTemplate)
+
+> ТЗ `plans/tz/2026-06-20-tracker-card-redesign-and-progress.md` Фаза 11 (R20). Регулярные задачи и шаблоны (паритет Bitrix24/Asana). `IssueTemplate` — заготовка задачи (config-снимок: title/description/checklist/labels/priority/estimate), создаётся вручную кнопкой «Создать из шаблона». `IssueRecurrence` — материализует задачу по расписанию (`rrule` = сериализованный `{ freq:'daily'|'weekly'|'monthly', interval, byweekday? }`, без библиотеки rrule). Cron `RecurrenceMaterializeCron` (`@Cron('0 6 * * *')`): `nextRunAt<=now & enabled` → создать `Issue` из config (через `IssuesService.create` + чек-листы) → сдвинуть `nextRunAt` по rrule → проставить `lastRunAt`. **Идемпотентность по дате `lastRunAt`** (повторный прогон в тот же день — no-op) + Redis-dedup `recurrence_materialize:<id>:<dayKey>`.
+>
+> **1 миграция (авто, аддитивная). 2 крутилки (seed, уже в STEPS): kill-switch `tracker.recurrenceEnabled` + кадэнс `tracker.recurrenceCronCadence`. Docker rebuild backend+frontend. Новых ENV/patch/backfill/LLM-taskType нет.**
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up`): `20260621073857_issue_recurrence_templates` — 2 новые таблицы: `IssueRecurrence` (`rrule String`, `config Json`, `nextRunAt`, `lastRunAt?`, `enabled Boolean default true`, индекс `(tenantId, enabled, nextRunAt)`) + `IssueTemplate` (`config Json`, `projectId String?` = null на всю Org, индекс `(tenantId, projectId)`). Аддитивная (CREATE TABLE), без потери данных. **В STEPS не регистрируется** (миграция схемы).
+- **Шаг 7 — Seed (идемпотентный, уже в STEPS `phase:'seed-base'`):** `seed-admin-setting-tracker.ts` дополнен ключами `tracker.recurrenceEnabled` (boolean, default **true**, Ship-On kill-switch, severity `high`) + `tracker.recurrenceCronCadence` (string, default `'0 6 * * *'`, severity `low`). Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Отдельной строки STEPS не нужно — сид уже зарегистрирован.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (контроллеры `IssueTemplatesController` 5 эндпоинтов `GET/POST /api/v1/issue-templates`, `PATCH/DELETE /api/v1/issue-templates/:id`, `POST /api/v1/issue-templates/:id/instantiate`; `IssueRecurrencesController` 4 эндпоинта `GET/POST /api/v1/issue-recurrences`, `PATCH/DELETE /api/v1/issue-recurrences/:id`; новый cron `RecurrenceMaterializeCron`). Frontend (секция «Шаблоны задач» + «Повторяющиеся задачи» в настройках проекта + группа «Повторения» в `/admin/tracker`).
+- **Шаг 12 — Smoke** (после выката): Swagger `/api/docs` теги `tracker / issue-templates` (5 эндпоинтов) и `tracker / issue-recurrences` (4) видны; создать шаблон с чек-листом → «Создать из шаблона» → задача создаётся с чек-листом; создать повторение с `nextRunAt` в прошлом → cron материализует **ровно одну** задачу и сдвигает `nextRunAt` в будущее; повторный прогон в тот же день — no-op (лог `alreadyRanToday`/`dedupSkipped`); рубильник `tracker.recurrenceEnabled=false` → cron `выключен — пропуск`; чужой tenant → `tenant_required`/403. Cron grep: `grep -r "RecurrenceMaterializeCron" dist/` после rebuild.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-21 — Трекер Волна 3 Ф10: пользовательские автоматизации (IssueAutomationRule)
 
 > ТЗ `plans/tz/2026-06-20-tracker-card-redesign-and-progress.md` Фаза 10 (R19). Правила «если — то» по задаче (паритет Jira Automation/Asana Rules): триггеры `status_changed|assigned|created|due_approaching|label_added`, действия `set_status|assign|add_label|set_priority|notify|create_subtask`. Движок `AutomationEngineService` подписан на `tracker.event_occurred` (EventEmitter2), применяет действия как `IssueActivity actorType='system' agentName='automation'`, защита от рекурсии по `appliedRuleIds`+`depth` (MAX_DEPTH=5).

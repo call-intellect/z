@@ -61,6 +61,24 @@ const SEEDS: SettingSeed[] = [
     description:
       'Рубильник пользовательских автоматизаций трекера (правила if-this-then-that). По умолчанию вкл (Ship-On). Выкл — движок не применяет ни одно правило.',
   },
+  {
+    key: 'tracker.recurrenceEnabled',
+    value: true,
+    category: 'tracker',
+    section: 'workers',
+    severity: 'high',
+    description:
+      'Рубильник воркера материализации повторяющихся задач. По умолчанию вкл (Ship-On). Выкл — повторения не создают новые задачи.',
+  },
+  {
+    key: 'tracker.recurrenceCronCadence',
+    value: '0 6 * * *',
+    category: 'tracker',
+    section: 'workers',
+    severity: 'low',
+    description:
+      'Кадэнс (cron) воркера материализации повторяющихся задач. По умолчанию ежедневно в 06:00 UTC.',
+  },
 ];
 
 interface Counters {

@@ -9546,6 +9546,36 @@ model IssueAutomationRule {
   @@index([tenantId, projectId, enabled])
 }
 
+/// Повторение: материализует новую задачу по расписанию из снимка config.
+model IssueRecurrence {
+  id              String    @id @default(cuid())
+  tenantId        String
+  projectId       String
+  templateIssueId String?
+  rrule           String    /// { freq:'daily'|'weekly'|'monthly', interval, byweekday? } сериализованный
+  config          Json      /// снимок: title, description, checklist[], assignees[], labels[], priority, estimate
+  nextRunAt       DateTime
+  lastRunAt       DateTime?
+  enabled         Boolean   @default(true)
+  createdById     String
+  createdAt       DateTime  @default(now())
+
+  @@index([tenantId, enabled, nextRunAt])
+}
+
+/// Шаблон задачи (ручное создание из шаблона).
+model IssueTemplate {
+  id          String   @id @default(cuid())
+  tenantId    String
+  projectId   String?
+  name        String
+  config      Json     /// { title, description, checklist[], labels[], priority, estimate, assigneeRole? }
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, projectId])
+}
+
 /// SLA-политика деска поддержки (синглтон per вендор-Org для v1). TZ support-desk Ф1.
 model SupportSlaPolicy {
   id                String   @id @default(cuid())

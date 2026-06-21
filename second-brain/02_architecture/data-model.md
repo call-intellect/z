@@ -806,6 +806,14 @@ erDiagram
 ### IssueVersion (исторические снимки)
 - `issueId, versionNumber, snapshot Json` (полный снимок Issue + связей), `createdByUserId`.
 
+### Трекер Волна 2/3 — паритет (TZ `tracker-card-redesign-and-progress`)
+- **IssueProgressUpdate** (Ф5, миграция `issue_progress_update`) — датированное обновление прогресса (Asana/Linear Project Update-стиль): `health String` (on_track/at_risk/off_track), `body @db.Text`, `doneText?/nextText?`, `authorType @default("human")` (human/ai_agent), `draftState?` (null=опубликовано|pending|accepted|edited|rejected — для авто-черновика), провенанс `sourceBlockIds/evidenceQuote/confidence`, снимок `previewQuote/previewSourceRef`. Авто-черновик готовит `ProgressAutoDraftCron`.
+- **IssueFieldDef / IssueFieldValue** (Ф9, миграция `issue_custom_fields`) — кастом-поля задач: `IssueFieldDef` (`type`, `config Json`, фракционный `order Decimal(20,10)`, `projectId?`=null на всю Org) + `IssueFieldValue` (`value Json`, `@@unique(issueId, fieldId)`).
+- **IssueAutomationRule** (Ф10, миграция `issue_automation_rules`) — правила «если — то»: `trigger/conditions/actions Json`, `enabled @default(true)`, `projectId?`=null на всю Org. Движок `AutomationEngineService` на `tracker.event_occurred`.
+- **IssueRecurrence / IssueTemplate** (Ф11, миграция `20260621073857_issue_recurrence_templates`):
+  - `IssueRecurrence` — материализация задачи по расписанию: `rrule String` (сериализованный `{ freq:'daily'|'weekly'|'monthly', interval, byweekday? }`, **без библиотеки rrule**), `config Json` (снимок задачи), `nextRunAt`, `lastRunAt?`, `enabled @default(true)`, `projectId`, индекс `@@index([tenantId, enabled, nextRunAt])`. Cron `RecurrenceMaterializeCron` (`@Cron('0 6 * * *')`, kill-switch `tracker.recurrenceEnabled`): `nextRunAt<=now & enabled` → `Issue` из config → сдвиг `nextRunAt` по rrule → `lastRunAt`; идемпотентность по дате `lastRunAt` + Redis-dedup.
+  - `IssueTemplate` — заготовка задачи для ручного создания: `config Json` (title/description/checklist/labels/priority/estimate/assigneeRole?), `projectId?`=null на всю Org, индекс `@@index([tenantId, projectId])`. Создание задачи из шаблона — `POST /api/v1/issue-templates/:id/instantiate` (через `IssueMaterializeService`).
+
 ### IntakeIssue (входящие задачи перед триажем)
 - `tenantId, projectId?` (если уже определён, иначе AI suggest).
 - `status @default("pending")` (pending/snoozed/accepted/rejected/duplicate), `source` (in_app/email/telegram/checkin/meeting/api/concierge/mobile_voice), `sourceEmail?, externalSource?, externalId?`.

@@ -70,6 +70,29 @@ const GROUPS: SettingsGroup[] = [
       },
     ],
   },
+  {
+    title: "Повторения",
+    description:
+      "Повторяющиеся задачи материализуются по расписанию из снимка-шаблона.",
+    specs: [
+      {
+        key: "tracker.recurrenceEnabled",
+        label: "Повторяющиеся задачи",
+        description:
+          "Рубильник воркера материализации повторений. Выкл — новые задачи из повторений не создаются. По умолчанию вкл (Ship-On).",
+        schema: z.boolean(),
+        defaultValue: true,
+      },
+      {
+        key: "tracker.recurrenceCronCadence",
+        label: "Расписание (cron) повторений",
+        description:
+          "Когда запускается воркер материализации повторяющихся задач. По умолчанию ежедневно в 06:00 UTC.",
+        schema: z.string().min(1),
+        defaultValue: "0 6 * * *",
+      },
+    ],
+  },
 ];
 
 export function TrackerSettingsClient(): JSX.Element {

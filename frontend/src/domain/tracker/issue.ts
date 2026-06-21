@@ -31,7 +31,9 @@ export interface IssueApi {
   dueDate: string | null;
   completedAt: string | null;
   cycleId: string | null;
+  cycleName?: string | null;
   goalId: string | null;
+  goalName?: string | null;
   boardId: string | null;
   meetingId: string | null;
   linkedMeetingIds: string[];
@@ -180,7 +182,9 @@ export interface Issue {
   dueDate: Date | null;
   completedAt: Date | null;
   cycleId: string | null;
+  cycleName: string | null;
   goalId: string | null;
+  goalName: string | null;
   boardId: string | null;
   meetingId: string | null;
   linkedMeetingIds: string[];
@@ -336,7 +340,9 @@ export function issueFromApi(api: IssueApi): Issue {
     dueDate,
     completedAt,
     cycleId: api.cycleId,
+    cycleName: api.cycleName ?? null,
     goalId: api.goalId,
+    goalName: api.goalName ?? null,
     boardId: api.boardId ?? null,
     meetingId: api.meetingId,
     linkedMeetingIds: api.linkedMeetingIds ?? [],

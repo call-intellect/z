@@ -1957,6 +1957,8 @@ export class IssuesService {
         assignees: { select: { userId: true } },
         labels: { select: { labelId: true } },
         project: { select: { slug: true, name: true } },
+        cycle: { select: { name: true } },
+        goal: { select: { name: true } },
       },
     });
     if (!issue) {
@@ -1973,6 +1975,8 @@ export class IssuesService {
       assignees: Array<{ userId: string }>;
       labels: Array<{ labelId: string }>;
       project?: { slug: string; name: string } | null;
+      cycle?: { name: string } | null;
+      goal?: { name: string } | null;
     },
   ): IssueResponseDto {
     return {
@@ -1996,7 +2000,9 @@ export class IssuesService {
       dueDate: issue.dueDate?.toISOString() ?? null,
       completedAt: issue.completedAt?.toISOString() ?? null,
       cycleId: issue.cycleId,
+      cycleName: issue.cycle?.name ?? null,
       goalId: issue.goalId,
+      goalName: issue.goal?.name ?? null,
       // Tracker Boards (2026-05-27).
       boardId: issue.boardId,
       meetingId: issue.meetingId,

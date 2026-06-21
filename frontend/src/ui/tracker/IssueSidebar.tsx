@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   Calendar,
+  CheckCircle2,
   Flag,
   Tag,
   Target,
@@ -60,6 +61,14 @@ export function IssueSidebar({
         </span>
       </Row>
 
+      <Row icon={<Calendar size={14} />} label="Срок начала">
+        <span className="text-fg-primary">
+          {issue.startDate
+            ? issue.startDate.toLocaleDateString("ru-RU")
+            : "—"}
+        </span>
+      </Row>
+
       <Row icon={<Flag size={14} />} label="Срок">
         <span
           className={due && issue.isOverdue ? "text-danger" : "text-fg-primary"}
@@ -68,6 +77,14 @@ export function IssueSidebar({
         </span>
       </Row>
 
+      {issue.completedAt ? (
+        <Row icon={<CheckCircle2 size={14} />} label="Выполнена">
+          <span className="text-success">
+            {issue.completedAt.toLocaleDateString("ru-RU")}
+          </span>
+        </Row>
+      ) : null}
+
       <Row icon={<Tag size={14} />} label="Метки">
         <span className="text-fg-primary">
           {issue.labelIds.length > 0 ? `${issue.labelIds.length} меток` : "—"}
@@ -75,11 +92,11 @@ export function IssueSidebar({
       </Row>
 
       <Row icon={<Layers size={14} />} label="Спринт">
-        <span className="text-fg-primary">{issue.cycleId ?? "—"}</span>
+        <span className="text-fg-primary">{issue.cycleName ?? "—"}</span>
       </Row>
 
       <Row icon={<Target size={14} />} label="Цель">
-        <span className="text-fg-primary">{issue.goalId ?? "—"}</span>
+        <span className="text-fg-primary">{issue.goalName ?? "—"}</span>
       </Row>
 
       <Row icon={<Calendar size={14} />} label="Создана">

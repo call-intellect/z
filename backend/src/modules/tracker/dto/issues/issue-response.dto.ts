@@ -21,7 +21,9 @@ export interface IssueResponseDto {
   dueDate: string | null;
   completedAt: string | null;
   cycleId: string | null;
+  cycleName?: string | null;
   goalId: string | null;
+  goalName?: string | null;
   boardId: string | null;
   meetingId: string | null;
   linkedMeetingIds: string[];

@@ -110,7 +110,7 @@ async applyAutoSummary(args: {
 **Acceptance:** `grep summaryJson schema.prisma`; миграция создаётся; `update({summary, summaryPinned})` сохраняет; `applyAutoSummary` при `pinned=true` → `{applied:false,reason:'pinned'}` (unit); typecheck/generate зелёные; сид идемпотентен.
 **Закрывает:** модель + крутилки.
 
-### Фаза 2 — Агент-компилятор summary из графа `[ ]`
+### Фаза 2 — Агент-компилятор summary из графа `[x]`
 **Файлы (new):** `company-summary-compiler.cron.ts` (или расширить `CompanyProfileBuilderCron`) — `@Cron`, интервал `summaryRebuildHours`; читает топ-блоки графа по tenantId (Entity/IdeaBlock/Decision/Goal), отбирает свежие по `max(occurredAt)` (Р4); промпт `company-summary-compile.prompt.ts` (cache-friendly) → `{contentMd}`; зовёт `applyAutoSummary` с `sourceBlockIds`+`confidence`; если блоков < `summaryMinSourceBlocks` → пропуск (cold-start). taskType `company-summary-compile` (capable, DeepSeek V4 Pro).
 **Acceptance:** unit: при ≥порога блоков → `CompanyProfile.summaryJson` непуст, `sourceBlockIds` заполнены, `confidence` 0..1; при pinned → не перетёрто; при < порога → пропуск + метрика; kill-switch off → cron no-op. typecheck/lint/build.
 **Закрывает:** авто-сбор, Р1, Р4.

@@ -122,6 +122,19 @@ const SEEDS: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
     ],
   },
+  {
+    taskType: 'company-summary-compile',
+    playbookSection: '§2.1 capable JSON compile + company-profile-autobuild',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' },
+      {
+        tier: 'secondary',
+        providerName: 'openai-via-proxy',
+        model: 'gpt-5.4',
+      },
+      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
+    ],
+  },
 ];
 
 interface SeedStats {

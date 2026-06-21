@@ -645,6 +645,7 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── Probe Фаза 4 (2026-06-20) — LLM-гейт ценности probe-вопроса ──
   private probeValueGateTotal!: Counter<'verdict'>;
   private subjectMemoryRuleExtractedTotal!: Counter<'kind'>;
+  private companySummaryCompileTotal!: Counter<'result'>;
   private subjectMemoryProbeSuppressedTotal!: Counter<'reason'>;
   private subjectMemoryRuleActivatedTotal!: Counter<never>;
   private subjectMemoryRuleRolledBackTotal!: Counter<'cause'>;
@@ -2715,6 +2716,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'subject_memory_rule_extracted_total',
       help: 'Слой выученной памяти: выведено правил по виду (kind).',
       labelNames: ['kind'] as const,
+    });
+    this.companySummaryCompileTotal = this.getOrCreateCounter({
+      name: 'company_summary_compile_total',
+      help: 'Авто-профиль компании: проход компилятора summary по тенанту (result): compiled | pinned | skipped_pinned | skipped_fresh | skipped_cold_start | error.',
+      labelNames: ['result'] as const,
     });
     this.subjectMemoryProbeSuppressedTotal = this.getOrCreateCounter({
       name: 'subject_memory_probe_suppressed_total',
@@ -6322,6 +6328,10 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incSubjectMemoryRuleExtracted(args: { kind: string }): void {
     this.subjectMemoryRuleExtractedTotal.inc({ kind: args.kind });
+  }
+
+  incCompanySummaryCompile(args: { result: string }): void {
+    this.companySummaryCompileTotal.inc({ result: args.result });
   }
 
   incSubjectMemoryProbeSuppressed(args: { reason: string }): void {

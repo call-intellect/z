@@ -304,6 +304,7 @@ const STEPS: Step[] = [
     'compile-org-document',
     'conflict-arbiter',
     'clone-method',
+    'day-signal',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,

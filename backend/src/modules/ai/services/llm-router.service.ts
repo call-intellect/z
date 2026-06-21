@@ -322,6 +322,7 @@ export type LlmTaskType =
   | 'checkin-parse'
   | 'operations-summary'
   | 'checkin-sentiment'
+  | 'day-signal-detect'
   // ТЗ 2026-05-25 LLM-architecture §6 — batch-вариант checkin-sentiment.
   // 10 чек-инов в одном вызове через tool `submit_batch_sentiments`.
   // Эксперимент 4: точность 100% vs 96% single, в 2× дешевле, на 20% быстрее.
@@ -785,6 +786,7 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'operations-summary',
   // SBA β-8.1 — добивка панели операционного директора
   'checkin-sentiment',
+  'day-signal-detect',
   'operations-weekly-digest',
   // SBA β-8.3 — ежедневный отчёт COO
   'operations-daily-digest',

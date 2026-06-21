@@ -82,6 +82,7 @@ function buildWorker(opts: {
   const cfg = {
     bitemporal: { enabled: false, supersedeEnabled: false },
     knowledgeCore: { distillKnnTopK: 10, distillMergeThreshold: 0.85 },
+    specialistsCombined: { enabled: false, delayMs: 0 },
   } as unknown;
 
   const gate = { checkOrThrow: vi.fn(async () => undefined) };

@@ -93,6 +93,7 @@ function buildWorker(
 
   const cfg = {
     bitemporal: { enabled: false, supersedeEnabled: false },
+    specialistsCombined: { enabled: false, delayMs: 0 },
   } as any;
 
   const worker = new BlockDistillWorker(

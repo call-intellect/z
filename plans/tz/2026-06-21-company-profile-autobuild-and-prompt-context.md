@@ -121,7 +121,7 @@ async applyAutoSummary(args: {
 **Acceptance:** unit chat-v2: при непустом summary — хвост содержит «Чем занимается:»; при пустом — мягко пропускается (как сейчас, fail-soft); BASE_SYSTEM_PROMPT не изменился (snapshot-спек зелёный — capsule вне BASE). Ассистент: SYSTEM содержит хвост «## О компании» при наличии профиля. Наблюдать: prompt-cache hit-rate ассистента ≥60% (Р6) — зафиксировать в метриках/проде.
 **Закрывает:** №67 реестра, Р2, Р3, Р6.
 
-### Фаза 4 — UI закрепления summary `[ ]`
+### Фаза 4 — UI закрепления summary `[x]`
 **Файлы:** `frontend/.../company/CompanyClient.tsx` + `company.api.ts` + домен `company-profile.ts` — показать авто-summary (read), поле редактирования + переключатель «Закрепить» (`summaryPinned`); русский UI, парные токены.
 **Acceptance:** на `/company` видно авто-summary; правка+закрепление сохраняются (`PATCH`); после закрепления авто-компилятор не перетирает (e2e/ручная); ни одного англ. слова в UI.
 **Закрывает:** Р1 (контроль владельца), strict-production-review-gate (RBAC: только admin Org правит).

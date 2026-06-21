@@ -18,6 +18,7 @@ import {
 } from "@/domain/company-profile";
 import { Button } from "@/ui/shadcn/button";
 import { Card } from "@/ui/shadcn/card";
+import { Switch } from "@/ui/shadcn/switch";
 
 import {
   AdminError,
@@ -54,6 +55,8 @@ function CompanyContent({
   const [saving, setSaving] = useState(false);
 
   const [displayName, setDisplayName] = useState("");
+  const [summary, setSummary] = useState("");
+  const [summaryPinned, setSummaryPinned] = useState(false);
   const [mission, setMission] = useState("");
   const [vision, setVision] = useState("");
   const [strategy, setStrategy] = useState("");
@@ -68,6 +71,8 @@ function CompanyContent({
       const d = toCompanyProfileDomain(r);
       setProfile(d);
       setDisplayName(d.displayName ?? "");
+      setSummary(d.summaryContentMd ?? "");
+      setSummaryPinned(d.summaryPinned);
       setMission(d.missionContentMd ?? "");
       setVision(d.visionContentMd ?? "");
       setStrategy(d.strategyContentMd ?? "");
@@ -91,6 +96,8 @@ function CompanyContent({
     try {
       const body: UpdateCompanyProfileRequest = {
         displayName: displayName.trim() || undefined,
+        summary: summary.trim() ? { contentMd: summary.trim() } : null,
+        summaryPinned,
         mission: mission.trim() ? { contentMd: mission.trim() } : null,
         vision: vision.trim() ? { contentMd: vision.trim() } : null,
         strategy: strategy.trim() ? { contentMd: strategy.trim() } : null,
@@ -98,14 +105,27 @@ function CompanyContent({
       };
       const r = await companyApi.update(orgId, body);
       setRaw(r);
-      setProfile(toCompanyProfileDomain(r));
+      const d = toCompanyProfileDomain(r);
+      setProfile(d);
+      setSummary(d.summaryContentMd ?? "");
+      setSummaryPinned(d.summaryPinned);
     } catch (err) {
       const msg = humanizeApiError(err, "Не удалось сохранить профиль");
       setError(msg);
     } finally {
       setSaving(false);
     }
-  }, [canEdit, displayName, mission, vision, strategy, stage, orgId]);
+  }, [
+    canEdit,
+    displayName,
+    summary,
+    summaryPinned,
+    mission,
+    vision,
+    strategy,
+    stage,
+    orgId,
+  ]);
 
   if (loading) return <AdminLoading rows={6} />;
   if (error && !profile)
@@ -153,6 +173,43 @@ function CompanyContent({
           readOnly={!canEdit}
           placeholder="Например: «ABC Технологии»"
         />
+
+        <div className="space-y-2 rounded-lg border border-border-subtle bg-bg-overlay p-4">
+          <Field
+            label="Чем занимается компания"
+            value={summary}
+            onChange={setSummary}
+            readOnly={!canEdit}
+            multiline
+            placeholder="Кора соберёт это описание автоматически по встречам и решениям. Можно поправить вручную."
+          />
+          {profile.summaryGeneratedAt && (
+            <div className="text-xs text-fg-tertiary">
+              Обновлено автоматически:{" "}
+              {profile.summaryGeneratedAt.toLocaleString("ru-RU")}
+            </div>
+          )}
+          <div className="flex items-start justify-between gap-4 pt-1">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-fg-primary">
+                Закрепить описание
+              </div>
+              <p className="mt-1 text-xs text-fg-secondary">
+                Если закрепить, автоматическое обновление не будет перезаписывать
+                ваш текст.
+              </p>
+            </div>
+            <div className="shrink-0 pt-1">
+              <Switch
+                checked={summaryPinned}
+                disabled={!canEdit}
+                onCheckedChange={setSummaryPinned}
+                aria-label="Закрепить описание компании"
+              />
+            </div>
+          </div>
+        </div>
+
         <Field
           label="Миссия (зачем существует компания)"
           value={mission}

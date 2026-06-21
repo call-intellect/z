@@ -22,6 +22,9 @@ export interface CompanyProfileDomain {
   strategyContentMd: string | null;
   strategyMarkets: string[];
   strategyBets: string[];
+  summaryContentMd: string | null;
+  summaryGeneratedAt: Date | null;
+  summaryPinned: boolean;
   stage: CompanyStageApi | null;
   stageLabel: string | null;
   maturityScore: number | null;
@@ -46,6 +49,11 @@ export function toCompanyProfileDomain(
     strategyContentMd: api.strategy?.contentMd ?? null,
     strategyMarkets: api.strategy?.markets ?? [],
     strategyBets: api.strategy?.bets ?? [],
+    summaryContentMd: api.summary?.contentMd ?? null,
+    summaryGeneratedAt: api.summary?.generatedAt
+      ? new Date(api.summary.generatedAt)
+      : null,
+    summaryPinned: api.summaryPinned,
     stage,
     stageLabel: stage ? COMPANY_STAGE_LABEL[stage] : null,
     maturityScore: api.maturityScore,

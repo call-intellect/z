@@ -22,6 +22,11 @@ export interface CompanyProfileApi {
     horizon?: string;
     targetDate?: string;
   } | null;
+  summary: {
+    contentMd: string;
+    generatedAt?: string;
+  } | null;
+  summaryPinned: boolean;
   targetMarketIds: string[];
   maturityScore: number | null;
   lastMaturityCalcAt: string | null;
@@ -58,6 +63,10 @@ export interface UpdateCompanyProfileRequest {
     horizon?: StrategyHorizonApi;
     targetDate?: string;
   } | null;
+  summary?: {
+    contentMd: string;
+  } | null;
+  summaryPinned?: boolean;
   targetMarketIds?: string[];
   stage?: CompanyStageApi | null;
 }

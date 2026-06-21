@@ -207,10 +207,14 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
         voiceInputEnabled: true,
         responseClassifyMinConfidence: args?.minConfidence ?? 0.5,
       },
+      subjectMemory: { enabled: false },
     } as unknown as TypedConfigService;
     const conversational = {
       sendNotification: vi.fn().mockResolvedValue({ id: 'ack-notif-1' }),
     } as unknown as ConversationalService;
+    const coreQueue = {
+      enqueueSubjectMemoryDerive: vi.fn().mockResolvedValue({ jobId: 'sm-1' }),
+    } as unknown as CoreQueueService;
     return new ProbeResponseHandler(
       prisma,
       metrics,
@@ -218,6 +222,7 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
       llm,
       cfg,
       conversational,
+      coreQueue,
     );
   }
 

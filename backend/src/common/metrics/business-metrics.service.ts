@@ -644,6 +644,11 @@ export class BusinessMetricsService implements OnModuleInit {
   private probeQualityJudgedTotal!: Counter<'verdict'>;
   // ── Probe Фаза 4 (2026-06-20) — LLM-гейт ценности probe-вопроса ──
   private probeValueGateTotal!: Counter<'verdict'>;
+  private subjectMemoryRuleExtractedTotal!: Counter<'kind'>;
+  private subjectMemoryProbeSuppressedTotal!: Counter<'reason'>;
+  private subjectMemoryRuleActivatedTotal!: Counter<never>;
+  private subjectMemoryRuleRolledBackTotal!: Counter<'cause'>;
+  private subjectMemoryApplyTotal!: Counter<'status'>;
   // ── W2 autonomy (2026-06-12) — OwnerResolver («лестница владельца») ──
   private ownerResolutionTotal!: Counter<'outcome'>;
   // ── Ф5/Ф6 assistant-channels (2026-06-12) — мост «каналы → помощник» ──
@@ -2705,6 +2710,31 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'probe_value_gate_total',
       help: 'Probe Фаза 4 — вердикт LLM-гейта ценности probe-вопроса: ask (вопрос стоит задать) | skip (пробел пустой → не беспокоим человека).',
       labelNames: ['verdict'] as const,
+    });
+    this.subjectMemoryRuleExtractedTotal = this.getOrCreateCounter({
+      name: 'subject_memory_rule_extracted_total',
+      help: 'Слой выученной памяти: выведено правил по виду (kind).',
+      labelNames: ['kind'] as const,
+    });
+    this.subjectMemoryProbeSuppressedTotal = this.getOrCreateCounter({
+      name: 'subject_memory_probe_suppressed_total',
+      help: 'Слой выученной памяти: probe подавлен выученным правилом (по причине reason).',
+      labelNames: ['reason'] as const,
+    });
+    this.subjectMemoryRuleActivatedTotal = this.getOrCreateCounter({
+      name: 'subject_memory_rule_activated_total',
+      help: 'Слой выученной памяти: выученное правило активировано.',
+      labelNames: [] as const,
+    });
+    this.subjectMemoryRuleRolledBackTotal = this.getOrCreateCounter({
+      name: 'subject_memory_rule_rolled_back_total',
+      help: 'Слой выученной памяти: выученное правило откатано (по причине cause).',
+      labelNames: ['cause'] as const,
+    });
+    this.subjectMemoryApplyTotal = this.getOrCreateCounter({
+      name: 'subject_memory_apply_total',
+      help: 'Слой выученной памяти: применение правила (по статусу status).',
+      labelNames: ['status'] as const,
     });
     // ── W2 autonomy (2026-06-12) — OwnerResolver («лестница владельца») ──
     this.ownerResolutionTotal = this.getOrCreateCounter({
@@ -6288,6 +6318,26 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incProbeValueGate(args: { verdict: 'skip' | 'ask' }): void {
     this.probeValueGateTotal.inc({ verdict: args.verdict });
+  }
+
+  incSubjectMemoryRuleExtracted(args: { kind: string }): void {
+    this.subjectMemoryRuleExtractedTotal.inc({ kind: args.kind });
+  }
+
+  incSubjectMemoryProbeSuppressed(args: { reason: string }): void {
+    this.subjectMemoryProbeSuppressedTotal.inc({ reason: args.reason });
+  }
+
+  incSubjectMemoryRuleActivated(): void {
+    this.subjectMemoryRuleActivatedTotal.inc();
+  }
+
+  incSubjectMemoryRuleRolledBack(args: { cause: string }): void {
+    this.subjectMemoryRuleRolledBackTotal.inc({ cause: args.cause });
+  }
+
+  incSubjectMemoryApply(args: { status: string }): void {
+    this.subjectMemoryApplyTotal.inc({ status: args.status });
   }
 
   // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract ────────────────

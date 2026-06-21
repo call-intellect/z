@@ -38,6 +38,7 @@ import {
   type SpecialistRoutingJobData,
   type SprintHelperJobData,
   type StrategicAlignmentJobData,
+  type SubjectMemoryDeriveJobData,
 } from './queues';
 
 /**
@@ -617,6 +618,26 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     this.logger.debug(
       `enqueue core.probe-events probeEventId=${args.probeEventId} delay=${args.delayMs ?? 0}ms`,
     );
+    return { jobId };
+  }
+
+  async enqueueSubjectMemoryDerive(args: {
+    tenantId: string;
+    probeEventId: string;
+    questionText: string;
+    answerText: string;
+    occurredAtIso: string;
+  }): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.SUBJECT_MEMORY_DERIVE);
+    const jobId = `subjmem_derive_${args.probeEventId}`;
+    const payload: SubjectMemoryDeriveJobData = {
+      tenantId: args.tenantId,
+      probeEventId: args.probeEventId,
+      questionText: args.questionText,
+      answerText: args.answerText,
+      occurredAtIso: args.occurredAtIso,
+    };
+    await q.add('subject-memory-derive', this.stamp(payload), { jobId });
     return { jobId };
   }
 

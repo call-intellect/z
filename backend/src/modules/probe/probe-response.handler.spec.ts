@@ -7,6 +7,7 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../ai/services/llm-router.service';
 import type { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
 import type { ConversationalService } from '../conversational/conversational.service';
+import type { CoreQueueService } from '../core-queue/core-queue.service';
 import type { CurationService } from '../curation/services/curation.service';
 
 import { ProbeResponseHandler } from './probe-response.handler';
@@ -125,10 +126,14 @@ function makeHandler(args: {
       voiceInputEnabled: true,
       responseClassifyMinConfidence: args.minConfidence ?? 0.5,
     },
+    subjectMemory: { enabled: false },
   } as unknown as TypedConfigService;
   const conversational = {
     sendNotification: vi.fn().mockResolvedValue({ id: 'ack-notif-1' }),
   } as unknown as ConversationalService;
+  const coreQueue = {
+    enqueueSubjectMemoryDerive: vi.fn().mockResolvedValue({ jobId: 'sm-1' }),
+  } as unknown as CoreQueueService;
   const curation = {
     decide: args.mocks.curationDecide,
   } as unknown as CurationService;
@@ -139,6 +144,7 @@ function makeHandler(args: {
     llm,
     cfg,
     conversational,
+    coreQueue,
     curation,
   );
 }

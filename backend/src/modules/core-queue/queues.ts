@@ -126,6 +126,11 @@ export const CORE_QUEUE_NAMES = {
    */
   PROBE_EVENTS: 'core.probe-events',
   /**
+   * Слой 3 (2026-06-21) — Выученная память уточнений. Consumer добавляет
+   * следующий кодер. Принимает `SubjectMemoryDeriveJobData`.
+   */
+  SUBJECT_MEMORY_DERIVE: 'core.subject-memory-derive',
+  /**
    * SBA γ-1 — Specialist 3.7 (SkillProfile) rebuild. Consumer —
    * `SkillProfileRebuildWorker`. Дебаунс через jobId
    * `skill-profile-rebuild_<profileId>` + delay (`cfg.skill.rebuildDebounceMs`,
@@ -421,6 +426,14 @@ export interface RebuildKnowledgeProfileJobData {
  */
 export interface ProbeEventJobData {
   probeEventId: string;
+}
+
+export interface SubjectMemoryDeriveJobData {
+  tenantId: string;
+  probeEventId: string;
+  questionText: string;
+  answerText: string;
+  occurredAtIso: string;
 }
 
 /**

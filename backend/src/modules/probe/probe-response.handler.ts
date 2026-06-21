@@ -9,6 +9,7 @@ import { LlmRouterService } from '../ai/services/llm-router.service';
 import { applyInputGuards } from '../ai/services/prompts/common';
 import { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
 import { ConversationalService } from '../conversational/conversational.service';
+import { CoreQueueService } from '../core-queue/core-queue.service';
 import { CurationService } from '../curation/services/curation.service';
 
 import { mapExistenceConfirmAnswer } from './existence-confirm.util';
@@ -34,6 +35,7 @@ export class ProbeResponseHandler {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(ConversationalService)
     private readonly conversational: ConversationalService,
+    @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Optional()
     @Inject(CurationService)
     private readonly curation?: CurationService,
@@ -100,6 +102,33 @@ export class ProbeResponseHandler {
         source: kind ?? 'unknown',
       });
       this.metrics.incProbeOutcome({ outcome: 'answered', reason: probe.reason });
+
+      if (
+        this.cfg.subjectMemory.enabled &&
+        classification &&
+        !classification.unclear &&
+        classification.answer
+      ) {
+        try {
+          const questionText =
+            this.extractQuestionText(probePayload) ?? probe.reason;
+          await this.coreQueue.enqueueSubjectMemoryDerive({
+            tenantId: event.tenantId,
+            probeEventId: probe.id,
+            questionText,
+            answerText: classification.answer,
+            occurredAtIso: (probe.dispatchedAt ?? new Date()).toISOString(),
+          });
+        } catch (err) {
+          this.logger.debug(
+            {
+              probeId: probe.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'subject-memory: enqueue derive не удался — пропускаю',
+          );
+        }
+      }
 
       if (probe.reason === 'regulation.existence_confirm') {
         await this.maybeDecideExistenceConfirm({

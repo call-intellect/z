@@ -6,6 +6,7 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../ai/services/llm-router.service';
 import type { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
 import type { ConversationalService } from '../conversational/conversational.service';
+import type { CoreQueueService } from '../core-queue/core-queue.service';
 
 import { ProbeResponseHandler } from './probe-response.handler';
 import type { NotificationRespondedPayload } from './probe.types';
@@ -56,6 +57,7 @@ function build(args: { ackThrows?: boolean; title?: string }): {
       voiceInputEnabled: true,
       responseClassifyMinConfidence: 0.5,
     },
+    subjectMemory: { enabled: false },
   } as unknown as TypedConfigService;
 
   const sendNotification = vi.fn().mockImplementation(async () => {
@@ -65,6 +67,9 @@ function build(args: { ackThrows?: boolean; title?: string }): {
   const conversational = {
     sendNotification,
   } as unknown as ConversationalService;
+  const coreQueue = {
+    enqueueSubjectMemoryDerive: vi.fn().mockResolvedValue({ jobId: 'sm-1' }),
+  } as unknown as CoreQueueService;
 
   const handler = new ProbeResponseHandler(
     prisma,
@@ -73,6 +78,7 @@ function build(args: { ackThrows?: boolean; title?: string }): {
     llm,
     cfg,
     conversational,
+    coreQueue,
   );
   return { handler, sendNotification, ingest };
 }

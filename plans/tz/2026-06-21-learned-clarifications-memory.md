@@ -148,7 +148,7 @@ model SubjectMemory {
 **Acceptance:** `bun run prisma:migrate -- --name subject_memory` создаёт файл; `grep "model SubjectMemory" schema.prisma`; `grep "subjectMemory.enabled" admin-setting-schema-registry.ts`; `bun run prisma:generate` + `bun run typecheck` зелёные; повторный сид настроек = no-op (идемпотентность).
 **Закрывает:** инфраструктуру для R1–R6.
 
-### Фаза 2 — Сервис вывода правила + хук записи в ProbeResponseHandler `[ ]`
+### Фаза 2 — Сервис вывода правила + хук записи в ProbeResponseHandler `[x]`
 **Цель:** ответ на probe → выведенное правило в `status: shadow`.
 **Файлы (new):** `backend/src/modules/probe/subject-memory/subject-memory.service.ts` (методы `deriveRuleFromProbeResponse`, `upsertWithSupersede`); промпт `subject-memory-rule-extract.prompt.ts` (cache-friendly: стабильный SYSTEM, переменные в конце user); регистрация taskType. **Хук:** в `ProbeResponseHandler.handle` после `tryClassifyResponse` ([probe-response.handler.ts:64](../../backend/src/modules/probe/probe-response.handler.ts#L64)) — если `classification && !classification.unclear` → enqueue вывод правила (BullMQ, не в request-path).
 **Supersede (Р4):** `upsertWithSupersede` ищет по embedding похожее правило того же `kind`; при совпадении — КОД сравнивает `occurredAt`, новее → старое `superseded`, иначе `confirmCount++`. LLM решает только «то же это правило?» (boolean), не свежесть.

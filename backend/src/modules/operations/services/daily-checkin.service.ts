@@ -7,13 +7,37 @@ import {
   Optional,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Prisma } from '@prisma/client';
+import { DailyCheckInSource, Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CreateCheckInInput, DailyCheckInDto } from '../dto/daily-check-in.dto';
 import { getLocalDate } from '../utils/local-date';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
+
+function sourceRank(s: string): number {
+  if (s === 'self_initiated' || s === 'manual' || s === 'cron_prompted') return 4;
+  if (s === 'meeting') return 3;
+  if (s === 'bitrix' || s === 'chatbox') return 2;
+  if (s === 'email' || s === 'phone_call') return 1;
+  return 0;
+}
+
+function normText(t: string): string {
+  return t.trim().toLowerCase();
+}
+
+function mergeByText<T extends { text: string }>(existing: T[], incoming: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of [...existing, ...incoming]) {
+    const key = normText(item.text);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
 
 @Injectable()
 export class DailyCheckInService {
@@ -129,6 +153,105 @@ export class DailyCheckInService {
       completed: true,
       source: args.source,
     });
+  }
+
+  async upsertFromDaySignal(args: {
+    tenantId: string;
+    personId: string;
+    kind: 'morning' | 'evening';
+    dateLocal: string;
+    items: Array<{ text: string; priority?: number }>;
+    dones: Array<{ text: string }>;
+    blockers: Array<{ text: string; severity?: 'low' | 'medium' | 'high' }>;
+    rawResponseText: string;
+    parseConfidence: number;
+    source: 'meeting' | 'bitrix' | 'chatbox' | 'email' | 'phone_call' | 'self_initiated';
+    now?: Date;
+  }): Promise<DailyCheckInDto> {
+    const existing = await this.prisma.dailyCheckIn.findUnique({
+      where: {
+        tenantId_personId_kind_dateLocal: {
+          tenantId: args.tenantId,
+          personId: args.personId,
+          kind: args.kind,
+          dateLocal: args.dateLocal,
+        },
+      },
+    });
+
+    const existingPlans = Array.isArray(existing?.plansJson)
+      ? (existing!.plansJson as Array<{ text: string; priority?: number }>)
+      : [];
+    const existingDones = Array.isArray(existing?.donesJson)
+      ? (existing!.donesJson as Array<{ text: string }>)
+      : [];
+    const existingBlockers = Array.isArray(existing?.blockersJson)
+      ? (existing!.blockersJson as Array<{ text: string; severity?: 'low' | 'medium' | 'high' }>)
+      : [];
+
+    const plans =
+      args.kind === 'morning' ? mergeByText(existingPlans, args.items) : existingPlans;
+    const dones =
+      args.kind === 'evening' ? mergeByText(existingDones, args.dones) : existingDones;
+    const blockers =
+      args.kind === 'evening' ? mergeByText(existingBlockers, args.blockers) : existingBlockers;
+
+    const existingRank = existing ? sourceRank(existing.source) : -1;
+    const newRank = sourceRank(args.source);
+    const newWins = newRank > existingRank;
+    const winnerSource: DailyCheckInSource = newWins
+      ? args.source
+      : (existing!.source as DailyCheckInSource);
+
+    const rawResponseText = newWins
+      ? args.rawResponseText
+      : (existing!.rawResponseText ?? args.rawResponseText);
+    const parseConfidence = newWins
+      ? args.parseConfidence
+      : Number(existing!.parseConfidence ?? args.parseConfidence);
+
+    const at = (args.now ?? new Date()).toISOString();
+    const prevContribs = Array.isArray(existing?.sourceContributions)
+      ? (existing!.sourceContributions as unknown[])
+      : [];
+    const contributions = [...prevContribs, { source: args.source, at, rank: newRank }];
+
+    const dto = await this.upsertInternal({
+      tenantId: args.tenantId,
+      personId: args.personId,
+      kind: args.kind,
+      dateLocal: args.dateLocal,
+      plans,
+      dones,
+      blockers,
+      notificationId: null,
+      rawResponseText,
+      parseConfidence,
+      curatorReview: false,
+      completed: true,
+      source: winnerSource,
+      sourceContributions: contributions as Prisma.InputJsonValue,
+    });
+
+    try {
+      this.eventEmitter?.emit('checkin.created', {
+        tenantId: args.tenantId,
+        checkInId: dto.id,
+        personId: args.personId,
+        kind: args.kind,
+        rawText: args.rawResponseText,
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          checkInId: dto.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'upsertFromDaySignal: EventEmitter.emit failed — продолжаю',
+      );
+    }
+
+    return dto;
   }
 
   async createPromptPlaceholder(args: {
@@ -248,7 +371,8 @@ export class DailyCheckInService {
     curatorReview: boolean;
     completed: boolean;
     onlyIfMissing?: boolean;
-    source: 'cron_prompted' | 'self_initiated' | 'manual';
+    source: DailyCheckInSource;
+    sourceContributions?: Prisma.InputJsonValue | null;
   }): Promise<DailyCheckInDto> {
     if (args.kind !== 'morning' && args.kind !== 'evening') {
       throw new BadRequestException({
@@ -258,6 +382,14 @@ export class DailyCheckInService {
     }
 
     const completedAt = args.completed ? new Date() : null;
+    const sourceContributionsPatch =
+      args.sourceContributions !== undefined
+        ? {
+            sourceContributions: (args.sourceContributions ?? Prisma.JsonNull) as
+              | Prisma.InputJsonValue
+              | typeof Prisma.JsonNull,
+          }
+        : {};
     const upsertData = {
       plansJson: (args.plans ?? Prisma.JsonNull) as Prisma.InputJsonValue | typeof Prisma.JsonNull,
       donesJson: (args.dones ?? Prisma.JsonNull) as Prisma.InputJsonValue | typeof Prisma.JsonNull,
@@ -303,8 +435,9 @@ export class DailyCheckInService {
         kind: args.kind,
         dateLocal: args.dateLocal,
         ...upsertData,
+        ...sourceContributionsPatch,
       },
-      update: upsertData,
+      update: { ...upsertData, ...sourceContributionsPatch },
     });
 
     if (args.completed) {
@@ -332,6 +465,7 @@ export class DailyCheckInService {
     createdAt: Date;
     updatedAt: Date;
     source?: string | null;
+    sourceContributions?: unknown;
     sentiment?: string | null;
     sentimentRationale?: string | null;
     sentimentVersion?: string | null;
@@ -345,8 +479,21 @@ export class DailyCheckInService {
       row.sentiment === 'green' || row.sentiment === 'yellow' || row.sentiment === 'red'
         ? row.sentiment
         : null;
-    const source: DailyCheckInDto['source'] =
-      row.source === 'self_initiated' || row.source === 'manual' ? row.source : 'cron_prompted';
+    const VALID_SOURCES = [
+      'cron_prompted',
+      'self_initiated',
+      'manual',
+      'meeting',
+      'bitrix',
+      'chatbox',
+      'email',
+      'phone_call',
+    ] as const;
+    const source: DailyCheckInDto['source'] = (VALID_SOURCES as readonly string[]).includes(
+      row.source ?? '',
+    )
+      ? (row.source as DailyCheckInDto['source'])
+      : 'cron_prompted';
     return {
       id: row.id,
       tenantId: row.tenantId,

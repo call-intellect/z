@@ -73,7 +73,15 @@ export interface DailyCheckInDto {
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  source: 'cron_prompted' | 'self_initiated' | 'manual';
+  source:
+    | 'cron_prompted'
+    | 'self_initiated'
+    | 'manual'
+    | 'meeting'
+    | 'bitrix'
+    | 'chatbox'
+    | 'email'
+    | 'phone_call';
   sentiment?: 'green' | 'yellow' | 'red' | null;
   sentimentRationale?: string | null;
   sentimentVersion?: string | null;

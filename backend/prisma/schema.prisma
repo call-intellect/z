@@ -2741,6 +2741,7 @@ model Org {
   /// ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — Смысловые блоки навыка.
   /// Канонизация SkillTrait'ов разных сотрудников в общий концепт.
   skillTraitConcepts   SkillTraitConcept[]  @relation("SkillTraitConceptTenant")
+  subjectMemories      SubjectMemory[]
 
   // ── TZ clone-method (2026-06-11) — Reflection-слой + журнал клона ──
   rolePrinciples RolePrinciple[] @relation("RolePrincipleTenant")
@@ -8281,6 +8282,51 @@ enum SkillTraitConceptStatus {
   active
   merged_into
   archived
+}
+
+enum SubjectMemoryKind {
+  term            /// термин/аббревиатура компании: «КП» = «коммерческое предложение»
+  disambiguation  /// разрешённая неоднозначность: «дизайн» → отдел/роль X
+  preference      /// предпочтение: «задачи ставить с дедлайном»
+}
+
+enum SubjectMemoryStatus {
+  shadow          /// выведено, но не влияет на поведение (наблюдаем метрику)
+  canary          /// влияет на часть трафика, под наблюдением rollback-метрики
+  active          /// влияет полностью
+  superseded      /// заменено более свежим правилом (по occurredAt)
+  rolled_back     /// авто-откат: ухудшило внешнюю метрику
+  disabled        /// kill-switch владельца
+}
+
+model SubjectMemory {
+  id              String              @id @default(cuid())
+  tenantId        String
+  kind            SubjectMemoryKind
+  contextText     String              @db.Text
+  ruleText        String              @db.Text
+  embedding       Unsupported("vector(1536)")?
+  status          SubjectMemoryStatus @default(shadow)
+  confirmCount    Int                 @default(0)
+  refuteCount     Int                 @default(0)
+  confidence      Decimal             @db.Decimal(4, 3) @default(0)
+  occurredAt      DateTime
+  supersededById  String?
+  supersededBy    SubjectMemory?      @relation("SubjectMemorySupersede", fields: [supersededById], references: [id])
+  supersedes      SubjectMemory[]     @relation("SubjectMemorySupersede")
+  sourceProbeIds  String[]            @default([])
+  sourceBlockIds  String[]            @default([])
+  staleAfter      DateTime?
+  lastAppliedAt   DateTime?
+  appliedCount    Int                 @default(0)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, kind, status])
+  @@index([tenantId, status, occurredAt])
+  @@map("subject_memory")
 }
 
 /// TZ clone-method (2026-06-11) — дискриминатор СЛОЯ черты: persona-compile v2

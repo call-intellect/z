@@ -1617,6 +1617,54 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'platform', section: 'probe', severity, description });
   }
 
+  const subjectMemory: Array<[string, unknown, Severity, string]> = [
+    [
+      'subjectMemory.enabled',
+      envBool('SUBJECT_MEMORY_ENABLED', true),
+      'high',
+      'Главный рубильник слоя выученной памяти уточнений (kill-switch, ON): probe запоминает однажды выясненные термины/неоднозначности/предпочтения и перестаёт переспрашивать. Выкл → правила не выводятся и не подавляют вопросы',
+    ],
+    [
+      'subjectMemory.retrieveBeforeAskEnabled',
+      envBool('SUBJECT_MEMORY_RETRIEVE_BEFORE_ASK_ENABLED', true),
+      'medium',
+      'Подавление уточняющего вопроса при наличии подходящего активного правила (retrieve-before-ask). Выкл → вопрос задаётся даже если ответ уже известен из памяти',
+    ],
+    [
+      'subjectMemory.matchMinSimilarity',
+      envFloat('SUBJECT_MEMORY_MATCH_MIN_SIMILARITY', 0.82),
+      'medium',
+      'Минимальная cosine-близость контекста вопроса к правилу, чтобы считать правило подходящим (0..1)',
+    ],
+    [
+      'subjectMemory.suppressMinConfidence',
+      envFloat('SUBJECT_MEMORY_SUPPRESS_MIN_CONFIDENCE', 0.7),
+      'medium',
+      'Минимальная уверенность правила (0..1), при которой оно может подавить уточняющий вопрос',
+    ],
+    [
+      'subjectMemory.canaryRollbackWindowHours',
+      envInt('SUBJECT_MEMORY_CANARY_ROLLBACK_WINDOW_HOURS', 48),
+      'medium',
+      'Окно наблюдения внешней метрики для canary-правила перед переводом в active или авто-откатом (часы)',
+    ],
+    [
+      'subjectMemory.ttlDays',
+      envInt('SUBJECT_MEMORY_TTL_DAYS', 180),
+      'low',
+      'Через сколько дней правило уходит в decay-пересмотр (TTL)',
+    ],
+    [
+      'subjectMemory.judgeQuorum',
+      envInt('SUBJECT_MEMORY_JUDGE_QUORUM', 2),
+      'medium',
+      'Сколько судей ансамбля должны согласиться, чтобы правило прошло из shadow в canary',
+    ],
+  ];
+  for (const [key, value, severity, description] of subjectMemory) {
+    out.push({ key, value, category: 'ai', section: 'subject-memory', severity, description });
+  }
+
   const daySignals: Array<[string, unknown, Severity, string]> = [
     [
       'daySignals.enabled',

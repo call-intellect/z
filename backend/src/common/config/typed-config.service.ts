@@ -1189,6 +1189,34 @@ export class TypedConfigService {
     } as const;
   }
 
+  get subjectMemory() {
+    return {
+      enabled: this.resolveSync<boolean>('subjectMemory.enabled', undefined, true),
+      retrieveBeforeAskEnabled: this.resolveSync<boolean>(
+        'subjectMemory.retrieveBeforeAskEnabled',
+        undefined,
+        true,
+      ),
+      matchMinSimilarity: this.resolveSync<number>(
+        'subjectMemory.matchMinSimilarity',
+        undefined,
+        0.82,
+      ),
+      suppressMinConfidence: this.resolveSync<number>(
+        'subjectMemory.suppressMinConfidence',
+        undefined,
+        0.7,
+      ),
+      canaryRollbackWindowHours: this.resolveSync<number>(
+        'subjectMemory.canaryRollbackWindowHours',
+        undefined,
+        48,
+      ),
+      ttlDays: this.resolveSync<number>('subjectMemory.ttlDays', undefined, 180),
+      judgeQuorum: this.resolveSync<number>('subjectMemory.judgeQuorum', undefined, 2),
+    } as const;
+  }
+
   get skill() {
     return {
       minObservations: this.get('SKILL_MIN_OBSERVATIONS'),

@@ -156,6 +156,14 @@ const registry = new Map<string, ZodTypeAny>([
   ['probe.existenceConfirmEnabled', z.boolean()],
   ['probe.machineFillableReasons', z.array(z.string())],
 
+  ['subjectMemory.enabled', z.boolean()],
+  ['subjectMemory.retrieveBeforeAskEnabled', z.boolean()],
+  ['subjectMemory.matchMinSimilarity', UNIT_INTERVAL],
+  ['subjectMemory.suppressMinConfidence', UNIT_INTERVAL],
+  ['subjectMemory.canaryRollbackWindowHours', POSITIVE_INT],
+  ['subjectMemory.ttlDays', POSITIVE_INT],
+  ['subjectMemory.judgeQuorum', POSITIVE_INT],
+
   ['daySignals.detectThreshold', UNIT_INTERVAL],
   ['daySignals.processLocalHour', z.number().int().min(0).max(23)],
   ['daySignals.enabled', z.boolean()],

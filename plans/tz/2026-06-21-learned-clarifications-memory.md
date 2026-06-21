@@ -141,7 +141,7 @@ model SubjectMemory {
 
 ## Фазы (dependency-ordered)
 
-### Фаза 1 — Модель + миграция + реестр AdminSetting `[ ]`
+### Фаза 1 — Модель + миграция + реестр AdminSetting `[x]`
 **Цель:** появилась сущность `SubjectMemory` и крутилки.
 **Файлы:** `schema.prisma` (+enum, +модель, +relation в `Org`); `prisma/migrations/*`; `postgres-init.sql` (HNSW+partial); `admin-setting-schema-registry.ts` (+7 ключей); сид настроек; `env`-доступ через `getDynamic` (НЕ `process.env`).
 **Что НЕ входит:** логика вывода/чтения.

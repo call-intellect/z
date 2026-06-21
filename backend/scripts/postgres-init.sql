@@ -405,6 +405,26 @@ BEGIN
 END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- ТЗ 2026-06-21 learned-clarifications-memory (Слой 3) — Выученная память правил.
+--    HNSW индекс на subject_memory.embedding (cosine) для retrieve-before-ask:
+--    findApplicableRule ищет top-1 по cosine среди active/canary правил.
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'subject_memory'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "subject_memory_embedding_hnsw_cosine_idx"
+      ON "subject_memory" USING hnsw (embedding vector_cosine_ops)
+      WHERE embedding IS NOT NULL AND status IN ('active','canary')
+    $sql$;
+  END IF;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- TZ clone-method (2026-06-11) — RolePrinciple (Reflection-слой принципов роли).
 --    HNSW индекс на role_principles.embedding (cosine) для KNN-дедупа при
 --    синтезе принципов и ретрива «похожих принципов» в persona-compile v2.

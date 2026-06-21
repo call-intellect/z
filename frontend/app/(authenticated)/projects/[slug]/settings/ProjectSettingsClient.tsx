@@ -17,6 +17,8 @@ import { useProjectMembers } from "@/hooks/tracker/useProject";
 import { AssigneeAvatar } from "@/ui/tracker";
 import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
 
+import { ProjectAutomationsSection } from "./ProjectAutomationsSection";
+
 export function ProjectSettingsClient({ slug }: { slug: string }) {
   const { currentOrgId } = useAuth();
   const { project, isLoading } = useProjectBySlug(currentOrgId, slug);
@@ -54,6 +56,13 @@ export function ProjectSettingsClient({ slug }: { slug: string }) {
 
       {currentOrgId && project?.id ? (
         <EmailInboxSection orgId={currentOrgId} projectId={project.id} />
+      ) : null}
+
+      {currentOrgId && project?.id ? (
+        <ProjectAutomationsSection
+          orgId={currentOrgId}
+          projectId={project.id}
+        />
       ) : null}
 
       <section className="flex flex-col gap-2">

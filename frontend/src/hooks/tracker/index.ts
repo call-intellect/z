@@ -9,6 +9,7 @@ export { useIssueRelations } from "./useIssueRelations";
 export { useIssueComments } from "./useIssueComments";
 export { useIssueChecklists } from "./useIssueChecklists";
 export { useIssueFieldDefs, useIssueFieldValues } from "./useIssueFields";
+export { useAutomationRules } from "./useAutomationRules";
 export { useCycles } from "./useCycles";
 export { useCycle, useCycleIssues } from "./useCycle";
 export { useIntake } from "./useIntake";

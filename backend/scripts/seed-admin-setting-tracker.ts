@@ -52,6 +52,15 @@ const SEEDS: SettingSeed[] = [
     description:
       'Рубильник AI-сводки изменений по задаче (catch-up «что произошло»). По умолчанию вкл (Ship-On).',
   },
+  {
+    key: 'tracker.automationsEnabled',
+    value: true,
+    category: 'tracker',
+    section: 'workers',
+    severity: 'high',
+    description:
+      'Рубильник пользовательских автоматизаций трекера (правила if-this-then-that). По умолчанию вкл (Ship-On). Выкл — движок не применяет ни одно правило.',
+  },
 ];
 
 interface Counters {

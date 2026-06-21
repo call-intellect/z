@@ -205,6 +205,12 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         matchPrefix: "/admin/probe",
       },
       {
+        href: "/admin/tracker",
+        label: "Трекер",
+        icon: Workflow,
+        matchPrefix: "/admin/tracker",
+      },
+      {
         href: "/admin/experiments",
         label: "A/B-эксперименты",
         icon: FlaskConical,

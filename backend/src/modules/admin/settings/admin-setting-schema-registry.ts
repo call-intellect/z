@@ -257,6 +257,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.progressAutoDraftMinSignals', z.number().int().min(1)],
   ['tracker.progressAutoDraftCron', z.string().min(1)],
   ['tracker.activityDigestEnabled', z.boolean()],
+  ['tracker.automationsEnabled', z.boolean()],
   ['conversational.telegramDigestHourLocal', z.number().int().min(0).max(23)],
 
   ['retention.defaultDays', POSITIVE_INT],

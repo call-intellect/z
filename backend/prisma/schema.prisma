@@ -9529,6 +9529,23 @@ model IssueFieldValue {
   @@index([tenantId, fieldId])
 }
 
+/// Пользовательское правило-автоматизация. trigger→conditions→actions как JSON.
+model IssueAutomationRule {
+  id          String   @id @default(cuid())
+  tenantId    String
+  projectId   String?  /// null = на всю Org
+  name        String
+  enabled     Boolean  @default(true)
+  trigger     Json     /// { type: 'status_changed'|'assigned'|'created'|'due_approaching'|'label_added', ... }
+  conditions  Json     /// [{ field, op, value }]
+  actions     Json     /// [{ type:'set_status'|'assign'|'add_label'|'set_priority'|'notify'|'create_subtask', ... }]
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, projectId, enabled])
+}
+
 /// SLA-политика деска поддержки (синглтон per вендор-Org для v1). TZ support-desk Ф1.
 model SupportSlaPolicy {
   id                String   @id @default(cuid())

@@ -122,6 +122,21 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-21 — Трекер Волна 3 Ф10: пользовательские автоматизации (IssueAutomationRule)
+
+> ТЗ `plans/tz/2026-06-20-tracker-card-redesign-and-progress.md` Фаза 10 (R19). Правила «если — то» по задаче (паритет Jira Automation/Asana Rules): триггеры `status_changed|assigned|created|due_approaching|label_added`, действия `set_status|assign|add_label|set_priority|notify|create_subtask`. Движок `AutomationEngineService` подписан на `tracker.event_occurred` (EventEmitter2), применяет действия как `IssueActivity actorType='system' agentName='automation'`, защита от рекурсии по `appliedRuleIds`+`depth` (MAX_DEPTH=5).
+>
+> **1 миграция (авто, аддитивная). 1 kill-switch (seed, уже в STEPS). Docker rebuild backend+frontend. Новых ENV/patch/backfill/LLM-taskType нет.**
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up`): `20260621071650_issue_automation_rules` — новая таблица `IssueAutomationRule` (`trigger/conditions/actions Json`, `enabled Boolean default true`, `projectId String?` = null на всю Org, индекс `(tenantId, projectId, enabled)`). Аддитивная (CREATE TABLE), без потери данных. **В STEPS не регистрируется** (миграция схемы).
+- **Шаг 7 — Seed (идемпотентный, уже в STEPS `phase:'seed-base'`):** `seed-admin-setting-tracker.ts` дополнен ключом `tracker.automationsEnabled` (boolean, default **true**, Ship-On kill-switch, severity `high`). Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Отдельной строки STEPS не нужно — сид уже зарегистрирован.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (новый контроллер `AutomationRulesController` — 4 эндпоинта `GET/POST /api/v1/automation-rules`, `PATCH/DELETE /api/v1/automation-rules/:id`, RBAC `canRead/canWrite('issue')` + движок `AutomationEngineService`). Frontend (секция «Автоматизации» в настройках проекта + admin-страница `/admin/tracker` с рубильником).
+- **Шаг 12 — Smoke** (после выката): Swagger `/api/docs` тег `tracker / automation-rules` показывает 4 эндпоинта; создать правило «при смене статуса на started → назначить владельца» → перевести задачу в started → появляется исполнитель + системная запись активности; рекурсии нет (правило set_status, совпадающее с триггером, не зацикливает события); рубильник `tracker.automationsEnabled=false` в админке → ни одно правило не применяется (лог `выключен (kill-switch)`); чужой tenant → `tenant_required`/403.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-21 — Хвосты трёх ТЗ: deep-link сообщения чата (Ф1) + UI крутилок (Ф2) + page-aware документ (Ф4)
 
 > Ветка `feature/three-tz-tails-finalization`. Коммиты: Ф1 `237b48b5`; Ф2 `40ef424d`+`19c091f5`; Ф4 `af7d4cb6`+`8010c92d`. second-brain: `02_architecture/data-model.md` (`Document.pageCount`/`pageOffsets`), `01_projects/admin.md` (7 страниц настроек + scaffold `DomainSettings`), `01_projects/frontend-pages.md` (7 admin-роутов), `01_projects/api-layer.md` (`ChatMessageDto.externalId`, page-aware doc-deeplink).

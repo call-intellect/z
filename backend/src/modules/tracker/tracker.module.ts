@@ -4,6 +4,7 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 
 import { ActivityDigestController } from './controllers/activity-digest.controller';
 import { AttachmentsController } from './controllers/attachments.controller';
+import { AutomationRulesController } from './controllers/automation-rules.controller';
 import { BoardsController } from './controllers/boards.controller';
 import { ChecklistsController } from './controllers/checklists.controller';
 import { CommentsController } from './controllers/comments.controller';
@@ -32,6 +33,8 @@ import { TrackerWebhooksController } from './controllers/webhooks.controller';
 import { TrackerGateway } from './gateways/tracker.gateway';
 import { ActivityRecorderService } from './services/activity-recorder.service';
 import { AssigneeResolverService } from './services/assignee-resolver.service';
+import { AutomationEngineService } from './services/automation-engine.service';
+import { AutomationRulesService } from './services/automation-rules.service';
 import { AttachmentsService } from './services/attachments.service';
 import { BoardsService } from './services/boards.service';
 import { ChecklistsService } from './services/checklists.service';
@@ -94,6 +97,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     CommentsController,
     ProgressUpdatesController,
     IssueFieldsController,
+    AutomationRulesController,
     ActivityDigestController,
     LabelsController,
     TrackerWebhooksController,
@@ -137,6 +141,8 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     CommentsService,
     ProgressUpdatesService,
     IssueFieldsService,
+    AutomationRulesService,
+    AutomationEngineService,
     LabelsService,
     WebhooksService,
     RelationsService,

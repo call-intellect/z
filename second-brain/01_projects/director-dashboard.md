@@ -139,3 +139,22 @@ LLM-резюме «Главное за неделю» — 3-4 факта + 1 р�
 - **Доставка дневной сводки COO + персональная галочка (Ф8, Ship-On):** удалён OFF-флаг `operations.daily_digest.deliver_to_telegram` / ENV `COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM`; cron шлёт безусловно (идемпотентно по `deliveredAt`), kill-switch `operations.daily_digest.enabled` остаётся. Policy `operations.daily_digest` в `EVENT_TYPE_CHANNEL_POLICY` (in_app+email+telegram+max). НОВЫЙ эндпоинт `GET /api/v1/me/notification-preferences`; персональная галочка «Ежедневная сводка компании» в Настройки → Уведомления управляет доставкой через существующий `optOutEventTypes` (при отключении сводка остаётся в кабинете). Стелс-эффект: после выката сводка начинает доставляться owner/coo во все привязанные каналы по умолчанию.
 
 Миграций БД нет (все поля/модели уже в схеме), seed/patch/backfill на запуск нет. `TeamHealthGrid` оказался НЕ orphan (живой на `/teams`) — не удалён.
+
+## Модульные дашборды исполнения (2026-06-21, ТЗ-модульные-дашборды, реализован целиком)
+
+Источник — `plans/tz/2026-06-21-modular-execution-dashboards.md` (Ф1–Ф5, ветка `dev`, коммиты Ф1 `9ee6d531`, Ф2 `4e5d3748`, Ф3 `1b9ed454`, Ф4+Ф5 `f244ada6`). Рефлексия — [[../05_история/2026-06-21-modular-execution-dashboards]]. Прод-операции — [[../../docs/operations/prod-deploy-log]] (блок «2026-06-21 — Модульные дашборды исполнения»).
+
+Дашборды стали **модульными**: вместо жёстко свёрстанных экранов — единый реестр виджетов + ролевые пресеты + canvas, который рендерит набор по паре `{role, rhythm}`. Три ритма День ⊂ Неделя ⊂ Месяц (каждый старший включает виджеты младшего + свои). Схема БД не менялась.
+
+- **Фронтовый слой** `frontend/src/ui/components/dashboard/registry/`:
+  - `types.ts` — `WidgetDescriptor` (`id,title,rhythm,roles,size,visibleWhen?,Component`).
+  - `widget-registry.ts` — `WIDGET_REGISTRY` из **18 виджетов** (M1–M10 + `WeeklyPlanFact`/`Trend`/`Achievements`/`Maturity`/`BusFactor`/`WeeklyDynamics`/`MonthRecap`).
+  - `presets.ts` — `DEFAULT_PRESETS` (3 роли × 3 ритма) + `toDashboardRole` (owner/admin→owner, coo→coo, иначе member).
+  - `DashboardCanvas.tsx` — рендер по `{role,rhythm}`, грид по `size`, пустой виджет скрыт через `:empty`.
+  - `use-dashboard-layout.ts` — SWR-крюк, override из бэка **или** code-fallback на `DEFAULT_PRESETS`.
+  - `_kit.tsx` — общие примитивы (`PeopleDrawer`/`Chip`/`MiniArrow`/`PersonRow`/`SourceLink`).
+- **Экраны на канвасе:** `/dashboard` (`DirectorDashboardClient`, rhythm `today`), `/week` (`WeekDesktopClient`, `week`), `/month` (`MonthDesktopClient`, `month`).
+- **Роли:** owner/coo — полный набор; **member** — только коллаборативные виджеты (`ideas`, `value`), командных данных не видит (решение владельца Р6).
+- **Drill-down + проваливание в источник:** вектор к цели / загрузка / план-факт раскрываются по людям (`PeopleDrawer`); виджет блокеров проваливается в исходный `IdeaBlock` через `relatedBlockIds`/`sourceBlockId` → `ProvenanceDrawer`.
+- **Бэкенд:** `ExecutionDashboardController` (`@Controller('api/v1/dashboard')`) + `ExecutionDashboardService` — 5 GET (`layout`, `goal-vector/by-person`, `issue-chains`, `load/by-person`, `operations/trend`); раскладка пресета через `getDynamic` (override AdminSetting / `null`). Контракты — [[api-layer]] §«Модульные дашборды исполнения»; карта модуля — [[../02_architecture/module-map]] §`dashboard`.
+- **Раскладка — Option B:** дефолты живут на фронте (`DEFAULT_PRESETS`), бэк отдаёт только override или `null`. Новой таблицы/колонки нет (`sourceBlockId` — JSON-поле в `blockersJson`), миграции нет; ENV/seed/очередей/cron не добавлено.

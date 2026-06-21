@@ -366,6 +366,22 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 
 Ряды строятся в `enrichDto` (один доп. `findMany`, best-effort: ошибка → пустой массив; индексы `@@index([tenantId,dateLocal])`/`@@index([tenantId,weekStart])` уже есть). Пустая история → `trend: []` / 12×`null`, фронт показывает заглушку «Тренд появится за несколько дней». FE-зеркало: `weeklyInflow` и `daily.trend` — слой `api`+`domain` (`operations-dashboard.{api,ts}`, `operations-daily-digest.{api,ts}`); `weekly.trend` — только API-тип (`weekly-digest.api.ts`; domain-слоя у weekly нет). Чистые мапперы покрыты unit-тестами (`bucketizeWeeklyInflow`, `mapDailyDigestRowsToTrend`, `mapWeeklyDigestRowsToTrend`). Схема БД не менялась.
 
+### Модульные дашборды исполнения (2026-06-21)
+
+ТЗ [`plans/tz/2026-06-21-modular-execution-dashboards.md`](../../plans/tz/2026-06-21-modular-execution-dashboards.md). Новый `ExecutionDashboardController` (`@Controller('api/v1/dashboard')`, тег Swagger `dashboard-execution`) + `ExecutionDashboardService` + DTO `execution-dashboard.dto.ts`. Все под `CookieAuthGuard+TenantGuard`+`RbacService.canViewDirectorDashboard` (owner/admin/coo/super_admin). Схема БД не менялась.
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| GET | `/api/v1/dashboard/layout?role=&rhythm=` | Раскладка ролевого пресета модульного дашборда: `{ role, rhythm, layout: string[]|null }`. `layout` — override из AdminSetting через `getDynamic`, либо `null` = дефолт берётся на фронте (`DEFAULT_PRESETS`). | owner/admin/coo/super_admin |
+| GET | `/api/v1/dashboard/goal-vector/by-person?goalId?&period=day\|week\|month` | Вектор движения к цели в разрезе по людям: вклад `PersonGoalContribution` + задачи `Issue.goalId`, `direction up\|side\|down`. | owner/admin/coo/super_admin |
+| GET | `/api/v1/dashboard/issue-chains?period=&limit=` | Цепочки «задача держит задачу» — связи `blocks`/`blocked_by` между `Issue`. | owner/admin/coo/super_admin |
+| GET | `/api/v1/dashboard/load/by-person` | Загрузка по людям: число активных задач + `level overload\|normal\|idle`. Пороги через `getDynamic` (`dashboard.load.overload_threshold=8` / `idle_threshold=2`, code-fallback). | owner/admin/coo/super_admin |
+| GET | `/api/v1/dashboard/operations/trend?period=day\|week\|month` | Тренд период-к-периоду из существующих digest-снимков (без новой таблицы; `month` = агрегация недель). | owner/admin/coo/super_admin |
+
+**Расширение чтения блокеров (для проваливания в источник):**
+- `GET /api/v1/dashboard/operations/blockers` (`OperationsDashboardService.fetchBlockers`) теперь отдаёт `sourceBlockId` — id исходного `IdeaBlock` из `blockersJson` (read-side, JSON-поле, миграции нет).
+- Хронические блокеры (`BlockerSynthesisService.listChronicForTenant`, `ChronicBlockerDto`) отдают `relatedBlockIds: string[]` — для проваливания виджета M6 через `ProvenanceDrawer`.
+
 ## Clones (Skill & Persona, γ-1 + v2)
 
 | Метод | Путь | Назначение | Доступ | Фаза |

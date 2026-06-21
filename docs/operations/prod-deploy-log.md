@@ -71,6 +71,29 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-21 — Модульные дашборды исполнения (3 ритма: реестр виджетов + ролевые пресеты + canvas)
+
+> ТЗ `plans/tz/2026-06-21-modular-execution-dashboards.md` (реализован целиком). Коммиты: Ф1 `9ee6d531`; Ф2 `4e5d3748`; Ф3 `1b9ed454`; Ф4+Ф5 `f244ada6`.
+>
+> **Зачем:** экраны `/dashboard` (День), `/week` (Неделя), `/month` (Месяц) переведены на единый модульный канвас (реестр из 18 виджетов + ролевые пресеты + рендер по `{role, rhythm}`); день ⊂ неделя ⊂ месяц; drill-down по людям (вектор к цели, загрузка, план-факт) + проваливание в источник (`relatedBlockIds` → ProvenanceDrawer). Раскладку пресета можно переопределить из AdminSetting (override) или оставить дефолт фронта (null).
+>
+> **Миграций НЕТ (Шаг 4 не затронут — `sourceBlockId` это JSON-поле в `blockersJson`, новой колонки/таблицы нет). ENV/seed/patch/backfill/очередей/cron/LLM-taskType — НЕТ. Только пересборка backend+frontend.**
+
+- **Шаг 4 — Prisma — НЕ затронут.** Схема БД не менялась: `sourceBlockId` и `relatedBlockIds` строятся из существующих JSON-полей (`blockersJson`) и связей `IdeaBlockLink`, без CREATE/ALTER.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (новый контроллер `ExecutionDashboardController` `@Controller('api/v1/dashboard')` + сервис `ExecutionDashboardService` + DTO `execution-dashboard.dto.ts`; `OperationsDashboardService.fetchBlockers` отдаёт `sourceBlockId`; `BlockerSynthesisService.listChronicForTenant` + `ChronicBlockerDto` отдают `relatedBlockIds`). Frontend (модульный слой `frontend/src/ui/components/dashboard/registry/*` — 18 виджетов + canvas + пресеты; экраны `/dashboard`,`/week`,`/month` на канвасе; api `execution-dashboard.api.ts`+`dashboard-layout.api.ts`).
+- **Шаг 12 — Smoke** (после выката): Swagger `/api/docs` тег `dashboard-execution` показывает 5 новых GET-эндпоинтов:
+  - `GET /api/v1/dashboard/layout?role=&rhythm=` → `{ role, rhythm, layout: string[]|null }` (override пресета из AdminSetting или `null` = дефолт фронта).
+  - `GET /api/v1/dashboard/goal-vector/by-person?goalId?&period=day|week|month` → вектор к цели по людям (вклад `PersonGoalContribution` + задачи `Issue.goalId`, `direction up|side|down`).
+  - `GET /api/v1/dashboard/issue-chains?period=&limit=` → цепочки `blocks`/`blocked_by`.
+  - `GET /api/v1/dashboard/load/by-person` → загрузка по людям (`level overload|normal|idle`; пороги `getDynamic dashboard.load.overload_threshold=8`/`idle_threshold=2`).
+  - `GET /api/v1/dashboard/operations/trend?period=day|week|month` → тренд период-к-периоду из digest-снимков (month = агрегация недель).
+  - `GET /api/v1/dashboard/operations/blockers` несёт `sourceBlockId`; чтение chronic-блокеров несёт `relatedBlockIds: string[]` (для проваливания в источник).
+  - Все 5 под `CookieAuthGuard+TenantGuard`+`canViewDirectorDashboard` (owner/admin/coo/super_admin); чужой tenant → `tenant_required`/403; member на `/dashboard`/`/week`/`/month` видит только коллаборативные виджеты (`ideas`,`value`).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-21 — Трекер: крошка→доска (Ф0.1) · чистка /tasks (Ф0.2) · карточка/sidebar/плотность (Волна 1 Ф1–Ф3) · Гант по умолчанию (Ф4)
 
 > ТЗ `plans/tz/2026-06-20-tracker-card-redesign-and-progress.md` (+ правки Д1–Д6 `b1702ab9`). Коммиты: Волна 0 `b1e9d3bc`; Ф1 `0c5ff787`; Ф2 `2d05dec2`; Ф3 `b5eb5be1`; Ф4 (этот выкат).

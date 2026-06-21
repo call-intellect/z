@@ -297,7 +297,8 @@ export class TelegramTaskParserService {
     const total =
       args.issuesPayload.urgentToday.length +
       args.issuesPayload.inProgress.length +
-      args.issuesPayload.overdue.length;
+      args.issuesPayload.overdue.length +
+      (args.issuesPayload.stalled?.length ?? 0);
     if (total === 0) return null;
 
     const prompt = this.buildDigestPrompt(args.issuesPayload);
@@ -773,6 +774,7 @@ ${text}
    ✅ Победа: {win или «—»}.
    ▶️ Следующий шаг: {nextAction или «—»}.»
    Сигналы перечисляй через «; ». Если signals пуст — пиши «Сигналы (0): нет». Если win/nextAction null — пиши «—». Не выдумывай данные, которых нет в payload.
+6. Если в payload есть непустой массив "stalled" — добавь секцию «🟡 <b>Застряли (нет движения):</b>» со списком «• <code>IDENT</code> «title» — N дн.», где N = daysIdle. Не более 12 элементов.
 
 Каждая задача — одна строка: «• <code>IDENT</code> «title» — короткий комментарий о сроке/статусе». Не более 8 элементов на секцию (если больше — допиши «… и ещё X»).
 
@@ -813,6 +815,15 @@ ${text}
         parts.push(
           `• <code>${escapeHtml(i.identifier)}</code> «${escapeHtml(i.title)}»` +
             (i.daysOverdue ? ` — на ${i.daysOverdue} дн.` : ''),
+        );
+      }
+      parts.push('');
+    }
+    if (payload.stalled && payload.stalled.length > 0) {
+      parts.push(`🟡 <b>Застряли (нет движения):</b>`);
+      for (const i of payload.stalled.slice(0, 12)) {
+        parts.push(
+          `• <code>${escapeHtml(i.identifier)}</code> «${escapeHtml(i.title)}» — ${i.daysIdle} дн.`,
         );
       }
       parts.push('');
@@ -912,6 +923,12 @@ export interface TelegramDigestIssueSummary {
   daysOverdue?: number | null;
 }
 
+export interface TelegramDigestStalledItem {
+  identifier: string;
+  title: string;
+  daysIdle: number;
+}
+
 export interface TelegramDigestPayload {
   urgentToday: TelegramDigestIssueSummary[];
   inProgress: TelegramDigestIssueSummary[];
@@ -926,6 +943,7 @@ export interface TelegramDigestPayload {
    * строкой; fallback рендерит вручную с тем же набором эмодзи.
    */
   sprint?: TelegramDigestSprintBlock;
+  stalled?: TelegramDigestStalledItem[];
 }
 
 /**

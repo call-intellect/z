@@ -157,6 +157,7 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['daily-checkin.skipNonWorkingDays', z.boolean()],
   ['daily-checkin.skipHolidays', z.boolean()],
+  ['daily-checkin.staleDaysThreshold', z.number().int().min(1).max(30)],
 
   ['blocker_synthesis.lookback_days', POSITIVE_INT],
   ['blocker_synthesis.recurring_days', POSITIVE_INT],

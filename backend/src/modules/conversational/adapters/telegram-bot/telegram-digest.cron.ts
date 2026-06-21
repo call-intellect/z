@@ -19,6 +19,7 @@ import { ConversationalService } from '../../conversational.service';
 import {
   type TelegramDigestPayload,
   type TelegramDigestSprintBlock,
+  type TelegramDigestStalledItem,
   TelegramTaskParserService,
 } from './telegram-task-parser.service';
 
@@ -213,7 +214,10 @@ export class TelegramDigestCron {
           userId,
         });
         const total =
-          payload.urgentToday.length + payload.inProgress.length + payload.overdue.length;
+          payload.urgentToday.length +
+          payload.inProgress.length +
+          payload.overdue.length +
+          (payload.stalled?.length ?? 0);
         if (total === 0) {
           empty++;
           this.metrics.incTelegramDigestSent({ tenantTop, result: 'empty' });
@@ -356,12 +360,55 @@ export class TelegramDigestCron {
       sprint = undefined;
     }
 
+    const staleThresholdDays = await this.cfg.getDynamic<number>(
+      'daily-checkin.staleDaysThreshold',
+      undefined,
+      2,
+    );
+    const stalled = await this.collectStalledIssues({
+      tenantId: args.tenantId,
+      userId: args.userId,
+      now,
+      thresholdDays: staleThresholdDays,
+    });
+
     return {
       urgentToday: urgentRows.map((i) => issueSummary(i, now)),
       inProgress: inProgressRows.map((i) => issueSummary(i, now)),
       overdue: overdueRows.map((i) => issueSummary(i, now)),
       ...(sprint ? { sprint } : {}),
+      ...(stalled.length ? { stalled } : {}),
     };
+  }
+
+  private async collectStalledIssues(args: {
+    tenantId: string;
+    userId: string;
+    now: Date;
+    thresholdDays: number;
+  }): Promise<TelegramDigestStalledItem[]> {
+    const cutoff = new Date(args.now.getTime() - args.thresholdDays * 24 * 3600 * 1000);
+    const rows = await this.prisma.issue.findMany({
+      where: {
+        tenantId: args.tenantId,
+        deletedAt: null,
+        archivedAt: null,
+        assignees: { some: { userId: args.userId } },
+        updatedAt: { lt: cutoff },
+        state: { category: { notIn: ['completed', 'cancelled'] } },
+      },
+      select: { identifier: true, title: true, updatedAt: true },
+      take: TelegramDigestCron.MAX_PER_SECTION,
+      orderBy: { updatedAt: 'asc' },
+    });
+    return rows.map((i) => ({
+      identifier: i.identifier,
+      title: i.title,
+      daysIdle: Math.max(
+        0,
+        Math.floor((args.now.getTime() - i.updatedAt.getTime()) / (24 * 3600 * 1000)),
+      ),
+    }));
   }
 
   private async collectSprintBlock(args: {

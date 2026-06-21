@@ -401,5 +401,23 @@ describe('TelegramTaskParserService', () => {
       expect(result).toContain('KORA-2');
       expect(result).toContain('на 2 дн');
     });
+
+    it('застрявшие (stalled) в fallback → секция «Застряли» с identifier', async () => {
+      vi.mocked(llm.call).mockRejectedValueOnce(new Error('boom'));
+      const result = await parser.formulateDigest({
+        tenantId: 'org-1',
+        userId: 'u-1',
+        issuesPayload: {
+          urgentToday: [],
+          inProgress: [],
+          overdue: [],
+          stalled: [{ identifier: 'KORA-9', title: 'Застряла', daysIdle: 3 }],
+        },
+      });
+      expect(result).toBeTruthy();
+      expect(result).toContain('Застряли');
+      expect(result).toContain('KORA-9');
+      expect(result).toContain('3 дн');
+    });
   });
 });

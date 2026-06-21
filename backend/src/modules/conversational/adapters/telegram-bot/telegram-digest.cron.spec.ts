@@ -651,4 +651,52 @@ describe('TelegramDigestCron', () => {
     expect(redis.client.set).not.toHaveBeenCalled();
     expect(conv.sendNotification).not.toHaveBeenCalled();
   });
+
+  it('застрявшие: задача без активности 3 дня → в payload.stalled с daysIdle≥2 + where.updatedAt.lt', async () => {
+    const prisma = makePrisma();
+    prisma.channelBinding.findMany.mockResolvedValueOnce([makeBindingRow('user-1', 'org-1')]);
+    prisma.person.findMany.mockResolvedValueOnce([
+      {
+        userId: 'user-1',
+        tenantId: 'org-1',
+        timezone: 'Europe/Moscow',
+        id: 'p-1',
+        workingDays: [1, 2, 3, 4, 5],
+      },
+    ]);
+    const threeDaysAgo = new Date(NOW_AT_MSK_9.getTime() - 3 * 24 * 3600 * 1000);
+    prisma.issue.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 'i-1',
+          identifier: 'KORA-1',
+          title: 'Срочная',
+          dueDate: new Date(),
+          state: { category: 'unstarted' },
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ identifier: 'KORA-9', title: 'Застряла', updatedAt: threeDaysAgo }]);
+    const parser = makeParser();
+    let capturedPayload: unknown = null;
+    vi.mocked(parser.formulateDigest).mockImplementationOnce((a) => {
+      capturedPayload = a.issuesPayload;
+      return Promise.resolve('<b>ok</b>');
+    });
+    const { cron } = makeCron({ prisma, parser });
+    const stats = await cron.run(NOW_AT_MSK_9);
+    expect(stats.sent).toBe(1);
+    const stalled = (capturedPayload as { stalled?: Array<{ identifier: string; daysIdle: number }> })
+      .stalled;
+    expect(stalled?.[0]?.identifier).toBe('KORA-9');
+    expect(stalled?.[0]?.daysIdle).toBeGreaterThanOrEqual(2);
+    const stalledCall = vi.mocked(prisma.issue.findMany).mock.calls.at(-1)?.[0];
+    expect(stalledCall).toEqual(
+      expect.objectContaining({
+        where: expect.objectContaining({ updatedAt: { lt: expect.any(Date) } }),
+      }),
+    );
+  });
 });

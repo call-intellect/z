@@ -1636,6 +1636,12 @@ function buildSettings(): SettingSeed[] {
       'high',
       'Не слать ежедневные напоминания в государственные праздники (производственный календарь). По умолчанию включено.',
     ],
+    [
+      'daily-checkin.staleDaysThreshold',
+      2,
+      'low',
+      'Сколько дней без активности по задаче, чтобы показать её в утреннем дайджесте как «застрявшую». По умолчанию 2 дня.',
+    ],
   ];
   for (const [key, value, severity, description] of dailyCheckin) {
     out.push({ key, value, category: 'platform', section: 'daily-checkin', severity, description });

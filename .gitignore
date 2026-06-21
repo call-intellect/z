@@ -45,9 +45,14 @@ backend/tmp/
 .qwen/
 .claude/worktrees/
 
-# Debug-скриншоты в корне (не для коммита — лежат в plans/analysis/<topic>/ если важны)
-/audit-board-*.png
-/v*-hero.png
+# Скриншоты/QA-снимки и аналитические артефакты сессий в корне (не для коммита — PII/мусор)
+/*.png
+# Артефакты прогонов eval/смоук и ошибочные вложенности — не коммитить
+/backend/backend/
+backend/scripts/_out/
+backend/scripts/eval/_out/
+backend/test/eval/**/runs/
+/infra/document-conversion/smoke/results/
 
 # Локальные тестовые медиа (звонки/записи) в корне — PII, НЕ коммитить (удаляются после теста).
 /*.mp3

@@ -22,6 +22,18 @@ type: architecture
 
 Если `envFallbackKey` задан, но ни cache, ни ENV, ни default не дали значения — `resolveSync` возвращает `undefined as T`, не throws. Это для optional полей (например `EMBEDDING_FALLBACK_LOCAL_URL`, который в `env.schema.ts` `.optional()`). Throws — только если `envFallbackKey` НЕ передан и `defaultValue` отсутствует (т.е. чисто-БД-ключ, для которого забыли сидер).
 
+### TC4. cron-строки и concurrency НЕ применяются на лету
+
+`@Cron('...')` читает выражение **один раз** при инстанцировании (попадает в `SchedulerRegistry`); пул BullMQ-воркера и `router.dispatchConcurrency` фиксируются при создании процессора. Перенос такого ключа в AdminSetting не перецепит расписание/пул — нужен **рестарт backend** ИЛИ **no-op-гейт в теле крона** (как `goals.pulse.enabled`: cron тикает, при `false` выходит без работы — применяется на лету). Часы/дни доставки (`*_LOCAL_HOUR`/`*_HOUR_UTC`) читаются per-run внутри тела крона → применяются на лету; чистые `*_CRON` — нет (поэтому при миграции их оставляем в ENV).
+
+### TC5. `AdminSettingsService.set()` НЕ валидирует value по реестру
+
+`SetSettingSchema = z.unknown()` — бэк принимает **любое** значение и **не** требует reason по severity. Вся валидация (safeParse по Zod из реестра + reason ≥10 символов для high/destructive) живёт ТОЛЬКО на фронте (`useAdminSettingEditor`). Прямой POST или сид может записать мусор — `resolveSync` вернёт его как есть. Чинится серверной валидацией по `getSchemaForKey` (ТЗ [2026-06-20-config-knobs-to-admin-settings](../../plans/tz/2026-06-20-config-knobs-to-admin-settings.md) Шаг 3).
+
+### TC6. Прямой `process.env.*` мимо `env.schema.ts` запрещён; фронт дублирует Zod вручную
+
+Конфиг читать ТОЛЬКО через `TypedConfigService` (`resolveSync`/`getDynamic`), объявленный в `env.schema.ts`. На 2026-06-20 было **26 нарушений** (`concierge`/`orchestrator`/`router`-fallback/воркеры) — `process.env.*` без валидации, без единого места дефолтов, без проводки в админку. Также: каждая `*SettingsClient.tsx` держит СВОЮ копию Zod-схемы (автоген из бэкового `/schema/:key` существует, но страницы им не пользуются) — рассинхрон бэк/фронт возможен, держи min/max/int/boolean в синхроне руками.
+
 ## LiveKit / Egress
 
 ### 1. Egress — потрескивание в записи (Feb 2026)

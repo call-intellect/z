@@ -9295,6 +9295,7 @@ model Issue {
   activities   IssueActivity[]
   versions     IssueVersion[]
   checklists   IssueChecklist[]
+  progressUpdates IssueProgressUpdate[]
 
   /// Встречи, запущенные из этой задачи (см. `Meeting.linkedIssueId`).
   meetingsFromIssue Meeting[] @relation("MeetingLinkedIssue")
@@ -9464,6 +9465,38 @@ model IssueComment {
   @@index([issueId, createdAt])
   @@index([authorId])
   @@index([parentCommentId])
+}
+
+/// Датированное обновление прогресса задачи (Asana/Linear Project Update-стиль).
+/// health — строкой (расширяемо, не enum). authorType=ai_agent + draftState=pending —
+/// авто-черновик из графа, ждёт подтверждения человеком (НЕ авто-постинг).
+model IssueProgressUpdate {
+  id             String    @id @default(cuid())
+  tenantId       String
+  issueId        String
+  authorId       String? /// null пока авто-черновик не подтверждён
+  authorType     String    @default("human") /// human | ai_agent
+  health         String /// on_track | at_risk | off_track (в норме/риск/буксует)
+  body           String    @db.Text
+  doneText       String?   @db.Text /// «что сделано»
+  nextText       String?   @db.Text /// «что дальше»
+  draftState     String? /// null=опубликовано | pending | accepted | edited | rejected (для ai_agent)
+  sourceBlockIds String[]  @default([]) /// провенанс: блоки графа авто-черновика
+  evidenceQuote  String?   @db.Text
+  confidence     Decimal?  @db.Decimal(4, 3)
+  previewQuote     String? @db.Text /// Д1: снимок цитаты-источника, контракт как Issue.previewQuote
+  previewSourceRef Json? /// Д1: снимок ProvenancePreviewRef (deepLink ?t=/?page=N/?m=)
+  periodStart    DateTime?
+  periodEnd      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, issueId, createdAt])
+  @@index([issueId, createdAt])
+  @@index([tenantId, draftState])
 }
 
 /// SLA-политика деска поддержки (синглтон per вендор-Org для v1). TZ support-desk Ф1.

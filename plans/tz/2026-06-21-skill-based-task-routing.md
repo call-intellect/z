@@ -93,7 +93,7 @@ async suggestAssignee(args: {
 
 ## Фазы
 
-### Фаза 1 — Роль человека в OrgContextService `[ ]`
+### Фаза 1 — Роль человека в OrgContextService `[x]`
 **Цель:** агент извлечения задач видит, кто чем занимается.
 **Файлы:** `org-context.service.ts` — people с реальной ролью (join `PersonRoleAssignment(status=active)`→`Role.name`; при отсутствии — `null`), убрать хардкод `role:null` ([:42](../../backend/src/modules/ai/services/org-context.service.ts#L42)); обновить тип `MeetingExtractActionsContext.people[].role`; форматтер в `prompts/common.ts` (если есть `withOrgContextNote`).
 **Что НЕ входит:** резолв-сервис.

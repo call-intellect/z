@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import type { MeetingExtractActionsContext } from './prompts/tasks';
@@ -9,7 +10,10 @@ export type OrgContext = MeetingExtractActionsContext &
 
 @Injectable()
 export class OrgContextService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+  ) {}
 
   async load(tenantId: string, meetingStartedAt: Date | null): Promise<OrgContext> {
     const [projects, goals, people] = await Promise.all([
@@ -31,15 +35,33 @@ export class OrgContextService {
       }),
       this.prisma.person.findMany({
         where: { tenantId, deletedAt: null, relationship: 'employee' },
-        select: { name: true },
+        select: {
+          name: true,
+          personRoles: {
+            where: { validTo: null },
+            select: { role: { select: { name: true } } },
+            take: 1,
+          },
+          appointments: {
+            where: { validTo: null, status: { not: 'former' } },
+            select: { role: { select: { name: true } } },
+            take: 1,
+          },
+        },
         take: 60,
         orderBy: { name: 'asc' },
       }),
     ]);
+    const useAppointment = this.cfg.persons.useAppointment;
     return {
       projects,
       goals,
-      people: people.map((p) => ({ name: p.name, role: null })),
+      people: people.map((p) => {
+        const role = useAppointment
+          ? (p.appointments[0]?.role?.name ?? null)
+          : (p.personRoles[0]?.role?.name ?? null);
+        return { name: p.name, role };
+      }),
       meetingDateIso: meetingStartedAt
         ? meetingStartedAt.toISOString().slice(0, 10)
         : new Date().toISOString().slice(0, 10),

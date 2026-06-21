@@ -148,7 +148,7 @@ export function withAsrNote(systemBody: string): string {
 export interface OrgContextForPrompt {
   projects?: Array<{ identifier?: string | null; name: string }>;
   goals?: Array<{ name: string }>;
-  people?: Array<{ name: string }>;
+  people?: Array<{ name: string; role?: string | null }>;
 }
 
 export function formatOrgContextForPrompt(ctx: OrgContextForPrompt): string {
@@ -164,7 +164,11 @@ export function formatOrgContextForPrompt(ctx: OrgContextForPrompt): string {
     parts.push(`Активные цели: ${ctx.goals.map((g) => g.name).join(', ')}.`);
   }
   if (ctx.people?.length) {
-    parts.push(`Сотрудники: ${ctx.people.map((p) => p.name).join(', ')}.`);
+    parts.push(
+      `Сотрудники: ${ctx.people
+        .map((p) => (p.role ? `${p.name} (${p.role})` : p.name))
+        .join(', ')}.`,
+    );
   }
   return parts.join('\n');
 }

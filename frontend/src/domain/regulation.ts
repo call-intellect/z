@@ -7,6 +7,7 @@ import type {
   RegulationHistoryResponseApi,
   RegulationKindApi,
   RegulationListItemApi,
+  RegulationNeedsAttentionApi,
   RegulationSourceItemApi,
   RegulationSourcesApi,
   RegulationStatusApi,
@@ -86,6 +87,12 @@ export function isDraftExtraction(
   return extractionStatus === "needed" || extractionStatus === "discussed";
 }
 
+export interface RegulationNeedsAttention {
+  missingOwner: boolean;
+  missingSteps: boolean;
+  unclearScope: boolean;
+}
+
 export interface RegulationDetail extends RegulationListItem {
   contentMd: string;
   sourceBlockIds: string[];
@@ -93,6 +100,21 @@ export interface RegulationDetail extends RegulationListItem {
   currentVersionId: string | null;
   steps?: ProcessStepDomain[];
   supersedesId?: string | null;
+  needsAttention: RegulationNeedsAttention;
+}
+
+function mapNeedsAttention(
+  api: RegulationNeedsAttentionApi | undefined,
+): RegulationNeedsAttention {
+  return {
+    missingOwner: api?.missingOwner ?? false,
+    missingSteps: api?.missingSteps ?? false,
+    unclearScope: api?.unclearScope ?? false,
+  };
+}
+
+export function hasNeedsAttention(na: RegulationNeedsAttention): boolean {
+  return na.missingOwner || na.missingSteps || na.unclearScope;
 }
 
 export interface ProcessStepDomain {
@@ -142,6 +164,7 @@ export function mapRegulationDetail(
     currentVersionId: api.currentVersionId,
     supersedesId: api.supersedesId ?? null,
     steps: api.steps ? api.steps.map(mapProcessStep) : undefined,
+    needsAttention: mapNeedsAttention(api.needsAttention),
   };
 }
 

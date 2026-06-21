@@ -46,6 +46,12 @@ export interface ProcessStepApi {
   slaMinutes: number | null;
 }
 
+export interface RegulationNeedsAttentionApi {
+  missingOwner: boolean;
+  missingSteps: boolean;
+  unclearScope: boolean;
+}
+
 export interface RegulationDetailApi extends RegulationListItemApi {
   contentMd: string;
   sourceBlockIds: string[];
@@ -53,6 +59,7 @@ export interface RegulationDetailApi extends RegulationListItemApi {
   currentVersionId: string | null;
   steps?: ProcessStepApi[];
   supersedesId?: string | null;
+  needsAttention?: RegulationNeedsAttentionApi;
 }
 
 export interface RegulationsListResponseApi {

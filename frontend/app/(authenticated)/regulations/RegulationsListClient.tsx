@@ -31,12 +31,14 @@ import {
   REGULATION_CHANGE_SOURCE_LABEL,
   REGULATION_KIND_LABEL,
   REGULATION_STATUS_LABEL,
+  hasNeedsAttention,
   isDraftExtraction,
   mapRegulationSources,
   mapVersionItem,
   type ExtractionStatus,
   type PolicySeverity,
   type RegulationDetail,
+  type RegulationNeedsAttention,
   type RegulationStatus,
   mapRegulationDetail,
 } from '@/domain/regulation';
@@ -559,6 +561,8 @@ function RegulationsListContent() {
           ) : null}
         </dl>
       </header>
+
+      <NeedsAttentionBadge needsAttention={detail.needsAttention} />
 
       {/* C3: provenance-аккордеон — дословные цитаты-источники. */}
       <SourcesAccordion
@@ -1141,6 +1145,43 @@ function RegulationsListContent() {
 
       {supersedeDialog}
     </div>
+  );
+}
+
+const NEEDS_ATTENTION_REASONS: ReadonlyArray<{
+  key: keyof RegulationNeedsAttention;
+  label: string;
+}> = [
+  { key: 'missingOwner', label: 'Не назначен владелец' },
+  { key: 'missingSteps', label: 'Не описаны шаги' },
+  { key: 'unclearScope', label: 'Не указана область действия' },
+];
+
+function NeedsAttentionBadge({
+  needsAttention,
+}: {
+  needsAttention: RegulationNeedsAttention;
+}) {
+  if (!hasNeedsAttention(needsAttention)) return null;
+  const reasons = NEEDS_ATTENTION_REASONS.filter(
+    (r) => needsAttention[r.key],
+  );
+  return (
+    <section className="rounded-md border border-chip-warning-fg/30 bg-chip-warning-bg px-3 py-2.5">
+      <h3 className="flex items-center gap-1.5 text-sm font-medium text-chip-warning-fg">
+        <span aria-hidden>⚠️</span>
+        Требует внимания
+      </h3>
+      <ul className="mt-1.5 flex flex-wrap gap-1.5">
+        {reasons.map((r) => (
+          <li key={r.key}>
+            <Chip variant="warning" size="sm">
+              {r.label}
+            </Chip>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

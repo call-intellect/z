@@ -27,6 +27,7 @@ import { CommitmentsService } from './services/commitments.service';
 import { CustomerRiskRadarService } from './services/customer-risk-radar.service';
 import { DailyCheckInService } from './services/daily-checkin.service';
 import { DailyDigestService } from './services/daily-digest.service';
+import { DaySignalExtractorService } from './services/day-signal-extractor.service';
 import { DecisionImplementationService } from './services/decision-implementation.service';
 import { GoalCascadeService } from './services/goal-cascade.service';
 import { KnowledgeAtRiskService } from './services/knowledge-at-risk.service';
@@ -91,6 +92,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
   ],
   providers: [
     DailyCheckInService,
+    DaySignalExtractorService,
     OperationsDashboardService,
     PersonalRelationService,
     GoalCascadeService,

@@ -143,10 +143,19 @@ ConversationalEvent (eventType='specialist.probe')
 - `RegulationsController` агрегирует три таблицы через единый дискриминатор `kind` в одном `RegulationListItemDto`.
 - `Specialist31CardHandler` зарегистрирован в `CardSpecialistRegistry` под именем `'3-1-regulations'` — chat-v2 умеет подсветить регламент в ответах (через overlap `sourceBlockIds ∩ candidateBlockIds`).
 
+## 8.1. Политика триггера probe (Волна 1, 2026-06-21)
+
+**Источник:** ТЗ [`plans/tz/2026-06-21-probe-trigger-policy-tz.md`](../../plans/tz/2026-06-21-probe-trigger-policy-tz.md) (Волна 1). Меняет поведение шага 7 «4 probe-trigger'а» для авто-извлечённых, ещё не подтверждённых человеком карточек.
+
+- **gap-вопросы глушатся центральным гейтом.** Три gap-повода — `regulation.missing_owner` (нет ответственного), `regulation.process_no_steps` (у процесса нет шагов), `regulation.scope_unclear` (нечёткая область действия) — на авто-извлечённой карточке с provenance `auto_unconfirmed` больше **не уходят push'ем**. Центральный гейт в `ProbeService.suggest` роняет их как `dropped_policy_silent` (см. [[probe-question-flow]] §8.2), а вместо вопроса в карточке `/regulations/[id]` показывается **тихий статус** «⚠️ Требует внимания» (`needsAttention` в `RegulationDetailDto` + бейдж). Это значит: система могла бы закрыть пробел сама / запись ещё не подтверждена — не нужно беспокоить человека «дырочными» вопросами.
+- **Один вопрос существования вместо missing_owner после грейса.** Когда у авто-извлечённого регламента истёк грейс (`probe.confirmGraceDays`, 2 дня) и пробел всё ещё открыт, вместо `missing_owner`-вопроса владельцу/админам задаётся **один** `regulation.existence_confirm` — «оставить / переименовать / назначить владельца / удалить». Ответ идёт не в свободный ingest, а структурным решением через `CurationService.decide`. Адресация: сначала владельцу (если назначен), затем админам.
+- **Крутилки:** `probe.suppressOnUnconfirmedAuto` (kill-switch ON — глушение gap-вопросов), `probe.existenceConfirmEnabled` (kill-switch ON — один вопрос вместо серии), `probe.confirmGraceDays` (2 — грейс), `probe.machineFillableReasons` (список поводов гейта).
+
 ## 9. История изменений процесса
 
 | Дата | Что изменилось | Коммит/рефлексия |
 |---|---|---|
+| 2026-06-21 | Волна 1 политики триггера: gap-вопросы (missing_owner/process_no_steps/scope_unclear) на авто-неподтв. карточках глушатся центральным гейтом → тихий статус `needsAttention` в карточке; после грейса вместо missing_owner — один `regulation.existence_confirm` владельцу→админам (→ `CurationService.decide`). Крутилки `probe.{suppressOnUnconfirmedAuto,existenceConfirmEnabled,confirmGraceDays}` | ТЗ probe-trigger-policy |
 | 2026-06-17 | Компилятор `compile-org-document` на создании карточки (Шаг 5а) + все 4 типа вкл. instruction; ручная загрузка docType→signalTypeHint; раздел переименован в «База знаний» | [[05_история/2026-06-17-knowledge-base-redesign-and-formatter]] |
 | 2026-05-29 | Карточка создана | этот документ |
 | 2026-05-22 | SBA α-7 — выкат Specialist 3.1 | [[01_projects/regulations]] |

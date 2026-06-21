@@ -212,10 +212,30 @@ ProbeDispatcherWorker.process
 |---|---|---|---|---|
 | 7.5 (после formulate) | `probe-quality-judge` | `deepseek-v4-flash` | `gpt-5.4-mini` → `ollama` | `backend/src/modules/probe/prompts/probe-quality-judge.prompt.ts` |
 
+## 8.2. Волна 1 — политика триггера probe (2026-06-21)
+
+**Источник:** ТЗ [`plans/tz/2026-06-21-probe-trigger-policy-tz.md`](../../plans/tz/2026-06-21-probe-trigger-policy-tz.md) (Волна 1). Профильная заметка — [[../01_projects/probe-agent]]. Отвечает не на «как сформулировать вопрос», а на «когда вообще его задавать» — central gate в самом `ProbeService.suggest`.
+
+**Центральный гейт политики (до dedup, шаг 2).** В начале `ProbeService.suggest`, ДО content-hash и семантического дедупа, проверяется связка «причина машинно-закрываема + запись авто-извлечена и не подтверждена человеком»:
+
+1. **Machine-fillable повод.** Если `reason` входит в крутилку-список `probe.machineFillableReasons` (нет владельца / нет шагов / нечёткий scope регламента — система могла бы закрыть пробел сама), И
+2. **provenance = `auto_unconfirmed`.** Запись (регламент/карточка), к которой относится пробел, извлечена автоматически и человеком ещё не подтверждена,
+
+то probe **не уходит** — статус `dropped_policy_silent` (метрика `probe_events_total{status="dropped_policy_silent"}`), а в карточке показывается **тихий статус** «Требует внимания» (`needsAttention` в `RegulationDetailDto` + бейдж «⚠️ Требует внимания» на `/regulations/[id]`). Kill-switch `probe.suppressOnUnconfirmedAuto` (ON); OFF → старое поведение (вопросы уходят).
+
+**Грейс `notBeforeAt` (новое поле `ProbeEvent.notBeforeAt`).** Свежая запись «отлёживается»: probe по ней не отправляется раньше `notBeforeAt = createdAt + probe.confirmGraceDays` (2 дня). Диспетчер (шаг 7) и digest-cron уважают `notBeforeAt`; attribution (closing-loop) тоже откладывается на грейс — за это время человек может подтвердить/удалить запись сам, и вопрос не понадобится.
+
+**`regulation.existence_confirm` после грейса (вместо серии gap-вопросов).** Для регламентов вместо набора `regulation.missing_owner` / `regulation.process_no_steps` / `regulation.scope_unclear` после истечения грейса задаётся **один** вопрос подтверждения существования — «оставить / переименовать / назначить владельца / удалить». Ответ идёт не в свободный ingest, а в `CurationService.decide` (структурное решение по карточке). Kill-switch `probe.existenceConfirmEnabled` (ON); OFF → старый gap-probe.
+
+**Связанная крутилка приёма.** `intake.autoAcceptSources` (override-only, code-fallback) — список источников, чьи извлечённые записи считаются авто-принятыми (влияет на `provenance`); вынесено из хардкода порога авто-приёма задач (telegram-task-parser теперь читает порог через `getDynamic`).
+
+**Крутилки Волны 1:** `probe.confirmGraceDays` (2), `probe.suppressOnUnconfirmedAuto` (true, kill-switch), `probe.existenceConfirmEnabled` (true, kill-switch), `probe.machineFillableReasons` (список реестра, override-only), `intake.autoAcceptSources` (список реестра, override-only).
+
 ## 9. История изменений процесса
 
 | Дата | Что изменилось | Коммит/рефлексия |
 |---|---|---|
+| 2026-06-21 | Волна 1 — политика триггера: центральный гейт в `suggest` (machine-fillable + provenance auto_unconfirmed → `dropped_policy_silent`, тихий статус в карточке вместо push); грейс `ProbeEvent.notBeforeAt` (миграция `20260621132002_probe_event_not_before_at`); `regulation.existence_confirm` после грейса вместо gap-вопросов (ответ → `CurationService.decide`); фикс хардкода порога авто-приёма задач. Крутилки `probe.{confirmGraceDays,suppressOnUnconfirmedAuto,existenceConfirmEnabled,machineFillableReasons}`, `intake.autoAcceptSources` | ТЗ probe-trigger-policy |
 | 2026-06-20 | Умный модуль (Ф1–Ф6): единый `ProbeFormulationService` (gate→formulate→judge) для push И дайджеста; **ценностный гейт** `probe-value-gate` перед формулировкой (ask=false → `dropped_low_value`, метрика `probe_value_gate_total`); промпт формулировки = proven B («НАЗОВИ ОБЪЕКТ»), эмиттеры кладут чистый `objectName`; судья видит объект; стоп-кран дайджеста (humanize message + гард паритета FALLBACK, без пустых вопросов); флаги `probe.valueGateEnabled`/`probe.digestFormulateEnabled` (kill-switch ON) | `dc6a2377`..`ee3a3f3c`, ТЗ probe-smart-questions-module |
 | 2026-06-18 | Фаза 2 (Ф1–Ф6): `probe_reply` (свободный ответ), LLM-судья качества `probe-quality-judge`, выбор получателя по отзывчивости (+реальный `kind`), семантический дедуп через pgvector, re-ask, повод `attribution.unresolved_at_ingest`. Закрыты gap'ы round-robin/хардкод kind/embedding-дедуп | `9430383f`..`ea27594e`, ТЗ probe-system-phase2 |
 | 2026-05-29 | Карточка создана. Зафиксированы gap'ы по cold-start и хардкод label'у. | этот документ |

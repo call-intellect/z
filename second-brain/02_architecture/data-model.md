@@ -1035,6 +1035,31 @@ Autonomy W2 (2026-06-12) добавила **ещё два значения** (м
 
 **Фаза 2 (2026-06-18) — новая колонка `ProbeEvent.questionEmbedding vector(1536)`** (миграция `add_probe_event_question_embedding`, ТЗ [`probe-system-phase2`](../../plans/tz/2026-06-17-probe-system-phase2.md)) — эмбеддинг сформулированного вопроса (text-embedding-3-small) для **семантического дедупа** вопросов поверх content-hash дедупа. HNSW-индекс `idx_probeevent_qembed_hnsw` (`vector_cosine_ops`, partial `WHERE "questionEmbedding" IS NOT NULL`) — в `postgres-init.sql`, не в schema.prisma. Дедуп-гейт: cosine ≥ `probe.semanticDedupThreshold` (0.92) в окне `probe.semanticDedupWindowHours` (72) → дроп. Колонка nullable, backfill не нужен. Полная карта Ф2 — [[../01_projects/probe-agent]] §«Фаза 2».
 
+**Волна 1 политики триггера (2026-06-21) — новая колонка `ProbeEvent.notBeforeAt DateTime?`** (миграция `20260621132002_probe_event_not_before_at` — `ALTER TABLE "probe_events" ADD COLUMN "notBeforeAt" TIMESTAMP(3)`, аддитивная, nullable, backfill не нужен) — **грейс**: probe по свежей авто-извлечённой записи не отправляется раньше `notBeforeAt = createdAt + probe.confirmGraceDays` (2 дня); диспетчер и digest-cron уважают поле, attribution откладывается на грейс. Часть центрального гейта политики (machine-fillable + provenance `auto_unconfirmed` → `dropped_policy_silent`) — см. процессы [[../03_processes/probe-question-flow]] §8.2 и [[../03_processes/specialist-3-1-regulations]] §8.1.
+
+## PersonLeave — отпуска / отсутствия сотрудника (2026-06-21)
+
+**Источник:** ТЗ [`plans/tz/2026-06-21-daily-reminders-delivery-fix-and-work-calendar.md`](../../plans/tz/2026-06-21-daily-reminders-delivery-fix-and-work-calendar.md) (Ф3, рабочий календарь). Миграция `20260621122719_person_leave` (CREATE TABLE, аддитивная). Полная карта надёжных напоминаний — [[../01_projects/operations]] (при наличии).
+
+Период отсутствия сотрудника (отпуск/больничный/командировка). Используется `PersonLeaveService.isOnLeave(personId, date)` в календарном гейте ежедневных напоминаний (план/отчёт/дайджест не шлются в дни активного leave) рядом с `Person.workingDays` + `HolidayService`. CRUD — `/api/v1/admin/person-leaves` (`GET/POST/DELETE`, `CookieAuthGuard+TenantGuard`).
+
+```prisma
+model PersonLeave {
+  id        String   @id @default(cuid())
+  tenantId  String
+  personId  String
+  fromDate  DateTime
+  toDate    DateTime
+  kind      String   @default("vacation")   // vacation | sick | trip | other
+  comment   String?
+  createdAt DateTime @default(now())
+
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, personId, fromDate, toDate])
+}
+```
+
 ## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
 
 **Источник:** [`plans/archive/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/archive/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[../01_projects/feedback]].

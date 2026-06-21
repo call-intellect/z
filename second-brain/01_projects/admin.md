@@ -182,6 +182,13 @@ admin-поверхности с разбором конкретной карто
   - При `grant` уведомление получателя — `eventType=clone.access_granted` (in-app + Telegram через `ConversationalService`). Notification-failure не откатывает grant (warn-log).
 - **ТЗ:** [plans/archive/2026-05-26-clone-access-grant-admin-api.md](../../plans/archive/2026-05-26-clone-access-grant-admin-api.md) + frontend часть в [plans/archive/2026-05-26-clones-marketplace-frontend.md](../../plans/archive/2026-05-26-clones-marketplace-frontend.md) §2-§3.
 
+### `/admin/checkin-signals` — Сигналы чек-инов (2026-06-21)
+
+Страница super_admin: крутилки универсального фиксатора чек-инов (`daySignals.*` — рубильник `daySignals.enabled`, порог детектора `daySignals.detectThreshold`, локальный час обработки `daySignals.processLocalHour`). Через `AdminSettingField` (history + audit), поверх `AdminSettingsService` / `TypedConfigService.getDynamic` (admin → ENV → code-fallback).
+
+- **Навигация:** новый пункт в разделе «AI и модели» admin-навигации (`frontend/app/(admin)/admin/navigation.ts`).
+- **ТЗ:** `plans/tz/2026-06-21-universal-daily-checkin-fixator-tz.md` (TZ3 админ-страница). Процесс детектора — [feature-flags.md](../../docs/operations/feature-flags.md) (`daySignals.enabled`).
+
 ## Тенанты (Org)
 
 ### `/admin/orgs/[id]` — Карточка организации (табы)

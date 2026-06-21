@@ -71,6 +71,27 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-21 — Политика триггера probe (Волна 1): гейт + грейс + подтверждение существования
+
+> ТЗ `plans/tz/2026-06-21-probe-trigger-policy-tz.md` (Волна 1). Центральная политика «когда вообще задавать уточняющий вопрос»: машинно-закрываемые пробелы на авто-извлечённых, не подтверждённых человеком записях push'ем не уходят — вместо вопроса тихий статус в карточке; gap-вопросы по регламентам заменяются одним вопросом подтверждения существования после грейса.
+>
+> **Зачем:** перестать беспокоить людей вопросами, на которые система может ответить сама (нет владельца/шагов/scope у авто-извлечённого регламента) или которые преждевременны (запись ещё «не отлежалась» грейс); один внятный вопрос вместо серии.
+>
+> **1 миграция (авто, аддитивная: `ProbeEvent.notBeforeAt`) + 3 крутилки AdminSetting (seed, уже в STEPS) + 2 крутилки реестра override-only (не сеются). Docker rebuild backend. Новых ENV нет (probe.* / intake.* — чистые AdminSetting).**
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260621132002_probe_event_not_before_at` — `ALTER TABLE "probe_events" ADD COLUMN "notBeforeAt" TIMESTAMP(3)` (грейс: probe не уходит раньше этого момента). Аддитивная, без потери данных, backfill не нужен (nullable). **В STEPS не регистрируется** (миграция схемы).
+- **Шаг 7 — Seed (идемпотентный, уже в STEPS `phase:'seed-base'`):** `docker compose exec backend bun run scripts/seed-admin-settings.ts` — новые ключи `probe.confirmGraceDays` (2) / `probe.suppressOnUnconfirmedAuto` (true, kill-switch ON) / `probe.existenceConfirmEnabled` (true, kill-switch ON). Ключи `probe.machineFillableReasons` / `intake.autoAcceptSources` — **только реестр** (code-fallback, override-only, не сеются). Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Отдельной строки STEPS не нужно — сид уже зарегистрирован.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Новый reason `regulation.existence_confirm`; центральный гейт в `ProbeService.suggest` (machine-fillable + provenance auto_unconfirmed → `dropped_policy_silent`, push не уходит); грейс `notBeforeAt` учитывается в диспетчере / digest-кроне; attribution откладывается на грейс.
+- **Шаг 12 — Smoke** (после выката):
+  - Метрика `probe_events_total{status="dropped_policy_silent"}` появляется на авто-неподтверждённых регламентах (gap-вопрос заглушён гейтом).
+  - В дайджесте 3-1 НЕТ reason'ов `regulation.missing_owner` / `regulation.process_no_steps` / `regulation.scope_unclear` (заменены тихим статусом / одним вопросом существования).
+  - Карточка `/regulations/[id]` показывает бейдж «⚠️ Требует внимания» (поле `needsAttention` в `RegulationDetailDto`).
+  - Крутилки `probe.{confirmGraceDays,suppressOnUnconfirmedAuto,existenceConfirmEnabled}` видны в админке AdminSetting.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-21 — Надёжные ежедневные напоминания: доставка утром + рабочий календарь + застрявшие задачи
 
 > ТЗ `plans/tz/2026-06-21-daily-reminders-delivery-fix-and-work-calendar.md` (Ф1–Ф5). Коммиты: Ф1 `5865a02b` (priorityTier:1, ранее); Ф3-фундамент `4d64b76c`; Ф2+Ф3-гейт `ea362476`; Ф4 `85b437d0`.

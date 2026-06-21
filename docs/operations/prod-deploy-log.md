@@ -71,6 +71,27 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-21 — Надёжные ежедневные напоминания: доставка утром + рабочий календарь + застрявшие задачи
+
+> ТЗ `plans/tz/2026-06-21-daily-reminders-delivery-fix-and-work-calendar.md` (Ф1–Ф5). Коммиты: Ф1 `5865a02b` (priorityTier:1, ранее); Ф3-фундамент `4d64b76c`; Ф2+Ф3-гейт `ea362476`; Ф4 `85b437d0`.
+>
+> **Зачем:** утренний чек-ин/дайджест доходит до Telegram (обходит тихие часы/бюджет через `priorityTier:1`); напоминания НЕ шлются в выходные/праздники/отпуск; застрявшие задачи в утреннем дайджесте — поимённо, а не счётчиком.
+>
+> **1 миграция (авто, аддитивная: `PersonLeave`) + 3 крутилки AdminSetting (seed, уже в STEPS) + новый CRUD-эндпоинт `person-leaves`. Docker rebuild backend. Новых ENV нет (daily-checkin.* — чистые AdminSetting).**
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260621122719_person_leave` — новая таблица `PersonLeave` (`tenantId`/`personId`/`fromDate`/`toDate`/`kind` default `'vacation'`/`comment?`/`createdAt`; индекс `(tenantId, personId, fromDate, toDate)`; FK `person onDelete Cascade`). Аддитивная (CREATE TABLE), без потери данных, backfill не нужен (nullable-семантика отсутствия записи). **В STEPS не регистрируется** (миграция схемы).
+- **Шаг 7 — Seed (идемпотентный, уже в STEPS `phase:'seed-base'`):** `docker compose exec backend bun run scripts/seed-admin-settings.ts` — новые ключи `daily-checkin.skipNonWorkingDays` (true, kill-switch ON) / `daily-checkin.skipHolidays` (true, kill-switch ON) / `daily-checkin.staleDaysThreshold` (2). Чистые AdminSetting (без ENV). Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Отдельной строки STEPS не нужно — сид уже зарегистрирован.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Кроны `DailyCheckInPromptCron` и `TelegramDigestCron` получили календарный гейт (workingDays + `HolidayService` + `PersonLeaveService.isOnLeave`); дайджест-парсер — секцию «Застряли».
+- **Шаг 12 — Smoke** (после выката):
+  - Новый эндпоинт в Swagger `/api/docs` тег `tracker / person-leaves`: `GET/POST/DELETE /api/v1/admin/person-leaves` (под `CookieAuthGuard+TenantGuard`, RBAC `project`).
+  - Крутилки `daily-checkin.{skipNonWorkingDays,skipHolidays,staleDaysThreshold}` видны в админке AdminSetting.
+  - В будний день утром в логах `sendNotification ... eventType=checkin.prompt channels=[...,telegram_bot]` (Telegram в каналах). В выходной — в логах `daily_checkin_skipped{reason:'weekend'}` / `telegram_digest ... result=skipped_non_working`, отправок нет.
+  - Утренний дайджест с застрявшими задачами содержит секцию «🟡 Застряли (нет движения)» с перечислением `IDENT «title» — N дн.`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-21 — Универсальный фиксатор чек-инов (детектор план/отчёт из всех каналов) — Ф8 крутилки
 
 > ТЗ `plans/tz/2026-06-21-universal-daily-checkin-fixator-tz.md` Фаза 8 (config+docs). Фиксатор детектирует план/отчёт сотрудника из всех каналов (встречи, Bitrix, чаты, почта, заметки) и пишет чек-ин — продакшен-код сервисов читает крутилки через `cfg.getDynamic`.

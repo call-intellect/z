@@ -5163,6 +5163,8 @@ model Document {
   originalSize   Int
   /// Заполняется парсером (Фаза 0b).
   parsedText     String?        @db.Text
+  pageCount      Int?
+  pageOffsets    Int[]          @default([])
   /// Если status=failed — текст ошибки парсера.
   parseError     String?        @db.Text
   status         DocumentStatus @default(uploaded)

@@ -13,10 +13,25 @@ export interface ParseResult {
   text: string;
   metadata: {
     pageCount?: number;
+    pageOffsets?: number[];
     title?: string;
     author?: string;
     extractedAt: Date;
   };
+}
+
+export function joinPagesWithOffsets(
+  pages: string[],
+  separator = '\n\n',
+): { text: string; pageOffsets: number[] } {
+  let text = '';
+  const pageOffsets: number[] = [];
+  for (let i = 0; i < pages.length; i += 1) {
+    pageOffsets.push(text.length);
+    text += pages[i] ?? '';
+    if (i < pages.length - 1) text += separator;
+  }
+  return { text, pageOffsets };
 }
 
 @Injectable()
@@ -80,61 +95,30 @@ export class DocumentParserService {
 
   private async parsePdf(buffer: Buffer): Promise<ParseResult> {
     try {
-      // импорт резолвится. Cast через `unknown` достаточен — `@ts-ignore`
-      const mod = (await import('pdf-parse')) as unknown as {
-        PDFParse?: new (opts: { data: Buffer | Uint8Array }) => {
-          getText: () => Promise<{
-            text: string;
-            pages?: Array<unknown>;
-            info?: { Title?: string; Author?: string };
-          }>;
-          destroy: () => Promise<void>;
-        };
-        default?: (data: Buffer) => Promise<{
-          text: string;
-          numpages?: number;
-          info?: { Title?: string; Author?: string };
-        }>;
+      const { extractText, getDocumentProxy, getMeta } = (await import('unpdf')) as unknown as {
+        extractText: (
+          pdf: unknown,
+          options?: { mergePages?: boolean },
+        ) => Promise<{ totalPages: number; text: string[] }>;
+        getDocumentProxy: (data: Uint8Array) => Promise<unknown>;
+        getMeta: (pdf: unknown) => Promise<{ info?: { Title?: string; Author?: string } }>;
       };
 
-      if (mod.PDFParse) {
-        const parser = new mod.PDFParse({ data: buffer });
-        try {
-          const result = await parser.getText();
-          return {
-            text: result.text ?? '',
-            metadata: {
-              pageCount: Array.isArray(result.pages) ? result.pages.length : undefined,
-              title: result.info?.Title,
-              author: result.info?.Author,
-              extractedAt: new Date(),
-            },
-          };
-        } finally {
-          await parser.destroy().catch((err) => {
-            this.logger.warn(
-              `pdf-parse destroy упал: ${err instanceof Error ? err.message : String(err)}`,
-            );
-          });
-        }
-      }
+      const pdf = await getDocumentProxy(new Uint8Array(buffer));
+      const { totalPages, text: pages } = await extractText(pdf);
+      const { info } = await getMeta(pdf);
+      const { text, pageOffsets } = joinPagesWithOffsets(pages);
 
-      if (typeof mod.default === 'function') {
-        const result = await mod.default(buffer);
-        return {
-          text: result.text ?? '',
-          metadata: {
-            pageCount: result.numpages,
-            title: result.info?.Title,
-            author: result.info?.Author,
-            extractedAt: new Date(),
-          },
-        };
-      }
-
-      throw new DocumentParseFailedError(
-        'pdf-parse не предоставил ожидаемый API (PDFParse class или default function)',
-      );
+      return {
+        text,
+        metadata: {
+          pageCount: totalPages,
+          pageOffsets,
+          title: info?.Title,
+          author: info?.Author,
+          extractedAt: new Date(),
+        },
+      };
     } catch (err) {
       if (err instanceof DocumentParseFailedError || err instanceof BadRequestException) {
         throw err;

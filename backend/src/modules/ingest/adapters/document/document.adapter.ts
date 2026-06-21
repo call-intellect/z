@@ -189,6 +189,8 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
         where: { id: documentId },
         data: {
           parsedText: parsed.text,
+          pageCount: parsed.metadata.pageCount ?? null,
+          pageOffsets: parsed.metadata.pageOffsets ?? [],
           status: 'parsed',
         },
       });

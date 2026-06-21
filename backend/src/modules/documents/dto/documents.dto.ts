@@ -160,6 +160,8 @@ export interface DocumentDto {
   attachedRoleId: string | null;
   attachedRoleName: string | null;
   parsedAt: string | null;
+  pageCount: number | null;
+  pageOffsets: number[];
   docType: DocumentType | null;
   attachedThemeId: string | null;
   attachedProjectId: string | null;
@@ -192,6 +194,8 @@ export function toDocumentDto(
     attachedRoleId: doc.attachedRoleId,
     attachedRoleName: doc.attachedRole?.name ?? null,
     parsedAt: null,
+    pageCount: doc.pageCount ?? null,
+    pageOffsets: doc.pageOffsets ?? [],
     docType: doc.docType,
     attachedThemeId: doc.attachedThemeId,
     attachedProjectId: doc.attachedProjectId,

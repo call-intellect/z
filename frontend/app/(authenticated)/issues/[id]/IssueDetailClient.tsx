@@ -12,6 +12,7 @@ import {
   IssueComments,
   IssueDescription,
   IssueHeader,
+  IssueProgress,
   IssueRelations,
   IssueSidebar,
   IssueSimilar,
@@ -92,6 +93,11 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
           <section className="flex flex-col gap-2">
             <h2 className="text-sm font-medium text-fg-primary">Чек-листы</h2>
             <IssueChecklists orgId={currentOrgId} issueId={issue.id} />
+          </section>
+
+          <section className="flex flex-col gap-2">
+            <h2 className="text-sm font-medium text-fg-primary">Прогресс</h2>
+            <IssueProgress orgId={currentOrgId} issueId={issue.id} />
           </section>
 
           <section className="flex flex-col gap-2">

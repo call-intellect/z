@@ -130,6 +130,7 @@ export class MeetingsService {
 
     let resolvedName: string;
     let resolvedEmail: string | null = invitee.email ?? null;
+    let resolvedUserId: string | null = invitee.userId ?? null;
     if (invitee.userId) {
       const u = await tx.user.findUnique({
         where: { id: invitee.userId },
@@ -140,9 +141,11 @@ export class MeetingsService {
     } else if (invitee.personId) {
       const p = await tx.person.findUnique({
         where: { id: invitee.personId },
-        select: { name: true },
+        select: { name: true, email: true, userId: true },
       });
       resolvedName = p?.name ?? invitee.email ?? 'Приглашённый';
+      if (!resolvedEmail) resolvedEmail = p?.email || null;
+      if (!resolvedUserId) resolvedUserId = p?.userId ?? null;
     } else {
       resolvedName = invitee.email ?? 'Приглашённый';
     }
@@ -166,7 +169,7 @@ export class MeetingsService {
     return {
       inviteToken,
       sendVia: invitee.sendVia ?? [],
-      userId: invitee.userId ?? null,
+      userId: resolvedUserId,
       email: resolvedEmail,
       name: resolvedName,
     };

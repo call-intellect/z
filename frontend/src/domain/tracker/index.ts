@@ -7,6 +7,7 @@ export * from "./cycle";
 export * from "./intake";
 export * from "./comment";
 export * from "./progress-update";
+export * from "./issue-field";
 export * from "./checklist";
 export * from "./label";
 export * from "./webhook";

@@ -8,6 +8,7 @@ import { BoardsController } from './controllers/boards.controller';
 import { ChecklistsController } from './controllers/checklists.controller';
 import { CommentsController } from './controllers/comments.controller';
 import { ProgressUpdatesController } from './controllers/progress-updates.controller';
+import { IssueFieldsController } from './controllers/issue-fields.controller';
 import { CyclesController } from './controllers/cycles.controller';
 import { DocumentUploadsController } from './controllers/document-uploads.controller';
 import { HolidaysController } from './controllers/holidays.controller';
@@ -36,6 +37,7 @@ import { BoardsService } from './services/boards.service';
 import { ChecklistsService } from './services/checklists.service';
 import { CommentsService } from './services/comments.service';
 import { ProgressUpdatesService } from './services/progress-updates.service';
+import { IssueFieldsService } from './services/issue-fields.service';
 import { CycleMeetingsService } from './services/cycle-meetings.service';
 import { CyclesService } from './services/cycles.service';
 import { HolidayService } from './services/holiday.service';
@@ -91,6 +93,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     IntakeController,
     CommentsController,
     ProgressUpdatesController,
+    IssueFieldsController,
     ActivityDigestController,
     LabelsController,
     TrackerWebhooksController,
@@ -133,6 +136,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     IntakeService,
     CommentsService,
     ProgressUpdatesService,
+    IssueFieldsService,
     LabelsService,
     WebhooksService,
     RelationsService,

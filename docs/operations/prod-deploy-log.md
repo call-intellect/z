@@ -108,6 +108,20 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-21 — Трекер Волна 3 Ф9: кастом-поля задачи (IssueFieldDef/IssueFieldValue)
+
+> ТЗ `plans/tz/2026-06-20-tracker-card-redesign-and-progress.md` Фаза 9 (R18). Произвольные поля на задаче (паритет Jira/Kaiten/Bitrix): типы text|number|date|checkbox|status|selectSingle|selectMulti|person|url.
+>
+> **1 миграция (авто, аддитивная). Docker rebuild backend+frontend. Новых ENV/seed/patch/backfill/LLM-taskType нет.**
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up`): `20260621065954_issue_custom_fields` — 2 новые таблицы `IssueFieldDef` (per-project/глобальное определение поля: `config Json`, фракционный `order Decimal(20,10)`, `archivedAt`, индекс `(tenantId, projectId, order)`) + `IssueFieldValue` (значение поля задачи: `value Json`, `@@unique(issueId, fieldId)`, индекс `(tenantId, fieldId)`, FK `issue onDelete Cascade`). Аддитивная (CREATE TABLE), без потери данных. **В STEPS не регистрируется** (миграция схемы).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (новый контроллер `IssueFieldsController` — 6 эндпоинтов `GET/POST /api/v1/issue-fields`, `DELETE /api/v1/issue-fields/:id`, `GET/POST /api/v1/issues/:id/field-values`, `DELETE /api/v1/issues/:id/field-values/:fieldId`, RBAC `canRead/canWrite('issue')`, валидация значения по type/config). Frontend (секция «Поля» в детали задачи: значения + форма управления определениями).
+- **Шаг 12 — Smoke** (после выката): Swagger `/api/docs` тег `tracker / custom-fields` показывает 6 эндпоинтов; создать поле `type=selectSingle` с опциями → задать значение задаче → видно в детали; невалидное значение (`selectSingle` с id не из config) → 400 `invalid_field_value`; чужой tenant → `tenant_required`/403.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-21 — Хвосты трёх ТЗ: deep-link сообщения чата (Ф1) + UI крутилок (Ф2) + page-aware документ (Ф4)
 
 > Ветка `feature/three-tz-tails-finalization`. Коммиты: Ф1 `237b48b5`; Ф2 `40ef424d`+`19c091f5`; Ф4 `af7d4cb6`+`8010c92d`. second-brain: `02_architecture/data-model.md` (`Document.pageCount`/`pageOffsets`), `01_projects/admin.md` (7 страниц настроек + scaffold `DomainSettings`), `01_projects/frontend-pages.md` (7 admin-роутов), `01_projects/api-layer.md` (`ChatMessageDto.externalId`, page-aware doc-deeplink).

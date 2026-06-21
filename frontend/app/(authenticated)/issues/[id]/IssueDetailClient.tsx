@@ -11,6 +11,7 @@ import {
   IssueChat,
   IssueChecklists,
   IssueComments,
+  IssueCustomFields,
   IssueDescription,
   IssueHeader,
   IssueProgress,
@@ -100,6 +101,15 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
             <h2 className="text-sm font-medium text-fg-primary">Прогресс</h2>
             <IssueProgress orgId={currentOrgId} issueId={issue.id} />
             <IssueActivityDigest orgId={currentOrgId} issueId={issue.id} />
+          </section>
+
+          <section className="flex flex-col gap-2">
+            <h2 className="text-sm font-medium text-fg-primary">Поля</h2>
+            <IssueCustomFields
+              orgId={currentOrgId}
+              issueId={issue.id}
+              projectId={issue.projectId}
+            />
           </section>
 
           <section className="flex flex-col gap-2">

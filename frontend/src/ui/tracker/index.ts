@@ -21,6 +21,7 @@ export { IssueComments } from "./IssueComments";
 export { IssueChecklists } from "./IssueChecklists";
 export { IssueProgress } from "./IssueProgress";
 export { IssueActivityDigest } from "./IssueActivityDigest";
+export { IssueCustomFields } from "./IssueCustomFields";
 export { MentionAutocompletePopup } from "./MentionAutocompletePopup";
 export { CycleProgress } from "./CycleProgress";
 export { IntakeBoard } from "./IntakeBoard";

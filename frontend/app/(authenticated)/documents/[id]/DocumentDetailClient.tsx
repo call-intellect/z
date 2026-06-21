@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef } from "react";
+import { Fragment, useEffect, useMemo, useRef } from "react";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import useSWR from "swr";
 
@@ -16,6 +16,7 @@ import {
   type DocumentStatusApi,
 } from "@/api/documents.api";
 import { useAuth } from "@/contexts/auth-context";
+import { buildRenderSegments } from "@/domain/document-render";
 import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 import { Badge } from "@/ui/shadcn/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
@@ -220,7 +221,10 @@ function Detail({
                 Ошибка парсинга. Проверьте файл и попробуйте загрузить ещё раз.
               </p>
             ) : document.status === "parsed" && parsedText ? (
-              <HighlightedText text={parsedText} />
+              <HighlightedText
+                text={parsedText}
+                pageOffsets={document.pageOffsets ?? []}
+              />
             ) : (
               <div className="flex items-center gap-2 text-sm text-fg-tertiary">
                 <Loader2 size={14} className="animate-spin" />
@@ -369,41 +373,102 @@ function findQuoteRange(
   return { start, end };
 }
 
-function HighlightedText({ text }: { text: string }) {
+function PageDivider({ page }: { page: number }) {
+  return (
+    <div
+      id={`doc-page-${page}`}
+      className="flex items-center gap-2 py-2 text-xs text-fg-tertiary"
+    >
+      <span className="h-px flex-1 bg-border-subtle" />
+      <span>— Страница {page} —</span>
+      <span className="h-px flex-1 bg-border-subtle" />
+    </div>
+  );
+}
+
+function HighlightedText({
+  text,
+  pageOffsets,
+}: {
+  text: string;
+  pageOffsets: number[];
+}) {
   const searchParams = useSearchParams();
   const query = searchParams.get("q") ?? "";
+  const pageParam = searchParams.get("page");
   const markRef = useRef<HTMLElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   const range = useMemo(
     () => (query ? findQuoteRange(text, query) : null),
     [text, query],
   );
 
+  const segments = useMemo(
+    () => buildRenderSegments(text, pageOffsets, range),
+    [text, pageOffsets, range],
+  );
+
   useEffect(() => {
     if (range && markRef.current) {
       markRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
     }
-  }, [range]);
+    if (!range && pageParam && containerRef.current) {
+      const target = containerRef.current.querySelector(
+        `#doc-page-${CSS.escape(pageParam)}`,
+      );
+      if (target) {
+        target.scrollIntoView({ block: "start", behavior: "smooth" });
+      }
+    }
+  }, [range, pageParam, segments]);
 
-  if (!range) {
+  if (pageOffsets.length === 0) {
+    if (!range) {
+      return (
+        <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap text-sm leading-relaxed text-fg-primary">
+          {text}
+        </pre>
+      );
+    }
     return (
       <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap text-sm leading-relaxed text-fg-primary">
-        {text}
+        {text.slice(0, range.start)}
+        <mark
+          ref={markRef}
+          className="rounded bg-accent-muted px-0.5 text-accent-fg"
+        >
+          {text.slice(range.start, range.end)}
+        </mark>
+        {text.slice(range.end)}
       </pre>
     );
   }
 
   return (
-    <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap text-sm leading-relaxed text-fg-primary">
-      {text.slice(0, range.start)}
-      <mark
-        ref={markRef}
-        className="rounded bg-accent-muted px-0.5 text-accent-fg"
-      >
-        {text.slice(range.start, range.end)}
-      </mark>
-      {text.slice(range.end)}
-    </pre>
+    <div
+      ref={containerRef}
+      className="max-h-[60vh] overflow-auto whitespace-pre-wrap font-mono text-sm leading-relaxed text-fg-primary"
+    >
+      {segments.map((seg, i) => (
+        <Fragment key={i}>
+          {seg.pageBreakBefore !== null && (
+            <PageDivider page={seg.pageBreakBefore} />
+          )}
+          {seg.isQuote ? (
+            <mark
+              ref={markRef}
+              className="rounded bg-accent-muted px-0.5 text-accent-fg"
+            >
+              {seg.text}
+            </mark>
+          ) : (
+            seg.text
+          )}
+        </Fragment>
+      ))}
+    </div>
   );
 }
 

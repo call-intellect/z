@@ -44,6 +44,8 @@ export interface DocumentApi {
   suggestedThemeId?: string | null;
   createdAt: string;
   parsedAt: string | null;
+  pageCount: number | null;
+  pageOffsets: number[];
 }
 
 export const ACCEPTED_DOCUMENT_EXTENSIONS = [

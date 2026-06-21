@@ -80,6 +80,55 @@ const TYPE_LABEL: Record<ProvenanceSourceType, string> = {
 
 const DOCUMENT_ANCHOR_MAX_CHARS = 60;
 
+export function offsetToPage(
+  pageOffsets: number[],
+  charOffset: number,
+): number | null {
+  if (!pageOffsets.length) return null;
+  let page = 1;
+  for (let i = 0; i < pageOffsets.length; i += 1) {
+    if (charOffset >= pageOffsets[i]!) page = i + 1;
+    else break;
+  }
+  return page;
+}
+
+export function findQuoteOffset(
+  parsedText: string,
+  quote: string,
+): number | null {
+  const normalizedQuery = quote.replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!normalizedQuery) return null;
+
+  const normalizedChars: string[] = [];
+  const sourceIndex: number[] = [];
+  let prevWasSpace = false;
+  for (let i = 0; i < parsedText.length; i += 1) {
+    const ch = parsedText[i]!;
+    if (/\s/.test(ch)) {
+      if (normalizedChars.length === 0 || prevWasSpace) continue;
+      normalizedChars.push(' ');
+      sourceIndex.push(i);
+      prevWasSpace = true;
+    } else {
+      normalizedChars.push(ch.toLowerCase());
+      sourceIndex.push(i);
+      prevWasSpace = false;
+    }
+  }
+  while (
+    normalizedChars.length > 0 &&
+    normalizedChars[normalizedChars.length - 1] === ' '
+  ) {
+    normalizedChars.pop();
+    sourceIndex.pop();
+  }
+
+  const at = normalizedChars.join('').indexOf(normalizedQuery);
+  if (at < 0) return null;
+  return sourceIndex[at]!;
+}
+
 export function documentAnchorParam(quote: string | null | undefined): string {
   if (!quote) return '';
   const normalized = quote.replace(/\s+/g, ' ').trim();
@@ -99,6 +148,7 @@ export function buildProvenanceDeepLink(args: {
   startMs?: number | null;
   messageExternalId?: string | null;
   quote?: string | null;
+  page?: number | null;
 }): string | null {
   if (!args.externalId) return null;
   if (args.sourceType === 'meeting') {
@@ -107,6 +157,12 @@ export function buildProvenanceDeepLink(args: {
   }
   if (args.sourceType === 'document') {
     const anchor = documentAnchorParam(args.quote);
+    const page = args.page != null && args.page >= 1 ? args.page : null;
+    if (page != null) {
+      return anchor
+        ? `/documents/${args.externalId}?page=${page}&q=${anchor}`
+        : `/documents/${args.externalId}?page=${page}`;
+    }
     return anchor
       ? `/documents/${args.externalId}?q=${anchor}`
       : `/documents/${args.externalId}`;
@@ -135,6 +191,7 @@ export class ProvenanceService {
     startMs?: number | null;
     messageExternalId?: string | null;
     quote?: string | null;
+    page?: number | null;
   }): string | null {
     return buildProvenanceDeepLink(args);
   }
@@ -259,6 +316,14 @@ export class ProvenanceService {
       chatSessionIds,
     );
 
+    const documentIds = [...sourceByRawEvent.values()]
+      .filter((s) => s.type === 'document' && s.refId)
+      .map((s) => s.refId as string);
+    const documentPaging = await this.resolveDocumentPaging(
+      viewer.tenantId,
+      documentIds,
+    );
+
     const nodes: ProvenanceNode[] = [];
     for (const blockId of blockIds) {
       const ev = firstByBlock.get(blockId);
@@ -301,6 +366,13 @@ export class ProvenanceService {
           : null;
       const deepLinkExternalId =
         baseSource.type === 'chat' ? chatId : baseSource.refId;
+      const page =
+        baseSource.type === 'document' && baseSource.refId
+          ? this.computeDocumentPage(
+              documentPaging.get(baseSource.refId),
+              ev.quote,
+            )
+          : null;
       const deepLink = deepLinkExternalId
         ? this.buildDeepLink({
             sourceType: baseSource.type,
@@ -308,6 +380,7 @@ export class ProvenanceService {
             startMs: ev.startMs,
             messageExternalId: ev.sourceMessageExternalId,
             quote: ev.quote,
+            page,
           })
         : null;
       nodes.push({
@@ -438,6 +511,11 @@ export class ProvenanceService {
     }
     const deepLinkExternalId =
       source?.type === 'chat' ? chatId : (source?.refId ?? null);
+    let page: number | null = null;
+    if (source?.type === 'document' && source.refId) {
+      const paging = await this.resolveDocumentPaging(tenantId, [source.refId]);
+      page = this.computeDocumentPage(paging.get(source.refId), ev.quote);
+    }
     const deepLink = deepLinkExternalId
       ? this.buildDeepLink({
           sourceType: source!.type,
@@ -445,6 +523,7 @@ export class ProvenanceService {
           startMs: ev.startMs,
           messageExternalId: ev.sourceMessageExternalId,
           quote: ev.quote,
+          page,
         })
       : null;
 
@@ -461,6 +540,39 @@ export class ProvenanceService {
         label: source?.label ?? null,
       },
     };
+  }
+
+  private async resolveDocumentPaging(
+    tenantId: string,
+    documentIds: string[],
+  ): Promise<
+    Map<string, { parsedText: string | null; pageOffsets: number[] }>
+  > {
+    const out = new Map<
+      string,
+      { parsedText: string | null; pageOffsets: number[] }
+    >();
+    const ids = [...new Set(documentIds.filter(Boolean))];
+    if (ids.length === 0) return out;
+    const docs = await this.prisma.document.findMany({
+      where: { tenantId, id: { in: ids } },
+      select: { id: true, parsedText: true, pageOffsets: true },
+    });
+    for (const d of docs) {
+      out.set(d.id, { parsedText: d.parsedText, pageOffsets: d.pageOffsets });
+    }
+    return out;
+  }
+
+  private computeDocumentPage(
+    paging: { parsedText: string | null; pageOffsets: number[] } | undefined,
+    quote: string,
+  ): number | null {
+    if (!paging || !paging.parsedText || paging.pageOffsets.length === 0) {
+      return null;
+    }
+    const off = findQuoteOffset(paging.parsedText, quote);
+    return off == null ? null : offsetToPage(paging.pageOffsets, off);
   }
 
   private async resolveChatIdsBySession(

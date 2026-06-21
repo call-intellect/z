@@ -8,6 +8,8 @@ import type { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolv
 import {
   buildProvenanceDeepLink,
   documentAnchorParam,
+  findQuoteOffset,
+  offsetToPage,
   PROVENANCE_ACCESS_MASK,
   ProvenanceService,
 } from './provenance.service';
@@ -57,6 +59,88 @@ describe('buildProvenanceDeepLink — документ с якорем ?q=', () 
     expect(
       buildProvenanceDeepLink({ sourceType: 'document', externalId: 'd1' }),
     ).toBe('/documents/d1');
+  });
+});
+
+describe('offsetToPage (B4а — page-aware deep-link)', () => {
+  it('offset попадает на нужную страницу по pageOffsets', () => {
+    const offsets = [0, 5, 10];
+    expect(offsetToPage(offsets, 0)).toBe(1);
+    expect(offsetToPage(offsets, 4)).toBe(1);
+    expect(offsetToPage(offsets, 5)).toBe(2);
+    expect(offsetToPage(offsets, 12)).toBe(3);
+  });
+
+  it('пустой pageOffsets → null', () => {
+    expect(offsetToPage([], 0)).toBeNull();
+  });
+});
+
+describe('findQuoteOffset (B4а — устойчивый поиск цитаты)', () => {
+  it('находит цитату при разном whitespace → исходный char-offset', () => {
+    const text = 'Начало.\n\nКлиент   просит\nскидку до конца месяца.';
+    const off = findQuoteOffset(text, '  Клиент просит   скидку ');
+    expect(off).toBe(text.indexOf('Клиент'));
+  });
+
+  it('регистронезависимый поиск', () => {
+    const text = 'Регламент Возврата применяется к заказам';
+    const off = findQuoteOffset(text, 'регламент возврата');
+    expect(off).toBe(0);
+  });
+
+  it('цитата не найдена → null', () => {
+    expect(findQuoteOffset('абвгде', 'не тут')).toBeNull();
+  });
+
+  it('пустая цитата → null', () => {
+    expect(findQuoteOffset('какой-то текст', '   ')).toBeNull();
+  });
+});
+
+describe('buildProvenanceDeepLink — page-aware документ (B4а)', () => {
+  it('document с page → /documents/:id?page=N&q=<anchor> (page первым)', () => {
+    expect(
+      buildProvenanceDeepLink({
+        sourceType: 'document',
+        externalId: 'd1',
+        quote: 'Клиент просит скидку',
+        page: 2,
+      }),
+    ).toBe(
+      `/documents/d1?page=2&q=${encodeURIComponent('Клиент просит скидку')}`,
+    );
+  });
+
+  it('document с page без anchor → /documents/:id?page=N', () => {
+    expect(
+      buildProvenanceDeepLink({
+        sourceType: 'document',
+        externalId: 'd1',
+        page: 2,
+      }),
+    ).toBe('/documents/d1?page=2');
+  });
+
+  it('document без page → ?q= (обратная совместимость)', () => {
+    expect(
+      buildProvenanceDeepLink({
+        sourceType: 'document',
+        externalId: 'd1',
+        quote: 'Клиент просит скидку',
+      }),
+    ).toBe(`/documents/d1?q=${encodeURIComponent('Клиент просит скидку')}`);
+  });
+
+  it('page < 1 игнорируется (как будто не задан)', () => {
+    expect(
+      buildProvenanceDeepLink({
+        sourceType: 'document',
+        externalId: 'd1',
+        quote: 'Клиент просит скидку',
+        page: 0,
+      }),
+    ).toBe(`/documents/d1?q=${encodeURIComponent('Клиент просит скидку')}`);
   });
 });
 
@@ -317,7 +401,14 @@ describe('ProvenanceService.resolve — последняя миля', () => {
       },
       meeting: { findMany: vi.fn(async () => []) },
       document: {
-        findMany: vi.fn(async () => [{ id: 'doc-7', name: 'Регламент возвратов' }]),
+        findMany: vi.fn(async () => [
+          {
+            id: 'doc-7',
+            name: 'Регламент возвратов',
+            parsedText: null,
+            pageOffsets: [],
+          },
+        ]),
       },
     };
     const svc = buildService({ prisma, isBypass: true });
@@ -332,6 +423,58 @@ describe('ProvenanceService.resolve — последняя миля', () => {
     expect(n.source.deepLink).not.toBeNull();
     expect(n.source.deepLink!.startsWith('/documents/doc-7?q=')).toBe(true);
     expect(decodeURIComponent(n.source.deepLink!.split('?q=')[1]!).length).toBeLessThanOrEqual(60);
+  });
+
+  it('document-источник с pageOffsets: deepLink с ?page=N&q= (page-aware)', async () => {
+    const parsedText =
+      'Стр.1 шапка документа.\nРегламент возврата применяется к заказам старше 30 дней.\nХвост первой страницы.';
+    const pageBreak = parsedText.indexOf('Регламент');
+    const prisma = {
+      decision: {
+        findFirst: vi.fn(async () => ({ sourceBlockIds: ['b-1'] })),
+      },
+      ideaBlock: {
+        findMany: vi.fn(async () => [{ id: 'b-1', primarySource: 'transcript' }]),
+      },
+      ideaBlockEvidence: {
+        findMany: vi.fn(async () => [
+          {
+            blockId: 'b-1',
+            rawEventId: 'raw-1',
+            quote: 'Регламент возврата применяется к заказам старше 30 дней',
+            startMs: null,
+            endMs: null,
+            sourceTimestamp: new Date('2026-03-10T09:00:00.000Z'),
+            sourceMessageExternalId: null,
+          },
+        ]),
+      },
+      rawEvent: {
+        findMany: vi.fn(async () => [
+          { id: 'raw-1', sourceType: 'document', sourceExternalId: 'doc:doc-7' },
+        ]),
+      },
+      meeting: { findMany: vi.fn(async () => []) },
+      document: {
+        findMany: vi.fn(async () => [
+          {
+            id: 'doc-7',
+            name: 'Регламент возвратов',
+            parsedText,
+            pageOffsets: [0, pageBreak],
+          },
+        ]),
+      },
+    };
+    const svc = buildService({ prisma, isBypass: true });
+    const nodes = await svc.resolve('decision', 'd-1', {
+      tenantId: 't-1',
+      userId: 'u-1',
+    });
+    const n = nodes[0]!;
+    expect(n.source.deepLink!.startsWith('/documents/doc-7?page=2&q=')).toBe(
+      true,
+    );
   });
 
   it('блок недоступен зрителю → accessFiltered, quote/label/deepLink замаскированы', async () => {

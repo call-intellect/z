@@ -7077,6 +7077,11 @@ enum DailyCheckInSource {
   cron_prompted
   self_initiated
   manual
+  meeting
+  bitrix
+  chatbox
+  email
+  phone_call
 }
 
 /// DailyCheckIn — утренний / вечерний чек-ин сотрудника.
@@ -7132,6 +7137,10 @@ model DailyCheckIn {
 
   /// ТЗ 2026-05-29 — источник чек-ина: cron / самоинициировано / manual.
   source DailyCheckInSource @default(cron_prompted)
+
+  /// Вклады в чек-ин по источникам (audit + merge): Array<{ source, at, rank }>.
+  /// Победитель содержимого — максимальный rank (ТЗ Ф4 sourceRank).
+  sourceContributions Json?
 
   /// SBA β-8.1 — настроение чек-ина (определяет LLM по тексту вечернего
   /// ответа). 'green' | 'yellow' | 'red'. NULL = анализ ещё не запускался

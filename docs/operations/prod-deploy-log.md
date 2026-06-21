@@ -71,6 +71,36 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-22 — Память субъекта + самообучение (3 слоя): выученная память уточнений · авто-профиль компании в промпты · маршрутизация задач по скиллам
+
+> ТЗ `plans/tz/2026-06-21-learned-clarifications-memory.md` (Слой 3) + `plans/tz/2026-06-21-company-profile-autobuild-and-prompt-context.md` (Слой 1) + `plans/tz/2026-06-21-skill-based-task-routing.md` (Слой 2). Ветка `feature/2026-06-21-subject-memory-program`, 12 коммитов.
+>
+> **Зачем:** (3) probe самообучается — из ответов на уточняющие вопросы выводится правило (термин/дизамбигуация/предпочтение), активное правило подавляет повтор вопроса (retrieve-before-ask); (1) Кора отвечает «от лица сотрудника компании» — авто-собранное «Чем занимается компания» подмешивается в SYSTEM chat-v2/concierge; (2) подсказка исполнителя задачи по скиллам (НИКОГДА не присваивает сама — Р1, 152-ФЗ).
+>
+> **3 миграции (авто, аддитивные) + 1 новый HNSW (postgres-init) + 15 крутилок AdminSetting (seed, уже в STEPS) + 4 новых LLM-route (seed, уже в STEPS) + 2 новых @Cron + 1 новая очередь + 1 новый эндпоинт. Docker rebuild backend+frontend. Новых ENV нет (subjectMemory.* / companyProfile.* / taskRouting.* — чистые AdminSetting). НОВЫХ STEPS-записей в `apply-prod-deploy.ts` добавлять НЕ нужно — всё едет существующими (seed-admin-settings / seed-llm-task-routes-ideas-and-probe / apply-postgres-init / migrate deploy).**
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): 3 миграции, все аддитивные, без потери данных, backfill не нужен. **В STEPS не регистрируются** (миграции схемы).
+  - `20260621155340_subject_memory` — новая таблица `subject_memory` (enum `SubjectMemoryKind` term/disambiguation/preference, enum `SubjectMemoryStatus` shadow/canary/active/superseded/rolled_back/disabled; поля `contextText`/`ruleText`/`embedding vector(1536)`/`confidence`/`occurredAt`/`supersededById`/`staleAfter`/`confirmCount`/`refuteCount` и т.д.).
+  - `20260621164903_subject_memory_canary_at` — `ADD COLUMN canaryAt TIMESTAMP(3)` на `subject_memory` (окно авто-rollback canary).
+  - `20260621170737_company_profile_summary` — `ADD COLUMN summaryJson JSONB` + `ADD COLUMN summaryPinned BOOLEAN` на `CompanyProfile` (авто-summary + защита закрепления владельцем).
+- **Шаг 5 — Postgres-init — обязательно, авто** (`apply-postgres-init` через `apply-prod-deploy.ts --with-schema`): новый partial HNSW `subject_memory_embedding_hnsw_cosine_idx` (cosine, `WHERE status IN ('active','canary')`) для retrieve-before-ask. Идемпотентен (`CREATE INDEX IF NOT EXISTS`). Отдельной STEPS-записи не нужно — едет существующим schema-этапом.
+- **Шаг 7 — Seed (идемпотентные, оба уже в STEPS `phase:'seed-base'`):**
+  - `docker compose exec backend bun run scripts/seed-admin-settings.ts` — 15 новых крутилок в 3 секциях: section `subject-memory` (`subjectMemory.enabled` kill-switch ON, `retrieveBeforeAskEnabled`, `matchMinSimilarity` 0.82, `suppressMinConfidence` 0.7, `canaryRollbackWindowHours` 48, `ttlDays` 180, `judgeQuorum` 2, `shadowToCanaryMinConfirm` 0, `judgeModels` `['deepseek-v4-flash','gpt-5.4-mini']`); section `company-profile` (`companyProfile.autoSummaryEnabled` kill-switch ON, `summaryRebuildHours` 24, `summaryMinSourceBlocks` 8); section `task-routing` (`taskRouting.enabled` kill-switch ON, `suggestMinConfidence` 0.6, `topK` 3). Чистые AdminSetting (без ENV).
+  - `docker compose exec backend bun run scripts/seed-llm-task-routes-ideas-and-probe.ts` — 4 новых маршрута: `subject-memory-rule-extract` (capable, deepseek-v4-pro), `subject-memory-judge` (cheap, deepseek-v4-flash→gpt-5.4-mini), `company-summary-compile` (capable), `task-assignee-arbiter` (capable). Паттерн `seed-llm-task-routes-${sub}` уже в STEPS.
+  - Доезжают агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Отдельных строк STEPS не нужно — оба сида уже зарегистрированы.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (probe/subject-memory: `SubjectMemoryService`/`SubjectMemoryActivationService`/`SubjectMemoryActivationCron`/`SubjectMemoryDeriveWorker` + хуки в `ProbeResponseHandler`/`ProbeFormulationService`; company-foundation: `CompanySummaryCompilerCron` + chat-v2/concierge capsule «## О компании»; tracker: `SkillRoutingService` + эндпоинт `POST /me/tasks/suggest-assignee` + concierge-tool `suggest_assignee`; OrgContextService — реальная роль человека по `cfg.persons.useAppointment`). Frontend (`/company` секция «Чем занимается компания» + Switch «Закрепить»; `IssueSidebar` one-tap «Подобрать исполнителя» → «Назначить»).
+- **Шаг 12 — Smoke** (после выката):
+  - Новые @Cron видны в логах планировщика: `SubjectMemoryActivationCron` (`'35 * * * *'`, grep `SubjectMemoryActivation`) и `CompanySummaryCompilerCron` (`'45 * * * *'`, grep `CompanySummaryCompiler`).
+  - Новая очередь BullMQ `core.subject-memory-derive` создана (`CoreQueueService` авто-создаёт из `CORE_QUEUE_NAMES`; grep `subject-memory-derive`).
+  - Новые taskType имеют маршруты: `docker compose exec backend bun run scripts/diag-routes.ts` (или `/admin/ai-models/<taskType>`) → `subject-memory-rule-extract` / `subject-memory-judge` / `company-summary-compile` / `task-assignee-arbiter`.
+  - Новый эндпоинт в Swagger `/api/docs`: `POST /api/v1/me/tasks/suggest-assignee` (под `CookieAuthGuard+TenantGuard`).
+  - Метрики в `/metrics`: `subject_memory_rule_extracted_total{kind}` / `subject_memory_probe_suppressed_total{reason}` / `subject_memory_rule_activated_total` / `subject_memory_rule_rolled_back_total{cause}` / `subject_memory_apply_total{status}`; `company_summary_compile_total{result}` / `company_capsule_injected_total{surface}`; `routing_suggestion_total{match_path}` / `routing_suggestion_accepted_total` / `routing_no_candidate_total`.
+  - Крутилки трёх секций (`subjectMemory.*` / `companyProfile.*` / `taskRouting.*`) видны в админке AdminSetting.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-21 — Политика триггера probe (Волна 1): гейт + грейс + подтверждение существования
 
 > ТЗ `plans/tz/2026-06-21-probe-trigger-policy-tz.md` (Волна 1). Центральная политика «когда вообще задавать уточняющий вопрос»: машинно-закрываемые пробелы на авто-извлечённых, не подтверждённых человеком записях push'ем не уходят — вместо вопроса тихий статус в карточке; gap-вопросы по регламентам заменяются одним вопросом подтверждения существования после грейса.

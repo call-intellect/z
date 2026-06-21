@@ -113,6 +113,10 @@ intake), чтобы окно и пороги не рассинхронились
 
 Все 7 пунктов добавлены в admin-навигацию (`frontend/app/(admin)/admin/navigation.ts`). Бэкенд-контракт не менялся — страницы ходят в существующие `GET/POST /api/v1/admin/settings*` (severity `high`/`destructive` → `reason` обязателен). Перенос самих ключей — раздел выше («Массовый перенос крутилок…»). Реестр страниц — [[frontend-pages]] §Admin.
 
+### Крутилки программы «Память субъекта + самообучение» (2026-06-22)
+
+Программа (3 ТЗ, ветка `feature/2026-06-21-subject-memory-program`) добавила 15 крутилок в 3 новых секции реестра `admin-setting-schema-registry.ts` (засижены `seed-admin-settings.ts`, уже в STEPS): `subject-memory` (9 — `subjectMemory.enabled` kill-switch + пороги активации/подавления), `company-profile` (3 — `companyProfile.autoSummaryEnabled` kill-switch + свежесть/cold-start), `task-routing` (3 — `taskRouting.enabled` kill-switch + порог/topK). Редактируются super_admin через generic `GET/POST /api/v1/admin/settings*` (выделенной UI-страницы пока нет — vNext, см. реестр «не-сделано»). Полный перечень с дефолтами/вердиктами — [[config-knobs-catalog]] §«Выученная память уточнений»/§«Авто-профиль компании»/§«Маршрутизация задач по скиллам».
+
 ## Поверхности курации (detail-страницы)
 
 С 2026-06-03 (Action Center, Фаза C3) у курации появились собственные

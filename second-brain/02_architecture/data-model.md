@@ -1060,6 +1060,22 @@ model PersonLeave {
 }
 ```
 
+## SubjectMemory — выученная память уточнений (2026-06-22)
+
+**Источник:** ТЗ [`plans/tz/2026-06-21-learned-clarifications-memory.md`](../../plans/tz/2026-06-21-learned-clarifications-memory.md) (Слой 3 программы «Память субъекта + самообучение»). Миграции `20260621155340_subject_memory` (CREATE TABLE) + `20260621164903_subject_memory_canary_at` (`ADD COLUMN canaryAt`). HNSW partial-index `subject_memory_embedding_hnsw_cosine_idx` (cosine, `WHERE status IN ('active','canary')`) — в `postgres-init.sql`, не в schema.prisma. Pipeline и сервисы — [[../01_projects/probe-agent]].
+
+Таблица `subject_memory`: правило, выведенное из ответа на уточняющий вопрос (probe). Жизненный цикл `status` (enum `SubjectMemoryStatus`): `shadow → canary → active` (активируется judge-ансамблем) либо `superseded` (более свежим правилом по `occurredAt`, Р4) / `rolled_back` (авто-rollback canary в окне `subjectMemory.canaryRollbackWindowHours`) / `disabled`. Тип (enum `SubjectMemoryKind`): `term` / `disambiguation` / `preference`.
+
+Ключевые поля: `contextText` (когда применять), `ruleText` (что Кора усвоила), `embedding vector(1536)` (text-embedding-3-small, для retrieve-before-ask), `confidence`, `occurredAt` (точка supersede), `supersededById`, `canaryAt`, `staleAfter` (TTL по `subjectMemory.ttlDays` 180), `confirmCount`/`refuteCount`. Применение: `SubjectMemoryService.retrieve` (findApplicableRule / findRelevantRules) подавляет повтор вопроса (active/canary с cosine ≥ `subjectMemory.matchMinSimilarity` 0.82 и confidence ≥ `subjectMemory.suppressMinConfidence` 0.7 → `answered_by_memory`, без LLM) и подмешивает known-правила в `probe-formulate` USER.
+
+## CompanyProfile — авто-summary компании в промпты (2026-06-22)
+
+**Источник:** ТЗ [`plans/tz/2026-06-21-company-profile-autobuild-and-prompt-context.md`](../../plans/tz/2026-06-21-company-profile-autobuild-and-prompt-context.md) (Слой 1). Миграция `20260621170737_company_profile_summary` (аддитивная). Сборка/подмешивание — [[../01_projects/company-foundation]] (при наличии) + chat-v2/concierge.
+
+Расширение `model CompanyProfile` двумя полями:
+- `summaryJson Json?` — авто-собранное «Чем занимается компания» (`CompanySummaryCompilerCron` читает топ canonical-IdeaBlock по графу → LLM `company-summary-compile` → `applyAutoSummary`; гейты pinned/fresh/cold-start). Хвост «## О компании» со строкой «Чем занимается: {summary}» подмешивается в SYSTEM chat-v2 (`buildCompanyAbout`) и concierge (cache-friendly, стабильный per-tenant, BASE не тронут).
+- `summaryPinned Boolean` — закрепление владельцем (UI `/company` Switch «Закрепить»): при `true` `applyAutoSummary` НЕ перетирает summary (защита Р1).
+
 ## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
 
 **Источник:** [`plans/archive/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/archive/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[../01_projects/feedback]].

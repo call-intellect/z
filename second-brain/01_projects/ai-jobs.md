@@ -282,6 +282,23 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2), clones v2 (`dia
 
 [[../index|← index]]
 
+## Память субъекта + самообучение — 4 новых taskType (2026-06-22)
+
+**Источник:** программа «Память субъекта + самообучение» (3 ТЗ, ветка `feature/2026-06-21-subject-memory-program`). Модели — [[../02_architecture/data-model]] §«SubjectMemory»/§«CompanyProfile»; воркеры/cron — [[workers-queues]]. Маршруты сеются через `seed-llm-task-routes-ideas-and-probe.ts` (уже в STEPS).
+
+| taskType | Категория | Что делает | Цепочка |
+|---|---|---|---|
+| `subject-memory-rule-extract` | probe / выученная память (Слой 3) | из ответа на уточняющий вопрос выводит правило (термин/дизамбигуация/предпочтение) — `SubjectMemoryService.deriveRuleFromProbeResponse` | capable, `deepseek-v4-pro` |
+| `subject-memory-judge` | probe / выученная память (Слой 3) | judge-ансамбль для активации правила `shadow → canary → active` (кворум `subjectMemory.judgeQuorum` 2, разными моделями `subjectMemory.judgeModels`) — `SubjectMemoryActivationService.promoteShadowRules` | cheap, `deepseek-v4-flash` → `gpt-5.4-mini` |
+| `company-summary-compile` | профиль компании (Слой 1) | собирает «Чем занимается компания» из топ canonical-IdeaBlock — `CompanySummaryCompilerCron` → `CompanyProfile.summaryJson` (защита pinned/fresh/cold-start) | capable |
+| `task-assignee-arbiter` | маршрутизация задач (Слой 2) | LLM-арбитр после hard-gate отдела + semantic pgvector + role-prior; ранжирует кандидатов-исполнителей — `SkillRoutingService.suggestAssignee` (НИКОГДА не присваивает сама, Р1) | capable |
+
+- **«То же правило» = cosine-порог, не LLM** — повтор/supersede правил решается по `embedding` (`subjectMemory.matchMinSimilarity` 0.82), без отдельного LLM-вызова на дедуп (дёшево, детерминированно).
+- **retrieve-before-ask** — перед `probe-formulate` `ProbeFormulationService.gate()` сверяет вопрос с active/canary-правилами; совпадение → `ask:false` (`answered_by_memory`), LLM не зовётся; known-правила также подмешиваются в `probe-formulate` USER.
+- **Метрики:** `subject_memory_rule_extracted_total{kind}` · `subject_memory_probe_suppressed_total{reason}` · `subject_memory_rule_activated_total` · `subject_memory_rule_rolled_back_total{cause}` · `subject_memory_apply_total{status}`; `company_summary_compile_total{result}` · `company_capsule_injected_total{surface}`; `routing_suggestion_total{match_path}` · `routing_suggestion_accepted_total` · `routing_no_candidate_total`.
+
+[[../index|← index]]
+
 ## Качество извлечения + устойчивость арбитра графа + измеритель (ТЗ-3/4/6, 2026-06-06)
 
 **Источник:** ТЗ-3 (устойчивость JSON-арбитра графа), ТЗ-4 (качество задач), ТЗ-6 (golden-измеритель), ветка `feature/prod-stability-2026-06-06`.

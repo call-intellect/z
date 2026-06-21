@@ -2512,4 +2512,23 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - pending-actions: провайдер `progress-draft.provider` (черновик прогресса в колокольчике исполнителю задачи).
 - Эндпоинты — [[../01_projects/api-layer]]; модели — [[data-model]]; крутилки/страница `/admin/tracker` — [[../01_projects/admin]] + `docs/operations/feature-flags.md`.
 
+## Память субъекта + самообучение — 3 слоя (2026-06-22)
+
+**Источник:** программа «Память субъекта + самообучение» (3 ТЗ, ветка `feature/2026-06-21-subject-memory-program`): [`plans/tz/2026-06-21-learned-clarifications-memory.md`](../../plans/tz/2026-06-21-learned-clarifications-memory.md) (Слой 3), [`plans/tz/2026-06-21-company-profile-autobuild-and-prompt-context.md`](../../plans/tz/2026-06-21-company-profile-autobuild-and-prompt-context.md) (Слой 1), [`plans/tz/2026-06-21-skill-based-task-routing.md`](../../plans/tz/2026-06-21-skill-based-task-routing.md) (Слой 2). Модели — [[data-model]] §SubjectMemory/§CompanyProfile; taskType — [[../01_projects/ai-jobs]]; очередь/cron — [[../01_projects/workers-queues]]; эндпоинт — [[../01_projects/api-layer]]; крутилки — [[../01_projects/config-knobs-catalog]] + `docs/operations/feature-flags.md`.
+
+### Слой 3 — выученная память уточнений (модуль `probe/subject-memory/`)
+- **`SubjectMemoryService`** — `deriveRuleFromProbeResponse` (вывод правила через `subject-memory-rule-extract`), `upsertWithSupersede` (supersede по `occurredAt` Р4, дедуп по cosine-порогу вместо LLM), `retrieve` (findApplicableRule / findRelevantRules для retrieve-before-ask).
+- **`SubjectMemoryActivationService`** — `promoteShadowRules` (shadow→canary→active за judge-ансамблем `subject-memory-judge`), `evaluateCanaryRules` (авто-rollback canary), `decayStaleRules` (TTL).
+- **`SubjectMemoryActivationCron`** (`@Cron('35 * * * *')`) + **`SubjectMemoryDeriveWorker`** (очередь `core.subject-memory-derive`, авто-создаётся `CoreQueueService` из `CORE_QUEUE_NAMES`).
+- **Хуки:** `ProbeResponseHandler` (после ingest ответа → enqueue вывода правила), `ProbeFormulationService.gate()` (retrieve-before-ask → `answered_by_memory`, без LLM) + `formulate()` (подмешивает known-правила в `probe-formulate` USER).
+
+### Слой 1 — авто-профиль компании в промпты (модуль `company-foundation/`)
+- **`CompanySummaryCompilerCron`** (`@Cron('45 * * * *')`, `company-foundation/workers/`) — топ canonical-IdeaBlock → `company-summary-compile` → `CompanyProfile.applyAutoSummary` (защита `summaryPinned` Р1, гейты fresh/cold-start).
+- **Capsule** — chat-v2 `buildCompanyAbout` + concierge SYSTEM: стабильный per-tenant хвост «## О компании» (cache-friendly, BASE не тронут).
+
+### Слой 2 — маршрутизация задач по скиллам (модуль `tracker/`)
+- **`SkillRoutingService.suggestAssignee`** (`tracker/services/`) — hard-gate `departmentId` → semantic pgvector (`skill_traits.embedding` через `skill_profiles.personId`) → role-prior (`RoleProfile.summaryCache`) → LLM-арбитр `task-assignee-arbiter` → предложения `{userId, confidence, rationale, matchPath}`. **НИКОГДА не присваивает сама** (Р1, 152-ФЗ).
+- **`OrgContextService`** — реальная роль человека (по `cfg.persons.useAppointment`) вместо `role:null`; `formatOrgContextForPrompt` рендерит «Имя (Роль)».
+- Эндпоинт `POST /me/tasks/suggest-assignee` + concierge-tool `suggest_assignee`; присвоение — существующим путём `addAssignee` (`viaRouting:true` → `incRoutingSuggestionAccepted`), уведомление через `IssueAssignmentNotifierService`.
+
 [[../index|← index]]

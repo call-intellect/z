@@ -5520,7 +5520,7 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Telegram-бот: утренний дайджест задач. */
   incTelegramDigestSent(args: {
     tenantTop: string;
-    result: 'sent' | 'empty' | 'dedup_skip' | 'error';
+    result: 'sent' | 'empty' | 'dedup_skip' | 'error' | 'skipped_non_working';
   }): void {
     this.telegramDigestSentTotal.inc({
       tenant_top: args.tenantTop,

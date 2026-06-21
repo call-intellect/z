@@ -1623,6 +1623,24 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'platform', section: 'day-signals', severity, description });
   }
 
+  const dailyCheckin: Array<[string, unknown, Severity, string]> = [
+    [
+      'daily-checkin.skipNonWorkingDays',
+      true,
+      'high',
+      'Не слать ежедневные напоминания (план/отчёт/дайджест) в нерабочие дни сотрудника (по его рабочим дням недели). По умолчанию включено.',
+    ],
+    [
+      'daily-checkin.skipHolidays',
+      true,
+      'high',
+      'Не слать ежедневные напоминания в государственные праздники (производственный календарь). По умолчанию включено.',
+    ],
+  ];
+  for (const [key, value, severity, description] of dailyCheckin) {
+    out.push({ key, value, category: 'platform', section: 'daily-checkin', severity, description });
+  }
+
   out.push({
     key: 'dataclass_policy:floors',
     value: {

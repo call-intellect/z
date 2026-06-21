@@ -4,6 +4,8 @@ import type { TypedConfigService } from '../../../../common/config/index';
 import type { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../../common/redis/redis.service';
+import type { HolidayService } from '../../../tracker/services/holiday.service';
+import type { PersonLeaveService } from '../../../tracker/services/person-leave.service';
 import type { ConversationalService } from '../../conversational.service';
 
 import { TelegramDigestCron } from './telegram-digest.cron';
@@ -67,6 +69,18 @@ function makeConv(): ConversationalService {
   } as unknown as ConversationalService;
 }
 
+function makeHoliday(isHoliday = false): HolidayService {
+  return {
+    isHoliday: vi.fn().mockResolvedValue(isHoliday),
+  } as unknown as HolidayService;
+}
+
+function makePersonLeave(isOnLeave = false): PersonLeaveService {
+  return {
+    isOnLeave: vi.fn().mockResolvedValue(isOnLeave),
+  } as unknown as PersonLeaveService;
+}
+
 function makeCfg(): TypedConfigService {
   return {
     async getDynamic<T>(_adminKey: string, envKey: string | undefined, def: T): Promise<T> {
@@ -88,6 +102,8 @@ function makeCron(
     metrics?: BusinessMetricsService;
     parser?: TelegramTaskParserService;
     conv?: ConversationalService;
+    holiday?: HolidayService;
+    personLeave?: PersonLeaveService;
   } = {},
 ): {
   cron: TelegramDigestCron;
@@ -96,12 +112,16 @@ function makeCron(
   metrics: BusinessMetricsService;
   parser: TelegramTaskParserService;
   conv: ConversationalService;
+  holiday: HolidayService;
+  personLeave: PersonLeaveService;
 } {
   const prisma = deps.prisma ?? makePrisma();
   const redis = deps.redis ?? makeRedis();
   const metrics = deps.metrics ?? makeMetrics();
   const parser = deps.parser ?? makeParser();
   const conv = deps.conv ?? makeConv();
+  const holiday = deps.holiday ?? makeHoliday();
+  const personLeave = deps.personLeave ?? makePersonLeave();
   const cron = new TelegramDigestCron(
     prisma as unknown as PrismaService,
     redis,
@@ -109,8 +129,10 @@ function makeCron(
     parser,
     conv,
     makeCfg(),
+    holiday,
+    personLeave,
   );
-  return { cron, prisma, redis, metrics, parser, conv };
+  return { cron, prisma, redis, metrics, parser, conv, holiday, personLeave };
 }
 
 const makeBindingRow = (userId: string, tenantId: string) => ({
@@ -127,9 +149,9 @@ const makeBindingRow = (userId: string, tenantId: string) => ({
   },
 });
 
-const NOW_AT_MSK_9 = new Date(Date.UTC(2026, 4, 24, 6, 0, 0));
+const NOW_AT_MSK_9 = new Date(Date.UTC(2026, 4, 25, 6, 0, 0));
 
-const NOW_AT_YEKB_9 = new Date(Date.UTC(2026, 4, 24, 4, 0, 0));
+const NOW_AT_YEKB_9 = new Date(Date.UTC(2026, 4, 25, 4, 0, 0));
 
 describe('TelegramDigestCron', () => {
   beforeEach(() => {
@@ -361,7 +383,7 @@ describe('TelegramDigestCron', () => {
     expect(parser.formulateDigest).not.toHaveBeenCalled();
     expect(conv.sendNotification).not.toHaveBeenCalled();
     const setCall = vi.mocked(redis.client.set).mock.calls[0];
-    expect(setCall?.[0]).toContain('telegram_digest:user-1:org-1:2026-05-24');
+    expect(setCall?.[0]).toContain('telegram_digest:user-1:org-1:2026-05-25');
   });
 
   it('ENV TELEGRAM_DIGEST_HOUR_LOCAL=11 → user MSK, now 08:00 UTC (=11:00 MSK) → отправка', async () => {
@@ -388,7 +410,7 @@ describe('TelegramDigestCron', () => {
       const parser = makeParser();
       vi.mocked(parser.formulateDigest).mockResolvedValueOnce('<b>11h</b>');
       const { cron, conv } = makeCron({ prisma, parser });
-      const NOW_AT_MSK_11 = new Date(Date.UTC(2026, 4, 24, 8, 0, 0));
+      const NOW_AT_MSK_11 = new Date(Date.UTC(2026, 4, 25, 8, 0, 0));
       const stats = await cron.run(NOW_AT_MSK_11);
       expect(stats.sent).toBe(1);
       expect(conv.sendNotification).toHaveBeenCalled();
@@ -560,5 +582,73 @@ describe('TelegramDigestCron', () => {
       tenantTop: expect.any(String),
       result: 'error',
     });
+  });
+
+  it('Воскресенье → skip non-working, без redis.set', async () => {
+    const prisma = makePrisma();
+    prisma.channelBinding.findMany.mockResolvedValueOnce([makeBindingRow('user-1', 'org-1')]);
+    prisma.person.findMany.mockResolvedValueOnce([
+      {
+        userId: 'user-1',
+        tenantId: 'org-1',
+        timezone: 'Europe/Moscow',
+        id: 'p-1',
+        workingDays: [1, 2, 3, 4, 5],
+      },
+    ]);
+    const { cron, metrics, redis, parser, conv } = makeCron({ prisma });
+    const NOW_SUNDAY = new Date(Date.UTC(2026, 4, 24, 6, 0, 0));
+    const stats = await cron.run(NOW_SUNDAY);
+    expect(stats.skippedNonWorking).toBe(1);
+    expect(stats.sent).toBe(0);
+    expect(redis.client.set).not.toHaveBeenCalled();
+    expect(parser.formulateDigest).not.toHaveBeenCalled();
+    expect(conv.sendNotification).not.toHaveBeenCalled();
+    expect(metrics.incTelegramDigestSent).toHaveBeenCalledWith({
+      tenantTop: expect.any(String),
+      result: 'skipped_non_working',
+    });
+  });
+
+  it('Праздник → skip non-working', async () => {
+    const prisma = makePrisma();
+    prisma.channelBinding.findMany.mockResolvedValueOnce([makeBindingRow('user-1', 'org-1')]);
+    prisma.person.findMany.mockResolvedValueOnce([
+      {
+        userId: 'user-1',
+        tenantId: 'org-1',
+        timezone: 'Europe/Moscow',
+        id: 'p-1',
+        workingDays: [1, 2, 3, 4, 5],
+      },
+    ]);
+    const holiday = makeHoliday(true);
+    const { cron, conv, redis } = makeCron({ prisma, holiday });
+    const stats = await cron.run(NOW_AT_MSK_9);
+    expect(stats.skippedNonWorking).toBe(1);
+    expect(stats.sent).toBe(0);
+    expect(redis.client.set).not.toHaveBeenCalled();
+    expect(conv.sendNotification).not.toHaveBeenCalled();
+  });
+
+  it('Отпуск → skip non-working', async () => {
+    const prisma = makePrisma();
+    prisma.channelBinding.findMany.mockResolvedValueOnce([makeBindingRow('user-1', 'org-1')]);
+    prisma.person.findMany.mockResolvedValueOnce([
+      {
+        userId: 'user-1',
+        tenantId: 'org-1',
+        timezone: 'Europe/Moscow',
+        id: 'p-1',
+        workingDays: [1, 2, 3, 4, 5],
+      },
+    ]);
+    const personLeave = makePersonLeave(true);
+    const { cron, conv, redis } = makeCron({ prisma, personLeave });
+    const stats = await cron.run(NOW_AT_MSK_9);
+    expect(stats.skippedNonWorking).toBe(1);
+    expect(stats.sent).toBe(0);
+    expect(redis.client.set).not.toHaveBeenCalled();
+    expect(conv.sendNotification).not.toHaveBeenCalled();
   });
 });

@@ -5,8 +5,10 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
+import { HolidayService } from '../../tracker/services/holiday.service';
+import { PersonLeaveService } from '../../tracker/services/person-leave.service';
 import { DailyCheckInService } from '../services/daily-checkin.service';
-import { getLocalDate, getLocalHour } from '../utils/local-date';
+import { getLocalDate, getLocalHour, localDayBoundsUtc } from '../utils/local-date';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
 @Injectable()
@@ -22,6 +24,8 @@ export class DailyCheckInPromptCron {
     private readonly conversational: ConversationalService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(HolidayService) private readonly holiday: HolidayService,
+    @Inject(PersonLeaveService) private readonly personLeave: PersonLeaveService,
   ) {}
 
   @Cron('0 * * * *')
@@ -47,10 +51,21 @@ export class DailyCheckInPromptCron {
     skippedAlreadyCompleted: number;
     skippedOutsideWindow: number;
     skippedNoUser: number;
+    skippedNonWorking: number;
     errors: number;
   }> {
     const morningHour = this.cfg.betaOps.morningLocalHour;
     const eveningHour = this.cfg.betaOps.eveningLocalHour;
+    const skipNonWorkingDays = await this.cfg.getDynamic<boolean>(
+      'daily-checkin.skipNonWorkingDays',
+      undefined,
+      true,
+    );
+    const skipHolidays = await this.cfg.getDynamic<boolean>(
+      'daily-checkin.skipHolidays',
+      undefined,
+      true,
+    );
 
     const persons = await this.prisma.person.findMany({
       where: {
@@ -64,6 +79,7 @@ export class DailyCheckInPromptCron {
         userId: true,
         timezone: true,
         name: true,
+        workingDays: true,
       },
       take: 5_000,
     });
@@ -72,6 +88,7 @@ export class DailyCheckInPromptCron {
     let skippedAlreadyCompleted = 0;
     let skippedOutsideWindow = 0;
     let skippedNoUser = 0;
+    let skippedNonWorking = 0;
     let errors = 0;
 
     for (const p of persons) {
@@ -88,6 +105,34 @@ export class DailyCheckInPromptCron {
 
       if (!kind) {
         skippedOutsideWindow++;
+        continue;
+      }
+
+      const localDayStart = new Date(`${localDate}T00:00:00.000Z`);
+      const { dayOfWeek } = localDayBoundsUtc(now, p.timezone);
+      const workingDays = p.workingDays.length ? p.workingDays : [1, 2, 3, 4, 5];
+      if (skipNonWorkingDays && !workingDays.includes(dayOfWeek)) {
+        skippedNonWorking++;
+        this.metrics.incDailyCheckinSkipped({ tenantTop, kind, reason: 'weekend' });
+        continue;
+      }
+      if (
+        skipHolidays &&
+        (await this.holiday.isHoliday({ tenantId: p.tenantId, date: localDayStart }))
+      ) {
+        skippedNonWorking++;
+        this.metrics.incDailyCheckinSkipped({ tenantTop, kind, reason: 'holiday' });
+        continue;
+      }
+      if (
+        await this.personLeave.isOnLeave({
+          tenantId: p.tenantId,
+          personId: p.id,
+          date: localDayStart,
+        })
+      ) {
+        skippedNonWorking++;
+        this.metrics.incDailyCheckinSkipped({ tenantTop, kind, reason: 'on_leave' });
         continue;
       }
 
@@ -154,6 +199,7 @@ export class DailyCheckInPromptCron {
       skippedAlreadyCompleted,
       skippedOutsideWindow,
       skippedNoUser,
+      skippedNonWorking,
       errors,
     };
   }

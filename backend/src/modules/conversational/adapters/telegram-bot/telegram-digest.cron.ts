@@ -7,7 +7,13 @@ import { BusinessMetricsService } from '../../../../common/metrics/business-metr
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 import { RedisService } from '../../../../common/redis/redis.service';
 import { tenantTopOf } from '../../../dialog-layer/utils/tenant-top';
-import { getLocalDate, getLocalHour } from '../../../operations/utils/local-date';
+import {
+  getLocalDate,
+  getLocalHour,
+  localDayBoundsUtc,
+} from '../../../operations/utils/local-date';
+import { HolidayService } from '../../../tracker/services/holiday.service';
+import { PersonLeaveService } from '../../../tracker/services/person-leave.service';
 import { ConversationalService } from '../../conversational.service';
 
 import {
@@ -39,6 +45,8 @@ export class TelegramDigestCron {
     @Inject(ConversationalService)
     private readonly conversational: ConversationalService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(HolidayService) private readonly holiday: HolidayService,
+    @Inject(PersonLeaveService) private readonly personLeave: PersonLeaveService,
   ) {}
 
   @Cron('0 * * * *')
@@ -61,8 +69,19 @@ export class TelegramDigestCron {
     deduped: number;
     errors: number;
     skippedHour: number;
+    skippedNonWorking: number;
   }> {
     const digestHourLocal = await this.resolveDigestHourLocal();
+    const skipNonWorkingDays = await this.cfg.getDynamic<boolean>(
+      'daily-checkin.skipNonWorkingDays',
+      undefined,
+      true,
+    );
+    const skipHolidays = await this.cfg.getDynamic<boolean>(
+      'daily-checkin.skipHolidays',
+      undefined,
+      true,
+    );
 
     const bindings = await this.prisma.channelBinding.findMany({
       where: {
@@ -80,6 +99,7 @@ export class TelegramDigestCron {
         deduped: 0,
         errors: 0,
         skippedHour: 0,
+        skippedNonWorking: 0,
       };
     }
 
@@ -88,12 +108,17 @@ export class TelegramDigestCron {
         deletedAt: null,
         userId: { in: bindings.map((b) => b.userId) },
       },
-      select: { userId: true, tenantId: true, timezone: true },
+      select: { id: true, userId: true, tenantId: true, timezone: true, workingDays: true },
     });
     const timezoneByKey = new Map<string, string | null>();
+    const personMetaByKey = new Map<string, { personId: string; workingDays: number[] }>();
     for (const p of personRows) {
       if (!p.userId) continue;
       timezoneByKey.set(`${p.userId}:${p.tenantId}`, p.timezone);
+      personMetaByKey.set(`${p.userId}:${p.tenantId}`, {
+        personId: p.id,
+        workingDays: p.workingDays ?? [],
+      });
     }
 
     const userIdsWithoutTenant = bindings
@@ -118,6 +143,7 @@ export class TelegramDigestCron {
     let deduped = 0;
     let errors = 0;
     let skippedHour = 0;
+    let skippedNonWorking = 0;
 
     for (const binding of bindings) {
       const userId = binding.userId;
@@ -133,6 +159,33 @@ export class TelegramDigestCron {
 
       if (localHour !== digestHourLocal) {
         skippedHour++;
+        continue;
+      }
+
+      const meta = personMetaByKey.get(`${userId}:${tenantId}`);
+      const localDayStart = new Date(`${localDate}T00:00:00.000Z`);
+      const { dayOfWeek } = localDayBoundsUtc(now, tz);
+      const workingDays = meta && meta.workingDays.length ? meta.workingDays : [1, 2, 3, 4, 5];
+      if (skipNonWorkingDays && !workingDays.includes(dayOfWeek)) {
+        skippedNonWorking++;
+        this.metrics.incTelegramDigestSent({ tenantTop, result: 'skipped_non_working' });
+        continue;
+      }
+      if (skipHolidays && (await this.holiday.isHoliday({ tenantId, date: localDayStart }))) {
+        skippedNonWorking++;
+        this.metrics.incTelegramDigestSent({ tenantTop, result: 'skipped_non_working' });
+        continue;
+      }
+      if (
+        meta?.personId &&
+        (await this.personLeave.isOnLeave({
+          tenantId,
+          personId: meta.personId,
+          date: localDayStart,
+        }))
+      ) {
+        skippedNonWorking++;
+        this.metrics.incTelegramDigestSent({ tenantTop, result: 'skipped_non_working' });
         continue;
       }
 
@@ -214,6 +267,7 @@ export class TelegramDigestCron {
       deduped,
       errors,
       skippedHour,
+      skippedNonWorking,
     };
   }
 

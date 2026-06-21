@@ -301,11 +301,27 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
     // Boolean(): поле nullable; в БД дефолт null, но защищаемся и от undefined
     // (иначе `!== null` ложно срабатывает на отсутствующем поле → блок авто-приёма).
     const hasSuggestedDuplicate = Boolean(intake.suggestedDuplicateOfIssueId);
+    let autoAcceptSources: string[];
+    try {
+      const raw = await this.cfg.getDynamic<string[]>('intake.autoAcceptSources', undefined, []);
+      autoAcceptSources = Array.isArray(raw) ? raw : [];
+    } catch {
+      autoAcceptSources = [];
+    }
+    const sourceAllowed =
+      autoAcceptSources.length === 0 || autoAcceptSources.includes(intake.source);
     const canAutoAccept =
       confidentEnough &&
       effectiveAssigneeId !== null &&
       effectiveProjectId !== null &&
-      !hasSuggestedDuplicate;
+      !hasSuggestedDuplicate &&
+      sourceAllowed;
+    if (confidentEnough && !sourceAllowed) {
+      this.logger.log(
+        { intakeIssueId, source: intake.source },
+        'intake-auto-triage: источник не в intake.autoAcceptSources — авто-приём отключён, ждём человека',
+      );
+    }
     if (hasSuggestedDuplicate) {
       this.logger.log(
         {

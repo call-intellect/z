@@ -47,6 +47,7 @@ interface MkOpts {
   llmText?: string;
   llmReject?: boolean;
   noProject?: boolean;
+  autoAcceptSources?: string[];
 }
 
 function mkWorker(opts?: MkOpts): {
@@ -145,6 +146,8 @@ function mkWorker(opts?: MkOpts): {
 
   const cfg = {
     tracker: { autoAcceptConfidenceThreshold: 0.75 },
+    getDynamic: async (_key: string, _env: string | undefined, def: unknown) =>
+      _key === 'intake.autoAcceptSources' ? (opts?.autoAcceptSources ?? def) : def,
   } as unknown as TypedConfigService;
 
   const worker = new IntakeAutoTriageWorker(
@@ -199,6 +202,19 @@ describe('IntakeAutoTriageWorker', () => {
     expect(metrics.incAiIntakeSuggested).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'auto_accepted' }),
     );
+  });
+
+  it('источник не в intake.autoAcceptSources → не авто-принимает, остаётся pending', async () => {
+    const { worker, prisma, issues } = mkWorker({
+      intake: { suggestedAssigneeId: 'user-ivanov' },
+      autoAcceptSources: ['telegram'],
+    });
+    await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
+    expect(issues.create).not.toHaveBeenCalled();
+    const updateArg = prisma.intakeIssue.update.mock.calls[0]?.[0] as
+      | { data: { status?: string } }
+      | undefined;
+    expect(updateArg?.data.status).not.toBe('accepted');
   });
 
   it('confidence < 0.92 → не создаёт Issue, обновляет только suggested*', async () => {

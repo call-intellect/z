@@ -7,6 +7,7 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../ai/services/llm-router.service';
 import type { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
 import type { ConversationalService } from '../conversational/conversational.service';
+import type { CurationService } from '../curation/services/curation.service';
 
 import { ProbeResponseHandler } from './probe-response.handler';
 import type { NotificationRespondedPayload } from './probe.types';
@@ -50,12 +51,19 @@ interface Mocks {
   ingestAdapter: ConversationalIngestAdapter;
   ingestArgs: Array<Record<string, unknown>>;
   llmCall: ReturnType<typeof vi.fn>;
+  curationFindFirst: ReturnType<typeof vi.fn>;
+  curationDecide: ReturnType<typeof vi.fn>;
 }
 
 function makeMocks(): Mocks {
   const probe = buildProbe();
   const notif = buildNotification();
   const ingestArgs: Array<Record<string, unknown>> = [];
+
+  const curationFindFirst = vi
+    .fn()
+    .mockResolvedValue({ id: 'curation-item-1' });
+  const curationDecide = vi.fn().mockResolvedValue({ id: 'curation-item-1' });
 
   const prisma = {
     probeEvent: {
@@ -70,6 +78,9 @@ function makeMocks(): Mocks {
         notificationId: 'notif-classify-1',
         channelBinding: { channel: { kind: 'telegram_bot' } },
       }),
+    },
+    curationItem: {
+      findFirst: curationFindFirst,
     },
   } as unknown as PrismaService;
 
@@ -91,7 +102,15 @@ function makeMocks(): Mocks {
 
   const llmCall = vi.fn();
 
-  return { prisma, metrics, ingestAdapter, ingestArgs, llmCall };
+  return {
+    prisma,
+    metrics,
+    ingestAdapter,
+    ingestArgs,
+    llmCall,
+    curationFindFirst,
+    curationDecide,
+  };
 }
 
 function makeHandler(args: {
@@ -110,6 +129,9 @@ function makeHandler(args: {
   const conversational = {
     sendNotification: vi.fn().mockResolvedValue({ id: 'ack-notif-1' }),
   } as unknown as ConversationalService;
+  const curation = {
+    decide: args.mocks.curationDecide,
+  } as unknown as CurationService;
   return new ProbeResponseHandler(
     args.mocks.prisma,
     args.mocks.metrics,
@@ -117,6 +139,7 @@ function makeHandler(args: {
     llm,
     cfg,
     conversational,
+    curation,
   );
 }
 
@@ -295,5 +318,115 @@ describe('ProbeResponseHandler — Agents v2 Фаза 0.1 classifier', () => {
     const ingested = mocks.ingestArgs[0]!;
     expect(ingested.signalTypeHint).toBeUndefined();
     expect(ingested.questionText).toBe('Решение по миграции на DeepSeek принято?');
+  });
+});
+
+describe('ProbeResponseHandler — existence-confirm → curation.decide', () => {
+  function setExistenceConfirmProbe(mocks: Mocks): void {
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi
+      .fn()
+      .mockResolvedValue({
+        ...buildProbe(),
+        reason: 'regulation.existence_confirm',
+        payload: {
+          message:
+            'Кора зафиксировала регламент «Возвраты». Оставить, переименовать или удалить?',
+          contextCardId: 'reg-99',
+          contextCardKind: 'regulation',
+        },
+      });
+  }
+
+  it('ответ «Удалить» (classifier off) → decide(reject) по существующему pending CurationItem', async () => {
+    const mocks = makeMocks();
+    setExistenceConfirmProbe(mocks);
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({
+      ...event,
+      payload: { text: 'Удалить, это устарело' },
+    });
+
+    expect(mocks.curationFindFirst).toHaveBeenCalledTimes(1);
+    const where = mocks.curationFindFirst.mock.calls[0]![0] as {
+      where: { tenantId: string; resourceId: string; status: string };
+    };
+    expect(where.where).toMatchObject({
+      tenantId: 'org-classify',
+      resourceId: 'reg-99',
+      status: 'pending',
+    });
+    expect(mocks.curationDecide).toHaveBeenCalledTimes(1);
+    const decideArg = mocks.curationDecide.mock.calls[0]![0] as {
+      tenantId: string;
+      curationItemId: string;
+      reviewerUserId: string;
+      decisionType: string;
+    };
+    expect(decideArg).toMatchObject({
+      tenantId: 'org-classify',
+      curationItemId: 'curation-item-1',
+      reviewerUserId: 'user-1',
+      decisionType: 'reject',
+    });
+  });
+
+  it('ответ «Переименовать» → decide(approve_with_edits)', async () => {
+    const mocks = makeMocks();
+    setExistenceConfirmProbe(mocks);
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({
+      ...event,
+      payload: { text: 'Переименовать в «Политика возвратов»' },
+    });
+
+    expect(mocks.curationDecide).toHaveBeenCalledTimes(1);
+    const decideArg = mocks.curationDecide.mock.calls[0]![0] as {
+      decisionType: string;
+    };
+    expect(decideArg.decisionType).toBe('approve_with_edits');
+  });
+
+  it('нераспознанный ответ → curation НЕ трогается', async () => {
+    const mocks = makeMocks();
+    setExistenceConfirmProbe(mocks);
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({
+      ...event,
+      payload: { text: 'хм не уверен' },
+    });
+
+    expect(mocks.curationFindFirst).not.toHaveBeenCalled();
+    expect(mocks.curationDecide).not.toHaveBeenCalled();
+  });
+
+  it('pending CurationItem не найден → decide НЕ вызывается (best-effort no-op)', async () => {
+    const mocks = makeMocks();
+    setExistenceConfirmProbe(mocks);
+    mocks.curationFindFirst.mockResolvedValueOnce(null);
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({
+      ...event,
+      payload: { text: 'Удалить' },
+    });
+
+    expect(mocks.curationFindFirst).toHaveBeenCalledTimes(1);
+    expect(mocks.curationDecide).not.toHaveBeenCalled();
+  });
+
+  it('обычный probe (не existence_confirm) → curation не трогается', async () => {
+    const mocks = makeMocks();
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({
+      ...event,
+      payload: { text: 'Удалить' },
+    });
+
+    expect(mocks.curationFindFirst).not.toHaveBeenCalled();
+    expect(mocks.curationDecide).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { CurationModule } from '../curation/curation.module';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
 
 import { ProbeDigestCron } from './probe-digest.cron';
@@ -13,7 +14,7 @@ import { ProbeService } from './probe.service';
 
 @Global()
 @Module({
-  imports: [PrismaModule, EmbeddingsModule],
+  imports: [PrismaModule, EmbeddingsModule, CurationModule],
   controllers: [ProbeController],
   providers: [
     ProbeService,

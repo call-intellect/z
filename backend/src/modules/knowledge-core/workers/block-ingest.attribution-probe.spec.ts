@@ -49,7 +49,7 @@ function buildWorker(opts: {
     {} as never, // graph
     {} as never, // metrics
     {} as never, // axisClassifier
-    {} as never, // cfg
+    { getDynamic: async (_k: string, _e: string | undefined, def: unknown) => def } as never, // cfg
     {} as never, // blockAccessDeriver
     probe as never, // probeService (Ф6)
   );

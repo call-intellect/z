@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { type DataClass } from '@prisma/client';
 
@@ -9,7 +9,9 @@ import { LlmRouterService } from '../ai/services/llm-router.service';
 import { applyInputGuards } from '../ai/services/prompts/common';
 import { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
 import { ConversationalService } from '../conversational/conversational.service';
+import { CurationService } from '../curation/services/curation.service';
 
+import { mapExistenceConfirmAnswer } from './existence-confirm.util';
 import type { NotificationRespondedPayload } from './probe.types';
 import {
   PROBE_RESPONSE_CLASSIFY_JSON_SCHEMA,
@@ -32,6 +34,9 @@ export class ProbeResponseHandler {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(ConversationalService)
     private readonly conversational: ConversationalService,
+    @Optional()
+    @Inject(CurationService)
+    private readonly curation?: CurationService,
   ) {}
 
   @OnEvent('notification.responded')
@@ -96,6 +101,16 @@ export class ProbeResponseHandler {
       });
       this.metrics.incProbeOutcome({ outcome: 'answered', reason: probe.reason });
 
+      if (probe.reason === 'regulation.existence_confirm') {
+        await this.maybeDecideExistenceConfirm({
+          tenantId: event.tenantId,
+          reviewerUserId: event.recipientUserId,
+          probePayload,
+          eventPayload: event.payload,
+          classifiedAnswer: classification?.answer,
+        });
+      }
+
       await this.sendAnswerAck({
         tenantId: event.tenantId,
         recipientUserId: event.recipientUserId,
@@ -113,6 +128,64 @@ export class ProbeResponseHandler {
           err: err instanceof Error ? err.message : String(err),
         },
         'ProbeResponseHandler: внутренняя ошибка — пропускаю',
+      );
+    }
+  }
+
+  private async maybeDecideExistenceConfirm(args: {
+    tenantId: string;
+    reviewerUserId: string;
+    probePayload: Record<string, unknown>;
+    eventPayload: Record<string, unknown>;
+    classifiedAnswer?: string;
+  }): Promise<void> {
+    if (!this.curation) return;
+    const contextCardId = this.toStringOrUndef(args.probePayload.contextCardId);
+    if (!contextCardId) return;
+
+    const answer =
+      args.classifiedAnswer && args.classifiedAnswer.trim().length > 0
+        ? args.classifiedAnswer
+        : this.extractResponseText(args.eventPayload);
+    if (!answer) return;
+
+    const mapped = mapExistenceConfirmAnswer(answer);
+    if (!mapped) return;
+
+    try {
+      const item = await this.prisma.curationItem.findFirst({
+        where: {
+          tenantId: args.tenantId,
+          resourceId: contextCardId,
+          status: 'pending',
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+      if (!item) {
+        this.logger.log(
+          `existence-confirm: pending CurationItem не найден (tenant=${args.tenantId} card=${contextCardId} decision=${mapped.decisionType}) — пропускаю проводку`,
+        );
+        return;
+      }
+      await this.curation.decide({
+        tenantId: args.tenantId,
+        curationItemId: item.id,
+        reviewerUserId: args.reviewerUserId,
+        decisionType: mapped.decisionType,
+        reasoning: 'existence-confirm: ответ на probe regulation.existence_confirm',
+      });
+      this.logger.log(
+        `existence-confirm: CurationItem ${item.id} → ${mapped.decisionType} (tenant=${args.tenantId} card=${contextCardId})`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          contextCardId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'existence-confirm: проводка ответа в curation упала (best-effort)',
       );
     }
   }

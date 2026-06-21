@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Policy, Process, Regulation } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ActivityFeedService } from '../../activity-feed/services/activity-feed.service';
@@ -33,6 +34,9 @@ export class Specialist31ProbeService {
     @Optional()
     @Inject(ActivityFeedService)
     private readonly activityFeed?: ActivityFeedService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
 
   async checkAndEmitProbesRegulation(reg: Regulation): Promise<void> {
@@ -173,6 +177,7 @@ export class Specialist31ProbeService {
     if (admins.length === 0) return;
 
     const label = this.kindLabel(args.resourceType);
+    const labelNom = this.kindLabelNominative(args.resourceType);
 
     if (this.ownerResolver) {
       try {
@@ -202,6 +207,22 @@ export class Specialist31ProbeService {
           this.metrics.incOwnerResolution({ outcome: 'ambiguous' });
           const names = await this.personNamesByUserIds(args.tenantId, resolution.candidates);
           if (names.length >= 2) {
+            const existenceConfirm = await this.existenceConfirmEnabled();
+            if (existenceConfirm) {
+              const message = `Кора зафиксировала ${labelNom} «${args.resourceName}» из встреч/чатов. Оставить и назначить владельца (${names.join(' или ')}), переименовать или удалить?`;
+              await this.emit({
+                tenantId: args.tenantId,
+                resourceType: args.resourceType,
+                resourceId: args.resourceId,
+                reason: 'regulation.existence_confirm',
+                message,
+                objectName: args.resourceName,
+                recipients: admins,
+                suggestedActions: ['Оставить', 'Переименовать', 'Назначить владельца', 'Удалить'],
+                notBeforeAt: await this.confirmGraceNotBeforeAt(),
+              });
+              return;
+            }
             const message = `У ${label} «${args.resourceName}» нет ответственного. Кого назначить владельцем: ${names.join(' или ')}?`;
             await this.emit({
               tenantId: args.tenantId,
@@ -227,6 +248,23 @@ export class Specialist31ProbeService {
           'specialist-3-1 probe: owner-resolver упал — fallback на probe',
         );
       }
+    }
+
+    const existenceConfirm = await this.existenceConfirmEnabled();
+    if (existenceConfirm) {
+      const message = `Кора зафиксировала ${labelNom} «${args.resourceName}». Подтвердите: оставить (назначить владельца), переименовать или удалить?`;
+      await this.emit({
+        tenantId: args.tenantId,
+        resourceType: args.resourceType,
+        resourceId: args.resourceId,
+        reason: 'regulation.existence_confirm',
+        message,
+        objectName: args.resourceName,
+        recipients: admins,
+        suggestedActions: ['Оставить', 'Переименовать', 'Назначить владельца', 'Удалить'],
+        notBeforeAt: await this.confirmGraceNotBeforeAt(),
+      });
+      return;
     }
 
     const message = `У ${label} «${args.resourceName}» нет ответственного — назначить владельца?`;
@@ -358,6 +396,7 @@ export class Specialist31ProbeService {
     objectName: string;
     recipients: readonly string[];
     suggestedActions?: readonly string[];
+    notBeforeAt?: Date;
   }): Promise<void> {
     const actionUrl = `/regulations/${args.resourceId}?kind=${args.resourceType}`;
     if (this.probeService) {
@@ -380,6 +419,7 @@ export class Specialist31ProbeService {
           recipientCandidates: [...args.recipients],
           priorityHint: 0.5,
           dataClass: 'internal',
+          notBeforeAt: args.notBeforeAt,
         });
         this.metrics.incCoreSpecialistProbeEvent({
           type: args.resourceType,
@@ -577,6 +617,35 @@ export class Specialist31ProbeService {
       default:
         return kind;
     }
+  }
+
+  private async existenceConfirmEnabled(): Promise<boolean> {
+    if (!this.cfg) return true;
+    try {
+      return await this.cfg.getDynamic<boolean>(
+        'probe.existenceConfirmEnabled',
+        undefined,
+        true,
+      );
+    } catch {
+      return true;
+    }
+  }
+
+  private async confirmGraceNotBeforeAt(): Promise<Date | undefined> {
+    if (!this.cfg) return undefined;
+    let graceDays: number;
+    try {
+      graceDays = await this.cfg.getDynamic<number>(
+        'probe.confirmGraceDays',
+        undefined,
+        2,
+      );
+    } catch {
+      graceDays = 2;
+    }
+    if (!Number.isFinite(graceDays) || graceDays <= 0) return undefined;
+    return new Date(Date.now() + graceDays * 86_400_000);
   }
 
   private logErr(reason: string, id: string, err: unknown): void {

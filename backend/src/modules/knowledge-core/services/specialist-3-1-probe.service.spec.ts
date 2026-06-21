@@ -1,6 +1,7 @@
 import type { Regulation } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { ActivityFeedService } from '../../activity-feed/services/activity-feed.service';
@@ -28,6 +29,7 @@ function makeEnv(
     | { kind: 'resolved'; userId: string }
     | { kind: 'ambiguous'; candidates: string[] }
     | { kind: 'none' },
+  opts?: { existenceConfirmEnabled?: boolean; confirmGraceDays?: number },
 ): {
   service: Specialist31ProbeService;
   suggest: ReturnType<typeof vi.fn>;
@@ -70,6 +72,16 @@ function makeEnv(
     publish: feedPublish,
   } as unknown as ActivityFeedService;
 
+  const existenceConfirmEnabled = opts?.existenceConfirmEnabled ?? true;
+  const confirmGraceDays = opts?.confirmGraceDays ?? 2;
+  const cfg = {
+    getDynamic: vi.fn(async (key: string) => {
+      if (key === 'probe.existenceConfirmEnabled') return existenceConfirmEnabled;
+      if (key === 'probe.confirmGraceDays') return confirmGraceDays;
+      return undefined;
+    }),
+  } as unknown as TypedConfigService;
+
   return {
     service: new Specialist31ProbeService(
       prisma,
@@ -78,6 +90,7 @@ function makeEnv(
       probeService,
       ownerResolver,
       activityFeed,
+      cfg,
     ),
     suggest,
     regulationUpdateMany,
@@ -113,7 +126,7 @@ describe('Specialist31ProbeService × OwnerResolver (regulation.missing_owner)',
     expect(env.incOwnerResolution).toHaveBeenCalledWith({ outcome: 'auto' });
   });
 
-  it('ambiguous → probe-вопрос-выбор с именами кандидатов, без авто-записи', async () => {
+  it('ambiguous + existenceConfirm ON (дефолт) → existence_confirm с именами кандидатов и грейсом', async () => {
     const env = makeEnv({
       kind: 'ambiguous',
       candidates: ['user-a', 'user-b'],
@@ -127,17 +140,44 @@ describe('Specialist31ProbeService × OwnerResolver (regulation.missing_owner)',
     expect(env.suggest).toHaveBeenCalledTimes(1);
     const call = env.suggest.mock.calls[0]![0] as {
       reason: string;
-      payload: { message: string };
+      payload: { message: string; suggestedActions: string[] };
+      notBeforeAt?: Date;
     };
-    expect(call.reason).toBe('regulation.missing_owner');
-    expect(call.payload.message).toContain('Кого назначить владельцем');
+    expect(call.reason).toBe('regulation.existence_confirm');
+    expect(call.payload.message).toContain('Кора зафиксировала');
     expect(call.payload.message).toContain('Иван Иванов или Пётр Петров');
+    expect(call.payload.suggestedActions).toEqual([
+      'Оставить',
+      'Переименовать',
+      'Назначить владельца',
+      'Удалить',
+    ]);
+    expect(call.notBeforeAt).toBeInstanceOf(Date);
     expect(env.incOwnerResolution).toHaveBeenCalledWith({
       outcome: 'ambiguous',
     });
   });
 
-  it('none → прежний probe «назначить владельца?»', async () => {
+  it('ambiguous + existenceConfirm OFF (kill-switch) → прежний probe regulation.missing_owner', async () => {
+    const env = makeEnv(
+      { kind: 'ambiguous', candidates: ['user-a', 'user-b'] },
+      { existenceConfirmEnabled: false },
+    );
+
+    await env.service.checkAndEmitProbesRegulation(makeRegulation());
+
+    expect(env.suggest).toHaveBeenCalledTimes(1);
+    const call = env.suggest.mock.calls[0]![0] as {
+      reason: string;
+      payload: { message: string };
+      notBeforeAt?: Date;
+    };
+    expect(call.reason).toBe('regulation.missing_owner');
+    expect(call.payload.message).toContain('Кого назначить владельцем');
+    expect(call.notBeforeAt).toBeUndefined();
+  });
+
+  it('none + existenceConfirm ON (дефолт) → existence_confirm после грейса', async () => {
     const env = makeEnv({ kind: 'none' });
 
     await env.service.checkAndEmitProbesRegulation(makeRegulation());
@@ -145,10 +185,51 @@ describe('Specialist31ProbeService × OwnerResolver (regulation.missing_owner)',
     expect(env.regulationUpdateMany).not.toHaveBeenCalled();
     expect(env.suggest).toHaveBeenCalledTimes(1);
     const call = env.suggest.mock.calls[0]![0] as {
-      payload: { message: string };
+      reason: string;
+      payload: { message: string; suggestedActions: string[] };
+      notBeforeAt?: Date;
     };
-    expect(call.payload.message).toContain('нет ответственного — назначить владельца?');
+    expect(call.reason).toBe('regulation.existence_confirm');
+    expect(call.payload.message).toContain('Кора зафиксировала');
+    expect(call.payload.suggestedActions).toEqual([
+      'Оставить',
+      'Переименовать',
+      'Назначить владельца',
+      'Удалить',
+    ]);
+    expect(call.notBeforeAt).toBeInstanceOf(Date);
     expect(env.incOwnerResolution).toHaveBeenCalledWith({ outcome: 'none' });
+  });
+
+  it('none + existenceConfirm OFF (kill-switch) → прежний probe «назначить владельца?», без грейса', async () => {
+    const env = makeEnv({ kind: 'none' }, { existenceConfirmEnabled: false });
+
+    await env.service.checkAndEmitProbesRegulation(makeRegulation());
+
+    expect(env.suggest).toHaveBeenCalledTimes(1);
+    const call = env.suggest.mock.calls[0]![0] as {
+      reason: string;
+      payload: { message: string };
+      notBeforeAt?: Date;
+    };
+    expect(call.reason).toBe('regulation.missing_owner');
+    expect(call.payload.message).toContain('нет ответственного — назначить владельца?');
+    expect(call.notBeforeAt).toBeUndefined();
+    expect(env.incOwnerResolution).toHaveBeenCalledWith({ outcome: 'none' });
+  });
+
+  it('none + confirmGraceDays=0 → existence_confirm без notBeforeAt', async () => {
+    const env = makeEnv({ kind: 'none' }, { confirmGraceDays: 0 });
+
+    await env.service.checkAndEmitProbesRegulation(makeRegulation());
+
+    expect(env.suggest).toHaveBeenCalledTimes(1);
+    const call = env.suggest.mock.calls[0]![0] as {
+      reason: string;
+      notBeforeAt?: Date;
+    };
+    expect(call.reason).toBe('regulation.existence_confirm');
+    expect(call.notBeforeAt).toBeUndefined();
   });
 
   it('M-3: resolved, но updateMany вернул count=0 (владелец назначен параллельно) → лента НЕ публикуется, probe НЕ шлётся', async () => {

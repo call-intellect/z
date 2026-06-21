@@ -19,6 +19,7 @@ export const PROBE_REASON_WINDOW: Record<string, ProbeWindow> = {
   'consistency_violation.R6': 'immediate',
   'goal.kr_checkpoint_suggested': 'immediate',
   'kr_checkpoint_suggested': 'immediate',
+  'regulation.existence_confirm': 'deferrable',
 };
 
 export function probeWindow(reason: string): ProbeWindow {
@@ -215,6 +216,37 @@ export const PROBE_REASON_RECHECK: Record<string, ProbeRecheckPredicate> = {
     return idea.status === 'in_discussion' && idea.statusChangedAt == null;
   },
   'regulation.missing_owner': async ({
+    prisma,
+    tenantId,
+    contextCardId,
+    contextCardKind,
+  }) => {
+    if (!contextCardId) return true;
+    const kind = (contextCardKind ?? '').toLowerCase();
+    if (kind === 'process') {
+      const row = await prisma.process.findFirst({
+        where: { id: contextCardId, tenantId },
+        select: { ownerPersonId: true },
+      });
+      if (!row) return false;
+      return row.ownerPersonId == null;
+    }
+    if (kind === 'policy') {
+      const row = await prisma.policy.findFirst({
+        where: { id: contextCardId, tenantId },
+        select: { ownerPersonId: true },
+      });
+      if (!row) return false;
+      return row.ownerPersonId == null;
+    }
+    const reg = await prisma.regulation.findFirst({
+      where: { id: contextCardId, tenantId },
+      select: { ownerPersonId: true },
+    });
+    if (!reg) return false;
+    return reg.ownerPersonId == null;
+  },
+  'regulation.existence_confirm': async ({
     prisma,
     tenantId,
     contextCardId,

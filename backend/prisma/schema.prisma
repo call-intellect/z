@@ -4961,6 +4961,7 @@ model Person {
   skillProfile                SkillProfile?                      @relation("SkillProfilePerson")
   /// SBA β-8 — DailyCheckIn записи сотрудника.
   dailyCheckIns               DailyCheckIn[]                     @relation("DailyCheckInPerson")
+  personLeaves                PersonLeave[]
   /// SBA β-8.2 — обратная связь для обещаний, адресованных этому человеку
   /// (`IdeaBlock.commitmentRecipientPersonId`).
   commitmentsToMe             IdeaBlock[]                        @relation("CommitmentRecipient")
@@ -10035,6 +10036,20 @@ model HolidayCalendar {
 
   @@unique([tenantId, date])
   @@index([date])
+}
+
+model PersonLeave {
+  id        String   @id @default(cuid())
+  tenantId  String
+  personId  String
+  fromDate  DateTime
+  toDate    DateTime
+  kind      String   @default("vacation")
+  comment   String?
+  createdAt DateTime @default(now())
+  person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, personId, fromDate, toDate])
 }
 
 // ──────────────────────────── Wave 2: Activity Feeds (2026-05-24) ────────────────────────────

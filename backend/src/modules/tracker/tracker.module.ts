@@ -23,6 +23,7 @@ import { MeTasksController } from './controllers/me-tasks.controller';
 import { MyMentionsController } from './controllers/my-mentions.controller';
 import { OrgIssuesController } from './controllers/org-issues.controller';
 import { OverviewController } from './controllers/overview.controller';
+import { PersonLeaveController } from './controllers/person-leave.controller';
 import { ProgressUpdatesController } from './controllers/progress-updates.controller';
 import { ProjectDocumentsController } from './controllers/project-documents.controller';
 import { ProjectsController } from './controllers/projects.controller';
@@ -63,6 +64,7 @@ import { MeTasksService } from './services/me-tasks.service';
 import { MeetingExtractActionsService } from './services/meeting-extract-actions.service';
 import { MyMentionsService } from './services/my-mentions.service';
 import { OverviewService } from './services/overview.service';
+import { PersonLeaveService } from './services/person-leave.service';
 import { ProgressUpdatesService } from './services/progress-updates.service';
 import { ProjectDocumentsService } from './services/project-documents.service';
 import { ProjectsFromTemplateService } from './services/projects-from-template.service';
@@ -116,6 +118,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     RelationsController,
     AttachmentsController,
     HolidaysController,
+    PersonLeaveController,
     ImportsController,
     MeInboxController,
     // tasks-unified-workspace Ф1 (2026-06-18): GET /api/v1/issues — сквозной
@@ -139,6 +142,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     ProjectsService,
     ProjectsFromTemplateService,
     HolidayService,
+    PersonLeaveService,
     BoardsService,
     IssuesService,
     MeTasksService,
@@ -208,6 +212,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     ProgressUpdatesService,
     IntakeAutoTriageQueueService,
     HolidayService,
+    PersonLeaveService,
     SprintAnalystService,
     // TZ task-dedup (2026-06-16, Ф2) — TaskCompletionHandler (operations)
     // переиспользует findSimilarByVector для семантического матча

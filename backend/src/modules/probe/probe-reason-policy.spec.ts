@@ -4,8 +4,10 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 
 import {
   isEntityUnattributed,
+  MACHINE_FILLABLE_REASONS,
   PROBE_REASON_RECHECK,
   probeWindow,
+  resolveProbeProvenance,
 } from './probe-reason-policy';
 
 describe('probeWindow', () => {
@@ -208,5 +210,124 @@ describe('PROBE_REASON_RECHECK — attribution.unresolved_at_ingest (Ф6)', () =
       contextCardKind: 'entity',
     });
     expect(rel).toBe(true);
+  });
+});
+
+describe('resolveProbeProvenance (центральный гейт политики)', () => {
+  it('regulation.missing_owner: sourceBlockIds непуст, version null, нет curation → auto_unconfirmed', async () => {
+    const prisma = {
+      regulation: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ sourceBlockIds: ['b1'], currentVersion: null }),
+      },
+      curationItem: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+    const p = await resolveProbeProvenance('regulation.missing_owner', {
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'r1',
+      contextCardKind: 'regulation',
+    });
+    expect(p).toBe('auto_unconfirmed');
+  });
+
+  it('currentVersion.trustTier=human → confirmed_or_manual', async () => {
+    const prisma = {
+      regulation: {
+        findFirst: vi.fn().mockResolvedValue({
+          sourceBlockIds: ['b1'],
+          currentVersion: { trustTier: 'human' },
+        }),
+      },
+      curationItem: { findFirst: vi.fn() },
+    } as unknown as PrismaService;
+    const p = await resolveProbeProvenance('regulation.missing_owner', {
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'r1',
+      contextCardKind: 'regulation',
+    });
+    expect(p).toBe('confirmed_or_manual');
+  });
+
+  it('открытый CurationItem (pending) при sourceBlockIds=[] → auto_unconfirmed', async () => {
+    const prisma = {
+      process: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ sourceBlockIds: [], currentVersion: null }),
+      },
+      curationItem: { findFirst: vi.fn().mockResolvedValue({ id: 'ci-1' }) },
+    } as unknown as PrismaService;
+    const p = await resolveProbeProvenance('regulation.missing_owner', {
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'p1',
+      contextCardKind: 'process',
+    });
+    expect(p).toBe('auto_unconfirmed');
+  });
+
+  it('карточка не найдена → unknown', async () => {
+    const prisma = {
+      regulation: { findFirst: vi.fn().mockResolvedValue(null) },
+      curationItem: { findFirst: vi.fn() },
+    } as unknown as PrismaService;
+    const p = await resolveProbeProvenance('regulation.missing_owner', {
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'r1',
+      contextCardKind: 'regulation',
+    });
+    expect(p).toBe('unknown');
+  });
+
+  it('нет contextCardId → unknown', async () => {
+    const prisma = {
+      regulation: { findFirst: vi.fn() },
+    } as unknown as PrismaService;
+    const p = await resolveProbeProvenance('regulation.missing_owner', {
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: null,
+      contextCardKind: 'regulation',
+    });
+    expect(p).toBe('unknown');
+  });
+
+  it('reason не из семьи regulation (decision.missing_decider) → unknown', async () => {
+    const prisma = {
+      regulation: { findFirst: vi.fn() },
+    } as unknown as PrismaService;
+    const p = await resolveProbeProvenance('decision.missing_decider', {
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'd1',
+      contextCardKind: 'decision',
+    });
+    expect(p).toBe('unknown');
+  });
+});
+
+describe('MACHINE_FILLABLE_REASONS (защита human-only)', () => {
+  it('содержит машинно-закрываемые gap-reason', () => {
+    expect(MACHINE_FILLABLE_REASONS.has('regulation.missing_owner')).toBe(true);
+    expect(MACHINE_FILLABLE_REASONS.has('regulation.process_no_steps')).toBe(
+      true,
+    );
+    expect(MACHINE_FILLABLE_REASONS.has('regulation.scope_unclear')).toBe(true);
+  });
+
+  it('НЕ содержит attribution / decision / commitment (human-only)', () => {
+    expect(
+      MACHINE_FILLABLE_REASONS.has('attribution.unresolved_at_ingest'),
+    ).toBe(false);
+    expect(MACHINE_FILLABLE_REASONS.has('decision.missing_decider')).toBe(false);
+    expect(MACHINE_FILLABLE_REASONS.has('decision.overdue')).toBe(false);
+    expect(MACHINE_FILLABLE_REASONS.has('commitment.followup')).toBe(false);
+    expect(MACHINE_FILLABLE_REASONS.has('commitment.silence_escalation')).toBe(
+      false,
+    );
   });
 });

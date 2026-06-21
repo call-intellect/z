@@ -29,7 +29,14 @@ export interface ProbeSuggestInput {
 
 export type ProbeSuggestResult =
   | { ok: true; probeEventId: string }
-  | { dropped: 'dedup' | 'rate_limit' | 'cold_start' | 'low_value' };
+  | {
+      dropped:
+        | 'dedup'
+        | 'rate_limit'
+        | 'cold_start'
+        | 'low_value'
+        | 'policy_silent';
+    };
 
 export interface NotificationRespondedPayload {
   tenantId: string;

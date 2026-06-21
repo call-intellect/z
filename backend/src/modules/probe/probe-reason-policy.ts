@@ -35,6 +35,85 @@ export const NUDGE_REASONS: ReadonlySet<string> = new Set([
   'card.missing_deadline',
 ]);
 
+export const MACHINE_FILLABLE_REASONS: ReadonlySet<string> = new Set([
+  'regulation.missing_owner',
+  'regulation.process_no_steps',
+  'regulation.scope_unclear',
+  'card.merge_suggestion',
+  'experiment.no_owner',
+  'process_template.missing_input_artifact',
+  'process_template.missing_output_artifact',
+  'process_template.step_without_owner',
+]);
+
+export type ProbeProvenance =
+  | 'auto_unconfirmed'
+  | 'confirmed_or_manual'
+  | 'unknown';
+
+export interface ProbeProvenanceCtx {
+  prisma: PrismaService;
+  tenantId: string;
+  contextCardId: string | null;
+  contextCardKind: string | null;
+}
+
+async function regulationFamilyProvenance(
+  ctx: ProbeProvenanceCtx,
+): Promise<ProbeProvenance> {
+  const { prisma, tenantId, contextCardId, contextCardKind } = ctx;
+  if (!contextCardId) return 'unknown';
+  const kind = (contextCardKind ?? '').toLowerCase();
+  const select = {
+    sourceBlockIds: true,
+    currentVersion: { select: { trustTier: true } },
+  } as const;
+  let card: {
+    sourceBlockIds: string[];
+    currentVersion: { trustTier: string } | null;
+  } | null;
+  if (kind === 'process') {
+    card = await prisma.process.findFirst({
+      where: { id: contextCardId, tenantId },
+      select,
+    });
+  } else if (kind === 'policy') {
+    card = await prisma.policy.findFirst({
+      where: { id: contextCardId, tenantId },
+      select,
+    });
+  } else {
+    card = await prisma.regulation.findFirst({
+      where: { id: contextCardId, tenantId },
+      select,
+    });
+  }
+  if (!card) return 'unknown';
+  if (card.currentVersion?.trustTier === 'human') return 'confirmed_or_manual';
+  const openCuration = await prisma.curationItem.findFirst({
+    where: { tenantId, resourceId: contextCardId, status: 'pending' },
+    select: { id: true },
+  });
+  if (openCuration) return 'auto_unconfirmed';
+  if (card.sourceBlockIds.length > 0) return 'auto_unconfirmed';
+  return 'unknown';
+}
+
+export async function resolveProbeProvenance(
+  reason: string,
+  ctx: ProbeProvenanceCtx,
+): Promise<ProbeProvenance> {
+  if (!ctx.contextCardId) return 'unknown';
+  if (
+    reason === 'regulation.missing_owner' ||
+    reason === 'regulation.process_no_steps' ||
+    reason === 'regulation.scope_unclear'
+  ) {
+    return regulationFamilyProvenance(ctx);
+  }
+  return 'unknown';
+}
+
 export interface ProbeRecheckCtx {
   prisma: PrismaService;
   tenantId: string;

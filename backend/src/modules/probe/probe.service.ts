@@ -16,7 +16,12 @@ import {
   probeEngagementRedisKey,
   probeTopicCooldownRedisKey,
 } from './probe-fatigue.util';
-import { NUDGE_REASONS, probeWindow } from './probe-reason-policy';
+import {
+  MACHINE_FILLABLE_REASONS,
+  NUDGE_REASONS,
+  probeWindow,
+  resolveProbeProvenance,
+} from './probe-reason-policy';
 import type {
   ProbeSuggestInput,
   ProbeSuggestPayload,
@@ -50,6 +55,57 @@ export class ProbeService {
           status: 'dropped_dedup',
         });
         return { dropped: 'dedup' };
+      }
+
+      let suppressOnUnconfirmedAuto = true;
+      try {
+        suppressOnUnconfirmedAuto = await this.cfg.getDynamic<boolean>(
+          'probe.suppressOnUnconfirmedAuto',
+          undefined,
+          true,
+        );
+      } catch {
+        suppressOnUnconfirmedAuto = true;
+      }
+      if (suppressOnUnconfirmedAuto) {
+        let machineFillable: string[];
+        try {
+          const raw = await this.cfg.getDynamic<string[]>(
+            'probe.machineFillableReasons',
+            undefined,
+            [...MACHINE_FILLABLE_REASONS],
+          );
+          machineFillable = Array.isArray(raw)
+            ? raw
+            : [...MACHINE_FILLABLE_REASONS];
+        } catch {
+          machineFillable = [...MACHINE_FILLABLE_REASONS];
+        }
+        if (machineFillable.includes(input.reason)) {
+          const provenance = await resolveProbeProvenance(input.reason, {
+            prisma: this.prisma,
+            tenantId: input.tenantId,
+            contextCardId:
+              typeof input.payload.contextCardId === 'string'
+                ? input.payload.contextCardId
+                : null,
+            contextCardKind:
+              typeof input.payload.contextCardKind === 'string'
+                ? input.payload.contextCardKind
+                : null,
+          });
+          if (provenance === 'auto_unconfirmed') {
+            this.metrics.incProbeEvent({
+              emittedByService: input.emittedByService,
+              reason: input.reason,
+              status: 'dropped_policy_silent',
+            });
+            this.logger.log(
+              `policy-gate: probe заглушён на авто-неподтверждённой записи (reason=${input.reason} tenant=${input.tenantId} card=${input.payload.contextCardId})`,
+            );
+            return { dropped: 'policy_silent' };
+          }
+        }
       }
 
       const notBeforeAt = input.notBeforeAt ?? null;

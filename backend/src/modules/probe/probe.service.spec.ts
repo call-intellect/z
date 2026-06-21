@@ -15,6 +15,11 @@ function makeService(over?: {
   embedResult?: number[] | 'throw';
   semanticRows?: Array<{ id: string; distance: number }>;
   dynamicOverrides?: Record<string, unknown>;
+  card?: {
+    sourceBlockIds: string[];
+    currentVersion: { trustTier: string } | null;
+  } | null;
+  curationItem?: { id: string } | null;
 }): {
   service: ProbeService;
   create: ReturnType<typeof vi.fn>;
@@ -24,6 +29,8 @@ function makeService(over?: {
   embed: ReturnType<typeof vi.fn>;
   queryRawUnsafe: ReturnType<typeof vi.fn>;
   executeRawUnsafe: ReturnType<typeof vi.fn>;
+  regulationFindFirst: ReturnType<typeof vi.fn>;
+  curationFindFirst: ReturnType<typeof vi.fn>;
 } {
   const create = vi
     .fn()
@@ -41,8 +48,17 @@ function makeService(over?: {
     .fn()
     .mockResolvedValue(over?.semanticRows ?? []);
   const executeRawUnsafe = vi.fn().mockResolvedValue(1);
+  const cardRow = over?.card ?? null;
+  const regulationFindFirst = vi.fn().mockResolvedValue(cardRow);
+  const processFindFirst = vi.fn().mockResolvedValue(cardRow);
+  const policyFindFirst = vi.fn().mockResolvedValue(cardRow);
+  const curationFindFirst = vi.fn().mockResolvedValue(over?.curationItem ?? null);
   const prisma = {
     probeEvent: { create, findFirst },
+    regulation: { findFirst: regulationFindFirst },
+    process: { findFirst: processFindFirst },
+    policy: { findFirst: policyFindFirst },
+    curationItem: { findFirst: curationFindFirst },
     $queryRawUnsafe: queryRawUnsafe,
     $executeRawUnsafe: executeRawUnsafe,
   } as unknown as PrismaService;
@@ -102,6 +118,8 @@ function makeService(over?: {
     embed,
     queryRawUnsafe,
     executeRawUnsafe,
+    regulationFindFirst,
+    curationFindFirst,
   };
 }
 
@@ -380,5 +398,112 @@ describe('ProbeService.suggest — Ф4 семантический дедуп в�
     expect('ok' in res && res.ok).toBe(true);
     expect(e.embed).not.toHaveBeenCalled();
     expect(e.queryRawUnsafe).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProbeService.suggest — центральный гейт политики (policy_silent)', () => {
+  it('авто-неподтверждённая запись (sourceBlockIds непуст, version null) → policy_silent, без события и enqueue', async () => {
+    const e = makeService({
+      card: { sourceBlockIds: ['b1'], currentVersion: null },
+      curationItem: null,
+    });
+    const res = await e.service.suggest({
+      tenantId: 'org-1',
+      emittedByService: '3-1-regulations',
+      reason: 'regulation.missing_owner',
+      payload: { contextCardId: 'r1', contextCardKind: 'regulation' },
+      recipientCandidates: ['user-1'],
+      priorityHint: 0.5,
+    });
+
+    expect('dropped' in res && res.dropped).toBe('policy_silent');
+    expect(e.incProbeEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'dropped_policy_silent' }),
+    );
+    expect(e.create).not.toHaveBeenCalled();
+    expect(e.enqueue).not.toHaveBeenCalled();
+    expect(e.regulationFindFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it('открытый CurationItem (pending) при sourceBlockIds=[] → policy_silent', async () => {
+    const e = makeService({
+      card: { sourceBlockIds: [], currentVersion: null },
+      curationItem: { id: 'ci-1' },
+    });
+    const res = await e.service.suggest({
+      tenantId: 'org-1',
+      emittedByService: '3-1-regulations',
+      reason: 'regulation.missing_owner',
+      payload: { contextCardId: 'r1', contextCardKind: 'regulation' },
+      recipientCandidates: ['user-1'],
+      priorityHint: 0.5,
+    });
+
+    expect('dropped' in res && res.dropped).toBe('policy_silent');
+    expect(e.curationFindFirst).toHaveBeenCalledTimes(1);
+    expect(e.create).not.toHaveBeenCalled();
+  });
+
+  it('подтверждённая запись (trustTier=human) → гейт пропускает, обычный pending', async () => {
+    const e = makeService({
+      card: { sourceBlockIds: ['b1'], currentVersion: { trustTier: 'human' } },
+      curationItem: null,
+    });
+    const res = await e.service.suggest({
+      tenantId: 'org-1',
+      emittedByService: '3-1-regulations',
+      reason: 'regulation.missing_owner',
+      payload: { contextCardId: 'r1', contextCardKind: 'regulation' },
+      recipientCandidates: ['user-1'],
+      priorityHint: 0.5,
+    });
+
+    expect('ok' in res && res.ok).toBe(true);
+    const created = e.create.mock.calls[0]![0] as { data: { status: string } };
+    expect(created.data.status).toBe('pending');
+    expect(e.incProbeEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'dropped_policy_silent' }),
+    );
+    expect(e.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('human-only reason (decision.missing_decider) → гейт не трогает (не в множестве)', async () => {
+    const e = makeService({
+      card: { sourceBlockIds: ['b1'], currentVersion: null },
+      curationItem: null,
+    });
+    const res = await e.service.suggest({
+      tenantId: 'org-1',
+      emittedByService: '3-3-decisions',
+      reason: 'decision.missing_decider',
+      payload: { contextCardId: 'd1', contextCardKind: 'decision' },
+      recipientCandidates: ['user-1'],
+      priorityHint: 0.5,
+    });
+
+    expect('ok' in res && res.ok).toBe(true);
+    expect(e.regulationFindFirst).not.toHaveBeenCalled();
+    expect(e.incProbeEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'dropped_policy_silent' }),
+    );
+  });
+
+  it('флаг suppressOnUnconfirmedAuto OFF → гейт не применяется', async () => {
+    const e = makeService({
+      dynamicOverrides: { 'probe.suppressOnUnconfirmedAuto': false },
+      card: { sourceBlockIds: ['b1'], currentVersion: null },
+      curationItem: null,
+    });
+    const res = await e.service.suggest({
+      tenantId: 'org-1',
+      emittedByService: '3-1-regulations',
+      reason: 'regulation.missing_owner',
+      payload: { contextCardId: 'r1', contextCardKind: 'regulation' },
+      recipientCandidates: ['user-1'],
+      priorityHint: 0.5,
+    });
+
+    expect('ok' in res && res.ok).toBe(true);
+    expect(e.regulationFindFirst).not.toHaveBeenCalled();
   });
 });

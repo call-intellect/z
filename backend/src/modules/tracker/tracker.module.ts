@@ -76,6 +76,7 @@ import { ImportTrackerWorker } from './workers/import-tracker.worker';
 import { IntakeAutoTriageWorker } from './workers/intake-auto-triage.worker';
 import { IssueOverdueDetectorCron } from './workers/issue-overdue-detector.cron';
 import { IssueStateGaugeCron } from './workers/issue-state-gauge.cron';
+import { ProgressAutoDraftCron } from './workers/progress-auto-draft.cron';
 import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
 
 @Module({
@@ -146,6 +147,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     IssueOverdueDetectorCron,
     IssueStateGaugeCron,
     GoalAlignmentLowCron,
+    ProgressAutoDraftCron,
     IssueInferFieldsService,
     IssueGoalSuggestService,
     MeetingExtractActionsService,

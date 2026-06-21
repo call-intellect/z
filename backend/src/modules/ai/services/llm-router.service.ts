@@ -550,6 +550,7 @@ export type LlmTaskType =
   // weekly summary спринта (recap гипотезы, velocity, обучения). Cache-friendly,
   // markdown без strict JSON. Primary deepseek-v4-flash.
   | 'sprint-weekly-digest'
+  | 'issue-progress-draft'
   // Pulse Wave 6 §6.6 (2026-05-30) — Goal-Vector-Tracker: per-Goal LLM
   // анализ артефактов (idea / commitment kept|broken / issue closed) и
   // вычисление pro/contra/net score per Person. JSON-strict, дёшево
@@ -848,6 +849,7 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // Pulse Wave 5 §5.1-5.2 (2026-05-30) — связные нарративы daily/weekly спринта.
   'sprint-daily-digest',
   'sprint-weekly-digest',
+  'issue-progress-draft',
   // Pulse Wave 6 §6.6 (2026-05-30) — Goal-Vector-Tracker: pro/contra/net per (person, goal).
   'goal-vector-tracker',
   // Pulse Wave 6 §6.8 (2026-05-30) — Decision-Hygiene-Scorer: Bezos type-1/type-2.

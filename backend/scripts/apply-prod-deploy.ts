@@ -133,6 +133,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-tracker.ts',
+    hint: 'tracker.progressAutoDraft{Enabled,MinSignals,Cron} — крутилки воркера авто-черновика прогресса задач (tracker-card-redesign-and-progress Ф7)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-work-hours.ts',
     hint: 'work_hours_default_{start,end} + work_days_default + default_timezone — дефолты рабочего профиля (calendar-master Ф4)',
   },

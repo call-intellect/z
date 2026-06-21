@@ -24,7 +24,15 @@ export interface DailyCheckInApi {
   personId: string;
   kind: "morning" | "evening";
   dateLocal: string;
-  source: "cron_prompted" | "self_initiated" | "manual";
+  source:
+    | "cron_prompted"
+    | "self_initiated"
+    | "manual"
+    | "meeting"
+    | "bitrix"
+    | "chatbox"
+    | "email"
+    | "phone_call";
   plans: CheckInPlanItemApi[];
   dones: CheckInDoneItemApi[];
   blockers: CheckInBlockerItemApi[];

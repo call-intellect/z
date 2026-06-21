@@ -206,26 +206,26 @@ function CheckInBody({ dto }: { dto: DailyCheckInApi }) {
 function CheckInSourceBadge({
   source,
 }: {
-  source: "cron_prompted" | "self_initiated" | "manual";
+  source: DailyCheckInApi["source"];
 }) {
-  const map: Record<typeof source, { icon: string; title: string }> = {
-    cron_prompted: {
-      icon: "🌅",
-      title: "Ответ на утренний/вечерний прампт от Коры",
-    },
-    self_initiated: {
-      icon: "✋",
-      title: "Написал в Telegram-бот сам, без прампта",
-    },
-    manual: { icon: "🖊", title: "Создан вручную через веб-кабинет" },
-  };
-  const m = map[source];
+  const map: Record<DailyCheckInApi["source"], { label: string; title: string }> =
+    {
+      cron_prompted: { label: "По запросу", title: "Ответ на запрос Коры" },
+      self_initiated: { label: "Лично", title: "Личный ответ" },
+      manual: { label: "Лично", title: "Личный ответ" },
+      meeting: { label: "Встреча", title: "Зафиксировано из встречи" },
+      bitrix: { label: "Bitrix", title: "Из переписки в Bitrix" },
+      chatbox: { label: "Чат", title: "Из чата" },
+      email: { label: "Почта", title: "Из почты" },
+      phone_call: { label: "Звонок", title: "Из звонка" },
+    };
+  const m = map[source] ?? { label: "Источник", title: "Источник" };
   return (
     <span
       title={m.title}
       className="rounded bg-bg-overlay px-2 py-0.5 text-xs text-fg-secondary"
     >
-      {m.icon}
+      {m.label}
     </span>
   );
 }

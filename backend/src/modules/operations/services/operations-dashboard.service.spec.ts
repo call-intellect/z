@@ -6,6 +6,7 @@ describe('OperationsDashboardService', () => {
   const baseCfg = {
     betaOps: {
       operationsDashboardCacheTtlSeconds: 300,
+      dailyCheckInEnabled: true,
     },
     getDynamic: vi.fn().mockResolvedValue(true),
   };
@@ -16,6 +17,8 @@ describe('OperationsDashboardService', () => {
     entityLinks?: unknown[];
     persons?: unknown[];
     appointments?: unknown[];
+    disciplineExpected?: Array<{ personId: string; kind: string; count: number }>;
+    disciplineCompleted?: Array<{ personId: string; kind: string; count: number }>;
     insightGroupBy?: Array<{ causeCategory: string | null; count: number }>;
     companyProfile?: {
       maturityScore: { toString(): string } | null;
@@ -31,9 +34,17 @@ describe('OperationsDashboardService', () => {
     const goalMissed = overrides.goalCounts?.missed ?? 0;
     const goalCascade = overrides.goalCounts?.cascade ?? 0;
     let goalCallIndex = 0;
+    const disciplineExpected = overrides.disciplineExpected ?? [];
+    const disciplineCompleted = overrides.disciplineCompleted ?? [];
+    const toGroupRows = (rows: Array<{ personId: string; kind: string; count: number }>) =>
+      rows.map((r) => ({ personId: r.personId, kind: r.kind, _count: { _all: r.count } }));
     const prisma = {
       dailyCheckIn: {
         findMany: vi.fn().mockResolvedValue(overrides.checkIns ?? []),
+        groupBy: vi.fn().mockImplementation((arg: { where?: { completedAt?: unknown } }) => {
+          const isCompleted = arg?.where?.completedAt !== undefined;
+          return Promise.resolve(toGroupRows(isCompleted ? disciplineCompleted : disciplineExpected));
+        }),
       },
       goal: {
         count: vi.fn().mockImplementation(() => {
@@ -249,6 +260,55 @@ describe('OperationsDashboardService', () => {
     const anna = cap.items.find((i) => i.personName === 'Анна');
     expect(anna?.loadPercent).toBe(120);
     expect(cap.overloadedCount).toBe(1);
+  });
+
+  it('missingCheckIns: чек-ин любого source засчитывается как сдал (фильтра по source нет)', async () => {
+    const { svc, prisma } = buildSvc({
+      persons: [{ id: 'p1', name: 'Иван', primaryDepartmentId: null }],
+      checkIns: [{ personId: 'p1' }],
+    });
+
+    const dto = await svc.getMissingCheckIns({ tenantId: 't1', date: '2026-06-21' });
+
+    expect(dto.date).toBe('2026-06-21');
+    expect(dto.totalEmployees).toBe(1);
+    expect(dto.missing).toEqual([]);
+    expect(dto.missing.some((m) => m.personId === 'p1')).toBe(false);
+
+    const checkInFindMany = prisma.dailyCheckIn.findMany as ReturnType<typeof vi.fn>;
+    const lastCall = checkInFindMany.mock.calls.at(-1)?.[0] as
+      | { where?: Record<string, unknown>; select?: Record<string, unknown> }
+      | undefined;
+    expect(lastCall?.where).not.toHaveProperty('source');
+    expect(lastCall?.select).not.toHaveProperty('source');
+  });
+
+  it('checkinDiscipline: bitrix-чек-ин учитывается как completed (source не в where)', async () => {
+    const { svc, prisma } = buildSvc({
+      persons: [{ id: 'p1', name: 'Иван' }],
+      disciplineExpected: [{ personId: 'p1', kind: 'morning', count: 1 }],
+      disciplineCompleted: [{ personId: 'p1', kind: 'morning', count: 1 }],
+    });
+
+    const dto = await svc.getCheckinDiscipline({
+      tenantId: 't1',
+      from: '2026-06-21',
+      to: '2026-06-21',
+    });
+
+    expect(dto.enabled).toBe(true);
+    expect(dto.totals.completionRate).toBeGreaterThan(0);
+
+    const p1 = dto.byPerson.find((b) => b.personId === 'p1');
+    expect(p1).toBeDefined();
+    expect(p1?.morningCompleted).toBe(1);
+    expect(p1?.completionRate).toBeGreaterThan(0);
+
+    const groupBy = prisma.dailyCheckIn.groupBy as ReturnType<typeof vi.fn>;
+    for (const call of groupBy.mock.calls) {
+      const where = (call[0] as { where?: Record<string, unknown> })?.where;
+      expect(where).not.toHaveProperty('source');
+    }
   });
 });
 

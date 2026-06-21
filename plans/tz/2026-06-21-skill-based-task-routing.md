@@ -100,7 +100,7 @@ async suggestAssignee(args: {
 **Acceptance:** unit `org-context.service.spec`: people содержат `role` для сотрудника с активной ролью; консьюмеры (`meeting-extract-actions`, `analyze.worker`) не регрессируют (спеки зелёные); typecheck/lint/build.
 **Закрывает:** вход для маршрутизации; косвенно качество извлечения задач.
 
-### Фаза 2 — SkillRoutingService (hard-gate → semantic → арбитр) `[ ]`
+### Фаза 2 — SkillRoutingService (hard-gate → semantic → арбитр) `[x]`
 **Файлы (new):** `skill-routing.service.ts`; промпт `task-assignee-arbiter.prompt.ts` (cache-friendly); регистрация taskType; pgvector-запрос по `SkillTraitConcept.embedding` (+ `RoleProfile` приор). [ASSUMPTION: путь `SkillTrait.profileId→Person` верифицировать; fallback — кандидаты из `PersonRoleAssignment`+`RoleProfile`.]
 **Что НЕ входит:** UI/присвоение/уведомление.
 **Acceptance:** unit: «заказать канцелярию» при наличии офис-менеджера → топ-кандидат он, `confidence≥порог`, `rationale` на русском; при `explicitTags.departmentId` → кандидаты только из отдела (hard-gate); при отсутствии уверенного → пустой массив + `routing_no_candidate_total`; LLM-арбитр зовётся, **присвоения нет** (мок трекера не вызван). typecheck/lint/build.

@@ -70,6 +70,10 @@ const registry = new Map<string, ZodTypeAny>([
   ['companyProfile.summaryRebuildHours', POSITIVE_INT],
   ['companyProfile.summaryMinSourceBlocks', POSITIVE_INT],
 
+  ['taskRouting.enabled', z.boolean()],
+  ['taskRouting.suggestMinConfidence', UNIT_INTERVAL],
+  ['taskRouting.topK', POSITIVE_INT],
+
   ['meetings.taskDedupeEnabled', z.boolean()],
   ['meetings.taskDedupeThreshold', UNIT_INTERVAL],
 

@@ -146,6 +146,7 @@ export type LlmTaskType =
   | 'subject-memory-rule-extract'
   | 'subject-memory-judge'
   | 'company-summary-compile'
+  | 'task-assignee-arbiter'
   // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate.
   // Зонтичный taskType для debate-decision-supersede (учёт/seed/budget).
   // Реальные LLM-вызовы идут через три stance-specific taskType'а ниже,
@@ -725,6 +726,7 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'subject-memory-rule-extract',
   'subject-memory-judge',
   'company-summary-compile',
+  'task-assignee-arbiter',
   // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate.
   'debate-decision-supersede',
   'debate-decision-supersede-critic',

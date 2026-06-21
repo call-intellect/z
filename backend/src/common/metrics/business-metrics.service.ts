@@ -646,6 +646,9 @@ export class BusinessMetricsService implements OnModuleInit {
   private probeValueGateTotal!: Counter<'verdict'>;
   private subjectMemoryRuleExtractedTotal!: Counter<'kind'>;
   private companySummaryCompileTotal!: Counter<'result'>;
+  private routingSuggestionTotal!: Counter<'match_path'>;
+  private routingSuggestionAcceptedTotal!: Counter<string>;
+  private routingNoCandidateTotal!: Counter<string>;
   private companyCapsuleInjectedTotal!: Counter<'surface'>;
   private subjectMemoryProbeSuppressedTotal!: Counter<'reason'>;
   private subjectMemoryRuleActivatedTotal!: Counter<never>;
@@ -2722,6 +2725,21 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'company_summary_compile_total',
       help: 'Авто-профиль компании: проход компилятора summary по тенанту (result): compiled | pinned | skipped_pinned | skipped_fresh | skipped_cold_start | error.',
       labelNames: ['result'] as const,
+    });
+    this.routingSuggestionTotal = this.getOrCreateCounter({
+      name: 'routing_suggestion_total',
+      help: 'Маршрутизация по скиллам: выдано предложение исполнителя по способу подбора (match_path).',
+      labelNames: ['match_path'] as const,
+    });
+    this.routingSuggestionAcceptedTotal = this.getOrCreateCounter({
+      name: 'routing_suggestion_accepted_total',
+      help: 'Маршрутизация по скиллам: предложенный исполнитель принят человеком.',
+      labelNames: [] as const,
+    });
+    this.routingNoCandidateTotal = this.getOrCreateCounter({
+      name: 'routing_no_candidate_total',
+      help: 'Маршрутизация по скиллам: подходящий исполнитель не найден (ни одного кандидата выше порога).',
+      labelNames: [] as const,
     });
     this.companyCapsuleInjectedTotal = this.getOrCreateCounter({
       name: 'company_capsule_injected_total',
@@ -6338,6 +6356,18 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incCompanySummaryCompile(args: { result: string }): void {
     this.companySummaryCompileTotal.inc({ result: args.result });
+  }
+
+  incRoutingSuggestion(args: { matchPath: string }): void {
+    this.routingSuggestionTotal.inc({ match_path: args.matchPath });
+  }
+
+  incRoutingSuggestionAccepted(): void {
+    this.routingSuggestionAcceptedTotal.inc();
+  }
+
+  incRoutingNoCandidate(): void {
+    this.routingNoCandidateTotal.inc();
   }
 
   incCompanyCapsuleInjected(args: { surface: string }): void {

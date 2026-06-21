@@ -1701,6 +1701,30 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'ai', section: 'company-profile', severity, description });
   }
 
+  const taskRouting: Array<[string, unknown, Severity, string]> = [
+    [
+      'taskRouting.enabled',
+      envBool('TASK_ROUTING_ENABLED', true),
+      'medium',
+      'Предложение исполнителя для задачи без явного назначенца по профилю компетенций (kill-switch, ON). Авто-назначения нет — только предложение человеку. Выкл → предложения не показываются',
+    ],
+    [
+      'taskRouting.suggestMinConfidence',
+      envFloat('TASK_ROUTING_SUGGEST_MIN_CONFIDENCE', 0.6),
+      'medium',
+      'Минимальная уверенность кандидата (0..1), ниже которой исполнитель не предлагается',
+    ],
+    [
+      'taskRouting.topK',
+      envInt('TASK_ROUTING_TOP_K', 3),
+      'low',
+      'Сколько кандидатов брать в семантическом поиске перед LLM-арбитром',
+    ],
+  ];
+  for (const [key, value, severity, description] of taskRouting) {
+    out.push({ key, value, category: 'ai', section: 'task-routing', severity, description });
+  }
+
   const daySignals: Array<[string, unknown, Severity, string]> = [
     [
       'daySignals.enabled',

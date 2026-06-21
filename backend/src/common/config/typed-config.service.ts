@@ -1252,6 +1252,14 @@ export class TypedConfigService {
     } as const;
   }
 
+  get taskRouting() {
+    return {
+      enabled: this.resolveSync<boolean>('taskRouting.enabled', undefined, true),
+      suggestMinConfidence: this.resolveSync<number>('taskRouting.suggestMinConfidence', undefined, 0.6),
+      topK: this.resolveSync<number>('taskRouting.topK', undefined, 3),
+    } as const;
+  }
+
   get skill() {
     return {
       minObservations: this.get('SKILL_MIN_OBSERVATIONS'),

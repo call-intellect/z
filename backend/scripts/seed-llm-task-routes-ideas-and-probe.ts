@@ -135,6 +135,19 @@ const SEEDS: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
     ],
   },
+  {
+    taskType: 'task-assignee-arbiter',
+    playbookSection: '§2.1 capable JSON arbiter + skill-based-task-routing',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' },
+      {
+        tier: 'secondary',
+        providerName: 'openai-via-proxy',
+        model: 'gpt-5.4',
+      },
+      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
+    ],
+  },
 ];
 
 interface SeedStats {

@@ -71,6 +71,7 @@ import { ProjectsFromTemplateService } from './services/projects-from-template.s
 import { ProjectsService } from './services/projects.service';
 import { RelationsService } from './services/relations.service';
 import { SimilarIssuesService } from './services/similar-issues.service';
+import { SkillRoutingService } from './services/skill-routing.service';
 import { SprintAnalystService } from './services/sprint-analyst.service';
 import { SprintArchiveService } from './services/sprint-archive.service';
 import { SprintHintsService } from './services/sprint-hints.service';
@@ -147,6 +148,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     IssuesService,
     MeTasksService,
     SimilarIssuesService,
+    SkillRoutingService,
     // TZ task-dedup (2026-06-16, Ф1) — единый дедуп-гейт перед записью задачи
     // (intake + прямой create). Зависит от @Global Ai/Embeddings/AdminSettings/
     // KnowledgeCore (Llm/Embedding/Calibration). Только suggest, авто-merge нет.
@@ -214,6 +216,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     HolidayService,
     PersonLeaveService,
     SprintAnalystService,
+    SkillRoutingService,
     // TZ task-dedup (2026-06-16, Ф2) — TaskCompletionHandler (operations)
     // переиспользует findSimilarByVector для семантического матча
     // сигнал-блок «сделал X» → открытая Issue (кандидат на закрытие).

@@ -10,6 +10,13 @@ import { IdeasByThemeWidget } from "./widgets/IdeasByThemeWidget";
 import { DecisionsWidget } from "./widgets/DecisionsWidget";
 import { FeedWidget } from "./widgets/FeedWidget";
 import { ValueWidget } from "./widgets/ValueWidget";
+import { WeeklyPlanFactWidget } from "./widgets/WeeklyPlanFactWidget";
+import { TrendWidget } from "./widgets/TrendWidget";
+import { AchievementsWidget } from "./widgets/AchievementsWidget";
+import { MaturityCardWidget } from "./widgets/MaturityCardWidget";
+import { BusFactorCardWidget } from "./widgets/BusFactorCardWidget";
+import { WeeklyDynamicsWidget } from "./widgets/WeeklyDynamicsWidget";
+import { MonthRecapWidget } from "./widgets/MonthRecapWidget";
 
 export const WIDGET_REGISTRY: Record<string, WidgetDescriptor> = {
   verdict: {
@@ -35,6 +42,62 @@ export const WIDGET_REGISTRY: Record<string, WidgetDescriptor> = {
     roles: ["owner", "coo"],
     size: "lg",
     Component: PlanFactWidget,
+  },
+  "weekly-plan-fact": {
+    id: "weekly-plan-fact",
+    title: "Кто держит слово",
+    rhythm: ["week", "month"],
+    roles: ["owner", "coo"],
+    size: "xl",
+    Component: WeeklyPlanFactWidget,
+  },
+  trend: {
+    id: "trend",
+    title: "Идём лучше или хуже",
+    rhythm: ["week", "month"],
+    roles: ["owner", "coo"],
+    size: "lg",
+    Component: TrendWidget,
+  },
+  "month-recap": {
+    id: "month-recap",
+    title: "Итоги месяца — снятая рутина",
+    rhythm: ["month"],
+    roles: ["owner", "coo"],
+    size: "xl",
+    Component: MonthRecapWidget,
+  },
+  achievements: {
+    id: "achievements",
+    title: "Достижения месяца",
+    rhythm: ["month"],
+    roles: ["owner", "coo"],
+    size: "md",
+    Component: AchievementsWidget,
+  },
+  "weekly-dynamics": {
+    id: "weekly-dynamics",
+    title: "Динамика по неделям",
+    rhythm: ["month"],
+    roles: ["owner", "coo"],
+    size: "lg",
+    Component: WeeklyDynamicsWidget,
+  },
+  maturity: {
+    id: "maturity",
+    title: "Зрелость компании",
+    rhythm: ["month"],
+    roles: ["owner", "coo"],
+    size: "lg",
+    Component: MaturityCardWidget,
+  },
+  "bus-factor": {
+    id: "bus-factor",
+    title: "Незаменимость",
+    rhythm: ["month"],
+    roles: ["owner", "coo"],
+    size: "md",
+    Component: BusFactorCardWidget,
   },
   load: {
     id: "load",

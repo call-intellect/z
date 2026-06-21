@@ -1,44 +1,15 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Activity, AlertTriangle, CheckCircle2, Users } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 
+import { useAuth } from "@/contexts/auth-context";
 import {
   CHART,
   glass,
   ModernPageShell,
 } from "@/ui/components/dashboard/modern";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/shadcn/tabs";
-
-import { OperationsDashboardClient } from "../dashboard/operations/OperationsDashboardClient";
-import { WeeklyDigestClient } from "../dashboard/operations/weekly/WeeklyDigestClient";
-import { WeeklyPerPersonWidget } from "../dashboard/operations/weekly/WeeklyPerPersonWidget";
-import { PortfolioDashboardClient } from "../dashboard/portfolio/PortfolioDashboardClient";
-import { CheckinDisciplineWidget } from "./CheckinDisciplineWidget";
-import { StaleQuestionsWidget } from "./StaleQuestionsWidget";
-
-const TAB_VALUES = ["summary", "pulse", "people"] as const;
-type WeekTab = (typeof TAB_VALUES)[number];
-const DEFAULT_TAB: WeekTab = "summary";
-
-const TABS: ReadonlyArray<{
-  value: WeekTab;
-  label: string;
-  icon: typeof Users;
-}> = [
-  { value: "summary", label: "Сводка", icon: Activity },
-  { value: "pulse", label: "Пульс сейчас", icon: AlertTriangle },
-  { value: "people", label: "Кто держит слово", icon: Users },
-];
-
-function normalizeTab(raw: string | null): WeekTab {
-  if (raw === "vector") return "summary";
-  if (raw !== null && (TAB_VALUES as readonly string[]).includes(raw)) {
-    return raw as WeekTab;
-  }
-  return DEFAULT_TAB;
-}
+import { DashboardCanvas } from "@/ui/components/dashboard/registry/DashboardCanvas";
+import { toDashboardRole } from "@/ui/components/dashboard/registry/presets";
 
 function defaultLastMondayUtc(): string {
   const d = new Date();
@@ -53,86 +24,18 @@ function defaultLastMondayUtc(): string {
 }
 
 export function WeekDesktopClient() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
-  const activeTab = useMemo(
-    () => normalizeTab(searchParams.get("tab")),
-    [searchParams],
-  );
-
-  const [weekStart, setWeekStart] = useState(
-    () => searchParams.get("weekStart") ?? defaultLastMondayUtc(),
-  );
-
-  const handleWeekChange = useCallback(
-    (nextWeek: string) => {
-      setWeekStart(nextWeek);
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("weekStart", nextWeek);
-      router.replace(`/week?${params.toString()}`);
-    },
-    [router, searchParams],
-  );
-
-  const handleTabChange = useCallback(
-    (value: string) => {
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("tab", value);
-      router.replace(`/week?${params.toString()}`);
-    },
-    [router, searchParams],
-  );
+  const { currentOrgRole } = useAuth();
+  const role = toDashboardRole(currentOrgRole);
 
   return (
     <ModernPageShell
       title="Неделя"
-      subtitle="Понедельничный разбор: сводка, операционный пульс и кто держит слово."
+      subtitle="Понедельничный разбор: куда идём, кто держит слово и лучше ли стало."
     >
-      <Tabs
-        value={activeTab}
-        onValueChange={handleTabChange}
-        className="w-full"
-      >
-        <TabsList className="flex w-full flex-wrap">
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <TabsTrigger key={tab.value} value={tab.value}>
-                <Icon size={14} strokeWidth={1.75} className="shrink-0" />
-                {tab.label}
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
-
-        {}
-        <TabsContent value="summary">
-          <div className="space-y-6">
-            <WeekVerdictBar weekStart={weekStart} />
-            <StaleQuestionsWidget />
-            <WeeklyDigestClient
-              embedded
-              weekStart={weekStart}
-              onWeekChange={handleWeekChange}
-            />
-            <PortfolioDashboardClient embedded />
-          </div>
-        </TabsContent>
-
-        {}
-        <TabsContent value="pulse">
-          <OperationsDashboardClient embedded />
-        </TabsContent>
-
-        {}
-        <TabsContent value="people">
-          <div className="space-y-6">
-            <WeeklyPerPersonWidget weekStart={weekStart} />
-            <CheckinDisciplineWidget weekStart={weekStart} />
-          </div>
-        </TabsContent>
-      </Tabs>
+      <div className="space-y-6">
+        <WeekVerdictBar weekStart={defaultLastMondayUtc()} />
+        <DashboardCanvas role={role} rhythm="week" />
+      </div>
     </ModernPageShell>
   );
 }

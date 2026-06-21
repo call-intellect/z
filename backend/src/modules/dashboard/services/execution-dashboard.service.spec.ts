@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  aggregateWeeklyMetrics,
   buildGoalVectorRows,
   computeDeltas,
   directionFromNet,
@@ -94,5 +95,23 @@ describe('computeDeltas', () => {
     const deltas = computeDeltas(current, previous);
     expect(Object.keys(deltas)).toEqual(['greenShare']);
     expect(deltas.greenShare).toBeCloseTo(0.25);
+  });
+});
+
+describe('aggregateWeeklyMetrics', () => {
+  it('несколько недель: *Share усредняются, счётчики суммируются, нечисловые пропускаются', () => {
+    const weeks = [
+      { greenShare: 0.6, redShare: 0.2, totalCheckIns: 10, topBlockers: ['a'] },
+      { greenShare: 0.8, redShare: 0.4, totalCheckIns: 14, topBlockers: ['b'] },
+    ];
+    const agg = aggregateWeeklyMetrics(weeks);
+    expect(agg.greenShare).toBeCloseTo(0.7);
+    expect(agg.redShare).toBeCloseTo(0.3);
+    expect(agg.totalCheckIns).toBe(24);
+    expect('topBlockers' in agg).toBe(false);
+  });
+
+  it('пустой список недель → пустой объект', () => {
+    expect(aggregateWeeklyMetrics([])).toEqual({});
   });
 });

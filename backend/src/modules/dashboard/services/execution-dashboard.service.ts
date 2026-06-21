@@ -65,6 +65,33 @@ export function computeDeltas(
   return deltas;
 }
 
+const SHARE_METRIC_SUFFIX = 'Share';
+
+export function aggregateWeeklyMetrics(
+  metricsList: Record<string, unknown>[],
+): Record<string, number> {
+  if (metricsList.length === 0) return {};
+  const sums = new Map<string, number>();
+  const counts = new Map<string, number>();
+  for (const metrics of metricsList) {
+    for (const [key, value] of Object.entries(metrics)) {
+      if (typeof value !== 'number' || Number.isNaN(value)) continue;
+      sums.set(key, (sums.get(key) ?? 0) + value);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  const result: Record<string, number> = {};
+  for (const [key, sum] of sums) {
+    if (key.endsWith(SHARE_METRIC_SUFFIX)) {
+      const count = counts.get(key) ?? 1;
+      result[key] = sum / count;
+    } else {
+      result[key] = sum;
+    }
+  }
+  return result;
+}
+
 function startOfUtcDay(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
@@ -74,6 +101,14 @@ function startOfIsoWeekUtc(now: Date): Date {
   const dow = day.getUTCDay();
   const diff = dow === 0 ? -6 : 1 - dow;
   return new Date(day.getTime() + diff * 24 * 3_600_000);
+}
+
+function startOfUtcMonth(now: Date): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
+function addUtcMonths(now: Date, months: number): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + months, 1));
 }
 
 @Injectable()
@@ -322,7 +357,7 @@ export class ExecutionDashboardService {
   }
 
   async getOperationsTrend(args: {
-    period: 'day' | 'week';
+    period: 'day' | 'week' | 'month';
     tenantId: string;
     now: Date;
   }): Promise<DigestTrendResponse> {
@@ -330,8 +365,52 @@ export class ExecutionDashboardService {
     const { current, previous } =
       period === 'day'
         ? await this.fetchDailyTrend(tenantId, now)
-        : await this.fetchWeeklyTrend(tenantId, now);
+        : period === 'month'
+          ? await this.fetchMonthlyTrend(tenantId, now)
+          : await this.fetchWeeklyTrend(tenantId, now);
     return { period, current, previous, deltas: computeDeltas(current, previous) };
+  }
+
+  private async fetchMonthlyTrend(
+    tenantId: string,
+    now: Date,
+  ): Promise<{
+    current: Record<string, unknown> | null;
+    previous: Record<string, unknown> | null;
+  }> {
+    const curStart = startOfUtcMonth(now);
+    const curEnd = startOfUtcMonth(addUtcMonths(now, 1));
+    const prevStart = startOfUtcMonth(addUtcMonths(now, -1));
+    const toLocal = (d: Date): string => d.toISOString().slice(0, 10);
+
+    const [curDigests, prevDigests] = await Promise.all([
+      this.prisma.weeklyOperationsDigest.findMany({
+        where: {
+          tenantId,
+          weekStart: { gte: toLocal(curStart), lt: toLocal(curEnd) },
+        },
+        select: { metricsJson: true },
+      }),
+      this.prisma.weeklyOperationsDigest.findMany({
+        where: {
+          tenantId,
+          weekStart: { gte: toLocal(prevStart), lt: toLocal(curStart) },
+        },
+        select: { metricsJson: true },
+      }),
+    ]);
+
+    const curList = curDigests
+      .map((d) => toMetricsRecord(d.metricsJson))
+      .filter((m): m is Record<string, unknown> => m !== null);
+    const prevList = prevDigests
+      .map((d) => toMetricsRecord(d.metricsJson))
+      .filter((m): m is Record<string, unknown> => m !== null);
+
+    return {
+      current: curList.length > 0 ? aggregateWeeklyMetrics(curList) : null,
+      previous: prevList.length > 0 ? aggregateWeeklyMetrics(prevList) : null,
+    };
   }
 
   private async fetchDailyTrend(

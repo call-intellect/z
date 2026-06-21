@@ -52,7 +52,7 @@ export interface LoadByPersonApi {
 }
 
 export interface OperationsTrendApi {
-  period: "day" | "week";
+  period: "day" | "week" | "month";
   current: Record<string, number> | null;
   previous: Record<string, number> | null;
   deltas: Record<string, number>;
@@ -90,7 +90,10 @@ export const executionDashboardApi = {
       headers: orgHeaders(orgId),
     }),
 
-  getOperationsTrend: (orgId: string, params: { period: "day" | "week" }) =>
+  getOperationsTrend: (
+    orgId: string,
+    params: { period: "day" | "week" | "month" },
+  ) =>
     apiClient.get<OperationsTrendApi>(
       `/api/v1/dashboard/operations/trend?period=${encodeURIComponent(
         params.period,

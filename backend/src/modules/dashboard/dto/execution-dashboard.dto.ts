@@ -81,7 +81,7 @@ export type LoadByPersonResponse = z.infer<typeof LoadByPersonResponseSchema>;
 export class LoadByPersonResponseDto extends createZodDto(LoadByPersonResponseSchema) {}
 
 export const DigestTrendQuerySchema = z.object({
-  period: z.enum(['day', 'week']).default('day'),
+  period: z.enum(['day', 'week', 'month']).default('day'),
 });
 export type DigestTrendQuery = z.infer<typeof DigestTrendQuerySchema>;
 

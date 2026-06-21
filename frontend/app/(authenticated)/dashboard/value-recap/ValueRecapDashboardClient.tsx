@@ -39,7 +39,11 @@ import {
   STATUS_TONE,
 } from "@/ui/components/dashboard/modern";
 
-export function ValueRecapDashboardClient() {
+export function ValueRecapDashboardClient({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) {
   const { currentOrgId } = useAuth();
   const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null);
 
@@ -109,17 +113,18 @@ export function ValueRecapDashboardClient() {
       : "Не удалось загрузить витрину.";
   })();
 
-  return (
-    <div style={{ background: MODERN_PAGE_BG, minHeight: "100vh" }}>
-      <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
+  const content = (
+    <>
         <header className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
-            <h1
-              className="text-2xl font-semibold tracking-tight"
-              style={{ color: CHART.text }}
-            >
-              Итоги месяца
-            </h1>
+            {!embedded && (
+              <h1
+                className="text-2xl font-semibold tracking-tight"
+                style={{ color: CHART.text }}
+              >
+                Итоги месяца
+              </h1>
+            )}
             <p className="mt-1 text-sm" style={{ color: CHART.dim }}>
               Снятая рутина, дисциплина решений и улучшения команды за{" "}
               {periodLabel}.
@@ -198,6 +203,15 @@ export function ValueRecapDashboardClient() {
         {!isLoading && !friendlyError && domain && domain.hasPayload && (
           <ValueRecapBody domain={domain} />
         )}
+    </>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <div style={{ background: MODERN_PAGE_BG, minHeight: "100vh" }}>
+      <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
+        {content}
       </div>
     </div>
   );

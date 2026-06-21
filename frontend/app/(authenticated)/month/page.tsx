@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Monitor } from "lucide-react";
 
-import { ValueRecapDashboardClient } from "../dashboard/value-recap/ValueRecapDashboardClient";
+import { MonthDesktopClient } from "./MonthDesktopClient";
 
 export const metadata: Metadata = {
   title: "Итоги месяца",
@@ -17,7 +17,7 @@ export default function MonthPage() {
           витрина с графиками, на телефоне она показывается урезанно.
         </p>
       </div>
-      <ValueRecapDashboardClient />
+      <MonthDesktopClient />
     </>
   );
 }

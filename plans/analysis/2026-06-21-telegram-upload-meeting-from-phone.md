@@ -1,10 +1,9 @@
 ---
 type: analysis
-status: research-complete
+status: tz-written
 feature: Загрузка встречи (аудио/видео) с телефона через Telegram-бот
 date: 2026-06-21
-owner_decisions_pending:
-  - Р-1 (лимит 20 МБ): Local Bot API Server vs MVP «только короткие» — рекомендация ниже
+owner_decisions: РЕШЕНО 2026-06-21 — Р-1: Local Bot API Server (до 2 ГБ); каналы: только Telegram; Р-2 по типу+размеру; Р-4 дефолт type=team (крутилка); Р-5 единая квота. ТЗ → plans/tz/2026-06-21-telegram-meeting-upload-from-phone.md
 related:
   - backend/src/modules/meeting-uploads/ (готовый конвейер загрузки → встреча)
   - backend/src/modules/conversational/adapters/telegram-bot/ (готовый бот + binding + скачивание)

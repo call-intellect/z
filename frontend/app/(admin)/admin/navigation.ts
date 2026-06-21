@@ -205,6 +205,12 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         matchPrefix: "/admin/probe",
       },
       {
+        href: "/admin/checkin-signals",
+        label: "Фиксатор чек-инов",
+        icon: ClipboardList,
+        matchPrefix: "/admin/checkin-signals",
+      },
+      {
         href: "/admin/tracker",
         label: "Трекер",
         icon: Workflow,

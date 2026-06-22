@@ -17,6 +17,7 @@ import { AiChatQuotaService } from '../../ai-chat-quota/ai-chat-quota.service';
 import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
 import { DialogService } from '../../dialog-layer/services/dialog.service';
 import { narrowToChatIntent } from '../../dialog-layer/services/query-classifier.service';
+import { SKILL_SUBJECT_SIGNAL_TYPES } from '../../knowledge-core/constants/skill-signal-types';
 import {
   CLONE_RESPOND_USER_TEMPLATE,
   type CloneRespondPracticeSkill,
@@ -2133,7 +2134,7 @@ export class ClonesService {
           block: {
             tenantId: args.tenantId,
             status: 'canonical',
-            signalType: { in: ['reasoning', 'rationale', 'decision_basis'] },
+            signalType: { in: [...SKILL_SUBJECT_SIGNAL_TYPES] },
             ...(accessEnforce && accessCtx ? this.accessResolver!.buildAccessWhere(accessCtx) : {}),
           },
         },
@@ -2269,7 +2270,7 @@ export class ClonesService {
           block: {
             tenantId: args.tenantId,
             status: 'canonical',
-            signalType: { in: ['reasoning', 'rationale', 'decision_basis'] },
+            signalType: { in: [...SKILL_SUBJECT_SIGNAL_TYPES] },
             ...(accessEnforce && accessCtx ? this.accessResolver!.buildAccessWhere(accessCtx) : {}),
           },
         },

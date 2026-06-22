@@ -174,7 +174,7 @@ Acceptance:
 - `cd backend && bun run typecheck && bun run lint && bun run build` — зелёные.
 Закрывает: R1, R2, R3, R6.
 
-### Ф2 · Согласование всех потребителей набора клона `[ ]`
+### Ф2 · Согласование всех потребителей набора клона `[x]`
 Файлы: `clones.service.ts:2136`, `:2272`; `persona-layer-validation.service.ts:297`; **+ обнаруженные по коду:** `specialist-3-7-skill-probe.service.ts:134`, `:258`; `practice-skills/services/practice-skill-extractor.service.ts:126` (Рубеж 4-расширенный).
 Что НЕ входит: обучающий конвейер (Ф1); промпты ответа клона; `specialist-3-3-decisions.worker.ts` (специалист решений, не клон).
 Acceptance:

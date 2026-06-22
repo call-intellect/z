@@ -5,6 +5,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { SKILL_SUBJECT_SIGNAL_TYPES } from '../../knowledge-core/constants/skill-signal-types';
 import { KnowledgeEmbeddingService } from '../../knowledge-core/services/embedding.service';
 import {
   PRACTICE_SKILL_EXTRACT_JSON_SCHEMA,
@@ -123,7 +124,7 @@ export class PracticeSkillExtractorService {
         id: { in: blockIds },
         tenantId: args.tenantId,
         status: 'canonical',
-        signalType: { in: ['reasoning', 'rationale', 'decision_basis'] },
+        signalType: { in: [...SKILL_SUBJECT_SIGNAL_TYPES] },
       },
       select: {
         id: true,

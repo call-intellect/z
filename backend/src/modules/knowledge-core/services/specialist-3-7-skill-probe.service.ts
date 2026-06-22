@@ -6,6 +6,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { ProbeService } from '../../probe/probe.service';
+import { SKILL_SUBJECT_SIGNAL_TYPES } from '../constants/skill-signal-types';
 import {
   CDM_CASE_INTERVIEW_JSON_SCHEMA,
   CDM_CASE_INTERVIEW_SCHEMA_NAME,
@@ -131,7 +132,7 @@ export class Specialist37ProbeService {
         block: {
           tenantId: args.tenantId,
           status: 'canonical',
-          signalType: { in: ['reasoning', 'rationale', 'decision_basis'] },
+          signalType: { in: [...SKILL_SUBJECT_SIGNAL_TYPES] },
           createdAt: { gte: freshSince },
         },
       },
@@ -255,7 +256,7 @@ export class Specialist37ProbeService {
         block: {
           tenantId: args.tenantId,
           status: 'canonical',
-          signalType: { in: ['reasoning', 'rationale', 'decision_basis'] },
+          signalType: { in: [...SKILL_SUBJECT_SIGNAL_TYPES] },
           createdAt: { gte: since },
         },
       },

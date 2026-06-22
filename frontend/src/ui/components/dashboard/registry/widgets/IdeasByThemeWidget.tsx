@@ -20,6 +20,11 @@ import { Chip, PeopleDrawer } from "../_kit";
 
 const GROWING_WEIGHT_THRESHOLD = 3;
 
+function clusterName(cluster: IdeaClusterApi): string {
+  const name = cluster.name?.trim();
+  return name && name.toLowerCase() !== "null" ? name : "";
+}
+
 export const IdeasByThemeWidget: FC<{ rhythm: Rhythm }> = () => {
   const { currentOrgId } = useAuth();
   const [active, setActive] = useState<IdeaClusterApi | null>(null);
@@ -67,6 +72,7 @@ export const IdeasByThemeWidget: FC<{ rhythm: Rhythm }> = () => {
       <div className="mt-4 space-y-2">
         {clusters.map((cluster) => {
           const growing = cluster.clusterWeight >= GROWING_WEIGHT_THRESHOLD;
+          const name = clusterName(cluster);
           return (
             <button
               key={cluster.id}
@@ -80,7 +86,7 @@ export const IdeasByThemeWidget: FC<{ rhythm: Rhythm }> = () => {
                   className="block truncate text-sm font-medium"
                   style={{ color: CHART.text }}
                 >
-                  {cluster.name}
+                  {name || "Без темы"}
                 </span>
                 <span
                   className="mt-0.5 block text-xs"
@@ -102,7 +108,7 @@ export const IdeasByThemeWidget: FC<{ rhythm: Rhythm }> = () => {
         onOpenChange={(open) => {
           if (!open) setActive(null);
         }}
-        title={active?.name ?? "Идеи по теме"}
+        title={(active && clusterName(active)) || "Идеи по теме"}
         subtitle="Что команда предлагает по этой теме"
       >
         {activeIdeas.length === 0 ? (

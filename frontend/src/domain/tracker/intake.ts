@@ -90,6 +90,7 @@ const KNOWN_SOURCES = new Set<IntakeSource>([
   "meeting",
   "api",
   "concierge",
+  "chatbox",
 ]);
 
 const parseDate = (s: string | null | undefined): Date | null =>

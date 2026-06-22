@@ -58,6 +58,7 @@ const SOURCE_ICON: Record<IntakeSource, React.ReactNode> = {
   meeting: <Mic2 size={12} aria-hidden />,
   api: <Inbox size={12} aria-hidden />,
   concierge: <MessageCircle size={12} aria-hidden />,
+  chatbox: <MessageCircle size={12} aria-hidden />,
 };
 
 const SOURCE_EMOJI: Record<IntakeSource, string> = {
@@ -68,6 +69,7 @@ const SOURCE_EMOJI: Record<IntakeSource, string> = {
   meeting: "🎤",
   api: "📥",
   concierge: "💬",
+  chatbox: "💬",
 };
 
 export function IntakeClient() {

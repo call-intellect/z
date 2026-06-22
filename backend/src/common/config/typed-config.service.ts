@@ -1701,6 +1701,11 @@ export class TypedConfigService {
         undefined,
         0.7,
       ),
+      chatboxTasksInTriageEnabled: this.resolveSync<boolean>(
+        'tracker.chatboxTasksInTriageEnabled',
+        undefined,
+        true,
+      ),
     } as const;
   }
 

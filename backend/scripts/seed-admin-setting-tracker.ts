@@ -124,6 +124,15 @@ const SEEDS: SettingSeed[] = [
     description:
       'Приоритет уточняющего вопроса об исполнителе задачи (0–1). По умолчанию 0.7.',
   },
+  {
+    key: 'tracker.chatboxTasksInTriageEnabled',
+    value: true,
+    category: 'ai',
+    section: 'tracker',
+    severity: 'medium',
+    description:
+      'Показывать задачи из чатов в общей ленте триажа /intake (read-union). Рубильник, по умолчанию вкл (Ship-On).',
+  },
 ];
 
 interface Counters {

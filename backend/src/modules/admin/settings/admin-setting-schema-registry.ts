@@ -299,6 +299,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.assigneeClarifyEnabled', z.boolean()],
   ['tracker.dueDateClarifyEnabled', z.boolean()],
   ['tracker.assigneeProbePriorityHint', UNIT_INTERVAL],
+  ['tracker.chatboxTasksInTriageEnabled', z.boolean()],
 
   ['taskClosure.enabled', z.boolean()],
   ['taskClosure.matchThreshold', UNIT_INTERVAL],

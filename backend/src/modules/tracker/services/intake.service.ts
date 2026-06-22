@@ -8,7 +8,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { Prisma, type IntakeIssue } from '@prisma/client';
+import { Prisma, type IntakeIssue, type Task } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -96,6 +96,12 @@ export interface TriageIntakeResult {
   intake: IntakeResponseDto;
   /** Создана при decision='accept'. */
   createdIssue: IssueResponseDto | null;
+}
+
+const CHATBOX_TASK_ID_PREFIX = 'chatbox-task:';
+
+function normalizeTitleForDedup(title: string): string {
+  return title.trim().toLowerCase().replace(/ё/gu, 'е');
 }
 
 /**
@@ -498,22 +504,111 @@ export class IntakeService {
       }
     }
 
-    const [items, total] = await Promise.all([
-      this.prisma.intakeIssue.findMany({
-        where,
-        orderBy: [{ createdAt: 'desc' }],
-        take: query.limit,
-        skip: (query.page - 1) * query.limit,
-      }),
-      this.prisma.intakeIssue.count({ where }),
-    ]);
-    const names = await this.resolveSuggestedNames(tenantId, items);
+    const includeChatbox =
+      this.cfg.tracker.chatboxTasksInTriageEnabled &&
+      pendingDefaultView &&
+      query.source === undefined &&
+      query.projectId === undefined;
+
+    if (!includeChatbox) {
+      const [items, total] = await Promise.all([
+        this.prisma.intakeIssue.findMany({
+          where,
+          orderBy: [{ createdAt: 'desc' }],
+          take: query.limit,
+          skip: (query.page - 1) * query.limit,
+        }),
+        this.prisma.intakeIssue.count({ where }),
+      ]);
+      const names = await this.resolveSuggestedNames(tenantId, items);
+      return {
+        items: items.map((i) => this.toResponse(i, names)),
+        total,
+        page: query.page,
+        limit: query.limit,
+      };
+    }
+
+    const intakeRows = await this.prisma.intakeIssue.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }],
+    });
+    const chatboxTasks = await this.prisma.task.findMany({
+      where: { tenantId, sourceType: 'chatbox', status: 'open' },
+      orderBy: [{ createdAt: 'desc' }],
+    });
+
+    const dedupTitles = await this.loadOpenTitlesForDedup(tenantId, intakeRows);
+    const chatboxKept = chatboxTasks.filter(
+      (t) => !dedupTitles.has(normalizeTitleForDedup(t.title)),
+    );
+
+    const names = await this.resolveSuggestedNames(
+      tenantId,
+      intakeRows,
+      chatboxKept,
+    );
+    const merged: Array<{ createdAt: Date; dto: IntakeResponseDto }> = [
+      ...intakeRows.map((i) => ({
+        createdAt: i.createdAt,
+        dto: this.toResponse(i, names),
+      })),
+      ...chatboxKept.map((t) => ({
+        createdAt: t.createdAt,
+        dto: this.toResponseFromChatboxTask(t, names),
+      })),
+    ];
+    merged.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const total = merged.length;
+    const start = (query.page - 1) * query.limit;
+    const items = merged
+      .slice(start, start + query.limit)
+      .map((m) => m.dto);
     return {
-      items: items.map((i) => this.toResponse(i, names)),
+      items,
       total,
       page: query.page,
       limit: query.limit,
     };
+  }
+
+  /**
+   * Кросс-дедуп для read-union триажа (Блок B / F10): нормализованные title
+   * открытых IntakeIssue (уже в выборке) + открытых Issue этого tenant. Если
+   * нормализованный title chatbox-Task совпадает с любым из них — задачу не
+   * показываем (одна задача из встречи и из чата). Best-effort: сбой Issue-выборки
+   * не ломает ленту — возвращаем title'ы только из intake-выборки.
+   */
+  private async loadOpenTitlesForDedup(
+    tenantId: string,
+    intakeRows: IntakeIssue[],
+  ): Promise<Set<string>> {
+    const titles = new Set<string>();
+    for (const i of intakeRows) {
+      const t = i.extractedTitle ?? i.rawContent;
+      if (t) titles.add(normalizeTitleForDedup(t));
+    }
+    try {
+      const openIssues = await this.prisma.issue.findMany({
+        where: {
+          tenantId,
+          deletedAt: null,
+          archivedAt: null,
+          completedAt: null,
+        },
+        select: { title: true },
+      });
+      for (const issue of openIssues) {
+        titles.add(normalizeTitleForDedup(issue.title));
+      }
+    } catch (e) {
+      this.logger.warn(
+        { err: e instanceof Error ? e.message : String(e) },
+        'intake findAll: кросс-дедуп по Issue упал — дедупим только по intake',
+      );
+    }
+    return titles;
   }
 
   /**
@@ -550,6 +645,7 @@ export class IntakeService {
   private async resolveSuggestedNames(
     tenantId: string,
     items: IntakeIssue[],
+    chatboxTasks: Task[] = [],
   ): Promise<SuggestedNameMaps> {
     const projectIds = new Set<string>();
     const goalIds = new Set<string>();
@@ -558,6 +654,9 @@ export class IntakeService {
       if (i.suggestedProjectId) projectIds.add(i.suggestedProjectId);
       if (i.suggestedGoalId) goalIds.add(i.suggestedGoalId);
       if (i.suggestedAssigneeId) assigneeUserIds.add(i.suggestedAssigneeId);
+    }
+    for (const t of chatboxTasks) {
+      if (t.assigneeUserId) assigneeUserIds.add(t.assigneeUserId);
     }
 
     const [projects, goals, persons] = await Promise.all([
@@ -645,6 +744,15 @@ export class IntakeService {
     tenantId: string,
     userId: string,
   ): Promise<TriageIntakeResult> {
+    if (id.startsWith(CHATBOX_TASK_ID_PREFIX)) {
+      return this.triageChatboxTask(
+        id.slice(CHATBOX_TASK_ID_PREFIX.length),
+        dto,
+        tenantId,
+        userId,
+      );
+    }
+
     const intake = await this.requireIntake(id, tenantId);
     if (intake.status !== 'pending' && intake.status !== 'snoozed') {
       throw new BadRequestException({
@@ -807,6 +915,147 @@ export class IntakeService {
   }
 
   /**
+   * Блок B / F10 — промоут chatbox-Task на триаже. accept → создаёт Issue из
+   * Task (тот же путь выбора проекта, что у IntakeIssue: явный → Inbox-fallback)
+   * и помечает Task `done` (идемпотентно: уже done → no-op). reject → помечает
+   * Task `done` без создания Issue. snooze/duplicate для chatbox-Task не
+   * поддержаны (нет состояния «отложено» у Task) — best-effort no-op c пометкой.
+   * Ответ — той же формы (`TriageIntakeResult`), что обычный триаж.
+   */
+  private async triageChatboxTask(
+    taskId: string,
+    dto: TriageIntakeDto,
+    tenantId: string,
+    userId: string,
+  ): Promise<TriageIntakeResult> {
+    const task = await this.prisma.task.findFirst({
+      where: { id: taskId, tenantId, sourceType: 'chatbox' },
+    });
+    if (!task) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'intake_not_found', message: 'Intake-карточка не найдена' },
+      });
+    }
+    if (task.status !== 'open') {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'intake_already_triaged',
+          message: `Задача уже в статусе '${task.status}'`,
+        },
+      });
+    }
+
+    let createdIssue: IssueResponseDto | null = null;
+
+    if (dto.decision === 'accept') {
+      const targetProjectId =
+        dto.targetProjectId ?? (await this.ensureInboxProjectId(tenantId));
+      if (!targetProjectId) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'target_project_required',
+            message: 'Не указан проект для создания задачи',
+          },
+        });
+      }
+      const title = dto.overrideTitle ?? task.title;
+      const description =
+        dto.overrideDescription ?? task.description ?? task.title;
+      createdIssue = await this.issues.create(
+        targetProjectId,
+        {
+          title,
+          description,
+          descriptionHtml: null,
+          descriptionStripped: description,
+          priority: dto.overridePriority ?? 'none',
+          stateId: null,
+          parentId: null,
+          estimatePoints: null,
+          sortOrder: 0,
+          startDate: null,
+          dueDate: dto.overrideDueDate ?? task.dueDate ?? null,
+          cycleId: null,
+          goalId: dto.overrideGoalId ?? null,
+          assigneeUserIds:
+            dto.overrideAssigneeUserIds ??
+            (task.assigneeUserId ? [task.assigneeUserId] : []),
+          labelIds: [],
+          externalSource: 'chatbox',
+          externalId: null,
+          sourceBlockIds: [],
+          linkedMeetingIds: [],
+          skipDedup: true,
+        },
+        tenantId,
+        userId,
+      );
+    } else if (dto.decision === 'snooze' && !dto.snoozedUntil) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'snoozed_until_required',
+          message: 'Для snooze требуется snoozedUntil',
+        },
+      });
+    } else if (dto.decision === 'duplicate' && !dto.duplicateOfIssueId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'duplicate_of_issue_required',
+          message: 'Для duplicate требуется duplicateOfIssueId',
+        },
+      });
+    }
+
+    const closesTask =
+      dto.decision === 'accept' ||
+      dto.decision === 'reject' ||
+      dto.decision === 'duplicate';
+    if (closesTask) {
+      await this.prisma.task.update({
+        where: { id: taskId },
+        data: { status: 'done' },
+      });
+    }
+
+    const intakeView: IntakeResponseDto = {
+      ...this.toResponseFromChatboxTask({
+        ...task,
+        status: closesTask ? 'done' : task.status,
+      }),
+      status:
+        dto.decision === 'accept'
+          ? 'accepted'
+          : dto.decision === 'reject'
+            ? 'rejected'
+            : dto.decision === 'snooze'
+              ? 'snoozed'
+              : 'duplicate',
+      triagedByUserId: userId,
+      triagedAt: new Date().toISOString(),
+      createdIssueId:
+        dto.decision === 'accept'
+          ? (createdIssue?.id ?? null)
+          : dto.decision === 'duplicate'
+            ? (dto.duplicateOfIssueId ?? null)
+            : null,
+    };
+
+    this.events.publishIntakeTriaged({
+      intakeId: `${CHATBOX_TASK_ID_PREFIX}${taskId}`,
+      tenantId,
+      decision: dto.decision,
+      createdIssueId: createdIssue?.id ?? null,
+    });
+
+    return { intake: intakeView, createdIssue };
+  }
+
+  /**
    * A10 (2026-06-14) — связывает созданную из intake задачу с пересекающимися
    * по `sourceBlockIds` Decision'ами (linkType='derived'). Тонкая обёртка над
    * общим хелпером `linkDerivedDecisionsForIssue` (тот же код, что в
@@ -897,6 +1146,53 @@ export class IntakeService {
       suggestedDuplicateOfIssueId: i.suggestedDuplicateOfIssueId,
       createdAt: i.createdAt.toISOString(),
       updatedAt: i.updatedAt.toISOString(),
+    };
+  }
+
+  /**
+   * Блок B / F10 (read-union) — адаптер chatbox-Task в элемент той же формы,
+   * что отдаёт `toResponse` для IntakeIssue. Синтетический id с префиксом
+   * `chatbox-task:`<Task.id> — по нему `triage` различает источник и промоутит
+   * Task→Issue. Поля, которых у Task нет, отдаём как null/пустые — форма
+   * совпадает 1-в-1 с IntakeResponseDto.
+   */
+  private toResponseFromChatboxTask(
+    t: Task,
+    names?: SuggestedNameMaps,
+  ): IntakeResponseDto {
+    return {
+      id: `${CHATBOX_TASK_ID_PREFIX}${t.id}`,
+      tenantId: t.tenantId ?? '',
+      projectId: null,
+      status: 'pending',
+      source: 'chatbox',
+      sourceEmail: null,
+      externalSource: null,
+      externalId: null,
+      rawContent: t.title,
+      extractedTitle: t.title,
+      extractedDescription: t.description,
+      suggestedProjectId: null,
+      suggestedAssigneeId: t.assigneeUserId,
+      suggestedGoalId: null,
+      suggestedProjectName: null,
+      suggestedAssigneeName:
+        (t.assigneeUserId && names?.assigneeNames.get(t.assigneeUserId)) ||
+        null,
+      suggestedGoalTitle: null,
+      suggestedPriority: null,
+      suggestedDueDate: t.dueDate?.toISOString() ?? null,
+      suggestedLabels: [],
+      sourceBlockIds: [],
+      confidence: null,
+      triagedByUserId: null,
+      triagedAt: null,
+      rejectedReason: null,
+      snoozedUntil: null,
+      createdIssueId: null,
+      suggestedDuplicateOfIssueId: null,
+      createdAt: t.createdAt.toISOString(),
+      updatedAt: t.updatedAt.toISOString(),
     };
   }
 }

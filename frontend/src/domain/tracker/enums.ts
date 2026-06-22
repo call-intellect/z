@@ -68,7 +68,8 @@ export type IntakeSource =
   | "checkin"
   | "meeting"
   | "api"
-  | "concierge";
+  | "concierge"
+  | "chatbox";
 
 export const INTAKE_SOURCE_LABELS: Record<IntakeSource, string> = {
   in_app: "В приложении",
@@ -78,6 +79,7 @@ export const INTAKE_SOURCE_LABELS: Record<IntakeSource, string> = {
   meeting: "Встреча",
   api: "API",
   concierge: "Помощник",
+  chatbox: "Из чата",
 };
 
 export type IntakeStatus =

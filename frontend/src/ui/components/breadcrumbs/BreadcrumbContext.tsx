@@ -44,28 +44,26 @@ export function useBreadcrumbOverrides(): ReadonlyMap<string, BreadcrumbOverride
 
 const EMPTY_OVERRIDES: ReadonlyMap<string, BreadcrumbOverride> = new Map();
 
-/**
- * Регистрирует имя/override для ТЕКУЩЕГО маршрута. Вызывается со страницы-детали,
- * которая уже загрузила сущность. Снимает регистрацию при размонтировании.
- * Пустой/undefined label или null override — no-op (пока грузится).
- */
 export function useRegisterBreadcrumb(override: BreadcrumbOverride | null): void {
   const ctx = useContext(BreadcrumbContext);
   const pathname = usePathname();
+
+  const register = ctx?.register;
+  const unregister = ctx?.unregister;
 
   const label = override?.label?.trim() ? override.label : undefined;
   const parentHref = override?.parentHref;
   const parentLabel = override?.parentLabel;
 
   useEffect(() => {
-    if (!ctx || !pathname || !label) return;
+    if (!register || !unregister || !pathname || !label) return;
 
-    ctx.register(pathname, { label, parentHref, parentLabel });
+    register(pathname, { label, parentHref, parentLabel });
 
     return () => {
-      ctx.unregister(pathname);
+      unregister(pathname);
     };
-  }, [ctx, pathname, label, parentHref, parentLabel]);
+  }, [register, unregister, pathname, label, parentHref, parentLabel]);
 }
 
 /** Провайдер вешается в AuthenticatedShell поверх AppShell. */

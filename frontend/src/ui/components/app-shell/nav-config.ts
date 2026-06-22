@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   BarChart3,
   BookText,
-  Bot,
   Brain,
   Building2,
   CalendarClock,
@@ -21,7 +20,6 @@ import {
   Lightbulb,
   ListChecks,
   MessageCircle,
-  Network,
   Palette,
   Plug,
   Settings,
@@ -264,19 +262,6 @@ const REFERENCE_SUBGROUP: NavConfigSubgroup = {
       tourTarget: "welcome.company",
     },
     {
-      href: "/departments",
-      label: "Отделы",
-      icon: Network,
-      matchPrefix: "/departments",
-      tourTarget: "welcome.departments",
-    },
-    {
-      href: "/domains",
-      label: "Домены",
-      icon: Shapes,
-      matchPrefix: "/domains",
-    },
-    {
       href: "/maturity",
       label: "Зрелость",
       icon: Gauge,
@@ -290,16 +275,10 @@ const REFERENCE_SUBGROUP: NavConfigSubgroup = {
     },
     {
       href: "/roles",
-      label: "Карты должностей",
+      label: "Должности",
       icon: IdCard,
       matchPrefix: "/roles",
       tourTarget: "welcome.roles",
-    },
-    {
-      href: "/clones",
-      label: "Клоны",
-      icon: Bot,
-      matchPrefix: "/clones",
       dot: "cloneGrants",
     },
     {
@@ -347,12 +326,6 @@ const SYSTEM_SECTION: NavConfigSection = {
       matchPrefix: "/delivery",
     },
     {
-      href: "/team-templates",
-      label: "Шаблоны",
-      icon: Shapes,
-      matchPrefix: "/team-templates",
-    },
-    {
       href: "/referrals",
       label: "Партнёрка",
       icon: Gift,
@@ -374,6 +347,19 @@ const SYSTEM_SECTION: NavConfigSection = {
   ],
   collapsibleSubgroups: [
     REFERENCE_SUBGROUP,
+    {
+      label: "Системное",
+      storageKey: "sidebar.system-advanced.open",
+      defaultCollapsed: true,
+      items: [
+        {
+          href: "/domains",
+          label: "Домены",
+          icon: Shapes,
+          matchPrefix: "/domains",
+        },
+      ],
+    },
     {
       label: "Админка",
       storageKey: "sidebar.admin.open",

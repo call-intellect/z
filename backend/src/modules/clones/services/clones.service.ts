@@ -1125,7 +1125,7 @@ export class ClonesService {
 
   private static stripCitationsFromText(text: string): string {
     return text
-      .replace(/\[BLOCK:[a-zA-Z0-9_-]+\]/g, '')
+      .replace(/\[BLOCK:[a-zA-Z0-9_-]+(?:\s*[—-][^\]]*)?\]/gu, '')
       .replace(/\s{2,}/g, ' ')
       .trim();
   }

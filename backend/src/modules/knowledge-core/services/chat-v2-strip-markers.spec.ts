@@ -83,4 +83,24 @@ describe('stripBlockMarkers', () => {
     const text = 'Смотри [документ](https://example.com/doc) подробнее.';
     expect(stripBlockMarkers(text)).toBe(text);
   });
+
+  it('убирает помеченную форму [BLOCK:<id> — подпись] (QA-fix Ф4)', () => {
+    const out = stripBlockMarkers(
+      'Связи выстроены по привязки [BLOCK:cmq2b95ue00dc01qjquhaws49 — цепочка рассуждения].',
+    );
+    expect(out).toBe('Связи выстроены по привязки.');
+    expect(out).not.toContain('[BLOCK:');
+  });
+
+  it('убирает id с дефисом/подчёркиванием [BLOCK:blk-1] и [BLOCK:blk_2]', () => {
+    expect(stripBlockMarkers('Факт [BLOCK:blk-1] и [BLOCK:blk_2] здесь')).toBe(
+      'Факт и здесь',
+    );
+  });
+
+  it('убирает форму с обычным дефисом [BLOCK:id - текст], не только тире', () => {
+    const out = stripBlockMarkers('Итог [BLOCK:abc123 - встреча по продажам] готов.');
+    expect(out).toBe('Итог готов.');
+    expect(out).not.toContain('[BLOCK:');
+  });
 });

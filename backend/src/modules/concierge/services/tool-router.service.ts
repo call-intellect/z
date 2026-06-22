@@ -79,6 +79,7 @@ export class ToolRouterService {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         obj: tool.rbacResource as any,
         act: tool.rbacAction ?? 'read',
+        resourceOwnerId: input.userId,
       });
       if (!allowed) {
         this.metrics.incConciergeToolCall?.({

@@ -13,29 +13,8 @@ import {
   type TaskClosurePendingDetail,
 } from './pending-actions-provider.types';
 
-/**
- * Порог уверенности (autoConfirm), выше которого кандидат помечается
- * `canQuickConfirm=true` (всё равно человек жмёт — это лишь «один клик», не
- * авто-закрытие). Code-fallback §7.6; источник правды — AdminSetting
- * `taskClosure.autoConfirmThreshold`.
- */
 const DEFAULT_AUTO_CONFIRM_THRESHOLD = 0.95;
 
-/**
- * Провайдер «задача-кандидат на закрытие ждёт подтверждения»
- * (TaskClosureCandidate, status='pending') — TZ task-dedup 2026-06-16 Ф2.
- *
- * Сигнал «сделал X» из разговора → семантический матч на открытую Issue +
- * LLM-верификатор → ОБРАТИМЫЙ кандидат. Авто-закрытие запрещено (R13): человек
- * подтверждает (закрыть) или отклоняет.
- *
- * Кому показываем: только owner/admin Org (как intake-триаж — их прерогатива).
- * Член без привилегий видит 0.
- *
- * severity=urgent, если карточка висит ≥ cfg.pendingActions.urgentAgeDays.
- * canQuickConfirm=true, если уверенность верификатора ≥ autoConfirmThreshold
- * (один клик; всё равно жмёт человек — это не авто-закрытие).
- */
 @Injectable()
 export class TaskClosurePendingProvider implements PendingActionsProvider {
   readonly source = 'task_closure' as const;
@@ -45,9 +24,9 @@ export class TaskClosurePendingProvider implements PendingActionsProvider {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  private buildWhere(
+  private async scopedWhere(
     a: PendingActionsProviderArgs,
-  ): Prisma.TaskClosureCandidateWhereInput {
+  ): Promise<Prisma.TaskClosureCandidateWhereInput> {
     const where: Prisma.TaskClosureCandidateWhereInput = {
       tenantId: a.tenantId,
       status: 'pending',
@@ -55,20 +34,27 @@ export class TaskClosurePendingProvider implements PendingActionsProvider {
     if (a.snoozedResourceIds.size > 0) {
       where.id = { notIn: [...a.snoozedResourceIds] };
     }
+    if (!isPrivileged(a.role)) {
+      const rows = await this.prisma.issueAssignee.findMany({
+        where: { userId: a.userId },
+        select: { issueId: true },
+      });
+      where.issueId = { in: rows.map((r) => r.issueId) };
+    }
     return where;
   }
 
   async countForUser(a: PendingActionsProviderArgs): Promise<number> {
-    if (!isPrivileged(a.role)) return 0;
-    return this.prisma.taskClosureCandidate.count({ where: this.buildWhere(a) });
+    return this.prisma.taskClosureCandidate.count({
+      where: await this.scopedWhere(a),
+    });
   }
 
   async listForUser(
     a: PendingActionsProviderArgs & { limit: number },
   ): Promise<PendingActionItem[]> {
-    if (!isPrivileged(a.role)) return [];
     const items = await this.prisma.taskClosureCandidate.findMany({
-      where: this.buildWhere(a),
+      where: await this.scopedWhere(a),
       orderBy: [{ createdAt: 'asc' }],
       take: a.limit,
       select: {

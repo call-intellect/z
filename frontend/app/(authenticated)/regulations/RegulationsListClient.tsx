@@ -1,6 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import useSWR from 'swr';
@@ -9,6 +16,7 @@ import {
   ArchiveRestore,
   CheckCircle2,
   ChevronDown,
+  HelpCircle,
   History,
   Quote,
   Replace,
@@ -17,6 +25,7 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
+import remarkGfm from 'remark-gfm';
 
 import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
@@ -1444,56 +1453,109 @@ export function parseContentMarkers(text: string): MarkerSegment[] {
   return segments;
 }
 
-/**
- * Рендер contentMd как markdown (react-markdown@10 + rehype-sanitize@6 —
- * тот же стек, что в `MeetingSummaryRender`) с подсветкой маркеров (B2.4).
- *
- * Маркеры вырезаются из текста ДО markdown-рендера и показываются строкой
- * чипов сверху, чтобы не зависеть от того, как markdown разобьёт абзацы.
- */
-function ContentMarkdown({ text }: { text: string }) {
-  const segments = useMemo(() => parseContentMarkers(text), [text]);
-  const markers = segments.filter(
-    (s): s is Extract<MarkerSegment, { kind: 'marker' }> => s.kind === 'marker',
-  );
-  // Текст без маркер-литералов — чтобы [требует уточнения] не дублировался.
-  const cleanText = useMemo(
-    () =>
-      segments
-        .map((s) => (s.kind === 'text' ? s.value : ''))
-        .join('')
-        .trim(),
-    [segments],
-  );
+const MARKER_HIGHLIGHT_CLASS: Record<
+  'warning' | 'danger' | 'info',
+  string
+> = {
+  warning: 'bg-chip-warning-bg text-chip-warning-fg',
+  danger: 'bg-chip-danger-bg text-chip-danger-fg',
+  info: 'bg-chip-info-bg text-chip-info-fg',
+};
 
-  // Ф5b: счётчик `## …` заголовков — id `kb-h-N` синхронизированы с extractToc,
-  // чтобы клики в правой TOC-колонке скроллили к нужному заголовку. Сбрасываем
-  // на каждый рендер (порядок обхода h2 у react-markdown стабилен).
+const MARKER_HIGHLIGHT_RE =
+  /\[(?:требует уточнения|конфликт|изменено)[^\]]*\]/gi;
+
+function markerVariant(
+  literal: string,
+): 'warning' | 'danger' | 'info' {
+  const inner = literal.slice(1).trim().toLowerCase();
+  const found = CONTENT_MARKERS.find((c) => inner.startsWith(c.literal));
+  return found?.variant ?? 'warning';
+}
+
+function highlightMarkers(node: ReactNode): ReactNode {
+  if (typeof node === 'string') {
+    const parts = node.split(MARKER_HIGHLIGHT_RE);
+    const matches = node.match(MARKER_HIGHLIGHT_RE);
+    if (!matches) return node;
+    const out: ReactNode[] = [];
+    parts.forEach((part, i) => {
+      if (part) out.push(part);
+      const mk = matches[i];
+      if (mk) {
+        const variant = markerVariant(mk);
+        out.push(
+          <mark
+            key={`mk-${i}`}
+            className={cn(
+              'mx-0.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 align-baseline text-[0.95em] font-medium ring-1 ring-inset ring-border-subtle',
+              MARKER_HIGHLIGHT_CLASS[variant],
+            )}
+          >
+            <HelpCircle className="h-3 w-3 shrink-0" aria-hidden="true" />
+            {mk.slice(1, -1).trim()}
+          </mark>,
+        );
+      }
+    });
+    return out;
+  }
+  if (Array.isArray(node)) {
+    return node.map((child, i) => (
+      <Fragment key={`hl-${i}`}>{highlightMarkers(child)}</Fragment>
+    ));
+  }
+  return node;
+}
+
+function ContentMarkdown({ text }: { text: string }) {
   let h2Index = 0;
 
   return (
-    <div className="space-y-2">
-      {markers.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {markers.map((mk, i) => (
-            <Chip key={`${mk.value}-${i}`} variant={mk.variant} size="sm">
-              {mk.value}
-            </Chip>
-          ))}
-        </div>
-      ) : null}
-      <div className="prose prose-sm max-w-none text-sm text-fg-primary [&>*]:my-2">
-        <ReactMarkdown
-          rehypePlugins={[rehypeSanitize]}
-          components={{
-            h2: ({ node: _node, ...props }) => (
-              <h2 id={`kb-h-${h2Index++}`} {...props} />
-            ),
-          }}
-        >
-          {cleanText || text}
-        </ReactMarkdown>
-      </div>
+    <div className="prose prose-sm max-w-none text-sm text-fg-primary [&>*]:my-2">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeSanitize]}
+        components={{
+          h2: ({ node: _node, ...props }) => (
+            <h2 id={`kb-h-${h2Index++}`} {...props} />
+          ),
+          p: ({ children }) => <p>{highlightMarkers(children)}</p>,
+          li: ({ children }) => <li>{highlightMarkers(children)}</li>,
+          strong: ({ children }) => (
+            <strong>{highlightMarkers(children)}</strong>
+          ),
+          em: ({ children }) => <em>{highlightMarkers(children)}</em>,
+          table: ({ children }) => (
+            <div className="my-3 overflow-x-auto rounded-md border border-border-subtle">
+              <table className="w-full border-collapse text-sm">
+                {children}
+              </table>
+            </div>
+          ),
+          thead: ({ children }) => (
+            <thead className="bg-bg-subtle">{children}</thead>
+          ),
+          tbody: ({ children }) => <tbody>{children}</tbody>,
+          tr: ({ children }) => (
+            <tr className="border-b border-border-subtle last:border-0">
+              {children}
+            </tr>
+          ),
+          th: ({ children }) => (
+            <th className="border-r border-border-subtle px-3 py-2 text-left font-semibold last:border-0">
+              {highlightMarkers(children)}
+            </th>
+          ),
+          td: ({ children }) => (
+            <td className="border-r border-border-subtle px-3 py-2 align-top last:border-0">
+              {highlightMarkers(children)}
+            </td>
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
     </div>
   );
 }

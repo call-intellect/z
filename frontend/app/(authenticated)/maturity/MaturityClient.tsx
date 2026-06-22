@@ -82,6 +82,8 @@ function MaturityContent({
     return <AdminError message={error} onRetry={() => void load()} />;
   if (!overview) return <AdminError message="Сводка недоступна" />;
 
+  const checklist = buildChecklist(overview);
+
   return (
     <div style={{ background: MODERN_PAGE_BG, minHeight: "100vh" }}>
       <div className="mx-auto max-w-5xl space-y-6 p-6">
@@ -91,20 +93,9 @@ function MaturityContent({
               Зрелость компании
             </h1>
             <p className="mt-1 text-sm text-fg-tertiary">
-              Агрегатный показатель: насколько полно описаны должности, отделы,
-              процессы и реакция на probe-запросы. Связано со{" "}
-              <Link href="/structure" className="underline">
-                Структурой
-              </Link>
-              ,{" "}
-              <Link href="/company" className="underline">
-                Компанией
-              </Link>
-              ,{" "}
-              <Link href="/domains" className="underline">
-                Доменами
-              </Link>
-              .
+              Чем полнее описаны компания, должности, отделы и зоны
+              ответственности, тем точнее Кора отвечает и помогает команде. Ниже
+              — что стоит дозаполнить, чтобы Кора работала точнее.
             </p>
           </div>
           {canRebuild && (
@@ -119,6 +110,34 @@ function MaturityContent({
         </header>
 
         {error && <AdminError message={error} />}
+
+        <GlassCard className="p-5">
+          <h2 className="text-base font-semibold text-fg-primary">
+            Что дозаполнить, чтобы Кора работала точнее
+          </h2>
+          <p className="mt-1 text-sm text-fg-tertiary">
+            Конкретные шаги — каждый делает память компании полнее, а ответы
+            Коры — точнее.
+          </p>
+          {checklist.length === 0 ? (
+            <div className="mt-4 rounded-lg bg-success/10 p-4 text-sm text-success-fg">
+              Базовое описание заполнено. Продолжайте проводить встречи и
+              уточнять должности — Кора будет становиться точнее.
+            </div>
+          ) : (
+            <ul className="mt-4 space-y-3">
+              {checklist.map((item) => (
+                <ChecklistRow key={item.key} item={item} />
+              ))}
+            </ul>
+          )}
+        </GlassCard>
+
+        <div>
+          <h2 className="mb-3 text-sm font-medium text-fg-tertiary">
+            Текущие показатели — индикатор, а не цель сами по себе
+          </h2>
+        </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <ScoreCard
@@ -185,6 +204,120 @@ function MaturityContent({
         </GlassCard>
       </div>
     </div>
+  );
+}
+
+interface ChecklistItem {
+  key: string;
+  title: string;
+  description: string;
+  href: string;
+  cta: string;
+}
+
+function buildChecklist(o: MaturityOverviewDomain): ChecklistItem[] {
+  const items: ChecklistItem[] = [];
+
+  if (o.companyPercent === null || o.companyPercent < 60) {
+    items.push({
+      key: "company",
+      title: "Опишите миссию и контекст компании",
+      description:
+        "Чем компания занимается, ради чего и кто клиенты — без этого Кора отвечает в общих словах.",
+      href: "/company",
+      cta: "Заполнить компанию",
+    });
+  }
+
+  if (o.rolesTotal === 0) {
+    items.push({
+      key: "roles-empty",
+      title: "Добавьте и опишите ключевые должности",
+      description:
+        "Хотя бы 3 главные роли с зоной ответственности — так Кора понимает, кто за что отвечает.",
+      href: "/roles",
+      cta: "Добавить должности",
+    });
+  } else if (o.rolesScored < o.rolesTotal) {
+    items.push({
+      key: "roles-partial",
+      title: "Дозаполните оставшиеся должности",
+      description: `Описано ${o.rolesScored} из ${o.rolesTotal}. Допишите остальные, чтобы ответы по людям были точными.`,
+      href: "/roles",
+      cta: "Дозаполнить должности",
+    });
+  }
+
+  if (o.departmentsTotal === 0) {
+    items.push({
+      key: "departments-empty",
+      title: "Создайте отделы и распределите должности",
+      description:
+        "Структура отделов помогает Коре связывать решения и задачи с нужной командой.",
+      href: "/departments",
+      cta: "Создать отделы",
+    });
+  } else if (o.departmentsScored < o.departmentsTotal) {
+    items.push({
+      key: "departments-partial",
+      title: "Дозаполните отделы",
+      description: `Описано ${o.departmentsScored} из ${o.departmentsTotal}. Добавьте недостающее по отделам.`,
+      href: "/departments",
+      cta: "Дозаполнить отделы",
+    });
+  }
+
+  if (o.domainsTotal === 0) {
+    items.push({
+      key: "domains-empty",
+      title: "Опишите зоны ответственности",
+      description:
+        "Крупные направления работы компании — Кора группирует по ним знания и находит нужное быстрее.",
+      href: "/domains",
+      cta: "Добавить зоны ответственности",
+    });
+  } else if (o.domainsScored < o.domainsTotal) {
+    items.push({
+      key: "domains-partial",
+      title: "Дозаполните зоны ответственности",
+      description: `Оценено ${o.domainsScored} из ${o.domainsTotal}. Уточните остальные направления.`,
+      href: "/domains",
+      cta: "Дозаполнить зоны",
+    });
+  }
+
+  const lowMaturityRoles = o.distribution
+    .filter((b) => /0|1|2|3/.test(b.bucket) && !/4|5|6|7|8|9/.test(b.bucket))
+    .reduce((sum, b) => sum + b.count, 0);
+  if (o.rolesTotal > 0 && (o.averageRolePercent ?? 0) < 50) {
+    items.push({
+      key: "meetings",
+      title: "Проведите рабочие встречи",
+      description:
+        lowMaturityRoles > 0
+          ? "Кора собирает контекст из встреч и решений. Несколько встреч заметно поднимут точность."
+          : "Кора учится на встречах и решениях — чем их больше, тем полнее память компании.",
+      href: "/meetings",
+      cta: "К встречам",
+    });
+  }
+
+  return items;
+}
+
+function ChecklistRow({ item }: { item: ChecklistItem }): JSX.Element {
+  return (
+    <li className="flex flex-col gap-3 rounded-lg bg-bg-overlay p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-fg-primary">{item.title}</div>
+        <div className="mt-1 text-sm text-fg-tertiary">{item.description}</div>
+      </div>
+      <Link href={item.href} className="shrink-0">
+        <Button variant="outline" size="sm">
+          {item.cta}
+        </Button>
+      </Link>
+    </li>
   );
 }
 

@@ -2,6 +2,8 @@
 
 import type { FC } from "react";
 import { useState } from "react";
+import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import useSWR from "swr";
 
 import { dashboardApi } from "@/api/dashboard.api";
@@ -16,11 +18,12 @@ import { Chip, PeopleDrawer } from "../_kit";
 const SOURCE_LABELS: ReadonlyArray<{
   key: "conflict" | "intake" | "probe" | "curation";
   label: string;
+  href: string;
 }> = [
-  { key: "conflict", label: "Конфликты" },
-  { key: "intake", label: "Задачи из встреч" },
-  { key: "probe", label: "Уточнения Коры" },
-  { key: "curation", label: "Кураторские" },
+  { key: "conflict", label: "Конфликты", href: "/curation/conflicts" },
+  { key: "intake", label: "Задачи из встреч", href: "/intake" },
+  { key: "probe", label: "Уточнения Коры", href: "/actions" },
+  { key: "curation", label: "Кураторские", href: "/curation" },
 ];
 
 export const VerdictWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
@@ -83,18 +86,24 @@ export const VerdictWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
           </p>
         ) : (
           SOURCE_LABELS.filter((s) => bySource[s.key] > 0).map((s) => (
-            <div
+            <Link
               key={s.key}
-              className="flex items-center justify-between rounded-xl p-3"
+              href={s.href}
+              onClick={() => setDrawerOpen(false)}
+              aria-label={`${s.label} — открыть очередь`}
+              className="flex cursor-pointer items-center justify-between rounded-xl p-3 transition hover:brightness-110"
               style={{ background: "var(--surface-inset)" }}
             >
               <span className="text-sm" style={{ color: CHART.text }}>
                 {s.label}
               </span>
-              <Chip tone={s.key === "conflict" ? "risk" : "warn"}>
-                {bySource[s.key]}
-              </Chip>
-            </div>
+              <span className="flex items-center gap-2">
+                <Chip tone={s.key === "conflict" ? "risk" : "warn"}>
+                  {bySource[s.key]}
+                </Chip>
+                <ChevronRight size={16} style={{ color: CHART.faint }} />
+              </span>
+            </Link>
           ))
         )}
       </PeopleDrawer>

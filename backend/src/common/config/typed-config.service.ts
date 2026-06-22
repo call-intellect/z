@@ -1706,6 +1706,11 @@ export class TypedConfigService {
         undefined,
         true,
       ),
+      meetingTasksAlwaysPromote: this.resolveSync<boolean>(
+        'tracker.meetingTasksAlwaysPromote',
+        undefined,
+        true,
+      ),
     } as const;
   }
 

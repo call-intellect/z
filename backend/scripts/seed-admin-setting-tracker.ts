@@ -133,6 +133,15 @@ const SEEDS: SettingSeed[] = [
     description:
       'Показывать задачи из чатов в общей ленте триажа /intake (read-union). Рубильник, по умолчанию вкл (Ship-On).',
   },
+  {
+    key: 'tracker.meetingTasksAlwaysPromote',
+    value: true,
+    category: 'ai',
+    section: 'tracker',
+    severity: 'medium',
+    description:
+      'Задача со встречи всегда становится Issue в трекере (неназначенной, проект «Из встреч»), даже если Кора не распознала исполнителя/срок. Рубильник, по умолчанию вкл (Ship-On). Выкл → встречные задачи без исполнителя остаются в /intake.',
+  },
 ];
 
 interface Counters {

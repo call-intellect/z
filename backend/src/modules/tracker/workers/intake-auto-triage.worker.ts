@@ -28,6 +28,7 @@ import { IssuesService } from '../services/issues.service';
 import { ProjectsService } from '../services/projects.service';
 
 const INBOX_PROJECT_NAME = 'Входящие';
+const MEETING_PROJECT_NAME = 'Из встреч';
 
 const ASSIGNEE_UNRESOLVED_NOTE = '⚠️ Кора: не удалось определить исполнителя — уточните';
 
@@ -276,6 +277,9 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
     const confidence = clampConfidence(parsed.confidence ?? 0);
 
     const confidentEnough = confidence >= this.cfg.tracker.autoAcceptConfidenceThreshold;
+    const isMeeting = intake.source === 'meeting';
+    const meetingAlwaysPromote = this.cfg.tracker.meetingTasksAlwaysPromote;
+    const meetingPromote = isMeeting && meetingAlwaysPromote;
 
     let effectiveAssigneeId = suggestedAssigneeId;
     let assigneeUnresolved = false;
@@ -289,8 +293,13 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
 
     let effectiveProjectId = suggestedProjectId;
     let viaDefaultProject = false;
-    if (confidentEnough && effectiveAssigneeId !== null && effectiveProjectId === null) {
-      effectiveProjectId = await this.resolveInboxProjectId(tenantId);
+    if (
+      effectiveProjectId === null &&
+      (meetingPromote || (confidentEnough && effectiveAssigneeId !== null))
+    ) {
+      effectiveProjectId = meetingPromote
+        ? await this.resolveMeetingProjectId(tenantId)
+        : await this.resolveInboxProjectId(tenantId);
       viaDefaultProject = effectiveProjectId !== null;
     }
 
@@ -310,13 +319,14 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
     }
     const sourceAllowed =
       autoAcceptSources.length === 0 || autoAcceptSources.includes(intake.source);
-    const canAutoAccept =
-      confidentEnough &&
-      effectiveAssigneeId !== null &&
-      effectiveProjectId !== null &&
-      !hasSuggestedDuplicate &&
-      sourceAllowed;
-    if (confidentEnough && !sourceAllowed) {
+    const canAutoAccept = meetingPromote
+      ? effectiveProjectId !== null && !hasSuggestedDuplicate && sourceAllowed
+      : confidentEnough &&
+        effectiveAssigneeId !== null &&
+        effectiveProjectId !== null &&
+        !hasSuggestedDuplicate &&
+        sourceAllowed;
+    if ((confidentEnough || meetingPromote) && !sourceAllowed) {
       this.logger.log(
         { intakeIssueId, source: intake.source },
         'intake-auto-triage: источник не в intake.autoAcceptSources — авто-приём отключён, ждём человека',
@@ -337,7 +347,7 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
         tenantId,
         intake,
         suggestedProjectId: effectiveProjectId!,
-        suggestedAssigneeId: effectiveAssigneeId!,
+        suggestedAssigneeId: effectiveAssigneeId,
         suggestedGoalId,
         suggestedPriority,
         suggestedDueDate,
@@ -398,7 +408,7 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
     tenantId: string;
     intake: IntakeIssue;
     suggestedProjectId: string;
-    suggestedAssigneeId: string;
+    suggestedAssigneeId: string | null;
     suggestedGoalId: string | null;
     suggestedPriority: 'urgent' | 'high' | 'medium' | 'low' | null;
     suggestedDueDate: Date | null;
@@ -459,7 +469,7 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
         dueDate: args.suggestedDueDate,
         cycleId: null,
         goalId: args.suggestedGoalId,
-        assigneeUserIds: [args.suggestedAssigneeId],
+        assigneeUserIds: args.suggestedAssigneeId ? [args.suggestedAssigneeId] : [],
         labelIds: [],
         externalSource: intake.externalSource ?? intake.source,
         externalId: intake.externalId,
@@ -569,6 +579,58 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
         'intake-auto-triage: создание проекта «Входящие» упало — оставляем pending',
       );
       return null;
+    }
+  }
+
+  private async resolveMeetingProjectId(tenantId: string): Promise<string | null> {
+    const findExisting = (): Promise<{ id: string } | null> =>
+      this.prisma.project.findFirst({
+        where: {
+          tenantId,
+          name: MEETING_PROJECT_NAME,
+          deletedAt: null,
+          archivedAt: null,
+        },
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
+      });
+    const existing = await findExisting();
+    if (existing) return existing.id;
+    const ownerId = await this.resolveOrgOwnerId(tenantId);
+    if (!ownerId) {
+      this.logger.warn(
+        { tenantId },
+        'intake-auto-triage: не нашли владельца Org — проект «Из встреч» не создан, fallback на «Входящие»',
+      );
+      return this.resolveInboxProjectId(tenantId);
+    }
+    try {
+      const created = await this.projects.create(
+        {
+          name: MEETING_PROJECT_NAME,
+          description: 'Задачи, поставленные на встречах. Создан Корой автоматически.',
+          network: 0,
+          timezone: 'Europe/Moscow',
+          cycleViewEnabled: true,
+          intakeViewEnabled: true,
+          gantViewEnabled: false,
+          timeTrackingEnabled: false,
+        },
+        tenantId,
+        ownerId,
+      );
+      return created.id;
+    } catch (err) {
+      const retry = await findExisting();
+      if (retry) return retry.id;
+      this.logger.warn(
+        {
+          tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'intake-auto-triage: создание проекта «Из встреч» упало — fallback на «Входящие»',
+      );
+      return this.resolveInboxProjectId(tenantId);
     }
   }
 

@@ -43,11 +43,14 @@ interface MkOpts {
     suggestedAssigneeId: string | null;
     suggestedProjectId: string | null;
     suggestedGoalId: string | null;
+    suggestedDuplicateOfIssueId: string | null;
+    meetingId: string | null;
   }>;
   llmText?: string;
   llmReject?: boolean;
   noProject?: boolean;
   autoAcceptSources?: string[];
+  meetingAlwaysPromote?: boolean;
 }
 
 function mkWorker(opts?: MkOpts): {
@@ -75,6 +78,8 @@ function mkWorker(opts?: MkOpts): {
     suggestedAssigneeId: null,
     suggestedProjectId: null,
     suggestedGoalId: null,
+    suggestedDuplicateOfIssueId: null,
+    meetingId: null,
     ...(opts?.intake ?? {}),
   };
 
@@ -145,7 +150,10 @@ function mkWorker(opts?: MkOpts): {
   const redis = { client: {} as unknown } as unknown as RedisService;
 
   const cfg = {
-    tracker: { autoAcceptConfidenceThreshold: 0.75 },
+    tracker: {
+      autoAcceptConfidenceThreshold: 0.75,
+      meetingTasksAlwaysPromote: opts?.meetingAlwaysPromote ?? true,
+    },
     getDynamic: async (_key: string, _env: string | undefined, def: unknown) =>
       _key === 'intake.autoAcceptSources' ? (opts?.autoAcceptSources ?? def) : def,
   } as unknown as TypedConfigService;
@@ -217,9 +225,10 @@ describe('IntakeAutoTriageWorker', () => {
     expect(updateArg?.data.status).not.toBe('accepted');
   });
 
-  it('confidence < 0.92 → не создаёт Issue, обновляет только suggested*', async () => {
+  it('confidence < 0.92 + рубильник OFF → не создаёт Issue, обновляет только suggested*', async () => {
     const { worker, prisma, issues, metrics } = mkWorker({
       intake: { suggestedAssigneeId: 'user-ivanov' },
+      meetingAlwaysPromote: false,
       llmText: JSON.stringify({
         suggestedProjectIdentifier: 'DEV',
         suggestedAssigneeHint: 'Иванов Сергей',
@@ -371,9 +380,10 @@ describe('IntakeAutoTriageWorker', () => {
     );
   });
 
-  it('W4: meeting + assignee null → pending, без fallback на владельца Org', async () => {
+  it('W4: meeting + assignee null + рубильник OFF → pending, без fallback на владельца Org', async () => {
     const { worker, prisma, issues, projects, metrics } = mkWorker({
       intake: { source: 'meeting', suggestedAssigneeId: null },
+      meetingAlwaysPromote: false,
     });
     await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
     expect(issues.create).not.toHaveBeenCalled();
@@ -397,8 +407,8 @@ describe('IntakeAutoTriageWorker', () => {
     expect(prisma.intakeIssue.update).not.toHaveBeenCalled();
   });
 
-  it('suggestedAssigneeId не разрешился → не auto-create', async () => {
-    const { worker, prisma, issues, metrics } = mkWorker();
+  it('suggestedAssigneeId не разрешился + рубильник OFF → не auto-create', async () => {
+    const { worker, prisma, issues, metrics } = mkWorker({ meetingAlwaysPromote: false });
     prisma.person.findMany.mockResolvedValueOnce([]);
     await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
     expect(issues.create).not.toHaveBeenCalled();
@@ -427,8 +437,11 @@ describe('IntakeAutoTriageWorker', () => {
     expect(issues.create).not.toHaveBeenCalled();
   });
 
-  it('meeting: confidence ≥ порога, но assignee не выводится и проекта нет → pending', async () => {
-    const { worker, issues, metrics } = mkWorker({ noProject: true });
+  it('meeting: confidence ≥ порога, assignee нет, проекта нет, рубильник OFF → pending', async () => {
+    const { worker, issues, metrics } = mkWorker({
+      noProject: true,
+      meetingAlwaysPromote: false,
+    });
     await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
     expect(issues.create).not.toHaveBeenCalled();
     expect(metrics.incAiIntakeAutoAccepted).not.toHaveBeenCalled();
@@ -474,6 +487,85 @@ describe('IntakeAutoTriageWorker', () => {
     expect(prisma.intakeIssue.update).not.toHaveBeenCalled();
     expect(metrics.incAiIntakeSuggested).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'llm_error' }),
+    );
+  });
+
+  it('A2: meeting без исполнителя/проекта + низкий confidence + рубильник ON → Issue в «Из встреч», неназначенный', async () => {
+    const { worker, prisma, issues, projects, metrics } = mkWorker({
+      intake: { source: 'meeting', suggestedAssigneeId: null, meetingId: 'mea_1' },
+      noProject: true,
+      llmText: JSON.stringify({
+        suggestedProjectIdentifier: null,
+        suggestedAssigneeHint: null,
+        suggestedGoalName: null,
+        suggestedPriority: 'medium',
+        suggestedDueDate: null,
+        suggestedLabels: [],
+        confidence: 0.5,
+      }),
+    });
+    prisma.project.findUnique.mockResolvedValue({ ownerId: 'user-org-owner' });
+    await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
+    expect(projects.create).toHaveBeenCalledTimes(1);
+    expect(projects.create.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ name: 'Из встреч' }),
+    );
+    expect(issues.create).toHaveBeenCalledTimes(1);
+    expect(issues.create.mock.calls[0]?.[0]).toBe('proj-inbox');
+    expect(issues.create).toHaveBeenCalledWith(
+      'proj-inbox',
+      expect.objectContaining({ assigneeUserIds: [], linkedMeetingIds: ['mea_1'] }),
+      'org-1',
+      'user-org-owner',
+    );
+    expect(metrics.incAiIntakeSuggested).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'auto_accepted', source: 'meeting' }),
+    );
+  });
+
+  it('A2: meeting без исполнителя/проекта + рубильник OFF → остаётся pending (Issue не создаётся)', async () => {
+    const { worker, issues, projects, metrics } = mkWorker({
+      intake: { source: 'meeting', suggestedAssigneeId: null, meetingId: 'mea_1' },
+      noProject: true,
+      meetingAlwaysPromote: false,
+      llmText: JSON.stringify({
+        suggestedProjectIdentifier: null,
+        suggestedAssigneeHint: null,
+        suggestedPriority: 'medium',
+        suggestedLabels: [],
+        confidence: 0.5,
+      }),
+    });
+    await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
+    expect(issues.create).not.toHaveBeenCalled();
+    expect(projects.create).not.toHaveBeenCalled();
+    expect(metrics.incAiIntakeAutoAccepted).not.toHaveBeenCalled();
+    expect(metrics.incAiIntakeSuggested).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'pending', source: 'meeting' }),
+    );
+  });
+
+  it('A2: meeting + рубильник ON, но найден дубль → НЕ авто-принимается', async () => {
+    const { worker, issues, metrics } = mkWorker({
+      intake: {
+        source: 'meeting',
+        suggestedAssigneeId: null,
+        meetingId: 'mea_1',
+        suggestedDuplicateOfIssueId: 'issue-dup',
+      },
+      llmText: JSON.stringify({
+        suggestedProjectIdentifier: 'DEV',
+        suggestedAssigneeHint: null,
+        suggestedPriority: 'medium',
+        suggestedLabels: [],
+        confidence: 0.95,
+      }),
+    });
+    await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
+    expect(issues.create).not.toHaveBeenCalled();
+    expect(metrics.incAiIntakeAutoAccepted).not.toHaveBeenCalled();
+    expect(metrics.incAiIntakeSuggested).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'pending', source: 'meeting' }),
     );
   });
 });

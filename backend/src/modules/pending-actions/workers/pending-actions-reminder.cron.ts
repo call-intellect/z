@@ -200,7 +200,7 @@ export class PendingActionsReminderCron {
             body,
           },
           dataClass: 'internal',
-          preferredChannelKinds: ['telegram_bot'],
+          preferredChannelKinds: ['in_app', 'telegram_bot'],
           critical: false,
         });
         this.metrics.incPendingReminderSent({ tenantTop, result: 'sent' });

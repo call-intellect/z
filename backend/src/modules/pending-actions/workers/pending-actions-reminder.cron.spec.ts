@@ -273,7 +273,7 @@ describe('PendingActionsReminderCron', () => {
     expect(conv.sendNotification).not.toHaveBeenCalled();
   });
 
-  it('total>0 в слот → sendNotification с preferredChannelKinds=[telegram_bot] + urgentCount', async () => {
+  it('total>0 в слот → sendNotification с preferredChannelKinds=[in_app, telegram_bot] + urgentCount', async () => {
     const prisma = makePrisma();
     prisma.channelBinding.findMany.mockResolvedValueOnce([makeBindingRow('user-1', 'org-1')]);
     prisma.person.findMany.mockResolvedValueOnce([
@@ -294,7 +294,7 @@ describe('PendingActionsReminderCron', () => {
         tenantId: 'org-1',
         recipientUserId: 'user-1',
         eventType: 'system.message',
-        preferredChannelKinds: ['telegram_bot'],
+        preferredChannelKinds: ['in_app', 'telegram_bot'],
         critical: false,
       }),
     );

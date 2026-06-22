@@ -97,6 +97,7 @@ import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { cn } from '@/ui/shadcn/lib/utils';
 import { useTour } from '@/ui/tour';
 
+import { DecisionsSection } from './DecisionsSection';
 import { FeedbackButton } from './FeedbackButton';
 import { MeetingPlayer } from './MeetingPlayer';
 import { MeetingChatPanel } from './MeetingChatPanel';
@@ -407,6 +408,9 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
                     />
                   </div>
                 )}
+                <div className="mt-6">
+                  <DecisionsSection meetingId={meetingId} />
+                </div>
                 <div className="mt-4">
                   <FeedbackButton meetingId={meetingId} />
                 </div>

@@ -91,7 +91,10 @@ export class DecisionsService {
     query: ListDecisionsQuery;
   }): Promise<ListDecisionsResponse> {
     const q = args.query;
-    const where = this.buildWhere(args.tenantId, q);
+    const meetingBlockIds = q.meeting_id
+      ? await this.resolveMeetingBlockIds(args.tenantId, q.meeting_id)
+      : null;
+    const where = this.buildWhere(args.tenantId, q, meetingBlockIds);
     const [items, total] = await Promise.all([
       this.prisma.decision.findMany({
         where,
@@ -473,7 +476,27 @@ export class DecisionsService {
     return { id: decision.id };
   }
 
-  private buildWhere(tenantId: string, q: ListDecisionsQuery): Prisma.DecisionWhereInput {
+  private async resolveMeetingBlockIds(tenantId: string, meetingId: string): Promise<string[]> {
+    const rows = await this.prisma.ideaBlockEvidence.findMany({
+      where: {
+        rawEvent: {
+          tenantId,
+          sourceType: 'meeting',
+          sourceExternalId: meetingId,
+        },
+        block: { tenantId },
+      },
+      select: { blockId: true },
+      take: 1_000,
+    });
+    return [...new Set(rows.map((r) => r.blockId))];
+  }
+
+  private buildWhere(
+    tenantId: string,
+    q: ListDecisionsQuery,
+    meetingBlockIds: string[] | null = null,
+  ): Prisma.DecisionWhereInput {
     const where: Prisma.DecisionWhereInput = {
       tenantId,
       deletedAt: q.deleted ? { not: null } : null,
@@ -484,6 +507,13 @@ export class DecisionsService {
     }
     if (q.affects_entity_id) {
       where.affectsEntityIds = { has: q.affects_entity_id };
+    }
+    if (q.meeting_id) {
+      const meetingOr: Prisma.DecisionWhereInput[] = [{ sourceMeetingId: q.meeting_id }];
+      if (meetingBlockIds && meetingBlockIds.length > 0) {
+        meetingOr.push({ sourceBlockIds: { hasSome: meetingBlockIds } });
+      }
+      where.AND = [...((where.AND as Prisma.DecisionWhereInput[]) ?? []), { OR: meetingOr }];
     }
     if (q.deadline_filter === 'overdue') {
       where.deadline = { lt: new Date(), not: null };

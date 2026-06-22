@@ -83,6 +83,7 @@ export type ListDecisionsRequest = {
   decided_by?: string;
   deadline_filter?: DeadlineFilterApi;
   affects_entity_id?: string;
+  meeting_id?: string;
   q?: string;
   deleted?: boolean;
 };
@@ -98,6 +99,7 @@ function buildDecisionsQuery(filters?: ListDecisionsRequest): string {
     p.set("deadline_filter", filters.deadline_filter);
   if (filters.affects_entity_id)
     p.set("affects_entity_id", filters.affects_entity_id);
+  if (filters.meeting_id) p.set("meeting_id", filters.meeting_id);
   if (filters.q) p.set("q", filters.q);
   if (filters.deleted) p.set("deleted", "true");
   const qs = p.toString();

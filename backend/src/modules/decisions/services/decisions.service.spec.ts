@@ -469,6 +469,95 @@ describe('DecisionsService — list({deleted})', () => {
   });
 });
 
+describe('DecisionsService — list({meeting_id}) — связь встреча↔решения', () => {
+  let decisionFindManyMock: ReturnType<typeof vi.fn>;
+  let decisionCountMock: ReturnType<typeof vi.fn>;
+  let evidenceFindManyMock: ReturnType<typeof vi.fn>;
+  let svc: DecisionsService;
+
+  beforeEach(() => {
+    decisionFindManyMock = vi.fn().mockResolvedValue([]);
+    decisionCountMock = vi.fn().mockResolvedValue(0);
+    evidenceFindManyMock = vi.fn();
+
+    const prisma = {
+      decision: { findMany: decisionFindManyMock, count: decisionCountMock },
+      ideaBlockEvidence: { findMany: evidenceFindManyMock },
+    } as unknown as PrismaService;
+
+    svc = new DecisionsService(
+      prisma,
+      {} as unknown as CurationService,
+      {} as unknown as ConflictService,
+    );
+  });
+
+  it('резолвит блоки встречи (RawEvent.sourceExternalId=meetingId, sourceType=meeting)', async () => {
+    evidenceFindManyMock.mockResolvedValue([{ blockId: 'b-1' }, { blockId: 'b-2' }, { blockId: 'b-1' }]);
+
+    const query = ListDecisionsQuerySchema.parse({ meeting_id: 'm-42' });
+    await svc.list({ tenantId: 't-1', query });
+
+    expect(evidenceFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          rawEvent: expect.objectContaining({
+            tenantId: 't-1',
+            sourceType: 'meeting',
+            sourceExternalId: 'm-42',
+          }),
+        }),
+        select: { blockId: true },
+      }),
+    );
+  });
+
+  it('where = OR(sourceMeetingId, sourceBlockIds hasSome [уникальные блоки])', async () => {
+    evidenceFindManyMock.mockResolvedValue([{ blockId: 'b-1' }, { blockId: 'b-2' }, { blockId: 'b-1' }]);
+
+    const query = ListDecisionsQuerySchema.parse({ meeting_id: 'm-42' });
+    await svc.list({ tenantId: 't-1', query });
+
+    expect(decisionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 't-1',
+          AND: [
+            {
+              OR: [
+                { sourceMeetingId: 'm-42' },
+                { sourceBlockIds: { hasSome: ['b-1', 'b-2'] } },
+              ],
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it('встреча без блоков → only sourceMeetingId (нет ветки hasSome)', async () => {
+    evidenceFindManyMock.mockResolvedValue([]);
+
+    const query = ListDecisionsQuerySchema.parse({ meeting_id: 'm-empty' });
+    await svc.list({ tenantId: 't-1', query });
+
+    expect(decisionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: [{ OR: [{ sourceMeetingId: 'm-empty' }] }],
+        }),
+      }),
+    );
+  });
+
+  it('без meeting_id → ideaBlockEvidence не запрашивается', async () => {
+    const query = ListDecisionsQuerySchema.parse({});
+    await svc.list({ tenantId: 't-1', query });
+
+    expect(evidenceFindManyMock).not.toHaveBeenCalled();
+  });
+});
+
 describe('DecisionsService — Ф6 гейт проекций на list', () => {
   const ACCESSIBLE = makeDecision({ id: 'd-open', sourceBlockIds: ['b-open'] });
   const DENIED = makeDecision({ id: 'd-council', sourceBlockIds: ['b-council'] });

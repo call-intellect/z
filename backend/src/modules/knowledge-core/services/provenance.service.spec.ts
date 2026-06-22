@@ -148,12 +148,12 @@ describe('buildProvenanceDeepLink (RC-6 — мс → сек)', () => {
   it('meeting: startMs делится на 1000 в ?t=<sec>', () => {
     expect(
       buildProvenanceDeepLink({ sourceType: 'meeting', externalId: 'm1', startMs: 90_000 }),
-    ).toBe('/meetings/m1?t=90');
+    ).toBe('/meetings/m1/result?t=90');
   });
 
   it('meeting: startMs null → ?t=0', () => {
     expect(buildProvenanceDeepLink({ sourceType: 'meeting', externalId: 'm1' })).toBe(
-      '/meetings/m1?t=0',
+      '/meetings/m1/result?t=0',
     );
   });
 
@@ -273,7 +273,7 @@ describe('ProvenanceService.resolve — последняя миля', () => {
       type: 'meeting',
       refId: 'm-1',
       label: 'Встреча «Планёрка»',
-      deepLink: '/meetings/m-1?t=90',
+      deepLink: '/meetings/m-1/result?t=90',
     });
   });
 

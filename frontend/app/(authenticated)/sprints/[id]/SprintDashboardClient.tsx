@@ -376,7 +376,7 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
                 {dashboard.linkedMeetings.map((m) => (
                   <li key={m.id}>
                     <Link
-                      href={`/meetings/${encodeURIComponent(m.id)}`}
+                      href={`/meetings/${encodeURIComponent(m.id)}/result`}
                       className="flex items-center justify-between gap-3 rounded-md border border-border-subtle bg-bg-elevated px-3 py-2 transition-colors hover:border-border hover:bg-bg-card"
                     >
                       <div className="min-w-0">

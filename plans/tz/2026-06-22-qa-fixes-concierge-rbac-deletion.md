@@ -174,7 +174,7 @@ const allowed = await this.rbac.check({
 
 ---
 
-### Ф3 — Кнопка «Удалить задачу» в UI `[ ]`
+### Ф3 — Кнопка «Удалить задачу» в UI `[x]`
 **Цель:** подключить уже готовый backend-delete к интерфейсу карточки задачи.
 **Картография:** backend готов — [issues.controller.ts:159-162](../../backend/src/modules/tracker/controllers/issues.controller.ts#L159) (`@Delete('issues/:id')`, soft delete, доступ assignee/PM/admin — RBAC проверяет контроллер), `issuesApi.remove` ([issues.api.ts:166](../../frontend/src/api/tracker/issues.api.ts#L166)). UI карточки — `frontend/app/(authenticated)/issues/[id]/IssueDetailClient.tsx` + `frontend/src/ui/tracker/IssueHeader.tsx` (переименование) / `IssueSidebar.tsx`. Эталон удаления с подтверждением — `CardDetailClient.tsx` (`useConfirmDialog`, `ask({title, description, confirmLabel})`, см. RC-6).
 **Что входит:** действие «Удалить задачу» в шапке/меню карточки (рядом с «Переименовать») → `useConfirmDialog.ask` с текстом про мягкое удаление → `issuesApi.remove(orgId, issueId)` → редирект на доску проекта (есть `parentHref`/крошка) + тост. Ошибку показывать через `humanizeApiError`.
@@ -239,7 +239,7 @@ deletedById String?
 
 ---
 
-### Ф7 — Фронт: кнопки «Удалить»/«Восстановить» регламента и решения `[ ]`
+### Ф7 — Фронт: кнопки «Удалить»/«Восстановить» регламента и решения `[x]`
 **Цель:** owner/admin видит и пользуется удалением/восстановлением в кабинете.
 **Картография:** деталь регламента — действия «Подтвердить актуальность / Заменить новой версией / История версий / Исправить / Это неверно» (UI базы знаний `/regulations`, `frontend/src/api/regulations.api.ts`). Деталь решения — `/decisions`, `frontend/src/api/decisions.api.ts`. Эталон UI-удаления — `CardDetailClient.tsx` (`useConfirmDialog` + меню `⋯` «В архив»/«Удалить»; список с фильтром «Без архива»/«В архиве»).
 **Что входит:**
@@ -255,7 +255,7 @@ deletedById String?
 
 ---
 
-### Ф8 — M2: 404 по ссылке-источнику на встречу `[ ]`
+### Ф8 — M2: 404 по ссылке-источнику на встречу `[x]`
 **Цель:** ссылка-источник из чата/карточки не должна вести в «Страница не найдена».
 **Картография:** провенанс-резолвер `ProvenanceService` (`buildDeepLink`, фильтр прав зрителя — `0beca91a`), фронт-рендер «Откуда это»/источников (chat-v2 citations, list-DTO `previewSourceRef`). Наблюдение QA: `/meetings/01KTGNR4MGBQPAGCF5BDEFKPRV` → 404 (встреча отсутствует/в другой Org/удалена).
 **Что входит (investigate-then-fix):** определить, почему deep-link на встречу резолвится в 404 — (а) устаревший id в старом блоке, (б) встреча недоступна зрителю/в другой Org, (в) встреча удалена. Сделать так, чтобы недоступный источник давал **понятное состояние** «источник недоступен», а не «битый» переход (либо не-кликабельный чип, либо страница встречи с graceful-403/«нет доступа»).

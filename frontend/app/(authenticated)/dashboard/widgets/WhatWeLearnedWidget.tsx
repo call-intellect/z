@@ -143,7 +143,7 @@ function Reason({
   const title = reasonSourceRef.meetingTitle ?? "встреча";
   return (
     <Link
-      href={`/meetings/${encodeURIComponent(reasonSourceRef.meetingId)}`}
+      href={`/meetings/${encodeURIComponent(reasonSourceRef.meetingId)}/result`}
       className="mt-0.5 inline-block text-xs hover:underline"
       style={{ color: CHART.cyan }}
       title="Открыть встречу-источник"

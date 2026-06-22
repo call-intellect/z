@@ -359,7 +359,7 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
               <>
                 <span aria-hidden="true">·</span>
                 <Link
-                  href={`/meetings/${item.meetingId}`}
+                  href={`/meetings/${item.meetingId}/result`}
                   className="text-chip-info-fg hover:underline"
                 >
                   {item.cite ? `встреча ${item.cite}` : 'встреча'}

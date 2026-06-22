@@ -153,7 +153,7 @@ export function buildProvenanceDeepLink(args: {
   if (!args.externalId) return null;
   if (args.sourceType === 'meeting') {
     const sec = Math.max(0, Math.round((args.startMs ?? 0) / 1000));
-    return `/meetings/${args.externalId}?t=${sec}`;
+    return `/meetings/${args.externalId}/result?t=${sec}`;
   }
   if (args.sourceType === 'document') {
     const anchor = documentAnchorParam(args.quote);

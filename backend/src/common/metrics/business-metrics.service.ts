@@ -64,6 +64,7 @@ export class BusinessMetricsService implements OnModuleInit {
   // «синк отстал»).
   private chatboxSyncsTotal!: Counter<'scope' | 'status'>;
   private chatboxAnalyzesTotal!: Counter<'status'>;
+  private chatboxTasksOwnerMissingTotal!: Counter<string>;
   private chatboxPendingSessions!: Gauge<string>;
   private chatboxLastSyncTsSeconds!: Gauge<'scope'>;
 
@@ -1263,6 +1264,10 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_chatbox_analyzes_total',
       help: 'Ф3 — анализ закрытой сессии чата (LLM-summary + мост в граф). status=success|failed.',
       labelNames: ['status'] as const,
+    });
+    this.chatboxTasksOwnerMissingTotal = this.getOrCreateCounter({
+      name: 'z_chatbox_tasks_owner_missing_total',
+      help: 'Ф3 — задачи из переписки пропущены: у Org нет ни одного участника (owner/admin/any не найден). Аномалия, а не штатный пропуск — алёрт при росте.',
     });
     this.chatboxPendingSessions = this.getOrCreateGauge({
       name: 'z_chatbox_pending_sessions',
@@ -4503,6 +4508,10 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incChatboxAnalyze(args: { status: 'success' | 'failed' }): void {
     this.chatboxAnalyzesTotal?.inc({ status: args.status });
+  }
+
+  incChatboxTasksOwnerMissing(): void {
+    this.chatboxTasksOwnerMissingTotal?.inc();
   }
 
   /** Ф3 — текущее число pending-сессий чата, ждущих анализа (gauge). */

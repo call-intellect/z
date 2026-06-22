@@ -2,6 +2,7 @@ import { type Job } from 'bullmq';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/index';
+import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { RedisService } from '../../common/redis/redis.service';
 import type { TaskExtractionService } from '../ai/services/task-extraction.service';
@@ -334,6 +335,123 @@ describe('ChatboxAnalyzeWorker.extractTasks', () => {
 
     await worker.extractTasks('t1', 's1');
 
+    expect(dedupeProcess).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChatboxAnalyzeWorker.resolveOwnerUserId fallback owner→admin→any', () => {
+  function makeRoleAwarePrisma(byRole: Record<string, string | null>, anyMember: string | null) {
+    return {
+      task: { findFirst: vi.fn(async () => null) },
+      taskSource: { findFirst: vi.fn(async () => null) },
+      chatboxChatSession: {
+        findFirst: vi.fn(async () => ({ id: 's1', chatId: 'chat-1' })),
+      },
+      chatboxChat: {
+        findFirst: vi.fn(async () => ({
+          id: 'chat-1',
+          externalId: 'ext-chat',
+          customerExternalId: null,
+          responsibleExternalId: null,
+        })),
+      },
+      chatboxMessage: {
+        findMany: vi.fn(async () => [
+          { senderType: 'CLIENT', senderName: 'Клиент', text: 'Хочу скидку', contentType: 'TEXT' },
+        ]),
+      },
+      chatboxMember: { findUnique: vi.fn(async () => null) },
+      person: { findFirst: vi.fn(async () => null) },
+      chatboxCustomer: { findUnique: vi.fn(async () => null) },
+      membership: {
+        findFirst: vi.fn(async (args: { where?: { role?: string } }) => {
+          const role = args.where?.role;
+          if (role === undefined) {
+            return anyMember === null ? null : { userId: anyMember };
+          }
+          const userId = byRole[role] ?? null;
+          return userId === null ? null : { userId };
+        }),
+      },
+    };
+  }
+
+  function makeWorkerWithMetrics(
+    prisma: ReturnType<typeof makeRoleAwarePrisma>,
+    extracted: unknown[],
+  ) {
+    const extractor = {
+      extractTasks: vi.fn(async () => extracted),
+    } as unknown as TaskExtractionService;
+    const dedupeProcess = vi.fn(async () => ({ created: extracted.length, linked: 0 }));
+    const dedupe = {
+      processCandidates: dedupeProcess,
+    } as unknown as CrossSourceTaskDedupeService;
+    const ingest = {
+      generateSummary: vi.fn(async () => null),
+      ingestSession: vi.fn(async () => ({ rawEventId: 'r1' })),
+    } as unknown as ChatboxIngestService;
+    const incChatboxTasksOwnerMissing = vi.fn();
+    const metrics = {
+      incChatboxTasksOwnerMissing,
+    } as unknown as BusinessMetricsService;
+    const cfg = {
+      get aiFeatures() {
+        return { chatboxTaskExtractionEnabled: true };
+      },
+    } as unknown as TypedConfigService;
+
+    const worker = new ChatboxAnalyzeWorker(
+      {} as unknown as RedisService,
+      prisma as unknown as PrismaService,
+      ingest,
+      extractor,
+      dedupe,
+      cfg,
+      metrics,
+    );
+    return { worker, dedupeProcess, incChatboxTasksOwnerMissing };
+  }
+
+  it('нет owner, есть admin → owner=admin.userId, задачи создаются', async () => {
+    const prisma = makeRoleAwarePrisma({ owner: null, admin: 'admin-user' }, 'admin-user');
+    const { worker, dedupeProcess, incChatboxTasksOwnerMissing } = makeWorkerWithMetrics(prisma, [
+      { title: 'Перезвонить', sourceQuote: 'позвоню', confidence: 0.8 },
+    ]);
+
+    await worker.extractTasks('t1', 's1');
+
+    expect(dedupeProcess).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({ ownerUserId: 'admin-user' }),
+    );
+    expect(incChatboxTasksOwnerMissing).not.toHaveBeenCalled();
+  });
+
+  it('нет owner/admin, есть обычный member → owner=member.userId, задачи создаются', async () => {
+    const prisma = makeRoleAwarePrisma({ owner: null, admin: null }, 'member-user');
+    const { worker, dedupeProcess, incChatboxTasksOwnerMissing } = makeWorkerWithMetrics(prisma, [
+      { title: 'Перезвонить', sourceQuote: 'позвоню', confidence: 0.8 },
+    ]);
+
+    await worker.extractTasks('t1', 's1');
+
+    expect(dedupeProcess).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({ ownerUserId: 'member-user' }),
+    );
+    expect(incChatboxTasksOwnerMissing).not.toHaveBeenCalled();
+  });
+
+  it('Org без участников → метрика incChatboxTasksOwnerMissing, задачи НЕ создаются (видимый сигнал)', async () => {
+    const prisma = makeRoleAwarePrisma({ owner: null, admin: null }, null);
+    const { worker, dedupeProcess, incChatboxTasksOwnerMissing } = makeWorkerWithMetrics(prisma, [
+      { title: 'Перезвонить', sourceQuote: 'позвоню', confidence: 0.8 },
+    ]);
+
+    await worker.extractTasks('t1', 's1');
+
+    expect(incChatboxTasksOwnerMissing).toHaveBeenCalledTimes(1);
     expect(dedupeProcess).not.toHaveBeenCalled();
   });
 });

@@ -261,8 +261,9 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
 
     const ownerUserId = await this.resolveOwnerUserId(tenantId, assigneeUserId);
     if (!ownerUserId) {
-      this.logger.warn(
-        `ChatboxAnalyze: не найден владелец-fallback для session=${sessionId} tenant=${tenantId} — пропуск задач`,
+      this.metrics?.incChatboxTasksOwnerMissing();
+      this.logger.error(
+        `ChatboxAnalyze: у Org нет ни одного участника (owner/admin/any) для session=${sessionId} tenant=${tenantId} — задачи не на кого назначить, пропуск`,
       );
       return;
     }
@@ -308,6 +309,18 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       select: { userId: true },
       orderBy: { joinedAt: 'asc' },
     });
-    return ownerMembership?.userId ?? null;
+    if (ownerMembership?.userId) return ownerMembership.userId;
+    const adminMembership = await this.prisma.membership.findFirst({
+      where: { orgId: tenantId, role: 'admin' },
+      select: { userId: true },
+      orderBy: { joinedAt: 'asc' },
+    });
+    if (adminMembership?.userId) return adminMembership.userId;
+    const anyMembership = await this.prisma.membership.findFirst({
+      where: { orgId: tenantId },
+      select: { userId: true },
+      orderBy: { joinedAt: 'asc' },
+    });
+    return anyMembership?.userId ?? null;
   }
 }

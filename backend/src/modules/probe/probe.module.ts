@@ -3,6 +3,7 @@ import { Global, Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { CurationModule } from '../curation/curation.module';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
+import { TrackerModule } from '../tracker/tracker.module';
 
 import { ProbeDigestCron } from './probe-digest.cron';
 import { ProbeDispatcherWorker } from './probe-dispatcher.worker';
@@ -18,7 +19,7 @@ import { SubjectMemoryService } from './subject-memory/subject-memory.service';
 
 @Global()
 @Module({
-  imports: [PrismaModule, EmbeddingsModule, CurationModule],
+  imports: [PrismaModule, EmbeddingsModule, CurationModule, TrackerModule],
   controllers: [ProbeController],
   providers: [
     ProbeService,

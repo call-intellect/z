@@ -9,6 +9,8 @@ import type { ConversationalIngestAdapter } from '../conversational/adapters/con
 import type { ConversationalService } from '../conversational/conversational.service';
 import type { CoreQueueService } from '../core-queue/core-queue.service';
 import type { CurationService } from '../curation/services/curation.service';
+import type { AssigneeResolverService } from '../tracker/services/assignee-resolver.service';
+import type { IssuesService } from '../tracker/services/issues.service';
 
 import { ProbeResponseHandler } from './probe-response.handler';
 import type { NotificationRespondedPayload } from './probe.types';
@@ -54,6 +56,10 @@ interface Mocks {
   llmCall: ReturnType<typeof vi.fn>;
   curationFindFirst: ReturnType<typeof vi.fn>;
   curationDecide: ReturnType<typeof vi.fn>;
+  issueUpdateMany: ReturnType<typeof vi.fn>;
+  issueAssigneeFindFirst: ReturnType<typeof vi.fn>;
+  assigneeResolve: ReturnType<typeof vi.fn>;
+  addAssignee: ReturnType<typeof vi.fn>;
 }
 
 function makeMocks(): Mocks {
@@ -65,6 +71,10 @@ function makeMocks(): Mocks {
     .fn()
     .mockResolvedValue({ id: 'curation-item-1' });
   const curationDecide = vi.fn().mockResolvedValue({ id: 'curation-item-1' });
+  const issueUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+  const issueAssigneeFindFirst = vi.fn().mockResolvedValue(null);
+  const assigneeResolve = vi.fn().mockResolvedValue({ kind: 'not_found' });
+  const addAssignee = vi.fn().mockResolvedValue({ ok: true });
 
   const prisma = {
     probeEvent: {
@@ -82,6 +92,12 @@ function makeMocks(): Mocks {
     },
     curationItem: {
       findFirst: curationFindFirst,
+    },
+    issue: {
+      updateMany: issueUpdateMany,
+    },
+    issueAssignee: {
+      findFirst: issueAssigneeFindFirst,
     },
   } as unknown as PrismaService;
 
@@ -111,6 +127,10 @@ function makeMocks(): Mocks {
     llmCall,
     curationFindFirst,
     curationDecide,
+    issueUpdateMany,
+    issueAssigneeFindFirst,
+    assigneeResolve,
+    addAssignee,
   };
 }
 
@@ -118,6 +138,7 @@ function makeHandler(args: {
   mocks: Mocks;
   classifyEnabled: boolean;
   minConfidence?: number;
+  withTracker?: boolean;
 }): ProbeResponseHandler {
   const llm = { call: args.mocks.llmCall } as unknown as LlmRouterService;
   const cfg = {
@@ -137,6 +158,13 @@ function makeHandler(args: {
   const curation = {
     decide: args.mocks.curationDecide,
   } as unknown as CurationService;
+  const withTracker = args.withTracker !== false;
+  const assigneeResolver = withTracker
+    ? ({ resolve: args.mocks.assigneeResolve } as unknown as AssigneeResolverService)
+    : undefined;
+  const issues = withTracker
+    ? ({ addAssignee: args.mocks.addAssignee } as unknown as IssuesService)
+    : undefined;
   return new ProbeResponseHandler(
     args.mocks.prisma,
     args.mocks.metrics,
@@ -146,6 +174,8 @@ function makeHandler(args: {
     conversational,
     coreQueue,
     curation,
+    assigneeResolver,
+    issues,
   );
 }
 
@@ -434,5 +464,132 @@ describe('ProbeResponseHandler — existence-confirm → curation.decide', () =>
 
     expect(mocks.curationFindFirst).not.toHaveBeenCalled();
     expect(mocks.curationDecide).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProbeResponseHandler — task-probe → исполнение ответа (A3)', () => {
+  function setTaskProbe(mocks: Mocks, reason: string): void {
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi
+      .fn()
+      .mockResolvedValue({
+        ...buildProbe(),
+        reason,
+        payload: {
+          contextCardId: 'issue-7',
+          contextCardKind: 'issue',
+          contextCardTitle: 'Сверстать лендинг',
+          suggestedQuestion: 'Кому поручить задачу «Сверстать лендинг»?',
+        },
+      });
+  }
+
+  it('assignee_unresolved «Анна» → resolved(u1), нет исполнителя → addAssignee(issue-7, u1, tenant, actor)', async () => {
+    const mocks = makeMocks();
+    setTaskProbe(mocks, 'task.assignee_unresolved');
+    mocks.assigneeResolve.mockResolvedValueOnce({
+      kind: 'resolved',
+      userId: 'u1',
+      name: 'Анна',
+      via: 'name',
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'Анна' } });
+
+    expect(mocks.issueAssigneeFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { issueId: 'issue-7' } }),
+    );
+    expect(mocks.assigneeResolve).toHaveBeenCalledWith('org-classify', 'Анна');
+    expect(mocks.addAssignee).toHaveBeenCalledTimes(1);
+    expect(mocks.addAssignee).toHaveBeenCalledWith('issue-7', 'u1', 'org-classify', 'user-1');
+  });
+
+  it('идемпотентность: у задачи уже есть исполнитель → addAssignee НЕ вызван', async () => {
+    const mocks = makeMocks();
+    setTaskProbe(mocks, 'task.assignee_unresolved');
+    mocks.issueAssigneeFindFirst.mockResolvedValueOnce({ id: 'ia-1' });
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'Анна' } });
+
+    expect(mocks.assigneeResolve).not.toHaveBeenCalled();
+    expect(mocks.addAssignee).not.toHaveBeenCalled();
+  });
+
+  it('resolver not_found/ambiguous/collective → addAssignee НЕ вызван (fail-open)', async () => {
+    for (const resolution of [
+      { kind: 'not_found' },
+      { kind: 'ambiguous', candidates: [{ userId: 'a', name: 'А' }, { userId: 'b', name: 'Б' }] },
+      { kind: 'collective', label: 'отдел дизайна' },
+    ]) {
+      const mocks = makeMocks();
+      setTaskProbe(mocks, 'task.assignee_unresolved');
+      mocks.assigneeResolve.mockResolvedValueOnce(resolution);
+      const handler = makeHandler({ mocks, classifyEnabled: false });
+
+      await handler.handle({ ...event, payload: { text: 'кто-то' } });
+
+      expect(mocks.addAssignee).not.toHaveBeenCalled();
+    }
+  });
+
+  it('due_date_missing «до пятницы» → issue.updateMany с data.dueDate (Date) и where.dueDate=null', async () => {
+    const mocks = makeMocks();
+    setTaskProbe(mocks, 'task.due_date_missing');
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'до пятницы' } });
+
+    expect(mocks.issueUpdateMany).toHaveBeenCalledTimes(1);
+    const call = mocks.issueUpdateMany.mock.calls[0]![0] as {
+      where: { id: string; tenantId: string; dueDate: null; deletedAt: null };
+      data: { dueDate: Date };
+    };
+    expect(call.where).toMatchObject({
+      id: 'issue-7',
+      tenantId: 'org-classify',
+      dueDate: null,
+      deletedAt: null,
+    });
+    expect(call.data.dueDate).toBeInstanceOf(Date);
+  });
+
+  it('due_date_missing невалидный срок → updateMany НЕ вызван', async () => {
+    const mocks = makeMocks();
+    setTaskProbe(mocks, 'task.due_date_missing');
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'когда-нибудь потом' } });
+
+    expect(mocks.issueUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('tracker-сервисы недоступны (assigneeResolver=undefined) → не падает, addAssignee недоступен', async () => {
+    const mocks = makeMocks();
+    setTaskProbe(mocks, 'task.assignee_unresolved');
+    const handler = makeHandler({ mocks, classifyEnabled: false, withTracker: false });
+
+    await expect(
+      handler.handle({ ...event, payload: { text: 'Анна' } }),
+    ).resolves.toBeUndefined();
+
+    expect(mocks.addAssignee).not.toHaveBeenCalled();
+  });
+
+  it('contextCardId отсутствует → ничего не делает', async () => {
+    const mocks = makeMocks();
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi
+      .fn()
+      .mockResolvedValue({
+        ...buildProbe(),
+        reason: 'task.assignee_unresolved',
+        payload: { contextCardKind: 'issue' },
+      });
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'Анна' } });
+
+    expect(mocks.issueAssigneeFindFirst).not.toHaveBeenCalled();
+    expect(mocks.addAssignee).not.toHaveBeenCalled();
   });
 });

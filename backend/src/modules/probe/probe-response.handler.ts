@@ -5,12 +5,15 @@ import { type DataClass } from '@prisma/client';
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { parseRussianDueDate } from '../../common/utils/parse-russian-due-date';
 import { LlmRouterService } from '../ai/services/llm-router.service';
 import { applyInputGuards } from '../ai/services/prompts/common';
 import { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
 import { ConversationalService } from '../conversational/conversational.service';
 import { CoreQueueService } from '../core-queue/core-queue.service';
 import { CurationService } from '../curation/services/curation.service';
+import { AssigneeResolverService } from '../tracker/services/assignee-resolver.service';
+import { IssuesService } from '../tracker/services/issues.service';
 
 import { mapExistenceConfirmAnswer } from './existence-confirm.util';
 import type { NotificationRespondedPayload } from './probe.types';
@@ -39,6 +42,12 @@ export class ProbeResponseHandler {
     @Optional()
     @Inject(CurationService)
     private readonly curation?: CurationService,
+    @Optional()
+    @Inject(AssigneeResolverService)
+    private readonly assigneeResolver?: AssigneeResolverService,
+    @Optional()
+    @Inject(IssuesService)
+    private readonly issues?: IssuesService,
   ) {}
 
   @OnEvent('notification.responded')
@@ -140,6 +149,20 @@ export class ProbeResponseHandler {
         });
       }
 
+      if (
+        probe.reason === 'task.assignee_unresolved' ||
+        probe.reason === 'task.due_date_missing'
+      ) {
+        await this.maybeApplyTaskProbeAnswer({
+          tenantId: event.tenantId,
+          reason: probe.reason,
+          actorUserId: event.recipientUserId,
+          probePayload,
+          eventPayload: event.payload,
+          classifiedAnswer: classification?.answer,
+        });
+      }
+
       await this.sendAnswerAck({
         tenantId: event.tenantId,
         recipientUserId: event.recipientUserId,
@@ -215,6 +238,59 @@ export class ProbeResponseHandler {
           err: err instanceof Error ? err.message : String(err),
         },
         'existence-confirm: проводка ответа в curation упала (best-effort)',
+      );
+    }
+  }
+
+  private async maybeApplyTaskProbeAnswer(args: {
+    tenantId: string;
+    reason: string;
+    actorUserId: string;
+    probePayload: Record<string, unknown>;
+    eventPayload: Record<string, unknown>;
+    classifiedAnswer?: string;
+  }): Promise<void> {
+    const issueId = this.toStringOrUndef(args.probePayload.contextCardId);
+    if (!issueId) return;
+    const answer =
+      args.classifiedAnswer && args.classifiedAnswer.trim().length > 0
+        ? args.classifiedAnswer
+        : this.extractResponseText(args.eventPayload);
+    if (!answer) return;
+
+    try {
+      if (args.reason === 'task.due_date_missing') {
+        const due = parseRussianDueDate(answer, new Date());
+        if (!due) return;
+        await this.prisma.issue.updateMany({
+          where: { id: issueId, tenantId: args.tenantId, dueDate: null, deletedAt: null },
+          data: { dueDate: due },
+        });
+        return;
+      }
+
+      if (!this.assigneeResolver || !this.issues) return;
+      const existing = await this.prisma.issueAssignee.findFirst({
+        where: { issueId },
+        select: { id: true },
+      });
+      if (existing) return;
+      const resolution = await this.assigneeResolver.resolve(args.tenantId, answer);
+      if (resolution.kind !== 'resolved') return;
+      await this.issues.addAssignee(
+        issueId,
+        resolution.userId,
+        args.tenantId,
+        this.toStringOrUndef(args.actorUserId) ?? resolution.userId,
+      );
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          issueId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'task-probe-apply: best-effort, пропускаю',
       );
     }
   }

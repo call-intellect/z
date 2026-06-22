@@ -212,7 +212,7 @@ export class MeTasksService {
               objectKindRu: 'задача',
               message: `Поставлена задача «${created.title}», но не определён исполнитель.`,
               suggestedQuestion:
-                `Для кого эта задача — кому её поручить?` +
+                `Кому поручить задачу «${created.title}» (вы указали «${body.assigneeName}»)?` +
                 (hintNames.length ? ` Возможно: ${hintNames.join(', ')}.` : ''),
             },
             recipientCandidates: [actorUserId],

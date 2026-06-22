@@ -21,18 +21,19 @@ import {
   type ReactElement,
 } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 
 import {
   chatV2Api,
-  streamChatV2Message,
   type ChatV2AskBody,
   type ChatV2AskResponseApi,
 } from "@/api/chat-v2.api";
 import { clonesApi } from "@/api/clones.api";
+import { meetingsApi } from "@/api/meetings.api";
 import { ApiError, humanizeApiError } from "@/api/api-error";
 import { useAuth } from "@/contexts/auth-context";
+import { AiTypingDots } from "@/ui/components/ai/AiTypingDots";
 import { AssistantMarkdown } from "@/ui/components/chat-v2/AssistantMarkdown";
 import { AssistantTargetSelect } from "@/ui/components/chat-v2/AssistantTargetSelect";
 import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
@@ -51,21 +52,19 @@ import {
   type ChatV2Message,
 } from "@/domain/chat-v2";
 
-function chatV2StageLabel(
-  stage: "understanding" | "searching" | "writing" | "slow" | null,
-): string {
-  switch (stage) {
-    case "understanding":
-      return "Понимаю вопрос…";
-    case "searching":
-      return "Ищу в памяти…";
-    case "writing":
-      return "Пишу ответ…";
-    case "slow":
-      return "Долго думаю — подождите…";
-    default:
-      return "Кора думает…";
-  }
+const ANSWER_POLL_INTERVAL_MS = 1500;
+const ANSWER_POLL_TIMEOUT_MS = 60_000;
+
+const SOURCE_UNAVAILABLE_CODES = new Set([
+  "meeting_not_found",
+  "not_found",
+  "db_not_found",
+  "forbidden",
+  "not_authorized",
+]);
+
+function isSourceUnavailableCode(code: string): boolean {
+  return SOURCE_UNAVAILABLE_CODES.has(code);
 }
 
 export function ChatV2Client(): ReactElement {
@@ -78,6 +77,7 @@ export function ChatV2Client(): ReactElement {
   const [selectedId, setSelectedId] = useState<string | null>(
     initialConversationId,
   );
+  const [composingNew, setComposingNew] = useState(false);
   const [statusFilter, setStatusFilter] =
     useState<ChatV2ConversationStatus>("active");
 
@@ -103,13 +103,20 @@ export function ChatV2Client(): ReactElement {
   }, [initialConversationId, list.data, statusFilter]);
 
   useEffect(() => {
+    if (composingNew) return;
     if (!selectedId && list.data && list.data.items.length > 0) {
       setSelectedId(list.data.items[0]!.id);
     }
-  }, [list.data, selectedId]);
+  }, [list.data, selectedId, composingNew]);
 
   const handleSelect = useCallback((id: string | null) => {
+    setComposingNew(false);
     setSelectedId(id);
+  }, []);
+
+  const handleCompose = useCallback(() => {
+    setComposingNew(true);
+    setSelectedId(null);
   }, []);
 
   return (
@@ -122,7 +129,7 @@ export function ChatV2Client(): ReactElement {
             <button
               type="button"
               className="rounded bg-accent px-3 py-1 text-xs font-medium text-accent-fg hover:bg-accent/90"
-              onClick={() => handleSelect(null)}
+              onClick={handleCompose}
             >
               <Plus size={14} className="inline" /> Новый
             </button>
@@ -176,7 +183,9 @@ export function ChatV2Client(): ReactElement {
       <main className="flex flex-1 flex-col">
         <ConversationDetail
           conversationId={selectedId}
+          composingNew={composingNew}
           onConversationCreated={(id) => {
+            setComposingNew(false);
             setSelectedId(id);
             void list.mutate();
             setTimeout(() => {
@@ -228,10 +237,12 @@ function ConversationItem({
 
 function ConversationDetail({
   conversationId,
+  composingNew,
   onConversationCreated,
   onConversationChanged,
 }: {
   conversationId: string | null;
+  composingNew: boolean;
   onConversationCreated: (id: string) => void;
   onConversationChanged: () => void;
 }): ReactElement {
@@ -262,19 +273,28 @@ function ConversationDetail({
   const [validAt, setValidAt] = useState<string>("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [lastCacheHit, setLastCacheHit] = useState<boolean>(false);
-  const [stage, setStage] = useState<
-    "understanding" | "searching" | "writing" | "slow" | null
-  >(null);
-  const streamControllerRef = useRef<AbortController | null>(null);
+  const pollAbortRef = useRef<{ aborted: boolean } | null>(null);
   const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   useEffect(() => {
     setLocalCloneMessages([]);
+    setInput("");
+    setError(null);
+    setLastCacheHit(false);
     return () => {
-      streamControllerRef.current?.abort();
-      streamControllerRef.current = null;
+      if (pollAbortRef.current) pollAbortRef.current.aborted = true;
+      pollAbortRef.current = null;
     };
   }, [conversationId]);
+
+  useEffect(() => {
+    if (composingNew) {
+      setInput("");
+      setError(null);
+      setLastCacheHit(false);
+      setLocalCloneMessages([]);
+    }
+  }, [composingNew]);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
@@ -296,50 +316,51 @@ function ConversationDetail({
       ...(asOfIso ? { asOf: asOfIso } : {}),
     };
 
+    setInput("");
+
+    if (pollAbortRef.current) pollAbortRef.current.aborted = true;
+    const pollToken = { aborted: false };
+    pollAbortRef.current = pollToken;
+
+    const pollUntilAnswer = async (messageId: string): Promise<void> => {
+      const deadline = Date.now() + ANSWER_POLL_TIMEOUT_MS;
+      while (!pollToken.aborted && Date.now() < deadline) {
+        const fresh = await detail.mutate();
+        if (pollToken.aborted) return;
+        const hasAnswer = fresh?.messages.some((m) => m.id === messageId);
+        if (hasAnswer) return;
+        await new Promise((resolve) =>
+          setTimeout(resolve, ANSWER_POLL_INTERVAL_MS),
+        );
+      }
+    };
+
     const applyAnswer = async (
       response: ChatV2AskResponseApi,
     ): Promise<void> => {
-      setInput("");
       setLastCacheHit(response.cacheHit);
       if (!conversationId) {
         onConversationCreated(response.conversationId);
       } else {
         await detail.mutate();
+        if (!pollToken.aborted) {
+          await pollUntilAnswer(response.messageId);
+        }
         onConversationChanged();
       }
     };
 
-    const slowTimer = setTimeout(() => setStage("slow"), 45_000);
-    const controller = new AbortController();
-    streamControllerRef.current = controller;
     try {
-      try {
-        setStage("understanding");
-        for await (const ev of streamChatV2Message(body, controller.signal)) {
-          if (ev.type === "stage") {
-            setStage(ev.stage);
-          } else if (ev.type === "done") {
-            await applyAnswer(ev);
-            break;
-          } else if (ev.type === "error") {
-            throw new Error(ev.message);
-          }
-        }
-      } catch {
-        const response = await chatV2Api.ask(body);
-        await applyAnswer(response);
-      }
+      const response = await chatV2Api.ask(body);
+      await applyAnswer(response);
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Не удалось получить ответ";
+      const msg = humanizeApiError(err, "Не удалось получить ответ");
       setError(msg);
     } finally {
-      clearTimeout(slowTimer);
-      if (streamControllerRef.current === controller) {
-        streamControllerRef.current = null;
+      if (pollAbortRef.current === pollToken) {
+        pollAbortRef.current = null;
       }
       setSending(false);
-      setStage(null);
     }
   }
 
@@ -439,10 +460,22 @@ function ConversationDetail({
     return [...server, ...extras];
   }, [detail.data, localCloneMessages]);
 
+  const firstUserText = useMemo<string | null>(() => {
+    const first = messages.find((m) => m.role === "user");
+    if (!first) return null;
+    const trimmed = first.text.trim();
+    if (!trimmed) return null;
+    return trimmed.length > 40 ? `${trimmed.slice(0, 40)}…` : trimmed;
+  }, [messages]);
+
   const targetLabel =
     selectedTarget.kind === "clone"
       ? selectedTarget.roleName
       : "Помощник компании";
+  const headerTitle =
+    detail.data?.title ??
+    firstUserText ??
+    (conversationId ? "Новый диалог" : targetLabel);
   const inputPlaceholder =
     selectedTarget.kind === "clone"
       ? `Спросите клона «${selectedTarget.roleName}»…`
@@ -454,10 +487,7 @@ function ConversationDetail({
       <header className="flex items-center justify-between border-b border-border bg-bg px-4 py-3">
         <div className="flex items-center gap-2">
           <MessageCircle size={18} className="text-accent" />
-          <h1 className="text-lg font-semibold">
-            {detail.data?.title ??
-              (conversationId ? "Новый диалог" : targetLabel)}
-          </h1>
+          <h1 className="text-lg font-semibold">{headerTitle}</h1>
         </div>
         {detail.data ? (
           <div className="flex items-center gap-2">
@@ -501,9 +531,12 @@ function ConversationDetail({
           messages.map((m) => <MessageView key={m.id} message={m} />)
         )}
         {sending ? (
-          <div className="flex items-center gap-2 text-sm italic text-fg-tertiary">
-            <Loader2 size={14} className="animate-spin" aria-hidden />
-            <span>{chatV2StageLabel(stage)}</span>
+          <div
+            className="flex items-center gap-2 text-sm italic text-fg-tertiary"
+            aria-live="polite"
+          >
+            <AiTypingDots />
+            <span>Мастер Кора готовит ответ…</span>
           </div>
         ) : null}
         {lastCacheHit ? (
@@ -655,35 +688,7 @@ function MessageView({ message }: { message: ChatV2Message }): ReactElement {
                 key={`${c.documentId ?? c.meetingId}-${c.startMs}-${idx}`}
                 className="rounded bg-bg px-2 py-1.5 text-xs"
               >
-                {c.documentId ? (
-                  <div className="font-medium">
-                    <Link
-                      href={`/documents/${encodeURIComponent(c.documentId)}`}
-                      className="text-accent hover:underline"
-                    >
-                      Документ: {c.documentName ?? "без названия"}
-                    </Link>
-                  </div>
-                ) : citationDeepLink(c) ? (
-                  <div className="font-medium">
-                    <Link
-                      href={citationDeepLink(c) as string}
-                      className="text-accent hover:underline"
-                    >
-                      {c.meetingTitle}{" "}
-                      <span className="text-fg-tertiary">
-                        [{formatTimestamp(c.startMs)}]
-                      </span>
-                    </Link>
-                  </div>
-                ) : (
-                  <div className="font-medium">
-                    {c.meetingTitle}{" "}
-                    <span className="text-fg-tertiary">
-                      [{formatTimestamp(c.startMs)}]
-                    </span>
-                  </div>
-                )}
+                <CitationSource citation={c} />
                 <div className="mt-0.5 italic text-fg-secondary">
                   &laquo;{c.snippet}&raquo;
                 </div>
@@ -694,6 +699,80 @@ function MessageView({ message }: { message: ChatV2Message }): ReactElement {
 
         {!isUser ? <MessageFeedback messageId={message.id} /> : null}
       </div>
+    </div>
+  );
+}
+
+function CitationSource({
+  citation,
+}: {
+  citation: ChatV2Message["citations"][number];
+}): ReactElement {
+  const router = useRouter();
+  const [unavailable, setUnavailable] = useState(false);
+  const [checking, setChecking] = useState(false);
+
+  const label = (
+    <>
+      {citation.meetingTitle}{" "}
+      <span className="text-fg-tertiary">
+        [{formatTimestamp(citation.startMs)}]
+      </span>
+    </>
+  );
+
+  if (citation.documentId) {
+    return (
+      <div className="font-medium">
+        <Link
+          href={`/documents/${encodeURIComponent(citation.documentId)}`}
+          className="text-accent hover:underline"
+        >
+          Документ: {citation.documentName ?? "без названия"}
+        </Link>
+      </div>
+    );
+  }
+
+  const href = citationDeepLink(citation);
+
+  if (!href || unavailable) {
+    return (
+      <div className="font-medium text-fg-tertiary">
+        {citation.meetingTitle}{" "}
+        <span className="not-italic">(источник недоступен)</span>
+      </div>
+    );
+  }
+
+  async function openMeeting(e: React.MouseEvent): Promise<void> {
+    e.preventDefault();
+    if (checking) return;
+    setChecking(true);
+    try {
+      await meetingsApi.access(citation.meetingId);
+      router.push(href as string);
+    } catch (err) {
+      if (err instanceof ApiError && !isSourceUnavailableCode(err.code)) {
+        router.push(href as string);
+      } else {
+        setUnavailable(true);
+      }
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  return (
+    <div className="font-medium">
+      <a
+        href={href}
+        onClick={(e) => void openMeeting(e)}
+        aria-busy={checking}
+        className="text-accent hover:underline aria-busy:opacity-60"
+      >
+        {label}
+      </a>
     </div>
   );
 }

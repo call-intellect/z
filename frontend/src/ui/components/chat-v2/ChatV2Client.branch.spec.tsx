@@ -3,12 +3,12 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import type { AssistantTarget } from "@/domain/chat-v2";
 
-const streamMock = vi.fn();
 const askMock = vi.fn();
 const askRoleMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => ({ get: () => null }),
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 vi.mock("swr", () => ({
@@ -64,7 +64,10 @@ vi.mock("@/ui/components/chat-v2/AssistantTargetSelect", () => ({
 
 vi.mock("@/api/chat-v2.api", () => ({
   chatV2Api: { ask: (...a: unknown[]) => askMock(...a) },
-  streamChatV2Message: (...a: unknown[]) => streamMock(...a),
+}));
+
+vi.mock("@/api/meetings.api", () => ({
+  meetingsApi: { access: vi.fn() },
 }));
 
 vi.mock("@/api/clones.api", () => ({
@@ -76,19 +79,6 @@ vi.mock("@/api/clones.api", () => ({
 
 import { ChatV2Client } from "@app/(authenticated)/chat-v2/ChatV2Client";
 
-async function* doneStream() {
-  yield {
-    type: "done" as const,
-    conversationId: "conv-assistant",
-    messageId: "m-assistant",
-    text: "Ответ помощника",
-    citations: [],
-    uncertaintyNote: null,
-    mode: "synthetic" as const,
-    cacheHit: false,
-  };
-}
-
 function typeAndSend(question: string) {
   const inputs = screen.getAllByPlaceholderText(/Спросите/i);
   const input = inputs[inputs.length - 1]!;
@@ -99,20 +89,27 @@ function typeAndSend(question: string) {
 
 describe("ChatV2Client onSubmit branching (ТЗ#5)", () => {
   beforeEach(() => {
-    streamMock.mockReset();
     askMock.mockReset();
     askRoleMock.mockReset();
   });
 
-  it("адресат «помощник» (дефолт) → вызван stream, askRole НЕ вызван", async () => {
-    streamMock.mockImplementation(() => doneStream());
+  it("адресат «помощник» (дефолт) → вызван ask, askRole НЕ вызван", async () => {
+    askMock.mockResolvedValue({
+      conversationId: "conv-assistant",
+      messageId: "m-assistant",
+      text: "Ответ помощника",
+      citations: [],
+      uncertaintyNote: null,
+      mode: "synthetic",
+      cacheHit: false,
+    });
     render(<ChatV2Client />);
 
     typeAndSend("Сколько у нас сделок?");
 
-    await waitFor(() => expect(streamMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(askMock).toHaveBeenCalledTimes(1));
     expect(askRoleMock).not.toHaveBeenCalled();
-    expect(streamMock.mock.calls[0]![0]).toMatchObject({
+    expect(askMock.mock.calls[0]![0]).toMatchObject({
       question: "Сколько у нас сделок?",
     });
   });
@@ -136,7 +133,7 @@ describe("ChatV2Client onSubmit branching (ТЗ#5)", () => {
     typeAndSend("Как продвигать продукт?");
 
     await waitFor(() => expect(askRoleMock).toHaveBeenCalledTimes(1));
-    expect(streamMock).not.toHaveBeenCalled();
+    expect(askMock).not.toHaveBeenCalled();
     expect(askRoleMock.mock.calls[0]![0]).toBe("org-1");
     expect(askRoleMock.mock.calls[0]![1]).toBe("role-mkt");
     expect(askRoleMock.mock.calls[0]![2]).toMatchObject({

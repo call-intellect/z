@@ -1,0 +1,257 @@
+{
+  "model": "deepseek-chat",
+  "rows": [
+    {
+      "c": {
+        "id": "c1",
+        "gold": "completion",
+        "note": "прошедшее, результат",
+        "text": "Я отправил коммерческое предложение клиенту вчера."
+      },
+      "old": {
+        "predictedCompletion": false,
+        "signals": [
+          "fact"
+        ]
+      },
+      "neu": {
+        "predictedCompletion": true,
+        "signals": [
+          "task_completed"
+        ]
+      }
+    },
+    {
+      "c": {
+        "id": "c2",
+        "gold": "completion",
+        "note": "закрытие задачи",
+        "text": "Закрыл задачу по интеграции с Битриксом, всё работает."
+      },
+      "old": {
+        "predictedCompletion": false,
+        "signals": [
+          "fact"
+        ]
+      },
+      "neu": {
+        "predictedCompletion": true,
+        "signals": [
+          "task_completed"
+        ]
+      }
+    },
+    {
+      "c": {
+        "id": "c3",
+        "gold": "completion",
+        "note": "сделал + выложил",
+        "text": "Сделал отчёт по продажам за месяц, выложил в общую папку."
+      },
+      "old": {
+        "predictedCompletion": false,
+        "signals": [
+          "fact"
+        ]
+      },
+      "neu": {
+        "predictedCompletion": true,
+        "signals": [
+          "task_completed"
+        ]
+      }
+    },
+    {
+      "c": {
+        "id": "c4",
+        "gold": "completion",
+        "note": "подписали",
+        "text": "Договор с поставщиком подписали сегодня утром."
+      },
+      "old": {
+        "predictedCompletion": false,
+        "signals": [
+          "fact"
+        ]
+      },
+      "neu": {
+        "predictedCompletion": false,
+        "signals": [
+          "fact"
+        ]
+      }
+    },
+    {
+      "c": {
+        "id": "c5",
+        "gold": "completion",
+        "note": "готово/выкатили",
+        "text": "Готово, выкатили новую версию приложения в прод."
+      },
+      "old": {
+        "predictedCompletion": false,
+        "signals": [
+          "fact"
+        ]
+      },
+      "neu": {
+        "predictedCompletion": true,
+        "signals": [
+          "task_completed"
+        ]
+      }
+    },
+    {
+      "c": {
+        "id": "c6",
+        "gold": "completion",
+        "note": "написал и отправил",
+        "text": "Написал Насте по поставке и отправил ей письмо."
+      },
+      "old": {
+        "predictedCompletion": false,
+        "signals": [
+          "commitment"
+        ]
+      },
+      "neu": {
+        "predictedCompletion": true,
+        "signals": [
+          "task_completed"
+        ]
+      }
+    },
+    {
+      "c": {
+        "id": "o1",
+        "gold": "other",
+        "note": "commitment (будущее)",
+        "text": "Отправлю коммерческое предложение клиенту завтра."
+      },
+      "old": {
+        "predictedCompletion": false,
+        "signals": [
+          "commitment"
+        ]
+      },
+      "neu": {
+        "predictedCompletion": false,
+        "signals": [
+          "commitment"
+        ]
+      }
+    },
+    {
+      "c": {
+        "id": "o2",
+        "gold": "other",
+        "note": "commitment (обязуюсь)",
+        "text": "Обязуюсь сделать отчёт по продажам к пятнице."
+      },
+      "old": {
+        "predictedCompletion": false,
+        "signals": [
+          "commitment"
+        ]
+      },
+      "neu": {
+        "predictedCompletion": false,
+        "signals": [
+          "commitment"
+        ]
+      }
+    },
+    {
+      "c": {
+        "id": "o3",
+        "gold": "other",
+        "note": "commitment (займусь)",
+        "text": "Я займусь интеграцией с Битриксом на следующей неделе."
+      },
+      "old": {
+        "predictedCompletion": false,
+        "signals": [
+          "commitment"
+        ]
+      },
+      "neu": {
+        "predictedCompletion": false,
+        "signals": [
+          "commitment"
+        ]
+      }
+    },
+    {
+      "c": {
+        "id": "o4",
+        "gold": "other",
+        "note": "decision (план)",
+        "text": "Решили перейти на новую CRM в следующем квартале."
+      },
+      "old": {
+        "predictedCompletion": false,
+        "signals": [
+          "decision"
+        ]
+      },
+      "neu": {
+        "predictedCompletion": false,
+        "signals": [
+          "decision"
+        ]
+      }
+    },
+    {
+      "c": {
+        "id": "o5",
+        "gold": "other",
+        "note": "need/idea",
+        "text": "Нам нужно нанять ещё одного дизайнера в команду."
+      },
+      "old": {
+        "predictedCompletion": false,
+        "signals": [
+          "idea"
+        ]
+      },
+      "neu": {
+        "predictedCompletion": false,
+        "signals": [
+          "idea"
+        ]
+      }
+    },
+    {
+      "c": {
+        "id": "o6",
+        "gold": "other",
+        "note": "fact/metric",
+        "text": "Выручка в этом месяце выросла на двадцать процентов."
+      },
+      "old": {
+        "predictedCompletion": false,
+        "signals": [
+          "fact"
+        ]
+      },
+      "neu": {
+        "predictedCompletion": false,
+        "signals": [
+          "metric"
+        ]
+      }
+    }
+  ],
+  "sOld": {
+    "complHit": 0,
+    "complTotal": 6,
+    "otherCorrect": 6,
+    "otherTotal": 6
+  },
+  "sNew": {
+    "complHit": 5,
+    "complTotal": 6,
+    "otherCorrect": 6,
+    "otherTotal": 6
+  }
+}

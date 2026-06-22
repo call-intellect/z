@@ -183,7 +183,7 @@ Acceptance:
 - `bun run typecheck && bun run build` — зелёные.
 Закрывает: R4.
 
-### Ф3 · Backfill-скрипт форс-пересборки `[ ]`
+### Ф3 · Backfill-скрипт форс-пересборки `[x]`
 Файлы: новый `backend/scripts/backfill-skill-profiles-rebuild.ts`; правка `backend/scripts/apply-prod-deploy.ts` (`STEPS`).
 Acceptance:
 - Скрипт запускается локально: `cd backend && bun run scripts/backfill-skill-profiles-rebuild.ts --tenant <id>` без ошибок; логирует число enqueued.
@@ -192,7 +192,7 @@ Acceptance:
 - `grep -n "new PrismaClient" backend/scripts/backfill-skill-profiles-rebuild.ts` → пусто; `grep -n "createPrismaClient" ...` → есть.
 Закрывает: R5.
 
-### Ф4 · Тесты + прод-acceptance `[ ]`
+### Ф4 · Тесты + прод-acceptance `[x]` (юнит-часть; прод-acceptance — за владельцем после выката)
 Файлы: тест на гейт-воркер и на `loadSubjectReasoningBlocks` (рядом с `specialist-3-7-skill.service.spec.ts` / новый `*.worker.spec.ts`).
 Acceptance:
 - Юнит: блок `signalType='methodology_step'`+canonical+subject-person-employee — НЕ отсекается воркером (доходит до `enqueueRebuildSkillProfile`); блок `signalType='fact'` — отсекается (reason `signal_out_of_scope`). `bunx vitest run <файл>` зелёный.

@@ -1,3 +1,5 @@
+import { SKILL_SUBJECT_SIGNAL_TYPES } from '../src/modules/knowledge-core/constants/skill-signal-types';
+
 import {
   type HarnessConfig,
   type HarnessInfra,
@@ -199,7 +201,7 @@ async function snapshot(infra: HarnessInfra, t: SyntheticTenant): Promise<CloneS
       role: 'subject',
       block: {
         tenantId: t.orgId,
-        signalType: { in: ['reasoning', 'rationale', 'decision_basis'] as never },
+        signalType: { in: [...SKILL_SUBJECT_SIGNAL_TYPES] as never },
       },
     },
   });
@@ -210,7 +212,7 @@ async function snapshot(infra: HarnessInfra, t: SyntheticTenant): Promise<CloneS
       block: {
         tenantId: t.orgId,
         status: 'canonical',
-        signalType: { in: ['reasoning', 'rationale', 'decision_basis'] as never },
+        signalType: { in: [...SKILL_SUBJECT_SIGNAL_TYPES] as never },
       },
     },
   });

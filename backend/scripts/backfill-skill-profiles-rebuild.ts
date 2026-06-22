@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import type { PrismaClient } from '@prisma/client';
 
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
@@ -25,6 +26,74 @@ function parseArgs(argv: string[]): Options {
     if (v) opts.tenantId = v;
   }
   return opts;
+}
+
+export async function runBackfillSkillProfilesRebuild(
+  prisma: Pick<PrismaClient, 'skillProfile'>,
+  coreQueue: {
+    enqueueRebuildSkillProfile(args: {
+      profileId: string;
+      tenantId: string;
+      reason?: string;
+      delayMs?: number;
+    }): Promise<{ jobId: string }>;
+  },
+  opts: { tenantId?: string; dryRun: boolean },
+): Promise<{ total: number; enqueued: number; errors: number }> {
+  const profileWhere = {
+    status: 'active' as const,
+    ...(opts.tenantId ? { tenantId: opts.tenantId } : {}),
+  };
+
+  let total = 0;
+  let enqueued = 0;
+  let errors = 0;
+  let cursorId: string | null = null;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const profiles = await prisma.skillProfile.findMany({
+      where: profileWhere,
+      select: { id: true, tenantId: true },
+      orderBy: { id: 'asc' },
+      take: PAGE_SIZE,
+      ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+    });
+    if (profiles.length === 0) break;
+    cursorId = profiles[profiles.length - 1]!.id;
+
+    for (const p of profiles) {
+      total++;
+      if (opts.dryRun) {
+        enqueued++;
+        continue;
+      }
+      try {
+        await coreQueue.enqueueRebuildSkillProfile({
+          profileId: p.id,
+          tenantId: p.tenantId,
+          reason: 'backfill-methodology-step',
+          delayMs: 0,
+        });
+        enqueued++;
+        if (enqueued % 50 === 0) {
+          console.log(`progress: enqueued=${enqueued}/${total}, errors=${errors}`);
+        }
+      } catch (err) {
+        errors++;
+        console.warn(
+          `[error] profileId=${p.id} tenantId=${p.tenantId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    if (profiles.length < PAGE_SIZE) break;
+  }
+
+  if (opts.dryRun) {
+    console.log(`Dry-run mode: поставил бы rebuild для ${enqueued} active-профилей. No enqueue.`);
+  }
+
+  return { total, enqueued, errors };
 }
 
 async function main(opts: Options): Promise<void> {
@@ -59,56 +128,10 @@ async function main(opts: Options): Promise<void> {
     const prisma = app.get(PrismaService);
     const coreQueue = app.get(CoreQueueService);
 
-    let total = 0;
-    let enqueued = 0;
-    let errors = 0;
-    let cursorId: string | null = null;
-
-    for (let page = 0; page < MAX_PAGES; page++) {
-      const profiles = await prisma.skillProfile.findMany({
-        where: profileWhere,
-        select: { id: true, tenantId: true },
-        orderBy: { id: 'asc' },
-        take: PAGE_SIZE,
-        ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
-      });
-      if (profiles.length === 0) break;
-      cursorId = profiles[profiles.length - 1]!.id;
-
-      for (const p of profiles) {
-        total++;
-        if (opts.dryRun) {
-          enqueued++;
-          continue;
-        }
-        try {
-          await coreQueue.enqueueRebuildSkillProfile({
-            profileId: p.id,
-            tenantId: p.tenantId,
-            reason: 'backfill-methodology-step',
-            delayMs: 0,
-          });
-          enqueued++;
-          if (enqueued % 50 === 0) {
-            console.log(`progress: enqueued=${enqueued}/${total}, errors=${errors}`);
-          }
-        } catch (err) {
-          errors++;
-          console.warn(
-            `[error] profileId=${p.id} tenantId=${p.tenantId}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
-      }
-
-      if (profiles.length < PAGE_SIZE) break;
-    }
-
-    if (opts.dryRun) {
-      console.log(`Dry-run mode: поставил бы rebuild для ${enqueued} active-профилей. No enqueue.`);
-    }
+    const stats = await runBackfillSkillProfilesRebuild(prisma, coreQueue, opts);
 
     console.log(
-      `=== DONE total=${total}, enqueued=${enqueued}, errors=${errors} ` +
+      `=== DONE total=${stats.total}, enqueued=${stats.enqueued}, errors=${stats.errors} ` +
         `(jobId-дедуп: повторный прогон = no-op) ===`,
     );
   } finally {

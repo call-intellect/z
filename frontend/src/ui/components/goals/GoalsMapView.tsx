@@ -81,8 +81,23 @@ interface ForceGraphProps {
   onNodeClick?: (node: MapLibNode) => void;
   width?: number;
   height?: number;
+  nodeRelSize?: number;
+  warmupTicks?: number;
   cooldownTicks?: number;
+  d3VelocityDecay?: number;
+  d3AlphaDecay?: number;
+  ref?: (instance: ForceGraphHandle | null) => void;
   backgroundColor?: string;
+}
+
+interface ChargeForce {
+  strength: (value: number) => ChargeForce;
+  distanceMax: (value: number) => ChargeForce;
+}
+
+interface ForceGraphHandle {
+  d3Force: (name: string) => ChargeForce | undefined;
+  d3ReheatSimulation?: () => void;
 }
 
 let CachedForceGraph2D: ComponentType<ForceGraphProps> | null = null;
@@ -223,6 +238,7 @@ export function GoalsMapView({
   loading?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const graphRef = useRef<ForceGraphHandle | null>(null);
   const [size, setSize] = useState<{ width: number; height: number }>({
     width: 0,
     height: 0,
@@ -277,6 +293,26 @@ export function GoalsMapView({
     () => buildLibData(goals, centerId, ideas, showIdeas),
     [goals, centerId, ideas, showIdeas],
   );
+
+  const applyAntiCollision = (instance: ForceGraphHandle | null) => {
+    graphRef.current = instance;
+    if (!instance) return;
+    const charge = instance.d3Force("charge");
+    if (charge) {
+      charge.strength(-260).distanceMax(420);
+    }
+    instance.d3ReheatSimulation?.();
+  };
+
+  useEffect(() => {
+    const instance = graphRef.current;
+    if (!instance) return;
+    const charge = instance.d3Force("charge");
+    if (charge) {
+      charge.strength(-260).distanceMax(420);
+    }
+    instance.d3ReheatSimulation?.();
+  }, [data]);
 
   const selected = useMemo(
     () => goals.find((g) => g.id === selectedId) ?? null,
@@ -385,8 +421,10 @@ export function GoalsMapView({
     <div className="relative">
       <div className="relative h-[68vh] overflow-hidden rounded-xl border border-border-subtle bg-bg-card">
         {!primary && (
-          <div className="absolute left-3 top-3 z-10 rounded-md border border-chip-warning-fg/40 bg-chip-warning-bg px-3 py-1.5 text-xs font-medium text-chip-warning-fg">
-            Не выбрана главная цель — центром временно показана самая важная
+          <div className="pointer-events-none absolute inset-x-3 top-3 z-30 flex justify-start">
+            <p className="max-w-md rounded-md border border-chip-warning-fg/40 bg-chip-warning-bg px-3 py-1.5 text-xs font-medium leading-snug text-chip-warning-fg shadow-sm">
+              Не выбрана главная цель — центром временно показана самая важная
+            </p>
           </div>
         )}
         {ideas && (
@@ -406,11 +444,13 @@ export function GoalsMapView({
         <div ref={containerRef} className="absolute inset-0">
           {LibComponent && size.width > 0 ? (
             <LibComponent
+              ref={applyAntiCollision}
               graphData={data}
               nodeId="id"
               nodeLabel="label"
               nodeVal="val"
               nodeColor={nodeColor}
+              nodeRelSize={5}
               nodeCanvasObjectMode="replace"
               nodeCanvasObject={nodeCanvasObject}
               linkColor={linkColor}
@@ -419,7 +459,7 @@ export function GoalsMapView({
               linkTarget="target"
               linkWidth={1.5}
               dagMode="radialout"
-              dagLevelDistance={80}
+              dagLevelDistance={140}
               dagNodeFilter={(n: MapLibNode) => n.alignment !== "orphan"}
               onDagError={(loopNodeIds) => {
                 console.warn("Карта целей: циклическая связь", loopNodeIds);
@@ -427,7 +467,9 @@ export function GoalsMapView({
               onNodeClick={(n: MapLibNode) => setSelectedId(n.id)}
               width={size.width}
               height={size.height}
-              cooldownTicks={120}
+              warmupTicks={60}
+              cooldownTicks={200}
+              d3VelocityDecay={0.28}
               backgroundColor="rgba(0,0,0,0)"
             />
           ) : libError ? (

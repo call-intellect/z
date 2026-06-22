@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import {
   ArrowDownRight,
@@ -74,6 +75,14 @@ import { cn } from "@/ui/shadcn/lib/utils";
 type StatusFilter = GoalStatus | "all";
 type ViewMode = "list" | "tree" | "map";
 
+const VIEW_MODES: readonly ViewMode[] = ["list", "tree", "map"];
+
+function parseViewMode(raw: string | null): ViewMode {
+  return raw && (VIEW_MODES as readonly string[]).includes(raw)
+    ? (raw as ViewMode)
+    : "list";
+}
+
 const STATUS_TABS: Array<{ value: StatusFilter; label: string }> = [
   { value: "all", label: "Все" },
   { value: "active", label: "Активные" },
@@ -86,8 +95,14 @@ export function GoalsClient() {
   const { currentOrgId, currentOrgRole } = useAuth();
   const isOwner = currentOrgRole === "owner";
 
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    parseViewMode(searchParams.get("view")),
+  );
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -97,6 +112,17 @@ export function GoalsClient() {
     const t = setTimeout(() => setDebouncedSearch(searchInput.trim()), 300);
     return () => clearTimeout(t);
   }, [searchInput]);
+
+  const changeView = (next: ViewMode) => {
+    setViewMode(next);
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "list") params.delete("view");
+    else params.set("view", next);
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
+  };
 
   const swrKey = currentOrgId
     ? (["goals", currentOrgId, statusFilter] as const)
@@ -195,7 +221,7 @@ export function GoalsClient() {
           <div className="ml-auto inline-flex items-center rounded-md border border-border-subtle bg-bg-card p-0.5 text-sm">
             <button
               type="button"
-              onClick={() => setViewMode("list")}
+              onClick={() => changeView("list")}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-sm px-3 py-1 transition-colors",
                 viewMode === "list"
@@ -209,7 +235,7 @@ export function GoalsClient() {
             </button>
             <button
               type="button"
-              onClick={() => setViewMode("tree")}
+              onClick={() => changeView("tree")}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-sm px-3 py-1 transition-colors",
                 viewMode === "tree"
@@ -223,7 +249,7 @@ export function GoalsClient() {
             </button>
             <button
               type="button"
-              onClick={() => setViewMode("map")}
+              onClick={() => changeView("map")}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-sm px-3 py-1 transition-colors",
                 viewMode === "map"

@@ -63,20 +63,33 @@ export function Board({
   orgId,
   projectId,
   boardId,
+  mineUserId,
   resolveCategory = defaultResolveCategory,
 }: {
   orgId: string;
   projectId: string;
   boardId?: string;
+  mineUserId?: string;
   resolveCategory?: (issue: Issue) => IssueStateCategory;
 }) {
   const { density, setDensity, compact } = useCardDensity();
-  const { issues, isLoading, error, mutate } = useIssues(orgId, projectId, {
-    limit: 100,
-    includeChildrenCount: true,
-    includeEngagementCount: !compact,
-    boardId,
-  });
+  const { issues: allIssues, isLoading, error, mutate } = useIssues(
+    orgId,
+    projectId,
+    {
+      limit: 100,
+      includeChildrenCount: true,
+      includeEngagementCount: !compact,
+      boardId,
+    },
+  );
+  const issues = useMemo(
+    () =>
+      mineUserId
+        ? allIssues.filter((i) => i.assigneeUserIds.includes(mineUserId))
+        : allIssues,
+    [allIssues, mineUserId],
+  );
   const { states, isLoading: statesLoading } = useStates(orgId, projectId);
   const { mutate: globalMutate } = useSWRConfig();
   const [creating, setCreating] = useState(false);
@@ -377,7 +390,7 @@ export function Board({
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        <div className="flex gap-3 overflow-x-auto pb-2">
+        <div className="flex max-h-[calc(100vh-15rem)] gap-3 overflow-x-auto overflow-y-hidden pb-2 [scrollbar-gutter:stable]">
           {columns.map((col, colIndex) => {
             const list = byColumn.get(col.key) ?? [];
             const showQuickAdd =
@@ -453,7 +466,7 @@ function BoardColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        "flex w-72 shrink-0 flex-col gap-2 rounded-lg bg-bg-overlay/40 p-2 transition-colors md:w-80",
+        "flex max-h-[calc(100vh-18rem)] w-72 shrink-0 flex-col gap-2 rounded-lg bg-bg-overlay/40 p-2 transition-colors md:w-80",
         column.accept && isOver && "bg-bg-overlay/80 ring-2 ring-accent/60",
       )}
       aria-disabled={disabled}
@@ -461,7 +474,7 @@ function BoardColumn({
       data-state-category={column.category}
       {...(tourTarget ? { "data-tour-target": tourTarget } : {})}
     >
-      <div className="flex items-center justify-between px-1 py-1">
+      <div className="flex shrink-0 items-center justify-between px-1 py-1">
         <span className="flex items-center gap-2 text-xs uppercase tracking-wider text-fg-secondary">
           {column.color && (
             <span
@@ -474,7 +487,7 @@ function BoardColumn({
         </span>
         <span className="text-[11px] text-fg-tertiary">{issues.length}</span>
       </div>
-      <div className="flex flex-col gap-2">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
         <SortableContext
           items={issues.map((i) => cardId(i.id))}
           strategy={verticalListSortingStrategy}
@@ -490,7 +503,7 @@ function BoardColumn({
           ))}
         </SortableContext>
       </div>
-      {quickAdd}
+      {quickAdd ? <div className="shrink-0">{quickAdd}</div> : null}
     </div>
   );
 }

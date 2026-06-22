@@ -58,8 +58,14 @@ function parseView(raw: string | null): WorkspaceView {
 }
 
 export function TasksWorkspaceClient() {
-  const { currentOrgId, currentOrgRole, isSuperAdmin, isLoading: authLoading } =
-    useAuth();
+  const {
+    user,
+    currentOrgId,
+    currentOrgRole,
+    isSuperAdmin,
+    isLoading: authLoading,
+  } = useAuth();
+  const currentUserId = user?.id ?? null;
   const isLeadership =
     isSuperAdmin ||
     (!!currentOrgRole && LEADERSHIP_ROLES.includes(currentOrgRole));
@@ -77,6 +83,7 @@ export function TasksWorkspaceClient() {
   const assigneeUserId = searchParams.get("assignee") ?? undefined;
   const cycleId = searchParams.get("cycle") ?? undefined;
   const qParam = searchParams.get("q") ?? "";
+  const mineOnly = searchParams.get("mine") === "1" && !!currentUserId;
 
   // Вкладки: базовые всем, «Входящие» — только руководителю.
   const tabs = useMemo<ReadonlyArray<{ value: WorkspaceView; label: string }>>(
@@ -129,16 +136,37 @@ export function TasksWorkspaceClient() {
   const selectedProjectId = selectedProject?.id;
 
   // ─── Фильтры сквозного списка ──────────────────────────────────────────────
+  const effectiveAssigneeUserId = mineOnly
+    ? (currentUserId ?? undefined)
+    : isLeadership
+      ? assigneeUserId
+      : undefined;
+
   const orgReq: ListOrgIssuesRequest = useMemo(
     () => ({
       projectId: selectedProjectId,
-      assigneeUserId: isLeadership ? assigneeUserId : undefined,
+      assigneeUserId: effectiveAssigneeUserId,
       cycleId,
       q: debouncedQ || undefined,
       includeArchived: view === "archive" ? true : undefined,
       limit: 200,
     }),
-    [selectedProjectId, isLeadership, assigneeUserId, cycleId, debouncedQ, view],
+    [
+      selectedProjectId,
+      effectiveAssigneeUserId,
+      cycleId,
+      debouncedQ,
+      view,
+    ],
+  );
+
+  const mineUserId = mineOnly ? (currentUserId ?? undefined) : undefined;
+  const filterMine = useCallback(
+    <T extends { assigneeUserIds: string[] }>(list: T[]): T[] =>
+      mineUserId
+        ? list.filter((i) => i.assigneeUserIds.includes(mineUserId))
+        : list,
+    [mineUserId],
   );
 
   // Хуки данных зовём всегда (правило хуков). Сквозной список используется в
@@ -238,9 +266,21 @@ export function TasksWorkspaceClient() {
           onSelect={(slug) => setParam("project", slug)}
         />
 
+        <Button
+          type="button"
+          variant={mineOnly ? "default" : "outline"}
+          size="sm"
+          aria-pressed={mineOnly}
+          onClick={() => setParam("mine", mineOnly ? null : "1")}
+          disabled={!currentUserId}
+        >
+          Мои
+        </Button>
+
         {isLeadership && (
           <AssigneeFilter
             assigneeUserId={assigneeUserId ?? null}
+            disabled={mineOnly}
             onSelect={(userId) => setParam("assignee", userId)}
           />
         )}
@@ -311,16 +351,24 @@ export function TasksWorkspaceClient() {
       {/* ─── Контент вида ─────────────────────────────────────────────────── */}
       {view === "board" ? (
         selectedProjectId ? (
-          <Board orgId={currentOrgId} projectId={selectedProjectId} />
+          <Board
+            orgId={currentOrgId}
+            projectId={selectedProjectId}
+            mineUserId={mineUserId}
+          />
         ) : (
-          <OrgBoard orgId={currentOrgId} req={orgReq} />
+          <OrgBoard orgId={currentOrgId} req={orgReq} mineUserId={mineUserId} />
         )
       ) : view === "list" ? (
         selectedProjectId ? (
-          <ProjectListView orgId={currentOrgId} projectId={selectedProjectId} />
+          <ProjectListView
+            orgId={currentOrgId}
+            projectId={selectedProjectId}
+            mineUserId={mineUserId}
+          />
         ) : (
           <IssueList
-            issues={orgIssuesAll.issues}
+            issues={filterMine(orgIssuesAll.issues)}
             group
             resolveCategory={orgBoardColumnFor}
             emptyText="Задач нет"
@@ -334,7 +382,7 @@ export function TasksWorkspaceClient() {
         // archive: includeArchived=true отдаёт активные+архивные → на клиенте
         // оставляем только архивные.
         <IssueList
-          issues={orgIssuesAll.issues.filter((i) => i.isArchived)}
+          issues={filterMine(orgIssuesAll.issues.filter((i) => i.isArchived))}
           group
           resolveCategory={orgBoardColumnFor}
           emptyText="Архив пуст"
@@ -359,11 +407,16 @@ export function TasksWorkspaceClient() {
 function ProjectListView({
   orgId,
   projectId,
+  mineUserId,
 }: {
   orgId: string;
   projectId: string;
+  mineUserId?: string;
 }) {
   const { issues, isLoading } = useIssues(orgId, projectId, { limit: 200 });
+  const visibleIssues = mineUserId
+    ? issues.filter((i) => i.assigneeUserIds.includes(mineUserId))
+    : issues;
   if (isLoading) {
     return (
       <div className="flex flex-col gap-2">
@@ -377,7 +430,11 @@ function ProjectListView({
     );
   }
   return (
-    <IssueList issues={issues} group emptyText="В проекте пока нет задач" />
+    <IssueList
+      issues={visibleIssues}
+      group
+      emptyText="В проекте пока нет задач"
+    />
   );
 }
 
@@ -543,9 +600,11 @@ function ProjectSelect({
 // ─── Фильтр команды (только руководителю) ────────────────────────────────────
 function AssigneeFilter({
   assigneeUserId,
+  disabled,
   onSelect,
 }: {
   assigneeUserId: string | null;
+  disabled?: boolean;
   onSelect: (userId: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -581,6 +640,10 @@ function AssigneeFilter({
       cancelled = true;
     };
   }, [debouncedQuery, open]);
+
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
 
   // Закрытие по клику вне.
   useEffect(() => {
@@ -621,11 +684,12 @@ function AssigneeFilter({
           variant="outline"
           size="sm"
           className="gap-1"
+          disabled={disabled}
           onClick={() => setOpen((v) => !v)}
         >
           {buttonLabel}
         </Button>
-        {assigneeUserId && (
+        {assigneeUserId && !disabled && (
           <button
             type="button"
             onClick={handleReset}

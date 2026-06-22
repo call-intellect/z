@@ -93,16 +93,26 @@ const parseCardId = (id: string): string | null =>
 export function OrgBoard({
   orgId,
   req,
+  mineUserId,
 }: {
   orgId: string;
   /** Фильтры сквозного списка (проект/исполнитель/приоритет/поиск). */
   req?: ListOrgIssuesRequest;
+  /** Если задан — на клиенте оставляем только задачи этого исполнителя («Мои»). */
+  mineUserId?: string;
 }) {
   const { density, setDensity, compact } = useCardDensity();
-  const { issues, isLoading, error, mutate } = useOrgIssues(orgId, {
+  const { issues: allIssues, isLoading, error, mutate } = useOrgIssues(orgId, {
     ...req,
     includeEngagementCount: !compact,
   });
+  const issues = useMemo(
+    () =>
+      mineUserId
+        ? allIssues.filter((i) => i.assigneeUserIds.includes(mineUserId))
+        : allIssues,
+    [allIssues, mineUserId],
+  );
 
   // Локальная оптимистика: issueId → целевая категория (карточка «прыгает»
   // мгновенно до прихода ре-валидированных данных).
@@ -246,7 +256,7 @@ export function OrgBoard({
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        <div className="flex gap-3 overflow-x-auto pb-2">
+        <div className="flex max-h-[calc(100vh-15rem)] gap-3 overflow-x-auto overflow-y-hidden pb-2 [scrollbar-gutter:stable]">
           {ISSUE_STATE_CATEGORY_VALUES.map((cat) => (
             <OrgBoardColumn
               key={cat}
@@ -287,18 +297,18 @@ function OrgBoardColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        'flex w-72 shrink-0 flex-col gap-2 rounded-lg bg-bg-overlay/40 p-2 transition-colors md:w-80',
+        'flex max-h-[calc(100vh-18rem)] w-72 shrink-0 flex-col gap-2 rounded-lg bg-bg-overlay/40 p-2 transition-colors md:w-80',
         isOver && 'bg-bg-overlay/80 ring-2 ring-accent/60',
       )}
       data-state-category={category}
     >
-      <div className="flex items-center justify-between px-1 py-1">
+      <div className="flex shrink-0 items-center justify-between px-1 py-1">
         <span className="text-xs uppercase tracking-wider text-fg-secondary">
           {ISSUE_STATE_CATEGORY_LABELS[category]}
         </span>
         <span className="text-[11px] text-fg-tertiary">{issues.length}</span>
       </div>
-      <div className="flex flex-col gap-2">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
         {issues.map((issue) => (
           <OrgBoardCard
             key={issue.id}

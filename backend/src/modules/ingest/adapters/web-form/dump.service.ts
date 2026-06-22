@@ -32,6 +32,14 @@ export class DumpService {
     @Inject(PersonsService) private readonly persons: PersonsService,
   ) {}
 
+  async shortTextToIdeaThreshold(): Promise<number> {
+    return this.cfg.getDynamic<number>(
+      'documents.short_text_to_idea_threshold',
+      undefined,
+      200,
+    );
+  }
+
   async createDump(input: {
     tenantId: string;
     userId: string;
@@ -40,6 +48,7 @@ export class DumpService {
     occurredAt?: Date;
     dataClass?: DataClass;
     nonce?: string;
+    asIdea?: boolean;
   }): Promise<{ rawEventId: string; idempotent: boolean; documentId?: string }> {
     await this.quota.checkAndIncrement({
       userId: input.userId,
@@ -57,7 +66,7 @@ export class DumpService {
 
     const person = await this.resolvePersonOrNull(input.tenantId, input.userId);
 
-    if (person) {
+    if (person && !input.asIdea) {
       const documentId = await this.createTextDocumentAndPublish({
         tenantId: input.tenantId,
         uploaderPersonId: person.id,
@@ -150,7 +159,7 @@ export class DumpService {
         tenantId: args.tenantId,
         uploaderId: args.uploaderPersonId,
         kind: 'text',
-        name: `Дамп от ${formatDumpName(timestamp)}`,
+        name: deriveTextNoteName(args.text, timestamp),
         mimeType: 'text/plain; charset=utf-8',
         inlineContent: inlineBytes,
         originalSize: inline.byteLength,
@@ -204,7 +213,22 @@ export class DumpService {
   }
 }
 
-function formatDumpName(d: Date): string {
+const TEXT_NOTE_NAME_MAX_LENGTH = 80;
+
+export function deriveTextNoteName(text: string, d: Date): string {
+  const firstLine = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (firstLine) {
+    return firstLine.length > TEXT_NOTE_NAME_MAX_LENGTH
+      ? `${firstLine.slice(0, TEXT_NOTE_NAME_MAX_LENGTH - 1).trimEnd()}…`
+      : firstLine;
+  }
+  return `Текстовая заметка от ${formatNoteDate(d)}`;
+}
+
+function formatNoteDate(d: Date): string {
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = d.getFullYear();

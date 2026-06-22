@@ -162,7 +162,8 @@ function Content({ orgId }: { orgId: string }) {
             Документы
           </h1>
           <p className="mt-1 text-sm text-fg-secondary">
-            Загруженные файлы и их статус парсинга.
+            Загрузите файлы и заметки — Кора разберёт их в память компании и
+            будет отвечать по ним в чате.
           </p>
         </div>
         <div className="flex items-center gap-2">

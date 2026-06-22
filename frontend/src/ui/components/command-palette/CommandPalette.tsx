@@ -984,7 +984,7 @@ const QUICK_NAV_ITEMS: QuickNavItem[] = [
   },
   {
     href: "/dump",
-    label: "Дамп",
+    label: "Текстовая заметка",
     subtitle: "Быстрая запись мысли",
     icon: Brain,
   },

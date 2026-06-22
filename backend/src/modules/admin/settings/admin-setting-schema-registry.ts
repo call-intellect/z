@@ -253,6 +253,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['documents.maxFilesPerUpload', POSITIVE_INT],
   ['documents.acceptedFormats', z.array(z.string())],
   ['documents.maxZipSizeMb', POSITIVE_INT],
+  ['documents.short_text_to_idea_threshold', z.number().int().min(1).max(5000)],
 
   ['pendingActions.reminderWindowStartHour', z.number().int().min(0).max(23)],
   ['pendingActions.reminderWindowEndHour', z.number().int().min(0).max(23)],

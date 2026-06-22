@@ -11,7 +11,7 @@ export const SOURCE_TYPE_LABELS: Record<SourceUiType, string> = {
   bot: "Telegram-бот",
   phone_call: "Телефония (Mango)",
   email: "Электронная почта (IMAP)",
-  web_form: "Дамп мысли (web-form)",
+  web_form: "Текстовые заметки (web-form)",
 };
 
 export type SourceTypeApi =

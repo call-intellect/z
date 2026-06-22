@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Inject,
@@ -29,6 +30,7 @@ const DumpCreateSchema = z.object({
   occurredAt: z.string().datetime({ offset: true }).optional(),
   dataClass: z.nativeEnum(DataClass).optional(),
   nonce: z.string().min(8).max(64).optional(),
+  asIdea: z.boolean().optional(),
 });
 type DumpCreateDto = z.infer<typeof DumpCreateSchema>;
 
@@ -39,9 +41,23 @@ type DumpCreateDto = z.infer<typeof DumpCreateSchema>;
 export class WebFormDumpController {
   constructor(@Inject(DumpService) private readonly dump: DumpService) {}
 
+  @Get('config')
+  @ApiOperation({
+    summary:
+      'Параметры формы текстовой заметки (порог, при котором короткий текст предлагается отправить в «Идеи»).',
+  })
+  async config(): Promise<{ shortTextToIdeaThreshold: number }> {
+    return {
+      shortTextToIdeaThreshold: await this.dump.shortTextToIdeaThreshold(),
+    };
+  }
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Создать дамп мысли (web-form адаптер)' })
+  @ApiOperation({
+    summary:
+      'Создать текстовую заметку (вставить текст). asIdea=true — отправить короткий текст в «Идеи» без создания документа.',
+  })
   async create(
     @Body(new ZodValidationPipe(DumpCreateSchema)) body: DumpCreateDto,
     @CurrentUser() user: CurrentUserPayload,
@@ -61,6 +77,7 @@ export class WebFormDumpController {
       occurredAt: body.occurredAt ? new Date(body.occurredAt) : undefined,
       dataClass: body.dataClass,
       nonce: body.nonce,
+      asIdea: body.asIdea,
     });
   }
 }

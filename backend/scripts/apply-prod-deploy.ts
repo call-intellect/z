@@ -138,6 +138,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-documents.ts',
+    hint: 'documents.short_text_to_idea_threshold=200 — порог, при котором короткий вставленный текст предлагается отправить в «Идеи» вместо документа (QA-Ф8 R17)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-proactive.ts',
     hint: 'proactive.{eveningPlanCheckEnabled,planItemOverdueThresholdDays} — вечерняя сверка плана дня по незакрытым пунктам (Блок C Ф3 F7)',
   },

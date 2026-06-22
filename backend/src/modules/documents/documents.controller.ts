@@ -166,7 +166,9 @@ export class DocumentsController {
 
   @Post('text')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Создать текстовый дамп (без файла, ≤50 000 символов)' })
+  @ApiOperation({
+    summary: 'Создать текстовую заметку (вставить текст, без файла, ≤50 000 символов)',
+  })
   async createTextDump(
     @Body(new ZodValidationPipe(CreateTextDumpSchema))
     body: CreateTextDumpDto,

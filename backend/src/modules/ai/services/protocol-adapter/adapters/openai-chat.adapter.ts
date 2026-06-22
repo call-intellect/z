@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 
 import { TypedConfigService } from '../../../../../common/config/index';
 import { BusinessMetricsService } from '../../../../../common/metrics/business-metrics.service';
+import { ensureJsonWordInUser } from '../../json-mode.util';
 import { isThinkingModel } from '../../llm-thinking-models';
 import type { LlmCompleteInput, LlmCompleteOutput, LlmToolCall } from '../../llm.types';
 import { LlmError } from '../../llm.types';
@@ -94,6 +95,7 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
         );
       } else if (fmt.type === 'json_object') {
         body['response_format'] = { type: 'json_object' };
+        ensureJsonWordInUser(messages);
       } else if (fmt.type === 'json_schema') {
         body['response_format'] = {
           type: 'json_schema',

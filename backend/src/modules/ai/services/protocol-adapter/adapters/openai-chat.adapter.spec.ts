@@ -29,6 +29,8 @@ vi.mock('openai', () => {
   };
 });
 
+import { JSON_MODE_USER_SUFFIX } from '../../json-mode.util';
+
 import { OpenAiChatProtocolAdapter } from './openai-chat.adapter';
 
 function makeCfg(): TypedConfigService {
@@ -90,10 +92,13 @@ describe('OpenAiChatProtocolAdapter — thinking-models guard', () => {
     vi.clearAllMocks();
   });
 
-  it('flash + json_schema → response_format strict json_schema (без автоконверта)', async () => {
+  it('flash (thinking) + json_schema → автоконверт в tool + guard.schema-to-tool', async () => {
     const { metrics, guard } = makeMetricsMock();
     const adapter = new OpenAiChatProtocolAdapter(makeCfg(), metrics);
-    nextCreateImpl = async () => okResponse({ content: '{"facts":["a"]}' });
+    nextCreateImpl = async () =>
+      okResponse({
+        toolCalls: [{ name: 'submit_facts', arguments: '{"facts":["a"]}' }],
+      });
 
     const out = await adapter.complete({
       provider: makeProvider(),
@@ -111,13 +116,13 @@ describe('OpenAiChatProtocolAdapter — thinking-models guard', () => {
     });
 
     expect(out.text).toBe('{"facts":["a"]}');
-    expect(guard).not.toHaveBeenCalled();
-    expect(lastCallArgs?.['response_format']).toEqual({
-      type: 'json_schema',
-      json_schema: { name: 'facts', strict: true, schema: FACTS_SCHEMA },
+    expect(guard).toHaveBeenCalledWith({
+      kind: 'schema-to-tool',
+      model: 'deepseek-v4-flash',
     });
-    expect(lastCallArgs?.['tools']).toBeUndefined();
-    expect(lastCallArgs?.['tool_choice']).toBeUndefined();
+    expect(lastCallArgs?.['response_format']).toBeUndefined();
+    expect(lastCallArgs?.['tool_choice']).toBe('auto');
+    expect(lastCallArgs?.['tools']).toBeDefined();
   });
 
   it('pro + json_schema (без tools) → автоконверт в tool + tool_choice=auto + hint + guard.schema-to-tool', async () => {
@@ -225,5 +230,55 @@ describe('OpenAiChatProtocolAdapter — thinking-models guard', () => {
     expect(lastCallArgs?.['response_format']).toEqual({ type: 'json_object' });
     expect(lastCallArgs?.['tools']).toBeUndefined();
     expect(lastCallArgs?.['tool_choice']).toBeUndefined();
+  });
+
+  it('json_object + system/user без слова json → guard дописывает суффикс в последний user отправляемого body', async () => {
+    const { metrics } = makeMetricsMock();
+    const adapter = new OpenAiChatProtocolAdapter(makeCfg(), metrics);
+    nextCreateImpl = async () => okResponse({ content: '{"ok":true}' });
+
+    await adapter.complete({
+      provider: makeProvider(),
+      input: {
+        system: { text: 'извлеки факты из текста' },
+        user: 'вот данные встречи',
+        model: 'deepseek-v4-flash',
+        responseFormat: { type: 'json_object' },
+      },
+    });
+
+    expect(lastCallArgs?.['response_format']).toEqual({ type: 'json_object' });
+    const messages = lastCallArgs?.['messages'] as Array<{
+      role: string;
+      content: string;
+    }>;
+    const userMsg = [...messages].reverse().find((m) => m.role === 'user');
+    expect(userMsg?.content).toContain('вот данные встречи');
+    expect(userMsg?.content).toContain(JSON_MODE_USER_SUFFIX.trim());
+    expect(/json/i.test(userMsg?.content ?? '')).toBe(true);
+  });
+
+  it('json_object + слово json уже в системном промпте → guard не дописывает суффикс', async () => {
+    const { metrics } = makeMetricsMock();
+    const adapter = new OpenAiChatProtocolAdapter(makeCfg(), metrics);
+    nextCreateImpl = async () => okResponse({ content: '{"ok":true}' });
+
+    await adapter.complete({
+      provider: makeProvider(),
+      input: {
+        system: { text: 'верни ответ в формате JSON' },
+        user: 'вот данные встречи',
+        model: 'deepseek-v4-flash',
+        responseFormat: { type: 'json_object' },
+      },
+    });
+
+    const messages = lastCallArgs?.['messages'] as Array<{
+      role: string;
+      content: string;
+    }>;
+    const userMsg = [...messages].reverse().find((m) => m.role === 'user');
+    expect(userMsg?.content).toBe('вот данные встречи');
+    expect(userMsg?.content).not.toContain(JSON_MODE_USER_SUFFIX.trim());
   });
 });

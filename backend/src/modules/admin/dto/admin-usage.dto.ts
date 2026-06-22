@@ -31,6 +31,7 @@ export type UsersUsageQuery = z.infer<typeof UsersUsageQuerySchema>;
 export const CallsLogQuerySchema = z.object({
   taskType: z.string().min(1).max(100).optional(),
   userId: z.string().min(1).max(100).optional(),
+  meetingId: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   cursor: z.string().optional(),
   experimentGroup: z.enum(['A', 'B']).optional(),

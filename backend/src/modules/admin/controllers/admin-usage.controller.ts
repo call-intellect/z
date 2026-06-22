@@ -70,6 +70,7 @@ export class AdminUsageController {
       scope: 'global',
       ...(q.taskType ? { taskType: q.taskType } : {}),
       ...(q.userId ? { userId: q.userId } : {}),
+      ...(q.meetingId ? { meetingId: q.meetingId } : {}),
       ...(q.experimentGroup ? { experimentGroup: q.experimentGroup } : {}),
       limit: q.limit,
       ...(q.cursor ? { cursor: q.cursor } : {}),

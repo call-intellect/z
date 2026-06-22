@@ -419,6 +419,7 @@ export class AdminUsageService {
     args: ScopeArgs & {
       taskType?: string;
       userId?: string;
+      meetingId?: string;
       experimentGroup?: 'A' | 'B';
       limit: number;
       cursor?: string;
@@ -428,6 +429,7 @@ export class AdminUsageService {
     const where: Prisma.AiUsageLogWhereInput = { ...tenantWhere };
     if (args.taskType) where.taskType = args.taskType;
     if (args.userId) where.userId = args.userId;
+    if (args.meetingId) where.meetingId = args.meetingId;
     if (args.experimentGroup) where.experimentGroup = args.experimentGroup;
 
     const cursor = decodeCursor(args.cursor);

@@ -1,4 +1,4 @@
-const BASE = (process.env.DIAG_API_BASE ?? 'https://meet.crossmark.ru').replace(/\/+$/, '');
+const BASE = (process.env.DIAG_API_BASE ?? 'https://korateam.ru').replace(/\/+$/, '');
 const EMAIL = process.env.DIAG_ADMIN_EMAIL ?? '';
 const PASSWORD = process.env.DIAG_ADMIN_PASSWORD ?? '';
 const ORG_ID = process.env.DIAG_ORG_ID ?? '';
@@ -212,6 +212,13 @@ async function cmdChain(a: Args): Promise<void> {
 }
 
 async function scanCallsByMeeting(meetingId: string, scan: number): Promise<Json[]> {
+  const server = await apiGet<{ items?: Json[]; nextCursor?: string | null }>(
+    `/api/v1/admin/usage/calls`,
+    { meetingId, limit: Math.min(scan, 200) },
+  ).catch((): { items?: Json[] } => ({ items: [] }));
+  const serverItems = (server.items ?? []).filter((it) => it['meetingId'] === meetingId);
+  if (serverItems.length > 0) return serverItems;
+
   const out: Json[] = [];
   let cursor: string | undefined;
   let fetched = 0;

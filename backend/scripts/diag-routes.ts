@@ -1,4 +1,4 @@
-const BASE = (process.env.DIAG_API_BASE ?? 'https://meet.crossmark.ru').replace(/\/+$/, '');
+const BASE = (process.env.DIAG_API_BASE ?? 'https://korateam.ru').replace(/\/+$/, '');
 const EMAIL = process.env.DIAG_ADMIN_EMAIL ?? '';
 const PASSWORD = process.env.DIAG_ADMIN_PASSWORD ?? '';
 

@@ -315,6 +315,10 @@ ideas-closing-loop (IdeasClosingLoopHandler — @OnEvent 'idea.status_changed') 
 - В каждом merge — re-load под транзакцией + проверка `mergedIntoId === null`,
   чтобы исключить race с параллельным merge.
 
+### Диагностика сбоя: AGE vs LLM-extract (F7, 2026-06-22)
+
+`block-ingest.worker` теперь разводит throw-текст по реальному источнику отказа: провал LLM-извлечения → `llm_extraction`, недоступность графовой базы Apache AGE → `age_unavailable`. Раньше текст «системный отказ графа AGE» кидался и при провале LLM — диагностика ложно винила AGE; метрика `age_unavailable` теперь растёт только при реальном сбое AGE. ТЗ [`meeting-to-tracker-and-models-unified-fix`](../../plans/tz/2026-06-22-meeting-to-tracker-and-models-unified-fix.md) F7.
+
 ## Хранение
 
 Prisma-модели (см. `backend/prisma/schema.prisma`):

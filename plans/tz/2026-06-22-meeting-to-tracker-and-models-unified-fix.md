@@ -193,4 +193,25 @@ export type AssigneeResolution =
 typecheck (вкл. `.spec`)/lint/build зелёные; vitest по затронутым + сценарии §8; **повтор replay 0→7**; живой ре-тест блоков A/C на проде; `second-brain/01_projects/` (tracker/probe/operations/dashboard/ai-jobs/knowledge-core/chatbox) обновлены; `feature-flags.md`+`prod-deploy-log.md`; `04_не-сделано` — закрыть строки по фильтру 4/F1/F3/F5/F6/F7/decision-bug; рефлексия.
 
 ## 14. Итог
-_(заполнит tz-orchestrator после реализации)_
+
+**Реализовано полностью (2026-06-22, ветка dev, 14 коммитов `df071d7a..`).** Блоки A–D (16 фаз) реализовала параллельная сессия по поглощённому `tasks-subsystem-unified-fix.md`; эта сессия добавила весь остаток:
+
+| Фаза | Коммит | Статус |
+|---|---|---|
+| **A2** корень — задача встречи → Issue всегда (kill-switch `tracker.meetingTasksAlwaysPromote` ON, проект «Из встреч») | `df071d7a` | ✅ replay 0→7 PASS |
+| A1/A3/A4/A5/A6 (помощник 404, probe-reason, исполнение probe, резолвер, гейт=пометка) | (Волна A–D парал. сессии) | ✅ ранее на dev |
+| F2 json-guard registry-адаптер | `924a848d` | ✅ |
+| F7 AGE vs LLM диагностика | `a391fdb1` | ✅ |
+| G1+G3 diag домен + meetingId-фильтр | `833f957e` | ✅ |
+| F1+F3 combined upsert + триаж/embedding/weight | `c155ce45` | ✅ |
+| D5 решения встречи в UI + meeting_id фильтр | `78626a15` | ✅ |
+| F4 vox-метрика + ре-сабмит no_words | `1194cdbb` | ✅ |
+| F8 quality-score толерантность | `7875e2e0` | ✅ |
+| E 4 извлекающих → deepseek-v4-pro | `9b8ee9a8` | ✅ |
+| B4 chatbox.taskExtraction.enabled → AdminSetting | `d917327e` | ✅ |
+| G4 previewMaxBytes крутилка | `549acca1` | ✅ |
+| F6 goal no_owner-фолбэк + пороги-крутилки | `8c388e7b` | ✅ |
+| F5 track-egress-watchdog cron | `d606fbc5` | ✅ |
+| G5 harness replay/ab-extract + howto | `fd077855` | ✅ replay 0→7 PASS |
+
+Верификация: backend typecheck/lint/build зелёные; 196 целевых юнит-тестов зелёные; **replay 0→7 PASS** (после кода); миграций Prisma нет, новых ENV нет; 8 новых AdminSetting (3 kill-switch ON + 5 крутилок), 2 метрики, 1 cron. Документация: `feature-flags.md`, `prod-deploy-log.md`, `second-brain/01_projects/*`, `02_architecture/knowledge-core.md`, `04_не-сделано`, рефлексия `05_история/2026-06-22-meeting-to-tracker-models-unified-impl.md`.

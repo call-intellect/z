@@ -114,6 +114,7 @@ knowledge-core (block-ingest подхватывает RawEvent сам, без и
 
 - **B2 — единый триаж:** задачи из чата (`Task`) видны в триаже `/intake` (read-union in-memory) + промоут `Task→Issue` на triage. `Task` остаётся пред-слоем — это объединение НА ЧТЕНИЕ, без дубль-записи (полная унификация `Task`/`Issue` отложена). Kill-switch `tracker.chatboxTasksInTriageEnabled` (ON).
 - **B3 — fallback владельца переписочной задачи:** `chatbox-analyze` ищет владельца owner→admin→any + метрика `z_chatbox_tasks_owner_missing_total` (владелец не нашёлся ни на одном шаге).
-- ТЗ [`2026-06-22-tasks-subsystem-unified-fix`](../../plans/tz/2026-06-22-tasks-subsystem-unified-fix.md) (Блок B). Триаж — [[tracker]].
+- **B4 — флаг извлечения задач вынесен в AdminSetting** (meeting-to-tracker-and-models-unified-fix B4, 2026-06-22): `chatbox.taskExtraction.enabled` (registry+seed, kill-switch ON; ENV `CHATBOX_TASK_EXTRACTION_ENABLED` — fallback). Выкл → переписка по-прежнему мостится в граф, но action items в `Task` не извлекаются. См. [[../../docs/operations/feature-flags]].
+- ТЗ [`2026-06-22-tasks-subsystem-unified-fix`](../../plans/tz/2026-06-22-tasks-subsystem-unified-fix.md) (Блок B) + [`meeting-to-tracker-and-models-unified-fix`](../../plans/tz/2026-06-22-meeting-to-tracker-and-models-unified-fix.md) B4. Триаж — [[tracker]].
 
 [[../index|← index]]

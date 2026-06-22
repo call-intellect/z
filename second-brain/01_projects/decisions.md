@@ -55,6 +55,14 @@ Cron-trigger'ы (overdue, outcome_unknown) — `@Cron('0 5 * * *')` в `Speciali
 
 Отправка — `ConversationalService.sendNotification({eventType:'specialist.probe', dataClass:'sensitive', ...})`.
 
+## Идемпотентность combined-пути + решения встречи в UI (F1/F3 + D5, 2026-06-22)
+
+- **F1 — идемпотентность.** `specialists-combined.persistDecisions` теперь делает `decision.upsert` по `sourceIdeaBlockId` (как полный specialist-3-3): повтор блока с тем же `sourceIdeaBlockId` не падает `Unique constraint failed`, решение материализуется/мержится. Доводит идемпотентность Decision (combined был дефолт-прод-путём, см. ниже).
+- **F3 — полнота combined.** Combined-решение/идея выровнены с полным specialist: получают `CurationItem` (`curation.triage`) + embedding + idea `weight>0` + supporters + событие `idea.created` (best-effort). Раньше combined-путь был урезан — решения/идеи проходили без триажа/веса.
+- **D5 — решения встречи в UI.** Карточка встречи показывает материализованные `Decision` (секция «Решения встречи», `DecisionsSection` в `OverviewTab`); связь — фильтр `GET /decisions?meeting_id=` (через `IdeaBlockEvidence → RawEvent.sourceExternalId`).
+
+ТЗ [`meeting-to-tracker-and-models-unified-fix`](../../plans/tz/2026-06-22-meeting-to-tracker-and-models-unified-fix.md) F1/F3/D5.
+
 ## Conflict-events
 
 | Type | Trigger | Suggested resolution |
@@ -106,7 +114,7 @@ Cron-trigger'ы (overdue, outcome_unknown) — `@Cron('0 5 * * *')` в `Speciali
 
 | Метод + путь | Действие | RBAC |
 |---|---|---|
-| `GET /decisions` | Список с фильтрами (status, decided_by, deadline_filter, affects_entity_id, q, page, limit) | read |
+| `GET /decisions` | Список с фильтрами (status, decided_by, deadline_filter, affects_entity_id, **meeting_id** (D5, 2026-06-22 — через `IdeaBlockEvidence → RawEvent.sourceExternalId`), q, page, limit) | read |
 | `POST /decisions` | Manual create (через triage → deep review) | write |
 | `GET /decisions/:id` | Детали Decision | read |
 | `GET /decisions/:id/history` | CardVersion timeline | read |

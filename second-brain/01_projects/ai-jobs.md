@@ -56,6 +56,10 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 | **Goals OKR v2, Specialist 3-14 (2026-06-02)** | `goal-extract`, `goal-hierarchy-link`, `goals-pulse-summarize` | **`goal-extract` (capable):** `deepseek/deepseek-v4-pro` → `openai-via-proxy/gpt-5.4-mini` → `ollama/qwen3.5:9b` — извлечь цель + горизонт + (опц.) измеримый KR + провенанс; обязан уметь вернуть `isGoal=false` (анти-плодёж). **`goal-hierarchy-link` (cheap):** `deepseek/deepseek-v4-flash` → `openai-via-proxy/gpt-5.4-mini` → `ollama/qwen3.5:9b` — арбитр «какая цель — родитель данной». **`goals-pulse-summarize`:** цепочка как `operations-daily-digest` (`deepseek-chat` → `gpt-5.4-nano` → `qwen3.5:9b`) — связный текст еженедельного пульса. **Без `anthropic`** (не закупаем). Все cache-friendly (стабильный SYSTEM, переменные данные в конце USER). Seed — `backend/scripts/seed-llm-task-routes-goals.ts` (идемпотентен, `editedByAdmin=false`). Полная заметка — [goals-and-strategic-alignment.md](goals-and-strategic-alignment.md) §«Goals OKR v2». |
 | **task-dedup (knowledge-core MASTER, 2026-06-16)** | `task-dedup-arbiter`, `task-closure-verify` | Оба **cheap-цепочка** `deepseek/deepseek-v4-flash` → `openai-via-proxy/gpt-5.4-mini` → `ollama/qwen3.5:9b`. **`task-dedup-arbiter`** — арбитр серой зоны при создании задачи: «новая задача — дубль уже существующей?» (после embedding-KNN-кандидатов; высокий порог → авто-suggest, серая зона → LLM). **`task-closure-verify`** — верификатор «правда ли блок разговора закрывает задачу X» (петля разговор→кандидат закрытия). Сиды — `seed-llm-task-routes-task-dedup-arbiter.ts` / `seed-llm-task-routes-task-closure-verify.ts` (оба в `apply-prod-deploy.ts` STEPS, phase `seed-llm-routes`). См. §«task-dedup — дедуп задач + петля закрытия» ниже. |
 
+### Извлекающие taskType → `deepseek-v4-pro` (E, 2026-06-22)
+
+4 ИЗВЛЕКАЮЩИХ taskType переведены с дефолтной `deepseek-v4-flash` на capable `deepseek-v4-pro` (точечно — на проде Flash сыпал invalid-JSON/fallback на извлечении задач/решений): `meeting-extract-actions`, `decision-extract`, `idea-extract`, `insight-extract`. **Арбитры/триаж/линкеры (`*-supersede-detect`, `intake-auto-triage`, `*-link-*`) остаются Flash; `ai.deepseek.defaultModel` НЕ тронут.** Доставка — сиды `seed-llm-task-routes-{tracker-phase3,decisions,insights,ideas-and-probe}.ts` (для чистого bootstrap) + `patch-task-extractor-route-pro.ts` (в STEPS `phase:'patch'` `skipBootstrap`, для апгрейда; не трогает `editedByAdmin=true`). SYSTEM-промпты не менялись — prompt-cache сохранён. ТЗ [`meeting-to-tracker-and-models-unified-fix`](../../plans/tz/2026-06-22-meeting-to-tracker-and-models-unified-fix.md) E.
+
 ## Откатный скрипт миграции LLM (2026-05-26)
 
 **Источник:** [`plans/tz/2026-05-26-llm-migration-smoke-checklist.md`](../../plans/tz/2026-05-26-llm-migration-smoke-checklist.md) §5. Подробности — в [[workers-queues]] §«Скрипт отката миграции LLM».
@@ -380,6 +384,14 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 - Метрики `z_llm_calls_total{provider}` (знаменатель) + `z_llm_cache_hit_ratio_below_threshold{provider}` (gauge). `BusinessMetricsService.getLlmCacheHitRatio` считает долю кэш-хитов; `provider-smoke-test.cron.checkCacheHitRatio` пишет WARN, если доля кэша DeepSeek ниже порога (видимость, что правки SYSTEM ломают prompt-caching). Флаги `llm.cacheSmokeEnabled` (default **true**) + `llm.cacheHitRatioWarnThreshold` (0.6).
 
 **Миграций БД НЕТ, новых ENV НЕТ** — все флаги через `resolveSync` (AdminSetting с code-fallback).
+
+### Hardening конвейера (F2/F8/F4, 2026-06-22)
+
+- **F2 — proxy-400 «json».** `openai-chat` protocol-adapter теперь дописывает слово `json` в USER при `response_format=json_object` (`ensureJsonWordInUser`, паритет с legacy-путём deepseek) — устранён латентный proxy-400, который ронял fallback `meeting-extract-actions` и `ai.quality-score`.
+- **F8 — quality-score Zod толерантна к дрейфу.** Схема разбора ответа `quality-score` обёрнута в `z.preprocess` (плоские `categories` → вложенный объект, clamp 0..100, отбрасывание лишних ключей) — реальный ответ модели проходит парс даже при дрейфе формы. SYSTEM/tool-схема не тронуты (prompt-cache сохранён). Лечит «оценка встречи не считается».
+- **F4 — vox-метрика + ре-сабмит.** Метрика `z_vox_outcome_total{outcome=ok|empty|no_words}` (`incVoxOutcome`) делает «эпидемию» пустых ASR-дорожек видимой; при `no_words` транскрибация ре-сабмитится ради пословных таймингов (без них ломались поведение/длительность). См. [[workers-queues]] §recording.
+
+ТЗ [`meeting-to-tracker-and-models-unified-fix`](../../plans/tz/2026-06-22-meeting-to-tracker-and-models-unified-fix.md) F2/F8/F4.
 
 [[../index|← index]]
 

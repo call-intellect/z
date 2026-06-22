@@ -6,8 +6,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { ProbeService } from '../../probe/probe.service';
 import type { PostAssignTaskBodyDto, PostAssignTaskResponseDto } from '../dto/issues/post-assign-task.dto';
 import type { PostCompleteTaskResponseDto } from '../dto/issues/post-complete-task.dto';
 import type { PostMeTaskBodyDto, PostMeTaskResponseDto } from '../dto/issues/post-me-task.dto';
@@ -46,6 +48,8 @@ export class MeTasksService {
     @Inject(SkillRoutingService) private readonly skillRouting: SkillRoutingService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
     @Inject(ProgressUpdatesService) private readonly progressUpdates: ProgressUpdatesService,
+    @Inject(ProbeService) private readonly probe: ProbeService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   async suggestAssignee(
@@ -102,6 +106,10 @@ export class MeTasksService {
       userId,
     );
 
+    if (!body.dueDate && this.cfg.tracker.dueDateClarifyEnabled) {
+      await this.raiseDueDateProbe(tenantId, issue.id, issue.title, [userId]);
+    }
+
     return {
       id: issue.id,
       title: issue.title,
@@ -116,25 +124,7 @@ export class MeTasksService {
     actorUserId: string,
   ): Promise<PostAssignTaskResponseDto> {
     const resolution = await this.resolver.resolve(tenantId, body.assigneeName);
-    if (resolution.kind === 'not_found' || resolution.kind === 'collective') {
-      throw new NotFoundException({
-        ok: false,
-        error: {
-          code: 'assignee_not_found',
-          message: `Не нашёл сотрудника по имени «${body.assigneeName}». Уточните имя.`,
-        },
-      });
-    }
-    if (resolution.kind === 'ambiguous') {
-      const names = resolution.candidates.map((c) => c.name).join(', ');
-      throw new ConflictException({
-        ok: false,
-        error: {
-          code: 'assignee_ambiguous',
-          message: `Несколько сотрудников с именем «${body.assigneeName}»: ${names}. Уточните, кого имели в виду.`,
-        },
-      });
-    }
+    const assigneeUserIds = resolution.kind === 'resolved' ? [resolution.userId] : [];
 
     const projectId = await this.projects.ensureInboxProjectId(tenantId);
     if (!projectId) {
@@ -164,7 +154,7 @@ export class MeTasksService {
         dueDate: body.dueDate ? new Date(body.dueDate) : null,
         cycleId: null,
         goalId: null,
-        assigneeUserIds: [resolution.userId],
+        assigneeUserIds,
         labelIds: [],
         externalSource: 'assistant',
         externalId: null,
@@ -173,27 +163,138 @@ export class MeTasksService {
       actorUserId,
     );
 
-    const fullIssue = await this.prisma.issue.findUnique({ where: { id: created.id } });
-    if (fullIssue) {
-      this.emitter.emitIssueAssigneeChanged({
-        issue: fullIssue,
-        actorUserId,
-        action: 'added',
-        assigneeUserId: resolution.userId,
+    const status = await this.resolveStatus(created.stateId);
+
+    if (resolution.kind === 'resolved') {
+      const fullIssue = await this.prisma.issue.findUnique({ where: { id: created.id } });
+      if (fullIssue) {
+        this.emitter.emitIssueAssigneeChanged({
+          issue: fullIssue,
+          actorUserId,
+          action: 'added',
+          assigneeUserId: resolution.userId,
+        });
+      }
+      this.metrics.incTaskAssigneeClarify({
+        outcome: resolution.via === 'memory' ? 'resolved_memory' : 'resolved_name',
       });
+      if (body.viaRouting === true) {
+        this.metrics.incRoutingSuggestionAccepted();
+      }
     }
 
-    if (body.viaRouting === true) {
-      this.metrics.incRoutingSuggestionAccepted();
+    let needsAssigneeResponse: Pick<
+      PostAssignTaskResponseDto,
+      'needsAssignee' | 'candidates' | 'message'
+    > | null = null;
+
+    if (resolution.kind !== 'resolved') {
+      let hintNames: string[] = [];
+      if (this.cfg.tracker.assigneeClarifyEnabled) {
+        const hints = await this.skillRouting
+          .suggestAssignee({
+            tenantId,
+            taskText: `${body.title}${body.description ? ` ${body.description}` : ''}`,
+          })
+          .catch(() => []);
+        hintNames = hints.slice(0, 3).map((h) => h.personName);
+
+        try {
+          await this.probe.suggest({
+            tenantId,
+            emittedByService: 'me-tasks',
+            reason: 'task.assignee_unresolved',
+            payload: {
+              contextCardId: created.id,
+              contextCardKind: 'issue',
+              contextCardTitle: created.title,
+              objectName: created.title,
+              objectKindRu: 'задача',
+              message: `Поставлена задача «${created.title}», но не определён исполнитель.`,
+              suggestedQuestion:
+                `Для кого эта задача — кому её поручить?` +
+                (hintNames.length ? ` Возможно: ${hintNames.join(', ')}.` : ''),
+            },
+            recipientCandidates: [actorUserId],
+            priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
+          });
+        } catch {
+          // best-effort: probe не должен ронять создание задачи
+        }
+
+        this.metrics.incTaskAssigneeClarify({
+          outcome:
+            resolution.kind === 'collective'
+              ? 'collective_probe_raised'
+              : 'assignee_probe_raised',
+        });
+      }
+
+      const candidates: Array<{ userId: string | null; name: string }> =
+        resolution.kind === 'ambiguous'
+          ? resolution.candidates.map((c) => ({ userId: c.userId, name: c.name }))
+          : hintNames.map((name) => ({ userId: null, name }));
+
+      const message =
+        resolution.kind === 'collective'
+          ? 'Создал задачу во «Входящих». Это коллективный адресат, уточню конкретного исполнителя.'
+          : 'Создал задачу во «Входящих». Уточню, на кого её повесить.';
+
+      needsAssigneeResponse = { needsAssignee: true, candidates, message };
+    }
+
+    if (!body.dueDate && this.cfg.tracker.dueDateClarifyEnabled) {
+      await this.raiseDueDateProbe(tenantId, created.id, created.title, [
+        assigneeUserIds[0] ?? actorUserId,
+      ]);
+    }
+
+    if (resolution.kind === 'resolved') {
+      return {
+        id: created.id,
+        title: created.title,
+        projectId: created.projectId,
+        status,
+        assignee: { userId: resolution.userId, name: resolution.name },
+      };
     }
 
     return {
       id: created.id,
       title: created.title,
       projectId: created.projectId,
-      status: await this.resolveStatus(created.stateId),
-      assignee: { userId: resolution.userId, name: resolution.name },
+      status,
+      ...(needsAssigneeResponse ?? { needsAssignee: true }),
     };
+  }
+
+  private async raiseDueDateProbe(
+    tenantId: string,
+    issueId: string,
+    title: string,
+    recipientCandidates: readonly string[],
+  ): Promise<void> {
+    try {
+      await this.probe.suggest({
+        tenantId,
+        emittedByService: 'me-tasks',
+        reason: 'task.due_date_missing',
+        payload: {
+          contextCardId: issueId,
+          contextCardKind: 'issue',
+          contextCardTitle: title,
+          objectName: title,
+          objectKindRu: 'задача',
+          message: `У задачи «${title}» не указан срок.`,
+          suggestedQuestion: `К какому сроку нужно сделать «${title}»?`,
+        },
+        recipientCandidates,
+        priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
+      });
+      this.metrics.incTaskAssigneeClarify({ outcome: 'due_probe_raised' });
+    } catch {
+      // best-effort: probe не должен ронять создание задачи
+    }
   }
 
   async resolveOpenTaskByName(

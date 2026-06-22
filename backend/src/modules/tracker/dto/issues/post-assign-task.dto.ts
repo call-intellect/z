@@ -20,5 +20,8 @@ export interface PostAssignTaskResponseDto {
   title: string;
   projectId: string;
   status: string;
-  assignee: { userId: string; name: string };
+  assignee?: { userId: string; name: string };
+  needsAssignee?: boolean;
+  candidates?: Array<{ userId: string | null; name: string }>;
+  message?: string;
 }

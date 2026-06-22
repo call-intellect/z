@@ -88,12 +88,11 @@ export class MeTasksController {
   })
   @ApiResponse({
     status: 201,
-    description: 'Созданная задача: { id, title, projectId, status, assignee }',
+    description:
+      'Созданная задача: { id, title, projectId, status, assignee? }. Если исполнитель не определён — { needsAssignee: true, candidates, message }, задача создаётся во «Входящих».',
   })
   @ApiResponse({ status: 400, description: 'Validation error / tenant_required' })
   @ApiResponse({ status: 403, description: 'Недостаточно прав на создание задач' })
-  @ApiResponse({ status: 404, description: 'assignee_not_found — сотрудник не найден по имени' })
-  @ApiResponse({ status: 409, description: 'assignee_ambiguous — несколько одноимённых сотрудников' })
   async assignTask(
     @Body(new ZodValidationPipe(PostAssignTaskBodySchema)) body: PostAssignTaskBodyDto,
     @CurrentUser() user: CurrentUserPayload,

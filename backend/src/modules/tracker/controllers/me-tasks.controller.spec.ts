@@ -103,7 +103,7 @@ describe('MeTasksController POST /me/tasks/assign', () => {
     const res = await controller.assignTask(body, USER, TENANT);
     expect(canWrite).toHaveBeenCalledWith(USER.id, TENANT, 'issue');
     expect(assignTask).toHaveBeenCalledWith(body, TENANT, USER.id);
-    expect(res.assignee.name).toBe('Айназ');
+    expect(res.assignee?.name).toBe('Айназ');
   });
 
   it('(б) пустой assigneeName → 400 (Zod)', () => {

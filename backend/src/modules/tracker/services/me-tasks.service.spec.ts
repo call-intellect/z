@@ -1,8 +1,10 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { ProbeService } from '../../probe/probe.service';
 import type { IssueResponseDto } from '../dto/issues/issue-response.dto';
 
 import type { AssigneeResolverService } from './assignee-resolver.service';
@@ -16,6 +18,20 @@ import type { TrackerEmitterService } from './tracker-emitter.service';
 const TENANT = 'org_1';
 const USER = 'user_1';
 const INBOX = 'proj_inbox';
+
+function makeCfg(overrides?: {
+  assigneeClarifyEnabled?: boolean;
+  dueDateClarifyEnabled?: boolean;
+  assigneeProbePriorityHint?: number;
+}): TypedConfigService {
+  return {
+    tracker: {
+      assigneeClarifyEnabled: overrides?.assigneeClarifyEnabled ?? true,
+      dueDateClarifyEnabled: overrides?.dueDateClarifyEnabled ?? true,
+      assigneeProbePriorityHint: overrides?.assigneeProbePriorityHint ?? 0.7,
+    },
+  } as unknown as TypedConfigService;
+}
 
 function makeIssueResponse(overrides: Partial<IssueResponseDto>): IssueResponseDto {
   return {
@@ -71,11 +87,13 @@ describe('MeTasksService.createSelfTask', () => {
   let issueStateFindUnique: ReturnType<typeof vi.fn>;
   let issuesCreate: ReturnType<typeof vi.fn>;
   let ensureInbox: ReturnType<typeof vi.fn>;
+  let probeSuggest: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     issueStateFindUnique = vi.fn(async () => ({ category: 'backlog' }));
     issuesCreate = vi.fn(async () => makeIssueResponse({}));
     ensureInbox = vi.fn(async () => INBOX);
+    probeSuggest = vi.fn(async () => ({ ok: true, probeEventId: 'probe_1' }));
 
     prisma = {
       issueState: { findUnique: issueStateFindUnique },
@@ -95,8 +113,11 @@ describe('MeTasksService.createSelfTask', () => {
     } as unknown as SkillRoutingService;
     const metrics = {
       incRoutingSuggestionAccepted: vi.fn(),
+      incTaskAssigneeClarify: vi.fn(),
     } as unknown as BusinessMetricsService;
     const progressUpdates = { create: vi.fn() } as unknown as ProgressUpdatesService;
+    const probe = { suggest: probeSuggest } as unknown as ProbeService;
+    const cfg = makeCfg();
 
     service = new MeTasksService(
       prisma,
@@ -107,6 +128,8 @@ describe('MeTasksService.createSelfTask', () => {
       skillRouting,
       metrics,
       progressUpdates,
+      probe,
+      cfg,
     );
   });
 
@@ -170,6 +193,27 @@ describe('MeTasksService.createSelfTask', () => {
     expect(res.status).toBe('backlog');
   });
 
+  it('(г) без срока → due-probe поднят на самого пользователя', async () => {
+    await service.createSelfTask({ title: 'Позвонить клиенту' }, TENANT, USER);
+
+    expect(probeSuggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'task.due_date_missing',
+        recipientCandidates: [USER],
+        payload: expect.objectContaining({ contextCardId: 'issue_1' }),
+      }),
+    );
+  });
+
+  it('(д) есть срок → due-probe НЕ поднят', async () => {
+    await service.createSelfTask(
+      { title: 'Позвонить клиенту', dueDate: new Date('2026-06-30') },
+      TENANT,
+      USER,
+    );
+    expect(probeSuggest).not.toHaveBeenCalled();
+  });
+
   it('защита BadRequestException — корректный тип ошибки', async () => {
     ensureInbox.mockResolvedValueOnce(null);
     await expect(service.createSelfTask({ title: 'X' }, TENANT, USER)).rejects.toBeInstanceOf(
@@ -193,8 +237,11 @@ describe('MeTasksService.assignTask', () => {
   let resolverResolve: ReturnType<typeof vi.fn>;
   let emitAssigneeChanged: ReturnType<typeof vi.fn>;
   let incRoutingSuggestionAccepted: ReturnType<typeof vi.fn>;
+  let incTaskAssigneeClarify: ReturnType<typeof vi.fn>;
+  let probeSuggest: ReturnType<typeof vi.fn>;
+  let suggestAssigneeMock: ReturnType<typeof vi.fn>;
 
-  beforeEach(() => {
+  function build(cfgOverrides?: Parameters<typeof makeCfg>[0]): void {
     issuesCreate = vi.fn(async () => makeIssueResponse({ assigneeUserIds: ['assignee_1'] }));
     ensureInbox = vi.fn(async () => INBOX);
     issueStateFindUnique = vi.fn(async () => ({ category: 'backlog' }));
@@ -208,8 +255,15 @@ describe('MeTasksService.assignTask', () => {
       stateId: 'state_backlog',
       dueDate: null,
     }));
-    resolverResolve = vi.fn(async () => ({ kind: 'resolved', userId: 'assignee_1', name: 'Айназ' }));
+    resolverResolve = vi.fn(async () => ({
+      kind: 'resolved',
+      userId: 'assignee_1',
+      name: 'Айназ',
+      via: 'name',
+    }));
     emitAssigneeChanged = vi.fn();
+    probeSuggest = vi.fn(async () => ({ ok: true, probeEventId: 'probe_1' }));
+    suggestAssigneeMock = vi.fn(async () => []);
 
     prisma = {
       issueState: { findUnique: issueStateFindUnique },
@@ -220,13 +274,17 @@ describe('MeTasksService.assignTask', () => {
     resolver = { resolve: resolverResolve } as unknown as AssigneeResolverService;
     emitter = { emitIssueAssigneeChanged: emitAssigneeChanged } as unknown as TrackerEmitterService;
     incRoutingSuggestionAccepted = vi.fn();
+    incTaskAssigneeClarify = vi.fn();
     const skillRouting = {
-      suggestAssignee: vi.fn(async () => []),
+      suggestAssignee: suggestAssigneeMock,
     } as unknown as SkillRoutingService;
     const metrics = {
       incRoutingSuggestionAccepted,
+      incTaskAssigneeClarify,
     } as unknown as BusinessMetricsService;
     const progressUpdates = { create: vi.fn() } as unknown as ProgressUpdatesService;
+    const probe = { suggest: probeSuggest } as unknown as ProbeService;
+    const cfg = makeCfg(cfgOverrides);
 
     service = new MeTasksService(
       prisma,
@@ -237,8 +295,12 @@ describe('MeTasksService.assignTask', () => {
       skillRouting,
       metrics,
       progressUpdates,
+      probe,
+      cfg,
     );
-  });
+  }
+
+  beforeEach(() => build());
 
   it('(а) resolved → создаёт задачу на исполнителя + эмитит issue.assignee_changed(added)', async () => {
     const res = await service.assignTask(
@@ -259,20 +321,92 @@ describe('MeTasksService.assignTask', () => {
       expect.objectContaining({ action: 'added', assigneeUserId: 'assignee_1' }),
     );
 
+    expect(incTaskAssigneeClarify).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'resolved_name' }),
+    );
+    expect(probeSuggest).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'task.assignee_unresolved' }),
+    );
+
     expect(res.assignee).toEqual({ userId: 'assignee_1', name: 'Айназ' });
+    expect(res.needsAssignee).toBeUndefined();
     expect(res.status).toBe('backlog');
   });
 
-  it('(б) not_found → NotFoundException assignee_not_found, issues.create не вызван', async () => {
-    resolverResolve.mockResolvedValueOnce({ kind: 'not_found' });
-    await expect(
-      service.assignTask({ title: 'X', assigneeName: 'Нет' }, TENANT, USER),
-    ).rejects.toMatchObject({ response: { error: { code: 'assignee_not_found' } } });
-    expect(issuesCreate).not.toHaveBeenCalled();
-    expect(emitAssigneeChanged).not.toHaveBeenCalled();
+  it('(а2) resolved via memory → outcome resolved_memory', async () => {
+    resolverResolve.mockResolvedValueOnce({
+      kind: 'resolved',
+      userId: 'assignee_1',
+      name: 'Айназ',
+      via: 'memory',
+    });
+    await service.assignTask(
+      { title: 'X', assigneeName: 'он', dueDate: '2026-06-20' },
+      TENANT,
+      USER,
+    );
+    expect(incTaskAssigneeClarify).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'resolved_memory' }),
+    );
   });
 
-  it('(в) ambiguous → ConflictException assignee_ambiguous со списком имён', async () => {
+  it('(б) not_found → задача СОЗДАНА без исполнителя + probe assignee_unresolved, исключения нет', async () => {
+    resolverResolve.mockResolvedValueOnce({ kind: 'not_found' });
+
+    const res = await service.assignTask(
+      { title: 'X', assigneeName: 'Нет', dueDate: '2026-06-20' },
+      TENANT,
+      USER,
+    );
+
+    expect(issuesCreate).toHaveBeenCalledTimes(1);
+    const [, dtoArg] = issuesCreate.mock.calls[0] as [string, Record<string, unknown>, string, string];
+    expect(dtoArg.assigneeUserIds).toEqual([]);
+    expect(emitAssigneeChanged).not.toHaveBeenCalled();
+
+    expect(probeSuggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'task.assignee_unresolved',
+        recipientCandidates: [USER],
+        payload: expect.objectContaining({ contextCardId: 'issue_1', contextCardKind: 'issue' }),
+      }),
+    );
+    expect(incTaskAssigneeClarify).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'assignee_probe_raised' }),
+    );
+
+    expect(res.needsAssignee).toBe(true);
+    expect(res.assignee).toBeUndefined();
+    expect(res.message).toBe('Создал задачу во «Входящих». Уточню, на кого её повесить.');
+  });
+
+  it('(б2) not_found → подсказки skill-routing идут в candidates и в текст вопроса', async () => {
+    resolverResolve.mockResolvedValueOnce({ kind: 'not_found' });
+    suggestAssigneeMock.mockResolvedValueOnce([
+      { personId: 'p1', userId: null, personName: 'Наташа', roleName: 'r', departmentName: 'd', confidence: 0.8, rationale: '', matchPath: 'semantic' },
+      { personId: 'p2', userId: null, personName: 'Игорь', roleName: 'r', departmentName: 'd', confidence: 0.7, rationale: '', matchPath: 'semantic' },
+    ]);
+
+    const res = await service.assignTask(
+      { title: 'заказать канцелярию', assigneeName: 'кто-нибудь', dueDate: '2026-06-20' },
+      TENANT,
+      USER,
+    );
+
+    expect(res.candidates).toEqual([
+      { userId: null, name: 'Наташа' },
+      { userId: null, name: 'Игорь' },
+    ]);
+    expect(probeSuggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          suggestedQuestion: expect.stringContaining('Наташа, Игорь'),
+        }),
+      }),
+    );
+  });
+
+  it('(в) ambiguous → задача создана + probe + candidates из резолвера', async () => {
     resolverResolve.mockResolvedValueOnce({
       kind: 'ambiguous',
       candidates: [
@@ -280,28 +414,124 @@ describe('MeTasksService.assignTask', () => {
         { userId: 'u2', name: 'Айназ' },
       ],
     });
-    await expect(
-      service.assignTask({ title: 'X', assigneeName: 'Айназ' }, TENANT, USER),
-    ).rejects.toMatchObject({ response: { error: { code: 'assignee_ambiguous' } } });
-    expect(issuesCreate).not.toHaveBeenCalled();
+
+    const res = await service.assignTask(
+      { title: 'X', assigneeName: 'Айназ', dueDate: '2026-06-20' },
+      TENANT,
+      USER,
+    );
+
+    expect(issuesCreate).toHaveBeenCalledTimes(1);
+    expect(probeSuggest).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'task.assignee_unresolved' }),
+    );
+    expect(res.needsAssignee).toBe(true);
+    expect(res.candidates).toEqual([
+      { userId: 'u1', name: 'Айназ' },
+      { userId: 'u2', name: 'Айназ' },
+    ]);
+    expect(incTaskAssigneeClarify).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'assignee_probe_raised' }),
+    );
   });
 
-  it('(г) viaRouting=true → учёт принятого предложения (incRoutingSuggestionAccepted)', async () => {
+  it('(г) collective → задача создана + probe + needsAssignee + сообщение про коллективный адресат', async () => {
+    resolverResolve.mockResolvedValueOnce({ kind: 'collective', label: 'отдел продаж' });
+
+    const res = await service.assignTask(
+      { title: 'X', assigneeName: 'отдел продаж', dueDate: '2026-06-20' },
+      TENANT,
+      USER,
+    );
+
+    expect(issuesCreate).toHaveBeenCalledTimes(1);
+    expect(probeSuggest).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'task.assignee_unresolved' }),
+    );
+    expect(res.needsAssignee).toBe(true);
+    expect(res.message).toBe(
+      'Создал задачу во «Входящих». Это коллективный адресат, уточню конкретного исполнителя.',
+    );
+    expect(incTaskAssigneeClarify).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'collective_probe_raised' }),
+    );
+  });
+
+  it('(д) без dueDate → probe due_date_missing поднят; с dueDate → НЕ поднят', async () => {
+    await service.assignTask({ title: 'X', assigneeName: 'Айназ' }, TENANT, USER);
+    expect(probeSuggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'task.due_date_missing',
+        recipientCandidates: ['assignee_1'],
+      }),
+    );
+
+    build();
     await service.assignTask(
-      { title: 'Протестировать бота', assigneeName: 'Айназ', viaRouting: true },
+      { title: 'X', assigneeName: 'Айназ', dueDate: '2026-06-20' },
+      TENANT,
+      USER,
+    );
+    expect(probeSuggest).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'task.due_date_missing' }),
+    );
+  });
+
+  it('(е) assigneeClarifyEnabled=false → assignee-probe НЕ поднят, но задача создана', async () => {
+    build({ assigneeClarifyEnabled: false });
+    resolverResolve.mockResolvedValueOnce({ kind: 'not_found' });
+
+    const res = await service.assignTask(
+      { title: 'X', assigneeName: 'Нет', dueDate: '2026-06-20' },
+      TENANT,
+      USER,
+    );
+
+    expect(issuesCreate).toHaveBeenCalledTimes(1);
+    expect(probeSuggest).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'task.assignee_unresolved' }),
+    );
+    expect(res.needsAssignee).toBe(true);
+  });
+
+  it('(ж) viaRouting=true (resolved) → учёт принятого предложения', async () => {
+    await service.assignTask(
+      { title: 'Протестировать бота', assigneeName: 'Айназ', viaRouting: true, dueDate: '2026-06-20' },
       TENANT,
       USER,
     );
     expect(incRoutingSuggestionAccepted).toHaveBeenCalledTimes(1);
   });
 
-  it('(д) без viaRouting → метрика принятия НЕ вызвана', async () => {
+  it('(з) без viaRouting → метрика принятия НЕ вызвана', async () => {
     await service.assignTask(
-      { title: 'Протестировать бота', assigneeName: 'Айназ' },
+      { title: 'Протестировать бота', assigneeName: 'Айназ', dueDate: '2026-06-20' },
       TENANT,
       USER,
     );
     expect(incRoutingSuggestionAccepted).not.toHaveBeenCalled();
+  });
+
+  it('(и) best-effort: probe.suggest бросает → задача всё равно возвращается', async () => {
+    resolverResolve.mockResolvedValueOnce({ kind: 'not_found' });
+    probeSuggest.mockRejectedValue(new Error('boom'));
+
+    const res = await service.assignTask(
+      { title: 'X', assigneeName: 'Нет', dueDate: '2026-06-20' },
+      TENANT,
+      USER,
+    );
+
+    expect(res.id).toBe('issue_1');
+    expect(res.needsAssignee).toBe(true);
+  });
+
+  it('(к) inbox недоступен → BadRequest, задача не создаётся', async () => {
+    ensureInbox.mockResolvedValueOnce(null);
+    await expect(
+      service.assignTask({ title: 'X', assigneeName: 'Айназ' }, TENANT, USER),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(issuesCreate).not.toHaveBeenCalled();
   });
 });
 
@@ -332,8 +562,11 @@ describe('MeTasksService.suggestAssignee', () => {
     } as unknown as SkillRoutingService;
     const metrics = {
       incRoutingSuggestionAccepted: vi.fn(),
+      incTaskAssigneeClarify: vi.fn(),
     } as unknown as BusinessMetricsService;
     const progressUpdates = { create: vi.fn() } as unknown as ProgressUpdatesService;
+    const probe = { suggest: vi.fn() } as unknown as ProbeService;
+    const cfg = makeCfg();
 
     service = new MeTasksService(
       prisma,
@@ -344,6 +577,8 @@ describe('MeTasksService.suggestAssignee', () => {
       skillRouting,
       metrics,
       progressUpdates,
+      probe,
+      cfg,
     );
   });
 
@@ -397,6 +632,8 @@ function buildResolveHarness(): {
   const skillRouting = {} as unknown as SkillRoutingService;
   const metrics = {} as unknown as BusinessMetricsService;
   const progressUpdates = { create: progressCreate } as unknown as ProgressUpdatesService;
+  const probe = { suggest: vi.fn() } as unknown as ProbeService;
+  const cfg = makeCfg();
 
   const service = new MeTasksService(
     prisma,
@@ -407,6 +644,8 @@ function buildResolveHarness(): {
     skillRouting,
     metrics,
     progressUpdates,
+    probe,
+    cfg,
   );
   return { service, issueFindMany, closureUpsert, progressCreate };
 }

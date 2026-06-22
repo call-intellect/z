@@ -577,6 +577,8 @@ export class BusinessMetricsService implements OnModuleInit {
   // вернулся к одиночному арбитру. reason ∈ cost_cap | provider_unavailable.
   private debateFallbackToSingleTotal!: Counter<'reason'>;
 
+  private voxOutcomeTotal!: Counter<'outcome'>;
+
   // ── KC-Temporal W1.2 (2026-05-25) — FactSupersedeService ──────────────
   // verdict ∈ unrelated | extends | contradicts | supersedes | skip_*.
   // skip_* — короткие замыкания до LLM-вызова (no_candidates, not_fact_signal,
@@ -2547,6 +2549,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_debate_fallback_to_single_total',
       help: 'Agents v2 Фаза A2 — debate сорвался, Specialist вернулся к одиночному LLM-вызову. reason ∈ cost_cap | provider_unavailable.',
       labelNames: ['reason'] as const,
+    });
+    this.voxOutcomeTotal = this.getOrCreateCounter({
+      name: 'z_vox_outcome_total',
+      help: 'vox F4 — исход транскрипции дорожки. outcome ∈ ok | empty | no_words. no_words = COMPLETED с текстом, но без пословных таймингов; empty = без слов и текста.',
+      labelNames: ['outcome'] as const,
     });
 
     // KC-Temporal W1.2 — FactSupersedeService.
@@ -8650,6 +8657,10 @@ export class BusinessMetricsService implements OnModuleInit {
     reason: 'cost_cap' | 'provider_unavailable';
   }): void {
     this.debateFallbackToSingleTotal.inc({ reason: args.reason });
+  }
+
+  incVoxOutcome(outcome: 'ok' | 'empty' | 'no_words'): void {
+    this.voxOutcomeTotal.inc({ outcome });
   }
 
   // ────────────────────── helpers ──────────────────────────────────────

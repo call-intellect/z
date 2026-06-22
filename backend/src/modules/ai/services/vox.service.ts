@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { SystemLogCategory } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { LogService } from '../../logging/log.service';
 
 import {
@@ -11,6 +12,14 @@ import {
   VoxError,
   type VoxSubmitOptions,
 } from './vox.types';
+
+export type VoxOutcome = 'ok' | 'empty' | 'no_words';
+
+export function classifyVoxOutcome(wordsCount: number, textLength: number): VoxOutcome {
+  if (wordsCount > 0) return 'ok';
+  if (textLength > 0) return 'no_words';
+  return 'empty';
+}
 
 function textPreview(text: string, max = 2000): string {
   return text.length > max ? `${text.slice(0, max)}…[+${text.length - max}]` : text;
@@ -27,6 +36,9 @@ export class VoxService {
   constructor(
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Optional() @Inject(LogService) private readonly logs?: LogService,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   private dbLog(
@@ -169,6 +181,7 @@ export class VoxService {
       if (result.status === 'COMPLETED') {
         const wordsCount = result.words?.length ?? 0;
         const textLength = result.transcriptText.length;
+        this.metrics?.incVoxOutcome(classifyVoxOutcome(wordsCount, textLength));
         this.logger.debug(
           { taskId, wordsCount, durationSeconds: result.durationSeconds },
           'Vox poll COMPLETED',

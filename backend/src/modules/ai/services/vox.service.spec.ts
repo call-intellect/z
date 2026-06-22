@@ -1,9 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
+import type { LogService } from '../../logging/log.service';
 
-import { VoxService } from './vox.service';
+import { VoxService, classifyVoxOutcome } from './vox.service';
 import { VoxError } from './vox.types';
+
+function makeMetrics(): { incVoxOutcome: ReturnType<typeof vi.fn> } {
+  return { incVoxOutcome: vi.fn() };
+}
 
 function makeCfg(): TypedConfigService {
   return {
@@ -345,5 +351,78 @@ describe('VoxService.poll', () => {
     expect(result.transcriptText).toBe('Только текст');
     expect(result.durationSeconds).toBe(48);
     expect(result.words ?? []).toHaveLength(0);
+  });
+});
+
+describe('classifyVoxOutcome', () => {
+  it('words>0 → ok', () => {
+    expect(classifyVoxOutcome(5, 20)).toBe('ok');
+    expect(classifyVoxOutcome(1, 0)).toBe('ok');
+  });
+
+  it('words=0, text>0 → no_words', () => {
+    expect(classifyVoxOutcome(0, 42)).toBe('no_words');
+  });
+
+  it('words=0, text=0 → empty', () => {
+    expect(classifyVoxOutcome(0, 0)).toBe('empty');
+  });
+});
+
+describe('VoxService.poll → incVoxOutcome', () => {
+  const realFetch = globalThis.fetch;
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    vi.useRealTimers();
+  });
+
+  async function pollOnce(body: Record<string, unknown>): Promise<{
+    incVoxOutcome: ReturnType<typeof vi.fn>;
+  }> {
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify(body), { status: 200 }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const metrics = makeMetrics();
+    const svc = new VoxService(
+      makeCfg(),
+      undefined as unknown as LogService,
+      metrics as unknown as BusinessMetricsService,
+    );
+    const promise = svc.poll('task-1', { intervalMs: 10, maxAttempts: 3 });
+    await vi.runAllTimersAsync();
+    await promise;
+    return metrics;
+  }
+
+  it('words>0 → incVoxOutcome("ok")', async () => {
+    const metrics = await pollOnce({
+      status: 'COMPLETED',
+      transcriptText: 'Привет мир',
+      durationSeconds: 1.5,
+      words: [{ word: 'Привет', startMs: 0, endMs: 500 }],
+    });
+    expect(metrics.incVoxOutcome).toHaveBeenCalledWith('ok');
+  });
+
+  it('words=0, text>0 → incVoxOutcome("no_words")', async () => {
+    const metrics = await pollOnce({
+      status: 'COMPLETED',
+      text: 'Текст без таймингов',
+      durationSeconds: 48,
+    });
+    expect(metrics.incVoxOutcome).toHaveBeenCalledWith('no_words');
+  });
+
+  it('words=0, text="" → incVoxOutcome("empty")', async () => {
+    const metrics = await pollOnce({
+      status: 'COMPLETED',
+      transcriptText: '',
+      durationSeconds: 0,
+    });
+    expect(metrics.incVoxOutcome).toHaveBeenCalledWith('empty');
   });
 });

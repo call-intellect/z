@@ -501,6 +501,47 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
           voxResult = await this.vox.poll(resub.taskId, pollOpts);
         }
       }
+
+      const firstNoWords =
+        !firstEmpty &&
+        (voxResult.words?.length ?? 0) === 0 &&
+        voxResult.transcriptText.trim().length > 0;
+      if (firstNoWords) {
+        this.logger.warn(
+          {
+            meetingId,
+            trackId: track.id,
+            identity: track.livekitIdentity,
+            speakerName: track.participantName,
+            textLength: voxResult.transcriptText.length,
+            durationSeconds: voxResult.durationSeconds ?? 0,
+          },
+          'transcribeOneTrack: COMPLETED с текстом, но БЕЗ пословных таймингов — один ре-submit свежей задачи ради word-timings',
+        );
+        await this.prisma.audioTrack.update({
+          where: { id: track.id },
+          data: { voxTaskId: null },
+        });
+        const resub = await this.vox.submit(audio, {});
+        await this.prisma.audioTrack.update({
+          where: { id: track.id },
+          data: { voxTaskId: resub.taskId },
+        });
+        const retried = await this.vox.poll(resub.taskId, pollOpts);
+        if ((retried.words?.length ?? 0) > 0) {
+          voxResult = retried;
+        } else {
+          this.logger.warn(
+            {
+              meetingId,
+              trackId: track.id,
+              identity: track.livekitIdentity,
+              speakerName: track.participantName,
+            },
+            'transcribeOneTrack: повтор тоже без пословных таймингов — сохраняем текст как есть (поведение/длительность нулевые)',
+          );
+        }
+      }
       success = true;
     } catch (err) {
       errorText = err instanceof Error ? err.message : String(err);

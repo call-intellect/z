@@ -129,7 +129,7 @@ const STEPS: Step[] = [
   {
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-worker-knobs.ts',
-    hint: 'knowledge.axisClassifyEnabled + roleProfiles.minBlocks + curation.consistencyChecker* + curation.completenessScannerEnabled + tracker.goalAlignmentLowEnabled + conversational.telegramDigestHourLocal — крутилки воркеров (config-knobs-to-admin-settings)',
+    hint: 'knowledge.axisClassifyEnabled + roleProfiles.minBlocks + curation.consistencyChecker* + curation.completenessScannerEnabled + tracker.goalAlignmentLowEnabled + conversational.telegramDigestHourLocal + recording.trackWatchdog{Enabled,TimeoutMinutes} — крутилки воркеров (config-knobs-to-admin-settings)',
   },
   {
     phase: 'seed-base',

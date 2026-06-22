@@ -78,6 +78,24 @@ const SEEDS: SettingSeed[] = [
     description:
       'Локальный час доставки Telegram-дайджеста (0–23). По умолчанию 9.',
   },
+  {
+    key: 'recording.trackWatchdogEnabled',
+    value: true,
+    category: 'recording',
+    section: 'workers',
+    severity: 'medium',
+    description:
+      'Рубильник watchdog застрявших аудио-дорожек: если egress-вебхук дорожки не долетел, запись зависает (allReady навсегда false → транскрипция не стартует). Watchdog деградирует застрявшую дорожку и переинициирует финализацию. По умолчанию вкл (Ship-On).',
+  },
+  {
+    key: 'recording.trackWatchdogTimeoutMinutes',
+    value: 20,
+    category: 'recording',
+    section: 'workers',
+    severity: 'low',
+    description:
+      'Сколько минут после окончания встречи ждать egress-вебхук аудио-дорожки, прежде чем считать её застрявшей и деградировать (исключить из готовности, чтобы транскрипция стартовала по готовым дорожкам). По умолчанию 20.',
+  },
 ];
 
 interface Counters {

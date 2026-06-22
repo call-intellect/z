@@ -25,6 +25,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private recordingsDeletedTotal!: Counter<'reason'>;
   private recordingsFailedTotal!: Counter<'reason'>;
   private recordingTrackEgressFailedTotal!: Counter<'reason'>;
+  private recordingTrackWatchdogTotal!: Counter<'outcome'>;
 
   // ── integrations ────────────────────────────────────────────────────
   private crossmarkApiRequestsTotal!: Counter<'endpoint' | 'status'>;
@@ -1170,6 +1171,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'recording_track_egress_failed_total',
       help: 'Сколько стартов per-track audio egress упало (дорожка не собралась). Алерт при росте = потеря дорожек/деградация транскрипта.',
       labelNames: ['reason'] as const,
+    });
+
+    this.recordingTrackWatchdogTotal = this.getOrCreateCounter({
+      name: 'recording_track_watchdog_total',
+      help: 'F5 watchdog зависших аудио-дорожек: outcome=forced (деградировал застрявшую дорожку и переинициировал финализацию → транскрипция стартовала по готовым дорожкам) | skipped (кандидат найден, но ещё не готов к форсу). Рост forced = egress-вебхуки дорожек теряются, нужен алерт.',
+      labelNames: ['outcome'] as const,
     });
 
     this.llmFallbackTotal = this.getOrCreateCounter({
@@ -8661,6 +8668,10 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incVoxOutcome(outcome: 'ok' | 'empty' | 'no_words'): void {
     this.voxOutcomeTotal.inc({ outcome });
+  }
+
+  incRecordingTrackWatchdog(args: { outcome: 'forced' | 'skipped' }): void {
+    this.recordingTrackWatchdogTotal.inc({ outcome: args.outcome });
   }
 
   // ────────────────────── helpers ──────────────────────────────────────

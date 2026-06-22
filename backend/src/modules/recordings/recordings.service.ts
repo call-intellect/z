@@ -698,6 +698,40 @@ export class RecordingsService {
     return { status: recording.status, allReady };
   }
 
+  async degradeStuckTracksAndFinalize(
+    meetingId: string,
+    stuckTrackIds: readonly string[],
+  ): Promise<{ status: RecordingStatus; allReady: boolean }> {
+    const recording = await this.prisma.recording.findUnique({
+      where: { meetingId },
+      select: { id: true },
+    });
+    if (!recording) return { status: 'failed', allReady: false };
+    if (stuckTrackIds.length === 0) return this.tryFinalizeReady(meetingId);
+
+    await this.prisma.$transaction(async (tx) => {
+      const dropped = await tx.audioTrack.findMany({
+        where: { id: { in: [...stuckTrackIds] }, recordingId: recording.id },
+        select: { id: true, livekitIdentity: true, trackEgressId: true },
+      });
+      for (const t of dropped) {
+        await tx.recordingAction.create({
+          data: {
+            recordingId: recording.id,
+            action: 'track_watchdog_dropped',
+            actor: 'system',
+            reason: `stuck_audio_track:${t.livekitIdentity}:${t.trackEgressId ?? 'no_egress'}`,
+          },
+        });
+      }
+      await tx.audioTrack.deleteMany({
+        where: { id: { in: dropped.map((t) => t.id) }, recordingId: recording.id },
+      });
+    });
+
+    return this.tryFinalizeReady(meetingId);
+  }
+
 
   private async presignComposite(
     meetingId: string,

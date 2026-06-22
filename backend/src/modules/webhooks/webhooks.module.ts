@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { makeCounterProvider } from '@willsoto/nestjs-prometheus';
 
 import { CompositeEgressReconcileCron } from './cron/composite-egress-reconcile.cron';
+import { TrackEgressWatchdogCron } from './cron/track-egress-watchdog.cron';
 import { LivekitEventsHandler } from './livekit-events.handler';
 import { LivekitSignatureVerifier } from './livekit-signature.verifier';
 import { LivekitWebhooksController } from './livekit-webhooks.controller';
@@ -16,6 +17,7 @@ import { MeetingFinalizationService } from './meeting-finalization.service';
     LivekitEventsHandler,
     MeetingFinalizationService,
     CompositeEgressReconcileCron,
+    TrackEgressWatchdogCron,
     makeCounterProvider({
       name: LIVEKIT_WEBHOOK_EVENTS_TOTAL,
       help: 'Количество принятых LiveKit-вебхуков по типам и факту дубликата',

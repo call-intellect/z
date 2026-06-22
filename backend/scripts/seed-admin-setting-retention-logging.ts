@@ -185,6 +185,15 @@ const SEEDS: SettingSeed[] = [
     severity: 'low',
     description: 'Порог «медленного запроса» для логирования (мс). По умолчанию 2000.',
   },
+  {
+    key: 'ai.usageLog.previewMaxBytes',
+    value: 32_768,
+    category: 'platform',
+    section: 'logging',
+    severity: 'low',
+    description:
+      'Сколько байт промпта/ответа модели хранить в журнале вызовов (для диагностики и A/B). Больше — полнее diag, но крупнее БД.',
+  },
 ];
 
 interface Counters {

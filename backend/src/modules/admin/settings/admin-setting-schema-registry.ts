@@ -378,6 +378,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['ai.anthropic.model', z.string().min(1)],
   ['ai.vox.model', z.string().min(1)],
   ['ai.deepseek.defaultModel', z.string().min(1)],
+  ['ai.usageLog.previewMaxBytes', z.number().int().min(1024).max(1_048_576)],
   ['gepa.reflectionLm', z.string().min(1)],
   ['gepa.taskLm', z.string().min(1)],
 

@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma, type LlmRouteTier } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
@@ -50,15 +51,18 @@ export interface RecordAiUsageInput {
   responsePreview?: string | null;
 }
 
-const PREVIEW_MAX_BYTES = 8 * 1024;
+const PREVIEW_MAX_BYTES_FALLBACK = 32 * 1024;
 
-function truncatePreview(value: string | null | undefined): string | null {
+export function truncatePreview(
+  value: string | null | undefined,
+  maxBytes: number,
+): string | null {
   if (value === null || value === undefined) return null;
   const enc = new TextEncoder();
   const bytes = enc.encode(value);
-  if (bytes.length <= PREVIEW_MAX_BYTES) return value;
+  if (bytes.length <= maxBytes) return value;
   const dec = new TextDecoder('utf-8', { fatal: false });
-  return dec.decode(bytes.slice(0, PREVIEW_MAX_BYTES));
+  return dec.decode(bytes.slice(0, maxBytes));
 }
 
 @Injectable()
@@ -68,11 +72,17 @@ export class AiUsageLogService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   async record(input: RecordAiUsageInput): Promise<string | null> {
     let createdId: string | null = null;
     try {
+      const maxBytes = await this.cfg.getDynamic<number>(
+        'ai.usageLog.previewMaxBytes',
+        undefined,
+        PREVIEW_MAX_BYTES_FALLBACK,
+      );
       const created = await this.prisma.aiUsageLog.create({
         data: {
           tenantId: input.tenantId ?? null,
@@ -99,8 +109,8 @@ export class AiUsageLogService {
           experimentGroup: input.experimentGroup ?? null,
           tier: input.tier ?? null,
           fallbackReason: input.fallbackReason ?? null,
-          requestPreview: truncatePreview(input.requestPreview),
-          responsePreview: truncatePreview(input.responsePreview),
+          requestPreview: truncatePreview(input.requestPreview, maxBytes),
+          responsePreview: truncatePreview(input.responsePreview, maxBytes),
         },
         select: { id: true },
       });

@@ -134,6 +134,14 @@ if (!SKILL_SUBJECT_SIGNAL_TYPE_SET.has(block.signalType)) {
 - `backend/src/modules/knowledge-core/services/persona-layer-validation.service.ts:297` (`loadCaseCandidateBlocks`) — замена на набор (judge-валидация меряет клон на согласованном наборе).
 > Якоря-строки на момент написания; перед правкой перечитать (номера дрейфуют). Искать по тексту литерала `['reasoning', 'rationale', 'decision_basis']`.
 
+### Рубеж 4-расширенный — потребители, обнаруженные по факту кода (грэп всего класса, 2026-06-22)
+Грэп литерала `['reasoning', 'rationale', 'decision_basis']` по `backend/src` вскрыл **3 точки сверх первоначального перечня**. Все три — потребители того же «subject-набора клона роли» (семейство специалиста 3-7 / downstream черт). Оставить их с узким набором = повторить ровно тот рассинхрон, который чинит это ТЗ (правило `feedback_fix_the_whole_class_not_the_case`: чинить весь класс, не кейс). Поэтому они входят в scope Ф2 (доказательство — ниже):
+- `backend/src/modules/knowledge-core/services/specialist-3-7-skill-probe.service.ts:134` (`checkProfileStarved`) — считает свежие subject-блоки и шлёт probe «у сотрудника не копится инфа о решениях». **С узким набором** будет слать **ложный** probe «профиль голодает», когда у носителя полно `methodology_step` → шум для владельца + противоречие с реально наполняющимся клоном. Замена на `[...SKILL_SUBJECT_SIGNAL_TYPES]`.
+- `backend/src/modules/knowledge-core/services/specialist-3-7-skill-probe.service.ts:258` (`loadFreshCaseQuotes`, CDM-интервью) — тянет «кейсы» для углубления клона роли. Должен черпать из того же пула, что обучает клон. Замена на набор.
+- `backend/src/modules/practice-skills/services/practice-skill-extractor.service.ts:126` (`extractForPerson`) — берёт `sourceBlockIds` уже построенных `SkillTrait` и **ре-фильтрует** их по signalType. После расширения `loadSubjectReasoningBlocks` черты будут строиться из `methodology_step`-блоков; узкий ре-фильтр их **выкинет** (`blocks.length===0` → молчаливый skip), сломав извлечение practice-skills для клонов на методологии. Замена на набор обязательна, иначе фича работает наполовину.
+
+**НЕ входит (проверено грэпом, осознанно вне scope):** `specialist-3-3-decisions.worker.ts:68-69` — это специалист **по решениям (3-3)**, не клон (3-7); `methodology_step` ≠ «решение» → набор не расширяем. `REASONING_SUBJECT_SIGNAL_TYPES` в block-ingest (6 типов с `expertise/experience/competence`) — отдельный subject-набор, только добавляем `methodology_step` (Рубеж 1), не заменяем.
+
 ### Backfill-скрипт
 `backend/src/.../scripts` → `backend/scripts/backfill-skill-profiles-rebuild.ts`:
 - `createPrismaClient()` из `./_lib/prisma` (НЕ `new PrismaClient()`); импорты из `../src`.
@@ -156,7 +164,7 @@ if (!SKILL_SUBJECT_SIGNAL_TYPE_SET.has(block.signalType)) {
 ```
 Ф1 и Ф2 правят разные файлы → параллельны. Ф3 строго после Ф1 (backfill бессмыслен без расширенной выборки). Ф4 строго после Ф1+Ф2+Ф3.
 
-### Ф1 · Ядро: единая константа + рубежи 1–3 `[ ]`
+### Ф1 · Ядро: единая константа + рубежи 1–3 `[x]`
 Файлы: новый `constants/skill-signal-types.ts`; `block-ingest.worker.ts:43-50`; `specialist-3-7-skill.worker.ts:69-83`; `specialist-3-7-skill.service.ts:530`; `role-principle-synthesis.service.ts:106`.
 Что НЕ входит: clones.service / persona-validation (это Ф2); backfill (Ф3); промпты.
 Acceptance:
@@ -166,12 +174,12 @@ Acceptance:
 - `cd backend && bun run typecheck && bun run lint && bun run build` — зелёные.
 Закрывает: R1, R2, R3, R6.
 
-### Ф2 · Согласование ответа клона и валидации `[ ]`
-Файлы: `clones.service.ts:2136`, `:2272`; `persona-layer-validation.service.ts:297`.
-Что НЕ входит: обучающий конвейер (Ф1); промпты ответа клона.
+### Ф2 · Согласование всех потребителей набора клона `[ ]`
+Файлы: `clones.service.ts:2136`, `:2272`; `persona-layer-validation.service.ts:297`; **+ обнаруженные по коду:** `specialist-3-7-skill-probe.service.ts:134`, `:258`; `practice-skills/services/practice-skill-extractor.service.ts:126` (Рубеж 4-расширенный).
+Что НЕ входит: обучающий конвейер (Ф1); промпты ответа клона; `specialist-3-3-decisions.worker.ts` (специалист решений, не клон).
 Acceptance:
 - `grep -n "SKILL_SUBJECT_SIGNAL_TYPES" backend/src/modules/clones/services/clones.service.ts` → ≥2 использования.
-- Литерал `['reasoning', 'rationale', 'decision_basis']` в этих трёх местах отсутствует (`grep` пусто).
+- Литерал `['reasoning', 'rationale', 'decision_basis']` отсутствует во всех 6 точках Рубежа 4 + 4-расширенного (`grep -rn` по этим файлам пусто).
 - `bun run typecheck && bun run build` — зелёные.
 Закрывает: R4.
 
@@ -196,7 +204,7 @@ Acceptance:
 - R1: Когда block-ingest пометил блок `methodology_step` от автора-сотрудника, система shall проставить `IdeaBlockEntity.role='subject'` даже при `subjectAttributionAllTypes=false`.
 - R2: Когда canonical-блок `methodology_step` с subject-person-employee проходит диспетчер 3-7, система shall НЕ отсекать его по `signal_out_of_scope`, а ставить `enqueueRebuildSkillProfile`.
 - R3: При rebuild профиля система shall включать блоки `methodology_step` в выборку наблюдений (`loadSubjectReasoningBlocks`).
-- R4: При ответе клона и при judge-валидации система shall подтягивать тот же расширенный набор блоков.
+- R4: При ответе клона, judge-валидации, probe-проверках (голодание профиля / CDM-интервью) и извлечении practice-skills система shall подтягивать тот же расширенный набор блоков (Рубеж 4 + 4-расширенный).
 - R5: Backfill-скрипт shall ставить rebuild для всех `active`-профилей идемпотентно (повтор = no-op).
 - R6: Набор signalType shall задаваться единой экспортируемой константой; литерал `['reasoning','rationale','decision_basis']` в перечисленных точках shall отсутствовать.
 - R7: После выката+backfill профиль носителя из прод-теста shall иметь `traits.length ≥ 3` и видимый клон в `/clones`.

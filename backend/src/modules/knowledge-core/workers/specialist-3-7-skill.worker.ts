@@ -5,6 +5,7 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
 import { type SpecialistRoutingJobData } from '../../core-queue/queues';
+import { SKILL_SUBJECT_SIGNAL_TYPE_SET } from '../constants/skill-signal-types';
 import { RouterService } from '../services/router.service';
 import { Specialist37Service } from '../services/specialist-3-7-skill.service';
 
@@ -66,11 +67,7 @@ export class Specialist37SkillWorker {
         });
         return;
       }
-      if (
-        block.signalType !== 'reasoning' &&
-        block.signalType !== 'rationale' &&
-        block.signalType !== 'decision_basis'
-      ) {
+      if (!SKILL_SUBJECT_SIGNAL_TYPE_SET.has(block.signalType)) {
         this.logger.debug(
           { blockId, signalType: block.signalType },
           'specialist-3-7: signalType вне области специалиста — skip',

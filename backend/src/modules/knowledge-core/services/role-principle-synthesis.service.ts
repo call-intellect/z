@@ -5,6 +5,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { SKILL_SUBJECT_SIGNAL_TYPES } from '../constants/skill-signal-types';
 import {
   ROLE_PRINCIPLE_SYNTHESIZE_JSON_SCHEMA,
   ROLE_PRINCIPLE_SYNTHESIZE_SCHEMA_NAME,
@@ -103,7 +104,7 @@ export class RolePrincipleSynthesisService {
         block: {
           tenantId: args.tenantId,
           status: 'canonical',
-          signalType: { in: ['reasoning', 'rationale', 'decision_basis'] },
+          signalType: { in: [...SKILL_SUBJECT_SIGNAL_TYPES] },
           createdAt: { gte: since },
         },
       },

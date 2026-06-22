@@ -14,6 +14,7 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
+import { SKILL_SUBJECT_SIGNAL_TYPES } from '../constants/skill-signal-types';
 import {
   PROCESS_MARKER_DETECT_JSON_SCHEMA,
   PROCESS_MARKER_DETECT_SCHEMA_NAME,
@@ -527,7 +528,7 @@ export class Specialist37Service {
         block: {
           tenantId: args.tenantId,
           status: 'canonical',
-          signalType: { in: ['reasoning', 'rationale', 'decision_basis'] },
+          signalType: { in: [...SKILL_SUBJECT_SIGNAL_TYPES] },
           createdAt: { gte: since },
         },
       },

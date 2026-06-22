@@ -47,6 +47,7 @@ const REASONING_SUBJECT_SIGNAL_TYPES: ReadonlySet<string> = new Set([
   'expertise',
   'experience',
   'competence',
+  'methodology_step',
 ]);
 
 export interface PropertySpan {

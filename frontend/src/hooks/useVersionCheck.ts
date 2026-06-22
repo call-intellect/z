@@ -7,7 +7,7 @@ const POLL_INTERVAL_MS = 5 * 60 * 1000;
 
 async function fetchVersion(): Promise<string | null> {
   try {
-    const res = await fetch("/api/version", { cache: "no-store" });
+    const res = await fetch("/version", { cache: "no-store" });
     if (!res.ok) return null;
     const json = (await res.json()) as { version?: string };
     return json.version ?? null;

@@ -96,6 +96,7 @@ export class ProjectionRebuilderService {
           this.prisma.decision.findMany({
             where: {
               tenantId: event.tenantId,
+              deletedAt: null,
               sourceBlockIds: { has: event.blockId },
             },
             select: { id: true },
@@ -136,6 +137,7 @@ export class ProjectionRebuilderService {
           this.prisma.regulation.findMany({
             where: {
               tenantId: event.tenantId,
+              deletedAt: null,
               sourceBlockIds: { has: event.blockId },
             },
             select: { id: true },
@@ -146,6 +148,7 @@ export class ProjectionRebuilderService {
           this.prisma.process.findMany({
             where: {
               tenantId: event.tenantId,
+              deletedAt: null,
               sourceBlockIds: { has: event.blockId },
             },
             select: { id: true },
@@ -156,6 +159,7 @@ export class ProjectionRebuilderService {
           this.prisma.policy.findMany({
             where: {
               tenantId: event.tenantId,
+              deletedAt: null,
               sourceBlockIds: { has: event.blockId },
             },
             select: { id: true },

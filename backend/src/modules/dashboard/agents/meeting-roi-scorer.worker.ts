@@ -84,7 +84,7 @@ export class MeetingRoiScorerWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     const decisions = await this.prisma.decision.count({
-      where: { sourceMeetingId: meetingId, tenantId: meeting.tenantId },
+      where: { sourceMeetingId: meetingId, tenantId: meeting.tenantId, deletedAt: null },
     });
 
     const commitments = await this.countCommitments(meetingId, meeting.tenantId);

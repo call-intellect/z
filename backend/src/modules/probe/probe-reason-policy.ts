@@ -75,17 +75,17 @@ async function regulationFamilyProvenance(
   } | null;
   if (kind === 'process') {
     card = await prisma.process.findFirst({
-      where: { id: contextCardId, tenantId },
+      where: { id: contextCardId, tenantId, deletedAt: null },
       select,
     });
   } else if (kind === 'policy') {
     card = await prisma.policy.findFirst({
-      where: { id: contextCardId, tenantId },
+      where: { id: contextCardId, tenantId, deletedAt: null },
       select,
     });
   } else {
     card = await prisma.regulation.findFirst({
-      where: { id: contextCardId, tenantId },
+      where: { id: contextCardId, tenantId, deletedAt: null },
       select,
     });
   }
@@ -173,7 +173,7 @@ export const PROBE_REASON_RECHECK: Record<string, ProbeRecheckPredicate> = {
   'decision.missing_decider': async ({ prisma, tenantId, contextCardId }) => {
     if (!contextCardId) return true;
     const d = await prisma.decision.findFirst({
-      where: { id: contextCardId, tenantId },
+      where: { id: contextCardId, tenantId, deletedAt: null },
       select: { decidedByPersonIds: true, decidedByPersonId: true },
     });
     if (!d) return false;
@@ -182,7 +182,7 @@ export const PROBE_REASON_RECHECK: Record<string, ProbeRecheckPredicate> = {
   'decision.overdue': async ({ prisma, tenantId, contextCardId }) => {
     if (!contextCardId) return true;
     const d = await prisma.decision.findFirst({
-      where: { id: contextCardId, tenantId },
+      where: { id: contextCardId, tenantId, deletedAt: null },
       select: { status: true },
     });
     if (!d) return false;
@@ -191,7 +191,7 @@ export const PROBE_REASON_RECHECK: Record<string, ProbeRecheckPredicate> = {
   'decision.no_deadline_critical': async ({ prisma, tenantId, contextCardId }) => {
     if (!contextCardId) return true;
     const d = await prisma.decision.findFirst({
-      where: { id: contextCardId, tenantId },
+      where: { id: contextCardId, tenantId, deletedAt: null },
       select: { deadline: true },
     });
     if (!d) return false;
@@ -200,7 +200,7 @@ export const PROBE_REASON_RECHECK: Record<string, ProbeRecheckPredicate> = {
   'decision.outcome_unknown': async ({ prisma, tenantId, contextCardId }) => {
     if (!contextCardId) return true;
     const d = await prisma.decision.findFirst({
-      where: { id: contextCardId, tenantId },
+      where: { id: contextCardId, tenantId, deletedAt: null },
       select: { actualOutcomes: true },
     });
     if (!d) return false;
@@ -225,7 +225,7 @@ export const PROBE_REASON_RECHECK: Record<string, ProbeRecheckPredicate> = {
     const kind = (contextCardKind ?? '').toLowerCase();
     if (kind === 'process') {
       const row = await prisma.process.findFirst({
-        where: { id: contextCardId, tenantId },
+        where: { id: contextCardId, tenantId, deletedAt: null },
         select: { ownerPersonId: true },
       });
       if (!row) return false;
@@ -233,14 +233,14 @@ export const PROBE_REASON_RECHECK: Record<string, ProbeRecheckPredicate> = {
     }
     if (kind === 'policy') {
       const row = await prisma.policy.findFirst({
-        where: { id: contextCardId, tenantId },
+        where: { id: contextCardId, tenantId, deletedAt: null },
         select: { ownerPersonId: true },
       });
       if (!row) return false;
       return row.ownerPersonId == null;
     }
     const reg = await prisma.regulation.findFirst({
-      where: { id: contextCardId, tenantId },
+      where: { id: contextCardId, tenantId, deletedAt: null },
       select: { ownerPersonId: true },
     });
     if (!reg) return false;
@@ -256,7 +256,7 @@ export const PROBE_REASON_RECHECK: Record<string, ProbeRecheckPredicate> = {
     const kind = (contextCardKind ?? '').toLowerCase();
     if (kind === 'process') {
       const row = await prisma.process.findFirst({
-        where: { id: contextCardId, tenantId },
+        where: { id: contextCardId, tenantId, deletedAt: null },
         select: { ownerPersonId: true },
       });
       if (!row) return false;
@@ -264,14 +264,14 @@ export const PROBE_REASON_RECHECK: Record<string, ProbeRecheckPredicate> = {
     }
     if (kind === 'policy') {
       const row = await prisma.policy.findFirst({
-        where: { id: contextCardId, tenantId },
+        where: { id: contextCardId, tenantId, deletedAt: null },
         select: { ownerPersonId: true },
       });
       if (!row) return false;
       return row.ownerPersonId == null;
     }
     const reg = await prisma.regulation.findFirst({
-      where: { id: contextCardId, tenantId },
+      where: { id: contextCardId, tenantId, deletedAt: null },
       select: { ownerPersonId: true },
     });
     if (!reg) return false;

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { AuditLogService } from '../../audit/audit-log.service';
 import type { CurationService } from '../../curation/services/curation.service';
 import type {
   ProvenanceService,
@@ -532,15 +533,16 @@ describe('RegulationsService — C4 getSummary', () => {
       redesignEnabled: true,
     });
 
-    expect(regCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1' } });
-    expect(procCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1' } });
-    expect(instrCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1' } });
-    expect(polCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1' } });
+    expect(regCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1', deletedAt: null } });
+    expect(procCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1', deletedAt: null } });
+    expect(instrCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1', deletedAt: null } });
+    expect(polCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1', deletedAt: null } });
     expect(regCount).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         where: expect.objectContaining({
           tenantId: 't-1',
+          deletedAt: null,
           createdAt: expect.objectContaining({ gte: expect.any(Date) }),
         }),
       }),
@@ -697,5 +699,150 @@ describe('RegulationsService — C3 getSources', () => {
     expect(res.items).toEqual([
       { blockId: 'b-1', quote: 'Цитата с неразрешённой встречей', startMs: null, meeting: null },
     ]);
+  });
+});
+
+describe('RegulationsService — soft-delete / restore', () => {
+  let regFindFirst: ReturnType<typeof vi.fn>;
+  let regUpdate: ReturnType<typeof vi.fn>;
+  let regFindMany: ReturnType<typeof vi.fn>;
+  let regCount: ReturnType<typeof vi.fn>;
+  let auditLog: ReturnType<typeof vi.fn>;
+  let svc: RegulationsService;
+
+  beforeEach(() => {
+    regFindFirst = vi.fn();
+    regUpdate = vi.fn().mockResolvedValue({ id: 'r-1' });
+    regFindMany = vi.fn();
+    regCount = vi.fn();
+    auditLog = vi.fn().mockResolvedValue(undefined);
+
+    const prisma = {
+      regulation: {
+        findFirst: regFindFirst,
+        update: regUpdate,
+        findMany: regFindMany,
+        count: regCount,
+      },
+      process: { findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn() },
+      policy: { findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn() },
+    } as unknown as PrismaService;
+
+    const audit = { log: auditLog } as unknown as AuditLogService;
+    svc = new RegulationsService(
+      prisma,
+      {} as unknown as CurationService,
+      null,
+      null,
+      null,
+      null,
+      null,
+      audit,
+    );
+  });
+
+  it('softDelete: проставляет deletedAt + deletedById, пишет audit DELETE', async () => {
+    regFindFirst.mockResolvedValue({ id: 'r-1' });
+
+    const res = await svc.softDelete({
+      tenantId: 't-1',
+      id: 'r-1',
+      kind: 'regulation',
+      actorUserId: 'u-1',
+    });
+
+    expect(res).toEqual({ ok: true });
+    expect(regUpdate).toHaveBeenCalledWith({
+      where: { id: 'r-1' },
+      data: { deletedAt: expect.any(Date), deletedById: 'u-1' },
+    });
+    expect(regFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'r-1', tenantId: 't-1', deletedAt: null }),
+      }),
+    );
+    expect(auditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'regulation.delete',
+        userId: 'u-1',
+        resourceId: 'r-1',
+      }),
+    );
+  });
+
+  it('softDelete: уже удалённый (нет активной записи) → notFound, update не зван', async () => {
+    regFindFirst.mockResolvedValue(null);
+
+    await expect(
+      svc.softDelete({ tenantId: 't-1', id: 'r-1', kind: 'regulation', actorUserId: 'u-1' }),
+    ).rejects.toThrow();
+    expect(regUpdate).not.toHaveBeenCalled();
+  });
+
+  it('удалённая запись не приходит в list (where.deletedAt=null)', async () => {
+    regFindMany.mockResolvedValue([]);
+    regCount.mockResolvedValue(0);
+
+    const query = ListRegulationsQuerySchema.parse({ kind: 'regulation' });
+    const res = await svc.list({ tenantId: 't-1', query });
+
+    expect(res.items).toEqual([]);
+    expect(regFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ deletedAt: null }),
+      }),
+    );
+  });
+
+  it('restore: удалённая запись → снимает deletedAt, пишет audit RESTORE', async () => {
+    regFindFirst.mockResolvedValue({ id: 'r-1', deletedAt: FIXED_DATE });
+
+    const res = await svc.restore({
+      tenantId: 't-1',
+      id: 'r-1',
+      kind: 'regulation',
+      actorUserId: 'u-1',
+    });
+
+    expect(res).toEqual({ ok: true });
+    expect(regUpdate).toHaveBeenCalledWith({
+      where: { id: 'r-1' },
+      data: { deletedAt: null, deletedById: null },
+    });
+    expect(auditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'regulation.restore', resourceId: 'r-1' }),
+    );
+  });
+
+  it('restore: уже активная запись (deletedAt=null) → no-op, update/audit не зван', async () => {
+    regFindFirst.mockResolvedValue({ id: 'r-1', deletedAt: null });
+
+    const res = await svc.restore({
+      tenantId: 't-1',
+      id: 'r-1',
+      kind: 'regulation',
+      actorUserId: 'u-1',
+    });
+
+    expect(res).toEqual({ ok: true });
+    expect(regUpdate).not.toHaveBeenCalled();
+    expect(auditLog).not.toHaveBeenCalled();
+  });
+
+  it('restore: lookup НЕ фильтрует deletedAt (находит удалённую)', async () => {
+    regFindFirst.mockResolvedValue({ id: 'r-1', deletedAt: FIXED_DATE });
+
+    await svc.restore({ tenantId: 't-1', id: 'r-1', kind: 'regulation', actorUserId: 'u-1' });
+
+    const call = regFindFirst.mock.calls[0]?.[0] as { where: Record<string, unknown> };
+    expect(call.where).not.toHaveProperty('deletedAt');
+  });
+
+  it('restore: несуществующая запись → notFound', async () => {
+    regFindFirst.mockResolvedValue(null);
+
+    await expect(
+      svc.restore({ tenantId: 't-1', id: 'nope', kind: 'regulation', actorUserId: 'u-1' }),
+    ).rejects.toThrow();
   });
 });

@@ -195,6 +195,7 @@ export class CoraFeedService {
     const rows = await this.prisma.decision.findMany({
       where: {
         tenantId: ctx.tenantId,
+        deletedAt: null,
         status: { notIn: ['rejected', 'cancelled', 'rolled_back', 'superseded'] },
         ...(ctx.since ? { createdAt: { gte: ctx.since } } : {}),
       },
@@ -576,6 +577,7 @@ export class CoraFeedService {
         this.prisma.decision.count({
           where: {
             tenantId,
+            deletedAt: null,
             status: { notIn: ['rejected', 'cancelled', 'rolled_back', 'superseded'] },
             ...(sinceWhere ? { createdAt: sinceWhere } : {}),
           },

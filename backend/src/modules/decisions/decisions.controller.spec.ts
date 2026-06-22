@@ -14,6 +14,8 @@ function build(opts: { canRead?: boolean; canWrite?: boolean } = {}) {
   const svc = {
     list: vi.fn(async () => ({ items: [], total: 0, page: 1, limit: 20 }) as never),
     getById: vi.fn(async () => ({ id: 'd-1' }) as never),
+    softDelete: vi.fn(async () => ({ ok: true }) as never),
+    restore: vi.fn(async () => ({ ok: true }) as never),
   } as unknown as DecisionsService;
   const rbac = {
     canRead: vi.fn(async () => opts.canRead ?? true),
@@ -55,5 +57,43 @@ describe('DecisionsController (IDOR fence)', () => {
     const { ctrl, svc } = build({ canRead: true });
     await ctrl.byId('d-1', userA, 'org-A');
     expect(svc.getById).toHaveBeenCalledWith({ tenantId: 'org-A', id: 'd-1' });
+  });
+
+  it('remove (soft-delete) happy: делегирует softDelete с tenantId/actorUserId', async () => {
+    const { ctrl, svc } = build({ canWrite: true });
+    await ctrl.remove('d-1', userA, 'org-A');
+    expect(svc.softDelete).toHaveBeenCalledWith({
+      tenantId: 'org-A',
+      id: 'd-1',
+      actorUserId: 'u-1',
+    });
+  });
+
+  it('remove 403 если canWrite=false', async () => {
+    const { ctrl, svc } = build({ canWrite: false });
+    await expect(ctrl.remove('d-1', userA, 'org-A')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(svc.softDelete).not.toHaveBeenCalled();
+  });
+
+  it('remove BadRequest tenant_required без X-Org-Id', async () => {
+    const { ctrl } = build({ canWrite: true });
+    await expect(ctrl.remove('d-1', userA, undefined)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('restore happy: делегирует restore с tenantId/actorUserId', async () => {
+    const { ctrl, svc } = build({ canWrite: true });
+    const res = await ctrl.restore('d-1', userA, 'org-A');
+    expect(res).toEqual({ ok: true });
+    expect(svc.restore).toHaveBeenCalledWith({
+      tenantId: 'org-A',
+      id: 'd-1',
+      actorUserId: 'u-1',
+    });
+  });
+
+  it('restore 403 если canWrite=false', async () => {
+    const { ctrl, svc } = build({ canWrite: false });
+    await expect(ctrl.restore('d-1', userA, 'org-A')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(svc.restore).not.toHaveBeenCalled();
   });
 });

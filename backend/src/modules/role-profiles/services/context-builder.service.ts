@@ -115,7 +115,7 @@ export class RoleProfileContextBuilder {
     }));
 
     const processesRaw = await this.prisma.process.findMany({
-      where: { tenantId, ownerRoleId: roleId, status: 'active' },
+      where: { tenantId, ownerRoleId: roleId, status: 'active', deletedAt: null },
       take: 10,
     });
     const processes = processesRaw.map((p) => ({
@@ -131,6 +131,7 @@ export class RoleProfileContextBuilder {
             tenantId,
             decidedByPersonId: { in: personIds },
             status: 'active',
+            deletedAt: null,
           },
           orderBy: { decidedAt: 'desc' },
           take: maxDecisions,

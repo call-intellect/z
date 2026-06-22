@@ -69,15 +69,15 @@ export class StructureService {
   }
 
   async processCount(tenantId: string): Promise<number> {
-    return this.prisma.process.count({ where: { tenantId } });
+    return this.prisma.process.count({ where: { tenantId, deletedAt: null } });
   }
 
   async regulationCount(tenantId: string): Promise<number> {
-    return this.prisma.regulation.count({ where: { tenantId } });
+    return this.prisma.regulation.count({ where: { tenantId, deletedAt: null } });
   }
 
   async policyCount(tenantId: string): Promise<number> {
-    return this.prisma.policy.count({ where: { tenantId } });
+    return this.prisma.policy.count({ where: { tenantId, deletedAt: null } });
   }
 
   async metricCount(tenantId: string): Promise<number> {

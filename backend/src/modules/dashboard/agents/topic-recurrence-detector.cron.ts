@@ -150,6 +150,7 @@ export class TopicRecurrenceDetectorCron {
     const count = await this.prisma.decision.count({
       where: {
         tenantId: args.tenantId,
+        deletedAt: null,
         status: { in: ['approved', 'implemented'] },
         sourceBlockIds: { hasSome: args.blockIds },
       },

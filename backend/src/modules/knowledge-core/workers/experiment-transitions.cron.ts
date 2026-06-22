@@ -128,6 +128,7 @@ export class ExperimentTransitionsCron {
         const decisions = await this.prisma.decision.findMany({
           where: {
             tenantId,
+            deletedAt: null,
             status: { notIn: ['rejected', 'cancelled', 'superseded'] },
             sourceBlockIds: { hasSome: decisionScopeBlocks },
             entityId: { not: null },

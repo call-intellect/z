@@ -422,8 +422,8 @@ export class Specialist31Service {
           });
         }
       } else {
-        const existing = await this.prisma.regulation.findUnique({
-          where: { id: verdict.targetId },
+        const existing = await this.prisma.regulation.findFirst({
+          where: { id: verdict.targetId, deletedAt: null },
         });
         if (!existing) {
           regulation = await this.prisma.regulation.upsert({
@@ -676,8 +676,8 @@ export class Specialist31Service {
           });
         }
       } else {
-        const existing = await this.prisma.process.findUnique({
-          where: { id: verdict.targetId },
+        const existing = await this.prisma.process.findFirst({
+          where: { id: verdict.targetId, deletedAt: null },
         });
         if (!existing) {
           proc = await this.prisma.process.upsert({
@@ -947,8 +947,8 @@ export class Specialist31Service {
           });
         }
       } else {
-        const existing = await this.prisma.policy.findUnique({
-          where: { id: verdict.targetId },
+        const existing = await this.prisma.policy.findFirst({
+          where: { id: verdict.targetId, deletedAt: null },
         });
         if (!existing) {
           policy = await this.prisma.policy.upsert({
@@ -1207,8 +1207,8 @@ export class Specialist31Service {
       if (verdict.decision === 'new' || !verdict.targetId || !mergeLike) {
         instruction = await createNew();
       } else {
-        const existing = await this.prisma.instruction.findUnique({
-          where: { id: verdict.targetId },
+        const existing = await this.prisma.instruction.findFirst({
+          where: { id: verdict.targetId, deletedAt: null },
         });
         if (!existing) {
           instruction = await createNew();
@@ -1412,6 +1412,7 @@ export class Specialist31Service {
               ${args.table === 'policy' ? 'NULL::text AS "scope"' : '"scope"'}
        FROM ${table}
        WHERE "tenantId" = $1
+         AND "deletedAt" IS NULL
          AND "embedding" IS NOT NULL
        ORDER BY "embedding" <=> $2::vector
        LIMIT ${Number(this.regulationDedupeTopK())}`,
@@ -1442,6 +1443,7 @@ export class Specialist31Service {
       const rows = await this.prisma.regulation.findMany({
         where: {
           tenantId: args.tenantId,
+          deletedAt: null,
           name: { contains: firstWords, mode: 'insensitive' },
         },
         select: { id: true, name: true, statement: true, scope: true, contentMd: true },
@@ -1458,6 +1460,7 @@ export class Specialist31Service {
       const rows = await this.prisma.process.findMany({
         where: {
           tenantId: args.tenantId,
+          deletedAt: null,
           name: { contains: firstWords, mode: 'insensitive' },
         },
         select: { id: true, name: true, description: true, scope: true },
@@ -1474,6 +1477,7 @@ export class Specialist31Service {
       const rows = await this.prisma.instruction.findMany({
         where: {
           tenantId: args.tenantId,
+          deletedAt: null,
           name: { contains: firstWords, mode: 'insensitive' },
         },
         select: { id: true, name: true, statement: true, contentMd: true, scope: true },
@@ -1489,6 +1493,7 @@ export class Specialist31Service {
     const rows = await this.prisma.policy.findMany({
       where: {
         tenantId: args.tenantId,
+        deletedAt: null,
         name: { contains: firstWords, mode: 'insensitive' },
       },
       select: { id: true, name: true, contentMd: true, scope: true },

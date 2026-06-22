@@ -477,6 +477,7 @@ export class DocumentsService {
         ? await this.prisma.decision.findMany({
             where: {
               tenantId: args.tenantId,
+              deletedAt: null,
               sourceIdeaBlockId: { in: blockIds },
             },
             include: { currentVersion: { select: { trustTier: true } } },
@@ -514,19 +515,19 @@ export class DocumentsService {
     const [processes, regulations, policies, metrics, tools] = await Promise.all([
       byType.process.length > 0
         ? this.prisma.process.findMany({
-            where: { id: { in: byType.process }, tenantId: args.tenantId },
+            where: { id: { in: byType.process }, tenantId: args.tenantId, deletedAt: null },
             include: { currentVersion: { select: { trustTier: true } } },
           })
         : Promise.resolve<WithTrustTier<Process>[]>([]),
       byType.regulation.length > 0
         ? this.prisma.regulation.findMany({
-            where: { id: { in: byType.regulation }, tenantId: args.tenantId },
+            where: { id: { in: byType.regulation }, tenantId: args.tenantId, deletedAt: null },
             include: { currentVersion: { select: { trustTier: true } } },
           })
         : Promise.resolve<WithTrustTier<Regulation>[]>([]),
       byType.policy.length > 0
         ? this.prisma.policy.findMany({
-            where: { id: { in: byType.policy }, tenantId: args.tenantId },
+            where: { id: { in: byType.policy }, tenantId: args.tenantId, deletedAt: null },
             include: { currentVersion: { select: { trustTier: true } } },
           })
         : Promise.resolve<WithTrustTier<Policy>[]>([]),

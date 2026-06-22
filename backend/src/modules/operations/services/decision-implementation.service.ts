@@ -49,6 +49,7 @@ export class DecisionImplementationService {
     const decisions = await this.prisma.decision.findMany({
       where: {
         tenantId: args.tenantId,
+        deletedAt: null,
         status: { in: [...DecisionImplementationService.CONTROLLED_STATUSES] },
       },
       select: {
@@ -183,6 +184,7 @@ export class DecisionImplementationService {
   }): Promise<{ total: number; doneWithOutcomes: number; throughputPercent: number }> {
     const baseWhere: Prisma.DecisionWhereInput = {
       tenantId: args.tenantId,
+      deletedAt: null,
       status: { in: [...DecisionImplementationService.CONTROLLED_STATUSES] },
       OR: [
         { decidedAt: { gte: args.from, lte: args.to } },
@@ -210,6 +212,7 @@ export class DecisionImplementationService {
     const rows = await this.prisma.decision.findMany({
       where: {
         tenantId: args.tenantId,
+        deletedAt: null,
         status: { in: [...DecisionImplementationService.CONTROLLED_STATUSES] },
         OR: [
           { decidedAt: { gte: args.from, lte: args.to } },
@@ -285,7 +288,7 @@ export class DecisionImplementationService {
     }>
   > {
     const rows = await this.prisma.decision.findMany({
-      where: { tenantId: args.tenantId, implementationStatus: 'stalled' },
+      where: { tenantId: args.tenantId, implementationStatus: 'stalled', deletedAt: null },
       orderBy: [{ decidedAt: 'asc' }, { createdAt: 'asc' }],
       take: Math.min(Math.max(args.limit ?? 50, 1), 100),
       select: {

@@ -76,10 +76,10 @@ export class OrgKnowledgeIndexService {
       this.prisma.entity.count({ where: { tenantId } }),
       this.prisma.theme.count({ where: { tenantId } }),
       this.prisma.meeting.count({ where: { tenantId } }),
-      this.prisma.decision.count({ where: { tenantId } }),
+      this.prisma.decision.count({ where: { tenantId, deletedAt: null } }),
       this.prisma.insight.count({ where: { tenantId } }),
-      this.prisma.process.count({ where: { tenantId } }),
-      this.prisma.regulation.count({ where: { tenantId } }),
+      this.prisma.process.count({ where: { tenantId, deletedAt: null } }),
+      this.prisma.regulation.count({ where: { tenantId, deletedAt: null } }),
       this.prisma.theme.findMany({
         where: { tenantId, status: 'active' },
         orderBy: { weight: 'desc' },

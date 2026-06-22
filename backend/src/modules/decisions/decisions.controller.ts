@@ -2,8 +2,11 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
+  HttpCode,
+  HttpStatus,
   Inject,
   Param,
   Post,
@@ -235,6 +238,37 @@ export class DecisionsController {
       actorUserId: user.id,
       canApplyDirectly,
     });
+  }
+
+  @Delete(':id')
+  @RequireSubscription()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Удалить решение (soft-delete, только owner / admin)',
+  })
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<void> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    await this.svc.softDelete({ tenantId: t, id, actorUserId: user.id });
+  }
+
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Восстановить удалённое решение (только owner / admin)',
+  })
+  async restore(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.svc.restore({ tenantId: t, id, actorUserId: user.id });
   }
 
   private requireTenant(tenantId: string | undefined): string {

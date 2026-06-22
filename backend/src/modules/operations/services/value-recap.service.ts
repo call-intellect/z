@@ -217,7 +217,7 @@ export class ValueRecapService {
         where: { tenantId, createdAt: { gte: from, lte: to } },
       }),
       this.prisma.decision.count({
-        where: { tenantId, createdAt: { gte: from, lte: to } },
+        where: { tenantId, createdAt: { gte: from, lte: to }, deletedAt: null },
       }),
       this.prisma.ideaBlock.count({
         where: {

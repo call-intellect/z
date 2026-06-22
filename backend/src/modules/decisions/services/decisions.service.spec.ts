@@ -308,6 +308,123 @@ describe('DecisionsService — E1 dispute / correct', () => {
   });
 });
 
+describe('DecisionsService — soft-delete / restore', () => {
+  let findFirstMock: ReturnType<typeof vi.fn>;
+  let updateMock: ReturnType<typeof vi.fn>;
+  let auditLogMock: ReturnType<typeof vi.fn>;
+  let svc: DecisionsService;
+
+  beforeEach(() => {
+    findFirstMock = vi.fn();
+    updateMock = vi.fn().mockResolvedValue(makeDecision());
+    auditLogMock = vi.fn().mockResolvedValue(undefined);
+
+    const prisma = {
+      decision: {
+        findFirst: findFirstMock,
+        update: updateMock,
+      },
+    } as unknown as PrismaService;
+
+    const audit = { log: auditLogMock } as unknown as {
+      log: (...args: unknown[]) => Promise<void>;
+    };
+
+    svc = new DecisionsService(
+      prisma,
+      {} as unknown as CurationService,
+      {} as unknown as ConflictService,
+      null,
+      null,
+      null,
+      null,
+      audit as never,
+    );
+  });
+
+  it('softDelete: активная запись → update {deletedAt, deletedById} + audit decision.delete', async () => {
+    findFirstMock.mockResolvedValue({ id: 'd-1' });
+
+    const res = await svc.softDelete({ tenantId: 't-1', id: 'd-1', actorUserId: 'u-1' });
+
+    expect(res).toEqual({ ok: true });
+    expect(findFirstMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'd-1', tenantId: 't-1', deletedAt: null },
+      }),
+    );
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'd-1' },
+        data: expect.objectContaining({ deletedById: 'u-1' }),
+      }),
+    );
+    const data = updateMock.mock.calls[0][0].data;
+    expect(data.deletedAt).toBeInstanceOf(Date);
+    expect(auditLogMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'decision.delete', userId: 'u-1', resourceId: 'd-1' }),
+    );
+  });
+
+  it('softDelete: запись не найдена (или уже удалена) → NotFound, update НЕ вызван', async () => {
+    findFirstMock.mockResolvedValue(null);
+
+    await expect(
+      svc.softDelete({ tenantId: 't-1', id: 'nope', actorUserId: 'u-1' }),
+    ).rejects.toThrow();
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(auditLogMock).not.toHaveBeenCalled();
+  });
+
+  it('restore: удалённая запись → update {deletedAt:null, deletedById:null} + audit decision.restore', async () => {
+    findFirstMock.mockResolvedValue({ id: 'd-1', deletedAt: FIXED_DATE });
+
+    const res = await svc.restore({ tenantId: 't-1', id: 'd-1', actorUserId: 'u-1' });
+
+    expect(res).toEqual({ ok: true });
+    expect(findFirstMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'd-1', tenantId: 't-1' },
+      }),
+    );
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'd-1' },
+        data: { deletedAt: null, deletedById: null },
+      }),
+    );
+    expect(auditLogMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'decision.restore', userId: 'u-1', resourceId: 'd-1' }),
+    );
+  });
+
+  it('restore: уже активная запись (deletedAt=null) → идемпотентно ok, update НЕ вызван', async () => {
+    findFirstMock.mockResolvedValue({ id: 'd-1', deletedAt: null });
+
+    const res = await svc.restore({ tenantId: 't-1', id: 'd-1', actorUserId: 'u-1' });
+
+    expect(res).toEqual({ ok: true });
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(auditLogMock).not.toHaveBeenCalled();
+  });
+
+  it('restore: запись не найдена → NotFound', async () => {
+    findFirstMock.mockResolvedValue(null);
+
+    await expect(svc.restore({ tenantId: 't-1', id: 'nope', actorUserId: 'u-1' })).rejects.toThrow();
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it('restore lookup НЕ фильтрует deletedAt (иначе удалённое не нашлось бы)', async () => {
+    findFirstMock.mockResolvedValue({ id: 'd-1', deletedAt: FIXED_DATE });
+
+    await svc.restore({ tenantId: 't-1', id: 'd-1', actorUserId: 'u-1' });
+
+    const where = findFirstMock.mock.calls[0][0].where;
+    expect(where).not.toHaveProperty('deletedAt');
+  });
+});
+
 describe('DecisionsService — Ф6 гейт проекций на list', () => {
   const ACCESSIBLE = makeDecision({ id: 'd-open', sourceBlockIds: ['b-open'] });
   const DENIED = makeDecision({ id: 'd-council', sourceBlockIds: ['b-council'] });

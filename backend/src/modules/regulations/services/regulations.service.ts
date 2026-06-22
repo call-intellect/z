@@ -11,6 +11,8 @@ import type { Prisma } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { AuditLogService } from '../../audit/audit-log.service';
+import { AUDIT } from '../../audit/audit.types';
 import { CurationService } from '../../curation/services/curation.service';
 import {
   type ProvenancePreviewRef,
@@ -74,6 +76,9 @@ export class RegulationsService {
     @Optional()
     @Inject(ProvenanceService)
     private readonly provenance: ProvenanceService | null = null,
+    @Optional()
+    @Inject(AuditLogService)
+    private readonly audit: AuditLogService | null = null,
   ) {}
 
   private async gateProjections<T extends { id: string; sourceBlockIds: string[] }>(
@@ -311,7 +316,7 @@ export class RegulationsService {
   }): Promise<RegulationDetailDto> {
     if (args.kind === 'process') {
       const proc = await this.prisma.process.findFirst({
-        where: { id: args.id, tenantId: args.tenantId },
+        where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
         include: {
           steps: { orderBy: { order: 'asc' } },
           currentVersion: { select: { trustTier: true } },
@@ -322,7 +327,7 @@ export class RegulationsService {
     }
     if (args.kind === 'policy') {
       const policy = await this.prisma.policy.findFirst({
-        where: { id: args.id, tenantId: args.tenantId },
+        where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
         include: { currentVersion: { select: { trustTier: true } } },
       });
       if (!policy) this.notFound(args.kind, args.id);
@@ -330,7 +335,7 @@ export class RegulationsService {
     }
     if (args.kind === 'instruction') {
       const instruction = await this.prisma.instruction.findFirst({
-        where: { id: args.id, tenantId: args.tenantId },
+        where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
       });
       if (!instruction) this.notFound(args.kind, args.id);
       return this.instructionToDetail(instruction);
@@ -339,6 +344,7 @@ export class RegulationsService {
       where: {
         id: args.id,
         tenantId: args.tenantId,
+        deletedAt: null,
         ...(args.kind === 'standard' ? { category: 'standard' } : { category: 'regulation' }),
       },
       include: { currentVersion: { select: { trustTier: true } } },
@@ -449,7 +455,7 @@ export class RegulationsService {
   ): Promise<string[]> {
     if (kind === 'process') {
       const rec = await this.prisma.process.findFirst({
-        where: { id, tenantId },
+        where: { id, tenantId, deletedAt: null },
         select: { sourceBlockIds: true },
       });
       if (!rec) this.notFound(kind, id);
@@ -457,7 +463,7 @@ export class RegulationsService {
     }
     if (kind === 'policy') {
       const rec = await this.prisma.policy.findFirst({
-        where: { id, tenantId },
+        where: { id, tenantId, deletedAt: null },
         select: { sourceBlockIds: true },
       });
       if (!rec) this.notFound(kind, id);
@@ -465,7 +471,7 @@ export class RegulationsService {
     }
     if (kind === 'instruction') {
       const rec = await this.prisma.instruction.findFirst({
-        where: { id, tenantId },
+        where: { id, tenantId, deletedAt: null },
         select: { sourceBlockIds: true },
       });
       if (!rec) this.notFound(kind, id);
@@ -475,6 +481,7 @@ export class RegulationsService {
       where: {
         id,
         tenantId,
+        deletedAt: null,
         ...(kind === 'standard' ? { category: 'standard' } : { category: 'regulation' }),
       },
       select: { sourceBlockIds: true },
@@ -497,17 +504,17 @@ export class RegulationsService {
       instrWeek,
       polWeek,
     ] = await Promise.all([
-      this.prisma.regulation.count({ where: { tenantId } }),
-      this.prisma.process.count({ where: { tenantId } }),
+      this.prisma.regulation.count({ where: { tenantId, deletedAt: null } }),
+      this.prisma.process.count({ where: { tenantId, deletedAt: null } }),
       this.prisma.processTemplate.count({
         where: { tenantId, deletedAt: null, status: 'active' },
       }),
-      this.prisma.instruction.count({ where: { tenantId } }),
-      this.prisma.policy.count({ where: { tenantId } }),
-      this.prisma.regulation.count({ where: { tenantId, ...recent } }),
-      this.prisma.process.count({ where: { tenantId, ...recent } }),
-      this.prisma.instruction.count({ where: { tenantId, ...recent } }),
-      this.prisma.policy.count({ where: { tenantId, ...recent } }),
+      this.prisma.instruction.count({ where: { tenantId, deletedAt: null } }),
+      this.prisma.policy.count({ where: { tenantId, deletedAt: null } }),
+      this.prisma.regulation.count({ where: { tenantId, deletedAt: null, ...recent } }),
+      this.prisma.process.count({ where: { tenantId, deletedAt: null, ...recent } }),
+      this.prisma.instruction.count({ where: { tenantId, deletedAt: null, ...recent } }),
+      this.prisma.policy.count({ where: { tenantId, deletedAt: null, ...recent } }),
     ]);
     const redesignEnabled =
       (await this.cfg?.getDynamic<boolean>(
@@ -541,7 +548,7 @@ export class RegulationsService {
       });
     }
     const existing = await this.prisma.regulation.findFirst({
-      where: { id: args.id, tenantId: args.tenantId },
+      where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
       select: { id: true },
     });
     if (!existing) this.notFound(args.body.kind, args.id);
@@ -549,6 +556,7 @@ export class RegulationsService {
       where: {
         id: args.body.supersededByRegulationId,
         tenantId: args.tenantId,
+        deletedAt: null,
       },
       select: { id: true },
     });
@@ -582,7 +590,7 @@ export class RegulationsService {
     const now = new Date();
     if (args.body.kind === 'process') {
       const exists = await this.prisma.process.findFirst({
-        where: { id: args.id, tenantId: args.tenantId },
+        where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
         select: { id: true },
       });
       if (!exists) this.notFound(args.body.kind, args.id);
@@ -594,7 +602,7 @@ export class RegulationsService {
     }
     if (args.body.kind === 'policy') {
       const exists = await this.prisma.policy.findFirst({
-        where: { id: args.id, tenantId: args.tenantId },
+        where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
         select: { id: true },
       });
       if (!exists) this.notFound(args.body.kind, args.id);
@@ -606,7 +614,7 @@ export class RegulationsService {
     }
     if (args.body.kind === 'instruction') {
       const exists = await this.prisma.instruction.findFirst({
-        where: { id: args.id, tenantId: args.tenantId },
+        where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
         select: { id: true },
       });
       if (!exists) this.notFound(args.body.kind, args.id);
@@ -617,7 +625,7 @@ export class RegulationsService {
       return { ok: true, lastConfirmedAt: now.toISOString() };
     }
     const exists = await this.prisma.regulation.findFirst({
-      where: { id: args.id, tenantId: args.tenantId },
+      where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
       select: { id: true },
     });
     if (!exists) this.notFound(args.body.kind, args.id);
@@ -626,6 +634,114 @@ export class RegulationsService {
       data: { lastConfirmedAt: now },
     });
     return { ok: true, lastConfirmedAt: now.toISOString() };
+  }
+
+  async softDelete(args: {
+    tenantId: string;
+    id: string;
+    kind: RegulationKindDto;
+    actorUserId: string;
+  }): Promise<{ ok: true }> {
+    const now = new Date();
+    const data = { deletedAt: now, deletedById: args.actorUserId };
+
+    if (args.kind === 'process') {
+      const exists = await this.prisma.process.findFirst({
+        where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!exists) this.notFound(args.kind, args.id);
+      await this.prisma.process.update({ where: { id: args.id }, data });
+    } else if (args.kind === 'policy') {
+      const exists = await this.prisma.policy.findFirst({
+        where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!exists) this.notFound(args.kind, args.id);
+      await this.prisma.policy.update({ where: { id: args.id }, data });
+    } else if (args.kind === 'instruction') {
+      const exists = await this.prisma.instruction.findFirst({
+        where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!exists) this.notFound(args.kind, args.id);
+      await this.prisma.instruction.update({ where: { id: args.id }, data });
+    } else {
+      const exists = await this.prisma.regulation.findFirst({
+        where: {
+          id: args.id,
+          tenantId: args.tenantId,
+          deletedAt: null,
+          ...(args.kind === 'standard' ? { category: 'standard' } : { category: 'regulation' }),
+        },
+        select: { id: true },
+      });
+      if (!exists) this.notFound(args.kind, args.id);
+      await this.prisma.regulation.update({ where: { id: args.id }, data });
+    }
+
+    await this.audit?.log({
+      action: AUDIT.REGULATION_DELETE,
+      userId: args.actorUserId,
+      resourceId: args.id,
+      metadata: { kind: args.kind },
+    });
+    return { ok: true };
+  }
+
+  async restore(args: {
+    tenantId: string;
+    id: string;
+    kind: RegulationKindDto;
+    actorUserId: string;
+  }): Promise<{ ok: true }> {
+    const data = { deletedAt: null, deletedById: null };
+
+    if (args.kind === 'process') {
+      const rec = await this.prisma.process.findFirst({
+        where: { id: args.id, tenantId: args.tenantId },
+        select: { id: true, deletedAt: true },
+      });
+      if (!rec) this.notFound(args.kind, args.id);
+      if (rec.deletedAt === null) return { ok: true };
+      await this.prisma.process.update({ where: { id: args.id }, data });
+    } else if (args.kind === 'policy') {
+      const rec = await this.prisma.policy.findFirst({
+        where: { id: args.id, tenantId: args.tenantId },
+        select: { id: true, deletedAt: true },
+      });
+      if (!rec) this.notFound(args.kind, args.id);
+      if (rec.deletedAt === null) return { ok: true };
+      await this.prisma.policy.update({ where: { id: args.id }, data });
+    } else if (args.kind === 'instruction') {
+      const rec = await this.prisma.instruction.findFirst({
+        where: { id: args.id, tenantId: args.tenantId },
+        select: { id: true, deletedAt: true },
+      });
+      if (!rec) this.notFound(args.kind, args.id);
+      if (rec.deletedAt === null) return { ok: true };
+      await this.prisma.instruction.update({ where: { id: args.id }, data });
+    } else {
+      const rec = await this.prisma.regulation.findFirst({
+        where: {
+          id: args.id,
+          tenantId: args.tenantId,
+          ...(args.kind === 'standard' ? { category: 'standard' } : { category: 'regulation' }),
+        },
+        select: { id: true, deletedAt: true },
+      });
+      if (!rec) this.notFound(args.kind, args.id);
+      if (rec.deletedAt === null) return { ok: true };
+      await this.prisma.regulation.update({ where: { id: args.id }, data });
+    }
+
+    await this.audit?.log({
+      action: AUDIT.REGULATION_RESTORE,
+      userId: args.actorUserId,
+      resourceId: args.id,
+      metadata: { kind: args.kind },
+    });
+    return { ok: true };
   }
 
   async dispute(args: {
@@ -836,14 +952,14 @@ export class RegulationsService {
   > {
     if (kind === 'process') {
       const rec = await this.prisma.process.findFirst({
-        where: { id, tenantId },
+        where: { id, tenantId, deletedAt: null },
       });
       if (!rec) this.notFound(kind, id);
       return rec;
     }
     if (kind === 'policy') {
       const rec = await this.prisma.policy.findFirst({
-        where: { id, tenantId },
+        where: { id, tenantId, deletedAt: null },
       });
       if (!rec) this.notFound(kind, id);
       return rec;
@@ -852,6 +968,7 @@ export class RegulationsService {
       where: {
         id,
         tenantId,
+        deletedAt: null,
         ...(kind === 'standard' ? { category: 'standard' } : { category: 'regulation' }),
       },
     });
@@ -916,7 +1033,7 @@ export class RegulationsService {
   }
 
   private regulationsWhere(tenantId: string, q: ListRegulationsQuery): Prisma.RegulationWhereInput {
-    const where: Prisma.RegulationWhereInput = { tenantId };
+    const where: Prisma.RegulationWhereInput = { tenantId, deletedAt: null };
     if (q.status) where.status = q.status;
     if (q.scope) where.scope = { contains: q.scope, mode: 'insensitive' };
     if (q.q) {
@@ -930,7 +1047,7 @@ export class RegulationsService {
   }
 
   private processesWhere(tenantId: string, q: ListRegulationsQuery): Prisma.ProcessWhereInput {
-    const where: Prisma.ProcessWhereInput = { tenantId };
+    const where: Prisma.ProcessWhereInput = { tenantId, deletedAt: null };
     if (q.status) where.status = q.status;
     if (q.scope) where.scope = { contains: q.scope, mode: 'insensitive' };
     if (q.q) {
@@ -943,7 +1060,7 @@ export class RegulationsService {
   }
 
   private policiesWhere(tenantId: string, q: ListRegulationsQuery): Prisma.PolicyWhereInput {
-    const where: Prisma.PolicyWhereInput = { tenantId };
+    const where: Prisma.PolicyWhereInput = { tenantId, deletedAt: null };
     if (q.status) where.status = q.status;
     if (q.scope) where.scope = { contains: q.scope, mode: 'insensitive' };
     if (q.q) {
@@ -959,7 +1076,7 @@ export class RegulationsService {
     tenantId: string,
     q: ListRegulationsQuery,
   ): Prisma.InstructionWhereInput {
-    const where: Prisma.InstructionWhereInput = { tenantId };
+    const where: Prisma.InstructionWhereInput = { tenantId, deletedAt: null };
     if (q.status) where.status = q.status;
     if (q.scope) where.scope = { contains: q.scope, mode: 'insensitive' };
     if (q.q) {

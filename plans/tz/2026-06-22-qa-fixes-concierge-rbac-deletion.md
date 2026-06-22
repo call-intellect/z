@@ -222,7 +222,7 @@ deletedById String?
 
 ---
 
-### Ф6 — Бэкенд: soft-delete + restore регламентов/решений `[ ]`
+### Ф6 — Бэкенд: soft-delete + restore регламентов/решений `[x]`
 **Цель:** owner/admin может удалить и восстановить карточку знания; удалённые исчезают из всех выдач.
 **Картография:** контроллер регламентов [regulations.controller.ts:124-206](../../backend/src/modules/regulations/regulations.controller.ts#L124) (есть `requireWrite(user.id, t, kind)` — RBAC owner/admin); сервис `regulations.service.ts` (методы `supersede`/`confirm`/`dispute`/`correct`, фильтры list/search/count); `decisions.controller.ts`/`decisions.service.ts` (аналогично). Эталон endpoint+grace — `cards.controller.ts:232-248` (`softDelete`/`restore`).
 **Что входит:**

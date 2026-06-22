@@ -48,6 +48,11 @@ export const ConfirmRegulationBodySchema = z.object({
 });
 export type ConfirmRegulationBody = z.infer<typeof ConfirmRegulationBodySchema>;
 
+export const RestoreRegulationBodySchema = z.object({
+  kind: RegulationKindSchema,
+});
+export type RestoreRegulationBody = z.infer<typeof RestoreRegulationBodySchema>;
+
 export const DisputeRegulationBodySchema = z
   .object({
     kind: RegulationKindSchema,

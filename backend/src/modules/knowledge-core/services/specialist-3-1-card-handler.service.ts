@@ -43,6 +43,7 @@ export class Specialist31CardHandler implements OnModuleInit, CardSpecialistHand
       const regulations = await this.prisma.regulation.findMany({
         where: {
           tenantId,
+          deletedAt: null,
           sourceBlockIds: { hasSome: [...blockIds] },
           status: 'active',
         },
@@ -61,6 +62,7 @@ export class Specialist31CardHandler implements OnModuleInit, CardSpecialistHand
       const processes = await this.prisma.process.findMany({
         where: {
           tenantId,
+          deletedAt: null,
           sourceBlockIds: { hasSome: [...blockIds] },
           status: 'active',
         },
@@ -77,6 +79,7 @@ export class Specialist31CardHandler implements OnModuleInit, CardSpecialistHand
       const policies = await this.prisma.policy.findMany({
         where: {
           tenantId,
+          deletedAt: null,
           sourceBlockIds: { hasSome: [...blockIds] },
           status: 'active',
         },
@@ -93,6 +96,7 @@ export class Specialist31CardHandler implements OnModuleInit, CardSpecialistHand
       const instructions = await this.prisma.instruction.findMany({
         where: {
           tenantId,
+          deletedAt: null,
           sourceBlockIds: { hasSome: [...blockIds] },
           status: 'active',
         },

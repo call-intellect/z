@@ -131,12 +131,14 @@ export class RegulationConsolidatorService {
         WHERE b2."tenantId" = a."tenantId"
           AND b2.id <> a.id
           AND b2.status <> 'deprecated'
+          AND b2."deletedAt" IS NULL
           AND b2.embedding IS NOT NULL
         ORDER BY b2.embedding <=> a.embedding
         LIMIT 1
       ) b
       WHERE a.id = $1
         AND a."tenantId" = $2
+        AND a."deletedAt" IS NULL
         AND a.embedding IS NOT NULL
         AND (1 - (b.embedding <=> a.embedding)) > $3
       LIMIT 1
@@ -371,12 +373,14 @@ export class RegulationConsolidatorService {
         WHERE b."tenantId" = a."tenantId"
           AND b.id <> a.id
           AND b.status <> 'deprecated'
+          AND b."deletedAt" IS NULL
           AND b.embedding IS NOT NULL
         ORDER BY b.embedding <=> a.embedding
         LIMIT 1
       ) nb
       WHERE a."tenantId" = $1
         AND a.status <> 'deprecated'
+        AND a."deletedAt" IS NULL
         AND a.embedding IS NOT NULL
         ${windowClause}
         AND (1 - (nb.embedding <=> a.embedding)) > $2

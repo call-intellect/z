@@ -71,7 +71,7 @@ export class GraphMaterializationService {
 
     const [decisions, ideas, goals] = await Promise.all([
       this.prisma.decision.count({
-        where: { tenantId, sourceBlockIds: { hasSome: blockIds } },
+        where: { tenantId, sourceBlockIds: { hasSome: blockIds }, deletedAt: null },
       }),
       this.prisma.idea.count({
         where: { tenantId, sourceBlockIds: { hasSome: blockIds } },

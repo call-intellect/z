@@ -1347,7 +1347,7 @@ export class EntityResolutionService {
     switch (type) {
       case 'process': {
         const rows = await this.prisma.process.findMany({
-          where: { tenantId },
+          where: { tenantId, deletedAt: null },
           select: { id: true, name: true },
         });
         return rows.find((r) => r.name.trim().toLowerCase() === loweredName)
@@ -1355,7 +1355,7 @@ export class EntityResolutionService {
       }
       case 'regulation': {
         const rows = await this.prisma.regulation.findMany({
-          where: { tenantId },
+          where: { tenantId, deletedAt: null },
           select: { id: true, name: true },
         });
         return rows.find((r) => r.name.trim().toLowerCase() === loweredName)
@@ -1363,7 +1363,7 @@ export class EntityResolutionService {
       }
       case 'policy': {
         const rows = await this.prisma.policy.findMany({
-          where: { tenantId },
+          where: { tenantId, deletedAt: null },
           select: { id: true, name: true },
         });
         return rows.find((r) => r.name.trim().toLowerCase() === loweredName)
@@ -1403,12 +1403,17 @@ export class EntityResolutionService {
     name: string,
   ): Promise<{ id: string } | null> {
     const table = this.tableForType(type);
+    const softDeleteClause =
+      type === 'process' || type === 'regulation' || type === 'policy'
+        ? 'AND "deletedAt" IS NULL'
+        : '';
     const rows = await this.prisma.$queryRawUnsafe<
       Array<{ id: string; sim: number }>
     >(
       `SELECT id, similarity(name, $1) AS sim
        FROM ${table}
        WHERE "tenantId" = $2
+         ${softDeleteClause}
          AND similarity(name, $1) >= 0.78
        ORDER BY sim DESC
        LIMIT 1`,

@@ -390,6 +390,7 @@ describe('Specialist31Service.upsertInstruction — Ф3 дедуп через а
     const prismaMock: any = {
       instruction: {
         findUnique: vi.fn().mockResolvedValue(existingInstruction),
+        findFirst: vi.fn().mockResolvedValue(existingInstruction),
         upsert: vi.fn(),
         update: vi.fn().mockResolvedValue({ id: 'i1' }),
       },

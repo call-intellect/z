@@ -653,7 +653,7 @@ export class ProvenanceService {
     switch (entityType) {
       case 'decision': {
         const d = await this.prisma.decision.findFirst({
-          where: { id: entityId, tenantId },
+          where: { id: entityId, tenantId, deletedAt: null },
           select: { sourceBlockIds: true },
         });
         return d?.sourceBlockIds ?? [];
@@ -675,7 +675,7 @@ export class ProvenanceService {
       case 'regulation':
       case 'instruction': {
         const r = await this.prisma.regulation.findFirst({
-          where: { id: entityId, tenantId },
+          where: { id: entityId, tenantId, deletedAt: null },
           select: { sourceBlockIds: true },
         });
         return r?.sourceBlockIds ?? [];

@@ -381,6 +381,7 @@ export class DailyDigestService {
       this.prisma.decision.findMany({
         where: {
           tenantId: args.tenantId,
+          deletedAt: null,
           decidedAt: { gte: dayStart, lte: dayEnd },
         },
         select: { id: true, statement: true, text: true, status: true },
@@ -568,6 +569,7 @@ export class DailyDigestService {
       this.prisma.decision.findMany({
         where: {
           tenantId: args.tenantId,
+          deletedAt: null,
           createdAt: { gte: dayStart, lt: dayEnd },
         },
         select: { id: true, statement: true, status: true, createdAt: true },
@@ -599,6 +601,7 @@ export class DailyDigestService {
       this.prisma.decision.findMany({
         where: {
           tenantId: args.tenantId,
+          deletedAt: null,
           status: { in: ['proposed', 'approved', 'active'] },
           raisedCount: { gte: 2 },
         },

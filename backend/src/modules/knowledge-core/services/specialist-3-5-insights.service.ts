@@ -727,6 +727,7 @@ export class Specialist35Service {
           `SELECT "id", "statement", "text", "decidedAt", "status"
            FROM "decisions"
            WHERE "tenantId" = $1
+             AND "deletedAt" IS NULL
              AND "embedding" IS NOT NULL
              AND "status" NOT IN ('rejected','cancelled','superseded')
            ORDER BY "embedding" <=> $2::vector
@@ -872,6 +873,7 @@ export class Specialist35Service {
       const decisions = await this.prisma.decision.findMany({
         where: {
           tenantId: args.tenantId,
+          deletedAt: null,
           sourceBlockIds: { hasSome: targetBlockIds },
         },
         select: { id: true },

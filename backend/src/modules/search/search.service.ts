@@ -396,6 +396,7 @@ export class SearchService {
     const rows = await this.prisma.process.findMany({
       where: {
         tenantId,
+        deletedAt: null,
         name: { contains: q, mode: 'insensitive' },
       },
       orderBy: { updatedAt: 'desc' },
@@ -420,6 +421,7 @@ export class SearchService {
     const rows = await this.prisma.regulation.findMany({
       where: {
         tenantId,
+        deletedAt: null,
         name: { contains: q, mode: 'insensitive' },
       },
       orderBy: { updatedAt: 'desc' },
@@ -444,6 +446,7 @@ export class SearchService {
     const rows = await this.prisma.policy.findMany({
       where: {
         tenantId,
+        deletedAt: null,
         name: { contains: q, mode: 'insensitive' },
       },
       orderBy: { updatedAt: 'desc' },
@@ -492,6 +495,7 @@ export class SearchService {
     const rows = await this.prisma.decision.findMany({
       where: {
         tenantId,
+        deletedAt: null,
         OR: [
           { statement: { contains: q, mode: 'insensitive' } },
           { text: { contains: q, mode: 'insensitive' } },

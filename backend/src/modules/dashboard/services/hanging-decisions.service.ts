@@ -49,6 +49,7 @@ export class HangingDecisionsService {
     return this.prisma.decision.findMany({
       where: {
         tenantId: args.tenantId,
+        deletedAt: null,
         status: { in: [...HANGING_STATUSES] },
         createdAt: { lte: ageThreshold },
         raisedCount: { gte: minRaisedCount },
@@ -81,6 +82,7 @@ export class HangingDecisionsService {
     const count = await this.prisma.decision.count({
       where: {
         tenantId: args.tenantId,
+        deletedAt: null,
         status: { in: [...HANGING_STATUSES] },
         createdAt: { lte: ageThreshold },
         raisedCount: { gte: args.minRaisedCount },
@@ -93,6 +95,7 @@ export class HangingDecisionsService {
     const events = await this.prisma.decision.findMany({
       where: {
         tenantId: args.tenantId,
+        deletedAt: null,
         status: { in: [...HANGING_STATUSES] },
         createdAt: { lte: ageThreshold },
         raisedCount: { gte: args.minRaisedCount },

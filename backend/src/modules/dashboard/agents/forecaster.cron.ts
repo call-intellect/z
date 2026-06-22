@@ -153,6 +153,7 @@ export class ForecasterCron {
       this.prisma.decision.count({
         where: {
           tenantId: args.tenantId,
+          deletedAt: null,
           status: { in: ['active', 'proposed', 'approved'] },
           raisedCount: { gte: 2 },
           createdAt: { lt: args.end },

@@ -169,6 +169,7 @@ export class ProactiveWatcherService {
     const candidates = await this.prisma.decision.findMany({
       where: {
         tenantId: args.tenantId,
+        deletedAt: null,
         createdAt: { lt: threshold },
         status: { in: ['approved', 'proposed'] as never[] },
         decidedByPersonIds: { isEmpty: true },
@@ -312,6 +313,7 @@ export class ProactiveWatcherService {
       where: {
         tenantId: args.tenantId,
         status: 'active',
+        deletedAt: null,
         updatedAt: { lt: threshold },
       },
       select: {

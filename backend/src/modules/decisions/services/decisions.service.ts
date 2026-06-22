@@ -12,6 +12,8 @@ import { type Decision, type DecisionStatus, Prisma } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { AuditLogService } from '../../audit/audit-log.service';
+import { AUDIT } from '../../audit/audit.types';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
 import type { ProvenancePreviewRef } from '../../knowledge-core/services/provenance.service';
@@ -52,6 +54,9 @@ export class DecisionsService {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService | null = null,
+    @Optional()
+    @Inject(AuditLogService)
+    private readonly audit: AuditLogService | null = null,
   ) {}
 
   private async gateProjections<T extends { id: string; sourceBlockIds: string[] }>(
@@ -112,7 +117,7 @@ export class DecisionsService {
 
   async getById(args: { tenantId: string; id: string }): Promise<DecisionDetailDto> {
     const decision = await this.prisma.decision.findFirst({
-      where: { id: args.id, tenantId: args.tenantId },
+      where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
       include: { currentVersion: { select: { trustTier: true } } },
     });
     if (!decision) this.notFound(args.id);
@@ -152,7 +157,7 @@ export class DecisionsService {
     };
 
     const root: DecisionWithTier | null = await this.prisma.decision.findFirst({
-      where: { id: args.id, tenantId: args.tenantId },
+      where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
       include: { currentVersion: { select: { trustTier: true } } },
     });
     if (!root) this.notFound(args.id);
@@ -228,7 +233,7 @@ export class DecisionsService {
       });
     }
     const existing = await this.prisma.decision.findFirst({
-      where: { id: args.id, tenantId: args.tenantId },
+      where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
     });
     if (!existing) this.notFound(args.id);
 
@@ -236,6 +241,7 @@ export class DecisionsService {
       where: {
         id: args.body.supersededByDecisionId,
         tenantId: args.tenantId,
+        deletedAt: null,
       },
     });
     if (!successor) {
@@ -315,7 +321,7 @@ export class DecisionsService {
     reviewerUserId: string;
   }): Promise<{ ok: true; status: DecisionStatusDto }> {
     const existing = await this.prisma.decision.findFirst({
-      where: { id: args.id, tenantId: args.tenantId },
+      where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
     });
     if (!existing) this.notFound(args.id);
 
@@ -354,7 +360,7 @@ export class DecisionsService {
     reviewerUserId: string;
   }): Promise<{ ok: true }> {
     const existing = await this.prisma.decision.findFirst({
-      where: { id: args.id, tenantId: args.tenantId },
+      where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
     });
     if (!existing) this.notFound(args.id);
 
@@ -449,7 +455,7 @@ export class DecisionsService {
   }
 
   private buildWhere(tenantId: string, q: ListDecisionsQuery): Prisma.DecisionWhereInput {
-    const where: Prisma.DecisionWhereInput = { tenantId };
+    const where: Prisma.DecisionWhereInput = { tenantId, deletedAt: null };
     if (q.status) where.status = q.status as DecisionStatus;
     if (q.decided_by) {
       where.decidedByPersonIds = { has: q.decided_by };
@@ -592,7 +598,7 @@ export class DecisionsService {
     actorUserId: string;
   }): Promise<{ ok: true }> {
     const existing = await this.prisma.decision.findFirst({
-      where: { id: args.id, tenantId: args.tenantId },
+      where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
       select: { id: true },
     });
     if (!existing) this.notFound(args.id);
@@ -616,7 +622,7 @@ export class DecisionsService {
     canApplyDirectly: boolean;
   }): Promise<{ ok: true; applied: boolean }> {
     const existing = await this.prisma.decision.findFirst({
-      where: { id: args.id, tenantId: args.tenantId },
+      where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
     });
     if (!existing) this.notFound(args.id);
 
@@ -664,6 +670,57 @@ export class DecisionsService {
       context: { before, after: args.correctedPayload },
     });
     return { ok: true, applied: true };
+  }
+
+  async softDelete(args: {
+    tenantId: string;
+    id: string;
+    actorUserId: string;
+  }): Promise<{ ok: true }> {
+    const existing = await this.prisma.decision.findFirst({
+      where: { id: args.id, tenantId: args.tenantId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!existing) this.notFound(args.id);
+
+    await this.prisma.decision.update({
+      where: { id: existing.id },
+      data: { deletedAt: new Date(), deletedById: args.actorUserId },
+    });
+
+    await this.audit?.log({
+      action: AUDIT.DECISION_DELETE,
+      userId: args.actorUserId,
+      resourceId: args.id,
+    });
+
+    return { ok: true };
+  }
+
+  async restore(args: {
+    tenantId: string;
+    id: string;
+    actorUserId: string;
+  }): Promise<{ ok: true }> {
+    const existing = await this.prisma.decision.findFirst({
+      where: { id: args.id, tenantId: args.tenantId },
+      select: { id: true, deletedAt: true },
+    });
+    if (!existing) this.notFound(args.id);
+    if (existing.deletedAt === null) return { ok: true };
+
+    await this.prisma.decision.update({
+      where: { id: existing.id },
+      data: { deletedAt: null, deletedById: null },
+    });
+
+    await this.audit?.log({
+      action: AUDIT.DECISION_RESTORE,
+      userId: args.actorUserId,
+      resourceId: args.id,
+    });
+
+    return { ok: true };
   }
 
   private notFound(id: string): never {

@@ -2182,6 +2182,7 @@ export class ClonesService {
     let decisions = await this.prisma.decision.findMany({
       where: {
         tenantId: args.tenantId,
+        deletedAt: null,
         decidedByPersonIds: { has: args.personId },
         status: { notIn: ['rejected', 'cancelled', 'superseded'] },
       },

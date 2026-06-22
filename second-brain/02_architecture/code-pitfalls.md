@@ -711,4 +711,30 @@ custom properties (`--x:rgb(...)` перед `--x:oklch(...)` + `@supports`-бл
 проверять эмпирически мини-тестом, старые версии трогали только прямые `color:`.
 Воспроизведение причины — поломка oklch-переменных в свежем Chrome + скриншот.
 
+## Значение React-контекста в deps эффекта, который сам меняет контекст = ∞-цикл (2026-06-22)
+
+`useRegisterBreadcrumb` ([BreadcrumbContext.tsx](../../frontend/src/ui/components/breadcrumbs/BreadcrumbContext.tsx))
+в `useEffect` зависел от всего объекта контекста `ctx`. Провайдер пересоздаёт
+`value` через `useMemo(..., [overrides, ...])` → при каждом изменении карты `value`
+меняет идентичность. Эффект сам вызывал `ctx.register(...)` → `overrides` менялся →
+новый `ctx` → эффект перезапускался → cleanup `ctx.unregister(...)` → снова новый
+`ctx` → `register` → … Бесконечная register⇄unregister-петля, перерисовывающая ВСЁ
+поддерево `BreadcrumbProvider` (~25k мутаций DOM/сек на проде). Бьёт все detail-
+страницы с breadcrumb (issues/persons/goals/documents/sprints/projects[slug]/cycles/
+themes/ideas/decisions/teams/tables/roles/clones).
+
+Симптомы коварны: **«Maximum update depth exceeded» НЕ кидается** (апдейты идут через
+смену значения контекста между коммитами, не synchronous-cascade). Главный поток на
+вид жив (concurrent React тайм-слайсит), но **навигация по `<Link>` голодает**:
+цикл дефолтного приоритета не пускает `startTransition` (низкий приоритет) к коммиту →
+вкладки «не кликаются», а Radix-дропдауны (pointerdown, дискретный приоритет) ещё
+открываются. CPU горит (Chrome помечает вкладку ресурсоёмкой), refresh на той же
+странице запускает цикл заново — спасает только закрытие вкладки.
+
+**Правило:** эффект-потребитель контекста зависит от **стабильных** функций
+(`register`/`unregister` через `useCallback([])`), НЕ от объекта-значения контекста.
+Фикс — коммит `84b72e90`. **Диагностика ∞-цикла без ошибок в консоли** —
+`MutationObserver` (мутаций/сек) в простое + изоляция сравнением страниц
+(зациклена vs здорова → разница в одном хуке). Подробности — [[../05_история/2026-06-22-tracker-breadcrumb-render-loop]].
+
 [[../index|← index]]

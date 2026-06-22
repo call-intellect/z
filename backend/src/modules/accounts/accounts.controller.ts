@@ -18,6 +18,7 @@ import type { Request, Response } from 'express';
 import { TypedConfigService } from '../../common/config/index';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
+import { OptionalAuth } from '../auth/decorators/optional-auth.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 
 import { AccountsService } from './accounts.service';
@@ -217,10 +218,12 @@ export class AccountsController {
   }
 
   @Get('me')
+  @OptionalAuth()
   @UseGuards(CookieAuthGuard)
-  async me(@CurrentUser() user: CurrentUserPayload): Promise<{
-    user: Awaited<ReturnType<AccountsService['getMe']>>;
+  async me(@CurrentUser() user: CurrentUserPayload | null): Promise<{
+    user: Awaited<ReturnType<AccountsService['getMe']>> | null;
   }> {
+    if (!user) return { user: null };
     const fresh = await this.accounts.getMe(user.id);
     return { user: fresh };
   }

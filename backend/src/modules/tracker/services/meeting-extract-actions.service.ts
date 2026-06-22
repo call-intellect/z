@@ -27,12 +27,14 @@ import {
   TASKS_TOOL_NAME,
 } from '../../ai/services/prompts/tasks';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
+import { EmbeddingFallbackService } from '../../embeddings/services/embedding-fallback.service';
 import { BlockFetchService } from '../../knowledge-core/services/block-fetch.service';
 import { TaskAssigneeResolverService } from '../../knowledge-core/services/task-assignee-resolver.service';
 import { computeExpiresAt } from '../../pending-actions/expires-at.util';
 import { ProbeService } from '../../probe/probe.service';
 
 import { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
+import { SimilarIssuesService } from './similar-issues.service';
 import { shouldMaterializeTask } from './task-quality-gate.util';
 
 /**
@@ -59,6 +61,9 @@ import { shouldMaterializeTask } from './task-quality-gate.util';
 @Injectable()
 export class MeetingExtractActionsService implements OnModuleInit {
   private readonly logger = new Logger(MeetingExtractActionsService.name);
+
+  private static readonly DUPLICATE_SIMILARITY_THRESHOLD = 0.85;
+  private static readonly DUPLICATE_DISTANCE_THRESHOLD = 0.15;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -95,6 +100,12 @@ export class MeetingExtractActionsService implements OnModuleInit {
     @Optional()
     @Inject(ProbeService)
     private readonly probe?: ProbeService,
+    @Optional()
+    @Inject(SimilarIssuesService)
+    private readonly similarIssues?: SimilarIssuesService,
+    @Optional()
+    @Inject(EmbeddingFallbackService)
+    private readonly embeddings?: EmbeddingFallbackService,
   ) {}
 
   onModuleInit(): void {
@@ -330,17 +341,13 @@ export class MeetingExtractActionsService implements OnModuleInit {
       const suggestedGoalId: string | null = null; // GoalHint в нашем prompt'е
       // не реализован — vNext (добавим goalHint field). На текущем этапе —
       // оставляем null; IntakeAutoTriageWorker может попробовать дозаполнить.
-      const suggestedPriority = t.suggestedPriority ?? null;
+      let suggestedPriority = t.suggestedPriority ?? null;
       const suggestedDueDate = this.parseIsoDate(t.suggestedDueDate ?? null);
       const confidenceDecimal: Prisma.Decimal | null =
         typeof t.confidence === 'number'
           ? new Prisma.Decimal(clampConfidence(t.confidence))
           : null;
 
-      // Ф0 (ТЗ 2026-06-16) — детерминированный гейт качества ПЕРЕД созданием
-      // задачи из AI-источника: не материализуем «мусор» (вопрос/намерение без
-      // ответственного и срока). Чистые правила, без LLM. При сомнении —
-      // пропускаем создание, поток не падает.
       const gate = shouldMaterializeTask({
         title,
         ownerUserId: suggestedAssigneeId,
@@ -349,13 +356,18 @@ export class MeetingExtractActionsService implements OnModuleInit {
         source: 'meeting',
       });
       if (!gate.ok) {
-        skipped++;
+        if (suggestedPriority == null) suggestedPriority = 'low';
         this.logger.log(
-          { meetingId, reason: gate.reason, title },
-          'meeting-extract-actions: гейт качества не пропустил задачу',
+          { meetingId, title, reason: gate.reason },
+          'meeting-extract-actions: задача низкого качества — создаём в intake (не дропаем)',
         );
-        continue;
       }
+
+      const suggestedDuplicateOfIssueId = await this.findDuplicateOpenIssueId({
+        tenantId,
+        title,
+        description: sourceQuote || null,
+      });
 
       const rawContent =
         sourceQuote.length > 0
@@ -378,6 +390,7 @@ export class MeetingExtractActionsService implements OnModuleInit {
           suggestedPriority,
           suggestedDueDate,
           suggestedLabels: [],
+          suggestedDuplicateOfIssueId,
           // A10 (2026-06-14) — провенанс встречи (для DecisionTaskLink derived).
           sourceBlockIds: meetingSourceBlockIds,
           // Фикс linkedMeetingIds 2026-06-17 — хранить для прокидки в Issue.
@@ -546,6 +559,49 @@ export class MeetingExtractActionsService implements OnModuleInit {
         'meeting-extract-actions: резолв sourceBlockIds упал — пустой провенанс',
       );
       return [];
+    }
+  }
+
+  private async findDuplicateOpenIssueId(args: {
+    tenantId: string;
+    title: string;
+    description: string | null;
+  }): Promise<string | null> {
+    if (!this.similarIssues || !this.embeddings) return null;
+    const text = args.description
+      ? `${args.title}\n\n${args.description.slice(0, 500)}`
+      : args.title;
+    if (text.trim().length === 0) return null;
+    try {
+      const vectors = await this.embeddings.embed([text]);
+      const vector = vectors[0];
+      if (!vector || vector.length === 0) return null;
+      const embedding = `[${vector.join(',')}]`;
+      const similar = await this.similarIssues.findSimilarByVector({
+        tenantId: args.tenantId,
+        embedding,
+        limit: 1,
+        threshold: MeetingExtractActionsService.DUPLICATE_DISTANCE_THRESHOLD,
+        openOnly: true,
+      });
+      const best = similar[0];
+      if (
+        best &&
+        best.similarity >=
+          MeetingExtractActionsService.DUPLICATE_SIMILARITY_THRESHOLD
+      ) {
+        return best.id;
+      }
+      return null;
+    } catch (e) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: e instanceof Error ? e.message : String(e),
+        },
+        'meeting-extract-actions: дедуп против открытых Issue упал — пропуск',
+      );
+      return null;
     }
   }
 

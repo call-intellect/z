@@ -7,6 +7,7 @@ import type { LlmRouterService } from '../../ai/services/llm-router.service';
 import type { OrgContextService } from '../../ai/services/org-context.service';
 import type { ParticipantContextService } from '../../ai/services/participant-context.service';
 import type { AiParticipantContext } from '../../ai/services/prompts/participant-context';
+import type { EmbeddingFallbackService } from '../../embeddings/services/embedding-fallback.service';
 import type {
   ResolvedTaskAssignee,
   TaskAssigneeResolverService,
@@ -15,6 +16,7 @@ import type { ProbeService } from '../../probe/probe.service';
 
 import type { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 import { MeetingExtractActionsService } from './meeting-extract-actions.service';
+import type { SimilarIssuesService } from './similar-issues.service';
 
 interface MockPrisma {
   meeting: { findFirst: ReturnType<typeof vi.fn> };
@@ -35,6 +37,8 @@ function mkService(opts?: {
   resolveResult?: ResolvedTaskAssignee[];
   assigneeClarifyEnabled?: boolean;
   probeReject?: boolean;
+  similarResult?: Array<{ id: string; similarity: number }>;
+  embedReject?: boolean;
 }): {
   service: MeetingExtractActionsService;
   prisma: MockPrisma;
@@ -47,6 +51,8 @@ function mkService(opts?: {
   };
   queue: { enqueue: ReturnType<typeof vi.fn> };
   probe: { suggest: ReturnType<typeof vi.fn> };
+  similarIssues: { findSimilarByVector: ReturnType<typeof vi.fn> };
+  embeddings: { embed: ReturnType<typeof vi.fn> };
 } {
   const prisma: MockPrisma = {
     meeting: {
@@ -161,6 +167,16 @@ function mkService(opts?: {
       ? vi.fn().mockRejectedValue(new Error('probe down'))
       : vi.fn().mockResolvedValue({ dispatched: true }),
   };
+  const similarIssues = {
+    findSimilarByVector: vi
+      .fn()
+      .mockResolvedValue(opts?.similarResult ?? []),
+  };
+  const embeddings = {
+    embed: opts?.embedReject
+      ? vi.fn().mockRejectedValue(new Error('embed down'))
+      : vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]),
+  };
 
   const cfg = {
     pendingActions: { intakeTtlDays: 30 },
@@ -181,6 +197,8 @@ function mkService(opts?: {
     queue as unknown as IntakeAutoTriageQueueService,
     undefined,
     probe as unknown as ProbeService,
+    similarIssues as unknown as SimilarIssuesService,
+    embeddings as unknown as EmbeddingFallbackService,
   );
   return {
     service,
@@ -192,6 +210,8 @@ function mkService(opts?: {
     metrics,
     queue,
     probe,
+    similarIssues,
+    embeddings,
   };
 }
 
@@ -534,5 +554,119 @@ describe('MeetingExtractActionsService', () => {
 
     expect(prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
     expect(probe.suggest).not.toHaveBeenCalled();
+  });
+
+  it('F3: гейт качества не ок (нет owner и срока) → IntakeIssue создаётся, suggestedPriority=low (не дроп)', async () => {
+    const { service, prisma, metrics } = mkService({
+      participants: [],
+      llmText: JSON.stringify({
+        tasks: [
+          {
+            title: 'Посмотреть метрики',
+            assignee: null,
+            dueDate: null,
+            suggestedAssigneeHint: null,
+            confidence: 0.7,
+            sourceQuote: 'Надо глянуть метрики',
+          },
+        ],
+      }),
+    });
+
+    const created = await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    expect(prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+    const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
+      data: { suggestedPriority: string | null; extractedTitle: string };
+    };
+    expect(createArg.data.suggestedPriority).toBe('low');
+    expect(createArg.data.extractedTitle).toBe('Посмотреть метрики');
+    expect(created).toHaveLength(1);
+    expect(metrics.incAiMeetingActionsExtracted).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'created', by: 1 }),
+    );
+  });
+
+  it('F3: гейт не ок, но LLM дал приоритет → приоритет НЕ перезаписывается на low', async () => {
+    const { service, prisma } = mkService({
+      participants: [],
+      llmText: JSON.stringify({
+        tasks: [
+          {
+            title: 'Посмотреть метрики',
+            assignee: null,
+            dueDate: null,
+            suggestedAssigneeHint: null,
+            suggestedPriority: 'high',
+            confidence: 0.7,
+            sourceQuote: 'Надо глянуть метрики',
+          },
+        ],
+      }),
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
+      data: { suggestedPriority: string | null };
+    };
+    expect(createArg.data.suggestedPriority).toBe('high');
+  });
+
+  it('F3: дубль против открытого Issue (similarity ≥ 0.85) → create с suggestedDuplicateOfIssueId', async () => {
+    const { service, prisma, similarIssues, embeddings } = mkService({
+      resolveResult: [
+        { assigneeRaw: 'Иванов Сергей', assigneeUserId: 'user-ivanov', ambiguous: false },
+      ],
+      participants: [participant({ displayName: 'Иванов Сергей', userId: 'user-ivanov' })],
+      similarResult: [{ id: 'issue-dup-1', similarity: 0.91 }],
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    expect(embeddings.embed).toHaveBeenCalledTimes(1);
+    expect(similarIssues.findSimilarByVector).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'org-1', openOnly: true }),
+    );
+    const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
+      data: { suggestedDuplicateOfIssueId: string | null };
+    };
+    expect(createArg.data.suggestedDuplicateOfIssueId).toBe('issue-dup-1');
+  });
+
+  it('F3: нет дубля (similarity ниже порога) → suggestedDuplicateOfIssueId=null', async () => {
+    const { service, prisma } = mkService({
+      resolveResult: [
+        { assigneeRaw: 'Иванов Сергей', assigneeUserId: 'user-ivanov', ambiguous: false },
+      ],
+      participants: [participant({ displayName: 'Иванов Сергей', userId: 'user-ivanov' })],
+      similarResult: [{ id: 'issue-weak-1', similarity: 0.5 }],
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
+      data: { suggestedDuplicateOfIssueId: string | null };
+    };
+    expect(createArg.data.suggestedDuplicateOfIssueId).toBeNull();
+  });
+
+  it('F3: embed дедупа упал → IntakeIssue создан, suggestedDuplicateOfIssueId=null (best-effort)', async () => {
+    const { service, prisma } = mkService({
+      resolveResult: [
+        { assigneeRaw: 'Иванов Сергей', assigneeUserId: 'user-ivanov', ambiguous: false },
+      ],
+      participants: [participant({ displayName: 'Иванов Сергей', userId: 'user-ivanov' })],
+      embedReject: true,
+    });
+
+    const created = await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    expect(prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+    const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
+      data: { suggestedDuplicateOfIssueId: string | null };
+    };
+    expect(createArg.data.suggestedDuplicateOfIssueId).toBeNull();
+    expect(created).toHaveLength(1);
   });
 });

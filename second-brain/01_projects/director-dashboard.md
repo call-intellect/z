@@ -158,3 +158,10 @@ LLM-резюме «Главное за неделю» — 3-4 факта + 1 р�
 - **Drill-down + проваливание в источник:** вектор к цели / загрузка / план-факт раскрываются по людям (`PeopleDrawer`); виджет блокеров проваливается в исходный `IdeaBlock` через `relatedBlockIds`/`sourceBlockId` → `ProvenanceDrawer`.
 - **Бэкенд:** `ExecutionDashboardController` (`@Controller('api/v1/dashboard')`) + `ExecutionDashboardService` — 5 GET (`layout`, `goal-vector/by-person`, `issue-chains`, `load/by-person`, `operations/trend`); раскладка пресета через `getDynamic` (override AdminSetting / `null`). Контракты — [[api-layer]] §«Модульные дашборды исполнения»; карта модуля — [[../02_architecture/module-map]] §`dashboard`.
 - **Раскладка — Option B:** дефолты живут на фронте (`DEFAULT_PRESETS`), бэк отдаёт только override или `null`. Новой таблицы/колонки нет (`sourceBlockId` — JSON-поле в `blockersJson`), миграции нет; ENV/seed/очередей/cron не добавлено.
+
+## Видимость руководителю задач (2026-06-22, ТЗ tasks-subsystem-unified-fix D)
+
+- **«Почему» вклада в цель (D1):** `getGoalVectorByPerson` отдаёт `reasons` (топ-3 из `signalsJson`) — руководитель видит, ЧТО именно двигает вектор человека к цели, а не только стрелку.
+- **Кросс-проектные зависшие (D2):** новый `GET /api/v1/dashboard/stuck/cross-project` — задачи без движения вне спринта, порог-крутилка `dashboard.stuck.staleDaysThreshold` (AdminSetting, сид `seed-admin-setting-dashboard-main.ts`).
+- **Решение↔задача замкнуты (D3, см. [[decisions]]):** обратная линковка `linkDerivedTasksForDecision` + переход Decision→`implemented` при закрытии всех связанных задач.
+- ТЗ [`2026-06-22-tasks-subsystem-unified-fix`](../../plans/tz/2026-06-22-tasks-subsystem-unified-fix.md) (Блок D).

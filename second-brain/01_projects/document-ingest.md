@@ -49,4 +49,10 @@ references:
 - **chat-v2 citations** += `documentId`/`documentName` — документ-источник в ответах AI-чата.
 - Крутилки: `documents.{maxSizeMb,maxFilesPerUpload,acceptedFormats,maxZipSizeMb}` (AdminSetting). Модели — [[../02_architecture/data-model]] §«Батч 5».
 
+## QA-фикс именования + короткое в «Идеи» (2026-06-22, ТЗ qa-feedback-batch Ф8)
+
+- **Имя заметки из 1-й строки** содержимого (а не дефолт «Дамп»).
+- **Короткий текст → «Идеи»** (а не полноразмерный разбор), порог-крутилка `documents.short_text_to_idea_threshold` (AdminSetting, сид `seed-admin-setting-documents.ts`).
+- ТЗ [`2026-06-22-qa-feedback-batch`](../../plans/tz/2026-06-22-qa-feedback-batch.md) Ф8.
+
 **Остаток (Волна 3, не сделано):** OCR (`tesseract.js`) для сканов + конвертация через `docling` (нужен `DOCLING_SERVICE_URL` владельца). См. реестр `04_не-сделано`.

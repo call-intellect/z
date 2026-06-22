@@ -149,4 +149,33 @@ export type AssigneeResolution =
 typecheck (вкл. `.spec`)/lint/build зелёные; vitest по затронутым файлам + сценарии §6; живой ре-тест блока A; `second-brain/01_projects/` (tracker/probe/operations/dashboard/ai-jobs) обновлены; `feature-flags.md`+`prod-deploy-log.md`; `04_не-сделано` — закрыть/обновить строки по F1,F3,F5,F6,F7; рефлексия.
 
 ## 10. Итог
-_(заполнит tz-orchestrator после реализации)_
+
+**Реализовано целиком — все блоки A→C→B→D (16 фаз).** Ветка `feature/2026-06-22-qa-and-tasks-subsystem` (общая с QA-пачкой), 25 коммитов; typecheck/lint/build зелёные на бэке и фронте, затронутые тесты проходят. **Миграций Prisma НЕТ** (`schema.prisma` не менялся), **новых ENV НЕТ** (все крутилки — чистые AdminSetting).
+
+- **Блок A — задача создаётся всегда + дозапрос исполнителя/срока с обучением:**
+  - **A1** — 2 probe-reason `task.assignee_unresolved` / `task.due_date_missing` (probe-reason-labels + policy), окно immediate, recheck-предикаты `issue`/`intake_issue`; метрика `task_assignee_clarify_total{outcome}`; крутилки `tracker.assigneeClarifyEnabled`/`tracker.dueDateClarifyEnabled` (kill-switch ON) + `tracker.assigneeProbePriorityHint`.
+  - **A2** — `MeTasksService.assignTask`/`createSelfTask` создают задачу ВСЕГДА (не 404/409): при нерезолве — Issue без исполнителя + probe + ответ `needsAssignee`+candidates; Concierge prompt + tool `assign_task` зовётся даже при неясном исполнителе.
+  - **A3** — `probe-response.handler.maybeApplyTaskProbeAnswer` исполняет ответ (исполнитель через резолвер + `IssuesService.addAssignee`; срок через `parseRussianDueDate`), идемпотентно; derive `SubjectMemory` автоматический; ProbeModule импортирует TrackerModule.
+  - **A4** — `AssigneeResolverService`: union `via:'name'|'memory'` + `kind:'collective'`, retrieve-before-ask через `SubjectMemory.findApplicableRule`, детект отдела/роли.
+  - **A5** — `meeting-extract-actions` при пустом исполнителе поднимает probe (`contextCardKind=intake_issue`, адресат = владелец встречи).
+- **Блок B — не терять задачу + единый трекер:**
+  - **B1** — гейт качества задачи встречи не дропает: IntakeIssue создаётся всегда (lowQuality → `suggestedPriority='low'`), дедуп против открытых Issue → `suggestedDuplicateOfIssueId`.
+  - **B2** — задачи из чата (`Task`) видны в триаже `/intake` (read-union in-memory) + промоут `Task→Issue` на triage; kill-switch `tracker.chatboxTasksInTriageEnabled` (ON).
+  - **B3** — `chatbox-analyze` fallback владельца owner→admin→any + метрика `z_chatbox_tasks_owner_missing_total`.
+- **Блок C — напоминания сотруднику:**
+  - **C1** — утренняя сводка включает задачи без срока; push `priorityTier:1`.
+  - **C2** — уведомление исполнителю о просрочке (`issue.overdue`, каналы in_app+telegram+max, дедуп `lastOverdueDetectedAt`); kill-switch `tracker.overdueNotifyEnabled` (ON).
+  - **C3** — вечерняя сверка плана (`rulePlanItemOverdue`): порог-крутилка `proactive.planItemOverdueThresholdDays`, вечерний гейт по таймзоне, названия незакрытых пунктов; kill-switch `proactive.eveningPlanCheckEnabled` (ON).
+  - **C4** — pending-actions-reminder + канал in_app (кабинет).
+- **Блок D — видимость руководителю + время:**
+  - **D1** — `getGoalVectorByPerson` отдаёт `reasons` (топ-3 из `signalsJson`).
+  - **D2** — `GET /api/v1/dashboard/stuck/cross-project` (зависшие вне спринта), порог `dashboard.stuck.staleDaysThreshold`.
+  - **D3** — `linkDerivedTasksForDecision` (обратная линковка) + переход Decision→`implemented` при закрытии всех связанных задач + `markTasksForReviewOnSupersede` не трогает закрытые.
+  - **D4** — юзер-facing суточные кроны (issue-overdue, feed-digest, chatbox-analyze/sync) переведены на `{ timeZone: 'Europe/Moscow' }`.
+
+**Новые сид-скрипты:** `seed-admin-setting-proactive.ts`, `seed-admin-setting-documents.ts` (+ расширены `seed-admin-setting-tracker.ts`, `seed-admin-setting-dashboard-main.ts`) — все в `apply-prod-deploy.ts` STEPS (`phase:'seed-base'`). 5 kill-switch (ON, Ship-On) + строки в `docs/operations/feature-flags.md`. Полная инструкция выката — `docs/operations/prod-deploy-log.md`.
+
+**Не вошло (вынесено в `second-brain/04_не-сделано`):**
+- **B2** — chatbox-задачи в триаже сделаны read-union (`Task` остаётся пред-слоем); полная унификация `Task`/`Issue` отложена.
+- **B1** — выделенная колонка `IntakeIssue.lowQuality` не вводилась (использован `suggestedPriority='low'`), миграция отложена.
+- **D4** — час кронов как AdminSetting-крутилка не введён (выбран `timeZone='Europe/Moscow'`); полный перевод всех кронов на ежечасный-тик + крутилка-часа отложен.

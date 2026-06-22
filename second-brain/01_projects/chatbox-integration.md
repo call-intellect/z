@@ -110,4 +110,10 @@ knowledge-core (block-ingest подхватывает RawEvent сам, без и
 - Связка `ChatboxCustomer` с `Person`/`Entity` графа (только менеджеры↔Person).
 - Аналитические дашборды по чатам (SLA, метрики ответов).
 
+## Задачи из переписки в триаже + fallback владельца (2026-06-22, ТЗ tasks-subsystem-unified-fix B2/B3)
+
+- **B2 — единый триаж:** задачи из чата (`Task`) видны в триаже `/intake` (read-union in-memory) + промоут `Task→Issue` на triage. `Task` остаётся пред-слоем — это объединение НА ЧТЕНИЕ, без дубль-записи (полная унификация `Task`/`Issue` отложена). Kill-switch `tracker.chatboxTasksInTriageEnabled` (ON).
+- **B3 — fallback владельца переписочной задачи:** `chatbox-analyze` ищет владельца owner→admin→any + метрика `z_chatbox_tasks_owner_missing_total` (владелец не нашёлся ни на одном шаге).
+- ТЗ [`2026-06-22-tasks-subsystem-unified-fix`](../../plans/tz/2026-06-22-tasks-subsystem-unified-fix.md) (Блок B). Триаж — [[tracker]].
+
 [[../index|← index]]

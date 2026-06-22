@@ -176,6 +176,13 @@ Default chain (см. `scripts/seed-llm-task-routes-decisions.ts`):
 - Migration `text` → `statement` для legacy-записей.
 - Dashboard widget «Overdue decisions» (опциональный β-3.14).
 
+## Замыкание решение↔задача (2026-06-22, ТЗ tasks-subsystem-unified-fix D3)
+
+- **Обратная линковка:** `linkDerivedTasksForDecision` связывает решение с порождёнными из него задачами.
+- **Авто-переход во «внедрено»:** Decision → `implemented` при закрытии ВСЕХ связанных задач.
+- **Защита supersede:** `markTasksForReviewOnSupersede` не трогает уже закрытые задачи.
+- ТЗ [`2026-06-22-tasks-subsystem-unified-fix`](../../plans/tz/2026-06-22-tasks-subsystem-unified-fix.md) (Блок D3). Миграций нет.
+
 ## Связи
 
 - **β-4 Insights** будет читать Decision'ы, чтобы связать «эта проблема — следствие решения X».

@@ -245,6 +245,14 @@ PROBE_COLD_START_MODE_HOURS=24
 
 Процесс — [[../03_processes/probe-question-flow]] (changelog 2026-06-20).
 
+## Дозапрос по задачам + исполнение ответа + обучение (2026-06-22, ТЗ tasks-subsystem-unified-fix A1/A3)
+
+Probe обслуживает задачную подсистему — два новых reason (в `probe-reason-labels` + policy, окно immediate, recheck-предикаты `issue`/`intake_issue`):
+- `task.assignee_unresolved` — задача с неясным исполнителем (создаётся ВСЕГДА как Issue без исполнителя, в ответ `needsAssignee`+candidates) поднимает уточняющий вопрос вместо 404/угадывания.
+- `task.due_date_missing` — задача без срока спрашивает срок.
+
+**Ответ на probe исполняется** (раньше probe только спрашивал): `probe-response.handler.maybeApplyTaskProbeAnswer` назначает исполнителя (резолвер → `IssuesService.addAssignee`) или выставляет срок (`parseRussianDueDate`), идемпотентно. ProbeModule импортирует TrackerModule. **Обучение:** ответ автоматически выводит правило `SubjectMemory` (отдел/роль→человек) — при повторе того же отдела/роли probe НЕ задаётся (`resolved via:'memory'`, retrieve-before-ask). Адресат при пустом исполнителе в задаче встречи — владелец встречи (`contextCardKind=intake_issue`). Kill-switch `tracker.assigneeClarifyEnabled` / `tracker.dueDateClarifyEnabled` (ON), метрика `task_assignee_clarify_total{outcome}` — [[../../docs/operations/feature-flags|feature-flags]]. Главный потребитель — [[tracker]].
+
 ## См. также
 
 - [[ideas]] — главный потребитель Probe-Agent в β-5.

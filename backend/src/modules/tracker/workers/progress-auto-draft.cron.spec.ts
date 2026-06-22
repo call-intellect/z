@@ -35,6 +35,7 @@ describe('ProgressAutoDraftCron', () => {
 
   let orgFindMany: ReturnType<typeof vi.fn>;
   let issueFindMany: ReturnType<typeof vi.fn>;
+  let issueFindFirst: ReturnType<typeof vi.fn>;
   let progressFindFirst: ReturnType<typeof vi.fn>;
   let progressCreate: ReturnType<typeof vi.fn>;
   let checklistFindMany: ReturnType<typeof vi.fn>;
@@ -54,6 +55,12 @@ describe('ProgressAutoDraftCron', () => {
         descriptionStripped: null,
       },
     ]);
+    issueFindFirst = vi.fn().mockResolvedValue({
+      id: 'issue_1',
+      tenantId: 'org_1',
+      title: 'Сверстать лендинг',
+      descriptionStripped: null,
+    });
     progressFindFirst = vi.fn().mockImplementation(
       async (args: { where?: { draftState?: unknown } }) => {
         if (args?.where?.draftState === 'pending') return null;
@@ -87,7 +94,7 @@ describe('ProgressAutoDraftCron', () => {
 
     prisma = {
       org: { findMany: orgFindMany },
-      issue: { findMany: issueFindMany },
+      issue: { findMany: issueFindMany, findFirst: issueFindFirst },
       issueProgressUpdate: { findFirst: progressFindFirst, create: progressCreate },
       issueChecklistItem: { findMany: checklistFindMany },
       issueActivity: { findMany: activityFindMany },
@@ -173,5 +180,125 @@ describe('ProgressAutoDraftCron', () => {
     expect(data.sourceBlockIds).toEqual([]);
     expect(data.previewQuote).toBeNull();
     expect(computeSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('событийный путь — onProgressSignal создаёт pending-черновик без крона', async () => {
+    await cron.onProgressSignal({
+      tenantId: 'org_1',
+      issueId: 'issue_1',
+      sourceBlockId: 'block_42',
+    });
+    expect(orgFindMany).not.toHaveBeenCalled();
+    expect(issueFindFirst).toHaveBeenCalledTimes(1);
+    expect(progressCreate).toHaveBeenCalledTimes(1);
+    const data = progressCreate.mock.calls[0]![0].data;
+    expect(data.authorType).toBe('ai_agent');
+    expect(data.draftState).toBe('pending');
+    expect(redisSet.mock.calls[0]![0]).toBe('progress_auto_draft:issue_1:block_42');
+  });
+
+  it('событийный путь — поблочный дедуп: тот же sourceBlockId дважды не плодит дубль', async () => {
+    const acquired = new Set<string>();
+    redisSet.mockImplementation(async (key: string) => {
+      if (acquired.has(key)) return null;
+      acquired.add(key);
+      return 'OK';
+    });
+
+    await cron.onProgressSignal({
+      tenantId: 'org_1',
+      issueId: 'issue_1',
+      sourceBlockId: 'block_42',
+    });
+    await cron.onProgressSignal({
+      tenantId: 'org_1',
+      issueId: 'issue_1',
+      sourceBlockId: 'block_42',
+    });
+
+    expect(progressCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('событийный путь — разные sourceBlockId в один день создают два черновика (не суточный дедуп)', async () => {
+    const acquired = new Set<string>();
+    redisSet.mockImplementation(async (key: string) => {
+      if (acquired.has(key)) return null;
+      acquired.add(key);
+      return 'OK';
+    });
+
+    await cron.onProgressSignal({
+      tenantId: 'org_1',
+      issueId: 'issue_1',
+      sourceBlockId: 'block_a',
+    });
+    await cron.onProgressSignal({
+      tenantId: 'org_1',
+      issueId: 'issue_1',
+      sourceBlockId: 'block_b',
+    });
+
+    expect(progressCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it('событийный путь — задача в backlog обрабатывается (нет фильтра started)', async () => {
+    issueFindFirst.mockResolvedValueOnce({
+      id: 'issue_backlog',
+      tenantId: 'org_1',
+      title: 'Идея в бэклоге',
+      descriptionStripped: null,
+    });
+    await cron.onProgressSignal({
+      tenantId: 'org_1',
+      issueId: 'issue_backlog',
+      sourceBlockId: 'block_7',
+    });
+    expect(progressCreate).toHaveBeenCalledTimes(1);
+    expect(progressCreate.mock.calls[0]![0].data.issueId).toBe('issue_backlog');
+  });
+
+  it('событийный путь — задачи нет (другой tenant/удалена) — no-op', async () => {
+    issueFindFirst.mockResolvedValueOnce(null);
+    await cron.onProgressSignal({
+      tenantId: 'org_other',
+      issueId: 'issue_1',
+      sourceBlockId: 'block_42',
+    });
+    expect(progressCreate).not.toHaveBeenCalled();
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(redisSet).not.toHaveBeenCalled();
+  });
+
+  it('событийный путь — уже есть pending-черновик — новый не создаём', async () => {
+    progressFindFirst.mockImplementation(
+      async (args: { where?: { draftState?: unknown } }) => {
+        if (args?.where?.draftState === 'pending') return { id: 'existing' };
+        return null;
+      },
+    );
+    await cron.onProgressSignal({
+      tenantId: 'org_1',
+      issueId: 'issue_1',
+      sourceBlockId: 'block_42',
+    });
+    expect(progressCreate).not.toHaveBeenCalled();
+    expect(redisSet).not.toHaveBeenCalled();
+  });
+
+  it('событийный путь — kill-switch OFF — ничего не делаем', async () => {
+    cron = new ProgressAutoDraftCron(
+      prisma,
+      redis,
+      makeCfg({ 'tracker.progressAutoDraftEnabled': false }),
+      llm,
+      provenance,
+    );
+    await cron.onProgressSignal({
+      tenantId: 'org_1',
+      issueId: 'issue_1',
+      sourceBlockId: 'block_42',
+    });
+    expect(issueFindFirst).not.toHaveBeenCalled();
+    expect(progressCreate).not.toHaveBeenCalled();
   });
 });

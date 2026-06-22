@@ -1,8 +1,9 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AdminSettingsService } from '../../admin/settings/admin-settings.service';
 import { tryParseJson } from '../../ai/services/json-extract.util';
@@ -66,7 +67,8 @@ export class TaskCompletionHandler {
   private static readonly KNN_LIMIT = 5;
   private static readonly LLM_RETRIES = 2;
   /** TTL pending-кандидата (sweep Ф3); 14 дней по умолчанию. */
-  private static readonly CANDIDATE_TTL_DAYS = 14;
+  private static readonly DEFAULT_CANDIDATE_TTL_DAYS = 14;
+  private static readonly DEFAULT_LEXICAL_FALLBACK_MIN_OVERLAP = 0.5;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -88,6 +90,12 @@ export class TaskCompletionHandler {
     @Optional()
     @Inject(TypedConfigService)
     private readonly config: TypedConfigService | null = null,
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly eventEmitter: EventEmitter2 | null = null,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService | null = null,
   ) {}
 
   @OnEvent('task.completion_signalled')
@@ -99,10 +107,20 @@ export class TaskCompletionHandler {
   }): Promise<void> {
     try {
       // 1. Гард от зацикливания: блок из самого трекера — не порождает кандидата.
-      if (event.sourceType === 'tracker_event') return;
+      if (event.sourceType === 'tracker_event') {
+        return this.outcome('skipped_tracker', {
+          tenantId: event.tenantId,
+          blockId: event.blockId,
+        });
+      }
 
       // Аварийный kill-switch петли закрытия (Ship-On, default ON).
-      if (!(await this.isEnabled())) return;
+      if (!(await this.isEnabled())) {
+        return this.outcome('disabled', {
+          tenantId: event.tenantId,
+          blockId: event.blockId,
+        });
+      }
 
       // 2. Блок-сигнал.
       const block = await this.prisma.ideaBlock.findUnique({
@@ -116,20 +134,32 @@ export class TaskCompletionHandler {
           supersededById: true,
         },
       });
-      if (!block) return;
-      // Блок поглощён merge/supersede — сигнал устарел, пропускаем (Pre-mortem:
-      // висячие sourceBlockIds при merge/удалении блока).
-      if (block.mergedIntoId || block.supersededById) return;
+      if (!block || block.mergedIntoId || block.supersededById) {
+        return this.outcome('dropped_merged', {
+          tenantId: event.tenantId,
+          blockId: event.blockId,
+        });
+      }
 
       const embedText = this.buildText(
         block.criticalQuestion,
         block.trustedAnswer,
       );
-      if (embedText.length === 0) return;
+      if (embedText.length === 0) {
+        return this.outcome('no_text', {
+          tenantId: event.tenantId,
+          blockId: event.blockId,
+        });
+      }
 
       // 3. Синхронный embed → KNN среди ОТКРЫТЫХ задач.
       const embedding = await this.embedWithTimeout(embedText);
-      if (!embedding) return; // best-effort: embed не посчитался — пропуск
+      if (!embedding) {
+        return this.outcome('embed_fail', {
+          tenantId: event.tenantId,
+          blockId: event.blockId,
+        });
+      }
 
       const matchThreshold = await this.matchThreshold();
       const similar = await this.similar.findSimilarByVector({
@@ -138,27 +168,39 @@ export class TaskCompletionHandler {
         limit: TaskCompletionHandler.KNN_LIMIT,
         openOnly: true,
       });
-      const best = similar[0];
-      // NIL / ниже порога → НЕ создавать кандидата (R6).
-      if (!best || best.similarity < matchThreshold) return;
+      const matched = await this.pickMatch(similar, embedText, matchThreshold);
+      if (!matched) {
+        return this.outcome('no_match', {
+          tenantId: event.tenantId,
+          blockId: event.blockId,
+        });
+      }
+
+      this.emitProgress(event.tenantId, matched.id, block.id);
 
       // 4. LLM-верификатор «правда ли выполнена» (анти-инъекция в обёртке).
       const verdict = await this.verify({
         tenantId: event.tenantId,
-        taskTitle: best.title,
+        taskTitle: matched.title,
         signalType: event.signalType,
         quote: block.trustedAnswer,
       });
-      if (!verdict || !verdict.done) return;
+      if (!verdict || !verdict.done) {
+        return this.outcome('not_done', {
+          tenantId: event.tenantId,
+          blockId: event.blockId,
+        });
+      }
 
       // Авто-закрытие ЗАПРЕЩЕНО (R13): создаём только ОБРАТИМЫЙ кандидат.
       await this.createCandidate({
         tenantId: event.tenantId,
-        issueId: best.id,
+        issueId: matched.id,
         sourceBlockId: block.id,
-        matchSimilarity: best.similarity,
+        matchSimilarity: matched.similarity,
         verdict,
       });
+      this.metrics?.incTaskClosureOutcome({ outcome: 'created' });
     } catch (err) {
       this.logger.warn(
         {
@@ -172,6 +214,82 @@ export class TaskCompletionHandler {
   }
 
   // ─────────────────────────── helpers ─────────────────────────────────────
+
+  private outcome(
+    outcome: string,
+    ctx: { tenantId: string; blockId: string },
+  ): void {
+    this.metrics?.incTaskClosureOutcome({ outcome });
+    this.logger.debug(
+      { tenantId: ctx.tenantId, blockId: ctx.blockId, outcome },
+      'task-closure: исход петли закрытия',
+    );
+  }
+
+  /**
+   * Выбор задачи-кандидата: лучший KNN ≥ порога, иначе лексический fallback по
+   * перекрытию токенов названия задачи с текстом сигнала (LLM-верификатор всё
+   * равно финально гейтит). null — ни одна задача не подошла.
+   */
+  private async pickMatch(
+    similar: Array<{ id: string; title: string; similarity: number }>,
+    blockText: string,
+    matchThreshold: number,
+  ): Promise<{ id: string; title: string; similarity: number } | null> {
+    const best = similar[0];
+    if (best && best.similarity >= matchThreshold) return best;
+    if (!best) return null;
+
+    const minOverlap = await this.lexicalFallbackMinOverlap();
+    let bestLexical: {
+      id: string;
+      title: string;
+      similarity: number;
+    } | null = null;
+    let bestOverlap = 0;
+    for (const cand of similar) {
+      const overlap = lexicalOverlap(blockText, cand.title);
+      if (overlap > bestOverlap) {
+        bestOverlap = overlap;
+        bestLexical = cand;
+      }
+    }
+    if (bestLexical && bestOverlap >= minOverlap) {
+      this.logger.debug(
+        {
+          issueId: bestLexical.id,
+          overlap: bestOverlap,
+          similarity: bestLexical.similarity,
+        },
+        'task-closure: лексический fallback поймал near-miss',
+      );
+      return bestLexical;
+    }
+    return null;
+  }
+
+  private emitProgress(
+    tenantId: string,
+    issueId: string,
+    sourceBlockId: string,
+  ): void {
+    try {
+      this.eventEmitter?.emit('task.progress_signalled', {
+        tenantId,
+        issueId,
+        sourceBlockId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId,
+          issueId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'task-closure: эмит task.progress_signalled упал (best-effort)',
+      );
+    }
+  }
 
   private async isEnabled(): Promise<boolean> {
     const v = await this.settings
@@ -196,6 +314,24 @@ export class TaskCompletionHandler {
     return typeof v === 'number' && Number.isFinite(v) && v > 0
       ? v
       : TaskCompletionHandler.DEFAULT_EMBED_TIMEOUT_MS;
+  }
+
+  private async lexicalFallbackMinOverlap(): Promise<number> {
+    const v = await this.settings
+      .get<number>('taskClosure.lexicalFallbackMinOverlap')
+      .catch(() => undefined);
+    return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1
+      ? v
+      : TaskCompletionHandler.DEFAULT_LEXICAL_FALLBACK_MIN_OVERLAP;
+  }
+
+  private async candidateTtlDays(): Promise<number> {
+    const v = await this.settings
+      .get<number>('taskClosure.candidateTtlDays')
+      .catch(() => undefined);
+    return typeof v === 'number' && Number.isFinite(v) && v > 0
+      ? v
+      : TaskCompletionHandler.DEFAULT_CANDIDATE_TTL_DAYS;
   }
 
   /** Текст блока для embedding'а: вопрос + ответ (обрезано). */
@@ -318,10 +454,8 @@ export class TaskCompletionHandler {
   }): Promise<void> {
     const confidence = await this.calibrate(args.verdict.confidence);
     const rationale = this.composeRationale(args.verdict);
-    const expiresAt = new Date(
-      Date.now() +
-        TaskCompletionHandler.CANDIDATE_TTL_DAYS * 24 * 60 * 60 * 1000,
-    );
+    const ttlDays = await this.candidateTtlDays();
+    const expiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
     try {
       await this.prisma.taskClosureCandidate.create({
         data: {
@@ -386,4 +520,27 @@ export class TaskCompletionHandler {
       return true;
     }
   }
+}
+
+function tokenize(text: string): Set<string> {
+  const normalized = (text ?? '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .split(/[^\p{L}\p{N}]+/u);
+  const tokens = new Set<string>();
+  for (const t of normalized) {
+    if (t.length >= 3) tokens.add(t);
+  }
+  return tokens;
+}
+
+export function lexicalOverlap(blockText: string, title: string): number {
+  const titleTokens = tokenize(title);
+  if (titleTokens.size === 0) return 0;
+  const blockTokens = tokenize(blockText);
+  let hit = 0;
+  for (const t of titleTokens) {
+    if (blockTokens.has(t)) hit++;
+  }
+  return hit / titleTokens.size;
 }

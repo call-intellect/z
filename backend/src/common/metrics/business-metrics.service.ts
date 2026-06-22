@@ -54,6 +54,9 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── семантический дедуп задач встречи (Ф5 Р2) ────────────────────────
   private taskDedupeTotal!: Counter<'result'>;
 
+  // ── петля закрытия задачи (TZ task-loop Ф2b) ─────────────────────────
+  private taskClosureOutcomeTotal!: Counter<'outcome'>;
+
   // ── ChatBox синк/анализ (ТЗ 2026-06-11 remaining-handoff Ф3) ──────────
   // syncs — успех/провал синка per scope; analyzes — успех/провал анализа
   // сессии; pending — сколько закрытых сессий ждут анализа (gauge);
@@ -1241,6 +1244,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_task_dedupe_total',
       help: 'Ф5 Р2 — семантический дедуп задач встречи. result=knn_merged|llm_merged|kept|skipped.',
       labelNames: ['result'] as const,
+    });
+
+    this.taskClosureOutcomeTotal = this.getOrCreateCounter({
+      name: 'z_task_closure_outcome_total',
+      help: 'TZ task-loop Ф2b — исход TaskCompletionHandler. outcome=created|no_match|not_done|embed_fail|disabled|skipped_tracker|dropped_merged|no_text. Падение created при росте сигналов → петля закрытия деградирует.',
+      labelNames: ['outcome'] as const,
     });
 
     // ChatBox синк/анализ (ТЗ 2026-06-11 remaining-handoff Ф3).
@@ -4462,6 +4471,16 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incTaskDedupe(args: { result: string }): void {
     this.taskDedupeTotal?.inc({ result: args.result });
+  }
+
+  /**
+   * TZ task-loop Ф2b — один исход петли закрытия задачи. outcome:
+   * 'created' | 'no_match' | 'not_done' | 'embed_fail' | 'disabled' |
+   * 'skipped_tracker' | 'dropped_merged' | 'no_text'. Optional-safe для тестов
+   * без onModuleInit.
+   */
+  incTaskClosureOutcome(args: { outcome: string }): void {
+    this.taskClosureOutcomeTotal?.inc({ outcome: args.outcome });
   }
 
   /**

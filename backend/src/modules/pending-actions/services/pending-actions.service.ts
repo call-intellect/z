@@ -57,8 +57,8 @@ export interface ConfirmInput {
   resolution?: ConfirmResolution;
   /// Свободный ответ на probe-вопрос (только source='probe').
   answerText?: string;
-  /// Целевой проект для intake accept.
   targetProjectId?: string;
+  comment?: string;
 }
 
 const SNOOZE_MIN_HOURS = 1;
@@ -469,7 +469,14 @@ export class PendingActionsService {
 
     const candidate = await this.prisma.taskClosureCandidate.findUnique({
       where: { id: input.resourceId },
-      select: { id: true, tenantId: true, issueId: true, status: true },
+      select: {
+        id: true,
+        tenantId: true,
+        issueId: true,
+        status: true,
+        evidenceQuote: true,
+        rationale: true,
+      },
     });
     if (!candidate || candidate.tenantId !== input.tenantId) {
       throw new BadRequestException({
@@ -534,25 +541,46 @@ export class PendingActionsService {
         },
       });
     }
-    // R13: закрытие выполняет ТОЛЬКО подтверждение человека (этот путь),
-    // ни один LLM-обработчик Issue напрямую не трогает.
     await this.issuesService.transitionState(
       issue.id,
       { stateId: completedState.id, reason: 'Подтверждено: выполнено в разговоре' } as never,
       input.tenantId,
       input.userId,
     );
-    await this.prisma.taskClosureCandidate.update({
-      where: { id: candidate.id },
-      data: {
-        status: 'accepted',
-        decidedByUserId: input.userId,
-        decidedAt: new Date(),
-      },
+
+    const decisionText =
+      input.comment ??
+      candidate.evidenceQuote ??
+      candidate.rationale ??
+      'Выполнение подтверждено.';
+    const decisionContent =
+      input.comment != null
+        ? `✅ Решение: ${decisionText}`
+        : `✅ Решение (из разговора): ${decisionText}`;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.issueComment.create({
+        data: {
+          issueId: issue.id,
+          authorId: input.userId,
+          authorType: 'human',
+          access: 'internal',
+          content: decisionContent,
+          contentStripped: decisionContent,
+        },
+      });
+      await tx.taskClosureCandidate.update({
+        where: { id: candidate.id },
+        data: {
+          status: 'accepted',
+          decidedByUserId: input.userId,
+          decidedAt: new Date(),
+        },
+      });
     });
     this.logger.log(
       { tenantId: input.tenantId, userId: input.userId, resourceId: candidate.id, issueId: issue.id },
-      'pending-actions.confirm: кандидат на закрытие принят — задача закрыта',
+      'pending-actions.confirm: кандидат на закрытие принят — задача закрыта, решение записано комментарием',
     );
   }
 

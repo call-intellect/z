@@ -200,7 +200,7 @@ export class CompletenessScannerService {
     let slots = 0;
 
     const regs = await this.prisma.regulation.findMany({
-      where: { tenantId, updatedAt: { gte: since } },
+      where: { tenantId, deletedAt: null, updatedAt: { gte: since } },
       take: LIMIT_PER_TYPE_PER_ORG,
       select: {
         id: true,
@@ -223,7 +223,7 @@ export class CompletenessScannerService {
     }
 
     const processes = await this.prisma.process.findMany({
-      where: { tenantId, updatedAt: { gte: since } },
+      where: { tenantId, deletedAt: null, updatedAt: { gte: since } },
       take: LIMIT_PER_TYPE_PER_ORG,
       select: {
         id: true,

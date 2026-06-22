@@ -16,6 +16,7 @@ export async function linkDerivedDecisionsForIssue(
   const decisions = await prisma.decision.findMany({
     where: {
       tenantId: args.tenantId,
+      deletedAt: null,
       sourceBlockIds: { hasSome: blockIds },
     },
     select: { id: true },

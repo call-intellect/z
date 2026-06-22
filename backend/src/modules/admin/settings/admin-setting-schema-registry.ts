@@ -284,6 +284,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['curation.consistencyCheckerEnabled', z.boolean()],
   ['curation.completenessScannerEnabled', z.boolean()],
   ['tracker.goalAlignmentLowEnabled', z.boolean()],
+  ['tracker.assigneeMatchMaxEdits', z.number().int().min(0).max(4)],
   ['tracker.progressAutoDraftEnabled', z.boolean()],
   ['tracker.progressAutoDraftMinSignals', z.number().int().min(1)],
   ['tracker.progressAutoDraftCron', z.string().min(1)],
@@ -291,6 +292,13 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.automationsEnabled', z.boolean()],
   ['tracker.recurrenceEnabled', z.boolean()],
   ['tracker.recurrenceCronCadence', z.string().min(1)],
+
+  ['taskClosure.enabled', z.boolean()],
+  ['taskClosure.matchThreshold', UNIT_INTERVAL],
+  ['taskClosure.embedTimeoutMs', POSITIVE_INT],
+  ['taskClosure.candidateTtlDays', POSITIVE_INT],
+  ['taskClosure.lexicalFallbackMinOverlap', UNIT_INTERVAL],
+
   ['conversational.telegramDigestHourLocal', z.number().int().min(0).max(23)],
 
   ['retention.defaultDays', POSITIVE_INT],

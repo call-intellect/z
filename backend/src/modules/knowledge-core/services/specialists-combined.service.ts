@@ -255,7 +255,7 @@ export class SpecialistsCombinedService {
       // ретраиться BullMQ → голый create плодил бы дубли. Guard по
       // sourceBlockIds:{has} перед create (как в single-специалистах).
       const dupDecision = await this.prisma.decision.findFirst({
-        where: { tenantId, sourceBlockIds: { has: d.sourceBlockId } },
+        where: { tenantId, deletedAt: null, sourceBlockIds: { has: d.sourceBlockId } },
         select: { id: true },
       });
       if (dupDecision) {

@@ -264,6 +264,7 @@ export class WeeklyDigestService {
       this.prisma.decision.findMany({
         where: {
           tenantId: args.tenantId,
+          deletedAt: null,
           status: { in: ['approved', 'proposed', 'active', 'implemented'] },
           actualOutcomes: null,
           decidedAt: { lt: addDays(parseDateLocalToUtc(args.weekStart), -7) },
@@ -572,6 +573,7 @@ export class WeeklyDigestService {
       this.prisma.decision.count({
         where: {
           tenantId: args.tenantId,
+          deletedAt: null,
           status: { in: ['active', 'proposed', 'approved'] },
           raisedCount: { gte: 2 },
           createdAt: { lt: addDays(curEndUtc, -7) },
@@ -580,6 +582,7 @@ export class WeeklyDigestService {
       this.prisma.decision.count({
         where: {
           tenantId: args.tenantId,
+          deletedAt: null,
           status: { in: ['active', 'proposed', 'approved'] },
           raisedCount: { gte: 2 },
           createdAt: { lt: addDays(prevEndUtc, -7) },

@@ -718,7 +718,7 @@ export class DirectorDashboardService {
           where: { tenantId, createdAt: { gte: since } },
         }),
         this.prisma.decision.count({
-          where: { tenantId, createdAt: { gte: since } },
+          where: { tenantId, createdAt: { gte: since }, deletedAt: null },
         }),
         this.prisma.$queryRaw<CountRow[]>`
         SELECT COUNT(*)::bigint AS cnt

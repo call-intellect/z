@@ -9,14 +9,31 @@ import {
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { PostAssignTaskBodyDto, PostAssignTaskResponseDto } from '../dto/issues/post-assign-task.dto';
+import type { PostCompleteTaskResponseDto } from '../dto/issues/post-complete-task.dto';
 import type { PostMeTaskBodyDto, PostMeTaskResponseDto } from '../dto/issues/post-me-task.dto';
+import type { PostProgressTaskResponseDto } from '../dto/issues/post-progress-task.dto';
 import type { PostSuggestAssigneeResponseDto } from '../dto/issues/post-suggest-assignee.dto';
 
 import { AssigneeResolverService } from './assignee-resolver.service';
 import { IssuesService } from './issues.service';
+import { ProgressUpdatesService } from './progress-updates.service';
 import { ProjectsService } from './projects.service';
 import { SkillRoutingService } from './skill-routing.service';
 import { TrackerEmitterService } from './tracker-emitter.service';
+
+export type OpenTaskResolution =
+  | { kind: 'resolved'; issueId: string; title: string }
+  | { kind: 'ambiguous'; candidates: Array<{ issueId: string; title: string }> }
+  | { kind: 'not_found' };
+
+function normalizeTaskName(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 @Injectable()
 export class MeTasksService {
@@ -28,6 +45,7 @@ export class MeTasksService {
     @Inject(TrackerEmitterService) private readonly emitter: TrackerEmitterService,
     @Inject(SkillRoutingService) private readonly skillRouting: SkillRoutingService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
+    @Inject(ProgressUpdatesService) private readonly progressUpdates: ProgressUpdatesService,
   ) {}
 
   async suggestAssignee(
@@ -175,6 +193,143 @@ export class MeTasksService {
       projectId: created.projectId,
       status: await this.resolveStatus(created.stateId),
       assignee: { userId: resolution.userId, name: resolution.name },
+    };
+  }
+
+  async resolveOpenTaskByName(
+    tenantId: string,
+    userId: string,
+    rawName: string,
+  ): Promise<OpenTaskResolution> {
+    const norm = normalizeTaskName(rawName);
+    if (!norm) return { kind: 'not_found' };
+
+    const issues = await this.prisma.issue.findMany({
+      where: {
+        tenantId,
+        deletedAt: null,
+        assignees: { some: { userId } },
+        state: { category: { notIn: ['completed', 'cancelled'] } },
+      },
+      select: { id: true, title: true },
+    });
+
+    type Candidate = { issueId: string; title: string; norm: string };
+    const candidates: Candidate[] = issues.map((i) => ({
+      issueId: i.id,
+      title: i.title,
+      norm: normalizeTaskName(i.title),
+    }));
+
+    const exact = candidates.filter((c) => c.norm === norm);
+    const partial = candidates.filter(
+      (c) => c.norm.includes(norm) || norm.includes(c.norm),
+    );
+    const matched = exact.length > 0 ? exact : partial;
+
+    if (matched.length === 0) return { kind: 'not_found' };
+    const first = matched[0];
+    if (matched.length === 1 && first) {
+      return { kind: 'resolved', issueId: first.issueId, title: first.title };
+    }
+    return {
+      kind: 'ambiguous',
+      candidates: matched.slice(0, 5).map((c) => ({ issueId: c.issueId, title: c.title })),
+    };
+  }
+
+  async completeTask(
+    body: { taskName: string; note?: string },
+    tenantId: string,
+    userId: string,
+  ): Promise<PostCompleteTaskResponseDto> {
+    const resolution = await this.resolveOpenTaskByName(tenantId, userId, body.taskName);
+    if (resolution.kind === 'not_found') {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'task_not_found',
+          message: 'Задача с таким названием не найдена среди ваших открытых задач',
+        },
+      });
+    }
+    if (resolution.kind === 'ambiguous') {
+      throw new ConflictException({
+        ok: false,
+        error: {
+          code: 'task_ambiguous',
+          message: 'Найдено несколько подходящих задач — уточните название',
+          candidates: resolution.candidates,
+        },
+      });
+    }
+
+    const sourceBlockId = `concierge-complete:${userId}`;
+    const row = await this.prisma.taskClosureCandidate.upsert({
+      where: {
+        tenantId_issueId_sourceBlockId: {
+          tenantId,
+          issueId: resolution.issueId,
+          sourceBlockId,
+        },
+      },
+      create: {
+        tenantId,
+        issueId: resolution.issueId,
+        sourceBlockId,
+        status: 'pending',
+        evidenceQuote: body.note ?? null,
+        rationale: 'Отмечено выполненным через помощника',
+        expiresAt: null,
+      },
+      update: {},
+    });
+
+    return {
+      candidateId: row.id,
+      issueId: resolution.issueId,
+      title: resolution.title,
+      status: row.status,
+    };
+  }
+
+  async reportTaskProgress(
+    body: { taskName: string; progress: string },
+    tenantId: string,
+    userId: string,
+  ): Promise<PostProgressTaskResponseDto> {
+    const resolution = await this.resolveOpenTaskByName(tenantId, userId, body.taskName);
+    if (resolution.kind === 'not_found') {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'task_not_found',
+          message: 'Задача с таким названием не найдена среди ваших открытых задач',
+        },
+      });
+    }
+    if (resolution.kind === 'ambiguous') {
+      throw new ConflictException({
+        ok: false,
+        error: {
+          code: 'task_ambiguous',
+          message: 'Найдено несколько подходящих задач — уточните название',
+          candidates: resolution.candidates,
+        },
+      });
+    }
+
+    const res = await this.progressUpdates.create(
+      resolution.issueId,
+      { health: 'on_track', body: body.progress },
+      tenantId,
+      userId,
+    );
+
+    return {
+      progressUpdateId: res.id,
+      issueId: resolution.issueId,
+      title: resolution.title,
     };
   }
 

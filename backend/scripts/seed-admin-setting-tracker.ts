@@ -17,6 +17,15 @@ interface SettingSeed {
 
 const SEEDS: SettingSeed[] = [
   {
+    key: 'tracker.assigneeMatchMaxEdits',
+    value: 2,
+    category: 'tracker',
+    section: 'workers',
+    severity: 'low',
+    description:
+      'Допуск опечаток/склонений при поиске исполнителя по имени (расстояние Левенштейна на общей основе). По умолчанию 2, диапазон 0–4. 0 — только точное совпадение.',
+  },
+  {
     key: 'tracker.progressAutoDraftEnabled',
     value: true,
     category: 'tracker',

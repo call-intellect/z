@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 
@@ -74,6 +75,65 @@ export class ProgressAutoDraftCron {
     }
   }
 
+  @OnEvent('task.progress_signalled')
+  async onProgressSignal(event: {
+    tenantId: string;
+    issueId: string;
+    sourceBlockId: string;
+  }): Promise<void> {
+    const enabled = await this.cfg.getDynamic<boolean>(
+      'tracker.progressAutoDraftEnabled',
+      'TRACKER_PROGRESS_AUTO_DRAFT_ENABLED',
+      true,
+    );
+    if (!enabled) return;
+
+    try {
+      const issue = await this.prisma.issue.findFirst({
+        where: {
+          id: event.issueId,
+          tenantId: event.tenantId,
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          tenantId: true,
+          title: true,
+          descriptionStripped: true,
+        },
+      });
+      if (!issue) return;
+
+      const minSignals = await this.minSignals();
+      const handled = await this.draftForIssue({
+        issue,
+        minSignals,
+        dedupKey: `${event.issueId}:${event.sourceBlockId}`,
+      });
+
+      if (handled === 'drafted') {
+        this.logger.log(
+          {
+            tenantId: event.tenantId,
+            issueId: event.issueId,
+            sourceBlockId: event.sourceBlockId,
+          },
+          'progress-auto-draft: событийный авто-черновик прогресса создан',
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: event.tenantId,
+          issueId: event.issueId,
+          sourceBlockId: event.sourceBlockId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'progress-auto-draft: ошибка событийного черновика — пропускаю',
+      );
+    }
+  }
+
   async run(): Promise<RunSummary> {
     const minSignals = await this.minSignals();
     const orgs = await this.prisma.org.findMany({
@@ -103,7 +163,6 @@ export class ProgressAutoDraftCron {
           where: {
             tenantId: org.id,
             deletedAt: null,
-            state: { category: 'started' },
           },
           select: {
             id: true,
@@ -165,6 +224,25 @@ export class ProgressAutoDraftCron {
   }): Promise<
     'drafted' | 'below_threshold' | 'dedup' | 'existing_pending'
   > {
+    return this.draftForIssue({
+      issue: args.issue,
+      minSignals: args.minSignals,
+      dedupKey: `${args.issue.id}:${args.todayKey}`,
+    });
+  }
+
+  private async draftForIssue(args: {
+    issue: {
+      id: string;
+      tenantId: string;
+      title: string;
+      descriptionStripped: string | null;
+    };
+    minSignals: number;
+    dedupKey: string;
+  }): Promise<
+    'drafted' | 'below_threshold' | 'dedup' | 'existing_pending'
+  > {
     const { issue } = args;
 
     const since = await this.lastProgressAt(issue.id, issue.tenantId);
@@ -179,7 +257,7 @@ export class ProgressAutoDraftCron {
       return 'existing_pending';
     }
 
-    const dedupOk = await this.dedupAcquire(issue.id, args.todayKey);
+    const dedupOk = await this.dedupAcquire(args.dedupKey);
     if (!dedupOk) return 'dedup';
 
     const draft = await this.formulate({
@@ -433,8 +511,8 @@ export class ProgressAutoDraftCron {
     return existing !== null;
   }
 
-  private async dedupAcquire(issueId: string, dayKey: string): Promise<boolean> {
-    const key = `progress_auto_draft:${issueId}:${dayKey}`;
+  private async dedupAcquire(dedupKey: string): Promise<boolean> {
+    const key = `progress_auto_draft:${dedupKey}`;
     try {
       const res = await this.redis.client.set(
         key,
@@ -447,8 +525,7 @@ export class ProgressAutoDraftCron {
     } catch (err) {
       this.logger.warn(
         {
-          issueId,
-          dayKey,
+          dedupKey,
           err: err instanceof Error ? err.message : String(err),
         },
         'progress-auto-draft: Redis SETNX упал — продолжаю без дедупа',

@@ -127,7 +127,7 @@ export const FeedWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
               </span>
               {meetingId ? (
                 <SourceLink
-                  href={`/meetings/${meetingId}`}
+                  href={`/meetings/${meetingId}/result`}
                   label="К встрече"
                 />
               ) : null}

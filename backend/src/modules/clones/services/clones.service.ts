@@ -1125,7 +1125,7 @@ export class ClonesService {
 
   private static stripCitationsFromText(text: string): string {
     return text
-      .replace(/\[BLOCK:[a-zA-Z0-9_-]+\]/g, '')
+      .replace(/\[BLOCK:[a-zA-Z0-9_-]+(?:\s*[—-][^\]]*)?\]/gu, '')
       .replace(/\s{2,}/g, ' ')
       .trim();
   }
@@ -2182,6 +2182,7 @@ export class ClonesService {
     let decisions = await this.prisma.decision.findMany({
       where: {
         tenantId: args.tenantId,
+        deletedAt: null,
         decidedByPersonIds: { has: args.personId },
         status: { notIn: ['rejected', 'cancelled', 'superseded'] },
       },

@@ -111,6 +111,7 @@ export class Specialist33DecisionsWorker {
     const decisions = await this.prisma.decision.findMany({
       where: {
         tenantId: args.tenantId,
+        deletedAt: null,
         reversibility: null,
         OR: [{ sourceIdeaBlockId: args.blockId }, { sourceBlockIds: { has: args.blockId } }],
       },

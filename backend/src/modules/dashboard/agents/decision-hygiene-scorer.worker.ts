@@ -72,8 +72,8 @@ export class DecisionHygieneScorerWorker implements OnModuleInit, OnModuleDestro
     const { decisionId, tenantId } = job.data;
     const startedAt = Date.now();
 
-    const decision = await this.prisma.decision.findUnique({
-      where: { id: decisionId },
+    const decision = await this.prisma.decision.findFirst({
+      where: { id: decisionId, deletedAt: null },
       select: {
         id: true,
         tenantId: true,

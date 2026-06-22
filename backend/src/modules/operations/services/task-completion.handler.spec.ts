@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
-import { TaskCompletionHandler } from './task-completion.handler';
+import { TaskCompletionHandler, lexicalOverlap } from './task-completion.handler';
 
 /**
  * TZ task-dedup (2026-06-16, Ф2) — TaskCompletionHandler unit-тесты.
@@ -27,6 +27,8 @@ describe('TaskCompletionHandler', () => {
     similar?: Array<{ id: string; title: string; similarity: number }>;
     enabled?: boolean;
     matchThreshold?: number;
+    lexicalFallbackMinOverlap?: number;
+    candidateTtlDays?: number;
     llmResponse?: string;
     candidateCreateThrows?: unknown;
   }) {
@@ -87,8 +89,29 @@ describe('TaskCompletionHandler', () => {
         if (key === 'taskClosure.matchThreshold') {
           return Promise.resolve(overrides.matchThreshold ?? 0.85);
         }
+        if (key === 'taskClosure.lexicalFallbackMinOverlap') {
+          return Promise.resolve(overrides.lexicalFallbackMinOverlap ?? 0.5);
+        }
+        if (key === 'taskClosure.candidateTtlDays') {
+          return Promise.resolve(overrides.candidateTtlDays ?? 14);
+        }
         return Promise.resolve(undefined);
       }),
+    };
+    const emitted: Array<{ event: string; payload: unknown }> = [];
+    const eventEmitter = {
+      emit: vi.fn().mockImplementation((event: string, payload: unknown) => {
+        emitted.push({ event, payload });
+        return true;
+      }),
+    };
+    const outcomes: string[] = [];
+    const metrics = {
+      incTaskClosureOutcome: vi
+        .fn()
+        .mockImplementation((args: { outcome: string }) => {
+          outcomes.push(args.outcome);
+        }),
     };
     const handler = new TaskCompletionHandler(
       prisma as never,
@@ -96,8 +119,24 @@ describe('TaskCompletionHandler', () => {
       similar as never,
       embeddings as never,
       settings as never,
+      null,
+      null,
+      eventEmitter as never,
+      metrics as never,
     );
-    return { handler, prisma, llm, similar, embeddings, settings, created };
+    return {
+      handler,
+      prisma,
+      llm,
+      similar,
+      embeddings,
+      settings,
+      created,
+      eventEmitter,
+      emitted,
+      metrics,
+      outcomes,
+    };
   }
 
   const baseEvent = {
@@ -189,5 +228,157 @@ describe('TaskCompletionHandler', () => {
     await handler.handle(baseEvent);
     expect(created).toHaveLength(0);
     expect(similar.findSimilarByVector).not.toHaveBeenCalled();
+  });
+
+  it('эмит task.progress_signalled при KNN-матче (до verify)', async () => {
+    const { handler, emitted } = build({});
+    await handler.handle(baseEvent);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]!.event).toBe('task.progress_signalled');
+    expect(emitted[0]!.payload).toEqual({
+      tenantId: 't1',
+      issueId: 'iss-1',
+      sourceBlockId: 'blk-1',
+    });
+  });
+
+  it('прогресс эмитится даже когда verify done=false (частичный сдвиг)', async () => {
+    const { handler, emitted, created } = build({
+      llmResponse: JSON.stringify({
+        done: false,
+        confidence: 0.5,
+        rationale: 'Начато, но не закончено.',
+        positiveSignals: [],
+        negativeSignals: ['работа не завершена'],
+      }),
+    });
+    await handler.handle(baseEvent);
+    expect(created).toHaveLength(0);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]!.event).toBe('task.progress_signalled');
+  });
+
+  it('лексический fallback: KNN ниже порога, но перекрытие токенов ловит задачу', async () => {
+    const { handler, created, emitted, llm } = build({
+      // similarity 0.7 < порога 0.85, но название почти дословно в тексте блока.
+      similar: [
+        { id: 'iss-7', title: 'Отправить КП клиенту Бета', similarity: 0.7 },
+      ],
+    });
+    await handler.handle(baseEvent);
+    // KNN не дотянул, fallback поймал → verify зван → done=true → кандидат.
+    expect(llm.call).toHaveBeenCalled();
+    expect(created).toHaveLength(1);
+    expect(created[0]!.issueId).toBe('iss-7');
+    expect(emitted).toHaveLength(1);
+  });
+
+  it('лексический fallback не срабатывает при низком перекрытии', async () => {
+    const { handler, created, emitted, llm } = build({
+      similar: [
+        { id: 'iss-9', title: 'Подготовить годовой бюджет', similarity: 0.6 },
+      ],
+    });
+    await handler.handle(baseEvent);
+    expect(llm.call).not.toHaveBeenCalled();
+    expect(created).toHaveLength(0);
+    expect(emitted).toHaveLength(0);
+  });
+
+  it('метрика исхода created при успешном кандидате', async () => {
+    const { handler, outcomes } = build({});
+    await handler.handle(baseEvent);
+    expect(outcomes).toContain('created');
+  });
+
+  it('метрика исхода skipped_tracker для tracker_event', async () => {
+    const { handler, outcomes } = build({});
+    await handler.handle({ ...baseEvent, sourceType: 'tracker_event' });
+    expect(outcomes).toEqual(['skipped_tracker']);
+  });
+
+  it('метрика исхода disabled при kill-switch OFF', async () => {
+    const { handler, outcomes } = build({ enabled: false });
+    await handler.handle(baseEvent);
+    expect(outcomes).toEqual(['disabled']);
+  });
+
+  it('метрика исхода no_match при пустом KNN', async () => {
+    const { handler, outcomes } = build({ similar: [] });
+    await handler.handle(baseEvent);
+    expect(outcomes).toEqual(['no_match']);
+  });
+
+  it('метрика исхода not_done при verify done=false', async () => {
+    const { handler, outcomes } = build({
+      llmResponse: JSON.stringify({
+        done: false,
+        confidence: 0.5,
+        rationale: 'Не завершено.',
+        positiveSignals: [],
+        negativeSignals: ['нет завершения'],
+      }),
+    });
+    await handler.handle(baseEvent);
+    expect(outcomes).toEqual(['not_done']);
+  });
+
+  it('метрика исхода dropped_merged при поглощённом блоке', async () => {
+    const { handler, outcomes } = build({
+      block: {
+        id: 'blk-1',
+        tenantId: 't1',
+        criticalQuestion: 'X',
+        trustedAnswer: 'сделал',
+        mergedIntoId: 'blk-2',
+        supersededById: null,
+      },
+    });
+    await handler.handle(baseEvent);
+    expect(outcomes).toEqual(['dropped_merged']);
+  });
+
+  it('идемпотентность: P2002 не порождает второй created-инкремент', async () => {
+    const { handler, outcomes } = build({
+      candidateCreateThrows: new Prisma.PrismaClientKnownRequestError('dup', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    });
+    await handler.handle(baseEvent);
+    // create поймал P2002 (молча) → createCandidate вернулся → created всё равно
+    // инкрементится (кандидат уже существует, петля идемпотентна).
+    expect(outcomes).toEqual(['created']);
+  });
+
+  describe('lexicalOverlap (чистая функция)', () => {
+    it('полное перекрытие токенов названия → 1', () => {
+      expect(
+        lexicalOverlap(
+          'отправить кп клиенту бета сегодня утром',
+          'Отправить клиенту',
+        ),
+      ).toBe(1);
+    });
+
+    it('нормализация ё→е и регистр', () => {
+      expect(lexicalOverlap('подобрал ключ', 'Ключ')).toBe(1);
+      expect(lexicalOverlap('всё готово', 'Все')).toBe(1);
+    });
+
+    it('короткие токены (<3 симв) отбрасываются', () => {
+      expect(lexicalOverlap('я он мы', 'Я Он')).toBe(0);
+    });
+
+    it('пустое название → 0', () => {
+      expect(lexicalOverlap('любой текст', '')).toBe(0);
+    });
+
+    it('частичное перекрытие → доля токенов названия', () => {
+      // название {отправить, отчёт}; в тексте только 'отправить' → 0.5
+      expect(lexicalOverlap('я отправить документ', 'отправить отчет')).toBe(
+        0.5,
+      );
+    });
   });
 });

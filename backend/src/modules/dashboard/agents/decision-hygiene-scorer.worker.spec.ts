@@ -27,6 +27,7 @@ function buildHarness(opts: HarnessOpts): WorkerHarness {
   const prisma = {
     decision: {
       findUnique: vi.fn(async () => opts.decision),
+      findFirst: vi.fn(async () => opts.decision),
       update: decisionUpdate,
     },
     ideaBlock: {

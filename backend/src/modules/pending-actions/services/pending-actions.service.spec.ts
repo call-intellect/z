@@ -60,6 +60,9 @@ describe('PendingActionsService (B0)', () => {
   let curationItemFindUnique: ReturnType<typeof vi.fn>;
   let taskClosureFindUnique: ReturnType<typeof vi.fn>;
   let taskClosureUpdate: ReturnType<typeof vi.fn>;
+  let issueCommentCreate: ReturnType<typeof vi.fn>;
+  let txTaskClosureUpdate: ReturnType<typeof vi.fn>;
+  let prismaTransaction: ReturnType<typeof vi.fn>;
   let issueFindFirst: ReturnType<typeof vi.fn>;
   let issueUpdate: ReturnType<typeof vi.fn>;
   let issueStateFindFirst: ReturnType<typeof vi.fn>;
@@ -76,11 +79,19 @@ describe('PendingActionsService (B0)', () => {
     curationItemFindUnique = vi.fn().mockResolvedValue(null);
     taskClosureFindUnique = vi.fn().mockResolvedValue(null);
     taskClosureUpdate = vi.fn().mockResolvedValue({});
+    issueCommentCreate = vi.fn().mockResolvedValue({ id: 'cmt-1' });
+    txTaskClosureUpdate = vi.fn().mockResolvedValue({});
     issueFindFirst = vi
       .fn()
       .mockResolvedValue({ id: 'iss-1', projectId: 'proj-1' });
     issueUpdate = vi.fn().mockResolvedValue({ id: 'iss-1' });
     issueStateFindFirst = vi.fn().mockResolvedValue({ id: 'state-done' });
+    prismaTransaction = vi.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
+      cb({
+        issueComment: { create: issueCommentCreate },
+        taskClosureCandidate: { update: txTaskClosureUpdate },
+      }),
+    );
     prisma = {
       membership: { findUnique: membershipFindUnique },
       pendingActionSnooze: { findMany: snoozeFindMany, upsert: snoozeUpsert },
@@ -91,6 +102,7 @@ describe('PendingActionsService (B0)', () => {
       },
       issue: { findFirst: issueFindFirst, update: issueUpdate },
       issueState: { findFirst: issueStateFindFirst },
+      $transaction: prismaTransaction,
     } as unknown as PrismaService;
 
     decide = vi.fn().mockResolvedValue({ id: 'ci-1', status: 'decided' });
@@ -430,6 +442,8 @@ describe('PendingActionsService (B0)', () => {
       tenantId: 't-1',
       issueId: 'iss-1',
       status: 'pending',
+      evidenceQuote: null,
+      rationale: null,
     });
     const res = await svc.confirm({
       tenantId: 't-1',
@@ -446,16 +460,135 @@ describe('PendingActionsService (B0)', () => {
     expect((dto as { stateId: string }).stateId).toBe('state-done');
     expect(tenantId).toBe('t-1');
     expect(userId).toBe('u-1');
-    // Кандидат → accepted.
-    expect(taskClosureUpdate.mock.calls[0]![0].data.status).toBe('accepted');
+    // Кандидат → accepted (через транзакцию).
+    expect(txTaskClosureUpdate.mock.calls[0]![0].data.status).toBe('accepted');
   });
 
-  it('confirm task_closure reject → Issue НЕ тронут, кандидат rejected', async () => {
+  it('confirm task_closure approve с comment → IssueComment с решением (метка) + accepted в одной транзакции', async () => {
+    taskClosureFindUnique.mockResolvedValue({
+      id: 'tcc-c',
+      tenantId: 't-1',
+      issueId: 'iss-1',
+      status: 'pending',
+      evidenceQuote: 'цитата из разговора',
+      rationale: 'обоснование',
+    });
+    await svc.confirm({
+      tenantId: 't-1',
+      userId: 'u-1',
+      source: 'task_closure',
+      resourceId: 'tcc-c',
+      resolution: 'approve',
+      comment: 'Сделано вчера, выкатили на прод',
+    });
+    // транзакция: комментарий + accepted атомарно.
+    expect(prismaTransaction).toHaveBeenCalledTimes(1);
+    expect(issueCommentCreate).toHaveBeenCalledTimes(1);
+    const commentData = issueCommentCreate.mock.calls[0]![0].data;
+    expect(commentData.issueId).toBe('iss-1');
+    expect(commentData.authorId).toBe('u-1');
+    expect(commentData.authorType).toBe('human');
+    expect(commentData.access).toBe('internal');
+    expect(commentData.content).toContain('Сделано вчера, выкатили на прод');
+    // ручной comment имеет метку решения.
+    expect(commentData.content).toContain('Решение');
+    expect(commentData.contentStripped).toBe(commentData.content);
+    // вне разговора (ручной ввод) — не приоритет evidenceQuote.
+    expect(commentData.content).not.toContain('цитата из разговора');
+    expect(txTaskClosureUpdate.mock.calls[0]![0].data.status).toBe('accepted');
+  });
+
+  it('confirm task_closure approve без comment → fallback на evidenceQuote с меткой «(из разговора)»', async () => {
+    taskClosureFindUnique.mockResolvedValue({
+      id: 'tcc-e',
+      tenantId: 't-1',
+      issueId: 'iss-1',
+      status: 'pending',
+      evidenceQuote: 'я закрыл эту задачу',
+      rationale: 'обоснование',
+    });
+    await svc.confirm({
+      tenantId: 't-1',
+      userId: 'u-1',
+      source: 'task_closure',
+      resourceId: 'tcc-e',
+      resolution: 'approve',
+    });
+    expect(issueCommentCreate).toHaveBeenCalledTimes(1);
+    const commentData = issueCommentCreate.mock.calls[0]![0].data;
+    expect(commentData.content).toContain('я закрыл эту задачу');
+    expect(commentData.content).toContain('из разговора');
+    // evidenceQuote приоритетнее rationale.
+    expect(commentData.content).not.toContain('обоснование');
+  });
+
+  it('confirm task_closure approve без comment и без evidenceQuote → fallback на rationale', async () => {
+    taskClosureFindUnique.mockResolvedValue({
+      id: 'tcc-r',
+      tenantId: 't-1',
+      issueId: 'iss-1',
+      status: 'pending',
+      evidenceQuote: null,
+      rationale: 'итог обсуждения',
+    });
+    await svc.confirm({
+      tenantId: 't-1',
+      userId: 'u-1',
+      source: 'task_closure',
+      resourceId: 'tcc-r',
+      resolution: 'approve',
+    });
+    const commentData = issueCommentCreate.mock.calls[0]![0].data;
+    expect(commentData.content).toContain('итог обсуждения');
+  });
+
+  it('confirm task_closure approve: повторный confirm не плодит дубль комментария (guard not_pending)', async () => {
+    taskClosureFindUnique
+      .mockResolvedValueOnce({
+        id: 'tcc-i',
+        tenantId: 't-1',
+        issueId: 'iss-1',
+        status: 'pending',
+        evidenceQuote: null,
+        rationale: null,
+      })
+      .mockResolvedValueOnce({
+        id: 'tcc-i',
+        tenantId: 't-1',
+        issueId: 'iss-1',
+        status: 'accepted',
+        evidenceQuote: null,
+        rationale: null,
+      });
+    await svc.confirm({
+      tenantId: 't-1',
+      userId: 'u-1',
+      source: 'task_closure',
+      resourceId: 'tcc-i',
+      resolution: 'approve',
+    });
+    expect(issueCommentCreate).toHaveBeenCalledTimes(1);
+    // повторный confirm: кандидат уже accepted → guard → BadRequest, комментарий не создаётся.
+    await expect(
+      svc.confirm({
+        tenantId: 't-1',
+        userId: 'u-1',
+        source: 'task_closure',
+        resourceId: 'tcc-i',
+        resolution: 'approve',
+      }),
+    ).rejects.toThrow();
+    expect(issueCommentCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirm task_closure reject → Issue НЕ тронут, кандидат rejected, комментарий НЕ создан', async () => {
     taskClosureFindUnique.mockResolvedValue({
       id: 'tcc-2',
       tenantId: 't-1',
       issueId: 'iss-1',
       status: 'pending',
+      evidenceQuote: 'цитата',
+      rationale: 'обоснование',
     });
     await svc.confirm({
       tenantId: 't-1',
@@ -466,6 +599,9 @@ describe('PendingActionsService (B0)', () => {
     });
     expect(transitionState).not.toHaveBeenCalled();
     expect(taskClosureUpdate.mock.calls[0]![0].data.status).toBe('rejected');
+    // reject-ветка не пишет решение комментарием.
+    expect(issueCommentCreate).not.toHaveBeenCalled();
+    expect(prismaTransaction).not.toHaveBeenCalled();
   });
 
   it('confirm task_closure: уже не pending → BadRequest, Issue не тронут', async () => {
@@ -474,6 +610,8 @@ describe('PendingActionsService (B0)', () => {
       tenantId: 't-1',
       issueId: 'iss-1',
       status: 'accepted',
+      evidenceQuote: null,
+      rationale: null,
     });
     await expect(
       svc.confirm({
@@ -493,6 +631,8 @@ describe('PendingActionsService (B0)', () => {
       tenantId: 'other',
       issueId: 'iss-1',
       status: 'pending',
+      evidenceQuote: null,
+      rationale: null,
     });
     await expect(
       svc.confirm({

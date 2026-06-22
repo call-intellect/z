@@ -138,6 +138,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-task-closure.ts',
+    hint: 'taskClosure.{enabled,matchThreshold,embedTimeoutMs,candidateTtlDays,lexicalFallbackMinOverlap} — крутилки петли авто-закрытия задач (task-loop Ф2b)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-work-hours.ts',
     hint: 'work_hours_default_{start,end} + work_days_default + default_timezone — дефолты рабочего профиля (calendar-master Ф4)',
   },

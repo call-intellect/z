@@ -531,6 +531,7 @@ export class PulsePatternsService {
     const decisions = await this.prisma.decision.findMany({
       where: {
         tenantId,
+        deletedAt: null,
         reversibility: 'type-1',
         createdAt: { gte: periodStart },
       },

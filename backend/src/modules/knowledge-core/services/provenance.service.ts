@@ -153,7 +153,7 @@ export function buildProvenanceDeepLink(args: {
   if (!args.externalId) return null;
   if (args.sourceType === 'meeting') {
     const sec = Math.max(0, Math.round((args.startMs ?? 0) / 1000));
-    return `/meetings/${args.externalId}?t=${sec}`;
+    return `/meetings/${args.externalId}/result?t=${sec}`;
   }
   if (args.sourceType === 'document') {
     const anchor = documentAnchorParam(args.quote);
@@ -653,7 +653,7 @@ export class ProvenanceService {
     switch (entityType) {
       case 'decision': {
         const d = await this.prisma.decision.findFirst({
-          where: { id: entityId, tenantId },
+          where: { id: entityId, tenantId, deletedAt: null },
           select: { sourceBlockIds: true },
         });
         return d?.sourceBlockIds ?? [];
@@ -675,7 +675,7 @@ export class ProvenanceService {
       case 'regulation':
       case 'instruction': {
         const r = await this.prisma.regulation.findFirst({
-          where: { id: entityId, tenantId },
+          where: { id: entityId, tenantId, deletedAt: null },
           select: { sourceBlockIds: true },
         });
         return r?.sourceBlockIds ?? [];

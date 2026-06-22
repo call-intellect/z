@@ -103,6 +103,7 @@ export class PendingActionsController {
       resolution: body.resolution,
       answerText: body.answerText,
       targetProjectId: body.targetProjectId,
+      comment: body.comment,
     });
   }
 

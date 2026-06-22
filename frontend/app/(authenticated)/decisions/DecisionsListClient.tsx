@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
@@ -20,10 +21,12 @@ import {
 } from "@/domain/decision";
 import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 import { TrustBadge } from "@/ui/components/shared/TrustBadge";
+import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
 import { CardCorrectionActions } from "@/ui/components/knowledge/CardCorrectionActions";
 import { ProvenanceChip } from "@/ui/components/provenance/ProvenanceChip";
 import { ProvenancePreviewSnippet } from "@/ui/components/provenance/ProvenancePreviewSnippet";
 import { mapPreviewToProvenanceRef } from "@/domain/provenance";
+import { Button } from "@/ui/shadcn/button";
 import { Input } from "@/ui/shadcn/input";
 
 import {
@@ -77,6 +80,8 @@ function DecisionsListContent({
 }) {
   const { currentOrgId, currentOrgRole } = useAuth();
   const canApplyDirectly = ["owner", "admin"].includes(currentOrgRole ?? "");
+  const canWrite = canApplyDirectly;
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
   const [data, setData] = useState<DecisionsListResponseApi | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +93,7 @@ function DecisionsListContent({
   const [deadlineFilter, setDeadlineFilter] = useState<
     "all" | DeadlineFilterApi
   >("all");
+  const [deletedFilter, setDeletedFilter] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(
     initialSelectedId ?? null,
   );
@@ -108,6 +114,7 @@ function DecisionsListContent({
         ...(deadlineFilter !== "all"
           ? { deadline_filter: deadlineFilter }
           : {}),
+        ...(deletedFilter ? { deleted: true } : {}),
         limit: 50,
       });
       setData(dto);
@@ -120,7 +127,7 @@ function DecisionsListContent({
     } finally {
       setIsLoading(false);
     }
-  }, [q, statusFilter, deadlineFilter]);
+  }, [q, statusFilter, deadlineFilter, deletedFilter]);
 
   useEffect(() => {
     void load();
@@ -173,6 +180,45 @@ function DecisionsListContent({
     },
     [selectedId, load, loadDetail],
   );
+
+  const handleDelete = useCallback(async () => {
+    if (!selectedId) return;
+    const ok = await ask({
+      title: "Удалить решение?",
+      description: "Восстановить можно в течение 30 дней.",
+      confirmLabel: "Удалить",
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await decisionsApi.remove(selectedId);
+      toast.success("Решение удалено");
+      setSelectedId(null);
+      await load();
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "forbidden") {
+        toast.error("Удалять решения могут только owner / admin");
+      } else {
+        toast.error(humanizeApiError(e, "Не удалось удалить"));
+      }
+    }
+  }, [selectedId, ask, load]);
+
+  const handleRestore = useCallback(async () => {
+    if (!selectedId) return;
+    try {
+      await decisionsApi.restore(selectedId);
+      toast.success("Решение восстановлено");
+      setSelectedId(null);
+      await load();
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "forbidden") {
+        toast.error("Восстанавливать решения могут только owner / admin");
+      } else {
+        toast.error(humanizeApiError(e, "Не удалось восстановить"));
+      }
+    }
+  }, [selectedId, load]);
 
   const groupedItems = useMemo(() => data?.items ?? [], [data]);
 
@@ -230,6 +276,19 @@ function DecisionsListContent({
             </option>
           ))}
         </select>
+        {canWrite ? (
+          <Button
+            type="button"
+            variant={deletedFilter ? "default" : "outline"}
+            size="sm"
+            onClick={() => {
+              setSelectedId(null);
+              setDeletedFilter((v) => !v);
+            }}
+          >
+            {deletedFilter ? "Показаны удалённые" : "Удалённые"}
+          </Button>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -478,7 +537,8 @@ function DecisionsListContent({
               </section>
 
               <div className="mt-4 flex flex-wrap gap-2">
-                {detail.status !== "implemented" &&
+                {!deletedFilter &&
+                detail.status !== "implemented" &&
                 detail.status !== "cancelled" ? (
                   <button
                     type="button"
@@ -488,7 +548,8 @@ function DecisionsListContent({
                     Отметить как реализованным
                   </button>
                 ) : null}
-                {detail.status !== "cancelled" &&
+                {!deletedFilter &&
+                detail.status !== "cancelled" &&
                 detail.status !== "rejected" &&
                 detail.status !== "superseded" ? (
                   <button
@@ -499,6 +560,28 @@ function DecisionsListContent({
                     Отменить решение
                   </button>
                 ) : null}
+                {canWrite && deletedFilter ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleRestore()}
+                  >
+                    Восстановить
+                  </Button>
+                ) : null}
+                {canWrite && !deletedFilter ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-danger hover:text-danger"
+                    onClick={() => void handleDelete()}
+                  >
+                    Удалить
+                  </Button>
+                ) : null}
+                {deletedFilter ? null : (
                 <CardCorrectionActions
                   fields={[
                     {
@@ -534,6 +617,7 @@ function DecisionsListContent({
                     void loadDetail();
                   }}
                 />
+                )}
               </div>
 
               {actionMsg ? (
@@ -543,6 +627,7 @@ function DecisionsListContent({
           )}
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 }

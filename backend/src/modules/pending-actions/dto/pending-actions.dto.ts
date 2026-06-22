@@ -91,6 +91,9 @@ export const ConfirmPendingActionBodySchema = z.object({
   answerText: z.string().trim().min(1).max(10_000).optional(),
   /// Целевой проект для intake accept (опционально; иначе suggested/привязка).
   targetProjectId: z.string().trim().min(1).max(64).optional(),
+  /// Текст решения комментарием в карточку при подтверждении закрытия задачи
+  /// (только source='task_closure'; иначе берётся evidenceQuote/rationale кандидата).
+  comment: z.string().trim().min(1).max(10_000).optional(),
 });
 export type ConfirmPendingActionBody = z.infer<
   typeof ConfirmPendingActionBodySchema

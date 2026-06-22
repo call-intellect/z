@@ -95,6 +95,8 @@ const CONFIRM_TOOL_RU_NAMES: Record<string, string> = {
   infer_table_schema: 'предложить схему новой таблицы',
   create_task: 'поставить задачу себе',
   assign_task: 'поставить задачу сотруднику',
+  complete_task: 'отметить задачу выполненной',
+  report_task_progress: 'отчитаться о прогрессе задачи',
 };
 
 const PARAM_RU_LABELS: Record<string, string> = {
@@ -110,6 +112,9 @@ const PARAM_RU_LABELS: Record<string, string> = {
   kind: 'вид',
   location: 'место',
   counterparty: 'с кем',
+  taskName: 'задача',
+  note: 'комментарий',
+  progress: 'отчёт',
 };
 
 const DATE_PARAM_KEYS = new Set<string>(['dueDate', 'startAt', 'endAt']);

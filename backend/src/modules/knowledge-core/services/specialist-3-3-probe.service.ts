@@ -153,6 +153,7 @@ export class Specialist33ProbeService {
     const overdue = await this.prisma.decision.findMany({
       where: {
         tenantId,
+        deletedAt: null,
         deadline: { lt: now, not: null },
         status: { notIn: ['implemented', 'cancelled', 'rejected', 'superseded'] },
       },
@@ -191,6 +192,7 @@ export class Specialist33ProbeService {
     const decisions = await this.prisma.decision.findMany({
       where: {
         tenantId,
+        deletedAt: null,
         status: 'implemented',
         actualOutcomes: null,
         decidedAt: { lt: cutoff, not: null },

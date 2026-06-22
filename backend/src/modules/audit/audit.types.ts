@@ -31,6 +31,10 @@ export const AUDIT = {
   CARD_UPDATE: 'card.update',
   CARD_DELETE: 'card.delete',
   CARD_RESTORE: 'card.restore',
+  REGULATION_DELETE: 'regulation.delete',
+  REGULATION_RESTORE: 'regulation.restore',
+  DECISION_DELETE: 'decision.delete',
+  DECISION_RESTORE: 'decision.restore',
   MEETING_LINK_TO_CARD: 'meeting.link_to_card',
   MEETING_UNLINK_FROM_CARD: 'meeting.unlink_from_card',
 

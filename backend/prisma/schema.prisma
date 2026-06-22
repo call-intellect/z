@@ -5732,6 +5732,8 @@ model Process {
   metricsJson        Json?
   createdAt          DateTime                     @default(now())
   updatedAt          DateTime                     @updatedAt
+  deletedAt          DateTime?
+  deletedById        String?
 
   /// SBA α-7 wave 2 (2026-05-23) — instance может ссылаться на canonical template.
   templateId String?
@@ -5752,6 +5754,7 @@ model Process {
   @@index([tenantId, scope])
   @@index([tenantId, templateId])
   @@index([currentVersionId])
+  @@index([tenantId, deletedAt])
   @@map("processes")
 }
 
@@ -6019,6 +6022,8 @@ model Regulation {
   lastConfirmedAt  DateTime?
   createdAt        DateTime                     @default(now())
   updatedAt        DateTime                     @updatedAt
+  deletedAt        DateTime?
+  deletedById      String?
 
   org              Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   ownerPerson      Person?          @relation("RegulationOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
@@ -6034,6 +6039,7 @@ model Regulation {
   @@index([tenantId, scope])
   @@index([tenantId, ownerPersonId])
   @@index([currentVersionId])
+  @@index([tenantId, deletedAt])
   @@map("regulations")
 }
 
@@ -6073,6 +6079,8 @@ model Instruction {
   lastConfirmedAt  DateTime?
   createdAt        DateTime                     @default(now())
   updatedAt        DateTime                     @updatedAt
+  deletedAt        DateTime?
+  deletedById      String?
 
   org              Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   ownerPerson      Person?          @relation("InstructionOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
@@ -6085,6 +6093,7 @@ model Instruction {
   @@index([tenantId, forRole])
   @@index([tenantId, ownerPersonId])
   @@index([currentVersionId])
+  @@index([tenantId, deletedAt])
   @@map("instructions")
 }
 
@@ -6112,6 +6121,8 @@ model Policy {
   lastConfirmedAt  DateTime?
   createdAt        DateTime                     @default(now())
   updatedAt        DateTime                     @updatedAt
+  deletedAt        DateTime?
+  deletedById      String?
 
   org            Org          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   ownerPerson    Person?      @relation("PolicyOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
@@ -6123,6 +6134,7 @@ model Policy {
   @@index([tenantId, scope])
   @@index([tenantId, ownerPersonId])
   @@index([currentVersionId])
+  @@index([tenantId, deletedAt])
   @@map("policies")
 }
 
@@ -6307,6 +6319,9 @@ model Decision {
   /// раз проверял внедрение решения.
   implementationCheckedAt DateTime?
 
+  deletedAt       DateTime?
+  deletedById     String?
+
   org             Org                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   decidedBy       Person?            @relation("DecisionDecidedBy", fields: [decidedByPersonId], references: [id], onDelete: SetNull)
   sourceMeeting   Meeting?           @relation("DecisionSourceMeeting", fields: [sourceMeetingId], references: [id], onDelete: SetNull)
@@ -6330,6 +6345,7 @@ model Decision {
   @@index([supersedesId])
   // SBA β-3 — для currentVersionId.
   @@index([currentVersionId])
+  @@index([tenantId, deletedAt])
   @@map("decisions")
 }
 

@@ -2,8 +2,10 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
+  HttpCode,
   Inject,
   Param,
   Post,
@@ -35,6 +37,8 @@ import {
   type RegulationKindDto,
   type RegulationSourcesResponse,
   type RegulationSummaryResponse,
+  RestoreRegulationBodySchema,
+  type RestoreRegulationBody,
   SupersedeRegulationBodySchema,
   type SupersedeRegulationBody,
 } from './dto/regulations.dto';
@@ -202,6 +206,50 @@ export class RegulationsController {
       reason: body.reason,
       actorUserId: user.id,
       canApplyDirectly,
+    });
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Удалить карточку (мягкое удаление, только owner/admin)',
+  })
+  async remove(
+    @Param('id') id: string,
+    @Query(new ZodValidationPipe(GetRegulationParamsSchema))
+    params: { kind: RegulationKindDto },
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<void> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t, params.kind);
+    await this.svc.softDelete({
+      tenantId: t,
+      id,
+      kind: params.kind,
+      actorUserId: user.id,
+    });
+  }
+
+  @Post(':id/restore')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Восстановить удалённую карточку (только owner/admin)',
+  })
+  async restore(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(RestoreRegulationBodySchema))
+    body: RestoreRegulationBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t, body.kind);
+    return this.svc.restore({
+      tenantId: t,
+      id,
+      kind: body.kind,
+      actorUserId: user.id,
     });
   }
 

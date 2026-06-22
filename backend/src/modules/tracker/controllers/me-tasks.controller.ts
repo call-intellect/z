@@ -21,10 +21,20 @@ import {
   type PostAssignTaskResponseDto,
 } from '../dto/issues/post-assign-task.dto';
 import {
+  PostCompleteTaskBodySchema,
+  type PostCompleteTaskBodyDto,
+  type PostCompleteTaskResponseDto,
+} from '../dto/issues/post-complete-task.dto';
+import {
   PostMeTaskBodySchema,
   type PostMeTaskBodyDto,
   type PostMeTaskResponseDto,
 } from '../dto/issues/post-me-task.dto';
+import {
+  PostProgressTaskBodySchema,
+  type PostProgressTaskBodyDto,
+  type PostProgressTaskResponseDto,
+} from '../dto/issues/post-progress-task.dto';
 import {
   PostSuggestAssigneeBodySchema,
   type PostSuggestAssigneeBodyDto,
@@ -92,6 +102,59 @@ export class MeTasksController {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
     return this.svc.assignTask(body, t, user.id);
+  }
+
+  @Post('me/tasks/complete')
+  @ApiOperation({
+    summary: 'Отметить задачу выполненной (по имени) — создаёт кандидата на подтверждение',
+    description:
+      'Находит открытую задачу текущего пользователя по названию (taskName) и ' +
+      'создаёт кандидата на закрытие в статусе «ожидает». Саму задачу НЕ ' +
+      'закрывает — финальное подтверждение делает человек в очереди действий. ' +
+      'Повторный вызов по той же задаче идемпотентен. Предусловие инструмента ' +
+      'помощника complete_task.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Кандидат на закрытие: { candidateId, issueId, title, status }',
+  })
+  @ApiResponse({ status: 400, description: 'Validation error / tenant_required' })
+  @ApiResponse({ status: 403, description: 'Недостаточно прав на изменение задач' })
+  @ApiResponse({ status: 404, description: 'task_not_found — задача не найдена по названию' })
+  @ApiResponse({ status: 409, description: 'task_ambiguous — несколько подходящих задач' })
+  async completeTask(
+    @Body(new ZodValidationPipe(PostCompleteTaskBodySchema)) body: PostCompleteTaskBodyDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<PostCompleteTaskResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.svc.completeTask(body, t, user.id);
+  }
+
+  @Post('me/tasks/progress')
+  @ApiOperation({
+    summary: 'Отчитаться о прогрессе задачи (по имени)',
+    description:
+      'Находит открытую задачу текущего пользователя по названию (taskName) и ' +
+      'добавляет к ней обновление прогресса с текстом отчёта (progress). ' +
+      'Предусловие инструмента помощника report_task_progress.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Обновление прогресса: { progressUpdateId, issueId, title }',
+  })
+  @ApiResponse({ status: 400, description: 'Validation error / tenant_required' })
+  @ApiResponse({ status: 403, description: 'Недостаточно прав на изменение задач' })
+  @ApiResponse({ status: 404, description: 'task_not_found — задача не найдена по названию' })
+  async reportTaskProgress(
+    @Body(new ZodValidationPipe(PostProgressTaskBodySchema)) body: PostProgressTaskBodyDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<PostProgressTaskResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.svc.reportTaskProgress(body, t, user.id);
   }
 
   @Post('me/tasks/suggest-assignee')

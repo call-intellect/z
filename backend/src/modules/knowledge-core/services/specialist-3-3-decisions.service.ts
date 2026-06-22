@@ -181,6 +181,7 @@ export class Specialist33Service {
       const alreadyMaterialized = await this.prisma.decision.findFirst({
         where: {
           tenantId: block.tenantId,
+          deletedAt: null,
           OR: [
             { sourceIdeaBlockId: block.id },
             { sourceBlockIds: { has: block.id } },
@@ -248,7 +249,7 @@ export class Specialist33Service {
 
       if (verdict.verdict === 'merge' && verdict.targetId) {
         const existing = await this.prisma.decision.findFirst({
-          where: { id: verdict.targetId, tenantId: block.tenantId },
+          where: { id: verdict.targetId, tenantId: block.tenantId, deletedAt: null },
         });
         if (!existing) {
           decision = await this.createNewDecision({
@@ -288,7 +289,7 @@ export class Specialist33Service {
         }
       } else if (verdict.verdict === 'supersedes' && verdict.targetId) {
         const existing = await this.prisma.decision.findFirst({
-          where: { id: verdict.targetId, tenantId: block.tenantId },
+          where: { id: verdict.targetId, tenantId: block.tenantId, deletedAt: null },
         });
         if (!existing) {
           decision = await this.createNewDecision({
@@ -605,6 +606,7 @@ export class Specialist33Service {
           `SELECT "id", "statement", "rationale", "decidedAt", "status", "text"
            FROM "decisions"
            WHERE "tenantId" = $1
+             AND "deletedAt" IS NULL
              AND "embedding" IS NOT NULL
              AND "status" NOT IN ('rejected','cancelled','superseded')
            ORDER BY "embedding" <=> $2::vector
@@ -642,6 +644,7 @@ export class Specialist33Service {
     const rows = await this.prisma.decision.findMany({
       where: {
         tenantId: args.tenantId,
+        deletedAt: null,
         OR: [
           { statement: { contains: firstWords, mode: 'insensitive' } },
           { text: { contains: firstWords, mode: 'insensitive' } },

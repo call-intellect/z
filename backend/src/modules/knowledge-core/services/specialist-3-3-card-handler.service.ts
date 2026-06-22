@@ -41,6 +41,7 @@ export class Specialist33CardHandler implements OnModuleInit, CardSpecialistHand
 
       const where: Prisma.DecisionWhereInput = {
         tenantId,
+        deletedAt: null,
         status: {
           notIn: ['rejected', 'cancelled', 'superseded'],
         },

@@ -140,6 +140,12 @@ const MY_SECTION: NavConfigSection = {
       badge: "myInbox",
     },
     {
+      href: "/actions",
+      label: "Требует вас",
+      icon: AlertTriangle,
+      matchPrefix: "/actions",
+    },
+    {
       href: "/me/check-ins",
       label: "Чек-ин",
       icon: CheckCircle2,
@@ -221,6 +227,12 @@ const PERSONAL_SECTION: NavConfigSection = {
       icon: UserRound,
       matchPrefix: "/me",
       overviewTarget: "overview.me",
+    },
+    {
+      href: "/actions",
+      label: "Требует вас",
+      icon: AlertTriangle,
+      matchPrefix: "/actions",
     },
   ],
 };
@@ -458,10 +470,7 @@ function sectionRefs(section: NavConfigSection): DesktopNavRef[] {
 }
 
 export function getDesktopNavRefs(): DesktopNavRef[] {
-  const refs: DesktopNavRef[] = [
-    ...DESKTOP_NAV.flatMap(sectionRefs),
-    { href: "/actions", matchPrefix: "/actions" },
-  ];
+  const refs: DesktopNavRef[] = [...DESKTOP_NAV.flatMap(sectionRefs)];
   const seen = new Set<string>();
   return refs.filter((r) => {
     if (seen.has(r.href)) return false;

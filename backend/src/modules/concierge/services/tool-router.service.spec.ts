@@ -94,6 +94,7 @@ describe('ToolRouterService — service-режим (Ф4)', () => {
       tenantId: 'org-1',
       obj: 'meetings',
       act: 'read',
+      resourceOwnerId: 'user-1',
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -237,6 +238,7 @@ describe('ToolRouterService — новые инструменты помощни
       tenantId: 'org-1',
       obj: 'issue',
       act: 'write',
+      resourceOwnerId: 'u-1',
     });
     const [url, init] = fetchMock.mock.calls[0] as [string, { method: string; body?: string }];
     expect(url).toBe('http://localhost:3000/api/v1/me/tasks');
@@ -277,6 +279,73 @@ describe('ToolRouterService — новые инструменты помощни
     const [url] = fetchMock.mock.calls[0] as [string];
     expect(url).toBe('http://localhost:3000/api/v1/me/notifications/free-note');
     expect(out.ok).toBe(true);
+  });
+});
+
+describe('ToolRouterService — self-scope RBAC (QA-fix Ф1: ask_chat_v2 не 403)', () => {
+  const ASK_CHAT_V2: ToolSchema = {
+    name: 'ask_chat_v2',
+    description: 'Спросить AI-чат компании',
+    method: 'POST',
+    path: '/api/v1/chat-v2/messages',
+    parameters: {
+      type: 'object',
+      properties: { question: { type: 'string' } },
+      required: ['question'],
+    },
+    rbacResource: 'chat_v2_conversation',
+    rbacAction: 'write',
+  };
+
+  function buildSelfScoped() {
+    const serviceMap = { findTool: vi.fn().mockReturnValue(ASK_CHAT_V2) };
+    const rbac = {
+      check: vi.fn(
+        (args: { userId: string; resourceOwnerId?: string }) =>
+          Promise.resolve(args.resourceOwnerId === args.userId),
+      ),
+    };
+    const prisma = {
+      user: {
+        findUnique: vi.fn().mockResolvedValue({ email: 'u@e.com', role: 'owner', deletedAt: null }),
+      },
+    };
+    const metrics = { incConciergeToolCall: vi.fn() };
+    const cfg = {
+      auth: { sessionSecret: TEST_SECRET },
+      concierge: { loopbackBaseUrl: LOOPBACK_BASE_URL },
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200,
+      text: () => Promise.resolve(JSON.stringify({ text: 'ответ', citations: [] })),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const svc = new ToolRouterService(
+      serviceMap as unknown as ServiceMapGeneratorService,
+      rbac as unknown as RbacService,
+      prisma as unknown as PrismaService,
+      metrics as unknown as BusinessMetricsService,
+      cfg as unknown as TypedConfigService,
+    );
+    return { svc, rbac, fetchMock };
+  }
+
+  it('rbac.check пропускает только при resourceOwnerId===userId → 200, доходит до loopback (без правки был бы 403)', async () => {
+    const { svc, rbac, fetchMock } = buildSelfScoped();
+    const out = await svc.execute({
+      toolName: 'ask_chat_v2',
+      args: { question: 'Какие задачи висят?' },
+      userId: 'owner-1',
+      tenantId: 'org-1',
+      authCookie: 'z_session=c',
+      baseUrl: 'http://localhost:3000',
+    });
+    expect(rbac.check).toHaveBeenCalledWith(
+      expect.objectContaining({ resourceOwnerId: 'owner-1', userId: 'owner-1' }),
+    );
+    expect(out.status).not.toBe(403);
+    expect(out.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

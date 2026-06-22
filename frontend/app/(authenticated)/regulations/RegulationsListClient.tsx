@@ -6,12 +6,14 @@ import Link from 'next/link';
 import useSWR from 'swr';
 import { toast } from 'sonner';
 import {
+  ArchiveRestore,
   CheckCircle2,
   ChevronDown,
   History,
   Quote,
   Replace,
   Search,
+  Trash2,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
@@ -48,6 +50,7 @@ import { TrustBadge } from '@/ui/components/shared/TrustBadge';
 import { ProvenancePreviewSnippet } from '@/ui/components/provenance/ProvenancePreviewSnippet';
 import { mapPreviewToProvenanceRef } from '@/domain/provenance';
 import { ConfirmDialog } from '@/ui/components/shared/ConfirmDialog';
+import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { EmptyState } from '@/ui/components/shared/EmptyState';
 import {
   CardCorrectionActions,
@@ -175,6 +178,8 @@ function extractToc(md: string): { id: string; text: string }[] {
 function RegulationsListContent() {
   const { currentOrgRole } = useAuth();
   const canApplyDirectly = ['owner', 'admin'].includes(currentOrgRole ?? '');
+  const canWrite = canApplyDirectly;
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
   const searchParams = useSearchParams();
   // `?kind=policy` (редирект с `/policies`) приземляется на нужный фильтр.
   const initialKind = useMemo<'all' | RegulationKindApi>(() => {
@@ -194,6 +199,7 @@ function RegulationsListContent() {
     useState<'all' | RegulationKindApi>(initialKind);
   const [statusFilter, setStatusFilter] =
     useState<'all' | RegulationStatusApi>('all');
+  const [deletedFilter, setDeletedFilter] = useState(false);
   const [selected, setSelected] = useState<{
     id: string;
     kind: RegulationKindApi;
@@ -229,6 +235,7 @@ function RegulationsListContent() {
         ...(qDebounced ? { q: qDebounced } : {}),
         ...(kindFilter !== 'all' ? { kind: kindFilter } : {}),
         ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
+        ...(deletedFilter ? { deleted: true } : {}),
         limit: 50,
       });
       setData(dto);
@@ -241,7 +248,7 @@ function RegulationsListContent() {
     } finally {
       setIsLoading(false);
     }
-  }, [qDebounced, kindFilter, statusFilter]);
+  }, [qDebounced, kindFilter, statusFilter, deletedFilter]);
 
   useEffect(() => {
     void load();
@@ -313,6 +320,45 @@ function RegulationsListContent() {
       throw e;
     }
   }, [selected, supersedeTargetId, loadDetail, load]);
+
+  const handleDelete = useCallback(async () => {
+    if (!selected) return;
+    const ok = await ask({
+      title: 'Удалить регламент?',
+      description: 'Восстановить можно в течение 30 дней.',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await regulationsApi.remove(selected.id, { kind: selected.kind });
+      toast.success('Регламент удалён');
+      setSelected(null);
+      await load();
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'forbidden') {
+        toast.error('Удалять регламенты могут только owner / admin');
+      } else {
+        toast.error(humanizeApiError(e, 'Не удалось удалить'));
+      }
+    }
+  }, [selected, ask, load]);
+
+  const handleRestore = useCallback(async () => {
+    if (!selected) return;
+    try {
+      await regulationsApi.restore(selected.id, { kind: selected.kind });
+      toast.success('Регламент восстановлен');
+      setSelected(null);
+      await load();
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'forbidden') {
+        toast.error('Восстанавливать регламенты могут только owner / admin');
+      } else {
+        toast.error(humanizeApiError(e, 'Не удалось восстановить'));
+      }
+    }
+  }, [selected, load]);
 
   const toggleHistory = useCallback(async () => {
     if (!selected) return;
@@ -485,6 +531,19 @@ function RegulationsListContent() {
           </option>
         ))}
       </select>
+      {canWrite ? (
+        <Button
+          type="button"
+          variant={deletedFilter ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => {
+            setSelected(null);
+            setDeletedFilter((v) => !v);
+          }}
+        >
+          {deletedFilter ? 'Показаны удалённые' : 'Удалённые'}
+        </Button>
+      ) : null}
     </div>
   );
 
@@ -618,24 +677,28 @@ function RegulationsListContent() {
       <section className="space-y-2">
         <h3 className="text-sm font-medium text-fg-primary">Действия</h3>
         <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => void handleConfirm()}
-          >
-            <CheckCircle2 className="mr-1.5 h-4 w-4" />
-            Подтвердить актуальность
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setSupersedeOpen(true)}
-          >
-            <Replace className="mr-1.5 h-4 w-4" />
-            Заменить новой версией
-          </Button>
+          {deletedFilter ? null : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handleConfirm()}
+            >
+              <CheckCircle2 className="mr-1.5 h-4 w-4" />
+              Подтвердить актуальность
+            </Button>
+          )}
+          {deletedFilter ? null : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setSupersedeOpen(true)}
+            >
+              <Replace className="mr-1.5 h-4 w-4" />
+              Заменить новой версией
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"
@@ -645,6 +708,30 @@ function RegulationsListContent() {
             <History className="mr-1.5 h-4 w-4" />
             {historyOpen ? 'Скрыть историю' : 'История версий'}
           </Button>
+          {canWrite && deletedFilter ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handleRestore()}
+            >
+              <ArchiveRestore className="mr-1.5 h-4 w-4" />
+              Восстановить
+            </Button>
+          ) : null}
+          {canWrite && !deletedFilter ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-danger hover:text-danger"
+              onClick={() => void handleDelete()}
+            >
+              <Trash2 className="mr-1.5 h-4 w-4" />
+              Удалить
+            </Button>
+          ) : null}
+          {deletedFilter ? null : (
           <CardCorrectionActions
             fields={buildRegulationCorrectionFields(detail)}
             canApplyDirectly={canApplyDirectly}
@@ -671,6 +758,7 @@ function RegulationsListContent() {
               void load();
             }}
           />
+          )}
         </div>
       </section>
 
@@ -900,6 +988,7 @@ function RegulationsListContent() {
       </div>
 
       {supersedeDialog}
+      {confirmDialog}
         </>
       )}
       </div>
@@ -1144,6 +1233,7 @@ function RegulationsListContent() {
       </div>
 
       {supersedeDialog}
+      {confirmDialog}
     </div>
   );
 }

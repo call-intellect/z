@@ -11,9 +11,12 @@ import {
 function makePrismaMock(): any {
   return {
     // Б50 — findFirst для source-block дедупа (null = дубля нет → create).
+    // F1 — findUnique/upsert по sourceIdeaBlockId (идемпотентность combined).
     decision: {
       create: vi.fn().mockResolvedValue({ id: 'd1' }),
       findFirst: vi.fn().mockResolvedValue(null),
+      findUnique: vi.fn().mockResolvedValue(null),
+      upsert: vi.fn().mockResolvedValue({ id: 'd1' }),
     },
     idea: {
       create: vi.fn().mockResolvedValue({ id: 'i1' }),
@@ -49,7 +52,20 @@ function makePrismaMock(): any {
       create: vi.fn().mockResolvedValue({ id: 'h1' }),
       findFirst: vi.fn().mockResolvedValue(null),
     },
+    $executeRawUnsafe: vi.fn().mockResolvedValue(1),
   };
+}
+
+function makeCurationMock() {
+  return { triage: vi.fn().mockResolvedValue({ status: 'provisional' }) };
+}
+
+function makeEmbedderMock() {
+  return { embedQuery: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]) };
+}
+
+function makeEventsMock() {
+  return { emit: vi.fn() };
 }
 
 function makeLlmMock(toolInput: unknown) {
@@ -221,7 +237,7 @@ describe('SpecialistsCombinedService.extractAll', () => {
     const result = await svc.extractAll({ ...argsTemplate() });
 
     expect(llm.call).toHaveBeenCalledTimes(1);
-    expect(prisma.decision.create).toHaveBeenCalledTimes(1);
+    expect(prisma.decision.upsert).toHaveBeenCalledTimes(1);
     expect(prisma.idea.create).toHaveBeenCalledTimes(1);
     expect(prisma.insight.create).toHaveBeenCalledTimes(1);
     expect(prisma.experiment.create).toHaveBeenCalledTimes(1);
@@ -321,10 +337,10 @@ describe('SpecialistsCombinedService.extractAll', () => {
 
     await svc.extractAll({ ...argsTemplate() });
 
-    expect(prisma.decision.create).toHaveBeenCalledTimes(1);
-    const callArg = prisma.decision.create.mock.calls[0][0];
-    expect(callArg.data.confidence).toBeInstanceOf(Prisma.Decimal);
-    expect(callArg.data.confidence.toString()).toBe('1');
+    expect(prisma.decision.upsert).toHaveBeenCalledTimes(1);
+    const callArg = prisma.decision.upsert.mock.calls[0][0];
+    expect(callArg.create.confidence).toBeInstanceOf(Prisma.Decimal);
+    expect(callArg.create.confidence.toString()).toBe('1');
   });
 
   // ─────────────────── Б50 (K4): source-block дедуп ───────────────────
@@ -357,10 +373,10 @@ describe('SpecialistsCombinedService.extractAll', () => {
     });
   });
 
-  it('P2002 sourceIdeaBlockId при create decision → дедуп, не ошибка, метрика db_conflict', async () => {
+  it('P2002 sourceIdeaBlockId при upsert decision → дедуп, не ошибка, метрика db_conflict', async () => {
     const prisma = makePrismaMock();
     prisma.decision.findFirst.mockResolvedValue(null);
-    prisma.decision.create.mockRejectedValue(
+    prisma.decision.upsert.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
         code: 'P2002',
         clientVersion: 'x',
@@ -376,7 +392,7 @@ describe('SpecialistsCombinedService.extractAll', () => {
 
     const result = await svc.extractAll({ ...argsTemplate() });
 
-    expect(prisma.decision.create).toHaveBeenCalledTimes(1);
+    expect(prisma.decision.upsert).toHaveBeenCalledTimes(1);
     expect(result.created.decisions).toBe(0);
     expect(result.errors.some((e) => e.includes('decision[blk_1]'))).toBe(false);
     expect(metrics.incCoreSpecialistExtractionFailure).toHaveBeenCalledWith(
@@ -484,5 +500,194 @@ describe('SpecialistsCombinedService.extractAll', () => {
     const upsertArg = prisma.instruction.upsert.mock.calls[0][0];
     expect(upsertArg.update.sourceBlockIds).toEqual({ set: ['blk_1'] });
     expect(upsertArg.update.sourceBlockIds).not.toHaveProperty('push');
+  });
+
+  // ─────────────────── F1 (идемпотентность decision через upsert) ───────────────────
+
+  it('F1: первый прогон combined по блоку → upsert.create-ветка, decision материализован', async () => {
+    const prisma = makePrismaMock();
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      decisions: [{ sourceBlockId: 'blk_1', statement: 'Решили X', confidence: 0.9 }],
+    });
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      llm as any,
+      makeMetricsMock() as any,
+    );
+
+    const result = await svc.extractAll({ ...argsTemplate() });
+
+    expect(prisma.decision.upsert).toHaveBeenCalledTimes(1);
+    const upsertArg = prisma.decision.upsert.mock.calls[0][0];
+    expect(upsertArg.where).toEqual({ sourceIdeaBlockId: 'blk_1' });
+    expect(upsertArg.create.sourceIdeaBlockId).toBe('blk_1');
+    expect(upsertArg.update.sourceBlockIds).toEqual({ set: ['blk_1'] });
+    expect(result.created.decisions).toBe(1);
+  });
+
+  it('F1: повтор того же блока (decision уже есть по sourceIdeaBlockId) → upsert.update объединяет sourceBlockIds, не падает, не дубль', async () => {
+    const prisma = makePrismaMock();
+    // findFirst по sourceBlockIds:{has} НЕ находит дубль (гонка двух писателей —
+    // оба прошли guard), но по sourceIdeaBlockId уже есть запись с blk_old.
+    prisma.decision.findFirst.mockResolvedValue(null);
+    prisma.decision.findUnique.mockResolvedValue({
+      id: 'd-existing',
+      sourceBlockIds: ['blk_old'],
+    });
+    prisma.decision.upsert.mockResolvedValue({ id: 'd-existing' });
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      decisions: [{ sourceBlockId: 'blk_1', statement: 'Решили X', confidence: 0.9 }],
+    });
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      llm as any,
+      makeMetricsMock() as any,
+    );
+
+    const result = await svc.extractAll({ ...argsTemplate() });
+
+    expect(prisma.decision.upsert).toHaveBeenCalledTimes(1);
+    const upsertArg = prisma.decision.upsert.mock.calls[0][0];
+    expect(upsertArg.update.sourceBlockIds.set).toEqual(
+      expect.arrayContaining(['blk_old', 'blk_1']),
+    );
+    expect(upsertArg.update.sourceBlockIds.set).toHaveLength(2);
+    // existing!==null → НЕ инкрементим счётчик новых.
+    expect(result.created.decisions).toBe(0);
+    expect(result.errors).toEqual([]);
+  });
+
+  // ─────────────────── F3 (побочные эффекты как у полного специалиста) ───────────────────
+
+  it('F3 decision: combined создаёт decision → curation.triage(decision) + embedding записаны', async () => {
+    const prisma = makePrismaMock();
+    const curation = makeCurationMock();
+    const embedder = makeEmbedderMock();
+    const events = makeEventsMock();
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      decisions: [
+        { sourceBlockId: 'blk_1', statement: 'Решили X', rationale: 'причина', confidence: 0.9 },
+      ],
+    });
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      llm as any,
+      makeMetricsMock() as any,
+      undefined,
+      curation as any,
+      embedder as any,
+      events as any,
+    );
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    expect(curation.triage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceType: 'decision',
+        resourceId: 'd1',
+        proposedPayload: expect.objectContaining({ statement: 'Решили X' }),
+      }),
+    );
+    expect(embedder.embedQuery).toHaveBeenCalled();
+    expect(prisma.$executeRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE "decisions"'),
+      expect.any(String),
+      'd1',
+    );
+  });
+
+  it('F3 idea: combined создаёт idea → weight>0 записан, curation.triage(idea) + idea.created event', async () => {
+    const prisma = makePrismaMock();
+    prisma.idea.create.mockResolvedValue({ id: 'i1' });
+    const curation = makeCurationMock();
+    const embedder = makeEmbedderMock();
+    const events = makeEventsMock();
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      ideas: [
+        { sourceBlockId: 'blk_1', kind: 'internal', statement: 'Идея Z', confidence: 0.7 },
+      ],
+    });
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      llm as any,
+      makeMetricsMock() as any,
+      undefined,
+      curation as any,
+      embedder as any,
+      events as any,
+    );
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    expect(prisma.idea.create).toHaveBeenCalledTimes(1);
+    const createArg = prisma.idea.create.mock.calls[0][0];
+    expect(createArg.data.weight).toBeInstanceOf(Prisma.Decimal);
+    expect(Number(createArg.data.weight.toString())).toBeGreaterThan(0);
+    expect(createArg.data.status).toBe('captured');
+    expect(curation.triage).toHaveBeenCalledWith(
+      expect.objectContaining({ resourceType: 'idea', resourceId: 'i1' }),
+    );
+    expect(events.emit).toHaveBeenCalledWith(
+      'idea.created',
+      expect.objectContaining({ ideaId: 'i1' }),
+    );
+  });
+
+  it('F3 best-effort: triage бросает → decision всё равно персистится, combined не падает', async () => {
+    const prisma = makePrismaMock();
+    const curation = makeCurationMock();
+    curation.triage.mockRejectedValue(new Error('triage down'));
+    const embedder = makeEmbedderMock();
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      decisions: [{ sourceBlockId: 'blk_1', statement: 'Решили X', confidence: 0.9 }],
+    });
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      llm as any,
+      makeMetricsMock() as any,
+      undefined,
+      curation as any,
+      embedder as any,
+      makeEventsMock() as any,
+    );
+
+    const result = await svc.extractAll({ ...argsTemplate() });
+
+    expect(prisma.decision.upsert).toHaveBeenCalledTimes(1);
+    expect(result.created.decisions).toBe(1);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('F3 best-effort: idea triage бросает → idea персистится, combined не падает', async () => {
+    const prisma = makePrismaMock();
+    prisma.idea.create.mockResolvedValue({ id: 'i1' });
+    const curation = makeCurationMock();
+    curation.triage.mockRejectedValue(new Error('triage down'));
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      ideas: [
+        { sourceBlockId: 'blk_1', kind: 'internal', statement: 'Идея Z', confidence: 0.7 },
+      ],
+    });
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      llm as any,
+      makeMetricsMock() as any,
+      undefined,
+      curation as any,
+      makeEmbedderMock() as any,
+      makeEventsMock() as any,
+    );
+
+    const result = await svc.extractAll({ ...argsTemplate() });
+
+    expect(prisma.idea.create).toHaveBeenCalledTimes(1);
+    expect(result.created.ideas).toBe(1);
+    expect(result.errors).toEqual([]);
   });
 });

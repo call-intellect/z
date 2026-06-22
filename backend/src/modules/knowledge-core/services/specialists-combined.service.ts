@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   type DataClass,
   type DecisionStatus,
@@ -13,6 +14,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { CurationService } from '../../curation/services/curation.service';
 import {
   buildSpecialistsCombinedSystemPrompt,
   buildSpecialistsCombinedUserMessage,
@@ -24,6 +26,8 @@ import {
   SpecialistsCombinedOutputSchema,
   SUBMIT_ALL_8_ENTITIES_TOOL,
 } from '../prompts/specialists-combined.prompt';
+
+import { KnowledgeEmbeddingService } from './embedding.service';
 
 export interface SpecialistsCombinedExtractArgs {
   tenantId: string;
@@ -82,6 +86,15 @@ export class SpecialistsCombinedService {
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
+    @Optional()
+    @Inject(CurationService)
+    private readonly curation?: CurationService,
+    @Optional()
+    @Inject(KnowledgeEmbeddingService)
+    private readonly embedder?: KnowledgeEmbeddingService,
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly events?: EventEmitter2,
   ) {}
 
   async extractAll(
@@ -137,9 +150,22 @@ export class SpecialistsCombinedService {
     };
 
     const blockIdSet = new Set(args.blocks.map((b) => b.id));
+    const dataClass: DataClass = args.dataClass ?? 'internal';
 
-    created.decisions = await this.persistDecisions(args.tenantId, parsed, blockIdSet, errors);
-    created.ideas = await this.persistIdeas(args.tenantId, parsed, blockIdSet, errors);
+    created.decisions = await this.persistDecisions(
+      args.tenantId,
+      parsed,
+      blockIdSet,
+      errors,
+      dataClass,
+    );
+    created.ideas = await this.persistIdeas(
+      args.tenantId,
+      parsed,
+      blockIdSet,
+      errors,
+      dataClass,
+    );
     created.insights = await this.persistInsights(args.tenantId, parsed, blockIdSet, errors);
     created.experiments = await this.persistExperiments(args.tenantId, parsed, blockIdSet, errors);
     created.regulations = await this.persistRegulations(args.tenantId, parsed, blockIdSet, errors);
@@ -240,6 +266,7 @@ export class SpecialistsCombinedService {
     parsed: SpecialistsCombinedOutput,
     blockIdSet: Set<string>,
     errors: string[],
+    dataClass: DataClass,
   ): Promise<number> {
     let created = 0;
     for (const d of parsed.decisions) {
@@ -265,29 +292,55 @@ export class SpecialistsCombinedService {
         });
         continue;
       }
+      const status = (d.status ?? 'approved') as DecisionStatus;
+      const confidence = new Prisma.Decimal(this.clamp01(d.confidence));
+      const alternatives =
+        d.alternatives && d.alternatives.length > 0
+          ? (d.alternatives as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull;
       try {
-        await this.prisma.decision.create({
-          data: {
+        const existing = await this.prisma.decision.findUnique({
+          where: { sourceIdeaBlockId: d.sourceBlockId },
+          select: { id: true, sourceBlockIds: true },
+        });
+        const decision = await this.prisma.decision.upsert({
+          where: { sourceIdeaBlockId: d.sourceBlockId },
+          create: {
             tenantId,
             text: d.statement.slice(0, 1_000),
             statement: d.statement,
             rationale: d.rationale ?? null,
-            alternatives:
-              d.alternatives && d.alternatives.length > 0
-                ? (d.alternatives as unknown as Prisma.InputJsonValue)
-                : Prisma.JsonNull,
+            alternatives,
             sourceBlockIds: [d.sourceBlockId],
             sourceIdeaBlockId: d.sourceBlockId,
-            // Б58: каст согласован с полным enum `DecisionStatus`
-            // (active/rolled_back/superseded/proposed/approved/rejected/
-            // implemented/cancelled), чтобы combined-путь не терял статусы
-            // (в т.ч. 'cancelled') в отличие от single-пути. Источник enum —
-            // schema.prisma; контракт извлечения — DecisionDraftSchema.
-            status: (d.status ?? 'approved') as DecisionStatus,
-            confidence: new Prisma.Decimal(this.clamp01(d.confidence)),
+            status,
+            confidence,
           },
+          update: {
+            statement: d.statement,
+            rationale: d.rationale ?? undefined,
+            alternatives,
+            sourceBlockIds: {
+              set: this.union(existing?.sourceBlockIds ?? [], [d.sourceBlockId]),
+            },
+            status,
+            confidence,
+            lastConfirmedAt: new Date(),
+          },
+          select: { id: true },
         });
-        created += 1;
+        if (!existing) created += 1;
+        await this.applyDecisionSideEffects({
+          tenantId,
+          decisionId: decision.id,
+          statement: d.statement,
+          rationale: d.rationale ?? null,
+          alternatives: d.alternatives ?? [],
+          status,
+          sourceBlockId: d.sourceBlockId,
+          confidence: this.clamp01(d.confidence),
+          dataClass,
+        });
       } catch (err) {
         if (
           err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -320,6 +373,7 @@ export class SpecialistsCombinedService {
     parsed: SpecialistsCombinedOutput,
     blockIdSet: Set<string>,
     errors: string[],
+    dataClass: DataClass,
   ): Promise<number> {
     let created = 0;
     for (const i of parsed.ideas) {
@@ -336,26 +390,187 @@ export class SpecialistsCombinedService {
         });
         continue;
       }
+      const weight = this.computeIdeaWeight({
+        supporterCount: 1,
+        recencyDate: new Date(),
+        hasRationale: Boolean(i.rationale),
+      });
       try {
-        await this.prisma.idea.create({
+        const idea = await this.prisma.idea.create({
           data: {
             tenantId,
             kind: i.kind as IdeaKind,
             statement: i.statement,
             rationale: i.rationale ?? null,
             sourceBlockIds: [i.sourceBlockId],
+            weight: new Prisma.Decimal(weight),
             confidence: new Prisma.Decimal(this.clamp01(i.confidence)),
             supporters: [] as unknown as Prisma.InputJsonValue,
             supporterCount: 1,
+            status: 'captured',
           },
+          select: { id: true },
         });
         created += 1;
+        await this.applyIdeaSideEffects({
+          tenantId,
+          ideaId: idea.id,
+          kind: i.kind,
+          statement: i.statement,
+          rationale: i.rationale ?? null,
+          sourceBlockId: i.sourceBlockId,
+          weight,
+          confidence: this.clamp01(i.confidence),
+          dataClass,
+        });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`idea[${i.sourceBlockId}]: ${msg}`);
       }
     }
     return created;
+  }
+
+  private async applyDecisionSideEffects(args: {
+    tenantId: string;
+    decisionId: string;
+    statement: string;
+    rationale: string | null;
+    alternatives: ReadonlyArray<unknown>;
+    status: DecisionStatus;
+    sourceBlockId: string;
+    confidence: number;
+    dataClass: DataClass;
+  }): Promise<void> {
+    await this.tryWriteEmbedding({
+      table: 'decisions',
+      id: args.decisionId,
+      text: `${args.statement} ${args.rationale ?? ''}`,
+    });
+    try {
+      await this.curation?.triage({
+        tenantId: args.tenantId,
+        resourceType: 'decision',
+        resourceId: args.decisionId,
+        confidence: this.clamp01(args.confidence),
+        proposedPayload: {
+          statement: args.statement,
+          rationale: args.rationale,
+          alternatives: args.alternatives,
+          status: args.status,
+          sourceBlockIds: [args.sourceBlockId],
+        },
+        conflictSignal: 'none',
+        createdByUserId: null,
+        dataClass: args.dataClass,
+      });
+    } catch (err) {
+      this.logger.debug(
+        {
+          decisionId: args.decisionId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialists-combined.decisions: triage упал — карточка без CurationItem (best-effort)',
+      );
+    }
+  }
+
+  private async applyIdeaSideEffects(args: {
+    tenantId: string;
+    ideaId: string;
+    kind: string;
+    statement: string;
+    rationale: string | null;
+    sourceBlockId: string;
+    weight: number;
+    confidence: number;
+    dataClass: DataClass;
+  }): Promise<void> {
+    await this.tryWriteEmbedding({
+      table: 'ideas',
+      id: args.ideaId,
+      text: args.statement,
+    });
+    try {
+      await this.curation?.triage({
+        tenantId: args.tenantId,
+        resourceType: 'idea',
+        resourceId: args.ideaId,
+        confidence: this.clamp01(args.confidence),
+        proposedPayload: {
+          kind: args.kind,
+          statement: args.statement,
+          rationale: args.rationale,
+          weight: args.weight,
+          sourceBlockIds: [args.sourceBlockId],
+        },
+        conflictSignal: 'none',
+        createdByUserId: null,
+        dataClass: args.dataClass,
+      });
+    } catch (err) {
+      this.logger.debug(
+        {
+          ideaId: args.ideaId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialists-combined.ideas: triage упал — карточка без CurationItem (best-effort)',
+      );
+    }
+    try {
+      this.events?.emit('idea.created', {
+        tenantId: args.tenantId,
+        ideaId: args.ideaId,
+        kind: args.kind,
+      });
+    } catch {
+      // graceful
+    }
+  }
+
+  private computeIdeaWeight(args: {
+    supporterCount: number;
+    recencyDate: Date;
+    hasRationale: boolean;
+  }): number {
+    const days = Math.max(
+      0,
+      (Date.now() - args.recencyDate.getTime()) / (1000 * 86400),
+    );
+    const recencyFactor = Math.max(0.1, 1 - days / 60);
+    const specificityFactor = args.hasRationale ? 1 : 0.5;
+    const base = Math.max(1, args.supporterCount) * 1.0;
+    const value = base + recencyFactor * 0.5 + specificityFactor;
+    return Math.round(value * 1000) / 1000;
+  }
+
+  private async tryWriteEmbedding(args: {
+    table: 'decisions' | 'ideas';
+    id: string;
+    text: string;
+  }): Promise<void> {
+    if (!this.embedder) return;
+    try {
+      const text = args.text.trim().slice(0, 2_000);
+      if (!text) return;
+      const vec = await this.embedder.embedQuery(text);
+      if (!vec) return;
+      const vecStr = `[${vec.join(',')}]`;
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "${args.table}" SET "embedding" = $1::vector WHERE "id" = $2`,
+        vecStr,
+        args.id,
+      );
+    } catch (err) {
+      this.logger.debug(
+        {
+          table: args.table,
+          id: args.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialists-combined.tryWriteEmbedding: пропускаю (best-effort)',
+      );
+    }
   }
 
   private async persistInsights(

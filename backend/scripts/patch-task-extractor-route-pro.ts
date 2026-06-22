@@ -2,7 +2,13 @@ import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
 
-const TASK_TYPES = ['tasks', 'meeting-extract-actions'] as const;
+const TASK_TYPES = [
+  'tasks',
+  'meeting-extract-actions',
+  'decision-extract',
+  'idea-extract',
+  'insight-extract',
+] as const;
 
 const TARGET_PROVIDER = 'deepseek';
 const TARGET_MODEL = 'deepseek-v4-pro';

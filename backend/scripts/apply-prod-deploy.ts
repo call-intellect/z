@@ -343,6 +343,12 @@ const STEPS: Step[] = [
     hint: 'block-ingest развилка idea↔decision → deepseek-v4-pro/gpt-5.4 (ТЗ idv Ф2; БЕЗ --force: уважает админ-правки)',
     skipBootstrap: true,
   },
+  {
+    phase: 'patch',
+    script: 'scripts/patch-task-extractor-route-pro.ts',
+    hint: '4 извлекающих taskType (meeting-extract-actions/decision-extract/idea-extract/insight-extract) + tasks → primary deepseek-v4-pro (фаза E R3; уважает админ-правки, идемпотентно)',
+    skipBootstrap: true,
+  },
 
   { phase: 'patch', script: 'scripts/patch-rename-client-to-customer.ts', skipBootstrap: true },
   {

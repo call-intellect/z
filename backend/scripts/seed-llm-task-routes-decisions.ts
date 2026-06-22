@@ -20,7 +20,7 @@ const SEEDS: TaskRouteSeed[] = [
     taskType: 'decision-extract',
     playbookSection: '§2.1 block-distill (similar complexity, structured JSON) + β-3 sub-TZ §11',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' },
       {
         tier: 'secondary',
         providerName: 'openai-via-proxy',

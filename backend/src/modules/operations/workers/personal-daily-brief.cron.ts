@@ -115,7 +115,7 @@ export class PersonalDailyBriefCron {
           tenantId: p.tenantId,
           recipientUserId: p.userId,
           eventType: 'proactive.notification',
-          priorityTier: 2,
+          priorityTier: 1,
           payload: {
             proactiveNotificationId: id,
             ruleType: 'personal_daily_brief',

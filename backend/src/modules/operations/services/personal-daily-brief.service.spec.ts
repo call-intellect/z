@@ -109,6 +109,63 @@ describe('PersonalDailyBriefService.buildFor', () => {
     expect(payload.promisedToMe[0]!.counterpartyName).toBe('Антон');
   });
 
+  it('задача без срока (issue dueDate=null) попадает в myTasks', async () => {
+    const { svc, prisma } = makeService();
+    prisma.issue.findMany.mockResolvedValue([
+      {
+        id: 'i-nodue',
+        title: 'Бессрочная задача',
+        identifier: 'PRJ-9',
+        dueDate: null,
+      },
+    ]);
+    prisma.ideaBlock.findMany.mockResolvedValue([]);
+
+    const payload = await svc.buildFor({
+      tenantId: 'org1',
+      personId: 'p1',
+      dateLocal: '2026-06-08',
+    });
+
+    expect(payload.counts.tasks).toBe(1);
+    expect(payload.myTasks[0]!.dueDateIso).toBeNull();
+    expect(payload.myTasks[0]!.overdue).toBe(false);
+    expect(payload.myTasks[0]!.title).toBe('PRJ-9: Бессрочная задача');
+
+    const issueWhere = prisma.issue.findMany.mock.calls[0]![0].where;
+    expect(issueWhere.AND).toEqual([
+      { OR: [{ dueDate: { lte: expect.any(Date) } }, { dueDate: null }] },
+      { OR: [{ state: null }, { state: { category: { notIn: ['completed', 'cancelled'] } } }] },
+    ]);
+    expect(issueWhere.dueDate).toBeUndefined();
+  });
+
+  it('задача без срока (task dueDate=null) попадает в myTasks; where допускает dueDate:null', async () => {
+    const { svc, prisma } = makeService();
+    prisma.task.findMany.mockResolvedValue([
+      {
+        id: 'task-nodue',
+        title: 'Бессрочный таск',
+        dueDate: null,
+        evidenceBlockIds: [],
+      },
+    ]);
+    prisma.ideaBlock.findMany.mockResolvedValue([]);
+
+    const payload = await svc.buildFor({
+      tenantId: 'org1',
+      personId: 'p1',
+      dateLocal: '2026-06-08',
+    });
+
+    expect(payload.counts.tasks).toBe(1);
+    expect(payload.myTasks[0]!.dueDateIso).toBeNull();
+    expect(payload.myTasks[0]!.overdue).toBe(false);
+
+    const taskWhere = prisma.task.findMany.mock.calls[0]![0].where;
+    expect(taskWhere.OR).toEqual([{ dueDate: { lte: expect.any(Date) } }, { dueDate: null }]);
+  });
+
   it('LLM-сбой подсказки → детерминированный fallback (бриф не падает)', async () => {
     const { svc, prisma } = makeService({
       llm: { call: vi.fn().mockRejectedValue(new Error('llm down')) },

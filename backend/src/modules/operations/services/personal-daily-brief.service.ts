@@ -152,8 +152,10 @@ export class PersonalDailyBriefService {
         deletedAt: null,
         archivedAt: null,
         assignees: { some: { userId: args.userId } },
-        dueDate: { lte: args.dayEnd },
-        OR: [{ state: null }, { state: { category: { notIn: ['completed', 'cancelled'] } } }],
+        AND: [
+          { OR: [{ dueDate: { lte: args.dayEnd } }, { dueDate: null }] },
+          { OR: [{ state: null }, { state: { category: { notIn: ['completed', 'cancelled'] } } }] },
+        ],
       },
       select: {
         id: true,
@@ -180,7 +182,7 @@ export class PersonalDailyBriefService {
         tenantId: args.tenantId,
         assigneeUserId: args.userId,
         status: { not: 'done' },
-        dueDate: { lte: args.dayEnd },
+        OR: [{ dueDate: { lte: args.dayEnd } }, { dueDate: null }],
       },
       select: { id: true, title: true, dueDate: true, evidenceBlockIds: true },
       orderBy: [{ dueDate: 'asc' }],

@@ -57,6 +57,7 @@ interface Mocks {
   curationFindFirst: ReturnType<typeof vi.fn>;
   curationDecide: ReturnType<typeof vi.fn>;
   issueUpdateMany: ReturnType<typeof vi.fn>;
+  intakeIssueUpdateMany: ReturnType<typeof vi.fn>;
   issueAssigneeFindFirst: ReturnType<typeof vi.fn>;
   assigneeResolve: ReturnType<typeof vi.fn>;
   addAssignee: ReturnType<typeof vi.fn>;
@@ -72,6 +73,7 @@ function makeMocks(): Mocks {
     .mockResolvedValue({ id: 'curation-item-1' });
   const curationDecide = vi.fn().mockResolvedValue({ id: 'curation-item-1' });
   const issueUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+  const intakeIssueUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
   const issueAssigneeFindFirst = vi.fn().mockResolvedValue(null);
   const assigneeResolve = vi.fn().mockResolvedValue({ kind: 'not_found' });
   const addAssignee = vi.fn().mockResolvedValue({ ok: true });
@@ -95,6 +97,9 @@ function makeMocks(): Mocks {
     },
     issue: {
       updateMany: issueUpdateMany,
+    },
+    intakeIssue: {
+      updateMany: intakeIssueUpdateMany,
     },
     issueAssignee: {
       findFirst: issueAssigneeFindFirst,
@@ -128,6 +133,7 @@ function makeMocks(): Mocks {
     curationFindFirst,
     curationDecide,
     issueUpdateMany,
+    intakeIssueUpdateMany,
     issueAssigneeFindFirst,
     assigneeResolve,
     addAssignee,
@@ -591,5 +597,96 @@ describe('ProbeResponseHandler — task-probe → исполнение отве�
 
     expect(mocks.issueAssigneeFindFirst).not.toHaveBeenCalled();
     expect(mocks.addAssignee).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProbeResponseHandler — task-probe для intake_issue (A5)', () => {
+  function setIntakeTaskProbe(mocks: Mocks, reason: string): void {
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi
+      .fn()
+      .mockResolvedValue({
+        ...buildProbe(),
+        reason,
+        payload: {
+          contextCardId: 'intake-7',
+          contextCardKind: 'intake_issue',
+          contextCardTitle: 'Сделать отчёт',
+          suggestedQuestion: 'Кому поручить задачу «Сделать отчёт»?',
+        },
+      });
+  }
+
+  it('assignee_unresolved «Анна» → resolved(u1) → intakeIssue.updateMany, НЕ issues.addAssignee', async () => {
+    const mocks = makeMocks();
+    setIntakeTaskProbe(mocks, 'task.assignee_unresolved');
+    mocks.assigneeResolve.mockResolvedValueOnce({
+      kind: 'resolved',
+      userId: 'u1',
+      name: 'Анна',
+      via: 'name',
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'Анна' } });
+
+    expect(mocks.assigneeResolve).toHaveBeenCalledWith('org-classify', 'Анна');
+    expect(mocks.addAssignee).not.toHaveBeenCalled();
+    expect(mocks.issueAssigneeFindFirst).not.toHaveBeenCalled();
+    expect(mocks.intakeIssueUpdateMany).toHaveBeenCalledTimes(1);
+    const call = mocks.intakeIssueUpdateMany.mock.calls[0]![0] as {
+      where: {
+        id: string;
+        tenantId: string;
+        suggestedAssigneeId: null;
+        status: string;
+      };
+      data: { suggestedAssigneeId: string };
+    };
+    expect(call.where).toMatchObject({
+      id: 'intake-7',
+      tenantId: 'org-classify',
+      suggestedAssigneeId: null,
+      status: 'pending',
+    });
+    expect(call.data.suggestedAssigneeId).toBe('u1');
+  });
+
+  it('assignee_unresolved resolver not_found → intakeIssue.updateMany НЕ вызван', async () => {
+    const mocks = makeMocks();
+    setIntakeTaskProbe(mocks, 'task.assignee_unresolved');
+    mocks.assigneeResolve.mockResolvedValueOnce({ kind: 'not_found' });
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'кто-то' } });
+
+    expect(mocks.intakeIssueUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.addAssignee).not.toHaveBeenCalled();
+  });
+
+  it('due_date_missing «до пятницы» → intakeIssue.updateMany c suggestedDueDate, issue.updateMany НЕ вызван', async () => {
+    const mocks = makeMocks();
+    setIntakeTaskProbe(mocks, 'task.due_date_missing');
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'до пятницы' } });
+
+    expect(mocks.issueUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.intakeIssueUpdateMany).toHaveBeenCalledTimes(1);
+    const call = mocks.intakeIssueUpdateMany.mock.calls[0]![0] as {
+      where: {
+        id: string;
+        tenantId: string;
+        suggestedDueDate: null;
+        status: string;
+      };
+      data: { suggestedDueDate: Date };
+    };
+    expect(call.where).toMatchObject({
+      id: 'intake-7',
+      tenantId: 'org-classify',
+      suggestedDueDate: null,
+      status: 'pending',
+    });
+    expect(call.data.suggestedDueDate).toBeInstanceOf(Date);
   });
 });

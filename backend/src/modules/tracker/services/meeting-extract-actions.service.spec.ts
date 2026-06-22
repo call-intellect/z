@@ -11,6 +11,7 @@ import type {
   ResolvedTaskAssignee,
   TaskAssigneeResolverService,
 } from '../../knowledge-core/services/task-assignee-resolver.service';
+import type { ProbeService } from '../../probe/probe.service';
 
 import type { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 import { MeetingExtractActionsService } from './meeting-extract-actions.service';
@@ -32,6 +33,8 @@ function mkService(opts?: {
   existingIntake?: boolean;
   participants?: AiParticipantContext[];
   resolveResult?: ResolvedTaskAssignee[];
+  assigneeClarifyEnabled?: boolean;
+  probeReject?: boolean;
 }): {
   service: MeetingExtractActionsService;
   prisma: MockPrisma;
@@ -43,12 +46,14 @@ function mkService(opts?: {
     incAiMeetingActionsExtracted: ReturnType<typeof vi.fn>;
   };
   queue: { enqueue: ReturnType<typeof vi.fn> };
+  probe: { suggest: ReturnType<typeof vi.fn> };
 } {
   const prisma: MockPrisma = {
     meeting: {
       findFirst: vi.fn().mockResolvedValue({
         id: 'm-1',
         tenantId: 'org-1',
+        ownerId: 'owner-1',
         title: 'DEV — Спринт 21',
         type: 'standup',
         startedAt: new Date('2026-05-24T10:00:00Z'),
@@ -151,9 +156,18 @@ function mkService(opts?: {
     incAiMeetingActionsExtracted: vi.fn(),
   };
   const queue = { enqueue: vi.fn().mockResolvedValue(undefined) };
+  const probe = {
+    suggest: opts?.probeReject
+      ? vi.fn().mockRejectedValue(new Error('probe down'))
+      : vi.fn().mockResolvedValue({ dispatched: true }),
+  };
 
   const cfg = {
     pendingActions: { intakeTtlDays: 30 },
+    tracker: {
+      assigneeClarifyEnabled: opts?.assigneeClarifyEnabled ?? true,
+      assigneeProbePriorityHint: 70,
+    },
   };
 
   const service = new MeetingExtractActionsService(
@@ -165,6 +179,8 @@ function mkService(opts?: {
     cfg as unknown as TypedConfigService,
     metrics as unknown as BusinessMetricsService,
     queue as unknown as IntakeAutoTriageQueueService,
+    undefined,
+    probe as unknown as ProbeService,
   );
   return {
     service,
@@ -175,6 +191,7 @@ function mkService(opts?: {
     assigneeResolver,
     metrics,
     queue,
+    probe,
   };
 }
 
@@ -419,5 +436,103 @@ describe('MeetingExtractActionsService', () => {
     expect(metrics.incAiMeetingActionsExtracted).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'created', by: 1 }),
     );
+  });
+
+  it('A5: задача без исполнителя → probe.suggest task.assignee_unresolved (intake_issue, recipient=ownerId)', async () => {
+    const { service, prisma, probe } = mkService({
+      participants: [],
+      llmText: JSON.stringify({
+        tasks: [
+          {
+            title: 'Без исполнителя',
+            assignee: null,
+            dueDate: '2026-05-30',
+            suggestedDueDate: '2026-05-30',
+            confidence: 0.8,
+            sourceQuote: 'Надо сделать Х',
+          },
+        ],
+      }),
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    expect(prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+    expect(probe.suggest).toHaveBeenCalledTimes(1);
+    const probeArg = probe.suggest.mock.calls[0]?.[0] as {
+      tenantId: string;
+      reason: string;
+      emittedByService: string;
+      payload: { contextCardKind: string };
+      recipientCandidates: string[];
+    };
+    expect(probeArg.tenantId).toBe('org-1');
+    expect(probeArg.reason).toBe('task.assignee_unresolved');
+    expect(probeArg.emittedByService).toBe('meeting-extract-actions');
+    expect(probeArg.payload.contextCardKind).toBe('intake_issue');
+    expect(probeArg.recipientCandidates).toEqual(['owner-1']);
+  });
+
+  it('A5: задача с исполнителем → probe.suggest НЕ вызван', async () => {
+    const { service, prisma, probe } = mkService({
+      resolveResult: [
+        { assigneeRaw: 'Иванов Сергей', assigneeUserId: 'user-ivanov', ambiguous: false },
+      ],
+      participants: [participant({ displayName: 'Иванов Сергей', userId: 'user-ivanov' })],
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    expect(prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+    expect(probe.suggest).not.toHaveBeenCalled();
+  });
+
+  it('A5: probe.suggest падает → обработка встречи не падает, IntakeIssue создан', async () => {
+    const { service, prisma, probe } = mkService({
+      participants: [],
+      probeReject: true,
+      llmText: JSON.stringify({
+        tasks: [
+          {
+            title: 'Без исполнителя',
+            assignee: null,
+            dueDate: '2026-05-30',
+            suggestedDueDate: '2026-05-30',
+            confidence: 0.8,
+            sourceQuote: 'Надо сделать Х',
+          },
+        ],
+      }),
+    });
+
+    const created = await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    expect(probe.suggest).toHaveBeenCalledTimes(1);
+    expect(prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+    expect(created).toHaveLength(1);
+  });
+
+  it('A5: assigneeClarifyEnabled=false → probe.suggest НЕ вызван даже без исполнителя', async () => {
+    const { service, prisma, probe } = mkService({
+      participants: [],
+      assigneeClarifyEnabled: false,
+      llmText: JSON.stringify({
+        tasks: [
+          {
+            title: 'Без исполнителя',
+            assignee: null,
+            dueDate: '2026-05-30',
+            suggestedDueDate: '2026-05-30',
+            confidence: 0.8,
+            sourceQuote: 'Надо сделать Х',
+          },
+        ],
+      }),
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    expect(prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+    expect(probe.suggest).not.toHaveBeenCalled();
   });
 });

@@ -252,6 +252,9 @@ export class ProbeResponseHandler {
   }): Promise<void> {
     const issueId = this.toStringOrUndef(args.probePayload.contextCardId);
     if (!issueId) return;
+    const contextCardKind = this.toStringOrUndef(
+      args.probePayload.contextCardKind,
+    );
     const answer =
       args.classifiedAnswer && args.classifiedAnswer.trim().length > 0
         ? args.classifiedAnswer
@@ -262,9 +265,37 @@ export class ProbeResponseHandler {
       if (args.reason === 'task.due_date_missing') {
         const due = parseRussianDueDate(answer, new Date());
         if (!due) return;
+        if (contextCardKind === 'intake_issue') {
+          await this.prisma.intakeIssue.updateMany({
+            where: {
+              id: issueId,
+              tenantId: args.tenantId,
+              suggestedDueDate: null,
+              status: 'pending',
+            },
+            data: { suggestedDueDate: due },
+          });
+          return;
+        }
         await this.prisma.issue.updateMany({
           where: { id: issueId, tenantId: args.tenantId, dueDate: null, deletedAt: null },
           data: { dueDate: due },
+        });
+        return;
+      }
+
+      if (contextCardKind === 'intake_issue') {
+        if (!this.assigneeResolver) return;
+        const resolution = await this.assigneeResolver.resolve(args.tenantId, answer);
+        if (resolution.kind !== 'resolved') return;
+        await this.prisma.intakeIssue.updateMany({
+          where: {
+            id: issueId,
+            tenantId: args.tenantId,
+            suggestedAssigneeId: null,
+            status: 'pending',
+          },
+          data: { suggestedAssigneeId: resolution.userId },
         });
         return;
       }

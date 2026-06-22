@@ -269,6 +269,74 @@ describe('PROBE_REASON_RECHECK — task.assignee_unresolved (Блок A Ф1)', (
   });
 });
 
+describe('PROBE_REASON_RECHECK — task.assignee_unresolved (intake_issue, Блок A Ф5)', () => {
+  const reason = 'task.assignee_unresolved';
+
+  it('intake без исполнителя + pending → пробел открыт (true)', async () => {
+    const prisma = {
+      intakeIssue: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ suggestedAssigneeId: null, status: 'pending' }),
+      },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'ii-1',
+      contextCardKind: 'intake_issue',
+    });
+    expect(rel).toBe(true);
+  });
+
+  it('intake исполнитель назначен → пробел закрыт (false)', async () => {
+    const prisma = {
+      intakeIssue: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ suggestedAssigneeId: 'u-1', status: 'pending' }),
+      },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'ii-1',
+      contextCardKind: 'intake_issue',
+    });
+    expect(rel).toBe(false);
+  });
+
+  it('intake уже не pending (accepted) → пробел закрыт (false)', async () => {
+    const prisma = {
+      intakeIssue: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ suggestedAssigneeId: null, status: 'accepted' }),
+      },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'ii-1',
+      contextCardKind: 'intake_issue',
+    });
+    expect(rel).toBe(false);
+  });
+
+  it('intake не найден → подавляем (false)', async () => {
+    const prisma = {
+      intakeIssue: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'ii-1',
+      contextCardKind: 'intake_issue',
+    });
+    expect(rel).toBe(false);
+  });
+});
+
 describe('PROBE_REASON_RECHECK — task.due_date_missing (Блок A Ф1)', () => {
   const reason = 'task.due_date_missing';
 

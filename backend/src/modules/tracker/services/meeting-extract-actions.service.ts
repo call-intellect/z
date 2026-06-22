@@ -30,6 +30,7 @@ import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { BlockFetchService } from '../../knowledge-core/services/block-fetch.service';
 import { TaskAssigneeResolverService } from '../../knowledge-core/services/task-assignee-resolver.service';
 import { computeExpiresAt } from '../../pending-actions/expires-at.util';
+import { ProbeService } from '../../probe/probe.service';
 
 import { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 import { shouldMaterializeTask } from './task-quality-gate.util';
@@ -91,6 +92,9 @@ export class MeetingExtractActionsService implements OnModuleInit {
     @Optional()
     @Inject(BlockFetchService)
     private readonly blockFetch?: BlockFetchService,
+    @Optional()
+    @Inject(ProbeService)
+    private readonly probe?: ProbeService,
   ) {}
 
   onModuleInit(): void {
@@ -394,6 +398,33 @@ export class MeetingExtractActionsService implements OnModuleInit {
             ? clampConfidence(t.confidence)
             : null,
       });
+
+      if (
+        suggestedAssigneeId == null &&
+        this.cfg.tracker.assigneeClarifyEnabled &&
+        this.probe
+      ) {
+        try {
+          await this.probe.suggest({
+            tenantId,
+            emittedByService: 'meeting-extract-actions',
+            reason: 'task.assignee_unresolved',
+            payload: {
+              contextCardId: issue.id,
+              contextCardKind: 'intake_issue',
+              contextCardTitle: title,
+              objectName: title,
+              objectKindRu: 'задача',
+              message: `Из встречи «${meeting.title}» извлечена задача «${title}», но не определён исполнитель.`,
+              suggestedQuestion: `Кому поручить задачу «${title}» из встречи «${meeting.title}»?`,
+            },
+            recipientCandidates: [meeting.ownerId],
+            priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
+          });
+        } catch {
+          // best-effort
+        }
+      }
 
       // Enqueue auto-triage (best-effort). Worker ещё раз перепроверит
       // suggested* и при высокой confidence создаст Issue автоматически.

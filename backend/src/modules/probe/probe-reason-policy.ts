@@ -308,8 +308,21 @@ export const PROBE_REASON_RECHECK: Record<string, ProbeRecheckPredicate> = {
     if (link) return false;
     return true;
   },
-  'task.assignee_unresolved': async ({ prisma, tenantId, contextCardId }) => {
+  'task.assignee_unresolved': async ({
+    prisma,
+    tenantId,
+    contextCardId,
+    contextCardKind,
+  }) => {
     if (!contextCardId) return true;
+    if (contextCardKind === 'intake_issue') {
+      const intake = await prisma.intakeIssue.findFirst({
+        where: { id: contextCardId, tenantId },
+        select: { suggestedAssigneeId: true, status: true },
+      });
+      if (!intake) return false;
+      return intake.suggestedAssigneeId == null && intake.status === 'pending';
+    }
     const issue = await prisma.issue.findFirst({
       where: { id: contextCardId, tenantId, deletedAt: null },
       select: { assignees: { select: { id: true } } },
@@ -317,8 +330,21 @@ export const PROBE_REASON_RECHECK: Record<string, ProbeRecheckPredicate> = {
     if (!issue) return false;
     return issue.assignees.length === 0;
   },
-  'task.due_date_missing': async ({ prisma, tenantId, contextCardId }) => {
+  'task.due_date_missing': async ({
+    prisma,
+    tenantId,
+    contextCardId,
+    contextCardKind,
+  }) => {
     if (!contextCardId) return true;
+    if (contextCardKind === 'intake_issue') {
+      const intake = await prisma.intakeIssue.findFirst({
+        where: { id: contextCardId, tenantId },
+        select: { suggestedDueDate: true, status: true },
+      });
+      if (!intake) return false;
+      return intake.suggestedDueDate == null && intake.status === 'pending';
+    }
     const issue = await prisma.issue.findFirst({
       where: { id: contextCardId, tenantId, deletedAt: null },
       select: { dueDate: true },

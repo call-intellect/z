@@ -135,11 +135,21 @@ export class ProactiveMessageCraftService {
           title: 'Сигналы внутри одной области не связаны',
           body: `В области «${name}» несколько insight'ов не ссылаются друг на друга. Стоит сшить.`,
         };
-      case 'plan_item_overdue':
+      case 'plan_item_overdue': {
+        const planItems = Array.isArray(facts.planItems)
+          ? facts.planItems.filter((t): t is string => typeof t === 'string').slice(0, 3)
+          : [];
+        if (planItems.length > 0) {
+          return {
+            title: 'Обещал на сегодня — ещё не закрыто',
+            body: `На сегодня в плане: ${planItems.join('; ')}. Вечер близко — отметишь, что сделано?`,
+          };
+        }
         return {
-          title: 'План есть, результата нет',
-          body: `План «${name}» старше 30 дней и без завершения. Проверим статус?`,
+          title: 'Обещал на сегодня — ещё не закрыто',
+          body: `«${name}» пока без отметки о завершении. Вечер близко — отметишь, что сделано?`,
         };
+      }
       default:
         return {
           title: 'Кора заметила кое-что',

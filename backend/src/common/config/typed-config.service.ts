@@ -1543,6 +1543,16 @@ export class TypedConfigService {
     return {
       enabled: this.get('PROACTIVE_WATCHER_ENABLED') !== false,
       antiSpamTtlHours: Number(this.get('PROACTIVE_WATCHER_ANTI_SPAM_TTL_HOURS') ?? 24),
+      eveningPlanCheckEnabled: this.resolveSync<boolean>(
+        'proactive.eveningPlanCheckEnabled',
+        undefined,
+        true,
+      ),
+      planItemOverdueThresholdDays: this.resolveSync<number>(
+        'proactive.planItemOverdueThresholdDays',
+        undefined,
+        1,
+      ),
       rules: {
         decisionNoOwner: this.get('PROACTIVE_RULE_DECISION_NO_OWNER_ENABLED') !== false,
         insightNoMitigation: this.get('PROACTIVE_RULE_INSIGHT_NO_MITIGATION_ENABLED') !== false,

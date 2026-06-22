@@ -7,6 +7,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
+import { getLocalHour } from '../../operations/utils/local-date';
 import { getProactiveLocalDate } from '../utils/local-date';
 
 import { ProactiveDedupService } from './proactive-dedup.service';
@@ -484,12 +485,16 @@ export class ProactiveWatcherService {
     tenantId: string;
     now: Date;
   }): Promise<{ sent: number; dedupSkipped: number }> {
-    const threshold = new Date(args.now.getTime() - 30 * 24 * 3600 * 1000);
+    if (!this.cfg.proactive.eveningPlanCheckEnabled) {
+      return { sent: 0, dedupSkipped: 0 };
+    }
+    const thresholdDays = this.cfg.proactive.planItemOverdueThresholdDays;
+    const since = new Date(args.now.getTime() - thresholdDays * 24 * 3600 * 1000);
     const morningCheckIns = await this.prisma.dailyCheckIn.findMany({
       where: {
         tenantId: args.tenantId,
         kind: 'morning',
-        createdAt: { lt: threshold },
+        createdAt: { gte: since },
         plansJson: { not: { equals: null } as never },
       },
       select: {
@@ -497,9 +502,10 @@ export class ProactiveWatcherService {
         personId: true,
         dateLocal: true,
         createdAt: true,
-        person: { select: { userId: true, name: true } },
+        plansJson: true,
+        person: { select: { userId: true, name: true, timezone: true } },
       },
-      take: ProactiveWatcherService.MAX_NOTIFICATIONS_PER_RULE_PER_ORG * 3,
+      take: 150,
       orderBy: { createdAt: 'desc' },
     });
     if (morningCheckIns.length === 0) return { sent: 0, dedupSkipped: 0 };
@@ -511,39 +517,51 @@ export class ProactiveWatcherService {
       byPerson.set(m.personId, arr);
     }
 
+    const eveningLocalHour = this.cfg.betaOps.eveningLocalHour;
+
     let sent = 0;
     let dedupSkipped = 0;
     let processed = 0;
     for (const [personId, ms] of byPerson) {
       if (processed >= ProactiveWatcherService.MAX_NOTIFICATIONS_PER_RULE_PER_ORG) break;
       processed++;
-      const oldest = ms[ms.length - 1]!;
+      const latest = ms[0]!;
+
+      const localHour = getLocalHour(args.now, latest.person?.timezone);
+      if (localHour < eveningLocalHour) continue;
+
       const eveningDone = await this.prisma.dailyCheckIn.count({
         where: {
           tenantId: args.tenantId,
           personId,
           kind: 'evening',
-          dateLocal: oldest.dateLocal,
+          dateLocal: latest.dateLocal,
           donesJson: { not: { equals: null } as never },
         },
       });
       if (eveningDone > 0) continue;
 
-      const recipient = oldest.person?.userId;
+      const recipient = latest.person?.userId;
       if (!recipient) continue;
-      const ageDays = Math.floor(
-        (args.now.getTime() - oldest.createdAt.getTime()) / (24 * 3600 * 1000),
-      );
+
+      const planItems = this.extractPlanItemTexts(latest.plansJson);
+      const name =
+        planItems.length === 0
+          ? `план от ${latest.dateLocal}`
+          : planItems.length === 1
+            ? `Не закрыто: ${planItems[0]}`
+            : `Не закрыто: ${planItems.slice(0, 2).join('; ')}`;
       const result = await this.emit({
         tenantId: args.tenantId,
         userId: recipient,
         ruleType: 'plan_item_overdue',
-        severity: ageDays > 60 ? 'medium' : 'low',
+        severity: 'low',
         now: args.now,
         facts: {
-          name: `план от ${oldest.dateLocal}`,
-          checkInId: oldest.id,
-          ageDays,
+          name,
+          planItems,
+          checkInId: latest.id,
+          dateLocal: latest.dateLocal,
         },
         actionUrl: '/me/check-ins',
       });
@@ -551,6 +569,21 @@ export class ProactiveWatcherService {
       else if (result === 'dedup_skipped') dedupSkipped++;
     }
     return { sent, dedupSkipped };
+  }
+
+  private extractPlanItemTexts(plansJson: unknown): string[] {
+    if (!Array.isArray(plansJson)) return [];
+    const texts: string[] = [];
+    for (const raw of plansJson) {
+      if (texts.length >= 5) break;
+      if (raw && typeof raw === 'object' && 'text' in raw) {
+        const text = (raw as { text: unknown }).text;
+        if (typeof text === 'string' && text.trim().length > 0) {
+          texts.push(text.trim().slice(0, 80));
+        }
+      }
+    }
+    return texts;
   }
 
   private async emit(input: {

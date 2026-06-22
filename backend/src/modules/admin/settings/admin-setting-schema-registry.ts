@@ -108,6 +108,9 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.autoAcceptConfidenceThreshold', UNIT_INTERVAL],
   ['intake.autoAcceptSources', z.array(z.string())],
 
+  ['proactive.eveningPlanCheckEnabled', z.boolean()],
+  ['proactive.planItemOverdueThresholdDays', z.number().int().min(1).max(90)],
+
   ['goals.pulse.enabled', z.boolean()],
   ['goals.pulse.deliver_to_telegram', z.boolean()],
 

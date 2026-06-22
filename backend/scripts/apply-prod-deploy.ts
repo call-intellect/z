@@ -138,6 +138,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-proactive.ts',
+    hint: 'proactive.{eveningPlanCheckEnabled,planItemOverdueThresholdDays} — вечерняя сверка плана дня по незакрытым пунктам (Блок C Ф3 F7)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-task-closure.ts',
     hint: 'taskClosure.{enabled,matchThreshold,embedTimeoutMs,candidateTtlDays,lexicalFallbackMinOverlap} — крутилки петли авто-закрытия задач (task-loop Ф2b)',
   },

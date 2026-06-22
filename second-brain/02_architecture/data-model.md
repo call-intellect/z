@@ -422,6 +422,8 @@ N:1 к IdeaBlock — один блок может агрегировать мн�
 
 **Деноль-снимок теперь читается list-DTO (2026-06-20, provenance-probe-followups A1):** `previewQuote`/`previewSourceRef` (Decision/Issue/Regulation/Task) выводятся в DTO списков решений/регламентов/задач — фронт рисует сниппет цитаты-источника прямо на карточке списка без on-demand резолва (полный `ProvenanceService.resolve` остаётся по клику «Откуда это»).
 
+**Soft-delete карточек знаний (2026-06-22, миграция `20260622065212_add_softdelete_to_knowledge_cards`, qa-fixes Ф5–Ф7):** `Regulation`/`Process`/`Policy`/`Instruction`/`Decision` получили `deletedAt DateTime?` + `deletedById String?` + `@@index([tenantId, deletedAt])`. Owner/admin удаляет (`@Delete(:id)` → `softDelete`, `deletedAt=now`) и восстанавливает (`@Post(:id/restore)`) в течение grace-окна (30 дней, по образцу `cards`). Удалённые исчезают из ВСЕХ выдач — все чтения (list/search/count/getById/провенанс/специалисты/дашборды/дайджесты) фильтруют `deletedAt: null`; list-эндпоинты регламентов/решений принимают `deleted: true` для показа удалённых (UI-тумблер «Удалённые»). Аддитивно (nullable = «не удалён»). Подробно — [[knowledge-core]].
+
 **Поле `sourceMessageExternalId String?`** (2026-06-20, миграция `20260620181013_add_evidence_source_message`, provenance-probe-followups B1) — внешний id конкретного сообщения чата, из которого взято свидетельство. Аддитивно (nullable, backfill не обязателен). Нужно для chatbox deep-link на сообщение: `ProvenanceService.buildDeepLink` строит `/chats/<chatId>?m=<msg>` (раньше вёл только на чат целиком). Заполняется на ingest chatbox-evidence; исторические записи — `null` (deep-link на чат без якоря сообщения).
 
 ### Entity

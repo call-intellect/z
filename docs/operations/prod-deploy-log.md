@@ -71,6 +71,28 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-22 — Петля закрытия задачи + QA-фиксы (Консьерж · удаление · источники)
+
+> ТЗ `plans/tz/2026-06-22-task-resolution-loop-and-cross-channel-completion.md` (task-loop Ф1–Ф6) + `plans/tz/2026-06-22-qa-fixes-concierge-rbac-deletion.md` (qa-fixes Ф1–Ф8). Ветка `feature/2026-06-22-task-loop-and-qa-fixes`, 8 коммитов.
+>
+> **Зачем:** надёжный авто-захват «выполнено/решение» со всех каналов (промпт block-ingest + handler-метрики + лексический fallback + событийный авто-черновик прогресса + детерминированный путь помощника «выполнил/прогресс»); резолвер исполнителя с учётом склонений русских имён; видимость кандидатов закрытия исполнителю + `/actions` в навигации. QA: Консьерж снова отвечает (rbac `resourceOwnerId` + `X-Org-Id` в стриме), очистка `[BLOCK:…]`, кнопка удаления задачи и soft-delete/restore регламентов/решений, источник-встреча без белого 404.
+>
+> **1 миграция (авто, аддитивная) + 5 крутилок AdminSetting (seed, УЖЕ в STEPS) + 1 новая метрика + 1 in-proc событие + 4 новых эндпоинта. Docker rebuild backend+frontend. Новых ENV нет (`taskClosure.*` / `tracker.assigneeMatchMaxEdits` — чистые AdminSetting). Новых STEPS-записей добавлять НЕ нужно — сид `seed-admin-setting-task-closure.ts` уже зарегистрирован (`phase:'seed-base'`).**
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260622065212_add_softdelete_to_knowledge_cards` — `ADD COLUMN "deletedAt" TIMESTAMP(3)` + `ADD COLUMN "deletedById" TEXT` + `@@index([tenantId, deletedAt])` на 5 моделях знаний (`Regulation`/`Process`/`Policy`/`Instruction`/`Decision`). Аддитивная (ADD COLUMN/CREATE INDEX, без DROP), без потери данных, backfill не нужен (nullable = «не удалён»). **В STEPS не регистрируется** (миграция схемы).
+- **Шаг 7 — Seed (идемпотентный, УЖЕ в STEPS `phase:'seed-base'`):** `docker compose exec backend bun run scripts/seed-admin-setting-task-closure.ts` — 5 крутилок (category `operations`, section `workers`): `taskClosure.enabled` (kill-switch ON), `taskClosure.matchThreshold` (0.85), `taskClosure.lexicalFallbackMinOverlap` (0.5), `taskClosure.embedTimeoutMs` (2500), `taskClosure.candidateTtlDays` (14). Плюс `tracker.assigneeMatchMaxEdits` (2) добавлен в `seed-admin-setting-tracker.ts` (тоже уже в STEPS). Чистые AdminSetting (без ENV). Доезжают агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (operations `TaskCompletionHandler`: метрики/лексический fallback/эмит `task.progress_signalled`; tracker `progress-auto-draft.cron` `@OnEvent` + `MeTasksService.completeTask/reportTaskProgress/resolveOpenTaskByName`; pending-actions `confirmTaskClosure` решение→комментарий + `task-closure.provider` видимость исполнителю; concierge tools `complete_task`/`report_task_progress`; regulations/decisions soft-delete/restore + list-фильтр `deleted`; provenance deep-link `/meetings/:id/result`). Frontend (`/actions` в навигации; «Удалить задачу» в `IssueHeader`; «Удалить»/«Восстановить» + тумблер «Удалённые» в `/regulations` и `/decisions`; ссылки-источники встреч → `/result`).
+- **Шаг 12 — Smoke** (после выката):
+  - Новые эндпоинты в Swagger `/api/docs` (под `CookieAuthGuard+TenantGuard`): `POST /api/v1/me/tasks/complete`, `POST /api/v1/me/tasks/progress`, `DELETE /api/v1/regulations/:id` + `POST /api/v1/regulations/:id/restore`, `DELETE /api/v1/decisions/:id` + `POST /api/v1/decisions/:id/restore`.
+  - Метрика в `/metrics`: `z_task_closure_outcome_total{outcome}` (created/no_match/not_done/embed_fail/disabled/skipped_tracker/dropped_merged/no_text) — падение `created` при росте сигналов = деградация петли.
+  - In-proc событие `task.progress_signalled` (EventEmitter2, без BullMQ/Redis-инфры) — слушает `progress-auto-draft.cron` (создаёт pending-черновик прогресса по блоку).
+  - Крутилки `taskClosure.*` видны в админке AdminSetting; группа «Поиск исполнителя» (`tracker.assigneeMatchMaxEdits`) на `/admin/tracker`.
+  - UI: `/actions` в сайдбаре; рядовой исполнитель видит свои кандидаты закрытия; клик по источнику-встрече ведёт на `/meetings/:id/result` (а не белый 404); удаление/восстановление регламента и решения работают.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-22 — Память субъекта + самообучение (3 слоя): выученная память уточнений · авто-профиль компании в промпты · маршрутизация задач по скиллам
 
 > ТЗ `plans/tz/2026-06-21-learned-clarifications-memory.md` (Слой 3) + `plans/tz/2026-06-21-company-profile-autobuild-and-prompt-context.md` (Слой 1) + `plans/tz/2026-06-21-skill-based-task-routing.md` (Слой 2). Ветка `feature/2026-06-21-subject-memory-program`, 12 коммитов.

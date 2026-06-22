@@ -24,7 +24,10 @@ export class ChatboxAnalyzeCron {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { name: 'ChatboxAnalyzeCron.sweep' })
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, {
+    name: 'ChatboxAnalyzeCron.sweep',
+    timeZone: 'Europe/Moscow',
+  })
   async sweep(): Promise<void> {
     try {
       const enabled = (await this.adminSettings.get<boolean>('chatbox.enabled', true)) ?? true;

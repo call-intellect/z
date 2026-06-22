@@ -14,12 +14,12 @@ export class FeedDigestCron {
     private readonly feed: ActivityFeedService,
   ) {}
 
-  @Cron('0 9 * * *')
+  @Cron('0 9 * * *', { timeZone: 'Europe/Moscow' })
   async sendDailyDigests(): Promise<void> {
     await this.runDigest('daily');
   }
 
-  @Cron('0 9 * * 1')
+  @Cron('0 9 * * 1', { timeZone: 'Europe/Moscow' })
   async sendWeeklyDigests(): Promise<void> {
     await this.runDigest('weekly');
   }

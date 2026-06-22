@@ -24,7 +24,7 @@ export class IssueOverdueDetectorCron {
     private readonly cfg: TypedConfigService | null = null,
   ) {}
 
-  @Cron('0 9 * * *')
+  @Cron('0 9 * * *', { timeZone: 'Europe/Moscow' })
   async detectOverdue(): Promise<void> {
     try {
       await this.run();

@@ -33,6 +33,15 @@ const SEEDS: SettingSeed[] = [
     description:
       'Kill-switch ChatBox-интеграции. False → синк-кроны и webhook работают в no-op без рестарта.',
   },
+  {
+    key: 'chatbox.taskExtraction.enabled',
+    value: true,
+    category: 'chatbox',
+    section: 'general',
+    severity: 'medium',
+    description:
+      'Извлечение задач из клиентской переписки (ChatBox): закрытая сессия → действия → задачи в трекере. Рубильник, по умолчанию вкл (Ship-On). Выкл → переписка по-прежнему в графе, но задачи из неё не создаются.',
+  },
 ];
 
 interface Counters {

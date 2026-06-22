@@ -71,6 +71,24 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-22 — Клон должности: signalType `methodology_step` (расширение набора)
+
+> **Миграций Prisma НЕТ** (enum `methodology_step` уже есть в `SignalType`), **seed/ENV НЕТ**. Только пересборка backend + один backfill + форс verify-cron для промоута черт. ТЗ: `plans/tz/2026-06-22-clone-signaltype-methodology-step.md`.
+
+**Шаг 8 — Backfill (1 прогон, идемпотентный, уже в STEPS `phase:'backfill'`, `skipBootstrap`):** `backfill-skill-profiles-rebuild.ts` — enqueue rebuild всех `active` SkillProfile после расширения набора-потребителя клона на `methodology_step`. jobId-дедуп `skill-profile-rebuild_<id>`: повтор **в окне ~24ч** = no-op (completed-job в Redis); вне окна — повторный rebuild (безопасно, детерминирован, recalibrate-safe). Доезжает `apply-prod-deploy.ts --mode update`.
+- Сначала точечно на тест-Org. **Форма флага строго `--tenant=<id>` (через `=`)** — `--tenant <id>` через пробел тоже поддержан, но без флага backfill идёт по ВСЕМ Org:
+  ```
+  docker compose exec backend bun run scripts/backfill-skill-profiles-rebuild.ts --dry-run --tenant=cmpuz4gbs000201mvfbf3k2zk
+  docker compose exec backend bun run scripts/backfill-skill-profiles-rebuild.ts --tenant=cmpuz4gbs000201mvfbf3k2zk
+  ```
+- По всем Org (осознанно — массовый rebuild = LLM-затраты): тот же скрипт без `--tenant`.
+
+**После backfill — промоут черт в `active`:** форс `SkillTraitVerifyCron.tick` через админку cron-ов (rebuild создаёт черты в `pending_verification`; в `active` их переводит verify-cron — иначе клон останется пустым).
+
+**Smoke:** `GET /api/v1/clones/persons/cmpzl0mee00065gnq9vm3ajv1/skill-profile` → `buildVersion ≥ 1`, `traits.length ≥ 3`; `/clones` показывает клон «[QA] Руководитель маркетинга»; ответ клона на тематический вопрос — не отказ, на вне-темный — отказ (анти-фейк).
+
+---
+
 ### 📄 2026-06-22 — Петля закрытия задачи + QA-фиксы (Консьерж · удаление · источники)
 
 > ТЗ `plans/tz/2026-06-22-task-resolution-loop-and-cross-channel-completion.md` (task-loop Ф1–Ф6) + `plans/tz/2026-06-22-qa-fixes-concierge-rbac-deletion.md` (qa-fixes Ф1–Ф8). Ветка `feature/2026-06-22-task-loop-and-qa-fixes`, 8 коммитов.

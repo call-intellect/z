@@ -39,7 +39,7 @@ Z наблюдает, как носители каждой должности р
 
 - **Тип:** событие (новый блок reasoning) + расписание (decay / snapshots / digest) + пользовательский ASK.
 - **Что инициирует:**
-  1. В графе появился `IdeaBlockEntity.role='subject'` для Person с `relationship='employee'` и блок имеет `signalType ∈ {reasoning, rationale, decision_basis}` — RouterService dispatch в `core.specialist-routing` jobName=`3-7-skill`, оттуда worker дёргает `enqueueRebuildSkillProfile(debounce 60s)` в очередь `core.skill-profile-rebuild`.
+  1. В графе появился `IdeaBlockEntity.role='subject'` для Person с `relationship='employee'` и блок имеет `signalType ∈ SKILL_SUBJECT_SIGNAL_TYPES` = `{reasoning, rationale, decision_basis, methodology_step}` (единая константа `knowledge-core/constants/skill-signal-types.ts`; `methodology_step` добавлен 2026-06-22 — см. [[../01_projects/skill-and-clone]] «Источник данных») — RouterService dispatch в `core.specialist-routing` jobName=`3-7-skill`, оттуда worker дёргает `enqueueRebuildSkillProfile(debounce 60s)` в очередь `core.skill-profile-rebuild`. Гейт-воркер `specialist-3-7-skill.worker.ts` отсекает по `SKILL_SUBJECT_SIGNAL_TYPE_SET` (тот же набор — иначе блок не доходит до rebuild).
   2. Каждые сутки `0 5 * * *` — `SkillProfileRecalibrateCron` (decay traits).
   3. Каждые 2 часа `0 */2 * * *` — `ExecutablePersonaTriggerWatcherCron` (реактивный rebuild персоны по delta ≥ 2 traits за 24ч ИЛИ возраст snapshot > 48ч).
   4. Каждое воскресенье `0 6 * * SUN` — `ExecutablePersonaBuildCron` (weekly snapshots scope='person' + scope='role').
@@ -50,7 +50,7 @@ Z наблюдает, как носители каждой должности р
 
 ## 3. Шаги процесса (общий список)
 
-1. **На встрече или в заметке сотрудник объяснил, почему он что-то сделал** — конвейер графа знаний пометил блок как reasoning/rationale/decision_basis и идентифицировал сотрудника как subject.
+1. **На встрече или в заметке сотрудник объяснил, почему он что-то сделал ИЛИ как он это делает** — конвейер графа знаний пометил блок как `reasoning/rationale/decision_basis/methodology_step` (набор `SKILL_SUBJECT_SIGNAL_TYPES`) и идентифицировал сотрудника как subject.
 2. **Платформа диспетчит блок в специалиста 3-7** — он находит/создаёт `SkillProfile` сотрудника и ставит «пересобрать профиль через минуту» (debounce 60s, чтобы серия блоков слилась в один rebuild).
 3. **Rebuild профиля** — KNN-группировка reasoning-блоков по похожести → LLM `skill-trait-detect` (primary DeepSeek V4 Pro) предлагает черты → KNN-merge с уже активными чертами → decay по времени → метрики и probe-события.
 4. **Каждая черта получает «смысловой блок навыка»** (`SkillTraitConcept`) — канонизированное имя категории (не «осторожен с оценками сроков» / «не любит давать сроки без данных» по отдельности, а один концепт). Ночной cron сливает близкие концепты.

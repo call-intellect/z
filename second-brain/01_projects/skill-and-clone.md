@@ -18,9 +18,9 @@ date: 2026-05-22
 
 ## Источник данных
 
-Только `IdeaBlockEntity.role='subject'` от Person с `signalType ∈ {reasoning, rationale, decision_basis}` (где сам сотрудник объясняет «почему я так решил»). Минимум `SKILL_MIN_OBSERVATIONS=5` цитат для появления trait'а.
+Только `IdeaBlockEntity.role='subject'` от Person с `signalType ∈ SKILL_SUBJECT_SIGNAL_TYPES` = `{reasoning, rationale, decision_basis, methodology_step}` (сотрудник объясняет «почему я так решил» ИЛИ «как я это делаю»). `methodology_step` добавлен **2026-06-22** (ТЗ `plans/tz/2026-06-22-clone-signaltype-methodology-step.md`): канал «Мысль/Память» почти не порождает `reasoning`, рассуждения про подход уходят в `methodology_step` — без него клон через этот канал не наполнялся (прод-находка). Набор задан **единой экспортируемой константой** `backend/src/modules/knowledge-core/constants/skill-signal-types.ts` — один источник для гейта-воркера (`SKILL_SUBJECT_SIGNAL_TYPE_SET`) и всех выборок (rebuild, синтез принципов роли, ответ клона, judge-валидация, probe-проверки, practice-skill). Минимум `SKILL_MIN_OBSERVATIONS=5` цитат для появления trait'а.
 
-**НЕ источник:** mentioned-блоки, не-reasoning signalType, внешние Person'ы (relationship≠'employee').
+**НЕ источник:** mentioned-блоки; `signalType` вне набора клона (`expertise/experience/competence` → `KnowledgeProfile` специалист 3-2; `process_step` надличностный → специалист 3-1; `decision` → специалист 3-3); внешние Person'ы (relationship≠'employee').
 
 > ⚠️ **Вскрыто боевым прод-тестом 2026-06-22** ([[../05_история/2026-06-22-clone-prod-test-and-signaltype-tz]]): узкий набор `{reasoning, rationale, decision_basis}` — узкое место. block-ingest метит «как сотрудник работает» как `methodology_step` («Шаг методологии»), а не `reasoning` → эти блоки до клона НЕ доходят, профиль не наполняется (у активных Org 0 клонов). Гейт `<5` делает полный skip. Фикс (расширить набор на `methodology_step`, единая константа + 3 рубежа + backfill) — ТЗ [`plans/tz/2026-06-22-clone-signaltype-methodology-step.md`](../../plans/tz/2026-06-22-clone-signaltype-methodology-step.md), реализация не начата. Набор скопирован литералом в ≥6 местах — рассинхрон и есть корень.
 

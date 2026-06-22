@@ -233,4 +233,17 @@ Acceptance:
 - Рефлексия в `second-brain/05_история/`.
 
 ## Итог
-_(заполнит tz-orchestrator по завершении: что реализовано, что осталось, ссылки на коммиты.)_
+**Реализовано полностью (Ф1–Ф4), ветка `feature/2026-06-22-clone-signaltype-methodology-step` → dev.**
+
+Коммиты:
+- `ff1d09db` — Ф1: константа `skill-signal-types.ts` + рубежи 1–3 (block-ingest subject-набор +methodology_step; гейт-воркер через Set; выборки rebuild + role-principle).
+- `d6ce7e17` — Ф2: рубеж 4 (clones.service ×2, persona-validation) + **3 находки сверх ТЗ** (probe ×2, practice-skill-extractor).
+- `ff30b03d` — Ф3: backfill-скрипт `backfill-skill-profiles-rebuild.ts` + регистрация в `apply-prod-deploy.ts` STEPS.
+- `ab2c1537` — Ф4: 11 юнит-тестов (гейт-воркер 3, loadSubjectReasoningBlocks 1, backfill 5, константа 2) + рефактор backfill под тест + consistency-фикс `clone-build-harness.ts` (8-я точка литерала).
+- `890fd7c5` — review-driven: backfill `--tenant` принимает обе формы (устранён footgun «молча по всем Org») + 4 теста parseArgs.
+
+Верификация (моя, не отчёт агента): typecheck EXIT=0 (вкл. .spec), lint 0 errors, build зелёный; 15 новых тестов + 41 существующий service.spec + 75 регресс-тестов изменённых файлов — зелёные; литерал `['reasoning','rationale','decision_basis']` в коде клона вычищен полностью (грэп пуст); independent strict-review — блокеров нет.
+
+**Расширение scope (доказано и реализовано):** грэп всего класса вскрыл 3 точки сверх первоначального ТЗ (probe `checkProfileStarved`/`loadFreshCaseQuotes`, practice-skill `extractForPerson` ре-фильтр) + 4-ю (`clone-build-harness`). Все — потребители того же набора клона; оставить узкими = повторить рассинхрон. Включены в Ф2/Ф4.
+
+**Осталось (за владельцем):** прод-выкат (`up -d --build`) → backfill (`--tenant=cmpuz4gbs000201mvfbf3k2zk` сначала) → форс `SkillTraitVerifyCron.tick` → прод-acceptance (buildVersion≥1, traits≥3, клон отвечает). Детали — `docs/operations/prod-deploy-log.md` Шаг 8. **vNext:** `process_step`/`expertise`/`competence` в наборе + правка прозаического claim «только reasoning» в промптах (prompt-cache) — отложено осознанно (Scope «Не входит»).

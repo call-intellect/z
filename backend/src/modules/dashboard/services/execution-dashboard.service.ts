@@ -11,6 +11,8 @@ import type {
   IssueChainRow,
   LoadByPersonResponse,
   LoadByPersonRow,
+  StuckIssuesResponse,
+  StuckIssueRow,
 } from '../dto/execution-dashboard.dto';
 
 type DashboardRole = 'owner' | 'coo' | 'member';
@@ -24,6 +26,7 @@ export interface GoalVectorPersonAggregate {
   contraScore: number;
   tasksDone: number;
   tasksOpen: number;
+  reasons: string[];
 }
 
 export function directionFromNet(net: number): 'up' | 'side' | 'down' {
@@ -45,8 +48,67 @@ export function buildGoalVectorRows(
       tasksDone: p.tasksDone,
       tasksOpen: p.tasksOpen,
       direction: directionFromNet(p.netScore),
+      reasons: p.reasons,
     }))
     .sort((a, b) => b.netScore - a.netScore);
+}
+
+type ContributionSignalKind =
+  | 'idea'
+  | 'commitment_kept'
+  | 'commitment_broken'
+  | 'issue_closed';
+
+interface ContributionSignal {
+  kind: ContributionSignalKind;
+  refId: string;
+  direction: 'pro' | 'contra';
+}
+
+const SIGNAL_REASON_LABELS: Record<string, string> = {
+  'issue_closed:pro': 'закрытые задачи',
+  'commitment_kept:pro': 'сдержанные обязательства',
+  'commitment_broken:contra': 'сорванные обязательства',
+  'idea:pro': 'идеи за',
+  'idea:contra': 'идеи против',
+};
+
+function extractContributionSignals(signalsJson: unknown): ContributionSignal[] {
+  if (!signalsJson || typeof signalsJson !== 'object' || Array.isArray(signalsJson)) {
+    return [];
+  }
+  const signals = (signalsJson as { signals?: unknown }).signals;
+  if (!Array.isArray(signals)) return [];
+  const result: ContributionSignal[] = [];
+  for (const raw of signals) {
+    if (!raw || typeof raw !== 'object') continue;
+    const kind = (raw as { kind?: unknown }).kind;
+    const direction = (raw as { direction?: unknown }).direction;
+    const refId = (raw as { refId?: unknown }).refId;
+    if (
+      (kind === 'idea' ||
+        kind === 'commitment_kept' ||
+        kind === 'commitment_broken' ||
+        kind === 'issue_closed') &&
+      (direction === 'pro' || direction === 'contra')
+    ) {
+      result.push({ kind, direction, refId: typeof refId === 'string' ? refId : '' });
+    }
+  }
+  return result;
+}
+
+export function buildGoalVectorReasons(signals: ContributionSignal[]): string[] {
+  const counts = new Map<string, number>();
+  for (const s of signals) {
+    const composite = `${s.kind}:${s.direction}`;
+    if (!(composite in SIGNAL_REASON_LABELS)) continue;
+    counts.set(composite, (counts.get(composite) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([composite, count]) => `${SIGNAL_REASON_LABELS[composite]!} ×${count}`);
 }
 
 export function computeDeltas(
@@ -164,6 +226,7 @@ export class ExecutionDashboardService {
         proScore: true,
         contraScore: true,
         netScore: true,
+        signalsJson: true,
       },
     });
 
@@ -171,12 +234,20 @@ export class ExecutionDashboardService {
       string,
       { proScore: number; contraScore: number; netScore: number }
     >();
+    const signalsByPerson = new Map<string, ContributionSignal[]>();
     for (const c of contributions) {
       const prev = byPerson.get(c.personId) ?? { proScore: 0, contraScore: 0, netScore: 0 };
       prev.proScore += Number(c.proScore.toString());
       prev.contraScore += Number(c.contraScore.toString());
       prev.netScore += Number(c.netScore.toString());
       byPerson.set(c.personId, prev);
+
+      const signals = extractContributionSignals(c.signalsJson);
+      if (signals.length > 0) {
+        const acc = signalsByPerson.get(c.personId) ?? [];
+        acc.push(...signals);
+        signalsByPerson.set(c.personId, acc);
+      }
     }
 
     const assignees = await this.prisma.issueAssignee.findMany({
@@ -257,6 +328,7 @@ export class ExecutionDashboardService {
         contraScore: contrib.contraScore,
         tasksDone: tasks.done,
         tasksOpen: tasks.open,
+        reasons: buildGoalVectorReasons(signalsByPerson.get(personId) ?? []),
       });
     }
 
@@ -310,6 +382,69 @@ export class ExecutionDashboardService {
       relationType: r.relationType as 'blocks' | 'blocked_by',
     }));
     return { chains };
+  }
+
+  async getStuckCrossProject(args: {
+    tenantId: string;
+    now: Date;
+  }): Promise<StuckIssuesResponse> {
+    const { tenantId, now } = args;
+    const staleDays = await this.cfg.getDynamic<number>(
+      'dashboard.stuck.staleDaysThreshold',
+      undefined,
+      5,
+    );
+    const cutoff = new Date(now.getTime() - staleDays * 86_400_000);
+
+    const issues = await this.prisma.issue.findMany({
+      where: {
+        tenantId,
+        deletedAt: null,
+        archivedAt: null,
+        state: { is: { category: { notIn: ['completed', 'cancelled'] } } },
+      },
+      select: {
+        id: true,
+        identifier: true,
+        title: true,
+        createdAt: true,
+        projectId: true,
+        project: { select: { name: true } },
+      },
+      take: 500,
+    });
+    if (issues.length === 0) {
+      return { items: [], staleDaysThreshold: staleDays };
+    }
+
+    const issueIds = issues.map((i) => i.id);
+    const lastActivity = await this.prisma.issueActivity.groupBy({
+      by: ['issueId'],
+      where: { issueId: { in: issueIds } },
+      _max: { createdAt: true },
+    });
+    const lastMovementByIssue = new Map<string, Date>();
+    for (const row of lastActivity) {
+      if (row._max.createdAt) lastMovementByIssue.set(row.issueId, row._max.createdAt);
+    }
+
+    const day = 86_400_000;
+    const items: StuckIssueRow[] = [];
+    for (const issue of issues) {
+      const lastMovement = lastMovementByIssue.get(issue.id) ?? issue.createdAt;
+      if (lastMovement.getTime() >= cutoff.getTime()) continue;
+      items.push({
+        issueId: issue.id,
+        identifier: issue.identifier,
+        title: issue.title,
+        projectId: issue.projectId,
+        projectName: issue.project?.name ?? 'Без проекта',
+        daysStuck: Math.floor((now.getTime() - lastMovement.getTime()) / day),
+      });
+    }
+
+    items.sort((a, b) => b.daysStuck - a.daysStuck);
+    return { items: items.slice(0, 50), staleDaysThreshold: staleDays };
   }
 
   async getLoadByPerson(args: { tenantId: string }): Promise<LoadByPersonResponse> {

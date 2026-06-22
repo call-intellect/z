@@ -31,6 +31,7 @@ import {
   type IssueChainsQuery,
   type IssueChainsResponseDto,
   type LoadByPersonResponseDto,
+  type StuckIssuesResponseDto,
 } from './dto/execution-dashboard.dto';
 import { ExecutionDashboardService } from './services/execution-dashboard.service';
 
@@ -109,6 +110,20 @@ export class ExecutionDashboardController {
     this.requireTenant(tenantId);
     await this.requireAccess(uid, tenantId!);
     return this.svc.getLoadByPerson({ tenantId: tenantId! });
+  }
+
+  @Get('stuck/cross-project')
+  @ApiOperation({
+    summary: 'Модульный дашборд — зависшие задачи без движения по всем проектам (вне спринта)',
+  })
+  async stuckCrossProject(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+  ): Promise<StuckIssuesResponseDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    return this.svc.getStuckCrossProject({ tenantId: tenantId!, now: new Date() });
   }
 
   @Get('operations/trend')

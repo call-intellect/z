@@ -30,6 +30,7 @@ export const GoalVectorPersonRowSchema = z.object({
   tasksDone: z.number(),
   tasksOpen: z.number(),
   direction: z.enum(['up', 'side', 'down']),
+  reasons: z.array(z.string()),
 });
 export type GoalVectorPersonRow = z.infer<typeof GoalVectorPersonRowSchema>;
 
@@ -93,3 +94,20 @@ export const DigestTrendResponseSchema = z.object({
 });
 export type DigestTrendResponse = z.infer<typeof DigestTrendResponseSchema>;
 export class DigestTrendResponseDto extends createZodDto(DigestTrendResponseSchema) {}
+
+export const StuckIssueRowSchema = z.object({
+  issueId: z.string(),
+  identifier: z.string(),
+  title: z.string(),
+  projectId: z.string(),
+  projectName: z.string(),
+  daysStuck: z.number(),
+});
+export type StuckIssueRow = z.infer<typeof StuckIssueRowSchema>;
+
+export const StuckIssuesResponseSchema = z.object({
+  items: z.array(StuckIssueRowSchema),
+  staleDaysThreshold: z.number(),
+});
+export type StuckIssuesResponse = z.infer<typeof StuckIssuesResponseSchema>;
+export class StuckIssuesResponseDto extends createZodDto(StuckIssuesResponseSchema) {}

@@ -1,4 +1,5 @@
-import { PrismaClient, type Prisma } from '@prisma/client';
+import { type Prisma } from '@prisma/client';
+
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
@@ -23,6 +24,15 @@ const SEEDS: SettingSeed[] = [
     severity: 'medium',
     description:
       'Kill-switch (ON): новая компоновка главной директора — первый экран ≤7 величин (Польза/Настроение/Обещания/Висящие решения/Компас/AI-сводка/Top-1 риск), единый компас, «Что узнали», сворачивание виджетов знаний в drill-down. OFF возвращает прежнюю раскладку первого экрана.',
+  },
+  {
+    key: 'dashboard.stuck.staleDaysThreshold',
+    value: 5,
+    category: 'dashboard',
+    section: 'main',
+    severity: 'low',
+    description:
+      'Порог «зависшей» задачи (в днях) для кросс-проектного экрана руководителя: задача без движения дольше этого срока считается зависшей. По умолчанию 5.',
   },
 ];
 

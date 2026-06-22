@@ -388,6 +388,8 @@ const registry = new Map<string, ZodTypeAny>([
   ['betaOps.weeklyDigestLocalDay', z.number().int().min(0).max(6)],
   ['betaOps.dailyDigestHourUtc', z.number().int().min(0).max(23)],
   ['betaOps.commitmentFollowupLocalHour', z.number().int().min(0).max(23)],
+
+  ['dashboard.stuck.staleDaysThreshold', z.number().int().min(1).max(90)],
 ]);
 
 export function getSchemaForKey(key: string): ZodTypeAny {

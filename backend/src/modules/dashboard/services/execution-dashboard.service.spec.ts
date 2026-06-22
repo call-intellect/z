@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
+  ExecutionDashboardService,
   aggregateWeeklyMetrics,
+  buildGoalVectorReasons,
   buildGoalVectorRows,
   computeDeltas,
   directionFromNet,
@@ -37,6 +39,7 @@ describe('buildGoalVectorRows', () => {
         contraScore: 1,
         tasksDone: 1,
         tasksOpen: 2,
+        reasons: [],
       },
       {
         personId: 'p-down',
@@ -46,6 +49,7 @@ describe('buildGoalVectorRows', () => {
         contraScore: 1,
         tasksDone: 0,
         tasksOpen: 3,
+        reasons: [],
       },
       {
         personId: 'p-up',
@@ -55,6 +59,7 @@ describe('buildGoalVectorRows', () => {
         contraScore: 0,
         tasksDone: 4,
         tasksOpen: 1,
+        reasons: [],
       },
     ];
 
@@ -113,5 +118,187 @@ describe('aggregateWeeklyMetrics', () => {
 
   it('пустой список недель → пустой объект', () => {
     expect(aggregateWeeklyMetrics([])).toEqual({});
+  });
+});
+
+describe('buildGoalVectorReasons', () => {
+  it('частоты по kind+direction → топ-3 читаемых строк по убыванию', () => {
+    const reasons = buildGoalVectorReasons([
+      { kind: 'commitment_broken', direction: 'contra', refId: 'a' },
+      { kind: 'commitment_broken', direction: 'contra', refId: 'b' },
+      { kind: 'commitment_broken', direction: 'contra', refId: 'c' },
+      { kind: 'issue_closed', direction: 'pro', refId: 'd' },
+    ]);
+    expect(reasons[0]).toBe('сорванные обязательства ×3');
+    expect(reasons).toContain('закрытые задачи ×1');
+  });
+
+  it('нет сигналов → пустой массив', () => {
+    expect(buildGoalVectorReasons([])).toEqual([]);
+  });
+});
+
+describe('ExecutionDashboardService.getGoalVectorByPerson — reasons (D1)', () => {
+  function makeService(prisma: unknown, cfg: unknown): ExecutionDashboardService {
+    return new ExecutionDashboardService(prisma as never, cfg as never);
+  }
+
+  const baseCfg = { getDynamic: vi.fn() };
+
+  it('signalsJson с commitment_broken ×3 (contra) и issue_closed ×1 (pro) → reasons первым «сорванные обязательства ×3»', async () => {
+    const prisma = {
+      goal: { findFirst: vi.fn().mockResolvedValue({ id: 'g1', name: 'Цель' }) },
+      personGoalContribution: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            personId: 'person-1',
+            proScore: { toString: () => '0.3' },
+            contraScore: { toString: () => '1.0' },
+            netScore: { toString: () => '-0.7' },
+            signalsJson: {
+              signals: [
+                { kind: 'commitment_broken', direction: 'contra', refId: 'r1' },
+                { kind: 'commitment_broken', direction: 'contra', refId: 'r2' },
+                { kind: 'commitment_broken', direction: 'contra', refId: 'r3' },
+                { kind: 'issue_closed', direction: 'pro', refId: 'r4' },
+              ],
+            },
+          },
+        ]),
+      },
+      issueAssignee: { findMany: vi.fn().mockResolvedValue([]) },
+      person: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ id: 'person-1', name: 'Иванов', userId: 'u1' }]),
+      },
+    };
+
+    const svc = makeService(prisma, baseCfg);
+    const res = await svc.getGoalVectorByPerson({
+      tenantId: 't1',
+      goalId: 'g1',
+      period: 'week',
+      now: new Date('2026-06-22T00:00:00Z'),
+    });
+
+    const row = res.rows.find((r) => r.personId === 'person-1');
+    expect(row).toBeDefined();
+    expect(row!.reasons[0]).toBe('сорванные обязательства ×3');
+    expect(row!.reasons).toContain('закрытые задачи ×1');
+  });
+
+  it('пустой signalsJson → reasons []', async () => {
+    const prisma = {
+      goal: { findFirst: vi.fn().mockResolvedValue({ id: 'g1', name: 'Цель' }) },
+      personGoalContribution: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            personId: 'person-1',
+            proScore: { toString: () => '0.0' },
+            contraScore: { toString: () => '0.0' },
+            netScore: { toString: () => '0.0' },
+            signalsJson: { signals: [] },
+          },
+        ]),
+      },
+      issueAssignee: { findMany: vi.fn().mockResolvedValue([]) },
+      person: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ id: 'person-1', name: 'Иванов', userId: 'u1' }]),
+      },
+    };
+
+    const svc = makeService(prisma, baseCfg);
+    const res = await svc.getGoalVectorByPerson({
+      tenantId: 't1',
+      goalId: 'g1',
+      period: 'week',
+      now: new Date('2026-06-22T00:00:00Z'),
+    });
+
+    const row = res.rows.find((r) => r.personId === 'person-1');
+    expect(row).toBeDefined();
+    expect(row!.reasons).toEqual([]);
+  });
+});
+
+describe('ExecutionDashboardService.getStuckCrossProject (D2)', () => {
+  const now = new Date('2026-06-22T00:00:00Z');
+  const day = 86_400_000;
+
+  function makeService(prisma: unknown): ExecutionDashboardService {
+    const cfg = { getDynamic: vi.fn().mockResolvedValue(5) };
+    return new ExecutionDashboardService(prisma as never, cfg as never);
+  }
+
+  it('задача с последней активностью старше порога → в stuck; свежая → нет; без активности (старый createdAt) → в stuck', async () => {
+    const oldActivity = new Date(now.getTime() - 10 * day);
+    const freshActivity = new Date(now.getTime() - 1 * day);
+    const oldCreated = new Date(now.getTime() - 20 * day);
+
+    const prisma = {
+      issue: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'i-stale',
+            identifier: 'PROJ-1',
+            title: 'Зависшая',
+            createdAt: new Date(now.getTime() - 30 * day),
+            projectId: 'p1',
+            project: { name: 'Проект А' },
+          },
+          {
+            id: 'i-fresh',
+            identifier: 'PROJ-2',
+            title: 'Свежая',
+            createdAt: new Date(now.getTime() - 30 * day),
+            projectId: 'p1',
+            project: { name: 'Проект А' },
+          },
+          {
+            id: 'i-noactivity',
+            identifier: 'PROJ-3',
+            title: 'Без активности',
+            createdAt: oldCreated,
+            projectId: 'p2',
+            project: { name: 'Проект Б' },
+          },
+        ]),
+      },
+      issueActivity: {
+        groupBy: vi.fn().mockResolvedValue([
+          { issueId: 'i-stale', _max: { createdAt: oldActivity } },
+          { issueId: 'i-fresh', _max: { createdAt: freshActivity } },
+        ]),
+      },
+    };
+
+    const svc = makeService(prisma);
+    const res = await svc.getStuckCrossProject({ tenantId: 't1', now });
+
+    const ids = res.items.map((i) => i.issueId);
+    expect(ids).toContain('i-stale');
+    expect(ids).toContain('i-noactivity');
+    expect(ids).not.toContain('i-fresh');
+    expect(res.staleDaysThreshold).toBe(5);
+
+    const noActivity = res.items.find((i) => i.issueId === 'i-noactivity');
+    expect(noActivity).toEqual(
+      expect.objectContaining({ projectName: 'Проект Б', daysStuck: 20 }),
+    );
+    expect(res.items[0]!.daysStuck).toBeGreaterThanOrEqual(res.items[res.items.length - 1]!.daysStuck);
+  });
+
+  it('нет задач → пустой items с порогом', async () => {
+    const prisma = {
+      issue: { findMany: vi.fn().mockResolvedValue([]) },
+      issueActivity: { groupBy: vi.fn() },
+    };
+    const svc = makeService(prisma);
+    const res = await svc.getStuckCrossProject({ tenantId: 't1', now });
+    expect(res.items).toEqual([]);
+    expect(res.staleDaysThreshold).toBe(5);
   });
 });

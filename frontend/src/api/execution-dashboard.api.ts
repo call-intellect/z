@@ -14,6 +14,7 @@ export interface GoalVectorByPersonRowApi {
   tasksDone: number;
   tasksOpen: number;
   direction: GoalVectorByPersonDirection;
+  reasons: string[];
 }
 
 export interface GoalVectorByPersonApi {

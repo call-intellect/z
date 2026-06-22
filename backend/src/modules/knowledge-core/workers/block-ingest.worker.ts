@@ -96,6 +96,22 @@ export function classifyTypedFailReason(err: unknown): TypedFailReason {
   return 'other';
 }
 
+export type IngestFailureKind = 'llm_extraction' | 'age_unavailable';
+
+export function buildIngestFailureMessage(kind: IngestFailureKind): string {
+  if (kind === 'llm_extraction') {
+    return (
+      'block-ingest: все окна LLM-извлечения провалились (taskType block-ingest) — ' +
+      'RawEvent НЕ ingested, job уходит в failed для ретрая после восстановления LLM-провайдеров'
+    );
+  }
+  return (
+    'block-ingest: системный отказ графа AGE (cypher не резолвится) — ' +
+    'RawEvent НЕ помечен ingested, job уходит в failed для ретрая ' +
+    'после восстановления AGE'
+  );
+}
+
 @Injectable()
 export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BlockIngestWorker.name);
@@ -283,6 +299,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       const llmDecisionBlockIds = new Set<string>();
 
       let systemFailure = false;
+      let failureKind: IngestFailureKind | null = null;
 
       for (const proc of typed.processes) {
         try {
@@ -316,8 +333,10 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             action: res.created ? 'created' : 'merged',
           });
         } catch (err) {
-          if (this.warnTypedFail('process', proc.name, err) === 'age_unavailable')
+          if (this.warnTypedFail('process', proc.name, err) === 'age_unavailable') {
             systemFailure = true;
+            failureKind = 'age_unavailable';
+          }
         }
       }
 
@@ -346,8 +365,10 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             action: res.created ? 'created' : 'merged',
           });
         } catch (err) {
-          if (this.warnTypedFail('regulation', reg.name, err) === 'age_unavailable')
+          if (this.warnTypedFail('regulation', reg.name, err) === 'age_unavailable') {
             systemFailure = true;
+            failureKind = 'age_unavailable';
+          }
         }
       }
 
@@ -376,8 +397,10 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             action: res.created ? 'created' : 'merged',
           });
         } catch (err) {
-          if (this.warnTypedFail('policy', pol.name, err) === 'age_unavailable')
+          if (this.warnTypedFail('policy', pol.name, err) === 'age_unavailable') {
             systemFailure = true;
+            failureKind = 'age_unavailable';
+          }
         }
       }
 
@@ -406,8 +429,10 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             action: res.created ? 'created' : 'merged',
           });
         } catch (err) {
-          if (this.warnTypedFail('tool', tool.name, err) === 'age_unavailable')
+          if (this.warnTypedFail('tool', tool.name, err) === 'age_unavailable') {
             systemFailure = true;
+            failureKind = 'age_unavailable';
+          }
         }
       }
 
@@ -438,8 +463,10 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             action: res.created ? 'created' : 'merged',
           });
         } catch (err) {
-          if (this.warnTypedFail('metric', metric.name, err) === 'age_unavailable')
+          if (this.warnTypedFail('metric', metric.name, err) === 'age_unavailable') {
             systemFailure = true;
+            failureKind = 'age_unavailable';
+          }
         }
       }
 
@@ -487,8 +514,10 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           });
           if (sourceBlockId) llmDecisionBlockIds.add(sourceBlockId);
         } catch (err) {
-          if (this.warnTypedFail('decision', dec.text.slice(0, 80), err) === 'age_unavailable')
+          if (this.warnTypedFail('decision', dec.text.slice(0, 80), err) === 'age_unavailable') {
             systemFailure = true;
+            failureKind = 'age_unavailable';
+          }
         }
       }
 
@@ -539,8 +568,10 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           if (
             this.warnTypedFail('decision (fallback)', block.trustedAnswer.slice(0, 80), err) ===
             'age_unavailable'
-          )
+          ) {
             systemFailure = true;
+            failureKind = 'age_unavailable';
+          }
         }
       }
 
@@ -642,18 +673,15 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       }
       if (extraction.failedWindows > 0 && blockIds.length === 0) {
         this.logger.error(
-          { rawEventId, failedWindows: extraction.failedWindows },
-          'block-ingest: все окна извлечения провалились, 0 блоков — RawEvent НЕ ingested (failed для видимости/ретрая)',
+          { rawEventId, failedWindows: extraction.failedWindows, failureKind: 'llm_extraction' },
+          'block-ingest: все окна LLM-извлечения провалились, 0 блоков — RawEvent НЕ ingested (failed для ретрая после восстановления LLM-провайдеров)',
         );
         systemFailure = true;
+        if (failureKind === null) failureKind = 'llm_extraction';
       }
 
       if (systemFailure) {
-        throw new Error(
-          'block-ingest: системный отказ графа AGE (cypher не резолвится) — ' +
-            'RawEvent НЕ помечен ingested, job уходит в failed для ретрая ' +
-            'после восстановления AGE',
-        );
+        throw new Error(buildIngestFailureMessage(failureKind ?? 'age_unavailable'));
       }
 
       await this.prisma.rawEvent.update({

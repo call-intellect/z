@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ExtractedBlock } from '../services/block-extraction.service';
 
-import { BlockIngestWorker } from './block-ingest.worker';
+import { BlockIngestWorker, buildIngestFailureMessage } from './block-ingest.worker';
 
 interface InsertedIdeaBlock {
   id: string;
@@ -612,5 +612,21 @@ describe('BlockIngestWorker — KC-Temporal W1.4 propertySpans', () => {
     });
 
     expect(fakeTx.inserted.updates.length).toBe(0);
+  });
+});
+
+describe('buildIngestFailureMessage — F7 развод диагностики LLM vs AGE', () => {
+  it("kind='llm_extraction' → текст про LLM-провайдеры, БЕЗ 'AGE'/'cypher'/'граф'", () => {
+    const msg = buildIngestFailureMessage('llm_extraction');
+    expect(msg).toContain('LLM');
+    expect(msg).not.toMatch(/AGE/i);
+    expect(msg).not.toMatch(/cypher/i);
+    expect(msg).not.toMatch(/граф/i);
+  });
+
+  it("kind='age_unavailable' → текст про отказ графа AGE (cypher)", () => {
+    const msg = buildIngestFailureMessage('age_unavailable');
+    expect(msg).toContain('AGE');
+    expect(msg).toMatch(/cypher/i);
   });
 });

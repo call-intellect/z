@@ -16,14 +16,17 @@ interface Options {
   dryRun: boolean;
 }
 
-function parseArgs(argv: string[]): Options {
-  const tenantArg = argv.find((a) => a.startsWith('--tenant='));
-
+export function parseArgs(argv: string[]): Options {
   const opts: Options = { dryRun: argv.includes('--dry-run') };
 
-  if (tenantArg) {
-    const v = tenantArg.split('=')[1];
+  const eqArg = argv.find((a) => a.startsWith('--tenant='));
+  if (eqArg) {
+    const v = eqArg.split('=')[1];
     if (v) opts.tenantId = v;
+  } else {
+    const idx = argv.indexOf('--tenant');
+    const next = idx >= 0 ? argv[idx + 1] : undefined;
+    if (next && !next.startsWith('--')) opts.tenantId = next;
   }
   return opts;
 }

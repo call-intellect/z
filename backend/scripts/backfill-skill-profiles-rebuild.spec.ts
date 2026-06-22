@@ -1,6 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { runBackfillSkillProfilesRebuild } from './backfill-skill-profiles-rebuild';
+import { parseArgs, runBackfillSkillProfilesRebuild } from './backfill-skill-profiles-rebuild';
+
+describe('backfill-skill-profiles-rebuild parseArgs — обе формы --tenant', () => {
+  it('--tenant=<id> (форма с =)', () => {
+    expect(parseArgs(['--tenant=org-7']).tenantId).toBe('org-7');
+  });
+
+  it('--tenant <id> (форма через пробел) — НЕ молчаливый all-Org', () => {
+    expect(parseArgs(['--tenant', 'org-7']).tenantId).toBe('org-7');
+  });
+
+  it('без флага → tenantId undefined (все Org), dryRun по --dry-run', () => {
+    const a = parseArgs(['--dry-run']);
+    expect(a.tenantId).toBeUndefined();
+    expect(a.dryRun).toBe(true);
+  });
+
+  it('--tenant без значения (следом другой флаг) → не подхватывает флаг как id', () => {
+    expect(parseArgs(['--tenant', '--dry-run']).tenantId).toBeUndefined();
+  });
+});
 
 describe('runBackfillSkillProfilesRebuild', () => {
   let findMany: ReturnType<typeof vi.fn>;

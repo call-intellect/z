@@ -88,6 +88,33 @@ const SEEDS: SettingSeed[] = [
     description:
       'Кадэнс (cron) воркера материализации повторяющихся задач. По умолчанию ежедневно в 06:00 UTC.',
   },
+  {
+    key: 'tracker.assigneeClarifyEnabled',
+    value: true,
+    category: 'ai',
+    section: 'tracker',
+    severity: 'high',
+    description:
+      'Дозапрашивать исполнителя задачи через уточняющий вопрос (probe), если не определён. Рубильник, по умолчанию вкл (Ship-On).',
+  },
+  {
+    key: 'tracker.dueDateClarifyEnabled',
+    value: true,
+    category: 'ai',
+    section: 'tracker',
+    severity: 'medium',
+    description:
+      'Дозапрашивать срок задачи через уточняющий вопрос (probe), если не указан. Рубильник, по умолчанию вкл (Ship-On).',
+  },
+  {
+    key: 'tracker.assigneeProbePriorityHint',
+    value: 0.7,
+    category: 'ai',
+    section: 'tracker',
+    severity: 'low',
+    description:
+      'Приоритет уточняющего вопроса об исполнителе задачи (0–1). По умолчанию 0.7.',
+  },
 ];
 
 interface Counters {

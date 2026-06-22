@@ -1671,6 +1671,21 @@ export class TypedConfigService {
         0.75,
       ),
       assignmentNotificationsEnabled: Boolean(this.get('ASSIGNMENT_NOTIFICATIONS_ENABLED') ?? true),
+      assigneeClarifyEnabled: this.resolveSync<boolean>(
+        'tracker.assigneeClarifyEnabled',
+        undefined,
+        true,
+      ),
+      dueDateClarifyEnabled: this.resolveSync<boolean>(
+        'tracker.dueDateClarifyEnabled',
+        undefined,
+        true,
+      ),
+      assigneeProbePriorityHint: this.resolveSync<number>(
+        'tracker.assigneeProbePriorityHint',
+        undefined,
+        0.7,
+      ),
     } as const;
   }
 

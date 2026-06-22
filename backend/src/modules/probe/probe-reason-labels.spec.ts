@@ -38,6 +38,21 @@ describe('probe-reason-labels', () => {
     expect(q!.length).toBeGreaterThan(0);
   });
 
+  it('Блок A Ф1 — task.assignee_unresolved / task.due_date_missing зарегистрированы (label + fallback)', () => {
+    expect(PROBE_REASON_LABEL['task.assignee_unresolved']).toBe(
+      'у задачи не определён исполнитель',
+    );
+    expect(PROBE_REASON_LABEL['task.due_date_missing']).toBe(
+      'у задачи не указан срок',
+    );
+    const qAssignee = PROBE_REASON_FALLBACK['task.assignee_unresolved'];
+    const qDue = PROBE_REASON_FALLBACK['task.due_date_missing'];
+    expect(qAssignee).toBeDefined();
+    expect(qAssignee!.length).toBeGreaterThan(0);
+    expect(qDue).toBeDefined();
+    expect(qDue!.length).toBeGreaterThan(0);
+  });
+
   it('ни один ярлык/вопрос не содержит латиницы (англоязычных слов/кодов)', () => {
     const latin = /[A-Za-z]/;
     for (const v of Object.values(PROBE_REASON_LABEL)) {

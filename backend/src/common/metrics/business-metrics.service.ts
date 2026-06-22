@@ -648,6 +648,7 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── Probe Фаза 4 (2026-06-20) — LLM-гейт ценности probe-вопроса ──
   private probeValueGateTotal!: Counter<'verdict'>;
   private subjectMemoryRuleExtractedTotal!: Counter<'kind'>;
+  private taskAssigneeClarifyTotal!: Counter<'outcome'>;
   private companySummaryCompileTotal!: Counter<'result'>;
   private routingSuggestionTotal!: Counter<'match_path'>;
   private routingSuggestionAcceptedTotal!: Counter<string>;
@@ -2729,6 +2730,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'subject_memory_rule_extracted_total',
       help: 'Слой выученной памяти: выведено правил по виду (kind).',
       labelNames: ['kind'] as const,
+    });
+    this.taskAssigneeClarifyTotal = this.getOrCreateCounter({
+      name: 'task_assignee_clarify_total',
+      help: 'Дозапрос исполнителя/срока задачи: исход по outcome.',
+      labelNames: ['outcome'] as const,
     });
     this.companySummaryCompileTotal = this.getOrCreateCounter({
       name: 'company_summary_compile_total',
@@ -6371,6 +6377,10 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incSubjectMemoryRuleExtracted(args: { kind: string }): void {
     this.subjectMemoryRuleExtractedTotal.inc({ kind: args.kind });
+  }
+
+  incTaskAssigneeClarify(args: { outcome: string }): void {
+    this.taskAssigneeClarifyTotal.inc({ outcome: args.outcome });
   }
 
   incCompanySummaryCompile(args: { result: string }): void {

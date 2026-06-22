@@ -213,6 +213,118 @@ describe('PROBE_REASON_RECHECK — attribution.unresolved_at_ingest (Ф6)', () =
   });
 });
 
+describe('PROBE_REASON_RECHECK — task.assignee_unresolved (Блок A Ф1)', () => {
+  const reason = 'task.assignee_unresolved';
+
+  it('нет contextCardId → не подавляем (true)', async () => {
+    const prisma = { issue: { findFirst: vi.fn() } } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: null,
+      contextCardKind: 'issue',
+    });
+    expect(rel).toBe(true);
+  });
+
+  it('задача не найдена → подавляем (false)', async () => {
+    const prisma = {
+      issue: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'i1',
+      contextCardKind: 'issue',
+    });
+    expect(rel).toBe(false);
+  });
+
+  it('исполнителей нет (assignees=[]) → пробел открыт (true)', async () => {
+    const prisma = {
+      issue: { findFirst: vi.fn().mockResolvedValue({ assignees: [] }) },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'i1',
+      contextCardKind: 'issue',
+    });
+    expect(rel).toBe(true);
+  });
+
+  it('исполнитель назначен → пробел закрыт (false)', async () => {
+    const prisma = {
+      issue: {
+        findFirst: vi.fn().mockResolvedValue({ assignees: [{ id: 'a1' }] }),
+      },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'i1',
+      contextCardKind: 'issue',
+    });
+    expect(rel).toBe(false);
+  });
+});
+
+describe('PROBE_REASON_RECHECK — task.due_date_missing (Блок A Ф1)', () => {
+  const reason = 'task.due_date_missing';
+
+  it('нет contextCardId → не подавляем (true)', async () => {
+    const prisma = { issue: { findFirst: vi.fn() } } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: null,
+      contextCardKind: 'issue',
+    });
+    expect(rel).toBe(true);
+  });
+
+  it('задача не найдена → подавляем (false)', async () => {
+    const prisma = {
+      issue: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'i1',
+      contextCardKind: 'issue',
+    });
+    expect(rel).toBe(false);
+  });
+
+  it('срок не указан (dueDate=null) → пробел открыт (true)', async () => {
+    const prisma = {
+      issue: { findFirst: vi.fn().mockResolvedValue({ dueDate: null }) },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'i1',
+      contextCardKind: 'issue',
+    });
+    expect(rel).toBe(true);
+  });
+
+  it('срок указан (dueDate=Date) → пробел закрыт (false)', async () => {
+    const prisma = {
+      issue: {
+        findFirst: vi.fn().mockResolvedValue({ dueDate: new Date() }),
+      },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'i1',
+      contextCardKind: 'issue',
+    });
+    expect(rel).toBe(false);
+  });
+});
+
 describe('resolveProbeProvenance (центральный гейт политики)', () => {
   it('regulation.missing_owner: sourceBlockIds непуст, version null, нет curation → auto_unconfirmed', async () => {
     const prisma = {

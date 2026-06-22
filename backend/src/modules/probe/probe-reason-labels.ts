@@ -55,6 +55,8 @@ export const PROBE_REASON_LABEL: Record<string, string> = {
   // attribution.* (Ф6 2026-06-17 — ingest-повод атрибуции новой сущности)
   'attribution.unresolved_at_ingest':
     'новая сущность не привязана к отделу/клиенту',
+  'task.assignee_unresolved': 'у задачи не определён исполнитель',
+  'task.due_date_missing': 'у задачи не указан срок',
 };
 
 export const PROBE_REASON_FALLBACK: Record<string, string> = {
@@ -99,6 +101,8 @@ export const PROBE_REASON_FALLBACK: Record<string, string> = {
   'commitment.silence_escalation': 'По вашему обещанию давно нет новостей. Как с ним сейчас?',
   'attribution.unresolved_at_ingest':
     'К какому отделу, проекту или клиенту это относится?',
+  'task.assignee_unresolved': 'Для кого эта задача — кому её поручить?',
+  'task.due_date_missing': 'К какому сроку нужно сделать эту задачу?',
   'insight.linked_decision_question':
     'Этот инсайт связан с решением. Что предлагаете с ним сделать?',
   'process_template.missing_input_artifact':

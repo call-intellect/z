@@ -20,6 +20,8 @@ export const PROBE_REASON_WINDOW: Record<string, ProbeWindow> = {
   'goal.kr_checkpoint_suggested': 'immediate',
   'kr_checkpoint_suggested': 'immediate',
   'regulation.existence_confirm': 'deferrable',
+  'task.assignee_unresolved': 'immediate',
+  'task.due_date_missing': 'immediate',
 };
 
 export function probeWindow(reason: string): ProbeWindow {
@@ -305,5 +307,23 @@ export const PROBE_REASON_RECHECK: Record<string, ProbeRecheckPredicate> = {
     });
     if (link) return false;
     return true;
+  },
+  'task.assignee_unresolved': async ({ prisma, tenantId, contextCardId }) => {
+    if (!contextCardId) return true;
+    const issue = await prisma.issue.findFirst({
+      where: { id: contextCardId, tenantId, deletedAt: null },
+      select: { assignees: { select: { id: true } } },
+    });
+    if (!issue) return false;
+    return issue.assignees.length === 0;
+  },
+  'task.due_date_missing': async ({ prisma, tenantId, contextCardId }) => {
+    if (!contextCardId) return true;
+    const issue = await prisma.issue.findFirst({
+      where: { id: contextCardId, tenantId, deletedAt: null },
+      select: { dueDate: true },
+    });
+    if (!issue) return false;
+    return issue.dueDate == null;
   },
 };

@@ -134,7 +134,7 @@ const STEPS: Step[] = [
   {
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-tracker.ts',
-    hint: 'tracker.progressAutoDraft{Enabled,MinSignals,Cron} — крутилки воркера авто-черновика прогресса задач (tracker-card-redesign-and-progress Ф7)',
+    hint: 'tracker.progressAutoDraft{Enabled,MinSignals,Cron} — крутилки воркера авто-черновика прогресса задач (tracker-card-redesign-and-progress Ф7) + tracker.{assigneeClarifyEnabled,dueDateClarifyEnabled,assigneeProbePriorityHint} — дозапрос исполнителя/срока задачи через probe (Блок A Ф1)',
   },
   {
     phase: 'seed-base',

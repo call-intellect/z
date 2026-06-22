@@ -215,6 +215,52 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         readOnly: true,
       },
       {
+        name: 'complete_task',
+        description:
+          'Используй, когда пользователь говорит, что ВЫПОЛНИЛ свою задачу («я сделал X», «закрыл задачу Y», «готово по Z»). Передай taskName названием задачи, как назвал пользователь. Создаёт запрос на подтверждение закрытия — задачу закроет человек.',
+        method: 'POST',
+        path: '/api/v1/me/tasks/complete',
+        parameters: {
+          type: 'object',
+          properties: {
+            taskName: {
+              type: 'string',
+              description: 'Название задачи, как назвал пользователь.',
+            },
+            note: {
+              type: 'string',
+              description: 'Короткий комментарий: что именно сделано. Опц.',
+            },
+          },
+          required: ['taskName'],
+        },
+        rbacResource: 'issue',
+        rbacAction: 'write',
+      },
+      {
+        name: 'report_task_progress',
+        description:
+          'Используй, когда пользователь отчитывается о ПРОГРЕССе своей задачи без полного завершения («по задаче X сделал то-то», «продвинулся по Y»). Передай taskName и progress (текст отчёта).',
+        method: 'POST',
+        path: '/api/v1/me/tasks/progress',
+        parameters: {
+          type: 'object',
+          properties: {
+            taskName: {
+              type: 'string',
+              description: 'Название задачи, как назвал пользователь.',
+            },
+            progress: {
+              type: 'string',
+              description: 'Текст отчёта о прогрессе.',
+            },
+          },
+          required: ['taskName', 'progress'],
+        },
+        rbacResource: 'issue',
+        rbacAction: 'write',
+      },
+      {
         name: 'search_tasks',
         description:
           'Используй для показа/поиска МОИХ задач в трекере (мои открытые дела, задачи на мне). Возвращает задачи с идентификаторами.',

@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -8,6 +8,7 @@ import type { IssueResponseDto } from '../dto/issues/issue-response.dto';
 import type { AssigneeResolverService } from './assignee-resolver.service';
 import type { IssuesService } from './issues.service';
 import { MeTasksService } from './me-tasks.service';
+import type { ProgressUpdatesService } from './progress-updates.service';
 import type { ProjectsService } from './projects.service';
 import type { SkillRoutingService } from './skill-routing.service';
 import type { TrackerEmitterService } from './tracker-emitter.service';
@@ -95,8 +96,18 @@ describe('MeTasksService.createSelfTask', () => {
     const metrics = {
       incRoutingSuggestionAccepted: vi.fn(),
     } as unknown as BusinessMetricsService;
+    const progressUpdates = { create: vi.fn() } as unknown as ProgressUpdatesService;
 
-    service = new MeTasksService(prisma, issues, projects, resolver, emitter, skillRouting, metrics);
+    service = new MeTasksService(
+      prisma,
+      issues,
+      projects,
+      resolver,
+      emitter,
+      skillRouting,
+      metrics,
+      progressUpdates,
+    );
   });
 
   it('(а) создаёт задачу себе в «Входящих» с исполнителем = userId', async () => {
@@ -215,8 +226,18 @@ describe('MeTasksService.assignTask', () => {
     const metrics = {
       incRoutingSuggestionAccepted,
     } as unknown as BusinessMetricsService;
+    const progressUpdates = { create: vi.fn() } as unknown as ProgressUpdatesService;
 
-    service = new MeTasksService(prisma, issues, projects, resolver, emitter, skillRouting, metrics);
+    service = new MeTasksService(
+      prisma,
+      issues,
+      projects,
+      resolver,
+      emitter,
+      skillRouting,
+      metrics,
+      progressUpdates,
+    );
   });
 
   it('(а) resolved → создаёт задачу на исполнителя + эмитит issue.assignee_changed(added)', async () => {
@@ -312,8 +333,18 @@ describe('MeTasksService.suggestAssignee', () => {
     const metrics = {
       incRoutingSuggestionAccepted: vi.fn(),
     } as unknown as BusinessMetricsService;
+    const progressUpdates = { create: vi.fn() } as unknown as ProgressUpdatesService;
 
-    service = new MeTasksService(prisma, issues, projects, resolver, emitter, skillRouting, metrics);
+    service = new MeTasksService(
+      prisma,
+      issues,
+      projects,
+      resolver,
+      emitter,
+      skillRouting,
+      metrics,
+      progressUpdates,
+    );
   });
 
   it('(а) делегирует в SkillRoutingService и возвращает {suggestions}', async () => {
@@ -342,5 +373,226 @@ describe('MeTasksService.suggestAssignee', () => {
       expect.objectContaining({ explicitTags: { departmentId: 'dep_1' } }),
     );
     expect(res).toEqual({ suggestions: [] });
+  });
+});
+
+function buildResolveHarness(): {
+  service: MeTasksService;
+  issueFindMany: ReturnType<typeof vi.fn>;
+  closureUpsert: ReturnType<typeof vi.fn>;
+  progressCreate: ReturnType<typeof vi.fn>;
+} {
+  const issueFindMany = vi.fn(async () => [] as Array<{ id: string; title: string }>);
+  const closureUpsert = vi.fn(async () => ({ id: 'cand_1', status: 'pending' }));
+  const progressCreate = vi.fn(async () => ({ id: 'pu_1', issueId: 'issue_1' }));
+
+  const prisma = {
+    issue: { findMany: issueFindMany },
+    taskClosureCandidate: { upsert: closureUpsert },
+  } as unknown as PrismaService;
+  const issues = {} as unknown as IssuesService;
+  const projects = {} as unknown as ProjectsService;
+  const resolver = {} as unknown as AssigneeResolverService;
+  const emitter = {} as unknown as TrackerEmitterService;
+  const skillRouting = {} as unknown as SkillRoutingService;
+  const metrics = {} as unknown as BusinessMetricsService;
+  const progressUpdates = { create: progressCreate } as unknown as ProgressUpdatesService;
+
+  const service = new MeTasksService(
+    prisma,
+    issues,
+    projects,
+    resolver,
+    emitter,
+    skillRouting,
+    metrics,
+    progressUpdates,
+  );
+  return { service, issueFindMany, closureUpsert, progressCreate };
+}
+
+describe('MeTasksService.resolveOpenTaskByName', () => {
+  it('точное совпадение норм-строк → resolved', async () => {
+    const h = buildResolveHarness();
+    h.issueFindMany.mockResolvedValueOnce([{ id: 'i1', title: 'Подготовить отчёт' }]);
+    const res = await h.service.resolveOpenTaskByName(TENANT, USER, 'подготовить отчет');
+    expect(res).toEqual({ kind: 'resolved', issueId: 'i1', title: 'Подготовить отчёт' });
+  });
+
+  it('частичное совпадение (includes) → resolved', async () => {
+    const h = buildResolveHarness();
+    h.issueFindMany.mockResolvedValueOnce([
+      { id: 'i1', title: 'Подготовить квартальный отчёт по продажам' },
+    ]);
+    const res = await h.service.resolveOpenTaskByName(TENANT, USER, 'квартальный отчёт');
+    expect(res).toEqual({
+      kind: 'resolved',
+      issueId: 'i1',
+      title: 'Подготовить квартальный отчёт по продажам',
+    });
+  });
+
+  it('нет совпадений → not_found', async () => {
+    const h = buildResolveHarness();
+    h.issueFindMany.mockResolvedValueOnce([{ id: 'i1', title: 'Совсем другая задача' }]);
+    const res = await h.service.resolveOpenTaskByName(TENANT, USER, 'позвонить клиенту');
+    expect(res).toEqual({ kind: 'not_found' });
+  });
+
+  it('две одинаковые задачи → ambiguous (срез кандидатов)', async () => {
+    const h = buildResolveHarness();
+    h.issueFindMany.mockResolvedValueOnce([
+      { id: 'i1', title: 'Отчёт' },
+      { id: 'i2', title: 'Отчёт' },
+    ]);
+    const res = await h.service.resolveOpenTaskByName(TENANT, USER, 'отчёт');
+    expect(res.kind).toBe('ambiguous');
+    if (res.kind === 'ambiguous') {
+      expect(res.candidates).toEqual([
+        { issueId: 'i1', title: 'Отчёт' },
+        { issueId: 'i2', title: 'Отчёт' },
+      ]);
+    }
+  });
+
+  it('запрос where исключает завершённые и отменённые + удалённые', async () => {
+    const h = buildResolveHarness();
+    h.issueFindMany.mockResolvedValueOnce([]);
+    await h.service.resolveOpenTaskByName(TENANT, USER, 'что-то');
+    expect(h.issueFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: TENANT,
+          deletedAt: null,
+          assignees: { some: { userId: USER } },
+          state: { category: { notIn: ['completed', 'cancelled'] } },
+        }),
+      }),
+    );
+  });
+
+  it('нормализация ё→е: запрос «ещё отчёт» матчит title «еще отчет»', async () => {
+    const h = buildResolveHarness();
+    h.issueFindMany.mockResolvedValueOnce([{ id: 'i1', title: 'еще отчет' }]);
+    const res = await h.service.resolveOpenTaskByName(TENANT, USER, 'ещё отчёт');
+    expect(res).toEqual({ kind: 'resolved', issueId: 'i1', title: 'еще отчет' });
+  });
+
+  it('пустое имя → not_found без запроса в БД', async () => {
+    const h = buildResolveHarness();
+    const res = await h.service.resolveOpenTaskByName(TENANT, USER, '   ');
+    expect(res).toEqual({ kind: 'not_found' });
+    expect(h.issueFindMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('MeTasksService.completeTask', () => {
+  it('resolved → upsert с sentinel sourceBlockId + status pending', async () => {
+    const h = buildResolveHarness();
+    h.issueFindMany.mockResolvedValueOnce([{ id: 'i1', title: 'Сделать макет' }]);
+    const res = await h.service.completeTask({ taskName: 'сделать макет', note: 'готово' }, TENANT, USER);
+
+    expect(h.closureUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          tenantId_issueId_sourceBlockId: {
+            tenantId: TENANT,
+            issueId: 'i1',
+            sourceBlockId: `concierge-complete:${USER}`,
+          },
+        },
+        create: expect.objectContaining({
+          tenantId: TENANT,
+          issueId: 'i1',
+          sourceBlockId: `concierge-complete:${USER}`,
+          status: 'pending',
+          evidenceQuote: 'готово',
+          rationale: 'Отмечено выполненным через помощника',
+          expiresAt: null,
+        }),
+        update: {},
+      }),
+    );
+    expect(res).toEqual({
+      candidateId: 'cand_1',
+      issueId: 'i1',
+      title: 'Сделать макет',
+      status: 'pending',
+    });
+  });
+
+  it('идемпотентность: повторный вызов всё равно upsert с пустым update', async () => {
+    const h = buildResolveHarness();
+    h.issueFindMany.mockResolvedValue([{ id: 'i1', title: 'Сделать макет' }]);
+    await h.service.completeTask({ taskName: 'сделать макет' }, TENANT, USER);
+    await h.service.completeTask({ taskName: 'сделать макет' }, TENANT, USER);
+    expect(h.closureUpsert).toHaveBeenCalledTimes(2);
+    expect(h.closureUpsert).toHaveBeenCalledWith(expect.objectContaining({ update: {} }));
+  });
+
+  it('note отсутствует → evidenceQuote = null', async () => {
+    const h = buildResolveHarness();
+    h.issueFindMany.mockResolvedValueOnce([{ id: 'i1', title: 'Сделать макет' }]);
+    await h.service.completeTask({ taskName: 'сделать макет' }, TENANT, USER);
+    expect(h.closureUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: expect.objectContaining({ evidenceQuote: null }) }),
+    );
+  });
+
+  it('not_found → NotFoundException task_not_found, upsert не вызван', async () => {
+    const h = buildResolveHarness();
+    h.issueFindMany.mockResolvedValueOnce([]);
+    await expect(
+      h.service.completeTask({ taskName: 'нет такой' }, TENANT, USER),
+    ).rejects.toMatchObject({ response: { error: { code: 'task_not_found' } } });
+    await expect(
+      h.service.completeTask({ taskName: 'нет такой' }, TENANT, USER),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(h.closureUpsert).not.toHaveBeenCalled();
+  });
+
+  it('ambiguous → ConflictException task_ambiguous с кандидатами', async () => {
+    const h = buildResolveHarness();
+    h.issueFindMany.mockResolvedValue([
+      { id: 'i1', title: 'Отчёт' },
+      { id: 'i2', title: 'Отчёт' },
+    ]);
+    await expect(
+      h.service.completeTask({ taskName: 'отчёт' }, TENANT, USER),
+    ).rejects.toMatchObject({
+      response: { error: { code: 'task_ambiguous' } },
+    });
+    await expect(
+      h.service.completeTask({ taskName: 'отчёт' }, TENANT, USER),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(h.closureUpsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('MeTasksService.reportTaskProgress', () => {
+  it('resolved → progressUpdates.create с health on_track и body=progress', async () => {
+    const h = buildResolveHarness();
+    h.issueFindMany.mockResolvedValueOnce([{ id: 'i1', title: 'Внедрить CRM' }]);
+    const res = await h.service.reportTaskProgress(
+      { taskName: 'внедрить crm', progress: 'настроил воронку' },
+      TENANT,
+      USER,
+    );
+    expect(h.progressCreate).toHaveBeenCalledWith(
+      'i1',
+      { health: 'on_track', body: 'настроил воронку' },
+      TENANT,
+      USER,
+    );
+    expect(res).toEqual({ progressUpdateId: 'pu_1', issueId: 'i1', title: 'Внедрить CRM' });
+  });
+
+  it('not_found → NotFoundException, create не вызван', async () => {
+    const h = buildResolveHarness();
+    h.issueFindMany.mockResolvedValueOnce([]);
+    await expect(
+      h.service.reportTaskProgress({ taskName: 'нет', progress: 'x' }, TENANT, USER),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(h.progressCreate).not.toHaveBeenCalled();
   });
 });

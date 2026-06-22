@@ -155,6 +155,30 @@ describe('ServiceMapGeneratorService', () => {
     expect(t?.description).toContain('ДРУГОМУ');
   });
 
+  it('complete_task — POST /me/tasks/complete, issue/write, taskName required, без readOnly', () => {
+    const t = svc.findTool('complete_task');
+    expect(t).not.toBeNull();
+    expect(t?.method).toBe('POST');
+    expect(t?.path).toBe('/api/v1/me/tasks/complete');
+    expect(t?.rbacResource).toBe('issue');
+    expect(t?.rbacAction).toBe('write');
+    expect(t?.parameters.required).toEqual(['taskName']);
+    expect(t?.readOnly).toBeUndefined();
+    expect(t?.description).toContain('Используй');
+  });
+
+  it('report_task_progress — POST /me/tasks/progress, issue/write, taskName+progress required', () => {
+    const t = svc.findTool('report_task_progress');
+    expect(t).not.toBeNull();
+    expect(t?.method).toBe('POST');
+    expect(t?.path).toBe('/api/v1/me/tasks/progress');
+    expect(t?.rbacResource).toBe('issue');
+    expect(t?.rbacAction).toBe('write');
+    expect(t?.parameters.required).toEqual(['taskName', 'progress']);
+    expect(t?.readOnly).toBeUndefined();
+    expect(t?.description).toContain('Используй');
+  });
+
   it('search_tasks — GET /me/inbox, issue/read, readOnly', () => {
     const t = svc.findTool('search_tasks');
     expect(t).not.toBeNull();

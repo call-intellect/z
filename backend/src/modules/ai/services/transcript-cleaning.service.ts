@@ -9,6 +9,7 @@ import {
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { MeetingVisibilityService } from '../../meetings/meeting-visibility.service';
 import { S3Service } from '../../recordings/s3.service';
 import { AiQueueService } from '../ai-queue.service';
 
@@ -23,6 +24,7 @@ export class TranscriptCleaningService {
     @Inject(S3Service) private readonly s3: S3Service,
     @Inject(AiQueueService) private readonly queue: AiQueueService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(MeetingVisibilityService) private readonly visibility: MeetingVisibilityService,
   ) {}
 
   async getTranscript(args: { meetingId: string; userId: string; cleaned: boolean }): Promise<{
@@ -35,9 +37,7 @@ export class TranscriptCleaningService {
       include: { transcript: true },
     });
     if (!meeting) throw new NotFoundException('Meeting not found');
-    if (meeting.ownerId !== args.userId) {
-      throw new ForbiddenException('not_meeting_host');
-    }
+    await this.visibility.assertCanView(args.meetingId, args.userId);
     const t = meeting.transcript;
     if (!t || t.turns === null) {
       throw new NotFoundException({ reason: 'transcript_not_ready' });

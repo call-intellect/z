@@ -1443,6 +1443,8 @@ function TranscriptTab({ meetingId }: { meetingId: string }) {
 
   const hasTracks = (tracksData?.tracks?.length ?? 0) > 0;
   const hasTurns = !error && (data?.turns?.length ?? 0) > 0;
+  const forbidden =
+    error instanceof ApiError && (error.code === 'not_authorized' || error.code === 'http_403');
 
   if (isLoading) {
     return (
@@ -1450,6 +1452,16 @@ function TranscriptTab({ meetingId }: { meetingId: string }) {
         <Skeleton className="h-4 w-full" />
         <Skeleton className="mt-2 h-4 w-3/4" />
         <Skeleton className="mt-2 h-4 w-5/6" />
+      </Card>
+    );
+  }
+
+  if (forbidden) {
+    return (
+      <Card>
+        <div className="py-6 text-center text-sm text-fg-secondary">
+          Нет доступа к транскрипту этой встречи.
+        </div>
       </Card>
     );
   }

@@ -3,13 +3,24 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { commonPrefixLength, levenshtein } from '../../../common/text/levenshtein';
+import { SubjectMemoryService } from '../../probe/subject-memory/subject-memory.service';
 
 export type AssigneeResolution =
-  | { kind: 'resolved'; userId: string; name: string }
+  | { kind: 'resolved'; userId: string; name: string; via: 'name' | 'memory' }
   | { kind: 'not_found' }
-  | { kind: 'ambiguous'; candidates: Array<{ userId: string; name: string }> };
+  | { kind: 'ambiguous'; candidates: Array<{ userId: string; name: string }> }
+  | { kind: 'collective'; label: string; departmentId?: string; roleId?: string };
 
 const DEFAULT_MAX_EDITS = 2;
+
+const COLLECTIVE_KEYWORDS = ['отдел', 'команда', 'группа', 'департамент', 'служба', 'все'];
+
+interface NamedUnit {
+  id: string;
+  name: string;
+  forms: string[];
+  tokens: string[];
+}
 
 function normalizeName(value: string): string {
   return value
@@ -71,11 +82,17 @@ function matchTier(
   return null;
 }
 
+type MemberMatch =
+  | { kind: 'resolved'; userId: string; name: string }
+  | { kind: 'not_found' }
+  | { kind: 'ambiguous'; candidates: Array<{ userId: string; name: string }> };
+
 @Injectable()
 export class AssigneeResolverService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Optional() @Inject(TypedConfigService) private readonly cfg?: TypedConfigService,
+    @Optional() @Inject(SubjectMemoryService) private readonly subjectMemory?: SubjectMemoryService,
   ) {}
 
   private async maxEdits(): Promise<number> {
@@ -87,6 +104,48 @@ export class AssigneeResolverService {
   }
 
   async resolve(tenantId: string, rawName: string): Promise<AssigneeResolution> {
+    const norm = normalizeName(rawName);
+    if (!norm) return { kind: 'not_found' };
+
+    const direct = await this.matchMembers(tenantId, rawName);
+
+    if (direct.kind === 'resolved') {
+      return { kind: 'resolved', userId: direct.userId, name: direct.name, via: 'name' };
+    }
+
+    const fromMemory = await this.resolveFromMemory(tenantId, rawName);
+    if (fromMemory) return fromMemory;
+
+    if (direct.kind === 'ambiguous') {
+      return { kind: 'ambiguous', candidates: direct.candidates };
+    }
+
+    const collective = await this.detectCollective(tenantId, rawName, norm);
+    if (collective) return collective;
+
+    return { kind: 'not_found' };
+  }
+
+  private async resolveFromMemory(
+    tenantId: string,
+    rawName: string,
+  ): Promise<Extract<AssigneeResolution, { kind: 'resolved' }> | null> {
+    if (!this.subjectMemory) return null;
+    let rule: { kind: string; ruleText: string } | null;
+    try {
+      rule = await this.subjectMemory.findApplicableRule(tenantId, rawName);
+    } catch {
+      return null;
+    }
+    if (!rule || rule.kind !== 'disambiguation') return null;
+    const ruleText = rule.ruleText?.trim();
+    if (!ruleText) return null;
+    const matched = await this.matchMembers(tenantId, ruleText);
+    if (matched.kind !== 'resolved') return null;
+    return { kind: 'resolved', userId: matched.userId, name: matched.name, via: 'memory' };
+  }
+
+  private async matchMembers(tenantId: string, rawName: string): Promise<MemberMatch> {
     const norm = normalizeName(rawName);
     if (!norm) return { kind: 'not_found' };
 
@@ -151,5 +210,72 @@ export class AssigneeResolverService {
       return { kind: 'resolved', userId: first.userId, name: first.name };
     }
     return { kind: 'ambiguous', candidates: tierCandidates.slice(0, 5) };
+  }
+
+  private async detectCollective(
+    tenantId: string,
+    rawName: string,
+    norm: string,
+  ): Promise<Extract<AssigneeResolution, { kind: 'collective' }> | null> {
+    const departmentId = await this.matchUnit(this.loadDepartments(tenantId), norm);
+    if (departmentId) return { kind: 'collective', label: rawName, departmentId };
+
+    const roleId = await this.matchUnit(this.loadRoles(tenantId), norm);
+    if (roleId) return { kind: 'collective', label: rawName, roleId };
+
+    const inputTokens = new Set(tokenize(norm));
+    const hasKeyword = COLLECTIVE_KEYWORDS.some(
+      (kw) => inputTokens.has(kw) || norm.includes(kw),
+    );
+    if (hasKeyword) return { kind: 'collective', label: rawName };
+
+    return null;
+  }
+
+  private async loadDepartments(tenantId: string): Promise<NamedUnit[]> {
+    const findMany = this.prisma.department?.findMany?.bind(this.prisma.department);
+    if (!findMany) return [];
+    const rows = await findMany({
+      where: { tenantId, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    return this.toUnits(rows);
+  }
+
+  private async loadRoles(tenantId: string): Promise<NamedUnit[]> {
+    const findMany = this.prisma.role?.findMany?.bind(this.prisma.role);
+    if (!findMany) return [];
+    const rows = await findMany({
+      where: { tenantId, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    return this.toUnits(rows);
+  }
+
+  private toUnits(rows: Array<{ id: string; name: string }>): NamedUnit[] {
+    return rows.map((r) => {
+      const form = normalizeName(r.name);
+      const forms = form ? [form] : [];
+      const tokens = forms.flatMap((f) => tokenize(f));
+      return { id: r.id, name: r.name, forms, tokens };
+    });
+  }
+
+  private async matchUnit(unitsPromise: Promise<NamedUnit[]>, norm: string): Promise<string | null> {
+    let units: NamedUnit[];
+    try {
+      units = await unitsPromise;
+    } catch {
+      return null;
+    }
+    const inputTokens = new Set(tokenize(norm));
+    for (const u of units) {
+      for (const form of u.forms) {
+        if (!form) continue;
+        if (norm.includes(form) || form.includes(norm)) return u.id;
+      }
+      if (u.tokens.length > 0 && u.tokens.every((t) => inputTokens.has(t))) return u.id;
+    }
+    return null;
   }
 }

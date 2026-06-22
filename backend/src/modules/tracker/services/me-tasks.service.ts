@@ -116,7 +116,7 @@ export class MeTasksService {
     actorUserId: string,
   ): Promise<PostAssignTaskResponseDto> {
     const resolution = await this.resolver.resolve(tenantId, body.assigneeName);
-    if (resolution.kind === 'not_found') {
+    if (resolution.kind === 'not_found' || resolution.kind === 'collective') {
       throw new NotFoundException({
         ok: false,
         error: {

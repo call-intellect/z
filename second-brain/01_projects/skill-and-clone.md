@@ -22,6 +22,8 @@ date: 2026-05-22
 
 **НЕ источник:** mentioned-блоки, не-reasoning signalType, внешние Person'ы (relationship≠'employee').
 
+> ⚠️ **Вскрыто боевым прод-тестом 2026-06-22** ([[../05_история/2026-06-22-clone-prod-test-and-signaltype-tz]]): узкий набор `{reasoning, rationale, decision_basis}` — узкое место. block-ingest метит «как сотрудник работает» как `methodology_step` («Шаг методологии»), а не `reasoning` → эти блоки до клона НЕ доходят, профиль не наполняется (у активных Org 0 клонов). Гейт `<5` делает полный skip. Фикс (расширить набор на `methodology_step`, единая константа + 3 рубежа + backfill) — ТЗ [`plans/tz/2026-06-22-clone-signaltype-methodology-step.md`](../../plans/tz/2026-06-22-clone-signaltype-methodology-step.md), реализация не начата. Набор скопирован литералом в ≥6 местах — рассинхрон и есть корень.
+
 ## Жизненный цикл
 
 | Event | Action |

@@ -33,6 +33,7 @@ import type { UpdateIssueDto } from '../dto/issues/update-issue.dto';
 
 import { ActivityRecorderService } from './activity-recorder.service';
 import { BoardsService } from './boards.service';
+import { maybeMarkDecisionsImplementedForIssue } from './decision-task-link.util';
 import { HolidayService } from './holiday.service';
 import { IssueEmbedQueueService } from './issue-embed-queue.service';
 import { IssueGoalSuggestService } from './issue-goal-suggest.service';
@@ -1174,6 +1175,19 @@ export class IssuesService {
         verb: 'status_changed',
       });
     });
+    if (newState.category === 'completed') {
+      try {
+        await maybeMarkDecisionsImplementedForIssue(this.prisma, {
+          tenantId,
+          issueId: id,
+        });
+      } catch (e) {
+        this.logger.warn(
+          { issueId: id, err: e instanceof Error ? e.message : String(e) },
+          'transitionState: maybeMarkDecisionsImplementedForIssue упал — пропуск (best-effort)',
+        );
+      }
+    }
     const response = await this.assemble(id, tenantId);
     this.events.publishIssueUpdated(response, tenantId, ['stateId']);
     // Sprint 3 B1-3.1 — ingest в knowledge-core (status_changed + спец. blocked/completed).

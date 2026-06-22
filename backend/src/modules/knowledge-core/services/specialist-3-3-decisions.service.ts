@@ -28,6 +28,7 @@ import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
 import { SystemLogPipeline } from '../../logging/log-pipeline';
 import { LogService } from '../../logging/log.service';
+import { linkDerivedTasksForDecision } from '../../tracker/services/decision-task-link.util';
 import {
   DECISION_EXTRACT_JSON_SCHEMA,
   DECISION_EXTRACT_SCHEMA_NAME,
@@ -394,6 +395,24 @@ export class Specialist33Service {
         id: decision.id,
         text: `${draft.statement} ${draft.rationale ?? ''}`,
       });
+
+      if (createdNew) {
+        try {
+          await linkDerivedTasksForDecision(this.prisma, {
+            tenantId: block.tenantId,
+            decisionId: decision.id,
+            sourceBlockIds: decision.sourceBlockIds,
+          });
+        } catch (err) {
+          this.logger.debug(
+            {
+              decisionId: decision.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'specialist-3-3.createNewDecision: linkDerivedTasksForDecision упал — пропуск (best-effort)',
+          );
+        }
+      }
 
       // Triage — Decision всегда critical → deep review.
       await this.triageProposed({
@@ -1363,6 +1382,8 @@ export class Specialist33Service {
           tenantId: args.tenantId,
           // не трогаем уже удалённые задачи
           deletedAt: null,
+          // не помечаем «под вопросом» уже закрытые/отменённые задачи
+          state: { is: { category: { notIn: ['completed', 'cancelled'] } } },
         },
         data: {
           closureReviewState: 'superseded_decision',

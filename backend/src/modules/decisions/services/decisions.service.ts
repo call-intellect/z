@@ -18,6 +18,7 @@ import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
 import type { ProvenancePreviewRef } from '../../knowledge-core/services/provenance.service';
 import { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
+import { linkDerivedTasksForDecision } from '../../tracker/services/decision-task-link.util';
 import type {
   ChangeStatusBody,
   CreateDecisionBody,
@@ -420,6 +421,24 @@ export class DecisionsService {
         validFrom: decidedAt ?? null,
       },
     });
+
+    if (decision.sourceBlockIds.length > 0) {
+      try {
+        await linkDerivedTasksForDecision(this.prisma, {
+          tenantId: args.tenantId,
+          decisionId: decision.id,
+          sourceBlockIds: decision.sourceBlockIds,
+        });
+      } catch (err) {
+        this.logger.warn(
+          {
+            decisionId: decision.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'decisions.createManual: linkDerivedTasksForDecision упал — пропуск (best-effort)',
+        );
+      }
+    }
 
     try {
       await this.curation.triage({

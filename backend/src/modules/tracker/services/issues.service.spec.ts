@@ -1104,9 +1104,11 @@ describe('IssuesService — transitionToCategory', () => {
         fn({
           issue: { update: issueUpdate },
         }),
-      issue: { findFirst: issueFindFirst },
+      issue: { findFirst: issueFindFirst, count: vi.fn().mockResolvedValue(0) },
       issueState: { findFirst: issueStateFindFirst },
       project: { findUnique: projectFindUnique },
+      decisionTaskLink: { findMany: vi.fn().mockResolvedValue([]) },
+      decision: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
     } as unknown as PrismaService;
 
     const activity = {

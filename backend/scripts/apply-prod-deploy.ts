@@ -618,6 +618,12 @@ const STEPS: Step[] = [
     hint: 'enqueue KnowledgeProfile rebuild для employee с expertise/experience/competence блоками (after router fix Фаза 0.5)',
     skipBootstrap: true,
   },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-skill-profiles-rebuild.ts',
+    hint: 'enqueue rebuild всех active SkillProfile после расширения signalType на methodology_step (clone-signaltype-methodology-step Ф3); jobId-дедуп',
+    skipBootstrap: true,
+  },
 
   {
     phase: 'backfill',

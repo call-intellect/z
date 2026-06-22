@@ -75,7 +75,8 @@ const VALID_HORIZONS: ReadonlySet<string> = new Set([
  *     cosine, HNSW) вместо ILIKE по 2 словам; ILIKE остаётся best-effort
  *     fallback'ом при отсутствии вектора. + source-block guard (Б34).
  *   - Goal.createdById обязателен (FK на User onDelete:Restrict) — подставляем
- *     owner'а Org (Membership role='owner'). Нет owner → skip создания.
+ *     owner'а Org (Membership role='owner'); нет owner → любой
+ *     член Org (joinedAt asc); Org вообще без членов → skip создания + WARN.
  *
  * Метрики — переиспользуем `core_specialist_*{type='goal'}`.
  */
@@ -137,6 +138,36 @@ export class Specialist314GoalsService {
     private readonly cfg?: TypedConfigService,
   ) {}
 
+  private async resolveThresholds(): Promise<GoalThresholds> {
+    const [minExtractConfidence, autoPromoteConfidence, maxActiveGoalsPerHorizon] =
+      await Promise.all([
+        this.cfg?.getDynamic<number>(
+          'goals.minExtractConfidence',
+          undefined,
+          Specialist314GoalsService.MIN_EXTRACT_CONFIDENCE,
+        ),
+        this.cfg?.getDynamic<number>(
+          'goals.autoPromoteConfidence',
+          undefined,
+          Specialist314GoalsService.AUTO_PROMOTE_CONFIDENCE,
+        ),
+        this.cfg?.getDynamic<number>(
+          'goals.maxActiveGoalsPerHorizon',
+          undefined,
+          Specialist314GoalsService.MAX_ACTIVE_GOALS_PER_HORIZON,
+        ),
+      ]);
+    return {
+      minExtractConfidence:
+        minExtractConfidence ?? Specialist314GoalsService.MIN_EXTRACT_CONFIDENCE,
+      autoPromoteConfidence:
+        autoPromoteConfidence ?? Specialist314GoalsService.AUTO_PROMOTE_CONFIDENCE,
+      maxActiveGoalsPerHorizon:
+        maxActiveGoalsPerHorizon ??
+        Specialist314GoalsService.MAX_ACTIVE_GOALS_PER_HORIZON,
+    };
+  }
+
   /** ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection. */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
@@ -169,7 +200,9 @@ export class Specialist314GoalsService {
     if (!block) return;
     if (block.tenantId !== args.tenantId) return;
 
-    const draft = await this.extractGoalDraft(block);
+    const thresholds = await this.resolveThresholds();
+
+    const draft = await this.extractGoalDraft(block, thresholds.minExtractConfidence);
     if (!draft) {
       this.logs.write({
         level: 'INFO',
@@ -267,6 +300,7 @@ export class Specialist314GoalsService {
       const overCap = await this.isOverFocusCap({
         tenantId: block.tenantId,
         horizon: draft.horizon,
+        maxActiveGoalsPerHorizon: thresholds.maxActiveGoalsPerHorizon,
       });
       if (overCap) {
         this.metrics.incCoreSpecialistExtractionFailure({
@@ -292,16 +326,20 @@ export class Specialist314GoalsService {
       // Owner Org для обязательного createdById.
       const ownerUserId = await this.resolveOwnerUserId(block.tenantId);
       if (!ownerUserId) {
+        this.metrics.incCoreSpecialistExtractionFailure({
+          type: METRIC_TYPE,
+          reason: 'no_owner',
+        });
         this.logger.warn(
           { blockId: block.id, tenantId: block.tenantId },
-          'specialist-3-14: не найден owner Org — пропускаю создание цели',
+          'specialist-3-14: в Org нет ни одного члена — пропускаю создание цели',
         );
         this.logs.write({
-          level: 'INFO',
+          level: 'WARN',
           pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
           module: 'specialist-3-14-goals',
           action: 'skipped',
-          message: 'Goal не создана: не найден owner Org',
+          message: 'Goal не создана: в Org нет ни одного члена (некому быть createdById)',
           orgId: block.tenantId,
           details: { type: 'goal', reason: 'no_owner', blockId: block.id },
         });
@@ -309,7 +347,7 @@ export class Specialist314GoalsService {
       }
 
       const promotionState =
-        draft.confidence >= Specialist314GoalsService.AUTO_PROMOTE_CONFIDENCE
+        draft.confidence >= thresholds.autoPromoteConfidence
           ? 'active'
           : 'suggested';
 
@@ -429,6 +467,7 @@ export class Specialist314GoalsService {
 
   private async extractGoalDraft(
     block: IdeaBlock & { evidence: IdeaBlockEvidence[] },
+    minExtractConfidence: number,
   ): Promise<GoalDraft | null> {
     const start = Date.now();
     const quotes = block.evidence
@@ -529,7 +568,7 @@ export class Specialist314GoalsService {
     }
     const confidence =
       typeof parsed.confidence === 'number' ? parsed.confidence : 0;
-    if (confidence < Specialist314GoalsService.MIN_EXTRACT_CONFIDENCE) {
+    if (confidence < minExtractConfidence) {
       this.logger.debug(
         { blockId: block.id, confidence },
         'specialist-3-14.extractGoalDraft: confidence слишком низкий — skip',
@@ -921,6 +960,7 @@ export class Specialist314GoalsService {
   private async isOverFocusCap(args: {
     tenantId: string;
     horizon: GoalHorizon;
+    maxActiveGoalsPerHorizon: number;
   }): Promise<boolean> {
     const count = await this.prisma.goal.count({
       where: {
@@ -930,7 +970,7 @@ export class Specialist314GoalsService {
         promotionState: { in: ['active', 'suggested'] },
       },
     });
-    return count >= Specialist314GoalsService.MAX_ACTIVE_GOALS_PER_HORIZON;
+    return count >= args.maxActiveGoalsPerHorizon;
   }
 
   private async createGoal(args: {
@@ -997,22 +1037,30 @@ export class Specialist314GoalsService {
 
   // ─────────────────────────── owner resolver ───────────────────────────
 
-  /**
-   * Goal.createdById обязателен (FK на User, onDelete:Restrict). У AI-специалиста
-   * нет реального пользователя — подставляем owner'а Org (Membership role='owner').
-   * Нет owner → null (caller пропускает создание, не падает).
-   */
   private async resolveOwnerUserId(tenantId: string): Promise<string | null> {
     const owner = await this.prisma.membership.findFirst({
       where: { orgId: tenantId, role: 'owner' },
       orderBy: { joinedAt: 'asc' },
       select: { userId: true },
     });
-    return owner?.userId ?? null;
+    if (owner?.userId) return owner.userId;
+
+    const anyMember = await this.prisma.membership.findFirst({
+      where: { orgId: tenantId },
+      orderBy: { joinedAt: 'asc' },
+      select: { userId: true },
+    });
+    return anyMember?.userId ?? null;
   }
 }
 
 // ─────────────────────────── shared types ───────────────────────────
+
+interface GoalThresholds {
+  minExtractConfidence: number;
+  autoPromoteConfidence: number;
+  maxActiveGoalsPerHorizon: number;
+}
 
 interface RawGoalDraft {
   isGoal?: boolean;

@@ -57,6 +57,7 @@ interface Mocks {
     $queryRawUnsafe: ReturnType<typeof vi.fn>;
   };
   llm: { call: ReturnType<typeof vi.fn> };
+  cfg: { getDynamic: ReturnType<typeof vi.fn> };
   embedder: { embedQuery: ReturnType<typeof vi.fn> };
   metrics: {
     incCoreSpecialistCards: ReturnType<typeof vi.fn>;
@@ -89,6 +90,15 @@ function buildService(): { svc: Specialist314GoalsService; m: Mocks } {
       $queryRawUnsafe: vi.fn().mockResolvedValue([]),
     },
     llm: { call: vi.fn() },
+    // По умолчанию getDynamic возвращает code-fallback (3-й аргумент) —
+    // воспроизводит admin→ENV→code-fallback, когда AdminSetting не задан.
+    cfg: {
+      getDynamic: vi
+        .fn()
+        .mockImplementation(
+          (_key: string, _env: string | undefined, def: unknown) => def,
+        ),
+    },
     embedder: { embedQuery: vi.fn().mockResolvedValue(null) },
     metrics: {
       incCoreSpecialistCards: vi.fn(),
@@ -109,7 +119,8 @@ function buildService(): { svc: Specialist314GoalsService; m: Mocks } {
      
     m.metrics as any,
     m.logs as any,
-    undefined,
+
+    m.cfg as any,
   );
   return { svc, m };
 }
@@ -430,11 +441,11 @@ describe('Specialist314GoalsService.processBlock', () => {
     expect(m.llm.call).toHaveBeenCalledTimes(1);
   });
 
-  it('owner Org не найден → цель не создаётся (не падает)', async () => {
+  it('no_owner фолбэк: owner нет, но есть обычный член → цель создаётся с createdById члена', async () => {
     m.llm.call.mockResolvedValueOnce(
       llmResult({
         isGoal: true,
-        statement: 'Цель без owner',
+        statement: 'Цель без явного owner',
         description: null,
         horizon: 'quarterly',
         measurable: null,
@@ -442,11 +453,76 @@ describe('Specialist314GoalsService.processBlock', () => {
       }),
     );
     m.prisma.goal.findMany.mockResolvedValue([]);
+    // 1-й findFirst — owner-запрос (нет owner); 2-й — любой член Org.
+    m.prisma.membership.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ userId: 'member-x' });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.goal.create).toHaveBeenCalledTimes(1);
+    expect(m.prisma.goal.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ createdById: 'member-x' }),
+      }),
+    );
+    // Раз цель создалась — метрика no_owner НЕ инкрементится.
+    expect(m.metrics.incCoreSpecialistExtractionFailure).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'no_owner' }),
+    );
+  });
+
+  it('Org вообще без членов → цель не создаётся + WARN-лог + метрика no_owner', async () => {
+    m.llm.call.mockResolvedValueOnce(
+      llmResult({
+        isGoal: true,
+        statement: 'Цель в пустой Org',
+        description: null,
+        horizon: 'quarterly',
+        measurable: null,
+        confidence: 0.6,
+      }),
+    );
+    m.prisma.goal.findMany.mockResolvedValue([]);
+    // И owner-запрос, и фолбэк «любой член» возвращают null.
     m.prisma.membership.findFirst.mockResolvedValue(null);
 
     await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
 
     expect(m.prisma.goal.create).not.toHaveBeenCalled();
+    expect(m.metrics.incCoreSpecialistExtractionFailure).toHaveBeenCalledWith({
+      type: 'goal',
+      reason: 'no_owner',
+    });
+    expect(m.logs.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'WARN',
+        action: 'skipped',
+        details: expect.objectContaining({ reason: 'no_owner' }),
+      }),
+    );
+  });
+
+  it('крутилка порога: minExtractConfidence=0.1 → реплика с confidence 0.2 проходит', async () => {
+    m.cfg.getDynamic.mockImplementation(
+      (key: string, _env: string | undefined, def: unknown) =>
+        key === 'goals.minExtractConfidence' ? 0.1 : def,
+    );
+    m.llm.call.mockResolvedValueOnce(
+      llmResult({
+        isGoal: true,
+        statement: 'Низко-уверенная цель',
+        description: null,
+        horizon: 'quarterly',
+        measurable: null,
+        confidence: 0.2,
+      }),
+    );
+    m.prisma.goal.findMany.mockResolvedValue([]);
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.goal.create).toHaveBeenCalledTimes(1);
   });
 
   it('ошибка записи goal.create → processBlock пробрасывает (BullMQ retry) + метрика db_error', async () => {

@@ -33,6 +33,33 @@ const SEEDS: SettingSeed[] = [
     description:
       'Если true — после генерации пульс целей отправляется через ConversationalService.sendNotification(eventType=goals.pulse) ролям owner и coo. По умолчанию false, чтобы Telegram не молотил сразу после раскатки.',
   },
+  {
+    key: 'goals.minExtractConfidence',
+    value: 0.4,
+    category: 'goals',
+    section: 'extraction',
+    severity: 'medium',
+    description:
+      'Мин. уверенность, чтобы реплику считать целью. Ниже порога специалист 3-14 пропускает блок (не создаёт цель). Диапазон 0..1.',
+  },
+  {
+    key: 'goals.autoPromoteConfidence',
+    value: 0.8,
+    category: 'goals',
+    section: 'extraction',
+    severity: 'low',
+    description:
+      'Уверенность для авто-продвижения цели: при >= этого значения AI-цель сразу создаётся в состоянии active, иначе suggested. Диапазон 0..1.',
+  },
+  {
+    key: 'goals.maxActiveGoalsPerHorizon',
+    value: 7,
+    category: 'goals',
+    section: 'extraction',
+    severity: 'low',
+    description:
+      'Макс. активных целей на горизонт (фокус-лимит). При достижении специалист 3-14 не плодит новые цели этого горизонта. Целое число.',
+  },
 ];
 
 interface Counters {

@@ -119,6 +119,10 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['goals.goalTaskLinkEnabled', z.boolean()],
 
+  ['goals.minExtractConfidence', z.coerce.number()],
+  ['goals.autoPromoteConfidence', z.coerce.number()],
+  ['goals.maxActiveGoalsPerHorizon', z.coerce.number()],
+
   ['goals.author_coverage_min', UNIT_INTERVAL],
   ['reliability.min_denominator', POSITIVE_INT],
   ['provenance.confidence_review_threshold', UNIT_INTERVAL],

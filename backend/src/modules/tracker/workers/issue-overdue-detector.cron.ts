@@ -1,7 +1,9 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { ConversationalService } from '../../conversational/conversational.service';
 import { TrackerEmitterService } from '../services/tracker-emitter.service';
 
 @Injectable()
@@ -14,6 +16,12 @@ export class IssueOverdueDetectorCron {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TrackerEmitterService)
     private readonly emitter: TrackerEmitterService,
+    @Optional()
+    @Inject(ConversationalService)
+    private readonly conversational: ConversationalService | null = null,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService | null = null,
   ) {}
 
   @Cron('0 9 * * *')
@@ -51,6 +59,7 @@ export class IssueOverdueDetectorCron {
       );
       try {
         this.emitter.emitIssueOverdueDetected({ issue, daysOverdue });
+        await this.notifyAssignees({ issue, daysOverdue });
         await this.prisma.issue.update({
           where: { id: issue.id },
           data: { lastOverdueDetectedAt: now },
@@ -71,5 +80,55 @@ export class IssueOverdueDetectorCron {
       'issue-overdue-detector: проход завершён',
     );
     return { scanned: candidates.length, emitted };
+  }
+
+  private async notifyAssignees(args: {
+    issue: { id: string; tenantId: string; identifier: string; title: string; dueDate: Date | null };
+    daysOverdue: number;
+  }): Promise<void> {
+    if (!this.conversational || !this.cfg?.tracker.overdueNotifyEnabled) return;
+    const conversational = this.conversational;
+    const { issue, daysOverdue } = args;
+    try {
+      const assignees = await this.prisma.issueAssignee.findMany({
+        where: { issueId: issue.id },
+        select: { userId: true },
+      });
+      for (const assignee of assignees) {
+        try {
+          await conversational.sendNotification({
+            tenantId: issue.tenantId,
+            recipientUserId: assignee.userId,
+            eventType: 'issue.overdue',
+            payload: {
+              issueId: issue.id,
+              issueIdentifier: issue.identifier,
+              issueTitle: issue.title,
+              daysOverdue,
+              dueDate: issue.dueDate?.toISOString() ?? null,
+              actionUrl: `/issues/${issue.id}`,
+            },
+            dataClass: 'internal',
+          });
+        } catch (err) {
+          this.logger.warn(
+            {
+              issueId: issue.id,
+              userId: assignee.userId,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'issue-overdue-detector: уведомление исполнителю не отправлено — продолжаем',
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        {
+          issueId: issue.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'issue-overdue-detector: не удалось получить исполнителей — пропускаем уведомления',
+      );
+    }
   }
 }

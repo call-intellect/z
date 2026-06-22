@@ -89,6 +89,15 @@ const SEEDS: SettingSeed[] = [
       'Кадэнс (cron) воркера материализации повторяющихся задач. По умолчанию ежедневно в 06:00 UTC.',
   },
   {
+    key: 'tracker.overdueNotifyEnabled',
+    value: true,
+    category: 'ai',
+    section: 'tracker',
+    severity: 'high',
+    description:
+      'Слать исполнителю уведомление о просрочке задачи (in_app + Telegram). Рубильник, по умолчанию вкл (Ship-On).',
+  },
+  {
     key: 'tracker.assigneeClarifyEnabled',
     value: true,
     category: 'ai',

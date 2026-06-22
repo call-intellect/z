@@ -292,6 +292,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.automationsEnabled', z.boolean()],
   ['tracker.recurrenceEnabled', z.boolean()],
   ['tracker.recurrenceCronCadence', z.string().min(1)],
+  ['tracker.overdueNotifyEnabled', z.boolean()],
   ['tracker.assigneeClarifyEnabled', z.boolean()],
   ['tracker.dueDateClarifyEnabled', z.boolean()],
   ['tracker.assigneeProbePriorityHint', UNIT_INTERVAL],

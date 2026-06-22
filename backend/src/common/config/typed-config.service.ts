@@ -1671,6 +1671,11 @@ export class TypedConfigService {
         0.75,
       ),
       assignmentNotificationsEnabled: Boolean(this.get('ASSIGNMENT_NOTIFICATIONS_ENABLED') ?? true),
+      overdueNotifyEnabled: this.resolveSync<boolean>(
+        'tracker.overdueNotifyEnabled',
+        undefined,
+        true,
+      ),
       assigneeClarifyEnabled: this.resolveSync<boolean>(
         'tracker.assigneeClarifyEnabled',
         undefined,

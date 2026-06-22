@@ -1,7 +1,9 @@
 import type { Issue } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { ConversationalService } from '../../conversational/conversational.service';
 import type { TrackerEmitterService } from '../services/tracker-emitter.service';
 
 import { IssueOverdueDetectorCron } from './issue-overdue-detector.cron';
@@ -9,11 +11,17 @@ import { IssueOverdueDetectorCron } from './issue-overdue-detector.cron';
 describe('IssueOverdueDetectorCron', () => {
   let prisma: PrismaService;
   let emitter: TrackerEmitterService;
+  let conversational: ConversationalService;
+  let cfg: TypedConfigService;
   let cron: IssueOverdueDetectorCron;
 
   let issueFindMany: ReturnType<typeof vi.fn>;
   let issueUpdate: ReturnType<typeof vi.fn>;
+  let assigneeFindMany: ReturnType<typeof vi.fn>;
   let emitOverdue: ReturnType<typeof vi.fn>;
+  let sendNotification: ReturnType<typeof vi.fn>;
+
+  let overdueNotifyEnabled = true;
 
   const overdueIssue: Issue = {
     id: 'i1',
@@ -52,16 +60,28 @@ describe('IssueOverdueDetectorCron', () => {
   } as unknown as Issue;
 
   beforeEach(() => {
+    overdueNotifyEnabled = true;
     issueFindMany = vi.fn().mockResolvedValue([overdueIssue]);
     issueUpdate = vi.fn().mockResolvedValue(overdueIssue);
+    assigneeFindMany = vi.fn().mockResolvedValue([{ userId: 'u-assignee' }]);
     emitOverdue = vi.fn();
+    sendNotification = vi.fn().mockResolvedValue(undefined);
     prisma = {
       issue: { findMany: issueFindMany, update: issueUpdate },
+      issueAssignee: { findMany: assigneeFindMany },
     } as unknown as PrismaService;
     emitter = {
       emitIssueOverdueDetected: emitOverdue,
     } as unknown as TrackerEmitterService;
-    cron = new IssueOverdueDetectorCron(prisma, emitter);
+    conversational = {
+      sendNotification,
+    } as unknown as ConversationalService;
+    cfg = {
+      get tracker() {
+        return { overdueNotifyEnabled };
+      },
+    } as unknown as TypedConfigService;
+    cron = new IssueOverdueDetectorCron(prisma, emitter, conversational, cfg);
   });
 
   it('эмитит overdue + проставляет lastOverdueDetectedAt для каждой просроченной задачи', async () => {
@@ -106,5 +126,57 @@ describe('IssueOverdueDetectorCron', () => {
     expect(result.scanned).toBe(2);
     expect(result.emitted).toBe(1);
     expect(emitOverdue).toHaveBeenCalledTimes(2);
+  });
+
+  it('просроченная задача с assignee → шлёт issue.overdue исполнителю + дедуп', async () => {
+    const result = await cron.run();
+    expect(result).toEqual({ scanned: 1, emitted: 1 });
+    expect(sendNotification).toHaveBeenCalledTimes(1);
+    const arg = sendNotification.mock.calls[0]![0];
+    expect(arg.eventType).toBe('issue.overdue');
+    expect(arg.recipientUserId).toBe('u-assignee');
+    expect(arg.tenantId).toBe('org_1');
+    expect(arg.dataClass).toBe('internal');
+    expect(arg.payload.issueId).toBe('i1');
+    expect(arg.payload.issueIdentifier).toBe('KORA-1');
+    expect(arg.payload.actionUrl).toBe('/issues/i1');
+    expect(issueUpdate).toHaveBeenCalledWith({
+      where: { id: 'i1' },
+      data: expect.objectContaining({ lastOverdueDetectedAt: expect.any(Date) }),
+    });
+  });
+
+  it('overdueNotifyEnabled:false → sendNotification не вызван, но дедуп проставлен', async () => {
+    overdueNotifyEnabled = false;
+    const result = await cron.run();
+    expect(result.emitted).toBe(1);
+    expect(sendNotification).not.toHaveBeenCalled();
+    expect(assigneeFindMany).not.toHaveBeenCalled();
+    expect(issueUpdate).toHaveBeenCalledWith({
+      where: { id: 'i1' },
+      data: expect.objectContaining({ lastOverdueDetectedAt: expect.any(Date) }),
+    });
+  });
+
+  it('sendNotification бросает → крон не падает, дедуп проставлен', async () => {
+    sendNotification.mockRejectedValueOnce(new Error('boom'));
+    const result = await cron.run();
+    expect(result).toEqual({ scanned: 1, emitted: 1 });
+    expect(sendNotification).toHaveBeenCalledTimes(1);
+    expect(issueUpdate).toHaveBeenCalledWith({
+      where: { id: 'i1' },
+      data: expect.objectContaining({ lastOverdueDetectedAt: expect.any(Date) }),
+    });
+  });
+
+  it('задача без assignees → sendNotification не вызван, дедуп проставлен', async () => {
+    assigneeFindMany.mockResolvedValueOnce([]);
+    const result = await cron.run();
+    expect(result.emitted).toBe(1);
+    expect(sendNotification).not.toHaveBeenCalled();
+    expect(issueUpdate).toHaveBeenCalledWith({
+      where: { id: 'i1' },
+      data: expect.objectContaining({ lastOverdueDetectedAt: expect.any(Date) }),
+    });
   });
 });

@@ -794,6 +794,21 @@ describe('RegulationsService — soft-delete / restore', () => {
     );
   });
 
+  it('list({deleted:true}) → where.deletedAt = { not: null } (только удалённые)', async () => {
+    regFindMany.mockResolvedValue([makeRegulation({ id: 'r-del', deletedAt: FIXED_DATE })]);
+    regCount.mockResolvedValue(1);
+
+    const query = ListRegulationsQuerySchema.parse({ kind: 'regulation', deleted: 'true' });
+    const res = await svc.list({ tenantId: 't-1', query });
+
+    expect(res.items.map((i) => i.id)).toEqual(['r-del']);
+    expect(regFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ deletedAt: { not: null } }),
+      }),
+    );
+  });
+
   it('restore: удалённая запись → снимает deletedAt, пишет audit RESTORE', async () => {
     regFindFirst.mockResolvedValue({ id: 'r-1', deletedAt: FIXED_DATE });
 

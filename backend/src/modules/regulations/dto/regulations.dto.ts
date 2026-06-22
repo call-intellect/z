@@ -28,6 +28,7 @@ export const ListRegulationsQuerySchema = z.object({
   kind: RegulationKindSchema.optional(),
   status: RegulationStatusSchema.optional(),
   scope: z.string().trim().min(1).max(120).optional(),
+  deleted: z.coerce.boolean().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });

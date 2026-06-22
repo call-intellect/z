@@ -1,10 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, X, Check } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Pencil, X, Check, MoreHorizontal, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/ui/shadcn/button";
 import { Input } from "@/ui/shadcn/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/ui/shadcn/dropdown-menu";
 import { issuesApi } from "@/api/tracker/issues.api";
+import { humanizeApiError } from "@/api/api-error";
+import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
 import type { Issue } from "@/domain/tracker";
 import { IssueStateBadge } from "./IssueStateBadge";
 
@@ -17,9 +27,30 @@ export function IssueHeader({
   orgId: string;
   onUpdated?: () => Promise<unknown> | void;
 }) {
+  const router = useRouter();
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(issue.title);
   const [saving, setSaving] = useState(false);
+
+  const handleDelete = async () => {
+    const ok = await ask({
+      title: "Удалить задачу?",
+      description: "Восстановить можно в течение 30 дней.",
+      confirmLabel: "Удалить",
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await issuesApi.remove(orgId, issue.id);
+      toast.success("Задача удалена");
+      router.push(
+        issue.projectSlug ? `/projects/${issue.projectSlug}/board` : "/projects",
+      );
+    } catch (err) {
+      toast.error(humanizeApiError(err, "Ошибка удаления"));
+    }
+  };
 
   const handleSave = async () => {
     const next = value.trim();
@@ -104,8 +135,24 @@ export function IssueHeader({
           >
             <Pencil size={14} />
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label="Меню задачи">
+                <MoreHorizontal size={16} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem
+                className="text-danger focus:text-danger"
+                onSelect={() => void handleDelete()}
+              >
+                <Trash2 size={14} /> Удалить задачу
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

@@ -1033,7 +1033,10 @@ export class RegulationsService {
   }
 
   private regulationsWhere(tenantId: string, q: ListRegulationsQuery): Prisma.RegulationWhereInput {
-    const where: Prisma.RegulationWhereInput = { tenantId, deletedAt: null };
+    const where: Prisma.RegulationWhereInput = {
+      tenantId,
+      deletedAt: q.deleted ? { not: null } : null,
+    };
     if (q.status) where.status = q.status;
     if (q.scope) where.scope = { contains: q.scope, mode: 'insensitive' };
     if (q.q) {
@@ -1047,7 +1050,10 @@ export class RegulationsService {
   }
 
   private processesWhere(tenantId: string, q: ListRegulationsQuery): Prisma.ProcessWhereInput {
-    const where: Prisma.ProcessWhereInput = { tenantId, deletedAt: null };
+    const where: Prisma.ProcessWhereInput = {
+      tenantId,
+      deletedAt: q.deleted ? { not: null } : null,
+    };
     if (q.status) where.status = q.status;
     if (q.scope) where.scope = { contains: q.scope, mode: 'insensitive' };
     if (q.q) {
@@ -1060,7 +1066,10 @@ export class RegulationsService {
   }
 
   private policiesWhere(tenantId: string, q: ListRegulationsQuery): Prisma.PolicyWhereInput {
-    const where: Prisma.PolicyWhereInput = { tenantId, deletedAt: null };
+    const where: Prisma.PolicyWhereInput = {
+      tenantId,
+      deletedAt: q.deleted ? { not: null } : null,
+    };
     if (q.status) where.status = q.status;
     if (q.scope) where.scope = { contains: q.scope, mode: 'insensitive' };
     if (q.q) {
@@ -1076,7 +1085,10 @@ export class RegulationsService {
     tenantId: string,
     q: ListRegulationsQuery,
   ): Prisma.InstructionWhereInput {
-    const where: Prisma.InstructionWhereInput = { tenantId, deletedAt: null };
+    const where: Prisma.InstructionWhereInput = {
+      tenantId,
+      deletedAt: q.deleted ? { not: null } : null,
+    };
     if (q.status) where.status = q.status;
     if (q.scope) where.scope = { contains: q.scope, mode: 'insensitive' };
     if (q.q) {

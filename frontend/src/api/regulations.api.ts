@@ -114,6 +114,7 @@ export type ListRegulationsRequest = {
   status?: RegulationStatusApi;
   scope?: string;
   q?: string;
+  deleted?: boolean;
 };
 
 function buildRegulationsQuery(filters?: ListRegulationsRequest): string {
@@ -125,6 +126,7 @@ function buildRegulationsQuery(filters?: ListRegulationsRequest): string {
   if (filters.status) p.set("status", filters.status);
   if (filters.scope) p.set("scope", filters.scope);
   if (filters.q) p.set("q", filters.q);
+  if (filters.deleted) p.set("deleted", "true");
   const qs = p.toString();
   return qs ? `?${qs}` : "";
 }
@@ -189,6 +191,17 @@ export const regulationsApi = {
   ) =>
     apiClient.post<{ ok: true; applied: boolean }>(
       `/api/v1/regulations/${encodeURIComponent(id)}/correct`,
+      body,
+    ),
+
+  remove: (id: string, body: { kind: RegulationKindApi }) =>
+    apiClient.del<void>(
+      `/api/v1/regulations/${encodeURIComponent(id)}?kind=${encodeURIComponent(body.kind)}`,
+    ),
+
+  restore: (id: string, body: { kind: RegulationKindApi }) =>
+    apiClient.post<{ ok: true }>(
+      `/api/v1/regulations/${encodeURIComponent(id)}/restore`,
       body,
     ),
 };

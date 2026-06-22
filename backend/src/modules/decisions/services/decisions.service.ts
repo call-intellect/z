@@ -455,7 +455,10 @@ export class DecisionsService {
   }
 
   private buildWhere(tenantId: string, q: ListDecisionsQuery): Prisma.DecisionWhereInput {
-    const where: Prisma.DecisionWhereInput = { tenantId, deletedAt: null };
+    const where: Prisma.DecisionWhereInput = {
+      tenantId,
+      deletedAt: q.deleted ? { not: null } : null,
+    };
     if (q.status) where.status = q.status as DecisionStatus;
     if (q.decided_by) {
       where.decidedByPersonIds = { has: q.decided_by };

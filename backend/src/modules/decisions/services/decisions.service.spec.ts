@@ -359,8 +359,8 @@ describe('DecisionsService — soft-delete / restore', () => {
         data: expect.objectContaining({ deletedById: 'u-1' }),
       }),
     );
-    const data = updateMock.mock.calls[0][0].data;
-    expect(data.deletedAt).toBeInstanceOf(Date);
+    const data = updateMock.mock.calls[0]?.[0]?.data;
+    expect(data?.deletedAt).toBeInstanceOf(Date);
     expect(auditLogMock).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'decision.delete', userId: 'u-1', resourceId: 'd-1' }),
     );
@@ -420,8 +420,52 @@ describe('DecisionsService — soft-delete / restore', () => {
 
     await svc.restore({ tenantId: 't-1', id: 'd-1', actorUserId: 'u-1' });
 
-    const where = findFirstMock.mock.calls[0][0].where;
+    const where = findFirstMock.mock.calls[0]?.[0]?.where;
     expect(where).not.toHaveProperty('deletedAt');
+  });
+});
+
+describe('DecisionsService — list({deleted})', () => {
+  let findManyMock: ReturnType<typeof vi.fn>;
+  let countMock: ReturnType<typeof vi.fn>;
+  let svc: DecisionsService;
+
+  beforeEach(() => {
+    findManyMock = vi.fn();
+    countMock = vi.fn();
+    const prisma = {
+      decision: { findMany: findManyMock, count: countMock },
+    } as unknown as PrismaService;
+    svc = new DecisionsService(
+      prisma,
+      {} as unknown as CurationService,
+      {} as unknown as ConflictService,
+    );
+  });
+
+  it('без флага → where.deletedAt=null (только действующие)', async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+
+    const query = ListDecisionsQuerySchema.parse({});
+    await svc.list({ tenantId: 't-1', query });
+
+    expect(findManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ deletedAt: null }) }),
+    );
+  });
+
+  it('list({deleted:true}) → where.deletedAt={ not: null } (только удалённые)', async () => {
+    findManyMock.mockResolvedValue([makeDecision({ id: 'd-del', deletedAt: FIXED_DATE })]);
+    countMock.mockResolvedValue(1);
+
+    const query = ListDecisionsQuerySchema.parse({ deleted: 'true' });
+    const res = await svc.list({ tenantId: 't-1', query });
+
+    expect(res.items.map((i) => i.id)).toEqual(['d-del']);
+    expect(findManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ deletedAt: { not: null } }) }),
+    );
   });
 });
 

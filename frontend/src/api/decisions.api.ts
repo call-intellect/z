@@ -84,6 +84,7 @@ export type ListDecisionsRequest = {
   deadline_filter?: DeadlineFilterApi;
   affects_entity_id?: string;
   q?: string;
+  deleted?: boolean;
 };
 
 function buildDecisionsQuery(filters?: ListDecisionsRequest): string {
@@ -98,6 +99,7 @@ function buildDecisionsQuery(filters?: ListDecisionsRequest): string {
   if (filters.affects_entity_id)
     p.set("affects_entity_id", filters.affects_entity_id);
   if (filters.q) p.set("q", filters.q);
+  if (filters.deleted) p.set("deleted", "true");
   const qs = p.toString();
   return qs ? `?${qs}` : "";
 }
@@ -163,5 +165,13 @@ export const decisionsApi = {
     apiClient.post<{ ok: true; applied: boolean }>(
       `/api/v1/decisions/${encodeURIComponent(id)}/correct`,
       body,
+    ),
+
+  remove: (id: string) =>
+    apiClient.del<void>(`/api/v1/decisions/${encodeURIComponent(id)}`),
+
+  restore: (id: string) =>
+    apiClient.post<{ ok: true }>(
+      `/api/v1/decisions/${encodeURIComponent(id)}/restore`,
     ),
 };

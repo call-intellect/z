@@ -25,6 +25,7 @@ export const ListDecisionsQuerySchema = z.object({
   decided_by: z.string().min(1).max(60).optional(),
   deadline_filter: DeadlineFilterSchema.optional(),
   affects_entity_id: z.string().min(1).max(60).optional(),
+  deleted: z.coerce.boolean().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });

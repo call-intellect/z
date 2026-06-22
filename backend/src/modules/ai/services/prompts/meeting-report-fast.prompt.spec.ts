@@ -197,7 +197,7 @@ describe('meeting-report-fast — Zod validation', () => {
     expect(parsed.success).toBe(false);
   });
 
-  it('отбраковывает quality_score с overallScore > 100', () => {
+  it('clamp overallScore > 100 в 100 (толерантность к дрейфу)', () => {
     const parsed = MeetingReportFastSchema.safeParse({
       ...VALID_OUTPUT,
       quality_score: {
@@ -205,7 +205,10 @@ describe('meeting-report-fast — Zod validation', () => {
         overallScore: 101,
       },
     });
-    expect(parsed.success).toBe(false);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.quality_score.overallScore).toBe(100);
+    }
   });
 
   it('отбраковывает recommendation с неизвестной severity', () => {
@@ -234,6 +237,154 @@ describe('meeting-report-fast — Zod validation', () => {
       },
     });
     expect(parsed.success).toBe(false);
+  });
+});
+
+describe('meeting-report-fast — quality_score толерантность к дрейфу (F8)', () => {
+  const BASE_QS = {
+    overallScore: 72,
+    categories: {
+      preparation: 70,
+      structure: 75,
+      clarity: 70,
+      outcomes: 80,
+      engagement: 65,
+    },
+    recommendations: [
+      {
+        text: 'Озвучить повестку в первые 5 минут.',
+        severity: 'info',
+        category: 'preparation',
+      },
+    ],
+    strengths: ['Конкретные итоги.'],
+  };
+
+  const wrap = (qualityScore: unknown) => ({
+    chapters: [{ title: 'Введение', summary: 'Текст.', startMs: 0, endMs: 60000 }],
+    tasks: [],
+    summary_markdown: '## Итоги',
+    quality_score: qualityScore,
+  });
+
+  it('valid вложенный ответ проходит, значения сохранены', () => {
+    const parsed = MeetingReportFastSchema.safeParse(wrap(BASE_QS));
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.quality_score.overallScore).toBe(72);
+      expect(parsed.data.quality_score.categories).toEqual({
+        preparation: 70,
+        structure: 75,
+        clarity: 70,
+        outcomes: 80,
+        engagement: 65,
+      });
+    }
+  });
+
+  it('плоский ответ (категории на верхнем уровне) собирается в categories', () => {
+    const flat = {
+      overallScore: 68,
+      preparation: 60,
+      structure: 70,
+      clarity: 65,
+      outcomes: 72,
+      engagement: 73,
+      recommendations: BASE_QS.recommendations,
+      strengths: BASE_QS.strengths,
+    };
+    const parsed = MeetingReportFastSchema.safeParse(wrap(flat));
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.quality_score.overallScore).toBe(68);
+      expect(parsed.data.quality_score.categories).toEqual({
+        preparation: 60,
+        structure: 70,
+        clarity: 65,
+        outcomes: 72,
+        engagement: 73,
+      });
+    }
+  });
+
+  it('плоский ответ без overallScore — overallScore выводится как среднее категорий', () => {
+    const flat = {
+      preparation: 60,
+      structure: 60,
+      clarity: 60,
+      outcomes: 60,
+      engagement: 60,
+      recommendations: BASE_QS.recommendations,
+      strengths: BASE_QS.strengths,
+    };
+    const parsed = MeetingReportFastSchema.safeParse(wrap(flat));
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.quality_score.overallScore).toBe(60);
+      expect(parsed.data.quality_score.categories.preparation).toBe(60);
+    }
+  });
+
+  it('значения вне диапазона (150, -3) клампятся в 0..100', () => {
+    const drifted = {
+      ...BASE_QS,
+      overallScore: 150,
+      categories: {
+        preparation: 150,
+        structure: -3,
+        clarity: 99.6,
+        outcomes: 80,
+        engagement: 65,
+      },
+    };
+    const parsed = MeetingReportFastSchema.safeParse(wrap(drifted));
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.quality_score.overallScore).toBe(100);
+      expect(parsed.data.quality_score.categories).toEqual({
+        preparation: 100,
+        structure: 0,
+        clarity: 100,
+        outcomes: 80,
+        engagement: 65,
+      });
+    }
+  });
+
+  it('лишний неизвестный ключ в quality_score не валит парс', () => {
+    const withExtra = {
+      ...BASE_QS,
+      sentiment: 'positive',
+      _debug: { tokens: 1234 },
+    };
+    const parsed = MeetingReportFastSchema.safeParse(wrap(withExtra));
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.quality_score.overallScore).toBe(72);
+      expect(parsed.data.quality_score).not.toHaveProperty('sentiment');
+    }
+  });
+
+  it('нечисловой/отсутствующий score дефолтится в 0, парс не падает', () => {
+    const messy = {
+      overallScore: 70,
+      categories: {
+        preparation: 'high',
+        structure: null,
+        clarity: 65,
+        outcomes: 80,
+        engagement: 65,
+      },
+      recommendations: BASE_QS.recommendations,
+      strengths: BASE_QS.strengths,
+    };
+    const parsed = MeetingReportFastSchema.safeParse(wrap(messy));
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.quality_score.categories.preparation).toBe(0);
+      expect(parsed.data.quality_score.categories.structure).toBe(0);
+      expect(parsed.data.quality_score.categories.clarity).toBe(65);
+    }
   });
 });
 

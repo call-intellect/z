@@ -42,29 +42,78 @@ export const MeetingReportFastTaskSchema = z
   })
   .strict();
 
-export const MeetingReportFastQualityScoreSchema = z
-  .object({
-    overallScore: ScoreInt,
-    categories: z.object({
-      preparation: ScoreInt,
-      structure: ScoreInt,
-      clarity: ScoreInt,
-      outcomes: ScoreInt,
-      engagement: ScoreInt,
-    }),
-    recommendations: z
-      .array(
-        z.object({
-          text: z.string().min(1),
-          severity: RecommendationSeverity,
-          category: RecommendationCategory,
-        }),
-      )
-      .min(1)
-      .max(7),
-    strengths: z.array(z.string().min(1)).max(4),
-  })
-  .strict();
+const QUALITY_SCORE_CATEGORY_KEYS = [
+  'preparation',
+  'structure',
+  'clarity',
+  'outcomes',
+  'engagement',
+] as const;
+
+const clampScore = (value: unknown): number => {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(100, Math.round(n)));
+};
+
+const normalizeQualityScore = (input: unknown): unknown => {
+  if (input === null || typeof input !== 'object') return input;
+  const raw = { ...(input as Record<string, unknown>) };
+
+  const rawCategories = raw.categories;
+  const hasNestedCategories =
+    rawCategories !== null && typeof rawCategories === 'object' && !Array.isArray(rawCategories);
+  const categoriesSource = (
+    hasNestedCategories ? (rawCategories as Record<string, unknown>) : raw
+  ) as Record<string, unknown>;
+
+  const categories: Record<string, number> = {};
+  for (const key of QUALITY_SCORE_CATEGORY_KEYS) {
+    categories[key] = clampScore(categoriesSource[key]);
+  }
+  raw.categories = categories;
+
+  raw.overallScore =
+    'overallScore' in raw
+      ? clampScore(raw.overallScore)
+      : clampScore(
+          QUALITY_SCORE_CATEGORY_KEYS.reduce((sum, key) => sum + (categories[key] ?? 0), 0) /
+            QUALITY_SCORE_CATEGORY_KEYS.length,
+        );
+
+  for (const key of QUALITY_SCORE_CATEGORY_KEYS) {
+    delete raw[key];
+  }
+
+  return raw;
+};
+
+const MeetingReportFastQualityScoreInnerSchema = z.object({
+  overallScore: ScoreInt,
+  categories: z.object({
+    preparation: ScoreInt,
+    structure: ScoreInt,
+    clarity: ScoreInt,
+    outcomes: ScoreInt,
+    engagement: ScoreInt,
+  }),
+  recommendations: z
+    .array(
+      z.object({
+        text: z.string().min(1),
+        severity: RecommendationSeverity,
+        category: RecommendationCategory,
+      }),
+    )
+    .min(1)
+    .max(7),
+  strengths: z.array(z.string().min(1)).max(4),
+});
+
+export const MeetingReportFastQualityScoreSchema = z.preprocess(
+  normalizeQualityScore,
+  MeetingReportFastQualityScoreInnerSchema,
+);
 
 export const MeetingReportFastSchema = z
   .object({

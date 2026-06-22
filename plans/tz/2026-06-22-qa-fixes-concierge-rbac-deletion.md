@@ -202,7 +202,7 @@ const allowed = await this.rbac.check({
 
 ---
 
-### Ф5 — Схема: `deletedAt` у регламентов/решений (миграция) `[ ]`
+### Ф5 — Схема: `deletedAt` у регламентов/решений (миграция) `[x]`
 **Цель:** дать моделям знаний поле для soft-delete (сейчас его нет — RC-4).
 **Картография:** `backend/prisma/schema.prisma` модели `Regulation`@5982, `Process`@5690, `Policy`@6092, `Instruction`@6042, `Decision`@6206. Эталон поля — `ProcessTemplate` (`deletedAt DateTime?` + `@@index`).
 **Что входит:** добавить в каждую из 5 моделей:

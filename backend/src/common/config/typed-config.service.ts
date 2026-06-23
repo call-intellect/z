@@ -1736,6 +1736,11 @@ export class TypedConfigService {
         undefined,
         true,
       ),
+      closureNotifyCreatorEnabled: this.resolveSync<boolean>(
+        'tracker.closureNotifyCreatorEnabled',
+        undefined,
+        true,
+      ),
     } as const;
   }
 

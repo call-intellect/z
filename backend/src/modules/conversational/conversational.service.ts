@@ -74,6 +74,7 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   'issue.mention': ['in_app', 'telegram_bot', 'max_bot'],
   'issue.assigned': ['in_app', 'telegram_bot', 'max_bot'],
   'issue.overdue': ['in_app', 'telegram_bot', 'max_bot'],
+  'task.closed_for_review': ['in_app', 'telegram_bot', 'max_bot'],
   'event.reminder': ['in_app', 'telegram_bot', 'max_bot'],
   'checkin.ack': ['telegram_bot', 'max_bot', 'in_app'],
   'note.ack': ['in_app', 'telegram_bot', 'max_bot'],

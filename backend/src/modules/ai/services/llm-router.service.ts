@@ -603,6 +603,7 @@ export type LlmTaskType =
   //   'goals-pulse-summarize'  — связный текст еженедельного пульса целей (Фаза 4).
   //     Как operations-daily-digest.
   | 'goal-extract'
+  | 'task-extract'
   | 'goal-hierarchy-link'
   | 'goals-pulse-summarize'
   // ChatBox integration (ТЗ 2026-06-05, Фаза 5) — LLM-summary сессии чата.
@@ -877,6 +878,7 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'table-semantic-filter',
   // Goals OKR v2 (2026-06-02, Фаза 2) — Specialist 3-14 (Goals).
   'goal-extract',
+  'task-extract',
   'goal-hierarchy-link',
   'goals-pulse-summarize',
   // ChatBox integration (ТЗ 2026-06-05, Фаза 5) — LLM-summary сессии чата.

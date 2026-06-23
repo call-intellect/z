@@ -387,7 +387,9 @@ IdeaBlock {
   tags[], signalType (enum: fact / pain / feature_request / objection /
                       churn_risk / idea / risk / commitment / decision /
                       mood / drift / competitor_move / metric_change /
-                      knowledge_gap),
+                      knowledge_gap / action_item /* 2026-06-23, миграция
+                      add_signaltype_action_item — спайн-извлечение задач,
+                      роутится в специалист 3-15-tasks */ ),
   confidence Decimal(4,3), dataClass,
   embedding vector(1536),                -- text-embedding-3-small
   status (draft | canonical | merged_into | archived),
@@ -607,6 +609,11 @@ Card {
 
 **`TaskSource`** — новая справочная модель/enum источника задачи (значения `meeting`/`chatbox`/…), на которую ссылается `Task.sourceType`.
 
+**`TaskSource` — провенанс-связь с `Issue` (миграция `20260623130000_tasksource_issue_link`, ТЗ unified-task-extraction Ф3/Ф4):** одна задача — N источников; источник теперь может указывать на `Issue` напрямую (LINK-семантика спайн-дедупа), а не только на `Task`.
+- `taskId: String?` — **стал nullable** (был NOT NULL): запись может относиться к `Issue`, а не к `Task`.
+- `issueId: String?` — FK на `Issue` (`onDelete: Cascade`): дубль задачи линкуется к существующему `Issue` без создания дубль-Issue (спайн-специалист `3-15-tasks` на вердикт дедупа 'same'; промоут Task→Issue пишет провенанс при accept).
+- `@@unique([issueId, sourceType, sourceRefId])` + `@@index([tenantId, issueId])` (идемпотентность провенанса: повтор `create` глотается P2002).
+
 **ChatBox: связка клиента переписки с графом (та же миграция).** `ChatboxCustomer` и `ChatboxChannelClient` (`ChannelClient`) получили:
 - `linkedPersonId: String?` — связь клиента/контакта переписки с `Person` графа знаний.
 - `linkMode: String?` — как установлена связка (ручная/по email/нечёткий матчинг по имени, гейт `chatbox.match.name_fuzzy_enabled`).
@@ -702,7 +709,7 @@ erDiagram
 ### Группа Б (без UI в Фазе 0)
 - `Mission, Vision, Strategy` — Уровень 1.
 - `Process, ProcessStep, Regulation, Policy` — Уровень 3. **SBA α-7** (2026-05-22) расширил эти модели in-place: `entityId @unique?`, `scope`, `ownerPersonId` (для Regulation/Policy), `currentVersionId → CardVersion`, `sourceBlockIds[]`, `personSubjectIds[]`, `dataClass`, `embedding Unsupported("vector(1536)")?`, `lastConfirmedAt`. Для `Regulation` дополнительно — `statement` (структурированное утверждение, альтернатива `contentMd` для дедупа/chat-v2), `supersedesId` (self-relation для версионирования). Для `Process` — `inputs`/`outputs`/`metricsJson` (JSON, не путать с моделью `Metric`). UI на `/regulations` (master-detail с фильтром `kind`).
-- **`Instruction`** (мастер-ТЗ промптов, Волна 6 A10, миграция `20260610120000_add_instruction`, `@@map("instructions")`) — first-class сущность **«Инструкция»**: пошаговое руководство «как сделать X» для **одной** роли. Полностью **зеркалит `Regulation`** + добавляет single-role признак `forRole String? @db.VarChar(120)`. Поля как у Regulation: `name @db.VarChar(300)`, `contentMd @db.Text`, `status ProcessStatus`, `version`, `confidence?`, `statement?` (структурированная суть для дедупа/retrieval), `scope?`, `ownerPersonId?` (FK Person, relation `InstructionOwnerPerson`), `supersedesId?` (self-relation `InstructionSupersedes` — версионирование), `currentVersionId? → CardVersion` (`InstructionCurrentVersion`), `entityId @unique?` (связка с графом), `sourceBlockIds[]`, `personSubjectIds[]`, `dataClass`, `dataClassAudit Json?`, `embedding Unsupported("vector(1536)")?` (name+statement, для KNN-дедупа), `lastConfirmedAt?`. Индексы btree: `@@unique([tenantId, name])`, `[tenantId, status]`, `[tenantId, forRole]`, `[tenantId, ownerPersonId]`, `[currentVersionId]`. HNSW `instructions_embedding_hnsw_cosine_idx` (cosine, `WHERE embedding IS NOT NULL`) — в `postgres-init.sql`, не в schema. Читается через тот же `/regulations` API с `kind=instruction` (см. api-layer.md). Извлечение/storage-роутинг — specialist-3-1-regulations + specialists-combined (`forRole` из `scope=role:<id>` или `roles[0]`).
+- **`Instruction`** (мастер-ТЗ промптов, Волна 6 A10, миграция `20260610120000_add_instruction`, `@@map("instructions")`) — first-class сущность **«Инструкция»**: пошаговое руководство «как сделать X» для **одной** роли. Полностью **зеркалит `Regulation`** + добавляет single-role признак `forRole String? @db.VarChar(120)`. Поля как у Regulation: `name @db.VarChar(300)`, `contentMd @db.Text`, `status ProcessStatus`, `version`, `confidence?`, `statement?` (структурированная суть для дедупа/retrieval), `scope?`, `ownerPersonId?` (FK Person, relation `InstructionOwnerPerson`), `supersedesId?` (self-relation `InstructionSupersedes` — версионирование), `currentVersionId? → CardVersion` (`InstructionCurrentVersion`), `entityId @unique?` (связка с графом), `sourceBlockIds[]`, `personSubjectIds[]`, `dataClass`, `dataClassAudit Json?`, `embedding Unsupported("vector(1536)")?` (name+statement, для KNN-дедупа), `lastConfirmedAt?`. Индексы btree: `@@unique([tenantId, name])`, `[tenantId, status]`, `[tenantId, forRole]`, `[tenantId, ownerPersonId]`, `[tenantId, scope]` (2026-06-23, миграция `20260623021934` — для точного фильтра `scope='role:<id>'` в retrieval регламентов клона, см. ниже §«Указатель регламентов в клоне роли»; у `Regulation/Process/Policy` индекс по `scope` уже был), `[currentVersionId]`. HNSW `instructions_embedding_hnsw_cosine_idx` (cosine, `WHERE embedding IS NOT NULL`) — в `postgres-init.sql`, не в schema. Читается через тот же `/regulations` API с `kind=instruction` (см. api-layer.md). Извлечение/storage-роутинг — specialist-3-1-regulations + specialists-combined (`forRole` из `scope=role:<id>` или `roles[0]`).
 - `Tool` — Уровень 4.
 - `Metric` — Уровень 5.
 - `Decision` — миграционный долг.
@@ -1880,6 +1887,12 @@ enum PersonaStatus {
 - `currentBearerPersonId String?` — `Person.id` текущего носителя роли (для `scope='role'`); раз заполнен — `maybeEmitBearerChanged` не видит расхождения, runaway-реэмит `role.bearer_changed` устранён.
 - `publicName String?` — ярлык `«Клон <Должность> v<N>»` (без ФИО) — попадает в ответ `clone-respond` и в историю (Р7/Р8).
 - `succeedsPersonaId String?` — ссылка на предыдущую (frozen) версию: цепочка версий для экрана должности и «совета бывших».
+
+### Указатель регламентов в клоне роли — `ExecutablePersona.applicableRegulationsSnapshot` (2026-06-23)
+
+**Источник:** [`plans/tz/2026-06-22-clone-regulation-grounding-method-c.md`](../../plans/tz/2026-06-22-clone-regulation-grounding-method-c.md) Фаза 2. Миграция `20260623021934`. Профильная заметка — [[../01_projects/skill-and-clone]] §«Регламенты должности в клоне роли (Способ C)»; сервис retrieval — [[module-map]] §«RoleRegulationRetrievalService».
+
+- `applicableRegulationsSnapshot Json?` — лёгкий **указатель** записанных правил должности (`[{kind, id, name, severity?, scope}]`, без полного текста), снятый `buildForRole` по `scope='role:<id>'` (активные карточки `Regulation`/`Instruction`/`Policy`/`Process`, топ по `lastConfirmedAt`/`updatedAt`, лимит `clone.regulations.snapshot.max_items`=20). Кладётся в ответ клона компактным блоком-перечнем заголовков `<regulations_index>` («клон знает, что у него есть N правил для сверки») — фундамент под будущего проверяльщика. Не путать с retrieval по смыслу: полный текст применимых правил подтягивается на лету `RoleRegulationRetrievalService` в момент ответа (блок `<applicable_regulations>`), снапшот же — дешёвый список-указатель. Аддитивно (nullable); backfill существующих персон не делался — поле заполняется при ближайшей пересборке клона (eventual by-design).
 
 ## knowledge-core MASTER — схема: partial-unique против гонки дублей (K1, 2026-06-16)
 

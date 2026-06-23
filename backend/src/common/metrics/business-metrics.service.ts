@@ -67,6 +67,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private chatboxAnalyzesTotal!: Counter<'status'>;
   private chatboxTasksOwnerMissingTotal!: Counter<string>;
   private chatboxPendingSessions!: Gauge<string>;
+  private chatboxStuckAnalyzing!: Gauge<string>;
   private chatboxLastSyncTsSeconds!: Gauge<'scope'>;
 
   // ── llm prompt caching (T7-F3 prompt caching distribution) ───────────
@@ -1281,6 +1282,10 @@ export class BusinessMetricsService implements OnModuleInit {
     this.chatboxPendingSessions = this.getOrCreateGauge({
       name: 'z_chatbox_pending_sessions',
       help: 'Ф3 — сколько закрытых сессий чата ждут анализа (analysisStatus=pending, по всем org). Растёт и не убывает → анализ встал.',
+    });
+    this.chatboxStuckAnalyzing = this.getOrCreateGauge({
+      name: 'z_chatbox_stuck_analyzing_sessions',
+      help: 'Сколько сессий чата зависло в analysisStatus=analyzing дольше chatbox.analyze.stuckAnalyzingMin (воркер умер между analyzing и done/failed). Ненулевое дольше интервала sweep → анализ виснет.',
     });
     this.chatboxLastSyncTsSeconds = this.getOrCreateGauge({
       name: 'z_chatbox_last_sync_ts_seconds',
@@ -4531,6 +4536,10 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Ф3 — текущее число pending-сессий чата, ждущих анализа (gauge). */
   setChatboxPendingSessions(count: number): void {
     this.chatboxPendingSessions?.set(count);
+  }
+
+  setChatboxStuckAnalyzing(count: number): void {
+    this.chatboxStuckAnalyzing?.set(count);
   }
 
   /** Ф3 — unixtime последнего успешного синка ChatBox per scope (gauge). */

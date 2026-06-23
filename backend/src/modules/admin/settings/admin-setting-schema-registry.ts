@@ -66,6 +66,11 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.meetingTasksToTrackerOnly', z.boolean()],
   ['knowledge.ideaDirectPathEnabled', z.boolean()],
 
+  ['clone.regulations.retrieval.top_n', POSITIVE_INT],
+  ['clone.regulations.retrieval.min_similarity', UNIT_INTERVAL],
+  ['clone.regulations.snapshot.max_items', POSITIVE_INT],
+  ['clone.regulations.scope.include_org', z.boolean()],
+
   ['companyProfile.autoSummaryEnabled', z.boolean()],
   ['companyProfile.summaryRebuildHours', POSITIVE_INT],
   ['companyProfile.summaryMinSourceBlocks', POSITIVE_INT],
@@ -292,6 +297,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['curation.consistencyCheckerEnabled', z.boolean()],
   ['curation.completenessScannerEnabled', z.boolean()],
   ['tracker.goalAlignmentLowEnabled', z.boolean()],
+  ['tracker.taskDedupGrayBand', UNIT_INTERVAL],
   ['tracker.assigneeMatchMaxEdits', z.number().int().min(0).max(4)],
   ['tracker.progressAutoDraftEnabled', z.boolean()],
   ['tracker.progressAutoDraftMinSignals', z.number().int().min(1)],
@@ -306,7 +312,11 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.assigneeProbePriorityHint', UNIT_INTERVAL],
   ['tracker.chatboxTasksInTriageEnabled', z.boolean()],
   ['tracker.meetingTasksAlwaysPromote', z.boolean()],
+  ['tracker.taskExtractionMode', z.enum(['spine', 'legacy'])],
+  ['tracker.taskDedupLinkSemantics', z.enum(['link', 'delete'])],
+  ['tracker.taskExtractMinConfidence', UNIT_INTERVAL],
   ['chatbox.taskExtraction.enabled', z.boolean()],
+  ['chatbox.analyze.stuckAnalyzingMin', POSITIVE_INT],
 
   ['taskClosure.enabled', z.boolean()],
   ['taskClosure.matchThreshold', UNIT_INTERVAL],

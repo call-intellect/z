@@ -258,6 +258,7 @@ const SIGNAL_TYPE_CONTEXT_RU: Record<SignalType, string> = {
   content_artifact: 'материал',
   commitment_status: 'статус обязательства',
   plan_item: 'пункт плана',
+  action_item: 'задача к исполнению',
   done_item: 'сделанное',
   blocker: 'блокер',
   team_friction: 'трение в команде',

@@ -5,6 +5,7 @@ import { ExperimentDetectorWorker } from './experiment-detector.worker';
 import { ProcessDetectorWorker } from './process-detector.worker';
 import { Specialist31RegulationsWorker } from './specialist-3-1-regulations.worker';
 import { Specialist314GoalsWorker } from './specialist-3-14-goals.worker';
+import { Specialist315TasksWorker } from './specialist-3-15-tasks.worker';
 import { Specialist32KnowledgeCloneWorker } from './specialist-3-2-knowledge-clone.worker';
 import { Specialist33DecisionsWorker } from './specialist-3-3-decisions.worker';
 import { Specialist34ProjectCustomerWorker } from './specialist-3-4-project-customer.worker';
@@ -70,6 +71,7 @@ describe('SpecialistRoutingDispatcherWorker', () => {
     const processDetector = make();
     const roleMap = make();
     const goals = make();
+    const tasks = make();
     const sprintHelper = make();
 
     const redis = { client: {} };
@@ -91,6 +93,7 @@ describe('SpecialistRoutingDispatcherWorker', () => {
       processDetector as never,
       roleMap as never,
       goals as never,
+      tasks as never,
       sprintHelper as never,
     );
 
@@ -114,6 +117,7 @@ describe('SpecialistRoutingDispatcherWorker', () => {
         processDetector,
         roleMap,
         goals,
+        tasks,
         sprintHelper,
       },
     };
@@ -146,7 +150,7 @@ describe('SpecialistRoutingDispatcherWorker', () => {
     }
   });
 
-  it('каждый из 14 jobName маршрутизируется в свой handler', async () => {
+  it('каждый из 15 jobName маршрутизируется в свой handler', async () => {
     const { handlers } = build();
     const processor = getProcessor();
 
@@ -161,6 +165,7 @@ describe('SpecialistRoutingDispatcherWorker', () => {
       [ExperimentDetectorWorker.SPECIALIST_NAME, handlers.experiments],
       [ProcessDetectorWorker.SPECIALIST_NAME, handlers.processDetector],
       [Specialist314GoalsWorker.SPECIALIST_NAME, handlers.goals],
+      [Specialist315TasksWorker.SPECIALIST_NAME, handlers.tasks],
       [SprintHelperWorker.JOB_NAME, handlers.sprintHelper],
     ];
 
@@ -178,10 +183,10 @@ describe('SpecialistRoutingDispatcherWorker', () => {
     await expect(processor(jobOf('3-999-unknown'))).rejects.toThrow(/неизвестный jobName/);
   });
 
-  it('регистрирует ровно 14 handler-ов (по числу специалистов на очереди)', () => {
+  it('регистрирует ровно 15 handler-ов (по числу специалистов на очереди)', () => {
     const { dispatcher } = build();
     const map = (dispatcher as unknown as { handlers: Map<string, unknown> }).handlers;
-    expect(map.size).toBe(14);
+    expect(map.size).toBe(15);
   });
 
   it('блок из встречи → pipe.run вызван с traceId="mtg_<meetingId>" и оборачивает handler', async () => {

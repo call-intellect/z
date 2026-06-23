@@ -450,6 +450,7 @@ enum SignalType {
   content_artifact
   commitment_status
   plan_item
+  action_item
   done_item
   blocker
   team_friction
@@ -1819,8 +1820,10 @@ model Task {
 model TaskSource {
   id          String   @id @default(cuid())
   tenantId    String
-  taskId      String
-  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId      String?
+  task        Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  issueId     String?
+  issue       Issue?   @relation(fields: [issueId], references: [id], onDelete: Cascade)
   /// meeting | chatbox
   sourceType  String
   /// meetingId | chatSessionId
@@ -1832,7 +1835,9 @@ model TaskSource {
   createdAt   DateTime @default(now())
 
   @@unique([taskId, sourceType, sourceRefId])
+  @@unique([issueId, sourceType, sourceRefId])
   @@index([tenantId, sourceType, sourceRefId])
+  @@index([tenantId, issueId])
 }
 
 model MeetingChapter {
@@ -6090,6 +6095,7 @@ model Instruction {
 
   @@unique([tenantId, name])
   @@index([tenantId, status])
+  @@index([tenantId, scope])
   @@index([tenantId, forRole])
   @@index([tenantId, ownerPersonId])
   @@index([currentVersionId])
@@ -8639,6 +8645,7 @@ model ExecutablePersona {
   /// по правилу floor для executable_persona; private-trait'ы анонимизируются
   /// до sensitive по private-aggregation в DataClassPolicyService).
   dataClassAudit        Json?
+  applicableRegulationsSnapshot Json?
   createdAt             DateTime      @default(now())
 
   tenant         Org                 @relation("ExecutablePersonaTenant", fields: [tenantId], references: [id], onDelete: Cascade)
@@ -9387,6 +9394,8 @@ model Issue {
 
   /// TZ-1 Фаза 3.B (daily-value-engine) — связи задача↔решение (join).
   decisionLinks DecisionTaskLink[] @relation("DecisionTaskLinkIssue")
+
+  taskSources TaskSource[]
 
   @@unique([projectId, sequenceId])
   @@unique([tenantId, identifier])

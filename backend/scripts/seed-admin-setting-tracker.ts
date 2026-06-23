@@ -26,6 +26,15 @@ const SEEDS: SettingSeed[] = [
       'Допуск опечаток/склонений при поиске исполнителя по имени (расстояние Левенштейна на общей основе). По умолчанию 2, диапазон 0–4. 0 — только точное совпадение.',
   },
   {
+    key: 'tracker.taskDedupGrayBand',
+    value: 0.07,
+    category: 'tracker',
+    section: 'workers',
+    severity: 'low',
+    description:
+      'Ширина серой зоны семантического дедупа задач: при сходстве в диапазоне [порог − зона; порог) вердикт «дубль/не дубль» выносит LLM-арбитр, а не одна косинусная близость. По умолчанию 0.07, диапазон 0–1. Больше зона — чаще зовём арбитра.',
+  },
+  {
     key: 'tracker.progressAutoDraftEnabled',
     value: true,
     category: 'tracker',
@@ -141,6 +150,33 @@ const SEEDS: SettingSeed[] = [
     severity: 'medium',
     description:
       'Задача со встречи всегда становится Issue в трекере (неназначенной, проект «Из встреч»), даже если Кора не распознала исполнителя/срок. Рубильник, по умолчанию вкл (Ship-On). Выкл → встречные задачи без исполнителя остаются в /intake.',
+  },
+  {
+    key: 'tracker.taskExtractionMode',
+    value: 'spine',
+    category: 'tracker',
+    section: 'workers',
+    severity: 'high',
+    description:
+      'Режим извлечения задач из не-meeting каналов. `spine` (по умолчанию, Ship-On) — единый спайн-специалист 3-15-tasks материализует задачи в IntakeIssue; `legacy` — аварийный откат на старые кустарные пути (chatbox task-extraction и т.д.). Рубильник.',
+  },
+  {
+    key: 'tracker.taskDedupLinkSemantics',
+    value: 'link',
+    category: 'tracker',
+    section: 'workers',
+    severity: 'high',
+    description:
+      'Семантика единого дедупа задач. `link` (по умолчанию, Ship-On) — дубль связывается через TaskSource (одна задача — N источников); `delete` — аварийный откат на удаление дубля внутри одной встречи. Рубильник.',
+  },
+  {
+    key: 'tracker.taskExtractMinConfidence',
+    value: 0.45,
+    category: 'tracker',
+    section: 'workers',
+    severity: 'low',
+    description:
+      'Порог уверенности спайн-специалиста 3-15-tasks: блок с confidence извлечённой задачи ниже порога считается «не задачей» и не материализуется в IntakeIssue. По умолчанию 0.45, диапазон 0–1.',
   },
 ];
 

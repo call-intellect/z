@@ -116,6 +116,7 @@ function makeFallbackDeps(opts: { redis: ReturnType<typeof makeRedisMock> }) {
   const cfg = {
     router: { maxSpecialistsPerBlock: 4 },
     aiFeatures: { promptInjectionGuardEnabled: false },
+    specialistsCombined: { enabled: false },
     resolveSync<T>(_adminKey: string, envKey: string | undefined, def: T): T {
       const raw = envKey ? process.env[envKey] : undefined;
       if (raw == null || raw === '') return def;

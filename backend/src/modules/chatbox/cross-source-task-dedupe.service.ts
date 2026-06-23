@@ -3,17 +3,9 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { tryParseJson } from '../ai/services/json-extract.util';
 import { LlmRouterService } from '../ai/services/llm-router.service';
-import { withInjectionGuard, wrapUserData } from '../ai/services/prompts/common';
 import { EmbeddingFallbackService } from '../embeddings/services/embedding-fallback.service';
-import {
-  TASK_DEDUPE_JSON_SCHEMA,
-  TASK_DEDUPE_SCHEMA_NAME,
-  TASK_DEDUPE_SYSTEM_PROMPT,
-  TASK_DEDUPE_USER_TEMPLATE,
-  TaskDedupeResponseSchema,
-} from '../knowledge-core/prompts/task-dedupe.prompt';
+import { cosineSimilarity, judgeSameTask } from '../knowledge-core/util/task-dedup-matcher.util';
 
 export interface CrossSourceTaskCandidate {
   title: string;
@@ -38,9 +30,6 @@ export type CrossSourceDedupeResult = 'created' | 'linked' | 'kept';
 @Injectable()
 export class CrossSourceTaskDedupeService {
   private readonly logger = new Logger(CrossSourceTaskDedupeService.name);
-
-  private static readonly GRAY_BAND = 0.07;
-  private static readonly LLM_RETRIES = 2;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -91,6 +80,7 @@ export class CrossSourceTaskDedupeService {
     }
 
     const threshold = this.threshold();
+    const grayBand = await this.grayBand();
 
     let openVecs: number[][];
     try {
@@ -124,7 +114,7 @@ export class CrossSourceTaskDedupeService {
     }
 
     for (const cand of candidates) {
-      const result = await this.processOne(cand, ctx, openTasks, openVecs, threshold);
+      const result = await this.processOne(cand, ctx, openTasks, openVecs, threshold, grayBand);
       if (result === 'linked') {
         linked++;
         this.metrics?.incTaskDedupe({ result: 'cross_linked' });
@@ -149,6 +139,7 @@ export class CrossSourceTaskDedupeService {
     }>,
     openVecs: number[][],
     threshold: number,
+    grayBand: number,
   ): Promise<CrossSourceDedupeResult> {
     try {
       let candVec: number[];
@@ -171,7 +162,7 @@ export class CrossSourceTaskDedupeService {
       let bestSim = -Infinity;
       let bestIdx = -1;
       for (let j = 0; j < openTasks.length; j++) {
-        const sim = this.cosine(candVec, openVecs[j]!);
+        const sim = cosineSimilarity(candVec, openVecs[j]!);
         if (sim > bestSim) {
           bestSim = sim;
           bestIdx = j;
@@ -190,8 +181,17 @@ export class CrossSourceTaskDedupeService {
         return 'linked';
       }
 
-      if (bestSim >= threshold - CrossSourceTaskDedupeService.GRAY_BAND) {
-        const same = await this.judgeSame(ctx, cand, best);
+      if (bestSim >= threshold - grayBand) {
+        const same = await judgeSameTask({
+          llm: this.llm,
+          tenantId: ctx.tenantId,
+          a: { title: best.title, assigneeRaw: best.assigneeRaw },
+          b: { title: cand.title, assigneeRaw: cand.assigneeRaw ?? null },
+          sourceRef: { type: 'task', id: best.id },
+          dataClass: 'sensitive',
+          logger: this.logger,
+          logContext: { sessionId: ctx.sessionId, taskId: best.id },
+        });
         if (same) {
           await this.linkToExisting(best, cand, ctx);
           return 'linked';
@@ -327,81 +327,19 @@ export class CrossSourceTaskDedupeService {
     }
   }
 
+  private async grayBand(): Promise<number> {
+    try {
+      const v = await this.cfg.getDynamic<number>('tracker.taskDedupGrayBand', undefined, 0.07);
+      return Number.isFinite(v) ? v : 0.07;
+    } catch {
+      return 0.07;
+    }
+  }
+
   private titleText(row: { title: string; description?: string | null }): string {
     const title = (row.title ?? '').trim();
     const desc = (row.description ?? '').trim();
     if (!desc) return title;
     return `${title}. ${desc.slice(0, 200)}`;
-  }
-
-  private cosine(a: number[], b: number[]): number {
-    const n = Math.min(a.length, b.length);
-    let dot = 0;
-    let na = 0;
-    let nb = 0;
-    for (let i = 0; i < n; i++) {
-      const x = a[i]!;
-      const y = b[i]!;
-      dot += x * y;
-      na += x * x;
-      nb += y * y;
-    }
-    if (na === 0 || nb === 0) return 0;
-    return dot / (Math.sqrt(na) * Math.sqrt(nb));
-  }
-
-  private async judgeSame(
-    ctx: CrossSourceChatContext,
-    cand: CrossSourceTaskCandidate,
-    existing: { id: string; title: string; assigneeRaw: string | null },
-  ): Promise<boolean> {
-    const userMessage = TASK_DEDUPE_USER_TEMPLATE({
-      a: { title: existing.title, assignee: existing.assigneeRaw },
-      b: { title: cand.title, assignee: cand.assigneeRaw ?? null },
-    });
-
-    for (let attempt = 0; attempt < CrossSourceTaskDedupeService.LLM_RETRIES; attempt++) {
-      try {
-        const out = await this.llm.call({
-          taskType: 'task-dedupe',
-          tenantId: ctx.tenantId,
-          systemPrompt: withInjectionGuard(TASK_DEDUPE_SYSTEM_PROMPT),
-          userMessage: wrapUserData(userMessage),
-          responseFormat: {
-            type: 'json_schema',
-            name: TASK_DEDUPE_SCHEMA_NAME,
-            strict: true,
-            schema: TASK_DEDUPE_JSON_SCHEMA,
-          },
-          sourceRef: { type: 'task', id: existing.id },
-          dataClass: 'sensitive',
-          validate: (text) => this.parseVerdict(text) !== null,
-        });
-        const verdict = this.parseVerdict(out.text);
-        if (verdict !== null) return verdict === 'same';
-        this.logger.warn(
-          { sessionId: ctx.sessionId, taskId: existing.id, attempt },
-          'cross-source-task-dedupe: невалидный JSON арбитра — повтор',
-        );
-      } catch (err) {
-        this.logger.warn(
-          {
-            sessionId: ctx.sessionId,
-            taskId: existing.id,
-            attempt,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          'cross-source-task-dedupe: LLM-арбитр упал — повтор',
-        );
-      }
-    }
-    return false;
-  }
-
-  private parseVerdict(text: string): 'same' | 'different' | null {
-    const raw = tryParseJson(text);
-    const parsed = TaskDedupeResponseSchema.safeParse(raw);
-    if (!parsed.success) return null;
-    return parsed.data.verdict;
   }
 }

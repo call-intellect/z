@@ -250,4 +250,24 @@ export type AssigneeResolution =
 typecheck (вкл. `.spec`)/lint/build зелёные; vitest по затронутым + сценарии Acceptance каждой фазы; second-brain обновлён (`01_projects/tracker.md` — спайн-специалист задач + промоут; `02_architecture/knowledge-core.md` — новый signalType+специалист; `ai-jobs.md`/`workers-queues.md` — `3-15-tasks`); `feature-flags.md` + `prod-deploy-log.md` (миграция enum + kill-switch); `04_не-сделано` — закрыть строку «задачи фрагментированы / не на спайне», открыть строки vNext (дроп Task; реестр экстракторов); рефлексия. Каждая фаза `[ ]`→`[x]` по мере приёмки.
 
 ## 12. Итог
-_(заполнит tz-orchestrator после реализации)_
+
+**Реализовано целиком (4 фазы, ветка `feature/unified-task-extraction`).**
+
+- **Ф1 — спайн-специалист задач** (`72249ebe`): `SignalType=action_item` (миграция `20260623120000_add_signaltype_action_item`); `Specialist315Tasks{Worker,Service}` (`3-15-tasks`, PRIORITY 3.9, не в `COMBINED_COVERED`) для НЕ-meeting-каналов: canonical `IdeaBlock(action_item)` → LLM `task-extract` → `IntakeIssue` → `IntakeAutoTriageQueue` → `Issue`. Meeting/meeting_report пропускаются (их извлекает `meeting-extract-actions`). Kill-switch `tracker.taskExtractionMode` (spine|legacy, ON=spine) + `tracker.taskDedupLinkSemantics` (link|delete, ON=link) + крутилка `tracker.taskExtractMinConfidence` (0.45). Legacy chatbox task-extraction обходится при spine (контент по-прежнему мостится в граф → action_item → спайн).
+- **Ф2 — единый резолвер исполнителя** (`ee6ef1fa`): substring-резолверы telegram-task-parser + intake-auto-triage удалены → канонический `tracker/AssigneeResolverService.resolve(tenantId, hint)` для текстовых каналов.
+- **Ф3 — единый дедуп** (`658b3194`): общий cosine+judgeSame вынесен в DI-free util `knowledge-core/util/task-dedup-matcher.util.ts` (meeting-task-dedupe + cross-source-task-dedupe). GRAY_BAND → AdminSetting `tracker.taskDedupGrayBand` (0.07). Спайн-специалист: LINK-семантика — дедуп против открытых Issue (`TaskDedupService.evaluate`, вне лока); на 'same' источник линкуется через `TaskSource{issueId}` без дубль-Issue. Advisory-lock `pg_advisory_xact_lock(tenant+normTitle)` + in-lock exact-title + pending-IntakeIssue re-check → гонка «встреча+чат параллельно» закрыта (LLM вне лока). Миграция `20260623130000_tasksource_issue_link`: `TaskSource.taskId` nullable + `issueId` (FK Issue) + `@@unique([issueId,sourceType,sourceRefId])` + `@@index`.
+- **Ф4 — Task как пред-слой** (`3dbd2627`, Р-1): однонаправленный промоут Task→Issue (`triageChatboxTask`) пишет провенанс `TaskSource{issueId}` (best-effort, идемпотентно); обратного Issue→Task нет; таблица Task НЕ дропается, 15+ `prisma.task.*` читателей не тронуты.
+
+**Сверх 4 фаз (одной серией):**
+- **chatbox-no-stuck** (`e17a3cf6`, отдельное ТЗ `2026-06-23-chatbox-analysis-no-stuck-sessions`): `incrementalSync` теперь enqueue'ит pending-анализ (Гарантия A); `ChatboxAnalyzeCron.sweep` → `EVERY_10_MINUTES`, подбирает pending+ended И застрявшие analyzing (`updatedAt < now − stuckAnalyzingMin`); крутилка `chatbox.analyze.stuckAnalyzingMin` (15); gauge `z_chatbox_stuck_analyzing_sessions`.
+- **chain-test** (`764bd39c`): `test/integration/task-extraction-chain.spec.ts` — 8 сценариев на stateful in-memory Prisma (happy-path, идемпотентность ретрая, «один артефакт» meeting+chat→1 Issue+2 TaskSource, race-guard, kill-switch legacy, новый канал generic-API без кода, не-задача отклонена, meeting-блок пропущен).
+- **chore-tests** (`122d2655`): синхронизация 3 снапшотов промптов + мок `specialistsCombined` в router-fallback spec (не относится к фиче).
+
+**Отклонения проектировщика (осознанные, НЕ дубли):**
+- `TaskAssigneeResolverService` оставлен как участник-резолвер встреч (ограниченный набор участников по identity) — это НЕ дубль tenant-wide fuzzy-резолвера, удалены ровно два кустарных substring-пути (Ф2).
+- chatbox сохраняет identity-резолв (`responsibleExternalId`) — не переводится на fuzzy.
+- `sweepIntervalMin` НЕ вводился — в кодовой базе нет механизма динамического крона; defined-but-unused = анти-паттерн Ship-On. Кадэнс фиксированный 10 мин (покрывает требование «10–15 мин»).
+
+**vNext** (строки в `second-brain/04_не-сделано/README.md`, 2026-06-23): (а) дроп legacy-модели Task + переписка 15+ `prisma.task.*` читателей (Р-1, отдельное ТЗ); (б) полное слияние `meeting-extract-actions` в спайн-специалист (Б-1); (в) механизм динамического крона для `sweepIntervalMin`; (г) 2 LOW-остатка дедупа (ё/е в ключе лока; flip-вердикта на ретрае может создать link+IntakeIssue); (д) двунаправленный дедуп одного артефакта, когда задача из чата опережает Issue со встречи.
+
+**DoD:** typecheck/lint/build зелёные; vitest по затронутым + chain-test (8 сценариев); 1 MEDIUM ревью (soft-delete Issue) исправлен в Ф3; second-brain/feature-flags/prod-deploy-log обновлены; строка «задачи не на спайне» закрыта, vNext-строки открыты. Все фазы `[x]`. Ждёт прод-выката (2 миграции авто через `migrate deploy` + сиды агрегатором; см. `docs/operations/prod-deploy-log.md`).

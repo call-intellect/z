@@ -206,6 +206,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
   exports: [
     IssuesService,
     AssigneeResolverService,
+    TaskDedupService,
     ActivityRecorderService,
     TrackerEventsService,
     TrackerEmitterService,

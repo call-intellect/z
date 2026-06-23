@@ -87,3 +87,15 @@ relates_to:
 ## 7. Критерий «сделано»
 
 Очередь «Требует вас» в реальной Org падает до единиц; к человеку доходит только подлинно неоднозначное; самообучение наблюдаемо и срабатывает; override-rate авто-решений не растёт.
+
+## 8. Статус реализации (2026-06-24, ветка `feature/2026-06-23-remove-manual-confirmations`)
+
+| Блок | Статус | Коммиты |
+|---|---|---|
+| **A** — судья: первоисточник + методология + серая зона | ✅ полностью | `1f6b22d5` (Ф1+Ф2 первоисточник+quote+промпт C+docs), `5e67507b` (Ф3 харнесс 38 карточек + Ф5 серая зона + 3 крутилки) |
+| **D** — наблюдаемость самообучения + дочистка дублей | ✅ полностью | `debef312` (Ф1 read-эндпоинт+диаг), `0513e1cc` (Ф2 дочистка `suppressed_by_memory`+миграция, Ф3 страница «Что Кора выучила», Ф4 логи) |
+| **B** — probe-черновики | 🟡 главное сделано, остаток в ТЗ | `73e6d0df` (B-1 pipeline + урок эксперимента Ф-А), `5fd2d028` (B-2 фронт HYBRID + B-3 миссия/видение/стратегия). **Остаток** — process-шаги через CurationItem (Ф-Б) + AUTO skill/knowledge (Ф-В): `plans/tz/2026-06-24-probe-drafts-phase-b-process-and-auto.md` (рискованные зоны `definitionJson`/тихая запись — вынесены осознанно) |
+| **C** — умный подбор «кому поручить» | 🟡 встречи+intake сделаны, OwnerResolver — остаток | `8c329916` (meeting-extract + intake-worker → SkillRouting fallback + крутилка). **Остаток** — OwnerResolver-ступень (риск цикла knowledge-core↔tracker): статус в `plans/tz/2026-06-23-skill-routing-connect-meetings-and-owner.md` §«Статус реализации» |
+| **§4 Отложенное** (конфликты/доставка/задачи/intake) | 📋 проанализировано + рецепт доделки | `plans/analysis/2026-06-24-deferred-areas-status-and-how-to-finish.md` (что решил PR #56, что осталось, что требует решения владельца) |
+
+**Качество:** каждый блок — typecheck + lint + build + юнит-тесты зелёные, приёмка оркестратором (греп маркеров + re-Read + независимый прогон). Выкат Ship-On, наблюдение прода (метрики `curation_gray_zone_judged_total`, `subject_memory_pending_swept_total`, `task_skill_routing_assigned_total`, эндпоинт `/api/v1/subject-memory`, диаг `subject-memory`).

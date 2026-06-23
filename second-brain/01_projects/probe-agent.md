@@ -253,6 +253,18 @@ Probe обслуживает задачную подсистему — два н
 
 **Ответ на probe исполняется** (раньше probe только спрашивал): `probe-response.handler.maybeApplyTaskProbeAnswer` назначает исполнителя (резолвер → `IssuesService.addAssignee`) или выставляет срок (`parseRussianDueDate`), идемпотентно. ProbeModule импортирует TrackerModule. **Обучение:** ответ автоматически выводит правило `SubjectMemory` (отдел/роль→человек) — при повторе того же отдела/роли probe НЕ задаётся (`resolved via:'memory'`, retrieve-before-ask). Адресат при пустом исполнителе в задаче встречи — владелец встречи (`contextCardKind=intake_issue`). Kill-switch `tracker.assigneeClarifyEnabled` / `tracker.dueDateClarifyEnabled` (ON), метрика `task_assignee_clarify_total{outcome}` — [[../../docs/operations/feature-flags|feature-flags]]. Главный потребитель — [[tracker]].
 
+## Probe автору реплики + диспетчер ответов задачи И решения (2026-06-23, ТЗ meeting-tasks-assignee-probe-closure)
+
+ТЗ [`plans/tz/2026-06-23-meeting-tasks-assignee-probe-closure-tz.md`](../../plans/tz/2026-06-23-meeting-tasks-assignee-probe-closure-tz.md) (Ф2/Ф5/Ф6) надстраивает probe-петлю над задачами/решениями:
+
+- **Адресат = автор реплики (Ф5):** probe `task.assignee_unresolved` со встречи теперь адресуется **автору реплики** (`authorPersonId` из `IdeaBlockEvidence`, см. [[../02_architecture/data-model]] §IdeaBlockEvidence), а не владельцу встречи; fallback на владельца только если автор не идентифицирован.
+- **Новые reason (Ф5):** `task.poorly_specified` («распиши подробнее»), `task.false_positive` («не задача»), `task.completion_detail_missing` (закрытие без конкретики в помощнике, Ф7) — добавлены в `probe-reason-labels` + `probe-reason-policy`. Текст уточнения по задаче содержит опцию «удалить».
+- **Дедуп с учётом адресата (Ф2):** дедуп probe учитывает получателя `(reason, contextId, recipientId)` за kill-switch `probe.recipientAwareDedupEnabled` (ON) — уточнение разным людям про одну карточку не схлопывается в одно.
+- **Взаимное закрытие при отклонении (Ф2):** `dismissProbe` гасит все `NotificationDelivery` логического уведомления (двухканальная доставка и закрытие при ОТВЕТЕ уже были — REALITY-CHECK).
+- **Общий диспетчер ответов задачи И решения (Ф6):** `ProbeResponseHandler` — единая точка применения ответов. Отрицательная ветка для любого task-reason («удали/не задача») → мягкое обратимое удаление задачи (переиспользует `IssuesService.softDelete` / intake reject, без миграции; окно возврата `tracker.taskDismissUndoWindowHours`=24). `task.poorly_specified/false_positive` → дозапись ответа в описание задачи. Новый `maybeApplyDecisionProbeAnswer` (раньше ответы по решениям уходили в пустоту): ответственный/срок/итог решения; «не решение» → `Decision.deletedAt`.
+
+Kill-switch — [[../../docs/operations/feature-flags|feature-flags]]; прод-выкат — `docs/operations/prod-deploy-log.md` (блок 2026-06-23 «Задачная петля…»). Главный потребитель — [[tracker]] §«Задачная петля…».
+
 ## См. также
 
 - [[ideas]] — главный потребитель Probe-Agent в β-5.

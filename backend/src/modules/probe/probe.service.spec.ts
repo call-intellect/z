@@ -4,8 +4,8 @@ import type { TypedConfigService } from '../../common/config/typed-config.servic
 import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { RedisService } from '../../common/redis/redis.service';
-import type { EmbeddingFallbackService } from '../embeddings/services/embedding-fallback.service';
 import type { CoreQueueService } from '../core-queue/core-queue.service';
+import type { EmbeddingFallbackService } from '../embeddings/services/embedding-fallback.service';
 
 import { ProbeService } from './probe.service';
 

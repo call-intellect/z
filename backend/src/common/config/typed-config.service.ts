@@ -1721,6 +1721,31 @@ export class TypedConfigService {
         undefined,
         'link',
       ),
+      selfAssignAuthorFallbackEnabled: this.resolveSync<boolean>(
+        'tracker.selfAssignAuthorFallbackEnabled',
+        undefined,
+        true,
+      ),
+      taskDismissUndoWindowHours: this.resolveSync<number>(
+        'tracker.taskDismissUndoWindowHours',
+        undefined,
+        24,
+      ),
+      completionDetailGateEnabled: this.resolveSync<boolean>(
+        'tracker.completionDetailGateEnabled',
+        undefined,
+        true,
+      ),
+      closureNotifyCreatorEnabled: this.resolveSync<boolean>(
+        'tracker.closureNotifyCreatorEnabled',
+        undefined,
+        true,
+      ),
+      livingCardEnabled: this.resolveSync<boolean>(
+        'tracker.livingCardEnabled',
+        undefined,
+        true,
+      ),
     } as const;
   }
 

@@ -153,6 +153,7 @@ const registry = new Map<string, ZodTypeAny>([
   // Probe Фаза 4 (2026-06-17) — семантический дедуп близких по смыслу probe
   // по эмбеддингу вопроса (рубильник ON · cosine-порог · окно поиска в часах).
   ['probe.semanticDedupEnabled', z.boolean()],
+  ['probe.recipientAwareDedupEnabled', z.boolean()],
   ['probe.semanticDedupThreshold', UNIT_INTERVAL],
   ['probe.semanticDedupWindowHours', POSITIVE_INT],
   // Probe Фаза 5 (2026-06-17) — kill-switch одного переспроса (re-ask) при
@@ -314,7 +315,12 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.meetingTasksAlwaysPromote', z.boolean()],
   ['tracker.taskExtractionMode', z.enum(['spine', 'legacy'])],
   ['tracker.taskDedupLinkSemantics', z.enum(['link', 'delete'])],
+  ['tracker.selfAssignAuthorFallbackEnabled', z.boolean()],
   ['tracker.taskExtractMinConfidence', UNIT_INTERVAL],
+  ['tracker.taskDismissUndoWindowHours', POSITIVE_INT],
+  ['tracker.completionDetailGateEnabled', z.boolean()],
+  ['tracker.closureNotifyCreatorEnabled', z.boolean()],
+  ['tracker.livingCardEnabled', z.boolean()],
   ['chatbox.taskExtraction.enabled', z.boolean()],
   ['chatbox.analyze.stuckAnalyzingMin', POSITIVE_INT],
 

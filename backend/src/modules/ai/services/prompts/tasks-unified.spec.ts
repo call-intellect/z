@@ -447,6 +447,21 @@ describe('Legacy buildMeetingExtractActionsPrompt (tasks.ts) — обратна�
     expect(out.system).toContain('Шкала confidence');
   });
 
+  it('Ф3: system содержит правило само-назначения «берёт задачу НА СЕБЯ»', () => {
+    const out = buildMeetingExtractActionsPrompt(SAMPLE_INPUT, {});
+    expect(out.system).toContain('берёт задачу НА СЕБЯ');
+  });
+
+  it('Ф3: structured (useAssigneeRaw) system тоже содержит правило само-назначения', () => {
+    const out = buildTasksPromptUnified(SAMPLE_INPUT, {
+      useAssigneeRaw: true,
+      withFragmentBounds: true,
+      withSourceQuote: true,
+      withConfidence: true,
+    });
+    expect(out.system).toContain('берёт задачу НА СЕБЯ');
+  });
+
   it('orgContext + meetingDateIso корректно прокидываются в user', () => {
     const out = buildMeetingExtractActionsPrompt(SAMPLE_INPUT, {
       meetingDateIso: '2026-05-24',

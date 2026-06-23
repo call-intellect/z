@@ -910,6 +910,17 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
         const link = url ? `\n\nОткрыть:\n${url}` : '';
         return `${head}${t}${who}${when}${link}`.slice(0, 4000);
       }
+      case 'task.closed_for_review': {
+        const text = (payload['text'] as string | undefined) ?? '';
+        const objectTitle = (payload['objectTitle'] as string | undefined) ?? '';
+        const head = 'Задача закрыта — проверьте';
+        const body = text.trim()
+          ? `\n\n${text}`
+          : objectTitle.trim()
+            ? `\n\n«${objectTitle}»`
+            : '';
+        return `${head}${body}`.slice(0, 4000);
+      }
       case 'support.ticket_created': {
         const num = String(payload['ticketNumber'] ?? '');
         const subject = (payload['subject'] as string | undefined) ?? '';

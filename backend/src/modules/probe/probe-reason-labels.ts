@@ -57,6 +57,9 @@ export const PROBE_REASON_LABEL: Record<string, string> = {
     'новая сущность не привязана к отделу/клиенту',
   'task.assignee_unresolved': 'у задачи не определён исполнитель',
   'task.due_date_missing': 'у задачи не указан срок',
+  'task.poorly_specified': 'задача сформулирована нечётко',
+  'task.false_positive': 'возможно, это не задача',
+  'task.completion_detail_missing': 'не хватает деталей о выполнении',
 };
 
 export const PROBE_REASON_FALLBACK: Record<string, string> = {
@@ -103,6 +106,10 @@ export const PROBE_REASON_FALLBACK: Record<string, string> = {
     'К какому отделу, проекту или клиенту это относится?',
   'task.assignee_unresolved': 'Для кого эта задача — кому её поручить?',
   'task.due_date_missing': 'К какому сроку нужно сделать эту задачу?',
+  'task.poorly_specified':
+    'Опишите задачу подробнее: что конкретно нужно сделать? Если это не задача — ответьте «удалить».',
+  'task.false_positive':
+    'Похоже, это не задача. Удалить её? Ответьте «удалить», либо уточните, в чём суть.',
   'insight.linked_decision_question':
     'Этот инсайт связан с решением. Что предлагаете с ним сделать?',
   'process_template.missing_input_artifact':
@@ -121,4 +128,5 @@ export const PROBE_REASON_FALLBACK: Record<string, string> = {
   'consistency_violation.R4': 'Здесь есть расхождение в данных. Какой вариант верный?',
   'consistency_violation.R5': 'Здесь есть расхождение в данных. Какой вариант верный?',
   'consistency_violation.R6': 'Здесь есть расхождение в данных. Какой вариант верный?',
+  'task.completion_detail_missing': 'Что конкретно вы сделали с этой задачей?',
 };

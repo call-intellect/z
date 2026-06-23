@@ -286,6 +286,38 @@ async function cmdCall(a: Args): Promise<void> {
   process.stdout.write(`${trunc(data['responsePreview'], 8000)}\n`);
 }
 
+async function cmdUsage(a: Args): Promise<void> {
+  const data = await apiGet<{ items?: Json[]; nextCursor?: string | null }>(
+    `/api/v1/admin/usage/calls`,
+    {
+      taskType: str(a, 'task'),
+      userId: str(a, 'user'),
+      meetingId: str(a, 'meeting'),
+      limit: num(a, 'limit') ?? 30,
+      cursor: str(a, 'cursor'),
+    },
+  );
+  if (has(a, 'json')) return printJson(data);
+  const items = data.items ?? [];
+  head(`usage/calls (${items.length})${str(a, 'task') ? ` task=${str(a, 'task')}` : ''}`);
+  const previewLen = num(a, 'preview') ?? 500;
+  for (const c of items) {
+    const user =
+      (c['userEmail'] as string | undefined) ??
+      ((c['user'] as { email?: string } | undefined)?.email ?? (c['userId'] as string | undefined));
+    process.stdout.write(
+      `  ${c['createdAt']}  ${c['taskType'] ?? '-'}  ${c['provider']}:${c['model']}  ${c['success'] ? 'ok' : 'FAIL'}  ${c['durationMs']}ms  user=${user ?? '-'}  id=${c['id']}\n`,
+    );
+    if (previewLen > 0) {
+      const reqp = typeof c['requestPreview'] === 'string' ? c['requestPreview'] : '';
+      const resp = typeof c['responsePreview'] === 'string' ? c['responsePreview'] : '';
+      if (reqp) process.stdout.write(`      <- ${trunc(reqp, previewLen)}\n`);
+      if (resp) process.stdout.write(`      -> ${trunc(resp, previewLen)}\n`);
+    }
+  }
+  if (data.nextCursor) process.stdout.write(`\nЕщё есть: --cursor ${data.nextCursor}\n`);
+}
+
 async function cmdTrace(a: Args): Promise<void> {
   const id = str(a, 'meeting') ?? a._[1];
   if (!id) die('Укажи --meeting <id>');
@@ -459,6 +491,8 @@ async function main(): Promise<void> {
       return cmdLlmCalls(a);
     case 'call':
       return cmdCall(a);
+    case 'usage':
+      return cmdUsage(a);
     case 'graph':
       return cmdGraph(a);
     case undefined:

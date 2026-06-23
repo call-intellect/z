@@ -258,6 +258,23 @@ insight-clusterer.cron (`0 *‎/6 * * *` — InsightClustererCron.sweep)
    │  AND status=active — probe insight.no_mitigation_plan admin'ам.
    └─ Обновление gauge insights_dynamic_label_count{label} (groupBy на active/mitigating).
 
+specialist-3-15-tasks.worker (consumer core.specialist-routing, jobName='3-15-tasks') — ТЗ unified-task-extraction Ф1 (2026-06-23)
+   ├─ Триггер: блок canonical с signalType='action_item' И источник НЕ meeting/meeting_report
+   │           (встречи извлекает meeting-extract-actions; гард + source-block guard на ретрае).
+   ├─ Specialist315TasksService.processBlock:
+   │    1. LLM `task-extract` (стабильный SYSTEM, json_schema strict, injection guard) → draft задачи.
+   │    2. Гейт уверенности `tracker.taskExtractMinConfidence` (0.45) — ниже = «не задача», skip.
+   │    3. Исполнитель — единый `tracker/AssigneeResolverService.resolve` (текстовые каналы; probe org-owner при not_found).
+   │    4. LINK-семантика дедупа (kill-switch tracker.taskDedupLinkSemantics): дедуп против ОТКРЫТЫХ Issue
+   │       (TaskDedupService.evaluate + task-dedup-matcher.util, серая зона tracker.taskDedupGrayBand) — вне лока.
+   │    5. Конкурентный guard: pg_advisory_xact_lock(tenantId+normTitle) вокруг evaluate→create + in-lock
+   │       exact-title re-check против Issue + pending-IntakeIssue (LLM вне лока).
+   │    6. 'same' → источник линкуется к Issue через TaskSource{issueId} БЕЗ дубль-Issue; иначе → IntakeIssue
+   │       → IntakeAutoTriageQueue (промоут в Issue существующим триажом).
+   ├─ Kill-switch tracker.taskExtractionMode (spine|legacy, ON=spine; legacy = аварийный откат на старые
+   │  кустарные пути извлечения, в т.ч. chatbox task-extraction).
+   └─ Метрики: core_specialist_*{type='task'}.
+
 specialist-3-6-ideas.worker (consumer core.specialist-routing, jobName='3-6-ideas') — SBA β-5
    ├─ idea | feature_request блоки.
    ├─ Specialist36Service.processBlock:
@@ -398,6 +415,10 @@ Card.cachedTopThemeIds[] String    # кэш топ-3 связанных тем (
 # BlockExtractionService JSON Schema strict обновлён автоматически через SIGNAL_TYPE_VALUES.
 # Промпт block-ingest расширен фразами-маркерами; TODO согласовать финальный текст
 # с владельцем продукта (см. зонтичный SBA §10).
+#
+# Unified-task-extraction Ф1 (2026-06-23, миграция add_signaltype_action_item):
+#   action_item — поручение/задача из НЕ-meeting-канала (chatbox/telegram/tracker/email/api);
+#                 роутится в специалист 3-15-tasks → LLM task-extract → IntakeIssue (см. RouterService ниже).
 ```
 
 ER-диаграмма (Mermaid):
@@ -609,6 +630,7 @@ CARD_ROLLUP_V2_DEBOUNCE_MS=60000      # дебаунс enqueueCardRollupV2
 | `reasoning` (subject is employee) | 3-7-skill |
 | `fact` (с Customer/Vendor/Project в блоке) | 3-4-project-customer |
 | `knowledge_gap` | 3-2-knowledge-clone |
+| `action_item` (НЕ meeting/meeting_report) | 3-15-tasks (PRIORITY 3.9, НЕ в `COMBINED_COVERED`; ТЗ unified-task-extraction Ф1, 2026-06-23) |
 
 **Анти-fan-out:** `ROUTER_MAX_SPECIALISTS_PER_BLOCK` (default 4). Top-N по приоритету: decisions > regulations > insights > ideas > skill > project-customer > knowledge-clone.
 

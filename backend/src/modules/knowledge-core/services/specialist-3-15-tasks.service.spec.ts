@@ -62,7 +62,11 @@ interface Mocks {
       findFirst: ReturnType<typeof vi.fn>;
       create: ReturnType<typeof vi.fn>;
     };
+    issue: { findFirst: ReturnType<typeof vi.fn> };
+    taskSource: { create: ReturnType<typeof vi.fn> };
     membership: { findFirst: ReturnType<typeof vi.fn> };
+    $queryRaw: ReturnType<typeof vi.fn>;
+    $transaction: ReturnType<typeof vi.fn>;
   };
   llm: { call: ReturnType<typeof vi.fn> };
   metrics: {
@@ -82,9 +86,13 @@ interface Mocks {
   };
   autoTriageQueue: { enqueue: ReturnType<typeof vi.fn> };
   probe: { suggest: ReturnType<typeof vi.fn> };
+  taskDedup: { evaluate: ReturnType<typeof vi.fn> };
 }
 
-function buildService(): { svc: Specialist315TasksService; m: Mocks } {
+function buildService(linkSemantics: 'link' | 'delete' = 'link'): {
+  svc: Specialist315TasksService;
+  m: Mocks;
+} {
   const m: Mocks = {
     prisma: {
       ideaBlock: { findUnique: vi.fn() },
@@ -92,9 +100,13 @@ function buildService(): { svc: Specialist315TasksService; m: Mocks } {
         findFirst: vi.fn().mockResolvedValue(null),
         create: vi.fn().mockResolvedValue({ id: 'intake-new' }),
       },
+      issue: { findFirst: vi.fn().mockResolvedValue(null) },
+      taskSource: { create: vi.fn().mockResolvedValue({ id: 'ts-1' }) },
       membership: {
         findFirst: vi.fn().mockResolvedValue({ userId: 'owner-1' }),
       },
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      $transaction: vi.fn(),
     },
     llm: { call: vi.fn() },
     metrics: {
@@ -114,7 +126,8 @@ function buildService(): { svc: Specialist315TasksService; m: Mocks } {
       getDynamic: vi
         .fn()
         .mockImplementation(
-          (_key: string, _env: string | undefined, def: unknown) => def,
+          (key: string, _env: string | undefined, def: unknown) =>
+            key === 'tracker.taskDedupLinkSemantics' ? linkSemantics : def,
         ),
       pendingActions: { intakeTtlDays: 14 },
       tracker: { assigneeClarifyEnabled: true, assigneeProbePriorityHint: 0.5 },
@@ -122,7 +135,16 @@ function buildService(): { svc: Specialist315TasksService; m: Mocks } {
     },
     autoTriageQueue: { enqueue: vi.fn().mockResolvedValue(undefined) },
     probe: { suggest: vi.fn().mockResolvedValue({ ok: true, probeEventId: 'p1' }) },
+    taskDedup: {
+      evaluate: vi
+        .fn()
+        .mockResolvedValue({ verdict: 'different', matchedIssueId: null }),
+    },
   };
+
+  m.prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
+    fn(m.prisma),
+  );
 
   const svc = new Specialist315TasksService(
 
@@ -141,6 +163,8 @@ function buildService(): { svc: Specialist315TasksService; m: Mocks } {
     m.autoTriageQueue as any,
 
     m.probe as any,
+
+    m.taskDedup as any,
   );
   return { svc, m };
 }
@@ -293,5 +317,100 @@ describe('Specialist315TasksService.processBlock', () => {
         data: expect.objectContaining({ source: 'api' }),
       }),
     );
+  });
+
+  it('(h) LINK + dedup verdict=same → linkTaskSource, intakeIssue.create НЕ вызван, enqueue НЕ вызван', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson()));
+    m.taskDedup.evaluate.mockResolvedValue({
+      verdict: 'same',
+      matchedIssueId: 'iss-1',
+    });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.taskSource.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          issueId: 'iss-1',
+          sourceType: 'chatbox',
+          sourceRefId: BLOCK_ID,
+        }),
+      }),
+    );
+    expect(m.prisma.intakeIssue.create).not.toHaveBeenCalled();
+    expect(m.autoTriageQueue.enqueue).not.toHaveBeenCalled();
+    expect(m.metrics.incCoreSpecialistSkipped).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'linked_existing_issue' }),
+    );
+  });
+
+  it('(i) LINK + dedup different + exact-title re-check null + нет pending → create + enqueue', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson()));
+    m.taskDedup.evaluate.mockResolvedValue({
+      verdict: 'different',
+      matchedIssueId: null,
+    });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+    expect(m.autoTriageQueue.enqueue).toHaveBeenCalledWith({
+      tenantId: TENANT,
+      intakeIssueId: 'intake-new',
+    });
+    expect(m.prisma.taskSource.create).not.toHaveBeenCalled();
+  });
+
+  it('(j) LINK + race: exact-title re-check вернул открытый Issue → link, create НЕ вызван', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson()));
+    m.taskDedup.evaluate.mockResolvedValue({
+      verdict: 'different',
+      matchedIssueId: null,
+    });
+    m.prisma.issue.findFirst.mockResolvedValue({ id: 'iss-2' });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.taskSource.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ issueId: 'iss-2' }),
+      }),
+    );
+    expect(m.prisma.intakeIssue.create).not.toHaveBeenCalled();
+  });
+
+  it('(k) LINK + pending IntakeIssue с тем же title → create НЕ вызван (dedup_pending)', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson()));
+    m.taskDedup.evaluate.mockResolvedValue({
+      verdict: 'different',
+      matchedIssueId: null,
+    });
+    m.prisma.intakeIssue.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'intake-pending' });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.intakeIssue.create).not.toHaveBeenCalled();
+    expect(m.autoTriageQueue.enqueue).not.toHaveBeenCalled();
+    expect(m.metrics.incCoreSpecialistSkipped).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'dedup_pending_intake' }),
+    );
+  });
+
+  it('(l) DELETE/legacy режим → dedup.evaluate НЕ вызван, intakeIssue.create вызван', async () => {
+    ({ svc, m } = buildService('delete'));
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson()));
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.taskDedup.evaluate).not.toHaveBeenCalled();
+    expect(m.prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+    expect(m.prisma.taskSource.create).not.toHaveBeenCalled();
   });
 });

@@ -20,12 +20,14 @@ import { computeExpiresAt } from '../../pending-actions/expires-at.util';
 import { ProbeService } from '../../probe/probe.service';
 import { AssigneeResolverService } from '../../tracker/services/assignee-resolver.service';
 import { IntakeAutoTriageQueueService } from '../../tracker/services/intake-auto-triage-queue.service';
+import { TaskDedupService } from '../../tracker/services/task-dedup.service';
 import {
   TASK_EXTRACT_JSON_SCHEMA,
   TASK_EXTRACT_SCHEMA_NAME,
   TASK_EXTRACT_SYSTEM_PROMPT,
   TASK_EXTRACT_USER_TEMPLATE,
 } from '../prompts/task-extract.prompt';
+import { normalizeTaskTitle } from '../util/task-dedup-matcher.util';
 
 const METRIC_TYPE = 'task';
 
@@ -67,6 +69,9 @@ export class Specialist315TasksService {
     @Optional()
     @Inject(ProbeService)
     private readonly probe?: ProbeService,
+    @Optional()
+    @Inject(TaskDedupService)
+    private readonly taskDedup?: TaskDedupService,
   ) {}
 
   private isPromptInjectionGuardEnabled(): boolean {
@@ -149,31 +154,100 @@ export class Specialist315TasksService {
         ? new Date(`${draft.dueHint}T00:00:00.000Z`)
         : null;
 
-    let issue: { id: string };
-    try {
-      issue = await this.prisma.intakeIssue.create({
-        data: {
+    const linkSemantics =
+      (await this.cfg?.getDynamic<'link' | 'delete'>(
+        'tracker.taskDedupLinkSemantics',
+        undefined,
+        'link',
+      )) ?? 'link';
+    const normTitle = normalizeTaskTitle(draft.title);
+
+    let matchedIssueId: string | null = null;
+    if (linkSemantics === 'link' && this.taskDedup) {
+      try {
+        const d = await this.taskDedup.evaluate({
           tenantId: block.tenantId,
-          projectId: null,
-          status: 'pending',
-          source,
-          externalSource: channel ?? 'api',
-          externalId: block.id,
-          rawContent: block.trustedAnswer ?? block.name,
-          extractedTitle: draft.title,
-          extractedDescription: draft.sourceQuote || null,
-          suggestedProjectId: null,
-          suggestedAssigneeId,
-          suggestedGoalId: null,
-          suggestedPriority: draft.priorityHint || null,
-          suggestedDueDate: dueDate,
-          suggestedLabels: [],
-          sourceBlockIds: [block.id],
-          meetingId: null,
-          confidence: new Prisma.Decimal(draft.confidence),
-          expiresAt: computeExpiresAt(ttlDays),
-        },
-        select: { id: true },
+          title: draft.title,
+          description: draft.sourceQuote || null,
+        });
+        if (d.verdict === 'same' && d.matchedIssueId) {
+          matchedIssueId = d.matchedIssueId;
+        }
+      } catch {
+        // best-effort: сбой дедупа не должен блокировать извлечение
+      }
+    }
+
+    let created: CreateOutcome;
+    try {
+      created = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${block.tenantId + ':' + normTitle}))`;
+        if (linkSemantics === 'link') {
+          if (!matchedIssueId) {
+            const exact = await tx.issue.findFirst({
+              where: {
+                tenantId: block.tenantId,
+                title: { equals: draft.title, mode: 'insensitive' },
+                completedAt: null,
+                deletedAt: null,
+              },
+              select: { id: true },
+            });
+            if (exact) matchedIssueId = exact.id;
+          }
+          if (matchedIssueId) {
+            await tx.taskSource
+              .create({
+                data: {
+                  tenantId: block.tenantId,
+                  issueId: matchedIssueId,
+                  sourceType: channel ?? 'api',
+                  sourceRefId: block.id,
+                  quote: draft.sourceQuote || null,
+                },
+              })
+              .catch((e) => {
+                if ((e as { code?: string })?.code !== 'P2002') throw e;
+              });
+            return { kind: 'linked', issueId: matchedIssueId };
+          }
+          const pendingDup = await tx.intakeIssue.findFirst({
+            where: {
+              tenantId: block.tenantId,
+              status: 'pending',
+              extractedTitle: { equals: draft.title, mode: 'insensitive' },
+            },
+            select: { id: true },
+          });
+          if (pendingDup) {
+            return { kind: 'dedup_pending', intakeIssueId: pendingDup.id };
+          }
+        }
+        const issue = await tx.intakeIssue.create({
+          data: {
+            tenantId: block.tenantId,
+            projectId: null,
+            status: 'pending',
+            source,
+            externalSource: channel ?? 'api',
+            externalId: block.id,
+            rawContent: block.trustedAnswer ?? block.name,
+            extractedTitle: draft.title,
+            extractedDescription: draft.sourceQuote || null,
+            suggestedProjectId: null,
+            suggestedAssigneeId,
+            suggestedGoalId: null,
+            suggestedPriority: draft.priorityHint || null,
+            suggestedDueDate: dueDate,
+            suggestedLabels: [],
+            sourceBlockIds: [block.id],
+            meetingId: null,
+            confidence: new Prisma.Decimal(draft.confidence),
+            expiresAt: computeExpiresAt(ttlDays),
+          },
+          select: { id: true },
+        });
+        return { kind: 'created', intakeIssueId: issue.id };
       });
     } catch (err) {
       this.metrics.incCoreSpecialistExtractionFailure({
@@ -190,17 +264,62 @@ export class Specialist315TasksService {
       throw err;
     }
 
+    if (created.kind === 'linked') {
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: Specialist315TasksService.SPECIALIST_NAME,
+        reason: 'linked_existing_issue',
+      });
+      this.logs.write({
+        level: 'INFO',
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: 'specialist-3-15-tasks',
+        action: 'linked',
+        message: `задача из блока связана с открытым Issue ${created.issueId}`,
+        orgId: block.tenantId,
+        details: {
+          type: METRIC_TYPE,
+          entityId: created.issueId,
+          blockId: block.id,
+          source,
+        },
+      });
+      return;
+    }
+
+    if (created.kind === 'dedup_pending') {
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: Specialist315TasksService.SPECIALIST_NAME,
+        reason: 'dedup_pending_intake',
+      });
+      this.logs.write({
+        level: 'INFO',
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: 'specialist-3-15-tasks',
+        action: 'skipped',
+        message: `дубль с pending IntakeIssue ${created.intakeIssueId} — skip`,
+        orgId: block.tenantId,
+        details: {
+          type: METRIC_TYPE,
+          entityId: created.intakeIssueId,
+          blockId: block.id,
+          source,
+        },
+      });
+      return;
+    }
+
+    const intakeIssueId = created.intakeIssueId;
     this.metrics.incCoreSpecialistCards({ type: METRIC_TYPE, status: 'pending' });
     this.logs.write({
       level: 'INFO',
       pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
       module: 'specialist-3-15-tasks',
       action: 'created',
-      message: `создан IntakeIssue ${issue.id}`,
+      message: `создан IntakeIssue ${intakeIssueId}`,
       orgId: block.tenantId,
       details: {
         type: METRIC_TYPE,
-        entityId: issue.id,
+        entityId: intakeIssueId,
         blockId: block.id,
         source,
       },
@@ -219,7 +338,7 @@ export class Specialist315TasksService {
             emittedByService: 'specialist-3-15-tasks',
             reason: 'task.assignee_unresolved',
             payload: {
-              contextCardId: issue.id,
+              contextCardId: intakeIssueId,
               contextCardKind: 'intake_issue',
               contextCardTitle: draft.title,
               objectName: draft.title,
@@ -239,12 +358,12 @@ export class Specialist315TasksService {
     try {
       await this.autoTriageQueue?.enqueue({
         tenantId: block.tenantId,
-        intakeIssueId: issue.id,
+        intakeIssueId,
       });
     } catch (err) {
       this.logger.warn(
         {
-          intakeIssueId: issue.id,
+          intakeIssueId,
           err: err instanceof Error ? err.message : String(err),
         },
         'specialist-3-15: enqueue auto-triage упал — продолжаем',
@@ -400,6 +519,11 @@ export class Specialist315TasksService {
     return anyMember?.userId ?? null;
   }
 }
+
+type CreateOutcome =
+  | { kind: 'linked'; issueId: string }
+  | { kind: 'dedup_pending'; intakeIssueId: string }
+  | { kind: 'created'; intakeIssueId: string };
 
 interface RawTaskDraft {
   isTask?: boolean;

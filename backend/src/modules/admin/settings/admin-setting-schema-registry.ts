@@ -292,6 +292,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['curation.consistencyCheckerEnabled', z.boolean()],
   ['curation.completenessScannerEnabled', z.boolean()],
   ['tracker.goalAlignmentLowEnabled', z.boolean()],
+  ['tracker.taskDedupGrayBand', UNIT_INTERVAL],
   ['tracker.assigneeMatchMaxEdits', z.number().int().min(0).max(4)],
   ['tracker.progressAutoDraftEnabled', z.boolean()],
   ['tracker.progressAutoDraftMinSignals', z.number().int().min(1)],

@@ -27,6 +27,7 @@ interface MockPrisma {
   goal: { findMany: ReturnType<typeof vi.fn> };
   issue: { findMany: ReturnType<typeof vi.fn> };
   org: { findUnique: ReturnType<typeof vi.fn> };
+  taskSource: { create: ReturnType<typeof vi.fn> };
 }
 
 interface MkOpts {
@@ -110,6 +111,7 @@ function mkWorker(opts?: MkOpts): {
     org: {
       findUnique: vi.fn().mockResolvedValue({ ownerId: 'user-org-owner' }),
     },
+    taskSource: { create: vi.fn().mockResolvedValue({ id: 'ts-1' }) },
   };
 
   const llmText =
@@ -217,6 +219,22 @@ describe('IntakeAutoTriageWorker', () => {
     expect(metrics.incAiIntakeAutoAccepted).toHaveBeenCalledTimes(1);
     expect(metrics.incAiIntakeSuggested).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'auto_accepted' }),
+    );
+  });
+
+  it('auto-accept пишет провенанс TaskSource(issueId, sourceType=intake.source)', async () => {
+    const { worker, prisma, issues } = mkWorker({
+      intake: { suggestedAssigneeId: 'user-ivanov' },
+    });
+    await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
+    expect(issues.create).toHaveBeenCalledTimes(1);
+    expect(prisma.taskSource.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          issueId: 'issue-created-1',
+          sourceType: 'meeting',
+        }),
+      }),
     );
   });
 

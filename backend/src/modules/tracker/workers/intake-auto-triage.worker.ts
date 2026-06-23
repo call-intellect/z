@@ -512,6 +512,28 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
         'intake-auto-triage: линковка derived-решений упала (best-effort)',
       );
     }
+    try {
+      await this.prisma.taskSource.create({
+        data: {
+          tenantId,
+          issueId: created.id,
+          sourceType: intake.source,
+          sourceRefId: intake.externalId ?? intake.meetingId ?? intake.id,
+          quote: null,
+        },
+      });
+    } catch (e) {
+      if ((e as { code?: string })?.code !== 'P2002') {
+        this.logger.warn(
+          {
+            intakeIssueId: intake.id,
+            issueId: created.id,
+            err: e instanceof Error ? e.message : String(e),
+          },
+          'intake-auto-triage: запись TaskSource провенанса упала (best-effort)',
+        );
+      }
+    }
     await this.prisma.intakeIssue.update({
       where: { id: intake.id },
       data: {

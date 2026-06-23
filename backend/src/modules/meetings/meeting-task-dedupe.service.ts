@@ -3,24 +3,13 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { tryParseJson } from '../ai/services/json-extract.util';
 import { LlmRouterService } from '../ai/services/llm-router.service';
-import { withInjectionGuard, wrapUserData } from '../ai/services/prompts/common';
 import { EmbeddingFallbackService } from '../embeddings/services/embedding-fallback.service';
-import {
-  TASK_DEDUPE_JSON_SCHEMA,
-  TASK_DEDUPE_SCHEMA_NAME,
-  TASK_DEDUPE_SYSTEM_PROMPT,
-  TASK_DEDUPE_USER_TEMPLATE,
-  TaskDedupeResponseSchema,
-} from '../knowledge-core/prompts/task-dedupe.prompt';
+import { cosineSimilarity, judgeSameTask } from '../knowledge-core/util/task-dedup-matcher.util';
 
 @Injectable()
 export class MeetingTaskDedupeService {
   private readonly logger = new Logger(MeetingTaskDedupeService.name);
-
-  private static readonly GRAY_BAND = 0.07;
-  private static readonly LLM_RETRIES = 2;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -62,6 +51,7 @@ export class MeetingTaskDedupeService {
       }
 
       const threshold = this.threshold();
+      const grayBand = await this.grayBand();
 
       let vectors: number[][];
       try {
@@ -99,7 +89,7 @@ export class MeetingTaskDedupeService {
         let bestSim = -Infinity;
         let bestIdx = -1;
         for (let j = 0; j < canonical.length; j++) {
-          const sim = this.cosine(dv, canonVecs[j]!);
+          const sim = cosineSimilarity(dv, canonVecs[j]!);
           if (sim > bestSim) {
             bestSim = sim;
             bestIdx = j;
@@ -112,13 +102,18 @@ export class MeetingTaskDedupeService {
           continue;
         }
 
-        if (bestSim >= threshold - MeetingTaskDedupeService.GRAY_BAND && bestIdx >= 0) {
-          const same = await this.judgeSame(
-            args.tenantId,
-            args.meetingId,
-            draft,
-            canonical[bestIdx]!,
-          );
+        if (bestSim >= threshold - grayBand && bestIdx >= 0) {
+          const canon = canonical[bestIdx]!;
+          const same = await judgeSameTask({
+            llm: this.llm,
+            tenantId: args.tenantId,
+            a: { title: canon.title, assigneeRaw: canon.assigneeRaw },
+            b: { title: draft.title, assigneeRaw: draft.assigneeRaw },
+            sourceRef: { type: 'task', id: draft.id },
+            dataClass: 'internal',
+            logger: this.logger,
+            logContext: { meetingId: args.meetingId, draftId: draft.id },
+          });
           if (same) {
             toDelete.push(draft.id);
             this.metrics?.incTaskDedupe({ result: 'llm_merged' });
@@ -171,82 +166,19 @@ export class MeetingTaskDedupeService {
     }
   }
 
+  private async grayBand(): Promise<number> {
+    try {
+      const v = await this.cfg.getDynamic<number>('tracker.taskDedupGrayBand', undefined, 0.07);
+      return Number.isFinite(v) ? v : 0.07;
+    } catch {
+      return 0.07;
+    }
+  }
+
   private titleText(row: { title: string; description?: string | null }): string {
     const title = (row.title ?? '').trim();
     const desc = (row.description ?? '').trim();
     if (!desc) return title;
     return `${title}. ${desc.slice(0, 200)}`;
-  }
-
-  private cosine(a: number[], b: number[]): number {
-    const n = Math.min(a.length, b.length);
-    let dot = 0;
-    let na = 0;
-    let nb = 0;
-    for (let i = 0; i < n; i++) {
-      const x = a[i]!;
-      const y = b[i]!;
-      dot += x * y;
-      na += x * x;
-      nb += y * y;
-    }
-    if (na === 0 || nb === 0) return 0;
-    return dot / (Math.sqrt(na) * Math.sqrt(nb));
-  }
-
-  private async judgeSame(
-    tenantId: string | null,
-    meetingId: string,
-    draft: { id: string; title: string; assigneeRaw: string | null },
-    canonical: { id: string; title: string; assigneeRaw: string | null },
-  ): Promise<boolean> {
-    const userMessage = TASK_DEDUPE_USER_TEMPLATE({
-      a: { title: canonical.title, assignee: canonical.assigneeRaw },
-      b: { title: draft.title, assignee: draft.assigneeRaw },
-    });
-
-    for (let attempt = 0; attempt < MeetingTaskDedupeService.LLM_RETRIES; attempt++) {
-      try {
-        const out = await this.llm.call({
-          taskType: 'task-dedupe',
-          tenantId,
-          systemPrompt: withInjectionGuard(TASK_DEDUPE_SYSTEM_PROMPT),
-          userMessage: wrapUserData(userMessage),
-          responseFormat: {
-            type: 'json_schema',
-            name: TASK_DEDUPE_SCHEMA_NAME,
-            strict: true,
-            schema: TASK_DEDUPE_JSON_SCHEMA,
-          },
-          sourceRef: { type: 'task', id: draft.id },
-          dataClass: 'internal',
-          validate: (text) => this.parseVerdict(text) !== null,
-        });
-        const verdict = this.parseVerdict(out.text);
-        if (verdict !== null) return verdict === 'same';
-        this.logger.warn(
-          { meetingId, draftId: draft.id, attempt },
-          'task-dedupe: невалидный JSON арбитра — повтор',
-        );
-      } catch (err) {
-        this.logger.warn(
-          {
-            meetingId,
-            draftId: draft.id,
-            attempt,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          'task-dedupe: LLM-арбитр упал — повтор',
-        );
-      }
-    }
-    return false;
-  }
-
-  private parseVerdict(text: string): 'same' | 'different' | null {
-    const raw = tryParseJson(text);
-    const parsed = TaskDedupeResponseSchema.safeParse(raw);
-    if (!parsed.success) return null;
-    return parsed.data.verdict;
   }
 }

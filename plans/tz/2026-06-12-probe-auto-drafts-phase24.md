@@ -1,11 +1,20 @@
 ---
 type: tz
-status: blocked-on-owner
+status: ready-to-implement
 feature: probe-auto-drafts
 date: 2026-06-12
+unblocked: 2026-06-23
 relates_to:
   - plans/archive/2026-06-11-autonomy-remove-manual-confirmations.md
+  - plans/analysis/2026-06-23-manual-confirmations-autonomy-review-and-probe.md
 ---
+
+## РАЗБЛОКИРОВАНО 2026-06-23 (решение владельца)
+
+Блокер снят: владелец дал «погнали» на все 4 рычага probe-автономизации, включая черновики. **Доказано на реальных данных** Org «Ооо луа» (скрипт `backend/scripts/draft-from-memory-test.ts`): Кора собрала осмысленный черновик миссии/видения/стратегии из 40 решений и разумный урок эксперимента даже при бедных данных, честно отметив нехватку. Пустой вопрос «уточните миссию» при этом висел 27 дней без ответа — черновик правят за минуту.
+
+**Расширение scope (помимо урока/шагов):** добавить черновик для `companyprofile.missing_mission/vision/strategy` (миссия/видение/стратегия) и `process_template.missing_output_artifact` (выходной артефакт шага) — оба доказаны на данных. Все черновики — **HYBRID** (показывать «вот черновик, подтвердите/правьте»), не молча, особенно миссия.
+
 
 # ТЗ-заглушка · W2-Ф2.4 — авто-черновики HYBRID и AUTO для skill/knowledge probe
 

@@ -57,10 +57,15 @@ interface Mocks {
   curationFindFirst: ReturnType<typeof vi.fn>;
   curationDecide: ReturnType<typeof vi.fn>;
   issueUpdateMany: ReturnType<typeof vi.fn>;
+  issueFindFirst: ReturnType<typeof vi.fn>;
   intakeIssueUpdateMany: ReturnType<typeof vi.fn>;
+  intakeIssueFindFirst: ReturnType<typeof vi.fn>;
   issueAssigneeFindFirst: ReturnType<typeof vi.fn>;
+  decisionUpdateMany: ReturnType<typeof vi.fn>;
+  personFindFirst: ReturnType<typeof vi.fn>;
   assigneeResolve: ReturnType<typeof vi.fn>;
   addAssignee: ReturnType<typeof vi.fn>;
+  softDelete: ReturnType<typeof vi.fn>;
 }
 
 function makeMocks(): Mocks {
@@ -73,10 +78,19 @@ function makeMocks(): Mocks {
     .mockResolvedValue({ id: 'curation-item-1' });
   const curationDecide = vi.fn().mockResolvedValue({ id: 'curation-item-1' });
   const issueUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+  const issueFindFirst = vi
+    .fn()
+    .mockResolvedValue({ description: null, descriptionStripped: null });
   const intakeIssueUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+  const intakeIssueFindFirst = vi
+    .fn()
+    .mockResolvedValue({ extractedDescription: null });
   const issueAssigneeFindFirst = vi.fn().mockResolvedValue(null);
+  const decisionUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+  const personFindFirst = vi.fn().mockResolvedValue(null);
   const assigneeResolve = vi.fn().mockResolvedValue({ kind: 'not_found' });
   const addAssignee = vi.fn().mockResolvedValue({ ok: true });
+  const softDelete = vi.fn().mockResolvedValue({ ok: true });
 
   const prisma = {
     probeEvent: {
@@ -97,12 +111,20 @@ function makeMocks(): Mocks {
     },
     issue: {
       updateMany: issueUpdateMany,
+      findFirst: issueFindFirst,
     },
     intakeIssue: {
       updateMany: intakeIssueUpdateMany,
+      findFirst: intakeIssueFindFirst,
     },
     issueAssignee: {
       findFirst: issueAssigneeFindFirst,
+    },
+    decision: {
+      updateMany: decisionUpdateMany,
+    },
+    person: {
+      findFirst: personFindFirst,
     },
   } as unknown as PrismaService;
 
@@ -133,10 +155,15 @@ function makeMocks(): Mocks {
     curationFindFirst,
     curationDecide,
     issueUpdateMany,
+    issueFindFirst,
     intakeIssueUpdateMany,
+    intakeIssueFindFirst,
     issueAssigneeFindFirst,
+    decisionUpdateMany,
+    personFindFirst,
     assigneeResolve,
     addAssignee,
+    softDelete,
   };
 }
 
@@ -169,7 +196,10 @@ function makeHandler(args: {
     ? ({ resolve: args.mocks.assigneeResolve } as unknown as AssigneeResolverService)
     : undefined;
   const issues = withTracker
-    ? ({ addAssignee: args.mocks.addAssignee } as unknown as IssuesService)
+    ? ({
+        addAssignee: args.mocks.addAssignee,
+        softDelete: args.mocks.softDelete,
+      } as unknown as IssuesService)
     : undefined;
   return new ProbeResponseHandler(
     args.mocks.prisma,
@@ -688,5 +718,325 @@ describe('ProbeResponseHandler — task-probe для intake_issue (A5)', () => {
       status: 'pending',
     });
     expect(call.data.suggestedDueDate).toBeInstanceOf(Date);
+  });
+});
+
+describe('ProbeResponseHandler — Фаза 6 отрицательная ветка (мягкое удаление)', () => {
+  function setTaskProbe(
+    mocks: Mocks,
+    reason: string,
+    kind: 'issue' | 'intake_issue',
+    contextCardId: string,
+  ): void {
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi
+      .fn()
+      .mockResolvedValue({
+        ...buildProbe(),
+        reason,
+        payload: {
+          contextCardId,
+          contextCardKind: kind,
+          contextCardTitle: 'Сверстать лендинг',
+          suggestedQuestion: 'Кому поручить задачу?',
+        },
+      });
+  }
+
+  it('«это не задача, удали» на task.assignee_unresolved (intake pending) → intakeIssue.updateMany({status:rejected})', async () => {
+    const mocks = makeMocks();
+    setTaskProbe(mocks, 'task.assignee_unresolved', 'intake_issue', 'intake-7');
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'это не задача, удали' } });
+
+    expect(mocks.intakeIssueUpdateMany).toHaveBeenCalledTimes(1);
+    const call = mocks.intakeIssueUpdateMany.mock.calls[0]![0] as {
+      where: { id: string; tenantId: string; status: string };
+      data: { status: string };
+    };
+    expect(call.where).toMatchObject({
+      id: 'intake-7',
+      tenantId: 'org-classify',
+      status: 'pending',
+    });
+    expect(call.data.status).toBe('rejected');
+    expect(mocks.softDelete).not.toHaveBeenCalled();
+    expect(mocks.addAssignee).not.toHaveBeenCalled();
+  });
+
+  it('«удалить» на promoted issue (task.false_positive) → issues.softDelete(issue, tenant, actor)', async () => {
+    const mocks = makeMocks();
+    setTaskProbe(mocks, 'task.false_positive', 'issue', 'issue-7');
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'удалить, это ошибочно' } });
+
+    expect(mocks.softDelete).toHaveBeenCalledTimes(1);
+    expect(mocks.softDelete).toHaveBeenCalledWith('issue-7', 'org-classify', 'user-1');
+    expect(mocks.intakeIssueUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('обычный ответ-имя «Анна» на task.assignee_unresolved НЕ удаляет (reject-ветка не срабатывает)', async () => {
+    const mocks = makeMocks();
+    setTaskProbe(mocks, 'task.assignee_unresolved', 'issue', 'issue-7');
+    mocks.assigneeResolve.mockResolvedValueOnce({
+      kind: 'resolved',
+      userId: 'u1',
+      name: 'Анна',
+      via: 'name',
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'Анна' } });
+
+    expect(mocks.softDelete).not.toHaveBeenCalled();
+    expect(mocks.addAssignee).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ProbeResponseHandler — Фаза 6 poorly_specified (доработка описания)', () => {
+  function setTaskProbe(
+    mocks: Mocks,
+    kind: 'issue' | 'intake_issue',
+    contextCardId: string,
+  ): void {
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi
+      .fn()
+      .mockResolvedValue({
+        ...buildProbe(),
+        reason: 'task.poorly_specified',
+        payload: {
+          contextCardId,
+          contextCardKind: kind,
+          contextCardTitle: 'Сделать отчёт',
+          suggestedQuestion: 'Уточните, что именно нужно сделать?',
+        },
+      });
+  }
+
+  it('issue с пустым описанием → descriptionStripped = answer, description продублирован', async () => {
+    const mocks = makeMocks();
+    setTaskProbe(mocks, 'issue', 'issue-7');
+    mocks.issueFindFirst.mockResolvedValueOnce({
+      description: null,
+      descriptionStripped: null,
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({
+      ...event,
+      payload: { text: 'Подготовить квартальный отчёт по продажам' },
+    });
+
+    expect(mocks.issueUpdateMany).toHaveBeenCalledTimes(1);
+    const call = mocks.issueUpdateMany.mock.calls[0]![0] as {
+      where: { id: string; tenantId: string; deletedAt: null };
+      data: { descriptionStripped: string; description?: string };
+    };
+    expect(call.where).toMatchObject({
+      id: 'issue-7',
+      tenantId: 'org-classify',
+      deletedAt: null,
+    });
+    expect(call.data.descriptionStripped).toBe(
+      'Подготовить квартальный отчёт по продажам',
+    );
+    expect(call.data.description).toBe('Подготовить квартальный отчёт по продажам');
+  });
+
+  it('issue с непустым описанием → старое не теряется (конкатенация в descriptionStripped, description не трогаем)', async () => {
+    const mocks = makeMocks();
+    setTaskProbe(mocks, 'issue', 'issue-7');
+    mocks.issueFindFirst.mockResolvedValueOnce({
+      description: '{"type":"doc"}',
+      descriptionStripped: 'Старое описание',
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'Новое уточнение' } });
+
+    const call = mocks.issueUpdateMany.mock.calls[0]![0] as {
+      data: { descriptionStripped: string; description?: string };
+    };
+    expect(call.data.descriptionStripped).toBe('Старое описание\n\nНовое уточнение');
+    expect(call.data.description).toBeUndefined();
+  });
+
+  it('intake_issue → extractedDescription дополнен конкатенацией (старое сохранено)', async () => {
+    const mocks = makeMocks();
+    setTaskProbe(mocks, 'intake_issue', 'intake-7');
+    mocks.intakeIssueFindFirst.mockResolvedValueOnce({
+      extractedDescription: 'Исходный текст',
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'Дополнение' } });
+
+    expect(mocks.intakeIssueUpdateMany).toHaveBeenCalledTimes(1);
+    const call = mocks.intakeIssueUpdateMany.mock.calls[0]![0] as {
+      where: { id: string; tenantId: string; status: string };
+      data: { extractedDescription: string };
+    };
+    expect(call.where).toMatchObject({
+      id: 'intake-7',
+      tenantId: 'org-classify',
+      status: 'pending',
+    });
+    expect(call.data.extractedDescription).toBe('Исходный текст\n\nДополнение');
+  });
+});
+
+describe('ProbeResponseHandler — Фаза 6 decision-probe (симметрия с решениями)', () => {
+  function setDecisionProbe(mocks: Mocks, reason: string): void {
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi
+      .fn()
+      .mockResolvedValue({
+        ...buildProbe(),
+        reason,
+        payload: {
+          contextCardId: 'dec-9',
+          contextCardKind: 'decision',
+          contextCardTitle: 'Миграция на DeepSeek',
+          suggestedQuestion: 'Кто принял это решение?',
+        },
+      });
+  }
+
+  it('«Иван» на decision.missing_decider → person по userId → decision.updateMany c decidedByPersonId', async () => {
+    const mocks = makeMocks();
+    setDecisionProbe(mocks, 'decision.missing_decider');
+    mocks.assigneeResolve.mockResolvedValueOnce({
+      kind: 'resolved',
+      userId: 'u-ivan',
+      name: 'Иван',
+      via: 'name',
+    });
+    mocks.personFindFirst.mockResolvedValueOnce({ id: 'person-ivan' });
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'Иван' } });
+
+    expect(mocks.assigneeResolve).toHaveBeenCalledWith('org-classify', 'Иван');
+    expect(mocks.personFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { tenantId: 'org-classify', userId: 'u-ivan', deletedAt: null },
+      }),
+    );
+    expect(mocks.decisionUpdateMany).toHaveBeenCalledTimes(1);
+    const call = mocks.decisionUpdateMany.mock.calls[0]![0] as {
+      where: { id: string; tenantId: string; deletedAt: null; decidedByPersonId: null };
+      data: { decidedByPersonId: string; decidedByPersonIds: string[] };
+    };
+    expect(call.where).toMatchObject({
+      id: 'dec-9',
+      tenantId: 'org-classify',
+      deletedAt: null,
+      decidedByPersonId: null,
+    });
+    expect(call.data.decidedByPersonId).toBe('person-ivan');
+    expect(call.data.decidedByPersonIds).toEqual(['person-ivan']);
+  });
+
+  it('missing_decider: userId не зарезолвлен → fallback по имени Person', async () => {
+    const mocks = makeMocks();
+    setDecisionProbe(mocks, 'decision.missing_decider');
+    mocks.assigneeResolve.mockResolvedValueOnce({ kind: 'not_found' });
+    mocks.personFindFirst.mockResolvedValueOnce({ id: 'person-by-name' });
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'Пётр Сидоров' } });
+
+    expect(mocks.personFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 'org-classify',
+          name: { equals: 'Пётр Сидоров', mode: 'insensitive' },
+          deletedAt: null,
+        }),
+      }),
+    );
+    expect(mocks.decisionUpdateMany).toHaveBeenCalledTimes(1);
+    const call = mocks.decisionUpdateMany.mock.calls[0]![0] as {
+      data: { decidedByPersonId: string };
+    };
+    expect(call.data.decidedByPersonId).toBe('person-by-name');
+  });
+
+  it('«это не решение, удали» на decision.missing_decider → decision.updateMany({deletedAt})', async () => {
+    const mocks = makeMocks();
+    setDecisionProbe(mocks, 'decision.missing_decider');
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'это не решение, удалить' } });
+
+    expect(mocks.decisionUpdateMany).toHaveBeenCalledTimes(1);
+    const call = mocks.decisionUpdateMany.mock.calls[0]![0] as {
+      where: { id: string; tenantId: string; deletedAt: null };
+      data: { deletedAt: Date };
+    };
+    expect(call.where).toMatchObject({
+      id: 'dec-9',
+      tenantId: 'org-classify',
+      deletedAt: null,
+    });
+    expect(call.data.deletedAt).toBeInstanceOf(Date);
+    expect(mocks.assigneeResolve).not.toHaveBeenCalled();
+  });
+
+  it('«до пятницы» на decision.no_deadline_critical → decision.updateMany c deadline (where.deadline=null)', async () => {
+    const mocks = makeMocks();
+    setDecisionProbe(mocks, 'decision.no_deadline_critical');
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'до пятницы' } });
+
+    expect(mocks.decisionUpdateMany).toHaveBeenCalledTimes(1);
+    const call = mocks.decisionUpdateMany.mock.calls[0]![0] as {
+      where: { id: string; tenantId: string; deletedAt: null; deadline: null };
+      data: { deadline: Date };
+    };
+    expect(call.where).toMatchObject({
+      id: 'dec-9',
+      tenantId: 'org-classify',
+      deletedAt: null,
+      deadline: null,
+    });
+    expect(call.data.deadline).toBeInstanceOf(Date);
+  });
+
+  it('ответ на decision.outcome_unknown → decision.updateMany c actualOutcomes (where.actualOutcomes=null)', async () => {
+    const mocks = makeMocks();
+    setDecisionProbe(mocks, 'decision.outcome_unknown');
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({
+      ...event,
+      payload: { text: 'Выручка выросла на 20%' },
+    });
+
+    expect(mocks.decisionUpdateMany).toHaveBeenCalledTimes(1);
+    const call = mocks.decisionUpdateMany.mock.calls[0]![0] as {
+      where: { id: string; tenantId: string; deletedAt: null; actualOutcomes: null };
+      data: { actualOutcomes: string };
+    };
+    expect(call.where).toMatchObject({
+      id: 'dec-9',
+      tenantId: 'org-classify',
+      deletedAt: null,
+      actualOutcomes: null,
+    });
+    expect(call.data.actualOutcomes).toBe('Выручка выросла на 20%');
+  });
+
+  it('decision.competing_versions (vNext noop) → ничего не пишем, не падаем', async () => {
+    const mocks = makeMocks();
+    setDecisionProbe(mocks, 'decision.competing_versions');
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await expect(
+      handler.handle({ ...event, payload: { text: 'версия 2' } }),
+    ).resolves.toBeUndefined();
+
+    expect(mocks.decisionUpdateMany).not.toHaveBeenCalled();
   });
 });

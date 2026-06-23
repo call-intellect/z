@@ -151,9 +151,22 @@ export class ProbeResponseHandler {
 
       if (
         probe.reason === 'task.assignee_unresolved' ||
-        probe.reason === 'task.due_date_missing'
+        probe.reason === 'task.due_date_missing' ||
+        probe.reason === 'task.poorly_specified' ||
+        probe.reason === 'task.false_positive'
       ) {
         await this.maybeApplyTaskProbeAnswer({
+          tenantId: event.tenantId,
+          reason: probe.reason,
+          actorUserId: event.recipientUserId,
+          probePayload,
+          eventPayload: event.payload,
+          classifiedAnswer: classification?.answer,
+        });
+      }
+
+      if (probe.reason.startsWith('decision.')) {
+        await this.maybeApplyDecisionProbeAnswer({
           tenantId: event.tenantId,
           reason: probe.reason,
           actorUserId: event.recipientUserId,
@@ -262,6 +275,39 @@ export class ProbeResponseHandler {
     if (!answer) return;
 
     try {
+      const mapped = mapExistenceConfirmAnswer(answer);
+      if (mapped?.decisionType === 'reject') {
+        if (contextCardKind === 'intake_issue') {
+          await this.prisma.intakeIssue.updateMany({
+            where: { id: issueId, tenantId: args.tenantId, status: 'pending' },
+            data: { status: 'rejected' },
+          });
+        } else if (this.issues) {
+          await this.issues.softDelete(
+            issueId,
+            args.tenantId,
+            this.toStringOrUndef(args.actorUserId) ?? issueId,
+          );
+        }
+        this.logger.log(
+          `task-probe-apply: dismissed issue=${issueId} reason=${args.reason} kind=${contextCardKind ?? 'issue'} (мягкое удаление по ответу человека)`,
+        );
+        return;
+      }
+
+      if (
+        args.reason === 'task.poorly_specified' ||
+        args.reason === 'task.false_positive'
+      ) {
+        await this.appendTaskDescription({
+          tenantId: args.tenantId,
+          issueId,
+          contextCardKind,
+          answer,
+        });
+        return;
+      }
+
       if (args.reason === 'task.due_date_missing') {
         const due = parseRussianDueDate(answer, new Date());
         if (!due) return;
@@ -324,6 +370,170 @@ export class ProbeResponseHandler {
         'task-probe-apply: best-effort, пропускаю',
       );
     }
+  }
+
+  private async appendTaskDescription(args: {
+    tenantId: string;
+    issueId: string;
+    contextCardKind?: string;
+    answer: string;
+  }): Promise<void> {
+    const addition = args.answer.trim();
+    if (!addition) return;
+
+    if (args.contextCardKind === 'intake_issue') {
+      const existing = await this.prisma.intakeIssue.findFirst({
+        where: { id: args.issueId, tenantId: args.tenantId, status: 'pending' },
+        select: { extractedDescription: true },
+      });
+      if (!existing) return;
+      const prev = existing.extractedDescription?.trim() ?? '';
+      const next = prev ? `${prev}\n\n${addition}` : addition;
+      await this.prisma.intakeIssue.updateMany({
+        where: { id: args.issueId, tenantId: args.tenantId, status: 'pending' },
+        data: { extractedDescription: next },
+      });
+      return;
+    }
+
+    const issue = await this.prisma.issue.findFirst({
+      where: { id: args.issueId, tenantId: args.tenantId, deletedAt: null },
+      select: { description: true, descriptionStripped: true },
+    });
+    if (!issue) return;
+    const prevStripped = issue.descriptionStripped?.trim() ?? '';
+    const nextStripped = prevStripped ? `${prevStripped}\n\n${addition}` : addition;
+    const data: { descriptionStripped: string; description?: string } = {
+      descriptionStripped: nextStripped,
+    };
+    if (!issue.description || issue.description.trim().length === 0) {
+      data.description = addition;
+    }
+    await this.prisma.issue.updateMany({
+      where: { id: args.issueId, tenantId: args.tenantId, deletedAt: null },
+      data,
+    });
+  }
+
+  private async maybeApplyDecisionProbeAnswer(args: {
+    tenantId: string;
+    reason: string;
+    actorUserId: string;
+    probePayload: Record<string, unknown>;
+    eventPayload: Record<string, unknown>;
+    classifiedAnswer?: string;
+  }): Promise<void> {
+    const decisionId = this.toStringOrUndef(args.probePayload.contextCardId);
+    if (!decisionId) return;
+    const answer =
+      args.classifiedAnswer && args.classifiedAnswer.trim().length > 0
+        ? args.classifiedAnswer
+        : this.extractResponseText(args.eventPayload);
+    if (!answer) return;
+
+    try {
+      const mapped = mapExistenceConfirmAnswer(answer);
+      if (mapped?.decisionType === 'reject') {
+        await this.prisma.decision.updateMany({
+          where: { id: decisionId, tenantId: args.tenantId, deletedAt: null },
+          data: { deletedAt: new Date() },
+        });
+        this.logger.log(
+          `decision-probe-apply: dismissed decision=${decisionId} reason=${args.reason} (мягкое удаление по ответу человека)`,
+        );
+        return;
+      }
+
+      if (args.reason === 'decision.missing_decider') {
+        const personId = await this.resolveDeciderPersonId(args.tenantId, answer);
+        if (!personId) return;
+        await this.prisma.decision.updateMany({
+          where: {
+            id: decisionId,
+            tenantId: args.tenantId,
+            deletedAt: null,
+            decidedByPersonId: null,
+          },
+          data: {
+            decidedByPersonId: personId,
+            decidedByPersonIds: [personId],
+          },
+        });
+        return;
+      }
+
+      if (
+        args.reason === 'decision.no_deadline_critical' ||
+        args.reason === 'decision.overdue'
+      ) {
+        const due = parseRussianDueDate(answer, new Date());
+        if (!due) return;
+        if (args.reason === 'decision.no_deadline_critical') {
+          await this.prisma.decision.updateMany({
+            where: {
+              id: decisionId,
+              tenantId: args.tenantId,
+              deletedAt: null,
+              deadline: null,
+            },
+            data: { deadline: due },
+          });
+          return;
+        }
+        await this.prisma.decision.updateMany({
+          where: { id: decisionId, tenantId: args.tenantId, deletedAt: null },
+          data: { deadline: due },
+        });
+        return;
+      }
+
+      if (args.reason === 'decision.outcome_unknown') {
+        await this.prisma.decision.updateMany({
+          where: {
+            id: decisionId,
+            tenantId: args.tenantId,
+            deletedAt: null,
+            actualOutcomes: null,
+          },
+          data: { actualOutcomes: answer.trim() },
+        });
+        return;
+      }
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          decisionId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'decision-probe-apply: best-effort, пропускаю',
+      );
+    }
+  }
+
+  private async resolveDeciderPersonId(
+    tenantId: string,
+    answer: string,
+  ): Promise<string | null> {
+    if (this.assigneeResolver) {
+      const resolution = await this.assigneeResolver.resolve(tenantId, answer);
+      if (resolution.kind === 'resolved') {
+        const person = await this.prisma.person.findFirst({
+          where: { tenantId, userId: resolution.userId, deletedAt: null },
+          select: { id: true },
+        });
+        if (person) return person.id;
+      }
+    }
+    const byName = await this.prisma.person.findFirst({
+      where: {
+        tenantId,
+        name: { equals: answer.trim(), mode: 'insensitive' },
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    return byName?.id ?? null;
   }
 
   private async sendAnswerAck(args: {

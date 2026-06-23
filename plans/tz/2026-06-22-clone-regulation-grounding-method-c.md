@@ -57,7 +57,7 @@
 
 ## Фазы
 
-### Фаза 1 — retrieval применимых правил при ответе клона `[ ]`
+### Фаза 1 — retrieval применимых правил при ответе клона `[x]`
 1. `RoleRegulationRetrievalService` (embedQuery + `$queryRaw` <=> по 4 таблицам, фильтр `scope = 'role:<id>' OR scope='org'`, порог + topN из AdminSetting).
 2. Helper `parseRoleScope(scope): string | null`.
 3. Ранжирование по (ранг severity, cosine) согласно Р3.

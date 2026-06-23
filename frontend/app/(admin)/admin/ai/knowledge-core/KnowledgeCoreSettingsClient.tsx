@@ -10,6 +10,7 @@ import {
   Link2,
   Loader2,
   Network,
+  ScrollText,
   Sparkles,
   Target,
   UserSquare,
@@ -345,6 +346,45 @@ const GROUPS: SettingGroup[] = [
         label: "Срок жизни элемента очереди (дни)",
         schema: positiveInt(30),
         defaultValue: 30,
+      },
+    ],
+  },
+  {
+    value: "clone_regulations",
+    label: "Регламенты клона",
+    icon: ScrollText,
+    settings: [
+      {
+        key: "clone.regulations.retrieval.top_n",
+        label: "Сколько правил подтягивать",
+        description:
+          "Сколько записанных правил должности подмешивать в ответ клона (топ по смысловой близости).",
+        schema: positiveInt(6),
+        defaultValue: 6,
+      },
+      {
+        key: "clone.regulations.retrieval.min_similarity",
+        label: "Порог близости (косинусная дистанция)",
+        description:
+          "Правила дальше этого порога в ответ клона не подмешиваются.",
+        schema: ratio01(0.3),
+        defaultValue: 0.3,
+      },
+      {
+        key: "clone.regulations.snapshot.max_items",
+        label: "Размер снимка правил",
+        description:
+          "Сколько заголовков правил держать в компактном указателе-снимке должности.",
+        schema: positiveInt(20),
+        defaultValue: 20,
+      },
+      {
+        key: "clone.regulations.scope.include_org",
+        label: "Включать правила уровня компании",
+        description:
+          "Подмешивать ли правила всей компании вдобавок к правилам самой должности.",
+        schema: z.boolean().default(true),
+        defaultValue: true,
       },
     ],
   },

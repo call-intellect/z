@@ -21,11 +21,13 @@ import { SKILL_SUBJECT_SIGNAL_TYPES } from '../../knowledge-core/constants/skill
 import {
   CLONE_RESPOND_USER_TEMPLATE,
   type CloneRespondPracticeSkill,
+  type CloneRespondRegulation,
   buildCloneRespondSystemPrompt,
 } from '../../knowledge-core/prompts/clone-respond.prompt';
 import { KnowledgeEmbeddingService } from '../../knowledge-core/services/embedding.service';
 import { ExecutablePersonaBuildService } from '../../knowledge-core/services/executable-persona-build.service';
 import { ExecutablePersonaVersioningService } from '../../knowledge-core/services/executable-persona-versioning.service';
+import { RoleRegulationRetrievalService } from '../../knowledge-core/services/role-regulation-retrieval.service';
 import { PracticeSkillRetrievalService } from '../../practice-skills/services/practice-skill-retrieval.service';
 import {
   KnowledgeAccessResolver,
@@ -88,6 +90,9 @@ export class ClonesService {
     @Optional()
     @Inject(PracticeSkillRetrievalService)
     private readonly practiceSkills: PracticeSkillRetrievalService | null = null,
+    @Optional()
+    @Inject(RoleRegulationRetrievalService)
+    private readonly roleRegulations: RoleRegulationRetrievalService | null = null,
   ) {}
 
   async askPerson(args: {
@@ -498,6 +503,12 @@ export class ClonesService {
       conversationId: args.conversationId ?? null,
     });
 
+    const applicableRegulations = await this.retrieveRoleRegulations({
+      tenantId: args.tenantId,
+      roleId: args.roleId,
+      question: args.question,
+    });
+
     const llmResult = await this.callCloneRespond({
       tenantId: args.tenantId,
       persona,
@@ -506,6 +517,7 @@ export class ClonesService {
       roleName: role.name,
       bearerName,
       practiceSkills: toPromptSkills(retrievedSkills),
+      applicableRegulations,
     });
 
     const citations = this.parseCitations(llmResult.text, subgraph);
@@ -943,6 +955,12 @@ export class ClonesService {
       conversationId: args.conversationId ?? null,
     });
 
+    const applicableRegulationsV2 = await this.retrieveRoleRegulations({
+      tenantId: args.tenantId,
+      roleId: args.roleId,
+      question: dialog.standaloneQuestion,
+    });
+
     const llmResult = await this.callCloneRespond({
       tenantId: args.tenantId,
       persona,
@@ -952,6 +970,7 @@ export class ClonesService {
       bearerName,
       mode,
       practiceSkills: toPromptSkills(retrievedSkillsV2Role),
+      applicableRegulations: applicableRegulationsV2,
     });
 
     const citations = this.parseCitations(llmResult.text, subgraph);
@@ -1052,6 +1071,34 @@ export class ClonesService {
       this.logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
         "clones.retrievePracticeSkills: retrieval упал — продолжаю без skill'ов",
+      );
+      return [];
+    }
+  }
+
+  private async retrieveRoleRegulations(args: {
+    tenantId: string;
+    roleId: string;
+    question: string;
+  }): Promise<CloneRespondRegulation[]> {
+    if (!this.roleRegulations) return [];
+    try {
+      const rules = await this.roleRegulations.retrieveForRole({
+        tenantId: args.tenantId,
+        roleId: args.roleId,
+        query: args.question,
+      });
+      return rules.map((r) => ({
+        kind: r.kind,
+        name: r.name,
+        text: r.text,
+        severity: r.severity,
+        scope: r.scope,
+      }));
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'clones.retrieveRoleRegulations: retrieval упал — продолжаю без регламентов',
       );
       return [];
     }
@@ -2478,6 +2525,7 @@ export class ClonesService {
     bearerName: string | null;
     mode?: 'factual' | 'judgmental';
     practiceSkills?: ReadonlyArray<CloneRespondPracticeSkill>;
+    applicableRegulations?: ReadonlyArray<CloneRespondRegulation>;
   }): Promise<LlmCallResult> {
     const mode = args.mode ?? 'factual';
     const systemPrompt = buildCloneRespondSystemPrompt({ mode });
@@ -2498,6 +2546,7 @@ export class ClonesService {
           decisions: args.subgraph.decisions,
         },
         practiceSkills: args.practiceSkills,
+        applicableRegulations: args.applicableRegulations,
       }),
       tenantId: args.tenantId,
       sourceRef: { type: 'executable_persona', id: args.persona.id },

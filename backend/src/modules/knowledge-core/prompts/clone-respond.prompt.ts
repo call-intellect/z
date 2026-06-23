@@ -107,6 +107,14 @@ export interface CloneRespondPracticeSkill {
   redFlags: ReadonlyArray<string>;
 }
 
+export interface CloneRespondRegulation {
+  kind: 'policy' | 'regulation' | 'process' | 'instruction';
+  name: string;
+  text: string;
+  severity?: 'advisory' | 'mandatory' | 'blocking' | null;
+  scope?: string | null;
+}
+
 export const CLONE_RESPOND_USER_TEMPLATE = (args: {
   question: string;
   roleName?: string | null;
@@ -118,6 +126,7 @@ export const CLONE_RESPOND_USER_TEMPLATE = (args: {
     decisions: ReadonlyArray<{ id: string; statement: string; rationale: string | null }>;
   };
   practiceSkills?: ReadonlyArray<CloneRespondPracticeSkill>;
+  applicableRegulations?: ReadonlyArray<CloneRespondRegulation>;
 }): string => {
   const roleName =
     args.roleName && args.roleName.trim().length > 0
@@ -159,6 +168,25 @@ export const CLONE_RESPOND_USER_TEMPLATE = (args: {
           '</known_procedures>',
         ].join('\n')
       : '';
+  const regulationsBlock =
+    args.applicableRegulations && args.applicableRegulations.length > 0
+      ? [
+          '',
+          'Записанные правила должности (ПРИОРИТЕТ над личным опытом: если правило противоречит привычке — следуй правилу; правило с пометкой [blocking] нарушать нельзя):',
+          '<applicable_regulations>',
+          ...args.applicableRegulations.map((r) => {
+            const label = {
+              policy: 'Политика',
+              regulation: 'Регламент',
+              process: 'Процесс',
+              instruction: 'Инструкция',
+            }[r.kind];
+            const sev = r.severity ? ` [${r.severity}]` : '';
+            return `  • (${label}${sev}) ${r.name}: ${r.text}`;
+          }),
+          '</applicable_regulations>',
+        ].join('\n')
+      : '';
   const parts = [
     '── КЛОН ДОЛЖНОСТИ ──',
     `Должность (роль): ${roleName}`,
@@ -179,6 +207,7 @@ export const CLONE_RESPOND_USER_TEMPLATE = (args: {
     decisionLines,
   ];
   if (skillsBlock) parts.push(skillsBlock);
+  if (regulationsBlock) parts.push(regulationsBlock);
   parts.push(
     '',
     `── ВОПРОС ──`,

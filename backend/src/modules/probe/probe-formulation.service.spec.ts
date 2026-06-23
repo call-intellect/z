@@ -35,6 +35,11 @@ function makeService(args: {
     currentResult: string | null;
     hypothesisText: string | null;
   } | null;
+  decisionRows?: {
+    statement: string | null;
+    text: string | null;
+    rationale: string | null;
+  }[];
 }): {
   svc: ProbeFormulationService;
   llmCall: ReturnType<typeof vi.fn>;
@@ -42,6 +47,7 @@ function makeService(args: {
   findRelevantRules: ReturnType<typeof vi.fn>;
   incSubjectMemoryProbeSuppressed: ReturnType<typeof vi.fn>;
   experimentFindFirst: ReturnType<typeof vi.fn>;
+  decisionFindMany: ReturnType<typeof vi.fn>;
 } {
   const llmCall = vi.fn();
   if (args.llmThrow) {
@@ -89,8 +95,12 @@ function makeService(args: {
   const experimentFindFirst = vi
     .fn()
     .mockResolvedValue(args.experimentRow ?? null);
+  const decisionFindMany = vi
+    .fn()
+    .mockResolvedValue(args.decisionRows ?? []);
   const prisma = {
     experiment: { findFirst: experimentFindFirst },
+    decision: { findMany: decisionFindMany },
   } as unknown as PrismaService;
 
   return {
@@ -106,6 +116,7 @@ function makeService(args: {
     findRelevantRules,
     incSubjectMemoryProbeSuppressed,
     experimentFindFirst,
+    decisionFindMany,
   };
 }
 
@@ -269,5 +280,62 @@ describe('ProbeFormulationService.draftFromMemory', () => {
       makeExperimentProbe({ contextCardId: 'exp-1' }),
     );
     expect(draft).toBeNull();
+  });
+
+  it('companyprofile.missing_mission + решения + LLM → черновик миссии', async () => {
+    const { svc, decisionFindMany, llmCall } = makeService({
+      decisionRows: [
+        { statement: 'Выходим на рынок РФ', text: null, rationale: 'спрос' },
+        { statement: 'Делаем ставку на память компании', text: null, rationale: null },
+      ],
+      llmResponse: {
+        text: JSON.stringify({ draftAnswer: 'Миссия X', missingNote: '' }),
+      },
+    });
+    const draft = await svc.draftFromMemory(
+      makeExperimentProbe({}, 'companyprofile.missing_mission'),
+    );
+    expect(draft).toEqual({ draftAnswer: 'Миссия X', draftKind: 'company_mission' });
+    expect(decisionFindMany).toHaveBeenCalledTimes(1);
+    expect(
+      (llmCall.mock.calls[0]![0] as { taskType: string }).taskType,
+    ).toBe('probe-draft-from-memory');
+  });
+
+  it('companyprofile.missing_vision → draftKind company_vision', async () => {
+    const { svc } = makeService({
+      decisionRows: [{ statement: 'Решение А', text: null, rationale: null }],
+      llmResponse: {
+        text: JSON.stringify({ draftAnswer: 'Видение Y', missingNote: '' }),
+      },
+    });
+    const draft = await svc.draftFromMemory(
+      makeExperimentProbe({}, 'companyprofile.missing_vision'),
+    );
+    expect(draft).toEqual({ draftAnswer: 'Видение Y', draftKind: 'company_vision' });
+  });
+
+  it('companyprofile.missing_strategy → draftKind company_strategy', async () => {
+    const { svc } = makeService({
+      decisionRows: [{ statement: 'Решение Б', text: null, rationale: null }],
+      llmResponse: {
+        text: JSON.stringify({ draftAnswer: 'Стратегия Z', missingNote: '' }),
+      },
+    });
+    const draft = await svc.draftFromMemory(
+      makeExperimentProbe({}, 'companyprofile.missing_strategy'),
+    );
+    expect(draft).toEqual({ draftAnswer: 'Стратегия Z', draftKind: 'company_strategy' });
+  });
+
+  it('companyprofile.missing_mission + 0 решений → null, LLM не зовётся', async () => {
+    const { svc, llmCall } = makeService({
+      decisionRows: [],
+    });
+    const draft = await svc.draftFromMemory(
+      makeExperimentProbe({}, 'companyprofile.missing_mission'),
+    );
+    expect(draft).toBeNull();
+    expect(llmCall).not.toHaveBeenCalled();
   });
 });

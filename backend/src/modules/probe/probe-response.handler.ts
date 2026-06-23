@@ -8,6 +8,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { parseRussianDueDate } from '../../common/utils/parse-russian-due-date';
 import { LlmRouterService } from '../ai/services/llm-router.service';
 import { applyInputGuards } from '../ai/services/prompts/common';
+import { CompanyProfileService } from '../company-foundation/services/company-profile.service';
 import { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
 import { ConversationalService } from '../conversational/conversational.service';
 import { CoreQueueService } from '../core-queue/core-queue.service';
@@ -48,6 +49,9 @@ export class ProbeResponseHandler {
     @Optional()
     @Inject(IssuesService)
     private readonly issues?: IssuesService,
+    @Optional()
+    @Inject(CompanyProfileService)
+    private readonly companyProfile?: CompanyProfileService,
   ) {}
 
   @OnEvent('notification.responded')
@@ -191,6 +195,16 @@ export class ProbeResponseHandler {
           tenantId: event.tenantId,
           actorUserId: event.recipientUserId,
           probePayload,
+          eventPayload: event.payload,
+          classifiedAnswer: classification?.answer,
+        });
+      }
+
+      if (probe.reason.startsWith('companyprofile.missing_')) {
+        await this.maybeApplyCompanyProfileAnswer({
+          tenantId: event.tenantId,
+          reason: probe.reason,
+          actorUserId: event.recipientUserId,
           eventPayload: event.payload,
           classifiedAnswer: classification?.answer,
         });
@@ -632,6 +646,55 @@ export class ProbeResponseHandler {
           err: err instanceof Error ? err.message : String(err),
         },
         'experiment-lesson-apply: best-effort, пропускаю',
+      );
+    }
+  }
+
+  private async maybeApplyCompanyProfileAnswer(args: {
+    tenantId: string;
+    reason: string;
+    actorUserId: string;
+    eventPayload: Record<string, unknown>;
+    classifiedAnswer?: string;
+  }): Promise<void> {
+    if (!this.companyProfile) return;
+    const answer =
+      args.classifiedAnswer && args.classifiedAnswer.trim().length > 0
+        ? args.classifiedAnswer
+        : this.extractResponseText(args.eventPayload);
+    if (!answer) return;
+    if (mapExistenceConfirmAnswer(answer)?.decisionType === 'reject') return;
+
+    const contentMd = answer.trim().slice(0, 8000);
+    if (!contentMd) return;
+    const value = { contentMd };
+    const body =
+      args.reason === 'companyprofile.missing_mission'
+        ? { mission: value }
+        : args.reason === 'companyprofile.missing_vision'
+          ? { vision: value }
+          : args.reason === 'companyprofile.missing_strategy'
+            ? { strategy: value }
+            : null;
+    if (!body) return;
+
+    try {
+      await this.companyProfile.update({
+        tenantId: args.tenantId,
+        userId: args.actorUserId,
+        body,
+      });
+      this.logger.log(
+        `company-profile-apply: ${args.reason} записано в профиль (tenant=${args.tenantId})`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          reason: args.reason,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'company-profile-apply: best-effort, пропускаю',
       );
     }
   }

@@ -1209,7 +1209,12 @@ export class TypedConfigService {
       draftReasons: this.resolveSync<readonly string[]>(
         'probe.draftReasons',
         undefined,
-        ['experiment.result_without_lesson'],
+        [
+          'experiment.result_without_lesson',
+          'companyprofile.missing_mission',
+          'companyprofile.missing_vision',
+          'companyprofile.missing_strategy',
+        ],
       ),
     } as const;
   }
@@ -1273,6 +1278,11 @@ export class TypedConfigService {
         'companyProfile.summaryMinSourceBlocks',
         undefined,
         8,
+      ),
+      completenessProbeEnabled: this.resolveSync<boolean>(
+        'companyProfile.completenessProbeEnabled',
+        undefined,
+        true,
       ),
     } as const;
   }

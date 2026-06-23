@@ -100,6 +100,49 @@ export class ProbeFormulationService {
       if (!draft) return null;
       return { draftAnswer: draft, draftKind: 'experiment_lesson' };
     }
+    if (
+      probe.reason === 'companyprofile.missing_mission' ||
+      probe.reason === 'companyprofile.missing_vision' ||
+      probe.reason === 'companyprofile.missing_strategy'
+    ) {
+      const decisions = await this.prisma.decision.findMany({
+        where: { tenantId: probe.tenantId, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 40,
+        select: { statement: true, text: true, rationale: true },
+      });
+      const facts = decisions
+        .map((d, i) => {
+          const body = d.statement ?? d.text ?? '';
+          const line = d.rationale ? `${body} — ${d.rationale}` : body;
+          return line.trim() ? `${i + 1}. ${line.trim().slice(0, 300)}` : '';
+        })
+        .filter(Boolean)
+        .join('\n');
+      if (!facts) return null;
+      const kindLabel =
+        probe.reason === 'companyprofile.missing_mission'
+          ? 'миссия компании'
+          : probe.reason === 'companyprofile.missing_vision'
+            ? 'видение компании'
+            : 'стратегия компании';
+      const draftKind =
+        probe.reason === 'companyprofile.missing_mission'
+          ? 'company_mission'
+          : probe.reason === 'companyprofile.missing_vision'
+            ? 'company_vision'
+            : 'company_strategy';
+      const draft = await this.callDraftLlm(
+        probe,
+        kindLabel,
+        typeof payload.message === 'string'
+          ? payload.message
+          : `Сформулируйте: ${kindLabel}.`,
+        facts,
+      );
+      if (!draft) return null;
+      return { draftAnswer: draft, draftKind };
+    }
     return null;
   }
 

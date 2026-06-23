@@ -77,6 +77,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['companyProfile.autoSummaryEnabled', z.boolean()],
   ['companyProfile.summaryRebuildHours', POSITIVE_INT],
   ['companyProfile.summaryMinSourceBlocks', POSITIVE_INT],
+  ['companyProfile.completenessProbeEnabled', z.boolean()],
 
   ['taskRouting.enabled', z.boolean()],
   ['taskRouting.suggestMinConfidence', UNIT_INTERVAL],

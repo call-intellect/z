@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { CompanyFoundationModule } from '../company-foundation/company-foundation.module';
 import { CurationModule } from '../curation/curation.module';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
 import { TrackerModule } from '../tracker/tracker.module';
@@ -20,7 +21,13 @@ import { SubjectMemoryService } from './subject-memory/subject-memory.service';
 
 @Global()
 @Module({
-  imports: [PrismaModule, EmbeddingsModule, CurationModule, TrackerModule],
+  imports: [
+    PrismaModule,
+    EmbeddingsModule,
+    CurationModule,
+    TrackerModule,
+    CompanyFoundationModule,
+  ],
   controllers: [ProbeController, SubjectMemoryController],
   providers: [
     ProbeService,

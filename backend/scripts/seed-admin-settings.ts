@@ -1638,7 +1638,12 @@ function buildSettings(): SettingSeed[] {
     ],
     [
       'probe.draftReasons',
-      ['experiment.result_without_lesson'],
+      [
+        'experiment.result_without_lesson',
+        'companyprofile.missing_mission',
+        'companyprofile.missing_vision',
+        'companyprofile.missing_strategy',
+      ],
       'low',
       'Probe: для каких поводов Кора готовит черновик ответа из памяти',
     ],
@@ -1731,6 +1736,12 @@ function buildSettings(): SettingSeed[] {
       envInt('COMPANY_PROFILE_SUMMARY_MIN_SOURCE_BLOCKS', 8),
       'low',
       'Минимум блоков графа, чтобы строить summary (иначе cold-start — пропуск, остаётся ручной ввод)',
+    ],
+    [
+      'companyProfile.completenessProbeEnabled',
+      envBool('COMPANY_PROFILE_COMPLETENESS_PROBE_ENABLED', true),
+      'medium',
+      'Кора раз в сутки проверяет профиль компании и, если миссия/видение/стратегия не заданы, задаёт владельцу уточняющий вопрос с черновиком из памяти (kill-switch, ON). Выкл → вопросы по незаполненному профилю не отправляются',
     ],
   ];
   for (const [key, value, severity, description] of companyProfile) {

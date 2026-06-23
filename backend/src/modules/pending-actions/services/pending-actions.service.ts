@@ -1,5 +1,6 @@
-import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
+import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
 import { ConflictService } from '../../curation/services/conflict.service';
@@ -116,6 +117,9 @@ export class PendingActionsService {
     // авто-черновика прогресса (Ф6-сервис; бизнес-логику НЕ дублируем).
     @Inject(ProgressUpdatesService)
     private readonly progressUpdatesService: ProgressUpdatesService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {
     // Порядок фиксирован — детерминизм для bySource/тестов.
     this.providers = [
@@ -516,7 +520,7 @@ export class PendingActionsService {
     // approve → найти completed-статус проекта задачи и перевести Issue.
     const issue = await this.prisma.issue.findFirst({
       where: { id: candidate.issueId, tenantId: input.tenantId },
-      select: { id: true, projectId: true },
+      select: { id: true, projectId: true, createdById: true, title: true },
     });
     if (!issue) {
       throw new BadRequestException({
@@ -582,6 +586,39 @@ export class PendingActionsService {
       { tenantId: input.tenantId, userId: input.userId, resourceId: candidate.id, issueId: issue.id },
       'pending-actions.confirm: кандидат на закрытие принят — задача закрыта, решение записано комментарием',
     );
+
+    const notifyCreatorEnabled =
+      this.cfg?.tracker?.closureNotifyCreatorEnabled ?? true;
+    if (
+      notifyCreatorEnabled &&
+      issue.createdById &&
+      issue.createdById !== input.userId
+    ) {
+      try {
+        await this.conversational.sendNotification({
+          tenantId: input.tenantId,
+          recipientUserId: issue.createdById,
+          eventType: 'task.closed_for_review',
+          payload: {
+            text: `Исполнитель закрыл задачу «${issue.title}» — проверьте.`,
+            summary: `Задача «${issue.title}» отмечена выполненной`,
+            objectTitle: issue.title,
+            issueId: issue.id,
+          },
+          dataClass: 'internal',
+        });
+      } catch (err) {
+        this.logger.warn(
+          {
+            tenantId: input.tenantId,
+            issueId: issue.id,
+            recipientUserId: issue.createdById,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'pending-actions.confirm: не удалось уведомить постановщика о закрытии задачи (best-effort)',
+        );
+      }
+    }
   }
 
   /**

@@ -428,6 +428,8 @@ N:1 к IdeaBlock — один блок может агрегировать мн�
 
 **Поле `sourceMessageExternalId String?`** (2026-06-20, миграция `20260620181013_add_evidence_source_message`, provenance-probe-followups B1) — внешний id конкретного сообщения чата, из которого взято свидетельство. Аддитивно (nullable, backfill не обязателен). Нужно для chatbox deep-link на сообщение: `ProvenanceService.buildDeepLink` строит `/chats/<chatId>?m=<msg>` (раньше вёл только на чат целиком). Заполняется на ingest chatbox-evidence; исторические записи — `null` (deep-link на чат без якоря сообщения).
 
+**Поля `authorPersonId String?` + `authorLabel String?`** (2026-06-23, миграция `20260623083858_evidence_author_person`, ТЗ [`meeting-tasks-assignee-probe-closure`](../../plans/tz/2026-06-23-meeting-tasks-assignee-probe-closure-tz.md) Ф1) — автор конкретной реплики-источника свидетельства. `authorPersonId` — FK-id на `Person`-автора (резолвится `resolveEvidenceAuthor` в `block-ingest`); `authorLabel` — текстовая метка автора, когда `Person` не идентифицирован (например `'Клиент'` для внешнего собеседника чат-бокса). Аддитивно (оба nullable, backfill не нужен). Зачем на уровне evidence: автор реплики доносится до агента извлечения задач (specialist-3-15 показывает автора каждой цитаты), что включает само-назначение «мне» и адресацию уточняющего probe **автору реплики**, а не владельцу встречи. Источник метки внешнего автора — `SegmentBuilder.Segment.authorExternalLabel`.
+
 ### Entity
 
 ```

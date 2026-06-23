@@ -4,11 +4,24 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import {
+  TASK_CLOSURE_VERIFY_JSON_SCHEMA,
+  TASK_CLOSURE_VERIFY_SCHEMA_NAME,
+  TASK_CLOSURE_VERIFY_SYSTEM_PROMPT,
+  TASK_CLOSURE_VERIFY_USER_TEMPLATE,
+  TaskClosureVerifyResponseSchema,
+} from '../../operations/prompts/task-closure-verify.prompt';
 import { ProbeService } from '../../probe/probe.service';
 import type { PostAssignTaskBodyDto, PostAssignTaskResponseDto } from '../dto/issues/post-assign-task.dto';
 import type { PostCompleteTaskResponseDto } from '../dto/issues/post-complete-task.dto';
@@ -50,6 +63,9 @@ export class MeTasksService {
     @Inject(ProgressUpdatesService) private readonly progressUpdates: ProgressUpdatesService,
     @Inject(ProbeService) private readonly probe: ProbeService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Optional()
+    @Inject(LlmRouterService)
+    private readonly llm?: LlmRouterService,
   ) {}
 
   async suggestAssignee(
@@ -365,6 +381,48 @@ export class MeTasksService {
       });
     }
 
+    const note = (body.note ?? '').trim();
+
+    if (this.cfg.tracker.completionDetailGateEnabled) {
+      const enough = await this.hasEnoughCompletionDetail({
+        tenantId,
+        issueId: resolution.issueId,
+        title: resolution.title,
+        note,
+      });
+      if (!enough) {
+        const clarificationQuestion = `Что конкретно вы сделали с задачей «${resolution.title}»?`;
+        try {
+          await this.probe.suggest({
+            tenantId,
+            emittedByService: 'me-tasks-complete',
+            reason: 'task.completion_detail_missing',
+            payload: {
+              contextCardId: resolution.issueId,
+              contextCardKind: 'issue',
+              contextCardTitle: resolution.title,
+              objectName: resolution.title,
+              objectKindRu: 'задача',
+              message: `Вы отметили задачу «${resolution.title}» выполненной, но без деталей.`,
+              suggestedQuestion: clarificationQuestion,
+            },
+            recipientCandidates: [userId],
+            priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
+          });
+        } catch {
+          // best-effort: probe не должен ронять ответ помощнику
+        }
+        return {
+          candidateId: null,
+          issueId: resolution.issueId,
+          title: resolution.title,
+          status: 'needs_detail',
+          needsDetail: true,
+          clarificationQuestion,
+        };
+      }
+    }
+
     const sourceBlockId = `concierge-complete:${userId}`;
     const row = await this.prisma.taskClosureCandidate.upsert({
       where: {
@@ -379,7 +437,7 @@ export class MeTasksService {
         issueId: resolution.issueId,
         sourceBlockId,
         status: 'pending',
-        evidenceQuote: body.note ?? null,
+        evidenceQuote: note.length > 0 ? note : null,
         rationale: 'Отмечено выполненным через помощника',
         expiresAt: null,
       },
@@ -392,6 +450,51 @@ export class MeTasksService {
       title: resolution.title,
       status: row.status,
     };
+  }
+
+  private async hasEnoughCompletionDetail(args: {
+    tenantId: string;
+    issueId: string;
+    title: string;
+    note: string;
+  }): Promise<boolean> {
+    if (args.note.length === 0) return false;
+    if (!this.llm) return true;
+
+    const guardOn = this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    const userMessage = TASK_CLOSURE_VERIFY_USER_TEMPLATE({
+      task: { title: args.title },
+      signalLabel: 'задача отмечена выполненной',
+      quote: args.note,
+    });
+    const systemPrompt = guardOn
+      ? withInjectionGuard(TASK_CLOSURE_VERIFY_SYSTEM_PROMPT)
+      : TASK_CLOSURE_VERIFY_SYSTEM_PROMPT;
+    const guardedUser = guardOn ? wrapUserData(userMessage) : userMessage;
+
+    try {
+      const out = await this.llm.call({
+        taskType: 'task-closure-verify',
+        tenantId: args.tenantId,
+        systemPrompt,
+        userMessage: guardedUser,
+        responseFormat: {
+          type: 'json_schema',
+          name: TASK_CLOSURE_VERIFY_SCHEMA_NAME,
+          strict: true,
+          schema: TASK_CLOSURE_VERIFY_JSON_SCHEMA,
+        },
+        dataClass: 'internal',
+        sourceRef: { type: 'issue', id: args.issueId },
+      });
+      const verdict = TaskClosureVerifyResponseSchema.safeParse(
+        JSON.parse(out.text),
+      );
+      if (!verdict.success) return true;
+      return verdict.data.done === true;
+    } catch {
+      return true;
+    }
   }
 
   async reportTaskProgress(

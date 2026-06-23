@@ -3539,6 +3539,8 @@ model IdeaBlockEvidence {
   startMs                 Int?
   endMs                   Int?
   sourceMessageExternalId String?
+  authorPersonId          String?
+  authorLabel             String?
   createdAt               DateTime   @default(now())
 
   block    IdeaBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)

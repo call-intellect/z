@@ -50,16 +50,29 @@ export const TASK_EXTRACT_SYSTEM_PROMPT = withAsrNote(
   ),
 );
 
+export interface TaskExtractEvidenceQuote {
+  quote: string;
+  authorLabel?: string | null;
+}
+
 export const TASK_EXTRACT_USER_TEMPLATE = (args: {
   blockName: string;
   criticalQuestion: string;
   trustedAnswer: string;
   signalType: string;
   tags: readonly string[];
-  evidenceQuotes: readonly string[];
+  evidenceQuotes: readonly (string | TaskExtractEvidenceQuote)[];
 }): string => {
+  const renderQuote = (q: string | TaskExtractEvidenceQuote): string => {
+    if (typeof q === 'string') return `«${q}»`;
+    const author =
+      typeof q.authorLabel === 'string' && q.authorLabel.trim().length > 0
+        ? ` — автор: ${q.authorLabel.trim()}`
+        : '';
+    return `«${q.quote}»${author}`;
+  };
   const quotes = args.evidenceQuotes.length
-    ? args.evidenceQuotes.map((q, i) => `  ${i + 1}. «${q}»`).join('\n')
+    ? args.evidenceQuotes.map((q, i) => `  ${i + 1}. ${renderQuote(q)}`).join('\n')
     : '  (цитат нет)';
   const tags = args.tags.length ? args.tags.join(', ') : '(нет)';
   return [

@@ -1565,6 +1565,12 @@ function buildSettings(): SettingSeed[] {
       'Семантический дедуп вопросов по эмбеддингу (kill-switch, ON)',
     ],
     [
+      'probe.recipientAwareDedupEnabled',
+      envBool('PROBE_RECIPIENT_AWARE_DEDUP_ENABLED', true),
+      'low',
+      'Дедуп уточнений с учётом адресата (рубильник): одинаковый по сути вопрос разным адресатам не схлопывается в один (kill-switch, ON). Выкл → дедуп только по reason+контекст без учёта получателей',
+    ],
+    [
       'probe.semanticDedupThreshold',
       envFloat('PROBE_SEMANTIC_DEDUP_THRESHOLD', 0.92),
       'low',

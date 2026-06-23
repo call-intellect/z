@@ -63,6 +63,14 @@ const GROUPS: SettingsGroup[] = [
         defaultValue: true,
       },
       {
+        key: "probe.recipientAwareDedupEnabled",
+        label: "Дедуп уточнений с учётом адресата",
+        description:
+          "Рубильник дедупа probe с учётом адресата: одинаковый по сути вопрос разным адресатам не схлопывается в один. По умолчанию вкл (Ship-On). Выкл → дедуп только по reason+контекст.",
+        schema: z.boolean(),
+        defaultValue: true,
+      },
+      {
         key: "probe.reaskEnabled",
         label: "Переспрос (re-ask)",
         description:

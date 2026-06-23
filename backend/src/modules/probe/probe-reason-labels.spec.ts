@@ -53,6 +53,21 @@ describe('probe-reason-labels', () => {
     expect(qDue!.length).toBeGreaterThan(0);
   });
 
+  it('Ф5 — task.poorly_specified / task.false_positive зарегистрированы (label + fallback с «удалить»)', () => {
+    expect(PROBE_REASON_LABEL['task.poorly_specified']).toBe(
+      'задача сформулирована нечётко',
+    );
+    expect(PROBE_REASON_LABEL['task.false_positive']).toBe(
+      'возможно, это не задача',
+    );
+    const qPoor = PROBE_REASON_FALLBACK['task.poorly_specified'];
+    const qFalse = PROBE_REASON_FALLBACK['task.false_positive'];
+    expect(qPoor).toBeDefined();
+    expect(qPoor).toContain('удалить');
+    expect(qFalse).toBeDefined();
+    expect(qFalse).toContain('удалить');
+  });
+
   it('ни один ярлык/вопрос не содержит латиницы (англоязычных слов/кодов)', () => {
     const latin = /[A-Za-z]/;
     for (const v of Object.values(PROBE_REASON_LABEL)) {

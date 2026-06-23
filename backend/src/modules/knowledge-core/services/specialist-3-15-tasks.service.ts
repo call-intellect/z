@@ -375,10 +375,23 @@ export class Specialist315TasksService {
     block: IdeaBlock & { evidence: IdeaBlockEvidence[] },
   ): Promise<TaskDraft | null> {
     const start = Date.now();
-    const quotes = block.evidence
+    const evidenceForQuotes = block.evidence
       .slice(0, 6)
-      .map((e) => e.quote)
-      .filter((q): q is string => !!q && q.length > 0);
+      .filter((e) => !!e.quote && e.quote.length > 0);
+
+    const labelByPersonId = await this.resolveEvidenceAuthorLabels(
+      block.tenantId,
+      evidenceForQuotes,
+    );
+    const quotes = evidenceForQuotes.map((e) => {
+      const authorLabel =
+        (e.authorLabel && e.authorLabel.trim().length > 0
+          ? e.authorLabel.trim()
+          : e.authorPersonId
+            ? labelByPersonId.get(e.authorPersonId) ?? null
+            : null) ?? null;
+      return { quote: e.quote, authorLabel };
+    });
 
     const guardOn = this.isPromptInjectionGuardEnabled();
     const rawUser = TASK_EXTRACT_USER_TEMPLATE({
@@ -496,6 +509,34 @@ export class Specialist315TasksService {
       priorityHint: this.normalizePriority(parsed.priorityHint),
       confidence: Math.max(0, Math.min(1, confidence)),
     };
+  }
+
+  private async resolveEvidenceAuthorLabels(
+    tenantId: string,
+    evidence: IdeaBlockEvidence[],
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const ids = Array.from(
+      new Set(
+        evidence
+          .filter((e) => !e.authorLabel || e.authorLabel.trim().length === 0)
+          .map((e) => e.authorPersonId)
+          .filter((id): id is string => !!id),
+      ),
+    );
+    if (ids.length === 0) return out;
+    try {
+      const persons = await this.prisma.person.findMany({
+        where: { tenantId, id: { in: ids } },
+        select: { id: true, name: true },
+      });
+      for (const p of persons) {
+        if (p.name && p.name.trim().length > 0) out.set(p.id, p.name.trim());
+      }
+    } catch {
+      return out;
+    }
+    return out;
   }
 
   private normalizePriority(input: unknown): string {

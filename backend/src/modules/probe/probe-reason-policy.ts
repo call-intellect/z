@@ -22,6 +22,8 @@ export const PROBE_REASON_WINDOW: Record<string, ProbeWindow> = {
   'regulation.existence_confirm': 'deferrable',
   'task.assignee_unresolved': 'immediate',
   'task.due_date_missing': 'immediate',
+  'task.poorly_specified': 'immediate',
+  'task.false_positive': 'immediate',
 };
 
 export function probeWindow(reason: string): ProbeWindow {
@@ -351,5 +353,48 @@ export const PROBE_REASON_RECHECK: Record<string, ProbeRecheckPredicate> = {
     });
     if (!issue) return false;
     return issue.dueDate == null;
+  },
+  'task.poorly_specified': async ({
+    prisma,
+    tenantId,
+    contextCardId,
+    contextCardKind,
+  }) => {
+    if (!contextCardId) return true;
+    if (contextCardKind === 'intake_issue') {
+      const intake = await prisma.intakeIssue.findFirst({
+        where: { id: contextCardId, tenantId },
+        select: { extractedDescription: true, status: true },
+      });
+      if (!intake) return false;
+      const description = (intake.extractedDescription ?? '').trim();
+      return intake.status === 'pending' && description.length < 12;
+    }
+    const issue = await prisma.issue.findFirst({
+      where: { id: contextCardId, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+    return Boolean(issue);
+  },
+  'task.false_positive': async ({
+    prisma,
+    tenantId,
+    contextCardId,
+    contextCardKind,
+  }) => {
+    if (!contextCardId) return true;
+    if (contextCardKind === 'intake_issue') {
+      const intake = await prisma.intakeIssue.findFirst({
+        where: { id: contextCardId, tenantId },
+        select: { status: true },
+      });
+      if (!intake) return false;
+      return intake.status === 'pending';
+    }
+    const issue = await prisma.issue.findFirst({
+      where: { id: contextCardId, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+    return Boolean(issue);
   },
 };

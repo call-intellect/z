@@ -317,6 +317,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.taskDedupLinkSemantics', z.enum(['link', 'delete'])],
   ['tracker.selfAssignAuthorFallbackEnabled', z.boolean()],
   ['tracker.taskExtractMinConfidence', UNIT_INTERVAL],
+  ['tracker.taskDismissUndoWindowHours', POSITIVE_INT],
   ['chatbox.taskExtraction.enabled', z.boolean()],
   ['chatbox.analyze.stuckAnalyzingMin', POSITIVE_INT],
 

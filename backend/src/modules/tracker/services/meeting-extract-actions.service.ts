@@ -443,6 +443,9 @@ export class MeetingExtractActionsService implements OnModuleInit {
         this.cfg.tracker.assigneeClarifyEnabled &&
         this.probe
       ) {
+        const author = findQuoteSpeaker(turns, byLivekitIdentity, sourceQuote);
+        const recipientId = author?.userId ?? meeting.ownerId;
+        const DISMISS_HINT = ' Если это не задача — ответьте «удалить».';
         try {
           await this.probe.suggest({
             tenantId,
@@ -454,10 +457,10 @@ export class MeetingExtractActionsService implements OnModuleInit {
               contextCardTitle: title,
               objectName: title,
               objectKindRu: 'задача',
-              message: `Из встречи «${meeting.title}» извлечена задача «${title}», но не определён исполнитель.`,
-              suggestedQuestion: `Кому поручить задачу «${title}» из встречи «${meeting.title}»?`,
+              message: `Из встречи «${meeting.title}» извлечена задача «${title}», но не определён исполнитель.${DISMISS_HINT}`,
+              suggestedQuestion: `Кому поручить задачу «${title}» из встречи «${meeting.title}»?${DISMISS_HINT}`,
             },
-            recipientCandidates: [meeting.ownerId],
+            recipientCandidates: [recipientId],
             priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
           });
         } catch {

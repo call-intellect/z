@@ -1726,6 +1726,11 @@ export class TypedConfigService {
         undefined,
         true,
       ),
+      taskDismissUndoWindowHours: this.resolveSync<number>(
+        'tracker.taskDismissUndoWindowHours',
+        undefined,
+        24,
+      ),
     } as const;
   }
 

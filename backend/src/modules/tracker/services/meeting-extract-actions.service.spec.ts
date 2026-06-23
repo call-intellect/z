@@ -669,6 +669,91 @@ describe('MeetingExtractActionsService', () => {
     expect(probeArg.recipientCandidates).toEqual(['owner-1']);
   });
 
+  it('Ф5: автор реплики (спикер цитаты) с userId → probe.suggest recipient=userId автора (не ownerId), текст с «удалить»', async () => {
+    const { service, prisma, probe } = mkService({
+      participants: [
+        participant({
+          displayName: 'Олег',
+          fullName: 'Олег Петров',
+          userId: 'u-oleg',
+          livekitIdentity: 'lk-oleg',
+        }),
+      ],
+      llmText: JSON.stringify({
+        tasks: [
+          {
+            title: 'Без исполнителя',
+            assignee: null,
+            dueDate: '2026-05-30',
+            suggestedDueDate: '2026-05-30',
+            confidence: 0.8,
+            sourceQuote: 'Надо сделать Х',
+          },
+        ],
+      }),
+    });
+    prisma.meeting.findFirst.mockResolvedValueOnce({
+      id: 'm-1',
+      tenantId: 'org-1',
+      ownerId: 'owner-1',
+      title: 'DEV — Спринт 21',
+      type: 'standup',
+      startedAt: new Date('2026-05-24T10:00:00Z'),
+      endedAt: new Date('2026-05-24T10:30:00Z'),
+      cardId: null,
+      transcript: {
+        turns: [
+          {
+            speaker: 'Олег',
+            text: 'Надо сделать Х',
+            startSec: 0,
+            endSec: 5,
+            speakerLivekitIdentity: 'lk-oleg',
+          },
+        ],
+        roomChat: null,
+      },
+      aiResult: null,
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    expect(probe.suggest).toHaveBeenCalledTimes(1);
+    const probeArg = probe.suggest.mock.calls[0]?.[0] as {
+      recipientCandidates: string[];
+      payload: { message: string; suggestedQuestion: string };
+    };
+    expect(probeArg.recipientCandidates).toEqual(['u-oleg']);
+    expect(probeArg.payload.message).toContain('удалить');
+    expect(probeArg.payload.suggestedQuestion).toContain('удалить');
+  });
+
+  it('Ф5: автор реплики не определён (нет участника с userId) → probe.suggest recipient=ownerId (fallback)', async () => {
+    const { service, probe } = mkService({
+      participants: [],
+      llmText: JSON.stringify({
+        tasks: [
+          {
+            title: 'Без исполнителя',
+            assignee: null,
+            dueDate: '2026-05-30',
+            suggestedDueDate: '2026-05-30',
+            confidence: 0.8,
+            sourceQuote: 'Надо сделать Х',
+          },
+        ],
+      }),
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    expect(probe.suggest).toHaveBeenCalledTimes(1);
+    const probeArg = probe.suggest.mock.calls[0]?.[0] as {
+      recipientCandidates: string[];
+    };
+    expect(probeArg.recipientCandidates).toEqual(['owner-1']);
+  });
+
   it('A5: задача с исполнителем → probe.suggest НЕ вызван', async () => {
     const { service, prisma, probe } = mkService({
       orgResolveResult: {

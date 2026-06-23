@@ -25,6 +25,7 @@ export interface Segment {
    * пишется (fail-closed). Свойство присутствует ТОЛЬКО у chatbox-сегментов.
    */
   authorPersonId?: string | null;
+  authorExternalLabel?: string | null;
   messageExternalId?: string | null;
 }
 
@@ -296,6 +297,9 @@ export class SegmentBuilderService {
           // (иначе встречи получили бы authorPersonId=null вместо undefined).
           ...(group[0]?.authorPersonId !== undefined
             ? { authorPersonId: group[0].authorPersonId }
+            : {}),
+          ...(group[0]?.authorPersonId === null
+            ? { authorExternalLabel: speaker }
             : {}),
           ...(buffer[0]?.messageExternalId !== undefined
             ? { messageExternalId: buffer[0].messageExternalId }

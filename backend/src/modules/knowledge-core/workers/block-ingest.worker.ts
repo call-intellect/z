@@ -936,6 +936,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         ? Math.min(block.confidence, reportConfidenceCap)
         : block.confidence;
 
+      const evidenceAuthor = await this.resolveEvidenceAuthor(args.segments, block, event);
+
       const blockId = await this.prisma.$transaction(async (tx) => {
         const ideaBlock = await tx.ideaBlock.create({
           data: {
@@ -979,6 +981,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             startMs: block.evidenceStartMs,
             endMs: block.evidenceEndMs,
             sourceMessageExternalId: this.resolveEvidenceMessageId(block, args.segments),
+            authorPersonId: evidenceAuthor.authorPersonId,
+            authorLabel: evidenceAuthor.authorLabel,
           },
         });
         const propertySpansValue = this.buildPropertySpans(block, evidence.id);
@@ -1437,6 +1441,62 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           block.evidenceStartMs <= s.endMs,
       ) ?? null;
     return seg?.messageExternalId ?? null;
+  }
+
+  private async resolveEvidenceAuthor(
+    segments: Segment[] | undefined,
+    block: ExtractedBlock,
+    event: RawEvent,
+  ): Promise<{ authorPersonId: string | null; authorLabel: string | null }> {
+    const empty = { authorPersonId: null, authorLabel: null };
+    try {
+      if (!Array.isArray(segments) || segments.length === 0) return empty;
+      const seg =
+        segments.find(
+          (s) =>
+            s.endMs > 0 &&
+            block.evidenceStartMs >= s.startMs &&
+            block.evidenceStartMs <= s.endMs,
+        ) ?? null;
+      if (!seg) return empty;
+
+      const segHasAuthor = Object.prototype.hasOwnProperty.call(seg, 'authorPersonId');
+      if (segHasAuthor) {
+        const segAuthor = seg.authorPersonId ?? null;
+        if (segAuthor) {
+          const person = await this.prisma.person.findUnique({
+            where: { id: segAuthor },
+            select: { name: true },
+          });
+          return {
+            authorPersonId: segAuthor,
+            authorLabel: person?.name ?? seg.speakers?.[0] ?? null,
+          };
+        }
+        return {
+          authorPersonId: null,
+          authorLabel: seg.authorExternalLabel ?? seg.speakers?.[0] ?? 'Клиент',
+        };
+      }
+
+      const speakerParticipantId = seg.speakerParticipantId ?? null;
+      const speakerName = seg.speakers?.[0] ?? null;
+      const personId = await this.entities.resolveSubjectPersonId(event.tenantId, {
+        speakerParticipantId,
+        speakerName,
+        authorUserId: null,
+        authorPersonId: null,
+        authorEmail: null,
+      });
+      if (!personId) return empty;
+      const person = await this.prisma.person.findUnique({
+        where: { id: personId },
+        select: { name: true },
+      });
+      return { authorPersonId: personId, authorLabel: person?.name ?? speakerName };
+    } catch {
+      return empty;
+    }
   }
 
   private async linkCommitmentRecipient(args: {

@@ -65,6 +65,7 @@ interface Mocks {
     issue: { findFirst: ReturnType<typeof vi.fn> };
     taskSource: { create: ReturnType<typeof vi.fn> };
     membership: { findFirst: ReturnType<typeof vi.fn> };
+    person: { findMany: ReturnType<typeof vi.fn> };
     $queryRaw: ReturnType<typeof vi.fn>;
     $transaction: ReturnType<typeof vi.fn>;
   };
@@ -105,6 +106,7 @@ function buildService(linkSemantics: 'link' | 'delete' = 'link'): {
       membership: {
         findFirst: vi.fn().mockResolvedValue({ userId: 'owner-1' }),
       },
+      person: { findMany: vi.fn().mockResolvedValue([]) },
       $queryRaw: vi.fn().mockResolvedValue([]),
       $transaction: vi.fn(),
     },
@@ -412,5 +414,81 @@ describe('Specialist315TasksService.processBlock', () => {
     expect(m.taskDedup.evaluate).not.toHaveBeenCalled();
     expect(m.prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
     expect(m.prisma.taskSource.create).not.toHaveBeenCalled();
+  });
+
+  it('(m) evidence с authorLabel → label попадает в userMessage для LLM', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(
+      makeBlock('chatbox', {
+        evidence: [
+          {
+            quote: 'подготовь смету по проекту Альфа',
+            sourceType: 'chatbox',
+            authorPersonId: null,
+            authorLabel: 'Клиент [Пётр]',
+          },
+        ],
+      }),
+    );
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson()));
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.llm.call).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userMessage: expect.stringContaining('Клиент [Пётр]'),
+      }),
+    );
+    expect(m.llm.call).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userMessage: expect.stringContaining('автор: Клиент [Пётр]'),
+      }),
+    );
+    expect(m.prisma.person.findMany).not.toHaveBeenCalled();
+  });
+
+  it('(n) evidence с authorPersonId без label → имя Person резолвится и попадает в userMessage', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(
+      makeBlock('chatbox', {
+        evidence: [
+          {
+            quote: 'подготовь смету по проекту Альфа',
+            sourceType: 'chatbox',
+            authorPersonId: 'p-manager',
+            authorLabel: null,
+          },
+        ],
+      }),
+    );
+    m.prisma.person.findMany.mockResolvedValue([
+      { id: 'p-manager', name: 'Сергей Менеджеров' },
+    ]);
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson()));
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.person.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: TENANT,
+          id: { in: ['p-manager'] },
+        }),
+      }),
+    );
+    expect(m.llm.call).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userMessage: expect.stringContaining('автор: Сергей Менеджеров'),
+      }),
+    );
+  });
+
+  it('(o) evidence без авторства → userMessage без « — автор:» (нет регрессии)', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson()));
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    const callArg = m.llm.call.mock.calls[0]![0] as { userMessage: string };
+    expect(callArg.userMessage).not.toContain('— автор:');
+    expect(m.prisma.person.findMany).not.toHaveBeenCalled();
   });
 });

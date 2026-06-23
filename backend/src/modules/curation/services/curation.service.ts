@@ -24,6 +24,7 @@ import {
   MultiAgentDebateService,
 } from '../../ai/services/multi-agent-debate.service';
 import { ConversationalService } from '../../conversational/conversational.service';
+import { ProvenanceService } from '../../knowledge-core/services/provenance.service';
 import { levelRu, resourceTypeRu } from '../../pending-actions/resource-type-ru';
 import { SkillTraitCategoryService } from '../../skills/services/skill-trait-categories.service';
 import type {
@@ -116,6 +117,9 @@ export class CurationService {
     @Optional()
     @Inject(MultiAgentDebateService)
     private readonly debate: MultiAgentDebateService | null = null,
+    @Optional()
+    @Inject(ProvenanceService)
+    private readonly provenance: ProvenanceService | null = null,
   ) {}
 
   async triage(input: TriageInput): Promise<TriageResult> {
@@ -1043,12 +1047,28 @@ export class CurationService {
   private async runAiVerifier(input: TriageInput): Promise<DebateVerdict | null> {
     if (!this.debate) return null;
     try {
+      let contextBlocks: unknown[] = [];
+      if (this.provenance) {
+        try {
+          const quotes = await this.provenance.resolveQuotesForJudge(
+            input.tenantId,
+            input.resourceType,
+            input.resourceId,
+            5,
+          );
+          if (quotes.length > 0) {
+            contextBlocks = quotes.map((quote) => ({ quote }));
+          }
+        } catch {
+          contextBlocks = [];
+        }
+      }
       const verdict = await this.debate.judge({
         taskFamily: 'curation-verify',
         taskType: 'debate-curation-verify',
         task: `Карточка ${input.resourceType} корректна, обоснована и должна быть канонизирована в память компании? Verdict строго: accept | reject.`,
         candidates: [{ resourceType: input.resourceType, candidate: input.proposedPayload }],
-        contextBlocks: [],
+        contextBlocks,
         tenantId: input.tenantId,
       });
       if (verdict.fallbackUsed === 'provider_unavailable' && verdict.votes.length === 0) {

@@ -542,6 +542,38 @@ export class ProvenanceService {
     };
   }
 
+  async resolveQuotesForJudge(
+    tenantId: string,
+    entityType: string,
+    entityId: string,
+    limit = 5,
+  ): Promise<string[]> {
+    const VALID: ReadonlyArray<ProvenanceEntityType> = [
+      'decision',
+      'issue',
+      'task',
+      'regulation',
+      'instruction',
+      'block',
+    ];
+    if (!VALID.includes(entityType as ProvenanceEntityType)) return [];
+    const blockIds = await this.collectSourceBlockIds(
+      entityType as ProvenanceEntityType,
+      entityId,
+      tenantId,
+    );
+    if (blockIds.length === 0) return [];
+    const evs = await this.prisma.ideaBlockEvidence.findMany({
+      where: { blockId: { in: blockIds } },
+      select: { quote: true },
+      orderBy: [{ startMs: 'asc' }, { createdAt: 'asc' }],
+      take: limit,
+    });
+    return evs
+      .map((e) => (typeof e.quote === 'string' ? e.quote.trim() : ''))
+      .filter((q) => q.length > 0);
+  }
+
   private async resolveDocumentPaging(
     tenantId: string,
     documentIds: string[],

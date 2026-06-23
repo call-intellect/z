@@ -23,6 +23,7 @@ import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { type IntakeAutoTriageJobData, TRACKER_QUEUE_NAMES } from '../queues';
+import { AssigneeResolverService } from '../services/assignee-resolver.service';
 import { linkDerivedDecisionsForIssue } from '../services/decision-task-link.util';
 import { IssuesService } from '../services/issues.service';
 import { ProjectsService } from '../services/projects.service';
@@ -94,6 +95,9 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
+    @Optional()
+    @Inject(AssigneeResolverService)
+    private readonly assigneeResolver?: AssigneeResolverService,
   ) {}
 
   onModuleInit(): void {
@@ -258,14 +262,18 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
       parsed.suggestedProjectIdentifier,
       intake.suggestedProjectId,
     );
-    const suggestedAssigneeId =
-      intake.source === 'meeting'
-        ? intake.suggestedAssigneeId
-        : resolveAssigneeUserId(
-            people,
-            parsed.suggestedAssigneeHint ?? null,
-            intake.suggestedAssigneeId,
-          );
+    let suggestedAssigneeId: string | null;
+    if (intake.source === 'meeting') {
+      suggestedAssigneeId = intake.suggestedAssigneeId;
+    } else {
+      const hint = (parsed.suggestedAssigneeHint ?? '').trim();
+      if (hint && this.assigneeResolver) {
+        const r = await this.assigneeResolver.resolve(tenantId, hint);
+        suggestedAssigneeId = r.kind === 'resolved' ? r.userId : intake.suggestedAssigneeId;
+      } else {
+        suggestedAssigneeId = intake.suggestedAssigneeId;
+      }
+    }
     const suggestedGoalId = resolveGoalId(
       goals,
       parsed.suggestedGoalName ?? null,
@@ -723,26 +731,6 @@ function resolveProjectId(
     if (found) return found.id;
   }
   return fallback;
-}
-
-function resolveAssigneeUserId(
-  people: Array<{ name: string; userId: string | null }>,
-  hint: string | null | undefined,
-  fallback: string | null,
-): string | null {
-  if (!hint || !hint.trim()) return fallback;
-  const trimmed = hint.trim().toLowerCase();
-  let found = people.find((p) => p.name.toLowerCase() === trimmed);
-  if (!found) {
-    const first = trimmed.split(/\s+/)[0] ?? '';
-    if (first.length >= 2) {
-      const matches = people.filter((p) => p.name.toLowerCase().includes(first));
-      if (matches.length === 1) {
-        found = matches[0];
-      }
-    }
-  }
-  return found?.userId ?? fallback;
 }
 
 function resolveGoalId(

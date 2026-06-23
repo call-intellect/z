@@ -7,6 +7,7 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 import type { IntakeAutoTriageJobData } from '../queues';
+import type { AssigneeResolverService } from '../services/assignee-resolver.service';
 import type { IssuesService } from '../services/issues.service';
 import type { ProjectsService } from '../services/projects.service';
 
@@ -51,6 +52,7 @@ interface MkOpts {
   noProject?: boolean;
   autoAcceptSources?: string[];
   meetingAlwaysPromote?: boolean;
+  resolverResult?: unknown;
 }
 
 function mkWorker(opts?: MkOpts): {
@@ -59,6 +61,7 @@ function mkWorker(opts?: MkOpts): {
   llm: { call: ReturnType<typeof vi.fn> };
   issues: { create: ReturnType<typeof vi.fn> };
   projects: { create: ReturnType<typeof vi.fn> };
+  resolver: { resolve: ReturnType<typeof vi.fn> };
   metrics: {
     incAiIntakeAutoAccepted: ReturnType<typeof vi.fn>;
     incAiIntakeSuggested: ReturnType<typeof vi.fn>;
@@ -147,6 +150,10 @@ function mkWorker(opts?: MkOpts): {
     incAiIntakeSuggested: vi.fn(),
   };
 
+  const resolver = {
+    resolve: vi.fn().mockResolvedValue(opts?.resolverResult ?? { kind: 'not_found' }),
+  };
+
   const redis = { client: {} as unknown } as unknown as RedisService;
 
   const cfg = {
@@ -166,8 +173,9 @@ function mkWorker(opts?: MkOpts): {
     projects as unknown as ProjectsService,
     cfg,
     metrics as unknown as BusinessMetricsService,
+    resolver as unknown as AssigneeResolverService,
   );
-  return { worker, prisma, llm, issues, projects, metrics };
+  return { worker, prisma, llm, issues, projects, resolver, metrics };
 }
 
 function jobOf(data: IntakeAutoTriageJobData): Job<IntakeAutoTriageJobData> {
@@ -257,8 +265,9 @@ describe('IntakeAutoTriageWorker', () => {
   });
 
   it('W4: telegram + confidence 0.8 + assignee и проект найдены → авто-приём (Issue создан)', async () => {
-    const { worker, issues, projects, metrics } = mkWorker({
+    const { worker, issues, projects, resolver, metrics } = mkWorker({
       intake: { source: 'telegram', externalSource: 'telegram' },
+      resolverResult: { kind: 'resolved', userId: 'user-ivanov', name: 'Иванов Сергей', via: 'name' },
       llmText: JSON.stringify({
         suggestedProjectIdentifier: 'DEV',
         suggestedAssigneeHint: 'Иванов Сергей',
@@ -270,6 +279,7 @@ describe('IntakeAutoTriageWorker', () => {
       }),
     });
     await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
+    expect(resolver.resolve).toHaveBeenCalledWith('org-1', 'Иванов Сергей');
     expect(issues.create).toHaveBeenCalledTimes(1);
     const createArg = issues.create.mock.calls[0];
     expect(createArg?.[0]).toBe('proj-dev');
@@ -316,6 +326,7 @@ describe('IntakeAutoTriageWorker', () => {
     const { worker, prisma, issues, projects, metrics } = mkWorker({
       intake: { source: 'telegram', externalSource: 'telegram' },
       noProject: true,
+      resolverResult: { kind: 'resolved', userId: 'user-ivanov', name: 'Иванов Сергей', via: 'name' },
       llmText: JSON.stringify({
         suggestedProjectIdentifier: null,
         suggestedAssigneeHint: 'Иванов Сергей',
@@ -345,6 +356,7 @@ describe('IntakeAutoTriageWorker', () => {
     const { worker, prisma, issues, projects } = mkWorker({
       intake: { source: 'telegram', externalSource: 'telegram' },
       noProject: true,
+      resolverResult: { kind: 'resolved', userId: 'user-ivanov', name: 'Иванов Сергей', via: 'name' },
       llmText: JSON.stringify({
         suggestedProjectIdentifier: null,
         suggestedAssigneeHint: 'Иванов Сергей',
@@ -567,5 +579,65 @@ describe('IntakeAutoTriageWorker', () => {
     expect(metrics.incAiIntakeSuggested).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'pending', source: 'meeting' }),
     );
+  });
+
+  it('Ф2: не-meeting + hint → единый резолвер вызван, resolved userId использован', async () => {
+    const { worker, issues, resolver } = mkWorker({
+      intake: { source: 'telegram', externalSource: 'telegram' },
+      resolverResult: { kind: 'resolved', userId: 'user-sergey', name: 'Сергей', via: 'name' },
+      llmText: JSON.stringify({
+        suggestedProjectIdentifier: 'DEV',
+        suggestedAssigneeHint: 'Сергею',
+        suggestedPriority: 'high',
+        suggestedLabels: [],
+        confidence: 0.95,
+      }),
+    });
+    await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
+    expect(resolver.resolve).toHaveBeenCalledWith('org-1', 'Сергею');
+    expect(issues.create).toHaveBeenCalledTimes(1);
+    const dto = issues.create.mock.calls[0]?.[1] as { assigneeUserIds: string[] };
+    expect(dto.assigneeUserIds).toEqual(['user-sergey']);
+  });
+
+  it('Ф2: source=meeting → единый резолвер НЕ вызван (используется intake.suggestedAssigneeId)', async () => {
+    const { worker, issues, resolver } = mkWorker({
+      intake: { source: 'meeting', suggestedAssigneeId: 'user-from-meeting' },
+      llmText: JSON.stringify({
+        suggestedProjectIdentifier: 'DEV',
+        suggestedAssigneeHint: 'Сергею',
+        suggestedPriority: 'high',
+        suggestedLabels: [],
+        confidence: 0.95,
+      }),
+    });
+    await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
+    expect(resolver.resolve).not.toHaveBeenCalled();
+    expect(issues.create).toHaveBeenCalledTimes(1);
+    const dto = issues.create.mock.calls[0]?.[1] as { assigneeUserIds: string[] };
+    expect(dto.assigneeUserIds).toEqual(['user-from-meeting']);
+  });
+
+  it('Ф2: collective → assignee откатывается на intake.suggestedAssigneeId (не перезаписывается)', async () => {
+    const { worker, issues, resolver } = mkWorker({
+      intake: {
+        source: 'telegram',
+        externalSource: 'telegram',
+        suggestedAssigneeId: 'user-fallback',
+      },
+      resolverResult: { kind: 'collective', label: 'отдел дизайна' },
+      llmText: JSON.stringify({
+        suggestedProjectIdentifier: 'DEV',
+        suggestedAssigneeHint: 'отдел дизайна',
+        suggestedPriority: 'high',
+        suggestedLabels: [],
+        confidence: 0.95,
+      }),
+    });
+    await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
+    expect(resolver.resolve).toHaveBeenCalledWith('org-1', 'отдел дизайна');
+    expect(issues.create).toHaveBeenCalledTimes(1);
+    const dto = issues.create.mock.calls[0]?.[1] as { assigneeUserIds: string[] };
+    expect(dto.assigneeUserIds).toEqual(['user-fallback']);
   });
 });

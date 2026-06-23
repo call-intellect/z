@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../../../ai/services/llm-router.service';
+import type { AssigneeResolverService } from '../../../tracker/services/assignee-resolver.service';
 
 import { TelegramTaskParserService } from './telegram-task-parser.service';
 
@@ -36,32 +37,51 @@ function makeLlm(): LlmRouterService {
   return { call: vi.fn() } as unknown as LlmRouterService;
 }
 
-function makeParser(prisma: PrismaMock, llm: LlmRouterService): TelegramTaskParserService {
-  return new TelegramTaskParserService(prisma as unknown as PrismaService, llm);
+interface ResolverMock {
+  resolve: ReturnType<typeof vi.fn>;
+}
+
+function makeResolver(): ResolverMock {
+  return { resolve: vi.fn().mockResolvedValue({ kind: 'not_found' }) };
+}
+
+function makeParser(
+  prisma: PrismaMock,
+  llm: LlmRouterService,
+  resolver?: ResolverMock,
+): TelegramTaskParserService {
+  return new TelegramTaskParserService(
+    prisma as unknown as PrismaService,
+    llm,
+    null,
+    resolver as unknown as AssigneeResolverService,
+  );
 }
 
 describe('TelegramTaskParserService', () => {
   let prisma: PrismaMock;
   let llm: LlmRouterService;
+  let resolver: ResolverMock;
   let parser: TelegramTaskParserService;
 
   beforeEach(() => {
     prisma = makePrisma();
     llm = makeLlm();
-    parser = makeParser(prisma, llm);
+    resolver = makeResolver();
+    parser = makeParser(prisma, llm, resolver);
   });
 
   describe('parseCreateTask', () => {
-    it('возвращает intakeIssueId + autoTriageEnqueued=true при confidence ≥ 0.85', async () => {
+    it('возвращает intakeIssueId + autoTriageEnqueued=true при confidence ≥ 0.85 (исполнитель через единый резолвер)', async () => {
       vi.mocked(llm.call).mockResolvedValue({
         text: JSON.stringify({
           title: 'Замерить и привезти расчёт по объекту Тверская',
-          suggestedAssigneeHint: 'Иванов',
+          suggestedAssigneeHint: 'Сергею',
           suggestedDueDate: '2026-05-24',
           suggestedProjectHint: 'Тверская',
           suggestedPriority: 'high',
           confidence: 0.92,
-          sourceQuote: 'Иванов, завтра в 15...',
+          sourceQuote: 'Сергею, завтра в 15...',
         }),
         modelUsed: 'deepseek:deepseek-chat',
         inputTokens: 100,
@@ -69,25 +89,29 @@ describe('TelegramTaskParserService', () => {
         cachedTokens: 0,
         durationMs: 500,
       });
-      prisma.person.findMany
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([{ userId: 'u-ivanov', name: 'Иванов Сергей' }]);
+      resolver.resolve.mockResolvedValueOnce({
+        kind: 'resolved',
+        userId: 'u1',
+        name: 'Сергей',
+        via: 'name',
+      });
       prisma.project.findFirst.mockResolvedValueOnce({ id: 'proj-1' });
 
       const result = await parser.parseCreateTask({
         tenantId: 'org-1',
         userId: 'u-author',
-        rawText: 'Иванов, завтра в 15, объект Тверская — замерить и привезти расчёт',
+        rawText: 'Сергею, завтра в 15, объект Тверская — замерить и привезти расчёт',
         externalId: '12345:67',
       });
 
+      expect(resolver.resolve).toHaveBeenCalledWith('org-1', 'Сергею');
       expect(result.intakeIssueId).toBe('intake-1');
       expect(result.autoTriageEnqueued).toBe(true);
       expect(result.confidence).toBe(0.92);
       expect(result.reason).toBe('ok');
       expect(result.suggested).toEqual({
         title: 'Замерить и привезти расчёт по объекту Тверская',
-        suggestedAssigneeId: 'u-ivanov',
+        suggestedAssigneeId: 'u1',
         suggestedProjectId: 'proj-1',
         suggestedDueDate: expect.any(String),
         suggestedPriority: 'high',
@@ -101,9 +125,44 @@ describe('TelegramTaskParserService', () => {
       expect(createArg.data.source).toBe('telegram');
       expect(createArg.data.externalSource).toBe('telegram');
       expect(createArg.data.externalId).toBe('12345:67');
-      expect(createArg.data.suggestedAssigneeId).toBe('u-ivanov');
+      expect(createArg.data.suggestedAssigneeId).toBe('u1');
       expect(createArg.data.suggestedProjectId).toBe('proj-1');
       expect(createArg.data.confidence).toBeInstanceOf(Prisma.Decimal);
+    });
+
+    it('исполнитель not_found → suggestedAssigneeId=null (резолвер вызван с hint)', async () => {
+      vi.mocked(llm.call).mockResolvedValue({
+        text: JSON.stringify({
+          title: 'Замерить и привезти расчёт по объекту Тверская',
+          suggestedAssigneeHint: 'Сергею',
+          suggestedDueDate: '2026-05-24',
+          suggestedProjectHint: 'Тверская',
+          suggestedPriority: 'high',
+          confidence: 0.92,
+          sourceQuote: 'Сергею, завтра в 15...',
+        }),
+        modelUsed: 'deepseek:deepseek-chat',
+        inputTokens: 100,
+        outputTokens: 50,
+        cachedTokens: 0,
+        durationMs: 500,
+      });
+      resolver.resolve.mockResolvedValueOnce({ kind: 'not_found' });
+      prisma.project.findFirst.mockResolvedValueOnce({ id: 'proj-1' });
+
+      const result = await parser.parseCreateTask({
+        tenantId: 'org-1',
+        userId: 'u-author',
+        rawText: 'Сергею, завтра — замерить и привезти расчёт',
+        externalId: '12345:68',
+      });
+
+      expect(resolver.resolve).toHaveBeenCalledWith('org-1', 'Сергею');
+      expect(result.suggested?.suggestedAssigneeId).toBeNull();
+      const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
+        data: Record<string, unknown>;
+      };
+      expect(createArg.data.suggestedAssigneeId).toBeNull();
     });
 
     it('autoTriageEnqueued=false при confidence < 0.85', async () => {

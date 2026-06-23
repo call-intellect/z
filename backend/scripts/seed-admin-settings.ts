@@ -1762,6 +1762,12 @@ function buildSettings(): SettingSeed[] {
       'Минимальная уверенность кандидата (0..1), ниже которой исполнитель не предлагается',
     ],
     [
+      'taskRouting.autoAssignMinConfidence',
+      envFloat('TASK_ROUTING_AUTO_ASSIGN_MIN_CONFIDENCE', 0.75),
+      'low',
+      'Подбор исполнителя: порог уверенности для АВТО-назначения по навыкам (без вопроса человеку)',
+    ],
+    [
       'taskRouting.topK',
       envInt('TASK_ROUTING_TOP_K', 3),
       'low',

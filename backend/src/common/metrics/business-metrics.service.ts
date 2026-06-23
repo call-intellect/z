@@ -659,6 +659,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private routingSuggestionTotal!: Counter<'match_path'>;
   private routingSuggestionAcceptedTotal!: Counter<string>;
   private routingNoCandidateTotal!: Counter<string>;
+  private taskSkillRoutingAssignedTotal!: Counter<'path'>;
   private companyCapsuleInjectedTotal!: Counter<'surface'>;
   private subjectMemoryProbeSuppressedTotal!: Counter<'reason'>;
   private subjectMemoryRuleActivatedTotal!: Counter<never>;
@@ -2786,6 +2787,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'routing_no_candidate_total',
       help: 'Маршрутизация по скиллам: подходящий исполнитель не найден (ни одного кандидата выше порога).',
       labelNames: [] as const,
+    });
+    this.taskSkillRoutingAssignedTotal = this.getOrCreateCounter({
+      name: 'task_skill_routing_assigned_total',
+      help: 'Авто-назначение исполнителя по навыкам (умный подбор) в авто-пути (path): meeting | intake.',
+      labelNames: ['path'] as const,
     });
     this.companyCapsuleInjectedTotal = this.getOrCreateCounter({
       name: 'company_capsule_injected_total',
@@ -6445,6 +6451,10 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incRoutingNoCandidate(): void {
     this.routingNoCandidateTotal.inc();
+  }
+
+  incTaskSkillRoutingAssigned(args: { path: 'meeting' | 'intake' }): void {
+    this.taskSkillRoutingAssignedTotal.inc({ path: args.path });
   }
 
   incCompanyCapsuleInjected(args: { surface: string }): void {

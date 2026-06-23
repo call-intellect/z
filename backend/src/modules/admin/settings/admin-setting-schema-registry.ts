@@ -81,6 +81,7 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['taskRouting.enabled', z.boolean()],
   ['taskRouting.suggestMinConfidence', UNIT_INTERVAL],
+  ['taskRouting.autoAssignMinConfidence', UNIT_INTERVAL],
   ['taskRouting.topK', POSITIVE_INT],
 
   ['meetings.taskDedupeEnabled', z.boolean()],

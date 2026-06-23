@@ -1291,6 +1291,7 @@ export class TypedConfigService {
     return {
       enabled: this.resolveSync<boolean>('taskRouting.enabled', undefined, true),
       suggestMinConfidence: this.resolveSync<number>('taskRouting.suggestMinConfidence', undefined, 0.6),
+      autoAssignMinConfidence: this.resolveSync<number>('taskRouting.autoAssignMinConfidence', undefined, 0.75),
       topK: this.resolveSync<number>('taskRouting.topK', undefined, 3),
     } as const;
   }

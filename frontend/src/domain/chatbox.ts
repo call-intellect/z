@@ -327,8 +327,8 @@ export type ChatboxCustomerView = {
   displayName: string;
   linkMode: ChatboxLinkMode;
   linkModeLabel: string;
-  linkedPersonId: string | null;
-  linkedPersonName: string | null;
+  linkedCustomerId: string | null;
+  linkedCustomerName: string | null;
 };
 
 export function mapCustomer(api: ChatboxCustomerApi): ChatboxCustomerView {
@@ -341,8 +341,8 @@ export function mapCustomer(api: ChatboxCustomerApi): ChatboxCustomerView {
     displayName: api.name ?? api.email ?? api.phone ?? api.externalId,
     linkMode: api.linkMode,
     linkModeLabel: chatboxLinkModeLabel(api.linkMode),
-    linkedPersonId: api.linkedPerson?.id ?? null,
-    linkedPersonName: api.linkedPerson?.name ?? null,
+    linkedCustomerId: api.linkedCustomer?.id ?? null,
+    linkedCustomerName: api.linkedCustomer?.name ?? null,
   };
 }
 

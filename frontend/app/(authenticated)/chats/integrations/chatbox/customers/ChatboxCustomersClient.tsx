@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { ApiError } from "@/api/api-error";
 import { chatboxApi } from "@/api/chatbox.api";
-import { personsDomainApi } from "@/api/structure.api";
+import { customersApi } from "@/api/customers.api";
 import {
   chatboxLinkModeBadgeVariant,
   mapCustomer,
@@ -35,10 +35,10 @@ function errMessage(e: unknown, fallback: string): string {
 }
 
 function currentValue(customer: ChatboxCustomerView): string {
-  return customer.linkedPersonId ?? NONE_VALUE;
+  return customer.linkedCustomerId ?? NONE_VALUE;
 }
 
-type PersonOption = { id: string; name: string; email: string | null };
+type CustomerOption = { id: string; name: string; email: string | null };
 
 function MatchCell({
   value,
@@ -47,7 +47,7 @@ function MatchCell({
 }: {
   value: string;
   sourceEmail: string | null;
-  options: PersonOption[];
+  options: CustomerOption[];
 }) {
   if (value === NONE_VALUE) {
     return <span className="text-sm text-fg-tertiary">— Не связывать —</span>;
@@ -59,16 +59,16 @@ function MatchCell({
       </span>
     );
   }
-  const person = options.find((p) => p.id === value);
+  const option = options.find((p) => p.id === value);
   const isEmailMatch =
-    person?.email &&
+    option?.email &&
     sourceEmail &&
-    person.email.toLowerCase() === sourceEmail.toLowerCase();
+    option.email.toLowerCase() === sourceEmail.toLowerCase();
   return (
     <div className="min-w-0">
       <div className="flex items-center gap-1.5">
         <span className="truncate text-sm font-medium text-fg-primary">
-          {person?.name || "(без имени)"}
+          {option?.name || "(без имени)"}
         </span>
         {isEmailMatch && (
           <Badge variant="secondary" className="shrink-0 text-xs">
@@ -76,8 +76,8 @@ function MatchCell({
           </Badge>
         )}
       </div>
-      {person?.email && (
-        <div className="truncate text-xs text-fg-tertiary">{person.email}</div>
+      {option?.email && (
+        <div className="truncate text-xs text-fg-tertiary">{option.email}</div>
       )}
     </div>
   );
@@ -103,37 +103,39 @@ function ChatboxCustomersContent() {
     chatboxApi.listCustomers().then((list) => list.map(mapCustomer)),
   );
 
-  const { data: persons } = useSWR(
-    currentOrgId ? ["org-persons-external", currentOrgId] : null,
-    () => personsDomainApi.list(currentOrgId!, { relationship: "external" }),
+  const { data: orgCustomers } = useSWR(
+    currentOrgId ? ["org-customers", currentOrgId] : null,
+    () => customersApi.list({ limit: 200 }, currentOrgId!),
   );
 
-  const personOptions: PersonOption[] = (persons?.items ?? []).map((p) => ({
-    id: p.id,
-    name: p.fullName || "(без имени)",
-    email: p.email ?? null,
-  }));
+  const customerOptions: CustomerOption[] = (orgCustomers?.items ?? []).map(
+    (c) => ({
+      id: c.id,
+      name: c.name || "(без имени)",
+      email: c.email,
+    }),
+  );
 
   const [pending, setPending] = useState<Record<string, string>>({});
   const [applying, setApplying] = useState(false);
   const suggestionsApplied = useRef(false);
 
   useEffect(() => {
-    if (!customers || !persons || suggestionsApplied.current) return;
+    if (!customers || !orgCustomers || suggestionsApplied.current) return;
     suggestionsApplied.current = true;
     const suggestions: Record<string, string> = {};
     for (const c of customers) {
-      if (c.linkedPersonId) continue;
-      const match = (persons.items ?? []).find(
-        (p) =>
-          p.email &&
+      if (c.linkedCustomerId) continue;
+      const match = (orgCustomers.items ?? []).find(
+        (o) =>
+          o.email &&
           c.email &&
-          p.email.toLowerCase() === c.email.toLowerCase(),
+          o.email.toLowerCase() === c.email.toLowerCase(),
       );
       suggestions[c.id] = match ? match.id : CREATE_VALUE;
     }
     if (Object.keys(suggestions).length > 0) setPending(suggestions);
-  }, [customers, persons]);
+  }, [customers, orgCustomers]);
 
   const list = customers ?? [];
   const changed = list.filter((c) => {
@@ -148,7 +150,7 @@ function ChatboxCustomersContent() {
       const v = pending[c.id];
       try {
         if (v === CREATE_VALUE) {
-          await chatboxApi.createCustomerPerson(c.id);
+          await chatboxApi.createCustomer(c.id);
         } else {
           await chatboxApi.linkCustomer(c.id, v === NONE_VALUE ? null : v);
         }
@@ -180,8 +182,8 @@ function ChatboxCustomersContent() {
               Клиенты
             </h1>
             <p className="text-sm text-fg-secondary">
-              Свяжите клиентов Чат бокса с карточками людей компании, чтобы Кора
-              верно приписывала знания из переписок.
+              Свяжите клиентов Чат бокса с клиентами компании, чтобы Кора верно
+              приписывала знания из переписок.
             </p>
           </div>
         </div>
@@ -234,7 +236,7 @@ function ChatboxCustomersContent() {
                   <CustomerRow
                     key={customer.id}
                     customer={customer}
-                    personOptions={personOptions}
+                    customerOptions={customerOptions}
                     value={value}
                     dirty={value !== currentValue(customer)}
                     disabled={applying}
@@ -283,31 +285,31 @@ function ApplyBar({
 
 function CustomerRow({
   customer,
-  personOptions,
+  customerOptions,
   value,
   dirty,
   disabled,
   onChange,
 }: {
   customer: ChatboxCustomerView;
-  personOptions: PersonOption[];
+  customerOptions: CustomerOption[];
   value: string;
   dirty: boolean;
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
-  const allOptions: PersonOption[] =
-    customer.linkedPersonId &&
-    !personOptions.some((p) => p.id === customer.linkedPersonId)
+  const allOptions: CustomerOption[] =
+    customer.linkedCustomerId &&
+    !customerOptions.some((p) => p.id === customer.linkedCustomerId)
       ? [
           {
-            id: customer.linkedPersonId,
-            name: customer.linkedPersonName ?? "(без имени)",
+            id: customer.linkedCustomerId,
+            name: customer.linkedCustomerName ?? "(без имени)",
             email: null,
           },
-          ...personOptions,
+          ...customerOptions,
         ]
-      : personOptions;
+      : customerOptions;
 
   return (
     <div

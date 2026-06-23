@@ -163,7 +163,7 @@ export type ChatboxCustomerApi = {
   phone: string | null;
   name: string | null;
   linkMode: ChatboxLinkMode;
-  linkedPerson: { id: string; name: string | null } | null;
+  linkedCustomer: { id: string; name: string | null } | null;
 };
 
 export type ListChatsQuery = {
@@ -271,15 +271,17 @@ export const chatboxApi = {
   listCustomers: () =>
     apiClient.get<ChatboxCustomerApi[]>("/api/v1/chatbox/customers"),
 
-  linkCustomer: (id: string, personId: string | null) =>
+  linkCustomer: (id: string, customerId: string | null) =>
     apiClient.put<{ ok: true; customer: ChatboxCustomerApi }>(
       "/api/v1/chatbox/customers/" + encodeURIComponent(id) + "/link",
-      { personId },
+      { customerId },
     ),
 
-  createCustomerPerson: (id: string) =>
+  createCustomer: (id: string) =>
     apiClient.post<{ ok: true; customer: ChatboxCustomerApi }>(
-      "/api/v1/chatbox/customers/" + encodeURIComponent(id) + "/create-person",
+      "/api/v1/chatbox/customers/" +
+        encodeURIComponent(id) +
+        "/create-customer",
       {},
     ),
 };

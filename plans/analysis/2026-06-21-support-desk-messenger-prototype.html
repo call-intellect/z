@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Кора · Единый чат — прототип (Сообщения · Деск поддержки · Настройки)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0c0a13;
+    --surface: #16121f;
+    --surface-2: #1b1727;
+    --surface-3: #221d31;
+    --line: rgba(255,255,255,.07);
+    --line-strong: rgba(255,255,255,.12);
+    --fg: #ece9f5;
+    --fg-2: #aba5c2;
+    --fg-3: #746e8c;
+    --accent: #8b7cff;
+    --accent-2: #a78bfa;
+    --accent-soft: rgba(139,124,255,.14);
+    --mint: #2dd4bf;
+    --mint-soft: rgba(45,212,191,.14);
+    --amber: #fbbf24;
+    --amber-soft: rgba(251,191,36,.13);
+    --rose: #fb7185;
+    --rose-soft: rgba(251,113,133,.14);
+    --blue: #60a5fa;
+    --radius: 16px;
+    --shadow: 0 18px 50px -22px rgba(0,0,0,.75);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Manrope", system-ui, sans-serif;
+    background:
+      radial-gradient(1100px 600px at 12% -8%, rgba(139,124,255,.16), transparent 60%),
+      radial-gradient(900px 520px at 100% 0%, rgba(45,212,191,.08), transparent 55%),
+      var(--bg);
+    color: var(--fg); -webkit-font-smoothing: antialiased; overflow: hidden; font-size: 14px;
+  }
+  .mono { font-family: "JetBrains Mono", monospace; }
+  ::selection { background: var(--accent-soft); }
+
+  .app { display: flex; flex-direction: column; height: 100vh; }
+
+  .topbar {
+    display: flex; align-items: center; gap: 20px; padding: 0 22px; height: 60px; flex-shrink: 0;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(28,23,40,.7), rgba(18,15,26,.5)); backdrop-filter: blur(14px);
+  }
+  .brand { display: flex; align-items: center; gap: 11px; font-weight: 800; font-family: "Bricolage Grotesque"; letter-spacing: -.02em; font-size: 18px; }
+  .brand .dot { width: 28px; height: 28px; border-radius: 9px; background: linear-gradient(140deg, var(--accent), var(--mint)); display: grid; place-items: center; color: #0c0a13; font-size: 15px; font-weight: 800; box-shadow: 0 6px 18px -6px var(--accent); }
+  .brand small { color: var(--fg-3); font-weight: 500; font-family: "Manrope"; font-size: 12px; margin-left: 2px; }
+
+  .nav { display: flex; gap: 4px; background: var(--surface); padding: 4px; border-radius: 12px; border: 1px solid var(--line); }
+  .nav button { font: inherit; font-weight: 600; font-size: 13px; color: var(--fg-2); background: none; border: 0; padding: 8px 16px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; gap: 7px; transition: .18s; position: relative; }
+  .nav button.active { background: var(--accent-soft); color: #fff; box-shadow: inset 0 0 0 1px rgba(139,124,255,.3); }
+  .nav button:not(.active):hover { color: var(--fg); background: rgba(255,255,255,.03); }
+  .nav .ncount { font-size: 10.5px; font-weight: 700; background: var(--rose); color: #fff; border-radius: 10px; padding: 1px 6px; }
+
+  .topbar .spacer { flex: 1; }
+  .me { display: flex; align-items: center; gap: 10px; }
+  .me .who { text-align: right; line-height: 1.25; }
+  .me .who b { font-size: 13px; font-weight: 700; }
+  .me .who span { font-size: 11px; color: var(--fg-3); }
+  .avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; color: #0c0a13; flex-shrink: 0; }
+
+  .screen { flex: 1; min-height: 0; }
+  [hidden] { display: none !important; }
+
+  /* ===== 3-column messenger layout (shared by Messages & Desk) ===== */
+  .three { display: grid; grid-template-columns: 360px minmax(0,1fr) 312px; height: 100%; }
+
+  .col-list { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: linear-gradient(180deg, rgba(22,18,31,.55), transparent); }
+  .list-head { padding: 16px 16px 12px; }
+  .list-head h2 { font-family: "Bricolage Grotesque"; font-size: 19px; font-weight: 700; letter-spacing: -.02em; display: flex; align-items: center; gap: 9px; }
+  .pill-count { font-family: "Manrope"; font-size: 11px; font-weight: 700; color: var(--accent-2); background: var(--accent-soft); padding: 2px 9px; border-radius: 20px; }
+  .search { margin-top: 12px; position: relative; }
+  .search input { width: 100%; font: inherit; font-size: 13px; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px 9px 34px; outline: none; transition: .15s; }
+  .search input:focus { border-color: var(--line-strong); background: var(--surface-2); }
+  .search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--fg-3); }
+
+  .tabs { display: flex; gap: 5px; padding: 0 14px 12px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+  .tabs button { font: inherit; font-size: 12px; font-weight: 600; color: var(--fg-2); background: var(--surface); border: 1px solid var(--line); padding: 5px 11px; border-radius: 20px; cursor: pointer; transition: .15s; display: flex; align-items: center; gap: 6px; }
+  .tabs button .n { font-size: 11px; color: var(--fg-3); }
+  .tabs button.active { background: #fff; color: #14101e; border-color: #fff; }
+  .tabs button.active .n { color: #5b5570; }
+  .tabs button:not(.active):hover { border-color: var(--line-strong); color: var(--fg); }
+
+  .threads { overflow-y: auto; flex: 1; padding: 6px; }
+  .grp-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--fg-3); font-weight: 700; padding: 12px 12px 6px; }
+
+  /* recap hook card */
+  .recap-card {
+    margin: 8px 6px 4px; padding: 13px 14px; border-radius: 14px; cursor: pointer;
+    background: linear-gradient(140deg, rgba(139,124,255,.18), rgba(45,212,191,.12));
+    border: 1px solid rgba(139,124,255,.3); display: flex; align-items: center; gap: 12px; transition: .15s;
+  }
+  .recap-card:hover { border-color: var(--accent); }
+  .recap-card .ic { width: 38px; height: 38px; border-radius: 11px; background: linear-gradient(140deg, var(--accent), var(--mint)); display: grid; place-items: center; color: #0c0a13; flex-shrink: 0; }
+  .recap-card b { font-size: 14px; display: block; }
+  .recap-card span { font-size: 12px; color: var(--fg-2); }
+
+  .thread { display: grid; grid-template-columns: auto 1fr auto; gap: 11px; padding: 11px 12px; border-radius: 13px; cursor: pointer; position: relative; border: 1px solid transparent; transition: .14s; }
+  .thread:hover { background: var(--surface); }
+  .thread.active { background: var(--surface-2); border-color: var(--line-strong); }
+  .thread.active::before { content:""; position:absolute; left:0; top:14px; bottom:14px; width:3px; border-radius:3px; background: linear-gradient(var(--accent), var(--mint)); }
+  .thread .ava { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #0c0a13; position: relative; flex-shrink: 0; }
+  .thread .ava.grp { border-radius: 13px; font-size: 18px; }
+  .thread .ava .on-dot { position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: var(--mint); border: 2px solid var(--bg); }
+  .thread .mid { min-width: 0; }
+  .thread .row1 { display: flex; align-items: center; gap: 7px; }
+  .thread .subj { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .thread .prev { color: var(--fg-3); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; }
+  .thread .prev b { color: var(--fg-2); font-weight: 600; }
+  .thread .num { font-size: 10.5px; color: var(--fg-3); }
+  .thread .right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .thread .time { font-size: 10.5px; color: var(--fg-3); white-space: nowrap; }
+  .unread { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #0c0a13; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+
+  .kind-ic { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex-shrink: 0; font-size: 19px; }
+  .kind-ic.task { background: rgba(96,165,250,.16); }
+  .kind-ic.meet { background: rgba(167,139,250,.16); }
+
+  .chip { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
+  .chip.work  { background: rgba(96,165,250,.14); color: #93c5fd; }
+  .chip.wait  { background: var(--amber-soft); color: var(--amber); }
+  .chip.new   { background: var(--accent-soft); color: var(--accent-2); }
+  .chip.done  { background: var(--mint-soft); color: var(--mint); }
+  .dot-sla { width: 7px; height: 7px; border-radius: 50%; background: var(--rose); box-shadow: 0 0 0 3px var(--rose-soft); flex-shrink: 0; }
+
+  /* chat column */
+  .col-chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .chat-head { padding: 13px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 13px; background: linear-gradient(180deg, rgba(27,23,39,.5), transparent); backdrop-filter: blur(8px); }
+  .chat-head .ava { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; font-weight: 700; font-size: 17px; color: #0c0a13; flex-shrink: 0; }
+  .chat-head .htitle { min-width: 0; flex: 1; }
+  .chat-head h1 { font-family: "Bricolage Grotesque"; font-size: 17px; font-weight: 700; letter-spacing: -.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat-head .sub { display: flex; align-items: center; gap: 8px; margin-top: 3px; color: var(--fg-3); font-size: 12px; }
+  .head-btn { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--fg-2); display: grid; place-items: center; cursor: pointer; transition: .15s; }
+  .head-btn:hover { color: var(--fg); border-color: var(--line-strong); }
+
+  .ctrl { display: flex; gap: 8px; align-items: center; }
+  .select { display: flex; align-items: center; gap: 7px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 7px 11px; cursor: pointer; transition: .15s; font-size: 12.5px; font-weight: 600; color: var(--fg); }
+  .select:hover { border-color: var(--line-strong); background: var(--surface-2); }
+  .select .lbl { color: var(--fg-3); font-weight: 500; font-size: 11px; }
+  .select svg { color: var(--fg-3); }
+  .select .ava-sm { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; font-size: 10px; font-weight: 700; color: #0c0a13; }
+
+  /* "ask Kora" bar */
+  .ask-bar { margin: 12px 20px 0; display: flex; align-items: center; gap: 11px; padding: 11px 14px; border-radius: 13px; background: linear-gradient(140deg, rgba(45,212,191,.1), rgba(139,124,255,.08)); border: 1px solid rgba(45,212,191,.25); cursor: pointer; transition: .15s; }
+  .ask-bar:hover { border-color: var(--mint); }
+  .ask-bar .ic { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(140deg, var(--mint), var(--accent)); display: grid; place-items: center; color: #0c0a13; flex-shrink: 0; }
+  .ask-bar input { flex: 1; background: none; border: 0; outline: none; color: var(--fg); font: inherit; font-size: 13px; }
+  .ask-bar input::placeholder { color: var(--fg-2); }
+
+  .stream { flex: 1; overflow-y: auto; padding: 18px 20px 12px; display: flex; flex-direction: column; gap: 14px; }
+  .day-sep { text-align: center; color: var(--fg-3); font-size: 11px; position: relative; margin: 4px 0; }
+  .day-sep span { background: var(--bg); padding: 0 12px; position: relative; z-index: 1; }
+  .day-sep::before { content:""; position:absolute; left:0; right:0; top:50%; height:1px; background: var(--line); }
+
+  .msg { max-width: 76%; display: flex; gap: 10px; }
+  .msg .send-ava { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; font-size: 12px; color: #0c0a13; flex-shrink: 0; align-self: flex-end; }
+  .msg .body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .msg .meta { font-size: 11.5px; color: var(--fg-3); display: flex; align-items: center; gap: 7px; padding: 0 4px; }
+  .msg .meta b { color: var(--fg-2); font-weight: 600; }
+  .bubble { padding: 10px 13px; border-radius: 15px; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; position: relative; }
+  .msg .bubble .msg-actions { position: absolute; top: -12px; right: 8px; display: none; gap: 2px; background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 9px; padding: 3px; box-shadow: var(--shadow); }
+  .msg:hover .bubble .msg-actions { display: flex; }
+  .msg-actions button { width: 26px; height: 26px; border-radius: 6px; border: 0; background: none; color: var(--fg-2); cursor: pointer; display: grid; place-items: center; }
+  .msg-actions button:hover { background: var(--surface-3); color: var(--fg); }
+
+  .msg.them { align-self: flex-start; }
+  .msg.them .bubble { background: var(--surface-2); border: 1px solid var(--line); border-bottom-left-radius: 5px; }
+  .msg.me { align-self: flex-end; flex-direction: row-reverse; }
+  .msg.me .meta { justify-content: flex-end; }
+  .msg.me .bubble { background: linear-gradient(150deg, rgba(139,124,255,.22), rgba(139,124,255,.12)); border: 1px solid rgba(139,124,255,.3); border-bottom-right-radius: 5px; }
+
+  /* voice message */
+  .voice { display: flex; align-items: center; gap: 11px; min-width: 220px; }
+  .voice .play { width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: #0c0a13; display: grid; place-items: center; flex-shrink: 0; cursor: pointer; }
+  .voice .wave { flex: 1; display: flex; align-items: center; gap: 2px; height: 28px; }
+  .voice .wave i { flex: 1; background: var(--accent-2); border-radius: 2px; opacity: .55; }
+  .voice .dur { font-size: 11px; color: var(--fg-3); font-family: "JetBrains Mono"; }
+  .voice-transcript { margin-top: 7px; font-size: 12.5px; color: var(--fg-2); border-top: 1px dashed var(--line-strong); padding-top: 7px; line-height: 1.45; }
+  .voice-transcript .tag { font-size: 10px; color: var(--mint); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+
+  .reactions { display: flex; gap: 5px; margin-top: 2px; padding: 0 2px; }
+  .react { font-size: 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 20px; padding: 1px 8px; display: flex; gap: 4px; align-items: center; cursor: pointer; }
+  .react.mine { background: var(--accent-soft); border-color: rgba(139,124,255,.3); }
+  .react .c { font-size: 11px; color: var(--fg-2); }
+  .thread-reply { font-size: 11.5px; color: var(--accent-2); padding: 0 4px; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+
+  /* Kora answer (what was decided) */
+  .kora-answer { align-self: stretch; max-width: 100%; border: 1px solid rgba(45,212,191,.3); background: linear-gradient(160deg, rgba(45,212,191,.08), rgba(139,124,255,.05)); border-radius: 16px; overflow: hidden; }
+  .kora-answer .ka-head { display: flex; align-items: center; gap: 10px; padding: 11px 15px; border-bottom: 1px solid rgba(45,212,191,.16); }
+  .kora-answer .spark { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(140deg, var(--mint), var(--accent)); display: grid; place-items: center; color: #0c0a13; }
+  .kora-answer .ka-head b { font-size: 13px; }
+  .kora-answer .ka-body { padding: 13px 15px; font-size: 13.5px; line-height: 1.55; }
+  .src-link { color: var(--mint); font-family: "JetBrains Mono"; font-size: 11.5px; background: var(--mint-soft); padding: 1px 7px; border-radius: 6px; cursor: pointer; }
+
+  /* clone draft (support) */
+  .draft { align-self: stretch; max-width: 100%; border: 1px solid rgba(45,212,191,.32); background: linear-gradient(160deg, rgba(45,212,191,.08), rgba(139,124,255,.06)); border-radius: 16px; overflow: hidden; }
+  .draft-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid rgba(45,212,191,.18); }
+  .draft-head .spark { width: 28px; height: 28px; border-radius: 9px; background: linear-gradient(140deg, var(--mint), var(--accent)); display: grid; place-items: center; color: #0c0a13; }
+  .draft-head b { font-size: 13.5px; }
+  .draft-head .tag { font-size: 10.5px; font-weight: 700; color: var(--mint); background: var(--mint-soft); padding: 2px 8px; border-radius: 20px; }
+  .draft-metrics { margin-left: auto; display: flex; gap: 14px; }
+  .draft-metrics .m { text-align: right; }
+  .draft-metrics .m span { display: block; font-size: 10px; color: var(--fg-3); }
+  .draft-metrics .m b { font-size: 14px; font-family: "JetBrains Mono"; }
+  .draft-body { padding: 14px 16px; font-size: 13.5px; line-height: 1.55; color: var(--fg); }
+  .draft-actions { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid rgba(45,212,191,.18); flex-wrap: wrap; }
+  .draft-actions button { font: inherit; font-weight: 600; font-size: 12.5px; border-radius: 9px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--surface-2); color: var(--fg); }
+  .draft-actions .primary { background: linear-gradient(140deg, var(--mint), #14b8a6); color: #06231f; border: 0; }
+  .draft-actions .edit { background: var(--accent-soft); border-color: rgba(139,124,255,.3); color: #fff; }
+
+  .note-msg { align-self: center; max-width: 82%; }
+  .note-msg .bubble { background: var(--amber-soft); border: 1px dashed rgba(251,191,36,.4); color: #f4dca0; font-size: 12.5px; border-radius: 12px; }
+  .note-msg .meta { justify-content: center; color: var(--amber); }
+
+  /* composer */
+  .composer { border-top: 1px solid var(--line); padding: 12px 18px 16px; background: linear-gradient(0deg, rgba(22,18,31,.6), transparent); }
+  .comp-tabs { display: flex; gap: 6px; margin-bottom: 9px; }
+  .comp-tabs button { font: inherit; font-size: 12px; font-weight: 600; color: var(--fg-2); background: none; border: 0; padding: 5px 10px; border-radius: 8px; cursor: pointer; display: flex; gap: 6px; align-items: center; }
+  .comp-tabs button.active.toclient { background: var(--accent-soft); color: #fff; }
+  .comp-tabs button.active.tonote { background: var(--amber-soft); color: var(--amber); }
+  .comp-box { display: flex; align-items: flex-end; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; transition: .15s; }
+  .comp-box.note-mode { border-color: rgba(251,191,36,.4); background: rgba(251,191,36,.04); }
+  .comp-box:focus-within { border-color: var(--line-strong); }
+  .comp-box textarea { flex: 1; resize: none; background: none; border: 0; outline: none; color: var(--fg); font: inherit; font-size: 13.5px; line-height: 1.5; max-height: 120px; }
+  .comp-box .tools { display: flex; gap: 6px; align-items: center; }
+  .icon-btn { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: var(--fg-2); display: grid; place-items: center; cursor: pointer; transition: .15s; }
+  .icon-btn:hover { color: var(--fg); border-color: var(--line-strong); }
+  .icon-btn.clone { background: linear-gradient(140deg, var(--mint-soft), var(--accent-soft)); border-color: rgba(45,212,191,.3); color: var(--mint); }
+  .send { width: 38px; height: 38px; border-radius: 11px; border: 0; background: linear-gradient(140deg, var(--accent), var(--accent-2)); color: #0c0a13; display: grid; place-items: center; cursor: pointer; box-shadow: 0 8px 20px -8px var(--accent); }
+  .comp-hint { font-size: 11px; color: var(--fg-3); margin-top: 7px; padding: 0 2px; display: flex; justify-content: space-between; }
+
+  /* recap full panel */
+  .recap-panel { flex: 1; overflow-y: auto; padding: 30px 36px; max-width: 760px; margin: 0 auto; width: 100%; }
+  .recap-panel .rp-head { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+  .recap-panel .rp-head .ic { width: 46px; height: 46px; border-radius: 14px; background: linear-gradient(140deg, var(--accent), var(--mint)); display: grid; place-items: center; color: #0c0a13; }
+  .recap-panel h1 { font-family: "Bricolage Grotesque"; font-size: 26px; font-weight: 800; letter-spacing: -.025em; }
+  .recap-panel .rp-sub { color: var(--fg-3); font-size: 13px; margin-bottom: 24px; margin-left: 60px; }
+  .recap-item { display: flex; gap: 14px; padding: 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); margin-bottom: 11px; }
+  .recap-item .rdot { width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+  .recap-item .rc b { font-size: 14px; }
+  .recap-item .rc p { color: var(--fg-2); font-size: 13px; margin-top: 3px; line-height: 1.5; }
+  .recap-item .rc a { color: var(--accent-2); font-size: 12.5px; text-decoration: none; margin-top: 7px; display: inline-flex; gap: 5px; align-items: center; }
+
+  /* info column */
+  .col-info { border-left: 1px solid var(--line); overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 16px; background: linear-gradient(180deg, rgba(22,18,31,.4), transparent); }
+  .info-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 15px; }
+  .info-card h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--fg-3); font-weight: 700; margin-bottom: 12px; }
+  .member { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  .member .ava { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; font-weight: 700; font-size: 11px; color: #0c0a13; }
+  .member b { font-size: 13px; }
+  .member span { font-size: 11px; color: var(--fg-3); }
+  .decided { display: flex; flex-direction: column; gap: 10px; }
+  .decided a { display: block; padding: 11px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 11px; text-decoration: none; transition: .15s; }
+  .decided a:hover { border-color: var(--line-strong); }
+  .decided .dt { font-size: 10px; color: var(--mint); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .decided b { font-size: 13px; color: var(--fg); display: block; margin-top: 3px; }
+  .decided span { font-size: 11.5px; color: var(--fg-3); }
+  .linked-task { display: flex; gap: 9px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
+  .linked-task:first-of-type { border-top: 0; }
+  .linked-task .ic { width: 26px; height: 26px; border-radius: 8px; background: rgba(96,165,250,.16); display: grid; place-items: center; font-size: 13px; flex-shrink: 0; }
+  .kv { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; font-size: 12.5px; border-top: 1px solid var(--line); }
+  .kv:first-of-type { border-top: 0; }
+  .kv .k { color: var(--fg-3); }
+  .kv .v { font-weight: 600; text-align: right; }
+  .sla-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+  .sla-bar { flex: 1; height: 6px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+  .sla-bar i { display: block; height: 100%; border-radius: 4px; }
+  .delivery { display: flex; gap: 8px; flex-wrap: wrap; }
+  .delivery .ch { font-size: 11px; padding: 4px 10px; border-radius: 20px; background: var(--surface-2); border: 1px solid var(--line); color: var(--fg-2); display: flex; gap: 5px; align-items: center; }
+  .delivery .ch.on { border-color: rgba(45,212,191,.3); color: var(--mint); }
+
+  /* ===== SETTINGS ===== */
+  .settings { height: 100%; overflow-y: auto; }
+  .settings-inner { max-width: 880px; margin: 0 auto; padding: 36px 28px 60px; }
+  .settings h1 { font-family: "Bricolage Grotesque"; font-size: 28px; font-weight: 800; letter-spacing: -.025em; }
+  .settings .lead { color: var(--fg-2); margin-top: 8px; font-size: 14px; max-width: 620px; line-height: 1.55; }
+  .sec { margin-top: 30px; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 24px; }
+  .sec-h { display: flex; align-items: center; gap: 13px; margin-bottom: 6px; }
+  .sec-h .ic { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; flex-shrink: 0; }
+  .sec-h h2 { font-family: "Bricolage Grotesque"; font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+  .sec-h .step { font-size: 11px; font-weight: 700; color: var(--accent-2); background: var(--accent-soft); padding: 3px 10px; border-radius: 20px; }
+  .sec p.desc { color: var(--fg-3); font-size: 13px; margin: 4px 0 18px 51px; line-height: 1.5; }
+  .field { display: flex; align-items: center; gap: 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 13px; padding: 14px 16px; }
+  .field.chosen { border-color: rgba(45,212,191,.35); background: linear-gradient(120deg, rgba(45,212,191,.06), transparent); }
+  .field .org-ava { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; font-weight: 800; font-size: 16px; color: #0c0a13; }
+  .field .org-info { flex: 1; }
+  .field .org-info b { font-size: 15px; }
+  .field .org-info span { display: block; color: var(--fg-3); font-size: 12px; margin-top: 2px; }
+  .badge-ok { font-size: 11px; font-weight: 700; color: var(--mint); background: var(--mint-soft); padding: 4px 11px; border-radius: 20px; display: flex; align-items: center; gap: 6px; }
+  .agents-head { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 12px 51px; }
+  .agents-head .cnt { font-size: 12.5px; color: var(--fg-3); }
+  .agent-list { margin-left: 51px; display: flex; flex-direction: column; gap: 8px; }
+  .agent { display: flex; align-items: center; gap: 13px; padding: 12px 15px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 13px; transition: .15s; }
+  .agent.on { border-color: rgba(139,124,255,.3); background: linear-gradient(120deg, rgba(139,124,255,.07), transparent); }
+  .agent .ava { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #0c0a13; }
+  .agent .who { flex: 1; }
+  .agent .who b { font-size: 14px; }
+  .agent .who span { display: block; color: var(--fg-3); font-size: 12px; margin-top: 1px; }
+  .agent .role-tag { font-size: 11px; color: var(--fg-2); background: var(--surface-3); padding: 3px 10px; border-radius: 20px; }
+  .switch { position: relative; width: 46px; height: 26px; flex-shrink: 0; cursor: pointer; }
+  .switch input { display: none; }
+  .switch .track { position: absolute; inset: 0; border-radius: 20px; background: var(--surface-3); border: 1px solid var(--line); transition: .2s; }
+  .switch .knob { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--fg-3); transition: .2s; }
+  .switch input:checked + .track { background: linear-gradient(140deg, var(--accent), var(--accent-2)); border-color: transparent; }
+  .switch input:checked + .track + .knob { left: 23px; background: #0c0a13; }
+  .note-box { margin: 16px 0 0 51px; display: flex; gap: 11px; padding: 13px 15px; background: var(--amber-soft); border: 1px solid rgba(251,191,36,.25); border-radius: 12px; font-size: 12.5px; color: #f4dca0; line-height: 1.5; }
+  .note-box svg { flex-shrink: 0; margin-top: 1px; }
+
+  .proto-banner { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: rgba(18,15,26,.92); border: 1px solid var(--line-strong); backdrop-filter: blur(12px); padding: 9px 18px; border-radius: 30px; font-size: 12px; color: var(--fg-2); z-index: 50; box-shadow: var(--shadow); display: flex; align-items: center; gap: 9px; }
+  .proto-banner b { color: var(--accent-2); }
+
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 6px; border: 2px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: #2e2840; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===== TOP BAR ===== -->
+  <header class="topbar">
+    <div class="brand"><span class="dot">К</span> Кора <small>· память компании</small></div>
+    <nav class="nav">
+      <button class="active" data-screen="messages" onclick="go('messages',this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+        Сообщения <span class="ncount">8</span>
+      </button>
+      <button data-screen="desk" onclick="go('desk',this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        Деск поддержки <span class="ncount">3</span>
+      </button>
+      <button data-screen="settings" onclick="go('settings',this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Настройки
+      </button>
+    </nav>
+    <div class="spacer"></div>
+    <div class="me">
+      <div class="who"><b>Сергей М.</b><span>Владелец · сотрудник поддержки</span></div>
+      <div class="avatar" style="background:linear-gradient(140deg,#8b7cff,#2dd4bf)">СМ</div>
+    </div>
+  </header>
+
+  <!-- ===== SCREEN: MESSAGES (unified) ===== -->
+  <section class="screen three" id="screen-messages">
+
+    <!-- LIST -->
+    <aside class="col-list">
+      <div class="list-head">
+        <h2>Сообщения <span class="pill-count">8 новых</span></h2>
+        <div class="search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input placeholder="Поиск по людям, группам, обращениям…" />
+        </div>
+      </div>
+      <div class="tabs">
+        <button class="active">Всё</button>
+        <button>Личные <span class="n">2</span></button>
+        <button>Группы <span class="n">3</span></button>
+        <button>Работа <span class="n">2</span></button>
+        <button>Поддержка <span class="n">3</span></button>
+      </div>
+
+      <div class="threads">
+        <div class="recap-card" onclick="openRecap()">
+          <span class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#0c0a13" stroke-width="2.2"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg></span>
+          <div><b>Что я пропустил</b><span>3 решения, 2 задачи на тебе, 1 спор без тебя</span></div>
+        </div>
+
+        <div class="grp-label">Личные</div>
+        <div class="thread" onclick="openChat('dm-olga',this)">
+          <div class="ava" style="background:linear-gradient(140deg,#60a5fa,#8b7cff)">ОМ<span class="on-dot"></span></div>
+          <div class="mid"><div class="row1"><span class="subj">Ольга Мазур</span></div><div class="prev">ок, посмотрю отчёт после обеда</div></div>
+          <div class="right"><span class="time">12:40</span><span class="unread">2</span></div>
+        </div>
+        <div class="thread" onclick="openChat('dm-dmitry',this)">
+          <div class="ava" style="background:linear-gradient(140deg,#34d399,#2dd4bf)">ДК</div>
+          <div class="mid"><div class="row1"><span class="subj">Дмитрий Кузнецов</span></div><div class="prev"><b>Вы:</b> запушил фикс, проверь</div></div>
+          <div class="right"><span class="time">11:15</span></div>
+        </div>
+
+        <div class="grp-label">Группы</div>
+        <div class="thread active" onclick="openChat('grp-release',this)">
+          <div class="ava grp" style="background:linear-gradient(140deg,#fbbf24,#fb7185)">🚀</div>
+          <div class="mid"><div class="row1"><span class="subj">#релиз-июнь</span></div><div class="prev"><b>Анна:</b> переносим на пятницу, ок?</div></div>
+          <div class="right"><span class="time">13:02</span><span class="unread">5</span></div>
+        </div>
+        <div class="thread" onclick="openChat('grp-support',this)">
+          <div class="ava grp" style="background:linear-gradient(140deg,#8b7cff,#2dd4bf)">🛟</div>
+          <div class="mid"><div class="row1"><span class="subj">Отдел поддержки</span></div><div class="prev"><b>Дмитрий:</b> кто возьмёт SUP-1041?</div></div>
+          <div class="right"><span class="time">12:58</span></div>
+        </div>
+        <div class="thread" onclick="openChat('grp-sales',this)">
+          <div class="ava grp" style="background:linear-gradient(140deg,#f0a5c0,#fbbf24)">💼</div>
+          <div class="mid"><div class="row1"><span class="subj">#продажи</span></div><div class="prev"><b>Игорь:</b> закрыли «Светофор», +14 мест</div></div>
+          <div class="right"><span class="time">вчера</span></div>
+        </div>
+
+        <div class="grp-label">Работа (из задач и встреч)</div>
+        <div class="thread" onclick="openChat('task-dash',this)">
+          <span class="kind-ic task">📋</span>
+          <div class="mid"><div class="row1"><span class="subj">Дашборд директора</span></div><div class="prev"><b>Задача · </b>обсуждение, 4 сообщения</div><div class="num mono">TASK-318</div></div>
+          <div class="right"><span class="time">10:30</span></div>
+        </div>
+        <div class="thread" onclick="openChat('meet-plan',this)">
+          <span class="kind-ic meet">🎥</span>
+          <div class="mid"><div class="row1"><span class="subj">Планёрка · понедельник</span></div><div class="prev"><b>Чат встречи · </b>дообсуждение</div></div>
+          <div class="right"><span class="time">пн</span></div>
+        </div>
+
+        <div class="grp-label">Поддержка (обращения клиентов)</div>
+        <div class="thread" onclick="goDesk()">
+          <div class="ava" style="background:linear-gradient(140deg,#f0a5c0,#fb7185)">ВП</div>
+          <div class="mid"><div class="row1"><span class="dot-sla"></span><span class="subj">Запись без звука</span></div><div class="prev">Вероника · ООО «Светофор Медиа»</div><div class="num mono">SUP-1042</div></div>
+          <div class="right"><span class="time">11:02</span><span class="chip work">В работе</span></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- CHAT: group #релиз-июнь -->
+    <main class="col-chat" id="chat-group">
+      <div class="chat-head">
+        <div class="ava" style="background:linear-gradient(140deg,#fbbf24,#fb7185)">🚀</div>
+        <div class="htitle">
+          <h1>#релиз-июнь</h1>
+          <div class="sub">5 участников · Анна, Дмитрий, вы +2 · <span style="color:var(--mint)">3 онлайн</span></div>
+        </div>
+        <button class="head-btn" title="Поиск в чате"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
+        <button class="head-btn" title="Быстрый созвон"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7zM1 5h15v14H1z"/></svg></button>
+      </div>
+
+      <div class="ask-bar" onclick="document.getElementById('askInput').focus()">
+        <span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0c0a13" stroke-width="2.2"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg></span>
+        <input id="askInput" placeholder="Спросить Кору: «что мы решили по релизу на прошлой неделе?»" />
+      </div>
+
+      <div class="stream">
+        <div class="day-sep"><span>Сегодня</span></div>
+
+        <div class="msg them">
+          <div class="send-ava" style="background:linear-gradient(140deg,#fbbf24,#f0a5c0)">АЛ</div>
+          <div class="body">
+            <div class="meta"><b>Анна Лебедева</b> 12:55</div>
+            <div class="bubble">Коллеги, по релизу: тестирование не успеваем закрыть к среде. Предлагаю перенести выкат на пятницу.
+              <div class="msg-actions">
+                <button title="Ответить в ветке"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 17l-5-5 5-5M4 12h12a4 4 0 0 1 0 8h-1"/></svg></button>
+                <button title="Реакция"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></svg></button>
+                <button title="Сделать задачей"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></button>
+              </div>
+            </div>
+            <div class="reactions"><span class="react mine">👍 <span class="c">3</span></span></div>
+          </div>
+        </div>
+
+        <div class="msg them">
+          <div class="send-ava" style="background:linear-gradient(140deg,#34d399,#2dd4bf)">ДК</div>
+          <div class="body">
+            <div class="meta"><b>Дмитрий Кузнецов</b> 12:58</div>
+            <div class="bubble voice-wrap">
+              <div class="voice">
+                <span class="play"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+                <span class="wave">
+                  <i style="height:30%"></i><i style="height:60%"></i><i style="height:90%"></i><i style="height:50%"></i><i style="height:75%"></i><i style="height:40%"></i><i style="height:85%"></i><i style="height:55%"></i><i style="height:65%"></i><i style="height:35%"></i><i style="height:80%"></i><i style="height:45%"></i>
+                </span>
+                <span class="dur">0:14</span>
+              </div>
+              <div class="voice-transcript"><span class="tag">расшифровка</span><br>Согласен с пятницей. Только давайте тогда фичу с дашбордом в этот релиз не тащить — она ещё сырая, перенесём в следующий.</div>
+            </div>
+            <div class="thread-reply"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 17l-5-5 5-5M4 12h12a4 4 0 0 1 0 8h-1"/></svg> 2 ответа в ветке</div>
+          </div>
+        </div>
+
+        <div class="msg me">
+          <div class="send-ava" style="background:linear-gradient(140deg,#8b7cff,#2dd4bf)">СМ</div>
+          <div class="body">
+            <div class="meta">12:59 · вы</div>
+            <div class="bubble">Ок, пятница. Дашборд — в следующий. Анна, оформишь как решение?
+              <div class="msg-actions">
+                <button title="Отметить решением"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></button>
+                <button title="Переслать"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 17l5-5-5-5M20 12H9a6 6 0 0 0-6 6v1"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Kora answer to "what was decided" -->
+        <div class="kora-answer">
+          <div class="ka-head"><span class="spark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0c0a13" stroke-width="2.2"><path d="M12 3v18M3 12h18"/></svg></span><b>Кора · ответ на «что мы решили»</b></div>
+          <div class="ka-body">
+            По этому чату зафиксированы решения:<br>
+            1. <b>Релиз перенесён на пятницу 27.06</b> — тестирование не успевало к среде. <span class="src-link">↗ сообщение Анны, 12:55</span><br>
+            2. <b>Фича «дашборд директора» вынесена в следующий релиз</b> (сырая). <span class="src-link">↗ голосовое Дмитрия, 12:58</span><br><br>
+            Оформить их в реестр решений компании и создать задачу на перенос дашборда?
+          </div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="comp-box" id="compBox">
+          <textarea id="compArea" rows="1" placeholder="Написать в #релиз-июнь…"></textarea>
+          <div class="tools">
+            <button class="icon-btn" title="Прикрепить файл"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.4 11.05 12.25 20.2a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.49"/></svg></button>
+            <button class="icon-btn" title="Голосовое сообщение"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 19v3"/></svg></button>
+            <button class="send" title="Отправить"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+          </div>
+        </div>
+        <div class="comp-hint"><span>Тела сообщений хранятся только у нас. Наружу (Telegram/MAX/почта) — лишь «у вас новое сообщение».</span><span>Enter — отправить</span></div>
+      </div>
+    </main>
+
+    <!-- CHAT: recap panel (hidden) -->
+    <main class="col-chat" id="chat-recap" hidden>
+      <div class="chat-head">
+        <button class="head-btn" onclick="closeRecap()" title="Назад"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button>
+        <div class="htitle"><h1>Что я пропустил</h1><div class="sub">пока вас не было · 1 рабочий день</div></div>
+      </div>
+      <div class="recap-panel">
+        <div class="rp-head"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0c0a13" stroke-width="2.2"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg></span><h1>За время отсутствия</h1></div>
+        <p class="rp-sub">Кора пересказала главное вместо 600 сообщений — с переходом в любой пункт.</p>
+
+        <div class="recap-item"><span class="rdot" style="background:var(--mint)"></span><div class="rc"><b>В #релиз-июнь решили перенести выкат на пятницу 27.06</b><p>Не успевали тестирование. Дашборд директора вынесли в следующий релиз.</p><a href="#">Открыть обсуждение →</a></div></div>
+        <div class="recap-item"><span class="rdot" style="background:var(--accent)"></span><div class="rc"><b>На вас 2 новые задачи</b><p>«Проверить фикс Дмитрия» и «Перенести дашборд в след. релиз» (из решения выше).</p><a href="#">Мои задачи →</a></div></div>
+        <div class="recap-item"><span class="rdot" style="background:var(--amber)"></span><div class="rc"><b>Спор по бюджету на подрядчика не закрыт — ждут вас</b><p>Игорь и Анна разошлись в оценке. Решение отложили до вашего ответа.</p><a href="#">Перейти к спору →</a></div></div>
+        <div class="recap-item"><span class="rdot" style="background:var(--rose)"></span><div class="rc"><b>Горящее обращение клиента: SUP-1040 нарушен SLA</b><p>«Гостевой вход просит пароль» — без исполнителя 3 часа.</p><a href="#" onclick="goDesk()">Открыть в деске →</a></div></div>
+      </div>
+    </main>
+
+    <!-- INFO: group context -->
+    <aside class="col-info">
+      <div class="info-card">
+        <h3>Участники · 5</h3>
+        <div class="member"><span class="ava" style="background:linear-gradient(140deg,#fbbf24,#f0a5c0)">АЛ</span><div><b>Анна Лебедева</b><span> · Маркетинг</span></div></div>
+        <div class="member"><span class="ava" style="background:linear-gradient(140deg,#34d399,#2dd4bf)">ДК</span><div><b>Дмитрий Кузнецов</b><span> · Инженер</span></div></div>
+        <div class="member"><span class="ava" style="background:linear-gradient(140deg,#8b7cff,#2dd4bf)">СМ</span><div><b>Сергей М.</b><span> · вы</span></div></div>
+        <div class="member"><span class="ava" style="background:linear-gradient(140deg,#f0a5c0,#fb7185)">ИП</span><div><b>Игорь Петров</b><span> · Продажи</span></div></div>
+      </div>
+
+      <div class="info-card">
+        <h3>Решения из этого чата</h3>
+        <div class="decided">
+          <a href="#"><span class="dt">сегодня</span><b>Релиз перенесён на пятницу 27.06</b><span>зафиксировано Корой из переписки</span></a>
+          <a href="#"><span class="dt">сегодня</span><b>Дашборд — в следующий релиз</b><span>из голосового Дмитрия</span></a>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <h3>Связанные задачи</h3>
+        <div class="linked-task"><span class="ic">📋</span><div><b style="font-weight:600">Перенести дашборд в след. релиз</b><br><span style="color:var(--fg-3);font-size:11px" class="mono">TASK-319 · создана из решения</span></div></div>
+        <div class="linked-task"><span class="ic">📋</span><div><b style="font-weight:600">Проверить фикс перед выкатом</b><br><span style="color:var(--fg-3);font-size:11px" class="mono">TASK-320 · на вас</span></div></div>
+      </div>
+
+      <div class="info-card">
+        <h3>Доставка уведомлений</h3>
+        <div class="delivery">
+          <span class="ch on">● В приложении</span>
+          <span class="ch on">● Telegram</span>
+          <span class="ch on">● MAX</span>
+          <span class="ch">○ Почта</span>
+        </div>
+        <p style="font-size:11.5px;color:var(--fg-3);margin-top:10px;line-height:1.45">Заблокируют один канал — разбудит другой. Наружу уходит только сигнал, без текста.</p>
+      </div>
+    </aside>
+  </section>
+
+  <!-- ===== SCREEN: DESK ===== -->
+  <section class="screen three" id="screen-desk" hidden>
+    <aside class="col-list">
+      <div class="list-head">
+        <h2>Деск поддержки <span class="pill-count">7 открытых</span></h2>
+        <div class="search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input placeholder="Поиск по обращениям, клиентам…" />
+        </div>
+      </div>
+      <div class="tabs">
+        <button class="active">Новые <span class="n">3</span></button>
+        <button>Мои <span class="n">2</span></button>
+        <button>Все <span class="n">7</span></button>
+        <button>Закрытые <span class="n">41</span></button>
+        <button>Спам <span class="n">1</span></button>
+      </div>
+      <div class="threads">
+        <div class="thread active">
+          <div class="ava" style="background:linear-gradient(140deg,#f0a5c0,#fb7185)">ВП</div>
+          <div class="mid"><div class="row1"><span class="subj">Запись без звука у участника</span></div><div class="prev">Вероника · ООО «Светофор Медиа»</div><div class="num mono">SUP-1042</div></div>
+          <div class="right"><span class="time">11:02</span><span class="chip work">В работе</span></div>
+        </div>
+        <div class="thread">
+          <div class="ava" style="background:linear-gradient(140deg,#60a5fa,#8b7cff)">МК</div>
+          <div class="mid"><div class="row1"><span class="subj">Не приходит AI-отчёт о встрече</span></div><div class="prev">Михаил · ИП Карпов</div><div class="num mono">SUP-1041</div></div>
+          <div class="right"><span class="time">10:48</span><span class="unread">2</span></div>
+        </div>
+        <div class="thread">
+          <div class="ava" style="background:linear-gradient(140deg,#34d399,#2dd4bf)">ЕС</div>
+          <div class="mid"><div class="row1"><span class="dot-sla"></span><span class="subj">Гостевой вход просит пароль</span></div><div class="prev">Елена · «Молочные реки»</div><div class="num mono">SUP-1040</div></div>
+          <div class="right"><span class="time">09:15</span><span class="unread">1</span></div>
+        </div>
+        <div class="thread">
+          <div class="ava" style="background:linear-gradient(140deg,#fbbf24,#f59e0b)">АБ</div>
+          <div class="mid"><div class="row1"><span class="subj">Как пригласить 12 участников</span></div><div class="prev">Клон: подготовил черновик…</div><div class="num mono">SUP-1039</div></div>
+          <div class="right"><span class="time">вчера</span><span class="chip wait">Ждёт клиента</span></div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="col-chat">
+      <div class="chat-head">
+        <div class="ava" style="background:linear-gradient(140deg,#f0a5c0,#fb7185)">ВП</div>
+        <div class="htitle">
+          <h1>Запись встречи без звука у участника</h1>
+          <div class="sub"><span class="mono" style="color:var(--fg-2)">SUP-1042</span> · Вероника П. · ООО «Светофор Медиа»</div>
+        </div>
+        <div class="ctrl">
+          <div class="select"><span class="lbl">Исполнитель</span><span class="ava-sm" style="background:linear-gradient(140deg,#8b7cff,#2dd4bf)">СМ</span>Сергей М.<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+          <div class="select"><span class="lbl">Статус</span><span class="chip work" style="margin:0">В работе</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></div>
+        </div>
+      </div>
+
+      <div class="stream">
+        <div class="day-sep"><span>Сегодня</span></div>
+        <div class="msg them">
+          <div class="send-ava" style="background:linear-gradient(140deg,#f0a5c0,#fb7185)">ВП</div>
+          <div class="body">
+            <div class="meta"><b>Вероника · клиент</b> 11:02</div>
+            <div class="bubble">Здравствуйте! Записали планёрку, но в записи у одного участника совсем нет звука, хотя в эфире его было слышно. Можно восстановить дорожку?</div>
+          </div>
+        </div>
+
+        <div class="note-msg">
+          <div class="meta">🔒 Внутренняя заметка · Сергей М. · 11:05</div>
+          <div class="bubble">По диагностике: дорожка в S3 есть, egress склеил микс без неё. Известный кейс с переподключением.</div>
+        </div>
+
+        <div class="draft">
+          <div class="draft-head">
+            <span class="spark"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0c0a13" stroke-width="2.2"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg></span>
+            <b>Черновик от клона поддержки</b>
+            <span class="tag">ожидает решения</span>
+            <div class="draft-metrics"><div class="m"><span>уверенность</span><b style="color:var(--mint)">0.82</b></div><div class="m"><span>обоснованность</span><b style="color:var(--mint)">0.91</b></div></div>
+          </div>
+          <div class="draft-body">
+            Вероника, добрый день! Звук не потерян — отдельные аудиодорожки пишутся на каждого участника независимо от общего микса, поэтому дорожку можно восстановить. <span class="src-link">[BLOCK:rec-tracks-42]</span><br><br>
+            Откройте встречу → «Запись» → «Дорожки участников» → скачайте нужную отдельно. Подготовить сведённую версию с этой дорожкой в течение часа? <span class="src-link">[BLOCK:egress-reconnect-17]</span>
+          </div>
+          <div class="draft-actions">
+            <button class="primary">✓ Отправить как есть</button>
+            <button class="edit">✎ Поправить и отправить</button>
+            <button>Отклонить</button>
+            <span style="margin-left:auto;align-self:center;font-size:11px;color:var(--fg-3)">источники — только из закрытого контура поддержки</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="comp-tabs">
+          <button class="active toclient" onclick="compMode('client',this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg> Ответ клиенту</button>
+          <button class="tonote" onclick="compMode('note',this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 13h6"/></svg> Внутренняя заметка</button>
+        </div>
+        <div class="comp-box" id="compBox2">
+          <textarea rows="1" placeholder="Ответ будет виден клиенту…" id="compArea2"></textarea>
+          <div class="tools">
+            <button class="icon-btn clone" title="Попросить черновик у клона"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg></button>
+            <button class="send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+          </div>
+        </div>
+        <div class="comp-hint"><span id="compHint2">Клиент видит это сообщение. Заметки и черновики клона клиенту не видны.</span><span>Enter — отправить</span></div>
+      </div>
+    </main>
+
+    <aside class="col-info">
+      <div class="info-card">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+          <div class="ava" style="width:46px;height:46px;border-radius:14px;display:grid;place-items:center;font-weight:700;font-size:17px;color:#0c0a13;background:linear-gradient(140deg,#f0a5c0,#fb7185)">ВП</div>
+          <div><b style="font-size:15px">Вероника П.</b><br><span style="font-size:12px;color:var(--fg-3)">veronika@svetofor.media</span></div>
+        </div>
+        <div class="kv"><span class="k">Компания клиента</span><span class="v">ООО «Светофор Медиа»</span></div>
+        <div class="kv"><span class="k">Тариф</span><span class="v">Команда · 14 чел.</span></div>
+        <div class="kv"><span class="k">Обращений</span><span class="v">6</span></div>
+      </div>
+      <div class="info-card">
+        <h3>SLA по обращению</h3>
+        <div class="sla-row"><span style="font-size:12.5px;color:var(--fg-2);width:96px">Первый ответ</span><div class="sla-bar"><i style="width:38%;background:var(--mint)"></i></div><span class="mono" style="font-size:11px;color:var(--mint)">в срок</span></div>
+        <div class="sla-row"><span style="font-size:12.5px;color:var(--fg-2);width:96px">Решение</span><div class="sla-bar"><i style="width:74%;background:var(--amber)"></i></div><span class="mono" style="font-size:11px;color:var(--amber)">2 ч 10 м</span></div>
+      </div>
+      <div class="info-card">
+        <h3>Закрытый контур поддержки</h3>
+        <p style="font-size:12.5px;color:var(--fg-2);line-height:1.5">Ответы по этому обращению после закрытия пополнят базу знаний поддержки, по которой учится клон. <b style="color:var(--mint)">Изолирована</b> — клон не видит другие данные компании.</p>
+      </div>
+    </aside>
+  </section>
+
+  <!-- ===== SCREEN: SETTINGS ===== -->
+  <section class="screen settings" id="screen-settings" hidden>
+    <div class="settings-inner">
+      <h1>Настройки службы поддержки</h1>
+      <p class="lead">Здесь задаётся компания, которая принимает обращения клиентов, и отмечаются сотрудники, которые будут на них отвечать. Эти двое — всё, что нужно, чтобы деск заработал.</p>
+
+      <div class="sec">
+        <div class="sec-h"><span class="ic" style="background:linear-gradient(140deg,var(--accent),var(--accent-2))"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#0c0a13" stroke-width="2.2"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/></svg></span><h2>Компания-деск</h2><span class="step">Шаг 1</span></div>
+        <p class="desc">Обращения всех клиентов будут стекаться в эту компанию. Указывается один раз. Без неё приём обращений выключен.</p>
+        <div class="field chosen">
+          <div class="org-ava" style="background:linear-gradient(140deg,#8b7cff,#2dd4bf)">К</div>
+          <div class="org-info"><b>ООО «Кора» (моя компания)</b><span>Принимает обращения от всех клиентов · вендорский деск</span></div>
+          <span class="badge-ok"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> выбрана</span>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-h"><span class="ic" style="background:linear-gradient(140deg,var(--mint),#14b8a6)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#06231f" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><h2>Сотрудники поддержки</h2><span class="step">Шаг 2</span></div>
+        <p class="desc">Включите тех, кто будет отвечать клиентам. Включённый сотрудник видит деск, отвечает в обращениях, и его ответы пополняют закрытую базу знаний, по которой учится клон поддержки.</p>
+        <div class="agents-head">
+          <span class="cnt">Включено <b style="color:var(--mint)">3</b> из 14 сотрудников</span>
+          <div class="search" style="width:220px;margin:0"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input placeholder="Найти сотрудника…" /></div>
+        </div>
+        <div class="agent-list">
+          <div class="agent on"><div class="ava" style="background:linear-gradient(140deg,#8b7cff,#2dd4bf)">СМ</div><div class="who"><b>Сергей Мазур</b><span>sergrv80@gmail.com</span></div><span class="role-tag">Владелец</span><label class="switch"><input type="checkbox" checked onchange="toggleAgent(this)"><span class="track"></span><span class="knob"></span></label></div>
+          <div class="agent on"><div class="ava" style="background:linear-gradient(140deg,#60a5fa,#8b7cff)">ОМ</div><div class="who"><b>Ольга Мазур</b><span>olga@kora.team</span></div><span class="role-tag">Поддержка</span><label class="switch"><input type="checkbox" checked onchange="toggleAgent(this)"><span class="track"></span><span class="knob"></span></label></div>
+          <div class="agent on"><div class="ava" style="background:linear-gradient(140deg,#34d399,#2dd4bf)">ДК</div><div class="who"><b>Дмитрий Кузнецов</b><span>dmitry@kora.team</span></div><span class="role-tag">Инженер</span><label class="switch"><input type="checkbox" checked onchange="toggleAgent(this)"><span class="track"></span><span class="knob"></span></label></div>
+          <div class="agent"><div class="ava" style="background:linear-gradient(140deg,#fbbf24,#f0a5c0)">АЛ</div><div class="who"><b>Анна Лебедева</b><span>anna@kora.team</span></div><span class="role-tag">Маркетинг</span><label class="switch"><input type="checkbox" onchange="toggleAgent(this)"><span class="track"></span><span class="knob"></span></label></div>
+          <div class="agent"><div class="ava" style="background:linear-gradient(140deg,#fb7185,#f0a5c0)">ИП</div><div class="who"><b>Игорь Петров</b><span>igor@kora.team</span></div><span class="role-tag">Продажи</span><label class="switch"><input type="checkbox" onchange="toggleAgent(this)"><span class="track"></span><span class="knob"></span></label></div>
+        </div>
+        <div class="note-box"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><span>Сейчас этого экрана в продукте ещё нет — сотрудников включают вручную через API. Прототип показывает, как это должно выглядеть.</span></div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="proto-banner">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+  <span><b>Прототип</b> · единый чат Коры (Сообщения · Деск · Настройки) — кликабельный макет для приёмки, не рабочий продукт</span>
+</div>
+
+<script>
+  function go(screen, btn) {
+    document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    document.getElementById('screen-messages').hidden = screen !== 'messages';
+    document.getElementById('screen-desk').hidden = screen !== 'desk';
+    document.getElementById('screen-settings').hidden = screen !== 'settings';
+    if (screen !== 'messages') closeRecap();
+  }
+  function goDesk() { go('desk', document.querySelector('.nav button[data-screen="desk"]')); }
+
+  function openChat(id, el) {
+    document.querySelectorAll('#screen-messages .thread').forEach(t=>t.classList.remove('active'));
+    if (el) el.classList.add('active');
+    closeRecap();
+  }
+  function openRecap() {
+    document.getElementById('chat-group').hidden = true;
+    document.getElementById('chat-recap').hidden = false;
+  }
+  function closeRecap() {
+    document.getElementById('chat-group').hidden = false;
+    document.getElementById('chat-recap').hidden = true;
+  }
+
+  function compMode(mode, btn) {
+    btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const box = document.getElementById('compBox2');
+    const area = document.getElementById('compArea2');
+    const hint = document.getElementById('compHint2');
+    if (mode === 'note') { box.classList.add('note-mode'); area.placeholder='Заметка видна только команде поддержки…'; hint.textContent='Внутренняя заметка. Клиент её не видит.'; }
+    else { box.classList.remove('note-mode'); area.placeholder='Ответ будет виден клиенту…'; hint.textContent='Клиент видит это сообщение. Заметки и черновики клона клиенту не видны.'; }
+  }
+
+  function toggleAgent(input) {
+    input.closest('.agent').classList.toggle('on', input.checked);
+    document.querySelector('.agents-head .cnt b').textContent = document.querySelectorAll('.agent input:checked').length;
+  }
+
+  document.querySelectorAll('textarea').forEach(area => {
+    area.addEventListener('input', () => { area.style.height='auto'; area.style.height=Math.min(area.scrollHeight,120)+'px'; });
+  });
+</script>
+</body>
+</html>

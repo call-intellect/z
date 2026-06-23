@@ -993,6 +993,28 @@ export class IntakeService {
         tenantId,
         userId,
       );
+      try {
+        await this.prisma.taskSource.create({
+          data: {
+            tenantId,
+            issueId: createdIssue.id,
+            sourceType: 'chatbox',
+            sourceRefId: task.sourceChatSessionId ?? task.id,
+            quote: task.sourceQuote ?? null,
+          },
+        });
+      } catch (e) {
+        if ((e as { code?: string })?.code !== 'P2002') {
+          this.logger.warn(
+            {
+              taskId,
+              issueId: createdIssue.id,
+              err: e instanceof Error ? e.message : String(e),
+            },
+            'triageChatboxTask: TaskSource provenance link failed (best-effort)',
+          );
+        }
+      }
     } else if (dto.decision === 'snooze' && !dto.snoozedUntil) {
       throw new BadRequestException({
         ok: false,

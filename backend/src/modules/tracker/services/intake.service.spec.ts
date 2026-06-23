@@ -920,20 +920,26 @@ describe('IntakeService.triage — промоут chatbox-Task (Блок B / F10
       description: string | null;
       assigneeUserId: string | null;
       dueDate: Date | null;
+      sourceChatSessionId: string | null;
+      sourceQuote: string | null;
       createdAt: Date;
       updatedAt: Date;
     } | null;
+    taskSourceCreate?: ReturnType<typeof vi.fn>;
   }): {
     svc: IntakeService;
     issuesCreate: ReturnType<typeof vi.fn>;
     taskUpdate: ReturnType<typeof vi.fn>;
     taskFindFirst: ReturnType<typeof vi.fn>;
+    taskSourceCreate: ReturnType<typeof vi.fn>;
   } {
     const issuesCreate = vi.fn(async () => ({ id: 'issue-from-chatbox' }));
     const taskUpdate = vi.fn(async () => ({}));
     const taskFindFirst = vi.fn(async () => opts.task);
+    const taskSourceCreate = opts.taskSourceCreate ?? vi.fn(async () => ({}));
     const prisma = {
       task: { findFirst: taskFindFirst, update: taskUpdate },
+      taskSource: { create: taskSourceCreate },
       project: { findFirst: vi.fn(async () => ({ id: 'inbox-existing' })) },
       org: { findUnique: vi.fn(async () => ({ ownerId: 'org-owner' })) },
     } as unknown as PrismaService;
@@ -952,7 +958,7 @@ describe('IntakeService.triage — промоут chatbox-Task (Блок B / F10
       undefined,
       projects as never,
     );
-    return { svc, issuesCreate, taskUpdate, taskFindFirst };
+    return { svc, issuesCreate, taskUpdate, taskFindFirst, taskSourceCreate };
   }
 
   function makeOpenTask() {
@@ -966,6 +972,8 @@ describe('IntakeService.triage — промоут chatbox-Task (Блок B / F10
       description: 'Описание',
       assigneeUserId: 'user-9',
       dueDate: null,
+      sourceChatSessionId: 'chat-session-1',
+      sourceQuote: 'надо согласовать бюджет',
       createdAt: now,
       updatedAt: now,
     };
@@ -974,8 +982,10 @@ describe('IntakeService.triage — промоут chatbox-Task (Блок B / F10
   const ACCEPT = { decision: 'accept', targetProjectId: 'proj-1' } as never;
   const REJECT = { decision: 'reject' } as never;
 
-  it('accept chatbox-task → Issue создан из Task + task.status=done', async () => {
-    const { svc, issuesCreate, taskUpdate } = build({ task: makeOpenTask() });
+  it('accept chatbox-task → Issue создан из Task + task.status=done + TaskSource провенанс', async () => {
+    const { svc, issuesCreate, taskUpdate, taskSourceCreate } = build({
+      task: makeOpenTask(),
+    });
 
     const res = await svc.triage('chatbox-task:t-1', ACCEPT, TENANT, 'user-1');
 
@@ -987,6 +997,16 @@ describe('IntakeService.triage — промоут chatbox-Task (Блок B / F10
     expect(projectId).toBe('proj-1');
     expect(dto.title).toBe('Задача из чата');
     expect(dto.assigneeUserIds).toEqual(['user-9']);
+    expect(taskSourceCreate).toHaveBeenCalledTimes(1);
+    expect(taskSourceCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        tenantId: TENANT,
+        issueId: 'issue-from-chatbox',
+        sourceType: 'chatbox',
+        sourceRefId: 'chat-session-1',
+        quote: 'надо согласовать бюджет',
+      }),
+    });
     expect(taskUpdate).toHaveBeenCalledWith({
       where: { id: 't-1' },
       data: { status: 'done' },
@@ -994,6 +1014,42 @@ describe('IntakeService.triage — промоут chatbox-Task (Блок B / F10
     expect(res.createdIssue).toEqual({ id: 'issue-from-chatbox' });
     expect(res.intake.status).toBe('accepted');
     expect(res.intake.createdIssueId).toBe('issue-from-chatbox');
+  });
+
+  it('accept без sourceChatSessionId → провенанс по task.id (fallback)', async () => {
+    const { svc, taskSourceCreate } = build({
+      task: { ...makeOpenTask(), sourceChatSessionId: null, sourceQuote: null },
+    });
+
+    await svc.triage('chatbox-task:t-1', ACCEPT, TENANT, 'user-1');
+
+    expect(taskSourceCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        issueId: 'issue-from-chatbox',
+        sourceType: 'chatbox',
+        sourceRefId: 't-1',
+        quote: null,
+      }),
+    });
+  });
+
+  it('провенанс best-effort: P2002 на TaskSource НЕ роняет accept', async () => {
+    const taskSourceCreate = vi.fn(async () => {
+      throw { code: 'P2002' };
+    });
+    const { svc, issuesCreate, taskUpdate } = build({
+      task: makeOpenTask(),
+      taskSourceCreate,
+    });
+
+    const res = await svc.triage('chatbox-task:t-1', ACCEPT, TENANT, 'user-1');
+
+    expect(issuesCreate).toHaveBeenCalledTimes(1);
+    expect(taskUpdate).toHaveBeenCalledWith({
+      where: { id: 't-1' },
+      data: { status: 'done' },
+    });
+    expect(res.intake.status).toBe('accepted');
   });
 
   it('reject chatbox-task → Issue НЕ создан, task.status=done', async () => {
@@ -1017,10 +1073,14 @@ describe('IntakeService.triage — промоут chatbox-Task (Блок B / F10
     );
   });
 
-  it('chatbox-task уже done → BadRequestException (идемпотентно: повторно не обрабатываем)', async () => {
-    const { svc } = build({ task: { ...makeOpenTask(), status: 'done' } });
+  it('chatbox-task уже done → accept BadRequestException, Issue НЕ создан повторно (идемпотентно)', async () => {
+    const { svc, issuesCreate, taskSourceCreate } = build({
+      task: { ...makeOpenTask(), status: 'done' },
+    });
     await expect(svc.triage('chatbox-task:t-1', ACCEPT, TENANT, 'user-1')).rejects.toThrow(
       BadRequestException,
     );
+    expect(issuesCreate).not.toHaveBeenCalled();
+    expect(taskSourceCreate).not.toHaveBeenCalled();
   });
 });

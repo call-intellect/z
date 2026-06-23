@@ -15,6 +15,7 @@ import {
   wrapUserData,
 } from '../../../ai/services/prompts/common';
 import { computeExpiresAt } from '../../../pending-actions/expires-at.util';
+import { AssigneeResolverService } from '../../../tracker/services/assignee-resolver.service';
 import { shouldMaterializeTask } from '../../../tracker/services/task-quality-gate.util';
 
 /** Code-fallback TTL (дни) intake, когда TypedConfigService недоступен (@Optional). */
@@ -74,6 +75,9 @@ export class TelegramTaskParserService {
     @Optional()
     @Inject(TypedConfigService)
     private readonly config: TypedConfigService | null = null,
+    @Optional()
+    @Inject(AssigneeResolverService)
+    private readonly assigneeResolver?: AssigneeResolverService,
   ) {}
 
   /**
@@ -437,10 +441,12 @@ export class TelegramTaskParserService {
   }): Promise<TelegramTaskParseResult> {
     const { tenantId, source, parsed } = args;
 
-    const suggestedAssigneeId = await this.resolveAssigneeId(
-      tenantId,
-      parsed.suggestedAssigneeHint,
-    );
+    const hint = (parsed.suggestedAssigneeHint ?? '').trim();
+    let suggestedAssigneeId: string | null = null;
+    if (hint && this.assigneeResolver) {
+      const r = await this.assigneeResolver.resolve(tenantId, hint);
+      if (r.kind === 'resolved') suggestedAssigneeId = r.userId;
+    }
     const suggestedProjectId = await this.resolveProjectId(
       tenantId,
       parsed.suggestedProjectHint,
@@ -547,46 +553,6 @@ export class TelegramTaskParserService {
   }
 
   // ─────────────────────────── helpers: resolve hints ────────────────────
-
-  /**
-   * Substring-match: ищем Person в org по части ФИО (первое слово hint'а).
-   * При множественном совпадении — null (нужен ручной триаж).
-   * Возвращаем User.id (а не Person.id), потому что Issue.assigneeUserIds — это User.id.
-   */
-  private async resolveAssigneeId(
-    tenantId: string,
-    hint: string | null | undefined,
-  ): Promise<string | null> {
-    const trimmed = (hint ?? '').trim();
-    if (trimmed.length < 2) return null;
-    const firstToken = trimmed.split(/\s+/)[0] ?? '';
-    if (firstToken.length < 2) return null;
-    try {
-      const candidates = await this.prisma.person.findMany({
-        where: {
-          tenantId,
-          deletedAt: null,
-          name: { contains: firstToken, mode: 'insensitive' },
-        },
-        take: 5,
-        select: { userId: true, name: true },
-      });
-      if (candidates.length === 0) return null;
-      const exact =
-        candidates.find(
-          (c) => c.name.toLowerCase() === trimmed.toLowerCase(),
-        ) ?? null;
-      const single =
-        candidates.length === 1 ? candidates[0] : exact ?? null;
-      return single?.userId ?? null;
-    } catch (err) {
-      this.logger.debug(
-        { err: err instanceof Error ? err.message : String(err) },
-        'telegram-task-parser: resolveAssigneeId — DB error, fallback null',
-      );
-      return null;
-    }
-  }
 
   /**
    * Резолв Project'а по identifier'у или по подстроке имени.

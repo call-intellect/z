@@ -120,11 +120,12 @@ describe('ChatboxAnalyzeWorker', () => {
 });
 
 describe('ChatboxAnalyzeWorker.extractTasks', () => {
-  function makeCfg(enabled: boolean): TypedConfigService {
+  function makeCfg(enabled: boolean, mode: 'spine' | 'legacy' = 'legacy'): TypedConfigService {
     return {
       get aiFeatures() {
         return { chatboxTaskExtractionEnabled: enabled };
       },
+      getDynamic: vi.fn().mockResolvedValue(mode),
     } as unknown as TypedConfigService;
   }
 
@@ -224,6 +225,7 @@ describe('ChatboxAnalyzeWorker.extractTasks', () => {
       extracted?: unknown[];
       dedupe?: { created: number; linked: number };
       withDeps?: boolean;
+      mode?: 'spine' | 'legacy';
     },
   ) {
     const extractor = {
@@ -245,7 +247,7 @@ describe('ChatboxAnalyzeWorker.extractTasks', () => {
       ingest,
       useDeps ? extractor : undefined,
       useDeps ? dedupe : undefined,
-      makeCfg(opts.enabled),
+      makeCfg(opts.enabled, opts.mode ?? 'legacy'),
     );
     return { worker, extractor, dedupe, dedupeProcess };
   }
@@ -337,6 +339,22 @@ describe('ChatboxAnalyzeWorker.extractTasks', () => {
 
     expect(dedupeProcess).not.toHaveBeenCalled();
   });
+
+  it('режим spine (дефолт) → extractTasks bypass (задачи через спайн-специалист, legacy не создаёт)', async () => {
+    const prisma = makePrisma({});
+    const { worker, extractor, dedupeProcess } = makeWorker(prisma, {
+      enabled: true,
+      mode: 'spine',
+      extracted: [{ title: 'Сделать расчёт', sourceQuote: 'Сделаю расчёт', confidence: 0.9 }],
+      dedupe: { created: 1, linked: 0 },
+    });
+
+    await worker.extractTasks('t1', 's1');
+
+    expect(extractor.extractTasks).not.toHaveBeenCalled();
+    expect(dedupeProcess).not.toHaveBeenCalled();
+    expect(prisma.task.findFirst).not.toHaveBeenCalled();
+  });
 });
 
 describe('ChatboxAnalyzeWorker.resolveOwnerUserId fallback owner→admin→any', () => {
@@ -399,6 +417,7 @@ describe('ChatboxAnalyzeWorker.resolveOwnerUserId fallback owner→admin→any',
       get aiFeatures() {
         return { chatboxTaskExtractionEnabled: true };
       },
+      getDynamic: vi.fn().mockResolvedValue('legacy'),
     } as unknown as TypedConfigService;
 
     const worker = new ChatboxAnalyzeWorker(

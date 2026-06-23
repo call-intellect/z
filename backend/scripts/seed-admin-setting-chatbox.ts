@@ -42,6 +42,15 @@ const SEEDS: SettingSeed[] = [
     description:
       'Извлечение задач из клиентской переписки (ChatBox): закрытая сессия → действия → задачи в трекере. Рубильник, по умолчанию вкл (Ship-On). Выкл → переписка по-прежнему в графе, но задачи из неё не создаются.',
   },
+  {
+    key: 'chatbox.analyze.stuckAnalyzingMin',
+    value: 15,
+    category: 'chatbox',
+    section: 'general',
+    severity: 'low',
+    description:
+      'Порог в минутах, после которого сессия в статусе analyzing считается зависшей (воркер умер между analyzing и done/failed) и переподбирается догоняющим sweep-кроном анализа.',
+  },
 ];
 
 interface Counters {

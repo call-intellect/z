@@ -91,6 +91,33 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-23 — Унификация извлечения задач на спайн (4 фазы) + chatbox-анализ не зависает
+
+> ТЗ `plans/tz/2026-06-23-unified-task-extraction.md` (Ф1–Ф4, strangler-fig) + `plans/tz/2026-06-23-chatbox-analysis-no-stuck-sessions.md`. Ветка `feature/unified-task-extraction`, 7 коммитов (`72249ebe` Ф1 / `ee6ef1fa` Ф2 / `658b3194` Ф3 / `3dbd2627` Ф4 / `e17a3cf6` chatbox-no-stuck / `764bd39c` chain-test / `122d2655` chore-tests).
+>
+> **Зачем:** извлечение задач из НЕ-meeting-каналов (chatbox/telegram/tracker/email/api) переведено на общий спайн графа — новый специалист `3-15-tasks` (`signalType=action_item` → LLM `task-extract` → IntakeIssue), единый резолвер исполнителя, единый дедуп с LINK-семантикой (`TaskSource{issueId}`, без дубль-Issue) + advisory-lock race-guard, Task = явный пред-слой с провенанс-промоутом Task→Issue. Встречи остаются на `meeting-extract-actions`. Плюс: chatbox-анализ не зависает (enqueue после синка + самолечащий sweep каждые 10 мин).
+>
+> **🟡 2 МИГРАЦИИ PRISMA (авто через `migrate deploy`).** **🟢 НОВЫХ ENV НЕТ** (`tracker.taskExtractionMode`/`taskDedupLinkSemantics`/`taskDedupGrayBand`/`taskExtractMinConfidence` + `chatbox.analyze.stuckAnalyzingMin` — чистые AdminSetting). 5 новых крутилок/флагов (2 kill-switch ON + 3 крутилки), 1 новый LLM taskType (`task-extract`, code-fallback), 1 новый специалист-воркер (`3-15-tasks`), 1 новая метрика (`z_chatbox_stuck_analyzing_sessions`). Docker rebuild backend.
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): 2 миграции, обе аддитивные, без потери данных, backfill не нужен. **В STEPS не регистрируются** (миграции схемы).
+  - `20260623120000_add_signaltype_action_item` — `ALTER TYPE "SignalType" ADD VALUE IF NOT EXISTS 'action_item'` (новый сигнал для спайн-извлечения задач).
+  - `20260623130000_tasksource_issue_link` — `ALTER TABLE "TaskSource" ALTER COLUMN "taskId" DROP NOT NULL` + `ADD COLUMN "issueId"` + FK `TaskSource_issueId_fkey → Issue` (Cascade) + `@@unique([issueId,sourceType,sourceRefId])` + `@@index([tenantId,issueId])` (провенанс-связь задача↔Issue).
+- **Шаг 7 — Seed (идемпотентные, оба уже в STEPS `phase:'seed-base'`):**
+  - `docker compose exec backend bun run scripts/seed-admin-setting-tracker.ts` — **расширен**: `tracker.taskExtractionMode` (kill-switch ON, spine|legacy), `tracker.taskDedupLinkSemantics` (kill-switch ON, link|delete), `tracker.taskDedupGrayBand` (0.07), `tracker.taskExtractMinConfidence` (0.45).
+  - `docker compose exec backend bun run scripts/seed-admin-setting-chatbox.ts` — **расширен**: `chatbox.analyze.stuckAnalyzingMin` (15).
+  - Доезжают агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Отдельных строк STEPS добавлять НЕ нужно — оба сида уже зарегистрированы.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend (knowledge-core: `Specialist315Tasks{Worker,Service}` + RouterService case `action_item`→`3-15-tasks` + `task-extract` промпт/taskType + `task-dedup-matcher.util`; tracker: единый `AssigneeResolverService` для текстовых каналов, `TaskDedupService` LINK-семантика + advisory-lock guard, `triageChatboxTask` пишет `TaskSource{issueId}`; chatbox: `incrementalSync` enqueue pending-анализа + `ChatboxAnalyzeCron.sweep` каждые 10 мин подбирает pending+ended И застрявшие analyzing).
+- **Шаг 12 — Smoke** (после выката):
+  - Новый специалист в логах диспетчера / метриках: grep `3-15-tasks` в `core.specialist-routing`; метрика `core_specialist_*{type='task'}` в `/metrics`.
+  - Новая метрика-gauge в `/metrics`: `z_chatbox_stuck_analyzing_sessions` (застрявшие в `analyzing` сессии чата; ненулевое дольше интервала sweep → анализ виснет).
+  - Sweep-крон анализа чата теперь каждые 10 мин (`EVERY_10_MINUTES`): grep `ChatboxAnalyzeCron`/`chatbox-analyze` в логах планировщика; pending-сессии не висят дольше ~интервала.
+  - Крутилки видны в админке AdminSetting: `tracker.{taskExtractionMode,taskDedupLinkSemantics,taskDedupGrayBand,taskExtractMinConfidence}`, `chatbox.analyze.stuckAnalyzingMin`. 2 kill-switch (`tracker.taskExtractionMode`/`tracker.taskDedupLinkSemantics`) — в `docs/operations/feature-flags.md`.
+  - Цепочка: новый текстовый источник (chatbox/telegram/api) с поручением → `IdeaBlock(action_item)` → IntakeIssue → Issue; параллельные «встреча+чат» про одно поручение → один Issue + N `TaskSource` (без дубль-Issue).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-22 — Встреча→трекер: корень авто-триажа (A2) + извлекающие модели на Pro (E) + системные баги конвейера (F1–F8) + наблюдаемость diag (G) + решения встречи в UI (D5)
 
 > ТЗ `plans/tz/2026-06-22-meeting-to-tracker-and-models-unified-fix.md` — остаток сверх блоков A–D (их реализовала параллельная сессия, см. блок «Задачная подсистема» ниже). Этот push (14 коммитов) добавляет: A2 (главный корень — задача со встречи промоутится в `Issue` ВСЕГДА, replay 0→7 PASS), E (4 извлекающих taskType → `deepseek-v4-pro`), F1–F8 (системные баги: идемпотентность решений, proxy-400 json, полнота combined-пути, vox-метрика, сторож зависших дорожек, Goal no_owner, AGE-vs-LLM диагностика, толерантная Zod quality-score), G (diag дефолт-домен korateam.ru + серверный фильтр LLM-вызовов по meetingId + лимит превью + harness), D5 (решения встречи в карточке встречи).

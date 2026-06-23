@@ -36,6 +36,11 @@ describe('ChatboxSyncService', () => {
     };
     chatboxChannel: { findMany: ReturnType<typeof vi.fn> };
     person: { findMany: ReturnType<typeof vi.fn> };
+    chatboxIntegration: {
+      findUnique: ReturnType<typeof vi.fn>;
+      updateMany: ReturnType<typeof vi.fn>;
+    };
+    chatboxChatSession: { findMany: ReturnType<typeof vi.fn> };
   };
   let integrationMock: { getConfigForSync: ReturnType<typeof vi.fn> };
   let sessionMock: { rebuildSessions: ReturnType<typeof vi.fn> };
@@ -68,6 +73,11 @@ describe('ChatboxSyncService', () => {
       },
       chatboxChannel: { findMany: vi.fn().mockResolvedValue([]) },
       person: { findMany: vi.fn().mockResolvedValue([]) },
+      chatboxIntegration: {
+        findUnique: vi.fn().mockResolvedValue({ analysisEnabled: true, lastIncrementalSyncAt: null }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      chatboxChatSession: { findMany: vi.fn().mockResolvedValue([]) },
     };
     integrationMock = {
       getConfigForSync: vi.fn().mockResolvedValue(CFG),
@@ -150,6 +160,48 @@ describe('ChatboxSyncService', () => {
     expect(prismaMock.chatboxCustomer.upsert).toHaveBeenCalledTimes(1);
     expect(prismaMock.chatboxCustomer.update).not.toHaveBeenCalled();
     expect(prismaMock.person.findMany).not.toHaveBeenCalled();
+  });
+
+  it('incrementalSync: ставит анализ pending+ended сессий и возвращает analysisEnqueued', async () => {
+    clientMock.listChannels.mockResolvedValue({ channels: [], total: 0 });
+    clientMock.listCustomers.mockResolvedValue({ customers: [], total: 0 });
+    clientMock.listChannelClients.mockResolvedValue({ clients: [], total: 0 });
+    clientMock.listMembers.mockResolvedValue({ members: [], total: 0 });
+    clientMock.listChats.mockResolvedValue({ chats: [], total: 0 });
+    prismaMock.chatboxChatSession.findMany.mockResolvedValue([{ id: 'sess1' }, { id: 'sess2' }]);
+
+    const result = await service.incrementalSync('t1');
+
+    expect(prismaMock.chatboxChatSession.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 't1',
+          analysisStatus: 'pending',
+          endedAt: { not: null },
+        }),
+      }),
+    );
+    expect(analyzeQueueMock.enqueue).toHaveBeenCalledTimes(2);
+    expect(analyzeQueueMock.enqueue).toHaveBeenCalledWith('t1', 'sess1');
+    expect(analyzeQueueMock.enqueue).toHaveBeenCalledWith('t1', 'sess2');
+    expect(result.analysisEnqueued).toBe(2);
+  });
+
+  it('incrementalSync: analysisEnabled=false → анализ не ставится', async () => {
+    clientMock.listChannels.mockResolvedValue({ channels: [], total: 0 });
+    clientMock.listCustomers.mockResolvedValue({ customers: [], total: 0 });
+    clientMock.listChannelClients.mockResolvedValue({ clients: [], total: 0 });
+    clientMock.listMembers.mockResolvedValue({ members: [], total: 0 });
+    clientMock.listChats.mockResolvedValue({ chats: [], total: 0 });
+    prismaMock.chatboxIntegration.findUnique.mockResolvedValue({
+      analysisEnabled: false,
+      lastIncrementalSyncAt: null,
+    });
+
+    const result = await service.incrementalSync('t1');
+
+    expect(analyzeQueueMock.enqueue).not.toHaveBeenCalled();
+    expect(result.analysisEnqueued).toBe(0);
   });
 
   it('syncChannelClients: upsert по числу, НЕ сопоставляет автоматически (update не зовётся)', async () => {

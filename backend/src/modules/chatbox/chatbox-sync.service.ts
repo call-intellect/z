@@ -454,6 +454,7 @@ export class ChatboxSyncService {
     channelClients: number;
     members: number;
     chats: number;
+    analysisEnqueued: number;
   }> {
     if (!(await this.isEnabled())) {
       this.logger.log('incrementalSync: chatbox.enabled=false — пропуск');
@@ -463,6 +464,7 @@ export class ChatboxSyncService {
         channelClients: 0,
         members: 0,
         chats: 0,
+        analysisEnqueued: 0,
       };
     }
     const startedAt = new Date();
@@ -485,7 +487,9 @@ export class ChatboxSyncService {
       data: { lastIncrementalSyncAt: startedAt },
     });
 
-    return { channels, customers, channelClients, members, chats };
+    const analysisEnqueued = await this.enqueuePendingAnalysisIfEnabled(tenantId);
+
+    return { channels, customers, channelClients, members, chats, analysisEnqueued };
   }
 
   async syncByScope(

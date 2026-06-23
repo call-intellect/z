@@ -54,6 +54,7 @@ export const SIGNAL_TYPE_LABEL: Record<string, string> = {
   content_artifact: 'контент-артефакт',
   commitment_status: 'статус обязательства',
   plan_item: 'пункт плана',
+  action_item: 'задача к исполнению',
   done_item: 'выполненный пункт',
   blocker: 'блокер',
   team_friction: 'трение в команде',

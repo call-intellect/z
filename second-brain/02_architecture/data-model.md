@@ -387,7 +387,9 @@ IdeaBlock {
   tags[], signalType (enum: fact / pain / feature_request / objection /
                       churn_risk / idea / risk / commitment / decision /
                       mood / drift / competitor_move / metric_change /
-                      knowledge_gap),
+                      knowledge_gap / action_item /* 2026-06-23, миграция
+                      add_signaltype_action_item — спайн-извлечение задач,
+                      роутится в специалист 3-15-tasks */ ),
   confidence Decimal(4,3), dataClass,
   embedding vector(1536),                -- text-embedding-3-small
   status (draft | canonical | merged_into | archived),
@@ -606,6 +608,11 @@ Card {
 - **Межисточниковый дедуп (Ф6):** задача из переписки, семантически совпадающая (cosine ≥ `tasks.cross_source_dedupe_threshold`, дефолт 0.85) с задачей из встречи/трекера, не плодит дубль. Гейт `TASKS_CROSS_SOURCE_DEDUPE_ENABLED`.
 
 **`TaskSource`** — новая справочная модель/enum источника задачи (значения `meeting`/`chatbox`/…), на которую ссылается `Task.sourceType`.
+
+**`TaskSource` — провенанс-связь с `Issue` (миграция `20260623130000_tasksource_issue_link`, ТЗ unified-task-extraction Ф3/Ф4):** одна задача — N источников; источник теперь может указывать на `Issue` напрямую (LINK-семантика спайн-дедупа), а не только на `Task`.
+- `taskId: String?` — **стал nullable** (был NOT NULL): запись может относиться к `Issue`, а не к `Task`.
+- `issueId: String?` — FK на `Issue` (`onDelete: Cascade`): дубль задачи линкуется к существующему `Issue` без создания дубль-Issue (спайн-специалист `3-15-tasks` на вердикт дедупа 'same'; промоут Task→Issue пишет провенанс при accept).
+- `@@unique([issueId, sourceType, sourceRefId])` + `@@index([tenantId, issueId])` (идемпотентность провенанса: повтор `create` глотается P2002).
 
 **ChatBox: связка клиента переписки с графом (та же миграция).** `ChatboxCustomer` и `ChatboxChannelClient` (`ChannelClient`) получили:
 - `linkedPersonId: String?` — связь клиента/контакта переписки с `Person` графа знаний.

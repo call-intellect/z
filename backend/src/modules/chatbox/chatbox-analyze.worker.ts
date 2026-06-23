@@ -159,6 +159,16 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    const mode =
+      (await this.cfg?.getDynamic<'spine' | 'legacy'>(
+        'tracker.taskExtractionMode',
+        undefined,
+        'spine',
+      )) ?? 'spine';
+    if (mode === 'spine') {
+      return;
+    }
+
     const [existingByTask, existingBySource] = await Promise.all([
       this.prisma.task.findFirst({
         where: { tenantId, sourceChatSessionId: sessionId },

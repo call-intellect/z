@@ -318,6 +318,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.selfAssignAuthorFallbackEnabled', z.boolean()],
   ['tracker.taskExtractMinConfidence', UNIT_INTERVAL],
   ['tracker.taskDismissUndoWindowHours', POSITIVE_INT],
+  ['tracker.completionDetailGateEnabled', z.boolean()],
   ['chatbox.taskExtraction.enabled', z.boolean()],
   ['chatbox.analyze.stuckAnalyzingMin', POSITIVE_INT],
 

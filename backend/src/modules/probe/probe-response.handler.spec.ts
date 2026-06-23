@@ -66,6 +66,7 @@ interface Mocks {
   assigneeResolve: ReturnType<typeof vi.fn>;
   addAssignee: ReturnType<typeof vi.fn>;
   softDelete: ReturnType<typeof vi.fn>;
+  closureUpsert: ReturnType<typeof vi.fn>;
 }
 
 function makeMocks(): Mocks {
@@ -91,6 +92,7 @@ function makeMocks(): Mocks {
   const assigneeResolve = vi.fn().mockResolvedValue({ kind: 'not_found' });
   const addAssignee = vi.fn().mockResolvedValue({ ok: true });
   const softDelete = vi.fn().mockResolvedValue({ ok: true });
+  const closureUpsert = vi.fn().mockResolvedValue({ id: 'cand-1', status: 'pending' });
 
   const prisma = {
     probeEvent: {
@@ -125,6 +127,9 @@ function makeMocks(): Mocks {
     },
     person: {
       findFirst: personFindFirst,
+    },
+    taskClosureCandidate: {
+      upsert: closureUpsert,
     },
   } as unknown as PrismaService;
 
@@ -164,6 +169,7 @@ function makeMocks(): Mocks {
     assigneeResolve,
     addAssignee,
     softDelete,
+    closureUpsert,
   };
 }
 
@@ -1038,5 +1044,72 @@ describe('ProbeResponseHandler — Фаза 6 decision-probe (симметрия
     ).resolves.toBeUndefined();
 
     expect(mocks.decisionUpdateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProbeResponseHandler — completion_detail_missing → кандидат на закрытие (Ф7)', () => {
+  function setCompletionDetailProbe(mocks: Mocks): void {
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi
+      .fn()
+      .mockResolvedValue({
+        ...buildProbe(),
+        reason: 'task.completion_detail_missing',
+        payload: {
+          contextCardId: 'issue-77',
+          contextCardKind: 'issue',
+          contextCardTitle: 'Сделать макет',
+          suggestedQuestion: 'Что конкретно вы сделали с задачей «Сделать макет»?',
+        },
+      });
+  }
+
+  it('ответ с деталями (не reject) → taskClosureCandidate.upsert c evidenceQuote=answer', async () => {
+    const mocks = makeMocks();
+    setCompletionDetailProbe(mocks);
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({
+      ...event,
+      payload: { text: 'собрал макет и отправил клиенту на согласование' },
+    });
+
+    expect(mocks.closureUpsert).toHaveBeenCalledTimes(1);
+    const call = mocks.closureUpsert.mock.calls[0]![0] as {
+      where: { tenantId_issueId_sourceBlockId: Record<string, string> };
+      create: { evidenceQuote: string; status: string; sourceBlockId: string };
+      update: { evidenceQuote: string };
+    };
+    expect(call.where.tenantId_issueId_sourceBlockId).toMatchObject({
+      tenantId: 'org-classify',
+      issueId: 'issue-77',
+      sourceBlockId: 'concierge-complete:user-1',
+    });
+    expect(call.create.evidenceQuote).toBe(
+      'собрал макет и отправил клиенту на согласование',
+    );
+    expect(call.create.status).toBe('pending');
+    expect(call.update.evidenceQuote).toBe(
+      'собрал макет и отправил клиенту на согласование',
+    );
+  });
+
+  it('ответ «не делал / удалить» (reject) → upsert НЕ вызван', async () => {
+    const mocks = makeMocks();
+    setCompletionDetailProbe(mocks);
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'удалить, я не делал' } });
+
+    expect(mocks.closureUpsert).not.toHaveBeenCalled();
+  });
+
+  it('пустой ответ → upsert НЕ вызван', async () => {
+    const mocks = makeMocks();
+    setCompletionDetailProbe(mocks);
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: {} });
+
+    expect(mocks.closureUpsert).not.toHaveBeenCalled();
   });
 });

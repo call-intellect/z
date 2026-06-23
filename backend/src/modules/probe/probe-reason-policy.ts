@@ -24,6 +24,7 @@ export const PROBE_REASON_WINDOW: Record<string, ProbeWindow> = {
   'task.due_date_missing': 'immediate',
   'task.poorly_specified': 'immediate',
   'task.false_positive': 'immediate',
+  'task.completion_detail_missing': 'immediate',
 };
 
 export function probeWindow(reason: string): ProbeWindow {

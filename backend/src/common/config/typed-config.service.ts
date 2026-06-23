@@ -1731,6 +1731,11 @@ export class TypedConfigService {
         undefined,
         24,
       ),
+      completionDetailGateEnabled: this.resolveSync<boolean>(
+        'tracker.completionDetailGateEnabled',
+        undefined,
+        true,
+      ),
     } as const;
   }
 

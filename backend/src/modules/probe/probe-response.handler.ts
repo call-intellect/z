@@ -165,6 +165,16 @@ export class ProbeResponseHandler {
         });
       }
 
+      if (probe.reason === 'task.completion_detail_missing') {
+        await this.maybeApplyCompletionDetailAnswer({
+          tenantId: event.tenantId,
+          actorUserId: event.recipientUserId,
+          probePayload,
+          eventPayload: event.payload,
+          classifiedAnswer: classification?.answer,
+        });
+      }
+
       if (probe.reason.startsWith('decision.')) {
         await this.maybeApplyDecisionProbeAnswer({
           tenantId: event.tenantId,
@@ -368,6 +378,60 @@ export class ProbeResponseHandler {
           err: err instanceof Error ? err.message : String(err),
         },
         'task-probe-apply: best-effort, пропускаю',
+      );
+    }
+  }
+
+  private async maybeApplyCompletionDetailAnswer(args: {
+    tenantId: string;
+    actorUserId: string;
+    probePayload: Record<string, unknown>;
+    eventPayload: Record<string, unknown>;
+    classifiedAnswer?: string;
+  }): Promise<void> {
+    const issueId = this.toStringOrUndef(args.probePayload.contextCardId);
+    if (!issueId) return;
+    const answer =
+      args.classifiedAnswer && args.classifiedAnswer.trim().length > 0
+        ? args.classifiedAnswer
+        : this.extractResponseText(args.eventPayload);
+    if (!answer) return;
+
+    if (mapExistenceConfirmAnswer(answer)?.decisionType === 'reject') return;
+
+    const sourceBlockId = `concierge-complete:${args.actorUserId}`;
+    const evidenceQuote = answer.slice(0, 2000);
+    try {
+      await this.prisma.taskClosureCandidate.upsert({
+        where: {
+          tenantId_issueId_sourceBlockId: {
+            tenantId: args.tenantId,
+            issueId,
+            sourceBlockId,
+          },
+        },
+        create: {
+          tenantId: args.tenantId,
+          issueId,
+          sourceBlockId,
+          status: 'pending',
+          evidenceQuote,
+          rationale: 'Детали выполнения получены ответом на уточнение',
+          expiresAt: null,
+        },
+        update: { evidenceQuote },
+      });
+      this.logger.log(
+        `completion-detail-apply: создан/обновлён кандидат на закрытие issue=${issueId} (tenant=${args.tenantId})`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          issueId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'completion-detail-apply: best-effort, пропускаю',
       );
     }
   }

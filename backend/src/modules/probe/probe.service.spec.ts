@@ -507,3 +507,85 @@ describe('ProbeService.suggest — центральный гейт полити�
     expect(e.regulationFindFirst).not.toHaveBeenCalled();
   });
 });
+
+describe('ProbeService.suggest — Ф2 дедуп с учётом адресата (recipientAwareDedup)', () => {
+  function hashOfCall(env: ReturnType<typeof makeService>): string {
+    const created = env.create.mock.calls[0]![0] as {
+      data: { contentHash: string };
+    };
+    return created.data.contentHash;
+  }
+
+  it('одинаковый reason+contextCardId, РАЗНЫЕ адресаты → РАЗНЫЕ contentHash', async () => {
+    const a = makeService();
+    await a.service.suggest({
+      tenantId: 'org-1',
+      emittedByService: '3-1-regulations',
+      reason: 'regulation.missing_owner',
+      payload: { contextCardId: 'card-1', message: 'Один и тот же вопрос' },
+      recipientCandidates: ['user-A'],
+      priorityHint: 0.5,
+    });
+    const b = makeService();
+    await b.service.suggest({
+      tenantId: 'org-1',
+      emittedByService: '3-1-regulations',
+      reason: 'regulation.missing_owner',
+      payload: { contextCardId: 'card-1', message: 'Один и тот же вопрос' },
+      recipientCandidates: ['user-B'],
+      priorityHint: 0.5,
+    });
+
+    expect(hashOfCall(a)).not.toBe(hashOfCall(b));
+  });
+
+  it('одинаковый reason+contextCardId, ОДИНАКОВЫЕ адресаты → ОДИНАКОВЫЙ contentHash', async () => {
+    const a = makeService();
+    await a.service.suggest({
+      tenantId: 'org-1',
+      emittedByService: '3-1-regulations',
+      reason: 'regulation.missing_owner',
+      payload: { contextCardId: 'card-1', message: 'Один и тот же вопрос' },
+      recipientCandidates: ['user-A', 'user-B'],
+      priorityHint: 0.5,
+    });
+    const b = makeService();
+    await b.service.suggest({
+      tenantId: 'org-1',
+      emittedByService: '3-1-regulations',
+      reason: 'regulation.missing_owner',
+      payload: { contextCardId: 'card-1', message: 'Один и тот же вопрос' },
+      recipientCandidates: ['user-B', 'user-A'],
+      priorityHint: 0.5,
+    });
+
+    expect(hashOfCall(a)).toBe(hashOfCall(b));
+  });
+
+  it('флаг recipientAwareDedupEnabled OFF → адресаты НЕ влияют на contentHash', async () => {
+    const a = makeService({
+      dynamicOverrides: { 'probe.recipientAwareDedupEnabled': false },
+    });
+    await a.service.suggest({
+      tenantId: 'org-1',
+      emittedByService: '3-1-regulations',
+      reason: 'regulation.missing_owner',
+      payload: { contextCardId: 'card-1', message: 'Один и тот же вопрос' },
+      recipientCandidates: ['user-A'],
+      priorityHint: 0.5,
+    });
+    const b = makeService({
+      dynamicOverrides: { 'probe.recipientAwareDedupEnabled': false },
+    });
+    await b.service.suggest({
+      tenantId: 'org-1',
+      emittedByService: '3-1-regulations',
+      reason: 'regulation.missing_owner',
+      payload: { contextCardId: 'card-1', message: 'Один и тот же вопрос' },
+      recipientCandidates: ['user-B'],
+      priorityHint: 0.5,
+    });
+
+    expect(hashOfCall(a)).toBe(hashOfCall(b));
+  });
+});

@@ -110,9 +110,22 @@ export class ProbeService {
 
       const notBeforeAt = input.notBeforeAt ?? null;
 
+      let recipientAwareDedup = true;
+      try {
+        recipientAwareDedup = await this.cfg.getDynamic<boolean>(
+          'probe.recipientAwareDedupEnabled',
+          undefined,
+          true,
+        );
+      } catch {
+        recipientAwareDedup = true;
+      }
       const contentHash = this.computeContentHash({
         reason: input.reason,
         payload: input.payload,
+        ...(recipientAwareDedup
+          ? { recipientCandidates: input.recipientCandidates }
+          : {}),
       });
 
       try {
@@ -568,6 +581,7 @@ export class ProbeService {
   private computeContentHash(args: {
     reason: string;
     payload: ProbeSuggestPayload;
+    recipientCandidates?: readonly string[];
   }): string {
     const ids: string[] = [];
     if (args.payload.contextBlockId) ids.push(`b:${args.payload.contextBlockId}`);
@@ -576,7 +590,11 @@ export class ProbeService {
       for (const id of args.payload.contextIds) ids.push(`x:${id}`);
     }
     ids.sort();
-    const buf = `${args.reason}|${ids.join('|')}|${args.payload.message ?? ''}`;
+    const recipients =
+      args.recipientCandidates && args.recipientCandidates.length > 0
+        ? [...args.recipientCandidates].sort()
+        : [];
+    const buf = `${args.reason}|${ids.join('|')}|${recipients.join('|')}|${args.payload.message ?? ''}`;
     return createHash('sha256').update(buf).digest('hex').slice(0, 64);
   }
 

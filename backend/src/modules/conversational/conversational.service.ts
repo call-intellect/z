@@ -464,10 +464,15 @@ export class ConversationalService {
         },
       });
     }
-    return this.prisma.notification.update({
+    const updated = await this.prisma.notification.update({
       where: { id: notif.id },
       data: { responseStatus: 'dismissed', status: 'read' },
     });
+    await this.prisma.notificationDelivery.updateMany({
+      where: { notificationId: notif.id },
+      data: { respondedAt: new Date(), status: 'responded' },
+    });
+    return updated;
   }
 
   async listMyNotifications(args: {

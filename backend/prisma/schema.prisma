@@ -6506,6 +6506,9 @@ enum ProbeStatus {
   /// не пингует сразу, а уходит ежедневным батч-дайджестом (ProbeDigestCron).
   /// Отличие от queued_digest (rate-limit) — для аудита источника отложки.
   routed_to_digest
+  /// SubjectMemory Ф2 — висящий дубль-probe погашен выводом/активацией
+  /// правила той же Org (sweepPendingDuplicates) — вопрос уже не задаём.
+  suppressed_by_memory
 }
 
 /// Idea — карточка идеи / запроса. SBA β-5 §4.1.

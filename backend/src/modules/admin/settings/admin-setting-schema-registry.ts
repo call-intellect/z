@@ -182,6 +182,7 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['subjectMemory.enabled', z.boolean()],
   ['subjectMemory.retrieveBeforeAskEnabled', z.boolean()],
+  ['subjectMemory.sweepPendingOnLearnEnabled', z.boolean()],
   ['subjectMemory.matchMinSimilarity', UNIT_INTERVAL],
   ['subjectMemory.suppressMinConfidence', UNIT_INTERVAL],
   ['subjectMemory.canaryRollbackWindowHours', POSITIVE_INT],

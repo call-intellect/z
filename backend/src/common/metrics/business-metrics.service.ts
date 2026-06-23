@@ -664,6 +664,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private subjectMemoryRuleActivatedTotal!: Counter<never>;
   private subjectMemoryRuleRolledBackTotal!: Counter<'cause'>;
   private subjectMemoryApplyTotal!: Counter<'status'>;
+  private subjectMemoryPendingSweptTotal!: Counter<never>;
   // ── W2 autonomy (2026-06-12) — OwnerResolver («лестница владельца») ──
   private ownerResolutionTotal!: Counter<'outcome'>;
   // ── Ф5/Ф6 assistant-channels (2026-06-12) — мост «каналы → помощник» ──
@@ -2810,6 +2811,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'subject_memory_apply_total',
       help: 'Слой выученной памяти: применение правила (по статусу status).',
       labelNames: ['status'] as const,
+    });
+    this.subjectMemoryPendingSweptTotal = this.getOrCreateCounter({
+      name: 'subject_memory_pending_swept_total',
+      help: 'Слой выученной памяти: висящие дубли-probe погашены выводом/активацией правила (sweepPendingDuplicates).',
+      labelNames: [] as const,
     });
     // ── W2 autonomy (2026-06-12) — OwnerResolver («лестница владельца») ──
     this.ownerResolutionTotal = this.getOrCreateCounter({
@@ -6459,6 +6465,10 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incSubjectMemoryApply(args: { status: string }): void {
     this.subjectMemoryApplyTotal.inc({ status: args.status });
+  }
+
+  incSubjectMemoryPendingSwept(args: { count: number }): void {
+    this.subjectMemoryPendingSweptTotal.inc(args.count);
   }
 
   // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract ────────────────

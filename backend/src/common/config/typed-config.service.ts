@@ -1217,6 +1217,11 @@ export class TypedConfigService {
         undefined,
         true,
       ),
+      sweepPendingOnLearnEnabled: this.resolveSync<boolean>(
+        'subjectMemory.sweepPendingOnLearnEnabled',
+        undefined,
+        true,
+      ),
       matchMinSimilarity: this.resolveSync<number>(
         'subjectMemory.matchMinSimilarity',
         undefined,

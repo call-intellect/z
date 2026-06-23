@@ -7,6 +7,7 @@ import {
   Eye,
   Link2,
   ShieldCheck,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 
@@ -21,6 +22,11 @@ type Item = {
 
 const ITEMS: Item[] = [
   { href: "/company-admin/memory-access", label: "Доступ к памяти", icon: Eye },
+  {
+    href: "/company-admin/subject-memory",
+    label: "Что Кора выучила",
+    icon: Sparkles,
+  },
   {
     href: "/company-admin/access-groups",
     label: "Группы доступа",

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { type ProbeStatus } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -6,12 +6,15 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { applyInputGuards } from '../../ai/services/prompts/common';
+import { LogService } from '../../logging/log.service';
 import {
   SUBJECT_MEMORY_JUDGE_JSON_SCHEMA,
   SUBJECT_MEMORY_JUDGE_SCHEMA_NAME,
   SUBJECT_MEMORY_JUDGE_SYSTEM_PROMPT,
   SUBJECT_MEMORY_JUDGE_USER_TEMPLATE,
 } from '../prompts/subject-memory-judge.prompt';
+
+import { SubjectMemoryService } from './subject-memory.service';
 
 const MS_PER_HOUR = 3_600_000;
 const MS_PER_DAY = 86_400_000;
@@ -42,7 +45,30 @@ export class SubjectMemoryActivationService {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Optional()
+    @Inject(SubjectMemoryService)
+    private readonly subjectMemory?: SubjectMemoryService,
+    @Optional()
+    @Inject(LogService)
+    private readonly logService?: LogService,
   ) {}
+
+  private emitLearningLog(
+    action: string,
+    message: string,
+    orgId: string,
+    details: Record<string, unknown>,
+  ): void {
+    try {
+      this.logService?.business(action, message, {
+        orgId,
+        module: SubjectMemoryActivationService.name,
+        details,
+      });
+    } catch {
+      /* observability best-effort */
+    }
+  }
 
   async promoteShadowRules(): Promise<{ promoted: number; rejected: number }> {
     if (!this.cfg.subjectMemory.enabled) return { promoted: 0, rejected: 0 };
@@ -174,6 +200,12 @@ export class SubjectMemoryActivationService {
           this.metrics.incSubjectMemoryRuleRolledBack({
             cause: 'refute_exceeds_confirm',
           });
+          this.emitLearningLog(
+            'subject_memory.rolled_back',
+            'Выученное правило откатано',
+            rule.tenantId,
+            { cause: 'refute_exceeds_confirm' },
+          );
           rolledBack++;
           continue;
         }
@@ -187,6 +219,12 @@ export class SubjectMemoryActivationService {
           this.metrics.incSubjectMemoryRuleRolledBack({
             cause: 'metric_worsened',
           });
+          this.emitLearningLog(
+            'subject_memory.rolled_back',
+            'Выученное правило откатано',
+            rule.tenantId,
+            { cause: 'metric_worsened' },
+          );
           rolledBack++;
           continue;
         }
@@ -196,6 +234,18 @@ export class SubjectMemoryActivationService {
           data: { status: 'active' },
         });
         this.metrics.incSubjectMemoryRuleActivated();
+        this.emitLearningLog(
+          'subject_memory.rule_activated',
+          'Выученное правило активировано',
+          rule.tenantId,
+          { kind: rule.kind },
+        );
+        await this.subjectMemory
+          ?.sweepPendingDuplicates({
+            tenantId: rule.tenantId,
+            contextText: rule.contextText,
+          })
+          .catch(() => 0);
         activated++;
       } catch (err) {
         this.logger.warn(

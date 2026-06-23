@@ -1655,6 +1655,12 @@ function buildSettings(): SettingSeed[] {
       'Подавление уточняющего вопроса при наличии подходящего активного правила (retrieve-before-ask). Выкл → вопрос задаётся даже если ответ уже известен из памяти',
     ],
     [
+      'subjectMemory.sweepPendingOnLearnEnabled',
+      envBool('SUBJECT_MEMORY_SWEEP_PENDING_ON_LEARN_ENABLED', true),
+      'medium',
+      'Самообучение: гасить висящие дубли-вопросы при выводе правила (kill-switch, ON). При выводе/активации правила открытые pending-probe той же Org, семантически близкие к контексту правила, переводятся в suppressed_by_memory. Выкл → дубли остаются в очереди',
+    ],
+    [
       'subjectMemory.matchMinSimilarity',
       envFloat('SUBJECT_MEMORY_MATCH_MIN_SIMILARITY', 0.82),
       'medium',

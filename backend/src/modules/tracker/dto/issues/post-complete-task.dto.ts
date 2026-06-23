@@ -10,8 +10,10 @@ export const PostCompleteTaskBodySchema = z
 export type PostCompleteTaskBodyDto = z.infer<typeof PostCompleteTaskBodySchema>;
 
 export interface PostCompleteTaskResponseDto {
-  candidateId: string;
+  candidateId: string | null;
   issueId: string;
   title: string;
   status: string;
+  needsDetail?: boolean;
+  clarificationQuestion?: string;
 }

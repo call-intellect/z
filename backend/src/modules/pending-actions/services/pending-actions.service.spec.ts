@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/typed-config.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { ConversationalService } from '../../conversational/conversational.service';
 import type { ConflictService } from '../../curation/services/conflict.service';
@@ -55,6 +56,8 @@ describe('PendingActionsService (B0)', () => {
   let conversational: ConversationalService;
   let issuesService: IssuesService;
   let progressUpdatesService: ProgressUpdatesService;
+  let cfg: TypedConfigService;
+  let sendNotification: ReturnType<typeof vi.fn>;
   let progressConfirm: ReturnType<typeof vi.fn>;
   let progressReject: ReturnType<typeof vi.fn>;
   let curationItemFindUnique: ReturnType<typeof vi.fn>;
@@ -112,8 +115,10 @@ describe('PendingActionsService (B0)', () => {
     triage = vi.fn().mockResolvedValue({ intake: { id: 'ii-1' }, createdIssue: null });
     intakeService = { triage } as unknown as IntakeService;
     respondToProbe = vi.fn().mockResolvedValue({ id: 'nt-1', responseStatus: 'answered' });
+    sendNotification = vi.fn().mockResolvedValue({ id: 'ntf-1' });
     conversational = {
       respondToProbe,
+      sendNotification,
     } as unknown as ConversationalService;
     transitionState = vi.fn().mockResolvedValue({ id: 'iss-1' });
     issuesService = { transitionState } as unknown as IssuesService;
@@ -123,6 +128,9 @@ describe('PendingActionsService (B0)', () => {
       confirm: progressConfirm,
       reject: progressReject,
     } as unknown as ProgressUpdatesService;
+    cfg = {
+      tracker: { closureNotifyCreatorEnabled: true },
+    } as unknown as TypedConfigService;
 
     curation = {
       source: 'curation',
@@ -175,6 +183,7 @@ describe('PendingActionsService (B0)', () => {
       conversational,
       issuesService,
       progressUpdatesService,
+      cfg,
     );
   });
 
@@ -643,6 +652,111 @@ describe('PendingActionsService (B0)', () => {
         resolution: 'approve',
       }),
     ).rejects.toThrow();
+  });
+
+  // ──── уведомление постановщика при закрытии (Ф8/Р-7) ────
+
+  it('confirm task_closure approve: исполнитель ≠ постановщик → уведомление постановщику (task.closed_for_review)', async () => {
+    taskClosureFindUnique.mockResolvedValue({
+      id: 'tcc-n',
+      tenantId: 't-1',
+      issueId: 'iss-1',
+      status: 'pending',
+      evidenceQuote: null,
+      rationale: null,
+    });
+    issueFindFirst.mockResolvedValue({
+      id: 'iss-1',
+      projectId: 'proj-1',
+      createdById: 'creator-1',
+      title: 'Починить виджет',
+    });
+    await svc.confirm({
+      tenantId: 't-1',
+      userId: 'executor-2',
+      source: 'task_closure',
+      resourceId: 'tcc-n',
+      resolution: 'approve',
+    });
+    expect(sendNotification).toHaveBeenCalledTimes(1);
+    expect(sendNotification.mock.calls[0]![0]).toEqual(
+      expect.objectContaining({
+        recipientUserId: 'creator-1',
+        eventType: 'task.closed_for_review',
+      }),
+    );
+  });
+
+  it('confirm task_closure approve: само-закрытие (createdById === userId) → уведомление НЕ шлётся (Р-7)', async () => {
+    taskClosureFindUnique.mockResolvedValue({
+      id: 'tcc-self',
+      tenantId: 't-1',
+      issueId: 'iss-1',
+      status: 'pending',
+      evidenceQuote: null,
+      rationale: null,
+    });
+    issueFindFirst.mockResolvedValue({
+      id: 'iss-1',
+      projectId: 'proj-1',
+      createdById: 'same-user',
+      title: 'Задача',
+    });
+    await svc.confirm({
+      tenantId: 't-1',
+      userId: 'same-user',
+      source: 'task_closure',
+      resourceId: 'tcc-self',
+      resolution: 'approve',
+    });
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it('confirm task_closure reject → уведомление постановщику НЕ шлётся', async () => {
+    taskClosureFindUnique.mockResolvedValue({
+      id: 'tcc-rej',
+      tenantId: 't-1',
+      issueId: 'iss-1',
+      status: 'pending',
+      evidenceQuote: null,
+      rationale: null,
+    });
+    await svc.confirm({
+      tenantId: 't-1',
+      userId: 'executor-2',
+      source: 'task_closure',
+      resourceId: 'tcc-rej',
+      resolution: 'reject',
+    });
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it('confirm task_closure approve: ошибка sendNotification → закрытие всё равно успешно (best-effort)', async () => {
+    taskClosureFindUnique.mockResolvedValue({
+      id: 'tcc-be',
+      tenantId: 't-1',
+      issueId: 'iss-1',
+      status: 'pending',
+      evidenceQuote: null,
+      rationale: null,
+    });
+    issueFindFirst.mockResolvedValue({
+      id: 'iss-1',
+      projectId: 'proj-1',
+      createdById: 'creator-1',
+      title: 'Задача',
+    });
+    sendNotification.mockRejectedValue(new Error('канал недоступен'));
+    const res = await svc.confirm({
+      tenantId: 't-1',
+      userId: 'executor-2',
+      source: 'task_closure',
+      resourceId: 'tcc-be',
+      resolution: 'approve',
+    });
+    expect(res).toEqual({ ok: true });
+    expect(transitionState).toHaveBeenCalledTimes(1);
+    expect(txTaskClosureUpdate.mock.calls[0]![0].data.status).toBe('accepted');
   });
 
   // ──── task_review (TZ task-dedup, 2026-06-16, Ф4, R11/R13) ────

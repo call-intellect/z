@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { LlmRouterService } from '../../ai/services/llm-router.service';
 import type { ProbeService } from '../../probe/probe.service';
 import type { IssueResponseDto } from '../dto/issues/issue-response.dto';
 
@@ -23,13 +24,16 @@ function makeCfg(overrides?: {
   assigneeClarifyEnabled?: boolean;
   dueDateClarifyEnabled?: boolean;
   assigneeProbePriorityHint?: number;
+  completionDetailGateEnabled?: boolean;
 }): TypedConfigService {
   return {
     tracker: {
       assigneeClarifyEnabled: overrides?.assigneeClarifyEnabled ?? true,
       dueDateClarifyEnabled: overrides?.dueDateClarifyEnabled ?? true,
       assigneeProbePriorityHint: overrides?.assigneeProbePriorityHint ?? 0.7,
+      completionDetailGateEnabled: overrides?.completionDetailGateEnabled ?? true,
     },
+    aiFeatures: { promptInjectionGuardEnabled: true },
   } as unknown as TypedConfigService;
 }
 
@@ -611,15 +615,33 @@ describe('MeTasksService.suggestAssignee', () => {
   });
 });
 
-function buildResolveHarness(): {
+function buildResolveHarness(opts?: {
+  cfgOverrides?: Parameters<typeof makeCfg>[0];
+  llmCall?: ReturnType<typeof vi.fn>;
+  withLlm?: boolean;
+}): {
   service: MeTasksService;
   issueFindMany: ReturnType<typeof vi.fn>;
   closureUpsert: ReturnType<typeof vi.fn>;
   progressCreate: ReturnType<typeof vi.fn>;
+  probeSuggest: ReturnType<typeof vi.fn>;
+  llmCall: ReturnType<typeof vi.fn>;
 } {
   const issueFindMany = vi.fn(async () => [] as Array<{ id: string; title: string }>);
   const closureUpsert = vi.fn(async () => ({ id: 'cand_1', status: 'pending' }));
   const progressCreate = vi.fn(async () => ({ id: 'pu_1', issueId: 'issue_1' }));
+  const probeSuggest = vi.fn(async () => ({ ok: true, probeEventId: 'probe_1' }));
+  const llmCall =
+    opts?.llmCall ??
+    vi.fn(async () => ({
+      text: JSON.stringify({
+        done: true,
+        confidence: 0.9,
+        rationale: 'r',
+        positiveSignals: [],
+        negativeSignals: [],
+      }),
+    }));
 
   const prisma = {
     issue: { findMany: issueFindMany },
@@ -632,8 +654,12 @@ function buildResolveHarness(): {
   const skillRouting = {} as unknown as SkillRoutingService;
   const metrics = {} as unknown as BusinessMetricsService;
   const progressUpdates = { create: progressCreate } as unknown as ProgressUpdatesService;
-  const probe = { suggest: vi.fn() } as unknown as ProbeService;
-  const cfg = makeCfg();
+  const probe = { suggest: probeSuggest } as unknown as ProbeService;
+  const cfg = makeCfg(opts?.cfgOverrides);
+  const llm =
+    opts?.withLlm === false
+      ? undefined
+      : ({ call: llmCall } as unknown as LlmRouterService);
 
   const service = new MeTasksService(
     prisma,
@@ -646,8 +672,9 @@ function buildResolveHarness(): {
     progressUpdates,
     probe,
     cfg,
+    llm,
   );
-  return { service, issueFindMany, closureUpsert, progressCreate };
+  return { service, issueFindMany, closureUpsert, progressCreate, probeSuggest, llmCall };
 }
 
 describe('MeTasksService.resolveOpenTaskByName', () => {
@@ -726,11 +753,43 @@ describe('MeTasksService.resolveOpenTaskByName', () => {
 });
 
 describe('MeTasksService.completeTask', () => {
-  it('resolved → upsert с sentinel sourceBlockId + status pending', async () => {
+  it('(а) пустой note + gate ON → probe completion_detail_missing, кандидат НЕ создан, needsDetail', async () => {
     const h = buildResolveHarness();
     h.issueFindMany.mockResolvedValueOnce([{ id: 'i1', title: 'Сделать макет' }]);
-    const res = await h.service.completeTask({ taskName: 'сделать макет', note: 'готово' }, TENANT, USER);
+    const res = await h.service.completeTask({ taskName: 'сделать макет' }, TENANT, USER);
 
+    expect(h.probeSuggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'task.completion_detail_missing',
+        emittedByService: 'me-tasks-complete',
+        recipientCandidates: [USER],
+        payload: expect.objectContaining({ contextCardId: 'i1', contextCardKind: 'issue' }),
+      }),
+    );
+    expect(h.closureUpsert).not.toHaveBeenCalled();
+    expect(res).toEqual({
+      candidateId: null,
+      issueId: 'i1',
+      title: 'Сделать макет',
+      status: 'needs_detail',
+      needsDetail: true,
+      clarificationQuestion: 'Что конкретно вы сделали с задачей «Сделать макет»?',
+    });
+  });
+
+  it('(б1) конкретный note + LLM verdict.done=true → кандидат создан, evidenceQuote=note', async () => {
+    const h = buildResolveHarness();
+    h.issueFindMany.mockResolvedValueOnce([{ id: 'i1', title: 'Сделать макет' }]);
+    const res = await h.service.completeTask(
+      { taskName: 'сделать макет', note: 'собрал макет и отправил клиенту' },
+      TENANT,
+      USER,
+    );
+
+    expect(h.llmCall).toHaveBeenCalledWith(
+      expect.objectContaining({ taskType: 'task-closure-verify' }),
+    );
+    expect(h.probeSuggest).not.toHaveBeenCalled();
     expect(h.closureUpsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
@@ -745,7 +804,7 @@ describe('MeTasksService.completeTask', () => {
           issueId: 'i1',
           sourceBlockId: `concierge-complete:${USER}`,
           status: 'pending',
-          evidenceQuote: 'готово',
+          evidenceQuote: 'собрал макет и отправил клиенту',
           rationale: 'Отмечено выполненным через помощника',
           expiresAt: null,
         }),
@@ -760,22 +819,86 @@ describe('MeTasksService.completeTask', () => {
     });
   });
 
-  it('идемпотентность: повторный вызов всё равно upsert с пустым update', async () => {
-    const h = buildResolveHarness();
+  it('(б2) конкретный note + LLM verdict.done=false → недостаточно, probe + needsDetail', async () => {
+    const h = buildResolveHarness({
+      llmCall: vi.fn(async () => ({
+        text: JSON.stringify({
+          done: false,
+          confidence: 0.8,
+          rationale: 'r',
+          positiveSignals: [],
+          negativeSignals: [],
+        }),
+      })),
+    });
+    h.issueFindMany.mockResolvedValueOnce([{ id: 'i1', title: 'Сделать макет' }]);
+    const res = await h.service.completeTask(
+      { taskName: 'сделать макет', note: 'начал делать' },
+      TENANT,
+      USER,
+    );
+    expect(h.probeSuggest).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'task.completion_detail_missing' }),
+    );
+    expect(h.closureUpsert).not.toHaveBeenCalled();
+    expect(res.needsDetail).toBe(true);
+    expect(res.candidateId).toBeNull();
+  });
+
+  it('(б3) непустой note + LLM отсутствует → fail-open, кандидат создан', async () => {
+    const h = buildResolveHarness({ withLlm: false });
+    h.issueFindMany.mockResolvedValueOnce([{ id: 'i1', title: 'Сделать макет' }]);
+    const res = await h.service.completeTask(
+      { taskName: 'сделать макет', note: 'готово' },
+      TENANT,
+      USER,
+    );
+    expect(h.probeSuggest).not.toHaveBeenCalled();
+    expect(h.closureUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: expect.objectContaining({ evidenceQuote: 'готово' }) }),
+    );
+    expect(res.candidateId).toBe('cand_1');
+  });
+
+  it('(б4) непустой note + LLM бросает → fail-open, кандидат создан', async () => {
+    const h = buildResolveHarness({
+      llmCall: vi.fn(async () => {
+        throw new Error('boom');
+      }),
+    });
+    h.issueFindMany.mockResolvedValueOnce([{ id: 'i1', title: 'Сделать макет' }]);
+    const res = await h.service.completeTask(
+      { taskName: 'сделать макет', note: 'готово' },
+      TENANT,
+      USER,
+    );
+    expect(h.closureUpsert).toHaveBeenCalledTimes(1);
+    expect(res.candidateId).toBe('cand_1');
+  });
+
+  it('(в) gate OFF → кандидат создаётся всегда (старое поведение), note=null', async () => {
+    const h = buildResolveHarness({ cfgOverrides: { completionDetailGateEnabled: false } });
+    h.issueFindMany.mockResolvedValueOnce([{ id: 'i1', title: 'Сделать макет' }]);
+    const res = await h.service.completeTask({ taskName: 'сделать макет' }, TENANT, USER);
+    expect(h.probeSuggest).not.toHaveBeenCalled();
+    expect(h.closureUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: expect.objectContaining({ evidenceQuote: null }) }),
+    );
+    expect(res).toEqual({
+      candidateId: 'cand_1',
+      issueId: 'i1',
+      title: 'Сделать макет',
+      status: 'pending',
+    });
+  });
+
+  it('(в2) gate OFF + повторный вызов → upsert идемпотентен с пустым update', async () => {
+    const h = buildResolveHarness({ cfgOverrides: { completionDetailGateEnabled: false } });
     h.issueFindMany.mockResolvedValue([{ id: 'i1', title: 'Сделать макет' }]);
     await h.service.completeTask({ taskName: 'сделать макет' }, TENANT, USER);
     await h.service.completeTask({ taskName: 'сделать макет' }, TENANT, USER);
     expect(h.closureUpsert).toHaveBeenCalledTimes(2);
     expect(h.closureUpsert).toHaveBeenCalledWith(expect.objectContaining({ update: {} }));
-  });
-
-  it('note отсутствует → evidenceQuote = null', async () => {
-    const h = buildResolveHarness();
-    h.issueFindMany.mockResolvedValueOnce([{ id: 'i1', title: 'Сделать макет' }]);
-    await h.service.completeTask({ taskName: 'сделать макет' }, TENANT, USER);
-    expect(h.closureUpsert).toHaveBeenCalledWith(
-      expect.objectContaining({ create: expect.objectContaining({ evidenceQuote: null }) }),
-    );
   });
 
   it('not_found → NotFoundException task_not_found, upsert не вызван', async () => {

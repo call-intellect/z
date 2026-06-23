@@ -21,6 +21,7 @@ import type {
   RoomChatMessage,
 } from '../../ai/services/prompts/common';
 import { withAsrNote } from '../../ai/services/prompts/common';
+import type { AiParticipantContext } from '../../ai/services/prompts/participant-context';
 import {
   buildMeetingExtractActionsPrompt,
   TASKS_SCHEMA,
@@ -33,6 +34,7 @@ import { TaskAssigneeResolverService } from '../../knowledge-core/services/task-
 import { computeExpiresAt } from '../../pending-actions/expires-at.util';
 import { ProbeService } from '../../probe/probe.service';
 
+import { AssigneeResolverService } from './assignee-resolver.service';
 import { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 import { SimilarIssuesService } from './similar-issues.service';
 import { shouldMaterializeTask } from './task-quality-gate.util';
@@ -106,6 +108,9 @@ export class MeetingExtractActionsService implements OnModuleInit {
     @Optional()
     @Inject(EmbeddingFallbackService)
     private readonly embeddings?: EmbeddingFallbackService,
+    @Optional()
+    @Inject(AssigneeResolverService)
+    private readonly orgAssigneeResolver?: AssigneeResolverService,
   ) {}
 
   onModuleInit(): void {
@@ -170,6 +175,18 @@ export class MeetingExtractActionsService implements OnModuleInit {
       tenantId,
     );
 
+    const byLivekitIdentity = new Map<string, AiParticipantContext>();
+    for (const p of participants) {
+      if (p.livekitIdentity) byLivekitIdentity.set(p.livekitIdentity, p);
+    }
+    const enrichedTurns: DialogTurn[] = turns.map((t) => {
+      const p = t.speakerLivekitIdentity
+        ? byLivekitIdentity.get(t.speakerLivekitIdentity)
+        : undefined;
+      const realName = p ? (p.fullName?.trim() || p.displayName) : t.speaker;
+      return { ...t, speaker: realName };
+    });
+
     // 3. Промпт + LLM.
     const prompt = buildMeetingExtractActionsPrompt(
       {
@@ -180,7 +197,7 @@ export class MeetingExtractActionsService implements OnModuleInit {
           startedAt: meeting.startedAt,
           endedAt: meeting.endedAt,
         },
-        dialog: turns,
+        dialog: enrichedTurns,
         ...(roomChat ? { roomChat } : {}),
       },
       ctx,
@@ -318,21 +335,30 @@ export class MeetingExtractActionsService implements OnModuleInit {
         continue;
       }
 
-      // Ф5.1 — резолв исполнителя по identity участников встречи через общий
-      // TaskAssigneeResolverService (тот же сервис, что в meeting-report-fast).
-      // LLM `assigneeUserId` не отдаёт → стартуем с null; матч только по
-      // assigneeRaw среди участников. Тёзка не из встречи / гость → null.
-      const suggestedAssigneeId =
-        this.assigneeResolver.resolve(
-          [
-            {
-              assigneeRaw: t.suggestedAssigneeHint ?? t.assignee ?? null,
-              assigneeUserId: null,
-            },
-          ],
-          participants,
-          tenantId,
-        )[0]?.assigneeUserId ?? null;
+      const hint = (t.suggestedAssigneeHint ?? t.assignee ?? '').trim();
+      let suggestedAssigneeId: string | null = null;
+      if (hint && this.orgAssigneeResolver) {
+        try {
+          const r = await this.orgAssigneeResolver.resolve(tenantId, hint);
+          suggestedAssigneeId = r.kind === 'resolved' ? r.userId : null;
+        } catch {
+          suggestedAssigneeId = null;
+        }
+      }
+      if (
+        suggestedAssigneeId == null &&
+        hint &&
+        this.cfg.tracker.selfAssignAuthorFallbackEnabled
+      ) {
+        const quoteSpeaker = findQuoteSpeaker(turns, byLivekitIdentity, sourceQuote);
+        if (
+          quoteSpeaker &&
+          quoteSpeaker.userId &&
+          hintRefersToSpeaker(hint, quoteSpeaker.speaker, quoteSpeaker.rawSpeaker)
+        ) {
+          suggestedAssigneeId = quoteSpeaker.userId;
+        }
+      }
       const suggestedProjectId = await this.resolveProjectIdByMeeting(
         tenantId,
         meeting.title,
@@ -417,6 +443,9 @@ export class MeetingExtractActionsService implements OnModuleInit {
         this.cfg.tracker.assigneeClarifyEnabled &&
         this.probe
       ) {
+        const author = findQuoteSpeaker(turns, byLivekitIdentity, sourceQuote);
+        const recipientId = author?.userId ?? meeting.ownerId;
+        const DISMISS_HINT = ' Если это не задача — ответьте «удалить».';
         try {
           await this.probe.suggest({
             tenantId,
@@ -428,10 +457,10 @@ export class MeetingExtractActionsService implements OnModuleInit {
               contextCardTitle: title,
               objectName: title,
               objectKindRu: 'задача',
-              message: `Из встречи «${meeting.title}» извлечена задача «${title}», но не определён исполнитель.`,
-              suggestedQuestion: `Кому поручить задачу «${title}» из встречи «${meeting.title}»?`,
+              message: `Из встречи «${meeting.title}» извлечена задача «${title}», но не определён исполнитель.${DISMISS_HINT}`,
+              suggestedQuestion: `Кому поручить задачу «${title}» из встречи «${meeting.title}»?${DISMISS_HINT}`,
             },
-            recipientCandidates: [meeting.ownerId],
+            recipientCandidates: [recipientId],
             priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
           });
         } catch {
@@ -613,4 +642,55 @@ function clampConfidence(v: number): number {
   if (v > 1) return 1;
   // 3 знака — соответствует БД Decimal(4,3).
   return Math.round(v * 1000) / 1000;
+}
+
+function normalizeForMatch(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/["'«»„‟“”]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function findQuoteSpeaker(
+  turns: readonly DialogTurn[],
+  byLivekitIdentity: ReadonlyMap<string, AiParticipantContext>,
+  sourceQuote: string,
+): { speaker: string; rawSpeaker: string; userId: string | null } | null {
+  const fragment = normalizeForMatch(sourceQuote).slice(0, 30);
+  if (!fragment) return null;
+  for (const turn of turns) {
+    const turnText = normalizeForMatch(turn.text);
+    if (!turnText) continue;
+    if (turnText.includes(fragment) || fragment.includes(turnText)) {
+      const p = turn.speakerLivekitIdentity
+        ? byLivekitIdentity.get(turn.speakerLivekitIdentity)
+        : undefined;
+      const speaker = p ? (p.fullName?.trim() || p.displayName) : turn.speaker;
+      return { speaker, rawSpeaker: turn.speaker, userId: p?.userId ?? null };
+    }
+  }
+  return null;
+}
+
+function hintRefersToSpeaker(
+  hint: string,
+  speaker: string,
+  rawSpeakerLabel: string | null,
+): boolean {
+  const normHint = normalizeForMatch(hint);
+  if (!normHint) return false;
+  const candidates = [speaker, rawSpeakerLabel].filter(
+    (c): c is string => typeof c === 'string' && c.trim().length > 0,
+  );
+  for (const c of candidates) {
+    const norm = normalizeForMatch(c);
+    if (!norm) continue;
+    if (norm === normHint || norm.includes(normHint) || normHint.includes(norm)) {
+      return true;
+    }
+  }
+  return false;
 }

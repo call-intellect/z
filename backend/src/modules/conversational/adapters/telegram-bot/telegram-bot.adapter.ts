@@ -1203,6 +1203,17 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         const link = url ? `\n\nОткрыть:\n${escapeHtml(url)}` : '';
         return `${head}${t}${who}${when}${link}`.slice(0, 4000);
       }
+      case 'task.closed_for_review': {
+        const text = (payload['text'] as string | undefined) ?? '';
+        const objectTitle = (payload['objectTitle'] as string | undefined) ?? '';
+        const head = '<b>Задача закрыта — проверьте</b>';
+        const body = text.trim()
+          ? `\n\n${escapeHtml(text)}`
+          : objectTitle.trim()
+            ? `\n\n«${escapeHtml(objectTitle)}»`
+            : '';
+        return `${head}${body}`.slice(0, 4000);
+      }
       case 'support.ticket_created': {
         const num = String(payload['ticketNumber'] ?? '');
         const subject = (payload['subject'] as string | undefined) ?? '';

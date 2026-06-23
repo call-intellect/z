@@ -186,6 +186,27 @@ export class TaskCompletionHandler {
         quote: block.trustedAnswer,
       });
       if (!verdict || !verdict.done) {
+        if (this.config?.tracker?.livingCardEnabled ?? true) {
+          try {
+            await this.appendLivingCardNote({
+              tenantId: event.tenantId,
+              issueId: matched.id,
+              sourceBlockId: block.id,
+              quote: block.trustedAnswer,
+              question: block.criticalQuestion,
+            });
+          } catch (err) {
+            this.logger.warn(
+              {
+                tenantId: event.tenantId,
+                issueId: matched.id,
+                blockId: block.id,
+                err: err instanceof Error ? err.message : String(err),
+              },
+              'living-card: дозапись заметки не удалась — пропускаю',
+            );
+          }
+        }
         return this.outcome('not_done', {
           tenantId: event.tenantId,
           blockId: event.blockId,
@@ -502,6 +523,43 @@ export class TaskCompletionHandler {
       parts.push(`Сомнения: ${v.negativeSignals.join('; ')}`);
     }
     return parts.join('\n').slice(0, 2_000);
+  }
+
+  private async appendLivingCardNote(args: {
+    tenantId: string;
+    issueId: string;
+    sourceBlockId: string;
+    quote: string;
+    question: string;
+  }): Promise<boolean> {
+    const existing = await this.prisma.issueActivity.findFirst({
+      where: {
+        issueId: args.issueId,
+        verb: 'conversation_note',
+        metadata: { path: ['sourceBlockId'], equals: args.sourceBlockId },
+      },
+      select: { id: true },
+    });
+    if (existing) return false;
+
+    await this.prisma.issueActivity.create({
+      data: {
+        tenantId: args.tenantId,
+        issueId: args.issueId,
+        actorUserId: null,
+        actorType: 'ai_agent',
+        agentName: 'living-card',
+        verb: 'conversation_note',
+        newValue: { text: `Из разговора: ${args.quote}`.slice(0, 2000) },
+        metadata: {
+          sourceBlockId: args.sourceBlockId,
+          quote: args.quote.slice(0, 2000),
+          question: args.question.slice(0, 500),
+        },
+        epoch: BigInt(Date.now()) * 1000n,
+      },
+    });
+    return true;
   }
 
   private async calibrate(raw: number): Promise<number> {

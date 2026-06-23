@@ -24,6 +24,11 @@ describe('probeWindow', () => {
     expect(probeWindow('card.outdated_summary')).toBe('deferrable');
     expect(probeWindow('unknown.x')).toBe('deferrable');
   });
+
+  it('Ф5 — task.poorly_specified / task.false_positive — immediate', () => {
+    expect(probeWindow('task.poorly_specified')).toBe('immediate');
+    expect(probeWindow('task.false_positive')).toBe('immediate');
+  });
 });
 
 describe('PROBE_REASON_RECHECK', () => {
@@ -382,6 +387,161 @@ describe('PROBE_REASON_RECHECK — task.due_date_missing (Блок A Ф1)', () =
       issue: {
         findFirst: vi.fn().mockResolvedValue({ dueDate: new Date() }),
       },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'i1',
+      contextCardKind: 'issue',
+    });
+    expect(rel).toBe(false);
+  });
+});
+
+describe('PROBE_REASON_RECHECK — task.poorly_specified (Ф5)', () => {
+  const reason = 'task.poorly_specified';
+
+  it('нет contextCardId → не подавляем (true)', async () => {
+    const prisma = {
+      intakeIssue: { findFirst: vi.fn() },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: null,
+      contextCardKind: 'intake_issue',
+    });
+    expect(rel).toBe(true);
+  });
+
+  it('intake pending с коротким описанием → пробел открыт (true)', async () => {
+    const prisma = {
+      intakeIssue: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ extractedDescription: 'ок', status: 'pending' }),
+      },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'ii-1',
+      contextCardKind: 'intake_issue',
+    });
+    expect(rel).toBe(true);
+  });
+
+  it('intake pending с подробным описанием → пробел закрыт (false)', async () => {
+    const prisma = {
+      intakeIssue: {
+        findFirst: vi.fn().mockResolvedValue({
+          extractedDescription: 'подробное описание задачи',
+          status: 'pending',
+        }),
+      },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'ii-1',
+      contextCardKind: 'intake_issue',
+    });
+    expect(rel).toBe(false);
+  });
+
+  it('intake уже не pending → пробел закрыт (false)', async () => {
+    const prisma = {
+      intakeIssue: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ extractedDescription: '', status: 'accepted' }),
+      },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'ii-1',
+      contextCardKind: 'intake_issue',
+    });
+    expect(rel).toBe(false);
+  });
+
+  it('intake не найден → подавляем (false)', async () => {
+    const prisma = {
+      intakeIssue: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'ii-1',
+      contextCardKind: 'intake_issue',
+    });
+    expect(rel).toBe(false);
+  });
+});
+
+describe('PROBE_REASON_RECHECK — task.false_positive (Ф5)', () => {
+  const reason = 'task.false_positive';
+
+  it('нет contextCardId → не подавляем (true)', async () => {
+    const prisma = {
+      intakeIssue: { findFirst: vi.fn() },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: null,
+      contextCardKind: 'intake_issue',
+    });
+    expect(rel).toBe(true);
+  });
+
+  it('intake ещё pending → пробел открыт (true)', async () => {
+    const prisma = {
+      intakeIssue: {
+        findFirst: vi.fn().mockResolvedValue({ status: 'pending' }),
+      },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'ii-1',
+      contextCardKind: 'intake_issue',
+    });
+    expect(rel).toBe(true);
+  });
+
+  it('intake уже не pending → пробел закрыт (false)', async () => {
+    const prisma = {
+      intakeIssue: {
+        findFirst: vi.fn().mockResolvedValue({ status: 'rejected' }),
+      },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'ii-1',
+      contextCardKind: 'intake_issue',
+    });
+    expect(rel).toBe(false);
+  });
+
+  it('issue не удалён → пробел открыт (true)', async () => {
+    const prisma = {
+      issue: { findFirst: vi.fn().mockResolvedValue({ id: 'i1' }) },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'i1',
+      contextCardKind: 'issue',
+    });
+    expect(rel).toBe(true);
+  });
+
+  it('issue удалён (не найден) → пробел закрыт (false)', async () => {
+    const prisma = {
+      issue: { findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaService;
     const rel = await PROBE_REASON_RECHECK[reason]!({
       prisma,

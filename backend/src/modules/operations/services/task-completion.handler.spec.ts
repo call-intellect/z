@@ -31,8 +31,11 @@ describe('TaskCompletionHandler', () => {
     candidateTtlDays?: number;
     llmResponse?: string;
     candidateCreateThrows?: unknown;
+    livingCardEnabled?: boolean;
+    existingLivingNote?: { id: string } | null;
   }) {
     const created: Array<Record<string, unknown>> = [];
+    const livingNotes: Array<Record<string, unknown>> = [];
     const prisma = {
       ideaBlock: {
         findUnique: vi.fn().mockResolvedValue(
@@ -55,6 +58,15 @@ describe('TaskCompletionHandler', () => {
           }
           created.push(data);
           return Promise.resolve({ id: `cand-${created.length}`, ...data });
+        }),
+      },
+      issueActivity: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue(overrides.existingLivingNote ?? null),
+        create: vi.fn().mockImplementation(({ data }) => {
+          livingNotes.push(data);
+          return Promise.resolve({ id: `act-${livingNotes.length}`, ...data });
         }),
       },
     };
@@ -113,6 +125,9 @@ describe('TaskCompletionHandler', () => {
           outcomes.push(args.outcome);
         }),
     };
+    const config = {
+      tracker: { livingCardEnabled: overrides.livingCardEnabled ?? true },
+    };
     const handler = new TaskCompletionHandler(
       prisma as never,
       llm as never,
@@ -120,7 +135,7 @@ describe('TaskCompletionHandler', () => {
       embeddings as never,
       settings as never,
       null,
-      null,
+      config as never,
       eventEmitter as never,
       metrics as never,
     );
@@ -132,6 +147,7 @@ describe('TaskCompletionHandler', () => {
       embeddings,
       settings,
       created,
+      livingNotes,
       eventEmitter,
       emitted,
       metrics,
@@ -349,6 +365,61 @@ describe('TaskCompletionHandler', () => {
     // create поймал P2002 (молча) → createCandidate вернулся → created всё равно
     // инкрементится (кандидат уже существует, петля идемпотентна).
     expect(outcomes).toEqual(['created']);
+  });
+
+  describe('живая карточка (Ф9): прогресс по существующей задаче', () => {
+    const notDoneResponse = JSON.stringify({
+      done: false,
+      confidence: 0.5,
+      rationale: 'Работа идёт, но ещё не завершена.',
+      positiveSignals: ['начал'],
+      negativeSignals: ['не завершено'],
+    });
+
+    it('матч + done=false + kill-switch ON → дозапись conversation_note, кандидат НЕ создан', async () => {
+      const { handler, prisma, livingNotes, created } = build({
+        llmResponse: notDoneResponse,
+      });
+      await handler.handle(baseEvent);
+      expect(prisma.issueActivity.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ verb: 'conversation_note' }),
+        }),
+      );
+      expect(livingNotes).toHaveLength(1);
+      expect(livingNotes[0]!.metadata).toMatchObject({ sourceBlockId: 'blk-1' });
+      expect(created).toHaveLength(0);
+      expect(prisma.taskClosureCandidate.create).not.toHaveBeenCalled();
+    });
+
+    it('идемпотентность: заметка по блоку уже есть → create НЕ вызван', async () => {
+      const { handler, prisma, livingNotes } = build({
+        llmResponse: notDoneResponse,
+        existingLivingNote: { id: 'act-existing' },
+      });
+      await handler.handle(baseEvent);
+      expect(prisma.issueActivity.findFirst).toHaveBeenCalled();
+      expect(prisma.issueActivity.create).not.toHaveBeenCalled();
+      expect(livingNotes).toHaveLength(0);
+    });
+
+    it('kill-switch OFF → дозаписи нет', async () => {
+      const { handler, prisma, livingNotes } = build({
+        llmResponse: notDoneResponse,
+        livingCardEnabled: false,
+      });
+      await handler.handle(baseEvent);
+      expect(prisma.issueActivity.create).not.toHaveBeenCalled();
+      expect(livingNotes).toHaveLength(0);
+    });
+
+    it('done=true → прежний путь (кандидат), заметка НЕ дописывается', async () => {
+      const { handler, prisma, created, livingNotes } = build({});
+      await handler.handle(baseEvent);
+      expect(created).toHaveLength(1);
+      expect(prisma.issueActivity.create).not.toHaveBeenCalled();
+      expect(livingNotes).toHaveLength(0);
+    });
   });
 
   describe('lexicalOverlap (чистая функция)', () => {

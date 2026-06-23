@@ -402,6 +402,58 @@ describe('SegmentBuilderService — authorPersonId (chatbox per-message)', () =>
     expect(segments[1]!.authorPersonId).toBe('p-manager');
     expect(segments[0]!.messageExternalId).toBe('msg-1');
     expect(segments[1]!.messageExternalId).toBe('msg-2');
+    expect(segments[0]!.authorExternalLabel).toBe('Клиент [A]');
+    expect(
+      Object.prototype.hasOwnProperty.call(segments[1]!, 'authorExternalLabel'),
+    ).toBe(false);
+    expect(segments[1]!.authorExternalLabel).toBeUndefined();
+  });
+
+  it('bitrix turns с authorPersonId автора → сегмент несёт authorPersonId', () => {
+    const svc = makeSvc();
+    const payload = {
+      kind: 'bitrix_chat_session',
+      fullText: 'Менеджер: ответ',
+      transcript: {
+        turns: [
+          {
+            speaker: 'Менеджер [Иван]',
+            text: 'согласовал поставку',
+            startSec: 0,
+            endSec: 0.9,
+            speakerParticipantId: null,
+            authorPersonId: 'p-ivan',
+            messageExternalId: 'b-1',
+          },
+        ],
+      },
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.authorPersonId).toBe('p-ivan');
+    expect(
+      Object.prototype.hasOwnProperty.call(segments[0]!, 'authorExternalLabel'),
+    ).toBe(false);
+  });
+
+  it('meeting turn (authorPersonId undefined) → authorExternalLabel НЕ задан', () => {
+    const svc = makeSvc();
+    const payload = {
+      meetingId: 'm1',
+      transcript: {
+        turns: [{ speaker: 'Алиса', text: 'Привет', startSec: 0, endSec: 1 }],
+      },
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(1);
+    expect(
+      Object.prototype.hasOwnProperty.call(segments[0]!, 'authorExternalLabel'),
+    ).toBe(false);
+    expect(segments[0]!.authorExternalLabel).toBeUndefined();
   });
 
   it('meeting turns (без authorPersonId) → сегменты БЕЗ поля authorPersonId (undefined, не null)', () => {

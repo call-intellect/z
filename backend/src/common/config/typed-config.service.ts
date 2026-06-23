@@ -1042,6 +1042,21 @@ export class TypedConfigService {
         undefined,
         0.01,
       ),
+      grayZoneJudgeEnabled: this.resolveSync<boolean>(
+        'knowledge.curationGrayZoneJudgeEnabled',
+        undefined,
+        true,
+      ),
+      grayZoneJudgeMinConfidence: this.resolveSync<number>(
+        'knowledge.curationGrayZoneJudgeMinConfidence',
+        undefined,
+        0.7,
+      ),
+      grayZoneJudgeSampleRate: this.resolveSync<number>(
+        'knowledge.curationGrayZoneJudgeSampleRate',
+        undefined,
+        1.0,
+      ),
       autotuneEnabled: this.resolveSync<boolean>(
         'knowledge.curationAutotuneEnabled',
         undefined,

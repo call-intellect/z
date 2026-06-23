@@ -158,6 +158,7 @@ export class CurationService {
       settings.provisionalThresholdByType?.[input.resourceType] ??
       settings.provisionalThreshold ??
       DEFAULT_PROVISIONAL_THRESHOLD;
+    const grayZoneMinT = settings.grayZoneJudgeMinConfidence ?? deepT;
 
     if (!isCritical && conflict === 'none' && effectiveConfidence >= autoT) {
       const version = await this.createInitialCardVersion(input, 'auto');
@@ -235,6 +236,52 @@ export class CurationService {
         },
         'curation.triage: AI-судья НЕ дал accept-консенсус → deep review (человек)',
       );
+    }
+
+    if (
+      !isCritical &&
+      conflict !== 'hard' &&
+      settings.grayZoneJudgeEnabled &&
+      settings.aiVerifierEnabled &&
+      this.debate &&
+      effectiveConfidence >= grayZoneMinT &&
+      effectiveConfidence < autoT &&
+      this.shouldSample(settings.grayZoneJudgeSampleRate ?? 1)
+    ) {
+      const verdict = await this.runAiVerifier(input);
+      const accepted =
+        verdict !== null &&
+        verdict.decision === 'accept' &&
+        (verdict.consensusType === 'unanimous' || verdict.consensusType === 'majority');
+      this.metrics.incCurationGrayZoneJudged({
+        outcome: accepted ? 'canonicalized' : 'to_human',
+      });
+      if (accepted) {
+        const version = await this.createInitialCardVersion(input, 'provisional');
+        this.metrics.incCurationProvisional({ resourceType: input.resourceType });
+        this.logger.log(
+          {
+            tenantId: input.tenantId,
+            resourceType: input.resourceType,
+            resourceId: input.resourceId,
+            versionId: version.id,
+            consensusType: verdict?.consensusType,
+            effectiveConfidence,
+          },
+          'curation.triage: gray-zone provisional-canonical (AI-судья accept)',
+        );
+        const auditItemId = await this.maybeCreateAuditSample({
+          input,
+          settings,
+          trustTier: 'provisional',
+        });
+        return {
+          decision: 'provisional',
+          cardVersionId: version.id,
+          curationItemId: auditItemId,
+          candidateCuratorIds: [],
+        };
+      }
     }
 
     let level: CurationLevel;
@@ -982,6 +1029,11 @@ export class CurationService {
       provisionalThresholdByType: provisionalByType,
       aiVerifierEnabled: args.patch.aiVerifierEnabled ?? current.aiVerifierEnabled,
       auditSampleRate: args.patch.auditSampleRate ?? current.auditSampleRate,
+      grayZoneJudgeEnabled: args.patch.grayZoneJudgeEnabled ?? current.grayZoneJudgeEnabled,
+      grayZoneJudgeMinConfidence:
+        args.patch.grayZoneJudgeMinConfidence ?? current.grayZoneJudgeMinConfidence,
+      grayZoneJudgeSampleRate:
+        args.patch.grayZoneJudgeSampleRate ?? current.grayZoneJudgeSampleRate,
       autotuneEnabled: args.patch.autotuneEnabled ?? current.autotuneEnabled,
       thresholdMin: args.patch.thresholdMin ?? current.thresholdMin,
       thresholdMax: args.patch.thresholdMax ?? current.thresholdMax,
@@ -1303,6 +1355,9 @@ export class CurationService {
       provisionalThresholdByType: {},
       aiVerifierEnabled: this.cfg.curation.aiVerifierEnabled,
       auditSampleRate: this.cfg.curation.auditSampleRate,
+      grayZoneJudgeEnabled: this.cfg.curation.grayZoneJudgeEnabled,
+      grayZoneJudgeMinConfidence: this.cfg.curation.grayZoneJudgeMinConfidence,
+      grayZoneJudgeSampleRate: this.cfg.curation.grayZoneJudgeSampleRate,
       autotuneEnabled: this.cfg.curation.autotuneEnabled,
       thresholdMin: this.cfg.curation.thresholdMin,
       thresholdMax: this.cfg.curation.thresholdMax,
@@ -1342,6 +1397,18 @@ export class CurationService {
         obj.auditSampleRate <= 1
           ? obj.auditSampleRate
           : def.auditSampleRate,
+      grayZoneJudgeEnabled:
+        typeof obj.grayZoneJudgeEnabled === 'boolean'
+          ? obj.grayZoneJudgeEnabled
+          : def.grayZoneJudgeEnabled,
+      grayZoneJudgeMinConfidence:
+        typeof obj.grayZoneJudgeMinConfidence === 'number'
+          ? obj.grayZoneJudgeMinConfidence
+          : def.grayZoneJudgeMinConfidence,
+      grayZoneJudgeSampleRate:
+        typeof obj.grayZoneJudgeSampleRate === 'number'
+          ? obj.grayZoneJudgeSampleRate
+          : def.grayZoneJudgeSampleRate,
       autotuneEnabled:
         typeof obj.autotuneEnabled === 'boolean' ? obj.autotuneEnabled : def.autotuneEnabled,
       thresholdMin: this.parseUnit(obj.thresholdMin, def.thresholdMin),

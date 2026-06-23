@@ -56,6 +56,7 @@
 | `knowledge.meetingTasksToTrackerOnly` | AdminSetting | seed-дефолт true + patch | из встречи одна задача (Issue); `assigneeRaw`/`sourceQuote` станут null. AdminSetting → false |
 | ~~`CONCIERGE_DIALOG_LAYER_ENABLED`~~ | ENV (code-default) | _**снят с употребления 2026-06-15**_ | После переписи помощника (ТЗ `assistant-router-dedup`) concierge больше не зовёт dialog-layer (понимание/синтез — внутри chat-v2). Флаг ничего не гейтит, может быть удалён из `.env`. |
 | `knowledge.curationAutotuneEnabled` | AdminSetting (code-fallback) | code-fallback true + patch; с 2026-06-12 и seed-дефолт true (autonomy W3) | базовый kill-switch порогов и так активен. AdminSetting → false |
+| `knowledge.curationGrayZoneJudgeEnabled` | AdminSetting (code-fallback) | kill-switch (ON); code-fallback true + seed-дефолт true (A-Ф5 судья серой зоны) | судит некритичные карточки серой зоны вместо отправки человеку; при accept-консенсусе канонизирует как `provisional` (+аудит-выборка). AdminSetting → false вернёт весь поток серой зоны к людям как раньше |
 
 ### ⏸️ Остаётся OFF — осознанное решение владельца
 

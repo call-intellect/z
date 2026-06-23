@@ -1,13 +1,28 @@
 import OpenAI from 'openai';
 
+type Stance = 'critic' | 'supporter' | 'neutral';
+type Variant = 'A' | 'B' | 'C';
+
 const client = new OpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? '',
   apiKey: process.env.DEEPSEEK_API_KEY ?? '',
 });
 const MODEL = process.env.DEEPSEEK_DEFAULT_MODEL ?? 'deepseek-v4-flash';
 
-type Stance = 'critic' | 'supporter' | 'neutral';
-type Variant = 'A' | 'B' | 'C';
+const supporterClient = process.env.OPENAI_PROXY_BASE_URL && process.env.OPENAI_PROXY_API_KEY
+  ? new OpenAI({ baseURL: process.env.OPENAI_PROXY_BASE_URL, apiKey: process.env.OPENAI_PROXY_API_KEY })
+  : null;
+const SUPPORTER_MODEL = process.env.OPENAI_PROXY_SUPPORTER_MODEL ?? 'gpt-5.4-mini';
+
+interface JudgeClient {
+  client: OpenAI;
+  model: string;
+}
+
+function clientForStance(stance: Stance): JudgeClient {
+  if (stance === 'supporter' && supporterClient) return { client: supporterClient, model: SUPPORTER_MODEL };
+  return { client, model: MODEL };
+}
 
 interface Card {
   id: string;
@@ -55,6 +70,85 @@ const CARDS: Card[] = [
   { id: 'd12', type: 'регламент', payload: 'Все новые менеджеры обязаны проходить недельное обучение перед допуском к звонкам.',
     source: '«а может новеньких неделю обучать перед звонками? — хорошая идея, но давай обсудим на следующей встрече, пока не утверждаем».',
     expect: 'reject', why: 'идея, явно НЕ утверждена («не утверждаем»)' },
+
+  { id: 'd13', type: 'решение', payload: 'Переносим релиз версии 2.0 с пятницы на следующий вторник.',
+    source: '«в пятницу мы не успеваем, переносим релиз на вторник». — «да, во вторник, всех предупрежу».',
+    expect: 'accept', why: 'согласованный перенос, новая дата зафиксирована' },
+  { id: 'd14', type: 'регламент', payload: 'Счета клиентам выставляем до 5-го числа каждого месяца.',
+    source: '«фиксируем правило: счета выставляем до пятого числа каждого месяца». — «принято, добавлю в регламент».',
+    expect: 'accept', why: 'правило явно утверждено' },
+  { id: 'd15', type: 'процесс', payload: 'Каждое утро в 9:30 проводим стендап на 15 минут в Telegram-звонке.',
+    source: '«давайте каждое утро в полдесятого делать стендап минут на пятнадцать в телеге». — «ок, ставлю всем в календарь».',
+    expect: 'accept', why: 'согласованный процесс с временем и каналом' },
+  { id: 'd16', type: 'факт', payload: 'Текущая конверсия из лида в сделку — 12%.',
+    source: '«по последним данным конверсия из лида в сделку двенадцать процентов». — «да, цифру подтверждаю из CRM».',
+    expect: 'accept', why: 'факт подтверждён обеими сторонами с источником данных' },
+  { id: 'd17', type: 'эксперимент', payload: 'Запускаем A/B-тест двух вариантов первого сообщения боту на две недели.',
+    source: '«предлагаю две недели погонять A/B первого сообщения бота». — «согласен, две недели, потом смотрим метрики».',
+    expect: 'accept', why: 'эксперимент согласован, срок и предмет ясны' },
+  { id: 'd18', type: 'урок эксперимента', payload: 'Скидка 20% не подняла удержание — отказываемся от постоянных скидок как инструмента.',
+    source: 'результат: «после месяца скидки удержание не выросло, цифры те же». обсуждение: «значит скидки не работают, больше так не делаем». — «согласен».',
+    expect: 'accept', why: 'урок из эксперимента с измеримым результатом и выводом' },
+  { id: 'd19', type: 'урок эксперимента', payload: 'Холодные звонки эффективнее тёплых писем.',
+    source: 'результат: «по холодным звонкам пока данных мало, две недели всего». обсуждение: «рано делать вывод, продолжаем мерить».',
+    expect: 'reject', why: 'вывод не обоснован — сами говорят «рано делать вывод»' },
+  { id: 'd20', type: 'решение', payload: 'Берём в работу интеграцию с amoCRM.',
+    source: '«а не взять ли нам интеграцию с amoCRM?» — «давайте пока отложим, сначала закроем текущий спринт».',
+    expect: 'reject', why: 'предложение отложено, не принято' },
+  { id: 'd21', type: 'регламент', payload: 'Возвращаем клиенту деньги в течение 3 дней.',
+    source: '«возвращаем деньги в течение трёх дней, если клиент не активировал лицензию». — «ок, фиксируем».',
+    expect: 'reject', why: 'потеряно условие «если не активировал лицензию» → опасно-безусловное правило' },
+  { id: 'd22', type: 'решение', payload: 'Назначаем ответственным за онбординг Петрова.',
+    source: '«ответственным за онбординг сделаем Сидорова». — «да, Сидоров берёт онбординг».',
+    expect: 'reject', why: 'реквизит расходится — в источнике Сидоров, в карточке Петров' },
+  { id: 'd23', type: 'решение', payload: 'Переходим на недельные спринты с понедельника.',
+    source: '«предлагаю недельные спринты. — звучит, но финальное решение за Иваном, он вернётся из отпуска в среду».',
+    expect: 'reject', why: 'не финал — решение делегировано Ивану, ещё не принято' },
+  { id: 'd24', type: 'процесс', payload: 'Все баги заводим в трекер с меткой приоритета.',
+    source: '«предварительно договорились заводить баги в трекер с приоритетом, но давайте на демо ещё раз сверимся прежде чем закреплять».',
+    expect: 'reject', why: 'предварительно, финал отложен до демо' },
+  { id: 'd25', type: 'факт', payload: 'В команде сейчас работают 8 человек.',
+    source: '«сколько нас сейчас? — да человек восемь, плюс-минус, точно не считал».',
+    expect: 'reject', why: 'расплывчато («плюс-минус», «не считал») — не точный факт' },
+  { id: 'd26', type: 'факт', payload: 'Офис компании находится в Москве, на Тверской.',
+    source: '«напомни адрес офиса для договора. — Москва, Тверская, дом 10».',
+    expect: 'accept', why: 'фактический реквизит, подтверждён в источнике' },
+  { id: 'd27', type: 'факт', payload: 'Основной канал привлекаемых клиентов — Telegram-реклама.',
+    source: '«откуда основной поток клиентов? — в основном из рекламы в телеге, процентов семьдесят».',
+    expect: 'accept', why: 'факт средней ясности, источник прямо подтверждает' },
+  { id: 'd28', type: 'факт', payload: 'Средний чек по новым клиентам вырос.',
+    source: '«как там средний чек? — да вроде растёт потихоньку, надо будет глянуть точные цифры».',
+    expect: 'reject', why: 'факт неподтверждён — «вроде», «надо глянуть цифры»' },
+  { id: 'd29', type: 'решение', payload: 'Запускаем реферальную программу: 1000 рублей за приведённого клиента.',
+    source: '«запускаем рефералку — тысяча рублей за каждого приведённого клиента». — «да, оформляем».',
+    expect: 'accept', why: 'согласованное решение, сумма совпадает' },
+  { id: 'd30', type: 'решение', payload: 'Увеличиваем штат поддержки на 10 человек в этом квартале.',
+    source: '«хорошо бы расширить поддержку человек на десять. — давай, но это решает совет директоров, вынесем туда».',
+    expect: 'reject', why: 'не финал — решение за советом директоров' },
+  { id: 'd31', type: 'регламент', payload: 'Отвечаем на входящие сообщения клиентов в течение часа в рабочее время.',
+    source: '«утвердим SLA: на входящие отвечаем в течение часа в рабочее время». — «да, фиксируем час».',
+    expect: 'accept', why: 'SLA явно утверждён, условие «в рабочее время» сохранено' },
+  { id: 'd32', type: 'процесс', payload: 'Перед публикацией текста его вычитывает второй человек.',
+    source: '«а давайте всё, что публикуем, вычитывает второй человек перед выходом». — «согласна, добавляем шаг ревью».',
+    expect: 'accept', why: 'согласованный процесс ревью' },
+  { id: 'd33', type: 'решение', payload: 'Закрываем направление офлайн-мероприятий.',
+    source: '«может закроем офлайн-ивенты, они не окупаются? — нет, давай ещё квартал попробуем, рано хоронить».',
+    expect: 'reject', why: 'предложение отклонено — решили продолжить' },
+  { id: 'd34', type: 'эксперимент', payload: 'Тестируем новый скрипт продаж на трёх менеджерах в течение месяца.',
+    source: '«обкатаем новый скрипт на троих менеджерах месяц, потом раскатим на всех если зайдёт». — «ок, берём троих».',
+    expect: 'accept', why: 'эксперимент согласован, выборка и срок ясны' },
+  { id: 'd35', type: 'урок эксперимента', payload: 'Рассылка в воскресенье даёт меньший отклик, чем в будни — переносим рассылки на будни.',
+    source: 'результат: «воскресная рассылка дала открываемость вдвое ниже будней». обсуждение: «значит шлём только в будни». — «да, убираем выходные».',
+    expect: 'accept', why: 'урок с измеримым результатом и принятым выводом' },
+  { id: 'd36', type: 'регламент', payload: 'Согласовываем все скидки свыше 15% с руководителем.',
+    source: '«скидки больше пятнадцати процентов — только через согласование с руководителем». — «принято, вносим в правила».',
+    expect: 'accept', why: 'правило с порогом, условие и число совпадают' },
+  { id: 'd37', type: 'решение', payload: 'Мы лучшая компания на рынке.',
+    source: '«да мы вообще лучшие на рынке, конкурентам до нас далеко!» — «ха, ну это ты загнул».',
+    expect: 'reject', why: 'риторика/самопохвала, оспорена собеседником' },
+  { id: 'd38', type: 'процесс', payload: 'Каждую пятницу подводим итоги недели в общем чате.',
+    source: '«предлагаю по пятницам кидать итоги недели в общий чат». — «можно, но давайте сначала месяц так поживём и решим, оставлять ли».',
+    expect: 'reject', why: 'не закреплено — пробуем и решим позже, финала нет' },
 ];
 
 const SYS_A: Record<Stance, string> = {
@@ -97,42 +191,65 @@ function userBC(c: Card): string {
   return `Первоисточник (фрагмент встречи, откуда извлечена карточка):\n${c.source}\n\nКарточка (${c.type}): «${c.payload}»\nДолжна ли эта карточка быть канонизирована в память компании? Ответь JSON.`;
 }
 
-async function vote(system: string, user: string): Promise<{ verdict: string; confidence: number } | null> {
+interface Vote {
+  verdict: string;
+  confidence: number;
+  quote: string;
+}
+
+async function vote(system: string, user: string, stance: Stance): Promise<Vote | null> {
+  const jc = clientForStance(stance);
   try {
-    const r = await client.chat.completions.create({
-      model: MODEL, stream: false, temperature: 0,
+    const r = await jc.client.chat.completions.create({
+      model: jc.model, stream: false, temperature: 0,
       response_format: { type: 'json_object' },
       messages: [{ role: 'system', content: system }, { role: 'user', content: user + '\nВерни строго JSON.' }],
     });
     const txt = r.choices?.[0]?.message?.content ?? '';
-    const j = JSON.parse(txt) as { verdict?: string; confidence?: number };
+    const j = JSON.parse(txt) as { verdict?: string; confidence?: number; quote?: string };
     const v = String(j.verdict ?? '').toLowerCase().includes('accept') ? 'accept' : 'reject';
-    return { verdict: v, confidence: typeof j.confidence === 'number' ? j.confidence : 0.5 };
+    return {
+      verdict: v,
+      confidence: typeof j.confidence === 'number' ? j.confidence : 0.5,
+      quote: typeof j.quote === 'string' ? j.quote.trim() : '',
+    };
   } catch (e) {
     process.stderr.write(`  vote err: ${e instanceof Error ? e.message : String(e)}\n`);
     return null;
   }
 }
 
-async function judge(c: Card, variant: Variant): Promise<'accept' | 'reject' | 'error'> {
+interface JudgeResult {
+  verdict: 'accept' | 'reject' | 'error';
+  quotedVotes: number;
+  totalVotes: number;
+}
+
+async function judge(c: Card, variant: Variant): Promise<JudgeResult> {
   const stances: Stance[] = ['critic', 'supporter', 'neutral'];
   const votes = await Promise.all(stances.map((s) => {
-    if (variant === 'A') return vote(SYS_A[s], userA(c));
-    if (variant === 'B') return vote(SYS_A[s], userBC(c));
-    return vote(`${SYS_C_BASE}\n${STANCE_C[s]}`, userBC(c));
+    if (variant === 'A') return vote(SYS_A[s], userA(c), s);
+    if (variant === 'B') return vote(SYS_A[s], userBC(c), s);
+    return vote(`${SYS_C_BASE}\n${STANCE_C[s]}`, userBC(c), s);
   }));
-  const ok = votes.filter((v): v is { verdict: string; confidence: number } => v !== null);
-  if (ok.length === 0) return 'error';
+  const ok = votes.filter((v): v is Vote => v !== null);
+  if (ok.length === 0) return { verdict: 'error', quotedVotes: 0, totalVotes: 0 };
   const acc = ok.filter((v) => v.verdict === 'accept').length;
-  return acc > ok.length / 2 ? 'accept' : 'reject';
+  const quotedVotes = variant === 'C' ? ok.filter((v) => v.quote.length > 0).length : 0;
+  return { verdict: acc > ok.length / 2 ? 'accept' : 'reject', quotedVotes, totalVotes: ok.length };
 }
 
 async function main(): Promise<void> {
   if (!process.env.DEEPSEEK_API_KEY) { process.stderr.write('Нет DEEPSEEK_API_KEY (--env-file)\n'); process.exit(1); }
-  process.stdout.write(`Модель: ${MODEL}\nКарточек: ${CARDS.length}, варианты A/B/C, 3 голоса\n\n`);
+  const supporterLine = supporterClient
+    ? `Голос «защитник» на другой модели: ${SUPPORTER_MODEL} (diversity провайдеров)`
+    : 'Все голоса на одной модели (OPENAI_PROXY_* не заданы — diversity выключен)';
+  process.stdout.write(`Модель: ${MODEL}\n${supporterLine}\nКарточек: ${CARDS.length}, варианты A/B/C, 3 голоса\n\n`);
   const variants: Variant[] = ['A', 'B', 'C'];
   const score: Record<Variant, { right: number; falseAccept: number; falseReject: number }> =
     { A: { right: 0, falseAccept: 0, falseReject: 0 }, B: { right: 0, falseAccept: 0, falseReject: 0 }, C: { right: 0, falseAccept: 0, falseReject: 0 } };
+  let quotedVotes = 0;
+  let totalCVotes = 0;
 
   const head = 'карточка'.padEnd(38) + 'ждём'.padEnd(8) + 'A'.padEnd(9) + 'B'.padEnd(9) + 'C';
   process.stdout.write(head + '\n' + '─'.repeat(head.length) + '\n');
@@ -141,10 +258,11 @@ async function main(): Promise<void> {
     const res: Record<Variant, string> = { A: '', B: '', C: '' };
     for (const v of variants) {
       const r = await judge(c, v);
-      res[v] = r;
-      if (r !== 'error') {
-        if (r === c.expect) score[v].right++;
-        else if (r === 'accept') score[v].falseAccept++;
+      res[v] = r.verdict;
+      if (v === 'C') { quotedVotes += r.quotedVotes; totalCVotes += r.totalVotes; }
+      if (r.verdict !== 'error') {
+        if (r.verdict === c.expect) score[v].right++;
+        else if (r.verdict === 'accept') score[v].falseAccept++;
         else score[v].falseReject++;
       }
     }
@@ -161,5 +279,7 @@ async function main(): Promise<void> {
       `Вариант ${v}: верно ${s.right}/${CARDS.length}  | ложно ПРИНЯТО (мусор в память): ${s.falseAccept}  | ложно ОТКЛОНЕНО (хорошее к людям): ${s.falseReject}\n`,
     );
   }
+  const coverage = totalCVotes > 0 ? Math.round((quotedVotes / totalCVotes) * 100) : 0;
+  process.stdout.write(`C: покрытие цитатой ${coverage}% (${quotedVotes}/${totalCVotes} голосов с непустой цитатой)\n`);
 }
 main().catch((e: unknown) => { process.stderr.write(String(e) + '\n'); process.exit(1); });

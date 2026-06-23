@@ -640,6 +640,24 @@ function buildSettings(): SettingSeed[] {
       'Курация: доля авто/провизорных решений в аудит-выборку (W3: 0.05→0.01 — меньше аудит-шума при сохранении сигнала autotune)',
     ],
     [
+      'knowledge.curationGrayZoneJudgeEnabled',
+      true,
+      'medium',
+      'Курация: судить некритичные карточки серой зоны (вместо отправки человеку)',
+    ],
+    [
+      'knowledge.curationGrayZoneJudgeMinConfidence',
+      0.7,
+      'low',
+      'Курация: нижний порог уверенности для судьи серой зоны',
+    ],
+    [
+      'knowledge.curationGrayZoneJudgeSampleRate',
+      1.0,
+      'low',
+      'Курация: доля карточек серой зоны, прогоняемых через судью',
+    ],
+    [
       'knowledge.curationAutotuneEnabled',
       envBool('CURATION_AUTOTUNE_ENABLED', true),
       'medium',

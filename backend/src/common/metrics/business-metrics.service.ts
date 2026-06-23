@@ -448,6 +448,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private curationProvisionalTotal!: Counter<'resource_type'>;
   private curationAuditSampleTotal!: Counter<'resource_type'>;
   private curationVerifierVerdictTotal!: Counter<'decision' | 'consensus_type'>;
+  private curationGrayZoneJudgedTotal!: Counter<'outcome'>;
   // ── Autonomy W1 (2026-06-12) — Conflict-Arbiter (LLM-арбитр конфликтов) ──
   // `z_conflict_arbiter_total{verdict, outcome}` — исходы ночного арбитра
   // конфликтов знаний: verdict дебата × outcome ∈ auto_resolved|left_open|error.
@@ -2348,6 +2349,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'curation_verifier_verdict_total',
       help: 'A1 — вердикты AI-судьи canonical-verify (decision ∈ accept|reject|split_uncertain|unavailable × consensus_type).',
       labelNames: ['decision', 'consensus_type'] as const,
+    });
+    this.curationGrayZoneJudgedTotal = this.getOrCreateCounter({
+      name: 'curation_gray_zone_judged_total',
+      help: 'A-Ф5 — некритичные карточки серой зоны, прогнанные через AI-судью (outcome ∈ canonicalized|to_human).',
+      labelNames: ['outcome'] as const,
     });
     // ── Autonomy W1 (2026-06-12) — Conflict-Arbiter (LLM-арбитр конфликтов) ──
     this.conflictArbiterTotal = this.getOrCreateCounter({
@@ -5744,6 +5750,10 @@ export class BusinessMetricsService implements OnModuleInit {
       decision: args.decision,
       consensus_type: args.consensusType,
     });
+  }
+
+  incCurationGrayZoneJudged(args: { outcome: 'canonicalized' | 'to_human' }): void {
+    this.curationGrayZoneJudgedTotal.inc({ outcome: args.outcome });
   }
 
   /**

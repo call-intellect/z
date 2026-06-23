@@ -106,10 +106,15 @@ export class RoleRegulationRetrievalService {
     }
     const vecLiteral = guard.literal;
 
+    const departmentId = await this.resolveDepartmentId(
+      args.tenantId,
+      args.roleId,
+      args.departmentId,
+    );
     const scopes = buildRoleScopeFilter({
       roleId: args.roleId,
       includeOrg,
-      departmentId: args.departmentId ?? null,
+      departmentId,
     });
     const perTable = Math.max(topN, 4);
 
@@ -265,6 +270,26 @@ export class RoleRegulationRetrievalService {
         `role-regulations.snapshot: запрос по "${label}" упал: ${err instanceof Error ? err.message : String(err)}`,
       );
       return [];
+    }
+  }
+
+  private async resolveDepartmentId(
+    tenantId: string,
+    roleId: string,
+    override?: string | null,
+  ): Promise<string | null> {
+    if (override !== undefined) return override;
+    try {
+      const role = await this.prisma.role.findFirst({
+        where: { id: roleId, tenantId },
+        select: { departmentId: true },
+      });
+      return role?.departmentId ?? null;
+    } catch (err) {
+      this.logger.debug(
+        `role-regulations: resolveDepartmentId упал: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
     }
   }
 

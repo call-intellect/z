@@ -8,6 +8,7 @@ const validVec = () => Array(DIM).fill(0.1) as number[];
 interface Mocks {
   prisma: {
     $queryRawUnsafe: ReturnType<typeof vi.fn>;
+    role: { findFirst: ReturnType<typeof vi.fn> };
     regulation: { findMany: ReturnType<typeof vi.fn> };
     instruction: { findMany: ReturnType<typeof vi.fn> };
     policy: { findMany: ReturnType<typeof vi.fn> };
@@ -43,6 +44,7 @@ const makeMocks = (): Mocks => {
   return {
     prisma: {
       $queryRawUnsafe: vi.fn(),
+      role: { findFirst: vi.fn().mockResolvedValue({ departmentId: null }) },
       regulation: { findMany: vi.fn().mockResolvedValue([]) },
       instruction: { findMany: vi.fn().mockResolvedValue([]) },
       policy: { findMany: vi.fn().mockResolvedValue([]) },
@@ -150,6 +152,45 @@ describe('RoleRegulationRetrievalService.retrieveForRole', () => {
     });
     expect(result).toEqual([]);
     expect(mocks.prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+
+  it('включает department:<id> в scope, когда у роли есть departmentId', async () => {
+    mocks.embedder.embedQuery.mockResolvedValue(validVec());
+    mocks.prisma.role.findFirst.mockResolvedValue({ departmentId: 'd1' });
+    mocks.prisma.$queryRawUnsafe.mockResolvedValue([]);
+    await buildService(mocks).retrieveForRole({
+      tenantId: 't1',
+      roleId: 'r1',
+      query: 'вопрос',
+    });
+    expect(mocks.prisma.role.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'r1', tenantId: 't1' } }),
+    );
+    expect(mocks.prisma.$queryRawUnsafe).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      't1',
+      expect.arrayContaining(['role:r1', 'org', 'department:d1']),
+      0.3,
+    );
+  });
+
+  it('без departmentId у роли — scope ровно role+org (department не добавляется)', async () => {
+    mocks.embedder.embedQuery.mockResolvedValue(validVec());
+    mocks.prisma.role.findFirst.mockResolvedValue({ departmentId: null });
+    mocks.prisma.$queryRawUnsafe.mockResolvedValue([]);
+    await buildService(mocks).retrieveForRole({
+      tenantId: 't1',
+      roleId: 'r1',
+      query: 'вопрос',
+    });
+    expect(mocks.prisma.$queryRawUnsafe).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      't1',
+      ['role:r1', 'org'],
+      0.3,
+    );
   });
 });
 

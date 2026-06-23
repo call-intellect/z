@@ -1741,6 +1741,11 @@ export class TypedConfigService {
         undefined,
         true,
       ),
+      livingCardEnabled: this.resolveSync<boolean>(
+        'tracker.livingCardEnabled',
+        undefined,
+        true,
+      ),
     } as const;
   }
 

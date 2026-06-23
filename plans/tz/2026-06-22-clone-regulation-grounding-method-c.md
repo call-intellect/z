@@ -57,7 +57,7 @@
 
 ## Фазы
 
-### Фаза 1 — retrieval применимых правил при ответе клона `[ ]`
+### Фаза 1 — retrieval применимых правил при ответе клона `[x]`
 1. `RoleRegulationRetrievalService` (embedQuery + `$queryRaw` <=> по 4 таблицам, фильтр `scope = 'role:<id>' OR scope='org'`, порог + topN из AdminSetting).
 2. Helper `parseRoleScope(scope): string | null`.
 3. Ранжирование по (ранг severity, cosine) согласно Р3.
@@ -65,13 +65,13 @@
 5. Вызов retrieval в `callCloneRespond`; прокидка в шаблон. Покрыть `askRole` и `askRoleV2`.
 6. Если правил нет — блок не рендерится (клон отвечает как прежде).
 
-### Фаза 2 — указатель правил в снапшоте клона `[ ]`
+### Фаза 2 — указатель правил в снапшоте клона `[x]`
 1. Новое поле `ExecutablePersona.applicableRegulationsSnapshot Json?` (`[{kind,id,name,severity?,scope}]`) — миграция Prisma.
 2. Заполнение в `buildForRole` после компиляции persona: запрос правил по `scope='role:<id>'` (без embedding — просто список активных), топ по `lastConfirmedAt`/`updatedAt`.
 3. Индекс `@@index([tenantId, scope])` на `Instruction`.
 4. Указатель используется как дешёвый «клон знает, что у него N правил» — в промпт кладётся компактным списком заголовков (не полный текст).
 
-### Фаза 3 — иерархия видимости + крутилки `[ ]`
+### Фаза 3 — иерархия видимости + крутилки `[x]`
 1. Иерархия `scope`: `role:<id>` + `org` + (если у `Role` есть `departmentId`) `department:<id>`. Проверить наличие связи Role↔Department; при отсутствии — только role+org, департамент в задел.
 2. Все пороги/количества — в `AdminSetting` (см. ниже), не в ENV и не в коде.
 
@@ -104,4 +104,4 @@
 
 ## Итог
 
-Реализовано: ничего (ТЗ). Порядок фаз: 1 → 2 → 3, каждая самостоятельно ценна. Фаза 1 включает клона-советчика на регламентах без миграции БД; Фаза 2 кладёт фундамент-указатель под проверяльщика; Фаза 3 расширяет видимость и выносит крутилки.
+Реализовано: **все 3 фазы** (ветка `feature/2026-06-22-clone-regulation-grounding-method-c`). Ф1 — клон-советчик на регламентах без миграции БД (RoleRegulationRetrievalService + блок `<applicable_regulations>` + 3 крутилки AdminSetting); Ф2 — указатель-снапшот `ExecutablePersona.applicableRegulationsSnapshot` (миграция + индекс Instruction) + блок `<regulations_index>`; Ф3 — иерархия scope `role + org + department` (resolveDepartmentId по `Role.departmentId`). Снапшот (Ф2) — role-only; иерархия (Ф3) — только в retrieval. Backfill существующих персон не делался: снапшот заполняется при ближайшей пересборке клона (eventual by-design). Нормализация `scope`→FK на `Role` — задел (см. реестр не-сделанного, Р2).

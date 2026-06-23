@@ -66,6 +66,11 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.meetingTasksToTrackerOnly', z.boolean()],
   ['knowledge.ideaDirectPathEnabled', z.boolean()],
 
+  ['clone.regulations.retrieval.top_n', POSITIVE_INT],
+  ['clone.regulations.retrieval.min_similarity', UNIT_INTERVAL],
+  ['clone.regulations.snapshot.max_items', POSITIVE_INT],
+  ['clone.regulations.scope.include_org', z.boolean()],
+
   ['companyProfile.autoSummaryEnabled', z.boolean()],
   ['companyProfile.summaryRebuildHours', POSITIVE_INT],
   ['companyProfile.summaryMinSourceBlocks', POSITIVE_INT],

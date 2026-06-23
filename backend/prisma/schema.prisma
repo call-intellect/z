@@ -6090,6 +6090,7 @@ model Instruction {
 
   @@unique([tenantId, name])
   @@index([tenantId, status])
+  @@index([tenantId, scope])
   @@index([tenantId, forRole])
   @@index([tenantId, ownerPersonId])
   @@index([currentVersionId])
@@ -8639,6 +8640,7 @@ model ExecutablePersona {
   /// по правилу floor для executable_persona; private-trait'ы анонимизируются
   /// до sensitive по private-aggregation в DataClassPolicyService).
   dataClassAudit        Json?
+  applicableRegulationsSnapshot Json?
   createdAt             DateTime      @default(now())
 
   tenant         Org                 @relation("ExecutablePersonaTenant", fields: [tenantId], references: [id], onDelete: Cascade)

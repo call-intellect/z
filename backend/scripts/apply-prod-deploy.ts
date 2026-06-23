@@ -228,6 +228,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-clone-regulations.ts',
+    hint: '4 крутилки clone.regulations.* (retrieval top_n/min_similarity, snapshot max_items, scope include_org) — клон знает регламенты должности (Способ C)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-probe-curation.ts',
     hint: 'probe.* (10) + knowledge.curation{ItemExpiryDays,StaleMonthsThreshold,StaleDynamicScoreThreshold} (config Шаг 7 — probe + остаток курации в AdminSetting)',
   },

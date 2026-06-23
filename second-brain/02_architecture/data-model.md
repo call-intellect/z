@@ -615,9 +615,32 @@ Card {
 - `@@unique([issueId, sourceType, sourceRefId])` + `@@index([tenantId, issueId])` (идемпотентность провенанса: повтор `create` глотается P2002).
 
 **ChatBox: связка клиента переписки с графом (та же миграция).** `ChatboxCustomer` и `ChatboxChannelClient` (`ChannelClient`) получили:
-- `linkedPersonId: String?` — связь клиента/контакта переписки с `Person` графа знаний.
+- `linkedPersonId: String?` — связь клиента/контакта переписки с `Person` графа знаний. **DEPRECATED (2026-06-23)** — заменён на `linkedCustomerId`, физический drop колонки — vNext.
 - `linkMode: String?` — как установлена связка (ручная/по email/нечёткий матчинг по имени, гейт `chatbox.match.name_fuzzy_enabled`).
 Это снимает прежнее ограничение «`ChatboxCustomer` не связан с `Person`/`Entity`» (см. реестр не-сделанного).
+
+**ChatBox: переход клиента переписки с `Person` на `Customer` (2026-06-23, миграция `20260623071903_chatbox_customer_model`, ТЗ [`chatbox-customer-vs-manager-split`](../../plans/tz/2026-06-23-chatbox-customer-vs-manager-split.md)).** Клиент переписки — это покупатель, а не сотрудник, поэтому он связывается с `Customer`/`Entity{type=customer}`, а не с `Person`. Те же таблицы получили:
+- `ChatboxCustomer.linkedCustomerId: String?` (FK → `Customer`) — связь клиента переписки с `Customer` графа знаний.
+- `ChatboxChannelClient.linkedContactEntityId: String?` — связь контакта канала с `Entity` (контакт клиента).
+Менеджер-исполнитель (`ChatboxMember`) по-прежнему связывается с `Person` — НЕ менялся.
+
+### Customer (1:1 над Entity{type=customer}) — зеркало Vendor
+
+```
+model Customer {
+  id, tenantId,
+  entityId @unique          → Entity (type=customer)   // 1:1
+  name, inn?, email?, phone?,
+  source?, externalCrmId?,                              // провенанс/CRM-id
+  responsiblePersonId?      → Person                    // ответственный менеджер
+  status CustomerStatus @default(active)                // active | inactive | churned
+  metadata Json?,
+  deletedAt DateTime?
+}
+enum CustomerStatus { active inactive churned }
+```
+
+Зеркало `model Vendor` (см. [[module-map]] §«SBA α-2»): покупатель компании как сущность графа знаний с 1:1-привязкой к `Entity{type=customer}`. Резолв/дедуп — `EntityResolutionService.findOrCreateCustomerEntity` (резолв `Entity{customer}` + `Customer`; приоритет дедупа `externalCrmId` → strong-id → name). `responsiblePersonId` — ответственный менеджер (FK на `Person`), `status` — стадия отношений (`CustomerStatus`), `externalCrmId`/`source` — провенанс из внешней CRM. На ChatBox-клиента ссылается `ChatboxCustomer.linkedCustomerId` (см. выше). Read API — `/api/v1/customers` (модуль `customers`, см. [[../01_projects/api-layer]]).
 
 **`MeetingChapter` дополнительно:**
 - `evidenceBlockIds: String[]` (default `[]`) — id блоков главы.

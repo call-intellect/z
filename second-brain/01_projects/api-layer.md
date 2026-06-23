@@ -122,6 +122,17 @@ CRUD `POST/PATCH/DELETE/list/getUsage` упразднены. Модель `Plan`
 | PATCH | `/api/v1/vendors/:id` | Обновить. RBAC `vendor:write`. 2026-05-28. |
 | DELETE | `/api/v1/vendors/:id` | Soft-delete. RBAC `vendor:delete`. 2026-05-28. |
 
+### Customers (2026-06-23, ТЗ chatbox-customer-vs-manager-split)
+
+Read-only API клиентов (`Customer` 1:1 над `Entity{type=customer}`, см. [[../02_architecture/data-model]] §«Customer»). Модуль `customers`, зеркало `vendors`. RBAC `obj='entity'`.
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET  | `/api/v1/customers` | Список клиентов с фильтрами `q` / `status` (active/inactive/churned) + пагинация `page`/`limit`. |
+| GET  | `/api/v1/customers/:id` | Детальный клиент. |
+
+**ChatBox — создание клиента из переписки (2026-06-23):** `POST /api/v1/chatbox/customers/:id/create-customer` (был `create-person`) — `ChatboxCustomersService.createCustomerAndLink` создаёт `Customer`/`Entity{customer}` из ChatBox-клиента и привязывает (`linkCustomer(customerId)` → `ChatboxCustomer.linkedCustomerId`); DTO отдаёт `linkedCustomer`. Клиент переписки теперь = `Customer`, а не `Person`.
+
 ## Goals OKR v2 — Граф целей (2026-06-02)
 
 ТЗ — [`plans/archive/2026-06-02-goals-okr-v2.md`](../../plans/archive/2026-06-02-goals-okr-v2.md). Полная заметка — [[goals-and-strategic-alignment]] §«Goals OKR v2». Все под `CookieAuthGuard + TenantGuard`. (Базовый CRUD целей `GET/POST/PATCH/DELETE /goals` и темы — описаны выше в Phase 9.)

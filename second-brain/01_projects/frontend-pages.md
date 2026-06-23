@@ -28,12 +28,18 @@ covers: реестр всех страниц Next.js App Router
 2. **Моё пространство** — `/me`, `/me/contributions`, `/me/social-contribution`, `/me/promises`, `/feedback`.
 3. **Память компании** — `/ideas`, `/regulations`, `/decisions`, `/insights`, `/entities`, `/themes`. Items фильтруются `useMemoryAccess()`.
 4. **Управление** *(только owner/admin/coo)* — `/dashboard/operations`, `/dashboard/operations/daily`, `/dashboard/operations/weekly`, `/goals`.
-5. **Справочник** *(collapsible, default свёрнут, storageKey `sidebar.reference.open`)* — `/company`, `/departments`, `/domains`, `/maturity`, `/documents`, `/roles`, `/clones`, `/vendors`, `/events`, `/experiments`, `/brand-voice`. Внутри — вложенная подгруппа «Будет в следующей фазе» с γ-пунктами (`/processes`, `/policies`, `/metrics`). *(2026-06-04: `/structure` отсюда убран — стал «Команда» в группе «Каждый день».)*
+5. **Справочник** *(collapsible, default свёрнут, storageKey `sidebar.reference.open`)* — `/company`, `/departments`, `/domains`, `/maturity`, `/documents`, `/roles`, `/clones`, `/customers`, `/vendors`, `/events`, `/experiments`, `/brand-voice`. Внутри — вложенная подгруппа «Будет в следующей фазе» с γ-пунктами (`/processes`, `/policies`, `/metrics`). *(2026-06-04: `/structure` отсюда убран — стал «Команда» в группе «Каждый день».)* *(2026-06-23: пункт «Клиенты» (`/customers`) добавлен рядом с «Поставщики».)*
 6. **Настройки** — `/settings/templates`, `/settings/integrations`, `/settings` + подгруппа «Админка» (`/company-admin` для owner/admin, `/admin` для super_admin). С 2026-06-02 «Админка компании» — отдельная поверхность `/company-admin/*` (Доступ к памяти / Источники / Встречи); «Экономика» (расходы LLM) и тех. «Ядро знаний» убраны из клиента — владелец Org себестоимость не видит.
 
 CTA «Создать встречу» (Plus + ссылка на `/meetings/create`) и `OrgSwitcher` живут в шапке Sidebar над списком групп.
 
 Источник ТЗ: [plans/archive/2026-05-27-navigation-restructure.md](../../plans/archive/2026-05-27-navigation-restructure.md).
+
+## Клиенты (2026-06-23, ТЗ chatbox-customer-vs-manager-split)
+
+| Путь | Что |
+|---|---|
+| `/customers` | **Справочник клиентов** (`frontend/app/(authenticated)/customers/`, зеркало `/vendors`) — read-only master-list клиентов компании (`Customer`, фильтры/поиск/статус). Слой `src/api/customers.api.ts`. Пункт «Клиенты» в подгруппе «Справочник» сайдбара (`nav-config.ts`, рядом с «Поставщики»). ChatBox-пикер клиента в `/chats` переключён на клиентов Коры (`Customer`). |
 
 ## Финальный handoff Wave 1-3 — новые страницы
 

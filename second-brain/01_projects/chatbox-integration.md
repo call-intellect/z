@@ -98,16 +98,26 @@ knowledge-core (block-ingest подхватывает RawEvent сам, без и
 - **Прод-чистка:** `scripts/backfill-chatbox-unregister-webhooks.ts` снимает уже зарегистрированные вебхуки на стороне ChatBox через API (находит по URL `/api/v1/webhooks/chatbox/` или описанию «Кора»), идемпотентно, не падает на ошибке отдельного орга. Зарегистрирован в `apply-prod-deploy.ts` STEPS (`backfill`).
 - **Причина:** вебхуки давали постоянный 403 `chatbox_webhook_invalid_secret` при рассинхроне секрета URL ↔ БД (кейс «Ооо луа»), а суточного забора по токену достаточно — мгновенность не стоила операционной боли. Фронт не менялся (визард и так хардкодит `daily`, realtime в UI не предлагался).
 
+## Обновления (2026-06-23, клиенты переписки → Customer, а не Person)
+
+ТЗ — [[../../plans/tz/2026-06-23-chatbox-customer-vs-manager-split]]. Клиент переписки — покупатель, а не сотрудник: он связывается с `Customer`/`Entity{type=customer}` графа знаний, а не с `Person`. Менеджеры (`ChatboxMember → Person`) НЕ менялись.
+
+- **Клиент = `Customer`.** На ингесте сессии клиент авто-резолвится в `Customer`/`Entity{customer}` через `EntityResolutionService.findOrCreateCustomerEntity` (дедуп `externalCrmId` → strong-id → name); менеджер-исполнитель остаётся `Person`.
+- **Колонки связки.** `ChatboxCustomer.linkedCustomerId` (FK → `Customer`) и `ChatboxChannelClient.linkedContactEntityId` (FK → `Entity`-контакт). Старый `linkedPersonId` — **DEPRECATED** (drop — vNext). Миграция `20260623071903_chatbox_customer_model` (новая модель `Customer` + enum `CustomerStatus` + ALTER chatbox-таблиц), см. [[../02_architecture/data-model]] §«Customer».
+- **Сервис/эндпоинт.** `ChatboxCustomersService` переведён с `Person` на `Customer`: `createCustomerAndLink` / `linkCustomer(customerId)`, DTO отдаёт `linkedCustomer`. Эндпоинт `POST /chatbox/customers/:id/create-customer` (был `create-person`).
+- **Справочник клиентов.** Read-only API `/api/v1/customers` (модуль `customers`, зеркало `vendors`) + страница `/customers` + пункт «Клиенты» в сайдбаре. FE-пикер клиента в `/chats` переключён на клиентов Коры. См. [[api-layer]], [[frontend-pages]].
+- **Backfill.** `scripts/backfill-chatbox-customers-from-person.ts` переносит ChatBox-клиентов `Person{external}` → `Customer` (идемпотентно, зарегистрирован в `apply-prod-deploy.ts` STEPS `phase:'backfill'`).
+
 ## Границы MVP / что в vNext
 
-**Входит:** API-клиент, CRUD интеграции, движок синка + сессии, суточный cron забора по AccessToken, мост в knowledge-core + LLM-summary (гейт `analysisEnabled`), исходящая отправка текста, веб-просмотр чатов с бейджами, автосвязка/маппинг менеджеров + создание Person из менеджера.
+**Входит:** API-клиент, CRUD интеграции, движок синка + сессии, суточный cron забора по AccessToken, мост в knowledge-core + LLM-summary (гейт `analysisEnabled`), исходящая отправка текста, веб-просмотр чатов с бейджами, автосвязка/маппинг менеджеров + создание Person из менеджера, связка клиента переписки с `Customer`/`Entity{customer}` графа (2026-06-23).
 
 **Не входит (vNext, см. ТЗ §«Не входит» и реестр [[../04_не-сделано/README|не-сделано]]):**
 - Создание чата с нуля из Коры (`POST /chats` ChatBox) — только отправка в существующий.
 - Скачивание медиа (image/audio/video/file) в S3 — храним только `*Url`.
 - Отправка нетекстовых сообщений (апстрим поддерживает только `TEXT`).
 - Двусторонний PATCH правок клиентов/кастомеров обратно в ChatBox (Кора read-only по ним).
-- Связка `ChatboxCustomer` с `Person`/`Entity` графа (только менеджеры↔Person).
+- ~~Связка `ChatboxCustomer` с `Person`/`Entity` графа (только менеджеры↔Person).~~ **Сделано 2026-06-23** — клиент связывается с `Customer`/`Entity{customer}` (`linkedCustomerId`), менеджер — с `Person`. См. §«Обновления (2026-06-23…)».
 - Аналитические дашборды по чатам (SLA, метрики ответов).
 
 ## Задачи из переписки в триаже + fallback владельца (2026-06-22, ТЗ tasks-subsystem-unified-fix B2/B3)

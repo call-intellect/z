@@ -71,6 +71,27 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-23 — ChatBox: разделение клиентов и менеджеров (клиент → Customer, а не Person)
+
+> ТЗ `plans/tz/2026-06-23-chatbox-customer-vs-manager-split.md`. Ветка `feature/chatbox-customer-vs-manager-split`.
+>
+> **Зачем:** клиент переписки — покупатель, а не сотрудник: он связывается с `Customer`/`Entity{type=customer}` графа знаний (зеркало `Vendor`), а не с `Person`. Менеджер-исполнитель остаётся `Person`. Новый read API клиентов `/api/v1/customers` + страница «Клиенты».
+>
+> **🟡 1 МИГРАЦИЯ PRISMA (авто через `migrate deploy`) + 1 BACKFILL (1 прогон, идемпотентный, УЖЕ в STEPS). 🟢 НОВЫХ ENV НЕТ.** Новых cron/LLM-taskType/метрик нет. Новый модуль `customers` (read API). Docker rebuild backend+frontend.
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260623071903_chatbox_customer_model` — новая таблица `"Customer"` (1:1 над `Entity{type=customer}`, зеркало `Vendor`: `entityId @unique`, `name`/`inn`/`email`/`phone`/`source`/`externalCrmId`, `responsiblePersonId → Person`, `status`, `metadata`, `deletedAt`) + новый enum `CustomerStatus` (`active`/`inactive`/`churned`) + ALTER chatbox-таблиц: `ChatboxCustomer.linkedCustomerId` (FK → `Customer`) и `ChatboxChannelClient.linkedContactEntityId`. Старый `ChatboxCustomer.linkedPersonId` оставлен (DEPRECATED, drop — vNext). Аддитивная (CREATE TABLE/TYPE + ADD COLUMN, без DROP), без потери данных. **В STEPS не регистрируется** (миграция схемы).
+- **Шаг 8 — Backfill (1 прогон, идемпотентный, УЖЕ в STEPS `phase:'backfill'`, `skipBootstrap`):** `docker compose exec backend bun run scripts/backfill-chatbox-customers-from-person.ts` — перенос ChatBox-клиентов `Person{external}` → `Customer`/`Entity{customer}` + проставление `ChatboxCustomer.linkedCustomerId`. Сначала dry-run: `docker compose exec backend bun run scripts/backfill-chatbox-customers-from-person.ts --dry-run`. Идемпотентен (повтор = no-op). Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (новый модуль `customers`: `CustomersController` + `CustomersService` — read API `GET /api/v1/customers` (`q`/`status`/`page`/`limit`) + `GET /api/v1/customers/:id`, RBAC `obj='entity'`; `EntityResolutionService.findOrCreateCustomerEntity` — резолв `Entity{customer}`+`Customer`, дедуп `externalCrmId`→strong-id→name; `ChatboxCustomersService` переведён на `Customer`: `createCustomerAndLink`/`linkCustomer(customerId)`, эндпоинт `POST /chatbox/customers/:id/create-customer` (был `create-person`); `chatbox-ingest` — клиент сессии авто-резолвится в `Customer`/`Entity{customer}`, менеджер остаётся `Person`). Frontend (страница `/customers` (зеркало `/vendors`) + `src/api/customers.api.ts` + пункт «Клиенты» в подгруппе «Справочник» `nav-config.ts`; ChatBox-пикер клиента в `/chats` переключён на клиентов Коры).
+- **Шаг 12 — Smoke** (после выката):
+  - Миграция применилась: `\d "Customer"` существует; `\d "ChatboxCustomer"` содержит `linkedCustomerId`; `\d "ChatboxChannelClient"` содержит `linkedContactEntityId`; enum `CustomerStatus` есть.
+  - Swagger `/api/docs` содержит тег `customers` (`GET /api/v1/customers`, `GET /api/v1/customers/:id`); `GET /api/v1/customers` отдаёт список.
+  - Backfill: после прогона у существующих ChatBox-клиентов проставлен `linkedCustomerId`, в `/customers` видны клиенты, перенесённые из `Person{external}`.
+  - Поведение: создание клиента из переписки (`POST /chatbox/customers/:id/create-customer`) создаёт `Customer`, не `Person`; ингест новой чат-сессии резолвит клиента в `Entity{customer}` (менеджер — в `Person`).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-23 — Клон должности знает регламенты своей должности (Способ C)
 
 > ТЗ `plans/tz/2026-06-22-clone-regulation-grounding-method-c.md` (Фазы 1–3). Ветка `feature/2026-06-22-clone-regulation-grounding-method-c`, 3 коммита `feat(clones)`.

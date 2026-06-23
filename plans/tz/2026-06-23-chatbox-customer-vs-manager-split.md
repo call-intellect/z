@@ -279,7 +279,7 @@ export interface ChatboxCustomerDto {
 - Ф6 (backfill) последняя — нужен боевой контракт колонок.
 - Согласованный мёрж: Ф3+Ф5 (DTO-контракт chatbox); Ф3Б+Ф5Б (контракт `/api/v1/customers`).
 
-### Фаза 1 — Prisma-модель `Customer` + chatbox-колонки + миграция `[ ]`
+### Фаза 1 — Prisma-модель `Customer` + chatbox-колонки + миграция `[x]`
 **Цель:** модель данных существует, клиент Prisma сгенерирован.
 **Входит:** модель `Customer` + enum `CustomerStatus` (сниппет выше); relations в `Entity`/`Person`/`Customer`/`ChatboxCustomer`; колонки `ChatboxCustomer.linkedCustomerId`, `ChatboxChannelClient.linkedContactEntityId` (+indexes); `bun run prisma:migrate -- --name chatbox_customer_model`; `bun run prisma:generate`.
 **Не входит:** любой сервисный/FE-код; запись в новые колонки; drop старых.
@@ -287,7 +287,7 @@ export interface ChatboxCustomerDto {
 **Acceptance:** `grep -n "model Customer" backend/prisma/schema.prisma` → 1; `grep -n "enum CustomerStatus" …` → 1; `grep -n "linkedCustomerId" …` → ≥1; новый файл в `backend/prisma/migrations/*chatbox_customer_model/migration.sql` существует и содержит `CREATE TABLE "Customer"`; `bun run prisma:generate` без ошибок; `bun run typecheck` зелёный (Prisma-типы `prisma.customer` доступны).
 **Закрывает:** R1, R2.
 
-### Фаза 2 — `findOrCreateCustomerEntity` + contact-link хелпер `[ ]`
+### Фаза 2 — `findOrCreateCustomerEntity` + contact-link хелпер `[x]`
 **Цель:** резолв `Entity{customer}`+`Customer` 1:1 со strong-id дедупом; связь контакт→account.
 **Входит:** метод `findOrCreateCustomerEntity` (контракт выше) в [entity-resolution.service.ts](backend/src/modules/knowledge-core/services/entity-resolution.service.ts) (рядом с `findOrCreateVendorEntity:1194`); unit-spec в `entity-resolution.service.spec.ts` (дедуп по email, дедуп по externalCrmId, повторный вызов → `created:false`, пустое имя → throw).
 **Не входит:** вызовы из chatbox (Ф3); UI.
@@ -295,7 +295,7 @@ export interface ChatboxCustomerDto {
 **Acceptance:** `bunx vitest run backend/src/modules/knowledge-core/services/entity-resolution.service.spec.ts` зелёный; негативный кейс: пустое `name` → `Error('EntityResolution: пустое имя customer')`; повтор с тем же email → тот же `entity.id`, `created:false`, `Customer` не дублируется.
 **Закрывает:** R3, R4.
 
-### Фаза 3 — `ChatboxCustomersService`/controller/DTO на `Customer` `[ ]`
+### Фаза 3 — `ChatboxCustomersService`/controller/DTO на `Customer` `[x]`
 **Цель:** ручная привязка/создание клиента работает через `Customer`, не `Person`.
 **Входит:** переписать сервис ([chatbox-customers.service.ts](backend/src/modules/chatbox/chatbox-customers.service.ts)) — `createCustomerAndLink`, `linkCustomer`, `listCustomers` (резолв `linkedCustomer`); убрать инъекцию `PersonsService`; контроллер ([chatbox-customers.controller.ts:65](backend/src/modules/chatbox/chatbox-customers.controller.ts#L65)) `create-person`→`create-customer`, `link` body `{customerId}`; DTO (сниппет выше); обновить `chatbox-customers.service.spec.ts`; в [chatbox.module.ts:24](backend/src/modules/chatbox/chatbox.module.ts#L24) подключить `EntityResolutionService` (импорт модуля knowledge-core/entity-resolution) к chatbox-провайдерам.
 **Не входит:** ingest/analyze (Ф4); FE (Ф5).
@@ -303,7 +303,7 @@ export interface ChatboxCustomerDto {
 **Acceptance:** `grep -n "createPersonAndLink\|relationship: 'external'\|PersonsService" backend/src/modules/chatbox/chatbox-customers.service.ts` → 0; `grep -n "create-customer" chatbox-customers.controller.ts` → 1; `bunx vitest run backend/src/modules/chatbox/chatbox-customers.service.spec.ts` зелёный; `bun run typecheck` зелёный; Swagger-smoke: `POST /api/v1/chatbox/customers/:id/create-customer` присутствует.
 **Закрывает:** R5, R6.
 
-### Фаза 3Б — Backend read API клиентов (`CustomersController`/`CustomersService`) `[ ]`
+### Фаза 3Б — Backend read API клиентов (`CustomersController`/`CustomersService`) `[x]`
 **Цель:** REST `GET /api/v1/customers` (list+filter+пагинация) и `GET /api/v1/customers/:id` по модели `Customer`.
 **Входит:** новый модуль `backend/src/modules/customers/` — зеркало `backend/src/modules/vendors/`: `customers.controller.ts` (только `@Get()` list + `@Get(':id')`; guards `CookieAuthGuard, TenantGuard`; RBAC `rbac.canRead(user.id, t, 'entity')`, Б8), `services/customers.service.ts` (`list`/`getById` по `prisma.customer`, фильтры `q`/`status`, `deletedAt: null`, `orderBy name`), `dto/customers.dto.ts` (Zod `ListCustomersQuerySchema`, `CustomerDto`, `ListCustomersResponse` — поля `id,entityId,name,inn,email,phone,status,responsiblePersonId,source,externalCrmId,createdAt,updatedAt`), регистрация модуля в `app.module.ts`.
 **Не входит:** create/update/delete (vNext, Б8); FE (Ф5Б); привязка из chatbox (Ф3).
@@ -311,7 +311,7 @@ export interface ChatboxCustomerDto {
 **Acceptance:** `bun run typecheck` зелёный; Swagger-smoke: `GET /api/v1/customers` и `GET /api/v1/customers/:id` присутствуют под тегом `customers`; unit-spec `customers.service.spec.ts` — list возвращает только `deletedAt:null`, фильтр `q` по `name` (ILIKE), tenant-scope (чужой tenant не виден); `grep -n "rbac.canRead" customers.controller.ts` → ≥1.
 **Закрывает:** R11.
 
-### Фаза 4 — ingest/analyze: клиент из `Customer`, менеджер из `Person` `[ ]`
+### Фаза 4 — ingest/analyze: клиент из `Customer`, менеджер из `Person` `[x]`
 **Цель:** в графе/задачах клиент = `Entity{customer}`, исполнитель = менеджер-`Person`.
 **Входит:** [chatbox-ingest.service.ts:249](backend/src/modules/chatbox/chatbox-ingest.service.ts#L249) — резолв/прикрепление `Entity{customer}` для `customer` в payload; [chatbox-analyze.worker.ts:255](backend/src/modules/chatbox/chatbox-analyze.worker.ts#L255) — `customerName` из `Customer`/`ChatboxCustomer`, assignee остаётся менеджер-`Person`; обновить spec'и воркера/ingest.
 **Не входит:** изменение менеджерского пути; FE.
@@ -319,7 +319,7 @@ export interface ChatboxCustomerDto {
 **Acceptance:** `bunx vitest run backend/src/modules/chatbox/chatbox-analyze.worker.spec.ts backend/src/modules/chatbox/chatbox-ingest.service.spec.ts` зелёный; assignee в извлечённой задаче по-прежнему резолвится из `ChatboxMember.linkedPersonId`; ни в одном новом пути нет создания `Person` для клиента (`grep` 0).
 **Закрывает:** R7.
 
-### Фаза 5 — FE `chatbox/customers` на список `Customer` `[ ]`
+### Фаза 5 — FE `chatbox/customers` на список `Customer` `[x]`
 **Цель:** пикер привязки оперирует клиентами (`Customer`), не сотрудниками-external.
 **Входит:** [ChatboxCustomersClient.tsx](frontend/app/(authenticated)/chats/integrations/chatbox/customers/ChatboxCustomersClient.tsx) — источник опций `Customer`; `chatbox.api.ts` (`createCustomer`, `linkCustomer({customerId})`, `listCustomerAccounts` при необходимости); `domain/chatbox.ts` (`linkedPerson`→`linkedCustomer`); типы `CustomerOption`.
 **Не входит:** `chatbox/managers/*`; новые страницы.
@@ -327,7 +327,7 @@ export interface ChatboxCustomerDto {
 **Acceptance:** `grep -n "relationship.*external\|personsDomainApi" ChatboxCustomersClient.tsx` → 0; `cd frontend && bun run typecheck && bun run lint` зелёные; UI-копирайт только русский; пары токенов `bg-*`/`text-*-fg` (без `text-white`/hex).
 **Закрывает:** R8.
 
-### Фаза 5Б — FE раздел «Клиенты» (справочная страница + навигация) `[ ]`
+### Фаза 5Б — FE раздел «Клиенты» (справочная страница + навигация) `[x]`
 **Цель:** в кабинете появляется раздел «Клиенты» рядом с «Поставщики» — список клиентов компании.
 **Входит:**
 - `frontend/src/api/customers.api.ts` — зеркало [vendors.api.ts](frontend/src/api/vendors.api.ts): `customersApi.list(filters?)`, `customersApi.get(id)` на `/api/v1/customers`; типы `CustomerListItemApi`/`CustomersListResponseApi`/`CustomerStatusApi` (`active|inactive|churned`).
@@ -338,7 +338,7 @@ export interface ChatboxCustomerDto {
 **Acceptance:** `cd frontend && bun run typecheck && bun run lint && bun run build` зелёные; `grep -n '"/customers"' frontend/src/ui/components/app-shell/nav-config.ts` → 1; страница `/customers` рендерит список из `customersApi.list` (не из persons/vendors); UI только русский; токены `bg-*`/`text-*-fg`, без `text-white`/hex; пустое состояние — текст про «клиенты появятся после синхронизации/первых переписок».
 **Закрывает:** R12.
 
-### Фаза 6 — backfill существующих `Person{external}` из chatbox `[ ]`
+### Фаза 6 — backfill существующих `Person{external}` из chatbox `[x]`
 **Цель:** боевые данные перенесены; `persons` очищен от осиротевших клиентов.
 **Входит:** `backend/scripts/backfill-chatbox-customers-from-person.ts` (контракт выше); регистрация в `apply-prod-deploy.ts` STEPS; запись в `docs/operations/prod-deploy-log.md` Шаг 8 (backfill) + Шаг 4 (схема); опц. `.spec.ts`.
 **Не входит:** drop колонок `linkedPersonId` (vNext).

@@ -16,9 +16,13 @@ name: z-dev
 
 services:
   postgres:
-    # pgvector/pgvector — официальный образ с расширением pgvector
-    # (требуется схемой: backend/prisma/schema.prisma `extensions = [pgvector]`).
-    image: pgvector/pgvector:pg17
+    # Composite-образ PG16 + pgvector + Apache AGE (см. infra/postgres/Dockerfile) —
+    # тот же, что строит prod-compose. PG16 совпадает с prod (Yandex Managed PG16)
+    # и с существующим dev-volume; AGE нужен графовой инфраструктуре Фазы 0.
+    build:
+      context: ./infra/postgres
+      dockerfile: Dockerfile
+    image: z-postgres-age-pgvector:pg16
     container_name: z-dev-postgres
     restart: unless-stopped
     environment:

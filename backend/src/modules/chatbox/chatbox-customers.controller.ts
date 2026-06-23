@@ -37,7 +37,7 @@ export class ChatboxCustomersController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'Список клиентов ChatBox с резолвом связанной Person' })
+  @ApiOperation({ summary: 'Список клиентов ChatBox с резолвом связанного клиента Коры' })
   async list(
     @CurrentUser() user: CurrentUserPayload,
     @CurrentOrg() tenantId: string | undefined,
@@ -48,7 +48,7 @@ export class ChatboxCustomersController {
   }
 
   @Put(':id/link')
-  @ApiOperation({ summary: 'Привязать клиента ChatBox к Person Коры (или снять)' })
+  @ApiOperation({ summary: 'Привязать клиента ChatBox к клиенту Коры (или снять)' })
   async link(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(ChatboxCustomerLinkSchema))
@@ -58,22 +58,22 @@ export class ChatboxCustomersController {
   ): Promise<{ ok: true; customer: ChatboxCustomerDto }> {
     const t = this.requireTenant(tenantId);
     await this.requireManage(user.id, t);
-    const customer = await this.service.linkCustomer(t, id, body.personId);
+    const customer = await this.service.linkCustomer(t, id, body.customerId);
     return { ok: true, customer };
   }
 
-  @Post(':id/create-person')
+  @Post(':id/create-customer')
   @ApiOperation({
-    summary: 'Создать сотрудника Коры из клиента ChatBox и связать с ним',
+    summary: 'Создать клиента Коры из клиента ChatBox и связать',
   })
-  async createPerson(
+  async createCustomer(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<{ ok: true; customer: ChatboxCustomerDto }> {
     const t = this.requireTenant(tenantId);
     await this.requireManage(user.id, t);
-    const customer = await this.service.createPersonAndLink(t, user.id, id);
+    const customer = await this.service.createCustomerAndLink(t, user.id, id);
     return { ok: true, customer };
   }
 

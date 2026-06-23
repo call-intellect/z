@@ -71,6 +71,26 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-23 — Клон должности знает регламенты своей должности (Способ C)
+
+> ТЗ `plans/tz/2026-06-22-clone-regulation-grounding-method-c.md` (Фазы 1–3). Ветка `feature/2026-06-22-clone-regulation-grounding-method-c`, 3 коммита `feat(clones)`.
+>
+> **Зачем:** клон должности при ответе «как бы ты сделал» теперь опирается не только на неявный опыт носителей (traits/principles/practice-skills), но и на записанные регламенты/инструкции/политики/процессы должности — подтягивает их по смыслу в момент ответа (приоритет «правило важнее привычки», `Policy(blocking)` перебивает личный опыт) и держит указатель-снапшот всех правил роли.
+>
+> **1 миграция (авто, аддитивная) + 4 крутилки AdminSetting (seed, УЖЕ в STEPS) + 2 новых блока промпта. Docker rebuild backend+frontend. 🟢 НОВЫХ ENV НЕТ** (`clone.regulations.*` — чистые AdminSetting). Новых метрик/cron/eventType/эндпоинтов нет.
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260623021934_clone_applicable_regulations_snapshot_and_instruction_scope_index` — `ADD COLUMN "applicableRegulationsSnapshot" JSONB` на `executable_personas` + `CREATE INDEX "instructions_tenantId_scope_idx" ON "instructions"("tenantId","scope")`. Аддитивная (ADD COLUMN/CREATE INDEX, без DROP), без потери данных. Backfill НЕ нужен: поле nullable, снапшот заполняется при ближайшей пересборке клона роли (`buildForRole` — cron/threshold/manual). **В STEPS не регистрируется** (миграция схемы).
+- **Шаг 7 — Seed (идемпотентный, УЖЕ в STEPS `phase:'seed-base'`):** `docker compose exec backend bun run scripts/seed-admin-setting-clone-regulations.ts` — 4 крутилки (category `knowledge`, section `clone_regulations`): `clone.regulations.retrieval.top_n` (6), `clone.regulations.retrieval.min_similarity` (0.3 — порог cosine-distance), `clone.regulations.snapshot.max_items` (20), `clone.regulations.scope.include_org` (true). Чистые AdminSetting (без ENV). Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (knowledge-core `RoleRegulationRetrievalService`: `retrieveForRole` — embedQuery + raw-SQL `<=>` cosine по 4 таблицам `regulations`/`instructions`/`policies`/`processes`, фильтр `scope = ANY(role:<id>,org,department:<id>)` + порог, ранг `Policy(blocking)>mandatory>Regulation/Process/Instruction>advisory`, topN; `listRoleSnapshot` — снапшот без embedding; `buildForRole` заполняет `applicableRegulationsSnapshot`; `clone-respond.prompt` 2 новых блока `<applicable_regulations>`/`<regulations_index>` в КОНЦЕ переменной user-части — system НЕ тронут, prompt-cache сохранён; `ClonesService.askRole`/`askRoleV2` вызывают retrieval, person-scope НЕ затронут). Frontend (группа «Регламенты клона» в `KnowledgeCoreSettingsClient` — 4 поля AdminSetting).
+- **Шаг 12 — Smoke** (после выката):
+  - Миграция применилась: `\d executable_personas` содержит `applicableRegulationsSnapshot`; `\d instructions` содержит индекс `instructions_tenantId_scope_idx`.
+  - Крутилки видны в админке AdminSetting (`/admin/ai/knowledge-core`, группа «Регламенты клона»): `clone.regulations.{retrieval.top_n,retrieval.min_similarity,snapshot.max_items,scope.include_org}`.
+  - Поведение: задать клону роли (`/clones`) вопрос по теме, на которую у должности есть `Regulation`/`Policy` (scope=`role:<id>` или `org`) — ответ ссылается на правило; на вопрос вне темы правил — правила не подмешиваются (порог отсекает). `Policy(blocking)` упоминается выше личного опыта.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-22 — Встреча→трекер: корень авто-триажа (A2) + извлекающие модели на Pro (E) + системные баги конвейера (F1–F8) + наблюдаемость diag (G) + решения встречи в UI (D5)
 
 > ТЗ `plans/tz/2026-06-22-meeting-to-tracker-and-models-unified-fix.md` — остаток сверх блоков A–D (их реализовала параллельная сессия, см. блок «Задачная подсистема» ниже). Этот push (14 коммитов) добавляет: A2 (главный корень — задача со встречи промоутится в `Issue` ВСЕГДА, replay 0→7 PASS), E (4 извлекающих taskType → `deepseek-v4-pro`), F1–F8 (системные баги: идемпотентность решений, proxy-400 json, полнота combined-пути, vox-метрика, сторож зависших дорожек, Goal no_owner, AGE-vs-LLM диагностика, толерантная Zod quality-score), G (diag дефолт-домен korateam.ru + серверный фильтр LLM-вызовов по meetingId + лимит превью + harness), D5 (решения встречи в карточке встречи).

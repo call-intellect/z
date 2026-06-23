@@ -11,6 +11,14 @@ export interface RetrievedRegulation {
   distance: number;
 }
 
+export interface RegulationSnapshotItem {
+  kind: RegulationKind;
+  id: string;
+  name: string;
+  severity: RegulationSeverity | null;
+  scope: string | null;
+}
+
 export function parseRoleScope(scope: string | null | undefined): string | null {
   const trimmed = scope?.trim();
   if (!trimmed || !trimmed.startsWith('role:')) return null;

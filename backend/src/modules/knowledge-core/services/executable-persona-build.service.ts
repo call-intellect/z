@@ -26,6 +26,8 @@ import {
 } from '../prompts/executable-persona-compile.prompt';
 
 import { DataClassPolicyService } from './dataclass-policy.service';
+import { RoleRegulationRetrievalService } from './role-regulation-retrieval.service';
+import { type RegulationSnapshotItem } from './role-scope.util';
 
 /**
  * SBA γ-1 доделки — почему был собран snapshot.
@@ -68,6 +70,9 @@ export class ExecutablePersonaBuildService {
     @Optional()
     @Inject(DataClassPolicyService)
     private readonly dataClassPolicy?: DataClassPolicyService,
+    @Optional()
+    @Inject(RoleRegulationRetrievalService)
+    private readonly roleRegulations?: RoleRegulationRetrievalService,
   ) {}
 
   /**
@@ -458,6 +463,12 @@ export class ExecutablePersonaBuildService {
       // СНАРУЖИ $transaction (анти-паттерн Б1: P2002 внутри tx ломает её).
       // Clones=Roles Ф2 — пересборка для role-scope также «погашает»
       // pending_rebuild версии (создаются handler'ом при смене носителя).
+      const applicableRegulationsSnapshot = this.roleRegulations
+        ? await this.roleRegulations
+            .listRoleSnapshot({ tenantId: args.tenantId, roleId: args.roleId })
+            .catch(() => [])
+        : [];
+
       const newPersona = await this.createRolePersonaWithRetry({
         tenantId: args.tenantId,
         roleId: args.roleId,
@@ -469,6 +480,7 @@ export class ExecutablePersonaBuildService {
         triggerReason,
         triggerEventAt,
         dataClassAudit,
+        applicableRegulationsSnapshot,
       });
 
       this.metrics.observePersonaBuildDuration(
@@ -874,6 +886,7 @@ export class ExecutablePersonaBuildService {
     triggerReason: PersonaTriggerReason;
     triggerEventAt: Date | null;
     dataClassAudit: Prisma.InputJsonValue | undefined;
+    applicableRegulationsSnapshot: RegulationSnapshotItem[];
   }): Promise<ExecutablePersona> {
     let lastErr: unknown;
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -918,6 +931,8 @@ export class ExecutablePersonaBuildService {
               builtFromTraitsCount: args.builtFromTraitsCount,
               triggerReason: args.triggerReason,
               triggerEventAt: args.triggerEventAt,
+              applicableRegulationsSnapshot:
+                args.applicableRegulationsSnapshot as unknown as Prisma.InputJsonValue,
               ...(args.dataClassAudit
                 ? { dataClassAudit: args.dataClassAudit }
                 : {}),

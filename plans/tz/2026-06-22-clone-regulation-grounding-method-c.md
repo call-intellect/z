@@ -65,7 +65,7 @@
 5. Вызов retrieval в `callCloneRespond`; прокидка в шаблон. Покрыть `askRole` и `askRoleV2`.
 6. Если правил нет — блок не рендерится (клон отвечает как прежде).
 
-### Фаза 2 — указатель правил в снапшоте клона `[ ]`
+### Фаза 2 — указатель правил в снапшоте клона `[x]`
 1. Новое поле `ExecutablePersona.applicableRegulationsSnapshot Json?` (`[{kind,id,name,severity?,scope}]`) — миграция Prisma.
 2. Заполнение в `buildForRole` после компиляции persona: запрос правил по `scope='role:<id>'` (без embedding — просто список активных), топ по `lastConfirmedAt`/`updatedAt`.
 3. Индекс `@@index([tenantId, scope])` на `Instruction`.

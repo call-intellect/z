@@ -10,6 +10,7 @@ import {
   rankRegulations,
   type RegulationKind,
   type RegulationSeverity,
+  type RegulationSnapshotItem,
   type RetrievedRegulation,
 } from './role-scope.util';
 
@@ -156,6 +157,115 @@ export class RoleRegulationRetrievalService {
       `role-regulations.retrieval: { tenantId: ${args.tenantId}, roleId: ${args.roleId}, found: ${ranked.length} }`,
     );
     return ranked;
+  }
+
+  async listRoleSnapshot(args: {
+    tenantId: string;
+    roleId: string;
+  }): Promise<RegulationSnapshotItem[]> {
+    const maxItems = await this.cfg.getDynamic<number>(
+      'clone.regulations.snapshot.max_items',
+      undefined,
+      20,
+    );
+    const scope = `role:${args.roleId}`;
+    const baseWhere = {
+      tenantId: args.tenantId,
+      scope,
+      status: 'active' as const,
+      deletedAt: null,
+    };
+    const baseOrder = [
+      { lastConfirmedAt: 'desc' as const },
+      { updatedAt: 'desc' as const },
+    ];
+    const baseSelect = {
+      id: true,
+      name: true,
+      scope: true,
+      lastConfirmedAt: true,
+      updatedAt: true,
+    };
+
+    const collected: Array<{ item: RegulationSnapshotItem; freshness: number }> = [];
+    const push = (
+      kind: RegulationKind,
+      rows: ReadonlyArray<{
+        id: string;
+        name: string;
+        scope: string | null;
+        lastConfirmedAt: Date | null;
+        updatedAt: Date;
+        severity?: string | null;
+      }>,
+    ): void => {
+      for (const r of rows) {
+        collected.push({
+          item: {
+            kind,
+            id: r.id,
+            name: r.name,
+            severity: kind === 'policy' ? this.normalizeSeverity(r.severity ?? null) : null,
+            scope: r.scope ?? null,
+          },
+          freshness: (r.lastConfirmedAt ?? r.updatedAt).getTime(),
+        });
+      }
+    };
+
+    await Promise.all([
+      this.safeFindMany('regulation', () =>
+        this.prisma.regulation.findMany({
+          where: baseWhere,
+          select: baseSelect,
+          orderBy: baseOrder,
+          take: maxItems,
+        }),
+      ).then((rows) => push('regulation', rows)),
+      this.safeFindMany('instruction', () =>
+        this.prisma.instruction.findMany({
+          where: baseWhere,
+          select: baseSelect,
+          orderBy: baseOrder,
+          take: maxItems,
+        }),
+      ).then((rows) => push('instruction', rows)),
+      this.safeFindMany('policy', () =>
+        this.prisma.policy.findMany({
+          where: baseWhere,
+          select: { ...baseSelect, severity: true },
+          orderBy: baseOrder,
+          take: maxItems,
+        }),
+      ).then((rows) => push('policy', rows)),
+      this.safeFindMany('process', () =>
+        this.prisma.process.findMany({
+          where: baseWhere,
+          select: baseSelect,
+          orderBy: baseOrder,
+          take: maxItems,
+        }),
+      ).then((rows) => push('process', rows)),
+    ]);
+
+    return collected
+      .sort((a, b) => b.freshness - a.freshness)
+      .slice(0, maxItems)
+      .map((c) => c.item);
+  }
+
+  private async safeFindMany<T>(
+    label: string,
+    run: () => Promise<T[]>,
+  ): Promise<T[]> {
+    try {
+      return await run();
+    } catch (err) {
+      this.logger.debug(
+        `role-regulations.snapshot: запрос по "${label}" упал: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return [];
+    }
   }
 
   private normalizeSeverity(value: string | null): RegulationSeverity | null {

@@ -143,6 +143,7 @@ export type LlmTaskType =
   // судья упал → шлём исходный. См. probe/prompts/probe-quality-judge.prompt.ts.
   | 'probe-quality-judge'
   | 'probe-value-gate'
+  | 'probe-draft-from-memory'
   | 'subject-memory-rule-extract'
   | 'subject-memory-judge'
   | 'company-summary-compile'
@@ -724,6 +725,7 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки probe-вопроса.
   'probe-quality-judge',
   'probe-value-gate',
+  'probe-draft-from-memory',
   'subject-memory-rule-extract',
   'subject-memory-judge',
   'company-summary-compile',

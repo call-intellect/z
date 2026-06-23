@@ -67,6 +67,8 @@ interface Mocks {
   addAssignee: ReturnType<typeof vi.fn>;
   softDelete: ReturnType<typeof vi.fn>;
   closureUpsert: ReturnType<typeof vi.fn>;
+  experimentFindFirst: ReturnType<typeof vi.fn>;
+  experimentUpdate: ReturnType<typeof vi.fn>;
 }
 
 function makeMocks(): Mocks {
@@ -93,6 +95,10 @@ function makeMocks(): Mocks {
   const addAssignee = vi.fn().mockResolvedValue({ ok: true });
   const softDelete = vi.fn().mockResolvedValue({ ok: true });
   const closureUpsert = vi.fn().mockResolvedValue({ id: 'cand-1', status: 'pending' });
+  const experimentFindFirst = vi
+    .fn()
+    .mockResolvedValue({ lessonsJson: null });
+  const experimentUpdate = vi.fn().mockResolvedValue({ id: 'exp-1' });
 
   const prisma = {
     probeEvent: {
@@ -130,6 +136,10 @@ function makeMocks(): Mocks {
     },
     taskClosureCandidate: {
       upsert: closureUpsert,
+    },
+    experiment: {
+      findFirst: experimentFindFirst,
+      update: experimentUpdate,
     },
   } as unknown as PrismaService;
 
@@ -170,6 +180,8 @@ function makeMocks(): Mocks {
     addAssignee,
     softDelete,
     closureUpsert,
+    experimentFindFirst,
+    experimentUpdate,
   };
 }
 
@@ -1111,5 +1123,70 @@ describe('ProbeResponseHandler — completion_detail_missing → кандида�
     await handler.handle({ ...event, payload: {} });
 
     expect(mocks.closureUpsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProbeResponseHandler — experiment.result_without_lesson → урок в lessonsJson (B-1)', () => {
+  function setExperimentProbe(mocks: Mocks): void {
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi
+      .fn()
+      .mockResolvedValue({
+        ...buildProbe(),
+        reason: 'experiment.result_without_lesson',
+        payload: {
+          contextCardId: 'exp-1',
+          contextCardKind: 'experiment',
+          contextCardTitle: 'Битрикс',
+          suggestedQuestion: 'Какой урок вынесли из эксперимента?',
+        },
+      });
+  }
+
+  it('подтверждённый урок → experiment.update c lessonsJson (append к существующим)', async () => {
+    const mocks = makeMocks();
+    setExperimentProbe(mocks);
+    mocks.experimentFindFirst.mockResolvedValueOnce({
+      lessonsJson: [{ text: 'старый урок', type: 'what_worked', sourceBlockId: null }],
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({
+      ...event,
+      payload: { text: 'Не мигрировать в пик продаж' },
+    });
+
+    expect(mocks.experimentUpdate).toHaveBeenCalledTimes(1);
+    const call = mocks.experimentUpdate.mock.calls[0]![0] as {
+      where: { id: string };
+      data: { lessonsJson: Array<{ text: string; type: string; sourceBlockId: null }> };
+    };
+    expect(call.where).toMatchObject({ id: 'exp-1' });
+    expect(call.data.lessonsJson).toHaveLength(2);
+    expect(call.data.lessonsJson[0]!.text).toBe('старый урок');
+    expect(call.data.lessonsJson[1]).toMatchObject({
+      text: 'Не мигрировать в пик продаж',
+      type: 'manual',
+      sourceBlockId: null,
+    });
+  });
+
+  it('reject-ответ → experiment.update НЕ вызван', async () => {
+    const mocks = makeMocks();
+    setExperimentProbe(mocks);
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'удалить, это не эксперимент' } });
+
+    expect(mocks.experimentUpdate).not.toHaveBeenCalled();
+  });
+
+  it('пустой ответ → experiment.update НЕ вызван', async () => {
+    const mocks = makeMocks();
+    setExperimentProbe(mocks);
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: {} });
+
+    expect(mocks.experimentUpdate).not.toHaveBeenCalled();
   });
 });

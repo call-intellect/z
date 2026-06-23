@@ -1206,6 +1206,11 @@ export class TypedConfigService {
         'PROBE_RESPONSE_CLASSIFY_MIN_CONFIDENCE',
         0.5,
       ),
+      draftReasons: this.resolveSync<readonly string[]>(
+        'probe.draftReasons',
+        undefined,
+        ['experiment.result_without_lesson'],
+      ),
     } as const;
   }
 

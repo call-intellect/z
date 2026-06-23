@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { type DataClass } from '@prisma/client';
+import { Prisma, type DataClass } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
@@ -179,6 +179,16 @@ export class ProbeResponseHandler {
         await this.maybeApplyDecisionProbeAnswer({
           tenantId: event.tenantId,
           reason: probe.reason,
+          actorUserId: event.recipientUserId,
+          probePayload,
+          eventPayload: event.payload,
+          classifiedAnswer: classification?.answer,
+        });
+      }
+
+      if (probe.reason === 'experiment.result_without_lesson') {
+        await this.maybeApplyExperimentLessonAnswer({
+          tenantId: event.tenantId,
           actorUserId: event.recipientUserId,
           probePayload,
           eventPayload: event.payload,
@@ -571,6 +581,57 @@ export class ProbeResponseHandler {
           err: err instanceof Error ? err.message : String(err),
         },
         'decision-probe-apply: best-effort, пропускаю',
+      );
+    }
+  }
+
+  private async maybeApplyExperimentLessonAnswer(args: {
+    tenantId: string;
+    actorUserId: string;
+    probePayload: Record<string, unknown>;
+    eventPayload: Record<string, unknown>;
+    classifiedAnswer?: string;
+  }): Promise<void> {
+    const experimentId = this.toStringOrUndef(args.probePayload.contextCardId);
+    if (!experimentId) return;
+    const answer =
+      args.classifiedAnswer && args.classifiedAnswer.trim().length > 0
+        ? args.classifiedAnswer
+        : this.extractResponseText(args.eventPayload);
+    if (!answer) return;
+    if (mapExistenceConfirmAnswer(answer)?.decisionType === 'reject') return;
+
+    const lessonText = answer.trim().slice(0, 2000);
+    if (!lessonText) return;
+
+    try {
+      const exp = await this.prisma.experiment.findFirst({
+        where: { id: experimentId, tenantId: args.tenantId },
+        select: { lessonsJson: true },
+      });
+      if (!exp) return;
+      const existing = Array.isArray(exp.lessonsJson)
+        ? (exp.lessonsJson as unknown[])
+        : [];
+      const next = [
+        ...existing,
+        { text: lessonText, type: 'manual', sourceBlockId: null },
+      ];
+      await this.prisma.experiment.update({
+        where: { id: experimentId },
+        data: { lessonsJson: next as unknown as Prisma.InputJsonValue },
+      });
+      this.logger.log(
+        `experiment-lesson-apply: урок дозаписан experiment=${experimentId} (tenant=${args.tenantId})`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          experimentId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'experiment-lesson-apply: best-effort, пропускаю',
       );
     }
   }

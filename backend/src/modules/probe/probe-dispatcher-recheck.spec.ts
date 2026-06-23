@@ -106,6 +106,7 @@ function makeWorker(args: { decisionFindFirst: ReturnType<typeof vi.fn> }): {
     metrics,
     cfg,
     subjectMemory,
+    prisma,
   );
   const worker = new ProbeDispatcherWorker(
     redis,

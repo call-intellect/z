@@ -231,6 +231,7 @@ function makeWorker(m: Mocks): ProbeDispatcherWorker {
     m.metrics,
     m.cfg,
     subjectMemory,
+    m.prisma,
   );
   return new ProbeDispatcherWorker(
     m.redis,

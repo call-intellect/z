@@ -231,6 +231,17 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         ? formulated.question
         : await this.formulation.judgeQuality(probe, formulated.question);
 
+    let draftAnswer: string | undefined;
+    let draftKind: string | undefined;
+    const draftReasons = this.cfg.probe?.draftReasons ?? [];
+    if (draftReasons.includes(probe.reason)) {
+      const draft = await this.formulation.draftFromMemory(probe).catch(() => null);
+      if (draft) {
+        draftAnswer = draft.draftAnswer;
+        draftKind = draft.draftKind;
+      }
+    }
+
     const payload = (probe.payload ?? {}) as Record<string, unknown>;
     const dataClass = this.extractDataClass(payload);
     try {
@@ -244,6 +255,7 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           context: typeof payload.message === 'string' ? payload.message : undefined,
           blockId: this.toStringOrUndef(payload.contextBlockId),
           quote: typeof payload.contextQuote === 'string' ? payload.contextQuote : undefined,
+          ...(draftAnswer ? { draftAnswer, draftKind } : {}),
         },
         dataClass,
         contextBlockId: this.toStringOrUndef(payload.contextBlockId),
@@ -261,6 +273,7 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           payload: {
             ...payload,
             formulatedQuestion: finalQuestion,
+            ...(draftAnswer ? { draftAnswer, draftKind } : {}),
           },
         },
       });

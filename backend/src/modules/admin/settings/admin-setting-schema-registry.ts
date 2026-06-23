@@ -179,6 +179,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['probe.suppressOnUnconfirmedAuto', z.boolean()],
   ['probe.existenceConfirmEnabled', z.boolean()],
   ['probe.machineFillableReasons', z.array(z.string())],
+  ['probe.draftReasons', z.array(z.string())],
 
   ['subjectMemory.enabled', z.boolean()],
   ['subjectMemory.retrieveBeforeAskEnabled', z.boolean()],

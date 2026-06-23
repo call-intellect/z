@@ -1636,6 +1636,12 @@ function buildSettings(): SettingSeed[] {
       'high',
       'Слать одно подтверждение существования регламента/процесса/политики (оставить/переименовать/назначить владельца/удалить) после грейса вместо серии gap-вопросов. Kill-switch, по умолчанию включён (Ship-On).',
     ],
+    [
+      'probe.draftReasons',
+      ['experiment.result_without_lesson'],
+      'low',
+      'Probe: для каких поводов Кора готовит черновик ответа из памяти',
+    ],
   ];
   for (const [key, value, severity, description] of probe) {
     out.push({ key, value, category: 'platform', section: 'probe', severity, description });

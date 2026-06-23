@@ -440,6 +440,41 @@ async function cmdGraph(a: Args): Promise<void> {
   }
 }
 
+async function cmdSubjectMemory(a: Args): Promise<void> {
+  const data = await apiGet<Json>('/api/v1/subject-memory', {
+    status: str(a, 'status'),
+    kind: str(a, 'kind'),
+    limit: num(a, 'limit') ?? 50,
+    ...(str(a, 'org') ? { org: str(a, 'org') } : {}),
+  });
+  if (has(a, 'json')) return printJson(data);
+
+  const counts = ((data as { countsByStatus?: Record<string, number> }).countsByStatus ??
+    {}) as Record<string, number>;
+  const items = ((data as { items?: Array<Json> }).items ?? []) as Array<Json>;
+  const total = (data as { total?: number }).total ?? items.length;
+
+  head(`Что Кора выучила — правила самообучения (всего ${total})`);
+  const cKeys = Object.keys(counts).sort((x, y) => (counts[y] ?? 0) - (counts[x] ?? 0));
+  if (cKeys.length === 0) {
+    process.stdout.write('  — (нет правил)\n');
+  } else {
+    for (const k of cKeys) process.stdout.write(`  ${k}: ${counts[k]}\n`);
+  }
+  head(`Правила (${items.length})`);
+  if (items.length === 0) {
+    process.stdout.write('  — (нет правил)\n');
+  } else {
+    for (const r of items) {
+      const conf = typeof r['confidence'] === 'number' ? (r['confidence'] as number).toFixed(3) : '—';
+      process.stdout.write(
+        `  [${r['status']}] ${r['kind']} | conf ${conf} | +${r['confirmCount']}/-${r['refuteCount']} | applied ${r['appliedCount']} | ` +
+          `"${trunc(r['contextText'], 80)}" → "${trunc(r['ruleText'], 120)}"\n`,
+      );
+    }
+  }
+}
+
 async function cmdOrgs(a: Args): Promise<void> {
   const data = await apiGet(`/api/v1/admin/orgs`, {
     search: str(a, 'search'),
@@ -468,6 +503,7 @@ const HELP = `diag — read-only разбор прод-данных Коры. К
   llm-calls --meeting <id> [--scan N]      AI/ASR-вызовы встречи (провайдер/модель/tier/успех)
   call      <aiUsageLogId>                 один вызов: промпт + ответ модели
   graph     --meeting <id> [--org <id>]   распределение signalType блоков встречи + счётчики Decision/Idea/Goal + расхождения
+  subject-memory --org <id> [--status <s>] [--kind <k>] [--limit N] [--json]  что Кора выучила — правила самообучения (счётчики по статусам + список)
 Любая команда + --json → сырой JSON. ENV: DIAG_API_BASE, DIAG_ADMIN_EMAIL, DIAG_ADMIN_PASSWORD, DIAG_ORG_ID.`;
 
 async function main(): Promise<void> {
@@ -495,6 +531,8 @@ async function main(): Promise<void> {
       return cmdUsage(a);
     case 'graph':
       return cmdGraph(a);
+    case 'subject-memory':
+      return cmdSubjectMemory(a);
     case undefined:
     case 'help':
     case '--help':

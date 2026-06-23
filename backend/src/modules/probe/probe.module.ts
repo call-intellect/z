@@ -15,12 +15,13 @@ import { ProbeService } from './probe.service';
 import { SubjectMemoryActivationCron } from './subject-memory/subject-memory-activation.cron';
 import { SubjectMemoryActivationService } from './subject-memory/subject-memory-activation.service';
 import { SubjectMemoryDeriveWorker } from './subject-memory/subject-memory-derive.worker';
+import { SubjectMemoryController } from './subject-memory/subject-memory.controller';
 import { SubjectMemoryService } from './subject-memory/subject-memory.service';
 
 @Global()
 @Module({
   imports: [PrismaModule, EmbeddingsModule, CurationModule, TrackerModule],
-  controllers: [ProbeController],
+  controllers: [ProbeController, SubjectMemoryController],
   providers: [
     ProbeService,
     ProbeFormulationService,

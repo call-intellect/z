@@ -14,6 +14,7 @@ import type {
 } from '../../knowledge-core/services/task-assignee-resolver.service';
 import type { ProbeService } from '../../probe/probe.service';
 
+import type { AssigneeResolution, AssigneeResolverService } from './assignee-resolver.service';
 import type { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 import { MeetingExtractActionsService } from './meeting-extract-actions.service';
 import type { SimilarIssuesService } from './similar-issues.service';
@@ -35,6 +36,9 @@ function mkService(opts?: {
   existingIntake?: boolean;
   participants?: AiParticipantContext[];
   resolveResult?: ResolvedTaskAssignee[];
+  orgResolveResult?: AssigneeResolution;
+  orgResolveReject?: boolean;
+  selfAssignAuthorFallbackEnabled?: boolean;
   assigneeClarifyEnabled?: boolean;
   probeReject?: boolean;
   similarResult?: Array<{ id: string; similarity: number }>;
@@ -46,6 +50,7 @@ function mkService(opts?: {
   participantContext: { loadForMeeting: ReturnType<typeof vi.fn> };
   orgContext: { load: ReturnType<typeof vi.fn> };
   assigneeResolver: { resolve: ReturnType<typeof vi.fn> };
+  orgAssigneeResolver: { resolve: ReturnType<typeof vi.fn> };
   metrics: {
     incAiMeetingActionsExtracted: ReturnType<typeof vi.fn>;
   };
@@ -158,6 +163,16 @@ function mkService(opts?: {
     ),
   };
 
+  const orgAssigneeResolver = {
+    resolve: opts?.orgResolveReject
+      ? vi.fn().mockRejectedValue(new Error('org resolver down'))
+      : vi
+          .fn()
+          .mockResolvedValue(
+            (opts?.orgResolveResult ?? { kind: 'not_found' }) satisfies AssigneeResolution,
+          ),
+  };
+
   const metrics = {
     incAiMeetingActionsExtracted: vi.fn(),
   };
@@ -183,6 +198,7 @@ function mkService(opts?: {
     tracker: {
       assigneeClarifyEnabled: opts?.assigneeClarifyEnabled ?? true,
       assigneeProbePriorityHint: 70,
+      selfAssignAuthorFallbackEnabled: opts?.selfAssignAuthorFallbackEnabled ?? true,
     },
   };
 
@@ -199,6 +215,7 @@ function mkService(opts?: {
     probe as unknown as ProbeService,
     similarIssues as unknown as SimilarIssuesService,
     embeddings as unknown as EmbeddingFallbackService,
+    orgAssigneeResolver as unknown as AssigneeResolverService,
   );
   return {
     service,
@@ -207,6 +224,7 @@ function mkService(opts?: {
     participantContext,
     orgContext,
     assigneeResolver,
+    orgAssigneeResolver,
     metrics,
     queue,
     probe,
@@ -234,9 +252,12 @@ describe('MeetingExtractActionsService', () => {
 
   it('извлекает задачу из встречи и создаёт IntakeIssue с suggested* + enqueue auto-triage', async () => {
     const { service, prisma, llm, metrics, queue, orgContext } = mkService({
-      resolveResult: [
-        { assigneeRaw: 'Иванов Сергей', assigneeUserId: 'user-ivanov', ambiguous: false },
-      ],
+      orgResolveResult: {
+        kind: 'resolved',
+        userId: 'user-ivanov',
+        name: 'Иванов Сергей',
+        via: 'name',
+      },
       participants: [participant({ displayName: 'Иванов Сергей', userId: 'user-ivanov' })],
     });
     const created = await service.extract({
@@ -355,24 +376,19 @@ describe('MeetingExtractActionsService', () => {
     expect(String(createArg.data.confidence)).toBe('1');
   });
 
-  it('Acceptance 5.1 (a): hint="Настя" + участник Настя c userId → suggestedAssigneeId=userId по identity', async () => {
-    const nastya = participant({
-      displayName: 'Настя',
-      userId: 'u-nastya',
-      role: 'host',
-    });
-    const { service, prisma, participantContext, assigneeResolver } = mkService({
-      participants: [nastya],
-      resolveResult: [{ assigneeRaw: 'Настя', assigneeUserId: 'u-nastya', ambiguous: false }],
+  it('Ф4 (а): hint="Айназ" (НЕ участник встречи) → Org-wide resolver резолвит → suggestedAssigneeId', async () => {
+    const { service, prisma, participantContext, orgAssigneeResolver } = mkService({
+      participants: [participant({ displayName: 'Олег', userId: 'u-oleg' })],
+      orgResolveResult: { kind: 'resolved', userId: 'u-ainaz', name: 'Айназ', via: 'name' },
       llmText: JSON.stringify({
         tasks: [
           {
             title: 'Подготовить Х',
-            assignee: 'Настя',
+            assignee: 'Айназ',
             dueDate: null,
-            suggestedAssigneeHint: 'Настя',
+            suggestedAssigneeHint: 'Айназ',
             confidence: 0.9,
-            sourceQuote: 'Настя, подготовь Х',
+            sourceQuote: 'Айназ, подготовь Х',
           },
         ],
       }),
@@ -381,31 +397,26 @@ describe('MeetingExtractActionsService', () => {
     await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
 
     expect(participantContext.loadForMeeting).toHaveBeenCalledWith('m-1');
-    expect(assigneeResolver.resolve).toHaveBeenCalledWith(
-      [{ assigneeRaw: 'Настя', assigneeUserId: null }],
-      [nastya],
-      'org-1',
-    );
+    expect(orgAssigneeResolver.resolve).toHaveBeenCalledTimes(1);
     const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
       data: { suggestedAssigneeId: string | null };
     };
-    expect(createArg.data.suggestedAssigneeId).toBe('u-nastya');
+    expect(createArg.data.suggestedAssigneeId).toBe('u-ainaz');
   });
 
-  it('Acceptance 5.1 (b): тёзка НЕ из встречи с тем же именем НЕ выбирается (resolver → null)', async () => {
-    const oleg = participant({ displayName: 'Олег', userId: 'u-oleg' });
-    const { service, prisma, assigneeResolver } = mkService({
-      participants: [oleg],
-      resolveResult: [{ assigneeRaw: 'Настя', assigneeUserId: null, ambiguous: false }],
+  it('Ф4 (б): Org-wide resolver вызывается с (tenantId, hint) — per-tenant', async () => {
+    const { service, orgAssigneeResolver } = mkService({
+      participants: [],
+      orgResolveResult: { kind: 'resolved', userId: 'u-ainaz', name: 'Айназ', via: 'name' },
       llmText: JSON.stringify({
         tasks: [
           {
             title: 'Подготовить Х',
-            assignee: 'Настя',
+            assignee: 'Айназ',
             dueDate: null,
-            suggestedAssigneeHint: 'Настя',
+            suggestedAssigneeHint: 'Айназ',
             confidence: 0.9,
-            sourceQuote: 'Настя, подготовь Х',
+            sourceQuote: 'Айназ, подготовь Х',
           },
         ],
       }),
@@ -413,15 +424,180 @@ describe('MeetingExtractActionsService', () => {
 
     await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
 
-    expect(assigneeResolver.resolve).toHaveBeenCalledWith(
-      [{ assigneeRaw: 'Настя', assigneeUserId: null }],
-      [oleg],
-      'org-1',
-    );
+    expect(orgAssigneeResolver.resolve).toHaveBeenCalledWith('org-1', 'Айназ');
+  });
+
+  it('Ф4 (в): author fallback — assignee=техметка спикера, orgResolver→not_found, цитата=реплика спикера с userId → suggestedAssigneeId=userId спикера', async () => {
+    const { service, prisma, orgAssigneeResolver } = mkService({
+      participants: [
+        participant({
+          displayName: 'chydo_002',
+          fullName: 'Сергей',
+          userId: 'u-sergey',
+          livekitIdentity: 'lk-chydo-002',
+        }),
+      ],
+      orgResolveResult: { kind: 'not_found' },
+      selfAssignAuthorFallbackEnabled: true,
+      llmText: JSON.stringify({
+        tasks: [
+          {
+            title: 'Изучить сервис',
+            assignee: 'chydo_002',
+            dueDate: null,
+            suggestedAssigneeHint: 'chydo_002',
+            confidence: 0.9,
+            sourceQuote: 'Задача мне изучить сервис',
+          },
+        ],
+      }),
+    });
+    prisma.meeting.findFirst.mockResolvedValueOnce({
+      id: 'm-1',
+      tenantId: 'org-1',
+      ownerId: 'owner-1',
+      title: 'DEV — Спринт 21',
+      type: 'standup',
+      startedAt: new Date('2026-05-24T10:00:00Z'),
+      endedAt: new Date('2026-05-24T10:30:00Z'),
+      cardId: null,
+      transcript: {
+        turns: [
+          {
+            speaker: 'chydo_002',
+            text: 'Задача мне изучить сервис',
+            startSec: 0,
+            endSec: 5,
+            speakerLivekitIdentity: 'lk-chydo-002',
+          },
+        ],
+        roomChat: null,
+      },
+      aiResult: null,
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    expect(orgAssigneeResolver.resolve).toHaveBeenCalledTimes(1);
+    const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
+      data: { suggestedAssigneeId: string | null };
+    };
+    expect(createArg.data.suggestedAssigneeId).toBe('u-sergey');
+  });
+
+  it('Ф4 (в-выкл): тот же кейс при selfAssignAuthorFallbackEnabled=false → suggestedAssigneeId=null', async () => {
+    const { service, prisma } = mkService({
+      participants: [
+        participant({
+          displayName: 'chydo_002',
+          fullName: 'Сергей',
+          userId: 'u-sergey',
+          livekitIdentity: 'lk-chydo-002',
+        }),
+      ],
+      orgResolveResult: { kind: 'not_found' },
+      selfAssignAuthorFallbackEnabled: false,
+      llmText: JSON.stringify({
+        tasks: [
+          {
+            title: 'Изучить сервис',
+            assignee: 'chydo_002',
+            dueDate: null,
+            suggestedAssigneeHint: 'chydo_002',
+            confidence: 0.9,
+            sourceQuote: 'Задача мне изучить сервис',
+          },
+        ],
+      }),
+    });
+    prisma.meeting.findFirst.mockResolvedValueOnce({
+      id: 'm-1',
+      tenantId: 'org-1',
+      ownerId: 'owner-1',
+      title: 'DEV — Спринт 21',
+      type: 'standup',
+      startedAt: new Date('2026-05-24T10:00:00Z'),
+      endedAt: new Date('2026-05-24T10:30:00Z'),
+      cardId: null,
+      transcript: {
+        turns: [
+          {
+            speaker: 'chydo_002',
+            text: 'Задача мне изучить сервис',
+            startSec: 0,
+            endSec: 5,
+            speakerLivekitIdentity: 'lk-chydo-002',
+          },
+        ],
+        roomChat: null,
+      },
+      aiResult: null,
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
     const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
       data: { suggestedAssigneeId: string | null };
     };
     expect(createArg.data.suggestedAssigneeId).toBeNull();
+  });
+
+  it('Ф4 (г): assignee=null (исполнитель НЕ назван) → fallback НЕ срабатывает, suggestedAssigneeId=null, уходит в probe', async () => {
+    const { service, prisma, orgAssigneeResolver, probe } = mkService({
+      participants: [
+        participant({
+          displayName: 'chydo_002',
+          fullName: 'Сергей',
+          userId: 'u-sergey',
+          livekitIdentity: 'lk-chydo-002',
+        }),
+      ],
+      selfAssignAuthorFallbackEnabled: true,
+      llmText: JSON.stringify({
+        tasks: [
+          {
+            title: 'Изучить сервис',
+            assignee: null,
+            dueDate: null,
+            suggestedAssigneeHint: null,
+            confidence: 0.9,
+            sourceQuote: 'Задача мне изучить сервис',
+          },
+        ],
+      }),
+    });
+    prisma.meeting.findFirst.mockResolvedValueOnce({
+      id: 'm-1',
+      tenantId: 'org-1',
+      ownerId: 'owner-1',
+      title: 'DEV — Спринт 21',
+      type: 'standup',
+      startedAt: new Date('2026-05-24T10:00:00Z'),
+      endedAt: new Date('2026-05-24T10:30:00Z'),
+      cardId: null,
+      transcript: {
+        turns: [
+          {
+            speaker: 'chydo_002',
+            text: 'Задача мне изучить сервис',
+            startSec: 0,
+            endSec: 5,
+            speakerLivekitIdentity: 'lk-chydo-002',
+          },
+        ],
+        roomChat: null,
+      },
+      aiResult: null,
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    expect(orgAssigneeResolver.resolve).not.toHaveBeenCalled();
+    const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
+      data: { suggestedAssigneeId: string | null };
+    };
+    expect(createArg.data.suggestedAssigneeId).toBeNull();
+    expect(probe.suggest).toHaveBeenCalledTimes(1);
   });
 
   it('Acceptance 5.1 (c): hint без совпадения → suggestedAssigneeId=null, IntakeIssue всё равно создаётся', async () => {
@@ -495,9 +671,12 @@ describe('MeetingExtractActionsService', () => {
 
   it('A5: задача с исполнителем → probe.suggest НЕ вызван', async () => {
     const { service, prisma, probe } = mkService({
-      resolveResult: [
-        { assigneeRaw: 'Иванов Сергей', assigneeUserId: 'user-ivanov', ambiguous: false },
-      ],
+      orgResolveResult: {
+        kind: 'resolved',
+        userId: 'user-ivanov',
+        name: 'Иванов Сергей',
+        via: 'name',
+      },
       participants: [participant({ displayName: 'Иванов Сергей', userId: 'user-ivanov' })],
     });
 
@@ -615,9 +794,12 @@ describe('MeetingExtractActionsService', () => {
 
   it('F3: дубль против открытого Issue (similarity ≥ 0.85) → create с suggestedDuplicateOfIssueId', async () => {
     const { service, prisma, similarIssues, embeddings } = mkService({
-      resolveResult: [
-        { assigneeRaw: 'Иванов Сергей', assigneeUserId: 'user-ivanov', ambiguous: false },
-      ],
+      orgResolveResult: {
+        kind: 'resolved',
+        userId: 'user-ivanov',
+        name: 'Иванов Сергей',
+        via: 'name',
+      },
       participants: [participant({ displayName: 'Иванов Сергей', userId: 'user-ivanov' })],
       similarResult: [{ id: 'issue-dup-1', similarity: 0.91 }],
     });
@@ -636,9 +818,12 @@ describe('MeetingExtractActionsService', () => {
 
   it('F3: нет дубля (similarity ниже порога) → suggestedDuplicateOfIssueId=null', async () => {
     const { service, prisma } = mkService({
-      resolveResult: [
-        { assigneeRaw: 'Иванов Сергей', assigneeUserId: 'user-ivanov', ambiguous: false },
-      ],
+      orgResolveResult: {
+        kind: 'resolved',
+        userId: 'user-ivanov',
+        name: 'Иванов Сергей',
+        via: 'name',
+      },
       participants: [participant({ displayName: 'Иванов Сергей', userId: 'user-ivanov' })],
       similarResult: [{ id: 'issue-weak-1', similarity: 0.5 }],
     });
@@ -653,9 +838,12 @@ describe('MeetingExtractActionsService', () => {
 
   it('F3: embed дедупа упал → IntakeIssue создан, suggestedDuplicateOfIssueId=null (best-effort)', async () => {
     const { service, prisma } = mkService({
-      resolveResult: [
-        { assigneeRaw: 'Иванов Сергей', assigneeUserId: 'user-ivanov', ambiguous: false },
-      ],
+      orgResolveResult: {
+        kind: 'resolved',
+        userId: 'user-ivanov',
+        name: 'Иванов Сергей',
+        via: 'name',
+      },
       participants: [participant({ displayName: 'Иванов Сергей', userId: 'user-ivanov' })],
       embedReject: true,
     });

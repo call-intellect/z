@@ -315,6 +315,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.meetingTasksAlwaysPromote', z.boolean()],
   ['tracker.taskExtractionMode', z.enum(['spine', 'legacy'])],
   ['tracker.taskDedupLinkSemantics', z.enum(['link', 'delete'])],
+  ['tracker.selfAssignAuthorFallbackEnabled', z.boolean()],
   ['tracker.taskExtractMinConfidence', UNIT_INTERVAL],
   ['chatbox.taskExtraction.enabled', z.boolean()],
   ['chatbox.analyze.stuckAnalyzingMin', POSITIVE_INT],

@@ -1721,6 +1721,11 @@ export class TypedConfigService {
         undefined,
         'link',
       ),
+      selfAssignAuthorFallbackEnabled: this.resolveSync<boolean>(
+        'tracker.selfAssignAuthorFallbackEnabled',
+        undefined,
+        true,
+      ),
     } as const;
   }
 

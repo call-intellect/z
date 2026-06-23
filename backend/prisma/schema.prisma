@@ -1758,51 +1758,51 @@ model AdminAuditLog {
 // ──────────────────────────── ai-workspace: tasks / chapters / highlights ────────────────────────────
 
 model Task {
-  id               String     @id @default(cuid())
+  id                  String       @id @default(cuid())
   /// tenant: Org, к которой принадлежит задача. После backfill — NOT NULL.
-  tenantId         String?
-  tenant           Org?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId            String?
+  tenant              Org?         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   /// D5 (ТЗ 2026-06-11 chatbox-tasks): задача может быть из переписки, не только
   /// из встречи → nullable. FK сохраняется (теперь nullable). Backfill: существующие → sourceType='meeting'.
-  meetingId        String?
-  meeting          Meeting?   @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  meetingId           String?
+  meeting             Meeting?     @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   /// meeting | chatbox (расширяемо строкой, не enum).
-  sourceType       String     @default("meeting")
+  sourceType          String       @default("meeting")
   /// ChatboxChatSession.id — если задача из переписки.
   sourceChatSessionId String?
   /// ChatboxChat.id (денорм, для drill-down/ссылки на чат).
-  sourceChatId     String?
-  userId           String
-  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title            String
-  description      String?    @db.Text
-  status           TaskStatus @default(open)
-  assigneeRaw      String?
+  sourceChatId        String?
+  userId              String
+  user                User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title               String
+  description         String?      @db.Text
+  status              TaskStatus   @default(open)
+  assigneeRaw         String?
   /// ТЗ 2026-05-25 hard-participant-identification: жёсткая связь с User,
   /// заполняется AI-pipeline (через resolve по participants встречи).
   /// onDelete=SetNull: при удалении User'а assigneeUserId сбрасывается,
   /// но Task остаётся (assigneeRaw сохраняет историческую строку).
-  assigneeUserId   String?
-  assignee         User?      @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
-  dueDate          DateTime?
-  sourceStartMs    Int?
-  sourceEndMs      Int?
-  sourceQuote      String?    @db.Text
-  confidence       Float?
-  createdManually  Boolean    @default(false)
+  assigneeUserId      String?
+  assignee            User?        @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  dueDate             DateTime?
+  sourceStartMs       Int?
+  sourceEndMs         Int?
+  sourceQuote         String?      @db.Text
+  confidence          Float?
+  createdManually     Boolean      @default(false)
   /// Фаза 5 knowledge-core: какие IdeaBlock'и породили задачу (для drill-down).
   /// Пустой массив = legacy задача, не связана с блоками.
-  evidenceBlockIds String[]   @default([])
+  evidenceBlockIds    String[]     @default([])
   /// Денорм deepLink/attribution провенанса (Task уже несёт sourceQuote/sourceStartMs).
-  previewSourceRef Json?
+  previewSourceRef    Json?
   /// Фаза 5: метка генератора. NULL = legacy `tasks-extract.worker`,
   /// 'v2' = `meeting-analyze-v2.worker` (knowledge-core поверх блоков).
   /// Используется для A/B-сравнения и для последующего скимаринга legacy.
-  extractorVersion String?
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  extractorVersion    String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
   /// D5/Р-2 — дополнительные источники задачи (межисточниковый дедуп).
-  sources          TaskSource[]
+  sources             TaskSource[]
 
   @@index([userId, status])
   @@index([meetingId])
@@ -2863,7 +2863,7 @@ model Org {
   chatboxMessages       ChatboxMessage[]
 
   // ── Bitrix24-интеграция (plans/tz/2026-06-09-bitrix24-integration-install.md) ──
-  bitrixIntegrations BitrixIntegration[]
+  bitrixIntegrations   BitrixIntegration[]
   // ── Bitrix24-источник: синк IM + CRM (plans/tz/2026-06-17-bitrix24-source-sync.md) ──
   bitrixUsers          BitrixUser[]
   bitrixDialogs        BitrixDialog[]
@@ -2874,6 +2874,7 @@ model Org {
   bitrixDeals          BitrixDeal[]
   bitrixLeads          BitrixLead[]
   bitrixCrmNotes       BitrixCrmNote[]
+  customers            Customer[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -3596,6 +3597,7 @@ model Entity {
 
   /// SBA α-3 — обратные связи новых моделей категории A.
   vendor                Vendor?                @relation("VendorEntity")
+  customer              Customer?              @relation("CustomerEntity")
   event                 Event?                 @relation("EventEntity")
   goal                  Goal?                  @relation("GoalEntity")
   document              Document?              @relation("DocumentEntity")
@@ -3649,6 +3651,43 @@ model Vendor {
   @@index([tenantId, status])
   @@index([tenantId, segment])
   @@index([tenantId, deletedAt])
+}
+
+/// Customer — клиент компании (account). Категория A онтологии, зеркало Vendor.
+/// 1:1 над Entity{type=customer}. Дедуп Entity по strong-id (inn/email/domain),
+/// fallback на name — EntityResolutionService.findOrCreateCustomerEntity.
+model Customer {
+  id                  String         @id @default(cuid())
+  tenantId            String
+  entityId            String         @unique
+  entity              Entity         @relation("CustomerEntity", fields: [entityId], references: [id], onDelete: Cascade)
+  org                 Org            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name                String         @db.VarChar(300)
+  inn                 String?        @db.VarChar(20)
+  email               String?        @db.VarChar(320)
+  phone               String?        @db.VarChar(40)
+  source              String?        @db.VarChar(40)
+  externalCrmId       String?        @db.VarChar(120)
+  responsiblePersonId String?
+  status              CustomerStatus @default(active)
+  metadata            Json?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  deletedAt           DateTime?
+
+  responsible      Person?           @relation("CustomerResponsible", fields: [responsiblePersonId], references: [id], onDelete: SetNull)
+  chatboxCustomers ChatboxCustomer[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, externalCrmId])
+  @@index([tenantId, responsiblePersonId])
+  @@index([tenantId, deletedAt])
+}
+
+enum CustomerStatus {
+  active
+  inactive
+  churned
 }
 
 /// Event — событие графа знаний (категория A, SBA α-3). Объединяет встречи,
@@ -4993,6 +5032,7 @@ model Person {
   /// TZ-1 Фаза 1 (daily-value-engine) — снимки риска клиентов, где этот Person
   /// ответственный менеджер (CustomerRiskSnapshot.responsiblePersonId).
   customerRiskSnapshots       CustomerRiskSnapshot[]             @relation("CustomerRiskSnapshotResponsible")
+  responsibleCustomers        Customer[]                         @relation("CustomerResponsible")
   /// TZ-1 Фаза 2 (daily-value-engine) — персональные дневные брифы «Твой день».
   personalDailyBriefs         PersonalDailyBrief[]               @relation("PersonalDailyBriefPerson")
   /// TZ-1 Фаза 3.A (daily-value-engine) — кластеры блокеров, где этот Person
@@ -6087,11 +6127,11 @@ model Instruction {
   deletedAt        DateTime?
   deletedById      String?
 
-  org              Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  ownerPerson      Person?          @relation("InstructionOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
-  supersedes       Instruction?     @relation("InstructionSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
-  supersededBy     Instruction[]    @relation("InstructionSupersedes")
-  currentVersion   CardVersion?     @relation("InstructionCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  org            Org           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerPerson    Person?       @relation("InstructionOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
+  supersedes     Instruction?  @relation("InstructionSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy   Instruction[] @relation("InstructionSupersedes")
+  currentVersion CardVersion?  @relation("InstructionCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, name])
   @@index([tenantId, status])
@@ -6325,22 +6365,22 @@ model Decision {
   /// раз проверял внедрение решения.
   implementationCheckedAt DateTime?
 
-  deletedAt       DateTime?
-  deletedById     String?
+  deletedAt   DateTime?
+  deletedById String?
 
-  org             Org                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  decidedBy       Person?            @relation("DecisionDecidedBy", fields: [decidedByPersonId], references: [id], onDelete: SetNull)
-  sourceMeeting   Meeting?           @relation("DecisionSourceMeeting", fields: [sourceMeetingId], references: [id], onDelete: SetNull)
-  sourceIdeaBlock IdeaBlock?         @relation(fields: [sourceIdeaBlockId], references: [id], onDelete: SetNull)
+  org               Org                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  decidedBy         Person?            @relation("DecisionDecidedBy", fields: [decidedByPersonId], references: [id], onDelete: SetNull)
+  sourceMeeting     Meeting?           @relation("DecisionSourceMeeting", fields: [sourceMeetingId], references: [id], onDelete: SetNull)
+  sourceIdeaBlock   IdeaBlock?         @relation(fields: [sourceIdeaBlockId], references: [id], onDelete: SetNull)
   // SBA β-3: self-relation supersede + CardVersion-current.
-  supersedes      Decision?          @relation("DecisionSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
-  supersededBy    Decision[]         @relation("DecisionSupersedes")
-  currentVersion  CardVersion?       @relation("DecisionCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
-  appliedPolicy   DecisionPolicy?    @relation("DecisionAppliedPolicy", fields: [appliedPolicyId], references: [id], onDelete: SetNull)
+  supersedes        Decision?          @relation("DecisionSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy      Decision[]         @relation("DecisionSupersedes")
+  currentVersion    CardVersion?       @relation("DecisionCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  appliedPolicy     DecisionPolicy?    @relation("DecisionAppliedPolicy", fields: [appliedPolicyId], references: [id], onDelete: SetNull)
   /// TZ-1 Фаза 3.B — связи решение↔задача (join DecisionTaskLink).
-  taskLinks       DecisionTaskLink[] @relation("DecisionTaskLinkDecision")
+  taskLinks         DecisionTaskLink[] @relation("DecisionTaskLinkDecision")
   /// ТЗ idea-vs-decision (2026-06-20) — идеи, повышенные в это решение (realized_as).
-  realizedFromIdeas Idea[]           @relation("IdeaRealizedAsDecision")
+  realizedFromIdeas Idea[]             @relation("IdeaRealizedAsDecision")
 
   @@index([tenantId, status])
   @@index([tenantId, decidedAt])
@@ -8311,44 +8351,44 @@ enum SkillTraitConceptStatus {
 }
 
 enum SubjectMemoryKind {
-  term            /// термин/аббревиатура компании: «КП» = «коммерческое предложение»
-  disambiguation  /// разрешённая неоднозначность: «дизайн» → отдел/роль X
-  preference      /// предпочтение: «задачи ставить с дедлайном»
+  term /// термин/аббревиатура компании: «КП» = «коммерческое предложение»
+  disambiguation /// разрешённая неоднозначность: «дизайн» → отдел/роль X
+  preference /// предпочтение: «задачи ставить с дедлайном»
 }
 
 enum SubjectMemoryStatus {
-  shadow          /// выведено, но не влияет на поведение (наблюдаем метрику)
-  canary          /// влияет на часть трафика, под наблюдением rollback-метрики
-  active          /// влияет полностью
-  superseded      /// заменено более свежим правилом (по occurredAt)
-  rolled_back     /// авто-откат: ухудшило внешнюю метрику
-  disabled        /// kill-switch владельца
+  shadow /// выведено, но не влияет на поведение (наблюдаем метрику)
+  canary /// влияет на часть трафика, под наблюдением rollback-метрики
+  active /// влияет полностью
+  superseded /// заменено более свежим правилом (по occurredAt)
+  rolled_back /// авто-откат: ухудшило внешнюю метрику
+  disabled /// kill-switch владельца
 }
 
 model SubjectMemory {
-  id              String              @id @default(cuid())
-  tenantId        String
-  kind            SubjectMemoryKind
-  contextText     String              @db.Text
-  ruleText        String              @db.Text
-  embedding       Unsupported("vector(1536)")?
-  status          SubjectMemoryStatus @default(shadow)
-  confirmCount    Int                 @default(0)
-  refuteCount     Int                 @default(0)
-  confidence      Decimal             @db.Decimal(4, 3) @default(0)
-  occurredAt      DateTime
-  supersededById  String?
-  supersededBy    SubjectMemory?      @relation("SubjectMemorySupersede", fields: [supersededById], references: [id])
-  supersedes      SubjectMemory[]     @relation("SubjectMemorySupersede")
-  sourceProbeIds  String[]            @default([])
-  sourceBlockIds  String[]            @default([])
-  staleAfter      DateTime?
-  lastAppliedAt   DateTime?
+  id             String                       @id @default(cuid())
+  tenantId       String
+  kind           SubjectMemoryKind
+  contextText    String                       @db.Text
+  ruleText       String                       @db.Text
+  embedding      Unsupported("vector(1536)")?
+  status         SubjectMemoryStatus          @default(shadow)
+  confirmCount   Int                          @default(0)
+  refuteCount    Int                          @default(0)
+  confidence     Decimal                      @default(0) @db.Decimal(4, 3)
+  occurredAt     DateTime
+  supersededById String?
+  supersededBy   SubjectMemory?               @relation("SubjectMemorySupersede", fields: [supersededById], references: [id])
+  supersedes     SubjectMemory[]              @relation("SubjectMemorySupersede")
+  sourceProbeIds String[]                     @default([])
+  sourceBlockIds String[]                     @default([])
+  staleAfter     DateTime?
+  lastAppliedAt  DateTime?
   /// Когда правило переведено в canary — старт окна наблюдения rollback-метрики.
-  canaryAt        DateTime?
-  appliedCount    Int                 @default(0)
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  canaryAt       DateTime?
+  appliedCount   Int                          @default(0)
+  createdAt      DateTime                     @default(now())
+  updatedAt      DateTime                     @updatedAt
 
   org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -8361,9 +8401,9 @@ model SubjectMemory {
 /// отбирает черты по слою (подход/ценности/мотивация/маркеры процесса), без
 /// него черты и ценности смешиваются в одном топ-20.
 enum SkillTraitLayer {
-  skill          // поведение при решениях (текущий дефолт)
-  value          // что ставит выше при конфликте приоритетов (revealed preference)
-  motivation     // что драйвит в работе
+  skill // поведение при решениях (текущий дефолт)
+  value // что ставит выше при конфликте приоритетов (revealed preference)
+  motivation // что драйвит в работе
   process_marker // конструктивный маркер процесса (перечисляет критерии / перепроверяет)
 }
 
@@ -8602,51 +8642,51 @@ model SkillTraitCategory {
 /// через admin API. Используется ClonesService при ответе в стиле сотрудника.
 /// См. sub-TZ §4.
 model ExecutablePersona {
-  id                    String        @id @default(uuid())
-  tenantId              String
+  id                            String        @id @default(uuid())
+  tenantId                      String
   /// Для scope='person' — обязателен (SkillProfile сотрудника).
   /// Для scope='role' — null (используется scopeRefId=roleId).
-  profileId             String?
-  scope                 PersonaScope
+  profileId                     String?
+  scope                         PersonaScope
   /// Для scope='role' — Role.id. Для scope='person' — null (берём profileId).
-  scopeRefId            String?
-  version               Int
-  snapshotAt            DateTime      @default(now())
+  scopeRefId                    String?
+  version                       Int
+  snapshotAt                    DateTime      @default(now())
   /// Сам persona prompt — структурированный текст «Думай как X. Тебя характеризует …».
   /// Длина 300–800 слов (TODO: на этапе γ-1 placeholder; финальную длину согласовать).
-  personaPrompt         String        @db.Text
+  personaPrompt                 String        @db.Text
   /// SkillTrait.id[], попавшие в этот snapshot.
-  includedTraitIds      String[]      @default([])
-  status                PersonaStatus
-  builtFromTraitsCount  Int
+  includedTraitIds              String[]      @default([])
+  status                        PersonaStatus
+  builtFromTraitsCount          Int
   /// SBA γ-1 доделки — почему этот snapshot был собран.
   /// 'scheduled' — еженедельный cron; 'threshold' — ≥N новых traits с прошлого
   /// snapshot; 'critical' — mark_as_misleading (severity=critical); 'manual' —
   /// вручную через admin API; 'on_demand' — on-the-fly из ClonesService.
-  triggerReason         String?       @db.VarChar(40)
+  triggerReason                 String?       @db.VarChar(40)
   /// SBA γ-1 доделки — время триггерного события (создания N-го trait'а / mark_misleading);
   /// нужно для метрики `executable_persona_snapshot_lag_seconds`.
-  triggerEventAt        DateTime?
+  triggerEventAt                DateTime?
   /// Clones=Roles Ф1 (2026-05-25) — версия клона роли (1, 2, 3...).
   /// При смене носителя роли создаётся новая версия. null — для scope='person'
   /// (legacy) и для записей до backfill.
-  roleVersion           Int?          @default(1)
+  roleVersion                   Int?          @default(1)
   /// Clones=Roles Ф1 — Person.id текущего носителя роли (для scope='role').
   /// null — для scope='person', для архивных версий и пока компания
   /// не назначила первого носителя.
-  currentBearerPersonId String?
+  currentBearerPersonId         String?
   /// Clones=Roles Ф1 — публичное имя клона: «Клон Маркетолога v2».
   /// Генерируется при build/backfill. null — для legacy persona.
-  publicName            String?
+  publicName                    String?
   /// Clones=Roles Ф1 — id предыдущей версии ExecutablePersona в цепочке
   /// версий клона роли (succeed-link).
-  succeedsPersonaId     String?
+  succeedsPersonaId             String?
   /// W4.2 (2026-05-25) — audit-trail вычисления dataClass (как минимум 'internal'
   /// по правилу floor для executable_persona; private-trait'ы анонимизируются
   /// до sensitive по private-aggregation в DataClassPolicyService).
-  dataClassAudit        Json?
+  dataClassAudit                Json?
   applicableRegulationsSnapshot Json?
-  createdAt             DateTime      @default(now())
+  createdAt                     DateTime      @default(now())
 
   tenant         Org                 @relation("ExecutablePersonaTenant", fields: [tenantId], references: [id], onDelete: Cascade)
   /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
@@ -9312,13 +9352,13 @@ model Issue {
   linkedMeetingIds String[] // видеовстречи из задачи
 
   // AI metadata
-  sourceBlockIds  String[] // если задача создана AI — откуда вытащил
+  sourceBlockIds   String[] // если задача создана AI — откуда вытащил
   /// Денорм-снимок провенанса для рендера списков без join.
   previewQuote     String?  @db.Text
   /// { evidenceId, blockId, sourceType, sourceExternalId, startMs?, deepLink, attribution }
   previewSourceRef Json?
-  confidence      Decimal? @db.Decimal(4, 3)
-  createdManually Boolean  @default(true)
+  confidence       Decimal? @db.Decimal(4, 3)
+  createdManually  Boolean  @default(true)
 
   /// Phase 3 — pgvector embedding (text-embedding-3-small, 1536 dim).
   /// Генерируется `issue-embed.worker` на create/update title+description.
@@ -9345,8 +9385,8 @@ model Issue {
 
   // Support desk (TZ 2026-06-09 support-desk) — заполняются ТОЛЬКО для тикетов
   // поддержки (cross-tenant: клиент из другой Org пишет в вендор-Org).
-  supportCustomerOrgId   String?   /// Org клиента, приславшего обращение
-  supportCustomerUserId  String?   /// User клиента (глобальный User.id)
+  supportCustomerOrgId   String? /// Org клиента, приславшего обращение
+  supportCustomerUserId  String? /// User клиента (глобальный User.id)
   supportCustomerContact String?   @db.VarChar(320) /// email/имя для отображения в деске
   firstResponseDueAt     DateTime? /// SLA: дедлайн первого ответа
   resolutionDueAt        DateTime? /// SLA: дедлайн решения
@@ -9369,21 +9409,21 @@ model Issue {
   parent   Issue?      @relation("IssueSubtasks", fields: [parentId], references: [id], onDelete: SetNull)
   children Issue[]     @relation("IssueSubtasks")
 
-  assignees    IssueAssignee[]
-  labels       IssueLabel[]
-  subscribers  IssueSubscriber[]
-  mentions     IssueMention[]
-  comments     IssueComment[]
-  attachments  IssueAttachment[]
-  links        IssueLink[]
-  relationsOut IssueRelation[]   @relation("IssueRelationSource")
-  relationsIn  IssueRelation[]   @relation("IssueRelationTarget")
-  activities   IssueActivity[]
-  versions     IssueVersion[]
-  checklists   IssueChecklist[]
+  assignees       IssueAssignee[]
+  labels          IssueLabel[]
+  subscribers     IssueSubscriber[]
+  mentions        IssueMention[]
+  comments        IssueComment[]
+  attachments     IssueAttachment[]
+  links           IssueLink[]
+  relationsOut    IssueRelation[]       @relation("IssueRelationSource")
+  relationsIn     IssueRelation[]       @relation("IssueRelationTarget")
+  activities      IssueActivity[]
+  versions        IssueVersion[]
+  checklists      IssueChecklist[]
   progressUpdates IssueProgressUpdate[]
-  fieldValues  IssueFieldValue[]
-  worklogs     IssueWorklog[]
+  fieldValues     IssueFieldValue[]
+  worklogs        IssueWorklog[]
 
   /// Встречи, запущенные из этой задачи (см. `Meeting.linkedIssueId`).
   meetingsFromIssue Meeting[] @relation("MeetingLinkedIssue")
@@ -9421,16 +9461,16 @@ model Issue {
 model TaskClosureCandidate {
   id              String    @id @default(cuid())
   tenantId        String
-  issueId         String    /// задача-кандидат на закрытие
-  sourceBlockId   String    /// IdeaBlock-сигнал выполнения из разговора
+  issueId         String /// задача-кандидат на закрытие
+  sourceBlockId   String /// IdeaBlock-сигнал выполнения из разговора
   status          String    @default("pending") @db.VarChar(16)
-  matchSimilarity Decimal?  @db.Decimal(4, 3)   /// cosine similarity матча блок↔Issue
-  confidence      Decimal?  @db.Decimal(4, 3)   /// откалиброванная уверенность верификатора
-  rationale       String?   @db.Text            /// «почему считаем сделанным» — человеческим языком, +/- сигналы
-  evidenceQuote   String?   @db.Text            /// цитата из разговора (для показа человеку)
+  matchSimilarity Decimal?  @db.Decimal(4, 3) /// cosine similarity матча блок↔Issue
+  confidence      Decimal?  @db.Decimal(4, 3) /// откалиброванная уверенность верификатора
+  rationale       String?   @db.Text /// «почему считаем сделанным» — человеческим языком, +/- сигналы
+  evidenceQuote   String?   @db.Text /// цитата из разговора (для показа человеку)
   decidedByUserId String?
   decidedAt       DateTime?
-  expiresAt       DateTime?                      /// авто-протухание pending (sweep, как IntakeIssue)
+  expiresAt       DateTime? /// авто-протухание pending (sweep, как IntakeIssue)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -9530,7 +9570,7 @@ model IssueComment {
 
   // Support desk (TZ 2026-06-09) — провенанс + состояние черновика клона.
   authorType        String   @default("human") /// human | clone | system
-  draftState        String?  /// null=обычный | pending | accepted | edited | rejected (только authorType=clone)
+  draftState        String? /// null=обычный | pending | accepted | edited | rejected (только authorType=clone)
   cloneConfidence   Decimal? @db.Decimal(4, 3) /// калиброванная уверенность клона
   groundednessScore Decimal? @db.Decimal(4, 3) /// результат critic (truthful/total)
 
@@ -9561,26 +9601,26 @@ model IssueComment {
 /// health — строкой (расширяемо, не enum). authorType=ai_agent + draftState=pending —
 /// авто-черновик из графа, ждёт подтверждения человеком (НЕ авто-постинг).
 model IssueProgressUpdate {
-  id             String    @id @default(cuid())
-  tenantId       String
-  issueId        String
-  authorId       String? /// null пока авто-черновик не подтверждён
-  authorType     String    @default("human") /// human | ai_agent
-  health         String /// on_track | at_risk | off_track (в норме/риск/буксует)
-  body           String    @db.Text
-  doneText       String?   @db.Text /// «что сделано»
-  nextText       String?   @db.Text /// «что дальше»
-  draftState     String? /// null=опубликовано | pending | accepted | edited | rejected (для ai_agent)
-  sourceBlockIds String[]  @default([]) /// провенанс: блоки графа авто-черновика
-  evidenceQuote  String?   @db.Text
-  confidence     Decimal?  @db.Decimal(4, 3)
-  previewQuote     String? @db.Text /// Д1: снимок цитаты-источника, контракт как Issue.previewQuote
+  id               String    @id @default(cuid())
+  tenantId         String
+  issueId          String
+  authorId         String? /// null пока авто-черновик не подтверждён
+  authorType       String    @default("human") /// human | ai_agent
+  health           String /// on_track | at_risk | off_track (в норме/риск/буксует)
+  body             String    @db.Text
+  doneText         String?   @db.Text /// «что сделано»
+  nextText         String?   @db.Text /// «что дальше»
+  draftState       String? /// null=опубликовано | pending | accepted | edited | rejected (для ai_agent)
+  sourceBlockIds   String[]  @default([]) /// провенанс: блоки графа авто-черновика
+  evidenceQuote    String?   @db.Text
+  confidence       Decimal?  @db.Decimal(4, 3)
+  previewQuote     String?   @db.Text /// Д1: снимок цитаты-источника, контракт как Issue.previewQuote
   previewSourceRef Json? /// Д1: снимок ProvenancePreviewRef (deepLink ?t=/?page=N/?m=)
-  periodStart    DateTime?
-  periodEnd      DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  deletedAt      DateTime?
+  periodStart      DateTime?
+  periodEnd        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
 
   issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
@@ -9593,10 +9633,10 @@ model IssueProgressUpdate {
 model IssueFieldDef {
   id         String    @id @default(cuid())
   tenantId   String
-  projectId  String?   /// null = поле на всю Org
+  projectId  String? /// null = поле на всю Org
   name       String    @db.VarChar(100)
-  type       String    /// text|number|date|checkbox|status|selectSingle|selectMulti|person|url (подмн. TablePropType)
-  config     Json      /// { options:[{id,name,color}] } и т.п.
+  type       String /// text|number|date|checkbox|status|selectSingle|selectMulti|person|url (подмн. TablePropType)
+  config     Json /// { options:[{id,name,color}] } и т.п.
   order      Decimal   @db.Decimal(20, 10)
   archivedAt DateTime?
   createdAt  DateTime  @default(now())
@@ -9639,12 +9679,12 @@ model IssueWorklog {
 model IssueAutomationRule {
   id          String   @id @default(cuid())
   tenantId    String
-  projectId   String?  /// null = на всю Org
+  projectId   String? /// null = на всю Org
   name        String
   enabled     Boolean  @default(true)
-  trigger     Json     /// { type: 'status_changed'|'assigned'|'created'|'due_approaching'|'label_added', ... }
-  conditions  Json     /// [{ field, op, value }]
-  actions     Json     /// [{ type:'set_status'|'assign'|'add_label'|'set_priority'|'notify'|'create_subtask', ... }]
+  trigger     Json /// { type: 'status_changed'|'assigned'|'created'|'due_approaching'|'label_added', ... }
+  conditions  Json /// [{ field, op, value }]
+  actions     Json /// [{ type:'set_status'|'assign'|'add_label'|'set_priority'|'notify'|'create_subtask', ... }]
   createdById String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -9658,8 +9698,8 @@ model IssueRecurrence {
   tenantId        String
   projectId       String
   templateIssueId String?
-  rrule           String    /// { freq:'daily'|'weekly'|'monthly', interval, byweekday? } сериализованный
-  config          Json      /// снимок: title, description, checklist[], assignees[], labels[], priority, estimate
+  rrule           String /// { freq:'daily'|'weekly'|'monthly', interval, byweekday? } сериализованный
+  config          Json /// снимок: title, description, checklist[], assignees[], labels[], priority, estimate
   nextRunAt       DateTime
   lastRunAt       DateTime?
   enabled         Boolean   @default(true)
@@ -9675,7 +9715,7 @@ model IssueTemplate {
   tenantId    String
   projectId   String?
   name        String
-  config      Json     /// { title, description, checklist[], labels[], priority, estimate, assigneeRole? }
+  config      Json /// { title, description, checklist[], labels[], priority, estimate, assigneeRole? }
   createdById String
   createdAt   DateTime @default(now())
 
@@ -9698,9 +9738,9 @@ model IssueRating {
   id            String   @id @default(cuid())
   tenantId      String
   issueId       String   @unique
-  score         Int      /// 1..5
+  score         Int /// 1..5
   comment       String?  @db.Text
-  ratedByUserId String?  /// клиент (User.id)
+  ratedByUserId String? /// клиент (User.id)
   createdAt     DateTime @default(now())
 
   @@index([tenantId, createdAt])
@@ -9710,14 +9750,14 @@ model IssueRating {
 /// TZ support-desk Ф3.
 model SupportDraftOutcome {
   id                String   @id @default(cuid())
-  tenantId          String   /// вендор-Org
+  tenantId          String /// вендор-Org
   issueId           String
   draftCommentId    String?
   taskType          String   @default("support-clone-draft")
   draftText         String   @db.Text
   finalText         String?  @db.Text /// что реально ушло клиенту (null если отклонён)
-  outcome           String   /// accepted | edited | rejected
-  editType          String?  /// factual | tone | policy | empty | null
+  outcome           String /// accepted | edited | rejected
+  editType          String? /// factual | tone | policy | empty | null
   cloneConfidence   Decimal? @db.Decimal(4, 3)
   groundednessScore Decimal? @db.Decimal(4, 3)
   promotedToContour Boolean  @default(false) /// прошёл гейт качества и попал в контур
@@ -9731,13 +9771,13 @@ model SupportDraftOutcome {
 /// Каждая операция (в т.ч. отклонённая дебатом) фиксируется — что/почему/verdict.
 model SupportCuratorAction {
   id             String   @id @default(cuid())
-  tenantId       String   /// вендор-Org
-  runDate        String   /// YYYY-MM-DD прогон (идемпотентность в пределах дня)
+  tenantId       String /// вендор-Org
+  runDate        String /// YYYY-MM-DD прогон (идемпотентность в пределах дня)
   blockId        String
-  action         String   /// keep | promote | fix | merge | archive
+  action         String /// keep | promote | fix | merge | archive
   reason         String   @db.Text
-  targetBlockId  String?  /// для merge — куда слили
-  debateDecision String?  /// итог MultiAgentDebateService (для destructive)
+  targetBlockId  String? /// для merge — куда слили
+  debateDecision String? /// итог MultiAgentDebateService (для destructive)
   applied        Boolean  @default(false) /// применена ли (false = дебат отклонил / keep)
   createdAt      DateTime @default(now())
 
@@ -9936,7 +9976,7 @@ model IntakeIssue {
 
   // Фикс linkedMeetingIds 2026-06-17 — ID встречи-источника (source='meeting').
   // При авто-приёме (IntakeAutoTriageWorker) прокидывается в Issue.linkedMeetingIds.
-  meetingId      String?
+  meetingId String?
 
   rawContent           String  @db.Text // исходный текст
   extractedTitle       String?
@@ -9956,7 +9996,7 @@ model IntakeIssue {
   /// `Issue.sourceBlockIds`; пересечение с `Decision.sourceBlockIds` той же Org
   /// рождает `DecisionTaskLink(linkType='derived')` (замыкание петли
   /// next-step → задача → решение). Пустой массив — провенанс неизвестен.
-  sourceBlockIds      String[]  @default([])
+  sourceBlockIds String[] @default([])
 
   confidence Decimal? @db.Decimal(4, 3)
 
@@ -11821,51 +11861,55 @@ model ChatboxChannel {
 
 /// ChatBox: унифицированный контакт (Customer). Ключ объединения клиента по мессенджерам.
 model ChatboxCustomer {
-  id            String   @id @default(cuid())
-  tenantId      String
-  externalId    String
-  name          String?
-  phone         String?
-  email         String?
-  externalCrmId String?
+  id               String                @id @default(cuid())
+  tenantId         String
+  externalId       String
+  name             String?
+  phone            String?
+  email            String?
+  externalCrmId    String?
   /// Ф1 (ТЗ 2026-06-11) — связка клиента с Person Коры (как у ChatboxMember).
-  linkedPersonId String?
-  linkMode       ChatboxMemberLinkMode @default(none)
-  raw           Json?
-  syncedAt      DateTime @default(now())
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  linkedPersonId   String?
+  linkedCustomerId String?
+  linkMode         ChatboxMemberLinkMode @default(none)
+  raw              Json?
+  syncedAt         DateTime              @default(now())
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
 
-  org     Org                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  clients ChatboxChannelClient[]
+  org         Org                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clients     ChatboxChannelClient[]
+  customerRef Customer?              @relation(fields: [linkedCustomerId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, externalId])
   @@index([tenantId])
   @@index([tenantId, linkedPersonId])
+  @@index([tenantId, linkedCustomerId])
 }
 
 /// ChatBox: identity клиента в конкретном мессенджере (ChannelClient).
 model ChatboxChannelClient {
-  id                 String   @id @default(cuid())
-  tenantId           String
-  externalId         String
-  customerExternalId String?
-  customerId         String?
-  channelType        String
-  channelExternalId  String?
-  messengerUserId    String?
-  name               String?
-  phone              String?
-  email              String?
-  avatarUrl          String?  @db.Text
-  isBlocked          Boolean  @default(false)
+  id                    String                @id @default(cuid())
+  tenantId              String
+  externalId            String
+  customerExternalId    String?
+  customerId            String?
+  channelType           String
+  channelExternalId     String?
+  messengerUserId       String?
+  name                  String?
+  phone                 String?
+  email                 String?
+  avatarUrl             String?               @db.Text
+  isBlocked             Boolean               @default(false)
   /// Ф1 (ТЗ 2026-06-11) — связка клиента с Person Коры (как у ChatboxMember).
-  linkedPersonId     String?
-  linkMode           ChatboxMemberLinkMode @default(none)
-  raw                Json?
-  syncedAt           DateTime @default(now())
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  linkedPersonId        String?
+  linkedContactEntityId String?
+  linkMode              ChatboxMemberLinkMode @default(none)
+  raw                   Json?
+  syncedAt              DateTime              @default(now())
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
 
   org      Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   customer ChatboxCustomer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -11873,6 +11917,7 @@ model ChatboxChannelClient {
   @@unique([tenantId, externalId])
   @@index([tenantId, customerId])
   @@index([tenantId, linkedPersonId])
+  @@index([tenantId, linkedContactEntityId])
 }
 
 /// ChatBox: менеджер (Member воркспейса). Связь с Person Коры.
@@ -11995,34 +12040,34 @@ model ChatboxMessage {
 /// НИКОГДА не возвращаются plain в API — наружу только `hasTokens`.
 /// Уникальность «одна connected на org» обеспечивается на уровне сервиса.
 model BitrixIntegration {
-  id                  String                  @id @default(cuid())
+  id                    String                  @id @default(cuid())
   /// member_id портала Bitrix24 (стабильный, не зависит от домена).
-  memberId            String                  @unique
+  memberId              String                  @unique
   /// Привязанная org Коры. null пока статус `pending` (установка из Маркета).
-  tenantId            String?
+  tenantId              String?
   /// Домен портала, напр. `acme.bitrix24.ru`.
-  portalDomain        String
+  portalDomain          String
   /// REST-эндпоинт портала из OAuth-ответа (для вызовов API), напр.
   /// `https://acme.bitrix24.ru/rest/`.
-  clientEndpoint      String?
+  clientEndpoint        String?
   /// REST-эндпоинт сервера авторизации (`https://oauth.bitrix.info/rest/`).
-  serverEndpoint      String?
+  serverEndpoint        String?
   /// Выданные scope (comma-separated), как вернул OAuth.
-  scope               String?
+  scope                 String?
   /// AES-256-GCM. Никогда не возвращается plain в API.
-  accessTokenEnc      String                  @db.Text
+  accessTokenEnc        String                  @db.Text
   /// AES-256-GCM. Живёт 180 дней; обновляется при refresh.
-  refreshTokenEnc     String                  @db.Text
+  refreshTokenEnc       String                  @db.Text
   /// application_token из ONAPPINSTALL — для проверки подлинности входящих
   /// событий (особенно ONAPPUNINSTALL, где авторизации уже нет). AES-256-GCM.
-  applicationTokenEnc String?                 @db.Text
+  applicationTokenEnc   String?                 @db.Text
   /// Момент протухания access_token (now + expires_in). null → считать протухшим.
-  accessExpiresAt     DateTime?
-  status              BitrixIntegrationStatus @default(pending)
-  lastError           String?                 @db.Text
-  lastConnectedAt     DateTime?
+  accessExpiresAt       DateTime?
+  status                BitrixIntegrationStatus @default(pending)
+  lastError             String?                 @db.Text
+  lastConnectedAt       DateTime?
   /// Источник: AI-анализ IM-диалогов включён по умолчанию (ТЗ 2026-06-17).
-  analysisEnabled       Boolean   @default(true)
+  analysisEnabled       Boolean                 @default(true)
   /// Источник: отметки последних синков (как у ChatBox).
   lastFullSyncAt        DateTime?
   lastIncrementalSyncAt DateTime?
@@ -12032,8 +12077,8 @@ model BitrixIntegration {
   /// Ф4b — до какого дня (UTC, начало дня) уже построены посуточные CRM-дайджесты.
   /// null → бэкафилл дайджестов за последние CRM_BACKFILL_DAYS закрытых дней.
   lastCrmDigestAt       DateTime?
-  createdAt           DateTime                @default(now())
-  updatedAt           DateTime                @updatedAt
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
 
   org Org? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -12067,21 +12112,21 @@ model BitrixUser {
 
 /// IM-диалог Bitrix (личный или групповой). Аналог ChatboxChat.
 model BitrixDialog {
-  id            String           @id @default(cuid())
-  tenantId      String
-  externalId    String // dialog_id (chatXXX или userId)
-  type          BitrixDialogType @default(chat)
-  title         String?
-  lastMessageAt DateTime?
-  messageCount  Int              @default(0)
+  id               String           @id @default(cuid())
+  tenantId         String
+  externalId       String // dialog_id (chatXXX или userId)
+  type             BitrixDialogType @default(chat)
+  title            String?
+  lastMessageAt    DateTime?
+  messageCount     Int              @default(0)
   /// Накопительное саммари разговора (ТЗ 2026-06-17): обновляется на закрытие
   /// каждой сессии-дня; компактный «живой» контекст без полной истории.
-  rollingSummary   String?   @db.Text
+  rollingSummary   String?          @db.Text
   rollingSummaryAt DateTime?
-  raw           Json?
-  syncedAt      DateTime         @default(now())
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  raw              Json?
+  syncedAt         DateTime         @default(now())
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   org      Org                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   sessions BitrixDialogSession[]
@@ -12116,17 +12161,17 @@ model BitrixDialogSession {
 
 /// Сообщение IM-диалога Bitrix. Аналог ChatboxMessage.
 model BitrixMessage {
-  id                String    @id @default(cuid())
+  id                String   @id @default(cuid())
   tenantId          String
   dialogId          String
   sessionId         String?
   externalId        String // message ID
   authorExternalId  String? // Bitrix user ID автора
   authorName        String?
-  text              String?   @db.Text
+  text              String?  @db.Text
   externalCreatedAt DateTime
   raw               Json?
-  createdAt         DateTime  @default(now())
+  createdAt         DateTime @default(now())
 
   org    Org          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   dialog BitrixDialog @relation(fields: [dialogId], references: [id], onDelete: Cascade)
@@ -12138,7 +12183,7 @@ model BitrixMessage {
 
 /// Зеркало CRM-контакта Bitrix. Мост в knowledge-core — Ф4.
 model BitrixContact {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   tenantId   String
   externalId String
   name       String?
@@ -12147,9 +12192,9 @@ model BitrixContact {
   /// Ф4b — DATE_MODIFY из Bitrix (для дельты и посуточного дайджеста).
   modifiedAt DateTime?
   raw        Json?
-  syncedAt   DateTime @default(now())
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  syncedAt   DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -12159,15 +12204,15 @@ model BitrixContact {
 
 /// Зеркало CRM-компании Bitrix.
 model BitrixCompany {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   tenantId   String
   externalId String
   title      String?
   modifiedAt DateTime?
   raw        Json?
-  syncedAt   DateTime @default(now())
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  syncedAt   DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -12177,16 +12222,16 @@ model BitrixCompany {
 
 /// Зеркало CRM-сделки Bitrix.
 model BitrixDeal {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   tenantId   String
   externalId String
   title      String?
   stageId    String?
   modifiedAt DateTime?
   raw        Json?
-  syncedAt   DateTime @default(now())
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  syncedAt   DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -12196,7 +12241,7 @@ model BitrixDeal {
 
 /// Зеркало CRM-лида Bitrix (crm.lead.list). ТЗ 2026-06-17.
 model BitrixLead {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   tenantId   String
   externalId String
   title      String?
@@ -12204,9 +12249,9 @@ model BitrixLead {
   statusId   String?
   modifiedAt DateTime?
   raw        Json?
-  syncedAt   DateTime @default(now())
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  syncedAt   DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 

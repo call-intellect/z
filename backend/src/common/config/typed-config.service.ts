@@ -1711,6 +1711,16 @@ export class TypedConfigService {
         undefined,
         true,
       ),
+      taskExtractionMode: this.resolveSync<'spine' | 'legacy'>(
+        'tracker.taskExtractionMode',
+        undefined,
+        'spine',
+      ),
+      taskDedupLinkSemantics: this.resolveSync<'link' | 'delete'>(
+        'tracker.taskDedupLinkSemantics',
+        undefined,
+        'link',
+      ),
     } as const;
   }
 

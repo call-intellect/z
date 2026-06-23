@@ -450,6 +450,7 @@ enum SignalType {
   content_artifact
   commitment_status
   plan_item
+  action_item
   done_item
   blocker
   team_friction

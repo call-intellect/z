@@ -145,6 +145,43 @@ describe('ChatboxChatsService.listChats', () => {
       }),
     );
   });
+
+  it('применяет фильтр по дате from/to в where через lastMessageAt', async () => {
+    const { service, prisma } = makeService();
+    prisma.chatboxChat.findMany.mockResolvedValue([]);
+    prisma.chatboxChat.count.mockResolvedValue(0);
+
+    const from = new Date('2026-06-01T00:00:00.000Z');
+    const to = new Date('2026-06-30T23:59:59.000Z');
+    await service.listChats('t1', { from, to });
+
+    expect(prisma.chatboxChat.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          tenantId: 't1',
+          lastMessageAt: { gte: from, lte: to },
+        },
+      }),
+    );
+  });
+
+  it('фильтр только по from → только gte', async () => {
+    const { service, prisma } = makeService();
+    prisma.chatboxChat.findMany.mockResolvedValue([]);
+    prisma.chatboxChat.count.mockResolvedValue(0);
+
+    const from = new Date('2026-06-01T00:00:00.000Z');
+    await service.listChats('t1', { from });
+
+    expect(prisma.chatboxChat.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          tenantId: 't1',
+          lastMessageAt: { gte: from },
+        },
+      }),
+    );
+  });
 });
 
 describe('ChatboxChatsService.getChat', () => {

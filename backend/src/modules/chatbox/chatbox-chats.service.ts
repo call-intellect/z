@@ -72,6 +72,9 @@ export class ChatboxChatsService {
       ...(q.status ? { status: q.status } : {}),
       ...(q.channelType ? { channelType: q.channelType } : {}),
       ...(q.customerExternalId ? { customerExternalId: q.customerExternalId } : {}),
+      ...(q.from || q.to
+        ? { lastMessageAt: { ...(q.from ? { gte: q.from } : {}), ...(q.to ? { lte: q.to } : {}) } }
+        : {}),
     };
     const take = clamp(
       q.limit ?? ChatboxChatsService.LIST_LIMIT_DEFAULT,

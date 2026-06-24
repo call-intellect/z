@@ -5,6 +5,8 @@ export const ChatboxChatsListQuerySchema = z.object({
   status: z.nativeEnum(ChatboxChatStatus).optional(),
   channelType: z.string().trim().min(1).optional(),
   customerExternalId: z.string().trim().min(1).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
   offset: z.coerce.number().int().min(0).optional(),
 });

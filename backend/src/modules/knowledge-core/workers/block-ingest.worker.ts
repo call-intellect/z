@@ -310,6 +310,19 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         }
       }
 
+      const summaryBlockId = await this.maybePersistMeetingSummary({
+        event,
+        payload,
+        contextHeader,
+      }).catch((err) => {
+        this.logger.warn(
+          { rawEventId, err: err instanceof Error ? err.message : String(err) },
+          'block-ingest: summary-блок «суть встречи» не создан — пропуск',
+        );
+        return null;
+      });
+      if (summaryBlockId) blockIds.push(summaryBlockId);
+
       await this.applyDocumentAttribution(event, payload, blockIds).catch((err) => {
         this.logger.warn(
           { rawEventId, err: err instanceof Error ? err.message : String(err) },
@@ -953,6 +966,52 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  private tryGetReportSummaryMarkdown(payload: unknown): string | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const p = payload as { kind?: unknown; reportSummaryMarkdown?: unknown };
+    if (p.kind !== 'meeting_report') return null;
+    const md = typeof p.reportSummaryMarkdown === 'string' ? p.reportSummaryMarkdown.trim() : '';
+    return md.length > 0 ? md : null;
+  }
+
+  private async maybePersistMeetingSummary(args: {
+    event: RawEvent;
+    payload: unknown;
+    contextHeader: string;
+  }): Promise<string | null> {
+    const { event, payload, contextHeader } = args;
+    if (event.sourceType !== 'meeting_report') return null;
+    const summaryMd = this.tryGetReportSummaryMarkdown(payload);
+    if (!summaryMd) return null;
+
+    const meetingTitle = this.tryGetMeetingTitle(payload);
+    const answer = summaryMd.slice(0, 4000);
+    const summaryBlock: ExtractedBlock = {
+      name: (meetingTitle ? `Суть встречи: ${meetingTitle}` : 'Суть встречи').slice(0, 200),
+      criticalQuestion: 'О чём была встреча и что главное?',
+      trustedAnswer: answer,
+      signalType: 'fact',
+      tags: [],
+      confidence: 0.9,
+      evidenceQuote: answer.slice(0, 500),
+      evidenceStartMs: 0,
+      evidenceEndMs: 0,
+      mentionedEntities: [],
+      role_relevant: false,
+    };
+    const [vector] = await this.embeddings.embedBlocks([summaryBlock], contextHeader);
+    return this.persistBlock({
+      event,
+      block: summaryBlock,
+      embedding: vector ?? null,
+      roleRelevant: false,
+      roleId: null,
+      segments: [],
+      authorUserId: null,
+      isMeetingSummary: true,
+    });
+  }
+
   private async persistBlock(args: {
     event: RawEvent;
     block: ExtractedBlock;
@@ -964,6 +1023,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     authorPersonId?: string | null;
     authorEmail?: string | null;
     subjectAllTypes?: boolean;
+    isMeetingSummary?: boolean;
   }): Promise<string | null> {
     const { event, block, embedding, roleRelevant, roleId } = args;
     if (!block.evidenceQuote || block.evidenceQuote.trim().length === 0) {
@@ -984,10 +1044,11 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       const validFromValue: Date | null = bitemporalEnabled ? event.occurredAt : null;
 
       const isReport = event.sourceType === 'meeting_report';
-      const reportConfidenceCap = isReport
+      const applyReportCap = isReport && args.isMeetingSummary !== true;
+      const reportConfidenceCap = applyReportCap
         ? await this.cfg.getDynamic<number>('knowledge.reportBlockConfidenceCap', undefined, 0.6)
         : 1;
-      const effectiveConfidence = isReport
+      const effectiveConfidence = applyReportCap
         ? Math.min(block.confidence, reportConfidenceCap)
         : block.confidence;
 
@@ -1009,7 +1070,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             roleRelevant,
             roleId,
             primarySource: isReport ? 'report' : 'transcript',
-            ...(isReport ? { dynamicScore: new Prisma.Decimal('0.7') } : {}),
+            ...(applyReportCap ? { dynamicScore: new Prisma.Decimal('0.7') } : {}),
             ...(validFromValue !== null ? { validFrom: validFromValue } : {}),
             ...(isCommitment
               ? {

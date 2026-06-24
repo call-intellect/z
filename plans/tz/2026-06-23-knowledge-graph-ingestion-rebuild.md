@@ -155,7 +155,7 @@ relates_to:
 
 ---
 
-### Ф4 — «Суть встречи» как retrievable-узел `[ ]`
+### Ф4 — «Суть встречи» как retrievable-узел `[x]`
 **Цель:** «о чём встреча» имеет цельный объект для поиска.
 **Картография:** report-путь `aiResult.summaryFast` → [report.adapter.ts:57](../../backend/src/modules/ingest/adapters/report.adapter.ts#L57); сегментация отчёта [segment-builder.service.ts:144-189](../../backend/src/modules/knowledge-core/services/segment-builder.service.ts#L144).
 **Что входит:** выделить «суть встречи» в отдельный **первоклассный retrievable IdeaBlock** (signalType — существующий подходящий, напр. `summary_point`/`fact`; `[ASSUMPTION: не вводить новый signalType — переиспользовать; если нет подходящего — обосновать в фазе]`), привязанный к эпизоду, **БЕЗ confidence-cap 0.6** (снять cap для summary-блока), с `IdeaBlockEvidence.rawEventId`. Этот блок — «родитель» для parent-document-сборки (Ф7).

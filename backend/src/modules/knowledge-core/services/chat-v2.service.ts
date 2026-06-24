@@ -4,6 +4,7 @@ import type { DataClass, SignalType } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { tryParseJson } from '../../ai/services/json-extract.util';
 import {
   LlmRouterService,
   maxDataClass,
@@ -18,6 +19,12 @@ import {
   KnowledgeAccessResolver,
   type KnowledgeAccessContext,
 } from '../../rbac/knowledge-access-resolver.service';
+import {
+  RAG_RERANK_SYSTEM_PROMPT,
+  RagRerankSchema,
+  buildRagRerankUser,
+} from '../prompts/rag-pipeline.prompts';
+import { fuseRankedLists } from '../utils/rank-fusion.util';
 
 import {
   ChatV2RetrievalService,
@@ -899,46 +906,104 @@ export class ChatV2Service {
 
     const queries: string[] =
       input.queries && input.queries.length > 0 ? [...input.queries] : [query];
-    // Per-query topK поменьше для multi-query expansion'а, чтобы total после
-    // merge ≈ topK * 1.5 (не раздувать LLM-контекст).
     const perQueryLimit =
       queries.length > 1
         ? Math.max(4, Math.ceil(topK / queries.length) + 2)
         : topK;
-    const merged = new Map<string, number>();
-    for (let i = 0; i < queries.length; i++) {
-      const q = queries[i] ?? '';
+
+    const perQuery: RankedBlockId[][] = [];
+    for (const q of queries) {
       if (!q || q.length === 0) continue;
-      const ranked: RankedBlockId[] = await this.retrieval.fetchCandidates({
-        tenantId,
-        scope,
-        scopeId: scopeId ?? null,
-        query: q,
-        limit: perQueryLimit,
-        graphHops,
-        validAt: input.validAt ?? null,
-        accessWhere,
-        // Query Understanding Волна 1 (Ф3 consume) — структурные фильтры.
-        dateFrom: input.structuralFilters?.dateFrom ?? null,
-        dateTo: input.structuralFilters?.dateTo ?? null,
-        signalTypes: input.structuralFilters?.signalTypes,
-        entityIds: input.structuralFilters?.entityIds,
-        themeBranches: input.structuralFilters?.themeBranches,
-        bitemporalActiveOnly:
-          input.structuralFilters?.bitemporalActiveOnly ?? false,
-      });
-      // Приоритет первой query (originalOrStandalone): её score boost'ится.
-      const boost = i === 0 ? 0.05 : 0;
-      for (const r of ranked) {
-        const prev = merged.get(r.blockId) ?? -Infinity;
-        const adj = r.score + boost;
-        if (adj > prev) merged.set(r.blockId, adj);
-      }
+      perQuery.push(
+        await this.retrieval.fetchCandidates({
+          tenantId,
+          scope,
+          scopeId: scopeId ?? null,
+          query: q,
+          limit: perQueryLimit,
+          graphHops,
+          validAt: input.validAt ?? null,
+          accessWhere,
+          dateFrom: input.structuralFilters?.dateFrom ?? null,
+          dateTo: input.structuralFilters?.dateTo ?? null,
+          signalTypes: input.structuralFilters?.signalTypes,
+          entityIds: input.structuralFilters?.entityIds,
+          themeBranches: input.structuralFilters?.themeBranches,
+          bitemporalActiveOnly:
+            input.structuralFilters?.bitemporalActiveOnly ?? false,
+        }),
+      );
     }
-    return [...merged.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, topK)
-      .map(([id]) => id);
+
+    if (perQuery.length === 0) return [];
+
+    const ranked =
+      perQuery.length > 1
+        ? fuseRankedLists(
+            perQuery.map((list) => list.map((r) => ({ id: r.blockId }))),
+            await this.cfg.getDynamic<number>('rag.rrf_k', undefined, 60),
+          ).slice(0, topK)
+        : perQuery[0]!.slice(0, topK).map((r) => r.blockId);
+
+    return this.conditionalRerank({ tenantId, question: query, blockIds: ranked });
+  }
+
+  private async conditionalRerank(args: {
+    tenantId: string;
+    question: string;
+    blockIds: string[];
+  }): Promise<string[]> {
+    const { tenantId, question, blockIds } = args;
+    const minPool = await this.cfg.getDynamic<number>(
+      'rag.rerank_min_pool',
+      undefined,
+      12,
+    );
+    if (blockIds.length <= minPool) return blockIds;
+
+    try {
+      const poolIds = blockIds.slice(0, 30);
+      const rows = await this.prisma.ideaBlock.findMany({
+        where: { id: { in: poolIds }, tenantId, status: 'canonical' },
+        select: { id: true, name: true, trustedAnswer: true },
+      });
+      if (rows.length === 0) return blockIds;
+      const byId = new Map(rows.map((r) => [r.id, r] as const));
+      const candidatesStr = poolIds
+        .map((id) => byId.get(id))
+        .filter((r): r is NonNullable<typeof r> => r != null)
+        .map((r) => `[ID:${r.id}] ${r.name}: ${r.trustedAnswer}`)
+        .join('\n');
+      if (!candidatesStr) return blockIds;
+
+      const guardOn = this.isPromptInjectionGuardEnabled();
+      const out = await this.llm.call({
+        taskType: 'rag-rerank',
+        tenantId,
+        systemPrompt: guardOn
+          ? withInjectionGuard(RAG_RERANK_SYSTEM_PROMPT)
+          : RAG_RERANK_SYSTEM_PROMPT,
+        userMessage: guardOn
+          ? wrapUserData(buildRagRerankUser(question, candidatesStr))
+          : buildRagRerankUser(question, candidatesStr),
+        responseFormat: { type: 'json_object' },
+        maxTokens: 400,
+        dataClass: 'internal',
+        sourceRef: { type: 'chat-v2-rerank', id: tenantId },
+      });
+
+      const parsed = RagRerankSchema.safeParse(tryParseJson(out.text));
+      if (!parsed.success) return blockIds;
+      const keepSet = new Set(parsed.data.keep);
+      const kept = blockIds.filter((id) => keepSet.has(id));
+      return kept.length > 0 ? kept : blockIds;
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 conditionalRerank: сбой — fail-open (исходный список)',
+      );
+      return blockIds;
+    }
   }
 
   /**

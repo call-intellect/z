@@ -56,9 +56,10 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
     if (input.temperature !== undefined) body['temperature'] = input.temperature;
 
     const isThinking = isThinkingModel(model);
+    const needsToolMode = isThinking || model.toLowerCase().includes('deepseek-v4-flash');
     const callerHasTools = !!(input.tools && input.tools.length > 0);
     const fmt = input.responseFormat;
-    const autoConvert = isThinking && fmt?.type === 'json_schema' && !callerHasTools;
+    const autoConvert = needsToolMode && fmt?.type === 'json_schema' && !callerHasTools;
 
     let autoConvertedToolName: string | undefined;
 
@@ -84,7 +85,7 @@ export class OpenAiChatProtocolAdapter implements LlmProtocolAdapter {
         `openai-chat thinking: автоконвертация json_schema → tool model=${model} schemaName=${fmt.name}`,
       );
     } else if (fmt) {
-      const skipStrictOnThinking = isThinking && fmt.type === 'json_schema' && callerHasTools;
+      const skipStrictOnThinking = needsToolMode && fmt.type === 'json_schema' && callerHasTools;
       if (skipStrictOnThinking) {
         this.metrics?.incLlmThinkingModelGuard({
           kind: 'strict-stripped',

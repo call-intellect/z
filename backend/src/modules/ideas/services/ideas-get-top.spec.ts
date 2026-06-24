@@ -48,6 +48,7 @@ describe('IdeasService.getTop', () => {
       {} as never,
       {} as never,
       null as never,
+      null as never,
       cfg as never,
       metrics as never,
     );

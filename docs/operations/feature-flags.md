@@ -72,6 +72,11 @@ _(пусто — все доставки в Telegram авторизованы в
 |---|---|---|
 | `RECORDING_FASTSTART_ENABLED` | 🟢 ВКЛ | Видео встреч стартует в плеере сразу (без долгой «крутилки»). |
 | `graph.ageEnabled` / `GRAPH_AGE_ENABLED` | 🟢 ВКЛ | Граф знаний пишется в графовую базу. Выкл → только обычная база. |
+| `BITEMPORAL_ENABLED` | 🟢 ВКЛ | Bi-temporal факты: при ingest пишется `validFrom`, а поиск скрывает устаревшие (superseded) версии. Выкл → выдача показывает все версии вперемешку. Включён Ship-On (граф-ингест Ф9). ENV-рубильник (zBool default true). |
+| `BITEMPORAL_SUPERSEDE_ENABLED` | 🟢 ВКЛ | Срабатывание замещения факта (supersede): новый факт закрывает `validUntil` старого. Защищён композитным судьёй-скептиком + высоким порогом (граф-ингест Ф6, R-1) — без подтверждения факт НЕ прячется. Выкл → факты не замещаются. ENV-рубильник (zBool default true). |
+| `BI_TEMPORAL_EDGES_ENABLED` | 🟢 ВКЛ | Bi-temporal фильтр рёбер в retrieval: обход графа берёт только активные рёбра (`validUntil IS NULL`). Выкл → обход по всем рёбрам. ENV-рубильник (zBool default true). |
+| `knowledge.contextual_header_enabled` | 🟢 ВКЛ | LLM-обогащение контекст-заголовка перед эмбеддингом блока (Contextual Retrieval, граф-ингест Ф3). Выкл → только детерминированная метастрока (без LLM). AdminSetting kill-switch (code-default true). |
+| `knowledge.theme_summary_enabled` | 🟢 ВКЛ | Воркер theme-summarize (инкрементальная суть темы/кластера, граф-ингест Ф8). Выкл → cron no-op, `Theme.summary` не пересчитывается. AdminSetting kill-switch (code-default true). |
 | `chatbox.enabled` | 🟢 ВКЛ | Синхронизация переписок ChatBox в память. Выкл → синк замирает. |
 | `bitrix.enabled` | 🟢 ВКЛ | Приём событий установки Bitrix24 (`ONAPPINSTALL`/`ONAPPUNINSTALL`). Выкл → install-handler отвечает 200 no-op (установки из Маркета не сохраняются). Не влияет на OAuth-коннект из Коры. |
 | `RECORDING_TRACK_RECONCILE_ENABLED` | 🟢 ВКЛ | Надёжная сверка аудиодорожек записи. |

@@ -224,7 +224,7 @@ relates_to:
 
 ---
 
-### Ф9 — Включить Ship-On флаги + крутилки в AdminSetting `[ ]`
+### Ф9 — Включить Ship-On флаги + крутилки в AdminSetting `[x]`
 **Цель:** убрать OFF-флаги (нарушение Ship-On), вынести пороги в AdminSetting.
 **Картография:** `BITEMPORAL_ENABLED`, `BI_TEMPORAL_EDGES_ENABLED` в `env.schema.ts`; реестр `docs/operations/feature-flags.md`.
 **Что входит:** перевести bi-temporal на **ON по умолчанию** (после корректности Ф1–Ф8); оформить как kill-switch (фича ON, рубильник для инцидента) + строка в `feature-flags.md`. Все введённые пороги/размеры/topK — в `admin-setting-schema-registry.ts` + сид + UI-поле (перечень: `contextual_header_enabled, segment_overlap_ratio, segment_max_tokens, entity_name_resolve_threshold, edge_confidence_high, edge_confidence_low, linker_min_canonical, linker_candidate_topk, search_expand_hops, theme_summary_enabled`).

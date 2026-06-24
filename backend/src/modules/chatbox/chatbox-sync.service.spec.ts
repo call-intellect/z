@@ -36,6 +36,10 @@ describe('ChatboxSyncService', () => {
       upsert: ReturnType<typeof vi.fn>;
       update: ReturnType<typeof vi.fn>;
     };
+    chatboxChat: {
+      upsert: ReturnType<typeof vi.fn>;
+      update: ReturnType<typeof vi.fn>;
+    };
     chatboxChannel: { findMany: ReturnType<typeof vi.fn> };
     person: { findMany: ReturnType<typeof vi.fn> };
     chatboxIntegration: {
@@ -74,6 +78,10 @@ describe('ChatboxSyncService', () => {
         findMany: vi.fn().mockResolvedValue([]),
         upsert: vi.fn().mockResolvedValue({ id: 'cc1' }),
         update: vi.fn().mockResolvedValue({ id: 'cc1' }),
+      },
+      chatboxChat: {
+        upsert: vi.fn().mockResolvedValue({ id: 'chatdb' }),
+        update: vi.fn().mockResolvedValue({ id: 'chatdb' }),
       },
       chatboxChannel: { findMany: vi.fn().mockResolvedValue([]) },
       person: { findMany: vi.fn().mockResolvedValue([]) },
@@ -114,6 +122,24 @@ describe('ChatboxSyncService', () => {
     expect(count).toBe(0);
     expect(clientMock.listChats).not.toHaveBeenCalled();
     expect(integrationMock.getConfigForSync).not.toHaveBeenCalled();
+  });
+
+  it('syncChats(since): старый чат первым в выдаче НЕ обрывает синк свежих (continue, не break)', async () => {
+    const since = new Date('2026-06-17T00:00:00.000Z');
+    clientMock.listChats.mockResolvedValue({
+      chats: [
+        { id: 'old', channelId: 'ch', status: 'active', createdAt: '2026-05-01T00:00:00.000Z', updatedAt: '2026-05-01T00:00:00.000Z' },
+        { id: 'r1', channelId: 'ch', status: 'active', createdAt: '2026-06-22T00:00:00.000Z', updatedAt: '2026-06-22T07:00:00.000Z' },
+        { id: 'r2', channelId: 'ch', status: 'active', createdAt: '2026-06-20T00:00:00.000Z', updatedAt: '2026-06-23T09:00:00.000Z' },
+      ],
+      total: 3,
+    });
+    clientMock.listMessages.mockResolvedValue({ messages: [], total: 0 });
+
+    const count = await service.syncChats('t1', { since });
+
+    expect(count).toBe(2);
+    expect(clientMock.listMessages).toHaveBeenCalledTimes(2);
   });
 
   it('syncMembers: upsert по числу members, linkedPersonId/linkMode не в data', async () => {

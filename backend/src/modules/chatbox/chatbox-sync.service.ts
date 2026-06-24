@@ -351,15 +351,15 @@ export class ChatboxSyncService {
     const channelTypeByExt = new Map(channels.map((c) => [c.externalId, c.channelType]));
 
     let count = 0;
+    let scanned = 0;
     let offset = 0;
     let total = Infinity;
     let page = 0;
-    let stop = false;
 
-    while (!stop && count < total) {
+    while (scanned < total) {
       if (page >= MAX_PAGES) {
         this.logger.warn(
-          `syncChats: достигнут кап ${MAX_PAGES} страниц (${count}/${total}) — остановка`,
+          `syncChats: достигнут кап ${MAX_PAGES} страниц (${scanned}/${total}) — остановка`,
         );
         break;
       }
@@ -373,10 +373,10 @@ export class ChatboxSyncService {
       if (items.length === 0) break;
 
       for (const apiChat of items) {
+        scanned += 1;
         const updatedAt = new Date(apiChat.updatedAt);
         if (opts?.since && updatedAt < opts.since) {
-          stop = true;
-          break;
+          continue;
         }
 
         const chatDbId = await this.upsertChat(tenantId, apiChat, channelTypeByExt);

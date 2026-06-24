@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EntityResolutionService } from '../knowledge-core/services/entity-resolution.service';
@@ -178,6 +179,74 @@ export class ChatboxCustomersService {
       });
       if (res.created) created += 1;
       else linked += 1;
+    }
+    return { created, linked };
+  }
+
+  async autoLinkChannelClients(tenantId: string): Promise<{ created: number; linked: number }> {
+    const rows = await this.prisma.chatboxChannelClient.findMany({
+      where: { tenantId, linkedContactEntityId: null },
+      select: { id: true, externalId: true, name: true, email: true, customerId: true },
+    });
+    let created = 0;
+    let linked = 0;
+    for (const cc of rows) {
+      const name = cc.name?.trim() || cc.externalId;
+      const email = cc.email?.trim() || null;
+      const { entity, created: wasCreated } = await this.entityResolution.findOrCreateEntity({
+        tenantId,
+        type: 'person',
+        name,
+        ...(email ? { email } : {}),
+      });
+      await this.prisma.chatboxChannelClient.update({
+        where: { id: cc.id },
+        data: { linkedContactEntityId: entity.id },
+      });
+      if (wasCreated) created += 1;
+      else linked += 1;
+
+      if (cc.customerId) {
+        const chatboxCustomer = await this.prisma.chatboxCustomer.findUnique({
+          where: { id: cc.customerId },
+          select: { linkedCustomerId: true },
+        });
+        if (chatboxCustomer?.linkedCustomerId) {
+          const customer = await this.prisma.customer.findUnique({
+            where: { id: chatboxCustomer.linkedCustomerId },
+            select: { entityId: true },
+          });
+          if (customer) {
+            const existing = await this.prisma.entityLink.findFirst({
+              where: {
+                fromEntityId: entity.id,
+                fromType: 'entity',
+                toEntityId: customer.entityId,
+                toType: 'entity',
+                relationType: 'works_at',
+              },
+              select: { id: true },
+            });
+            if (!existing) {
+              await this.prisma.entityLink.create({
+                data: {
+                  tenantId,
+                  fromEntityId: entity.id,
+                  toEntityId: customer.entityId,
+                  fromType: 'entity',
+                  toType: 'entity',
+                  relationType: 'works_at',
+                  confidence: new Prisma.Decimal('1.000'),
+                  explanation: 'Контакт ChatBox привязан к клиенту',
+                  createdBy: 'manual',
+                  status: 'active',
+                  properties: {},
+                },
+              });
+            }
+          }
+        }
+      }
     }
     return { created, linked };
   }

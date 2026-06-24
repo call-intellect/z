@@ -40,6 +40,10 @@ describe('ChatboxSyncService', () => {
       upsert: ReturnType<typeof vi.fn>;
       update: ReturnType<typeof vi.fn>;
     };
+    chatboxMessage: {
+      upsert: ReturnType<typeof vi.fn>;
+      findMany: ReturnType<typeof vi.fn>;
+    };
     chatboxChannel: {
       findMany: ReturnType<typeof vi.fn>;
       count: ReturnType<typeof vi.fn>;
@@ -55,7 +59,10 @@ describe('ChatboxSyncService', () => {
   let sessionMock: { rebuildSessions: ReturnType<typeof vi.fn> };
   let adminMock: { get: ReturnType<typeof vi.fn> };
   let analyzeQueueMock: { enqueue: ReturnType<typeof vi.fn> };
-  let customersMock: { autoLinkUnlinked: ReturnType<typeof vi.fn> };
+  let customersMock: {
+    autoLinkUnlinked: ReturnType<typeof vi.fn>;
+    autoLinkChannelClients: ReturnType<typeof vi.fn>;
+  };
   let membersMock: { autoLinkUnlinked: ReturnType<typeof vi.fn> };
   let service: ChatboxSyncService;
 
@@ -86,6 +93,10 @@ describe('ChatboxSyncService', () => {
         upsert: vi.fn().mockResolvedValue({ id: 'chatdb' }),
         update: vi.fn().mockResolvedValue({ id: 'chatdb' }),
       },
+      chatboxMessage: {
+        upsert: vi.fn().mockResolvedValue({ id: 'msg1' }),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
       chatboxChannel: {
         findMany: vi.fn().mockResolvedValue([]),
         count: vi.fn().mockResolvedValue(1),
@@ -105,6 +116,7 @@ describe('ChatboxSyncService', () => {
     analyzeQueueMock = { enqueue: vi.fn().mockResolvedValue({ jobId: 'j1' }) };
     customersMock = {
       autoLinkUnlinked: vi.fn().mockResolvedValue({ created: 0, linked: 0 }),
+      autoLinkChannelClients: vi.fn().mockResolvedValue({ created: 0, linked: 0 }),
     };
     membersMock = {
       autoLinkUnlinked: vi.fn().mockResolvedValue({ created: 0, linked: 0 }),
@@ -276,5 +288,47 @@ describe('ChatboxSyncService', () => {
     expect(prismaMock.chatboxChannelClient.upsert).toHaveBeenCalledTimes(1);
     expect(prismaMock.chatboxChannelClient.update).not.toHaveBeenCalled();
     expect(prismaMock.person.findMany).not.toHaveBeenCalled();
+    expect(customersMock.autoLinkChannelClients).toHaveBeenCalledWith('t1');
+  });
+
+  it('syncMessages: >1 distinct CLIENT-отправитель → chatboxChat.update получает isGroup=true', async () => {
+    clientMock.listMessages.mockResolvedValue({ messages: [], total: 0 });
+    prismaMock.chatboxMessage.findMany.mockResolvedValue([
+      { senderExternalId: 'tg-1' },
+      { senderExternalId: 'tg-2' },
+    ]);
+
+    await service.syncMessages('t1', 'chatdb', 'chat-ext');
+
+    expect(prismaMock.chatboxMessage.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 't1',
+          chatId: 'chatdb',
+          senderType: 'CLIENT',
+          senderExternalId: { not: null },
+        }),
+        distinct: ['senderExternalId'],
+      }),
+    );
+    expect(prismaMock.chatboxChat.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'chatdb' },
+        data: expect.objectContaining({ isGroup: true }),
+      }),
+    );
+  });
+
+  it('syncMessages: один CLIENT-отправитель → isGroup=false', async () => {
+    clientMock.listMessages.mockResolvedValue({ messages: [], total: 0 });
+    prismaMock.chatboxMessage.findMany.mockResolvedValue([{ senderExternalId: 'tg-1' }]);
+
+    await service.syncMessages('t1', 'chatdb', 'chat-ext');
+
+    expect(prismaMock.chatboxChat.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ isGroup: false }),
+      }),
+    );
   });
 });

@@ -221,6 +221,11 @@ export class ChatboxSyncService {
       });
     }
 
+    const auto = await this.customers.autoLinkChannelClients(tenantId);
+    this.logger.log(
+      `syncChannelClients: авто-контакты — создано ${auto.created}, привязано ${auto.linked}`,
+    );
+
     return clients.length;
   }
 
@@ -329,9 +334,16 @@ export class ChatboxSyncService {
 
     await this.sessions.rebuildSessions(tenantId, chatDbId);
 
+    const clientSenders = await this.prisma.chatboxMessage.findMany({
+      where: { tenantId, chatId: chatDbId, senderType: 'CLIENT', senderExternalId: { not: null } },
+      select: { senderExternalId: true },
+      distinct: ['senderExternalId'],
+    });
+    const isGroup = clientSenders.length > 1;
+
     await this.prisma.chatboxChat.update({
       where: { id: chatDbId },
-      data: { messageCount: messages.length, lastMessageAt },
+      data: { messageCount: messages.length, lastMessageAt, isGroup },
     });
 
     return messages.length;

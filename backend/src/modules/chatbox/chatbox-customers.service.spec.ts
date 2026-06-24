@@ -11,14 +11,27 @@ describe('ChatboxCustomersService', () => {
     chatboxCustomer: {
       findMany: ReturnType<typeof vi.fn>;
       findFirst: ReturnType<typeof vi.fn>;
+      findUnique: ReturnType<typeof vi.fn>;
+      update: ReturnType<typeof vi.fn>;
+    };
+    chatboxChannelClient: {
+      findMany: ReturnType<typeof vi.fn>;
       update: ReturnType<typeof vi.fn>;
     };
     customer: {
       findMany: ReturnType<typeof vi.fn>;
       findFirst: ReturnType<typeof vi.fn>;
+      findUnique: ReturnType<typeof vi.fn>;
+    };
+    entityLink: {
+      findFirst: ReturnType<typeof vi.fn>;
+      create: ReturnType<typeof vi.fn>;
     };
   };
-  let entityResolutionMock: { findOrCreateCustomerEntity: ReturnType<typeof vi.fn> };
+  let entityResolutionMock: {
+    findOrCreateCustomerEntity: ReturnType<typeof vi.fn>;
+    findOrCreateEntity: ReturnType<typeof vi.fn>;
+  };
   let service: ChatboxCustomersService;
 
   beforeEach(() => {
@@ -26,14 +39,27 @@ describe('ChatboxCustomersService', () => {
       chatboxCustomer: {
         findMany: vi.fn(),
         findFirst: vi.fn(),
+        findUnique: vi.fn(),
+        update: vi.fn(),
+      },
+      chatboxChannelClient: {
+        findMany: vi.fn(),
         update: vi.fn(),
       },
       customer: {
         findMany: vi.fn(),
         findFirst: vi.fn(),
+        findUnique: vi.fn(),
+      },
+      entityLink: {
+        findFirst: vi.fn(),
+        create: vi.fn(),
       },
     };
-    entityResolutionMock = { findOrCreateCustomerEntity: vi.fn() };
+    entityResolutionMock = {
+      findOrCreateCustomerEntity: vi.fn(),
+      findOrCreateEntity: vi.fn(),
+    };
     service = new ChatboxCustomersService(
       prismaMock as unknown as PrismaService,
       entityResolutionMock as unknown as EntityResolutionService,
@@ -329,6 +355,120 @@ describe('ChatboxCustomersService', () => {
 
       expect(entityResolutionMock.findOrCreateCustomerEntity).not.toHaveBeenCalled();
       expect(prismaMock.chatboxCustomer.update).not.toHaveBeenCalled();
+      expect(res).toEqual({ created: 0, linked: 0 });
+    });
+  });
+
+  describe('autoLinkChannelClients', () => {
+    it('unlinked channel-client → findOrCreateEntity(person) + linkedContactEntityId; без customerId works_at не создаётся', async () => {
+      prismaMock.chatboxChannelClient.findMany.mockResolvedValue([
+        { id: 'cc1', externalId: 'tg-1', name: 'Собеседник', email: 'cc@x.ru', customerId: null },
+      ]);
+      entityResolutionMock.findOrCreateEntity.mockResolvedValue({
+        entity: { id: 'ent-new' },
+        created: true,
+      });
+
+      const res = await service.autoLinkChannelClients('t1');
+
+      expect(prismaMock.chatboxChannelClient.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { tenantId: 't1', linkedContactEntityId: null },
+        }),
+      );
+      expect(entityResolutionMock.findOrCreateEntity).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: 't1',
+          type: 'person',
+          name: 'Собеседник',
+          email: 'cc@x.ru',
+        }),
+      );
+      expect(prismaMock.chatboxChannelClient.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'cc1' },
+          data: { linkedContactEntityId: 'ent-new' },
+        }),
+      );
+      expect(prismaMock.entityLink.create).not.toHaveBeenCalled();
+      expect(res).toEqual({ created: 1, linked: 0 });
+    });
+
+    it('customerId с привязанным аккаунтом → создаётся EntityLink works_at контакт→аккаунт', async () => {
+      prismaMock.chatboxChannelClient.findMany.mockResolvedValue([
+        { id: 'cc1', externalId: 'tg-1', name: 'Контакт', email: null, customerId: 'cust-ref' },
+      ]);
+      entityResolutionMock.findOrCreateEntity.mockResolvedValue({
+        entity: { id: 'ent-contact' },
+        created: false,
+      });
+      prismaMock.chatboxCustomer.findUnique.mockResolvedValue({ linkedCustomerId: 'kora-cust' });
+      prismaMock.customer.findUnique.mockResolvedValue({ entityId: 'acc-ent' });
+      prismaMock.entityLink.findFirst.mockResolvedValue(null);
+
+      const res = await service.autoLinkChannelClients('t1');
+
+      expect(entityResolutionMock.findOrCreateEntity).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 't1', type: 'person', name: 'Контакт' }),
+      );
+      expect(prismaMock.entityLink.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            tenantId: 't1',
+            fromEntityId: 'ent-contact',
+            toEntityId: 'acc-ent',
+            fromType: 'entity',
+            toType: 'entity',
+            relationType: 'works_at',
+            createdBy: 'manual',
+            status: 'active',
+          }),
+        }),
+      );
+      expect(res).toEqual({ created: 0, linked: 1 });
+    });
+
+    it('EntityLink works_at уже существует → не дублируется', async () => {
+      prismaMock.chatboxChannelClient.findMany.mockResolvedValue([
+        { id: 'cc1', externalId: 'tg-1', name: 'Контакт', email: null, customerId: 'cust-ref' },
+      ]);
+      entityResolutionMock.findOrCreateEntity.mockResolvedValue({
+        entity: { id: 'ent-contact' },
+        created: false,
+      });
+      prismaMock.chatboxCustomer.findUnique.mockResolvedValue({ linkedCustomerId: 'kora-cust' });
+      prismaMock.customer.findUnique.mockResolvedValue({ entityId: 'acc-ent' });
+      prismaMock.entityLink.findFirst.mockResolvedValue({ id: 'link-existing' });
+
+      await service.autoLinkChannelClients('t1');
+
+      expect(prismaMock.entityLink.create).not.toHaveBeenCalled();
+    });
+
+    it('name пустой → fallback на externalId', async () => {
+      prismaMock.chatboxChannelClient.findMany.mockResolvedValue([
+        { id: 'cc1', externalId: 'tg-42', name: '  ', email: null, customerId: null },
+      ]);
+      entityResolutionMock.findOrCreateEntity.mockResolvedValue({
+        entity: { id: 'ent-new' },
+        created: true,
+      });
+
+      await service.autoLinkChannelClients('t1');
+
+      expect(entityResolutionMock.findOrCreateEntity).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'tg-42' }),
+      );
+    });
+
+    it('нет unlinked channel-client → no-op (резолвер не зовётся)', async () => {
+      prismaMock.chatboxChannelClient.findMany.mockResolvedValue([]);
+
+      const res = await service.autoLinkChannelClients('t1');
+
+      expect(entityResolutionMock.findOrCreateEntity).not.toHaveBeenCalled();
+      expect(prismaMock.chatboxChannelClient.update).not.toHaveBeenCalled();
+      expect(prismaMock.entityLink.create).not.toHaveBeenCalled();
       expect(res).toEqual({ created: 0, linked: 0 });
     });
   });

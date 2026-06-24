@@ -48,7 +48,12 @@ type Counter = {
 
 function counters(s: ChatboxMemorySummaryView): Counter[] {
   return [
-    { key: "dialogs", label: "Забрано диалогов", tone: "neutral" },
+    {
+      key: "dialogs",
+      label: "Забрано диалогов",
+      tone: "neutral",
+      href: "/chats/integrations/chatbox/chats",
+    },
     { key: "analyzed", label: "Проанализировано", tone: "neutral" },
     {
       key: "inProgress",

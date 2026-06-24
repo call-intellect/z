@@ -16,11 +16,7 @@ import {
 import { toast } from "sonner";
 
 import { ApiError } from "@/api/api-error";
-import {
-  chatboxApi,
-  type ChatboxSyncRunApi,
-  type ChatboxSyncScope,
-} from "@/api/chatbox.api";
+import { chatboxApi, type ChatboxSyncScope } from "@/api/chatbox.api";
 import { mapIntegration } from "@/domain/chatbox";
 import {
   CardTitle,
@@ -512,12 +508,6 @@ function ConnectedView({
               Клиенты
             </Link>
           </Button>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/chats/integrations/chatbox/chats">
-              <MessagesSquare size={14} />
-              Чаты
-            </Link>
-          </Button>
         </div>
       </GlassCard>
 
@@ -528,7 +518,22 @@ function ConnectedView({
       <SyncStatusCard />
 
       {}
-      <SyncLogCard />
+      <GlassCard className="flex flex-wrap items-center justify-between gap-3 !py-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-fg-primary">
+            Журнал синхронизаций
+          </p>
+          <p className="mt-0.5 text-xs text-fg-tertiary">
+            История запусков: что и когда забрано.
+          </p>
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/chats/integrations/chatbox/sync-log">
+            <History size={14} />
+            Открыть журнал
+          </Link>
+        </Button>
+      </GlassCard>
 
       {}
       <GlassCard className="flex flex-wrap items-center justify-between gap-3 !py-4">
@@ -632,107 +637,4 @@ function toDate(iso: string | null): Date | null {
   if (!iso) return null;
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? null : d;
-}
-
-const SYNC_STATUS_META: Record<
-  string,
-  { label: string; tone: keyof typeof STATUS_TONE }
-> = {
-  success: { label: "Готово", tone: "ok" },
-  failed: { label: "Ошибка", tone: "risk" },
-  running: { label: "Идёт", tone: "warning" },
-  skipped: { label: "Пропуск", tone: "warning" },
-};
-
-const SYNC_COUNT_LABELS: ReadonlyArray<{ key: string; label: string }> = [
-  { key: "chats", label: "чатов" },
-  { key: "messages", label: "сообщений" },
-  { key: "customers", label: "клиентов" },
-  { key: "channelClients", label: "контактов" },
-  { key: "members", label: "менеджеров" },
-  { key: "channels", label: "каналов" },
-  { key: "analysisEnqueued", label: "в граф" },
-];
-
-function syncCountParts(
-  counts: Record<string, unknown> | null,
-): Array<{ label: string; value: number }> {
-  if (!counts) return [];
-  const parts: Array<{ label: string; value: number }> = [];
-  for (const { key, label } of SYNC_COUNT_LABELS) {
-    const v = counts[key];
-    if (typeof v === "number") parts.push({ label, value: v });
-  }
-  return parts;
-}
-
-function SyncLogRow({ run }: { run: ChatboxSyncRunApi }) {
-  const started = toDate(run.startedAt);
-  const meta = SYNC_STATUS_META[run.status] ?? {
-    label: run.status,
-    tone: "warning" as const,
-  };
-  const tone = STATUS_TONE[meta.tone];
-  const duration =
-    run.durationMs != null ? `${Math.round(run.durationMs / 1000)} с` : null;
-  const parts = syncCountParts(run.counts);
-
-  return (
-    <div className="space-y-1 border-t border-border-subtle py-2.5 first:border-t-0 first:pt-0">
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm">
-        <span className="text-fg-primary">{formatDate(started)}</span>
-        <span className="text-fg-tertiary">·</span>
-        <span className="text-fg-secondary">
-          {run.trigger === "auto" ? "По расписанию" : "Ручная"}
-        </span>
-        <span
-          className="rounded-full px-2 py-0.5 text-xs font-medium"
-          style={{ color: tone.c, background: tone.bg }}
-        >
-          {meta.label}
-        </span>
-        {duration && (
-          <span className="text-xs text-fg-tertiary">{duration}</span>
-        )}
-      </div>
-      {parts.length > 0 && (
-        <p className="text-xs text-fg-tertiary">
-          собрано:{" "}
-          {parts
-            .map((p) => `${p.label} ${p.value.toLocaleString("ru-RU")}`)
-            .join(" · ")}
-        </p>
-      )}
-      {run.status === "failed" && run.error && (
-        <p className="text-xs text-danger">{run.error}</p>
-      )}
-    </div>
-  );
-}
-
-function SyncLogCard() {
-  const { data, isLoading } = useSWR(["chatbox-sync-log"], () =>
-    chatboxApi.syncLog(20),
-  );
-
-  return (
-    <GlassCard className="space-y-3">
-      <CardTitle icon={<History size={16} />} grad={GRAD.blue}>
-        Журнал синхронизаций
-      </CardTitle>
-      {isLoading ? (
-        <div className="flex items-center text-sm text-fg-tertiary">
-          <Loader2 size={14} className="mr-2 animate-spin" /> Загружаем...
-        </div>
-      ) : !data || data.length === 0 ? (
-        <p className="text-sm text-fg-tertiary">Синхронизаций ещё не было.</p>
-      ) : (
-        <div className="flex flex-col">
-          {data.map((run) => (
-            <SyncLogRow key={run.id} run={run} />
-          ))}
-        </div>
-      )}
-    </GlassCard>
-  );
 }

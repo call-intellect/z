@@ -341,6 +341,7 @@ Source {
 ```
 RawEvent {
   id, tenantId, sourceId, sourceType,
+  sourceTitle? VARCHAR,                   -- эпизод-узел (граф знаний v2, 2026-06-24): человекочитаемый заголовок эпизода («Созвон с клиентом, 2026-06-20»); заполняют meeting/report-адаптеры через `ingest/adapters/episode-title.util.ts`; для группировки поиска по эпизоду + понятного источника
   sourceExternalId? (если null — дедуп по checksum),
   idempotencyKey UNIQUE (sha256(sourceId + ':' + (sourceExternalId ?? checksum) + ':' + occurredAtIso)),
   occurredAt, receivedAt (default now),
@@ -480,7 +481,10 @@ IdeaBlockLink {
                           shares_topic | shares_entity | question_answered_by)
   confidence        Decimal(4,3)
   explanation       String @Text
-  createdBy         enum (linker | reframing | manual)
+  createdBy         enum (linker | reframing | manual | system)
+                    -- enum LinkCreatedBy += system (граф знаний v2, 2026-06-24):
+                    -- структурные рёбра shares_entity (на ingest) / shares_topic
+                    -- (при кластеризации тем) пишутся без LLM с createdBy=system
   status            enum (active | archived)  @default(active)
   createdAt, updatedAt
   @@unique(fromBlockId, toBlockId, relationType)
@@ -535,6 +539,8 @@ Theme {
   branch? (strategy | clients | sales | marketing | product | operations |
            team | finance | technology | production | partnerships | legal),
   embedding vector(1536),
+  summary? @Text,                         -- авто-резюме темы (граф знаний v2, 2026-06-24)
+  summaryUpdatedAt?,                       -- когда пересчитано (инкрементально)
   lastSignalAt?, createdAt, updatedAt,
 
   @@index(tenantId, status)
@@ -549,6 +555,34 @@ AI-кластер canonical IdeaBlock'ов. Создаётся `theme-clusterer.
 
 Описание/имя/ветка генерируются LLM `theme-classify` (JSON Schema strict).
 Embedding темы — `text-embedding-3-small` от `name + ' ' + description`.
+
+**Поля `summary` / `summaryUpdatedAt`** (граф знаний v2, 2026-06-24) — авто-резюме
+темы. Пересчитывает **инкрементально** (только изменившиеся темы) cron
+`theme-summarize` (`@Cron`, taskType `theme-summarize`, kill-switch
+`knowledge.theme_summary_enabled`). Подробно — [[knowledge-core]] §«Перестройка
+ингеста + умный поэтапный поиск».
+
+### EntityAlias (граф знаний v2, 2026-06-24)
+
+```
+EntityAlias {
+  id, tenantId,
+  alias            -- псевдоним/упоминание (как встретилось в источнике)
+  personId? → Person   -- куда резолвится (Person ...
+  entityId? → Entity   -- ... или Entity)
+  createdAt, updatedAt
+  @@unique(tenantId, alias)
+  @@index(tenantId, personId)
+  @@index(tenantId, entityId)
+}
+```
+
+Per-Org кэш cross-source идентичности «псевдоним → Person/Entity» — ускоряет и
+стабилизирует резолв при ingest. Каскад `resolvePersonByHint`: exact →
+**alias-cache** → fuzzy → эмбеддинг-склейка (порог
+`knowledge.entity_name_resolve_threshold` 0.9) → LLM-арбитр (taskType
+`entity-name-resolve`) → **fail-closed null** (инвариант R-2: разных людей не
+склеиваем). Подробно — [[knowledge-core]] §«Cross-source идентичность».
 
 ### ThemeIdeaBlock (M:M)
 

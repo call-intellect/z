@@ -18,6 +18,8 @@ import {
   type FactSupersedeVerdict,
 } from '../prompts/fact-supersede-detect.prompt';
 
+import { BlockLinkService } from './block-link.service';
+
 @Injectable()
 export class FactSupersedeService {
   private readonly logger = new Logger(FactSupersedeService.name);
@@ -34,6 +36,9 @@ export class FactSupersedeService {
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
+    @Optional()
+    @Inject(BlockLinkService)
+    private readonly blockLink?: BlockLinkService,
   ) {}
 
   async processNewBlock(blockId: string): Promise<{
@@ -177,6 +182,33 @@ export class FactSupersedeService {
         };
       }
 
+      if (this.blockLink) {
+        const targetBlock = await this.prisma.ideaBlock.findUnique({
+          where: { id: targetBlockId },
+        });
+        if (!targetBlock) {
+          this.logger.debug(
+            { blockId, targetBlockId },
+            'fact-supersede: target-блок не найден перед скептиком — skip',
+          );
+          return { verdict: 'supersedes', targetId: targetBlockId, applied: false };
+        }
+        const confirmed = await this.blockLink.confirmRiskLink({
+          tenantId: block.tenantId,
+          fromBlock: block,
+          toBlock: targetBlock,
+          relationType: 'supersedes',
+        });
+        if (!confirmed) {
+          this.metrics.incRiskEdge({ relation: 'supersedes', outcome: 'rejected_skeptic' });
+          this.logger.debug(
+            { blockId, targetBlockId },
+            'fact-supersede: supersede отвергнут скептиком — факт НЕ замещён (R-1)',
+          );
+          return { verdict: 'supersedes', targetId: targetBlockId, applied: false };
+        }
+      }
+
       const applied = await this.applySupersedes({
         tenantId: block.tenantId,
         newBlockId: block.id,
@@ -184,6 +216,9 @@ export class FactSupersedeService {
         confidence: verdict.confidence,
         reason: verdict.reason,
       });
+      if (applied) {
+        this.metrics.incRiskEdge({ relation: 'supersedes', outcome: 'created' });
+      }
       return {
         verdict: 'supersedes',
         targetId: targetBlockId,

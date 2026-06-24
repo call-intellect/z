@@ -806,6 +806,7 @@ enum LinkCreatedBy {
   linker
   reframing
   manual
+  system
 }
 
 /// Состояние связи: active = живая, archived = архив (понижен confidence или
@@ -2596,6 +2597,7 @@ model Org {
   entities               Entity[]
   blockLinks             IdeaBlockLink[]
   entityLinks            EntityLink[]
+  entityAliases          EntityAlias[]
   themes                 Theme[]
   goals                  Goal[]
   goalAlignmentSnapshots GoalAlignmentSnapshot[]
@@ -3330,6 +3332,10 @@ model RawEvent {
   sourceType       SourceType
   /// Если null — событие без внешнего ID, дедуп по checksum.
   sourceExternalId String?
+  /// Человекочитаемый заголовок эпизода (≈ Graphiti source_description):
+  /// «Встреча: планёрка маркетинга, 14.06» / «Чат с клиентом Александром».
+  /// Непустой для meeting/report; для чатов — резюме треда.
+  sourceTitle      String?
   /// sha256(sourceId + ':' + (sourceExternalId ?? payloadChecksum) + ':' + occurredAtIso)
   idempotencyKey   String                   @unique
   occurredAt       DateTime
@@ -4261,6 +4267,28 @@ model EntityLink {
   @@index([toEntityId, validFrom, validUntil])
 }
 
+/// Ф5 (граф-ингест 2026-06-23) — per-Org кэш псевдонимов имён → Person/Entity.
+/// Закрывает «Настя↔chydo_002»: имя-упоминание резолвится в одного человека
+/// без повторного fuzzy-LLM. Пополняется при ingest, читается перед fuzzy/LLM.
+/// personId/entityId — скаляры без FK (семантика кэша: устаревшая запись
+/// безвредна, читатель проверяет Person.deletedAt). Изоляция — по tenantId.
+model EntityAlias {
+  id        String   @id @default(cuid())
+  tenantId  String
+  /// Нормализованный псевдоним (lower-case, схлопнутые пробелы): «настя».
+  alias     String
+  personId  String?
+  entityId  String?
+  roleHint  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, alias])
+  @@index([tenantId, personId])
+}
+
 // ──────────────────────────── knowledge-core: Theme (Фаза 4) ────────────────────────────
 
 /// Theme — AI-кластер блоков. Создаётся `theme-clusterer.cron` (KNN-greedy
@@ -4289,6 +4317,11 @@ model Theme {
   branch         ThemeBranch?
   embedding      Unsupported("vector(1536)")?
   lastSignalAt   DateTime?
+  /// Ф8 (граф-ингест 2026-06-23) — retrievable «суть темы/кластера»,
+  /// обновляется инкрементально воркером theme-summarize (map-reduce
+  /// member-блоков, без полного rebuild). null — резюме ещё не построено.
+  summary          String?                      @db.Text
+  summaryUpdatedAt DateTime?
   createdAt      DateTime                     @default(now())
   updatedAt      DateTime                     @updatedAt
 

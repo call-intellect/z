@@ -17,6 +17,7 @@ import { CardRollupV2Service } from './services/card-rollup-v2.service';
 import { ChatV2RetrievalService } from './services/chat-v2-retrieval.service';
 import { ChatV2TableContextService } from './services/chat-v2-table-context.service';
 import { ChatV2Service } from './services/chat-v2.service';
+import { ChunkContextService } from './services/chunk-context.service';
 import { ClusteringService } from './services/clustering.service';
 import { ConfidenceCalibrationService } from './services/confidence-calibration.service';
 import { DataClassPolicyService } from './services/dataclass-policy.service';
@@ -88,6 +89,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     SegmentBuilderService,
     BlockExtractionService,
     KnowledgeEmbeddingService,
+    ChunkContextService,
     RoleRegulationRetrievalService,
     EntityResolutionService,
     RegulationConsolidatorService,
@@ -162,6 +164,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     SegmentBuilderService,
     BlockExtractionService,
     KnowledgeEmbeddingService,
+    ChunkContextService,
     RoleRegulationRetrievalService,
     EntityResolutionService,
     RegulationConsolidatorService,

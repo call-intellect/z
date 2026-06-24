@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildBlockIngestPrompt } from './block-ingest.prompt';
+import type { Segment } from '../services/segment-builder.service';
 
 /**
  * Ф1 agent-chain-overhaul (2026-06-07) — recall классификации signalType.
@@ -61,6 +62,55 @@ describe('block-ingest prompt — signalType recall (Ф1)', () => {
   it('содержит правило анти-галлюцинации имён (C6)', () => {
     expect(system).toContain(
       'бери ТОЛЬКО из реплик и из имён спикеров',
+    );
+  });
+});
+
+describe('buildBlockIngestPrompt — контекст эпизода (Ф3 A)', () => {
+  const segments: Segment[] = [
+    { startMs: 0, endMs: 1000, speakers: ['Анна'], text: 'Я подготовлю смету к пятнице.' },
+  ];
+
+  it('включает дату (ДД.ММ.ГГГГ), тип, участников и заголовок в user', () => {
+    const { user } = buildBlockIngestPrompt({
+      meetingTitle: 'Планёрка отдела продаж',
+      meetingDateIso: '2026-03-07T12:34:56.000Z',
+      meetingType: 'sales',
+      participants: ['Анна', 'Борис'],
+      segments,
+    });
+
+    expect(user).toContain('Контекст эпизода:');
+    expect(user).toContain('07.03.2026');
+    expect(user).toContain('Планёрка отдела продаж');
+    expect(user).toContain('sales');
+    expect(user).toContain('Анна, Борис');
+  });
+
+  it('SYSTEM не зависит от user-аргументов (prompt-cache сохранён)', () => {
+    const withContext = buildBlockIngestPrompt({
+      meetingTitle: 'Планёрка',
+      meetingDateIso: '2026-03-07T12:00:00.000Z',
+      meetingType: 'sales',
+      participants: ['Анна', 'Борис'],
+      segments,
+    });
+    const without = buildBlockIngestPrompt({ segments });
+
+    expect(withContext.system).toBe(without.system);
+  });
+
+  it('пустой контекст не печатает шапку', () => {
+    const { user } = buildBlockIngestPrompt({ segments });
+    expect(user).not.toContain('Контекст эпизода:');
+    expect(user.startsWith('Сегменты')).toBe(true);
+  });
+
+  it('SYSTEM содержит инвариант многостороннего факта (R13) и пункт 10 самопроверки', () => {
+    const { system } = buildBlockIngestPrompt({ segments });
+    expect(system).toContain('Многосторонний факт');
+    expect(system).toContain(
+      '10. Многосторонние обязательства/договорённости не схлопнуты',
     );
   });
 });

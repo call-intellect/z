@@ -10,6 +10,7 @@ import {
   type KnowledgeAccessContext,
 } from '../../rbac/knowledge-access-resolver.service';
 import { KnowledgeEmbeddingService } from '../services/embedding.service';
+import { fuseRankedLists } from '../utils/rank-fusion.util';
 
 import type {
   BlockSearchItemDto,
@@ -81,7 +82,7 @@ export class SearchService {
     const bm25Weight = this.cfg.knowledgeCore.searchBm25Weight;
     const bitemporalActiveOnly = this.cfg.bitemporal.enabled;
 
-    const rows = await this.runHybridQuery({
+    const hybridRows = await this.runHybridQuery({
       tenantId: args.tenantId,
       query: args.query,
       qvec,
@@ -97,22 +98,82 @@ export class SearchService {
       enforcement: enf,
     });
 
-    if (rows.length === 0) {
+    if (hybridRows.length === 0) {
       return { results: [], tookMs: Date.now() - startedAt };
     }
 
-    const blockIds = rows.map((r) => r.id);
-
     if (enf === 'shadow' && accessCtx && !accessCtx.isBypass) {
-      const { denied } = await this.accessResolver.partitionBlockIdsByAccess(accessCtx, blockIds);
+      const { denied } = await this.accessResolver.partitionBlockIdsByAccess(
+        accessCtx,
+        hybridRows.map((r) => r.id),
+      );
       this.metrics.incAccessShadowDiff({ surface: 'search' }, denied);
     }
+
+    const expandHops = await this.cfg.getDynamic<number>(
+      'knowledge.search_expand_hops',
+      undefined,
+      1,
+    );
+
+    let orderedRows = hybridRows;
+
+    if (expandHops > 0) {
+      const seedIds = hybridRows.slice(0, 20).map((r) => r.id);
+      const expanded = await this.expandViaGraphForSearch({
+        tenantId: args.tenantId,
+        seedIds,
+        bitemporalActiveOnly,
+        accessCtx,
+        enforcement: enf,
+      });
+
+      if (expanded.length > 0) {
+        const graphRows = await this.fetchRowsByIds({
+          tenantId: args.tenantId,
+          ids: expanded.map((e) => e.id),
+          qvec,
+          cosineWeight,
+          bm25Weight,
+          query: args.query,
+          bitemporalActiveOnly,
+        });
+
+        if (graphRows.length > 0) {
+          const linkConfidenceById = new Map(expanded.map((e) => [e.id, e.linkConfidence]));
+          const graphList = [...graphRows]
+            .sort(
+              (a, b) =>
+                (linkConfidenceById.get(b.id) ?? 0) - (linkConfidenceById.get(a.id) ?? 0),
+            )
+            .map((r) => ({ id: r.id }));
+          const hybridList = hybridRows.map((r) => ({ id: r.id }));
+
+          const k = await this.cfg.getDynamic<number>('knowledge.search_rrf_k', undefined, 60);
+          const fusedIds = fuseRankedLists([hybridList, graphList], k);
+
+          const rowById = new Map<string, RawSearchRow>();
+          for (const r of graphRows) rowById.set(r.id, r);
+          for (const r of hybridRows) rowById.set(r.id, r);
+
+          const fused = fusedIds
+            .map((id) => rowById.get(id))
+            .filter((r): r is RawSearchRow => r !== undefined);
+
+          orderedRows = fused.slice(0, args.limit + expanded.length);
+        }
+      }
+    }
+
+    const blockIds = orderedRows.map((r) => r.id);
     const [evidenceMap, entitiesMap] = await Promise.all([
       this.loadEvidence(blockIds),
       this.loadEntities(blockIds),
     ]);
 
-    const results: SearchResultItemDto[] = rows.map((r) => ({
+    const grouped = this.groupByEpisode(orderedRows, evidenceMap);
+
+    const results: SearchResultItemDto[] = grouped.map((r) => ({
       block: this.rowToBlockDto(r),
       evidence: evidenceMap.get(r.id) ?? [],
       entities: entitiesMap.get(r.id) ?? [],
@@ -124,6 +185,150 @@ export class SearchService {
     }));
 
     return { results, tookMs: Date.now() - startedAt };
+  }
+
+  private groupByEpisode(
+    rows: RawSearchRow[],
+    evidenceMap: Map<string, EvidenceItemDto[]>,
+  ): RawSearchRow[] {
+    const groups = new Map<string, RawSearchRow[]>();
+    const order: string[] = [];
+    for (const r of rows) {
+      const ev = evidenceMap.get(r.id);
+      const firstRawEventId = ev && ev.length > 0 ? ev[0]?.rawEventId : null;
+      const key = firstRawEventId ? `ep:${firstRawEventId}` : `id:${r.id}`;
+      const bucket = groups.get(key);
+      if (bucket) {
+        bucket.push(r);
+      } else {
+        groups.set(key, [r]);
+        order.push(key);
+      }
+    }
+    const out: RawSearchRow[] = [];
+    for (const key of order) {
+      const bucket = groups.get(key);
+      if (bucket) out.push(...bucket);
+    }
+    return out;
+  }
+
+  private async expandViaGraphForSearch(args: {
+    tenantId: string;
+    seedIds: string[];
+    bitemporalActiveOnly: boolean;
+    accessCtx: KnowledgeAccessContext | null;
+    enforcement: 'off' | 'shadow' | 'enforce';
+  }): Promise<Array<{ id: string; linkConfidence: number }>> {
+    if (args.seedIds.length === 0) return [];
+
+    const seedSet = new Set(args.seedIds);
+    const links = await this.prisma.ideaBlockLink.findMany({
+      where: {
+        tenantId: args.tenantId,
+        status: 'active',
+        deletedAt: null,
+        OR: [{ fromBlockId: { in: args.seedIds } }, { toBlockId: { in: args.seedIds } }],
+        ...(args.bitemporalActiveOnly ? { validUntil: null } : {}),
+      },
+      select: { fromBlockId: true, toBlockId: true, confidence: true },
+      orderBy: { confidence: 'desc' },
+      take: 200,
+    });
+
+    const bestById = new Map<string, number>();
+    for (const link of links) {
+      const conf = this.toFiniteNumber(link.confidence) ?? 0;
+      const other = seedSet.has(link.fromBlockId)
+        ? seedSet.has(link.toBlockId)
+          ? null
+          : link.toBlockId
+        : link.fromBlockId;
+      if (!other || seedSet.has(other)) continue;
+      const prev = bestById.get(other);
+      if (prev === undefined || conf > prev) bestById.set(other, conf);
+    }
+
+    let candidates = [...bestById.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 30)
+      .map(([id, linkConfidence]) => ({ id, linkConfidence }));
+
+    if (
+      args.enforcement === 'enforce' &&
+      args.accessCtx &&
+      !args.accessCtx.isBypass &&
+      candidates.length > 0
+    ) {
+      const { accessible } = await this.accessResolver.partitionBlockIdsByAccess(
+        args.accessCtx,
+        candidates.map((c) => c.id),
+      );
+      const allowed = new Set(accessible);
+      candidates = candidates.filter((c) => allowed.has(c.id));
+    }
+
+    return candidates;
+  }
+
+  private async fetchRowsByIds(args: {
+    tenantId: string;
+    ids: string[];
+    qvec: number[] | null;
+    cosineWeight: number;
+    bm25Weight: number;
+    query: string;
+    bitemporalActiveOnly: boolean;
+  }): Promise<RawSearchRow[]> {
+    if (args.ids.length === 0) return [];
+
+    const params: unknown[] = [];
+    const pushParam = (v: unknown): string => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+
+    const pTenant = pushParam(args.tenantId);
+    const pQtext = pushParam(args.query);
+    const pWcos = pushParam(args.cosineWeight);
+    const pWbm = pushParam(args.bm25Weight);
+
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    const vecLiteral = args.qvec
+      ? buildVectorLiteral(args.qvec, expectedDim)
+      : { literal: null, rejectReason: null as null | string };
+    const cosineSelect = vecLiteral.literal
+      ? `(1 - (b.embedding <=> ${pushParam(vecLiteral.literal)}::vector(1536)))`
+      : '0::float';
+
+    const filters: string[] = [`b."tenantId" = ${pTenant}`, `b.status = 'canonical'`];
+    if (args.bitemporalActiveOnly) {
+      filters.push('b."validUntil" IS NULL');
+    }
+    if (vecLiteral.literal) {
+      filters.push('b.embedding IS NOT NULL');
+    }
+    const pIds = pushParam(args.ids);
+    filters.push(`b.id = ANY(${pIds}::text[])`);
+
+    const sql = `
+      WITH q AS (
+        SELECT plainto_tsquery('russian', ${pQtext}) AS qtsq
+      )
+      SELECT b.id, b."tenantId", b.name, b."criticalQuestion", b."trustedAnswer",
+             b.tags, b."signalType", b.confidence, b.status, b."evidenceCount",
+             b."createdAt", b."updatedAt",
+             ${cosineSelect} AS cosine_score,
+             COALESCE(ts_rank(b.search_tsv, (SELECT qtsq FROM q)), 0) AS bm25_score,
+             (
+               ${pWcos}::float * ${cosineSelect}
+               + ${pWbm}::float * COALESCE(ts_rank(b.search_tsv, (SELECT qtsq FROM q)), 0)
+             ) AS combined_score
+      FROM "IdeaBlock" b
+      WHERE ${filters.join(' AND ')}
+    `;
+
+    return this.prisma.$queryRawUnsafe<RawSearchRow[]>(sql, ...params);
   }
 
   private async runHybridQuery(args: {

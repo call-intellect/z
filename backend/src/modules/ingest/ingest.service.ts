@@ -15,6 +15,7 @@ export interface IngestEventInput {
   tenantId: string;
   sourceId: string;
   sourceExternalId?: string | null;
+  sourceTitle?: string | null;
   occurredAt: Date;
   payload: unknown;
   dataClass?: DataClass;
@@ -134,6 +135,7 @@ export class IngestService {
           sourceId: source.id,
           sourceType: source.type as SourceType,
           sourceExternalId: input.sourceExternalId ?? null,
+          sourceTitle: input.sourceTitle ?? null,
           idempotencyKey,
           occurredAt: input.occurredAt,
           payloadStorage: useS3 ? 's3' : 'inline',

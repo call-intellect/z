@@ -3,6 +3,8 @@ import { BadRequestException, Inject, Injectable, Logger, NotFoundException } fr
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { IngestService, type IngestResult } from '../ingest.service';
 
+import { buildMeetingSourceTitle } from './episode-title.util';
+
 interface MergedTranscript {
   meetingId?: string;
   turns: Array<{
@@ -108,6 +110,7 @@ export class MeetingIngestAdapter {
       tenantId: meeting.tenantId,
       sourceId: source.id,
       sourceExternalId: meeting.id,
+      sourceTitle: buildMeetingSourceTitle({ title: meeting.title, occurredAt }),
       occurredAt,
       payload,
       dataClass: 'internal',

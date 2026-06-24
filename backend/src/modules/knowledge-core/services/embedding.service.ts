@@ -11,9 +11,14 @@ export class KnowledgeEmbeddingService {
     private readonly embeddings: EmbeddingFallbackService,
   ) {}
 
-  async embedBlocks(blocks: ExtractedBlock[]): Promise<number[][]> {
+  async embedBlocks(blocks: ExtractedBlock[], contextHeader?: string): Promise<number[][]> {
     if (blocks.length === 0) return [];
-    const texts = blocks.map((b) => `${b.criticalQuestion} ${b.trustedAnswer}`);
+    const header = contextHeader?.trim();
+    const texts = blocks.map((b) =>
+      header
+        ? `${header}\n${b.criticalQuestion} ${b.trustedAnswer}`
+        : `${b.criticalQuestion} ${b.trustedAnswer}`,
+    );
     return this.embeddings.embed(texts);
   }
 

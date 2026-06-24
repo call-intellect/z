@@ -350,8 +350,8 @@ const KnowledgeCoreSchema = z.object({
   CHAT_V2_DEFAULT_MODE: z.enum(['factual', 'synthetic', 'clone_style']).default('synthetic'),
   CHAT_V2_STREAMING_ENABLED: zBool(true),
 
-  BITEMPORAL_ENABLED: zBool(false),
-  BITEMPORAL_SUPERSEDE_ENABLED: zBool(false),
+  BITEMPORAL_ENABLED: zBool(true),
+  BITEMPORAL_SUPERSEDE_ENABLED: zBool(true),
   BITEMPORAL_FACT_SIGNAL_TYPES: z
     .string()
     .default('fact,commitment,commitment_status,plan_item,done_item,client_request'),
@@ -363,7 +363,7 @@ const KnowledgeCoreSchema = z.object({
   ENTITY_INGEST_RESOLVE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.95),
   ENTITY_INGEST_RESOLVE_CACHE_TTL_S: z.coerce.number().int().positive().default(3600),
 
-  BI_TEMPORAL_EDGES_ENABLED: zBool(false),
+  BI_TEMPORAL_EDGES_ENABLED: zBool(true),
 
   MULTI_AGENT_DEBATE_ENABLED: zBool(false),
   DEBATE_DEFAULT_N: z.coerce.number().int().positive().default(3),

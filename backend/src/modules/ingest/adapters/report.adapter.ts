@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { IngestService, type IngestResult } from '../ingest.service';
 
+import { buildReportSourceTitle } from './episode-title.util';
 import { mapStructuredToReportFacts, type ReportFact } from './report-fact-mapper';
 
 interface ReportChapterPayload {
@@ -86,6 +87,7 @@ export class ReportIngestAdapter {
       tenantId,
       sourceId: source.id,
       sourceExternalId: `report_${meeting.id}`,
+      sourceTitle: buildReportSourceTitle({ title: meeting.title, occurredAt }),
       occurredAt,
       payload,
       dataClass: 'internal',

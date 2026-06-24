@@ -82,7 +82,7 @@
 - [[02_architecture/llm-cache-status]] — **prompt caching по всем 9 каналам Z**: где работает, где нет, размерные пороги, 6 анти-паттернов (verified 2026-05-25)
 
 - [[02_architecture/code-pitfalls]] — копилка тех. фактов «не как кажется» (LiveKit, Egress, webhooks, ASR-биллинг)
-- [[02_architecture/knowledge-core]] — единое информационное ядро Z (Фаза 4): IdeaBlock + Entity + IdeaBlockLink + EntityLink + Theme, pipeline ingest→distill→link→reframing→theme-clusterer→card-rollup-v2, гибридный поиск + граф + темы
+- [[02_architecture/knowledge-core]] — единое информационное ядро Z (Фаза 4): IdeaBlock + Entity + IdeaBlockLink + EntityLink + Theme, pipeline ingest→distill→link→reframing→theme-clusterer→card-rollup-v2, гибридный поиск + граф + темы. **Граф знаний v2 (2026-06-24):** перестройка ингеста (эпизод-узел `sourceTitle`, провенанс-инвариант, контекст чанка `ChunkContextService`, alias-cache `EntityAlias`, гибрид рёбер + судья-скептик, поиск с 1-hop обходом рёбер + RRF, авто-резюме тем, bi-temporal ON) + умный поэтапный поиск Мастера (роутер→ReWOO-план→судья достаточности→синтез→гейт честности)
 - [[02_architecture/ai-agents-map]] — реестр всех AI-агентов по способу запуска (событие / cron / диалог); комплемент к agent-modules (срез по способностям)
 - [[02_architecture/security-and-152fz]] — per-Org retention, право на удаление ПДн (152-ФЗ), dataClass-routing в LlmRouter, метрики core_*/kc_access_*
 

@@ -104,7 +104,7 @@ relates_to:
 
 ---
 
-### Ф1 — Узел эпизода: `RawEvent.sourceTitle` + модель/поле «суть встречи» `[ ]`
+### Ф1 — Узел эпизода: `RawEvent.sourceTitle` + модель/поле «суть встречи» `[x]`
 **Цель:** дать эпизоду заголовок и место под retrievable-суть.
 **Картография:** `RawEvent` [schema.prisma:3326](../../backend/prisma/schema.prisma#L3326) (якорь `model RawEvent`); адаптеры [meeting.adapter.ts:88](../../backend/src/modules/ingest/adapters/meeting.adapter.ts#L88) (payload), [report.adapter.ts:74](../../backend/src/modules/ingest/adapters/report.adapter.ts#L74).
 **Что входит:**
@@ -125,7 +125,7 @@ relates_to:
 
 ---
 
-### Ф2 — Провенанс-инвариант: блок без evidence запрещён + отчёт как RawEvent `[ ]`
+### Ф2 — Провенанс-инвариант: блок без evidence запрещён + отчёт как RawEvent `[x]`
 **Цель:** убить `sourceMeetingId=null`; каждый факт кликабелен к источнику.
 **Картография:** [block-ingest.worker.ts:494,548](../../backend/src/modules/knowledge-core/workers/block-ingest.worker.ts#L494) (якорь `sourceMeetingId: event.sourceType === 'meeting'`); `IdeaBlockEvidence` [schema.prisma:3531](../../backend/prisma/schema.prisma#L3531); report-путь [report.adapter.ts:74](../../backend/src/modules/ingest/adapters/report.adapter.ts#L74) (уже создаёт `RawEvent` `sourceExternalId=report_<id>` — проверить, что блоки получают `IdeaBlockEvidence.rawEventId`).
 **Что входит:**
@@ -138,7 +138,7 @@ relates_to:
 
 ---
 
-### Ф3 — Контекст чанка (Contextual Retrieval) + фикс извлечения `[ ]`
+### Ф3 — Контекст чанка (Contextual Retrieval) + фикс извлечения `[x]`
 **Цель:** чанк перестаёт «висеть»; чинит баг даты, overlap, размер.
 **Картография:** [segment-builder.service.ts:255-360](../../backend/src/modules/knowledge-core/services/segment-builder.service.ts#L255) (якорь `buildFromMeeting`, `maxTokens`), [block-ingest.prompt.ts:356,442-455](../../backend/src/modules/knowledge-core/prompts/block-ingest.prompt.ts#L356) (якорь `buildBlockIngestPrompt`, `meetingTitle`), [block-extraction.service.ts:404-461](../../backend/src/modules/knowledge-core/services/block-extraction.service.ts#L404) (окно, `processWindow`).
 **Что входит:**
@@ -155,7 +155,7 @@ relates_to:
 
 ---
 
-### Ф4 — «Суть встречи» как retrievable-узел `[ ]`
+### Ф4 — «Суть встречи» как retrievable-узел `[x]`
 **Цель:** «о чём встреча» имеет цельный объект для поиска.
 **Картография:** report-путь `aiResult.summaryFast` → [report.adapter.ts:57](../../backend/src/modules/ingest/adapters/report.adapter.ts#L57); сегментация отчёта [segment-builder.service.ts:144-189](../../backend/src/modules/knowledge-core/services/segment-builder.service.ts#L144).
 **Что входит:** выделить «суть встречи» в отдельный **первоклассный retrievable IdeaBlock** (signalType — существующий подходящий, напр. `summary_point`/`fact`; `[ASSUMPTION: не вводить новый signalType — переиспользовать; если нет подходящего — обосновать в фазе]`), привязанный к эпизоду, **БЕЗ confidence-cap 0.6** (снять cap для summary-блока), с `IdeaBlockEvidence.rawEventId`. Этот блок — «родитель» для parent-document-сборки (Ф7).
@@ -166,7 +166,7 @@ relates_to:
 
 ---
 
-### Ф5 — Cross-source идентичность: alias-cache + эмбеддинг-склейка `[ ]`
+### Ф5 — Cross-source идентичность: alias-cache + эмбеддинг-склейка `[x]`
 **Цель:** «Настя» (текст) и `chydo_002` (аккаунт) — один человек.
 **Картография:** `entity-resolution.service.ts` (якорь `resolveSubjectPersonId` ~`:1114`); `Entity.aliases/mergedIntoId/embedding` [schema.prisma:3560](../../backend/prisma/schema.prisma#L3560); `commitmentRecipientPersonId` (fuzzy-путь) [schema.prisma:3416](../../backend/prisma/schema.prisma#L3416).
 **Что входит:**
@@ -181,7 +181,7 @@ relates_to:
 
 ---
 
-### Ф6 — Гибрид рёбер факт↔факт: структурные (без LLM) + смысловые (LLM) + тираж по риску `[ ]`
+### Ф6 — Гибрид рёбер факт↔факт: структурные (без LLM) + смысловые (LLM) + тираж по риску `[x]`
 **Цель:** связность строится дёшево и предсказуемо, риск-рёбра — под высоким барьером.
 **Картография:** `block-linker.worker.ts` (якорь `findLinkCandidates`, `judgeLink`, гейт по canonical-count, `contradicts`≥0.85→Conflict); `block-link.service.ts`; `IdeaBlockLink` [schema.prisma:4129](../../backend/prisma/schema.prisma#L4129); enum [schema.prisma:700](../../backend/prisma/schema.prisma#L700).
 **Что входит:**
@@ -198,7 +198,7 @@ relates_to:
 
 ---
 
-### Ф7 — Поиск: гибридный вход + обход рёбер + группировка `[ ]`
+### Ф7 — Поиск: гибридный вход + обход рёбер + группировка `[x]`
 **Цель:** рёбра графа работают в основном поиске; ответ собирается по встрече/сущности.
 **Картография:** [search.service.ts:56-127](../../backend/src/modules/knowledge-core/api/search.service.ts#L56) (якорь `runHybridQuery`); 1-hop в `chat-v2-retrieval.service.ts` (якорь `expandViaGraph`) — переиспользовать.
 **Что входит:**
@@ -212,7 +212,7 @@ relates_to:
 
 ---
 
-### Ф8 — `Theme.summary` инкрементально `[ ]`
+### Ф8 — `Theme.summary` инкрементально `[x]`
 **Цель:** «суть темы/кластера» retrievable, обновляется без полного rebuild.
 **Картография:** `theme-clusterer.cron.ts`, `clustering.service.ts`, `Theme` [schema.prisma:4274](../../backend/prisma/schema.prisma#L4274) (нет `summary`).
 **Что входит:** миграция `Theme.summary String? @db.Text` + `summaryUpdatedAt`; воркер `theme-summarize` (map-reduce member-блоков, инкрементально: новый блок присвоен теме → дописать/освежить резюме, без пересборки всех тем — label-propagation-приём, анализ `03`). Cache-friendly.
@@ -224,7 +224,7 @@ relates_to:
 
 ---
 
-### Ф9 — Включить Ship-On флаги + крутилки в AdminSetting `[ ]`
+### Ф9 — Включить Ship-On флаги + крутилки в AdminSetting `[x]`
 **Цель:** убрать OFF-флаги (нарушение Ship-On), вынести пороги в AdminSetting.
 **Картография:** `BITEMPORAL_ENABLED`, `BI_TEMPORAL_EDGES_ENABLED` в `env.schema.ts`; реестр `docs/operations/feature-flags.md`.
 **Что входит:** перевести bi-temporal на **ON по умолчанию** (после корректности Ф1–Ф8); оформить как kill-switch (фича ON, рубильник для инцидента) + строка в `feature-flags.md`. Все введённые пороги/размеры/topK — в `admin-setting-schema-registry.ts` + сид + UI-поле (перечень: `contextual_header_enabled, segment_overlap_ratio, segment_max_tokens, entity_name_resolve_threshold, edge_confidence_high, edge_confidence_low, linker_min_canonical, linker_candidate_topk, search_expand_hops, theme_summary_enabled`).

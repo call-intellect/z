@@ -354,6 +354,7 @@ const SYSTEM_PROMPT = withAsrNote(
 - Имена людей (адресат обещания, кто принял решение, упомянутые лица) бери ТОЛЬКО из реплик и из имён спикеров. Если имя не звучало явно — оставляй пусто (null), не подставляй вероятное.
 - Если спикеры — только технические метки (вид «Speaker_0», «unknown»), авторство реплики НЕИЗВЕСТНО: не приписывай реплику человеку и не указывай адресата обещания.
 - Срок обязательства указывай только если он назван («к пятнице», «до конца месяца», «к 25-му») — переведи в дату формата ГГГГ-ММ-ДД относительно даты разговора. «Скоро», «на днях», «как-нибудь» — это не срок, оставляй пусто.
+- Многосторонний факт (обещание/решение/договорённость, где участвуют >1 человека) сохраняй ПОЛНОСТЬЮ: и кто дал слово (автор — спикер реплики), и кому адресовано (commitmentRecipientNameGuess), и срок (commitmentDueDateGuess). НЕ схлопывай факт до одного исполнителя, теряя автора или срок. Если в реплике «А поручил Б сделать X к сроку C» — адресат Б и срок C обязательны к заполнению.
 
 # Цитата-доказательство
 - К каждому блоку приложи короткую дословную цитату из текста (по возможности 15–20 слов, не длинную склейку) и её таймкоды в миллисекундах из границ соответствующего сегмента. Начало ≤ конец.
@@ -428,6 +429,7 @@ const SYSTEM_PROMPT = withAsrNote(
 7. Уверенность не завышена; при сомнении она снижена.
 8. Для каждого предложения, ПРИНЯТОГО в окне, ровно один блок signalType=decision и НЕТ дублирующего idea про то же; отложенное/гипотетика/мнение без фиксации — idea/suggestion, не decision.
 9. Сообщения о УЖЕ сделанном (прошедшее время + результат: «сделал», «закрыл», «отправил», «готово», «выполнил») помечены как выполнение (task_completed/done_item), а не как обязательство или просто факт.
+10. Многосторонние обязательства/договорённости не схлопнуты: адресат и срок заполнены, автор (спикер) не потерян.
 
 Верни строго JSON по схеме block_ingest_v2. Никакого markdown, преамбул и пояснений вне JSON.
 `),
@@ -436,7 +438,19 @@ const SYSTEM_PROMPT = withAsrNote(
 
 interface BuildArgs {
   meetingTitle?: string | undefined;
+  meetingDateIso?: string | undefined;
+  meetingType?: string | undefined;
+  participants?: string[] | undefined;
   segments: Segment[];
+}
+
+function formatDateRu(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const yyyy = String(d.getUTCFullYear());
+  return `${dd}.${mm}.${yyyy}`;
 }
 
 export function buildBlockIngestPrompt(args: BuildArgs): {
@@ -450,7 +464,18 @@ export function buildBlockIngestPrompt(args: BuildArgs): {
     speakers: s.speakers,
     text: s.text,
   }));
-  const header = args.meetingTitle ? `Заголовок встречи/документа: ${args.meetingTitle}\n\n` : '';
+
+  const contextLines: string[] = [];
+  if (args.meetingTitle) contextLines.push(`- Заголовок: ${args.meetingTitle}`);
+  if (args.meetingType) contextLines.push(`- Тип: ${args.meetingType}`);
+  const dateRu = args.meetingDateIso ? formatDateRu(args.meetingDateIso) : null;
+  if (dateRu) contextLines.push(`- Дата разговора: ${dateRu}`);
+  if (args.participants && args.participants.length > 0) {
+    contextLines.push(`- Участники: ${args.participants.join(', ')}`);
+  }
+  const header =
+    contextLines.length > 0 ? `Контекст эпизода:\n${contextLines.join('\n')}\n\n` : '';
+
   const user = `${header}Сегменты (порядок сохраняй для таймкодов):\n${JSON.stringify(segmentsJson, null, 2)}\n\nВерни JSON по схеме.`;
   return { system: SYSTEM_PROMPT, user };
 }

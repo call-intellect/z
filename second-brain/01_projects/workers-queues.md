@@ -52,6 +52,7 @@ covers: реестр BullMQ-очередей, воркеров, @Cron задан
 | Cron | Расписание | Файл | Что делает |
 |---|---|---|---|
 | `theme-clusterer` | `15 * * * *` | `knowledge-core/workers/theme-clusterer.cron.ts` | Кластеризация тем |
+| **`theme-summarize` (граф знаний v2, 2026-06-24)** | `@Cron('35 * * * *')` (ежечасно) | `knowledge-core/workers/theme-summarize.cron.ts` | Авто-резюме тем (`Theme.summary`/`summaryUpdatedAt`) через taskType `theme-summarize`. **Инкрементально** — пересчитывает только изменившиеся темы. Kill-switch `knowledge.theme_summary_enabled` (ON). См. [[ai-jobs]] §«Граф знаний v2», [[../02_architecture/knowledge-core]] §«Перестройка ингеста + умный поэтапный поиск». |
 | `reframing` | `0 3 * * *` | `knowledge-core/workers/reframing.cron.ts` | Архивация слабых связей + decay |
 | `entity-graph-builder` | `0 * * * *` | `knowledge-core/workers/entity-graph-builder.cron.ts` | Co-mentioned пары Entity |
 | `chat-v2-cleanup` | `0 3 * * 0` (Sun 03:00) | `chat-v2/workers/chat-v2-cleanup.cron.ts` | TTL 90 дней → archived |

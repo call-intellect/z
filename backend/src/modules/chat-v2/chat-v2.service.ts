@@ -10,10 +10,17 @@ import {
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { tryParseJson } from '../ai/services/json-extract.util';
+import { LlmRouterService } from '../ai/services/llm-router.service';
+import { withInjectionGuard, wrapUserData } from '../ai/services/prompts/common';
 import { AnswerCacheService } from '../dialog-layer/services/answer-cache.service';
 import { DialogService } from '../dialog-layer/services/dialog.service';
 import { narrowToChatIntent } from '../dialog-layer/services/query-classifier.service';
-
+import {
+  RAG_GROUNDEDNESS_SYSTEM_PROMPT,
+  RagGroundednessSchema,
+  buildRagGroundednessUser,
+} from '../knowledge-core/prompts/rag-pipeline.prompts';
 import type { ChatV2Stage } from '../knowledge-core/services/chat-v2.service';
 
 import { ChatV2ConversationsService } from './services/conversations.service';
@@ -58,6 +65,8 @@ export class ChatV2OrchestrationService {
     @Inject(DialogService) private readonly dialog: DialogService,
     @Inject(AnswerCacheService)
     private readonly answerCache: AnswerCacheService,
+    @Inject(LlmRouterService)
+    private readonly llm: LlmRouterService,
   ) {}
 
   async ask(input: AskInput): Promise<ChatAnswer> {
@@ -216,20 +225,31 @@ export class ChatV2OrchestrationService {
       this.metrics.incChatV2UncertaintyMarked({ mode });
     }
 
+    const gated = await this.applyGroundednessGate({
+      tenantId: input.tenantId,
+      userId: input.userId,
+      question: input.question,
+      text: result.text,
+      citations: result.citations,
+      usedBlockIds,
+    });
+    const answerText = gated.text;
+    const answerCitations = gated.citations;
+
     const assistantMessage = await this.conversations.appendMessage({
       conversationId: conversation.id,
       role: 'assistant',
       mode,
-      text: result.text,
+      text: answerText,
       citations:
-        result.citations.length > 0
-          ? (result.citations as unknown as Prisma.InputJsonValue)
+        answerCitations.length > 0
+          ? (answerCitations as unknown as Prisma.InputJsonValue)
           : Prisma.JsonNull,
       retrievalMeta: result.retrievalMeta as Prisma.InputJsonValue,
       llmMeta: result.llmMeta as Prisma.InputJsonValue,
     });
 
-    if (dialogResult.enabled && result.text.length > 0) {
+    if (dialogResult.enabled && answerText.length > 0) {
       void this.answerCache
         .set(
           {
@@ -241,8 +261,8 @@ export class ChatV2OrchestrationService {
             validAt: validAtIso,
           },
           {
-            text: result.text,
-            citations: result.citations,
+            text: answerText,
+            citations: answerCitations,
             uncertaintyNote: result.uncertaintyNote,
             mode,
             usedBlockIds,
@@ -276,13 +296,88 @@ export class ChatV2OrchestrationService {
     return {
       conversationId: conversation.id,
       messageId: assistantMessage.id,
-      text: result.text,
-      citations: result.citations,
+      text: answerText,
+      citations: answerCitations,
       uncertaintyNote: result.uncertaintyNote,
       mode,
       cacheHit: false,
       dataClass: result.dataClass,
     };
+  }
+
+  private async applyGroundednessGate(args: {
+    tenantId: string;
+    userId: string;
+    question: string;
+    text: string;
+    citations: unknown[];
+    usedBlockIds: string[];
+  }): Promise<{ text: string; citations: unknown[] }> {
+    const unchanged = { text: args.text, citations: args.citations };
+
+    const mode = await this.cfg.getDynamic<string>('rag.groundedness_mode', undefined, 'on');
+    if (mode === 'off') {
+      return unchanged;
+    }
+
+    let blocksStr = '';
+    if (args.usedBlockIds.length > 0) {
+      try {
+        const blocks = await this.prisma.ideaBlock.findMany({
+          where: { id: { in: args.usedBlockIds.slice(0, GROUNDEDNESS_MAX_BLOCKS) }, tenantId: args.tenantId },
+          select: { id: true, name: true, trustedAnswer: true },
+        });
+        blocksStr = blocks
+          .map((b) => `[BLOCK:${b.id}] ${b.name}: ${b.trustedAnswer}`)
+          .join('\n')
+          .slice(0, GROUNDEDNESS_BLOCKS_CHAR_LIMIT);
+      } catch (err) {
+        this.logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'applyGroundednessGate: загрузка блоков упала — fail-open',
+        );
+        return unchanged;
+      }
+    }
+
+    let grounded: boolean;
+    try {
+      const out = await this.llm.call({
+        taskType: 'rag-groundedness',
+        tenantId: args.tenantId,
+        userId: args.userId,
+        systemPrompt: withInjectionGuard(RAG_GROUNDEDNESS_SYSTEM_PROMPT),
+        userMessage: wrapUserData(
+          buildRagGroundednessUser(args.question, args.text, blocksStr),
+        ),
+        responseFormat: { type: 'json_object' },
+        maxTokens: 200,
+        dataClass: 'internal',
+      });
+      const parsed = RagGroundednessSchema.safeParse(tryParseJson(out.text));
+      if (!parsed.success) {
+        return unchanged;
+      }
+      grounded = parsed.data.grounded;
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'applyGroundednessGate: LLM-вызов упал — fail-open',
+      );
+      return unchanged;
+    }
+
+    if (grounded) {
+      return unchanged;
+    }
+
+    if (mode === 'shadow') {
+      this.metrics.incRagAbstain({ mode: 'shadow' });
+      return unchanged;
+    }
+
+    this.metrics.incRagAbstain({ mode: 'on' });
+    return { text: GROUNDEDNESS_HONEST_ABSTAIN, citations: [] };
   }
 
   private async loadConversationSummary(conversationId: string): Promise<string | null> {
@@ -314,3 +409,8 @@ function coerceDataClass(v: unknown): DataClass {
   }
   return 'sensitive';
 }
+
+const GROUNDEDNESS_MAX_BLOCKS = 15;
+const GROUNDEDNESS_BLOCKS_CHAR_LIMIT = 12_000;
+const GROUNDEDNESS_HONEST_ABSTAIN =
+  'В памяти компании я этого не нашёл — не хочу выдумывать. Уточните вопрос, и я поищу ещё.';

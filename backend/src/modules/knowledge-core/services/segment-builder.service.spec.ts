@@ -15,7 +15,11 @@ import { SegmentBuilderService } from './segment-builder.service';
 describe('SegmentBuilderService — free_note (Фаза 10)', () => {
   const makeCfg = (maxTokens = 2000) =>
     ({
-      knowledgeCore: { blockIngestMaxTokensPerSegment: maxTokens },
+      knowledgeCore: {
+        blockIngestMaxTokensPerSegment: maxTokens,
+        segmentMaxTokens: maxTokens,
+        segmentOverlapRatio: 0,
+      },
     }) as unknown as ConstructorParameters<typeof SegmentBuilderService>[0];
 
   const makeSvc = (maxTokens = 2000) => new SegmentBuilderService(makeCfg(maxTokens));
@@ -106,7 +110,11 @@ describe('SegmentBuilderService — email payload (Фаза A4)', () => {
   const makeSvc = (maxTokens = 2000) =>
     new SegmentBuilderService(
       {
-        knowledgeCore: { blockIngestMaxTokensPerSegment: maxTokens },
+        knowledgeCore: {
+        blockIngestMaxTokensPerSegment: maxTokens,
+        segmentMaxTokens: maxTokens,
+        segmentOverlapRatio: 0,
+      },
       } as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
     );
 
@@ -147,7 +155,11 @@ describe('SegmentBuilderService — meeting_report (Фаза 2)', () => {
   const makeSvc = () =>
     new SegmentBuilderService(
       ({
-        knowledgeCore: { blockIngestMaxTokensPerSegment: 2000 },
+        knowledgeCore: {
+        blockIngestMaxTokensPerSegment: 2000,
+        segmentMaxTokens: 2000,
+        segmentOverlapRatio: 0,
+      },
       }) as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
     );
 
@@ -242,7 +254,11 @@ describe('SegmentBuilderService — длинный turn усекается до 
   const makeSvc = (maxTokens: number) =>
     new SegmentBuilderService(
       {
-        knowledgeCore: { blockIngestMaxTokensPerSegment: maxTokens },
+        knowledgeCore: {
+        blockIngestMaxTokensPerSegment: maxTokens,
+        segmentMaxTokens: maxTokens,
+        segmentOverlapRatio: 0,
+      },
       } as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
     );
 
@@ -301,7 +317,11 @@ describe('SegmentBuilderService — speakerParticipantId (Фаза 1)', () => {
   const makeSvc = (maxTokens = 2000) =>
     new SegmentBuilderService(
       {
-        knowledgeCore: { blockIngestMaxTokensPerSegment: maxTokens },
+        knowledgeCore: {
+        blockIngestMaxTokensPerSegment: maxTokens,
+        segmentMaxTokens: maxTokens,
+        segmentOverlapRatio: 0,
+      },
       } as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
     );
 
@@ -359,7 +379,11 @@ describe('SegmentBuilderService — authorPersonId (chatbox per-message)', () =>
   const makeSvc = (maxTokens = 2000) =>
     new SegmentBuilderService(
       {
-        knowledgeCore: { blockIngestMaxTokensPerSegment: maxTokens },
+        knowledgeCore: {
+        blockIngestMaxTokensPerSegment: maxTokens,
+        segmentMaxTokens: maxTokens,
+        segmentOverlapRatio: 0,
+      },
       } as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
     );
 
@@ -499,7 +523,11 @@ describe('SegmentBuilderService — notification_response (clone-method Э3.1)',
   const makeSvc = () =>
     new SegmentBuilderService(
       ({
-        knowledgeCore: { blockIngestMaxTokensPerSegment: 2000 },
+        knowledgeCore: {
+        blockIngestMaxTokensPerSegment: 2000,
+        segmentMaxTokens: 2000,
+        segmentOverlapRatio: 0,
+      },
       }) as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
     );
 

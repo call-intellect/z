@@ -164,7 +164,7 @@ describe('MaxWebhooksController — Ф1 дедуп по mid + ранний ACK',
     expect(inboundQueue.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         inbound: expect.objectContaining({ type: 'max_msg' }),
-        dedupeId: 'ch-max-1:m1',
+        dedupeId: 'ch-max-1_m1',
       }),
     );
     expect(conversational.dispatchInbound).not.toHaveBeenCalled();

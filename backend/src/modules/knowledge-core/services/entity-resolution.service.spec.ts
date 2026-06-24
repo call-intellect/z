@@ -552,3 +552,185 @@ describe('EntityResolutionService — negative-cache distinct-пар (Б29)', ()
     expect(await svc.isEntityPairDistinct('e1', 'e2')).toBe(false);
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// Ф5 cross-source identity (2026-06-24) — resolvePersonByHint каскад:
+// exact → alias-cache → fuzzy → эмбеддинг-склейка → LLM-арбитр (fail-closed).
+// R-2: разных людей НИКОГДА не склеиваем. Юнит-тесты с моканым prisma.
+// ───────────────────────────────────────────────────────────────────────────
+describe('EntityResolutionService.resolvePersonByHint — cross-source identity (Ф5)', () => {
+  function buildSvc(opts: {
+    persons: Array<{ id: string; name: string }>;
+    aliasFindUnique?: ReturnType<typeof vi.fn>;
+    aliasUpsert?: ReturnType<typeof vi.fn>;
+    aliasDelete?: ReturnType<typeof vi.fn>;
+    personFindFirst?: ReturnType<typeof vi.fn>;
+    queryRawUnsafe?: ReturnType<typeof vi.fn>;
+    embedQuery?: ReturnType<typeof vi.fn>;
+    cfgGetDynamic?: ReturnType<typeof vi.fn>;
+    llmCall?: ReturnType<typeof vi.fn>;
+  }): EntityResolutionService {
+    const prisma = {
+      person: {
+        findMany: vi.fn(async () => opts.persons),
+        findFirst: opts.personFindFirst ?? vi.fn(async () => null),
+      },
+      entityAlias: {
+        findUnique: opts.aliasFindUnique ?? vi.fn(async () => null),
+        upsert: opts.aliasUpsert ?? vi.fn(async () => ({})),
+        delete: opts.aliasDelete ?? vi.fn(async () => ({})),
+      },
+      $queryRawUnsafe: opts.queryRawUnsafe ?? vi.fn(async () => []),
+    } as unknown as PrismaService;
+    const embed = {
+      embedQuery: opts.embedQuery ?? vi.fn(async () => new Array<number>(1536).fill(0)),
+    } as unknown as KnowledgeEmbeddingService;
+    const cfg = {
+      getDynamic: opts.cfgGetDynamic ?? vi.fn(async () => 0.9),
+    } as never;
+    const llm = opts.llmCall ? ({ call: opts.llmCall } as never) : undefined;
+    // (prisma, embeddings, redis, coreQueue, metrics, cfg, events, llm)
+    return new EntityResolutionService(
+      prisma,
+      embed,
+      undefined,
+      undefined,
+      undefined,
+      cfg,
+      undefined,
+      llm,
+    );
+  }
+
+  it('alias-cache hit: живой Person → возвращает personId, без fuzzy/embedding', async () => {
+    const aliasFindUnique = vi.fn(async () => ({ personId: 'p-cached' }));
+    const personFindFirst = vi.fn(async () => ({ id: 'p-cached' }));
+    const queryRawUnsafe = vi.fn(async () => [{ id: 'p-x', score: 0.99 }]);
+    const embedQuery = vi.fn(async () => new Array<number>(1536).fill(0));
+    const svc = buildSvc({
+      persons: [{ id: 'p-cached', name: 'Анастасия Иванова' }],
+      aliasFindUnique,
+      personFindFirst,
+      queryRawUnsafe,
+      embedQuery,
+    });
+
+    const res = await svc.resolvePersonByHint('t1', 'Настя');
+
+    expect(res).toBe('p-cached');
+    expect(aliasFindUnique).toHaveBeenCalledTimes(1);
+    expect(queryRawUnsafe).not.toHaveBeenCalled();
+    expect(embedQuery).not.toHaveBeenCalled();
+  });
+
+  it('embedding unambiguous: один кандидат ≥0.9 → возвращает id + populateAlias upsert', async () => {
+    const aliasUpsert = vi.fn(async () => ({}));
+    const queryRawUnsafe = vi.fn(async () => [{ id: 'p-emb', score: 0.95 }]);
+    const svc = buildSvc({
+      // Нет exact, нет fuzzy substring совпадения с «настя».
+      persons: [{ id: 'p-emb', name: 'Анастасия Петрова' }],
+      aliasUpsert,
+      queryRawUnsafe,
+    });
+
+    const res = await svc.resolvePersonByHint('t1', 'Настя');
+
+    expect(res).toBe('p-emb');
+    expect(aliasUpsert).toHaveBeenCalledTimes(1);
+    expect(aliasUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { tenantId_alias: { tenantId: 't1', alias: 'настя' } },
+        create: { tenantId: 't1', alias: 'настя', personId: 'p-emb' },
+      }),
+    );
+  });
+
+  it('ambiguous fail-closed: два кандидата ≥0.9, llm недоступен → null', async () => {
+    const aliasUpsert = vi.fn(async () => ({}));
+    const queryRawUnsafe = vi.fn(async () => [
+      { id: 'p-a', score: 0.95 },
+      { id: 'p-b', score: 0.93 },
+    ]);
+    const svc = buildSvc({
+      persons: [
+        { id: 'p-a', name: 'Анастасия Петрова' },
+        { id: 'p-b', name: 'Анастасия Сидорова' },
+      ],
+      aliasUpsert,
+      queryRawUnsafe,
+      // llmCall не задан → llm=undefined
+    });
+
+    const res = await svc.resolvePersonByHint('t1', 'Настя', 'обсуждали бюджет');
+
+    expect(res).toBeNull();
+    expect(aliasUpsert).not.toHaveBeenCalled();
+  });
+
+  it('ambiguous + llm + context → арбитр выбирает одного из списка', async () => {
+    const aliasUpsert = vi.fn(async () => ({}));
+    const queryRawUnsafe = vi.fn(async () => [
+      { id: 'p-a', score: 0.95 },
+      { id: 'p-b', score: 0.93 },
+    ]);
+    const llmCall = vi.fn(async () => ({ text: '{"personId":"p-b"}' }));
+    const svc = buildSvc({
+      persons: [
+        { id: 'p-a', name: 'Анастасия Петрова' },
+        { id: 'p-b', name: 'Анастасия Сидорова' },
+      ],
+      aliasUpsert,
+      queryRawUnsafe,
+      llmCall,
+    });
+
+    const res = await svc.resolvePersonByHint('t1', 'Настя', 'обсуждали бюджет');
+
+    expect(res).toBe('p-b');
+    expect(llmCall).toHaveBeenCalledTimes(1);
+    expect(aliasUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: { tenantId: 't1', alias: 'настя', personId: 'p-b' },
+      }),
+    );
+  });
+
+  it('арбитр вернул id вне списка → null (fail-closed)', async () => {
+    const queryRawUnsafe = vi.fn(async () => [
+      { id: 'p-a', score: 0.95 },
+      { id: 'p-b', score: 0.93 },
+    ]);
+    const llmCall = vi.fn(async () => ({ text: '{"personId":"p-zzz"}' }));
+    const svc = buildSvc({
+      persons: [
+        { id: 'p-a', name: 'Анастасия Петрова' },
+        { id: 'p-b', name: 'Анастасия Сидорова' },
+      ],
+      queryRawUnsafe,
+      llmCall,
+    });
+
+    const res = await svc.resolvePersonByHint('t1', 'Настя', 'обсуждали бюджет');
+    expect(res).toBeNull();
+  });
+
+  it('exact-name всё ещё работает (регресс) + populateAlias', async () => {
+    const aliasUpsert = vi.fn(async () => ({}));
+    const aliasFindUnique = vi.fn(async () => null);
+    const svc = buildSvc({
+      persons: [{ id: 'p-exact', name: 'Иван Петров' }],
+      aliasUpsert,
+      aliasFindUnique,
+    });
+
+    const res = await svc.resolvePersonByHint('t1', 'Иван Петров');
+
+    expect(res).toBe('p-exact');
+    expect(aliasFindUnique).not.toHaveBeenCalled();
+    expect(aliasUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: { tenantId: 't1', alias: 'иван петров', personId: 'p-exact' },
+      }),
+    );
+  });
+});

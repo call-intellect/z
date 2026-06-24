@@ -169,3 +169,62 @@ describe('ThemeClustererCron — Б10: блок не дублируется в �
     expect(themeIdeaBlockCreateManySpy).not.toHaveBeenCalled();
   });
 });
+
+function makeCronForEdges(cap: number) {
+  const upsertSpy = vi.fn(
+    async (_arg: {
+      where: {
+        fromBlockId_toBlockId_relationType: {
+          fromBlockId: string;
+          toBlockId: string;
+          relationType: string;
+        };
+      };
+      create: { createdBy: string; relationType: string; status: string };
+    }) => ({}),
+  );
+  const fakePrisma = {
+    ideaBlockLink: { upsert: upsertSpy },
+  } as unknown as ConstructorParameters<typeof ThemeClustererCron>[0];
+  const fakeCfg = {
+    getDynamic: vi.fn(async () => cap),
+  } as unknown as ConstructorParameters<typeof ThemeClustererCron>[1];
+  const stub = {} as never;
+  return {
+    cron: new ThemeClustererCron(fakePrisma, fakeCfg, stub, stub, stub, stub),
+    upsertSpy,
+  };
+}
+
+describe('ThemeClustererCron — Ф8: structural shares_topic edges', () => {
+  it('создаёт shares_topic upsert\'ы между всеми блоками темы с createdBy=system', async () => {
+    const { cron, upsertSpy } = makeCronForEdges(10);
+
+    await cron.createSharesTopicEdges('org_1', ['b1', 'b2', 'b3']);
+
+    expect(upsertSpy).toHaveBeenCalledTimes(6);
+    for (const call of upsertSpy.mock.calls) {
+      const arg = call[0];
+      expect(arg.where.fromBlockId_toBlockId_relationType.relationType).toBe(
+        'shares_topic',
+      );
+      expect(arg.create.createdBy).toBe('system');
+      expect(arg.create.status).toBe('active');
+      expect(arg.where.fromBlockId_toBlockId_relationType.fromBlockId).not.toBe(
+        arg.where.fromBlockId_toBlockId_relationType.toBlockId,
+      );
+    }
+  });
+
+  it('меньше 2 блоков → рёбра не создаются', async () => {
+    const { cron, upsertSpy } = makeCronForEdges(10);
+    await cron.createSharesTopicEdges('org_1', ['b1']);
+    expect(upsertSpy).not.toHaveBeenCalled();
+  });
+
+  it('cap ограничивает число целей на блок', async () => {
+    const { cron, upsertSpy } = makeCronForEdges(1);
+    await cron.createSharesTopicEdges('org_1', ['b1', 'b2', 'b3']);
+    expect(upsertSpy).toHaveBeenCalledTimes(3);
+  });
+});

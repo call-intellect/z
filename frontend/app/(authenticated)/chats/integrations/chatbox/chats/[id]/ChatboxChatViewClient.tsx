@@ -184,6 +184,13 @@ function ChatboxChatViewContent({ chatId }: { chatId: string }) {
             const showDay = day !== "" && day !== lastDay;
             if (showDay) lastDay = day;
             const isClient = m.senderType === "CLIENT";
+            const senderName =
+              m.senderName?.trim() ||
+              (m.senderType === "CLIENT"
+                ? chat.customer?.name || chat.clientName || ""
+                : m.senderType === "USER"
+                  ? chat.responsible?.name || ""
+                  : "");
             return (
               <div key={m.id}>
                 {showDay && (
@@ -202,9 +209,10 @@ function ChatboxChatViewContent({ chatId }: { chatId: string }) {
                     }`}
                   >
                     <div className="mb-0.5 flex items-center gap-1.5 text-xs text-fg-tertiary">
-                      <span className="font-medium">
-                        {chatboxSenderRoleLabel(m.senderType)}
-                        {m.senderName ? ` · ${m.senderName}` : ""}
+                      <span className="font-medium text-fg-secondary">
+                        {senderName
+                          ? `${senderName} · ${chatboxSenderRoleLabel(m.senderType)}`
+                          : chatboxSenderRoleLabel(m.senderType)}
                       </span>
                       {m.isOutboundFromKora && (
                         <span className="text-accent">(из Коры)</span>

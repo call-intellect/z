@@ -41,6 +41,15 @@ CTA «Создать встречу» (Plus + ссылка на `/meetings/creat
 |---|---|
 | `/customers` | **Справочник клиентов** (`frontend/app/(authenticated)/customers/`, зеркало `/vendors`) — read-only master-list клиентов компании (`Customer`, фильтры/поиск/статус). Слой `src/api/customers.api.ts`. Пункт «Клиенты» в подгруппе «Справочник» сайдбара (`nav-config.ts`, рядом с «Поставщики»). ChatBox-пикер клиента в `/chats` переключён на клиентов Коры (`Customer`). |
 
+## Просмотр диалогов ChatBox (2026-06-24, ТЗ chatbox-dialogs-viewer)
+
+| Путь | Что |
+|---|---|
+| `/chats/integrations/chatbox/chats` | **Список забранных диалогов** (`ChatboxChatsListClient`) — read-only, фильтр по дате (`от`/`до` + быстрые «Сегодня»/«Вчера»/«Все»), сортировка по дате (бэк `lastMessageAt desc`), пагинация «Загрузить ещё». Строка: собеседник/канал/последнее сообщение/счётчик/статус. Источник: `chatboxApi.listChats({from,to,limit,offset})`. |
+| `/chats/integrations/chatbox/chats/[id]` | **Чтение переписки** (`ChatboxChatViewClient`) — read-only транскрипт через `listMessages(order:'asc')`, пузыри с подписью роли (`chatboxSenderRoleLabel`: Клиент/Менеджер/Ассистент/Контроль качества), разделители по дням, время, плейсхолдеры медиа (`chatboxContentPlaceholder`), пометка «(из Коры)». **Поля ввода нет** (только просмотр). |
+
+Точка входа — ссылка «Чаты» на `/chats/integrations/chatbox` рядом с «Менеджеры»/«Клиенты». BE: date-фильтр `from`/`to` в `GET /api/v1/chatbox/chats` (см. [[api-layer]]).
+
 ## Финальный handoff Wave 1-3 — новые страницы
 
 ### T1 Recognition (Gamification frontend)

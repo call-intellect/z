@@ -630,7 +630,7 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | POST | `/api/v1/chatbox/integration/sync` | ручной синк `{scope:'all'\|'customers'\|'managers'\|'chats'}` → BullMQ job | manage |
 | GET | `/api/v1/chatbox/integration/sync/status` | статус последних синков | read |
 | GET | `/api/v1/chatbox/integration/memory-summary` | **сводка «Чаты в памяти» (блок A, 2026-06-11):** counts `{dialogs, sessions, analyzed, inProgress, failed}` + `blocks` (`RawEvent` `sourceType='chatbox'`) + `tasks` (`Task` `sourceType='chatbox'`) + `analysisEnabled`. Питает виджет `ChatboxMemorySummaryCard` на `/chats/integrations/chatbox` | read |
-| GET | `/api/v1/chatbox/chats` | список чатов (фильтры `status`/`channelType`/`customerExternalId`, пагинация) | read |
+| GET | `/api/v1/chatbox/chats` | список чатов (фильтры `status`/`channelType`/`customerExternalId`, **`from`/`to` — диапазон по `lastMessageAt`, 2026-06-24**, пагинация; сортировка `lastMessageAt desc`) | read |
 | GET | `/api/v1/chatbox/chats/:id` | чат + клиент(unified) + менеджер + сессии | read |
 | GET | `/api/v1/chatbox/chats/:id/messages` | сообщения чата | read |
 | POST | `/api/v1/chatbox/chats/:id/messages` | отправить ответ от менеджера `{text}` → ChatBox API | write |

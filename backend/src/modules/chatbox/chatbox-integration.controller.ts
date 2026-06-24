@@ -10,6 +10,7 @@ import {
   Inject,
   Post,
   Put,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -26,11 +27,14 @@ import { RbacService } from '../rbac/rbac.service';
 import { ChatboxIntegrationService } from './chatbox-integration.service';
 import {
   ChatboxIntegrationUpsertSchema,
+  ChatboxSyncLogQuerySchema,
   ChatboxSyncRequestSchema,
   ChatboxWorkspacesProbeSchema,
   type ChatboxIntegrationResponseDto,
   type ChatboxIntegrationUpsertDto,
+  type ChatboxSyncLogQueryDto,
   type ChatboxSyncRequestDto,
+  type ChatboxSyncRunDto,
   type ChatboxWorkspaceDto,
   type ChatboxWorkspacesProbeDto,
 } from './dto/chatbox-integration.dto';
@@ -176,6 +180,40 @@ export class ChatboxIntegrationController {
       lastIncrementalSyncAt: integration.lastIncrementalSyncAt?.toISOString() ?? null,
       counts: { chats, messages, customers, channelClients, members, sessions },
     };
+  }
+
+  @Get('sync-log')
+  @ApiOperation({ summary: 'Журнал синхронизаций ChatBox' })
+  async syncLog(
+    @Query(new ZodValidationPipe(ChatboxSyncLogQuerySchema))
+    query: ChatboxSyncLogQueryDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<ChatboxSyncRunDto[]> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+
+    const limit = query.limit ?? 20;
+    const runs = await this.prisma.integrationSyncRun.findMany({
+      where: { tenantId: t, provider: 'chatbox', kind: 'sync' },
+      orderBy: { startedAt: 'desc' },
+      take: limit,
+    });
+
+    return runs.map((r) => ({
+      id: r.id,
+      scope: r.scope,
+      trigger: r.scope === 'incremental' ? 'auto' : 'manual',
+      startedAt: r.startedAt.toISOString(),
+      finishedAt: r.finishedAt ? r.finishedAt.toISOString() : null,
+      durationMs: r.durationMs,
+      status: r.status,
+      counts:
+        r.counts && typeof r.counts === 'object' && !Array.isArray(r.counts)
+          ? (r.counts as Record<string, unknown>)
+          : null,
+      error: r.error,
+    }));
   }
 
   @Get('memory-summary')

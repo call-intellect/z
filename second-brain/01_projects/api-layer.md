@@ -629,6 +629,7 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | DELETE | `/api/v1/chatbox/integration` | отключить (снять webhook, status→disconnected) | delete |
 | POST | `/api/v1/chatbox/integration/sync` | ручной синк `{scope:'all'\|'customers'\|'managers'\|'chats'}` → BullMQ job | manage |
 | GET | `/api/v1/chatbox/integration/sync/status` | статус последних синков | read |
+| GET | `/api/v1/chatbox/integration/sync-log` | **журнал синхронизаций (2026-06-24, ТЗ chatbox-sync-log):** последние прогоны из `IntegrationSyncRun` (`provider='chatbox'`, `kind='sync'`, `?limit=`≤50, default 20, `startedAt desc`) → `{id, scope, trigger:'auto'\|'manual' (incremental→auto), startedAt, finishedAt, durationMs, status, counts, error}`. Питает панель «Журнал синхронизаций» на `/chats/integrations/chatbox` | read |
 | GET | `/api/v1/chatbox/integration/memory-summary` | **сводка «Чаты в памяти» (блок A, 2026-06-11):** counts `{dialogs, sessions, analyzed, inProgress, failed}` + `blocks` (`RawEvent` `sourceType='chatbox'`) + `tasks` (`Task` `sourceType='chatbox'`) + `analysisEnabled`. Питает виджет `ChatboxMemorySummaryCard` на `/chats/integrations/chatbox` | read |
 | GET | `/api/v1/chatbox/chats` | список чатов (фильтры `status`/`channelType`/`customerExternalId`, **`from`/`to` — диапазон по `lastMessageAt`, 2026-06-24**, пагинация; сортировка `lastMessageAt desc`) | read |
 | GET | `/api/v1/chatbox/chats/:id` | чат + клиент(unified) + менеджер + сессии | read |

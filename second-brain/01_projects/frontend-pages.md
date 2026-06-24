@@ -506,6 +506,8 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 
 **ChatBox-виджет (блок A, 2026-06-11):** `ChatboxMemorySummaryCard` на `/chats/integrations/chatbox` — сводка «Чаты в памяти» (counts диалоги/сессии/проанализировано/в работе/ошибки + блоки/задачи из переписки), читает `GET /api/v1/chatbox/integration/memory-summary` (см. [[api-layer]] §ChatBox).
 
+**Журнал синхронизаций ChatBox (2026-06-24, ТЗ chatbox-sync-log):** панель `SyncLogCard` в `ChatboxIntegrationClient` (`/chats/integrations/chatbox`, после `SyncStatusCard`) — список последних прогонов синка: дата-время · тип («По расписанию»/«Ручная» по `trigger`) · бейдж статуса (Готово/Ошибка/Идёт/Пропуск) · длительность · «собрано: чатов/сообщений/клиентов/контактов/менеджеров/каналов/в граф» (только присутствующие ключи `counts`), при `failed` — текст ошибки. Читает `GET /api/v1/chatbox/integration/sync-log?limit=20`. counts синка теперь содержит `messages` (число синканутых сообщений). См. [[api-layer]] §ChatBox.
+
 ## История
 
 - **2026-05-25:** создан в рамках handoff Wave 1-3. Документированы T1, T2, T5 (settings секция), feed/spotlights обновления.

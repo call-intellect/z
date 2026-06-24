@@ -43,3 +43,20 @@ export interface ChatboxIntegrationResponseDto {
   createdAt: string;
   updatedAt: string;
 }
+
+export const ChatboxSyncLogQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+});
+export type ChatboxSyncLogQueryDto = z.infer<typeof ChatboxSyncLogQuerySchema>;
+
+export interface ChatboxSyncRunDto {
+  id: string;
+  scope: string | null;
+  trigger: 'auto' | 'manual';
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  status: string;
+  counts: Record<string, unknown> | null;
+  error: string | null;
+}

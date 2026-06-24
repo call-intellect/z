@@ -49,6 +49,18 @@ export type ChatboxSyncStatusApi =
 
 export type ChatboxSyncScope = "all" | "customers" | "managers" | "chats";
 
+export type ChatboxSyncRunApi = {
+  id: string;
+  scope: string | null;
+  trigger: "auto" | "manual";
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  status: string;
+  counts: Record<string, unknown> | null;
+  error: string | null;
+};
+
 export type ChatboxMemorySummaryApi = {
   configured: boolean;
   analysisEnabled: boolean;
@@ -219,6 +231,12 @@ export const chatboxApi = {
   syncStatus: () =>
     apiClient.get<ChatboxSyncStatusApi>(
       "/api/v1/chatbox/integration/sync/status",
+    ),
+
+  syncLog: (limit?: number) =>
+    apiClient.get<ChatboxSyncRunApi[]>(
+      "/api/v1/chatbox/integration/sync-log" +
+        (limit ? `?limit=${limit}` : ""),
     ),
 
   memorySummary: () =>

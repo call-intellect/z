@@ -40,7 +40,10 @@ describe('ChatboxSyncService', () => {
       upsert: ReturnType<typeof vi.fn>;
       update: ReturnType<typeof vi.fn>;
     };
-    chatboxChannel: { findMany: ReturnType<typeof vi.fn> };
+    chatboxChannel: {
+      findMany: ReturnType<typeof vi.fn>;
+      count: ReturnType<typeof vi.fn>;
+    };
     person: { findMany: ReturnType<typeof vi.fn> };
     chatboxIntegration: {
       findUnique: ReturnType<typeof vi.fn>;
@@ -83,7 +86,10 @@ describe('ChatboxSyncService', () => {
         upsert: vi.fn().mockResolvedValue({ id: 'chatdb' }),
         update: vi.fn().mockResolvedValue({ id: 'chatdb' }),
       },
-      chatboxChannel: { findMany: vi.fn().mockResolvedValue([]) },
+      chatboxChannel: {
+        findMany: vi.fn().mockResolvedValue([]),
+        count: vi.fn().mockResolvedValue(1),
+      },
       person: { findMany: vi.fn().mockResolvedValue([]) },
       chatboxIntegration: {
         findUnique: vi.fn().mockResolvedValue({ analysisEnabled: true, lastIncrementalSyncAt: null }),
@@ -118,8 +124,9 @@ describe('ChatboxSyncService', () => {
 
   it('kill-switch false → syncChats возвращает рано, client не вызван', async () => {
     adminMock.get.mockResolvedValue(false);
-    const count = await service.syncChats('t1');
-    expect(count).toBe(0);
+    const r = await service.syncChats('t1');
+    expect(r.chats).toBe(0);
+    expect(r.messages).toBe(0);
     expect(clientMock.listChats).not.toHaveBeenCalled();
     expect(integrationMock.getConfigForSync).not.toHaveBeenCalled();
   });
@@ -136,9 +143,10 @@ describe('ChatboxSyncService', () => {
     });
     clientMock.listMessages.mockResolvedValue({ messages: [], total: 0 });
 
-    const count = await service.syncChats('t1', { since });
+    const r = await service.syncChats('t1', { since });
 
-    expect(count).toBe(2);
+    expect(r.chats).toBe(2);
+    expect(r.messages).toBe(0);
     expect(clientMock.listMessages).toHaveBeenCalledTimes(2);
   });
 

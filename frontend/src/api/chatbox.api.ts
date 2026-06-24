@@ -87,12 +87,20 @@ export type ChatboxPartyApi = {
   name: string | null;
 };
 
+export type ChatboxParticipantApi = {
+  externalId: string;
+  role: "client" | "manager" | "assistant" | "quality_control";
+  name: string | null;
+  messageCount: number;
+};
+
 export type ChatboxChatApi = {
   id: string;
   externalId: string;
   channelType: string;
   channelName: string | null;
   status: ChatboxChatStatusApi;
+  isGroup: boolean;
   customer: ChatboxPartyApi | null;
   clientName: string | null;
   responsible: ChatboxPartyApi | null;
@@ -120,6 +128,7 @@ export type ChatboxSessionApi = {
 
 export type ChatboxChatDetailApi = ChatboxChatApi & {
   externalUpdatedAt: string | null;
+  participants: ChatboxParticipantApi[];
   sessions: ChatboxSessionApi[];
   messengerIdentities: MessengerIdentityApi[];
 };

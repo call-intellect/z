@@ -204,9 +204,12 @@ function ChatboxChatsListContent() {
                         {fmtDateTime(c.lastMessageAt)} · {c.messageCount} сообщ.
                       </div>
                     </div>
-                    <Badge variant={c.status === "closed" ? "secondary" : "default"}>
-                      {statusLabel(c.status)}
-                    </Badge>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {c.isGroup && <Badge variant="secondary">Группа</Badge>}
+                      <Badge variant={c.status === "closed" ? "secondary" : "default"}>
+                        {statusLabel(c.status)}
+                      </Badge>
+                    </div>
                   </Link>
                 </li>
               ))}

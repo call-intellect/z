@@ -13,6 +13,7 @@ import {
 import {
   chatboxChannelLabel,
   chatboxContentPlaceholder,
+  chatboxParticipantRoleLabel,
   chatboxSenderRoleLabel,
 } from "@/domain/chatbox";
 import { TierGate } from "@/ui/components/TierGate";
@@ -162,6 +163,7 @@ function ChatboxChatViewContent({ chatId }: { chatId: string }) {
             <span className="text-lg font-semibold text-fg-primary">
               {chat.customer?.name || chat.clientName || chat.externalId}
             </span>
+            {chat.isGroup && <Badge variant="secondary">Группа</Badge>}
             <Badge variant={chat.status === "closed" ? "secondary" : "default"}>
               {chat.status === "closed" ? "Закрыт" : "Активен"}
             </Badge>
@@ -172,6 +174,17 @@ function ChatboxChatViewContent({ chatId }: { chatId: string }) {
             {chat.responsible?.name ? ` · Менеджер: ${chat.responsible.name}` : ""} ·{" "}
             {chat.messageCount} сообщений
           </div>
+          {chat.isGroup && chat.participants?.length ? (
+            <div className="mt-1 text-xs text-fg-tertiary">
+              Участники:{" "}
+              {chat.participants
+                .map(
+                  (p) =>
+                    `${p.name || p.externalId} (${chatboxParticipantRoleLabel(p.role)}, ${p.messageCount} сообщ.)`,
+                )
+                .join(", ")}
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

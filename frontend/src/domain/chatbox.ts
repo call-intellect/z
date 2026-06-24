@@ -187,6 +187,17 @@ export function chatboxSenderRoleLabel(senderType: string): string {
   return SENDER_ROLE_LABELS[senderType] ?? "Система";
 }
 
+const PARTICIPANT_ROLE_LABELS: Record<string, string> = {
+  client: "Клиент",
+  manager: "Менеджер",
+  assistant: "Ассистент",
+  quality_control: "Контроль качества",
+};
+
+export function chatboxParticipantRoleLabel(role: string): string {
+  return PARTICIPANT_ROLE_LABELS[role] ?? "Участник";
+}
+
 const CONTENT_PLACEHOLDERS: Record<string, string> = {
   IMAGE: "[Фото]",
   AUDIO: "[Аудио]",

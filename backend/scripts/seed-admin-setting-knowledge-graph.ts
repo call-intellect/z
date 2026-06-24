@@ -106,6 +106,24 @@ const SEEDS: SettingSeed[] = [
     description:
       'Рубильник воркера theme-summarize (инкрементальная суть темы/кластера). ON по умолчанию (Ship-On).',
   },
+  {
+    key: 'knowledge.search_expand_hops',
+    value: 1,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Глубина обхода связей графа в основном поиске (число «прыжков» по рёбрам от найденных блоков). 0 — обход выключен, 1 — соседи на один шаг. По умолчанию 1.',
+  },
+  {
+    key: 'knowledge.search_rrf_k',
+    value: 60,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'low',
+    description:
+      'Параметр k для слияния рангов RRF в поиске (стандартно 60): сглаживает вклад позиции при объединении гибридного списка и связей графа. По умолчанию 60.',
+  },
 ];
 
 interface Counters {

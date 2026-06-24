@@ -3330,6 +3330,10 @@ model RawEvent {
   sourceType       SourceType
   /// Если null — событие без внешнего ID, дедуп по checksum.
   sourceExternalId String?
+  /// Человекочитаемый заголовок эпизода (≈ Graphiti source_description):
+  /// «Встреча: планёрка маркетинга, 14.06» / «Чат с клиентом Александром».
+  /// Непустой для meeting/report; для чатов — резюме треда.
+  sourceTitle      String?
   /// sha256(sourceId + ':' + (sourceExternalId ?? payloadChecksum) + ':' + occurredAtIso)
   idempotencyKey   String                   @unique
   occurredAt       DateTime

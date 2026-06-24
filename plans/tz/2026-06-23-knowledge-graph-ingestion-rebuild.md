@@ -104,7 +104,7 @@ relates_to:
 
 ---
 
-### Ф1 — Узел эпизода: `RawEvent.sourceTitle` + модель/поле «суть встречи» `[ ]`
+### Ф1 — Узел эпизода: `RawEvent.sourceTitle` + модель/поле «суть встречи» `[x]`
 **Цель:** дать эпизоду заголовок и место под retrievable-суть.
 **Картография:** `RawEvent` [schema.prisma:3326](../../backend/prisma/schema.prisma#L3326) (якорь `model RawEvent`); адаптеры [meeting.adapter.ts:88](../../backend/src/modules/ingest/adapters/meeting.adapter.ts#L88) (payload), [report.adapter.ts:74](../../backend/src/modules/ingest/adapters/report.adapter.ts#L74).
 **Что входит:**

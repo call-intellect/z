@@ -108,6 +108,16 @@ knowledge-core (block-ingest подхватывает RawEvent сам, без и
 - **Справочник клиентов.** Read-only API `/api/v1/customers` (модуль `customers`, зеркало `vendors`) + страница `/customers` + пункт «Клиенты» в сайдбаре. FE-пикер клиента в `/chats` переключён на клиентов Коры. См. [[api-layer]], [[frontend-pages]].
 - **Backfill.** `scripts/backfill-chatbox-customers-from-person.ts` переносит ChatBox-клиентов `Person{external}` → `Customer` (идемпотентно, зарегистрирован в `apply-prod-deploy.ts` STEPS `phase:'backfill'`).
 
+## Групповые чаты (2026-06-24)
+
+ТЗ — [[../../plans/tz/2026-06-24-chatbox-group-chats]]. Полная поддержка чатов с несколькими клиентами в одном треде.
+
+- **Детекция `isGroup`.** `syncMessages` выставляет `ChatboxChat.isGroup=true`, если в чате >1 различного CLIENT `senderExternalId` (производный флаг, миграция `20260624160000_chatbox_chat_is_group`, см. [[../02_architecture/data-model]] §ChatboxChat). Backfill не нужен — детекция проставляет при ближайшем синке.
+- **Участники с именами/ролями.** `getChat` (`GET /chatbox/chats/:id`) отдаёт `participants[]` (`{externalId, role, name, messageCount}`): имена резолвятся из зеркал `ChatboxChannelClient`/`ChatboxMember` по `senderExternalId`, роли из `ChatboxSenderType` (CLIENT→client / USER→manager / ASSISTANT→assistant / QUALITY_CONTROL→quality_control). `listMessages` тоже резолвит `senderName` из зеркал (per-message `sender.name` у ChatBox — NULL).
+- **Go-forward авто-контакты.** `ChatboxCustomersService.autoLinkChannelClients` (вызов из `syncChannelClients`): каждый channel-client → `Entity{type=person}` (контакт) + `EntityLink(works_at)` к аккаунту-Customer (через `customerId`→`linkedCustomerId`→`Customer.entityId`), проставляет `ChatboxChannelClient.linkedContactEntityId`. Идемпотентно.
+- **UI.** Бейдж «Группа» в списке `/chats` и шапке диалога; в шапке детальной — список участников (имя + роль + кол-во сообщений); в переписке — резолвленные имена отправителей.
+- **vNext:** пофименная атрибуция сообщений группы в граф/задачи (`ingestSession`) — заглушка [[../../plans/tz/2026-06-24-chatbox-group-graph-attribution]].
+
 ## Границы MVP / что в vNext
 
 **Входит:** API-клиент, CRUD интеграции, движок синка + сессии, суточный cron забора по AccessToken, мост в knowledge-core + LLM-summary (гейт `analysisEnabled`), исходящая отправка текста, веб-просмотр чатов с бейджами, автосвязка/маппинг менеджеров + создание Person из менеджера, связка клиента переписки с `Customer`/`Entity{customer}` графа (2026-06-23).

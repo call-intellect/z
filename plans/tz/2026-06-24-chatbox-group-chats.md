@@ -103,14 +103,14 @@ participants: ChatboxParticipantDto[];
 
 ## Фазы (dependency-ordered: Ф1 → Ф2 → Ф3 → Ф4)
 
-### Фаза 1 — schema `isGroup` + миграция `[ ]`
+### Фаза 1 — schema `isGroup` + миграция `[x]`
 **Файлы:** backend/prisma/schema.prisma (model ChatboxChat, якорь `model ChatboxChat`).
 **Входит:** поле `isGroup Boolean @default(false)`; `prisma:migrate --name chatbox_chat_is_group`; `prisma:generate`.
 **Не входит:** детекция (Ф2), read/FE.
 **Acceptance:** `grep "isGroup" backend/prisma/schema.prisma`→1; файл миграции с `ADD COLUMN "isGroup"`; `bun run typecheck`=0 (`prisma.chatboxChat.isGroup` доступно).
 **Закрывает:** R1.
 
-### Фаза 2 — детекция группы при синке + go-forward контакты `[ ]`
+### Фаза 2 — детекция группы при синке + go-forward контакты `[x]`
 **Файлы:** chatbox-sync.service.ts (`syncMessages`, `syncChannelClients`), chatbox-customers.service.ts (новый `autoLinkChannelClients`), их `.spec.ts`.
 **Входит:**
 - В `syncMessages` (после upsert сообщений + `rebuildSessions`, рядом с `chatboxChat.update({messageCount,lastMessageAt})`): посчитать distinct CLIENT-отправителей чата (`chatboxMessage.findMany({where:{tenantId,chatId,senderType:'CLIENT'}, select:{senderExternalId:true}, distinct:['senderExternalId']})` → length>1) и записать `isGroup`.
@@ -119,14 +119,14 @@ participants: ChatboxParticipantDto[];
 **Acceptance:** `bun run typecheck`+`build`=0; unit: чат с >1 CLIENT-отправителем → `isGroup=true`, с одним → false; `autoLinkChannelClients` для unlinked channelClient создаёт Entity{person}+works_at и ставит linkedContactEntityId, повтор=no-op; `grep "autoLinkChannelClients" chatbox-sync.service.ts`→1.
 **Закрывает:** R2, R3.
 
-### Фаза 3 — read: участники + isGroup + резолв имён `[ ]`
+### Фаза 3 — read: участники + isGroup + резолв имён `[x]`
 **Файлы:** chatbox-chats.service.ts (listChats/getChat/listMessages), dto/chatbox-chats.dto.ts, chatbox-chats.service.spec.ts.
 **Входит:** DTO (выше); `listChats`/`getChat` отдают `isGroup`; `getChat` — `participants[]` (groupBy senderExternalId+senderType по ChatboxMessage, резолв имён из зеркал, messageCount); `listMessages` — `senderName` резолвится из зеркал по senderExternalId (batch).
 **Не входит:** FE; ingest.
 **Acceptance:** `bun run typecheck`+`build`=0; unit: getChat возвращает isGroup + participants с именами/ролями/счётчиками; listMessages резолвит senderName из channelClient/member (не из ChatboxMessage.senderName); Swagger чатов содержит поля. 
 **Закрывает:** R4, R5.
 
-### Фаза 4 — FE: бейдж «Группа» + участники + имена `[ ]`
+### Фаза 4 — FE: бейдж «Группа» + участники + имена `[x]`
 **Файлы:** frontend/src/api/chatbox.api.ts (типы isGroup/participants/senderName), frontend/src/domain/chatbox.ts (лейблы ролей участников), ChatboxChatsListClient.tsx (бейдж «Группа» в строке), ChatboxChatViewClient.tsx (шапка: список участников с именами+ролями; переписка: имя отправителя из `m.senderName` резолва).
 **Входит:** в списке у групповых чатов — бейдж «Группа»; в шапке детальной — блок «Участники: имя (роль), …»; в пузырях — имя из резолв-`senderName` (fallback роль).
 **Не входит:** новые страницы; редактирование.

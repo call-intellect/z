@@ -478,6 +478,7 @@ export class BusinessMetricsService implements OnModuleInit {
   // 'llm_error', 'json_parse', 'schema_validation', 'arbiter_skip', ...).
   private coreSpecialistExtractionFailuresTotal!: Counter<'type' | 'reason'>;
   private corePartialLossTotal!: Counter<'reason'>;
+  private blockWithoutEvidenceTotal!: Counter<'reason'>;
   // Ф3 МТЗ «разблокировка конвейера» (баг #18) — счётчик ранних skip-return'ов
   // хендлеров специалистов. До этого skip был неотличим от success (duration-
   // метрика в finally на ВСЕХ путях). reason: 'block_not_found' /
@@ -2433,6 +2434,11 @@ export class BusinessMetricsService implements OnModuleInit {
     this.corePartialLossTotal = this.getOrCreateCounter({
       name: 'core_partial_loss_total',
       help: 'block-ingest: частичная/полная потеря блоков (reason). reason: extraction_window_failed | persist_null',
+      labelNames: ['reason'] as const,
+    });
+    this.blockWithoutEvidenceTotal = this.getOrCreateCounter({
+      name: 'kc_block_without_evidence_total',
+      help: 'block-ingest: блок отброшен провенанс-инвариантом (нет непустой evidence-цитаты). reason: empty_quote',
       labelNames: ['reason'] as const,
     });
     // Ф3 МТЗ «разблокировка конвейера» (баг #18) — skip-return'ы хендлеров.
@@ -6022,6 +6028,10 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incCorePartialLoss(args: { reason: string; count?: number }): void {
     this.corePartialLossTotal.inc({ reason: args.reason }, args.count ?? 1);
+  }
+
+  incBlockWithoutEvidence(args: { reason: string }): void {
+    this.blockWithoutEvidenceTotal.inc({ reason: args.reason });
   }
 
   /**

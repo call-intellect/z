@@ -919,6 +919,14 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     subjectAllTypes?: boolean;
   }): Promise<string | null> {
     const { event, block, embedding, roleRelevant, roleId } = args;
+    if (!block.evidenceQuote || block.evidenceQuote.trim().length === 0) {
+      this.metrics.incBlockWithoutEvidence({ reason: 'empty_quote' });
+      this.logger.warn(
+        { rawEventId: event.id, blockName: block.name },
+        'block-ingest: блок без evidence-цитаты (провенанс-инвариант) — отброшен',
+      );
+      return null;
+    }
     try {
       const isCommitment = block.signalType === 'commitment';
       const commitmentDueDate = isCommitment

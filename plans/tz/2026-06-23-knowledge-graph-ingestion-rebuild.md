@@ -125,7 +125,7 @@ relates_to:
 
 ---
 
-### Ф2 — Провенанс-инвариант: блок без evidence запрещён + отчёт как RawEvent `[ ]`
+### Ф2 — Провенанс-инвариант: блок без evidence запрещён + отчёт как RawEvent `[x]`
 **Цель:** убить `sourceMeetingId=null`; каждый факт кликабелен к источнику.
 **Картография:** [block-ingest.worker.ts:494,548](../../backend/src/modules/knowledge-core/workers/block-ingest.worker.ts#L494) (якорь `sourceMeetingId: event.sourceType === 'meeting'`); `IdeaBlockEvidence` [schema.prisma:3531](../../backend/prisma/schema.prisma#L3531); report-путь [report.adapter.ts:74](../../backend/src/modules/ingest/adapters/report.adapter.ts#L74) (уже создаёт `RawEvent` `sourceExternalId=report_<id>` — проверить, что блоки получают `IdeaBlockEvidence.rawEventId`).
 **Что входит:**

@@ -37,6 +37,7 @@ describe('ChatboxSyncService', () => {
       update: ReturnType<typeof vi.fn>;
     };
     chatboxChat: {
+      findFirst: ReturnType<typeof vi.fn>;
       upsert: ReturnType<typeof vi.fn>;
       update: ReturnType<typeof vi.fn>;
     };
@@ -90,6 +91,7 @@ describe('ChatboxSyncService', () => {
         update: vi.fn().mockResolvedValue({ id: 'cc1' }),
       },
       chatboxChat: {
+        findFirst: vi.fn().mockResolvedValue(null),
         upsert: vi.fn().mockResolvedValue({ id: 'chatdb' }),
         update: vi.fn().mockResolvedValue({ id: 'chatdb' }),
       },
@@ -138,7 +140,9 @@ describe('ChatboxSyncService', () => {
     adminMock.get.mockResolvedValue(false);
     const r = await service.syncChats('t1');
     expect(r.chats).toBe(0);
+    expect(r.newChats).toBe(0);
     expect(r.messages).toBe(0);
+    expect(r.newMessages).toBe(0);
     expect(clientMock.listChats).not.toHaveBeenCalled();
     expect(integrationMock.getConfigForSync).not.toHaveBeenCalled();
   });
@@ -154,11 +158,15 @@ describe('ChatboxSyncService', () => {
       total: 3,
     });
     clientMock.listMessages.mockResolvedValue({ messages: [], total: 0 });
+    prismaMock.chatboxChat.findFirst.mockResolvedValue(null);
+    prismaMock.chatboxMessage.findMany.mockResolvedValue([]);
 
     const r = await service.syncChats('t1', { since });
 
     expect(r.chats).toBe(2);
+    expect(r.newChats).toBe(2);
     expect(r.messages).toBe(0);
+    expect(r.newMessages).toBe(0);
     expect(clientMock.listMessages).toHaveBeenCalledTimes(2);
   });
 

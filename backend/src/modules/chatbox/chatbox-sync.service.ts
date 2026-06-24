@@ -295,7 +295,11 @@ export class ChatboxSyncService {
     return enqueued;
   }
 
-  async syncMessages(tenantId: string, chatDbId: string, chatExternalId: string): Promise<number> {
+  async syncMessages(
+    tenantId: string,
+    chatDbId: string,
+    chatExternalId: string,
+  ): Promise<{ total: number; created: number }> {
     const cfg = await this.loadCfg(tenantId);
     const messages = await this.paginateAll<ChatboxApiMessage>(async (limit, offset) => {
       const res = await this.client.listMessages(cfg.token, cfg.workspaceId, chatExternalId, {
@@ -305,6 +309,16 @@ export class ChatboxSyncService {
       });
       return { items: res.messages ?? [], total: res.total };
     });
+
+    const ids = messages.map((m) => m.id);
+    const existingRows = ids.length
+      ? await this.prisma.chatboxMessage.findMany({
+          where: { tenantId, externalId: { in: ids } },
+          select: { externalId: true },
+        })
+      : [];
+    const existingSet = new Set(existingRows.map((r) => r.externalId));
+    const created = ids.filter((id) => !existingSet.has(id)).length;
 
     let lastMessageAt: Date | null = null;
     for (const m of messages) {
@@ -346,16 +360,16 @@ export class ChatboxSyncService {
       data: { messageCount: messages.length, lastMessageAt, isGroup },
     });
 
-    return messages.length;
+    return { total: messages.length, created };
   }
 
   async syncChats(
     tenantId: string,
     opts?: { since?: Date },
-  ): Promise<{ chats: number; messages: number }> {
+  ): Promise<{ chats: number; newChats: number; messages: number; newMessages: number }> {
     if (!(await this.isEnabled())) {
       this.logger.log('syncChats: chatbox.enabled=false — пропуск');
-      return { chats: 0, messages: 0 };
+      return { chats: 0, newChats: 0, messages: 0, newMessages: 0 };
     }
     const cfg = await this.loadCfg(tenantId);
 
@@ -371,7 +385,9 @@ export class ChatboxSyncService {
     const channelTypeByExt = new Map(channels.map((c) => [c.externalId, c.channelType]));
 
     let count = 0;
+    let newChats = 0;
     let messages = 0;
+    let newMessages = 0;
     let scanned = 0;
     let offset = 0;
     let total = Infinity;
@@ -400,8 +416,16 @@ export class ChatboxSyncService {
           continue;
         }
 
+        const existedChat = await this.prisma.chatboxChat.findFirst({
+          where: { tenantId, externalId: apiChat.id },
+          select: { id: true },
+        });
+        if (!existedChat) newChats += 1;
+
         const chatDbId = await this.upsertChat(tenantId, apiChat, channelTypeByExt);
-        messages += await this.syncMessages(tenantId, chatDbId, apiChat.id);
+        const m = await this.syncMessages(tenantId, chatDbId, apiChat.id);
+        messages += m.total;
+        newMessages += m.created;
         count += 1;
       }
 
@@ -409,7 +433,7 @@ export class ChatboxSyncService {
       offset += PAGE_SIZE;
     }
 
-    return { chats: count, messages };
+    return { chats: count, newChats, messages, newMessages };
   }
 
   private async upsertChat(
@@ -460,7 +484,9 @@ export class ChatboxSyncService {
     channelClients: number;
     members: number;
     chats: number;
+    newChats: number;
     messages: number;
+    newMessages: number;
   }> {
     if (!(await this.isEnabled())) {
       this.logger.log('fullSync: chatbox.enabled=false — пропуск');
@@ -470,21 +496,23 @@ export class ChatboxSyncService {
         channelClients: 0,
         members: 0,
         chats: 0,
+        newChats: 0,
         messages: 0,
+        newMessages: 0,
       };
     }
     const channels = await this.syncChannels(tenantId);
     const customers = await this.syncCustomers(tenantId);
     const channelClients = await this.syncChannelClients(tenantId);
     const members = await this.syncMembers(tenantId);
-    const { chats, messages } = await this.syncChats(tenantId);
+    const { chats, newChats, messages, newMessages } = await this.syncChats(tenantId);
 
     await this.prisma.chatboxIntegration.updateMany({
       where: { tenantId },
       data: { lastFullSyncAt: new Date() },
     });
 
-    return { channels, customers, channelClients, members, chats, messages };
+    return { channels, customers, channelClients, members, chats, newChats, messages, newMessages };
   }
 
   async incrementalSync(tenantId: string): Promise<{
@@ -493,7 +521,9 @@ export class ChatboxSyncService {
     channelClients: number;
     members: number;
     chats: number;
+    newChats: number;
     messages: number;
+    newMessages: number;
     analysisEnqueued: number;
   }> {
     if (!(await this.isEnabled())) {
@@ -504,7 +534,9 @@ export class ChatboxSyncService {
         channelClients: 0,
         members: 0,
         chats: 0,
+        newChats: 0,
         messages: 0,
+        newMessages: 0,
         analysisEnqueued: 0,
       };
     }
@@ -519,7 +551,7 @@ export class ChatboxSyncService {
     const customers = await this.syncCustomers(tenantId);
     const channelClients = await this.syncChannelClients(tenantId);
     const members = await this.syncMembers(tenantId);
-    const { chats, messages } = await this.syncChats(tenantId, {
+    const { chats, newChats, messages, newMessages } = await this.syncChats(tenantId, {
       since: row?.lastIncrementalSyncAt ?? undefined,
     });
 
@@ -530,7 +562,17 @@ export class ChatboxSyncService {
 
     const analysisEnqueued = await this.enqueuePendingAnalysisIfEnabled(tenantId);
 
-    return { channels, customers, channelClients, members, chats, messages, analysisEnqueued };
+    return {
+      channels,
+      customers,
+      channelClients,
+      members,
+      chats,
+      newChats,
+      messages,
+      newMessages,
+      analysisEnqueued,
+    };
   }
 
   async syncByScope(
@@ -554,9 +596,9 @@ export class ChatboxSyncService {
         return { members };
       }
       case 'chats': {
-        const { chats, messages } = await this.syncChats(tenantId, opts);
+        const { chats, newChats, messages, newMessages } = await this.syncChats(tenantId, opts);
         const analysisEnqueued = await this.enqueuePendingAnalysisIfEnabled(tenantId);
-        return { chats, messages, analysisEnqueued };
+        return { chats, newChats, messages, newMessages, analysisEnqueued };
       }
     }
   }

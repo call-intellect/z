@@ -462,6 +462,7 @@ export class ChatboxSyncService {
       clientExternalId,
       customerExternalId,
       responsibleExternalId: apiChat.responsible?.id ?? null,
+      title: apiChat.client?.name ?? null,
       status: this.mapStatus(apiChat.status),
       externalCreatedAt: new Date(apiChat.createdAt),
       externalUpdatedAt: new Date(apiChat.updatedAt),

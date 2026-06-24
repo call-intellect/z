@@ -248,8 +248,8 @@ export class ChatboxIntegrationController {
       this.prisma.chatboxChatSession.count({
         where: { tenantId: t, analysisStatus: 'failed' },
       }),
-      this.prisma.rawEvent.count({
-        where: { tenantId: t, sourceType: 'chatbox' },
+      this.prisma.ideaBlock.count({
+        where: { tenantId: t, status: 'canonical' },
       }),
       this.prisma.task.count({
         where: { tenantId: t, sourceType: 'chatbox' },

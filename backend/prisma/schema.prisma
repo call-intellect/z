@@ -11995,6 +11995,7 @@ model ChatboxChat {
   lastMessageAt         DateTime?
   messageCount          Int               @default(0)
   isGroup               Boolean           @default(false)
+  title                 String?
   /// Накопительное саммари разговора (ТЗ 2026-06-17): обновляется на закрытие
   /// каждой сессии-дня; компактный «живой» контекст без полной истории.
   rollingSummary        String?           @db.Text

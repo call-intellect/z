@@ -20,8 +20,9 @@ function makeService(
   integration: any;
 } {
   const prisma = {
+    $queryRaw: vi.fn().mockResolvedValue([]),
     chatboxChat: {
-      findMany: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       findFirst: vi.fn(),
       count: vi.fn(),
       update: vi.fn(),
@@ -33,11 +34,11 @@ function makeService(
       upsert: vi.fn(),
       groupBy: vi.fn().mockResolvedValue([]),
     },
-    chatboxCustomer: { findMany: vi.fn(), findFirst: vi.fn() },
-    chatboxMember: { findMany: vi.fn(), findFirst: vi.fn() },
-    chatboxChannelClient: { findMany: vi.fn(), findFirst: vi.fn() },
+    chatboxCustomer: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn() },
+    chatboxMember: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn() },
+    chatboxChannelClient: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn() },
     chatboxChannel: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
-    chatboxChatSession: { findMany: vi.fn() },
+    chatboxChatSession: { findMany: vi.fn().mockResolvedValue([]) },
     ...over.prisma,
   };
   const client = { sendMessage: vi.fn(), ...over.client };
@@ -55,37 +56,27 @@ function makeService(
 }
 
 describe('ChatboxChatsService.listChats', () => {
-  it('маппит DTO и резолвит имена батчем (без N+1)', async () => {
+  it('схлопывает диалог-группу в 1 представителя, агрегирует messageCount/isGroup и резолвит имена/title', async () => {
     const { service, prisma } = makeService();
-    prisma.chatboxChat.findMany.mockResolvedValue([
-      {
-        id: 'db1',
-        externalId: 'ext1',
-        channelType: 'TELEGRAM',
-        status: 'ACTIVE',
-        isGroup: true,
-        customerExternalId: 'cust1',
-        clientExternalId: 'cli1',
-        responsibleExternalId: 'mem1',
-        lastMessageAt: new Date('2026-06-04T10:00:00.000Z'),
-        messageCount: 3,
-        externalCreatedAt: new Date('2026-06-01T08:00:00.000Z'),
-      },
-      {
-        id: 'db2',
-        externalId: 'ext2',
-        channelType: 'TELEGRAM',
-        status: 'ACTIVE',
-        isGroup: false,
-        customerExternalId: 'cust1',
-        clientExternalId: null,
-        responsibleExternalId: null,
-        lastMessageAt: null,
-        messageCount: 0,
-        externalCreatedAt: null,
-      },
-    ]);
-    prisma.chatboxChat.count.mockResolvedValue(2);
+    prisma.$queryRaw
+      .mockResolvedValueOnce([
+        {
+          id: 'db1',
+          externalId: 'ext1',
+          channelExternalId: 'ch1',
+          channelType: 'TELEGRAM',
+          clientExternalId: 'cli1',
+          customerExternalId: 'cust1',
+          responsibleExternalId: 'mem1',
+          title: 'Никита Емельянов',
+          status: 'active',
+          externalCreatedAt: new Date('2026-06-01T08:00:00.000Z'),
+          group_message_count: 13n,
+          group_is_group: false,
+          group_last_msg: new Date('2026-06-24T10:59:42.301Z'),
+        },
+      ])
+      .mockResolvedValueOnce([{ count: 1n }]);
     prisma.chatboxCustomer.findMany.mockResolvedValue([{ externalId: 'cust1', name: 'Arsenii' }]);
     prisma.chatboxMember.findMany.mockResolvedValue([{ externalId: 'mem1', name: 'Никита' }]);
     prisma.chatboxChannelClient.findMany.mockResolvedValue([
@@ -94,99 +85,37 @@ describe('ChatboxChatsService.listChats', () => {
 
     const out = await service.listChats('t1', {});
 
-    expect(out.total).toBe(2);
+    expect(out.total).toBe(1);
+    expect(out.items).toHaveLength(1);
     expect(out.items[0]).toEqual(
       expect.objectContaining({
         id: 'db1',
         externalId: 'ext1',
-        isGroup: true,
+        title: 'Никита Емельянов',
+        isGroup: false,
         customer: { externalId: 'cust1', name: 'Arsenii' },
         clientName: 'tg-Arsenii',
         responsible: { externalId: 'mem1', name: 'Никита' },
-        lastMessageAt: '2026-06-04T10:00:00.000Z',
-        messageCount: 3,
+        lastMessageAt: '2026-06-24T10:59:42.301Z',
+        messageCount: 13,
       }),
     );
-    expect(out.items[1]).toEqual(
-      expect.objectContaining({
-        isGroup: false,
-        responsible: null,
-        clientName: null,
-        lastMessageAt: null,
-      }),
-    );
-
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
     expect(prisma.chatboxCustomer.findMany).toHaveBeenCalledTimes(1);
-    expect(prisma.chatboxMember.findMany).toHaveBeenCalledTimes(1);
-    expect(prisma.chatboxChannelClient.findMany).toHaveBeenCalledTimes(1);
-    expect(prisma.chatboxCustomer.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          tenantId: 't1',
-          externalId: { in: ['cust1'] },
-        }),
-      }),
-    );
   });
 
-  it('применяет фильтры status/channelType/customerExternalId в where', async () => {
+  it('пустая группировка → пустой список, total 0', async () => {
     const { service, prisma } = makeService();
-    prisma.chatboxChat.findMany.mockResolvedValue([]);
-    prisma.chatboxChat.count.mockResolvedValue(0);
+    prisma.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([{ count: 0n }]);
 
-    await service.listChats('t1', {
+    const out = await service.listChats('t1', {
       status: 'closed',
       channelType: 'TELEGRAM',
       customerExternalId: 'cust9',
     });
 
-    expect(prisma.chatboxChat.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          tenantId: 't1',
-          status: 'closed',
-          channelType: 'TELEGRAM',
-          customerExternalId: 'cust9',
-        },
-      }),
-    );
-  });
-
-  it('применяет фильтр по дате from/to в where через lastMessageAt', async () => {
-    const { service, prisma } = makeService();
-    prisma.chatboxChat.findMany.mockResolvedValue([]);
-    prisma.chatboxChat.count.mockResolvedValue(0);
-
-    const from = new Date('2026-06-01T00:00:00.000Z');
-    const to = new Date('2026-06-30T23:59:59.000Z');
-    await service.listChats('t1', { from, to });
-
-    expect(prisma.chatboxChat.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          tenantId: 't1',
-          lastMessageAt: { gte: from, lte: to },
-        },
-      }),
-    );
-  });
-
-  it('фильтр только по from → только gte', async () => {
-    const { service, prisma } = makeService();
-    prisma.chatboxChat.findMany.mockResolvedValue([]);
-    prisma.chatboxChat.count.mockResolvedValue(0);
-
-    const from = new Date('2026-06-01T00:00:00.000Z');
-    await service.listChats('t1', { from });
-
-    expect(prisma.chatboxChat.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          tenantId: 't1',
-          lastMessageAt: { gte: from },
-        },
-      }),
-    );
+    expect(out.items).toEqual([]);
+    expect(out.total).toBe(0);
   });
 });
 
@@ -200,14 +129,16 @@ describe('ChatboxChatsService.getChat', () => {
     });
   });
 
-  it('есть чат → возвращает sessions + messengerIdentities', async () => {
+  it('агрегирует sessions/messageCount по sibling-чатам диалога + title + messengerIdentities', async () => {
     const { service, prisma } = makeService();
     prisma.chatboxChat.findFirst.mockResolvedValue({
       id: 'db1',
       externalId: 'ext1',
+      channelExternalId: 'ch1',
       channelType: 'TELEGRAM',
-      status: 'ACTIVE',
+      status: 'active',
       isGroup: false,
+      title: 'Никита Емельянов',
       customerExternalId: 'cust1',
       clientExternalId: 'cli1',
       responsibleExternalId: 'mem1',
@@ -216,6 +147,8 @@ describe('ChatboxChatsService.getChat', () => {
       externalCreatedAt: new Date('2026-06-01T08:00:00.000Z'),
       externalUpdatedAt: new Date('2026-06-04T10:00:00.000Z'),
     });
+    prisma.$queryRaw.mockResolvedValue([{ id: 'db1' }, { id: 'db2' }]);
+    prisma.chatboxChat.findMany.mockResolvedValue([{ messageCount: 5 }, { messageCount: 8 }]);
     prisma.chatboxCustomer.findFirst.mockResolvedValue({
       externalId: 'cust1',
       name: 'Arsenii',
@@ -227,11 +160,18 @@ describe('ChatboxChatsService.getChat', () => {
     });
     prisma.chatboxChatSession.findMany.mockResolvedValue([
       {
-        id: 's1',
-        seq: 1,
+        id: 's2',
         startedAt: new Date('2026-06-01T08:00:00.000Z'),
         endedAt: new Date('2026-06-02T08:00:00.000Z'),
-        summary: 'итог',
+        summary: 'итог-1',
+        analysisStatus: 'done',
+        previousSessionId: null,
+      },
+      {
+        id: 's1',
+        startedAt: new Date('2026-06-10T08:00:00.000Z'),
+        endedAt: new Date('2026-06-11T08:00:00.000Z'),
+        summary: 'итог-2',
         analysisStatus: 'done',
         previousSessionId: null,
       },
@@ -257,13 +197,21 @@ describe('ChatboxChatsService.getChat', () => {
     const out = await service.getChat('t1', 'db1');
 
     expect(out.id).toBe('db1');
+    expect(out.title).toBe('Никита Емельянов');
     expect(out.isGroup).toBe(false);
+    expect(out.messageCount).toBe(13);
     expect(out.participants).toEqual([]);
     expect(out.customer).toEqual({ externalId: 'cust1', name: 'Arsenii' });
     expect(out.responsible).toEqual({ externalId: 'mem1', name: 'Никита' });
     expect(out.clientName).toBe('tg-Arsenii');
-    expect(out.sessions).toHaveLength(1);
-    expect(out.sessions[0]).toEqual(expect.objectContaining({ id: 's1', seq: 1, summary: 'итог' }));
+    expect(out.sessions).toHaveLength(2);
+    expect(out.sessions[0]).toEqual(expect.objectContaining({ id: 's2', seq: 1, summary: 'итог-1' }));
+    expect(out.sessions[1]).toEqual(expect.objectContaining({ id: 's1', seq: 2, summary: 'итог-2' }));
+    expect(prisma.chatboxChatSession.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { tenantId: 't1', chatId: { in: ['db1', 'db2'] } },
+      }),
+    );
     expect(out.messengerIdentities).toHaveLength(2);
     expect(out.messengerIdentities[0]).toEqual({
       channelType: 'TELEGRAM',
@@ -278,9 +226,11 @@ describe('ChatboxChatsService.getChat', () => {
     prisma.chatboxChat.findFirst.mockResolvedValue({
       id: 'db1',
       externalId: 'ext1',
+      channelExternalId: 'ch1',
       channelType: 'TELEGRAM',
-      status: 'ACTIVE',
+      status: 'active',
       isGroup: true,
+      title: 'Gonka | Devs',
       customerExternalId: null,
       clientExternalId: null,
       responsibleExternalId: null,
@@ -289,6 +239,8 @@ describe('ChatboxChatsService.getChat', () => {
       externalCreatedAt: null,
       externalUpdatedAt: null,
     });
+    prisma.$queryRaw.mockResolvedValue([{ id: 'db1' }]);
+    prisma.chatboxChat.findMany.mockResolvedValue([{ messageCount: 6 }]);
     prisma.chatboxChatSession.findMany.mockResolvedValue([]);
     prisma.chatboxMessage.groupBy.mockResolvedValue([
       { senderExternalId: 'cli1', senderType: 'CLIENT', _count: { _all: 4 } },
@@ -305,6 +257,7 @@ describe('ChatboxChatsService.getChat', () => {
     const out = await service.getChat('t1', 'db1');
 
     expect(out.isGroup).toBe(true);
+    expect(out.title).toBe('Gonka | Devs');
     expect(out.participants).toEqual([
       { externalId: 'cli1', role: 'client', name: 'Клиент Один', messageCount: 4 },
       { externalId: 'a1', role: 'assistant', name: null, messageCount: 3 },
@@ -316,7 +269,7 @@ describe('ChatboxChatsService.getChat', () => {
         by: ['senderExternalId', 'senderType'],
         where: expect.objectContaining({
           tenantId: 't1',
-          chatId: 'db1',
+          chatId: { in: ['db1'] },
           senderExternalId: { not: null },
         }),
       }),

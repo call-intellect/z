@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import { type ChatboxChatStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 
@@ -75,15 +76,6 @@ export class ChatboxChatsService {
     tenantId: string,
     q: ChatboxChatsListQueryDto,
   ): Promise<{ items: ChatListItemDto[]; total: number }> {
-    const where = {
-      tenantId,
-      ...(q.status ? { status: q.status } : {}),
-      ...(q.channelType ? { channelType: q.channelType } : {}),
-      ...(q.customerExternalId ? { customerExternalId: q.customerExternalId } : {}),
-      ...(q.from || q.to
-        ? { lastMessageAt: { ...(q.from ? { gte: q.from } : {}), ...(q.to ? { lte: q.to } : {}) } }
-        : {}),
-    };
     const take = clamp(
       q.limit ?? ChatboxChatsService.LIST_LIMIT_DEFAULT,
       1,
@@ -91,15 +83,86 @@ export class ChatboxChatsService {
     );
     const skip = q.offset ?? 0;
 
-    const [chats, total] = await Promise.all([
-      this.prisma.chatboxChat.findMany({
-        where,
-        orderBy: { lastMessageAt: { sort: 'desc', nulls: 'last' } },
-        take,
-        skip,
-      }),
-      this.prisma.chatboxChat.count({ where }),
-    ]);
+    const conds: Prisma.Sql[] = [Prisma.sql`"tenantId" = ${tenantId}`];
+    if (q.status) conds.push(Prisma.sql`"status" = ${q.status}::"ChatboxChatStatus"`);
+    if (q.channelType) conds.push(Prisma.sql`"channelType" = ${q.channelType}`);
+    if (q.customerExternalId)
+      conds.push(Prisma.sql`"customerExternalId" = ${q.customerExternalId}`);
+    if (q.from) conds.push(Prisma.sql`"lastMessageAt" >= ${q.from}`);
+    if (q.to) conds.push(Prisma.sql`"lastMessageAt" <= ${q.to}`);
+    const whereSql = Prisma.join(conds, ' AND ');
+
+    const dialogKey = Prisma.sql`COALESCE("customerExternalId", "clientExternalId", "externalId")`;
+
+    const rows = await this.prisma.$queryRaw<RepresentativeRow[]>(Prisma.sql`
+      WITH ranked AS (
+        SELECT
+          "id",
+          "externalId",
+          "channelExternalId",
+          "channelType",
+          "clientExternalId",
+          "customerExternalId",
+          "responsibleExternalId",
+          "title",
+          "status",
+          "externalCreatedAt",
+          ROW_NUMBER() OVER (
+            PARTITION BY "channelExternalId", ${dialogKey}
+            ORDER BY "lastMessageAt" DESC NULLS LAST, "id" DESC
+          ) AS rn,
+          SUM("messageCount") OVER (PARTITION BY "channelExternalId", ${dialogKey}) AS group_message_count,
+          BOOL_OR("isGroup") OVER (PARTITION BY "channelExternalId", ${dialogKey}) AS group_is_group,
+          MAX("lastMessageAt") OVER (PARTITION BY "channelExternalId", ${dialogKey}) AS group_last_msg
+        FROM "ChatboxChat"
+        WHERE ${whereSql}
+      )
+      SELECT
+        "id",
+        "externalId",
+        "channelExternalId",
+        "channelType",
+        "clientExternalId",
+        "customerExternalId",
+        "responsibleExternalId",
+        "title",
+        "status",
+        "externalCreatedAt",
+        group_message_count,
+        group_is_group,
+        group_last_msg
+      FROM ranked
+      WHERE rn = 1
+      ORDER BY group_last_msg DESC NULLS LAST
+      LIMIT ${take} OFFSET ${skip}
+    `);
+
+    const totalRows = await this.prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+      SELECT count(*)::bigint AS count
+      FROM (
+        SELECT 1
+        FROM "ChatboxChat"
+        WHERE ${whereSql}
+        GROUP BY "channelExternalId", ${dialogKey}
+      ) g
+    `);
+    const total = Number(totalRows[0]?.count ?? 0n);
+
+    const chats = rows.map((r) => ({
+      id: r.id,
+      externalId: r.externalId,
+      channelExternalId: r.channelExternalId,
+      channelType: r.channelType,
+      clientExternalId: r.clientExternalId,
+      customerExternalId: r.customerExternalId,
+      responsibleExternalId: r.responsibleExternalId,
+      title: r.title,
+      status: r.status,
+      isGroup: r.group_is_group ?? false,
+      lastMessageAt: r.group_last_msg,
+      messageCount: Number(r.group_message_count ?? 0n),
+      externalCreatedAt: r.externalCreatedAt,
+    }));
 
     const customerIds = uniq(chats.map((c) => c.customerExternalId).filter(isStr));
     const memberIds = uniq(chats.map((c) => c.responsibleExternalId).filter(isStr));
@@ -145,6 +208,7 @@ export class ChatboxChatsService {
         externalId: c.externalId,
         channelType: channel?.channelType || c.channelType || '',
         channelName: channel?.title ?? null,
+        title: c.title ?? null,
         status: c.status,
         isGroup: c.isGroup,
         customer: c.customerExternalId
@@ -175,7 +239,10 @@ export class ChatboxChatsService {
     });
     if (!chat) throw this.chatNotFound();
 
-    const [customer, responsible, sessions, identities, client, channel, grouped] =
+    const siblingIds = await this.resolveSiblingChatIds(tenantId, chat);
+    const chatIdFilter = { in: siblingIds };
+
+    const [customer, responsible, siblingChats, identities, client, channel, grouped] =
       await Promise.all([
         chat.customerExternalId
           ? this.prisma.chatboxCustomer.findFirst({
@@ -189,18 +256,9 @@ export class ChatboxChatsService {
               select: { externalId: true, name: true, linkedPersonId: true },
             })
           : Promise.resolve(null),
-        this.prisma.chatboxChatSession.findMany({
-          where: { tenantId, chatId: chatDbId },
-          orderBy: { seq: 'asc' },
-          select: {
-            id: true,
-            seq: true,
-            startedAt: true,
-            endedAt: true,
-            summary: true,
-            analysisStatus: true,
-            previousSessionId: true,
-          },
+        this.prisma.chatboxChat.findMany({
+          where: { tenantId, id: chatIdFilter },
+          select: { messageCount: true },
         }),
         chat.customerExternalId
           ? this.prisma.chatboxChannelClient.findMany({
@@ -227,10 +285,23 @@ export class ChatboxChatsService {
           : Promise.resolve(null),
         this.prisma.chatboxMessage.groupBy({
           by: ['senderExternalId', 'senderType'],
-          where: { tenantId, chatId: chatDbId, senderExternalId: { not: null } },
+          where: { tenantId, chatId: chatIdFilter, senderExternalId: { not: null } },
           _count: { _all: true },
         }),
       ]);
+
+    const rawSessions = await this.prisma.chatboxChatSession.findMany({
+      where: { tenantId, chatId: chatIdFilter },
+      orderBy: { startedAt: 'asc' },
+      select: {
+        id: true,
+        startedAt: true,
+        endedAt: true,
+        summary: true,
+        analysisStatus: true,
+        previousSessionId: true,
+      },
+    });
 
     const messengerIdentities: MessengerIdentityDto[] = identities.map((i) => ({
       channelType: i.channelType,
@@ -239,25 +310,38 @@ export class ChatboxChatsService {
       avatarUrl: i.avatarUrl ?? null,
     }));
 
-    const participantNameMap = await this.resolveSenderNames(
-      tenantId,
-      grouped.map((g) => g.senderExternalId),
-    );
-    const participants: ChatboxParticipantDto[] = grouped
-      .filter((g): g is typeof g & { senderExternalId: string } => !!g.senderExternalId)
-      .map((g) => ({
-        externalId: g.senderExternalId,
+    const groupedAcc = new Map<string, { senderType: string; messageCount: number }>();
+    for (const g of grouped) {
+      if (!g.senderExternalId) continue;
+      const prev = groupedAcc.get(g.senderExternalId);
+      if (prev) {
+        prev.messageCount += g._count._all;
+      } else {
+        groupedAcc.set(g.senderExternalId, {
+          senderType: g.senderType,
+          messageCount: g._count._all,
+        });
+      }
+    }
+
+    const participantNameMap = await this.resolveSenderNames(tenantId, [...groupedAcc.keys()]);
+    const participants: ChatboxParticipantDto[] = [...groupedAcc.entries()]
+      .map(([externalId, g]) => ({
+        externalId,
         role: SENDER_ROLE[g.senderType] ?? 'client',
-        name: participantNameMap.get(g.senderExternalId) ?? null,
-        messageCount: g._count._all,
+        name: participantNameMap.get(externalId) ?? null,
+        messageCount: g.messageCount,
       }))
       .sort((a, b) => b.messageCount - a.messageCount);
+
+    const messageCount = siblingChats.reduce((sum, c) => sum + c.messageCount, 0);
 
     return {
       id: chat.id,
       externalId: chat.externalId,
       channelType: channel?.channelType || chat.channelType || '',
       channelName: channel?.title ?? null,
+      title: chat.title ?? null,
       status: chat.status,
       isGroup: chat.isGroup,
       customer: customer ? { externalId: customer.externalId, name: customer.name ?? null } : null,
@@ -270,12 +354,12 @@ export class ChatboxChatsService {
         : null,
       participants,
       lastMessageAt: chat.lastMessageAt?.toISOString() ?? null,
-      messageCount: chat.messageCount,
+      messageCount,
       externalCreatedAt: chat.externalCreatedAt?.toISOString() ?? null,
       externalUpdatedAt: chat.externalUpdatedAt?.toISOString() ?? null,
-      sessions: sessions.map((s) => ({
+      sessions: rawSessions.map((s, idx) => ({
         id: s.id,
-        seq: s.seq,
+        seq: idx + 1,
         startedAt: s.startedAt?.toISOString() ?? null,
         endedAt: s.endedAt?.toISOString() ?? null,
         summary: s.summary ?? null,
@@ -293,9 +377,10 @@ export class ChatboxChatsService {
   ): Promise<{ items: ChatMessageDto[]; total: number }> {
     const chat = await this.prisma.chatboxChat.findFirst({
       where: { id: chatDbId, tenantId },
-      select: { id: true },
     });
     if (!chat) throw this.chatNotFound();
+
+    const siblingIds = await this.resolveSiblingChatIds(tenantId, chat);
 
     const take = clamp(
       q.limit ?? ChatboxChatsService.MSG_LIMIT_DEFAULT,
@@ -303,7 +388,7 @@ export class ChatboxChatsService {
       ChatboxChatsService.MSG_LIMIT_MAX,
     );
     const skip = q.offset ?? 0;
-    const where = { tenantId, chatId: chatDbId };
+    const where = { tenantId, chatId: { in: siblingIds } };
 
     const [messages, total] = await Promise.all([
       this.prisma.chatboxMessage.findMany({
@@ -463,13 +548,38 @@ export class ChatboxChatsService {
     return { id: externalId };
   }
 
+  private async resolveSiblingChatIds(
+    tenantId: string,
+    chat: {
+      id: string;
+      channelExternalId: string | null;
+      customerExternalId: string | null;
+      clientExternalId: string | null;
+      externalId: string;
+    },
+  ): Promise<string[]> {
+    const dialogKey =
+      chat.customerExternalId ?? chat.clientExternalId ?? chat.externalId ?? null;
+    if (!chat.channelExternalId || !dialogKey) return [chat.id];
+
+    const siblings = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id"
+      FROM "ChatboxChat"
+      WHERE "tenantId" = ${tenantId}
+        AND "channelExternalId" = ${chat.channelExternalId}
+        AND COALESCE("customerExternalId", "clientExternalId", "externalId") = ${dialogKey}
+    `);
+    const ids = siblings.map((s) => s.id);
+    return ids.length > 0 ? ids : [chat.id];
+  }
+
   private async resolveSenderNames(
     tenantId: string,
     externalIds: ReadonlyArray<string | null | undefined>,
   ): Promise<Map<string, string>> {
     const ids = [...new Set(externalIds.filter((x): x is string => !!x))];
     if (ids.length === 0) return new Map();
-    const [clients, members] = await Promise.all([
+    const [clients, members, customers] = await Promise.all([
       this.prisma.chatboxChannelClient.findMany({
         where: { tenantId, externalId: { in: ids } },
         select: { externalId: true, name: true },
@@ -478,8 +588,13 @@ export class ChatboxChatsService {
         where: { tenantId, externalId: { in: ids } },
         select: { externalId: true, name: true },
       }),
+      this.prisma.chatboxCustomer.findMany({
+        where: { tenantId, externalId: { in: ids } },
+        select: { externalId: true, name: true },
+      }),
     ]);
     const map = new Map<string, string>();
+    for (const c of customers) if (c.name) map.set(c.externalId, c.name);
     for (const m of members) if (m.name) map.set(m.externalId, m.name);
     for (const c of clients) if (c.name) map.set(c.externalId, c.name);
     return map;
@@ -491,6 +606,22 @@ export class ChatboxChatsService {
       error: { code: 'chatbox_chat_not_found', message: 'Чат не найден' },
     });
   }
+}
+
+interface RepresentativeRow {
+  id: string;
+  externalId: string;
+  channelExternalId: string;
+  channelType: string;
+  clientExternalId: string | null;
+  customerExternalId: string | null;
+  responsibleExternalId: string | null;
+  title: string | null;
+  status: ChatboxChatStatus;
+  externalCreatedAt: Date | null;
+  group_message_count: bigint | number | null;
+  group_is_group: boolean | null;
+  group_last_msg: Date | null;
 }
 
 function isStr(v: string | null | undefined): v is string {

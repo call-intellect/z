@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   Contact,
   Database,
+  History,
   Loader2,
   MessagesSquare,
   Trash2,
@@ -515,6 +516,24 @@ function ConnectedView({
 
       {}
       <SyncStatusCard />
+
+      {}
+      <GlassCard className="flex flex-wrap items-center justify-between gap-3 !py-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-fg-primary">
+            Журнал синхронизаций
+          </p>
+          <p className="mt-0.5 text-xs text-fg-tertiary">
+            История запусков: что и когда забрано.
+          </p>
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/chats/integrations/chatbox/sync-log">
+            <History size={14} />
+            Открыть журнал
+          </Link>
+        </Button>
+      </GlassCard>
 
       {}
       <GlassCard className="flex flex-wrap items-center justify-between gap-3 !py-4">

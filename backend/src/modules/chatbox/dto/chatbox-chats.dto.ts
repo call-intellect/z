@@ -5,6 +5,8 @@ export const ChatboxChatsListQuerySchema = z.object({
   status: z.nativeEnum(ChatboxChatStatus).optional(),
   channelType: z.string().trim().min(1).optional(),
   customerExternalId: z.string().trim().min(1).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
   offset: z.coerce.number().int().min(0).optional(),
 });
@@ -34,6 +36,13 @@ export interface MessengerIdentityDto {
   avatarUrl: string | null;
 }
 
+export interface ChatboxParticipantDto {
+  externalId: string;
+  role: 'client' | 'manager' | 'assistant' | 'quality_control';
+  name: string | null;
+  messageCount: number;
+}
+
 export interface ChatboxSessionDto {
   id: string;
   seq: number;
@@ -48,7 +57,9 @@ export interface ChatListItemDto {
   id: string;
   externalId: string;
   channelType: string;
+  channelName: string | null;
   status: string;
+  isGroup: boolean;
   customer: ChatboxRefDto | null;
   clientName: string | null;
   responsible: ChatboxRefDto | null;
@@ -61,10 +72,13 @@ export interface ChatDetailDto {
   id: string;
   externalId: string;
   channelType: string;
+  channelName: string | null;
   status: string;
+  isGroup: boolean;
   customer: ChatboxRefDto | null;
   clientName: string | null;
   responsible: ChatboxRefDto | null;
+  participants: ChatboxParticipantDto[];
   lastMessageAt: string | null;
   messageCount: number;
   externalCreatedAt: string | null;

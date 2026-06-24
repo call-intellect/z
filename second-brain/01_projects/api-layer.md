@@ -122,6 +122,17 @@ CRUD `POST/PATCH/DELETE/list/getUsage` упразднены. Модель `Plan`
 | PATCH | `/api/v1/vendors/:id` | Обновить. RBAC `vendor:write`. 2026-05-28. |
 | DELETE | `/api/v1/vendors/:id` | Soft-delete. RBAC `vendor:delete`. 2026-05-28. |
 
+### Customers (2026-06-23, ТЗ chatbox-customer-vs-manager-split)
+
+Read-only API клиентов (`Customer` 1:1 над `Entity{type=customer}`, см. [[../02_architecture/data-model]] §«Customer»). Модуль `customers`, зеркало `vendors`. RBAC `obj='entity'`.
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET  | `/api/v1/customers` | Список клиентов с фильтрами `q` / `status` (active/inactive/churned) + пагинация `page`/`limit`. |
+| GET  | `/api/v1/customers/:id` | Детальный клиент. |
+
+**ChatBox — создание клиента из переписки (2026-06-23):** `POST /api/v1/chatbox/customers/:id/create-customer` (был `create-person`) — `ChatboxCustomersService.createCustomerAndLink` создаёт `Customer`/`Entity{customer}` из ChatBox-клиента и привязывает (`linkCustomer(customerId)` → `ChatboxCustomer.linkedCustomerId`); DTO отдаёт `linkedCustomer`. Клиент переписки теперь = `Customer`, а не `Person`.
+
 ## Goals OKR v2 — Граф целей (2026-06-02)
 
 ТЗ — [`plans/archive/2026-06-02-goals-okr-v2.md`](../../plans/archive/2026-06-02-goals-okr-v2.md). Полная заметка — [[goals-and-strategic-alignment]] §«Goals OKR v2». Все под `CookieAuthGuard + TenantGuard`. (Базовый CRUD целей `GET/POST/PATCH/DELETE /goals` и темы — описаны выше в Phase 9.)
@@ -618,10 +629,11 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | DELETE | `/api/v1/chatbox/integration` | отключить (снять webhook, status→disconnected) | delete |
 | POST | `/api/v1/chatbox/integration/sync` | ручной синк `{scope:'all'\|'customers'\|'managers'\|'chats'}` → BullMQ job | manage |
 | GET | `/api/v1/chatbox/integration/sync/status` | статус последних синков | read |
+| GET | `/api/v1/chatbox/integration/sync-log` | **журнал синхронизаций (2026-06-24, ТЗ chatbox-sync-log):** последние прогоны из `IntegrationSyncRun` (`provider='chatbox'`, `kind='sync'`, `?limit=`≤50, default 20, `startedAt desc`) → `{id, scope, trigger:'auto'\|'manual' (incremental→auto), startedAt, finishedAt, durationMs, status, counts, error}`. Питает панель «Журнал синхронизаций» на `/chats/integrations/chatbox` | read |
 | GET | `/api/v1/chatbox/integration/memory-summary` | **сводка «Чаты в памяти» (блок A, 2026-06-11):** counts `{dialogs, sessions, analyzed, inProgress, failed}` + `blocks` (`RawEvent` `sourceType='chatbox'`) + `tasks` (`Task` `sourceType='chatbox'`) + `analysisEnabled`. Питает виджет `ChatboxMemorySummaryCard` на `/chats/integrations/chatbox` | read |
-| GET | `/api/v1/chatbox/chats` | список чатов (фильтры `status`/`channelType`/`customerExternalId`, пагинация) | read |
-| GET | `/api/v1/chatbox/chats/:id` | чат + клиент(unified) + менеджер + сессии | read |
-| GET | `/api/v1/chatbox/chats/:id/messages` | сообщения чата | read |
+| GET | `/api/v1/chatbox/chats` | список чатов (фильтры `status`/`channelType`/`customerExternalId`, **`from`/`to` — диапазон по `lastMessageAt`, 2026-06-24**, пагинация; сортировка `lastMessageAt desc`; **`isGroup` в ответе, 2026-06-24**) | read |
+| GET | `/api/v1/chatbox/chats/:id` | чат + клиент(unified) + менеджер + сессии (**`isGroup` + `participants[]` `{externalId, role, name, messageCount}` — имена/роли резолвятся из зеркал ChatboxChannelClient/ChatboxMember, 2026-06-24**) | read |
+| GET | `/api/v1/chatbox/chats/:id/messages` | сообщения чата (**`senderName` резолвится из зеркал — per-message sender.name у ChatBox NULL, 2026-06-24**) | read |
 | POST | `/api/v1/chatbox/chats/:id/messages` | отправить ответ от менеджера `{text}` → ChatBox API | write |
 | GET | `/api/v1/chatbox/members` | менеджеры + текущая связка с Person | read |
 | PUT | `/api/v1/chatbox/members/:id/link` | ручной маппинг `{personId\|null}` | manage |

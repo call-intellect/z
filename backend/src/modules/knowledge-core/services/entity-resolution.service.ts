@@ -1457,6 +1457,84 @@ export class EntityResolutionService {
     return { entity, vendorId: vendor.id, created: true };
   }
 
+  async findOrCreateCustomerEntity(args: {
+    tenantId: string;
+    name: string;
+    inn?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    domain?: string | null;
+    ogrn?: string | null;
+    source?: string | null;
+    externalCrmId?: string | null;
+    metadata?: Record<string, unknown>;
+  }): Promise<{ entity: Entity; customerId: string; created: boolean }> {
+    const normalized = args.name.trim();
+    if (normalized.length === 0) {
+      throw new Error('EntityResolution: пустое имя customer');
+    }
+
+    const externalCrmId = args.externalCrmId?.trim();
+    if (externalCrmId && externalCrmId.length > 0) {
+      const byCrm = await this.prisma.customer.findFirst({
+        where: {
+          tenantId: args.tenantId,
+          externalCrmId,
+          deletedAt: null,
+        },
+        select: { id: true, entityId: true },
+      });
+      if (byCrm) {
+        const ent = await this.prisma.entity.findUnique({
+          where: { id: byCrm.entityId },
+        });
+        if (ent) {
+          const updated = await this.prisma.entity.update({
+            where: { id: ent.id },
+            data: { mentionsCount: { increment: 1 } },
+          });
+          return { entity: updated, customerId: byCrm.id, created: false };
+        }
+      }
+    }
+
+    const { entity } = await this.findOrCreateEntity({
+      tenantId: args.tenantId,
+      type: 'customer',
+      name: normalized,
+      inn: args.inn,
+      ogrn: args.ogrn,
+      email: args.email,
+      phone: args.phone,
+      domain: args.domain,
+      metadata: args.metadata,
+    });
+
+    const existingCustomer = await this.prisma.customer.findUnique({
+      where: { entityId: entity.id },
+      select: { id: true },
+    });
+    if (existingCustomer) {
+      return { entity, customerId: existingCustomer.id, created: false };
+    }
+
+    const customer = await this.prisma.customer.create({
+      data: {
+        tenantId: args.tenantId,
+        entityId: entity.id,
+        name: normalized.slice(0, 300),
+        inn: args.inn ?? null,
+        email: args.email ?? null,
+        phone: args.phone ?? null,
+        source: args.source ?? null,
+        externalCrmId: args.externalCrmId ?? null,
+        status: 'active',
+      },
+      select: { id: true },
+    });
+    return { entity, customerId: customer.id, created: true };
+  }
+
   /**
    * Найти или создать Entity{type=event} + связанный Event-запись.
    * Дедуп по `(tenantId, title, startAt within ±1 день)` — события с тем же

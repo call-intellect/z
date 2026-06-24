@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../ai/services/llm-router.service';
 import type { IngestService } from '../ingest/ingest.service';
+import type { EntityResolutionService } from '../knowledge-core/services/entity-resolution.service';
 
 import { ChatboxIngestService, renderTranscript } from './chatbox-ingest.service';
 
@@ -11,12 +12,14 @@ function makeService(
     prisma?: Partial<Record<string, unknown>>;
     ingest?: Partial<IngestService>;
     llm?: Partial<LlmRouterService>;
+    entityResolution?: Partial<Record<string, unknown>>;
   } = {},
 ): {
   service: ChatboxIngestService;
   prisma: any;
   ingest: any;
   llm: any;
+  entityResolution: any;
 } {
   const prisma = {
     source: { findUnique: vi.fn(), create: vi.fn() },
@@ -29,12 +32,19 @@ function makeService(
   };
   const ingest = { ingest: vi.fn(), ...over.ingest };
   const llm = { call: vi.fn(), ...over.llm };
+  const entityResolution = {
+    findOrCreateCustomerEntity: vi
+      .fn()
+      .mockResolvedValue({ entity: { id: 'ent-c' }, customerId: 'c1', created: true }),
+    ...over.entityResolution,
+  };
   const service = new ChatboxIngestService(
     prisma as unknown as PrismaService,
     ingest as unknown as IngestService,
     llm as unknown as LlmRouterService,
+    entityResolution as unknown as EntityResolutionService,
   );
-  return { service, prisma, ingest, llm };
+  return { service, prisma, ingest, llm, entityResolution };
 }
 
 describe('renderTranscript', () => {
@@ -171,6 +181,9 @@ describe('ChatboxIngestService.ingestSession', () => {
     prisma.chatboxCustomer.findUnique.mockResolvedValue({
       externalId: 'custExt',
       name: 'Arsenii',
+      email: null,
+      phone: null,
+      externalCrmId: null,
     });
     prisma.chatboxMember.findUnique.mockResolvedValue({
       externalId: 'memExt',
@@ -239,6 +252,9 @@ describe('ChatboxIngestService.ingestSession', () => {
     prisma.chatboxCustomer.findUnique.mockResolvedValue({
       externalId: 'custExt',
       name: 'Arsenii',
+      email: null,
+      phone: null,
+      externalCrmId: null,
     });
     prisma.chatboxMember.findUnique.mockResolvedValue({
       externalId: 'memExt',
@@ -266,6 +282,105 @@ describe('ChatboxIngestService.ingestSession', () => {
     });
     expect(payload.fullText).toContain('Клиент [Arsenii]: У меня вопрос по цене');
     expect(payload.fullText).toContain('Менеджер [Никита]: Скидку дам');
+  });
+
+  it('клиент резолвится в Customer-сущность → findOrCreateCustomerEntity вызван, payload.customer.entityId=ent-c', async () => {
+    const { service, prisma, ingest, entityResolution } = makeService();
+    prisma.chatboxChatSession.findFirst.mockResolvedValue({
+      id: 's1',
+      chatId: 'c1',
+      seq: 4,
+      startedAt: new Date('2026-06-04T12:00:00.000Z'),
+      endedAt: new Date('2026-06-04T12:30:00.000Z'),
+      previousSessionId: null,
+    });
+    prisma.chatboxChat.findFirst.mockResolvedValue({
+      externalId: 'chatExt',
+      channelType: 'TELEGRAM',
+      customerExternalId: 'custExt',
+      responsibleExternalId: 'memExt',
+    });
+    prisma.chatboxMessage.findMany.mockResolvedValue([
+      {
+        senderType: 'CLIENT',
+        senderName: 'Arsenii',
+        text: 'Привет',
+        contentType: 'TEXT',
+        externalCreatedAt: new Date('2026-06-04T12:23:00.000Z'),
+      },
+    ]);
+    prisma.chatboxCustomer.findUnique.mockResolvedValue({
+      externalId: 'custExt',
+      name: 'Arsenii',
+      email: ' a@example.com ',
+      phone: ' +79990000000 ',
+      externalCrmId: 'crm-77',
+    });
+    prisma.chatboxMember.findUnique.mockResolvedValue({
+      externalId: 'memExt',
+      name: 'Никита',
+      linkedPersonId: 'p1',
+    });
+    prisma.source.findUnique.mockResolvedValue({ id: 'src1' });
+    ingest.ingest.mockResolvedValue({ rawEvent: { id: 're1' }, idempotent: false });
+
+    await service.ingestSession('t1', 's1');
+
+    expect(entityResolution.findOrCreateCustomerEntity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 't1',
+        name: 'Arsenii',
+        email: 'a@example.com',
+        phone: '+79990000000',
+        externalCrmId: 'crm-77',
+        source: 'chatbox',
+      }),
+    );
+    const payload = (ingest.ingest.mock.calls[0]![0] as { payload: any }).payload;
+    expect(payload.customer).toMatchObject({ externalId: 'custExt', entityId: 'ent-c' });
+  });
+
+  it('резолв клиента бросает → ingest НЕ падает, payload.customer.entityId=null', async () => {
+    const { service, prisma, ingest, entityResolution } = makeService();
+    entityResolution.findOrCreateCustomerEntity.mockRejectedValue(new Error('resolve down'));
+    prisma.chatboxChatSession.findFirst.mockResolvedValue({
+      id: 's1',
+      chatId: 'c1',
+      seq: 5,
+      startedAt: new Date('2026-06-04T12:00:00.000Z'),
+      endedAt: new Date('2026-06-04T12:30:00.000Z'),
+      previousSessionId: null,
+    });
+    prisma.chatboxChat.findFirst.mockResolvedValue({
+      externalId: 'chatExt',
+      channelType: 'TELEGRAM',
+      customerExternalId: 'custExt',
+      responsibleExternalId: null,
+    });
+    prisma.chatboxMessage.findMany.mockResolvedValue([
+      {
+        senderType: 'CLIENT',
+        senderName: 'Arsenii',
+        text: 'Привет',
+        contentType: 'TEXT',
+        externalCreatedAt: new Date('2026-06-04T12:23:00.000Z'),
+      },
+    ]);
+    prisma.chatboxCustomer.findUnique.mockResolvedValue({
+      externalId: 'custExt',
+      name: 'Arsenii',
+      email: null,
+      phone: null,
+      externalCrmId: null,
+    });
+    prisma.source.findUnique.mockResolvedValue({ id: 'src1' });
+    ingest.ingest.mockResolvedValue({ rawEvent: { id: 're1' }, idempotent: false });
+
+    const out = await service.ingestSession('t1', 's1');
+
+    expect(out).toEqual({ rawEventId: 're1' });
+    const payload = (ingest.ingest.mock.calls[0]![0] as { payload: any }).payload;
+    expect(payload.customer).toMatchObject({ externalId: 'custExt', entityId: null });
   });
 });
 

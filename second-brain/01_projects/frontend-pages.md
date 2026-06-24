@@ -28,12 +28,27 @@ covers: реестр всех страниц Next.js App Router
 2. **Моё пространство** — `/me`, `/me/contributions`, `/me/social-contribution`, `/me/promises`, `/feedback`.
 3. **Память компании** — `/ideas`, `/regulations`, `/decisions`, `/insights`, `/entities`, `/themes`. Items фильтруются `useMemoryAccess()`.
 4. **Управление** *(только owner/admin/coo)* — `/dashboard/operations`, `/dashboard/operations/daily`, `/dashboard/operations/weekly`, `/goals`.
-5. **Справочник** *(collapsible, default свёрнут, storageKey `sidebar.reference.open`)* — `/company`, `/departments`, `/domains`, `/maturity`, `/documents`, `/roles`, `/clones`, `/vendors`, `/events`, `/experiments`, `/brand-voice`. Внутри — вложенная подгруппа «Будет в следующей фазе» с γ-пунктами (`/processes`, `/policies`, `/metrics`). *(2026-06-04: `/structure` отсюда убран — стал «Команда» в группе «Каждый день».)*
+5. **Справочник** *(collapsible, default свёрнут, storageKey `sidebar.reference.open`)* — `/company`, `/departments`, `/domains`, `/maturity`, `/documents`, `/roles`, `/clones`, `/customers`, `/vendors`, `/events`, `/experiments`, `/brand-voice`. Внутри — вложенная подгруппа «Будет в следующей фазе» с γ-пунктами (`/processes`, `/policies`, `/metrics`). *(2026-06-04: `/structure` отсюда убран — стал «Команда» в группе «Каждый день».)* *(2026-06-23: пункт «Клиенты» (`/customers`) добавлен рядом с «Поставщики».)*
 6. **Настройки** — `/settings/templates`, `/settings/integrations`, `/settings` + подгруппа «Админка» (`/company-admin` для owner/admin, `/admin` для super_admin). С 2026-06-02 «Админка компании» — отдельная поверхность `/company-admin/*` (Доступ к памяти / Источники / Встречи); «Экономика» (расходы LLM) и тех. «Ядро знаний» убраны из клиента — владелец Org себестоимость не видит.
 
 CTA «Создать встречу» (Plus + ссылка на `/meetings/create`) и `OrgSwitcher` живут в шапке Sidebar над списком групп.
 
 Источник ТЗ: [plans/archive/2026-05-27-navigation-restructure.md](../../plans/archive/2026-05-27-navigation-restructure.md).
+
+## Клиенты (2026-06-23, ТЗ chatbox-customer-vs-manager-split)
+
+| Путь | Что |
+|---|---|
+| `/customers` | **Справочник клиентов** (`frontend/app/(authenticated)/customers/`, зеркало `/vendors`) — read-only master-list клиентов компании (`Customer`, фильтры/поиск/статус). Слой `src/api/customers.api.ts`. Пункт «Клиенты» в подгруппе «Справочник» сайдбара (`nav-config.ts`, рядом с «Поставщики»). ChatBox-пикер клиента в `/chats` переключён на клиентов Коры (`Customer`). |
+
+## Просмотр диалогов ChatBox (2026-06-24, ТЗ chatbox-dialogs-viewer)
+
+| Путь | Что |
+|---|---|
+| `/chats/integrations/chatbox/chats` | **Список забранных диалогов** (`ChatboxChatsListClient`) — read-only, фильтр по дате (`от`/`до` + быстрые «Сегодня»/«Вчера»/«Все»), сортировка по дате (бэк `lastMessageAt desc`), пагинация «Загрузить ещё». Строка: собеседник/канал/последнее сообщение/счётчик/статус. Источник: `chatboxApi.listChats({from,to,limit,offset})`. |
+| `/chats/integrations/chatbox/chats/[id]` | **Чтение переписки** (`ChatboxChatViewClient`) — read-only транскрипт через `listMessages(order:'asc')`, пузыри с подписью роли (`chatboxSenderRoleLabel`: Клиент/Менеджер/Ассистент/Контроль качества), разделители по дням, время, плейсхолдеры медиа (`chatboxContentPlaceholder`), пометка «(из Коры)». **Поля ввода нет** (только просмотр). |
+
+Точка входа — ссылка «Чаты» на `/chats/integrations/chatbox` рядом с «Менеджеры»/«Клиенты». BE: date-фильтр `from`/`to` в `GET /api/v1/chatbox/chats` (см. [[api-layer]]).
 
 ## Финальный handoff Wave 1-3 — новые страницы
 
@@ -490,6 +505,8 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 **Примитивы `src/ui/mobile/shared/*`:** `ZoneTile`, `StatusDot`, `GlanceGauge`, `DrillList` (зональные плитки/индикаторы/мини-датчик/drill-вниз), `MobileAskClient`, `MobileMemoryClient`. Exec-экраны — `src/ui/mobile/exec/{MobileOverviewClient,MobileTeamClient,MobileDealsClient,MobileGoalsClient}.tsx`; manager — `src/ui/mobile/manager/MobileMemoryClient.tsx`.
 
 **ChatBox-виджет (блок A, 2026-06-11):** `ChatboxMemorySummaryCard` на `/chats/integrations/chatbox` — сводка «Чаты в памяти» (counts диалоги/сессии/проанализировано/в работе/ошибки + блоки/задачи из переписки), читает `GET /api/v1/chatbox/integration/memory-summary` (см. [[api-layer]] §ChatBox).
+
+**Журнал синхронизаций ChatBox (2026-06-24, ТЗ chatbox-sync-log):** панель `SyncLogCard` в `ChatboxIntegrationClient` (`/chats/integrations/chatbox`, после `SyncStatusCard`) — список последних прогонов синка: дата-время · тип («По расписанию»/«Ручная» по `trigger`) · бейдж статуса (Готово/Ошибка/Идёт/Пропуск) · длительность · «собрано: чатов/сообщений/клиентов/контактов/менеджеров/каналов/в граф» (только присутствующие ключи `counts`), при `failed` — текст ошибки. Читает `GET /api/v1/chatbox/integration/sync-log?limit=20`. counts синка теперь содержит `messages` (число синканутых сообщений). См. [[api-layer]] §ChatBox.
 
 ## История
 

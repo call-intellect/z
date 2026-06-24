@@ -108,6 +108,34 @@ export function chatboxChannelTypeLabel(type: string): string {
   }
 }
 
+export function chatboxChannelLabel(channelType: string): string {
+  switch (channelType) {
+    case "TELEGRAM":
+    case "TELEGRAM_PRIVATE":
+      return "Telegram";
+    case "MAX":
+    case "EXT_MAX":
+      return "MAX";
+    case "WHATSAPP":
+    case "WHATSAPP_BUSINESS":
+    case "WHATSAPP_WHAPI":
+    case "EXT_WHATSAPP":
+      return "WhatsApp";
+    case "AVITO":
+      return "Avito";
+    case "CIAN":
+      return "ЦИАН";
+    case "VK":
+      return "ВКонтакте";
+    case "EMAIL_CLIENT":
+      return "Email";
+    case "CHAT_WIDGET":
+      return "Виджет";
+    default:
+      return "Канал";
+  }
+}
+
 export function chatboxChannelTypeBadgeClass(type: string): string {
   const label = chatboxChannelTypeLabel(type);
   switch (label) {
@@ -146,6 +174,42 @@ export type ChatboxSenderRole = "client" | "manager";
 
 export function senderRoleOf(type: ChatboxSenderTypeApi): ChatboxSenderRole {
   return type === "CLIENT" ? "client" : "manager";
+}
+
+const SENDER_ROLE_LABELS: Record<string, string> = {
+  CLIENT: "Клиент",
+  USER: "Менеджер",
+  ASSISTANT: "Ассистент",
+  QUALITY_CONTROL: "Контроль качества",
+};
+
+export function chatboxSenderRoleLabel(senderType: string): string {
+  return SENDER_ROLE_LABELS[senderType] ?? "Система";
+}
+
+const PARTICIPANT_ROLE_LABELS: Record<string, string> = {
+  client: "Клиент",
+  manager: "Менеджер",
+  assistant: "Ассистент",
+  quality_control: "Контроль качества",
+};
+
+export function chatboxParticipantRoleLabel(role: string): string {
+  return PARTICIPANT_ROLE_LABELS[role] ?? "Участник";
+}
+
+const CONTENT_PLACEHOLDERS: Record<string, string> = {
+  IMAGE: "[Фото]",
+  AUDIO: "[Аудио]",
+  VOICE: "[Аудио]",
+  VIDEO: "[Видео]",
+  VIDEO_NOTE: "[Видео]",
+  FILE: "[Файл]",
+  COMMAND: "[Команда]",
+};
+
+export function chatboxContentPlaceholder(contentType: string): string {
+  return CONTENT_PLACEHOLDERS[contentType] ?? "[Вложение]";
 }
 
 export type MessengerIdentityView = {
@@ -327,8 +391,8 @@ export type ChatboxCustomerView = {
   displayName: string;
   linkMode: ChatboxLinkMode;
   linkModeLabel: string;
-  linkedPersonId: string | null;
-  linkedPersonName: string | null;
+  linkedCustomerId: string | null;
+  linkedCustomerName: string | null;
 };
 
 export function mapCustomer(api: ChatboxCustomerApi): ChatboxCustomerView {
@@ -341,8 +405,8 @@ export function mapCustomer(api: ChatboxCustomerApi): ChatboxCustomerView {
     displayName: api.name ?? api.email ?? api.phone ?? api.externalId,
     linkMode: api.linkMode,
     linkModeLabel: chatboxLinkModeLabel(api.linkMode),
-    linkedPersonId: api.linkedPerson?.id ?? null,
-    linkedPersonName: api.linkedPerson?.name ?? null,
+    linkedCustomerId: api.linkedCustomer?.id ?? null,
+    linkedCustomerName: api.linkedCustomer?.name ?? null,
   };
 }
 

@@ -128,6 +128,7 @@ import { TasksModule } from './modules/tasks/tasks.module';
 import { TemplatesModule } from './modules/templates/templates.module';
 import { TrackerModule } from './modules/tracker/tracker.module';
 import { UsersModule } from './modules/users/users.module';
+import { CustomersModule } from './modules/customers/customers.module';
 import { VendorsModule } from './modules/vendors/vendors.module';
 import { VoiceModule } from './modules/voice/voice.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
@@ -275,6 +276,7 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     ConversationalModule,
 
     VendorsModule,
+    CustomersModule,
     EventsModule,
     OrgMembersModule,
 

@@ -8,11 +8,19 @@ import { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.servic
 import type {
   ChatboxChatsListQueryDto,
   ChatboxMessagesQueryDto,
+  ChatboxParticipantDto,
   ChatDetailDto,
   ChatListItemDto,
   ChatMessageDto,
   MessengerIdentityDto,
 } from './dto/chatbox-chats.dto';
+
+const SENDER_ROLE: Record<string, ChatboxParticipantDto['role']> = {
+  CLIENT: 'client',
+  USER: 'manager',
+  ASSISTANT: 'assistant',
+  QUALITY_CONTROL: 'quality_control',
+};
 
 @Injectable()
 export class ChatboxChatsService {
@@ -72,6 +80,9 @@ export class ChatboxChatsService {
       ...(q.status ? { status: q.status } : {}),
       ...(q.channelType ? { channelType: q.channelType } : {}),
       ...(q.customerExternalId ? { customerExternalId: q.customerExternalId } : {}),
+      ...(q.from || q.to
+        ? { lastMessageAt: { ...(q.from ? { gte: q.from } : {}), ...(q.to ? { lte: q.to } : {}) } }
+        : {}),
     };
     const take = clamp(
       q.limit ?? ChatboxChatsService.LIST_LIMIT_DEFAULT,
@@ -93,8 +104,9 @@ export class ChatboxChatsService {
     const customerIds = uniq(chats.map((c) => c.customerExternalId).filter(isStr));
     const memberIds = uniq(chats.map((c) => c.responsibleExternalId).filter(isStr));
     const clientIds = uniq(chats.map((c) => c.clientExternalId).filter(isStr));
+    const channelIds = uniq(chats.map((c) => c.channelExternalId).filter(isStr));
 
-    const [customers, members, clients] = await Promise.all([
+    const [customers, members, clients, channels] = await Promise.all([
       customerIds.length
         ? this.prisma.chatboxCustomer.findMany({
             where: { tenantId, externalId: { in: customerIds } },
@@ -113,34 +125,46 @@ export class ChatboxChatsService {
             select: { externalId: true, name: true },
           })
         : Promise.resolve([]),
+      channelIds.length
+        ? this.prisma.chatboxChannel.findMany({
+            where: { tenantId, externalId: { in: channelIds } },
+            select: { externalId: true, channelType: true, title: true },
+          })
+        : Promise.resolve([]),
     ]);
 
     const customerMap = toNameMap(customers);
     const memberMap = toNameMap(members);
     const clientMap = toNameMap(clients);
+    const channelMap = new Map(channels.map((ch) => [ch.externalId, ch]));
 
-    const items: ChatListItemDto[] = chats.map((c) => ({
-      id: c.id,
-      externalId: c.externalId,
-      channelType: c.channelType,
-      status: c.status,
-      customer: c.customerExternalId
-        ? {
-            externalId: c.customerExternalId,
-            name: customerMap.get(c.customerExternalId) ?? null,
-          }
-        : null,
-      clientName: c.clientExternalId ? (clientMap.get(c.clientExternalId) ?? null) : null,
-      responsible: c.responsibleExternalId
-        ? {
-            externalId: c.responsibleExternalId,
-            name: memberMap.get(c.responsibleExternalId) ?? null,
-          }
-        : null,
-      lastMessageAt: c.lastMessageAt?.toISOString() ?? null,
-      messageCount: c.messageCount,
-      externalCreatedAt: c.externalCreatedAt?.toISOString() ?? null,
-    }));
+    const items: ChatListItemDto[] = chats.map((c) => {
+      const channel = c.channelExternalId ? channelMap.get(c.channelExternalId) : undefined;
+      return {
+        id: c.id,
+        externalId: c.externalId,
+        channelType: channel?.channelType || c.channelType || '',
+        channelName: channel?.title ?? null,
+        status: c.status,
+        isGroup: c.isGroup,
+        customer: c.customerExternalId
+          ? {
+              externalId: c.customerExternalId,
+              name: customerMap.get(c.customerExternalId) ?? null,
+            }
+          : null,
+        clientName: c.clientExternalId ? (clientMap.get(c.clientExternalId) ?? null) : null,
+        responsible: c.responsibleExternalId
+          ? {
+              externalId: c.responsibleExternalId,
+              name: memberMap.get(c.responsibleExternalId) ?? null,
+            }
+          : null,
+        lastMessageAt: c.lastMessageAt?.toISOString() ?? null,
+        messageCount: c.messageCount,
+        externalCreatedAt: c.externalCreatedAt?.toISOString() ?? null,
+      };
+    });
 
     return { items, total };
   }
@@ -151,50 +175,62 @@ export class ChatboxChatsService {
     });
     if (!chat) throw this.chatNotFound();
 
-    const [customer, responsible, sessions, identities, client] = await Promise.all([
-      chat.customerExternalId
-        ? this.prisma.chatboxCustomer.findFirst({
-            where: { tenantId, externalId: chat.customerExternalId },
-            select: { externalId: true, name: true },
-          })
-        : Promise.resolve(null),
-      chat.responsibleExternalId
-        ? this.prisma.chatboxMember.findFirst({
-            where: { tenantId, externalId: chat.responsibleExternalId },
-            select: { externalId: true, name: true, linkedPersonId: true },
-          })
-        : Promise.resolve(null),
-      this.prisma.chatboxChatSession.findMany({
-        where: { tenantId, chatId: chatDbId },
-        orderBy: { seq: 'asc' },
-        select: {
-          id: true,
-          seq: true,
-          startedAt: true,
-          endedAt: true,
-          summary: true,
-          analysisStatus: true,
-          previousSessionId: true,
-        },
-      }),
-      chat.customerExternalId
-        ? this.prisma.chatboxChannelClient.findMany({
-            where: { tenantId, customerExternalId: chat.customerExternalId },
-            select: {
-              channelType: true,
-              externalId: true,
-              name: true,
-              avatarUrl: true,
-            },
-          })
-        : Promise.resolve([]),
-      chat.clientExternalId
-        ? this.prisma.chatboxChannelClient.findFirst({
-            where: { tenantId, externalId: chat.clientExternalId },
-            select: { name: true },
-          })
-        : Promise.resolve(null),
-    ]);
+    const [customer, responsible, sessions, identities, client, channel, grouped] =
+      await Promise.all([
+        chat.customerExternalId
+          ? this.prisma.chatboxCustomer.findFirst({
+              where: { tenantId, externalId: chat.customerExternalId },
+              select: { externalId: true, name: true },
+            })
+          : Promise.resolve(null),
+        chat.responsibleExternalId
+          ? this.prisma.chatboxMember.findFirst({
+              where: { tenantId, externalId: chat.responsibleExternalId },
+              select: { externalId: true, name: true, linkedPersonId: true },
+            })
+          : Promise.resolve(null),
+        this.prisma.chatboxChatSession.findMany({
+          where: { tenantId, chatId: chatDbId },
+          orderBy: { seq: 'asc' },
+          select: {
+            id: true,
+            seq: true,
+            startedAt: true,
+            endedAt: true,
+            summary: true,
+            analysisStatus: true,
+            previousSessionId: true,
+          },
+        }),
+        chat.customerExternalId
+          ? this.prisma.chatboxChannelClient.findMany({
+              where: { tenantId, customerExternalId: chat.customerExternalId },
+              select: {
+                channelType: true,
+                externalId: true,
+                name: true,
+                avatarUrl: true,
+              },
+            })
+          : Promise.resolve([]),
+        chat.clientExternalId
+          ? this.prisma.chatboxChannelClient.findFirst({
+              where: { tenantId, externalId: chat.clientExternalId },
+              select: { name: true },
+            })
+          : Promise.resolve(null),
+        chat.channelExternalId
+          ? this.prisma.chatboxChannel.findFirst({
+              where: { tenantId, externalId: chat.channelExternalId },
+              select: { channelType: true, title: true },
+            })
+          : Promise.resolve(null),
+        this.prisma.chatboxMessage.groupBy({
+          by: ['senderExternalId', 'senderType'],
+          where: { tenantId, chatId: chatDbId, senderExternalId: { not: null } },
+          _count: { _all: true },
+        }),
+      ]);
 
     const messengerIdentities: MessengerIdentityDto[] = identities.map((i) => ({
       channelType: i.channelType,
@@ -203,11 +239,27 @@ export class ChatboxChatsService {
       avatarUrl: i.avatarUrl ?? null,
     }));
 
+    const participantNameMap = await this.resolveSenderNames(
+      tenantId,
+      grouped.map((g) => g.senderExternalId),
+    );
+    const participants: ChatboxParticipantDto[] = grouped
+      .filter((g): g is typeof g & { senderExternalId: string } => !!g.senderExternalId)
+      .map((g) => ({
+        externalId: g.senderExternalId,
+        role: SENDER_ROLE[g.senderType] ?? 'client',
+        name: participantNameMap.get(g.senderExternalId) ?? null,
+        messageCount: g._count._all,
+      }))
+      .sort((a, b) => b.messageCount - a.messageCount);
+
     return {
       id: chat.id,
       externalId: chat.externalId,
-      channelType: chat.channelType,
+      channelType: channel?.channelType || chat.channelType || '',
+      channelName: channel?.title ?? null,
       status: chat.status,
+      isGroup: chat.isGroup,
       customer: customer ? { externalId: customer.externalId, name: customer.name ?? null } : null,
       clientName: client?.name ?? null,
       responsible: responsible
@@ -216,6 +268,7 @@ export class ChatboxChatsService {
             name: responsible.name ?? null,
           }
         : null,
+      participants,
       lastMessageAt: chat.lastMessageAt?.toISOString() ?? null,
       messageCount: chat.messageCount,
       externalCreatedAt: chat.externalCreatedAt?.toISOString() ?? null,
@@ -284,11 +337,21 @@ export class ChatboxChatsService {
       }
     }
 
+    const nameByExtId = await this.resolveSenderNames(
+      tenantId,
+      messages.map((m) => m.senderExternalId),
+    );
+
     const items: ChatMessageDto[] = messages.map((m) => ({
       id: m.id,
       externalId: m.externalId,
       senderType: m.senderType,
-      senderName: m.senderName ?? null,
+      senderName:
+        m.senderType === 'ASSISTANT'
+          ? 'Ассистент'
+          : m.senderType === 'QUALITY_CONTROL'
+            ? 'Контроль качества'
+            : (nameByExtId.get(m.senderExternalId ?? '') ?? m.senderName ?? null),
       senderPersonId:
         m.senderType !== 'CLIENT' && m.senderExternalId
           ? (personByExtId.get(m.senderExternalId) ?? null)
@@ -398,6 +461,28 @@ export class ChatboxChatsService {
     });
 
     return { id: externalId };
+  }
+
+  private async resolveSenderNames(
+    tenantId: string,
+    externalIds: ReadonlyArray<string | null | undefined>,
+  ): Promise<Map<string, string>> {
+    const ids = [...new Set(externalIds.filter((x): x is string => !!x))];
+    if (ids.length === 0) return new Map();
+    const [clients, members] = await Promise.all([
+      this.prisma.chatboxChannelClient.findMany({
+        where: { tenantId, externalId: { in: ids } },
+        select: { externalId: true, name: true },
+      }),
+      this.prisma.chatboxMember.findMany({
+        where: { tenantId, externalId: { in: ids } },
+        select: { externalId: true, name: true },
+      }),
+    ]);
+    const map = new Map<string, string>();
+    for (const m of members) if (m.name) map.set(m.externalId, m.name);
+    for (const c of clients) if (c.name) map.set(c.externalId, c.name);
+    return map;
   }
 
   private chatNotFound(): BadRequestException {

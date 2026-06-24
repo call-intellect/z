@@ -15,7 +15,9 @@ import {
   type ChatboxApiChat,
   type ChatboxApiMessage,
 } from './chatbox-api.client';
+import { ChatboxCustomersService } from './chatbox-customers.service';
 import { ChatboxIntegrationService } from './chatbox-integration.service';
+import { ChatboxMembersService } from './chatbox-members.service';
 import { ChatboxSessionService } from './chatbox-session.service';
 import { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
 
@@ -39,6 +41,10 @@ export class ChatboxSyncService {
     private readonly adminSettings: AdminSettingsService,
     @Inject(ChatboxAnalyzeQueueService)
     private readonly analyzeQueue: ChatboxAnalyzeQueueService,
+    @Inject(ChatboxCustomersService)
+    private readonly customers: ChatboxCustomersService,
+    @Inject(ChatboxMembersService)
+    private readonly members: ChatboxMembersService,
   ) {}
 
   private async loadCfg(tenantId: string): Promise<SyncCfg> {
@@ -154,6 +160,11 @@ export class ChatboxSyncService {
       });
     }
 
+    const auto = await this.customers.autoLinkUnlinked(tenantId);
+    this.logger.log(
+      `syncCustomers: авто-привязка клиентов — создано ${auto.created}, привязано ${auto.linked}`,
+    );
+
     return customers.length;
   }
 
@@ -210,6 +221,11 @@ export class ChatboxSyncService {
       });
     }
 
+    const auto = await this.customers.autoLinkChannelClients(tenantId);
+    this.logger.log(
+      `syncChannelClients: авто-контакты — создано ${auto.created}, привязано ${auto.linked}`,
+    );
+
     return clients.length;
   }
 
@@ -243,6 +259,11 @@ export class ChatboxSyncService {
       });
     }
 
+    const auto = await this.members.autoLinkUnlinked(tenantId);
+    this.logger.log(
+      `syncMembers: авто-привязка менеджеров — создано ${auto.created}, привязано ${auto.linked}`,
+    );
+
     return members.length;
   }
 
@@ -274,7 +295,11 @@ export class ChatboxSyncService {
     return enqueued;
   }
 
-  async syncMessages(tenantId: string, chatDbId: string, chatExternalId: string): Promise<number> {
+  async syncMessages(
+    tenantId: string,
+    chatDbId: string,
+    chatExternalId: string,
+  ): Promise<{ total: number; created: number }> {
     const cfg = await this.loadCfg(tenantId);
     const messages = await this.paginateAll<ChatboxApiMessage>(async (limit, offset) => {
       const res = await this.client.listMessages(cfg.token, cfg.workspaceId, chatExternalId, {
@@ -284,6 +309,16 @@ export class ChatboxSyncService {
       });
       return { items: res.messages ?? [], total: res.total };
     });
+
+    const ids = messages.map((m) => m.id);
+    const existingRows = ids.length
+      ? await this.prisma.chatboxMessage.findMany({
+          where: { tenantId, externalId: { in: ids } },
+          select: { externalId: true },
+        })
+      : [];
+    const existingSet = new Set(existingRows.map((r) => r.externalId));
+    const created = ids.filter((id) => !existingSet.has(id)).length;
 
     let lastMessageAt: Date | null = null;
     for (const m of messages) {
@@ -313,20 +348,35 @@ export class ChatboxSyncService {
 
     await this.sessions.rebuildSessions(tenantId, chatDbId);
 
+    const clientSenders = await this.prisma.chatboxMessage.findMany({
+      where: { tenantId, chatId: chatDbId, senderType: 'CLIENT', senderExternalId: { not: null } },
+      select: { senderExternalId: true },
+      distinct: ['senderExternalId'],
+    });
+    const isGroup = clientSenders.length > 1;
+
     await this.prisma.chatboxChat.update({
       where: { id: chatDbId },
-      data: { messageCount: messages.length, lastMessageAt },
+      data: { messageCount: messages.length, lastMessageAt, isGroup },
     });
 
-    return messages.length;
+    return { total: messages.length, created };
   }
 
-  async syncChats(tenantId: string, opts?: { since?: Date }): Promise<number> {
+  async syncChats(
+    tenantId: string,
+    opts?: { since?: Date },
+  ): Promise<{ chats: number; newChats: number; messages: number; newMessages: number }> {
     if (!(await this.isEnabled())) {
       this.logger.log('syncChats: chatbox.enabled=false — пропуск');
-      return 0;
+      return { chats: 0, newChats: 0, messages: 0, newMessages: 0 };
     }
     const cfg = await this.loadCfg(tenantId);
+
+    const existingChannels = await this.prisma.chatboxChannel.count({ where: { tenantId } });
+    if (existingChannels === 0) {
+      await this.syncChannels(tenantId);
+    }
 
     const channels = await this.prisma.chatboxChannel.findMany({
       where: { tenantId },
@@ -335,15 +385,18 @@ export class ChatboxSyncService {
     const channelTypeByExt = new Map(channels.map((c) => [c.externalId, c.channelType]));
 
     let count = 0;
+    let newChats = 0;
+    let messages = 0;
+    let newMessages = 0;
+    let scanned = 0;
     let offset = 0;
     let total = Infinity;
     let page = 0;
-    let stop = false;
 
-    while (!stop && count < total) {
+    while (scanned < total) {
       if (page >= MAX_PAGES) {
         this.logger.warn(
-          `syncChats: достигнут кап ${MAX_PAGES} страниц (${count}/${total}) — остановка`,
+          `syncChats: достигнут кап ${MAX_PAGES} страниц (${scanned}/${total}) — остановка`,
         );
         break;
       }
@@ -357,14 +410,22 @@ export class ChatboxSyncService {
       if (items.length === 0) break;
 
       for (const apiChat of items) {
+        scanned += 1;
         const updatedAt = new Date(apiChat.updatedAt);
         if (opts?.since && updatedAt < opts.since) {
-          stop = true;
-          break;
+          continue;
         }
 
+        const existedChat = await this.prisma.chatboxChat.findFirst({
+          where: { tenantId, externalId: apiChat.id },
+          select: { id: true },
+        });
+        if (!existedChat) newChats += 1;
+
         const chatDbId = await this.upsertChat(tenantId, apiChat, channelTypeByExt);
-        await this.syncMessages(tenantId, chatDbId, apiChat.id);
+        const m = await this.syncMessages(tenantId, chatDbId, apiChat.id);
+        messages += m.total;
+        newMessages += m.created;
         count += 1;
       }
 
@@ -372,7 +433,7 @@ export class ChatboxSyncService {
       offset += PAGE_SIZE;
     }
 
-    return count;
+    return { chats: count, newChats, messages, newMessages };
   }
 
   private async upsertChat(
@@ -423,6 +484,9 @@ export class ChatboxSyncService {
     channelClients: number;
     members: number;
     chats: number;
+    newChats: number;
+    messages: number;
+    newMessages: number;
   }> {
     if (!(await this.isEnabled())) {
       this.logger.log('fullSync: chatbox.enabled=false — пропуск');
@@ -432,20 +496,23 @@ export class ChatboxSyncService {
         channelClients: 0,
         members: 0,
         chats: 0,
+        newChats: 0,
+        messages: 0,
+        newMessages: 0,
       };
     }
     const channels = await this.syncChannels(tenantId);
     const customers = await this.syncCustomers(tenantId);
     const channelClients = await this.syncChannelClients(tenantId);
     const members = await this.syncMembers(tenantId);
-    const chats = await this.syncChats(tenantId);
+    const { chats, newChats, messages, newMessages } = await this.syncChats(tenantId);
 
     await this.prisma.chatboxIntegration.updateMany({
       where: { tenantId },
       data: { lastFullSyncAt: new Date() },
     });
 
-    return { channels, customers, channelClients, members, chats };
+    return { channels, customers, channelClients, members, chats, newChats, messages, newMessages };
   }
 
   async incrementalSync(tenantId: string): Promise<{
@@ -454,6 +521,9 @@ export class ChatboxSyncService {
     channelClients: number;
     members: number;
     chats: number;
+    newChats: number;
+    messages: number;
+    newMessages: number;
     analysisEnqueued: number;
   }> {
     if (!(await this.isEnabled())) {
@@ -464,6 +534,9 @@ export class ChatboxSyncService {
         channelClients: 0,
         members: 0,
         chats: 0,
+        newChats: 0,
+        messages: 0,
+        newMessages: 0,
         analysisEnqueued: 0,
       };
     }
@@ -478,7 +551,7 @@ export class ChatboxSyncService {
     const customers = await this.syncCustomers(tenantId);
     const channelClients = await this.syncChannelClients(tenantId);
     const members = await this.syncMembers(tenantId);
-    const chats = await this.syncChats(tenantId, {
+    const { chats, newChats, messages, newMessages } = await this.syncChats(tenantId, {
       since: row?.lastIncrementalSyncAt ?? undefined,
     });
 
@@ -489,7 +562,17 @@ export class ChatboxSyncService {
 
     const analysisEnqueued = await this.enqueuePendingAnalysisIfEnabled(tenantId);
 
-    return { channels, customers, channelClients, members, chats, analysisEnqueued };
+    return {
+      channels,
+      customers,
+      channelClients,
+      members,
+      chats,
+      newChats,
+      messages,
+      newMessages,
+      analysisEnqueued,
+    };
   }
 
   async syncByScope(
@@ -513,9 +596,9 @@ export class ChatboxSyncService {
         return { members };
       }
       case 'chats': {
-        const chats = await this.syncChats(tenantId, opts);
+        const { chats, newChats, messages, newMessages } = await this.syncChats(tenantId, opts);
         const analysisEnqueued = await this.enqueuePendingAnalysisIfEnabled(tenantId);
-        return { chats, analysisEnqueued };
+        return { chats, newChats, messages, newMessages, analysisEnqueued };
       }
     }
   }

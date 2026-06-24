@@ -49,6 +49,18 @@ export type ChatboxSyncStatusApi =
 
 export type ChatboxSyncScope = "all" | "customers" | "managers" | "chats";
 
+export type ChatboxSyncRunApi = {
+  id: string;
+  scope: string | null;
+  trigger: "auto" | "manual";
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  status: string;
+  counts: Record<string, unknown> | null;
+  error: string | null;
+};
+
 export type ChatboxMemorySummaryApi = {
   configured: boolean;
   analysisEnabled: boolean;
@@ -75,11 +87,20 @@ export type ChatboxPartyApi = {
   name: string | null;
 };
 
+export type ChatboxParticipantApi = {
+  externalId: string;
+  role: "client" | "manager" | "assistant" | "quality_control";
+  name: string | null;
+  messageCount: number;
+};
+
 export type ChatboxChatApi = {
   id: string;
   externalId: string;
   channelType: string;
+  channelName: string | null;
   status: ChatboxChatStatusApi;
+  isGroup: boolean;
   customer: ChatboxPartyApi | null;
   clientName: string | null;
   responsible: ChatboxPartyApi | null;
@@ -107,6 +128,7 @@ export type ChatboxSessionApi = {
 
 export type ChatboxChatDetailApi = ChatboxChatApi & {
   externalUpdatedAt: string | null;
+  participants: ChatboxParticipantApi[];
   sessions: ChatboxSessionApi[];
   messengerIdentities: MessengerIdentityApi[];
 };
@@ -163,13 +185,15 @@ export type ChatboxCustomerApi = {
   phone: string | null;
   name: string | null;
   linkMode: ChatboxLinkMode;
-  linkedPerson: { id: string; name: string | null } | null;
+  linkedCustomer: { id: string; name: string | null } | null;
 };
 
 export type ListChatsQuery = {
   status?: ChatboxChatStatusApi;
   channelType?: string;
   customerExternalId?: string;
+  from?: string;
+  to?: string;
   limit?: number;
   offset?: number;
 };
@@ -216,6 +240,12 @@ export const chatboxApi = {
   syncStatus: () =>
     apiClient.get<ChatboxSyncStatusApi>(
       "/api/v1/chatbox/integration/sync/status",
+    ),
+
+  syncLog: (limit?: number) =>
+    apiClient.get<ChatboxSyncRunApi[]>(
+      "/api/v1/chatbox/integration/sync-log" +
+        (limit ? `?limit=${limit}` : ""),
     ),
 
   memorySummary: () =>
@@ -271,15 +301,17 @@ export const chatboxApi = {
   listCustomers: () =>
     apiClient.get<ChatboxCustomerApi[]>("/api/v1/chatbox/customers"),
 
-  linkCustomer: (id: string, personId: string | null) =>
+  linkCustomer: (id: string, customerId: string | null) =>
     apiClient.put<{ ok: true; customer: ChatboxCustomerApi }>(
       "/api/v1/chatbox/customers/" + encodeURIComponent(id) + "/link",
-      { personId },
+      { customerId },
     ),
 
-  createCustomerPerson: (id: string) =>
+  createCustomer: (id: string) =>
     apiClient.post<{ ok: true; customer: ChatboxCustomerApi }>(
-      "/api/v1/chatbox/customers/" + encodeURIComponent(id) + "/create-person",
+      "/api/v1/chatbox/customers/" +
+        encodeURIComponent(id) +
+        "/create-customer",
       {},
     ),
 };

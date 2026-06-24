@@ -1,25 +1,33 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { PersonsService } from '../persons/services/persons.service';
+import { EntityResolutionService } from '../knowledge-core/services/entity-resolution.service';
 
-import type { ChatboxCustomerDto, ChatboxLinkedPersonDto } from './dto/chatbox-customers.dto';
+import type { ChatboxCustomerDto, ChatboxLinkedCustomerDto } from './dto/chatbox-customers.dto';
 
 @Injectable()
 export class ChatboxCustomersService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(PersonsService) private readonly persons: PersonsService,
+    @Inject(EntityResolutionService) private readonly entityResolution: EntityResolutionService,
   ) {}
 
-  async createPersonAndLink(
+  async createCustomerAndLink(
     tenantId: string,
     userId: string,
     customerId: string,
   ): Promise<ChatboxCustomerDto> {
     const customer = await this.prisma.chatboxCustomer.findFirst({
       where: { id: customerId, tenantId },
-      select: { id: true, name: true, email: true, linkedPersonId: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        externalCrmId: true,
+        linkedCustomerId: true,
+      },
     });
     if (!customer) {
       throw new BadRequestException({
@@ -30,38 +38,28 @@ export class ChatboxCustomersService {
         },
       });
     }
-    if (customer.linkedPersonId) {
+    if (customer.linkedCustomerId) {
       throw new BadRequestException({
         ok: false,
         error: {
           code: 'chatbox_customer_already_linked',
-          message: 'Клиент уже связан с сотрудником',
+          message: 'Клиент уже связан',
         },
       });
     }
 
-    const email = customer.email?.trim() || null;
-
-    let personId: string | null = null;
-    if (email) {
-      const existing = await this.prisma.person.findFirst({
-        where: { tenantId, email, deletedAt: null },
-        select: { id: true },
-      });
-      personId = existing?.id ?? null;
-    }
-
-    if (!personId) {
-      const name = customer.name?.trim() || email || 'Без имени';
-      const created = await this.persons.create({
+    const { customerId: domainCustomerId } = await this.entityResolution.findOrCreateCustomerEntity(
+      {
         tenantId,
-        userId,
-        body: { name, ...(email ? { email } : {}), relationship: 'external' },
-      });
-      personId = created.id;
-    }
+        name: customer.name?.trim() || customer.email?.trim() || 'Без имени',
+        email: customer.email?.trim() || null,
+        phone: customer.phone?.trim() || null,
+        externalCrmId: customer.externalCrmId ?? null,
+        source: 'chatbox',
+      },
+    );
 
-    return this.linkCustomer(tenantId, customerId, personId);
+    return this.linkCustomer(tenantId, customerId, domainCustomerId);
   }
 
   async listCustomers(tenantId: string): Promise<ChatboxCustomerDto[]> {
@@ -75,13 +73,13 @@ export class ChatboxCustomersService {
         phone: true,
         name: true,
         linkMode: true,
-        linkedPersonId: true,
+        linkedCustomerId: true,
       },
     });
 
-    const personMap = await this.resolvePersons(
+    const customerMap = await this.resolveCustomers(
       tenantId,
-      customers.map((c) => c.linkedPersonId),
+      customers.map((c) => c.linkedCustomerId),
     );
 
     return customers.map((c) => ({
@@ -91,20 +89,20 @@ export class ChatboxCustomersService {
       phone: c.phone,
       name: c.name,
       linkMode: c.linkMode,
-      linkedPerson: c.linkedPersonId ? (personMap.get(c.linkedPersonId) ?? null) : null,
+      linkedCustomer: c.linkedCustomerId ? (customerMap.get(c.linkedCustomerId) ?? null) : null,
     }));
   }
 
   async linkCustomer(
     tenantId: string,
-    customerId: string,
-    personId: string | null,
+    chatboxCustomerId: string,
+    customerId: string | null,
   ): Promise<ChatboxCustomerDto> {
-    const customer = await this.prisma.chatboxCustomer.findFirst({
-      where: { id: customerId, tenantId },
+    const chatboxCustomer = await this.prisma.chatboxCustomer.findFirst({
+      where: { id: chatboxCustomerId, tenantId },
       select: { id: true },
     });
-    if (!customer) {
+    if (!chatboxCustomer) {
       throw new BadRequestException({
         ok: false,
         error: {
@@ -114,25 +112,25 @@ export class ChatboxCustomersService {
       });
     }
 
-    if (personId !== null) {
-      const person = await this.prisma.person.findFirst({
-        where: { id: personId, tenantId },
+    if (customerId !== null) {
+      const domainCustomer = await this.prisma.customer.findFirst({
+        where: { id: customerId, tenantId },
         select: { id: true },
       });
-      if (!person) {
+      if (!domainCustomer) {
         throw new BadRequestException({
           ok: false,
-          error: { code: 'person_not_found', message: 'Person не найден' },
+          error: { code: 'customer_not_found', message: 'Клиент Коры не найден' },
         });
       }
     }
 
     const updated = await this.prisma.chatboxCustomer.update({
-      where: { id: customerId },
+      where: { id: chatboxCustomerId },
       data:
-        personId !== null
-          ? { linkedPersonId: personId, linkMode: 'manual' }
-          : { linkedPersonId: null, linkMode: 'none' },
+        customerId !== null
+          ? { linkedCustomerId: customerId, linkMode: 'manual' }
+          : { linkedCustomerId: null, linkMode: 'none' },
       select: {
         id: true,
         externalId: true,
@@ -140,11 +138,11 @@ export class ChatboxCustomersService {
         phone: true,
         name: true,
         linkMode: true,
-        linkedPersonId: true,
+        linkedCustomerId: true,
       },
     });
 
-    const personMap = await this.resolvePersons(tenantId, [updated.linkedPersonId]);
+    const customerMap = await this.resolveCustomers(tenantId, [updated.linkedCustomerId]);
 
     return {
       id: updated.id,
@@ -153,22 +151,118 @@ export class ChatboxCustomersService {
       phone: updated.phone,
       name: updated.name,
       linkMode: updated.linkMode,
-      linkedPerson: updated.linkedPersonId ? (personMap.get(updated.linkedPersonId) ?? null) : null,
+      linkedCustomer: updated.linkedCustomerId
+        ? (customerMap.get(updated.linkedCustomerId) ?? null)
+        : null,
     };
   }
 
-  private async resolvePersons(
+  async autoLinkUnlinked(tenantId: string): Promise<{ created: number; linked: number }> {
+    const rows = await this.prisma.chatboxCustomer.findMany({
+      where: { tenantId, linkedCustomerId: null },
+      select: { id: true, name: true, email: true, phone: true, externalCrmId: true },
+    });
+    let created = 0;
+    let linked = 0;
+    for (const c of rows) {
+      const res = await this.entityResolution.findOrCreateCustomerEntity({
+        tenantId,
+        name: c.name?.trim() || c.email?.trim() || 'Без имени',
+        email: c.email?.trim() || null,
+        phone: c.phone?.trim() || null,
+        externalCrmId: c.externalCrmId ?? null,
+        source: 'chatbox',
+      });
+      await this.prisma.chatboxCustomer.update({
+        where: { id: c.id },
+        data: { linkedCustomerId: res.customerId, linkMode: 'auto' },
+      });
+      if (res.created) created += 1;
+      else linked += 1;
+    }
+    return { created, linked };
+  }
+
+  async autoLinkChannelClients(tenantId: string): Promise<{ created: number; linked: number }> {
+    const rows = await this.prisma.chatboxChannelClient.findMany({
+      where: { tenantId, linkedContactEntityId: null },
+      select: { id: true, externalId: true, name: true, email: true, customerId: true },
+    });
+    let created = 0;
+    let linked = 0;
+    for (const cc of rows) {
+      const name = cc.name?.trim() || cc.externalId;
+      const email = cc.email?.trim() || null;
+      const { entity, created: wasCreated } = await this.entityResolution.findOrCreateEntity({
+        tenantId,
+        type: 'person',
+        name,
+        ...(email ? { email } : {}),
+      });
+      await this.prisma.chatboxChannelClient.update({
+        where: { id: cc.id },
+        data: { linkedContactEntityId: entity.id },
+      });
+      if (wasCreated) created += 1;
+      else linked += 1;
+
+      if (cc.customerId) {
+        const chatboxCustomer = await this.prisma.chatboxCustomer.findUnique({
+          where: { id: cc.customerId },
+          select: { linkedCustomerId: true },
+        });
+        if (chatboxCustomer?.linkedCustomerId) {
+          const customer = await this.prisma.customer.findUnique({
+            where: { id: chatboxCustomer.linkedCustomerId },
+            select: { entityId: true },
+          });
+          if (customer) {
+            const existing = await this.prisma.entityLink.findFirst({
+              where: {
+                fromEntityId: entity.id,
+                fromType: 'entity',
+                toEntityId: customer.entityId,
+                toType: 'entity',
+                relationType: 'works_at',
+              },
+              select: { id: true },
+            });
+            if (!existing) {
+              await this.prisma.entityLink.create({
+                data: {
+                  tenantId,
+                  fromEntityId: entity.id,
+                  toEntityId: customer.entityId,
+                  fromType: 'entity',
+                  toType: 'entity',
+                  relationType: 'works_at',
+                  confidence: new Prisma.Decimal('1.000'),
+                  explanation: 'Контакт ChatBox привязан к клиенту',
+                  createdBy: 'manual',
+                  status: 'active',
+                  properties: {},
+                },
+              });
+            }
+          }
+        }
+      }
+    }
+    return { created, linked };
+  }
+
+  private async resolveCustomers(
     tenantId: string,
     ids: (string | null)[],
-  ): Promise<Map<string, ChatboxLinkedPersonDto>> {
-    const personIds = [...new Set(ids.filter((id): id is string => !!id))];
-    if (personIds.length === 0) {
+  ): Promise<Map<string, ChatboxLinkedCustomerDto>> {
+    const customerIds = [...new Set(ids.filter((id): id is string => !!id))];
+    if (customerIds.length === 0) {
       return new Map();
     }
-    const persons = await this.prisma.person.findMany({
-      where: { tenantId, id: { in: personIds } },
+    const customers = await this.prisma.customer.findMany({
+      where: { tenantId, id: { in: customerIds } },
       select: { id: true, name: true },
     });
-    return new Map(persons.map((p) => [p.id, { id: p.id, name: p.name }]));
+    return new Map(customers.map((c) => [c.id, { id: c.id, name: c.name }]));
   }
 }

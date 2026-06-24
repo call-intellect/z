@@ -395,12 +395,14 @@ Setup-scripts (CLI-флаги, idempotent, шифруют секреты сов�
 
 **Новые модули backend:**
 - `backend/src/modules/vendors/` — read-only API `/api/v1/vendors` (list + getById). Полный CRUD — α-6.
+- `backend/src/modules/customers/` (2026-06-23, ТЗ chatbox-customer-vs-manager-split) — read-only API `/api/v1/customers` (`CustomersController` + `CustomersService`: list `GET /customers` с `q/status/page/limit` + getById `GET /customers/:id`). Зеркало `vendors`. RBAC `obj='entity'`. Клиент = `Customer` (1:1 над `Entity{type=customer}`, см. [[data-model]] §«Customer»).
 - `backend/src/modules/events/` — read-only API `/api/v1/events`. RBAC ResourceType — `event_card` (чтобы не конфликтовать с доменными событиями).
 - `backend/src/modules/knowledge-core/services/router.service.ts` — `RouterService.dispatch(block)`: статический mapping `signalType → specialistName` (decisions / regulations / insights / ideas / skill / project-customer / knowledge-clone). Анти-fan-out через `ROUTER_MAX_SPECIALISTS_PER_BLOCK` (default 4). Публикует jobs в BullMQ-очередь `core.specialist-routing` (consumer'ы появятся в α-6 / α-7 / β-2 / β-3 / γ-1).
 
 **EntityResolutionService extension:**
 - `findOrCreateVendorEntity({tenantId, name, inn?})` — приоритет дедупа по `inn`, fallback на name.
 - `findOrCreateEventEntity({tenantId, title, startAt, kind?, relatedMeetingId?})` — дедуп по time-window.
+- `findOrCreateCustomerEntity(...)` (2026-06-23) — резолв `Entity{type=customer}` + `Customer` (зеркало `findOrCreateVendorEntity`); приоритет дедупа `externalCrmId` → strong-id → name. Вызывается `chatbox-ingest`: при ингесте сессии клиент переписки авто-резолвится в `Customer`/`Entity{customer}` (менеджер-исполнитель остаётся `Person`) — связь `chatbox → knowledge-core` для клиентов.
 
 **Hook в `block-ingest.worker.ts`:** после persist'а всех блоков вызывается `routerService.dispatch(block)` для каждого блока (best-effort, не валит pipeline).
 

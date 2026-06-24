@@ -728,6 +728,12 @@ const STEPS: Step[] = [
   },
   {
     phase: 'backfill',
+    script: 'scripts/backfill-chatbox-customers-from-person.ts',
+    skipBootstrap: true,
+    hint: 'ChatBox клиенты Person{external} → Customer/Entity{customer} + контакты Entity{person}; осиротевшие Person soft-delete',
+  },
+  {
+    phase: 'backfill',
     script: 'scripts/backfill-task-source-type.ts',
     hint: "Task.sourceType='meeting' где пусто (chatbox-tasks Ф5)",
     skipBootstrap: true,

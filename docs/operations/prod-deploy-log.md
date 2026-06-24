@@ -71,6 +71,45 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-24 — ChatBox: полная поддержка групповых чатов
+
+> ТЗ `plans/tz/2026-06-24-chatbox-group-chats.md`. Ветка `feature/chatbox-customer-vs-manager-split`.
+>
+> **Зачем:** чат с несколькими клиентами в одном треде размечается флагом `isGroup`; детальный API отдаёт участников с резолвленными именами/ролями; channel-client'ы go-forward становятся контактами `Entity{person}` со связью `works_at` к аккаунту-Customer; UI показывает бейдж «Группа», список участников и имена отправителей в переписке.
+>
+> **🟡 1 МИГРАЦИЯ PRISMA (авто через `migrate deploy`, аддитивная). 🟢 НОВЫХ ENV НЕТ.** Новых seed/patch/backfill/cron/LLM-taskType/метрик нет (детекция `isGroup` и авто-контакты идут штатным синком/ингестом). Docker rebuild backend+frontend.
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260624160000_chatbox_chat_is_group` — `ALTER TABLE "ChatboxChat" ADD COLUMN "isGroup" BOOLEAN NOT NULL DEFAULT false` (производный флаг группового чата — `true`, если в чате >1 различного CLIENT-отправителя). Аддитивная (ADD COLUMN, без DROP), без потери данных, backfill не нужен — детекция проставит `isGroup` при следующем синке (`syncMessages`). **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §ChatboxChat.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`chatbox`: `syncMessages` выставляет `isGroup` при >1 различного CLIENT `senderExternalId`; `ChatboxCustomersService.autoLinkChannelClients` из `syncChannelClients` — channel-client → `Entity{type=person}` + `EntityLink(works_at)` к аккаунту-Customer + `ChatboxChannelClient.linkedContactEntityId`, идемпотентно; `getChat` отдаёт `isGroup`+`participants[]`, `listChats` — `isGroup`, `listMessages` резолвит `senderName` из зеркал `ChatboxChannelClient`/`ChatboxMember`). Frontend (бейдж «Группа» в списке и шапке диалога `/chats`; список участников в шапке детальной; резолвленные имена отправителей в переписке).
+- **Шаг 12 — Smoke** (после выката):
+  - Миграция применилась: `\d "ChatboxChat"` содержит колонку `isGroup` (default false).
+  - После синка чат с >1 CLIENT-отправителем имеет `isGroup=true`; `GET /api/v1/chatbox/chats/:id` отдаёт `participants[]` с именами/ролями; `GET /api/v1/chatbox/chats/:id/messages` отдаёт `senderName`.
+  - Фронт: бейдж «Группа» в списке/шапке, список участников в детальной, имена отправителей в переписке.
+  - Go-forward: у channel-client'ов после `chats`-синка проставлен `linkedContactEntityId`, контакт виден как `Entity{person}` со связью `works_at` к Customer.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-23 — ChatBox: разделение клиентов и менеджеров (клиент → Customer, а не Person)
+
+> ТЗ `plans/tz/2026-06-23-chatbox-customer-vs-manager-split.md`. Ветка `feature/chatbox-customer-vs-manager-split`.
+>
+> **Зачем:** клиент переписки — покупатель, а не сотрудник: он связывается с `Customer`/`Entity{type=customer}` графа знаний (зеркало `Vendor`), а не с `Person`. Менеджер-исполнитель остаётся `Person`. Новый read API клиентов `/api/v1/customers` + страница «Клиенты».
+>
+> **🟡 1 МИГРАЦИЯ PRISMA (авто через `migrate deploy`) + 1 BACKFILL (1 прогон, идемпотентный, УЖЕ в STEPS). 🟢 НОВЫХ ENV НЕТ.** Новых cron/LLM-taskType/метрик нет. Новый модуль `customers` (read API). Docker rebuild backend+frontend.
+
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260623071903_chatbox_customer_model` — новая таблица `"Customer"` (1:1 над `Entity{type=customer}`, зеркало `Vendor`: `entityId @unique`, `name`/`inn`/`email`/`phone`/`source`/`externalCrmId`, `responsiblePersonId → Person`, `status`, `metadata`, `deletedAt`) + новый enum `CustomerStatus` (`active`/`inactive`/`churned`) + ALTER chatbox-таблиц: `ChatboxCustomer.linkedCustomerId` (FK → `Customer`) и `ChatboxChannelClient.linkedContactEntityId`. Старый `ChatboxCustomer.linkedPersonId` оставлен (DEPRECATED, drop — vNext). Аддитивная (CREATE TABLE/TYPE + ADD COLUMN, без DROP), без потери данных. **В STEPS не регистрируется** (миграция схемы).
+- **Шаг 8 — Backfill (1 прогон, идемпотентный, УЖЕ в STEPS `phase:'backfill'`, `skipBootstrap`):** `docker compose exec backend bun run scripts/backfill-chatbox-customers-from-person.ts` — перенос ChatBox-клиентов `Person{external}` → `Customer`/`Entity{customer}` + проставление `ChatboxCustomer.linkedCustomerId`. Сначала dry-run: `docker compose exec backend bun run scripts/backfill-chatbox-customers-from-person.ts --dry-run`. Идемпотентен (повтор = no-op). Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (новый модуль `customers`: `CustomersController` + `CustomersService` — read API `GET /api/v1/customers` (`q`/`status`/`page`/`limit`) + `GET /api/v1/customers/:id`, RBAC `obj='entity'`; `EntityResolutionService.findOrCreateCustomerEntity` — резолв `Entity{customer}`+`Customer`, дедуп `externalCrmId`→strong-id→name; `ChatboxCustomersService` переведён на `Customer`: `createCustomerAndLink`/`linkCustomer(customerId)`, эндпоинт `POST /chatbox/customers/:id/create-customer` (был `create-person`); `chatbox-ingest` — клиент сессии авто-резолвится в `Customer`/`Entity{customer}`, менеджер остаётся `Person`). Frontend (страница `/customers` (зеркало `/vendors`) + `src/api/customers.api.ts` + пункт «Клиенты» в подгруппе «Справочник» `nav-config.ts`; ChatBox-пикер клиента в `/chats` переключён на клиентов Коры).
+- **Шаг 12 — Smoke** (после выката):
+  - Миграция применилась: `\d "Customer"` существует; `\d "ChatboxCustomer"` содержит `linkedCustomerId`; `\d "ChatboxChannelClient"` содержит `linkedContactEntityId`; enum `CustomerStatus` есть.
+  - Swagger `/api/docs` содержит тег `customers` (`GET /api/v1/customers`, `GET /api/v1/customers/:id`); `GET /api/v1/customers` отдаёт список.
+  - Backfill: после прогона у существующих ChatBox-клиентов проставлен `linkedCustomerId`, в `/customers` видны клиенты, перенесённые из `Person{external}`.
+  - Поведение: создание клиента из переписки (`POST /chatbox/customers/:id/create-customer`) создаёт `Customer`, не `Person`; ингест новой чат-сессии резолвит клиента в `Entity{customer}` (менеджер — в `Person`).
+
+---
+
 ### 📄 2026-06-23 — Убрать лишние подтверждения: судья курации видит первоисточник + серая зона · наблюдаемость самообучения SubjectMemory · probe-черновики из памяти · умный подбор исполнителя (Блоки A–D)
 
 > ТЗ `plans/tz/2026-06-23-remove-manual-confirmations-master-tz.md` (Блоки A/B/C/D; анализ — `plans/archive/2026-06-11-autonomy-remove-manual-confirmations.md`). Ветка `feature/2026-06-23-remove-manual-confirmations`, коммиты поверх dev (`1f6b22d5`/`5e67507b` A · `73e6d0df`/`5fd2d028` B · `8c329916` C · `debef312`/`0513e1cc` D).

@@ -734,3 +734,125 @@ describe('EntityResolutionService.resolvePersonByHint — cross-source identity 
     );
   });
 });
+
+describe('EntityResolutionService.findOrCreateCustomerEntity (unit)', () => {
+  function buildSvc(opts: {
+    customerFindFirst?: ReturnType<typeof vi.fn>;
+    customerFindUnique?: ReturnType<typeof vi.fn>;
+    customerCreate?: ReturnType<typeof vi.fn>;
+    entityFindUnique?: ReturnType<typeof vi.fn>;
+    entityUpdate?: ReturnType<typeof vi.fn>;
+  }): EntityResolutionService {
+    const prisma = {
+      customer: {
+        findFirst: opts.customerFindFirst ?? vi.fn(async () => null),
+        findUnique: opts.customerFindUnique ?? vi.fn(async () => null),
+        create: opts.customerCreate ?? vi.fn(async () => ({ id: 'cust-new' })),
+      },
+      entity: {
+        findUnique: opts.entityFindUnique ?? vi.fn(async () => null),
+        update: opts.entityUpdate ?? vi.fn(async (a: { where: { id: string } }) => ({ id: a.where.id })),
+      },
+    } as unknown as PrismaService;
+    const embed = {} as unknown as KnowledgeEmbeddingService;
+    return new EntityResolutionService(prisma, embed);
+  }
+
+  it('пустое имя → бросает Error', async () => {
+    const svc = buildSvc({});
+    await expect(
+      svc.findOrCreateCustomerEntity({ tenantId: 't1', name: '   ' }),
+    ).rejects.toThrow('EntityResolution: пустое имя customer');
+  });
+
+  it('customer уже есть по externalCrmId → created:false, create НЕ вызван', async () => {
+    const customerFindFirst = vi.fn(async () => ({ id: 'cust-1', entityId: 'ent-1' }));
+    const entityFindUnique = vi.fn(async () => ({ id: 'ent-1', tenantId: 't1', type: 'customer' }));
+    const entityUpdate = vi.fn(async () => ({ id: 'ent-1', tenantId: 't1', type: 'customer' }));
+    const customerCreate = vi.fn(async () => ({ id: 'should-not-be-called' }));
+    const svc = buildSvc({ customerFindFirst, entityFindUnique, entityUpdate, customerCreate });
+
+    const res = await svc.findOrCreateCustomerEntity({
+      tenantId: 't1',
+      name: 'ООО Клиент',
+      externalCrmId: 'crm-42',
+    });
+
+    expect(res.created).toBe(false);
+    expect(res.customerId).toBe('cust-1');
+    expect(res.entity.id).toBe('ent-1');
+    expect(customerCreate).not.toHaveBeenCalled();
+    expect(customerFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 't1',
+          externalCrmId: 'crm-42',
+          deletedAt: null,
+        }),
+      }),
+    );
+    expect(entityUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'ent-1' },
+        data: { mentionsCount: { increment: 1 } },
+      }),
+    );
+  });
+
+  it('новый клиент → findOrCreateEntity с type:customer, создаёт Customer, created:true', async () => {
+    const customerCreate = vi.fn(async () => ({ id: 'cust-new' }));
+    const svc = buildSvc({ customerCreate });
+    const resolveSpy = vi
+      .spyOn(svc, 'findOrCreateEntity')
+      .mockResolvedValue({
+        entity: { id: 'ent-new', tenantId: 't1', type: 'customer' } as never,
+        created: true,
+      });
+
+    const res = await svc.findOrCreateCustomerEntity({
+      tenantId: 't1',
+      name: '  Новый Клиент  ',
+      email: 'a@b.com',
+      source: 'chatbox',
+    });
+
+    expect(res.created).toBe(true);
+    expect(res.customerId).toBe('cust-new');
+    expect(res.entity.id).toBe('ent-new');
+    expect(resolveSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 't1', type: 'customer', name: 'Новый Клиент' }),
+    );
+    expect(customerCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tenantId: 't1',
+          entityId: 'ent-new',
+          name: 'Новый Клиент',
+          email: 'a@b.com',
+          source: 'chatbox',
+          status: 'active',
+        }),
+      }),
+    );
+  });
+
+  it('Entity новый, но Customer по entityId уже есть → created:false, create НЕ вызван', async () => {
+    const customerFindUnique = vi.fn(async () => ({ id: 'cust-existing' }));
+    const customerCreate = vi.fn(async () => ({ id: 'should-not-be-called' }));
+    const svc = buildSvc({ customerFindUnique, customerCreate });
+    vi.spyOn(svc, 'findOrCreateEntity').mockResolvedValue({
+      entity: { id: 'ent-x', tenantId: 't1', type: 'customer' } as never,
+      created: false,
+    });
+
+    const res = await svc.findOrCreateCustomerEntity({ tenantId: 't1', name: 'Клиент X' });
+
+    expect(res.created).toBe(false);
+    expect(res.customerId).toBe('cust-existing');
+    expect(res.entity.id).toBe('ent-x');
+    expect(customerCreate).not.toHaveBeenCalled();
+    expect(customerFindUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { entityId: 'ent-x' } }),
+    );
+  });
+});

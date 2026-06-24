@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { LlmRouterService } from '../ai/services/llm-router.service';
 import { applyInputGuards } from '../ai/services/prompts/common';
 import { IngestService } from '../ingest/ingest.service';
+import { EntityResolutionService } from '../knowledge-core/services/entity-resolution.service';
 
 const SOURCE_TYPE = 'chatbox' as const;
 const SOURCE_NAME = 'ChatBox' as const;
@@ -81,6 +82,7 @@ export class ChatboxIngestService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(IngestService) private readonly ingest: IngestService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    @Inject(EntityResolutionService) private readonly entityResolution: EntityResolutionService,
   ) {}
 
   private async upsertSource(tenantId: string): Promise<{ id: string }> {
@@ -246,7 +248,13 @@ export class ChatboxIngestService {
       previousSessionSummary = prev?.summary ?? null;
     }
 
-    let customer: { externalId: string; name: string | null } | null = null;
+    let customer: {
+      externalId: string;
+      name: string | null;
+      email: string | null;
+      phone: string | null;
+      externalCrmId: string | null;
+    } | null = null;
     if (chat?.customerExternalId) {
       const c = await this.prisma.chatboxCustomer.findUnique({
         where: {
@@ -255,9 +263,43 @@ export class ChatboxIngestService {
             externalId: chat.customerExternalId,
           },
         },
-        select: { externalId: true, name: true },
+        select: {
+          externalId: true,
+          name: true,
+          email: true,
+          phone: true,
+          externalCrmId: true,
+        },
       });
-      customer = c ? { externalId: c.externalId, name: c.name } : null;
+      customer = c
+        ? {
+            externalId: c.externalId,
+            name: c.name,
+            email: c.email,
+            phone: c.phone,
+            externalCrmId: c.externalCrmId,
+          }
+        : null;
+    }
+
+    let customerEntityId: string | null = null;
+    if (customer) {
+      try {
+        const resolved = await this.entityResolution.findOrCreateCustomerEntity({
+          tenantId,
+          name: customer.name?.trim() || customer.externalId,
+          email: customer.email?.trim() || null,
+          phone: customer.phone?.trim() || null,
+          externalCrmId: customer.externalCrmId ?? null,
+          source: 'chatbox',
+        });
+        customerEntityId = resolved.entity.id;
+      } catch (err) {
+        this.logger.warn(
+          { tenantId, sessionId, err: err instanceof Error ? err.message : String(err) },
+          'ingestSession: не удалось резолвить Customer-сущность — продолжаем без неё',
+        );
+      }
     }
 
     let responsible: {
@@ -307,7 +349,7 @@ export class ChatboxIngestService {
       sessionId: session.id,
       sessionSeq: session.seq,
       channelType: chat?.channelType ?? null,
-      customer,
+      customer: customer ? { ...customer, entityId: customerEntityId } : null,
       responsible,
       previousSessionSummary,
       rollingSummary: chat?.rollingSummary ?? null,

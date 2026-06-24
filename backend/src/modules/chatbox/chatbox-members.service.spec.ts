@@ -16,6 +16,7 @@ describe('ChatboxMembersService', () => {
     person: {
       findMany: ReturnType<typeof vi.fn>;
       findFirst: ReturnType<typeof vi.fn>;
+      create: ReturnType<typeof vi.fn>;
       updateMany: ReturnType<typeof vi.fn>;
     };
   };
@@ -31,6 +32,7 @@ describe('ChatboxMembersService', () => {
       person: {
         findMany: vi.fn(),
         findFirst: vi.fn(),
+        create: vi.fn(),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     };
@@ -204,6 +206,75 @@ describe('ChatboxMembersService', () => {
       await expect(service.linkMember('t1', 'm404', 'p1')).rejects.toThrow(BadRequestException);
       expect(prismaMock.person.findFirst).not.toHaveBeenCalled();
       expect(prismaMock.chatboxMember.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('autoLinkUnlinked', () => {
+    it('email уже есть у Person → linked++, create НЕ вызван, linkMode=auto', async () => {
+      prismaMock.chatboxMember.findMany.mockResolvedValue([
+        { id: 'm1', name: 'Alice', email: 'a@x.ru' },
+      ]);
+      prismaMock.person.findFirst.mockResolvedValue({ id: 'p-exist' });
+
+      const res = await service.autoLinkUnlinked('t1');
+
+      expect(prismaMock.chatboxMember.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { tenantId: 't1', linkedPersonId: null },
+        }),
+      );
+      expect(prismaMock.person.create).not.toHaveBeenCalled();
+      expect(prismaMock.chatboxMember.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'm1' },
+          data: { linkedPersonId: 'p-exist', linkMode: 'auto' },
+        }),
+      );
+      expect(prismaMock.person.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'p-exist', relationship: 'external' }),
+          data: { relationship: 'employee' },
+        }),
+      );
+      expect(res).toEqual({ created: 0, linked: 1 });
+    });
+
+    it('email без Person → create relationship=employee, created++, linkMode=auto', async () => {
+      prismaMock.chatboxMember.findMany.mockResolvedValue([
+        { id: 'm1', name: 'Bob', email: 'b@x.ru' },
+      ]);
+      prismaMock.person.findFirst.mockResolvedValue(null);
+      prismaMock.person.create.mockResolvedValue({ id: 'p-new' });
+
+      const res = await service.autoLinkUnlinked('t1');
+
+      expect(prismaMock.person.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            tenantId: 't1',
+            name: 'Bob',
+            email: 'b@x.ru',
+            relationship: 'employee',
+          }),
+        }),
+      );
+      expect(prismaMock.chatboxMember.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'm1' },
+          data: { linkedPersonId: 'p-new', linkMode: 'auto' },
+        }),
+      );
+      expect(res).toEqual({ created: 1, linked: 0 });
+    });
+
+    it('нет unlinked-строк → no-op', async () => {
+      prismaMock.chatboxMember.findMany.mockResolvedValue([]);
+
+      const res = await service.autoLinkUnlinked('t1');
+
+      expect(prismaMock.person.create).not.toHaveBeenCalled();
+      expect(prismaMock.chatboxMember.update).not.toHaveBeenCalled();
+      expect(res).toEqual({ created: 0, linked: 0 });
     });
   });
 });

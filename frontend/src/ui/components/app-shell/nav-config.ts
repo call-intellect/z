@@ -9,6 +9,7 @@ import {
   CalendarRange,
   CheckCircle2,
   ClipboardList,
+  Contact,
   FileText,
   FlaskConical,
   Gauge,
@@ -286,6 +287,12 @@ const REFERENCE_SUBGROUP: NavConfigSubgroup = {
       label: "Поставщики",
       icon: Truck,
       matchPrefix: "/vendors",
+    },
+    {
+      href: "/customers",
+      label: "Клиенты",
+      icon: Contact,
+      matchPrefix: "/customers",
     },
     {
       href: "/events",

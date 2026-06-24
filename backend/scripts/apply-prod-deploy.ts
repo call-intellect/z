@@ -219,7 +219,12 @@ const STEPS: Step[] = [
   {
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-knowledge-graph.ts',
-    hint: 'knowledge.segment_max_tokens + segment_overlap_ratio + contextual_header_enabled (Ф3 ЧАСТЬ B — sized-нарезка с overlap + контекст-заголовок перед эмбеддингом)',
+    hint: 'knowledge.* граф-ингест (Ф3/Ф5/Ф6/Ф7/Ф8: нарезка с overlap, контекст-заголовок, пороги рёбер/судьи, alias-резолв, поиск RRF/обход, theme-summary)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-smart-search.ts',
+    hint: 'concierge.max_steps + rag.* (умный поэтапный поиск Мастера Ф4: сторож, RRF, реранк, достаточность, гейт честности, cold-start)',
   },
   {
     phase: 'seed-base',

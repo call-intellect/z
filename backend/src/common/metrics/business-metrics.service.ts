@@ -480,6 +480,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private corePartialLossTotal!: Counter<'reason'>;
   private blockWithoutEvidenceTotal!: Counter<'reason'>;
   private riskEdgeTotal!: Counter<'relation' | 'outcome'>;
+  private ragAbstainTotal!: Counter<'mode'>;
   // Ф3 МТЗ «разблокировка конвейера» (баг #18) — счётчик ранних skip-return'ов
   // хендлеров специалистов. До этого skip был неотличим от success (duration-
   // метрика в finally на ВСЕХ путях). reason: 'block_not_found' /
@@ -2446,6 +2447,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'kc_risk_edge_total',
       help: 'block-linker/fact-supersede: рискованные связи (contradicts/supersedes/causes). outcome: created | rejected_low_conf | rejected_skeptic',
       labelNames: ['relation', 'outcome'] as const,
+    });
+    this.ragAbstainTotal = this.getOrCreateCounter({
+      name: 'rag_abstain_total',
+      help: 'Гейт честности RAG: ответ не заземлён блоками → честный отказ. mode: on (отказ применён) | shadow (только наблюдение over-abstention)',
+      labelNames: ['mode'] as const,
     });
     // Ф3 МТЗ «разблокировка конвейера» (баг #18) — skip-return'ы хендлеров.
     this.coreSpecialistSkippedTotal = this.getOrCreateCounter({
@@ -6042,6 +6048,10 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incRiskEdge(args: { relation: string; outcome: string }): void {
     this.riskEdgeTotal.inc({ relation: args.relation, outcome: args.outcome });
+  }
+
+  incRagAbstain(args: { mode: string }): void {
+    this.ragAbstainTotal.inc({ mode: args.mode });
   }
 
   /**

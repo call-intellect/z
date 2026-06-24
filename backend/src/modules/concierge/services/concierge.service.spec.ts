@@ -771,6 +771,104 @@ describe('ConciergeService.process() — Ф6 канальный whitelist + conf
   });
 });
 
+describe('ConciergeService.process() — Ф4.1 лимит шагов + сторож зацикливания', () => {
+  it('идентичный поисковый запрос сверх порога → сторож останавливает, ответ НЕ пустой и честный', async () => {
+    const { svc, mocks } = buildConciergeService({ nativeToolsEnabled: true });
+    mocks.llmCall.mockResolvedValue({
+      text: '',
+      modelUsed: 'mock',
+      inputTokens: 0,
+      outputTokens: 0,
+      cachedTokens: 0,
+      durationMs: 0,
+      toolCalls: [{ name: 'ask_chat_v2', input: { question: 'что решили по подрядчику?' } }],
+    });
+    const toolRouterExec = (
+      mocks.toolRouter as unknown as { execute: ReturnType<typeof vi.fn> }
+    ).execute;
+    toolRouterExec.mockResolvedValue({
+      ok: true,
+      status: 200,
+      result: { text: 'Частичные данные из памяти.', citations: [] },
+      tool: { name: 'ask_chat_v2', method: 'POST', readOnly: true },
+    });
+
+    const events = await collect(
+      svc.process({
+        userMessage: 'Что решили по подрядчику?',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+      }),
+    );
+
+    const keysAsked = (
+      mocks.getDynamic.mock.calls as unknown as Array<[string, unknown, unknown]>
+    ).map((c) => c[0]);
+    expect(keysAsked).toContain('concierge.max_steps');
+    expect(keysAsked).toContain('rag.loop_guard_threshold');
+
+    const messageEvent = events.find((e) => e.type === 'message');
+    expect(messageEvent && messageEvent.type === 'message').toBe(true);
+    const text = messageEvent && messageEvent.type === 'message' ? messageEvent.text : '';
+    expect(text.length).toBeGreaterThan(0);
+    expect(text).not.toBe('Готово. Если нужно — уточните, что сделать дальше.');
+    expect(text).toContain('Не успел собрать полный ответ');
+
+    expect(mocks.llmCall.mock.calls.length).toBeLessThan(6);
+  });
+
+  it('maxSteps=2 исчерпан без финала (разные запросы) → НЕ пустой ответ', async () => {
+    const { svc, mocks } = buildConciergeService({ nativeToolsEnabled: true });
+    mocks.getDynamic.mockImplementation(
+      async (key: string, _env: unknown, def: unknown): Promise<unknown> => {
+        if (key === 'concierge.max_steps') return 2;
+        if (key === 'rag.loop_guard_threshold') return 1;
+        if (key === 'concierge.history_pairs') return 4;
+        if (key === 'concierge.clarify_min_confidence') return 80;
+        return def;
+      },
+    );
+    let n = 0;
+    mocks.llmCall.mockImplementation(async () => {
+      n++;
+      return {
+        text: '',
+        modelUsed: 'mock',
+        inputTokens: 0,
+        outputTokens: 0,
+        cachedTokens: 0,
+        durationMs: 0,
+        toolCalls: [{ name: 'ask_chat_v2', input: { question: `запрос-${n}` } }],
+      };
+    });
+    const toolRouterExec = (
+      mocks.toolRouter as unknown as { execute: ReturnType<typeof vi.fn> }
+    ).execute;
+    toolRouterExec.mockResolvedValue({
+      ok: true,
+      status: 200,
+      result: { text: 'нашёл кое-что', citations: [] },
+      tool: { name: 'ask_chat_v2', method: 'POST', readOnly: true },
+    });
+
+    const events = await collect(
+      svc.process({
+        userMessage: 'долгий вопрос',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+      }),
+    );
+
+    expect(mocks.llmCall).toHaveBeenCalledTimes(2);
+    const messageEvent = events.find((e) => e.type === 'message');
+    const text = messageEvent && messageEvent.type === 'message' ? messageEvent.text : '';
+    expect(text.length).toBeGreaterThan(0);
+    expect(text).toContain('Не успел собрать полный ответ');
+  });
+});
+
 describe('ServiceMapGeneratorService.toLlmTools() — полнота', () => {
   it('маппит весь whitelist в LlmTool с непустыми name/description, input_schema.type=object', () => {
     const gen = new ServiceMapGeneratorService();

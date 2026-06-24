@@ -64,6 +64,11 @@ export type LlmTaskType =
   | 'entity-merge-arbiter'
   | 'entity-name-resolve'
   | 'block-link-confirm'
+  | 'rag-route'
+  | 'rag-plan'
+  | 'rag-rerank'
+  | 'rag-sufficiency'
+  | 'rag-groundedness'
   | 'entity-graph-builder'
   | 'theme-classify'
   // Ф8 граф-ингест (2026-06-23) — инкрементальная суть темы/кластера (map-reduce).
@@ -695,6 +700,11 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'entity-merge-arbiter',
   'entity-name-resolve',
   'block-link-confirm',
+  'rag-route',
+  'rag-plan',
+  'rag-rerank',
+  'rag-sufficiency',
+  'rag-groundedness',
   'entity-graph-builder',
   'theme-classify',
   // Ф8 граф-ингест (2026-06-23) — инкрементальная суть темы/кластера.

@@ -101,6 +101,15 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['graph.ageEnabled', z.boolean()],
 
+  ['concierge.max_steps', POSITIVE_INT],
+  ['rag.loop_guard_threshold', POSITIVE_INT],
+  ['rag.rrf_k', POSITIVE_INT],
+  ['rag.rerank_min_pool', POSITIVE_INT],
+  ['rag.multiquery_count', POSITIVE_INT],
+  ['rag.groundedness_mode', z.enum(['off', 'shadow', 'on'])],
+  ['rag.iterative_enabled', z.boolean()],
+  ['rag.cold_start_min_blocks', NON_NEGATIVE_INT],
+
   ['aiFeatures.summaryAgentEnabled', z.boolean()],
   ['aiFeatures.regulationMinMaterializeConfidence', UNIT_INTERVAL],
   ['aiFeatures.regulationConsolidatorEnabled', z.boolean()],

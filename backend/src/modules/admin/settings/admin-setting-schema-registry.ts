@@ -9,6 +9,7 @@ const UNIT_INTERVAL = z.number().min(0).max(1);
 const registry = new Map<string, ZodTypeAny>([
   ['knowledge.distillMergeThreshold', UNIT_INTERVAL],
   ['knowledge.entityMergeThreshold', UNIT_INTERVAL],
+  ['knowledge.entity_name_resolve_threshold', UNIT_INTERVAL],
   ['knowledge.themeCosineThreshold', UNIT_INTERVAL],
   ['knowledge.ideaClusterThreshold', UNIT_INTERVAL],
   ['knowledge.insightClusterThreshold', UNIT_INTERVAL],

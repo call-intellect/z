@@ -516,7 +516,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           let decidedByPersonId: string | undefined;
           if (dec.decidedByPersonHint) {
             const personId = await this.entities
-              .resolvePersonByHint(event.tenantId, dec.decidedByPersonHint)
+              .resolvePersonByHint(event.tenantId, dec.decidedByPersonHint, dec.text)
               .catch(() => null);
             if (personId) decidedByPersonId = personId;
           }

@@ -2596,6 +2596,7 @@ model Org {
   entities               Entity[]
   blockLinks             IdeaBlockLink[]
   entityLinks            EntityLink[]
+  entityAliases          EntityAlias[]
   themes                 Theme[]
   goals                  Goal[]
   goalAlignmentSnapshots GoalAlignmentSnapshot[]
@@ -4263,6 +4264,28 @@ model EntityLink {
   /// под BI_TEMPORAL_EDGES_ENABLED. См. plans/tz/2026-05-29-agents-v2-umbrella.md §A1.
   @@index([fromEntityId, validFrom, validUntil])
   @@index([toEntityId, validFrom, validUntil])
+}
+
+/// Ф5 (граф-ингест 2026-06-23) — per-Org кэш псевдонимов имён → Person/Entity.
+/// Закрывает «Настя↔chydo_002»: имя-упоминание резолвится в одного человека
+/// без повторного fuzzy-LLM. Пополняется при ingest, читается перед fuzzy/LLM.
+/// personId/entityId — скаляры без FK (семантика кэша: устаревшая запись
+/// безвредна, читатель проверяет Person.deletedAt). Изоляция — по tenantId.
+model EntityAlias {
+  id        String   @id @default(cuid())
+  tenantId  String
+  /// Нормализованный псевдоним (lower-case, схлопнутые пробелы): «настя».
+  alias     String
+  personId  String?
+  entityId  String?
+  roleHint  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, alias])
+  @@index([tenantId, personId])
 }
 
 // ──────────────────────────── knowledge-core: Theme (Фаза 4) ────────────────────────────

@@ -166,7 +166,7 @@ relates_to:
 
 ---
 
-### Ф5 — Cross-source идентичность: alias-cache + эмбеддинг-склейка `[ ]`
+### Ф5 — Cross-source идентичность: alias-cache + эмбеддинг-склейка `[x]`
 **Цель:** «Настя» (текст) и `chydo_002` (аккаунт) — один человек.
 **Картография:** `entity-resolution.service.ts` (якорь `resolveSubjectPersonId` ~`:1114`); `Entity.aliases/mergedIntoId/embedding` [schema.prisma:3560](../../backend/prisma/schema.prisma#L3560); `commitmentRecipientPersonId` (fuzzy-путь) [schema.prisma:3416](../../backend/prisma/schema.prisma#L3416).
 **Что входит:**

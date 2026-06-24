@@ -36,6 +36,13 @@ export interface MessengerIdentityDto {
   avatarUrl: string | null;
 }
 
+export interface ChatboxParticipantDto {
+  externalId: string;
+  role: 'client' | 'manager' | 'assistant' | 'quality_control';
+  name: string | null;
+  messageCount: number;
+}
+
 export interface ChatboxSessionDto {
   id: string;
   seq: number;
@@ -52,6 +59,7 @@ export interface ChatListItemDto {
   channelType: string;
   channelName: string | null;
   status: string;
+  isGroup: boolean;
   customer: ChatboxRefDto | null;
   clientName: string | null;
   responsible: ChatboxRefDto | null;
@@ -66,9 +74,11 @@ export interface ChatDetailDto {
   channelType: string;
   channelName: string | null;
   status: string;
+  isGroup: boolean;
   customer: ChatboxRefDto | null;
   clientName: string | null;
   responsible: ChatboxRefDto | null;
+  participants: ChatboxParticipantDto[];
   lastMessageAt: string | null;
   messageCount: number;
   externalCreatedAt: string | null;

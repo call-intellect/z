@@ -218,6 +218,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-knowledge-graph.ts',
+    hint: 'knowledge.segment_max_tokens + segment_overlap_ratio + contextual_header_enabled (Ф3 ЧАСТЬ B — sized-нарезка с overlap + контекст-заголовок перед эмбеддингом)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-retention-logging.ts',
     hint: 'retention.* (10) + logging.* (11) (config Шаг 5 — крутилки хранения и логов в AdminSetting)',
   },

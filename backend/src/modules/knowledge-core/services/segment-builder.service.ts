@@ -259,7 +259,9 @@ export class SegmentBuilderService {
       this.logger.warn('SegmentBuilder: meeting payload без turns — нет сегментов');
       return [];
     }
-    const maxTokens = this.cfg.knowledgeCore.blockIngestMaxTokensPerSegment;
+    const ceiling = this.cfg.knowledgeCore.blockIngestMaxTokensPerSegment;
+    const maxTokens = Math.min(this.cfg.knowledgeCore.segmentMaxTokens, ceiling);
+    const overlapRatio = this.cfg.knowledgeCore.segmentOverlapRatio;
 
     // Шаг 1: схлопываем подряд идущих same-speaker.
     const groups: MeetingTurn[][] = [];
@@ -281,7 +283,11 @@ export class SegmentBuilderService {
       const speaker = group[0]?.speaker ?? 'unknown';
       let buffer: MeetingTurn[] = [];
       let bufferChars = 0;
-      const flush = () => {
+      // Б21 — лимит в символах: 1 токен ≈ 4 символа. Запас под `speaker: `
+      // префикс и перевод строки учитывается тем, что turnChars их прибавляет.
+      const maxChars = Math.max(1, maxTokens * 4);
+      const turnChars = (t: MeetingTurn) => t.text.length + speaker.length + 3;
+      const flush = (keepOverlap: boolean) => {
         if (buffer.length === 0) return;
         const text = buffer.map((t) => `${speaker}: ${t.text}`).join('\n');
         const startSec = buffer[0]!.startSec;
@@ -305,32 +311,37 @@ export class SegmentBuilderService {
             ? { messageExternalId: buffer[0].messageExternalId }
             : {}),
         });
-        buffer = [];
-        bufferChars = 0;
+        if (keepOverlap && overlapRatio > 0) {
+          const overlapChars = Math.round(maxChars * overlapRatio);
+          const tail: MeetingTurn[] = [];
+          let tailChars = 0;
+          for (let i = buffer.length - 1; i >= 0; i--) {
+            const c = buffer[i]!;
+            const cChars = turnChars(c);
+            if (tailChars + cChars > overlapChars) break;
+            tail.unshift(c);
+            tailChars += cChars;
+          }
+          buffer = tail;
+          bufferChars = tailChars;
+        } else {
+          buffer = [];
+          bufferChars = 0;
+        }
       };
-      // Б21 — лимит в символах: 1 токен ≈ 4 символа. Запас под `speaker: `
-      // префикс и перевод строки учитывается тем, что turnChars их прибавляет.
-      const maxChars = Math.max(1, maxTokens * 4);
       for (const turn of group) {
-        // Б21 — одиночный сверхдлинный turn РАНЬШЕ уходил в LLM-окно целиком
-        // (комментарий «резать опаснее» оставлял дыру): провайдер ловил
-        // таймаут/обрезку JSON и терялось ВСЁ окно. Теперь длинный turn режем
-        // посимвольно на куски ≤ лимита, каждый — отдельный turn того же
-        // speaker'а. Семантика сохраняется лучше, чем полная потеря окна.
         const chunks = this.splitTurnByChars(turn, maxChars, speaker);
         for (const chunk of chunks) {
-          const turnChars = chunk.text.length + speaker.length + 3;
-          // Если уже есть содержимое и добавление этого turn перегонит лимит —
-          // флашим и начинаем новый сегмент.
-          const projectedChars = bufferChars + turnChars;
+          const chunkChars = turnChars(chunk);
+          const projectedChars = bufferChars + chunkChars;
           if (buffer.length > 0 && Math.ceil(projectedChars / 4) > maxTokens) {
-            flush();
+            flush(true);
           }
           buffer.push(chunk);
-          bufferChars += turnChars;
+          bufferChars += chunkChars;
         }
       }
-      flush();
+      flush(false);
     }
 
     return segments;

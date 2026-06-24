@@ -138,7 +138,7 @@ relates_to:
 
 ---
 
-### Ф3 — Контекст чанка (Contextual Retrieval) + фикс извлечения `[ ]`
+### Ф3 — Контекст чанка (Contextual Retrieval) + фикс извлечения `[x]`
 **Цель:** чанк перестаёт «висеть»; чинит баг даты, overlap, размер.
 **Картография:** [segment-builder.service.ts:255-360](../../backend/src/modules/knowledge-core/services/segment-builder.service.ts#L255) (якорь `buildFromMeeting`, `maxTokens`), [block-ingest.prompt.ts:356,442-455](../../backend/src/modules/knowledge-core/prompts/block-ingest.prompt.ts#L356) (якорь `buildBlockIngestPrompt`, `meetingTitle`), [block-extraction.service.ts:404-461](../../backend/src/modules/knowledge-core/services/block-extraction.service.ts#L404) (окно, `processWindow`).
 **Что входит:**

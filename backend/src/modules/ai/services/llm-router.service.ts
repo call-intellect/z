@@ -57,6 +57,7 @@ export type LlmTaskType =
   | 'card-rollup'
   | 'card-chat'
   | 'block-ingest'
+  | 'chunk-context'
   | 'block-distill'
   | 'block-linker'
   | 'entity-resolver'
@@ -683,6 +684,7 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'card-rollup',
   'card-chat',
   'block-ingest',
+  'chunk-context',
   'block-distill',
   'block-linker',
   'entity-resolver',

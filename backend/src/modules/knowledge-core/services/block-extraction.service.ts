@@ -325,6 +325,9 @@ interface ExtractArgs {
   tenantId: string;
   rawEventId: string;
   meetingTitle?: string | undefined;
+  meetingDateIso?: string | undefined;
+  meetingType?: string | undefined;
+  participants?: string[] | undefined;
   segments: Segment[];
   /** Фаза 11: dataClass исходного RawEvent — пробрасывается в LLM-вызов. */
   dataClass?: DataClass;
@@ -407,6 +410,9 @@ export class BlockExtractionService {
         tenantId: args.tenantId,
         rawEventId: args.rawEventId,
         meetingTitle: args.meetingTitle,
+        meetingDateIso: args.meetingDateIso,
+        meetingType: args.meetingType,
+        participants: args.participants,
         windowIndex: Math.floor(i / windowSize),
         segments: slice,
         dataClass: args.dataClass,
@@ -451,12 +457,18 @@ export class BlockExtractionService {
     tenantId: string;
     rawEventId: string;
     meetingTitle?: string | undefined;
+    meetingDateIso?: string | undefined;
+    meetingType?: string | undefined;
+    participants?: string[] | undefined;
     windowIndex: number;
     segments: Segment[];
     dataClass?: DataClass;
   }): Promise<ExtractedWindow> {
     const { system, user } = buildBlockIngestPrompt({
       meetingTitle: args.meetingTitle,
+      meetingDateIso: args.meetingDateIso,
+      meetingType: args.meetingType,
+      participants: args.participants,
       segments: args.segments,
     });
     // ТЗ 2026-05-24 §4 (F1.2) — обернуть транскрипт-сегменты + meetingTitle

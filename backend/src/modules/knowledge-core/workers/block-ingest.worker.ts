@@ -35,6 +35,7 @@ import {
   type ExtractedBlock,
   type ExtractedEntityMention,
 } from '../services/block-extraction.service';
+import { ChunkContextService } from '../services/chunk-context.service';
 import { KnowledgeEmbeddingService } from '../services/embedding.service';
 import { EntityResolutionService } from '../services/entity-resolution.service';
 import { SegmentBuilderService, type Segment } from '../services/segment-builder.service';
@@ -151,6 +152,9 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(TaskEvidenceLinkerService)
     private readonly taskEvidenceLinker?: TaskEvidenceLinkerService,
+    @Optional()
+    @Inject(ChunkContextService)
+    private readonly chunkContext?: ChunkContextService,
   ) {}
 
   onModuleInit(): void {
@@ -213,6 +217,9 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         tenantId: event.tenantId,
         rawEventId: event.id,
         meetingTitle,
+        meetingDateIso: event.occurredAt.toISOString(),
+        meetingType: this.tryGetMeetingType(payload),
+        participants: this.tryGetParticipantNames(payload),
         segments,
         dataClass: event.dataClass,
       });
@@ -243,8 +250,22 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         'block-ingest: извлечение завершено',
       );
 
+      const contextHeader = this.chunkContext
+        ? await this.chunkContext
+            .buildContextHeader({
+              tenantId: event.tenantId,
+              meetingTitle,
+              meetingType: this.tryGetMeetingType(payload),
+              meetingDateIso: event.occurredAt.toISOString(),
+              participants: this.tryGetParticipantNames(payload),
+            })
+            .catch(() => '')
+        : '';
+
       const embeddings =
-        blocksInOrder.length > 0 ? await this.embeddings.embedBlocks(blocksInOrder) : [];
+        blocksInOrder.length > 0
+          ? await this.embeddings.embedBlocks(blocksInOrder, contextHeader)
+          : [];
 
       const indexToBlockId = new Map<number, string>();
       const blockIds: string[] = [];
@@ -786,6 +807,32 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     if (typeof payload !== 'object' || payload === null) return undefined;
     const t = (payload as { title?: unknown }).title;
     return typeof t === 'string' && t.length > 0 ? t : undefined;
+  }
+
+  private tryGetMeetingType(payload: unknown): string | undefined {
+    if (typeof payload !== 'object' || payload === null) return undefined;
+    const p = payload as { type?: unknown; meetingType?: unknown };
+    const t = p.type;
+    if (typeof t === 'string' && t.length > 0) return t;
+    const mt = p.meetingType;
+    if (typeof mt === 'string' && mt.length > 0) return mt;
+    return undefined;
+  }
+
+  private tryGetParticipantNames(payload: unknown): string[] | undefined {
+    if (typeof payload !== 'object' || payload === null) return undefined;
+    const parts = (payload as { participants?: unknown }).participants;
+    if (!Array.isArray(parts)) return undefined;
+    const names: string[] = [];
+    for (const p of parts) {
+      if (p === null || typeof p !== 'object') continue;
+      const name = (p as { displayName?: unknown }).displayName;
+      if (typeof name === 'string' && name.trim().length > 0) {
+        names.push(name.trim());
+      }
+      if (names.length >= 12) break;
+    }
+    return names.length > 0 ? names : undefined;
   }
 
   private tryGetAuthorUserId(payload: unknown): string | null {

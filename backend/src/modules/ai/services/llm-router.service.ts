@@ -66,6 +66,8 @@ export type LlmTaskType =
   | 'block-link-confirm'
   | 'entity-graph-builder'
   | 'theme-classify'
+  // Ф8 граф-ингест (2026-06-23) — инкрементальная суть темы/кластера (map-reduce).
+  | 'theme-summarize'
   | 'reframing'
   | 'card-rollup-v2'
   | 'chat-v2'
@@ -695,6 +697,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'block-link-confirm',
   'entity-graph-builder',
   'theme-classify',
+  // Ф8 граф-ингест (2026-06-23) — инкрементальная суть темы/кластера.
+  'theme-summarize',
   'reframing',
   'card-rollup-v2',
   'chat-v2',

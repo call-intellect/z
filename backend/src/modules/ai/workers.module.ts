@@ -63,6 +63,7 @@ import { SprintHelperWorker } from '../knowledge-core/workers/sprint-helper.work
 import { StrategicAlignmentCron } from '../knowledge-core/workers/strategic-alignment.cron';
 import { StrategicAlignmentWorker } from '../knowledge-core/workers/strategic-alignment.worker';
 import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cron';
+import { ThemeSummarizeCron } from '../knowledge-core/workers/theme-summarize.cron';
 import { MeetingUploadIngestWorker } from '../meeting-uploads/workers/meeting-upload-ingest.worker';
 import { MeetingUploadTranscribeWorker } from '../meeting-uploads/workers/meeting-upload-transcribe.worker';
 import { PersonalRelationBuilderWorker } from '../operations/workers/personal-relation-builder.worker';
@@ -154,6 +155,7 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     GoalTaskLinkerCron,
     ReframingCron,
     ThemeClustererCron,
+    ThemeSummarizeCron,
     CardRollupV2Worker,
     Specialist34ProjectCustomerWorker,
     Specialist31RegulationsWorker,

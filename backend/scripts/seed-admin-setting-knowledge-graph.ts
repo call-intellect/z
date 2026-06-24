@@ -97,6 +97,15 @@ const SEEDS: SettingSeed[] = [
     description:
       'Максимум структурных рёбер shares_entity (общая сущность), которые детерминированно создаются для одного блока при ingest (без LLM). По умолчанию 10.',
   },
+  {
+    key: 'knowledge.theme_summary_enabled',
+    value: true,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'high',
+    description:
+      'Рубильник воркера theme-summarize (инкрементальная суть темы/кластера). ON по умолчанию (Ship-On).',
+  },
 ];
 
 interface Counters {

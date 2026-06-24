@@ -41,6 +41,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.segment_max_tokens', z.number().int().min(200).max(2000)],
   ['knowledge.segment_overlap_ratio', UNIT_INTERVAL],
   ['knowledge.contextual_header_enabled', z.boolean()],
+  ['knowledge.theme_summary_enabled', z.boolean()],
   ['knowledge.linkerMinBlocks', POSITIVE_INT],
   ['knowledge.linker_min_canonical', POSITIVE_INT],
   ['knowledge.linker_candidate_topk', POSITIVE_INT],

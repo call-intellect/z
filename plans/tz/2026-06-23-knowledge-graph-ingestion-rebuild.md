@@ -212,7 +212,7 @@ relates_to:
 
 ---
 
-### Ф8 — `Theme.summary` инкрементально `[ ]`
+### Ф8 — `Theme.summary` инкрементально `[x]`
 **Цель:** «суть темы/кластера» retrievable, обновляется без полного rebuild.
 **Картография:** `theme-clusterer.cron.ts`, `clustering.service.ts`, `Theme` [schema.prisma:4274](../../backend/prisma/schema.prisma#L4274) (нет `summary`).
 **Что входит:** миграция `Theme.summary String? @db.Text` + `summaryUpdatedAt`; воркер `theme-summarize` (map-reduce member-блоков, инкрементально: новый блок присвоен теме → дописать/освежить резюме, без пересборки всех тем — label-propagation-приём, анализ `03`). Cache-friendly.

@@ -257,7 +257,7 @@ export class ThemeClustererCron {
     // ThemeIdeaBlock только по ним. Если не осталось ни одного свободного —
     // тему не создаём (иначе родится пустая осиротевшая Theme).
     const blockIdsInCluster = blocks.map((b) => b.id);
-    const themeId = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const freeRows = await tx.$queryRawUnsafe<Array<{ id: string }>>(
         `SELECT b.id AS id
            FROM "IdeaBlock" b
@@ -292,14 +292,16 @@ export class ThemeClustererCron {
         select: { id: true },
       });
 
+      const attachedBlockIds = blocks
+        .filter((b) => freeBlockIds.has(b.id))
+        .map((b) => b.id);
+
       await tx.themeIdeaBlock.createMany({
-        data: blocks
-          .filter((b) => freeBlockIds.has(b.id))
-          .map((b) => ({
-            themeId: created.id,
-            blockId: b.id,
-            weight: new Prisma.Decimal('1.000'),
-          })),
+        data: attachedBlockIds.map((blockId) => ({
+          themeId: created.id,
+          blockId,
+          weight: new Prisma.Decimal('1.000'),
+        })),
         skipDuplicates: true,
       });
       if (topEntities.length > 0) {
@@ -312,10 +314,13 @@ export class ThemeClustererCron {
           skipDuplicates: true,
         });
       }
-      return created.id;
+      return { themeId: created.id, attachedBlockIds };
     });
 
-    if (!themeId) return null;
+    if (!result) return null;
+    const themeId = result.themeId;
+
+    await this.createSharesTopicEdges(tenantId, result.attachedBlockIds);
 
     if (embedding && embedding.length > 0) {
       try {
@@ -336,6 +341,68 @@ export class ThemeClustererCron {
     }
 
     return themeId;
+  }
+
+  async createSharesTopicEdges(
+    tenantId: string,
+    blockIds: string[],
+  ): Promise<void> {
+    if (blockIds.length < 2) return;
+    let cap: number;
+    try {
+      cap = await this.cfg.getDynamic<number>(
+        'knowledge.structural_shares_entity_topk',
+        undefined,
+        10,
+      );
+    } catch {
+      cap = 10;
+    }
+    if (!Number.isFinite(cap) || cap <= 0) return;
+
+    for (const fromBlockId of blockIds) {
+      const targets = blockIds
+        .filter((id) => id !== fromBlockId)
+        .slice(0, cap);
+      for (const toBlockId of targets) {
+        try {
+          await this.prisma.ideaBlockLink.upsert({
+            where: {
+              fromBlockId_toBlockId_relationType: {
+                fromBlockId,
+                toBlockId,
+                relationType: 'shares_topic',
+              },
+            },
+            create: {
+              tenantId,
+              fromBlockId,
+              toBlockId,
+              relationType: 'shares_topic',
+              confidence: new Prisma.Decimal('1.000'),
+              explanation: 'Общая тема (структурная связь)',
+              createdBy: 'system',
+              status: 'active',
+            },
+            update: {
+              status: 'active',
+              deletedAt: null,
+              deletedBy: null,
+            },
+          });
+        } catch (err) {
+          this.logger.debug(
+            {
+              tenantId,
+              fromBlockId,
+              toBlockId,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'theme-clusterer: shares_topic upsert упал — пропускаю ребро',
+          );
+        }
+      }
+    }
   }
 }
 

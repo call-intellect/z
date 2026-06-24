@@ -4317,6 +4317,11 @@ model Theme {
   branch         ThemeBranch?
   embedding      Unsupported("vector(1536)")?
   lastSignalAt   DateTime?
+  /// Ф8 (граф-ингест 2026-06-23) — retrievable «суть темы/кластера»,
+  /// обновляется инкрементально воркером theme-summarize (map-reduce
+  /// member-блоков, без полного rebuild). null — резюме ещё не построено.
+  summary          String?                      @db.Text
+  summaryUpdatedAt DateTime?
   createdAt      DateTime                     @default(now())
   updatedAt      DateTime                     @updatedAt
 

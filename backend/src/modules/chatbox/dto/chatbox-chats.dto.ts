@@ -50,6 +50,7 @@ export interface ChatListItemDto {
   id: string;
   externalId: string;
   channelType: string;
+  channelName: string | null;
   status: string;
   customer: ChatboxRefDto | null;
   clientName: string | null;
@@ -63,6 +64,7 @@ export interface ChatDetailDto {
   id: string;
   externalId: string;
   channelType: string;
+  channelName: string | null;
   status: string;
   customer: ChatboxRefDto | null;
   clientName: string | null;

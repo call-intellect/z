@@ -108,6 +108,34 @@ export function chatboxChannelTypeLabel(type: string): string {
   }
 }
 
+export function chatboxChannelLabel(channelType: string): string {
+  switch (channelType) {
+    case "TELEGRAM":
+    case "TELEGRAM_PRIVATE":
+      return "Telegram";
+    case "MAX":
+    case "EXT_MAX":
+      return "MAX";
+    case "WHATSAPP":
+    case "WHATSAPP_BUSINESS":
+    case "WHATSAPP_WHAPI":
+    case "EXT_WHATSAPP":
+      return "WhatsApp";
+    case "AVITO":
+      return "Avito";
+    case "CIAN":
+      return "ЦИАН";
+    case "VK":
+      return "ВКонтакте";
+    case "EMAIL_CLIENT":
+      return "Email";
+    case "CHAT_WIDGET":
+      return "Виджет";
+    default:
+      return "Канал";
+  }
+}
+
 export function chatboxChannelTypeBadgeClass(type: string): string {
   const label = chatboxChannelTypeLabel(type);
   switch (label) {

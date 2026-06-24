@@ -6,6 +6,7 @@ import { ArrowLeft, Loader2, MessagesSquare } from "lucide-react";
 
 import { ApiError, humanizeApiError } from "@/api/api-error";
 import { chatboxApi, type ChatboxChatApi } from "@/api/chatbox.api";
+import { chatboxChannelLabel } from "@/domain/chatbox";
 import { useAuth } from "@/contexts/auth-context";
 import { TierGate } from "@/ui/components/TierGate";
 import { EmptyState } from "@/ui/components/shared/EmptyState";
@@ -198,8 +199,9 @@ function ChatboxChatsListContent() {
                         {c.customer?.name || c.clientName || c.externalId}
                       </div>
                       <div className="mt-0.5 truncate text-xs text-fg-tertiary">
-                        {c.channelType} · {fmtDateTime(c.lastMessageAt)} ·{" "}
-                        {c.messageCount} сообщ.
+                        {chatboxChannelLabel(c.channelType)}
+                        {c.channelName ? ` · ${c.channelName}` : ""} ·{" "}
+                        {fmtDateTime(c.lastMessageAt)} · {c.messageCount} сообщ.
                       </div>
                     </div>
                     <Badge variant={c.status === "closed" ? "secondary" : "default"}>

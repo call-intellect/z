@@ -35,6 +35,7 @@ function makeService(
     chatboxCustomer: { findMany: vi.fn(), findFirst: vi.fn() },
     chatboxMember: { findMany: vi.fn(), findFirst: vi.fn() },
     chatboxChannelClient: { findMany: vi.fn(), findFirst: vi.fn() },
+    chatboxChannel: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
     chatboxChatSession: { findMany: vi.fn() },
     ...over.prisma,
   };

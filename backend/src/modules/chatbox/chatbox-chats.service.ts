@@ -96,8 +96,9 @@ export class ChatboxChatsService {
     const customerIds = uniq(chats.map((c) => c.customerExternalId).filter(isStr));
     const memberIds = uniq(chats.map((c) => c.responsibleExternalId).filter(isStr));
     const clientIds = uniq(chats.map((c) => c.clientExternalId).filter(isStr));
+    const channelIds = uniq(chats.map((c) => c.channelExternalId).filter(isStr));
 
-    const [customers, members, clients] = await Promise.all([
+    const [customers, members, clients, channels] = await Promise.all([
       customerIds.length
         ? this.prisma.chatboxCustomer.findMany({
             where: { tenantId, externalId: { in: customerIds } },
@@ -116,34 +117,45 @@ export class ChatboxChatsService {
             select: { externalId: true, name: true },
           })
         : Promise.resolve([]),
+      channelIds.length
+        ? this.prisma.chatboxChannel.findMany({
+            where: { tenantId, externalId: { in: channelIds } },
+            select: { externalId: true, channelType: true, title: true },
+          })
+        : Promise.resolve([]),
     ]);
 
     const customerMap = toNameMap(customers);
     const memberMap = toNameMap(members);
     const clientMap = toNameMap(clients);
+    const channelMap = new Map(channels.map((ch) => [ch.externalId, ch]));
 
-    const items: ChatListItemDto[] = chats.map((c) => ({
-      id: c.id,
-      externalId: c.externalId,
-      channelType: c.channelType,
-      status: c.status,
-      customer: c.customerExternalId
-        ? {
-            externalId: c.customerExternalId,
-            name: customerMap.get(c.customerExternalId) ?? null,
-          }
-        : null,
-      clientName: c.clientExternalId ? (clientMap.get(c.clientExternalId) ?? null) : null,
-      responsible: c.responsibleExternalId
-        ? {
-            externalId: c.responsibleExternalId,
-            name: memberMap.get(c.responsibleExternalId) ?? null,
-          }
-        : null,
-      lastMessageAt: c.lastMessageAt?.toISOString() ?? null,
-      messageCount: c.messageCount,
-      externalCreatedAt: c.externalCreatedAt?.toISOString() ?? null,
-    }));
+    const items: ChatListItemDto[] = chats.map((c) => {
+      const channel = c.channelExternalId ? channelMap.get(c.channelExternalId) : undefined;
+      return {
+        id: c.id,
+        externalId: c.externalId,
+        channelType: channel?.channelType || c.channelType || '',
+        channelName: channel?.title ?? null,
+        status: c.status,
+        customer: c.customerExternalId
+          ? {
+              externalId: c.customerExternalId,
+              name: customerMap.get(c.customerExternalId) ?? null,
+            }
+          : null,
+        clientName: c.clientExternalId ? (clientMap.get(c.clientExternalId) ?? null) : null,
+        responsible: c.responsibleExternalId
+          ? {
+              externalId: c.responsibleExternalId,
+              name: memberMap.get(c.responsibleExternalId) ?? null,
+            }
+          : null,
+        lastMessageAt: c.lastMessageAt?.toISOString() ?? null,
+        messageCount: c.messageCount,
+        externalCreatedAt: c.externalCreatedAt?.toISOString() ?? null,
+      };
+    });
 
     return { items, total };
   }
@@ -154,7 +166,7 @@ export class ChatboxChatsService {
     });
     if (!chat) throw this.chatNotFound();
 
-    const [customer, responsible, sessions, identities, client] = await Promise.all([
+    const [customer, responsible, sessions, identities, client, channel] = await Promise.all([
       chat.customerExternalId
         ? this.prisma.chatboxCustomer.findFirst({
             where: { tenantId, externalId: chat.customerExternalId },
@@ -197,6 +209,12 @@ export class ChatboxChatsService {
             select: { name: true },
           })
         : Promise.resolve(null),
+      chat.channelExternalId
+        ? this.prisma.chatboxChannel.findFirst({
+            where: { tenantId, externalId: chat.channelExternalId },
+            select: { channelType: true, title: true },
+          })
+        : Promise.resolve(null),
     ]);
 
     const messengerIdentities: MessengerIdentityDto[] = identities.map((i) => ({
@@ -209,7 +227,8 @@ export class ChatboxChatsService {
     return {
       id: chat.id,
       externalId: chat.externalId,
-      channelType: chat.channelType,
+      channelType: channel?.channelType || chat.channelType || '',
+      channelName: channel?.title ?? null,
       status: chat.status,
       customer: customer ? { externalId: customer.externalId, name: customer.name ?? null } : null,
       clientName: client?.name ?? null,

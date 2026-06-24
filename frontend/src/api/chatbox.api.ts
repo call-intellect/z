@@ -79,6 +79,7 @@ export type ChatboxChatApi = {
   id: string;
   externalId: string;
   channelType: string;
+  channelName: string | null;
   status: ChatboxChatStatusApi;
   customer: ChatboxPartyApi | null;
   clientName: string | null;

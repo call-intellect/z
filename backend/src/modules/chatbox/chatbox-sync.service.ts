@@ -344,6 +344,11 @@ export class ChatboxSyncService {
     }
     const cfg = await this.loadCfg(tenantId);
 
+    const existingChannels = await this.prisma.chatboxChannel.count({ where: { tenantId } });
+    if (existingChannels === 0) {
+      await this.syncChannels(tenantId);
+    }
+
     const channels = await this.prisma.chatboxChannel.findMany({
       where: { tenantId },
       select: { externalId: true, channelType: true },

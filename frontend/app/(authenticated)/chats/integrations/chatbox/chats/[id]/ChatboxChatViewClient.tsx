@@ -11,6 +11,7 @@ import {
   type ChatboxMessageApi,
 } from "@/api/chatbox.api";
 import {
+  chatboxChannelLabel,
   chatboxContentPlaceholder,
   chatboxSenderRoleLabel,
 } from "@/domain/chatbox";
@@ -166,7 +167,8 @@ function ChatboxChatViewContent({ chatId }: { chatId: string }) {
             </Badge>
           </div>
           <div className="mt-1 text-xs text-fg-tertiary">
-            Канал: {chat.channelType}
+            Канал: {chatboxChannelLabel(chat.channelType)}
+            {chat.channelName ? ` · ${chat.channelName}` : ""}
             {chat.responsible?.name ? ` · Менеджер: ${chat.responsible.name}` : ""} ·{" "}
             {chat.messageCount} сообщений
           </div>

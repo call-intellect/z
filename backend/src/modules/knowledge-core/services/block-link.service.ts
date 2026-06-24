@@ -14,11 +14,25 @@ import { tryParseJson } from '../../ai/services/json-extract.util';
 import { LlmRouterService, maxDataClass } from '../../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import {
+  BLOCK_LINK_CONFIRM_SYSTEM_PROMPT,
+  parseBlockLinkConfirm,
+} from '../prompts/block-link-confirm.prompt';
+import {
   BLOCK_LINKER_JSON_SCHEMA,
   BLOCK_LINKER_SYSTEM_PROMPT,
   BlockLinkerResponseSchema,
 } from '../prompts/block-linker.prompt';
 import { signalTypeLabel } from '../prompts/signal-type-label';
+
+const BLOCK_LINK_CONFIRM_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['confirmed', 'reason'],
+  properties: {
+    confirmed: { type: 'boolean' },
+    reason: { type: 'string' },
+  },
+} as const;
 
 export interface LinkVerdict {
   relationType: IdeaBlockLinkType | null;
@@ -170,6 +184,51 @@ export class BlockLinkService {
     this.metrics?.incKcBlockLinkerFallbackNone({ reason: 'exhausted' });
     this.logger.warn({ fromId, toId }, 'block-linker: fallback на none после 2 попыток');
     return { relationType: null, confidence: 0, explanation: 'invalid LLM judge JSON' };
+  }
+
+  async confirmRiskLink(args: {
+    tenantId: string;
+    fromBlock: IdeaBlock;
+    toBlock: IdeaBlock;
+    relationType: IdeaBlockLinkType;
+  }): Promise<boolean> {
+    const userPayload = {
+      relationType: args.relationType,
+      blockA: this.summariseBlock(args.fromBlock),
+      blockB: this.summariseBlock(args.toBlock),
+    };
+    const userMessage = `Предполагаемая связь блока A → блока B: ${args.relationType}. Опровергни или подтверди строго по содержанию.\n\n${JSON.stringify(userPayload, null, 2)}`;
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    try {
+      const out = await this.llm.call({
+        taskType: 'block-link-confirm',
+        tenantId: args.tenantId,
+        systemPrompt: guardOn
+          ? withInjectionGuard(BLOCK_LINK_CONFIRM_SYSTEM_PROMPT)
+          : BLOCK_LINK_CONFIRM_SYSTEM_PROMPT,
+        userMessage: guardOn ? wrapUserData(userMessage) : userMessage,
+        responseFormat: {
+          type: 'json_schema',
+          name: 'BlockLinkConfirm',
+          strict: true,
+          schema: BLOCK_LINK_CONFIRM_JSON_SCHEMA,
+        },
+        sourceRef: { type: 'idea-block', id: args.fromBlock.id },
+        dataClass: maxDataClass([args.fromBlock.dataClass, args.toBlock.dataClass]),
+        validate: (text) => parseBlockLinkConfirm(tryParseJson(text)) !== null,
+      });
+      return parseBlockLinkConfirm(tryParseJson(out.text))?.confirmed === true;
+    } catch (err) {
+      this.logger.warn(
+        {
+          fromId: args.fromBlock.id,
+          toId: args.toBlock.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'block-link-confirm: скептик упал — fail-closed (риск-ребро отвергнуто)',
+      );
+      return false;
+    }
   }
 
   private parseVerdict(text: string): LinkVerdict | null {

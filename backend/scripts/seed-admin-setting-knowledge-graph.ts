@@ -52,6 +52,51 @@ const SEEDS: SettingSeed[] = [
     description:
       'Порог cosine-сходства (0–1) для эмбеддинг-склейки упомянутого имени с реальным сотрудником при резолве «кто это» (например «Настя» → аккаунт). Кандидат принимается только при единственном совпадении ≥ порога; при двух и более — неоднозначность, склейка не выполняется (fail-closed). По умолчанию 0.9.',
   },
+  {
+    key: 'knowledge.edge_confidence_high',
+    value: 0.85,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'high',
+    description:
+      'Высокий порог уверенности (0–1) для рискованных связей графа (противоречие/замещение/причинность): такие связи прячут или меняют версии фактов. Создаются только при уверенности ≥ порога И подтверждении судьёй-скептиком. По умолчанию 0.85.',
+  },
+  {
+    key: 'knowledge.edge_confidence_low',
+    value: 0.6,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Базовый порог уверенности (0–1) для обычных смысловых связей графа (развивает/следствие/отвечает/закрывает). По умолчанию 0.6.',
+  },
+  {
+    key: 'knowledge.linker_min_canonical',
+    value: 2,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Минимум канонических блоков в Org, при котором смысловой линкер начинает строить связи (убирает гейт-лаг при малом графе). По умолчанию 2.',
+  },
+  {
+    key: 'knowledge.linker_candidate_topk',
+    value: 12,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'low',
+    description:
+      'Сколько ближайших по вектору блоков-кандидатов рассматривает смысловой линкер для одного нового блока. По умолчанию 12.',
+  },
+  {
+    key: 'knowledge.structural_shares_entity_topk',
+    value: 10,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'low',
+    description:
+      'Максимум структурных рёбер shares_entity (общая сущность), которые детерминированно создаются для одного блока при ingest (без LLM). По умолчанию 10.',
+  },
 ];
 
 interface Counters {

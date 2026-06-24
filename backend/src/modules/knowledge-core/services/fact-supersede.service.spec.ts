@@ -7,6 +7,7 @@ import type { RedisService } from '../../../common/redis/redis.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 import type { ConflictService } from '../../curation/services/conflict.service';
 
+import type { BlockLinkService } from './block-link.service';
 import { FactSupersedeService } from './fact-supersede.service';
 
 function makeMocks() {
@@ -45,6 +46,7 @@ function makeMocks() {
   const metrics = {
     observeKcFactSupersedeLatencyMs: vi.fn(),
     incKcFactSupersedeVerdict: vi.fn(),
+    incRiskEdge: vi.fn(),
   } as unknown as BusinessMetricsService;
 
   const cfg = {
@@ -77,6 +79,7 @@ function makeMocks() {
       llmCall,
       conflictReport,
       metrics,
+      incRiskEdge: metrics.incRiskEdge as ReturnType<typeof vi.fn>,
     },
   };
 }
@@ -261,5 +264,87 @@ describe('FactSupersedeService', () => {
     expect(m.spies.llmCall).toHaveBeenCalledTimes(1);
     expect(m.spies.blockUpdateMany).toHaveBeenCalledTimes(1);
     expect(m.spies.conflictReport).toHaveBeenCalledTimes(1);
+  });
+
+  function makeSupersedeMocks() {
+    const m = makeMocks();
+    m.spies.blockUnique.mockImplementation(async (args: { where: { id: string } }) => {
+      if (args.where.id === 'blk-old') {
+        return makeBlock({ id: 'blk-old', trustedAnswer: 'old a' });
+      }
+      return makeBlock();
+    });
+    m.spies.queryRawUnsafe.mockResolvedValue([
+      {
+        id: 'blk-old',
+        name: 'old fact',
+        criticalQuestion: 'q',
+        trustedAnswer: 'old a',
+        signalType: 'fact',
+        validFrom: new Date('2026-05-01T10:00:00Z'),
+        similarity: 0.93,
+      },
+    ]);
+    m.spies.llmCall.mockResolvedValue({
+      text: JSON.stringify({
+        verdict: 'supersedes',
+        targetBlockId: 'blk-old',
+        reason: 'новый факт явно отменяет старый',
+        confidence: 0.92,
+      }),
+    });
+    m.spies.blockUpdateMany.mockResolvedValue({ count: 1 });
+    return m;
+  }
+
+  it('R-1: скептик отверг supersede → факт НЕ замещён, rejected_skeptic', async () => {
+    const m = makeSupersedeMocks();
+    const confirmRiskLink = vi.fn(async () => false);
+    const blockLink = { confirmRiskLink } as unknown as BlockLinkService;
+    const svc = new FactSupersedeService(
+      m.prisma,
+      m.redis,
+      m.llm,
+      m.conflicts,
+      m.metrics,
+      m.cfg,
+      blockLink,
+    );
+
+    const r = await svc.processNewBlock('blk-new');
+
+    expect(confirmRiskLink).toHaveBeenCalledTimes(1);
+    expect(r.applied).toBe(false);
+    expect(m.spies.blockUpdateMany).not.toHaveBeenCalled();
+    expect(m.spies.conflictReport).not.toHaveBeenCalled();
+    expect(m.spies.incRiskEdge).toHaveBeenCalledWith({
+      relation: 'supersedes',
+      outcome: 'rejected_skeptic',
+    });
+  });
+
+  it('скептик подтвердил supersede → факт замещён, created', async () => {
+    const m = makeSupersedeMocks();
+    const confirmRiskLink = vi.fn(async () => true);
+    const blockLink = { confirmRiskLink } as unknown as BlockLinkService;
+    const svc = new FactSupersedeService(
+      m.prisma,
+      m.redis,
+      m.llm,
+      m.conflicts,
+      m.metrics,
+      m.cfg,
+      blockLink,
+    );
+
+    const r = await svc.processNewBlock('blk-new');
+
+    expect(confirmRiskLink).toHaveBeenCalledTimes(1);
+    expect(r.applied).toBe(true);
+    expect(m.spies.blockUpdateMany).toHaveBeenCalledTimes(1);
+    expect(m.spies.incRiskEdge).toHaveBeenCalledWith({
+      relation: 'supersedes',
+      outcome: 'created',
+    });
   });
 });

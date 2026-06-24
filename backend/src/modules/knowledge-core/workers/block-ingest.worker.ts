@@ -323,6 +323,13 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       });
       if (summaryBlockId) blockIds.push(summaryBlockId);
 
+      await this.createStructuralEntityEdges(event.tenantId, blockIds).catch((err) => {
+        this.logger.warn(
+          { rawEventId, err: err instanceof Error ? err.message : String(err) },
+          'block-ingest: структурные shares_entity не построены — пропуск',
+        );
+      });
+
       await this.applyDocumentAttribution(event, payload, blockIds).catch((err) => {
         this.logger.warn(
           { rawEventId, err: err instanceof Error ? err.message : String(err) },
@@ -1730,6 +1737,54 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         })),
         skipDuplicates: true,
       });
+    }
+  }
+
+  private async createStructuralEntityEdges(tenantId: string, blockIds: string[]): Promise<void> {
+    if (blockIds.length === 0) return;
+    const cap = await this.cfg.getDynamic<number>(
+      'knowledge.structural_shares_entity_topk',
+      undefined,
+      10,
+    );
+    for (const blockId of blockIds) {
+      const ents = await this.prisma.ideaBlockEntity.findMany({
+        where: { blockId },
+        select: { entityId: true },
+      });
+      if (ents.length === 0) continue;
+      const entityIds = ents.map((e) => e.entityId);
+      const others = await this.prisma.ideaBlockEntity.findMany({
+        where: { entityId: { in: entityIds }, blockId: { not: blockId }, block: { tenantId } },
+        select: { blockId: true },
+        distinct: ['blockId'],
+        take: cap,
+      });
+      for (const o of others) {
+        if (o.blockId === blockId) continue;
+        await this.prisma.ideaBlockLink
+          .upsert({
+            where: {
+              fromBlockId_toBlockId_relationType: {
+                fromBlockId: blockId,
+                toBlockId: o.blockId,
+                relationType: 'shares_entity',
+              },
+            },
+            update: { status: 'active', deletedAt: null, deletedBy: null },
+            create: {
+              tenantId,
+              fromBlockId: blockId,
+              toBlockId: o.blockId,
+              relationType: 'shares_entity',
+              confidence: new Prisma.Decimal('1.000'),
+              explanation: 'Общая сущность (структурная связь)',
+              createdBy: 'system',
+              status: 'active',
+            },
+          })
+          .catch(() => undefined);
+      }
     }
   }
 

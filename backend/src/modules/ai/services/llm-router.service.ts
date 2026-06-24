@@ -63,6 +63,7 @@ export type LlmTaskType =
   | 'entity-resolver'
   | 'entity-merge-arbiter'
   | 'entity-name-resolve'
+  | 'block-link-confirm'
   | 'entity-graph-builder'
   | 'theme-classify'
   | 'reframing'
@@ -691,6 +692,7 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'entity-resolver',
   'entity-merge-arbiter',
   'entity-name-resolve',
+  'block-link-confirm',
   'entity-graph-builder',
   'theme-classify',
   'reframing',

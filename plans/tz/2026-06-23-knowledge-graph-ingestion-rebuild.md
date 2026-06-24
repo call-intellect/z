@@ -181,7 +181,7 @@ relates_to:
 
 ---
 
-### Ф6 — Гибрид рёбер факт↔факт: структурные (без LLM) + смысловые (LLM) + тираж по риску `[ ]`
+### Ф6 — Гибрид рёбер факт↔факт: структурные (без LLM) + смысловые (LLM) + тираж по риску `[x]`
 **Цель:** связность строится дёшево и предсказуемо, риск-рёбра — под высоким барьером.
 **Картография:** `block-linker.worker.ts` (якорь `findLinkCandidates`, `judgeLink`, гейт по canonical-count, `contradicts`≥0.85→Conflict); `block-link.service.ts`; `IdeaBlockLink` [schema.prisma:4129](../../backend/prisma/schema.prisma#L4129); enum [schema.prisma:700](../../backend/prisma/schema.prisma#L700).
 **Что входит:**

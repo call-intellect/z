@@ -479,6 +479,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private coreSpecialistExtractionFailuresTotal!: Counter<'type' | 'reason'>;
   private corePartialLossTotal!: Counter<'reason'>;
   private blockWithoutEvidenceTotal!: Counter<'reason'>;
+  private riskEdgeTotal!: Counter<'relation' | 'outcome'>;
   // Ф3 МТЗ «разблокировка конвейера» (баг #18) — счётчик ранних skip-return'ов
   // хендлеров специалистов. До этого skip был неотличим от success (duration-
   // метрика в finally на ВСЕХ путях). reason: 'block_not_found' /
@@ -2440,6 +2441,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'kc_block_without_evidence_total',
       help: 'block-ingest: блок отброшен провенанс-инвариантом (нет непустой evidence-цитаты). reason: empty_quote',
       labelNames: ['reason'] as const,
+    });
+    this.riskEdgeTotal = this.getOrCreateCounter({
+      name: 'kc_risk_edge_total',
+      help: 'block-linker/fact-supersede: рискованные связи (contradicts/supersedes/causes). outcome: created | rejected_low_conf | rejected_skeptic',
+      labelNames: ['relation', 'outcome'] as const,
     });
     // Ф3 МТЗ «разблокировка конвейера» (баг #18) — skip-return'ы хендлеров.
     this.coreSpecialistSkippedTotal = this.getOrCreateCounter({
@@ -6032,6 +6038,10 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incBlockWithoutEvidence(args: { reason: string }): void {
     this.blockWithoutEvidenceTotal.inc({ reason: args.reason });
+  }
+
+  incRiskEdge(args: { relation: string; outcome: string }): void {
+    this.riskEdgeTotal.inc({ relation: args.relation, outcome: args.outcome });
   }
 
   /**

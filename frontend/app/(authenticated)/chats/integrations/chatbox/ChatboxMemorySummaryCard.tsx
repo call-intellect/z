@@ -69,7 +69,7 @@ function counters(s: ChatboxMemorySummaryView): Counter[] {
       key: "blocks",
       label: "Карточки памяти",
       tone: "neutral",
-      href: "/cards",
+      href: "/ideas",
     },
     { key: "tasks", label: "Задачи", tone: "neutral", href: "/tasks" },
   ];

@@ -368,7 +368,7 @@ IdeaBlockLink {
   relationType (develops | contradicts | causes | consequences_of |
                 shares_topic | shares_entity | question_answered_by),
   confidence Decimal(4,3), explanation @Text,
-  createdBy (linker | reframing | manual),
+  createdBy (linker | reframing | manual | system),
   status (active | archived),
   @@unique(fromBlockId, toBlockId, relationType)
 }
@@ -491,6 +491,38 @@ Response:
 **Источник:** [`plans/tz/2026-06-10-query-understanding-tier0-tier1.md`](../../plans/tz/2026-06-10-query-understanding-tier0-tier1.md) (Tier 0+1). Карта фичи — [[../01_projects/chat-v2]] §«Query Understanding Волна 1».
 
 chat-v2 retrieval теперь умеет применять **recall-safe структурные фильтры** (дата по `IdeaBlockEvidence.sourceTimestamp` / `signalType` / entity / `themeBranch` через `ThemeIdeaBlock`+`Theme.branch` / bitemporal `validUntil IS NULL`) поверх смыслового сходства. Источник структуры — `QueryPlanExtractorService` (dialog-layer): один LLM-вызов `dialog-extract-plan` извлекает план запроса, период резолвится детерминированно (без date-библиотек), fail-open на любой ошибке. При наличии хотя бы одного фильтра `ChatV2RetrievalService.rankByStructuralFilter` делает **полный точный скан** WHERE-фильтрованного пула с `ORDER BY` вычисляемого cosine-score — НЕ HNSW-проба `embedding<=>qvec LIMIT` (та роняет recall на узком окне). Без фильтров путь прежний (без регрессии); пустой фильтрованный пул → честное «по заданным условиям ничего не нашлось» без LLM-синтеза. Kill-switch `QUERY_PLAN_EXTRACTION_ENABLED` (ON).
+
+### Перестройка ингеста + умный поэтапный поиск (граф знаний v2, 2026-06-24)
+
+Две связанные фичи: (А) перестройка ингеста — граф собирается точнее и связнее; (Б) умный поэтапный поиск Мастера (Concierge / Chat-v2) — ответ строится в несколько шагов с проверкой честности.
+
+#### А. Граф знаний — перестройка ингеста
+
+- **Эпизод-узел (`sourceTitle`).** `RawEvent` получил человекочитаемый заголовок эпизода (например «Созвон с клиентом, 2026-06-20») — заполняется meeting/report-адаптерами через `ingest/adapters/episode-title.util.ts`. Нужен, чтобы поиск группировал результаты по эпизоду и показывал понятный источник.
+- **Провенанс-инвариант (machine-guard).** Блок без непустой evidence-цитаты **НЕ пишется** — `persistBlock` в `block-ingest.worker` режет блоки-«призраки» без подтверждения цитатой; метрика `kc_block_without_evidence_total`. Усиливает правило «нет цитаты — нет факта».
+- **Контекст чанка перед извлечением.** В промпт `block-ingest` теперь подаются дата / тип / участники встречи (в USER, prompt-cache сохранён — стабильный SYSTEM не тронут); инвариант **R13** — многосторонний факт (автор + адресат + срок) не схлопывать в один обезличенный блок. Нарезка под-чанков: размер `knowledge.segment_max_tokens` (600) + overlap `knowledge.segment_overlap_ratio` (0.2).
+- **`ChunkContextService`** (`services/chunk-context.service.ts`) — контекст-заголовок перед эмбеддингом блока (поднимает recall на узких запросах): детерминированная метастрока добавляется **всегда** + LLM-предложение заголовка за kill-switch `knowledge.contextual_header_enabled` (taskType `chunk-context`). Метод `embedBlocks(blocks, contextHeader)`.
+- **«Суть встречи» как retrievable holistic-блок.** Для отчёта создаётся отдельный блок `signalType=fact` из `reportSummaryMarkdown`, освобождённый от report-confidence-cap (флаг `isMeetingSummary`) — служит parent-document'ом для поиска (запрос «о чём была встреча» находит сводку, а не осколок).
+- **Cross-source идентичность (`EntityAlias`).** Новая таблица — per-Org кэш «псевдоним → Person/Entity». Каскад `resolvePersonByHint`: exact → alias-cache → fuzzy → эмбеддинг-склейка (порог `knowledge.entity_name_resolve_threshold` 0.9) → LLM-арбитр (taskType `entity-name-resolve`) → **fail-closed null** (инвариант **R-2**: разных людей не склеиваем — при сомнении не сливаем).
+- **Гибрид рёбер графа.** Структурные рёбра без LLM: `shares_entity` (на ingest, `createdBy=system`) и `shares_topic` (при кластеризации тем). Смысловые рёбра `block-linker` с риск-тирингом (`knowledge.edge_confidence_high` 0.85 / `edge_confidence_low` 0.6, `linker_min_canonical`, `linker_candidate_topk`) и **композитным судьёй-скептиком** для опасных типов `contradicts` / `supersedes` / `causes` (taskType `block-link-confirm`, **fail-closed** — при сомнении ребро отвергаем; метрика `kc_risk_edge_total`). Fact-supersede тоже под скептиком (инвариант **R-1**: ложное «устарело» не должно прятать живой факт). enum `LinkCreatedBy` получил значение `system`.
+- **Темы — авто-резюме.** `Theme.summary` / `summaryUpdatedAt` + cron `theme-summarize` (`workers/theme-summarize.cron.ts`, `@Cron`, taskType `theme-summarize`, kill-switch `knowledge.theme_summary_enabled`) — пересчитывает резюме **инкрементально**, только для изменившихся тем.
+- **bi-temporal включён (Ship-On).** Флаги `BITEMPORAL_ENABLED` / `BITEMPORAL_SUPERSEDE_ENABLED` / `BI_TEMPORAL_EDGES_ENABLED` = `true` — устаревшие версии фактов имеют `validUntil != NULL` и скрыты из выдачи.
+
+#### Поиск с обходом рёбер + RRF (`search.service`)
+
+После гибридного входа (cosine + BM25) поиск делает **1-hop обход рёбер** графа (`knowledge.search_expand_hops`) → **RRF-слияние** результатов (Reciprocal Rank Fusion — слияние рангов нескольких списков, утилита `knowledge-core/utils/rank-fusion.util.ts`, параметр `knowledge.search_rrf_k`) → **группировку по эпизоду**. Superseded-блоки скрыты (bi-temporal `validUntil IS NULL`). Это поднимает связность ответа: вопрос находит не только прямое совпадение, но и соседние по графу блоки.
+
+#### Б. Умный поэтапный поиск Мастера (concierge / chat-v2 / knowledge-core)
+
+Многошаговая ветка ответа поверх knowledge-core — за гейтом `rag.iterative_enabled` + cold-start (`rag.cold_start_min_blocks`), **fail-open до одношагового** при любой ошибке:
+
+1. **Роутер сложности** (taskType `rag-route`) — простой вопрос идёт коротким путём, сложный — поэтапным.
+2. **ReWOO-план** (`rag-plan`) — раскладывает сложный вопрос на под-вопросы заранее (Reasoning WithOut Observation — план до поиска).
+3. **Пошаговый retrieval с судьёй достаточности** (`rag-sufficiency`) — после каждого шага судья решает, хватает ли собранного для ответа.
+4. **RRF-слияние подзапросов** + **условный LLM-реранк** (`rag-rerank`, порог `rag.rerank_min_pool` — реранк только когда пул кандидатов большой).
+5. **Синтез** → **гейт честности после синтеза** (`chat-v2.service applyGroundednessGate` → taskType `rag-groundedness`, режим `rag.groundedness_mode`) — отсекает невыводимые из источников утверждения; метрика `rag_abstain_total` (сколько раз честно воздержались от ответа).
+
+Защита диалога Concierge: **сторож зацикливания** (`concierge/utils/loop-guard.ts`, лимит `concierge.max_steps` — AdminSetting) даёт честный частичный ответ при достижении лимита; строгий **гейт переспроса** в промпте `concierge-respond` — на вопросах-поиск переспрашивать запрещено (Мастер ищет, а не задаёт встречный вопрос). Промпты-победители — `knowledge-core/prompts/rag-pipeline.prompts.ts`.
 
 Дополнительные эндпоинты:
 - `GET /api/v1/knowledge/blocks/:id` — деталка блока + evidence + entities;

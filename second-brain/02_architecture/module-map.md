@@ -2532,4 +2532,21 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **`OrgContextService`** — реальная роль человека (по `cfg.persons.useAppointment`) вместо `role:null`; `formatOrgContextForPrompt` рендерит «Имя (Роль)».
 - Эндпоинт `POST /me/tasks/suggest-assignee` + concierge-tool `suggest_assignee`; присвоение — существующим путём `addAssignee` (`viaRouting:true` → `incRoutingSuggestionAccepted`), уведомление через `IssueAssignmentNotifierService`.
 
+## Граф знаний v2 — перестройка ингеста + умный поэтапный поиск (2026-06-24)
+
+Подробно — [[knowledge-core]] §«Перестройка ингеста + умный поэтапный поиск»; модели/поля — [[data-model]] (`RawEvent.sourceTitle`, `EntityAlias`, `Theme.summary`, `LinkCreatedBy += system`); taskType — [[../01_projects/ai-jobs]]; cron — [[../01_projects/workers-queues]].
+
+### Перестройка ингеста (`knowledge-core/`)
+- **`services/chunk-context.service.ts`** (`ChunkContextService`) — контекст-заголовок перед эмбеддингом блока: детерминированная метастрока всегда + LLM-предложение за kill-switch `knowledge.contextual_header_enabled` (taskType `chunk-context`); метод `embedBlocks(blocks, contextHeader)`.
+- **`ingest/adapters/episode-title.util.ts`** — заголовок эпизода (`RawEvent.sourceTitle`) от meeting/report-адаптеров.
+- **`utils/rank-fusion.util.ts`** — RRF-слияние (Reciprocal Rank Fusion) рангов нескольких списков (`knowledge.search_rrf_k`); `search.service` после гибридного входа делает 1-hop обход рёбер (`knowledge.search_expand_hops`) → RRF → группировку по эпизоду.
+- **`block-ingest.worker`** — машинный гард провенанса (блок без evidence-цитаты не пишется, метрика `kc_block_without_evidence_total`); контекст встречи в USER-промпт (prompt-cache сохранён), инвариант R13; шаг cross-source резолва `resolvePersonByHint` (alias-cache `EntityAlias` → fuzzy → embedding → LLM `entity-name-resolve`, fail-closed); структурные рёбра `shares_entity` (`createdBy=system`).
+- **`block-linker`** — риск-тиринг рёбер + композитный судья-скептик `block-link-confirm` для `contradicts`/`supersedes`/`causes` (fail-closed, метрика `kc_risk_edge_total`).
+- **`workers/theme-summarize.cron.ts`** (`@Cron`) — авто-резюме тем (`Theme.summary`, taskType `theme-summarize`, инкрементально, kill-switch `knowledge.theme_summary_enabled`).
+
+### Умный поэтапный поиск Мастера (`concierge/` + `chat-v2/` + `knowledge-core/`)
+- **`knowledge-core/prompts/rag-pipeline.prompts.ts`** — промпты-победители многошаговой ветки: роутер сложности `rag-route` → ReWOO-план `rag-plan` → пошаговый retrieval с судьёй достаточности `rag-sufficiency` → условный LLM-реранк `rag-rerank` (`rag.rerank_min_pool`). Гейт `rag.iterative_enabled` + cold-start `rag.cold_start_min_blocks`, fail-open до одношагового.
+- **`chat-v2.service` `applyGroundednessGate`** — гейт честности после синтеза (taskType `rag-groundedness`, режим `rag.groundedness_mode`, метрика `rag_abstain_total`).
+- **`concierge/utils/loop-guard.ts`** — сторож зацикливания (лимит `concierge.max_steps` AdminSetting, честный частичный ответ при лимите); строгий гейт переспроса в промпте `concierge-respond`.
+
 [[../index|← index]]

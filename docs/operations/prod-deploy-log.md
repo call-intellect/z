@@ -3595,6 +3595,8 @@ docker compose up -d --build frontend
 
 Полный список — `backend/src/common/config/env.schema.ts`. VAPID_*, CONCIERGE_* сознательно вне EnvSchema (TS2589 при глубоких `.merge()`) — читаются через `process.env` напрямую.
 
+**Граф знаний v2 (2026-06-24) — bi-temporal флаги переведены на ON (Ship-On), новых ENV-ключей нет:** дефолты в `env.schema.ts` сменены `false→true` для `BITEMPORAL_ENABLED`, `BITEMPORAL_SUPERSEDE_ENABLED`, `BI_TEMPORAL_EDGES_ENABLED`. Прод эти ключи в `.env` НЕ задаёт → на пересборке применяется `true` автоматически. Эффект: записывается `validFrom`, поиск скрывает устаревшие (superseded) версии фактов, supersede срабатывает (защищён композитным судьёй-скептиком). Аварийный откат — задать любой из них `=false` в `.env`. Реестр — `docs/operations/feature-flags.md`.
+
 ---
 
 ### Шаг 2 — Pull + сборка образов
@@ -3693,6 +3695,13 @@ Enum расширения (без удалений — Postgres не умеет 
 - `SourceType`: +conversational, +tracker_event
 - `VerificationPurpose`: +magic_link, +invite_accept
 - ~50 новых enum-типов целиком
+- **Граф знаний v2 (2026-06-24, ветка `feature/2026-06-23-kg-ingestion-and-smart-search`):** `LinkCreatedBy` += `system` (структурные рёбра без LLM).
+
+**Граф знаний v2 + умный поиск (2026-06-24)** — 4 аддитивные миграции, доезжают авто через `migrate deploy`, бэкфилла нет (все поля nullable / новая таблица):
+- `add_rawevent_source_title` — `RawEvent.sourceTitle String?` (человекочитаемый заголовок эпизода).
+- `add_entity_alias_cache` — новая модель `EntityAlias` (per-Org кэш псевдоним→Person/Entity, FK на `Org` cascade, `@@unique([tenantId, alias])`).
+- `add_linkcreatedby_system` — `LinkCreatedBy` += `system`.
+- `add_theme_summary` — `Theme.summary @db.Text` + `Theme.summaryUpdatedAt DateTime?` (инкрементальная суть темы, воркер `theme-summarize`).
 
 ---
 
@@ -3916,6 +3925,13 @@ docker compose exec backend bun run scripts/seed-llm-default-primary-deepseek-pr
 
 ℹ️ Большинство `seed-llm-task-routes-*` принимают `--update-existing` — без него существующие записи не трогаются. Защита `editedByAdmin` блокирует затирание ручных правок.
 
+**Граф знаний v2 + умный поиск (2026-06-24) — 2 новых сид-скрипта крутилок** (оба зарегистрированы в `apply-prod-deploy.ts STEPS` `phase:'seed-base'`, прогоняются агрегатором; защита admin-edited не затирает ручные правки):
+```bash
+docker compose exec backend bun run scripts/seed-admin-setting-knowledge-graph.ts   # 12 крутилок графа (нарезка/overlap/контекст-заголовок/пороги рёбер/судья/alias/поиск RRF+обход/theme-summary)
+docker compose exec backend bun run scripts/seed-admin-setting-smart-search.ts       # 8 крутилок Мастера (concierge.max_steps + rag.*: сторож/RRF/реранк/достаточность/гейт честности/iterative/cold-start)
+```
+Либо разом через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (прогонит оба + остальные seed/patch).
+
 ---
 
 ### Шаг 7.8 — Демо-воркспейс «ТехноСтрим» (per-Org, по запросу)
@@ -4045,6 +4061,12 @@ curl https://prod.host/metrics | grep -E 'z_voice_ws|z_mail_inbound|z_llm_cache|
 ```
 
 Должны быть `bullmq_*` метрики под новые очереди: `probe-*, conversational-send, chat-v2-cleanup, card-stale-detector, idea-clusterer, insight-clusterer, knowledge-clone-rebuild, skill-profile-*, executable-persona-build, skill-manager-digest, tracker.webhook-delivery`.
+
+**Граф знаний v2 + умный поиск (2026-06-24).** Новый cron `theme-summarize` (`@Cron('35 * * * *')`, in-process) — через ~час в `Theme.summary` появляется суть у тем с ≥2 членами. 9 новых taskType маршрутизируются по дефолт-цепочке DeepSeek (отдельный route не обязателен): `chunk-context, entity-name-resolve, block-link-confirm, theme-summarize, rag-route, rag-plan, rag-rerank, rag-sufficiency, rag-groundedness`. Новые метрики:
+```bash
+curl https://prod.host/metrics | grep -E 'kc_block_without_evidence_total|kc_risk_edge_total|rag_abstain_total'
+```
+**Ф10 — ручная приёмка** (после `up -d --build` + `apply-prod-deploy.ts`, требует «да» владельца на diag/qa): «суть встречи X» → связная суть+кликабельный источник; человек из встречи+чата = один профиль; поиск возвращает блок, достижимый через ребро; нет `sourceMeetingId=null` у новых блоков (diag); superseded скрыт; кейс «Александр» (агрегат без переспроса); «нет данных» → честный отказ.
 
 **Демо-воркспейс (2026-05-28).** В Swagger под тегом `onboarding` должны появиться `POST /api/v1/orgs/:orgId/demo-workspace` и `POST /api/v1/orgs/:orgId/reset-demo`. Smoke-проверка:
 

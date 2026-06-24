@@ -12,6 +12,9 @@ out/
 # Локальные креды тестового кабинета (скилл qa-tester, Playwright-приёмка). НЕ коммитить.
 /.qa-cabinet.local.json
 
+# Локальные креды прод-SSH (точечные прогоны скриптов на проде). НЕ коммитить.
+/.prod-access.local.json
+
 *.log
 coverage/
 

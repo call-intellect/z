@@ -1,0 +1,670 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e8]:
+    - complementary [ref=e10]:
+      - link "На главную" [ref=e12] [cursor=pointer]:
+        - /url: /dashboard
+        - generic [ref=e13]: К
+        - generic [ref=e14]: Кора
+      - generic [ref=e16]:
+        - img [ref=e17]
+        - generic [ref=e21]: Ооо луа
+      - button "Создать" [ref=e23]:
+        - img [ref=e24]
+        - text: Создать
+      - navigation [ref=e25]:
+        - generic [ref=e26]:
+          - generic [ref=e27]: Ритмы
+          - list [ref=e28]:
+            - listitem [ref=e29]:
+              - link "Сегодня" [ref=e30] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e31]
+                - generic [ref=e34]: Сегодня
+            - listitem [ref=e35]:
+              - link "Аналитика" [ref=e36] [cursor=pointer]:
+                - /url: /dashboard/operations
+                - img [ref=e37]
+                - generic [ref=e39]: Аналитика
+            - listitem [ref=e40]:
+              - link "Неделя" [ref=e41] [cursor=pointer]:
+                - /url: /week
+                - img [ref=e42]
+                - generic [ref=e44]: Неделя
+            - listitem [ref=e45]:
+              - link "Итоги месяца" [ref=e46] [cursor=pointer]:
+                - /url: /month
+                - img [ref=e47]
+                - generic [ref=e50]: Итоги месяца
+        - generic [ref=e51]:
+          - generic [ref=e52]: Работа
+          - list [ref=e53]:
+            - listitem [ref=e54]:
+              - link "Встречи" [ref=e55] [cursor=pointer]:
+                - /url: /meetings
+                - img [ref=e56]
+                - generic [ref=e59]: Встречи
+            - listitem [ref=e60]:
+              - link "Задачи" [ref=e61] [cursor=pointer]:
+                - /url: /projects
+                - img [ref=e62]
+                - generic [ref=e65]: Задачи
+            - listitem [ref=e66]:
+              - link "Память" [ref=e67] [cursor=pointer]:
+                - /url: /memory
+                - img [ref=e68]
+                - generic [ref=e76]: Память
+            - listitem [ref=e77]:
+              - link "База знаний" [ref=e78] [cursor=pointer]:
+                - /url: /regulations
+                - img [ref=e79]
+                - generic [ref=e81]: База знаний
+            - listitem [ref=e82]:
+              - link "Цели" [ref=e83] [cursor=pointer]:
+                - /url: /goals
+                - img [ref=e84]
+                - generic [ref=e88]: Цели
+            - listitem [ref=e89]:
+              - link "Команда" [ref=e90] [cursor=pointer]:
+                - /url: /structure
+                - img [ref=e91]
+                - generic [ref=e96]: Команда
+        - generic [ref=e97]:
+          - generic [ref=e98]: Личное
+          - list [ref=e99]:
+            - listitem [ref=e100]:
+              - link "Я" [ref=e101] [cursor=pointer]:
+                - /url: /me
+                - img [ref=e102]
+                - generic [ref=e105]: Я
+            - listitem [ref=e106]:
+              - link "Требует вас" [ref=e107] [cursor=pointer]:
+                - /url: /actions
+                - img [ref=e108]
+                - generic [ref=e110]: Требует вас
+        - generic [ref=e111]:
+          - generic [ref=e112]: Система
+          - list [ref=e113]:
+            - listitem [ref=e114]:
+              - link "Настройки" [ref=e115] [cursor=pointer]:
+                - /url: /settings
+                - img [ref=e116]
+                - generic [ref=e119]: Настройки
+            - listitem [ref=e120]:
+              - link "Доставка" [ref=e121] [cursor=pointer]:
+                - /url: /delivery
+                - img [ref=e122]
+                - generic [ref=e124]: Доставка
+            - listitem [ref=e125]:
+              - link "Партнёрка" [ref=e126] [cursor=pointer]:
+                - /url: /referrals
+                - img [ref=e127]
+                - generic [ref=e131]: Партнёрка
+            - listitem [ref=e132]:
+              - link "Ваши предложения" [ref=e133] [cursor=pointer]:
+                - /url: /feedback
+                - img [ref=e134]
+                - generic [ref=e136]: Ваши предложения
+          - button "Справочник" [ref=e138]:
+            - img [ref=e139]
+            - generic [ref=e141]: Справочник
+          - button "Системное" [ref=e143]:
+            - img [ref=e144]
+            - generic [ref=e146]: Системное
+          - generic [ref=e147]:
+            - button "Админка" [expanded] [ref=e148]:
+              - img [ref=e149]
+              - generic [ref=e151]: Админка
+            - list [ref=e152]:
+              - listitem [ref=e153]:
+                - link "Админка компании" [ref=e154] [cursor=pointer]:
+                  - /url: /company-admin
+                  - img [ref=e155]
+                  - generic [ref=e158]: Админка компании
+      - button "С Сергей svmazur@mail.ru" [ref=e160]:
+        - generic [ref=e162]: С
+        - generic [ref=e163]:
+          - generic [ref=e164]: Сергей
+          - generic [ref=e165]: svmazur@mail.ru
+        - img [ref=e166]
+    - main [ref=e168]:
+      - 'button "Уведомления: 34" [ref=e170]':
+        - img [ref=e171]
+        - generic [ref=e174]: "34"
+      - generic [ref=e176]:
+        - generic [ref=e177]:
+          - generic [ref=e178]:
+            - heading "Сегодня — Сергей" [level=1] [ref=e179]
+            - paragraph [ref=e180]: Что случилось, что буксует, куда движемся — за 30 секунд.
+          - generic [ref=e181]:
+            - link "Открыть Неделю" [ref=e182] [cursor=pointer]:
+              - /url: /week
+              - img [ref=e183]
+              - generic [ref=e185]: Неделя
+            - link "Открыть Итоги месяца" [ref=e186] [cursor=pointer]:
+              - /url: /month
+              - img [ref=e187]
+              - generic [ref=e190]: Итоги месяца
+        - generic [ref=e191]:
+          - generic [ref=e193]:
+            - status [ref=e194]:
+              - img [ref=e196]
+              - generic [ref=e200]: Компания в норме. 15 вещей требуют вашего решения
+              - link "Разобрать" [ref=e201] [cursor=pointer]:
+                - /url: /actions
+                - text: Разобрать
+                - img [ref=e202]
+            - 'button "Ждут тебя: 15" [ref=e204]'
+          - generic [ref=e206]:
+            - generic [ref=e207]:
+              - img [ref=e209]
+              - heading "Вектор к цели" [level=3] [ref=e213]
+            - paragraph [ref=e214]: Цель компании не задана — задайте главную цель, чтобы видеть, куда движется команда.
+          - generic [ref=e216]:
+            - generic [ref=e217]:
+              - img [ref=e219]
+              - heading "План и факт" [level=3] [ref=e223]
+            - generic [ref=e224]:
+              - generic [ref=e225]:
+                - img [ref=e228]
+                - generic [ref=e232]: 0 из 3
+                - generic [ref=e234]: Отчитались утром
+              - generic [ref=e235]:
+                - img [ref=e238]
+                - generic [ref=e242]: 0 из 0
+                - generic [ref=e244]: Подвели итог вечером
+              - generic [ref=e245]:
+                - img [ref=e248]
+                - generic [ref=e252]: "3"
+                - generic [ref=e254]: Всего чек-инов за период
+            - generic [ref=e256]:
+              - generic [ref=e257]:
+                - img [ref=e259]
+                - heading "Настроение команды" [level=3] [ref=e263]
+              - generic [ref=e264]:
+                - generic [ref=e265]:
+                  - application [ref=e268]
+                  - generic:
+                    - generic: "3"
+                    - generic: чек-инов
+                - list [ref=e275]:
+                  - listitem [ref=e276]:
+                    - generic [ref=e277]: В норме
+                    - generic [ref=e279]: "3"
+                  - listitem [ref=e280]:
+                    - generic [ref=e281]: Устал
+                    - generic [ref=e283]: "0"
+                  - listitem [ref=e284]:
+                    - generic [ref=e285]: Тяжело
+                    - generic [ref=e287]: "0"
+            - button "По людям" [ref=e288]
+          - generic [ref=e290]:
+            - generic [ref=e291]:
+              - img [ref=e293]
+              - heading "Кто чем загружен" [level=3] [ref=e296]
+            - paragraph [ref=e297]: Карта нагрузки — куда перекинуть задачи.
+            - generic [ref=e298]:
+              - generic [ref=e299]: Перегруз 0
+              - generic [ref=e300]: Норма 2
+              - generic [ref=e301]: Недогруз 0
+            - button "По людям" [ref=e302]
+          - generic [ref=e304]:
+            - generic [ref=e305]:
+              - img [ref=e307]
+              - heading "Что зависло" [level=3] [ref=e310]
+            - generic [ref=e311]: "20"
+            - paragraph [ref=e312]: задач без движения
+            - list [ref=e313]:
+              - listitem [ref=e314]:
+                - link "Подготовить квартальный обзор для правления MANA-1 25 дн. без движения" [ref=e315] [cursor=pointer]:
+                  - /url: /issues/cmpnxgjzt000j01nxabmfoesp
+                  - generic [ref=e316]:
+                    - generic [ref=e317]: Подготовить квартальный обзор для правления MANA-1
+                    - generic [ref=e318]: 25 дн. без движения
+              - listitem [ref=e319]:
+                - link "Согласовать ключевые цели на квартал MANA-2 25 дн. без движения" [ref=e320] [cursor=pointer]:
+                  - /url: /issues/cmpnxgk08000k01nxe95ucyrr
+                  - generic [ref=e321]:
+                    - generic [ref=e322]: Согласовать ключевые цели на квартал MANA-2
+                    - generic [ref=e323]: 25 дн. без движения
+              - listitem [ref=e324]:
+                - link "Зафиксировать решение и назначить ответственного MANA-3 25 дн. без движения" [ref=e325] [cursor=pointer]:
+                  - /url: /issues/cmpnxgk0a000l01nx7lwf5zuz
+                  - generic [ref=e326]:
+                    - generic [ref=e327]: Зафиксировать решение и назначить ответственного MANA-3
+                    - generic [ref=e328]: 25 дн. без движения
+              - listitem [ref=e329]:
+                - link "Декомпозировать новую фичу на задачи DEVE-1 24 дн. без движения" [ref=e330] [cursor=pointer]:
+                  - /url: /issues/cmppkhlnk001p01rq477cx2i1
+                  - generic [ref=e331]:
+                    - generic [ref=e332]: Декомпозировать новую фичу на задачи DEVE-1
+                    - generic [ref=e333]: 24 дн. без движения
+              - listitem [ref=e334]:
+                - link "Реализовать API-эндпоинт по спецификации DEVE-2 24 дн. без движения" [ref=e335] [cursor=pointer]:
+                  - /url: /issues/cmppkhlnu001q01rqhnj99nb5
+                  - generic [ref=e336]:
+                    - generic [ref=e337]: Реализовать API-эндпоинт по спецификации DEVE-2
+                    - generic [ref=e338]: 24 дн. без движения
+              - listitem [ref=e339]:
+                - link "Подготовить релизные заметки DEVE-3 24 дн. без движения" [ref=e340] [cursor=pointer]:
+                  - /url: /issues/cmppkhlnx001r01rqj79ay4sj
+                  - generic [ref=e341]:
+                    - generic [ref=e342]: Подготовить релизные заметки DEVE-3
+                    - generic [ref=e343]: 24 дн. без движения
+              - listitem [ref=e344]:
+                - link "тест SPRIN-1 18 дн. без движения" [ref=e345] [cursor=pointer]:
+                  - /url: /issues/cmq0h75pt04z601kk0m2si1ok
+                  - generic [ref=e346]:
+                    - generic [ref=e347]: тест SPRIN-1
+                    - generic [ref=e348]: 18 дн. без движения
+              - listitem [ref=e349]:
+                - link "Привлечь 25 платящих клиентов SPRIN-2 17 дн. без движения" [ref=e350] [cursor=pointer]:
+                  - /url: /issues/cmq0sigfl007k01qxlcp50k8p
+                  - generic [ref=e351]:
+                    - generic [ref=e352]: Привлечь 25 платящих клиентов SPRIN-2
+                    - generic [ref=e353]: 17 дн. без движения
+              - listitem [ref=e354]:
+                - link "Запустить 10 компаний на бесплатные тесты и сделать из них кейсы MTG-1 16 дн. без движения" [ref=e355] [cursor=pointer]:
+                  - /url: /issues/cmq142eob0005rhp8yurvskgf
+                  - generic [ref=e356]:
+                    - generic [ref=e357]: Запустить 10 компаний на бесплатные тесты и сделать из них кейсы MTG-1
+                    - generic [ref=e358]: 16 дн. без движения
+              - listitem [ref=e359]:
+                - link "Запустить 10 компаний на бесплатные тесты и сделать из них кейсы MTG-2 13 дн. без движения" [ref=e360] [cursor=pointer]:
+                  - /url: /issues/cmq6a8bv6002y01p76djql43g
+                  - generic [ref=e361]:
+                    - generic [ref=e362]: Запустить 10 компаний на бесплатные тесты и сделать из них кейсы MTG-2
+                    - generic [ref=e363]: 13 дн. без движения
+              - listitem [ref=e364]:
+                - link "Проводить экскурсии-онбординг для новых клиентов MTG-3 13 дн. без движения" [ref=e365] [cursor=pointer]:
+                  - /url: /issues/cmq6aaxv2008101p7sdb5k81t
+                  - generic [ref=e366]:
+                    - generic [ref=e367]: Проводить экскурсии-онбординг для новых клиентов MTG-3
+                    - generic [ref=e368]: 13 дн. без движения
+              - listitem [ref=e369]:
+                - link "Сделать десять кейсов по новой платформе MTG-4 13 дн. без движения" [ref=e370] [cursor=pointer]:
+                  - /url: /issues/cmq6aazv3008401p7hpfcflsu
+                  - generic [ref=e371]:
+                    - generic [ref=e372]: Сделать десять кейсов по новой платформе MTG-4
+                    - generic [ref=e373]: 13 дн. без движения
+              - listitem [ref=e374]:
+                - link "Уточнить у Никиты про новую функцию интеграции чат-бокса с корой DEVE-4 13 дн. без движения" [ref=e375] [cursor=pointer]:
+                  - /url: /issues/cmq6ab3ib008d01p7r12nueg4
+                  - generic [ref=e376]:
+                    - generic [ref=e377]: Уточнить у Никиты про новую функцию интеграции чат-бокса с корой DEVE-4
+                    - generic [ref=e378]: 13 дн. без движения
+              - listitem [ref=e379]:
+                - link "Изучить сервис DEVE-6 13 дн. без движения" [ref=e380] [cursor=pointer]:
+                  - /url: /issues/cmq6fbkym000601nxmo2mhc3p
+                  - generic [ref=e381]:
+                    - generic [ref=e382]: Изучить сервис DEVE-6
+                    - generic [ref=e383]: 13 дн. без движения
+              - listitem [ref=e384]:
+                - link "Изучить Tenchat и создать пять профилей MTG-6 12 дн. без движения" [ref=e385] [cursor=pointer]:
+                  - /url: /issues/cmq6ewe2j0000kgmrr1jh0rx4
+                  - generic [ref=e386]:
+                    - generic [ref=e387]: Изучить Tenchat и создать пять профилей MTG-6
+                    - generic [ref=e388]: 12 дн. без движения
+              - listitem [ref=e389]:
+                - link "Создать отдельную группу в чат-боксе для нового продукта и подключить её MTG-7 12 дн. без движения" [ref=e390] [cursor=pointer]:
+                  - /url: /issues/cmq6ewe3h0002kgmrzfn3zo1t
+                  - generic [ref=e391]:
+                    - generic [ref=e392]: Создать отдельную группу в чат-боксе для нового продукта и подключить её MTG-7
+                    - generic [ref=e393]: 12 дн. без движения
+              - listitem [ref=e394]:
+                - link "Уточнить у Никиты новый путь интеграции с чат-боксом MTG-8 12 дн. без движения" [ref=e395] [cursor=pointer]:
+                  - /url: /issues/cmq6ewe460004kgmrzjv2v544
+                  - generic [ref=e396]:
+                    - generic [ref=e397]: Уточнить у Никиты новый путь интеграции с чат-боксом MTG-8
+                    - generic [ref=e398]: 12 дн. без движения
+              - listitem [ref=e399]:
+                - link "Узнать про возможность восстановления базы клиентов из Битрикс24 MTG-9 12 дн. без движения" [ref=e400] [cursor=pointer]:
+                  - /url: /issues/cmq6ewe4s0006kgmrdvgyop9y
+                  - generic [ref=e401]:
+                    - generic [ref=e402]: Узнать про возможность восстановления базы клиентов из Битрикс24 MTG-9
+                    - generic [ref=e403]: 12 дн. без движения
+              - listitem [ref=e404]:
+                - link "Доработать фон и отображение в видео-встречах MTG-10 12 дн. без движения" [ref=e405] [cursor=pointer]:
+                  - /url: /issues/cmq6ewe5b0008kgmrw5c8cajk
+                  - generic [ref=e406]:
+                    - generic [ref=e407]: Доработать фон и отображение в видео-встречах MTG-10
+                    - generic [ref=e408]: 12 дн. без движения
+              - listitem [ref=e409]:
+                - link "Исследовать возможность интеграции с Битрикс24 MTG-11 12 дн. без движения" [ref=e410] [cursor=pointer]:
+                  - /url: /issues/cmq6ewe67000akgmr8ebg32io
+                  - generic [ref=e411]:
+                    - generic [ref=e412]: Исследовать возможность интеграции с Битрикс24 MTG-11
+                    - generic [ref=e413]: 12 дн. без движения
+          - generic [ref=e415]:
+            - generic [ref=e416]:
+              - img [ref=e418]
+              - heading "Идеи команды по темам" [level=3] [ref=e420]
+            - generic [ref=e421]:
+              - button "Без темы 5 идей растёт" [ref=e422]:
+                - generic [ref=e423]:
+                  - generic [ref=e424]: Без темы
+                  - generic [ref=e425]: 5 идей
+                - generic [ref=e426]: растёт
+              - button "Уведомления и напоминания 5 идей растёт" [ref=e427]:
+                - generic [ref=e428]:
+                  - generic [ref=e429]: Уведомления и напоминания
+                  - generic [ref=e430]: 5 идей
+                - generic [ref=e431]: растёт
+              - button "Без темы 4 идей растёт" [ref=e432]:
+                - generic [ref=e433]:
+                  - generic [ref=e434]: Без темы
+                  - generic [ref=e435]: 4 идей
+                - generic [ref=e436]: растёт
+              - button "Контроль выполнения задач 3 идей растёт" [ref=e437]:
+                - generic [ref=e438]:
+                  - generic [ref=e439]: Контроль выполнения задач
+                  - generic [ref=e440]: 3 идей
+                - generic [ref=e441]: растёт
+              - button "Вложения и файлы в задачах 2 идей растёт" [ref=e442]:
+                - generic [ref=e443]:
+                  - generic [ref=e444]: Вложения и файлы в задачах
+                  - generic [ref=e445]: 2 идей
+                - generic [ref=e446]: растёт
+              - button "Планируется с трёх Telegram-аккаунтов ежедневно рассылать короткие сообщения с п 2 идей растёт" [ref=e447]:
+                - generic [ref=e448]:
+                  - generic [ref=e449]: Планируется с трёх Telegram-аккаунтов ежедневно рассылать короткие сообщения с п
+                  - generic [ref=e450]: 2 идей
+                - generic [ref=e451]: растёт
+              - button "После встреч система фиксирует все договорённости, поставленные задачи, отслежив 2 идей растёт" [ref=e452]:
+                - generic [ref=e453]:
+                  - generic [ref=e454]: После встреч система фиксирует все договорённости, поставленные задачи, отслежив
+                  - generic [ref=e455]: 2 идей
+                - generic [ref=e456]: растёт
+              - button "Дашборды и операционный мониторинг 2 идей растёт" [ref=e457]:
+                - generic [ref=e458]:
+                  - generic [ref=e459]: Дашборды и операционный мониторинг
+                  - generic [ref=e460]: 2 идей
+                - generic [ref=e461]: растёт
+              - button "Автоматическое распределение задач 2 идей растёт" [ref=e462]:
+                - generic [ref=e463]:
+                  - generic [ref=e464]: Автоматическое распределение задач
+                  - generic [ref=e465]: 2 идей
+                - generic [ref=e466]: растёт
+              - button "Без темы 2 идей растёт" [ref=e467]:
+                - generic [ref=e468]:
+                  - generic [ref=e469]: Без темы
+                  - generic [ref=e470]: 2 идей
+                - generic [ref=e471]: растёт
+              - button "База знаний и обучение системы 2 идей растёт" [ref=e472]:
+                - generic [ref=e473]:
+                  - generic [ref=e474]: База знаний и обучение системы
+                  - generic [ref=e475]: 2 идей
+                - generic [ref=e476]: растёт
+              - button "База знаний и корпоративные документы 2 идей растёт" [ref=e477]:
+                - generic [ref=e478]:
+                  - generic [ref=e479]: База знаний и корпоративные документы
+                  - generic [ref=e480]: 2 идей
+                - generic [ref=e481]: растёт
+              - button "Без темы 2 идей растёт" [ref=e482]:
+                - generic [ref=e483]:
+                  - generic [ref=e484]: Без темы
+                  - generic [ref=e485]: 2 идей
+                - generic [ref=e486]: растёт
+              - button "Интеграции и сбор данных из коммуникаций 2 идей растёт" [ref=e487]:
+                - generic [ref=e488]:
+                  - generic [ref=e489]: Интеграции и сбор данных из коммуникаций
+                  - generic [ref=e490]: 2 идей
+                - generic [ref=e491]: растёт
+              - button "Сбор и агрегация данных из внешних источников 2 идей растёт" [ref=e492]:
+                - generic [ref=e493]:
+                  - generic [ref=e494]: Сбор и агрегация данных из внешних источников
+                  - generic [ref=e495]: 2 идей
+                - generic [ref=e496]: растёт
+              - button "Удобство работы с задачами 2 идей растёт" [ref=e497]:
+                - generic [ref=e498]:
+                  - generic [ref=e499]: Удобство работы с задачами
+                  - generic [ref=e500]: 2 идей
+                - generic [ref=e501]: растёт
+              - button "Требуется настройка Salesbot, чтобы клиентам, оставившим заявку через форму на с 2 идей растёт" [ref=e502]:
+                - generic [ref=e503]:
+                  - generic [ref=e504]: Требуется настройка Salesbot, чтобы клиентам, оставившим заявку через форму на с
+                  - generic [ref=e505]: 2 идей
+                - generic [ref=e506]: растёт
+              - button "Писать первыми через СМС признано плохим вариантом. Предлагается сначала добавля 2 идей растёт" [ref=e507]:
+                - generic [ref=e508]:
+                  - generic [ref=e509]: Писать первыми через СМС признано плохим вариантом. Предлагается сначала добавля
+                  - generic [ref=e510]: 2 идей
+                - generic [ref=e511]: растёт
+              - button "Доступность и понятность интерфейса (UX/UI) 2 идей растёт" [ref=e512]:
+                - generic [ref=e513]:
+                  - generic [ref=e514]: Доступность и понятность интерфейса (UX/UI)
+                  - generic [ref=e515]: 2 идей
+                - generic [ref=e516]: растёт
+              - button "Без темы 2 идей растёт" [ref=e517]:
+                - generic [ref=e518]:
+                  - generic [ref=e519]: Без темы
+                  - generic [ref=e520]: 2 идей
+                - generic [ref=e521]: растёт
+          - generic [ref=e523]:
+            - generic [ref=e524]:
+              - img [ref=e526]
+              - heading "Решения" [level=3] [ref=e529]
+            - generic [ref=e530]:
+              - generic [ref=e531]:
+                - img [ref=e534]
+                - generic [ref=e537]: 0%
+                - generic [ref=e539]: "Доведено: 0 из 0"
+              - generic [ref=e540]:
+                - img [ref=e543]
+                - generic [ref=e546]: "16"
+                - generic [ref=e548]: Застряли без результата
+            - generic [ref=e549]:
+              - generic [ref=e550]:
+                - generic [ref=e551]:
+                  - generic [ref=e552]: Включить настройку синхронизации новых менеджеров с системой.
+                  - generic [ref=e553]: 153 дн. ждёт
+                - link "Открыть" [ref=e554] [cursor=pointer]:
+                  - /url: /decisions/cmq95jz6m02sr01ldh93wr5ku
+                  - text: Открыть
+                  - img [ref=e555]
+              - generic [ref=e557]:
+                - generic [ref=e558]:
+                  - generic [ref=e559]: Утверждено приветствие без указания времени суток («Здравствуйте»).
+                  - generic [ref=e560]: 145 дн. ждёт
+                - link "Открыть" [ref=e561] [cursor=pointer]:
+                  - /url: /decisions/cmq96k2e3041d01ldcaur0hon
+                  - text: Открыть
+                  - img [ref=e562]
+              - generic [ref=e564]:
+                - generic [ref=e565]:
+                  - generic [ref=e566]: Использовать таблицу или Google Docs для фиксации и передачи правок по чек-листу.
+                  - generic [ref=e567]: 143 дн. ждёт
+                - link "Открыть" [ref=e568] [cursor=pointer]:
+                  - /url: /decisions/cmq96vcqo04ck01ldfzlg4ipf
+                  - text: Открыть
+                  - img [ref=e569]
+              - generic [ref=e571]:
+                - generic [ref=e572]:
+                  - generic [ref=e573]: Фактический запуск и начало работы системы (ОКК звонков) запланированы на понедельник, 9 февраля.
+                  - generic [ref=e574]: 136 дн. ждёт
+                - link "Открыть" [ref=e575] [cursor=pointer]:
+                  - /url: /decisions/cmq98cgc905my01ldjohwgli7
+                  - text: Открыть
+                  - img [ref=e576]
+              - generic [ref=e578]:
+                - generic [ref=e579]:
+                  - generic [ref=e580]: Использовать единый кабинет для всех региональных каналов вместо создания дополнительных.
+                  - generic [ref=e581]: 133 дн. ждёт
+                - link "Открыть" [ref=e582] [cursor=pointer]:
+                  - /url: /decisions/cmq98q8fh05wt01ldh105gcwn
+                  - text: Открыть
+                  - img [ref=e583]
+              - generic [ref=e585]:
+                - generic [ref=e586]:
+                  - generic [ref=e587]: Провести незапланированный созвон в Яндекс Телемост прямо сейчас для демонстрации настроек.
+                  - generic [ref=e588]: 133 дн. ждёт
+                - link "Открыть" [ref=e589] [cursor=pointer]:
+                  - /url: /decisions/cmq99byjo06bd01ldcg2zcseo
+                  - text: Открыть
+                  - img [ref=e590]
+              - generic [ref=e592]:
+                - generic [ref=e593]:
+                  - generic [ref=e594]: Договорились созвониться по номеру 89774244425 для совместного прохождения пути настройки и поиска несостыковки.
+                  - generic [ref=e595]: 133 дн. ждёт
+                - link "Открыть" [ref=e596] [cursor=pointer]:
+                  - /url: /decisions/cmq99byk606be01ld0vlqya00
+                  - text: Открыть
+                  - img [ref=e597]
+              - generic [ref=e599]:
+                - generic [ref=e600]:
+                  - generic [ref=e601]: Добавить одну неделю к сроку лицензии клиента в качестве компенсации.
+                  - generic [ref=e602]: 129 дн. ждёт
+                - link "Открыть" [ref=e603] [cursor=pointer]:
+                  - /url: /decisions/cmq99msj606ko01ldi1or6cdi
+                  - text: Открыть
+                  - img [ref=e604]
+              - generic [ref=e606]:
+                - generic [ref=e607]:
+                  - generic [ref=e608]: Клиент решил начать подключение 'макс 3+1' (или базового) и запрашивает тестовый доступ.
+                  - generic [ref=e609]: 129 дн. ждёт
+                - link "Открыть" [ref=e610] [cursor=pointer]:
+                  - /url: /decisions/cmq99qtsa06om01ldzivc0j6n
+                  - text: Открыть
+                  - img [ref=e611]
+              - generic [ref=e613]:
+                - generic [ref=e614]:
+                  - generic [ref=e615]: Удалить дублирующийся лид, который был ошибочно создан
+                  - generic [ref=e616]: 119 дн. ждёт
+                - link "Открыть" [ref=e617] [cursor=pointer]:
+                  - /url: /decisions/cmq9an1xf07gh01ldjea78xkt
+                  - text: Открыть
+                  - img [ref=e618]
+              - generic [ref=e620]:
+                - generic [ref=e621]:
+                  - generic [ref=e622]: Провести вводный Zoom-созвон по проекту завтра в 11:00.
+                  - generic [ref=e623]: 118 дн. ждёт
+                - link "Открыть" [ref=e624] [cursor=pointer]:
+                  - /url: /decisions/cmq9aoer107i301ldvdpygtc5
+                  - text: Открыть
+                  - img [ref=e625]
+              - generic [ref=e627]:
+                - generic [ref=e628]:
+                  - generic [ref=e629]: Провести созвон по вопросам ИИ и работы РОПа 19.03 в 11-30 Мск
+                  - generic [ref=e630]: 101 дн. ждёт
+                - link "Открыть" [ref=e631] [cursor=pointer]:
+                  - /url: /decisions/cmq9bn8db086101ld5n8tpc3p
+                  - text: Открыть
+                  - img [ref=e632]
+              - generic [ref=e634]:
+                - generic [ref=e635]:
+                  - generic [ref=e636]: Отложить внедрение модуля ОКК до подтверждения стабильной работы интеграции Telegram и Макс
+                  - generic [ref=e637]: 96 дн. ждёт
+                - link "Открыть" [ref=e638] [cursor=pointer]:
+                  - /url: /decisions/cmq9cctu008u601ld9kk19i0o
+                  - text: Открыть
+                  - img [ref=e639]
+              - generic [ref=e641]:
+                - generic [ref=e642]:
+                  - generic [ref=e643]: Начать контроль качества (ОКК) с внедрения чек-листа «Первый звонок»
+                  - generic [ref=e644]: 96 дн. ждёт
+                - link "Открыть" [ref=e645] [cursor=pointer]:
+                  - /url: /decisions/cmq9ccty208u701ldty85n5xq
+                  - text: Открыть
+                  - img [ref=e646]
+              - generic [ref=e648]:
+                - generic [ref=e649]:
+                  - generic [ref=e650]: "Разделить рабочий чат в Telegram на смысловые топики: 'ОКК звонки', 'ОКК переписки и коннекторы' и 'Финансы'."
+                  - generic [ref=e651]: 91 дн. ждёт
+                - link "Открыть" [ref=e652] [cursor=pointer]:
+                  - /url: /decisions/cmq9chp2y08z501ldrnt0zl4x
+                  - text: Открыть
+                  - img [ref=e653]
+              - generic [ref=e655]:
+                - generic [ref=e656]:
+                  - generic [ref=e657]: Клиент решил подключить стандартный тариф (без ОКК) минимум на полгода.
+                  - generic [ref=e658]: 89 дн. ждёт
+                - link "Открыть" [ref=e659] [cursor=pointer]:
+                  - /url: /decisions/cmq9cjhqb091h01ldpipx40iv
+                  - text: Открыть
+                  - img [ref=e660]
+          - generic [ref=e663]:
+            - generic [ref=e664]:
+              - img [ref=e666]
+              - heading "Лента" [level=3] [ref=e668]
+            - generic [ref=e669]:
+              - generic [ref=e670]:
+                - img [ref=e672]
+                - generic [ref=e675]:
+                  - generic [ref=e676]: Сергею проверить весь чат с переписками, исправить все баги и дать обратную связь
+                  - generic [ref=e677]: 19 ч назад
+              - generic [ref=e678]:
+                - img [ref=e680]
+                - generic [ref=e683]:
+                  - generic [ref=e684]: Поставить задачу ИИ-системе найти, где находится транскрибация по встречам
+                  - generic [ref=e685]: 19 ч назад
+              - generic [ref=e686]:
+                - img [ref=e688]
+                - generic [ref=e691]:
+                  - generic [ref=e692]: Отключить автоматическое включение демонстрации экрана и камеры при входе во встречу
+                  - generic [ref=e693]: 19 ч назад
+              - generic [ref=e694]:
+                - img [ref=e696]
+                - generic [ref=e699]:
+                  - generic [ref=e700]: Проверка всего чата с переписками, исправление багов и обратная связь
+                  - generic [ref=e701]: 19 ч назад
+              - generic [ref=e702]:
+                - img [ref=e704]
+                - generic [ref=e707]:
+                  - generic [ref=e708]: Поиск расположения транскрибации по встречам
+                  - generic [ref=e709]: 19 ч назад
+              - generic [ref=e710]:
+                - img [ref=e712]
+                - generic [ref=e715]:
+                  - generic [ref=e716]: Подготовка плана лидогенерации
+                  - generic [ref=e717]: 19 ч назад
+              - generic [ref=e718]:
+                - img [ref=e720]
+                - generic [ref=e723]:
+                  - generic [ref=e724]: Составление скриптов для проведения демонстраций клиентам
+                  - generic [ref=e725]: 19 ч назад
+              - generic [ref=e726]:
+                - img [ref=e728]
+                - generic [ref=e731]:
+                  - generic [ref=e732]: Детальное изучение сервиса и проверка его работоспособности
+                  - generic [ref=e733]: 19 ч назад
+              - generic [ref=e734]:
+                - img [ref=e736]
+                - generic [ref=e739]:
+                  - generic [ref=e740]: Отключение автоматического включения камеры и демонстрации экрана при входе во встречу
+                  - generic [ref=e741]: 19 ч назад
+          - generic [ref=e743]:
+            - generic [ref=e744]:
+              - img [ref=e746]
+              - heading "Польза Коры за период" [level=3] [ref=e749]
+            - generic [ref=e751]:
+              - heading "Польза за период" [level=3] [ref=e752]
+              - paragraph [ref=e753]: Рутина, которую Кора сняла с команды — твёрдые факты, не оценки.
+              - generic [ref=e754]:
+                - 'link "Встречи запротоколированы: 15 — открыть источник" [ref=e755] [cursor=pointer]':
+                  - /url: /meetings
+                  - img [ref=e757]
+                  - generic [ref=e761]: "15"
+                  - generic [ref=e762]: Встречи запротоколированы
+                - 'link "Задачи извлечены: 30 — открыть источник" [ref=e763] [cursor=pointer]':
+                  - /url: /tasks
+                  - img [ref=e765]
+                  - generic [ref=e768]: "30"
+                  - generic [ref=e769]: Задачи извлечены
+                - 'link "Решения зафиксированы: 55 — открыть источник" [ref=e770] [cursor=pointer]':
+                  - /url: /decisions
+                  - img [ref=e772]
+                  - generic [ref=e775]: "55"
+                  - generic [ref=e776]: Решения зафиксированы
+                - 'link "Вопросов отвечено памятью: 7 — открыть источник" [ref=e777] [cursor=pointer]':
+                  - /url: /memory
+                  - img [ref=e779]
+                  - generic [ref=e781]: "7"
+                  - generic [ref=e782]: Вопросов отвечено памятью
+                - 'link "Договорённостей удержано: 0 — открыть источник" [ref=e783] [cursor=pointer]':
+                  - /url: /me/promises
+                  - img [ref=e785]
+                  - generic [ref=e790]: "0"
+                  - generic [ref=e791]: Договорённостей удержано
+    - button "Открыть помощника" [ref=e792]:
+      - img [ref=e793]
+  - region "Notifications alt+T"
+  - alert [ref=e7]

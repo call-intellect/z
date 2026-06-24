@@ -66,11 +66,14 @@ export class ProbePendingProvider implements PendingActionsProvider {
       const payload = asObject(i.payload);
       const question = strOrUndef(payload.question);
       const context = strOrUndef(payload.context);
+      const draftAnswer = strOrUndef(payload.draftAnswer);
+      const draftKind = strOrUndef(payload.draftKind);
       const detail: ProbePendingDetail = {
         kind: 'probe',
         question: question ?? 'Уточняющий вопрос ждёт вашего ответа',
         context,
         notificationId: i.id,
+        ...(draftAnswer ? { draftAnswer, draftKind } : {}),
       };
       return {
         source: this.source,

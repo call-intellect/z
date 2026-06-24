@@ -1048,6 +1048,9 @@ Autonomy W2 (2026-06-12) добавила **ещё два значения** (м
 
 **Волна 1 политики триггера (2026-06-21) — новая колонка `ProbeEvent.notBeforeAt DateTime?`** (миграция `20260621132002_probe_event_not_before_at` — `ALTER TABLE "probe_events" ADD COLUMN "notBeforeAt" TIMESTAMP(3)`, аддитивная, nullable, backfill не нужен) — **грейс**: probe по свежей авто-извлечённой записи не отправляется раньше `notBeforeAt = createdAt + probe.confirmGraceDays` (2 дня); диспетчер и digest-cron уважают поле, attribution откладывается на грейс. Часть центрального гейта политики (machine-fillable + provenance `auto_unconfirmed` → `dropped_policy_silent`) — см. процессы [[../03_processes/probe-question-flow]] §8.2 и [[../03_processes/specialist-3-1-regulations]] §8.1.
 
+Автономизация — убрать лишние подтверждения (2026-06-23, Блок D) добавила **ещё одно значение** (миграция `20260623151703_add_probe_suppressed_by_memory`, `ALTER TYPE "ProbeStatus" ADD VALUE 'suppressed_by_memory'`, аддитивно):
+- **`suppressed_by_memory`** — висящий **pending-probe погашен дочисткой по выученному правилу** `SubjectMemory` (`SubjectMemoryService.sweepPendingDuplicates`): при активации нового правила самообучения близкие к нему ожидающие probe закрываются, человека не переспрашивают то, что Кора уже выучила. Kill-switch `subjectMemory.sweepPendingOnLearnEnabled` (ON), метрика `subject_memory_pending_swept_total`. См. [[../01_projects/probe-agent]] §«Наблюдаемость самообучения SubjectMemory».
+
 ## PersonLeave — отпуска / отсутствия сотрудника (2026-06-21)
 
 **Источник:** ТЗ [`plans/tz/2026-06-21-daily-reminders-delivery-fix-and-work-calendar.md`](../../plans/tz/2026-06-21-daily-reminders-delivery-fix-and-work-calendar.md) (Ф3, рабочий календарь). Миграция `20260621122719_person_leave` (CREATE TABLE, аддитивная). Полная карта надёжных напоминаний — [[../01_projects/operations]] (при наличии).

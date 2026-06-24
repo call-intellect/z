@@ -265,6 +265,28 @@ Probe обслуживает задачную подсистему — два н
 
 Kill-switch — [[../../docs/operations/feature-flags|feature-flags]]; прод-выкат — `docs/operations/prod-deploy-log.md` (блок 2026-06-23 «Задачная петля…»). Главный потребитель — [[tracker]] §«Задачная петля…».
 
+## Автономизация — убрать лишние подтверждения (2026-06-23, Блоки B/D)
+
+ТЗ [`plans/tz/2026-06-23-remove-manual-confirmations-master-tz.md`](../../plans/tz/2026-06-23-remove-manual-confirmations-master-tz.md) (Блоки B/D). Ветка `feature/2026-06-23-remove-manual-confirmations`. Цель — меньше уточняющих вопросов уходит человеку «голыми», и видно, чему probe научился.
+
+### Probe-черновики из памяти (HYBRID, Блок B)
+
+На уточняющий вопрос, для которого память даёт ответ, Кора прикрепляет **готовый черновик** — человек подтверждает/правит (HYBRID, авто-применения нет):
+- Новый LLM taskType `probe-draft-from-memory` (capable: `deepseek-v4-pro`, промпт `probe/prompts/probe-draft-from-memory.prompt.ts`, сид в `seed-llm-task-routes-ideas-and-probe.ts`) — [[ai-jobs]] §«Probe-черновики из памяти».
+- `ProbeFormulationService.draftFromMemory` собирает `draftAnswer`/`draftKind`; диспетчер прикрепляет их к `Notification.payload` для reason'ов из крутилки `probe.draftReasons`; фронт ProbeCard + `ProbePendingDetail` показывают черновик.
+- **Вертикали-источники:** урок эксперимента (`Experiment.lessonsJson` при подтверждении) и миссия/видение/стратегия (новый `@Cron` `company-profile-completeness` за kill-switch `companyProfile.completenessProbeEnabled`, reason'ы `companyprofile.missing_mission/vision/strategy`, запись через `CompanyProfileService`). Cron — [[workers-queues]] §История 2026-06-23.
+
+### Наблюдаемость самообучения SubjectMemory (Блок D)
+
+Выученные правила probe (термин/дизамбигуация/предпочтение, см. [[../05_история/2026-06-22-subject-memory-program]]) стали видимыми и подчищают дубли:
+- **Новый REST** `GET /api/v1/subject-memory` (owner/admin/coo) — правила по `tenantId`, фильтры `status`/`kind`, агрегат `countsByStatus`. Контроллер `probe/subject-memory/subject-memory.controller.ts` + DTO, зарегистрирован в `probe.module.ts`. См. [[api-layer]] §История 2026-06-23.
+- **Фронт-страница** «Что Кора выучила» `/company-admin/subject-memory` (owner/admin/coo) + `subject-memory.api.ts` + `domain/subject-memory.ts` + пункт в `CompanyAdminSidebar`. См. [[frontend-pages]] §«Что Кора выучила».
+- **Диаг-команда** `diag.ts subject-memory --org/--status/--kind/--json`.
+- **Дочистка дублей:** `SubjectMemoryService.sweepPendingDuplicates` при активации правила гасит висящие pending-probe, близкие к нему → новый статус `ProbeStatus.suppressed_by_memory` (миграция `20260623151703_add_probe_suppressed_by_memory`, [[../02_architecture/data-model]] §`ProbeStatus`). Kill-switch `subjectMemory.sweepPendingOnLearnEnabled` (ON), метрика `subject_memory_pending_swept_total`.
+- **Логи обучения** через LogService с явным `orgId`: `subject_memory.rule_extracted` / `pending_swept` / `rule_activated` / `rolled_back`.
+
+Kill-switch — [[../../docs/operations/feature-flags|feature-flags]]; прод-выкат — `docs/operations/prod-deploy-log.md` (блок 2026-06-23 «Убрать лишние подтверждения…»).
+
 ## См. также
 
 - [[ideas]] — главный потребитель Probe-Agent в β-5.

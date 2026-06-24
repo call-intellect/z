@@ -509,6 +509,59 @@ describe('ProvenanceService.resolve — последняя миля', () => {
   });
 });
 
+describe('ProvenanceService.resolveQuotesForJudge (ИИ-судья курации — первоисточник)', () => {
+  it('валидный тип decision + блоки с цитатами → массив непустых строк', async () => {
+    const findFirst = vi.fn(async () => ({ sourceBlockIds: ['b-1', 'b-2'] }));
+    const findMany = vi.fn(async () => [
+      { quote: 'Переходим на недельные спринты' },
+      { quote: '  Демо каждую пятницу  ' },
+      { quote: '' },
+    ]);
+    const prisma = {
+      decision: { findFirst },
+      ideaBlockEvidence: { findMany },
+    };
+    const svc = buildService({ prisma });
+    const quotes = await svc.resolveQuotesForJudge('t-1', 'decision', 'd-1', 5);
+    expect(quotes).toEqual(['Переходим на недельные спринты', 'Демо каждую пятницу']);
+    expect(findFirst).toHaveBeenCalledTimes(1);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { blockId: { in: ['b-1', 'b-2'] } },
+        take: 5,
+      }),
+    );
+  });
+
+  it('невалидный тип process → [] (collectSourceBlockIds не зовётся)', async () => {
+    const findFirst = vi.fn(async () => ({ sourceBlockIds: ['b-1'] }));
+    const findMany = vi.fn(async () => [{ quote: 'не должно появиться' }]);
+    const prisma = {
+      decision: { findFirst },
+      ideaBlockEvidence: { findMany },
+    };
+    const svc = buildService({ prisma });
+    const quotes = await svc.resolveQuotesForJudge('t-1', 'process', 'p-1', 5);
+    expect(quotes).toEqual([]);
+    expect(findFirst).not.toHaveBeenCalled();
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it('валидный тип, но у сущности нет блоков → [] (evidence не запрашивается)', async () => {
+    const findFirst = vi.fn(async () => ({ sourceBlockIds: [] }));
+    const findMany = vi.fn(async () => [{ quote: 'не должно появиться' }]);
+    const prisma = {
+      decision: { findFirst },
+      ideaBlockEvidence: { findMany },
+    };
+    const svc = buildService({ prisma });
+    const quotes = await svc.resolveQuotesForJudge('t-1', 'decision', 'd-1', 5);
+    expect(quotes).toEqual([]);
+    expect(findFirst).toHaveBeenCalledTimes(1);
+    expect(findMany).not.toHaveBeenCalled();
+  });
+});
+
 describe('ProvenanceService.resolveVoiceNoteAudioUrl (B3 — Послушать оригинал)', () => {
   const viewer = { tenantId: 't-1', userId: 'u-1' };
 

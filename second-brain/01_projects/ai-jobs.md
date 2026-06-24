@@ -579,6 +579,19 @@ LLM-judge текстового подтверждения мутаций в ка
 
 [[../index|← index]]
 
+## Probe-черновики из памяти — `probe-draft-from-memory` (2026-06-23, автономизация Блок B)
+
+**Источник:** ТЗ [`plans/tz/2026-06-23-remove-manual-confirmations-master-tz.md`](../../plans/tz/2026-06-23-remove-manual-confirmations-master-tz.md) (Блок B). Ветка `feature/2026-06-23-remove-manual-confirmations`. Карта фичи — [[probe-agent]] §«Probe-черновики из памяти (HYBRID)».
+
+| taskType | Цепочка | Что делает |
+|---|---|---|
+| `probe-draft-from-memory` (**capable**) | `deepseek-v4-pro` → `openai-via-proxy/gpt-5.4` → `ollama/qwen3:30b` | Готовит **черновик ответа** на уточняющий вопрос (probe) из памяти (SubjectMemory + контекст карточки): `ProbeFormulationService.draftFromMemory` собирает `draftAnswer`/`draftKind`, диспетчер прикрепляет их к `Notification.payload` для reason'ов из крутилки `probe.draftReasons` (HYBRID — человек подтверждает/правит, авто-применения нет). Промпт `backend/src/modules/probe/prompts/probe-draft-from-memory.prompt.ts` (cache-friendly). |
+
+- Сид — `backend/scripts/seed-llm-task-routes-ideas-and-probe.ts` (**пополнен** маршрутом, уже в `apply-prod-deploy.ts` STEPS, phase `seed-llm-routes`, идемпотентен). В union `LlmTaskType` + `ALL_LLM_TASK_TYPES`.
+- **Вертикали-источники черновиков** (НЕ новые taskType): урок эксперимента (запись в `Experiment.lessonsJson` при подтверждении) и миссия/видение/стратегия — новый `@Cron` `company-profile-completeness` (`company-profile-completeness.cron.ts`, kill-switch `companyProfile.completenessProbeEnabled`, reason'ы `companyprofile.missing_mission/vision/strategy`, запись через `CompanyProfileService`). Cron — [[workers-queues]] §История 2026-06-23.
+
+[[../index|← index]]
+
 ## Ревизия 12 промптов клона M5 + фиксы конвейера/кронов (2026-06-16)
 
 **Источник:** ТЗ [`plans/tz/2026-06-16-clone-agents-prompt-revision.md`](../../plans/tz/2026-06-16-clone-agents-prompt-revision.md) (Приложения A–D + Раздел 8). Ветка `devsv`, 9 коммитов. **Новых taskType / провайдеров НЕТ.** Карта модуля — [[skill-and-clone]] §«Доработки 2026-06-16»; кроны — [[workers-queues]] §История 2026-06-16.

@@ -10,6 +10,7 @@ import type { IntakeAutoTriageJobData } from '../queues';
 import type { AssigneeResolverService } from '../services/assignee-resolver.service';
 import type { IssuesService } from '../services/issues.service';
 import type { ProjectsService } from '../services/projects.service';
+import type { AssigneeSuggestion, SkillRoutingService } from '../services/skill-routing.service';
 
 import { IntakeAutoTriageWorker } from './intake-auto-triage.worker';
 
@@ -54,6 +55,11 @@ interface MkOpts {
   autoAcceptSources?: string[];
   meetingAlwaysPromote?: boolean;
   resolverResult?: unknown;
+  taskRoutingEnabled?: boolean;
+  autoAssignMinConfidence?: number;
+  skillRoutingResult?: AssigneeSuggestion[];
+  skillRoutingReject?: boolean;
+  withSkillRouting?: boolean;
 }
 
 function mkWorker(opts?: MkOpts): {
@@ -66,7 +72,9 @@ function mkWorker(opts?: MkOpts): {
   metrics: {
     incAiIntakeAutoAccepted: ReturnType<typeof vi.fn>;
     incAiIntakeSuggested: ReturnType<typeof vi.fn>;
+    incTaskSkillRoutingAssigned: ReturnType<typeof vi.fn>;
   };
+  skillRouting: { suggestAssignee: ReturnType<typeof vi.fn> };
 } {
   const intake = {
     id: 'intake-1',
@@ -150,10 +158,17 @@ function mkWorker(opts?: MkOpts): {
   const metrics = {
     incAiIntakeAutoAccepted: vi.fn(),
     incAiIntakeSuggested: vi.fn(),
+    incTaskSkillRoutingAssigned: vi.fn(),
   };
 
   const resolver = {
     resolve: vi.fn().mockResolvedValue(opts?.resolverResult ?? { kind: 'not_found' }),
+  };
+
+  const skillRouting = {
+    suggestAssignee: opts?.skillRoutingReject
+      ? vi.fn().mockRejectedValue(new Error('skill routing down'))
+      : vi.fn().mockResolvedValue(opts?.skillRoutingResult ?? []),
   };
 
   const redis = { client: {} as unknown } as unknown as RedisService;
@@ -162,6 +177,10 @@ function mkWorker(opts?: MkOpts): {
     tracker: {
       autoAcceptConfidenceThreshold: 0.75,
       meetingTasksAlwaysPromote: opts?.meetingAlwaysPromote ?? true,
+    },
+    taskRouting: {
+      enabled: opts?.taskRoutingEnabled ?? true,
+      autoAssignMinConfidence: opts?.autoAssignMinConfidence ?? 0.75,
     },
     getDynamic: async (_key: string, _env: string | undefined, def: unknown) =>
       _key === 'intake.autoAcceptSources' ? (opts?.autoAcceptSources ?? def) : def,
@@ -176,8 +195,11 @@ function mkWorker(opts?: MkOpts): {
     cfg,
     metrics as unknown as BusinessMetricsService,
     resolver as unknown as AssigneeResolverService,
+    opts?.withSkillRouting === false
+      ? undefined
+      : (skillRouting as unknown as SkillRoutingService),
   );
-  return { worker, prisma, llm, issues, projects, resolver, metrics };
+  return { worker, prisma, llm, issues, projects, resolver, metrics, skillRouting };
 }
 
 function jobOf(data: IntakeAutoTriageJobData): Job<IntakeAutoTriageJobData> {
@@ -657,5 +679,102 @@ describe('IntakeAutoTriageWorker', () => {
     expect(issues.create).toHaveBeenCalledTimes(1);
     const dto = issues.create.mock.calls[0]?.[1] as { assigneeUserIds: string[] };
     expect(dto.assigneeUserIds).toEqual(['user-fallback']);
+  });
+
+  const skillSuggestion = (over: Partial<AssigneeSuggestion>): AssigneeSuggestion => ({
+    personId: 'p1',
+    userId: 'u-skill',
+    personName: 'Аналитик',
+    roleName: 'Маркетолог',
+    departmentName: 'Маркетинг',
+    confidence: 0.9,
+    rationale: 'совпадение по зоне ответственности',
+    matchPath: 'semantic',
+    ...over,
+  });
+
+  it('Блок C: telegram + name-matching не дал исполнителя → skillRouting (0.9 ≥ 0.75) → исполнитель назначен, метрика intake', async () => {
+    const { worker, issues, skillRouting, metrics } = mkWorker({
+      intake: { source: 'telegram', externalSource: 'telegram', suggestedAssigneeId: null },
+      skillRoutingResult: [skillSuggestion({ userId: 'u-skill' })],
+      llmText: JSON.stringify({
+        suggestedProjectIdentifier: 'DEV',
+        suggestedAssigneeHint: null,
+        suggestedPriority: 'high',
+        suggestedLabels: [],
+        confidence: 0.9,
+      }),
+    });
+    await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
+    expect(skillRouting.suggestAssignee).toHaveBeenCalledTimes(1);
+    expect(skillRouting.suggestAssignee).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'org-1' }),
+    );
+    expect(issues.create).toHaveBeenCalledTimes(1);
+    const dto = issues.create.mock.calls[0]?.[1] as { assigneeUserIds: string[] };
+    expect(dto.assigneeUserIds).toEqual(['u-skill']);
+    expect(metrics.incTaskSkillRoutingAssigned).toHaveBeenCalledWith({ path: 'intake' });
+  });
+
+  it('Блок C: skillRouting низкая уверенность (0.5 < 0.75) → исполнитель не назначен по навыкам, метрика не инкрементнута', async () => {
+    const { worker, skillRouting, metrics } = mkWorker({
+      intake: { source: 'telegram', externalSource: 'telegram', suggestedAssigneeId: null },
+      meetingAlwaysPromote: false,
+      skillRoutingResult: [skillSuggestion({ userId: 'u-skill', confidence: 0.5 })],
+      llmText: JSON.stringify({
+        suggestedProjectIdentifier: 'DEV',
+        suggestedAssigneeHint: null,
+        suggestedPriority: 'medium',
+        suggestedLabels: [],
+        confidence: 0.6,
+      }),
+    });
+    await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
+    expect(skillRouting.suggestAssignee).toHaveBeenCalledTimes(1);
+    expect(metrics.incTaskSkillRoutingAssigned).not.toHaveBeenCalled();
+  });
+
+  it('Блок C: топ-кандидат без userId → исполнитель не назначен по навыкам', async () => {
+    const { worker, skillRouting, metrics } = mkWorker({
+      intake: { source: 'telegram', externalSource: 'telegram', suggestedAssigneeId: null },
+      meetingAlwaysPromote: false,
+      skillRoutingResult: [skillSuggestion({ userId: null, confidence: 0.95 })],
+      llmText: JSON.stringify({
+        suggestedProjectIdentifier: 'DEV',
+        suggestedAssigneeHint: null,
+        suggestedPriority: 'medium',
+        suggestedLabels: [],
+        confidence: 0.6,
+      }),
+    });
+    await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
+    expect(skillRouting.suggestAssignee).toHaveBeenCalledTimes(1);
+    expect(metrics.incTaskSkillRoutingAssigned).not.toHaveBeenCalled();
+  });
+
+  it('Блок C: taskRouting.enabled=false → skillRouting.suggestAssignee НЕ зван', async () => {
+    const { worker, skillRouting } = mkWorker({
+      intake: { source: 'telegram', externalSource: 'telegram', suggestedAssigneeId: null },
+      taskRoutingEnabled: false,
+      skillRoutingResult: [skillSuggestion({ userId: 'u-skill' })],
+      llmText: JSON.stringify({
+        suggestedProjectIdentifier: 'DEV',
+        suggestedAssigneeHint: null,
+        suggestedPriority: 'medium',
+        suggestedLabels: [],
+        confidence: 0.6,
+      }),
+    });
+    await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
+    expect(skillRouting.suggestAssignee).not.toHaveBeenCalled();
+  });
+
+  it('Блок C: source=meeting → смысловой подбор по навыкам в этой ветке НЕ применяется', async () => {
+    const { worker, skillRouting } = mkWorker({
+      intake: { source: 'meeting', suggestedAssigneeId: null },
+      skillRoutingResult: [skillSuggestion({ userId: 'u-skill' })],
+    });
+    await worker.process(jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }));
+    expect(skillRouting.suggestAssignee).not.toHaveBeenCalled();
   });
 });

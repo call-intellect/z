@@ -170,7 +170,10 @@ function stubFormulationService(): ProbeFormulationService {
     findApplicableRule: vi.fn().mockResolvedValue(null),
     findRelevantRules: vi.fn().mockResolvedValue([]),
   } as unknown as SubjectMemoryService;
-  return new ProbeFormulationService(llm, metrics, cfg, subjectMemory);
+  const prisma = {
+    experiment: { findFirst: vi.fn().mockResolvedValue(null) },
+  } as unknown as PrismaService;
+  return new ProbeFormulationService(llm, metrics, cfg, subjectMemory, prisma);
 }
 
 describe('СИНТЕТИКА — промпты probe собираются на реалистичных данных', () => {
@@ -349,7 +352,7 @@ describe('СИНТЕТИКА — провенанс резолвит источ�
     log(JSON.stringify(nodes[0], null, 2));
     expect(nodes).toHaveLength(1);
     expect(nodes[0]!.quote).toContain('недельные спринты');
-    expect(nodes[0]!.source.deepLink).toBe('/meetings/m-1?t=90');
+    expect(nodes[0]!.source.deepLink).toBe('/meetings/m-1/result?t=90');
     expect(nodes[0]!.attribution).toBe('quoted');
   });
 

@@ -35,6 +35,8 @@ export interface ProbeDetailApi {
   meetingTitle?: string;
   cite?: PendingActionCiteApi;
   notificationId: string;
+  draftAnswer?: string;
+  draftKind?: string;
 }
 
 export interface ConflictVersionApi {

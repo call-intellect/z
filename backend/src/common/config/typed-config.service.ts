@@ -1042,6 +1042,21 @@ export class TypedConfigService {
         undefined,
         0.01,
       ),
+      grayZoneJudgeEnabled: this.resolveSync<boolean>(
+        'knowledge.curationGrayZoneJudgeEnabled',
+        undefined,
+        true,
+      ),
+      grayZoneJudgeMinConfidence: this.resolveSync<number>(
+        'knowledge.curationGrayZoneJudgeMinConfidence',
+        undefined,
+        0.7,
+      ),
+      grayZoneJudgeSampleRate: this.resolveSync<number>(
+        'knowledge.curationGrayZoneJudgeSampleRate',
+        undefined,
+        1.0,
+      ),
       autotuneEnabled: this.resolveSync<boolean>(
         'knowledge.curationAutotuneEnabled',
         undefined,
@@ -1191,6 +1206,16 @@ export class TypedConfigService {
         'PROBE_RESPONSE_CLASSIFY_MIN_CONFIDENCE',
         0.5,
       ),
+      draftReasons: this.resolveSync<readonly string[]>(
+        'probe.draftReasons',
+        undefined,
+        [
+          'experiment.result_without_lesson',
+          'companyprofile.missing_mission',
+          'companyprofile.missing_vision',
+          'companyprofile.missing_strategy',
+        ],
+      ),
     } as const;
   }
 
@@ -1199,6 +1224,11 @@ export class TypedConfigService {
       enabled: this.resolveSync<boolean>('subjectMemory.enabled', undefined, true),
       retrieveBeforeAskEnabled: this.resolveSync<boolean>(
         'subjectMemory.retrieveBeforeAskEnabled',
+        undefined,
+        true,
+      ),
+      sweepPendingOnLearnEnabled: this.resolveSync<boolean>(
+        'subjectMemory.sweepPendingOnLearnEnabled',
         undefined,
         true,
       ),
@@ -1249,6 +1279,11 @@ export class TypedConfigService {
         undefined,
         8,
       ),
+      completenessProbeEnabled: this.resolveSync<boolean>(
+        'companyProfile.completenessProbeEnabled',
+        undefined,
+        true,
+      ),
     } as const;
   }
 
@@ -1256,6 +1291,7 @@ export class TypedConfigService {
     return {
       enabled: this.resolveSync<boolean>('taskRouting.enabled', undefined, true),
       suggestMinConfidence: this.resolveSync<number>('taskRouting.suggestMinConfidence', undefined, 0.6),
+      autoAssignMinConfidence: this.resolveSync<number>('taskRouting.autoAssignMinConfidence', undefined, 0.75),
       topK: this.resolveSync<number>('taskRouting.topK', undefined, 3),
     } as const;
   }

@@ -448,6 +448,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private curationProvisionalTotal!: Counter<'resource_type'>;
   private curationAuditSampleTotal!: Counter<'resource_type'>;
   private curationVerifierVerdictTotal!: Counter<'decision' | 'consensus_type'>;
+  private curationGrayZoneJudgedTotal!: Counter<'outcome'>;
   // ── Autonomy W1 (2026-06-12) — Conflict-Arbiter (LLM-арбитр конфликтов) ──
   // `z_conflict_arbiter_total{verdict, outcome}` — исходы ночного арбитра
   // конфликтов знаний: verdict дебата × outcome ∈ auto_resolved|left_open|error.
@@ -658,11 +659,13 @@ export class BusinessMetricsService implements OnModuleInit {
   private routingSuggestionTotal!: Counter<'match_path'>;
   private routingSuggestionAcceptedTotal!: Counter<string>;
   private routingNoCandidateTotal!: Counter<string>;
+  private taskSkillRoutingAssignedTotal!: Counter<'path'>;
   private companyCapsuleInjectedTotal!: Counter<'surface'>;
   private subjectMemoryProbeSuppressedTotal!: Counter<'reason'>;
   private subjectMemoryRuleActivatedTotal!: Counter<never>;
   private subjectMemoryRuleRolledBackTotal!: Counter<'cause'>;
   private subjectMemoryApplyTotal!: Counter<'status'>;
+  private subjectMemoryPendingSweptTotal!: Counter<never>;
   // ── W2 autonomy (2026-06-12) — OwnerResolver («лестница владельца») ──
   private ownerResolutionTotal!: Counter<'outcome'>;
   // ── Ф5/Ф6 assistant-channels (2026-06-12) — мост «каналы → помощник» ──
@@ -2349,6 +2352,11 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'A1 — вердикты AI-судьи canonical-verify (decision ∈ accept|reject|split_uncertain|unavailable × consensus_type).',
       labelNames: ['decision', 'consensus_type'] as const,
     });
+    this.curationGrayZoneJudgedTotal = this.getOrCreateCounter({
+      name: 'curation_gray_zone_judged_total',
+      help: 'A-Ф5 — некритичные карточки серой зоны, прогнанные через AI-судью (outcome ∈ canonicalized|to_human).',
+      labelNames: ['outcome'] as const,
+    });
     // ── Autonomy W1 (2026-06-12) — Conflict-Arbiter (LLM-арбитр конфликтов) ──
     this.conflictArbiterTotal = this.getOrCreateCounter({
       name: 'z_conflict_arbiter_total',
@@ -2780,6 +2788,11 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'Маршрутизация по скиллам: подходящий исполнитель не найден (ни одного кандидата выше порога).',
       labelNames: [] as const,
     });
+    this.taskSkillRoutingAssignedTotal = this.getOrCreateCounter({
+      name: 'task_skill_routing_assigned_total',
+      help: 'Авто-назначение исполнителя по навыкам (умный подбор) в авто-пути (path): meeting | intake.',
+      labelNames: ['path'] as const,
+    });
     this.companyCapsuleInjectedTotal = this.getOrCreateCounter({
       name: 'company_capsule_injected_total',
       help: 'Авто-профиль компании: краткое описание (capsule) подставлено в SYSTEM по поверхности (surface): chat_v2 | concierge.',
@@ -2804,6 +2817,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'subject_memory_apply_total',
       help: 'Слой выученной памяти: применение правила (по статусу status).',
       labelNames: ['status'] as const,
+    });
+    this.subjectMemoryPendingSweptTotal = this.getOrCreateCounter({
+      name: 'subject_memory_pending_swept_total',
+      help: 'Слой выученной памяти: висящие дубли-probe погашены выводом/активацией правила (sweepPendingDuplicates).',
+      labelNames: [] as const,
     });
     // ── W2 autonomy (2026-06-12) — OwnerResolver («лестница владельца») ──
     this.ownerResolutionTotal = this.getOrCreateCounter({
@@ -5746,6 +5764,10 @@ export class BusinessMetricsService implements OnModuleInit {
     });
   }
 
+  incCurationGrayZoneJudged(args: { outcome: 'canonicalized' | 'to_human' }): void {
+    this.curationGrayZoneJudgedTotal.inc({ outcome: args.outcome });
+  }
+
   /**
    * Конфликты — создание (resolution='created') или резолюция
    * (resolution='accept_new'|'keep_old'|'merge'|'evolving'|'dismissed').
@@ -6431,6 +6453,10 @@ export class BusinessMetricsService implements OnModuleInit {
     this.routingNoCandidateTotal.inc();
   }
 
+  incTaskSkillRoutingAssigned(args: { path: 'meeting' | 'intake' }): void {
+    this.taskSkillRoutingAssignedTotal.inc({ path: args.path });
+  }
+
   incCompanyCapsuleInjected(args: { surface: string }): void {
     this.companyCapsuleInjectedTotal.inc({ surface: args.surface });
   }
@@ -6449,6 +6475,10 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incSubjectMemoryApply(args: { status: string }): void {
     this.subjectMemoryApplyTotal.inc({ status: args.status });
+  }
+
+  incSubjectMemoryPendingSwept(args: { count: number }): void {
+    this.subjectMemoryPendingSweptTotal.inc(args.count);
   }
 
   // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract ────────────────

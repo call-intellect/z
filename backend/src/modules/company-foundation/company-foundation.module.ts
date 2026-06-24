@@ -11,6 +11,7 @@ import { DepartmentDomainLinkService } from './services/department-domain-link.s
 import { FunctionalDomainService } from './services/functional-domain.service';
 import { MaturityScorerService } from './services/maturity-scorer.service';
 import { CompanyProfileBuilderCron } from './workers/company-profile-builder.cron';
+import { CompanyProfileCompletenessCron } from './workers/company-profile-completeness.cron';
 import { CompanySummaryCompilerCron } from './workers/company-summary-compiler.cron';
 import { DepartmentDetectorCron } from './workers/department-detector.cron';
 import { DomainExpanderCron } from './workers/domain-expander.cron';
@@ -30,6 +31,7 @@ import { MaturityScorerCron } from './workers/maturity-scorer.cron';
     DepartmentDomainLinkService,
     MaturityScorerService,
     CompanyProfileBuilderCron,
+    CompanyProfileCompletenessCron,
     CompanySummaryCompilerCron,
     DepartmentDetectorCron,
     DomainExpanderCron,

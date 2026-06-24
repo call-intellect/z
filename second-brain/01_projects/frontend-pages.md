@@ -527,4 +527,12 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 
 - **2026-06-20 (провенанс «Откуда это» на поверхностях — снипеты/подсветка/плеер):** сниппет цитаты-источника (`ProvenancePreviewSnippet`) рисуется прямо на карточках списков решений/регламентов/задач из денорм-`previewQuote` (без on-demand резолва). На странице документа — **подсветка/прокрутка к цитате** по deep-link `/documents/<id>?q=<цитата>` (B4, вариант «б»; page-aware `?page=N` остаётся vNext). В дровере «Откуда это» (`ProvenanceDrawer`) — **плеер голосового** сообщения (Telegram/MAX) через presigned `GET /api/v1/provenance/voice-note/:rawEventId/audio`. Chatbox-источник ведёт на конкретное сообщение `/chats/<chatId>?m=<msg>`. Источник: [plans/tz/2026-06-20-provenance-probe-followups.md](../../plans/tz/2026-06-20-provenance-probe-followups.md) (A1 / B1 / B3 / B4).
 
+## «Что Кора выучила» — самообучение probe (2026-06-23, автономизация Блок D)
+
+| Путь | Что показывает | Доступ |
+|---|---|---|
+| `/company-admin/subject-memory` | **«Что Кора выучила»** — правила самообучения probe (SubjectMemory): термины/дизамбигуации/предпочтения, выученные из ответов на уточняющие вопросы; фильтры по статусу (`shadow`/`canary`/`active`/…) и виду правила (`kind`), счётчики `countsByStatus`. Читает `GET /api/v1/subject-memory` ([[api-layer]] §История 2026-06-23). | owner/admin/coo |
+
+Файлы: `frontend/app/(authenticated)/company-admin/subject-memory/` + `frontend/src/api/subject-memory.api.ts` (ApiDto) + `frontend/src/domain/subject-memory.ts` (маппер) + пункт в `CompanyAdminSidebar.tsx`. ТЗ [`2026-06-23-remove-manual-confirmations-master-tz`](../../plans/tz/2026-06-23-remove-manual-confirmations-master-tz.md) Блок D. Карта фичи — [[probe-agent]] §«Наблюдаемость самообучения SubjectMemory».
+
 [[../index|← index]]

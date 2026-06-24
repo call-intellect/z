@@ -216,8 +216,10 @@ export class MultiAgentDebateService {
       candidates: args.candidates,
       contextBlocks: args.contextBlocks,
       priorVotes: args.priorVotes,
+      family: args.family,
     });
 
+    const voteSchema = resolveVoteSchema(args.family);
     const result: LlmCallResult = await this.llm.call({
       taskType: taskType as Parameters<LlmRouterService['call']>[0]['taskType'],
       systemPrompt,
@@ -225,8 +227,8 @@ export class MultiAgentDebateService {
       tenantId: args.tenantId,
       responseFormat: {
         type: 'json_schema',
-        name: DEBATE_VOTE_SCHEMA_NAME,
-        schema: DEBATE_VOTE_JSON_SCHEMA,
+        name: voteSchema.name,
+        schema: voteSchema.schema,
         strict: true,
       },
       sourceRef: { type: 'debate-stance', id: args.stance },
@@ -248,6 +250,7 @@ export class MultiAgentDebateService {
       confidence: parsed.confidence,
       provider,
       costUsd,
+      quote: parsed.quote,
     };
   }
 
@@ -256,12 +259,27 @@ export class MultiAgentDebateService {
     candidates: unknown[];
     contextBlocks: unknown[];
     priorVotes: DebateVote[] | null;
+    family: DebateTaskFamily;
   }): string {
     const parts: string[] = [];
     parts.push(`Задача: ${args.task}`);
     parts.push(`Кандидаты: ${JSON.stringify(args.candidates)}`);
     if (args.contextBlocks.length > 0) {
-      parts.push(`Контекст: ${JSON.stringify(args.contextBlocks)}`);
+      if (args.family === 'curation-verify') {
+        const quotes = args.contextBlocks
+          .map((b) =>
+            b && typeof b === 'object' && typeof (b as { quote?: unknown }).quote === 'string'
+              ? (b as { quote: string }).quote
+              : '',
+          )
+          .filter((q) => q.length > 0);
+        const sourceText = quotes.length > 0 ? quotes.join('\n— ') : JSON.stringify(args.contextBlocks);
+        parts.push(
+          `Первоисточник (фрагменты встречи/чата, откуда извлечена карточка):\n— ${sourceText}`,
+        );
+      } else {
+        parts.push(`Контекст: ${JSON.stringify(args.contextBlocks)}`);
+      }
     }
     if (args.priorVotes && args.priorVotes.length > 0) {
       const priorSummary = args.priorVotes
@@ -273,7 +291,7 @@ export class MultiAgentDebateService {
       parts.push('Голоса коллег в round 1:');
       parts.push(priorSummary);
     }
-    parts.push('Верни JSON по схеме debate_vote_v1.');
+    parts.push('Верни строго JSON по заданной схеме ответа.');
     return parts.join('\n\n');
   }
 
@@ -377,6 +395,7 @@ export interface DebateVote {
   confidence: number;
   provider: string;
   costUsd: number;
+  quote?: string;
 }
 
 export interface DebateVerdict {
@@ -412,21 +431,28 @@ const STANCE_SYSTEM_PROMPTS: Record<DebateStance, string> = {
   ].join('\n'),
 };
 
+const CURATION_VERIFY_BASE = [
+  'Ты — арбитр качества памяти компании Кора. Твоя задача — решить, можно ли занести карточку знания в постоянную память компании, на основании ПЕРВОИСТОЧНИКА (фрагмента встречи/чата), из которого карточка извлечена.',
+  'Зачем это важно: память компании кормит ответы сотрудникам, отчёты руководителю и цифровых двойников. Ложный «факт» хуже его отсутствия — ему будут доверять. Поэтому в память идёт только то, что первоисточник реально подтверждает как состоявшееся решение/факт/правило.',
+  'Канонизируй (accept), если в первоисточнике это: (1) принято/утверждено/согласовано — а не предложено и отвергнуто, не обсуждается, не шутка; (2) сформулировано в карточке без потери условий и оговорок из источника; (3) реквизиты (числа, даты, имена) в карточке совпадают с источником.',
+  'Отклоняй (reject), если в первоисточнике: предложение отвергли или отложили; это гипотеза/риторика/шутка; карточка потеряла условие («если…») и стала опасно-безусловной; формулировка расплывчата; реквизит расходится с источником.',
+  'ОБЯЗАТЕЛЬНО: обоснуй вердикт короткой дословной ЦИТАТОЙ из первоисточника (поле quote). Если первоисточник не дан или в нём нет опоры для карточки — это повод reject, в quote верни пустую строку.',
+  'Self-check перед ответом: подтверждает ли цитата именно то, что написано в карточке; не отклоняешь ли из-за нехватки контекста, которого на деле достаточно; не принимаешь ли отклонённое/обсуждаемое за решённое.',
+  'Verdict строго: accept | reject. Reasoning — до 60 слов. Верни JSON по заданной схеме ответа (verdict, quote, reasoning, confidence 0..1).',
+].join('\n');
+
 const CURATION_VERIFY_SYSTEM_PROMPTS: Record<DebateStance, string> = {
   'strict-critic': [
-    'Ты — строгий критик-аудитор знаний компании. Решаешь, должна ли карточка быть канонизирована в постоянную память компании.',
-    'Default — reject при любом сомнении. Голосуй reject, если формулировка расплывчата, не обоснована фактами, противоречит здравому смыслу, дублирует существующее знание или источник вызывает сомнение.',
-    'Verdict строго: accept | reject. Reasoning — до 200 слов. Верни JSON по схеме debate_vote_v1: verdict + reasoning + confidence (0..1).',
+    CURATION_VERIFY_BASE,
+    'Твоя роль в разборе — СТРОГИЙ КРИТИК: ищи причины НЕ канонизировать. Но отвергай только по фактам из первоисточника, а не из-за их отсутствия.',
   ].join('\n'),
   'empathetic-supporter': [
-    'Ты — поддерживающий арбитр-куратор знаний компании. Решаешь, должна ли карточка быть канонизирована в постоянную память компании.',
-    'Default — accept при наличии осмысленного, обоснованного содержания. Сомнения трактуй в пользу карточки, если нет явных противоречий или вреда.',
-    'Verdict строго: accept | reject. Reasoning — до 200 слов. Верни JSON по схеме debate_vote_v1: verdict + reasoning + confidence (0..1).',
+    CURATION_VERIFY_BASE,
+    'Твоя роль в разборе — ЗАЩИТНИК: ищи причины канонизировать, если первоисточник реально подтверждает карточку.',
   ].join('\n'),
   'neutral-judge': [
-    'Ты — нейтральный арбитр качества знаний компании. Взвесь pro и contra канонизации карточки одинаково: ни критик, ни сторонник.',
-    'Оцени: корректна ли карточка, обоснована ли фактами, достаточно ли ясна формулировка, чтобы стать каноническим знанием компании.',
-    'Verdict строго: accept | reject. Reasoning — до 200 слов. Верни JSON по схеме debate_vote_v1: verdict + reasoning + confidence (0..1).',
+    CURATION_VERIFY_BASE,
+    'Твоя роль в разборе — НЕЙТРАЛЬНЫЙ АРБИТР: взвесь за и против по первоисточнику одинаково.',
   ].join('\n'),
 };
 
@@ -484,25 +510,76 @@ export const DEBATE_VOTE_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
+export const DEBATE_VOTE_WITH_QUOTE_SCHEMA_NAME = 'debate_vote_with_quote_v1';
+
+export const DEBATE_VOTE_WITH_QUOTE_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['verdict', 'quote', 'reasoning', 'confidence'],
+  properties: {
+    verdict: {
+      type: 'string',
+      minLength: 1,
+      maxLength: 64,
+      description: 'Решение: accept | reject.',
+    },
+    quote: {
+      type: 'string',
+      minLength: 0,
+      maxLength: 600,
+      description:
+        'Короткая дословная цитата из первоисточника, обосновывающая вердикт. Пустая строка, если первоисточник не дан.',
+    },
+    reasoning: {
+      type: 'string',
+      minLength: 0,
+      maxLength: 2000,
+      description: 'Обоснование на русском, до 60 слов.',
+    },
+    confidence: {
+      type: 'number',
+      minimum: 0,
+      maximum: 1,
+      description: 'Уверенность голосующего (0..1).',
+    },
+  },
+};
+
+function resolveVoteSchema(family: DebateTaskFamily): {
+  name: string;
+  schema: Record<string, unknown>;
+} {
+  if (family === 'curation-verify') {
+    return {
+      name: DEBATE_VOTE_WITH_QUOTE_SCHEMA_NAME,
+      schema: DEBATE_VOTE_WITH_QUOTE_JSON_SCHEMA,
+    };
+  }
+  return { name: DEBATE_VOTE_SCHEMA_NAME, schema: DEBATE_VOTE_JSON_SCHEMA };
+}
+
 function parseDebateVoteResponse(text: string): {
   verdict: string;
   reasoning: string;
   confidence: number;
+  quote: string;
 } {
   try {
     const raw = JSON.parse(text) as {
       verdict?: unknown;
       reasoning?: unknown;
       confidence?: unknown;
+      quote?: unknown;
     };
     const verdict =
       typeof raw.verdict === 'string' && raw.verdict.length > 0 ? raw.verdict : 'unknown';
     const reasoning = typeof raw.reasoning === 'string' ? raw.reasoning : '';
     const confidenceNum = typeof raw.confidence === 'number' ? raw.confidence : 0;
     const confidence = Math.max(0, Math.min(1, confidenceNum));
-    return { verdict, reasoning, confidence };
+    const quote = typeof raw.quote === 'string' ? raw.quote : '';
+    return { verdict, reasoning, confidence, quote };
   } catch {
-    return { verdict: 'unknown', reasoning: '', confidence: 0 };
+    return { verdict: 'unknown', reasoning: '', confidence: 0, quote: '' };
   }
 }
 

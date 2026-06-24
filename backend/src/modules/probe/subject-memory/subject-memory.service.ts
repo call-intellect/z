@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { type SubjectMemoryKind } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -7,6 +7,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { applyInputGuards } from '../../ai/services/prompts/common';
 import { EmbeddingFallbackService } from '../../embeddings/services/embedding-fallback.service';
+import { LogService } from '../../logging/log.service';
 import {
   SUBJECT_MEMORY_RULE_EXTRACT_JSON_SCHEMA,
   SUBJECT_MEMORY_RULE_EXTRACT_SCHEMA_NAME,
@@ -39,6 +40,9 @@ export class SubjectMemoryService {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Optional()
+    @Inject(LogService)
+    private readonly logService?: LogService,
   ) {}
 
   async findApplicableRule(
@@ -317,5 +321,86 @@ export class SubjectMemoryService {
     });
 
     this.metrics.incSubjectMemoryRuleExtracted({ kind: args.kind });
+
+    try {
+      this.logService?.business(
+        'subject_memory.rule_extracted',
+        'Выведено правило выученной памяти',
+        {
+          orgId: args.tenantId,
+          module: SubjectMemoryService.name,
+          details: { kind: args.kind, confidence: args.confidence },
+        },
+      );
+    } catch {
+      /* observability best-effort */
+    }
+
+    await this.sweepPendingDuplicates({
+      tenantId: args.tenantId,
+      contextText: args.contextText,
+      excludeProbeId: args.probeId,
+    }).catch(() => 0);
+  }
+
+  async sweepPendingDuplicates(args: {
+    tenantId: string;
+    contextText: string;
+    excludeProbeId?: string;
+  }): Promise<number> {
+    if (!this.cfg.subjectMemory.enabled) return 0;
+    if (!this.cfg.subjectMemory.sweepPendingOnLearnEnabled) return 0;
+    const text = (args.contextText ?? '').trim();
+    if (text.length === 0) return 0;
+    const [vec] = await this.embeddings.embed([text]);
+    if (!vec) return 0;
+    const vecLiteral = `[${vec.join(',')}]`;
+    const minSim = this.cfg.subjectMemory.matchMinSimilarity;
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `
+        SELECT id FROM "probe_events"
+        WHERE "tenantId" = $2
+          AND status = 'pending'
+          AND "questionEmbedding" IS NOT NULL
+          AND ($4::text = '' OR id <> $4::text)
+          AND (1 - ("questionEmbedding" <=> $1::vector(1536))) >= $3::float
+        `,
+        vecLiteral,
+        args.tenantId,
+        minSim,
+        args.excludeProbeId ?? '',
+      );
+      if (rows.length === 0) return 0;
+      const ids = rows.map((r) => r.id);
+      await this.prisma.probeEvent.updateMany({
+        where: { id: { in: ids }, tenantId: args.tenantId, status: 'pending' },
+        data: { status: 'suppressed_by_memory' },
+      });
+      this.metrics.incSubjectMemoryPendingSwept({ count: ids.length });
+      try {
+        this.logService?.business(
+          'subject_memory.pending_swept',
+          'Погашены висящие дубли-probe выводом правила',
+          {
+            orgId: args.tenantId,
+            module: SubjectMemoryService.name,
+            details: { count: ids.length },
+          },
+        );
+      } catch {
+        /* observability best-effort */
+      }
+      return ids.length;
+    } catch (err) {
+      this.logger.debug(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'subject-memory: sweepPendingDuplicates упал (best-effort)',
+      );
+      return 0;
+    }
   }
 }

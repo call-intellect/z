@@ -113,6 +113,13 @@ const res = await curation.triage({
 - **Лимит на CardVersion.payload** (sub-TZ §13.4) — на α-4 без ограничений, мониторим размер таблицы; ограничение «храним последние N версий» — в δ+ если будет проблема.
 - **Skill-карточки** (sub-TZ §3.6 «Skill — особый case») — без pre-approval, mark_as_misleading. Будет реализовано в γ-1 SkillProfile.
 
+## ИИ-судья видит первоисточник + серая зона (2026-06-23, автономизация Блок A)
+
+**Источник:** ТЗ [`plans/tz/2026-06-23-remove-manual-confirmations-master-tz.md`](../../plans/tz/2026-06-23-remove-manual-confirmations-master-tz.md) (Блок A). Цель — меньше карточек уходит человеку, при этом судья судит по фактам, а не вслепую.
+
+- **Судья видит первоисточник.** `CurationService.runAiVerifier` (3-голосовый debate, который решает provisional-путь, см. таблицу выше) теперь подаёт в `contextBlocks` **цитаты первоисточника** (было `[]`). Их собирает новый viewer-less `ProvenanceService.resolveQuotesForJudge` (по `tenantId`, без проверки прав читателя — судья системный). Голос изменён на схему `debate_vote_with_quote_v1` (поле `quote`) **только для curation-verify** (`MultiAgentDebateService`) — судья обязан указать цитату-обоснование. Промпт C — по методологии; эталон `docs/methodology/prompts/examples/curation-verify.md`.
+- **Серая зона некритичных карточек.** Некритичные карточки с `effectiveConfidence ∈ [grayZoneMin..autoThreshold)` (раньше уходили в light review к человеку) прогоняются через судью: accept-консенсус → канонизация как `provisional` + аудит-выборка; иначе — light к человеку как раньше. Kill-switch `knowledge.curationGrayZoneJudgeEnabled` (ON); крутилки `knowledge.curationGrayZoneJudgeMinConfidence` (0.7), `knowledge.curationGrayZoneJudgeSampleRate` (1.0 — доля provisional в аудит-выборку). Метрика `curation_gray_zone_judged_total{outcome}`. Реестр флагов — [[../../docs/operations/feature-flags|feature-flags]].
+
 ## Связанные документы
 
 - [[../02_architecture/module-map|module-map.md]] §SBA α-4.

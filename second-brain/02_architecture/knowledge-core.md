@@ -668,6 +668,7 @@ CARD_ROLLUP_V2_DEBOUNCE_MS=60000      # дебаунс enqueueCardRollupV2
   - accept-консенсус → **провизорная канонизация** (`trustTier='provisional'`, без человека);
   - reject / split / судья недоступен → deep `CurationItem` (человек, безопасный fallback).
   Не-критические auto-решения → `trustTier='auto'`; всё, что прошло человека → `trustTier='human'`.
+  - **С 2026-06-23 (автономизация Блок A):** судья видит **первоисточник** — `CurationService.runAiVerifier` подаёт в `contextBlocks` цитаты через viewer-less `ProvenanceService.resolveQuotesForJudge` (было `[]`), голос по схеме `debate_vote_with_quote_v1` (обязательная цитата-обоснование). Плюс **серая зона**: некритичные карточки `[grayZoneMin..autoThreshold)` тоже прогоняются через судью (accept → `provisional`+аудит, иначе light к человеку) за kill-switch `knowledge.curationGrayZoneJudgeEnabled` (ON), крутилки `knowledge.curationGrayZoneJudge{MinConfidence(0.7),SampleRate(1.0)}`, метрика `curation_gray_zone_judged_total{outcome}`. См. [[../01_projects/curation]] §«ИИ-судья видит первоисточник + серая зона».
 
 - **Аудит-выборка 5%.** Доля авто/провизорных решений (`auditSampleRate`, default 0.05) превращается в
   лёгкий `CurationItem(triageReason.reason='audit_sample')` — он **не блокирует** канонизацию, нужен

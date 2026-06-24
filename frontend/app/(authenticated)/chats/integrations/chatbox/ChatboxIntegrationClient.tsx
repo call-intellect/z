@@ -507,6 +507,12 @@ function ConnectedView({
               Клиенты
             </Link>
           </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/chats/integrations/chatbox/chats">
+              <MessagesSquare size={14} />
+              Чаты
+            </Link>
+          </Button>
         </div>
       </GlassCard>
 

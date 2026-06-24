@@ -148,6 +148,31 @@ export function senderRoleOf(type: ChatboxSenderTypeApi): ChatboxSenderRole {
   return type === "CLIENT" ? "client" : "manager";
 }
 
+const SENDER_ROLE_LABELS: Record<string, string> = {
+  CLIENT: "Клиент",
+  USER: "Менеджер",
+  ASSISTANT: "Ассистент",
+  QUALITY_CONTROL: "Контроль качества",
+};
+
+export function chatboxSenderRoleLabel(senderType: string): string {
+  return SENDER_ROLE_LABELS[senderType] ?? "Система";
+}
+
+const CONTENT_PLACEHOLDERS: Record<string, string> = {
+  IMAGE: "[Фото]",
+  AUDIO: "[Аудио]",
+  VOICE: "[Аудио]",
+  VIDEO: "[Видео]",
+  VIDEO_NOTE: "[Видео]",
+  FILE: "[Файл]",
+  COMMAND: "[Команда]",
+};
+
+export function chatboxContentPlaceholder(contentType: string): string {
+  return CONTENT_PLACEHOLDERS[contentType] ?? "[Вложение]";
+}
+
 export type MessengerIdentityView = {
   channelType: string;
   channelLabel: string;

@@ -170,6 +170,8 @@ export type ListChatsQuery = {
   status?: ChatboxChatStatusApi;
   channelType?: string;
   customerExternalId?: string;
+  from?: string;
+  to?: string;
   limit?: number;
   offset?: number;
 };

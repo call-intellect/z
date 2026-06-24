@@ -15,7 +15,9 @@ import {
   type ChatboxApiChat,
   type ChatboxApiMessage,
 } from './chatbox-api.client';
+import { ChatboxCustomersService } from './chatbox-customers.service';
 import { ChatboxIntegrationService } from './chatbox-integration.service';
+import { ChatboxMembersService } from './chatbox-members.service';
 import { ChatboxSessionService } from './chatbox-session.service';
 import { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
 
@@ -39,6 +41,10 @@ export class ChatboxSyncService {
     private readonly adminSettings: AdminSettingsService,
     @Inject(ChatboxAnalyzeQueueService)
     private readonly analyzeQueue: ChatboxAnalyzeQueueService,
+    @Inject(ChatboxCustomersService)
+    private readonly customers: ChatboxCustomersService,
+    @Inject(ChatboxMembersService)
+    private readonly members: ChatboxMembersService,
   ) {}
 
   private async loadCfg(tenantId: string): Promise<SyncCfg> {
@@ -154,6 +160,11 @@ export class ChatboxSyncService {
       });
     }
 
+    const auto = await this.customers.autoLinkUnlinked(tenantId);
+    this.logger.log(
+      `syncCustomers: авто-привязка клиентов — создано ${auto.created}, привязано ${auto.linked}`,
+    );
+
     return customers.length;
   }
 
@@ -242,6 +253,11 @@ export class ChatboxSyncService {
         update: data,
       });
     }
+
+    const auto = await this.members.autoLinkUnlinked(tenantId);
+    this.logger.log(
+      `syncMembers: авто-привязка менеджеров — создано ${auto.created}, привязано ${auto.linked}`,
+    );
 
     return members.length;
   }

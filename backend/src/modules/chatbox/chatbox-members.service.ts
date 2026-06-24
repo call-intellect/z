@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PersonsService } from '../persons/services/persons.service';
@@ -162,6 +163,58 @@ export class ChatboxMembersService {
       linkMode: updated.linkMode,
       linkedPerson: updated.linkedPersonId ? (personMap.get(updated.linkedPersonId) ?? null) : null,
     };
+  }
+
+  async autoLinkUnlinked(tenantId: string): Promise<{ created: number; linked: number }> {
+    const rows = await this.prisma.chatboxMember.findMany({
+      where: { tenantId, linkedPersonId: null },
+      select: { id: true, name: true, email: true },
+    });
+    let created = 0;
+    let linked = 0;
+    for (const m of rows) {
+      const email = m.email?.trim() || null;
+      let personId: string | null = null;
+      if (email) {
+        const existing = await this.prisma.person.findFirst({
+          where: { tenantId, email, deletedAt: null },
+          select: { id: true },
+        });
+        personId = existing?.id ?? null;
+      }
+      if (personId) {
+        linked += 1;
+      } else {
+        const name = m.name?.trim() || email || 'Без имени';
+        try {
+          const person = await this.prisma.person.create({
+            data: { tenantId, name, email: email ?? '', relationship: 'employee' },
+            select: { id: true },
+          });
+          personId = person.id;
+          created += 1;
+        } catch (err) {
+          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002' && email) {
+            const raced = await this.prisma.person.findFirst({
+              where: { tenantId, email, deletedAt: null },
+              select: { id: true },
+            });
+            personId = raced?.id ?? null;
+            if (personId) linked += 1;
+          }
+          if (!personId) continue;
+        }
+      }
+      await this.prisma.chatboxMember.update({
+        where: { id: m.id },
+        data: { linkedPersonId: personId, linkMode: 'auto' },
+      });
+      await this.prisma.person.updateMany({
+        where: { id: personId, tenantId, relationship: 'external', deletedAt: null },
+        data: { relationship: 'employee' },
+      });
+    }
+    return { created, linked };
   }
 
   private async resolvePersons(

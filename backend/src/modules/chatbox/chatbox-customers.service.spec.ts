@@ -266,4 +266,70 @@ describe('ChatboxCustomersService', () => {
       expect(entityResolutionMock.findOrCreateCustomerEntity).not.toHaveBeenCalled();
     });
   });
+
+  describe('autoLinkUnlinked', () => {
+    it('unlinked-строка → резолвит сущность и ставит linkMode=auto', async () => {
+      prismaMock.chatboxCustomer.findMany.mockResolvedValue([
+        { id: 'c1', name: 'Клиент', email: 'a@x.ru', phone: '+7900', externalCrmId: 'crm1' },
+      ]);
+      entityResolutionMock.findOrCreateCustomerEntity.mockResolvedValue({
+        customerId: 'cust-new',
+        created: true,
+      });
+
+      const res = await service.autoLinkUnlinked('t1');
+
+      expect(prismaMock.chatboxCustomer.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { tenantId: 't1', linkedCustomerId: null },
+        }),
+      );
+      expect(entityResolutionMock.findOrCreateCustomerEntity).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: 't1',
+          name: 'Клиент',
+          email: 'a@x.ru',
+          phone: '+7900',
+          externalCrmId: 'crm1',
+          source: 'chatbox',
+        }),
+      );
+      expect(prismaMock.chatboxCustomer.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'c1' },
+          data: { linkedCustomerId: 'cust-new', linkMode: 'auto' },
+        }),
+      );
+      expect(res).toEqual({ created: 1, linked: 0 });
+    });
+
+    it('резолвер вернул created=false → счётчик linked++', async () => {
+      prismaMock.chatboxCustomer.findMany.mockResolvedValue([
+        { id: 'c1', name: 'Клиент', email: null, phone: null, externalCrmId: null },
+      ]);
+      entityResolutionMock.findOrCreateCustomerEntity.mockResolvedValue({
+        customerId: 'cust-exist',
+        created: false,
+      });
+
+      const res = await service.autoLinkUnlinked('t1');
+
+      expect(res).toEqual({ created: 0, linked: 1 });
+      expect(prismaMock.chatboxCustomer.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { linkedCustomerId: 'cust-exist', linkMode: 'auto' },
+        }),
+      );
+    });
+
+    it('нет unlinked-строк → no-op (резолвер не зовётся)', async () => {
+      prismaMock.chatboxCustomer.findMany.mockResolvedValue([]);
+
+      const res = await service.autoLinkUnlinked('t1');
+
+      expect(entityResolutionMock.findOrCreateCustomerEntity).not.toHaveBeenCalled();
+      expect(prismaMock.chatboxCustomer.update).not.toHaveBeenCalled();
+      expect(res).toEqual({ created: 0, linked: 0 });
+    });
+  });
 });

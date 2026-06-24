@@ -156,6 +156,32 @@ export class ChatboxCustomersService {
     };
   }
 
+  async autoLinkUnlinked(tenantId: string): Promise<{ created: number; linked: number }> {
+    const rows = await this.prisma.chatboxCustomer.findMany({
+      where: { tenantId, linkedCustomerId: null },
+      select: { id: true, name: true, email: true, phone: true, externalCrmId: true },
+    });
+    let created = 0;
+    let linked = 0;
+    for (const c of rows) {
+      const res = await this.entityResolution.findOrCreateCustomerEntity({
+        tenantId,
+        name: c.name?.trim() || c.email?.trim() || 'Без имени',
+        email: c.email?.trim() || null,
+        phone: c.phone?.trim() || null,
+        externalCrmId: c.externalCrmId ?? null,
+        source: 'chatbox',
+      });
+      await this.prisma.chatboxCustomer.update({
+        where: { id: c.id },
+        data: { linkedCustomerId: res.customerId, linkMode: 'auto' },
+      });
+      if (res.created) created += 1;
+      else linked += 1;
+    }
+    return { created, linked };
+  }
+
   private async resolveCustomers(
     tenantId: string,
     ids: (string | null)[],

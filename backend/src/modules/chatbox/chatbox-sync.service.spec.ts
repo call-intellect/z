@@ -4,7 +4,9 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { AdminSettingsService } from '../admin/settings/admin-settings.service';
 
 import type { ChatboxApiClient } from './chatbox-api.client';
+import type { ChatboxCustomersService } from './chatbox-customers.service';
 import type { ChatboxIntegrationService } from './chatbox-integration.service';
+import type { ChatboxMembersService } from './chatbox-members.service';
 import type { ChatboxSessionService } from './chatbox-session.service';
 import { ChatboxSyncService } from './chatbox-sync.service';
 import type { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
@@ -46,6 +48,8 @@ describe('ChatboxSyncService', () => {
   let sessionMock: { rebuildSessions: ReturnType<typeof vi.fn> };
   let adminMock: { get: ReturnType<typeof vi.fn> };
   let analyzeQueueMock: { enqueue: ReturnType<typeof vi.fn> };
+  let customersMock: { autoLinkUnlinked: ReturnType<typeof vi.fn> };
+  let membersMock: { autoLinkUnlinked: ReturnType<typeof vi.fn> };
   let service: ChatboxSyncService;
 
   beforeEach(() => {
@@ -85,6 +89,12 @@ describe('ChatboxSyncService', () => {
     sessionMock = { rebuildSessions: vi.fn().mockResolvedValue({ sessionCount: 0 }) };
     adminMock = { get: vi.fn().mockResolvedValue(true) };
     analyzeQueueMock = { enqueue: vi.fn().mockResolvedValue({ jobId: 'j1' }) };
+    customersMock = {
+      autoLinkUnlinked: vi.fn().mockResolvedValue({ created: 0, linked: 0 }),
+    };
+    membersMock = {
+      autoLinkUnlinked: vi.fn().mockResolvedValue({ created: 0, linked: 0 }),
+    };
 
     service = new ChatboxSyncService(
       prismaMock as unknown as PrismaService,
@@ -93,6 +103,8 @@ describe('ChatboxSyncService', () => {
       sessionMock as unknown as ChatboxSessionService,
       adminMock as unknown as AdminSettingsService,
       analyzeQueueMock as unknown as ChatboxAnalyzeQueueService,
+      customersMock as unknown as ChatboxCustomersService,
+      membersMock as unknown as ChatboxMembersService,
     );
   });
 
@@ -135,7 +147,7 @@ describe('ChatboxSyncService', () => {
     expect(firstCall.update).not.toHaveProperty('linkedPersonId');
   });
 
-  it('syncMembers: НЕ сопоставляет автоматически (update/person.findMany не зовутся)', async () => {
+  it('syncMembers: делегирует авто-привязку members.autoLinkUnlinked', async () => {
     clientMock.listMembers.mockResolvedValue({
       members: [{ id: 'a', email: 'A@X.ru', name: 'A', role: 'MANAGER' }],
       total: 1,
@@ -143,11 +155,12 @@ describe('ChatboxSyncService', () => {
 
     await service.syncMembers('t1');
 
+    expect(membersMock.autoLinkUnlinked).toHaveBeenCalledWith('t1');
     expect(prismaMock.chatboxMember.update).not.toHaveBeenCalled();
     expect(prismaMock.person.findMany).not.toHaveBeenCalled();
   });
 
-  it('syncCustomers: upsert по числу, НЕ сопоставляет автоматически (update не зовётся)', async () => {
+  it('syncCustomers: upsert по числу + делегирует авто-привязку customers.autoLinkUnlinked', async () => {
     clientMock.listCustomers.mockResolvedValue({
       customers: [
         { id: 'c1', name: 'Клиент', email: 'C@X.ru', phone: '+7900', externalId: null },
@@ -158,6 +171,7 @@ describe('ChatboxSyncService', () => {
     const count = await service.syncCustomers('t1');
     expect(count).toBe(1);
     expect(prismaMock.chatboxCustomer.upsert).toHaveBeenCalledTimes(1);
+    expect(customersMock.autoLinkUnlinked).toHaveBeenCalledWith('t1');
     expect(prismaMock.chatboxCustomer.update).not.toHaveBeenCalled();
     expect(prismaMock.person.findMany).not.toHaveBeenCalled();
   });

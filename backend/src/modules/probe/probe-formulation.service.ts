@@ -3,6 +3,7 @@ import { type DataClass, type ProbeEvent } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import { LlmRouterService } from '../ai/services/llm-router.service';
 import { applyInputGuards } from '../ai/services/prompts/common';
 import {
@@ -19,6 +20,12 @@ import {
   PROBE_REASON_LABEL_DEFAULT,
 } from './probe-reason-labels';
 import { passesMarkerCheck } from './probe-text.util';
+import {
+  PROBE_DRAFT_FROM_MEMORY_JSON_SCHEMA,
+  PROBE_DRAFT_FROM_MEMORY_SCHEMA_NAME,
+  PROBE_DRAFT_FROM_MEMORY_SYSTEM_PROMPT,
+  PROBE_DRAFT_FROM_MEMORY_USER_TEMPLATE,
+} from './prompts/probe-draft-from-memory.prompt';
 import {
   PROBE_QUALITY_JUDGE_JSON_SCHEMA,
   PROBE_QUALITY_JUDGE_SCHEMA_NAME,
@@ -59,7 +66,132 @@ export class ProbeFormulationService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(SubjectMemoryService)
     private readonly subjectMemory: SubjectMemoryService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
+
+  async draftFromMemory(
+    probe: ProbeEvent,
+  ): Promise<{ draftAnswer: string; draftKind: string } | null> {
+    const payload = (probe.payload ?? {}) as Record<string, unknown>;
+    if (probe.reason === 'experiment.result_without_lesson') {
+      const experimentId =
+        typeof payload.contextCardId === 'string' ? payload.contextCardId : null;
+      if (!experimentId) return null;
+      const exp = await this.prisma.experiment.findFirst({
+        where: { id: experimentId, tenantId: probe.tenantId },
+        select: { name: true, currentResult: true, hypothesisText: true },
+      });
+      if (!exp || !exp.currentResult) return null;
+      const facts = [
+        `Эксперимент: ${exp.name}`,
+        exp.hypothesisText ? `Гипотеза: ${exp.hypothesisText}` : '',
+        `Результат: ${exp.currentResult}`,
+      ]
+        .filter(Boolean)
+        .join('\n');
+      const draft = await this.callDraftLlm(
+        probe,
+        'урок эксперимента',
+        typeof payload.message === 'string'
+          ? payload.message
+          : 'Какой урок вынесли из этого эксперимента?',
+        facts,
+      );
+      if (!draft) return null;
+      return { draftAnswer: draft, draftKind: 'experiment_lesson' };
+    }
+    if (
+      probe.reason === 'companyprofile.missing_mission' ||
+      probe.reason === 'companyprofile.missing_vision' ||
+      probe.reason === 'companyprofile.missing_strategy'
+    ) {
+      const decisions = await this.prisma.decision.findMany({
+        where: { tenantId: probe.tenantId, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 40,
+        select: { statement: true, text: true, rationale: true },
+      });
+      const facts = decisions
+        .map((d, i) => {
+          const body = d.statement ?? d.text ?? '';
+          const line = d.rationale ? `${body} — ${d.rationale}` : body;
+          return line.trim() ? `${i + 1}. ${line.trim().slice(0, 300)}` : '';
+        })
+        .filter(Boolean)
+        .join('\n');
+      if (!facts) return null;
+      const kindLabel =
+        probe.reason === 'companyprofile.missing_mission'
+          ? 'миссия компании'
+          : probe.reason === 'companyprofile.missing_vision'
+            ? 'видение компании'
+            : 'стратегия компании';
+      const draftKind =
+        probe.reason === 'companyprofile.missing_mission'
+          ? 'company_mission'
+          : probe.reason === 'companyprofile.missing_vision'
+            ? 'company_vision'
+            : 'company_strategy';
+      const draft = await this.callDraftLlm(
+        probe,
+        kindLabel,
+        typeof payload.message === 'string'
+          ? payload.message
+          : `Сформулируйте: ${kindLabel}.`,
+        facts,
+      );
+      if (!draft) return null;
+      return { draftAnswer: draft, draftKind };
+    }
+    return null;
+  }
+
+  private async callDraftLlm(
+    probe: ProbeEvent,
+    kindLabel: string,
+    question: string,
+    facts: string,
+  ): Promise<string | null> {
+    try {
+      const guarded = applyInputGuards(
+        PROBE_DRAFT_FROM_MEMORY_SYSTEM_PROMPT,
+        PROBE_DRAFT_FROM_MEMORY_USER_TEMPLATE({ kindLabel, question, facts }),
+        {
+          enabled: this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false,
+          injection: true,
+        },
+      );
+      const result = await this.llm.call({
+        taskType: 'probe-draft-from-memory',
+        systemPrompt: guarded.system,
+        userMessage: guarded.user,
+        tenantId: probe.tenantId,
+        responseFormat: {
+          type: 'json_schema',
+          name: PROBE_DRAFT_FROM_MEMORY_SCHEMA_NAME,
+          schema: PROBE_DRAFT_FROM_MEMORY_JSON_SCHEMA,
+          strict: true,
+        },
+        sourceRef: { type: 'probe', id: probe.id },
+      });
+      const parsed = JSON.parse(result.text) as {
+        draftAnswer?: unknown;
+        missingNote?: unknown;
+      };
+      const draft =
+        typeof parsed.draftAnswer === 'string' ? parsed.draftAnswer.trim() : '';
+      return draft.length > 0 ? draft : null;
+    } catch (err) {
+      this.logger.debug(
+        {
+          probeId: probe.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'probe.draftFromMemory: LLM упал — без черновика',
+      );
+      return null;
+    }
+  }
 
   async gate(probe: ProbeEvent): Promise<ProbeValueGateVerdict> {
     try {

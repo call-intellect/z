@@ -15,6 +15,7 @@ import {
   CONCIERGE_RESPOND_SYSTEM_PROMPT,
   buildConciergeUserPrompt,
 } from '../prompts/concierge-respond.prompt';
+import { LoopGuard } from '../utils/loop-guard';
 
 import { ConciergeContextBuilderService } from './concierge-context-builder.service';
 import { ConciergeQuotaService } from './concierge-quota.service';
@@ -27,7 +28,11 @@ import {
 } from './step-scorer.service';
 import { ToolRouterService } from './tool-router.service';
 
-const MAX_TOOL_LOOP_ITERATIONS = 5;
+const DEFAULT_MAX_STEPS = 6;
+const DEFAULT_LOOP_GUARD_THRESHOLD = 1;
+
+const SEARCH_TOOL_NAME_HINTS = ['chat', 'memory', 'search', 'ask'];
+const SEARCH_QUERY_PARAM_KEYS = ['query', 'question', 'q', 'text'];
 
 const DEFAULT_HISTORY_PAIRS = 4;
 const DEFAULT_CLARIFY_MIN_CONFIDENCE = 80;
@@ -250,7 +255,14 @@ export class ConciergeService {
     let toolMessages: Array<{ role: 'tool'; content: string }> = [];
     let finalText = '';
 
-    for (let i = 0; i < MAX_TOOL_LOOP_ITERATIONS; i++) {
+    const maxSteps = await this.getMaxSteps();
+    const guardThreshold = await this.getLoopGuardThreshold();
+    const guard = new LoopGuard();
+    let gotFinal = false;
+    let loopGuardTripped = false;
+    let lastSearchPreview = '';
+
+    for (let i = 0; i < maxSteps; i++) {
       const rawUserBlock = this.composeConciergeUserBlock({
         contextBlock,
         summary: conversation.summary,
@@ -287,12 +299,26 @@ export class ConciergeService {
 
       if (parsed.kind === 'final') {
         finalText = parsed.text;
+        gotFinal = true;
         yield { type: 'thinking', text: 'Готовлю ответ…' };
         break;
       }
 
       const toolName = parsed.toolName;
       const params = parsed.params;
+
+      const searchQuery = this.extractSearchQuery(toolName, params);
+      if (searchQuery !== null) {
+        const repeated = !guard.firstTime(searchQuery);
+        if (repeated && guard.hitCount > guardThreshold) {
+          this.logger.warn(
+            { toolName, conversationId: conversation.id, hitCount: guard.hitCount },
+            'concierge: сторож зацикливания — идентичный поисковый запрос повторён сверх порога, останавливаю переформулировку',
+          );
+          loopGuardTripped = true;
+          break;
+        }
+      }
 
       if (input.toolWhitelist && !input.toolWhitelist.includes(toolName)) {
         this.logger.warn(
@@ -388,6 +414,9 @@ export class ConciergeService {
       }
 
       const preview = this.previewResult(execResult.result);
+      if (this.extractSearchQuery(toolName, params) !== null && execResult.ok) {
+        lastSearchPreview = preview;
+      }
       yield {
         type: 'tool_result',
         toolName,
@@ -436,6 +465,10 @@ export class ConciergeService {
     if (passthrough && askChatV2Capture) {
       finalText = askChatV2Capture.text;
       citations = askChatV2Capture.citations;
+    }
+
+    if (!finalText && !gotFinal && (loopGuardTripped || executedTools.length > 0)) {
+      finalText = this.buildPartialAnswer({ lastSearchPreview, toolMessages });
     }
 
     if (!finalText) {
@@ -494,6 +527,62 @@ export class ConciergeService {
     } catch {
       return DEFAULT_CLARIFY_MIN_CONFIDENCE;
     }
+  }
+
+  private async getMaxSteps(): Promise<number> {
+    let value: number;
+    try {
+      value = await this.cfg.getDynamic<number>('concierge.max_steps', undefined, DEFAULT_MAX_STEPS);
+    } catch {
+      value = DEFAULT_MAX_STEPS;
+    }
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : DEFAULT_MAX_STEPS;
+  }
+
+  private async getLoopGuardThreshold(): Promise<number> {
+    let value: number;
+    try {
+      value = await this.cfg.getDynamic<number>(
+        'rag.loop_guard_threshold',
+        undefined,
+        DEFAULT_LOOP_GUARD_THRESHOLD,
+      );
+    } catch {
+      value = DEFAULT_LOOP_GUARD_THRESHOLD;
+    }
+    return Number.isFinite(value) && value >= 0 ? Math.floor(value) : DEFAULT_LOOP_GUARD_THRESHOLD;
+  }
+
+  private extractSearchQuery(
+    toolName: string,
+    params: Record<string, unknown>,
+  ): string | null {
+    const lower = toolName.toLowerCase();
+    const isSearchTool = SEARCH_TOOL_NAME_HINTS.some((hint) => lower.includes(hint));
+    if (!isSearchTool) return null;
+    for (const key of SEARCH_QUERY_PARAM_KEYS) {
+      const v = params[key];
+      if (typeof v === 'string' && v.trim() !== '') return v;
+    }
+    const firstString = Object.values(params).find(
+      (v): v is string => typeof v === 'string' && v.trim() !== '',
+    );
+    return firstString ?? null;
+  }
+
+  private buildPartialAnswer(args: {
+    lastSearchPreview: string;
+    toolMessages: Array<{ role: 'tool'; content: string }>;
+  }): string {
+    const found = args.lastSearchPreview.trim();
+    if (found !== '') {
+      return `Не успел собрать полный ответ за отведённые шаги — вот что нашёл: ${found}`;
+    }
+    const lastTool = args.toolMessages[args.toolMessages.length - 1]?.content.trim() ?? '';
+    if (lastTool !== '') {
+      return `Не успел собрать полный ответ за отведённые шаги — вот что нашёл: ${lastTool}`;
+    }
+    return 'Пока не нашёл ответ в памяти компании. Уточните вопрос, и я поищу ещё.';
   }
 
   private composeConciergeUserBlock(args: {

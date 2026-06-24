@@ -35,6 +35,7 @@ import {
   type ExtractedBlock,
   type ExtractedEntityMention,
 } from '../services/block-extraction.service';
+import { ChunkContextService } from '../services/chunk-context.service';
 import { KnowledgeEmbeddingService } from '../services/embedding.service';
 import { EntityResolutionService } from '../services/entity-resolution.service';
 import { SegmentBuilderService, type Segment } from '../services/segment-builder.service';
@@ -151,6 +152,9 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(TaskEvidenceLinkerService)
     private readonly taskEvidenceLinker?: TaskEvidenceLinkerService,
+    @Optional()
+    @Inject(ChunkContextService)
+    private readonly chunkContext?: ChunkContextService,
   ) {}
 
   onModuleInit(): void {
@@ -213,6 +217,9 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         tenantId: event.tenantId,
         rawEventId: event.id,
         meetingTitle,
+        meetingDateIso: event.occurredAt.toISOString(),
+        meetingType: this.tryGetMeetingType(payload),
+        participants: this.tryGetParticipantNames(payload),
         segments,
         dataClass: event.dataClass,
       });
@@ -243,8 +250,22 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         'block-ingest: извлечение завершено',
       );
 
+      const contextHeader = this.chunkContext
+        ? await this.chunkContext
+            .buildContextHeader({
+              tenantId: event.tenantId,
+              meetingTitle,
+              meetingType: this.tryGetMeetingType(payload),
+              meetingDateIso: event.occurredAt.toISOString(),
+              participants: this.tryGetParticipantNames(payload),
+            })
+            .catch(() => '')
+        : '';
+
       const embeddings =
-        blocksInOrder.length > 0 ? await this.embeddings.embedBlocks(blocksInOrder) : [];
+        blocksInOrder.length > 0
+          ? await this.embeddings.embedBlocks(blocksInOrder, contextHeader)
+          : [];
 
       const indexToBlockId = new Map<number, string>();
       const blockIds: string[] = [];
@@ -288,6 +309,26 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           persistFailures += 1;
         }
       }
+
+      const summaryBlockId = await this.maybePersistMeetingSummary({
+        event,
+        payload,
+        contextHeader,
+      }).catch((err) => {
+        this.logger.warn(
+          { rawEventId, err: err instanceof Error ? err.message : String(err) },
+          'block-ingest: summary-блок «суть встречи» не создан — пропуск',
+        );
+        return null;
+      });
+      if (summaryBlockId) blockIds.push(summaryBlockId);
+
+      await this.createStructuralEntityEdges(event.tenantId, blockIds).catch((err) => {
+        this.logger.warn(
+          { rawEventId, err: err instanceof Error ? err.message : String(err) },
+          'block-ingest: структурные shares_entity не построены — пропуск',
+        );
+      });
 
       await this.applyDocumentAttribution(event, payload, blockIds).catch((err) => {
         this.logger.warn(
@@ -482,7 +523,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           let decidedByPersonId: string | undefined;
           if (dec.decidedByPersonHint) {
             const personId = await this.entities
-              .resolvePersonByHint(event.tenantId, dec.decidedByPersonHint)
+              .resolvePersonByHint(event.tenantId, dec.decidedByPersonHint, dec.text)
               .catch(() => null);
             if (personId) decidedByPersonId = personId;
           }
@@ -788,6 +829,32 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     return typeof t === 'string' && t.length > 0 ? t : undefined;
   }
 
+  private tryGetMeetingType(payload: unknown): string | undefined {
+    if (typeof payload !== 'object' || payload === null) return undefined;
+    const p = payload as { type?: unknown; meetingType?: unknown };
+    const t = p.type;
+    if (typeof t === 'string' && t.length > 0) return t;
+    const mt = p.meetingType;
+    if (typeof mt === 'string' && mt.length > 0) return mt;
+    return undefined;
+  }
+
+  private tryGetParticipantNames(payload: unknown): string[] | undefined {
+    if (typeof payload !== 'object' || payload === null) return undefined;
+    const parts = (payload as { participants?: unknown }).participants;
+    if (!Array.isArray(parts)) return undefined;
+    const names: string[] = [];
+    for (const p of parts) {
+      if (p === null || typeof p !== 'object') continue;
+      const name = (p as { displayName?: unknown }).displayName;
+      if (typeof name === 'string' && name.trim().length > 0) {
+        names.push(name.trim());
+      }
+      if (names.length >= 12) break;
+    }
+    return names.length > 0 ? names : undefined;
+  }
+
   private tryGetAuthorUserId(payload: unknown): string | null {
     if (typeof payload !== 'object' || payload === null) return null;
     const v = (payload as { userId?: unknown }).userId;
@@ -906,6 +973,52 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  private tryGetReportSummaryMarkdown(payload: unknown): string | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const p = payload as { kind?: unknown; reportSummaryMarkdown?: unknown };
+    if (p.kind !== 'meeting_report') return null;
+    const md = typeof p.reportSummaryMarkdown === 'string' ? p.reportSummaryMarkdown.trim() : '';
+    return md.length > 0 ? md : null;
+  }
+
+  private async maybePersistMeetingSummary(args: {
+    event: RawEvent;
+    payload: unknown;
+    contextHeader: string;
+  }): Promise<string | null> {
+    const { event, payload, contextHeader } = args;
+    if (event.sourceType !== 'meeting_report') return null;
+    const summaryMd = this.tryGetReportSummaryMarkdown(payload);
+    if (!summaryMd) return null;
+
+    const meetingTitle = this.tryGetMeetingTitle(payload);
+    const answer = summaryMd.slice(0, 4000);
+    const summaryBlock: ExtractedBlock = {
+      name: (meetingTitle ? `Суть встречи: ${meetingTitle}` : 'Суть встречи').slice(0, 200),
+      criticalQuestion: 'О чём была встреча и что главное?',
+      trustedAnswer: answer,
+      signalType: 'fact',
+      tags: [],
+      confidence: 0.9,
+      evidenceQuote: answer.slice(0, 500),
+      evidenceStartMs: 0,
+      evidenceEndMs: 0,
+      mentionedEntities: [],
+      role_relevant: false,
+    };
+    const [vector] = await this.embeddings.embedBlocks([summaryBlock], contextHeader);
+    return this.persistBlock({
+      event,
+      block: summaryBlock,
+      embedding: vector ?? null,
+      roleRelevant: false,
+      roleId: null,
+      segments: [],
+      authorUserId: null,
+      isMeetingSummary: true,
+    });
+  }
+
   private async persistBlock(args: {
     event: RawEvent;
     block: ExtractedBlock;
@@ -917,8 +1030,17 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     authorPersonId?: string | null;
     authorEmail?: string | null;
     subjectAllTypes?: boolean;
+    isMeetingSummary?: boolean;
   }): Promise<string | null> {
     const { event, block, embedding, roleRelevant, roleId } = args;
+    if (!block.evidenceQuote || block.evidenceQuote.trim().length === 0) {
+      this.metrics.incBlockWithoutEvidence({ reason: 'empty_quote' });
+      this.logger.warn(
+        { rawEventId: event.id, blockName: block.name },
+        'block-ingest: блок без evidence-цитаты (провенанс-инвариант) — отброшен',
+      );
+      return null;
+    }
     try {
       const isCommitment = block.signalType === 'commitment';
       const commitmentDueDate = isCommitment
@@ -929,10 +1051,11 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       const validFromValue: Date | null = bitemporalEnabled ? event.occurredAt : null;
 
       const isReport = event.sourceType === 'meeting_report';
-      const reportConfidenceCap = isReport
+      const applyReportCap = isReport && args.isMeetingSummary !== true;
+      const reportConfidenceCap = applyReportCap
         ? await this.cfg.getDynamic<number>('knowledge.reportBlockConfidenceCap', undefined, 0.6)
         : 1;
-      const effectiveConfidence = isReport
+      const effectiveConfidence = applyReportCap
         ? Math.min(block.confidence, reportConfidenceCap)
         : block.confidence;
 
@@ -954,7 +1077,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             roleRelevant,
             roleId,
             primarySource: isReport ? 'report' : 'transcript',
-            ...(isReport ? { dynamicScore: new Prisma.Decimal('0.7') } : {}),
+            ...(applyReportCap ? { dynamicScore: new Prisma.Decimal('0.7') } : {}),
             ...(validFromValue !== null ? { validFrom: validFromValue } : {}),
             ...(isCommitment
               ? {
@@ -1614,6 +1737,54 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         })),
         skipDuplicates: true,
       });
+    }
+  }
+
+  private async createStructuralEntityEdges(tenantId: string, blockIds: string[]): Promise<void> {
+    if (blockIds.length === 0) return;
+    const cap = await this.cfg.getDynamic<number>(
+      'knowledge.structural_shares_entity_topk',
+      undefined,
+      10,
+    );
+    for (const blockId of blockIds) {
+      const ents = await this.prisma.ideaBlockEntity.findMany({
+        where: { blockId },
+        select: { entityId: true },
+      });
+      if (ents.length === 0) continue;
+      const entityIds = ents.map((e) => e.entityId);
+      const others = await this.prisma.ideaBlockEntity.findMany({
+        where: { entityId: { in: entityIds }, blockId: { not: blockId }, block: { tenantId } },
+        select: { blockId: true },
+        distinct: ['blockId'],
+        take: cap,
+      });
+      for (const o of others) {
+        if (o.blockId === blockId) continue;
+        await this.prisma.ideaBlockLink
+          .upsert({
+            where: {
+              fromBlockId_toBlockId_relationType: {
+                fromBlockId: blockId,
+                toBlockId: o.blockId,
+                relationType: 'shares_entity',
+              },
+            },
+            update: { status: 'active', deletedAt: null, deletedBy: null },
+            create: {
+              tenantId,
+              fromBlockId: blockId,
+              toBlockId: o.blockId,
+              relationType: 'shares_entity',
+              confidence: new Prisma.Decimal('1.000'),
+              explanation: 'Общая сущность (структурная связь)',
+              createdBy: 'system',
+              status: 'active',
+            },
+          })
+          .catch(() => undefined);
+      }
     }
   }
 

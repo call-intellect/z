@@ -4,11 +4,13 @@ import {
   Logger,
   type OnModuleDestroy,
   type OnModuleInit,
+  Optional,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { type IdeaBlockLinkType, Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { type BlockLinkerJobData, CORE_QUEUE_NAMES } from '../../core-queue/queues';
@@ -19,6 +21,12 @@ import { BlockLinkService } from '../services/block-link.service';
 import { TemporalConflictService } from '../services/temporal-conflict.service';
 
 const CONFLICT_AUTO_ESCALATE_CONFIDENCE = 0.85;
+
+const RISK_LINK_TYPES: ReadonlySet<IdeaBlockLinkType> = new Set([
+  'contradicts',
+  'supersedes',
+  'causes',
+]);
 
 @Injectable()
 export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
@@ -37,6 +45,9 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(ConflictService) private readonly conflicts: ConflictService,
     @Inject(TemporalConflictService)
     private readonly temporalConflict: TemporalConflictService,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   onModuleInit(): void {
@@ -85,7 +96,11 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
 
     await this.gate.checkOrThrow(block.tenantId, 'block-linker');
 
-    const minBlocks = this.cfg.knowledgeCore.linkerMinBlocks;
+    const minBlocks = await this.cfg.getDynamic<number>(
+      'knowledge.linker_min_canonical',
+      undefined,
+      2,
+    );
     const canonicalCount = await this.prisma.ideaBlock.count({
       where: { tenantId: block.tenantId, status: 'canonical' },
     });
@@ -97,14 +112,27 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const topK = this.cfg.knowledgeCore.linkKnnTopK;
+    const topK = await this.cfg.getDynamic<number>(
+      'knowledge.linker_candidate_topk',
+      undefined,
+      12,
+    );
     const candidates = await this.linker.findLinkCandidates({
       tenantId: block.tenantId,
       blockId: block.id,
       topK,
     });
 
-    const minConfidence = this.cfg.knowledgeCore.linkMinConfidence;
+    const edgeConfidenceHigh = await this.cfg.getDynamic<number>(
+      'knowledge.edge_confidence_high',
+      undefined,
+      0.85,
+    );
+    const edgeConfidenceLow = await this.cfg.getDynamic<number>(
+      'knowledge.edge_confidence_low',
+      undefined,
+      0.6,
+    );
     let createdCount = 0;
     for (const { candidate } of candidates) {
       try {
@@ -114,7 +142,41 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
           toBlock: candidate,
         });
         if (verdict.relationType === null) continue;
-        if (verdict.confidence < minConfidence) continue;
+        const relationType = verdict.relationType;
+        const isRisk = RISK_LINK_TYPES.has(relationType);
+        const threshold = isRisk ? edgeConfidenceHigh : edgeConfidenceLow;
+        if (verdict.confidence < threshold) {
+          if (isRisk) {
+            this.metrics?.incRiskEdge({ relation: relationType, outcome: 'rejected_low_conf' });
+          }
+          continue;
+        }
+        if (isRisk) {
+          const confirmed = await this.linker.confirmRiskLink({
+            tenantId: block.tenantId,
+            fromBlock: block,
+            toBlock: candidate,
+            relationType,
+          });
+          if (!confirmed) {
+            this.metrics?.incRiskEdge({ relation: relationType, outcome: 'rejected_skeptic' });
+            this.logger.debug(
+              { blockId: block.id, candidateId: candidate.id, relationType },
+              'block-linker: риск-связь отвергнута судьёй-скептиком (композитный судья)',
+            );
+            continue;
+          }
+          this.metrics?.incRiskEdge({ relation: relationType, outcome: 'created' });
+          this.logger.debug(
+            {
+              blockId: block.id,
+              candidateId: candidate.id,
+              relationType,
+              confidence: verdict.confidence,
+            },
+            'block-linker: риск-связь подтверждена (порог + скептик)',
+          );
+        }
 
         const confidenceDecimal = new Prisma.Decimal(verdict.confidence.toFixed(3));
         const validFrom = parseIsoHint(verdict.validFromHint);
@@ -125,7 +187,7 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
             fromBlockId_toBlockId_relationType: {
               fromBlockId: block.id,
               toBlockId: candidate.id,
-              relationType: verdict.relationType,
+              relationType,
             },
           },
           update: {
@@ -149,7 +211,7 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
             tenantId: block.tenantId,
             fromBlockId: block.id,
             toBlockId: candidate.id,
-            relationType: verdict.relationType,
+            relationType,
             confidence: confidenceDecimal,
             explanation: verdict.explanation,
             createdBy: 'linker',
@@ -173,7 +235,7 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
         }
 
         if (
-          verdict.relationType === 'contradicts' &&
+          relationType === 'contradicts' &&
           verdict.confidence >= CONFLICT_AUTO_ESCALATE_CONFIDENCE
         ) {
           try {
@@ -184,11 +246,11 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
               newId: block.id,
               evidence: {
                 blockIds: [block.id, candidate.id],
-                relationType: verdict.relationType,
+                relationType,
                 confidence: verdict.confidence,
                 explanation: verdict.explanation,
               },
-              relationType: verdict.relationType,
+              relationType,
               detectedBy: 'block-linker',
             });
           } catch (err) {

@@ -29,6 +29,8 @@ export type PendingActionDetail =
       meetingTitle?: string;
       cite?: PendingActionCite;
       notificationId: string;
+      draftAnswer?: string;
+      draftKind?: string;
     }
   | {
       kind: "conflict";
@@ -195,6 +197,8 @@ export function mapPendingActionDetail(
         meetingTitle: api.meetingTitle,
         cite: mapCite(api.cite),
         notificationId: api.notificationId,
+        draftAnswer: api.draftAnswer,
+        draftKind: api.draftKind,
       };
     case "conflict":
       return {

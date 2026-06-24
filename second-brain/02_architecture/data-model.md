@@ -341,6 +341,7 @@ Source {
 ```
 RawEvent {
   id, tenantId, sourceId, sourceType,
+  sourceTitle? VARCHAR,                   -- эпизод-узел (граф знаний v2, 2026-06-24): человекочитаемый заголовок эпизода («Созвон с клиентом, 2026-06-20»); заполняют meeting/report-адаптеры через `ingest/adapters/episode-title.util.ts`; для группировки поиска по эпизоду + понятного источника
   sourceExternalId? (если null — дедуп по checksum),
   idempotencyKey UNIQUE (sha256(sourceId + ':' + (sourceExternalId ?? checksum) + ':' + occurredAtIso)),
   occurredAt, receivedAt (default now),
@@ -480,7 +481,10 @@ IdeaBlockLink {
                           shares_topic | shares_entity | question_answered_by)
   confidence        Decimal(4,3)
   explanation       String @Text
-  createdBy         enum (linker | reframing | manual)
+  createdBy         enum (linker | reframing | manual | system)
+                    -- enum LinkCreatedBy += system (граф знаний v2, 2026-06-24):
+                    -- структурные рёбра shares_entity (на ingest) / shares_topic
+                    -- (при кластеризации тем) пишутся без LLM с createdBy=system
   status            enum (active | archived)  @default(active)
   createdAt, updatedAt
   @@unique(fromBlockId, toBlockId, relationType)
@@ -535,6 +539,8 @@ Theme {
   branch? (strategy | clients | sales | marketing | product | operations |
            team | finance | technology | production | partnerships | legal),
   embedding vector(1536),
+  summary? @Text,                         -- авто-резюме темы (граф знаний v2, 2026-06-24)
+  summaryUpdatedAt?,                       -- когда пересчитано (инкрементально)
   lastSignalAt?, createdAt, updatedAt,
 
   @@index(tenantId, status)
@@ -549,6 +555,34 @@ AI-кластер canonical IdeaBlock'ов. Создаётся `theme-clusterer.
 
 Описание/имя/ветка генерируются LLM `theme-classify` (JSON Schema strict).
 Embedding темы — `text-embedding-3-small` от `name + ' ' + description`.
+
+**Поля `summary` / `summaryUpdatedAt`** (граф знаний v2, 2026-06-24) — авто-резюме
+темы. Пересчитывает **инкрементально** (только изменившиеся темы) cron
+`theme-summarize` (`@Cron`, taskType `theme-summarize`, kill-switch
+`knowledge.theme_summary_enabled`). Подробно — [[knowledge-core]] §«Перестройка
+ингеста + умный поэтапный поиск».
+
+### EntityAlias (граф знаний v2, 2026-06-24)
+
+```
+EntityAlias {
+  id, tenantId,
+  alias            -- псевдоним/упоминание (как встретилось в источнике)
+  personId? → Person   -- куда резолвится (Person ...
+  entityId? → Entity   -- ... или Entity)
+  createdAt, updatedAt
+  @@unique(tenantId, alias)
+  @@index(tenantId, personId)
+  @@index(tenantId, entityId)
+}
+```
+
+Per-Org кэш cross-source идентичности «псевдоним → Person/Entity» — ускоряет и
+стабилизирует резолв при ingest. Каскад `resolvePersonByHint`: exact →
+**alias-cache** → fuzzy → эмбеддинг-склейка (порог
+`knowledge.entity_name_resolve_threshold` 0.9) → LLM-арбитр (taskType
+`entity-name-resolve`) → **fail-closed null** (инвариант R-2: разных людей не
+склеиваем). Подробно — [[knowledge-core]] §«Cross-source идентичность».
 
 ### ThemeIdeaBlock (M:M)
 
@@ -1070,6 +1104,9 @@ Autonomy W2 (2026-06-12) добавила **ещё два значения** (м
 **Фаза 2 (2026-06-18) — новая колонка `ProbeEvent.questionEmbedding vector(1536)`** (миграция `add_probe_event_question_embedding`, ТЗ [`probe-system-phase2`](../../plans/tz/2026-06-17-probe-system-phase2.md)) — эмбеддинг сформулированного вопроса (text-embedding-3-small) для **семантического дедупа** вопросов поверх content-hash дедупа. HNSW-индекс `idx_probeevent_qembed_hnsw` (`vector_cosine_ops`, partial `WHERE "questionEmbedding" IS NOT NULL`) — в `postgres-init.sql`, не в schema.prisma. Дедуп-гейт: cosine ≥ `probe.semanticDedupThreshold` (0.92) в окне `probe.semanticDedupWindowHours` (72) → дроп. Колонка nullable, backfill не нужен. Полная карта Ф2 — [[../01_projects/probe-agent]] §«Фаза 2».
 
 **Волна 1 политики триггера (2026-06-21) — новая колонка `ProbeEvent.notBeforeAt DateTime?`** (миграция `20260621132002_probe_event_not_before_at` — `ALTER TABLE "probe_events" ADD COLUMN "notBeforeAt" TIMESTAMP(3)`, аддитивная, nullable, backfill не нужен) — **грейс**: probe по свежей авто-извлечённой записи не отправляется раньше `notBeforeAt = createdAt + probe.confirmGraceDays` (2 дня); диспетчер и digest-cron уважают поле, attribution откладывается на грейс. Часть центрального гейта политики (machine-fillable + provenance `auto_unconfirmed` → `dropped_policy_silent`) — см. процессы [[../03_processes/probe-question-flow]] §8.2 и [[../03_processes/specialist-3-1-regulations]] §8.1.
+
+Автономизация — убрать лишние подтверждения (2026-06-23, Блок D) добавила **ещё одно значение** (миграция `20260623151703_add_probe_suppressed_by_memory`, `ALTER TYPE "ProbeStatus" ADD VALUE 'suppressed_by_memory'`, аддитивно):
+- **`suppressed_by_memory`** — висящий **pending-probe погашен дочисткой по выученному правилу** `SubjectMemory` (`SubjectMemoryService.sweepPendingDuplicates`): при активации нового правила самообучения близкие к нему ожидающие probe закрываются, человека не переспрашивают то, что Кора уже выучила. Kill-switch `subjectMemory.sweepPendingOnLearnEnabled` (ON), метрика `subject_memory_pending_swept_total`. См. [[../01_projects/probe-agent]] §«Наблюдаемость самообучения SubjectMemory».
 
 ## PersonLeave — отпуска / отсутствия сотрудника (2026-06-21)
 

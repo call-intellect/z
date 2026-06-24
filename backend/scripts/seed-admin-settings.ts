@@ -640,6 +640,24 @@ function buildSettings(): SettingSeed[] {
       'Курация: доля авто/провизорных решений в аудит-выборку (W3: 0.05→0.01 — меньше аудит-шума при сохранении сигнала autotune)',
     ],
     [
+      'knowledge.curationGrayZoneJudgeEnabled',
+      true,
+      'medium',
+      'Курация: судить некритичные карточки серой зоны (вместо отправки человеку)',
+    ],
+    [
+      'knowledge.curationGrayZoneJudgeMinConfidence',
+      0.7,
+      'low',
+      'Курация: нижний порог уверенности для судьи серой зоны',
+    ],
+    [
+      'knowledge.curationGrayZoneJudgeSampleRate',
+      1.0,
+      'low',
+      'Курация: доля карточек серой зоны, прогоняемых через судью',
+    ],
+    [
       'knowledge.curationAutotuneEnabled',
       envBool('CURATION_AUTOTUNE_ENABLED', true),
       'medium',
@@ -1618,6 +1636,17 @@ function buildSettings(): SettingSeed[] {
       'high',
       'Слать одно подтверждение существования регламента/процесса/политики (оставить/переименовать/назначить владельца/удалить) после грейса вместо серии gap-вопросов. Kill-switch, по умолчанию включён (Ship-On).',
     ],
+    [
+      'probe.draftReasons',
+      [
+        'experiment.result_without_lesson',
+        'companyprofile.missing_mission',
+        'companyprofile.missing_vision',
+        'companyprofile.missing_strategy',
+      ],
+      'low',
+      'Probe: для каких поводов Кора готовит черновик ответа из памяти',
+    ],
   ];
   for (const [key, value, severity, description] of probe) {
     out.push({ key, value, category: 'platform', section: 'probe', severity, description });
@@ -1635,6 +1664,12 @@ function buildSettings(): SettingSeed[] {
       envBool('SUBJECT_MEMORY_RETRIEVE_BEFORE_ASK_ENABLED', true),
       'medium',
       'Подавление уточняющего вопроса при наличии подходящего активного правила (retrieve-before-ask). Выкл → вопрос задаётся даже если ответ уже известен из памяти',
+    ],
+    [
+      'subjectMemory.sweepPendingOnLearnEnabled',
+      envBool('SUBJECT_MEMORY_SWEEP_PENDING_ON_LEARN_ENABLED', true),
+      'medium',
+      'Самообучение: гасить висящие дубли-вопросы при выводе правила (kill-switch, ON). При выводе/активации правила открытые pending-probe той же Org, семантически близкие к контексту правила, переводятся в suppressed_by_memory. Выкл → дубли остаются в очереди',
     ],
     [
       'subjectMemory.matchMinSimilarity',
@@ -1702,6 +1737,12 @@ function buildSettings(): SettingSeed[] {
       'low',
       'Минимум блоков графа, чтобы строить summary (иначе cold-start — пропуск, остаётся ручной ввод)',
     ],
+    [
+      'companyProfile.completenessProbeEnabled',
+      envBool('COMPANY_PROFILE_COMPLETENESS_PROBE_ENABLED', true),
+      'medium',
+      'Кора раз в сутки проверяет профиль компании и, если миссия/видение/стратегия не заданы, задаёт владельцу уточняющий вопрос с черновиком из памяти (kill-switch, ON). Выкл → вопросы по незаполненному профилю не отправляются',
+    ],
   ];
   for (const [key, value, severity, description] of companyProfile) {
     out.push({ key, value, category: 'ai', section: 'company-profile', severity, description });
@@ -1719,6 +1760,12 @@ function buildSettings(): SettingSeed[] {
       envFloat('TASK_ROUTING_SUGGEST_MIN_CONFIDENCE', 0.6),
       'medium',
       'Минимальная уверенность кандидата (0..1), ниже которой исполнитель не предлагается',
+    ],
+    [
+      'taskRouting.autoAssignMinConfidence',
+      envFloat('TASK_ROUTING_AUTO_ASSIGN_MIN_CONFIDENCE', 0.75),
+      'low',
+      'Подбор исполнителя: порог уверенности для АВТО-назначения по навыкам (без вопроса человеку)',
     ],
     [
       'taskRouting.topK',

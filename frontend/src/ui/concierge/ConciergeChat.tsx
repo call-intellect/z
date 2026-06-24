@@ -57,10 +57,18 @@ export function ConciergeChat({
   );
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     if (initialInput) setInput(initialInput);
   }, [initialInput]);
+
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
+  }, [input]);
 
   const handleCreateFromSchema = useCallback(
     async (schema: InferredTableSchema) => {
@@ -157,8 +165,8 @@ export function ConciergeChat({
         if (r.quotaExceeded) {
           toast.error(
             r.quotaExceeded === "daily"
-              ? "Дневная квота Concierge исчерпана"
-              : "Месячная квота Concierge исчерпана",
+              ? "Дневная квота Мастера исчерпана"
+              : "Месячная квота Мастера исчерпана",
           );
         } else if (r.error) {
           toast.error(r.error.message);
@@ -202,7 +210,7 @@ export function ConciergeChat({
           }
         }
       } catch {
-        toast.error("Concierge временно недоступен");
+        toast.error("Мастер временно недоступен");
       }
     }
 
@@ -278,8 +286,8 @@ export function ConciergeChat({
         case "quota_exceeded":
           toast.error(
             ev.scope === "daily"
-              ? "Дневная квота Concierge исчерпана"
-              : "Месячная квота Concierge исчерпана",
+              ? "Дневная квота Мастера исчерпана"
+              : "Месячная квота Мастера исчерпана",
           );
           break;
         case "error":
@@ -313,7 +321,7 @@ export function ConciergeChat({
       >
         {rows.length === 0 && (
           <div className="text-center text-fg-tertiary">
-            Я Concierge. Спросите что-нибудь или попросите выполнить действие.
+            Я Мастер. Спросите что-нибудь или попросите выполнить действие.
           </div>
         )}
         {rows.map((row) =>
@@ -340,22 +348,29 @@ export function ConciergeChat({
           ),
         )}
         {busy && (
-          <div className="text-xs text-fg-tertiary">Concierge печатает…</div>
+          <div className="text-xs text-fg-tertiary">Мастер печатает…</div>
         )}
       </div>
       <form
-        className="flex gap-2 border-t border-border-subtle p-2"
+        className="flex items-end gap-2 border-t border-border-subtle p-2"
         onSubmit={(e) => {
           e.preventDefault();
           void send();
         }}
       >
-        <input
-          type="text"
-          className="flex-1 rounded-md border border-border-subtle bg-bg-overlay px-3 py-2 text-sm"
+        <textarea
+          ref={inputRef}
+          rows={1}
+          className="max-h-32 flex-1 resize-none overflow-y-auto rounded-md border border-border-subtle bg-bg-overlay px-3 py-2 text-sm"
           placeholder="Что нужно сделать?"
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void send();
+            }
+          }}
           disabled={busy}
         />
         <button

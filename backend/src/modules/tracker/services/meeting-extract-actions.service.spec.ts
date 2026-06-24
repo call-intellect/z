@@ -18,6 +18,7 @@ import type { AssigneeResolution, AssigneeResolverService } from './assignee-res
 import type { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 import { MeetingExtractActionsService } from './meeting-extract-actions.service';
 import type { SimilarIssuesService } from './similar-issues.service';
+import type { AssigneeSuggestion, SkillRoutingService } from './skill-routing.service';
 
 interface MockPrisma {
   meeting: { findFirst: ReturnType<typeof vi.fn> };
@@ -43,6 +44,11 @@ function mkService(opts?: {
   probeReject?: boolean;
   similarResult?: Array<{ id: string; similarity: number }>;
   embedReject?: boolean;
+  taskRoutingEnabled?: boolean;
+  autoAssignMinConfidence?: number;
+  skillRoutingResult?: AssigneeSuggestion[];
+  skillRoutingReject?: boolean;
+  withSkillRouting?: boolean;
 }): {
   service: MeetingExtractActionsService;
   prisma: MockPrisma;
@@ -53,11 +59,13 @@ function mkService(opts?: {
   orgAssigneeResolver: { resolve: ReturnType<typeof vi.fn> };
   metrics: {
     incAiMeetingActionsExtracted: ReturnType<typeof vi.fn>;
+    incTaskSkillRoutingAssigned: ReturnType<typeof vi.fn>;
   };
   queue: { enqueue: ReturnType<typeof vi.fn> };
   probe: { suggest: ReturnType<typeof vi.fn> };
   similarIssues: { findSimilarByVector: ReturnType<typeof vi.fn> };
   embeddings: { embed: ReturnType<typeof vi.fn> };
+  skillRouting: { suggestAssignee: ReturnType<typeof vi.fn> };
 } {
   const prisma: MockPrisma = {
     meeting: {
@@ -175,6 +183,7 @@ function mkService(opts?: {
 
   const metrics = {
     incAiMeetingActionsExtracted: vi.fn(),
+    incTaskSkillRoutingAssigned: vi.fn(),
   };
   const queue = { enqueue: vi.fn().mockResolvedValue(undefined) };
   const probe = {
@@ -193,12 +202,22 @@ function mkService(opts?: {
       : vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]),
   };
 
+  const skillRouting = {
+    suggestAssignee: opts?.skillRoutingReject
+      ? vi.fn().mockRejectedValue(new Error('skill routing down'))
+      : vi.fn().mockResolvedValue(opts?.skillRoutingResult ?? []),
+  };
+
   const cfg = {
     pendingActions: { intakeTtlDays: 30 },
     tracker: {
       assigneeClarifyEnabled: opts?.assigneeClarifyEnabled ?? true,
       assigneeProbePriorityHint: 70,
       selfAssignAuthorFallbackEnabled: opts?.selfAssignAuthorFallbackEnabled ?? true,
+    },
+    taskRouting: {
+      enabled: opts?.taskRoutingEnabled ?? true,
+      autoAssignMinConfidence: opts?.autoAssignMinConfidence ?? 0.75,
     },
   };
 
@@ -216,6 +235,9 @@ function mkService(opts?: {
     similarIssues as unknown as SimilarIssuesService,
     embeddings as unknown as EmbeddingFallbackService,
     orgAssigneeResolver as unknown as AssigneeResolverService,
+    opts?.withSkillRouting === false
+      ? undefined
+      : (skillRouting as unknown as SkillRoutingService),
   );
   return {
     service,
@@ -230,6 +252,7 @@ function mkService(opts?: {
     probe,
     similarIssues,
     embeddings,
+    skillRouting,
   };
 }
 
@@ -940,6 +963,148 @@ describe('MeetingExtractActionsService', () => {
       data: { suggestedDuplicateOfIssueId: string | null };
     };
     expect(createArg.data.suggestedDuplicateOfIssueId).toBeNull();
+    expect(created).toHaveLength(1);
+  });
+
+  const skillRoutingLlmText = JSON.stringify({
+    tasks: [
+      {
+        title: 'Настроить аналитику',
+        assignee: null,
+        dueDate: '2026-05-30',
+        suggestedAssigneeHint: null,
+        suggestedDueDate: '2026-05-30',
+        confidence: 0.9,
+        sourceQuote: 'Надо настроить аналитику воронки',
+      },
+    ],
+  });
+
+  it('Блок C: name-matching дал null → skillRouting (conf 0.9 ≥ 0.75) → suggestedAssigneeId=u1, метрика meeting', async () => {
+    const { service, prisma, skillRouting, metrics } = mkService({
+      participants: [],
+      llmText: skillRoutingLlmText,
+      skillRoutingResult: [
+        {
+          personId: 'p1',
+          userId: 'u1',
+          personName: 'Аналитик',
+          roleName: 'Маркетолог',
+          departmentName: 'Маркетинг',
+          confidence: 0.9,
+          rationale: 'совпадение по зоне ответственности',
+          matchPath: 'semantic',
+        },
+      ],
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    expect(skillRouting.suggestAssignee).toHaveBeenCalledTimes(1);
+    expect(skillRouting.suggestAssignee).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'org-1' }),
+    );
+    const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
+      data: { suggestedAssigneeId: string | null };
+    };
+    expect(createArg.data.suggestedAssigneeId).toBe('u1');
+    expect(metrics.incTaskSkillRoutingAssigned).toHaveBeenCalledWith({ path: 'meeting' });
+  });
+
+  it('Блок C: skillRouting вернул низкую уверенность (0.5 < 0.75) → suggestedAssigneeId=null, метрика не инкрементнута', async () => {
+    const { service, prisma, skillRouting, metrics } = mkService({
+      participants: [],
+      llmText: skillRoutingLlmText,
+      skillRoutingResult: [
+        {
+          personId: 'p1',
+          userId: 'u1',
+          personName: 'Аналитик',
+          roleName: null,
+          departmentName: null,
+          confidence: 0.5,
+          rationale: 'слабое совпадение',
+          matchPath: 'role_prior',
+        },
+      ],
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    expect(skillRouting.suggestAssignee).toHaveBeenCalledTimes(1);
+    const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
+      data: { suggestedAssigneeId: string | null };
+    };
+    expect(createArg.data.suggestedAssigneeId).toBeNull();
+    expect(metrics.incTaskSkillRoutingAssigned).not.toHaveBeenCalled();
+  });
+
+  it('Блок C: топ-кандидат без userId (Person без аккаунта) → suggestedAssigneeId=null', async () => {
+    const { service, prisma, metrics } = mkService({
+      participants: [],
+      llmText: skillRoutingLlmText,
+      skillRoutingResult: [
+        {
+          personId: 'p1',
+          userId: null,
+          personName: 'Аналитик',
+          roleName: null,
+          departmentName: null,
+          confidence: 0.95,
+          rationale: 'высокая уверенность, но нет аккаунта',
+          matchPath: 'semantic',
+        },
+      ],
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
+      data: { suggestedAssigneeId: string | null };
+    };
+    expect(createArg.data.suggestedAssigneeId).toBeNull();
+    expect(metrics.incTaskSkillRoutingAssigned).not.toHaveBeenCalled();
+  });
+
+  it('Блок C: taskRouting.enabled=false → skillRouting.suggestAssignee НЕ зван', async () => {
+    const { service, skillRouting } = mkService({
+      participants: [],
+      llmText: skillRoutingLlmText,
+      taskRoutingEnabled: false,
+      skillRoutingResult: [
+        {
+          personId: 'p1',
+          userId: 'u1',
+          personName: 'Аналитик',
+          roleName: null,
+          departmentName: null,
+          confidence: 0.9,
+          rationale: 'не должно учитываться',
+          matchPath: 'semantic',
+        },
+      ],
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    expect(skillRouting.suggestAssignee).not.toHaveBeenCalled();
+  });
+
+  it('Блок C: skillRouting упал → обработка не падает, suggestedAssigneeId=null (fail-soft)', async () => {
+    const { service, prisma, skillRouting } = mkService({
+      participants: [],
+      llmText: skillRoutingLlmText,
+      skillRoutingReject: true,
+    });
+
+    const created = await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    expect(skillRouting.suggestAssignee).toHaveBeenCalledTimes(1);
+    expect(prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+    const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
+      data: { suggestedAssigneeId: string | null };
+    };
+    expect(createArg.data.suggestedAssigneeId).toBeNull();
     expect(created).toHaveLength(1);
   });
 });

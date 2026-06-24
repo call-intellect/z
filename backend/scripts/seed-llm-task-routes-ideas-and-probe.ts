@@ -84,6 +84,19 @@ const SEEDS: TaskRouteSeed[] = [
     ],
   },
   {
+    taskType: 'probe-draft-from-memory',
+    playbookSection: '§2.1 capable JSON draft + probe-drafts B-1',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' },
+      {
+        tier: 'secondary',
+        providerName: 'openai-via-proxy',
+        model: 'gpt-5.4-mini',
+      },
+      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
+    ],
+  },
+  {
     taskType: 'idea-status-summarize',
     playbookSection: '§2.1 short summarize + β-5 §11',
     chain: [

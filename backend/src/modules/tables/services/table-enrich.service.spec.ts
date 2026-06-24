@@ -156,7 +156,7 @@ describe('TableEnrichService', () => {
     const prov = prisma.tableCellProvenance.create.mock.calls[0]![0].data;
     expect(prov.sourceType).toBe('meeting');
     expect(prov.sourceId).toBe(MEETING);
-    expect(prov.sourceLink).toBe(`/meetings/${MEETING}?t=12`);
+    expect(prov.sourceLink).toBe(`/meetings/${MEETING}/result?t=12`);
     expect(prov.appliedBy).toBe('agent');
     expect(prov.previousValue).toBe(Prisma.JsonNull);
     expect(prisma.tableCellPendingPatch.create).not.toHaveBeenCalled();

@@ -54,6 +54,8 @@ export interface ProbePendingDetail {
   cite?: string;
   /// id Notification (для ответа через respond).
   notificationId: string;
+  draftAnswer?: string;
+  draftKind?: string;
 }
 
 /// conflict: суть конфликта + обе версии.

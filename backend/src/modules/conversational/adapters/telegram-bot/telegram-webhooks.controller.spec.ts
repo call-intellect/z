@@ -320,7 +320,7 @@ describe('TelegramWebhooksController — Ф1 дедуп + ранний ACK (cale
     expect(inboundQueue.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         inbound: expect.objectContaining({ type: 'tg_msg' }),
-        dedupeId: 'global-1:42',
+        dedupeId: 'global-1_42',
       }),
     );
     expect(conversational.dispatchInbound).not.toHaveBeenCalled();

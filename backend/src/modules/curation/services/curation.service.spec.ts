@@ -105,6 +105,9 @@ function buildCfg(overrides?: Partial<Record<string, unknown>>): TypedConfigServ
       provisionalThresholdDefault: 0.8,
       aiVerifierEnabled: true,
       auditSampleRate: 0.05,
+      grayZoneJudgeEnabled: true,
+      grayZoneJudgeMinConfidence: 0.7,
+      grayZoneJudgeSampleRate: 1.0,
       autotuneEnabled: false,
       thresholdMin: 0.6,
       thresholdMax: 0.97,
@@ -123,6 +126,7 @@ function buildMetrics() {
     incCurationProvisional: vi.fn(),
     incCurationAuditSample: vi.fn(),
     incCurationVerifierVerdict: vi.fn(),
+    incCurationGrayZoneJudged: vi.fn(),
     incCurationDecision: vi.fn(),
     observeCurationTimeToDecide: vi.fn(),
   } as unknown as BusinessMetricsService;
@@ -429,6 +433,127 @@ describe('CurationService — A1 «лестница доверия»', () => {
     expect(createdCurationItems).toHaveLength(1);
     expect(res.curationItemId).toBe('ci-1');
     expect(res.decision).toBe('deep');
+  });
+});
+
+const grayZoneInput: TriageInput = {
+  tenantId: 'tenant-A',
+  resourceType: 'insight',
+  resourceId: 'res-gz',
+  confidence: 0.8,
+  proposedPayload: { statement: 'Клиенты чаще спрашивают про интеграции' },
+  conflictSignal: 'none',
+};
+
+describe('CurationService — A-Ф5 судья серой зоны (некритичные карточки)', () => {
+  let metrics: BusinessMetricsService;
+  let routing: CuratorRoutingService;
+
+  beforeEach(() => {
+    metrics = buildMetrics();
+    routing = buildRouting();
+  });
+
+  it('серая зона [0.7, autoT) + accept-консенсус → provisional (НЕ light), judge вызван', async () => {
+    const { prisma, createdCardVersions } = buildPrisma({
+      curationSettings: { auditSampleRate: 0 },
+    });
+    const debate = buildDebate(acceptVerdict('unanimous'));
+    const service = makeService({ prisma, metrics, routing, debate });
+
+    const res = await service.triage(grayZoneInput);
+
+    expect(res.decision).toBe('provisional');
+    expect(res.cardVersionId).toBe('cv-1');
+    expect(createdCardVersions[0]?.trustTier).toBe('provisional');
+    expect(debate?.judge).toHaveBeenCalledTimes(1);
+    expect(metrics.incCurationGrayZoneJudged).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'canonicalized' }),
+    );
+    expect(metrics.incCurationProvisional).toHaveBeenCalledWith({
+      resourceType: 'insight',
+    });
+  });
+
+  it('серая зона + reject → light (к человеку), как раньше', async () => {
+    const { prisma, createdCardVersions, createdCurationItems } = buildPrisma({
+      curationSettings: { auditSampleRate: 0 },
+    });
+    const debate = buildDebate(rejectVerdict());
+    const service = makeService({ prisma, metrics, routing, debate });
+
+    const res = await service.triage(grayZoneInput);
+
+    expect(res.decision).toBe('light');
+    expect(createdCardVersions).toHaveLength(0);
+    expect(createdCurationItems[0]?.level).toBe('light');
+    expect(debate?.judge).toHaveBeenCalledTimes(1);
+    expect(metrics.incCurationGrayZoneJudged).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'to_human' }),
+    );
+  });
+
+  it('серая зона + split → light (к человеку)', async () => {
+    const { prisma, createdCardVersions, createdCurationItems } = buildPrisma({
+      curationSettings: { auditSampleRate: 0 },
+    });
+    const debate = buildDebate(acceptVerdict('split'));
+    const service = makeService({ prisma, metrics, routing, debate });
+
+    const res = await service.triage(grayZoneInput);
+
+    expect(res.decision).toBe('light');
+    expect(createdCardVersions).toHaveLength(0);
+    expect(createdCurationItems[0]?.level).toBe('light');
+    expect(metrics.incCurationGrayZoneJudged).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'to_human' }),
+    );
+  });
+
+  it('grayZoneJudgeEnabled=false → judge НЕ вызван, карточка идёт в light (как до фичи)', async () => {
+    const { prisma, createdCardVersions, createdCurationItems } = buildPrisma({
+      curationSettings: { grayZoneJudgeEnabled: false, auditSampleRate: 0 },
+    });
+    const debate = buildDebate(acceptVerdict('unanimous'));
+    const service = makeService({ prisma, metrics, routing, debate });
+
+    const res = await service.triage(grayZoneInput);
+
+    expect(res.decision).toBe('light');
+    expect(createdCardVersions).toHaveLength(0);
+    expect(createdCurationItems[0]?.level).toBe('light');
+    expect(debate?.judge).not.toHaveBeenCalled();
+    expect(metrics.incCurationGrayZoneJudged).not.toHaveBeenCalled();
+  });
+
+  it('eff < grayZoneMinT (0.65) → judge НЕ вызван, light', async () => {
+    const { prisma, createdCardVersions } = buildPrisma({
+      curationSettings: { auditSampleRate: 0 },
+    });
+    const debate = buildDebate(acceptVerdict('unanimous'));
+    const service = makeService({ prisma, metrics, routing, debate });
+
+    const res = await service.triage({ ...grayZoneInput, confidence: 0.65 });
+
+    expect(res.decision).toBe('light');
+    expect(createdCardVersions).toHaveLength(0);
+    expect(debate?.judge).not.toHaveBeenCalled();
+    expect(metrics.incCurationGrayZoneJudged).not.toHaveBeenCalled();
+  });
+
+  it('критическая карточка по-прежнему идёт в СВОЮ ветку (critical-судья), gray-zone не перехватывает', async () => {
+    const { prisma, createdCardVersions } = buildPrisma({
+      curationSettings: { auditSampleRate: 0 },
+    });
+    const debate = buildDebate(acceptVerdict('unanimous'));
+    const service = makeService({ prisma, metrics, routing, debate });
+
+    const res = await service.triage(criticalInput);
+
+    expect(res.decision).toBe('provisional');
+    expect(createdCardVersions[0]?.trustTier).toBe('provisional');
+    expect(metrics.incCurationVerifierVerdict).toHaveBeenCalled();
+    expect(metrics.incCurationGrayZoneJudged).not.toHaveBeenCalled();
   });
 });
 

@@ -10,6 +10,8 @@ interface VoteMock {
   verdict: string;
   reasoning?: string;
   confidence?: number;
+  quote?: string;
+  rawText?: string;
   provider: 'deepseek' | 'openai-via-proxy';
   model: string;
   inputTokens?: number;
@@ -18,30 +20,43 @@ interface VoteMock {
 
 function buildLlmRouter(votes: Array<VoteMock | Error>): {
   router: LlmRouterService;
-  calls: Array<{ taskType: string }>;
+  calls: Array<{ taskType: string; schemaName?: string; userMessage?: string }>;
 } {
-  const calls: Array<{ taskType: string }> = [];
+  const calls: Array<{ taskType: string; schemaName?: string; userMessage?: string }> = [];
   let i = 0;
-  const call = vi.fn(async (params: { taskType: string }): Promise<LlmCallResult> => {
-    calls.push({ taskType: params.taskType });
-    const next = votes[i++];
-    if (!next) throw new Error('No more votes mocked');
-    if (next instanceof Error) throw next;
-    const text = JSON.stringify({
-      verdict: next.verdict,
-      reasoning: next.reasoning ?? 'because',
-      confidence: next.confidence ?? 0.8,
-    });
-    return {
-      text,
-      modelUsed: `${next.provider}:${next.model}`,
-      inputTokens: next.inputTokens ?? 500,
-      outputTokens: next.outputTokens ?? 100,
-      cachedTokens: 0,
-      durationMs: 50,
-      providerUsed: next.provider,
-    };
-  });
+  const call = vi.fn(
+    async (params: {
+      taskType: string;
+      userMessage?: string;
+      responseFormat?: { name?: string };
+    }): Promise<LlmCallResult> => {
+      calls.push({
+        taskType: params.taskType,
+        schemaName: params.responseFormat?.name,
+        userMessage: params.userMessage,
+      });
+      const next = votes[i++];
+      if (!next) throw new Error('No more votes mocked');
+      if (next instanceof Error) throw next;
+      const text =
+        next.rawText ??
+        JSON.stringify({
+          verdict: next.verdict,
+          quote: next.quote ?? '',
+          reasoning: next.reasoning ?? 'because',
+          confidence: next.confidence ?? 0.8,
+        });
+      return {
+        text,
+        modelUsed: `${next.provider}:${next.model}`,
+        inputTokens: next.inputTokens ?? 500,
+        outputTokens: next.outputTokens ?? 100,
+        cachedTokens: 0,
+        durationMs: 50,
+        providerUsed: next.provider,
+      };
+    },
+  );
   return {
     router: { call } as unknown as LlmRouterService,
     calls,
@@ -280,5 +295,72 @@ describe('MultiAgentDebateService.judge', () => {
     expect(metrics.incDebateFallbackToSingle).toHaveBeenCalledWith({
       reason: 'provider_unavailable',
     });
+  });
+
+  it('curation-verify: llm.call с json_schema name=debate_vote_with_quote_v1, quote из ответа попадает в голоса', async () => {
+    const { router, calls } = buildLlmRouter([
+      { verdict: 'accept', quote: 'Переходим на спринты', provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { verdict: 'accept', quote: 'Согласовано всеми', provider: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { verdict: 'accept', quote: '', provider: 'deepseek', model: 'deepseek-v4-flash' },
+    ]);
+    const service = new MultiAgentDebateService(
+      router,
+      metrics as unknown as BusinessMetricsService,
+      buildCfg(),
+    );
+    const verdict = await service.judge({
+      ...baseRequest,
+      taskFamily: 'curation-verify',
+      taskType: 'debate-curation-verify',
+      contextBlocks: [{ quote: 'Переходим на спринты' }],
+    });
+
+    expect(verdict.decision).toBe('accept');
+    expect(calls.every((c) => c.schemaName === 'debate_vote_with_quote_v1')).toBe(true);
+    expect(verdict.votes.map((v) => v.quote)).toEqual([
+      'Переходим на спринты',
+      'Согласовано всеми',
+      '',
+    ]);
+    expect(calls[0]?.userMessage).toContain('Первоисточник');
+    expect(calls[0]?.userMessage).toContain('Переходим на спринты');
+  });
+
+  it('decision-supersede: остаётся старая схема debate_vote_v1 (без quote)', async () => {
+    const { router, calls } = buildLlmRouter([
+      { verdict: 'new', provider: 'deepseek', model: 'deepseek-v4-pro' },
+      { verdict: 'new', provider: 'openai-via-proxy', model: 'gpt-5.4' },
+      { verdict: 'new', provider: 'deepseek', model: 'deepseek-v4-flash' },
+    ]);
+    const service = new MultiAgentDebateService(
+      router,
+      metrics as unknown as BusinessMetricsService,
+      buildCfg(),
+    );
+    await service.judge(baseRequest);
+
+    expect(calls.every((c) => c.schemaName === 'debate_vote_v1')).toBe(true);
+  });
+
+  it('curation-verify: битый JSON в ответе → дефолты (verdict=unknown, quote отсутствует/пустой)', async () => {
+    const { router } = buildLlmRouter([
+      { verdict: 'accept', rawText: '{не json', provider: 'deepseek', model: 'deepseek-v4-flash' },
+      { verdict: 'accept', quote: 'ок', provider: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { verdict: 'accept', quote: 'ок', provider: 'deepseek', model: 'deepseek-v4-flash' },
+    ]);
+    const service = new MultiAgentDebateService(
+      router,
+      metrics as unknown as BusinessMetricsService,
+      buildCfg(),
+    );
+    const verdict = await service.judge({
+      ...baseRequest,
+      taskFamily: 'curation-verify',
+      taskType: 'debate-curation-verify',
+    });
+
+    const broken = verdict.votes.find((v) => v.verdict === 'unknown');
+    expect(broken).toBeDefined();
+    expect(broken?.quote).toBe('');
   });
 });

@@ -304,6 +304,26 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2), clones v2 (`dia
 
 [[../index|← index]]
 
+## Граф знаний v2 — 9 новых taskType (2026-06-24)
+
+Перестройка ингеста (граф) + умный поэтапный поиск Мастера. Полная карта — [[../02_architecture/knowledge-core]] §«Перестройка ингеста + умный поэтапный поиск»; модели — [[../02_architecture/data-model]]; cron — [[workers-queues]]. Все cache-friendly (стабильный SYSTEM, переменные данные в конце USER); цепочка по умолчанию — DeepSeek-flash → OpenAI-mini → Ollama (где не указано иное).
+
+| taskType | Что делает | Цепочка |
+|---|---|---|
+| `chunk-context` | предлагает контекст-заголовок блока перед эмбеддингом (поднимает recall); детерминированная метастрока — всегда, LLM — за kill-switch `knowledge.contextual_header_enabled` | DeepSeek-flash → OpenAI-mini → Ollama |
+| `entity-name-resolve` | LLM-арбитр cross-source идентичности «псевдоним → тот же человек/сущность?» в каскаде `resolvePersonByHint` (после alias-cache `EntityAlias` + embedding-склейки); **fail-closed null** (R-2 — не склеиваем разных) | DeepSeek-flash → OpenAI-mini → Ollama |
+| `block-link-confirm` | композитный судья-скептик опасных рёбер графа `contradicts`/`supersedes`/`causes` (и fact-supersede); **fail-closed** — при сомнении ребро отвергаем (R-1 — ложное «устарело» не прячет факт); метрика `kc_risk_edge_total` | DeepSeek-flash → OpenAI-mini → Ollama |
+| `theme-summarize` | авто-резюме темы (`Theme.summary`) — cron `theme-summarize`, инкрементально (только изменившиеся темы), kill-switch `knowledge.theme_summary_enabled` | DeepSeek-flash → OpenAI-mini → Ollama |
+| `rag-route` | роутер сложности вопроса: простой → короткий путь, сложный → поэтапный (гейт `rag.iterative_enabled`) | DeepSeek-flash → OpenAI-mini → Ollama |
+| `rag-plan` | ReWOO-план (Reasoning WithOut Observation): раскладывает сложный вопрос на под-вопросы заранее | DeepSeek-flash → OpenAI-mini → Ollama |
+| `rag-sufficiency` | судья достаточности после каждого шага retrieval: хватает ли собранного для ответа | DeepSeek-flash → OpenAI-mini → Ollama |
+| `rag-rerank` | условный LLM-реранк кандидатов (только при большом пуле, порог `rag.rerank_min_pool`) после RRF-слияния подзапросов | DeepSeek-flash → OpenAI-mini → Ollama |
+| `rag-groundedness` | гейт честности после синтеза (`chat-v2.service applyGroundednessGate`, режим `rag.groundedness_mode`): отсекает невыводимые из источников утверждения; метрика `rag_abstain_total` | DeepSeek-flash → OpenAI-mini → Ollama |
+
+Промпты-победители поэтапного поиска — `knowledge-core/prompts/rag-pipeline.prompts.ts`. Сторож зацикливания Concierge (`loop-guard.ts`, `concierge.max_steps`) и строгий гейт переспроса в `concierge-respond` — без отдельного taskType (детерминированная защита + правило в промпте).
+
+[[../index|← index]]
+
 ## Качество извлечения + устойчивость арбитра графа + измеритель (ТЗ-3/4/6, 2026-06-06)
 
 **Источник:** ТЗ-3 (устойчивость JSON-арбитра графа), ТЗ-4 (качество задач), ТЗ-6 (golden-измеритель), ветка `feature/prod-stability-2026-06-06`.
@@ -576,6 +596,19 @@ LLM-judge текстового подтверждения мутаций в ка
 
 - Сид — `backend/scripts/seed-llm-task-routes-ideas-and-probe.ts` (уже в `apply-prod-deploy.ts` STEPS, phase `seed-llm-routes`, идемпотентен). Без маршрута вызов упал бы на аварийный `DEFAULT_FALLBACK_CHAIN` — маршрут заведён вместе с фичей.
 - Остальные Ф2-доводки (свободный ответ `probe_reply`, выбор получателя по отзывчивости, семантический дедуп через pgvector, re-ask, повод `attribution.unresolved_at_ingest`) — НЕ новые LLM-taskType (детерминированная логика / эмбеддинги). См. [[probe-agent]] §«Фаза 2».
+
+[[../index|← index]]
+
+## Probe-черновики из памяти — `probe-draft-from-memory` (2026-06-23, автономизация Блок B)
+
+**Источник:** ТЗ [`plans/tz/2026-06-23-remove-manual-confirmations-master-tz.md`](../../plans/tz/2026-06-23-remove-manual-confirmations-master-tz.md) (Блок B). Ветка `feature/2026-06-23-remove-manual-confirmations`. Карта фичи — [[probe-agent]] §«Probe-черновики из памяти (HYBRID)».
+
+| taskType | Цепочка | Что делает |
+|---|---|---|
+| `probe-draft-from-memory` (**capable**) | `deepseek-v4-pro` → `openai-via-proxy/gpt-5.4` → `ollama/qwen3:30b` | Готовит **черновик ответа** на уточняющий вопрос (probe) из памяти (SubjectMemory + контекст карточки): `ProbeFormulationService.draftFromMemory` собирает `draftAnswer`/`draftKind`, диспетчер прикрепляет их к `Notification.payload` для reason'ов из крутилки `probe.draftReasons` (HYBRID — человек подтверждает/правит, авто-применения нет). Промпт `backend/src/modules/probe/prompts/probe-draft-from-memory.prompt.ts` (cache-friendly). |
+
+- Сид — `backend/scripts/seed-llm-task-routes-ideas-and-probe.ts` (**пополнен** маршрутом, уже в `apply-prod-deploy.ts` STEPS, phase `seed-llm-routes`, идемпотентен). В union `LlmTaskType` + `ALL_LLM_TASK_TYPES`.
+- **Вертикали-источники черновиков** (НЕ новые taskType): урок эксперимента (запись в `Experiment.lessonsJson` при подтверждении) и миссия/видение/стратегия — новый `@Cron` `company-profile-completeness` (`company-profile-completeness.cron.ts`, kill-switch `companyProfile.completenessProbeEnabled`, reason'ы `companyprofile.missing_mission/vision/strategy`, запись через `CompanyProfileService`). Cron — [[workers-queues]] §История 2026-06-23.
 
 [[../index|← index]]
 

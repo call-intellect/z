@@ -1,0 +1,8 @@
+const BASE=(process.env.DIAG_API_BASE??'https://korateam.ru').replace(/\/+$/,'');
+const EMAIL=process.env.DIAG_ADMIN_EMAIL??'';const PASSWORD=process.env.DIAG_ADMIN_PASSWORD??'';
+const ORG=process.argv[2]??'';type J=Record<string,unknown>;
+function die(m:string):never{process.stderr.write(`\n✗ ${m}\n`);process.exit(1);}
+let C='';
+async function login(){const r=await fetch(`${BASE}/api/v1/auth/admin-login`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:EMAIL,password:PASSWORD})});if(!r.ok)die(`login ${r.status}`);const cs=typeof (r.headers as any).getSetCookie==='function'?(r.headers as any).getSetCookie():[r.headers.get('set-cookie')].filter(Boolean);for(const c of cs){const m=/z_session=([^;]+)/.exec(c as string);if(m)C=`z_session=${m[1]}`;}}
+async function main(){await login();const u=new URL(`${BASE}/api/v1/curation/conflicts`);u.searchParams.set('status','open');u.searchParams.set('limit','20');const r=await fetch(u,{headers:{accept:'application/json',cookie:C,'x-org-id':ORG}});if(!r.ok)die(`${r.status}: ${(await r.text()).slice(0,200)}`);const d=await r.json() as J;const items=((d as any).items??[])as J[];process.stdout.write(`open конфликтов: ${items.length}\n\n`);for(const c of items){process.stdout.write(`— [${c['relationType']??'?'}] ${c['resourceType']??''} detectedBy=${c['detectedBy']??'?'}\n  старое(${String(c['existingId']).slice(0,8)}): ${String((c['evidence'] as any)?.existingText??(c as any).existingText??'—').slice(0,140)}\n  новое(${String(c['newId']).slice(0,8)}): ${String((c['evidence'] as any)?.newText??(c as any).newText??'—').slice(0,140)}\n  reasoning: ${String(c['reasoning']??'—').slice(0,160)}\n\n`);}}
+main().catch(e=>die(String(e)));

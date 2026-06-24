@@ -17,6 +17,7 @@ function makeCfg(enforcement: 'off' | 'shadow' | 'enforce' = 'off'): TypedConfig
     knowledgeCore: { searchCosineWeight: 0.7, searchBm25Weight: 0.3 },
     bitemporal: { enabled: false },
     ai: { embeddings: { dimensions: 1536 } },
+    getDynamic: vi.fn(async (_k: string, _e: unknown, def: unknown) => def),
   } as unknown as TypedConfigService;
 }
 
@@ -96,6 +97,7 @@ function buildFakePrisma(captured: { sql: string | null }): PrismaService {
     }),
     ideaBlockEvidence: { findMany: vi.fn(async () => []) },
     ideaBlockEntity: { findMany: vi.fn(async () => []) },
+    ideaBlockLink: { findMany: vi.fn(async () => []) },
   } as unknown as PrismaService;
 }
 

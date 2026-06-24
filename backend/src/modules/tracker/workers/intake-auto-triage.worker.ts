@@ -27,6 +27,7 @@ import { AssigneeResolverService } from '../services/assignee-resolver.service';
 import { linkDerivedDecisionsForIssue } from '../services/decision-task-link.util';
 import { IssuesService } from '../services/issues.service';
 import { ProjectsService } from '../services/projects.service';
+import { SkillRoutingService } from '../services/skill-routing.service';
 
 const INBOX_PROJECT_NAME = 'Входящие';
 const MEETING_PROJECT_NAME = 'Из встреч';
@@ -98,6 +99,9 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(AssigneeResolverService)
     private readonly assigneeResolver?: AssigneeResolverService,
+    @Optional()
+    @Inject(SkillRoutingService)
+    private readonly skillRouting?: SkillRoutingService,
   ) {}
 
   onModuleInit(): void {
@@ -291,6 +295,34 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
 
     let effectiveAssigneeId = suggestedAssigneeId;
     let assigneeUnresolved = false;
+    if (
+      effectiveAssigneeId === null &&
+      intake.source !== 'meeting' &&
+      this.skillRouting &&
+      this.cfg.taskRouting.enabled
+    ) {
+      try {
+        const taskText = [
+          intake.extractedTitle,
+          intake.extractedDescription,
+          intake.rawContent,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+        if (taskText.length > 0) {
+          const sugg = await this.skillRouting.suggestAssignee({ tenantId, taskText });
+          const top = sugg[0];
+          const minConf = this.cfg.taskRouting.autoAssignMinConfidence;
+          if (top && top.userId && top.confidence >= minConf) {
+            effectiveAssigneeId = top.userId;
+            this.metrics?.incTaskSkillRoutingAssigned({ path: 'intake' });
+          }
+        }
+      } catch {
+        /* fail-soft */
+      }
+    }
     if (confidentEnough && effectiveAssigneeId === null && intake.source !== 'meeting') {
       const orgOwnerId = await this.resolveOrgOwnerId(tenantId);
       if (orgOwnerId) {

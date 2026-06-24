@@ -37,6 +37,7 @@ import { ProbeService } from '../../probe/probe.service';
 import { AssigneeResolverService } from './assignee-resolver.service';
 import { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 import { SimilarIssuesService } from './similar-issues.service';
+import { SkillRoutingService } from './skill-routing.service';
 import { shouldMaterializeTask } from './task-quality-gate.util';
 
 /**
@@ -111,6 +112,9 @@ export class MeetingExtractActionsService implements OnModuleInit {
     @Optional()
     @Inject(AssigneeResolverService)
     private readonly orgAssigneeResolver?: AssigneeResolverService,
+    @Optional()
+    @Inject(SkillRoutingService)
+    private readonly skillRouting?: SkillRoutingService,
   ) {}
 
   onModuleInit(): void {
@@ -357,6 +361,25 @@ export class MeetingExtractActionsService implements OnModuleInit {
           hintRefersToSpeaker(hint, quoteSpeaker.speaker, quoteSpeaker.rawSpeaker)
         ) {
           suggestedAssigneeId = quoteSpeaker.userId;
+        }
+      }
+      if (suggestedAssigneeId == null && this.skillRouting && this.cfg.taskRouting.enabled) {
+        try {
+          const taskText = [title, t.suggestedAssigneeHint, sourceQuote]
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+          if (taskText.length > 0) {
+            const sugg = await this.skillRouting.suggestAssignee({ tenantId, taskText });
+            const top = sugg[0];
+            const minConf = this.cfg.taskRouting.autoAssignMinConfidence;
+            if (top && top.userId && top.confidence >= minConf) {
+              suggestedAssigneeId = top.userId;
+              this.metrics?.incTaskSkillRoutingAssigned({ path: 'meeting' });
+            }
+          }
+        } catch {
+          suggestedAssigneeId = null;
         }
       }
       const suggestedProjectId = await this.resolveProjectIdByMeeting(

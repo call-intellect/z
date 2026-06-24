@@ -4,6 +4,7 @@ import type { DataClass, SignalType } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { tryParseJson } from '../../ai/services/json-extract.util';
 import {
   LlmRouterService,
   maxDataClass,
@@ -18,6 +19,21 @@ import {
   KnowledgeAccessResolver,
   type KnowledgeAccessContext,
 } from '../../rbac/knowledge-access-resolver.service';
+import {
+  RAG_RERANK_SYSTEM_PROMPT,
+  RagRerankSchema,
+  buildRagRerankUser,
+  RAG_ROUTE_SYSTEM_PROMPT,
+  RagRouteSchema,
+  buildRagRouteUser,
+  RAG_PLAN_SYSTEM_PROMPT,
+  RagPlanSchema,
+  buildRagPlanUser,
+  RAG_SUFFICIENCY_SYSTEM_PROMPT,
+  RagSufficiencySchema,
+  buildRagSufficiencyUser,
+} from '../prompts/rag-pipeline.prompts';
+import { fuseRankedLists } from '../utils/rank-fusion.util';
 
 import {
   ChatV2RetrievalService,
@@ -551,6 +567,16 @@ export const BASE_SYSTEM_PROMPT = `## Роль
 - Не выдумывай факты, даты, имена, решения, которых нет в контексте.
 - Не выбирай «победителя» при споре двух фактов.`;
 
+interface RetrievalCtx {
+  tenantId: string;
+  scope: ChatV2Scope;
+  scopeId: string | null;
+  query: string;
+  topK: number;
+  graphHops: number;
+  accessWhere: Record<string, unknown> | undefined;
+}
+
 @Injectable()
 export class ChatV2Service {
   private readonly logger = new Logger(ChatV2Service.name);
@@ -647,7 +673,7 @@ export class ChatV2Service {
     // ОДНОВРЕМЕННО с графовым retrieval через Promise.allSettled: по времени
     // почти не дороже. Падение ветки таблиц НЕ валит ответ (граф отвечает).
     const [retrievalSettled, tableSettled] = await Promise.allSettled([
-      this.runRetrieval(input, {
+      this.retrieveWithOptionalPlan(input, {
         tenantId,
         scope,
         scopeId: scopeId ?? null,
@@ -874,6 +900,193 @@ export class ChatV2Service {
 
   // ─────────────────────────── private ───────────────────────────
 
+  private async retrieveWithOptionalPlan(
+    input: ChatV2Input,
+    ctx: RetrievalCtx,
+  ): Promise<string[]> {
+    try {
+      const iterativeEnabled = await this.cfg.getDynamic<boolean>(
+        'rag.iterative_enabled',
+        undefined,
+        true,
+      );
+      if (!iterativeEnabled) return this.runRetrieval(input, ctx);
+
+      const minBlocks = await this.cfg.getDynamic<number>(
+        'rag.cold_start_min_blocks',
+        undefined,
+        20,
+      );
+      const canonicalCount = await this.prisma.ideaBlock.count({
+        where: { tenantId: ctx.tenantId, status: 'canonical' },
+      });
+      if (canonicalCount < minBlocks) return this.runRetrieval(input, ctx);
+
+      const route = await this.routeComplexity(ctx.tenantId, input.query);
+      if (route !== 'iterative') return this.runRetrieval(input, ctx);
+
+      const steps = await this.planSteps(ctx.tenantId, input.query);
+
+      const collected = new Set<string>();
+      const seenQueries = new Set<string>();
+      const norm = (q: string): string =>
+        q.toLowerCase().replace(/[^a-zа-я0-9]+/gi, ' ').trim();
+      const runStep = async (q: string): Promise<void> => {
+        if (!q) return;
+        const fp = norm(q);
+        if (!fp || seenQueries.has(fp)) return;
+        seenQueries.add(fp);
+        const ids = await this.runRetrieval(
+          { ...input, query: q, queries: [q] },
+          { ...ctx, query: q },
+        );
+        for (const id of ids) collected.add(id);
+      };
+
+      for (const s of steps) {
+        await runStep(s.query);
+      }
+
+      const suff = await this.judgeSufficiency(
+        ctx.tenantId,
+        input.query,
+        [...collected],
+      );
+      if (!suff.sufficient && suff.nextQuery && !seenQueries.has(norm(suff.nextQuery))) {
+        await runStep(suff.nextQuery);
+      }
+
+      if (collected.size === 0) return this.runRetrieval(input, ctx);
+      return [...collected].slice(0, Math.max(ctx.topK, collected.size));
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: ctx.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'chat-v2 retrieveWithOptionalPlan: сбой ветки — fail-open до одношагового',
+      );
+      return this.runRetrieval(input, ctx);
+    }
+  }
+
+  /**
+   * Ф4.4 — роутер сложности. FAIL-OPEN: при ошибке/невалидном ответе → 'single'
+   * (при сомнении ищем, не отбрасываем как 'none').
+   */
+  private async routeComplexity(
+    tenantId: string,
+    question: string,
+  ): Promise<'none' | 'single' | 'iterative'> {
+    try {
+      const guardOn = this.isPromptInjectionGuardEnabled();
+      const out = await this.llm.call({
+        taskType: 'rag-route',
+        tenantId,
+        systemPrompt: guardOn
+          ? withInjectionGuard(RAG_ROUTE_SYSTEM_PROMPT)
+          : RAG_ROUTE_SYSTEM_PROMPT,
+        userMessage: guardOn
+          ? wrapUserData(buildRagRouteUser(question))
+          : buildRagRouteUser(question),
+        responseFormat: { type: 'json_object' },
+        maxTokens: 200,
+        dataClass: 'internal',
+        sourceRef: { type: 'chat-v2-route', id: tenantId },
+      });
+      const parsed = RagRouteSchema.safeParse(tryParseJson(out.text));
+      if (!parsed.success) return 'single';
+      return parsed.data.complexity;
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 routeComplexity: сбой — fail-open (single)',
+      );
+      return 'single';
+    }
+  }
+
+  private async planSteps(
+    tenantId: string,
+    question: string,
+  ): Promise<Array<{ goal: string; query: string }>> {
+    const fallback = [{ goal: '', query: question }];
+    try {
+      const guardOn = this.isPromptInjectionGuardEnabled();
+      const out = await this.llm.call({
+        taskType: 'rag-plan',
+        tenantId,
+        systemPrompt: guardOn
+          ? withInjectionGuard(RAG_PLAN_SYSTEM_PROMPT)
+          : RAG_PLAN_SYSTEM_PROMPT,
+        userMessage: guardOn
+          ? wrapUserData(buildRagPlanUser(question))
+          : buildRagPlanUser(question),
+        responseFormat: { type: 'json_object' },
+        maxTokens: 400,
+        dataClass: 'internal',
+        sourceRef: { type: 'chat-v2-plan', id: tenantId },
+      });
+      const parsed = RagPlanSchema.safeParse(tryParseJson(out.text));
+      if (!parsed.success || parsed.data.steps.length === 0) return fallback;
+      return parsed.data.steps.slice(0, 4);
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 planSteps: сбой — fail-open (один шаг = исходный вопрос)',
+      );
+      return fallback;
+    }
+  }
+
+  private async judgeSufficiency(
+    tenantId: string,
+    question: string,
+    blockIds: string[],
+  ): Promise<{ sufficient: boolean; nextQuery: string }> {
+    try {
+      const poolIds = blockIds.slice(0, 20);
+      let collectedStr = '';
+      if (poolIds.length > 0) {
+        const rows = await this.prisma.ideaBlock.findMany({
+          where: { id: { in: poolIds }, tenantId, status: 'canonical' },
+          select: { id: true, name: true, trustedAnswer: true },
+        });
+        collectedStr = rows
+          .map((r) => `[ID:${r.id}] ${r.name}: ${r.trustedAnswer}`)
+          .join('\n');
+      }
+
+      const guardOn = this.isPromptInjectionGuardEnabled();
+      const out = await this.llm.call({
+        taskType: 'rag-sufficiency',
+        tenantId,
+        systemPrompt: guardOn
+          ? withInjectionGuard(RAG_SUFFICIENCY_SYSTEM_PROMPT)
+          : RAG_SUFFICIENCY_SYSTEM_PROMPT,
+        userMessage: guardOn
+          ? wrapUserData(buildRagSufficiencyUser(question, collectedStr))
+          : buildRagSufficiencyUser(question, collectedStr),
+        responseFormat: { type: 'json_object' },
+        maxTokens: 250,
+        dataClass: 'internal',
+        sourceRef: { type: 'chat-v2-sufficiency', id: tenantId },
+      });
+      const parsed = RagSufficiencySchema.safeParse(tryParseJson(out.text));
+      if (!parsed.success) return { sufficient: true, nextQuery: '' };
+      return {
+        sufficient: parsed.data.sufficient,
+        nextQuery: parsed.data.nextQuery,
+      };
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 judgeSufficiency: сбой — fail-open (sufficient)',
+      );
+      return { sufficient: true, nextQuery: '' };
+    }
+  }
+
   /**
    * Графовый retrieval blockId'ов под scope (вынесен из ask() для запуска
    * ПАРАЛЛЕЛЬНО с табличной веткой, ЧАСТЬ B ТЗ 2026-06-15 §7). Логика та же:
@@ -881,15 +1094,7 @@ export class ChatV2Service {
    */
   private async runRetrieval(
     input: ChatV2Input,
-    ctx: {
-      tenantId: string;
-      scope: ChatV2Scope;
-      scopeId: string | null;
-      query: string;
-      topK: number;
-      graphHops: number;
-      accessWhere: Record<string, unknown> | undefined;
-    },
+    ctx: RetrievalCtx,
   ): Promise<string[]> {
     const { tenantId, scope, scopeId, query, topK, graphHops, accessWhere } = ctx;
 
@@ -899,46 +1104,104 @@ export class ChatV2Service {
 
     const queries: string[] =
       input.queries && input.queries.length > 0 ? [...input.queries] : [query];
-    // Per-query topK поменьше для multi-query expansion'а, чтобы total после
-    // merge ≈ topK * 1.5 (не раздувать LLM-контекст).
     const perQueryLimit =
       queries.length > 1
         ? Math.max(4, Math.ceil(topK / queries.length) + 2)
         : topK;
-    const merged = new Map<string, number>();
-    for (let i = 0; i < queries.length; i++) {
-      const q = queries[i] ?? '';
+
+    const perQuery: RankedBlockId[][] = [];
+    for (const q of queries) {
       if (!q || q.length === 0) continue;
-      const ranked: RankedBlockId[] = await this.retrieval.fetchCandidates({
-        tenantId,
-        scope,
-        scopeId: scopeId ?? null,
-        query: q,
-        limit: perQueryLimit,
-        graphHops,
-        validAt: input.validAt ?? null,
-        accessWhere,
-        // Query Understanding Волна 1 (Ф3 consume) — структурные фильтры.
-        dateFrom: input.structuralFilters?.dateFrom ?? null,
-        dateTo: input.structuralFilters?.dateTo ?? null,
-        signalTypes: input.structuralFilters?.signalTypes,
-        entityIds: input.structuralFilters?.entityIds,
-        themeBranches: input.structuralFilters?.themeBranches,
-        bitemporalActiveOnly:
-          input.structuralFilters?.bitemporalActiveOnly ?? false,
-      });
-      // Приоритет первой query (originalOrStandalone): её score boost'ится.
-      const boost = i === 0 ? 0.05 : 0;
-      for (const r of ranked) {
-        const prev = merged.get(r.blockId) ?? -Infinity;
-        const adj = r.score + boost;
-        if (adj > prev) merged.set(r.blockId, adj);
-      }
+      perQuery.push(
+        await this.retrieval.fetchCandidates({
+          tenantId,
+          scope,
+          scopeId: scopeId ?? null,
+          query: q,
+          limit: perQueryLimit,
+          graphHops,
+          validAt: input.validAt ?? null,
+          accessWhere,
+          dateFrom: input.structuralFilters?.dateFrom ?? null,
+          dateTo: input.structuralFilters?.dateTo ?? null,
+          signalTypes: input.structuralFilters?.signalTypes,
+          entityIds: input.structuralFilters?.entityIds,
+          themeBranches: input.structuralFilters?.themeBranches,
+          bitemporalActiveOnly:
+            input.structuralFilters?.bitemporalActiveOnly ?? false,
+        }),
+      );
     }
-    return [...merged.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, topK)
-      .map(([id]) => id);
+
+    if (perQuery.length === 0) return [];
+
+    const ranked =
+      perQuery.length > 1
+        ? fuseRankedLists(
+            perQuery.map((list) => list.map((r) => ({ id: r.blockId }))),
+            await this.cfg.getDynamic<number>('rag.rrf_k', undefined, 60),
+          ).slice(0, topK)
+        : perQuery[0]!.slice(0, topK).map((r) => r.blockId);
+
+    return this.conditionalRerank({ tenantId, question: query, blockIds: ranked });
+  }
+
+  private async conditionalRerank(args: {
+    tenantId: string;
+    question: string;
+    blockIds: string[];
+  }): Promise<string[]> {
+    const { tenantId, question, blockIds } = args;
+    const minPool = await this.cfg.getDynamic<number>(
+      'rag.rerank_min_pool',
+      undefined,
+      12,
+    );
+    if (blockIds.length <= minPool) return blockIds;
+
+    try {
+      const poolIds = blockIds.slice(0, 30);
+      const rows = await this.prisma.ideaBlock.findMany({
+        where: { id: { in: poolIds }, tenantId, status: 'canonical' },
+        select: { id: true, name: true, trustedAnswer: true },
+      });
+      if (rows.length === 0) return blockIds;
+      const byId = new Map(rows.map((r) => [r.id, r] as const));
+      const candidatesStr = poolIds
+        .map((id) => byId.get(id))
+        .filter((r): r is NonNullable<typeof r> => r != null)
+        .map((r) => `[ID:${r.id}] ${r.name}: ${r.trustedAnswer}`)
+        .join('\n');
+      if (!candidatesStr) return blockIds;
+
+      const guardOn = this.isPromptInjectionGuardEnabled();
+      const out = await this.llm.call({
+        taskType: 'rag-rerank',
+        tenantId,
+        systemPrompt: guardOn
+          ? withInjectionGuard(RAG_RERANK_SYSTEM_PROMPT)
+          : RAG_RERANK_SYSTEM_PROMPT,
+        userMessage: guardOn
+          ? wrapUserData(buildRagRerankUser(question, candidatesStr))
+          : buildRagRerankUser(question, candidatesStr),
+        responseFormat: { type: 'json_object' },
+        maxTokens: 400,
+        dataClass: 'internal',
+        sourceRef: { type: 'chat-v2-rerank', id: tenantId },
+      });
+
+      const parsed = RagRerankSchema.safeParse(tryParseJson(out.text));
+      if (!parsed.success) return blockIds;
+      const keepSet = new Set(parsed.data.keep);
+      const kept = blockIds.filter((id) => keepSet.has(id));
+      return kept.length > 0 ? kept : blockIds;
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 conditionalRerank: сбой — fail-open (исходный список)',
+      );
+      return blockIds;
+    }
   }
 
   /**

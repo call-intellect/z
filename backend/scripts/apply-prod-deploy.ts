@@ -218,6 +218,16 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-knowledge-graph.ts',
+    hint: 'knowledge.* граф-ингест (Ф3/Ф5/Ф6/Ф7/Ф8: нарезка с overlap, контекст-заголовок, пороги рёбер/судьи, alias-резолв, поиск RRF/обход, theme-summary)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-smart-search.ts',
+    hint: 'concierge.max_steps + rag.* (умный поэтапный поиск Мастера Ф4: сторож, RRF, реранк, достаточность, гейт честности, cold-start)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-retention-logging.ts',
     hint: 'retention.* (10) + logging.* (11) (config Шаг 5 — крутилки хранения и логов в AdminSetting)',
   },

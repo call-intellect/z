@@ -28,6 +28,10 @@ function makeService(args: {
   }>;
   matchMinSimilarity?: number;
   suppressMinConfidence?: number;
+  sweepPendingOnLearnEnabled?: boolean;
+  embedResult?: unknown;
+  queryRawResolver?: () => Promise<unknown>;
+  queryRawReject?: boolean;
   applicableRows?: Array<{
     id: string;
     kind: string;
@@ -42,9 +46,11 @@ function makeService(args: {
   tx: TxMock;
   queryRawUnsafe: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
+  updateMany: ReturnType<typeof vi.fn>;
   metrics: {
     incSubjectMemoryRuleExtracted: ReturnType<typeof vi.fn>;
     incSubjectMemoryApply: ReturnType<typeof vi.fn>;
+    incSubjectMemoryPendingSwept: ReturnType<typeof vi.fn>;
   };
 } {
   const llmCall = vi.fn().mockResolvedValue({
@@ -52,7 +58,9 @@ function makeService(args: {
   });
   const llm = { call: llmCall } as unknown as LlmRouterService;
 
-  const embed = vi.fn().mockResolvedValue([new Array(1536).fill(0.01)]);
+  const embed = vi
+    .fn()
+    .mockResolvedValue(args.embedResult ?? [new Array(1536).fill(0.01)]);
   const embeddings = { embed } as unknown as EmbeddingFallbackService;
 
   const tx: TxMock = {
@@ -63,25 +71,34 @@ function makeService(args: {
       update: vi.fn().mockResolvedValue({ id: 'sm-cand' }),
     },
   };
-  const queryRawUnsafe = vi.fn().mockResolvedValue(args.applicableRows ?? []);
+  const queryRawUnsafe = args.queryRawReject
+    ? vi.fn().mockRejectedValue(new Error('boom'))
+    : args.queryRawResolver
+      ? vi.fn().mockImplementation(args.queryRawResolver)
+      : vi.fn().mockResolvedValue(args.applicableRows ?? []);
   const update = vi.fn().mockResolvedValue({ id: 'sm-applied' });
+  const updateMany = vi.fn().mockResolvedValue({ count: 0 });
   const prisma = {
     $transaction: vi.fn(async (cb: (t: TxMock) => Promise<unknown>) => cb(tx)),
     $queryRawUnsafe: queryRawUnsafe,
     subjectMemory: { update },
+    probeEvent: { updateMany },
   } as unknown as PrismaService;
 
   const incSubjectMemoryRuleExtracted = vi.fn();
   const incSubjectMemoryApply = vi.fn();
+  const incSubjectMemoryPendingSwept = vi.fn();
   const metrics = {
     incSubjectMemoryRuleExtracted,
     incSubjectMemoryApply,
+    incSubjectMemoryPendingSwept,
   } as unknown as BusinessMetricsService;
 
   const cfg = {
     aiFeatures: { promptInjectionGuardEnabled: false },
     subjectMemory: {
       enabled: args.enabled ?? true,
+      sweepPendingOnLearnEnabled: args.sweepPendingOnLearnEnabled ?? true,
       matchMinSimilarity: args.matchMinSimilarity ?? 0.82,
       suppressMinConfidence: args.suppressMinConfidence ?? 0.7,
     },
@@ -95,7 +112,12 @@ function makeService(args: {
     tx,
     queryRawUnsafe,
     update,
-    metrics: { incSubjectMemoryRuleExtracted, incSubjectMemoryApply },
+    updateMany,
+    metrics: {
+      incSubjectMemoryRuleExtracted,
+      incSubjectMemoryApply,
+      incSubjectMemoryPendingSwept,
+    },
   };
 }
 
@@ -122,7 +144,7 @@ describe('SubjectMemoryService.deriveRuleFromProbeResponse', () => {
       occurredAt: new Date('2026-06-21T10:00:00Z'),
     });
 
-    expect(embed).toHaveBeenCalledTimes(1);
+    expect(embed).toHaveBeenCalledTimes(2);
     expect(tx.subjectMemory.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -338,5 +360,77 @@ describe('SubjectMemoryService.findApplicableRule', () => {
     expect(metrics.incSubjectMemoryApply).toHaveBeenCalledWith({
       status: 'suppressed',
     });
+  });
+});
+
+describe('SubjectMemoryService.sweepPendingDuplicates', () => {
+  it('flag off → 0 и raw SQL не вызван', async () => {
+    const { svc, queryRawUnsafe, updateMany } = makeService({
+      sweepPendingOnLearnEnabled: false,
+    });
+
+    const n = await svc.sweepPendingDuplicates({
+      tenantId: 'org-1',
+      contextText: 'термин КП',
+    });
+
+    expect(n).toBe(0);
+    expect(queryRawUnsafe).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it('найдены дубли → updateMany на suppressed_by_memory + метрика + count', async () => {
+    const { svc, queryRawUnsafe, updateMany, metrics } = makeService({
+      queryRawResolver: () => Promise.resolve([{ id: 'p1' }, { id: 'p2' }]),
+    });
+
+    const n = await svc.sweepPendingDuplicates({
+      tenantId: 'org-1',
+      contextText: 'термин КП',
+      excludeProbeId: 'probe-src',
+    });
+
+    expect(n).toBe(2);
+    expect(queryRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: { in: ['p1', 'p2'] },
+          tenantId: 'org-1',
+          status: 'pending',
+        }),
+        data: { status: 'suppressed_by_memory' },
+      }),
+    );
+    expect(metrics.incSubjectMemoryPendingSwept).toHaveBeenCalledWith({
+      count: 2,
+    });
+  });
+
+  it('пустой contextText → 0 (embed/SQL не зовём)', async () => {
+    const { svc, embed, queryRawUnsafe, updateMany } = makeService({});
+
+    const n = await svc.sweepPendingDuplicates({
+      tenantId: 'org-1',
+      contextText: '   ',
+    });
+
+    expect(n).toBe(0);
+    expect(embed).not.toHaveBeenCalled();
+    expect(queryRawUnsafe).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it('$queryRawUnsafe бросает → 0 (fail-soft)', async () => {
+    const { svc, updateMany, metrics } = makeService({ queryRawReject: true });
+
+    const n = await svc.sweepPendingDuplicates({
+      tenantId: 'org-1',
+      contextText: 'термин КП',
+    });
+
+    expect(n).toBe(0);
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(metrics.incSubjectMemoryPendingSwept).not.toHaveBeenCalled();
   });
 });

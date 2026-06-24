@@ -8,6 +8,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
 import {
   ENTITY_CREATED,
@@ -64,6 +65,9 @@ export class EntityResolutionService {
     @Optional()
     @Inject(EventEmitter2)
     private readonly events?: EventEmitter2,
+    @Optional()
+    @Inject(LlmRouterService)
+    private readonly llm?: LlmRouterService,
   ) {}
 
   /**
@@ -726,15 +730,29 @@ export class EntityResolutionService {
   }
 
   /**
-   * Резолвит подсказку имени персоны (`decidedByPersonHint` из extraction'а)
-   * в реальный Person.id. Алгоритм аналогичен resolveRoleByHint.
+   * Резолвит подсказку имени персоны (`decidedByPersonHint` / упоминание
+   * «Настя» из транскрипта) в реальный Person.id. Каскад резолва:
+   *   0. нормализация имени;
+   *   1. exact name (case-insensitive) → cache alias + return;
+   *   2. per-Org alias-cache (EntityAlias) → проверка живости Person → return;
+   *   3. fuzzy substring: ровно 1 → cache alias + return;
+   *   4. эмбеддинг-склейка (cosine Person→Entity.embedding): ровно 1 ≥ порога
+   *      (knowledge.entity_name_resolve_threshold, default 0.9) → cache + return;
+   *      ≥2 → неоднозначно → к арбитру;
+   *   5. LLM-арбитр (опц., fail-closed): только при наличии llm + context;
+   *      уверенный выбор → cache + return, иначе null.
+   *
+   * R-2 fail-closed: при любой неоднозначности без явного разрешения — null;
+   * разных людей НИКОГДА не склеиваем.
    */
   async resolvePersonByHint(
     tenantId: string,
     hint: string,
+    context?: string,
   ): Promise<string | null> {
     const normalized = this.normalizeName(hint);
     if (normalized.length === 0) return null;
+    const lowered = normalized.toLowerCase();
 
     const persons = await this.prisma.person.findMany({
       where: { tenantId, deletedAt: null },
@@ -742,24 +760,206 @@ export class EntityResolutionService {
     });
     if (persons.length === 0) return null;
 
-    const lowered = normalized.toLowerCase();
     const exact = persons.find((p) => p.name.trim().toLowerCase() === lowered);
-    if (exact) return exact.id;
+    if (exact) {
+      await this.populateAlias(tenantId, lowered, exact.id);
+      return exact.id;
+    }
+
+    const cached = await this.prisma.entityAlias
+      .findUnique({
+        where: { tenantId_alias: { tenantId, alias: lowered } },
+        select: { personId: true },
+      })
+      .catch(() => null);
+    if (cached?.personId) {
+      const alive = await this.prisma.person
+        .findFirst({
+          where: { id: cached.personId, tenantId, deletedAt: null },
+          select: { id: true },
+        })
+        .catch(() => null);
+      if (alive) return alive.id;
+      await this.prisma.entityAlias
+        .delete({ where: { tenantId_alias: { tenantId, alias: lowered } } })
+        .catch(() => undefined);
+    }
 
     const fuzzy = persons.filter((p) => {
       const pn = p.name.trim().toLowerCase();
       return pn.includes(lowered) || lowered.includes(pn);
     });
     if (fuzzy.length === 1 && fuzzy[0]) {
+      await this.populateAlias(tenantId, lowered, fuzzy[0].id);
       return fuzzy[0].id;
     }
-    if (fuzzy.length > 1) {
+
+    const embeddingCandidates = await this.resolvePersonByEmbedding(
+      tenantId,
+      normalized,
+    );
+    if (embeddingCandidates.length === 1 && embeddingCandidates[0]) {
+      await this.populateAlias(tenantId, lowered, embeddingCandidates[0].id);
+      return embeddingCandidates[0].id;
+    }
+
+    const nameById = new Map(persons.map((p) => [p.id, p.name]));
+    const arbiterPool: Array<{ id: string; name: string }> =
+      embeddingCandidates.length >= 2
+        ? embeddingCandidates.map((c) => ({
+            id: c.id,
+            name: nameById.get(c.id) ?? '',
+          }))
+        : fuzzy.length >= 2
+          ? fuzzy.map((p) => ({ id: p.id, name: p.name }))
+          : [];
+    if (arbiterPool.length >= 2 && this.llm && context) {
+      const chosen = await this.arbitratePersonByLlm(
+        tenantId,
+        normalized,
+        context,
+        arbiterPool,
+      );
+      if (chosen) {
+        await this.populateAlias(tenantId, lowered, chosen);
+        return chosen;
+      }
+    }
+
+    if (arbiterPool.length >= 2 || fuzzy.length > 1) {
       this.logger.debug(
-        { tenantId, hint, candidates: fuzzy.length },
-        'resolvePersonByHint: неоднозначная подсказка — пропуск',
+        { tenantId, hint, candidates: arbiterPool.length || fuzzy.length },
+        'resolvePersonByHint: неоднозначная подсказка — fail-closed (null)',
       );
     }
     return null;
+  }
+
+  /**
+   * Per-Org alias-cache: upsert EntityAlias по (tenantId, alias)→personId.
+   * Best-effort — на ошибке debug-лог, не бросаем (резолв уже состоялся).
+   */
+  private async populateAlias(
+    tenantId: string,
+    alias: string,
+    personId: string,
+  ): Promise<void> {
+    try {
+      await this.prisma.entityAlias.upsert({
+        where: { tenantId_alias: { tenantId, alias } },
+        create: { tenantId, alias, personId },
+        update: { personId },
+      });
+    } catch (err) {
+      this.logger.debug(
+        {
+          tenantId,
+          alias,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'populateAlias: upsert EntityAlias не удался (best-effort)',
+      );
+    }
+  }
+
+  /**
+   * Эмбеддинг-склейка имени: cosine между embedding'ом hint и Person→Entity.
+   * Возвращает кандидатов с similarity ≥ порога (top-5). Пустой массив, если
+   * нет embedding'а / pgvector недоступен / порог не достигнут.
+   */
+  private async resolvePersonByEmbedding(
+    tenantId: string,
+    name: string,
+  ): Promise<Array<{ id: string; score: number }>> {
+    if (!this.embeddings) return [];
+    let vec: number[] | null;
+    try {
+      vec = await this.embeddings.embedQuery(name);
+    } catch {
+      return [];
+    }
+    if (!vec || vec.length === 0) return [];
+
+    const threshold =
+      (await this.cfg
+        ?.getDynamic<number>('knowledge.entity_name_resolve_threshold', undefined, 0.9)
+        .catch(() => 0.9)) ?? 0.9;
+
+    interface Row {
+      id: string;
+      score: string | number;
+    }
+    let rows: Row[];
+    try {
+      rows = await this.prisma.$queryRawUnsafe<Row[]>(
+        `
+        SELECT p.id AS id, 1 - (e.embedding <=> $1::vector(1536)) AS score
+        FROM "Person" p
+        JOIN "Entity" e ON e.id = p."entityId"
+        WHERE p."tenantId" = $2
+          AND p."deletedAt" IS NULL
+          AND e.embedding IS NOT NULL
+        ORDER BY e.embedding <=> $1::vector(1536)
+        LIMIT 5
+        `,
+        this.toVectorLiteral(vec),
+        tenantId,
+      );
+    } catch {
+      return [];
+    }
+    const out: Array<{ id: string; score: number }> = [];
+    for (const r of rows) {
+      const score = typeof r.score === 'string' ? Number(r.score) : r.score;
+      if (Number.isFinite(score) && score >= threshold) {
+        out.push({ id: r.id, score });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * LLM-арбитр выбора одного Person из неоднозначных кандидатов (fail-closed).
+   * Cache-friendly: стабильный SYSTEM, переменные данные (имя/контекст/список)
+   * в конце user. На любой ошибке / неуверенности / id вне списка → null.
+   */
+  private async arbitratePersonByLlm(
+    tenantId: string,
+    name: string,
+    context: string,
+    candidates: Array<{ id: string; name: string }>,
+  ): Promise<string | null> {
+    if (!this.llm) return null;
+    const allowed = new Set(candidates.map((c) => c.id));
+    const list = candidates
+      .map((c) => `- id=${c.id} name=${c.name}`)
+      .join('\n');
+    const system =
+      'Ты выбираешь, какому из перечисленных людей относится упомянутое имя. ' +
+      'Верни JSON {"personId": "<id>|null"}. Если непонятно — null.';
+    const user = `Имя: ${name}\nКонтекст: ${context}\nКандидаты:\n${list}`;
+    try {
+      const res = await this.llm.call({
+        taskType: 'entity-name-resolve',
+        systemPrompt: system,
+        userMessage: user,
+        tenantId,
+        responseFormat: { type: 'json_object' },
+      });
+      const parsed = JSON.parse(res.text) as { personId?: unknown };
+      const id = parsed?.personId;
+      if (typeof id === 'string' && allowed.has(id)) return id;
+      return null;
+    } catch (err) {
+      this.logger.debug(
+        {
+          tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'arbitratePersonByLlm: LLM-арбитр упал/неуверен — fail-closed (null)',
+      );
+      return null;
+    }
   }
 
   // ─────────────────────────── Фаза 0b: typed entity dedup ─────────────────

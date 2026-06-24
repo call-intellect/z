@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -94,8 +94,18 @@ function isTechnicalContext(ctx: string): boolean {
 
 function ProbeCard({ action, onConfirm, onSnooze }: CardProps) {
   const d = action.detail?.kind === "probe" ? action.detail : undefined;
-  const [text, setText] = useState("");
+  const draft = d?.draftAnswer?.trim() ?? "";
+  const hasDraft = draft.length > 0;
+  const [text, setText] = useState(draft);
   const [busy, setBusy] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
+  }, [text]);
 
   const question = d?.question ?? action.title;
   const cite: PendingActionCite | undefined =
@@ -128,11 +138,22 @@ function ProbeCard({ action, onConfirm, onSnooze }: CardProps) {
         <WaitChip ageDays={action.ageDays} />
       </div>
 
+      {hasDraft && (
+        <div className="flex items-start gap-2 rounded-xl bg-chip-info-bg px-3 py-2.5 text-[13px] leading-relaxed text-chip-info-fg">
+          <Sparkles size={15} className="mt-0.5 shrink-0" />
+          <span>
+            Кора набросала черновик из памяти — проверьте и поправьте, прежде чем
+            подтвердить.
+          </span>
+        </div>
+      )}
+
       <Textarea
+        ref={textareaRef}
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Ответьте своими словами — например: «Отвечает Петров, Иванов помогает с тестами»"
-        className="min-h-[64px]"
+        className="min-h-[64px] resize-none"
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -141,7 +162,7 @@ function ProbeCard({ action, onConfirm, onSnooze }: CardProps) {
           disabled={!text.trim() || busy}
           onClick={() => void handleAnswer()}
         >
-          Ответить
+          {hasDraft ? "Подтвердить черновик" : "Ответить"}
         </Button>
         <Button
           size="sm"

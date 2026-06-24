@@ -90,6 +90,39 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-23 — Убрать лишние подтверждения: судья курации видит первоисточник + серая зона · наблюдаемость самообучения SubjectMemory · probe-черновики из памяти · умный подбор исполнителя (Блоки A–D)
+
+> ТЗ `plans/tz/2026-06-23-remove-manual-confirmations-master-tz.md` (Блоки A/B/C/D; анализ — `plans/archive/2026-06-11-autonomy-remove-manual-confirmations.md`). Ветка `feature/2026-06-23-remove-manual-confirmations`, коммиты поверх dev (`1f6b22d5`/`5e67507b` A · `73e6d0df`/`5fd2d028` B · `8c329916` C · `debef312`/`0513e1cc` D).
+>
+> **Зачем:** меньше карточек/вопросов уходит человеку. ИИ-судья курации теперь видит первоисточник (цитаты) и судит некритичные карточки «серой зоны» сам; самообучение probe (SubjectMemory) стало видимым (REST + страница «Что Кора выучила» + диаг) и подчищает зависшие дубли-probe по выученному правилу; на уточняющие вопросы без исполнителя/срока/урока эксперимента/профиля компании Кора прикрепляет готовый черновик ответа (HYBRID — человек подтверждает); исполнитель задачи подбирается умно по скиллам как fallback при извлечении.
+>
+> **🟡 1 МИГРАЦИЯ PRISMA (авто через `migrate deploy`, аддитивная — новый enum-литерал).** **🟢 НОВЫХ ENV НЕТ** (6 новых ключей — чистые AdminSetting). 3 новых kill-switch (все ON) + 1 крутилка-порог + 1 новый LLM taskType + 1 новый `@Cron` + 1 новый REST + 1 новая диаг-команда + 1 новая фронт-страница. Docker rebuild backend+frontend.
+
+- **Шаг 1 — Флаги/ENV — НОВЫХ ENV НЕТ.** 3 новых kill-switch (тип A, ВКЛ — действий владельца не требуют): `knowledge.curationGrayZoneJudgeEnabled` (A — судья серой зоны), `subjectMemory.sweepPendingOnLearnEnabled` (D — дочистка дублей-probe), `companyProfile.completenessProbeEnabled` (B — probe-эмиттер профиля компании). Плюс крутилка `taskRouting.autoAssignMinConfidence` (C, 0.75). Все — AdminSetting (см. Шаг 7). Строки в реестре — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260623151703_add_probe_suppressed_by_memory` — `ALTER TYPE "ProbeStatus" ADD VALUE 'suppressed_by_memory'` (новый литерал: висящий pending-probe погашен дочисткой по выученному правилу SubjectMemory). Аддитивная (ADD VALUE, без DROP), без потери данных, backfill не нужен. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«enum `ProbeStatus`».
+- **Шаг 7 — Seed (идемпотентные, оба сида УЖЕ в STEPS, отдельной регистрации НЕ нужно — новые ключи прорастут штатным сидом):** доезжают прогоном `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`:
+  - `seed-admin-settings.ts` — **пополнен** ключами: `knowledge.curationGrayZoneJudgeEnabled` (kill-switch ON — A), `knowledge.curationGrayZoneJudgeMinConfidence` (0.7 — A), `knowledge.curationGrayZoneJudgeSampleRate` (1.0 — A, доля аудит-выборки provisional), `subjectMemory.sweepPendingOnLearnEnabled` (kill-switch ON — D), `probe.draftReasons` (B — список reason'ов, для которых формулируется черновик из памяти), `companyProfile.completenessProbeEnabled` (kill-switch ON — B), `taskRouting.autoAssignMinConfidence` (0.75 — C).
+  - `seed-llm-task-routes-ideas-and-probe.ts` — **пополнен** маршрутом `probe-draft-from-memory` (capable: `deepseek-v4-pro`, цепочка по образцу probe-taskType'ов). Без маршрута вызов упал бы на аварийный DEFAULT — заведён вместе с фичей.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend:
+  - **A (судья курации):** `ProvenanceService.resolveQuotesForJudge` (viewer-less, цитаты первоисточника по `tenantId`) подаётся в `CurationService.runAiVerifier` через `contextBlocks` (было `[]`); новая схема голоса `debate_vote_with_quote_v1` (поле `quote`) только для curation-verify (`MultiAgentDebateService`); серая зона `[grayZoneMin..autoT)` некритичных карточек прогоняется через судью → accept → `provisional`+аудит-выборка, иначе light к человеку. Метрика `curation_gray_zone_judged_total{outcome}`.
+  - **D (SubjectMemory):** новый REST `GET /api/v1/subject-memory` (`SubjectMemoryController`, owner/admin/coo); `SubjectMemoryService.sweepPendingDuplicates` гасит висящие pending-probe близкие к выученному правилу (→ `ProbeStatus.suppressed_by_memory`); логи обучения через LogService (`subject_memory.rule_extracted/pending_swept/rule_activated/rolled_back`, orgId явно); метрика `subject_memory_pending_swept_total`.
+  - **B (probe-черновики):** `ProbeFormulationService.draftFromMemory` (taskType `probe-draft-from-memory`) собирает черновик; диспетчер прикрепляет `draftAnswer`/`draftKind` к `Notification.payload` для reason'ов из `probe.draftReasons`; вертикали — урок эксперимента (`Experiment.lessonsJson`) и профиль компании (новый `@Cron` `company-profile-completeness` за флагом `companyProfile.completenessProbeEnabled`, reason'ы `companyprofile.missing_mission/vision/strategy`, запись через `CompanyProfileService`).
+  - **C (умный подбор):** `SkillRoutingService.suggestAssignee` подключён как fallback в `meeting-extract-actions.service.ts` и `intake-auto-triage.worker.ts`; метрика `task_skill_routing_assigned_total{path}`.
+  Frontend (D): страница `/company-admin/subject-memory` «Что Кора выучила» (owner/admin/coo) — `frontend/app/(authenticated)/company-admin/subject-memory/` + `subject-memory.api.ts` + `domain/subject-memory.ts` + пункт в `CompanyAdminSidebar.tsx`.
+- **Шаг 12 — Smoke** (после выката):
+  - Миграция применилась: `SELECT unnest(enum_range(NULL::"ProbeStatus"))` содержит `suppressed_by_memory`.
+  - Новый REST в Swagger `/api/docs`: `GET /api/v1/subject-memory` (тег `subject-memory`, фильтры `status`/`kind`, `countsByStatus`; под `CookieAuthGuard+TenantGuard`, доступ owner/admin/coo).
+  - Новый `@Cron` виден в логах планировщика: `company-profile-completeness` (in-process через WorkersModule); за флагом `companyProfile.completenessProbeEnabled`.
+  - Новая диаг-команда: `docker compose exec backend bun run scripts/diag.ts subject-memory --org <id> [--status --kind --json]` отдаёт правила самообучения.
+  - Новый LLM taskType: `probe-draft-from-memory` виден в `/admin/usage` (или `diag-routes.ts`) на `deepseek-v4-pro`.
+  - Метрики в `/metrics`: `curation_gray_zone_judged_total{outcome}`, `subject_memory_pending_swept_total`, `task_skill_routing_assigned_total{path}`.
+  - Крутилки видны в админке AdminSetting: `knowledge.curationGrayZoneJudge{Enabled,MinConfidence,SampleRate}`, `subjectMemory.sweepPendingOnLearnEnabled`, `probe.draftReasons`, `companyProfile.completenessProbeEnabled`, `taskRouting.autoAssignMinConfidence`. 3 kill-switch — в `docs/operations/feature-flags.md`.
+  - Фронт: `/company-admin/subject-memory` «Что Кора выучила» доступна owner/admin/coo (пункт в `CompanyAdminSidebar`).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-23 — Задачная петля: авторство реплик · само-назначение · probe автору · отклонение словами · уведомление постановщику · живая карточка (Ф1–Ф9)
 
 > ТЗ `plans/tz/2026-06-23-meeting-tasks-assignee-probe-closure-tz.md` (Ф1–Ф9). Ветка `feature/2026-06-23-meeting-tasks-assignee-probe-closure`.
@@ -3581,6 +3614,8 @@ docker compose up -d --build frontend
 
 Полный список — `backend/src/common/config/env.schema.ts`. VAPID_*, CONCIERGE_* сознательно вне EnvSchema (TS2589 при глубоких `.merge()`) — читаются через `process.env` напрямую.
 
+**Граф знаний v2 (2026-06-24) — bi-temporal флаги переведены на ON (Ship-On), новых ENV-ключей нет:** дефолты в `env.schema.ts` сменены `false→true` для `BITEMPORAL_ENABLED`, `BITEMPORAL_SUPERSEDE_ENABLED`, `BI_TEMPORAL_EDGES_ENABLED`. Прод эти ключи в `.env` НЕ задаёт → на пересборке применяется `true` автоматически. Эффект: записывается `validFrom`, поиск скрывает устаревшие (superseded) версии фактов, supersede срабатывает (защищён композитным судьёй-скептиком). Аварийный откат — задать любой из них `=false` в `.env`. Реестр — `docs/operations/feature-flags.md`.
+
 ---
 
 ### Шаг 2 — Pull + сборка образов
@@ -3679,6 +3714,13 @@ Enum расширения (без удалений — Postgres не умеет 
 - `SourceType`: +conversational, +tracker_event
 - `VerificationPurpose`: +magic_link, +invite_accept
 - ~50 новых enum-типов целиком
+- **Граф знаний v2 (2026-06-24, ветка `feature/2026-06-23-kg-ingestion-and-smart-search`):** `LinkCreatedBy` += `system` (структурные рёбра без LLM).
+
+**Граф знаний v2 + умный поиск (2026-06-24)** — 4 аддитивные миграции, доезжают авто через `migrate deploy`, бэкфилла нет (все поля nullable / новая таблица):
+- `add_rawevent_source_title` — `RawEvent.sourceTitle String?` (человекочитаемый заголовок эпизода).
+- `add_entity_alias_cache` — новая модель `EntityAlias` (per-Org кэш псевдоним→Person/Entity, FK на `Org` cascade, `@@unique([tenantId, alias])`).
+- `add_linkcreatedby_system` — `LinkCreatedBy` += `system`.
+- `add_theme_summary` — `Theme.summary @db.Text` + `Theme.summaryUpdatedAt DateTime?` (инкрементальная суть темы, воркер `theme-summarize`).
 
 ---
 
@@ -3902,6 +3944,13 @@ docker compose exec backend bun run scripts/seed-llm-default-primary-deepseek-pr
 
 ℹ️ Большинство `seed-llm-task-routes-*` принимают `--update-existing` — без него существующие записи не трогаются. Защита `editedByAdmin` блокирует затирание ручных правок.
 
+**Граф знаний v2 + умный поиск (2026-06-24) — 2 новых сид-скрипта крутилок** (оба зарегистрированы в `apply-prod-deploy.ts STEPS` `phase:'seed-base'`, прогоняются агрегатором; защита admin-edited не затирает ручные правки):
+```bash
+docker compose exec backend bun run scripts/seed-admin-setting-knowledge-graph.ts   # 12 крутилок графа (нарезка/overlap/контекст-заголовок/пороги рёбер/судья/alias/поиск RRF+обход/theme-summary)
+docker compose exec backend bun run scripts/seed-admin-setting-smart-search.ts       # 8 крутилок Мастера (concierge.max_steps + rag.*: сторож/RRF/реранк/достаточность/гейт честности/iterative/cold-start)
+```
+Либо разом через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (прогонит оба + остальные seed/patch).
+
 ---
 
 ### Шаг 7.8 — Демо-воркспейс «ТехноСтрим» (per-Org, по запросу)
@@ -4031,6 +4080,12 @@ curl https://prod.host/metrics | grep -E 'z_voice_ws|z_mail_inbound|z_llm_cache|
 ```
 
 Должны быть `bullmq_*` метрики под новые очереди: `probe-*, conversational-send, chat-v2-cleanup, card-stale-detector, idea-clusterer, insight-clusterer, knowledge-clone-rebuild, skill-profile-*, executable-persona-build, skill-manager-digest, tracker.webhook-delivery`.
+
+**Граф знаний v2 + умный поиск (2026-06-24).** Новый cron `theme-summarize` (`@Cron('35 * * * *')`, in-process) — через ~час в `Theme.summary` появляется суть у тем с ≥2 членами. 9 новых taskType маршрутизируются по дефолт-цепочке DeepSeek (отдельный route не обязателен): `chunk-context, entity-name-resolve, block-link-confirm, theme-summarize, rag-route, rag-plan, rag-rerank, rag-sufficiency, rag-groundedness`. Новые метрики:
+```bash
+curl https://prod.host/metrics | grep -E 'kc_block_without_evidence_total|kc_risk_edge_total|rag_abstain_total'
+```
+**Ф10 — ручная приёмка** (после `up -d --build` + `apply-prod-deploy.ts`, требует «да» владельца на diag/qa): «суть встречи X» → связная суть+кликабельный источник; человек из встречи+чата = один профиль; поиск возвращает блок, достижимый через ребро; нет `sourceMeetingId=null` у новых блоков (diag); superseded скрыт; кейс «Александр» (агрегат без переспроса); «нет данных» → честный отказ.
 
 **Демо-воркспейс (2026-05-28).** В Swagger под тегом `onboarding` должны появиться `POST /api/v1/orgs/:orgId/demo-workspace` и `POST /api/v1/orgs/:orgId/reset-demo`. Smoke-проверка:
 

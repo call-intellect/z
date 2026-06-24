@@ -43,7 +43,7 @@ export function ConciergeFloatingButton() {
       {open && (
         <div className="fixed bottom-20 right-6 z-50 flex h-[70vh] max-h-[600px] w-[calc(100vw-2rem)] max-w-[380px] flex-col rounded-md border border-border-subtle bg-bg-base shadow-2xl md:bottom-6 md:h-[600px]">
           <div className="flex items-center justify-between border-b border-border-subtle px-3 py-2">
-            <div className="text-sm font-medium">Консьерж</div>
+            <div className="text-sm font-medium">Мастер</div>
             <button
               type="button"
               aria-label="Закрыть"

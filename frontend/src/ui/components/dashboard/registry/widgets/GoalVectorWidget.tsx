@@ -3,6 +3,7 @@
 import type { FC } from "react";
 import { useState } from "react";
 import { Sparkles, Target } from "lucide-react";
+import Link from "next/link";
 import useSWR from "swr";
 
 import { dashboardApi } from "@/api/dashboard.api";
@@ -74,8 +75,12 @@ export const GoalVectorWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
 
   const narrative = directorSwr.data?.narrativeSummary?.text ?? null;
   const rows = personSwr.data?.rows ?? [];
+  const goalState = personSwr.data?.goalState ?? "none";
+  const fallbackGoalTitle = personSwr.data?.goalTitle ?? null;
+  const displayTitle = primaryGoal?.goalTitle ?? fallbackGoalTitle;
 
-  const loading = pulseSwr.isLoading || directorSwr.isLoading;
+  const loading =
+    pulseSwr.isLoading || directorSwr.isLoading || personSwr.isLoading;
 
   if (loading) {
     return (
@@ -92,18 +97,84 @@ export const GoalVectorWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
   }
 
   if (!primaryGoal) {
+    if (goalState === "none") {
+      return (
+        <GlassCard>
+          <CardTitle icon={<Target size={16} />} grad={GRAD.violet}>
+            Вектор к цели
+          </CardTitle>
+          <p
+            className="mt-6 text-center text-sm"
+            style={{ color: CHART.faint }}
+          >
+            Цель компании не задана — задайте главную, чтобы видеть, куда движется
+            команда.
+          </p>
+          <div className="mt-3 flex justify-center">
+            <Link
+              href="/goals"
+              className="inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium transition hover:brightness-110"
+              style={{
+                background: "var(--surface-inset-strong)",
+                color: CHART.text,
+              }}
+            >
+              Задать главную цель
+            </Link>
+          </div>
+        </GlassCard>
+      );
+    }
+
     return (
       <GlassCard>
         <CardTitle icon={<Target size={16} />} grad={GRAD.violet}>
           Вектор к цели
         </CardTitle>
+        {goalState === "active_fallback" ? (
+          <Link
+            href="/goals"
+            className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition hover:brightness-110"
+            style={{
+              background: "var(--chip-warning-bg)",
+              color: "var(--chip-warning-fg)",
+            }}
+          >
+            Кора предложила эту цель — подтвердить главной
+          </Link>
+        ) : null}
         <p
-          className="mt-6 py-6 text-center text-sm"
-          style={{ color: CHART.faint }}
+          className="mt-4 text-base font-semibold"
+          style={{ color: CHART.text }}
         >
-          Цель компании не задана — задайте главную цель, чтобы видеть, куда
-          движется команда.
+          {displayTitle ?? "Цель"}
         </p>
+        {rows.length === 0 ? (
+          <p className="mt-1 text-sm" style={{ color: CHART.dim }}>
+            Накапливаем данные по людям
+          </p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {rows.slice(0, 5).map((row) => (
+              <li
+                key={row.personId}
+                className="flex items-center gap-3 rounded-xl p-2.5"
+                style={{ background: "var(--surface-inset)" }}
+              >
+                <MiniArrow direction={row.direction} />
+                <span
+                  className="min-w-0 flex-1 truncate text-sm font-medium"
+                  style={{ color: CHART.text }}
+                >
+                  {row.personName}
+                </span>
+                <span className="text-xs" style={{ color: CHART.faint }}>
+                  сделано {row.tasksDone} · висит {row.tasksOpen}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </GlassCard>
     );
   }
@@ -116,6 +187,18 @@ export const GoalVectorWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
       <CardTitle icon={<Target size={16} />} grad={GRAD.violet}>
         Вектор к цели
       </CardTitle>
+      {goalState === "active_fallback" ? (
+        <Link
+          href="/goals"
+          className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition hover:brightness-110"
+          style={{
+            background: "var(--chip-warning-bg)",
+            color: "var(--chip-warning-fg)",
+          }}
+        >
+          Кора предложила эту цель — подтвердить главной
+        </Link>
+      ) : null}
 
       <div className="mt-4 grid gap-5 md:grid-cols-2">
         <div className="flex flex-col gap-3">

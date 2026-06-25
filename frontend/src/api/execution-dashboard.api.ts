@@ -21,6 +21,7 @@ export interface GoalVectorByPersonApi {
   goalId: string | null;
   goalTitle: string | null;
   rows: GoalVectorByPersonRowApi[];
+  goalState: "primary" | "active_fallback" | "none";
 }
 
 export type IssueChainRelationType = "blocks" | "blocked_by";

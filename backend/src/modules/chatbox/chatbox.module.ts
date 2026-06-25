@@ -16,7 +16,6 @@ import { ChatboxMembersService } from './chatbox-members.service';
 import { ChatboxSessionService } from './chatbox-session.service';
 import { ChatboxSyncCron } from './chatbox-sync.cron';
 import { ChatboxSyncService } from './chatbox-sync.service';
-import { CrossSourceTaskDedupeService } from './cross-source-task-dedupe.service';
 import { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
 import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
 
@@ -41,7 +40,6 @@ import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
     ChatboxIngestService,
     ChatboxAnalyzeQueueService,
     ChatboxAnalyzeCron,
-    CrossSourceTaskDedupeService,
   ],
   exports: [
     ChatboxApiClient,
@@ -51,7 +49,6 @@ import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
     ChatboxSyncQueueService,
     ChatboxIngestService,
     ChatboxAnalyzeQueueService,
-    CrossSourceTaskDedupeService,
   ],
 })
 export class ChatboxModule {}

@@ -8,19 +8,12 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
-import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
-import type { DialogTurn } from '../ai/services/prompts/common';
-import { TaskExtractionService } from '../ai/services/task-extraction.service';
 import { IntegrationSyncLogService } from '../integrations-observability/integration-sync-log.service';
 
 import { ChatboxIngestService } from './chatbox-ingest.service';
-import {
-  type CrossSourceTaskCandidate,
-  CrossSourceTaskDedupeService,
-} from './cross-source-task-dedupe.service';
 import { CHATBOX_ANALYZE_QUEUE, type ChatboxAnalyzeJobData } from './queue/chatbox-analyze.queue';
 
 @Injectable()
@@ -33,15 +26,6 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ChatboxIngestService)
     private readonly ingest: ChatboxIngestService,
-    @Optional()
-    @Inject(TaskExtractionService)
-    private readonly taskExtractor?: TaskExtractionService,
-    @Optional()
-    @Inject(CrossSourceTaskDedupeService)
-    private readonly taskDedupe?: CrossSourceTaskDedupeService,
-    @Optional()
-    @Inject(TypedConfigService)
-    private readonly cfg?: TypedConfigService,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -119,19 +103,6 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       await this.syncLog?.succeed(run, { rawEventId: res.rawEventId });
       this.metrics?.incChatboxAnalyze({ status: 'success' });
       this.logger.debug(`ChatboxAnalyze готово: session=${sessionId} rawEventId=${res.rawEventId}`);
-
-      try {
-        await this.extractTasks(tenantId, sessionId);
-      } catch (taskErr) {
-        this.logger.warn(
-          {
-            tenantId,
-            sessionId,
-            err: taskErr instanceof Error ? taskErr.message : String(taskErr),
-          },
-          'ChatboxAnalyze: извлечение задач из переписки упало (игнорируем)',
-        );
-      }
     } catch (err) {
       await this.syncLog?.fail(run, err);
       await this.prisma.chatboxChatSession
@@ -151,186 +122,5 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       );
       throw err;
     }
-  }
-
-  async extractTasks(tenantId: string, sessionId: string): Promise<void> {
-    const enabled = this.cfg?.aiFeatures.chatboxTaskExtractionEnabled ?? false;
-    if (!enabled || !this.taskExtractor || !this.taskDedupe) {
-      return;
-    }
-
-    const mode =
-      (await this.cfg?.getDynamic<'spine' | 'legacy'>(
-        'tracker.taskExtractionMode',
-        undefined,
-        'spine',
-      )) ?? 'spine';
-    if (mode === 'spine') {
-      return;
-    }
-
-    const [existingByTask, existingBySource] = await Promise.all([
-      this.prisma.task.findFirst({
-        where: { tenantId, sourceChatSessionId: sessionId },
-        select: { id: true },
-      }),
-      this.prisma.taskSource.findFirst({
-        where: { tenantId, sourceType: 'chatbox', sourceRefId: sessionId },
-        select: { id: true },
-      }),
-    ]);
-    if (existingByTask || existingBySource) {
-      this.logger.debug(
-        `ChatboxAnalyze: задачи для session=${sessionId} уже извлечены — пропуск (идемпотентность)`,
-      );
-      return;
-    }
-
-    const session = await this.prisma.chatboxChatSession.findFirst({
-      where: { id: sessionId, tenantId },
-      select: { id: true, chatId: true },
-    });
-    if (!session) return;
-
-    const chat = await this.prisma.chatboxChat.findFirst({
-      where: { id: session.chatId, tenantId },
-      select: {
-        id: true,
-        externalId: true,
-        customerExternalId: true,
-        responsibleExternalId: true,
-      },
-    });
-
-    const messages = await this.prisma.chatboxMessage.findMany({
-      where: { tenantId, sessionId },
-      orderBy: { externalCreatedAt: 'asc' },
-      select: {
-        senderType: true,
-        senderName: true,
-        text: true,
-        contentType: true,
-      },
-    });
-    if (messages.length === 0) return;
-
-    const dialog: DialogTurn[] = messages.map((m, i) => {
-      const isClient = m.senderType === 'CLIENT';
-      const role = isClient ? 'Клиент' : 'Менеджер';
-      const name = m.senderName ? ` [${m.senderName}]` : '';
-      const body =
-        m.contentType !== 'TEXT' || !m.text || m.text.trim() === '' ? `[${m.contentType}]` : m.text;
-      return {
-        speaker: `${role}${name}`,
-        text: body,
-        startSec: i,
-        endSec: i + 0.9,
-        speakerParticipantId: null,
-      };
-    });
-
-    let assigneeUserId: string | null = null;
-    let assigneeRaw: string | null = null;
-    if (chat?.responsibleExternalId) {
-      const member = await this.prisma.chatboxMember.findUnique({
-        where: {
-          tenantId_externalId: {
-            tenantId,
-            externalId: chat.responsibleExternalId,
-          },
-        },
-        select: { name: true, linkedPersonId: true },
-      });
-      assigneeRaw = member?.name ?? null;
-      if (member?.linkedPersonId) {
-        const person = await this.prisma.person.findFirst({
-          where: { id: member.linkedPersonId, tenantId },
-          select: { userId: true, name: true },
-        });
-        assigneeUserId = person?.userId ?? null;
-        assigneeRaw = assigneeRaw ?? person?.name ?? null;
-      }
-    }
-
-    let customerName: string | null = null;
-    if (chat?.customerExternalId) {
-      const customer = await this.prisma.chatboxCustomer.findUnique({
-        where: {
-          tenantId_externalId: {
-            tenantId,
-            externalId: chat.customerExternalId,
-          },
-        },
-        select: { name: true },
-      });
-      customerName = customer?.name ?? null;
-    }
-    const title = customerName
-      ? `Переписка с клиентом: ${customerName}`
-      : `Переписка ${chat?.externalId ?? session.chatId}`;
-
-    const ownerUserId = await this.resolveOwnerUserId(tenantId, assigneeUserId);
-    if (!ownerUserId) {
-      this.metrics?.incChatboxTasksOwnerMissing();
-      this.logger.error(
-        `ChatboxAnalyze: у Org нет ни одного участника (owner/admin/any) для session=${sessionId} tenant=${tenantId} — задачи не на кого назначить, пропуск`,
-      );
-      return;
-    }
-
-    const extracted = await this.taskExtractor.extractTasks({
-      meetingId: session.chatId,
-      tenantId,
-      meeting: { id: session.chatId, type: 'chatbox', title },
-      dialog,
-    });
-    if (extracted.length === 0) {
-      this.logger.debug(`ChatboxAnalyze: разборщик не нашёл задач в session=${sessionId}`);
-      return;
-    }
-
-    const candidates: CrossSourceTaskCandidate[] = extracted.map((t) => ({
-      title: t.title,
-      description: t.description ?? null,
-      assigneeRaw,
-      assigneeUserId,
-      sourceQuote: t.sourceQuote,
-      confidence: t.confidence,
-    }));
-
-    const result = await this.taskDedupe.processCandidates(candidates, {
-      tenantId,
-      ownerUserId,
-      sessionId,
-      chatId: session.chatId,
-    });
-    this.logger.debug(
-      `ChatboxAnalyze: задачи session=${sessionId} created=${result.created} linked=${result.linked}`,
-    );
-  }
-
-  private async resolveOwnerUserId(
-    tenantId: string,
-    assigneeUserId: string | null,
-  ): Promise<string | null> {
-    if (assigneeUserId) return assigneeUserId;
-    const ownerMembership = await this.prisma.membership.findFirst({
-      where: { orgId: tenantId, role: 'owner' },
-      select: { userId: true },
-      orderBy: { joinedAt: 'asc' },
-    });
-    if (ownerMembership?.userId) return ownerMembership.userId;
-    const adminMembership = await this.prisma.membership.findFirst({
-      where: { orgId: tenantId, role: 'admin' },
-      select: { userId: true },
-      orderBy: { joinedAt: 'asc' },
-    });
-    if (adminMembership?.userId) return adminMembership.userId;
-    const anyMembership = await this.prisma.membership.findFirst({
-      where: { orgId: tenantId },
-      select: { userId: true },
-      orderBy: { joinedAt: 'asc' },
-    });
-    return anyMembership?.userId ?? null;
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/ui/shadcn/button";
@@ -23,24 +23,19 @@ export function WizardShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
 
-  const [guardChecked, setGuardChecked] = useState(false);
-  const [redirecting, setRedirecting] = useState(false);
-
   const step = stepFromPath(pathname);
   const progress = Math.round((step / TOTAL_STEPS) * 100);
 
-  useEffect(() => {
-    if (isLoading) return;
-    if (!user) return;
-    if (currentOrgRole !== "owner") {
-      setRedirecting(true);
-      router.replace("/dashboard");
-      return;
-    }
-    setGuardChecked(true);
-  }, [isLoading, user, currentOrgRole, router]);
+  const ready = !isLoading && !!user;
+  const isOwner = currentOrgRole === "owner";
 
-  if (isLoading || !user || !guardChecked || redirecting) {
+  useEffect(() => {
+    if (ready && !isOwner) {
+      router.replace("/dashboard");
+    }
+  }, [ready, isOwner, router]);
+
+  if (!ready || !isOwner) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-base">
         <div className="w-full max-w-md space-y-3 px-6">

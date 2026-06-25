@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 import { onboardingApi } from '@/api/onboarding.api';
@@ -26,6 +26,23 @@ export default function Step5Page() {
   const { currentOrgId } = useAuth();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!currentOrgId) return;
+    let active = true;
+    onboardingApi
+      .getWelcome(currentOrgId)
+      .then((w) => {
+        if (!active) return;
+        if (w.currentStack.length > 0) {
+          setSelected((prev) => (prev.size === 0 ? new Set(w.currentStack) : prev));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [currentOrgId]);
 
   const toggle = (id: string) => {
     setSelected((prev) => {

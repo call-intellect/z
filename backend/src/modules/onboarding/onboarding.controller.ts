@@ -22,7 +22,11 @@ import { RbacService } from '../rbac/rbac.service';
 
 import { UpdateCompanyRoleSchema, type UpdateCompanyRoleBody } from './dto/update-company-role.dto';
 import { WelcomePatchSchema, type WelcomePatchBody } from './dto/welcome-patch.dto';
-import { OnboardingService, type SetupProgressDto } from './onboarding.service';
+import {
+  OnboardingService,
+  type SetupProgressDto,
+  type WelcomeAnswersDto,
+} from './onboarding.service';
 
 @ApiTags('onboarding')
 @ApiBearerAuth()
@@ -56,6 +60,19 @@ export class OnboardingController {
   ): Promise<{ ok: true }> {
     await this.requireOwnerOrAdmin(user.id, orgId);
     return this.svc.patchWelcome({ orgId: tenantId ?? orgId, userId: user.id, body });
+  }
+
+  @Get('orgs/:orgId/welcome')
+  @UseGuards(TenantGuard)
+  @ApiOperation({ summary: 'Сохранённые ответы Блока A онбординга (для регидрации шагов)' })
+  @ApiOkResponse({ description: '{ teamSize, industry, painPoints, currentStack, plannedFeatures }' })
+  async getWelcome(
+    @Param('orgId') orgId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<WelcomeAnswersDto> {
+    await this.requireOwnerOrAdmin(user.id, orgId);
+    return this.svc.getWelcome(tenantId ?? orgId);
   }
 
   @Post('orgs/:orgId/welcome/complete')

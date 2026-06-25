@@ -12,7 +12,6 @@ import {
 
 import { accountsApi } from "@/api/accounts.api";
 import { setApiClientOrgId } from "@/api/api-client";
-import { ApiError } from "@/api/api-error";
 import { authApi } from "@/api/auth.api";
 import {
   mapAccountUserDtoToDomain,
@@ -33,7 +32,7 @@ type AuthContextValue = AuthState & {
   currentOrgRole: CurrentOrgRole;
   currentOrgId: string | null;
   profileCompletedAt: Date | null;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<AccountUser | null>;
   logout: () => Promise<void>;
   loginStandalone: (
     email: string,
@@ -67,20 +66,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading: true,
   });
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<AccountUser | null> => {
     setState((prev) => ({ ...prev, isLoading: true }));
     try {
       const res = await accountsApi.me();
-      setState({
-        user: res.user ? mapAccountUserDtoToDomain(res.user) : null,
-        isLoading: false,
-      });
-    } catch (e) {
-      if (e instanceof ApiError && e.code === "unauthorized") {
-        setState({ user: null, isLoading: false });
-        return;
-      }
+      const nextUser = res.user ? mapAccountUserDtoToDomain(res.user) : null;
+      setState({ user: nextUser, isLoading: false });
+      return nextUser;
+    } catch {
       setState({ user: null, isLoading: false });
+      return null;
     }
   }, []);
 

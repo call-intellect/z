@@ -8,6 +8,14 @@ export interface WelcomePatchBody {
   plannedFeatures?: string[];
 }
 
+export interface WelcomeAnswersApi {
+  teamSize: string | null;
+  industry: string | null;
+  painPoints: string[];
+  currentStack: string[];
+  plannedFeatures: string[];
+}
+
 export interface SetupProgressApi {
   completed: number;
   total: number;
@@ -25,6 +33,12 @@ export const onboardingApi = {
   getSetupProgress: (orgId: string) =>
     apiClient.get<SetupProgressApi>(
       `/api/v1/orgs/${encodeURIComponent(orgId)}/setup-progress`,
+      { headers: { "X-Org-Id": orgId } },
+    ),
+
+  getWelcome: (orgId: string) =>
+    apiClient.get<WelcomeAnswersApi>(
+      `/api/v1/orgs/${encodeURIComponent(orgId)}/welcome`,
       { headers: { "X-Org-Id": orgId } },
     ),
 

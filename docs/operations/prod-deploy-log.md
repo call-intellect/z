@@ -71,13 +71,13 @@ docker compose run --rm --no-deps backend \
 
 ---
 
-### 📄 2026-06-25 — «Единый помощник» Ф6: модель на агента через LlmTaskRoute (без правок кода)
+### 📄 2026-06-25 — «Единый помощник»: single-pass Мастер + упрощённый chat-v2 + модель на агента (Ф2–Ф6)
 
-> ТЗ `plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md` (Ф6). Ветка `feature/edinyy-pomoshnik-arhitektura`.
+> ТЗ `plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md` (Ф2–Ф6). Ветка `feature/edinyy-pomoshnik-arhitektura`, коммиты `f51e5a0e` (Ф4a) … `8dac5210` (Ф1/Ф5).
 >
-> **Зачем:** 5 живых агентов «Единого помощника» маршрутизируются на модели из ТЗ §5 — без изменений app-кода, только строки `LlmTaskRoute`. Сид авторитетный (re-point существующих `concierge-respond`/`chat-v2`, заведённых другими сидами), но НИКОГДА не трогает записи с `editedByAdmin=true`.
+> **Зачем:** убрана ReAct-петля Мастера (корень прод-бага с сырым JSON), цепочка chat-v2 свёрнута с ~10 LLM-вызовов до 4 (понимание → rerank → синтез → groundedness; route/plan/sufficiency законсервированы), замкнута петля уточнения (`[[CLARIFY]]`/`needsClarification`), 5 агентов маршрутизированы на модели из ТЗ §5. Фронт частично: «Память»=дверь к реестрам, `/chat-v2`+`/assistant`→`/chat`, видимые «Concierge»→«Мастер».
 >
-> **🟢 НОВЫХ ENV НЕТ · НОВЫХ МИГРАЦИЙ НЕТ · ИЗМЕНЕНИЙ APP-КОДА НЕТ.** 1 новый seed (зарегистрирован в STEPS `phase:'seed-llm-routes'`) + 1 новый диаг-скрипт (read-only). Docker rebuild backend (доставить скрипты).
+> **🟢 НОВЫХ ENV НЕТ · НОВЫХ МИГРАЦИЙ НЕТ.** Изменения app-кода (Ф2–Ф5 backend + Ф1/Ф5 frontend) едут с rebuild образа. 4 новые крутилки AdminSetting (Ф4/Ф5, чистые — без ENV, едут существующими сидами) + 1 новый seed LLM-routes (зарегистрирован в STEPS `phase:'seed-llm-routes'`) + 1 новый диаг-скрипт (read-only). Docker rebuild backend+frontend.
 >
 > | агент | taskType | primary |
 > |---|---|---|
@@ -87,11 +87,17 @@ docker compose run --rm --no-deps backend \
 > | Синтез ответа | `chat-v2` | `deepseek` / `deepseek-v4-pro` |
 > | Контролёр заземления | `rag-groundedness` | `deepseek` / `deepseek-v4-flash` |
 
-- **Шаг 7 — Seed (идемпотентный, авторитетный upsert, УЖЕ в STEPS `phase:'seed-llm-routes'`):** `docker compose exec backend bun run scripts/seed-llm-task-routes-edinyy-pomoshnik.ts` — маршруты 5 агентов «Единого помощника» (см. таблицу выше + fallback-цепочки secondary/tertiary). Авторитетный: для не-`editedByAdmin` записей создаёт/обновляет `model`/`priority`/`isActive`; `editedByAdmin=true` записи пропускает (защита ручных правок из admin UI). Также прогоняется агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Это once-step (sha256 содержимого) — правка сида ⇒ повторный прогон автоматически.
-- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend` (доставить новые `scripts/*`; правок app-кода нет — `frontend` не нужен).
+- **Шаг 7 — Seed LLM-routes (идемпотентный, авторитетный upsert, УЖЕ в STEPS `phase:'seed-llm-routes'`):** `docker compose exec backend bun run scripts/seed-llm-task-routes-edinyy-pomoshnik.ts` — маршруты 5 агентов «Единого помощника» (см. таблицу выше + fallback-цепочки secondary/tertiary). Авторитетный: для не-`editedByAdmin` записей создаёт/обновляет `model`/`priority`/`isActive`; `editedByAdmin=true` записи пропускает (защита ручных правок из admin UI). Также прогоняется агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Это once-step (sha256 содержимого) — правка сида ⇒ повторный прогон автоматически.
+- **Шаг 7 — Seed крутилок (идемпотентный, УЖЕ в STEPS `phase:'seed-base'`):** 4 новые крутилки Ф4/Ф5 (чистые AdminSetting, без ENV) едут существующими сидами:
+  - `docker compose exec backend bun run scripts/seed-admin-setting-smart-search.ts` — **расширен 3 новыми ключами** (section `smart_search`): `rag.k_retrieve` (30 — размер пула кандидатов до реранка), `rag.k_context` (18 — сколько блоков уходит в синтез после реранка, ≤ `k_retrieve`), `rag.understanding_merged` (kill-switch ON — слитый модуль понимания: 1 LLM-вызов вместо 2; OFF → старый путь мульти-запрос+извлечение-плана).
+  - `docker compose exec backend bun run scripts/seed-admin-settings.ts` — **расширен 1 ключом**: `probe.implicit_match_max_age_days` (3 — окно свежести implicit-матча probe, лечит ложное «Готово»).
+  - Оба сида уважают admin-override; доезжают агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (concierge single-pass + chat-v2 4-вызова + петля уточнения + слитый `dialog-understand`); frontend (Ф1/Ф5: «Память»=дверь, `/chat-v2`+`/assistant`→redirect `/chat`, нейминг «Мастер»).
 - **Шаг 12 — Smoke** (после выката):
   - `docker compose exec backend bun run scripts/diag-llm-routes.ts` — показывает ожидаемые primary по 5 taskType (`concierge-respond`→`openai-via-proxy:gpt-5.4-mini`, `dialog-understand`→`deepseek:deepseek-v4-pro`, `rag-rerank`→`deepseek:deepseek-v4-flash`, `chat-v2`→`deepseek:deepseek-v4-pro`, `rag-groundedness`→`deepseek:deepseek-v4-flash`). Флаг `--json` — машинный вывод. Read-only, в БД ничего не пишет.
-  - Записи с `[правка-админа]` в выводе сида НЕ перезаписаны (если admin что-то правил вручную).
+  - Записи с `[правка-админа]` в выводе сидов НЕ перезаписаны (если admin что-то правил вручную).
+  - Крутилки видны в админке AdminSetting: `rag.k_retrieve` (30), `rag.k_context` (18), `rag.understanding_merged` (ON), `probe.implicit_match_max_age_days` (3).
+  - Прод-регресс `cmqs42gdq01lj01qqsblfdon4` («позиционирование», «сколько встреч с Александром») — чистый текстовый ответ, ни одного сырого JSON, ноль зацикливаний.
 
 Этот блок при следующем prod-cut перенести в «Архив применённых».
 

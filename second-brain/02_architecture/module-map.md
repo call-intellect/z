@@ -1597,6 +1597,16 @@ backend/src/modules/tracker/
 
 **Поток:** tracker эмит `issue.assignee_changed` → conversational listener → `sendNotification('issue.assigned')`. Listener живёт в `ConversationalModule` (а не в tracker), т.к. conversational уже импортит tracker — обратный импорт дал бы цикл. Один listener покрывает **оба** пути назначения: UI-путь `addAssignee` и помощника (`assign_task`).
 
+### Единый помощник: Мастер single-pass + chat-v2 4-вызова (2026-06-25)
+
+ТЗ [`plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md`](../../plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md) (Ф2–Ф6, коммиты `f51e5a0e`…`8dac5210`). Полная карта потока — [[knowledge-core]] §«Единый помощник», профили — [[../01_projects/concierge-agent]] / [[../01_projects/chat-v2]] / [[../01_projects/ai-jobs]]. Убраны обе петли (ReAct Мастера + route/plan/sufficiency внутри chat-v2).
+
+- **`concierge/services/concierge.service.ts` — single-pass.** Удалены `for i<maxSteps`, loop-guard, `buildPartialAnswer`, сырой JSON-дамп, обёртка `ask_chat_v2`, крутилки `concierge.max_steps`/`rag.loop_guard_threshold`. Слой 1 — детерм. перехват (probe/confirm/clarify/checkin) ДО LLM; Слой 2 — один диспетч-вызов `concierge-respond` (`answer|action|note|checkin_self`); Слой 3 — один проход. `answer` → chat-v2 `askEphemeral` в процессе, текст слово-в-слово (passthrough); `action` → инструмент + отдельный render-вызов (`CONCIERGE_RENDER_SYSTEM_PROMPT`). Канальный clarify-перехват — Redis-ключ `concierge:clarify:<bindingId>` (`assistant-channel.bridge.ts` + telegram/max адаптеры).
+- **`knowledge-core/services/chat-v2.service.ts` — движок-ответчик, 4 LLM-вызова, memoryless.** `askEphemeral({history,summary,intent,scope?,scopeRefId?})` без своей `ChatV2Conversation` (тред принадлежит Мастеру). Цепочка: понимание (`dialog-understand`) → поиск+RRF → rerank (`rag-rerank`, `rag.k_retrieve` 30 → `rag.k_context` 18) → синтез (`chat-v2`, токен `[[CLARIFY]]` → `needsClarification`) → groundedness (`rag-groundedness`, при clarify пропускается, переспрос не кэшируется). route/plan/sufficiency-методы удалены; промпты `RAG_ROUTE`/`RAG_PLAN`/`RAG_SUFFICIENCY` законсервированы как exports.
+- **`dialog-layer/services/query-plan-extractor.service.ts` + `dialog.service.ts` — слитое понимание.** `dialog-multi-query` + `dialog-extract-plan` → один вызов `dialog-understand` (метод `understand()`), kill-switch `rag.understanding_merged` (ON; OFF → два прежних вызова как fallback).
+- **Модели по агентам** — `LlmTaskRoute` через `seed-llm-task-routes-edinyy-pomoshnik.ts` (diag `diag-llm-routes.ts`): `concierge-respond`→`gpt-5.4-mini`, `dialog-understand`/`chat-v2`→`deepseek-v4-pro`, `rag-rerank`/`rag-groundedness`→`deepseek-v4-flash`.
+- **Фронт (Ф1/Ф5):** `/chat-v2`+`/assistant` → redirect `/chat`; `/memory` = дверь к реестрам (кусочный `MemorySearch` удалён); видимые «Concierge»→«Мастер». Полное схлопывание 3 движков/4 поверхностей отколото в [`2026-06-25-edinyy-pomoshnik-chat-surface-convergence.md`](../../plans/tz/2026-06-25-edinyy-pomoshnik-chat-surface-convergence.md) (нужна визуальная приёмка).
+
 ### PWA frontend (Wave 2 F2)
 
 ```

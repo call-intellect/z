@@ -512,17 +512,35 @@ chat-v2 retrieval теперь умеет применять **recall-safe ст�
 
 После гибридного входа (cosine + BM25) поиск делает **1-hop обход рёбер** графа (`knowledge.search_expand_hops`) → **RRF-слияние** результатов (Reciprocal Rank Fusion — слияние рангов нескольких списков, утилита `knowledge-core/utils/rank-fusion.util.ts`, параметр `knowledge.search_rrf_k`) → **группировку по эпизоду**. Superseded-блоки скрыты (bi-temporal `validUntil IS NULL`). Это поднимает связность ответа: вопрос находит не только прямое совпадение, но и соседние по графу блоки.
 
-#### Б. Умный поэтапный поиск Мастера (concierge / chat-v2 / knowledge-core)
+#### Б. Умный поэтапный поиск Мастера — ⚠️ ЗАМЕНЁН single-pass (2026-06-25, «Единый помощник»)
 
-Многошаговая ветка ответа поверх knowledge-core — за гейтом `rag.iterative_enabled` + cold-start (`rag.cold_start_min_blocks`), **fail-open до одношагового** при любой ошибке:
+> **Описанная ниже многошаговая ветка изъята из горячего пути chat-v2** при упрощении ассистента — см. §«Единый помощник» ниже. Текст оставлен как историческая справка о методе; промпты `RAG_ROUTE`/`RAG_PLAN`/`RAG_SUFFICIENCY` законсервированы как exports для будущей фичи «Большой анализ» ([`plans/analysis/2026-06-25-iterative-rag-method-parked.md`](../../plans/analysis/2026-06-25-iterative-rag-method-parked.md)).
 
-1. **Роутер сложности** (taskType `rag-route`) — простой вопрос идёт коротким путём, сложный — поэтапным.
-2. **ReWOO-план** (`rag-plan`) — раскладывает сложный вопрос на под-вопросы заранее (Reasoning WithOut Observation — план до поиска).
-3. **Пошаговый retrieval с судьёй достаточности** (`rag-sufficiency`) — после каждого шага судья решает, хватает ли собранного для ответа.
-4. **RRF-слияние подзапросов** + **условный LLM-реранк** (`rag-rerank`, порог `rag.rerank_min_pool` — реранк только когда пул кандидатов большой).
-5. **Синтез** → **гейт честности после синтеза** (`chat-v2.service applyGroundednessGate` → taskType `rag-groundedness`, режим `rag.groundedness_mode`) — отсекает невыводимые из источников утверждения; метрика `rag_abstain_total` (сколько раз честно воздержались от ответа).
+Многошаговая ветка ответа (была за гейтом `rag.iterative_enabled` + cold-start `rag.cold_start_min_blocks`, **fail-open до одношагового**):
 
-Защита диалога Concierge: **сторож зацикливания** (`concierge/utils/loop-guard.ts`, лимит `concierge.max_steps` — AdminSetting) даёт честный частичный ответ при достижении лимита; строгий **гейт переспроса** в промпте `concierge-respond` — на вопросах-поиск переспрашивать запрещено (Мастер ищет, а не задаёт встречный вопрос). Промпты-победители — `knowledge-core/prompts/rag-pipeline.prompts.ts`.
+1. **Роутер сложности** (`rag-route`) — простой вопрос коротким путём, сложный — поэтапным.
+2. **ReWOO-план** (`rag-plan`) — раскладывал сложный вопрос на под-вопросы заранее (Reasoning WithOut Observation).
+3. **Пошаговый retrieval с судьёй достаточности** (`rag-sufficiency`) — после каждого шага судья решал, хватает ли собранного.
+4. RRF-слияние подзапросов + условный LLM-реранк (`rag-rerank`).
+5. Синтез → гейт честности (`rag-groundedness`).
+
+#### Б′. Единый помощник: single-pass Мастер + chat-v2 (4 вызова) — 2026-06-25
+
+ТЗ [`plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md`](../../plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md) (Ф2–Ф6). Профили — [[../01_projects/concierge-agent]] / [[../01_projects/chat-v2]] / [[../01_projects/ai-jobs]]. Убраны обе петли (ReAct Мастера + route/plan/sufficiency внутри chat-v2).
+
+**Мастер (`concierge.service.ts`) — single-pass, без ReAct-петли.** Удалены `for i<maxSteps`, loop-guard, `buildPartialAnswer`, сырой JSON-дамп (корень прод-бага), крутилки `concierge.max_steps` / `rag.loop_guard_threshold`. Поток:
+- **Слой 1 (детерм. перехват ДО LLM):** открытый probe → probe-handler; pending confirm → выполнить/отменить; **pending clarify → вернуть реплику в исходный вопрос chat-v2** (`isClarifyPending(history)` → `resumeClarify` → `askEphemeral`); ждём чек-ин → handler. Канальный Слой-1: Redis-ключ `concierge:clarify:<bindingId>` (bridge ставит/снимает; telegram+max адаптеры читают первым → форсят `assistant_turn`).
+- **Слой 2 (один LLM-вызов `concierge-respond`):** диспетчер → `answer | action{tool,args} | note | checkin_self`.
+- **Слой 3 (один проход):** `answer` → chat-v2 `askEphemeral` **в процессе** (история+summary треда Мастера), ответ **слово-в-слово** (passthrough — правило для всего `answer`-пути, чтобы не порвать `[BLOCK:id]` и не вернуть выдумку); `action` → один инструмент (мутация → confirm) + один **render-вызов** (отдельный `CONCIERGE_RENDER_SYSTEM_PROMPT`, без JSON-утечки); `note` → ingest; `checkin_self` → DailyCheckIn.
+
+**chat-v2 (`chat-v2.service.ts`) — движок-ответчик single-pass, 4 LLM-вызова, memoryless.** Тред один и принадлежит Мастеру; `askEphemeral({history,summary,intent,scope?,scopeRefId?})` — без своей `ChatV2Conversation`. Цепочка:
+1. **Понимание** (`dialog-understand`, DeepSeek pro) — `dialog-multi-query` + `dialog-extract-plan` СЛИТЫ в один вызов (3 переформулировки + фильтры дата/сущность/тип + флаг `aggregation`); kill-switch `rag.understanding_merged` (ON; OFF → два прежних вызова). `AskInput.intent` пропускает `dialog-classify`.
+2. **Поиск+RRF** — на каждую формулировку кандидаты (вектор+граф), слияние RRF; счёт «сколько» — настоящим COUNT/табличной веткой.
+3. **Переранжировщик** (`rag-rerank`, DeepSeek flash) — ОЖИВЛЁН: `topK` разнесён на `rag.k_retrieve` (30) / `rag.k_context` (18), реранк работает всегда когда пул > `rag.rerank_min_pool` (12), сужает 30→18; кормится summary+история+вопрос+3 формулировки (раньше видел голый вопрос, был мёртв при срезе 12).
+4. **Синтез** (`chat-v2`, DeepSeek pro) — ответ из 18 блоков; переспрос-при-вариантах помечает первую строку токеном `[[CLARIFY]]` → `needsClarification` течёт `ChatV2Output→SynthesisResult→ChatAnswer→контроллер/SSE`.
+5. **Контролёр заземления** (`rag-groundedness`, DeepSeek flash, режим `rag.groundedness_mode`) — анти-выдумка; при `needsClarification` **пропускается**, и оркестратор НЕ кэширует переспрос (`applyGroundednessGate` / `answerCache.set` обходятся).
+
+Модели по агентам — через `LlmTaskRoute` (сид `seed-llm-task-routes-edinyy-pomoshnik.ts`, diag `diag-llm-routes.ts`), не код. Промпты — `knowledge-core/prompts/rag-pipeline.prompts.ts`.
 
 Дополнительные эндпоинты:
 - `GET /api/v1/knowledge/blocks/:id` — деталка блока + evidence + entities;

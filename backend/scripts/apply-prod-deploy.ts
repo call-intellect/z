@@ -744,6 +744,7 @@ const STEPS: Step[] = [
     hint: "Task.sourceType='meeting' где пусто (chatbox-tasks Ф5)",
     skipBootstrap: true,
   },
+  { phase: 'backfill', script: 'scripts/backfill-purge-junk-entities.ts', skipBootstrap: true },
   {
     phase: 'backfill',
     script: 'scripts/backfill-role-clone-single-bearer.ts',

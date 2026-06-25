@@ -201,6 +201,87 @@ describe('Specialist36Service.processBlock — direct-path dedup guard', () => {
   });
 });
 
+describe('Specialist36Service.upgradeIdeaQuality', () => {
+  let svc: Specialist36Service;
+  let m: Mocks;
+
+  beforeEach(() => {
+    ({ svc, m } = buildService());
+  });
+
+  it('дописывает машинную идею (createdByUserId=null, rationale=null)', async () => {
+    const existing = { id: IDEA_ID, createdByUserId: null, rationale: null };
+    const extractSpy = vi
+      .spyOn(svc as unknown as Record<'extractDraft', () => Promise<unknown>>, 'extractDraft')
+      .mockResolvedValue({
+        isIdea: true,
+        kind: 'internal',
+        statement: 'Добавить экспорт в PDF',
+        rationale: 'Клиент просит',
+        confidence: 0.7,
+      });
+
+    await (svc as never as {
+      upgradeIdeaQuality: (a: unknown) => Promise<void>;
+    }).upgradeIdeaQuality({ existing, block: block() });
+
+    expect(extractSpy).toHaveBeenCalledTimes(1);
+    expect(m.prisma.idea.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: IDEA_ID },
+        data: expect.objectContaining({
+          statement: 'Добавить экспорт в PDF',
+          rationale: 'Клиент просит',
+        }),
+      }),
+    );
+  });
+
+  it('идемпотентность: rationale уже есть → extractDraft и update НЕ вызваны', async () => {
+    const existing = { id: IDEA_ID, createdByUserId: null, rationale: 'уже есть' };
+    const extractSpy = vi.spyOn(
+      svc as unknown as Record<'extractDraft', () => Promise<unknown>>,
+      'extractDraft',
+    );
+
+    await (svc as never as {
+      upgradeIdeaQuality: (a: unknown) => Promise<void>;
+    }).upgradeIdeaQuality({ existing, block: block() });
+
+    expect(extractSpy).not.toHaveBeenCalled();
+    expect(m.prisma.idea.update).not.toHaveBeenCalled();
+  });
+
+  it('защита человеческих правок: createdByUserId задан → extractDraft и update НЕ вызваны', async () => {
+    const existing = { id: IDEA_ID, createdByUserId: 'user-1', rationale: null };
+    const extractSpy = vi.spyOn(
+      svc as unknown as Record<'extractDraft', () => Promise<unknown>>,
+      'extractDraft',
+    );
+
+    await (svc as never as {
+      upgradeIdeaQuality: (a: unknown) => Promise<void>;
+    }).upgradeIdeaQuality({ existing, block: block() });
+
+    expect(extractSpy).not.toHaveBeenCalled();
+    expect(m.prisma.idea.update).not.toHaveBeenCalled();
+  });
+
+  it('не идея: extractDraft → null → update НЕ вызван', async () => {
+    const existing = { id: IDEA_ID, createdByUserId: null, rationale: null };
+    vi.spyOn(
+      svc as unknown as Record<'extractDraft', () => Promise<unknown>>,
+      'extractDraft',
+    ).mockResolvedValue(null);
+
+    await (svc as never as {
+      upgradeIdeaQuality: (a: unknown) => Promise<void>;
+    }).upgradeIdeaQuality({ existing, block: block() });
+
+    expect(m.prisma.idea.update).not.toHaveBeenCalled();
+  });
+});
+
 /**
  * G6 (CONFIRMED, LOW) — condition-UPDATE в changeStatus.
  *

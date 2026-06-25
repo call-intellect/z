@@ -150,6 +150,15 @@ export class Specialist36Service {
       },
     });
     if (alreadyMaterialized) {
+      await this.upgradeIdeaQuality({ existing: alreadyMaterialized, block }).catch((err) =>
+        this.logger.warn(
+          {
+            ideaId: alreadyMaterialized.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'specialist-3-6: upgradeIdeaQuality упал — продолжаем обогащение',
+        ),
+      );
       try {
         await this.updateExistingIdea({ existing: alreadyMaterialized, block });
       } catch (err) {
@@ -586,6 +595,23 @@ export class Specialist36Service {
         supporterCount: merged.length,
         weight: new Prisma.Decimal(weight),
         lastDiscussedAt: new Date(),
+      },
+    });
+  }
+
+  private async upgradeIdeaQuality(args: {
+    existing: Idea;
+    block: IdeaBlock & { evidence: IdeaBlockEvidence[] };
+  }): Promise<void> {
+    if (args.existing.createdByUserId !== null) return;
+    if (args.existing.rationale !== null) return;
+    const draft = await this.extractDraft(args.block);
+    if (!draft || draft.isIdea === false) return;
+    await this.prisma.idea.update({
+      where: { id: args.existing.id },
+      data: {
+        statement: draft.statement,
+        rationale: draft.rationale ?? null,
       },
     });
   }

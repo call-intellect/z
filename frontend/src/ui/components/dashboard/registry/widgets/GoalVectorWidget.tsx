@@ -50,7 +50,7 @@ export const GoalVectorWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
   );
 
   const directorSwr = useSWR(
-    currentOrgId ? ["goalvec-director", currentOrgId, directorPeriod] : null,
+    currentOrgId ? ["director", currentOrgId, directorPeriod] : null,
     async () => dashboardApi.getDirectorView(currentOrgId!, directorPeriod),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );

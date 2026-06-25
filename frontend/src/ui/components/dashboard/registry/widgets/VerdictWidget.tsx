@@ -33,17 +33,15 @@ export const VerdictWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
   const period = rhythm === "month" ? "month" : "week";
 
   const swr = useSWR(
-    currentOrgId ? ["verdict-director", currentOrgId, period] : null,
-    async () =>
-      directorDashboardFromApi(
-        await dashboardApi.getDirectorView(currentOrgId!, period),
-      ),
+    currentOrgId ? ["director", currentOrgId, period] : null,
+    async () => dashboardApi.getDirectorView(currentOrgId!, period),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
+  const view = swr.data ? directorDashboardFromApi(swr.data) : undefined;
 
-  const total = swr.data?.requiresAction?.total ?? 0;
-  const degraded = swr.data?.degraded ?? false;
-  const bySource = swr.data?.requiresAction?.bySource ?? {
+  const total = view?.requiresAction?.total ?? 0;
+  const degraded = view?.degraded ?? false;
+  const bySource = view?.requiresAction?.bySource ?? {
     conflict: 0,
     intake: 0,
     probe: 0,

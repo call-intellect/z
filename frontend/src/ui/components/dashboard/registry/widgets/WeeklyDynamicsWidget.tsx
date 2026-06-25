@@ -4,6 +4,7 @@ import type { FC } from "react";
 import { Activity, AlertTriangle, Target, TrendingUp } from "lucide-react";
 import useSWR from "swr";
 
+import { ApiError } from "@/api/api-error";
 import { weeklyDigestApi } from "@/api/weekly-digest.api";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -38,7 +39,19 @@ export const WeeklyDynamicsWidget: FC<{ rhythm: Rhythm }> = () => {
 
   const digestSwr = useSWR(
     currentOrgId ? ["weekly-dynamics", currentOrgId, weekStart] : null,
-    async () => weeklyDigestApi.get(weekStart),
+    async () => {
+      try {
+        return await weeklyDigestApi.get(weekStart);
+      } catch (err) {
+        if (
+          err instanceof ApiError &&
+          (err.code === "digest_not_found" || err.code === "not_found")
+        ) {
+          return null;
+        }
+        throw err;
+      }
+    },
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 

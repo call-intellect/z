@@ -22,13 +22,11 @@ export const ValueWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
   const period = rhythm === "month" ? "month" : "week";
 
   const swr = useSWR(
-    currentOrgId ? ["value-director", currentOrgId, period] : null,
-    async () =>
-      directorDashboardFromApi(
-        await dashboardApi.getDirectorView(currentOrgId!, period),
-      ),
+    currentOrgId ? ["director", currentOrgId, period] : null,
+    async () => dashboardApi.getDirectorView(currentOrgId!, period),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
+  const view = swr.data ? directorDashboardFromApi(swr.data) : undefined;
 
   if (swr.isLoading) {
     return (
@@ -41,7 +39,7 @@ export const ValueWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
     );
   }
 
-  const valueStrip = swr.data?.valueStrip;
+  const valueStrip = view?.valueStrip;
   if (!valueStrip) return null;
 
   return (

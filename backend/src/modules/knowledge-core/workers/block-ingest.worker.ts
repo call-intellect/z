@@ -40,7 +40,6 @@ import { KnowledgeEmbeddingService } from '../services/embedding.service';
 import { isJunkEntityName } from '../services/entity-name-quality';
 import { EntityResolutionService } from '../services/entity-resolution.service';
 import { SegmentBuilderService, type Segment } from '../services/segment-builder.service';
-import { TaskEvidenceLinkerService } from '../services/task-evidence-linker.service';
 
 export const TRACKER_ECHO_SIGNALS = new Set<string>([
   'task_created',
@@ -161,9 +160,6 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(ProbeService)
     private readonly probeService?: ProbeService,
-    @Optional()
-    @Inject(TaskEvidenceLinkerService)
-    private readonly taskEvidenceLinker?: TaskEvidenceLinkerService,
     @Optional()
     @Inject(ChunkContextService)
     private readonly chunkContext?: ChunkContextService,
@@ -791,21 +787,6 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           });
       }
 
-      if (
-        this.taskEvidenceLinker &&
-        event.sourceType === 'meeting' &&
-        event.sourceExternalId &&
-        blockIds.length > 0
-      ) {
-        await this.taskEvidenceLinker
-          .linkForMeeting({ tenantId: event.tenantId, meetingId: event.sourceExternalId })
-          .catch((err) => {
-            this.logger.warn(
-              { rawEventId, err: err instanceof Error ? err.message : String(err) },
-              'block-ingest: привязка задач к блокам-источникам не удалась — пропуск (graceful)',
-            );
-          });
-      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(

@@ -302,3 +302,114 @@ describe('ExecutionDashboardService.getStuckCrossProject (D2)', () => {
     expect(res.staleDaysThreshold).toBe(5);
   });
 });
+
+describe('ExecutionDashboardService.getGoalVectorByPerson — goalState fallback (Ф1)', () => {
+  const cfg = { getDynamic: vi.fn() };
+  const now = new Date('2026-06-22T00:00:00Z');
+
+  function makeService(prisma: unknown): ExecutionDashboardService {
+    return new ExecutionDashboardService(prisma as never, cfg as never);
+  }
+
+  type GoalFindFirstArgs = { where?: Record<string, unknown> };
+
+  it('нет primary, нет вкладов, есть active-цель → goalState active_fallback', async () => {
+    const prisma = {
+      goal: {
+        findFirst: vi.fn().mockImplementation((args: GoalFindFirstArgs) => {
+          const where = args.where ?? {};
+          if (where.isPrimary === true) return Promise.resolve(null);
+          if (where.status === 'active') return Promise.resolve({ id: 'g-active' });
+          if (where.id !== undefined) {
+            return Promise.resolve({
+              id: 'g-active',
+              name: 'Запустить 10 компаний',
+              isPrimary: false,
+            });
+          }
+          return Promise.resolve(null);
+        }),
+      },
+      personGoalContribution: {
+        groupBy: vi.fn().mockResolvedValue([]),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      issueAssignee: { findMany: vi.fn().mockResolvedValue([]) },
+      person: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+
+    const svc = makeService(prisma);
+    const res = await svc.getGoalVectorByPerson({
+      tenantId: 't1',
+      period: 'day',
+      now,
+    });
+
+    expect(res.goalId).toBe('g-active');
+    expect(res.goalState).toBe('active_fallback');
+    expect(res.rows).toEqual([]);
+    expect(res.goalTitle).toBe('Запустить 10 компаний');
+  });
+
+  it('нет целей вовсе → goalState none', async () => {
+    const prisma = {
+      goal: {
+        findFirst: vi.fn().mockImplementation((args: GoalFindFirstArgs) => {
+          const where = args.where ?? {};
+          if (where.isPrimary === true) return Promise.resolve(null);
+          if (where.status === 'active') return Promise.resolve(null);
+          return Promise.resolve(null);
+        }),
+      },
+      personGoalContribution: {
+        groupBy: vi.fn().mockResolvedValue([]),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      issueAssignee: { findMany: vi.fn().mockResolvedValue([]) },
+      person: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+
+    const svc = makeService(prisma);
+    const res = await svc.getGoalVectorByPerson({
+      tenantId: 't1',
+      period: 'day',
+      now,
+    });
+
+    expect(res.goalId).toBeNull();
+    expect(res.goalState).toBe('none');
+    expect(res.rows).toEqual([]);
+    expect(res.goalTitle).toBeNull();
+  });
+
+  it('есть primary-цель → goalState primary', async () => {
+    const prisma = {
+      goal: {
+        findFirst: vi.fn().mockImplementation((args: GoalFindFirstArgs) => {
+          const where = args.where ?? {};
+          if (where.isPrimary === true) return Promise.resolve({ id: 'g1' });
+          if (where.id !== undefined) {
+            return Promise.resolve({ id: 'g1', name: 'Главная', isPrimary: true });
+          }
+          return Promise.resolve(null);
+        }),
+      },
+      personGoalContribution: {
+        groupBy: vi.fn().mockResolvedValue([]),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      issueAssignee: { findMany: vi.fn().mockResolvedValue([]) },
+      person: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+
+    const svc = makeService(prisma);
+    const res = await svc.getGoalVectorByPerson({
+      tenantId: 't1',
+      period: 'day',
+      now,
+    });
+
+    expect(res.goalState).toBe('primary');
+    expect(res.goalId).toBe('g1');
+  });
+});

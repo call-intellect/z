@@ -205,14 +205,17 @@ export class ExecutionDashboardService {
 
     const goalId = await this.resolveGoalId(tenantId, args.goalId);
     if (!goalId) {
-      return { goalId: null, goalTitle: null, rows: [] };
+      return { goalId: null, goalTitle: null, rows: [], goalState: 'none' };
     }
 
     const goal = await this.prisma.goal.findFirst({
       where: { tenantId, id: goalId },
-      select: { id: true, name: true },
+      select: { id: true, name: true, isPrimary: true },
     });
     const goalTitle = goal?.name ?? null;
+    const goalState: 'primary' | 'active_fallback' | 'none' = goal?.isPrimary
+      ? 'primary'
+      : 'active_fallback';
 
     const contribSince =
       period === 'month'
@@ -270,7 +273,7 @@ export class ExecutionDashboardService {
     const personIds = new Set<string>(byPerson.keys());
     for (const p of personsByUserId.values()) personIds.add(p.id);
     if (personIds.size === 0) {
-      return { goalId, goalTitle, rows: [] };
+      return { goalId, goalTitle, rows: [], goalState };
     }
 
     const personMeta = await this.prisma.person.findMany({
@@ -332,7 +335,7 @@ export class ExecutionDashboardService {
       });
     }
 
-    return { goalId, goalTitle, rows: buildGoalVectorRows(aggregates) };
+    return { goalId, goalTitle, rows: buildGoalVectorRows(aggregates), goalState };
   }
 
   private async resolveGoalId(tenantId: string, requested?: string): Promise<string | null> {
@@ -349,7 +352,13 @@ export class ExecutionDashboardService {
       orderBy: { _sum: { netScore: 'desc' } },
       take: 1,
     });
-    return top[0]?.goalId ?? null;
+    if (top[0]?.goalId) return top[0].goalId;
+    const active = await this.prisma.goal.findFirst({
+      where: { tenantId, status: 'active' },
+      orderBy: [{ isPrimary: 'desc' }, { weight: 'desc' }, { createdAt: 'asc' }],
+      select: { id: true },
+    });
+    return active?.id ?? null;
   }
 
   async getIssueChains(args: {

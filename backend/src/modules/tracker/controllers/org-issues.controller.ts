@@ -55,7 +55,8 @@ export class OrgIssuesController {
     summary: 'Сквозной список задач всей организации (рабочий стол «Задачи»)',
     description:
       'Кросс-проектная выборка Issue с фильтрами projectId/assigneeUserId/' +
-      'stateCategory/priority/cycleId/labelId/q и пагинацией page/limit. ' +
+      'linkedMeetingId/stateCategory/priority/cycleId/labelId/q и пагинацией ' +
+      'page/limit. linkedMeetingId — задачи, связанные с конкретной встречей. ' +
       'Видимость: руководитель (owner/admin/coo) или visibilityMode=open — все ' +
       'задачи; manager+strict — только свои (assignee=self или создатель). ' +
       'Каждый item несёт stateCategory для группировки по 5 колонкам.',

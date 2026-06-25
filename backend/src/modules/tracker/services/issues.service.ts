@@ -526,6 +526,9 @@ export class IssuesService {
     if (!query.includeDeleted) where.deletedAt = null;
     if (!query.includeArchived) where.archivedAt = null;
     if (query.projectId) where.projectId = query.projectId;
+    if (query.linkedMeetingId) {
+      where.linkedMeetingIds = { has: query.linkedMeetingId };
+    }
     if (query.stateCategory) where.state = { category: query.stateCategory };
     if (query.priority) where.priority = query.priority;
     if (query.cycleId) where.cycleId = query.cycleId;

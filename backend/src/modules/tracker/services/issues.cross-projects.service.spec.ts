@@ -225,6 +225,32 @@ describe('IssuesService.findAllAcrossProjects', () => {
     expect(whereOf(findMany).projectId).toBe('p9');
   });
 
+  it('linkedMeetingId фильтр → where.linkedMeetingIds = { has }', async () => {
+    const { svc, findMany } = makeService([]);
+    await svc.findAllAcrossProjects(
+      't1',
+      'me',
+      { ...baseQuery, linkedMeetingId: 'm1' },
+      { isLeadership: true, visibility: 'open' },
+    );
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ linkedMeetingIds: { has: 'm1' } }),
+      }),
+    );
+  });
+
+  it('без linkedMeetingId where.linkedMeetingIds отсутствует', async () => {
+    const { svc, findMany } = makeService([]);
+    await svc.findAllAcrossProjects(
+      't1',
+      'me',
+      baseQuery,
+      { isLeadership: true, visibility: 'open' },
+    );
+    expect(whereOf(findMany).linkedMeetingIds).toBeUndefined();
+  });
+
   it('q + strict сосуществуют: where.OR (поиск) и where.AND (self-scope) оба присутствуют', async () => {
     const { svc, findMany } = makeService([]);
     await svc.findAllAcrossProjects(

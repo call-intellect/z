@@ -41,9 +41,10 @@ import {
 } from "@/domain/meeting";
 import { pickPrimarySummary } from "@/domain/ai-result";
 import { tagFromApi, type TagDomain } from "@/domain/tag";
-import { pickPrimaryTasks } from "@/domain/task";
 import { useIsMobile } from "@/hooks/useMediaQuery";
-import { useMeetingTasks } from "@/hooks/use-meeting-tasks";
+import { useMeetingIssues } from "@/hooks/tracker/use-meeting-issues";
+import { useAuth } from "@/contexts/auth-context";
+import { AssigneeAvatarGroup } from "@/ui/tracker";
 import {
   MEETING_STATUSES,
   MEETING_TYPES,
@@ -1026,12 +1027,13 @@ function DetailEmpty() {
 }
 
 function MeetingDetailPane({ meetingId }: { meetingId: string }) {
+  const { currentOrgId } = useAuth();
   const { data, isLoading, error } = useSWR(
     ["meeting-result-mini", meetingId],
     () => meetingsApi.result(meetingId),
     { revalidateOnFocus: false },
   );
-  const { tasks: taskRows } = useMeetingTasks(meetingId);
+  const { issues: tasks } = useMeetingIssues(currentOrgId, meetingId);
   const [inviteOpen, setInviteOpen] = useState(false);
 
   if (isLoading) {
@@ -1062,7 +1064,6 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
   const recording = data.recording;
   const aiResult = data.aiResult;
   const summary = pickPrimarySummary(aiResult)?.markdown ?? null;
-  const tasks = pickPrimaryTasks(taskRows);
 
   const durMs =
     typeof meeting.durationMs === "number"
@@ -1212,10 +1213,10 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
                     <ul className="flex flex-col">
                       {tasks.slice(0, 5).map((t) => {
                         const title = t.title || "—";
-                        const assignee = t.assignee ?? undefined;
                         const due = t.dueDate
                           ? t.dueDate.toLocaleDateString("ru-RU")
                           : undefined;
+                        const hasAssignees = t.assigneeUserIds.length > 0;
                         return (
                           <li
                             key={t.id}
@@ -1230,16 +1231,18 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
                               <div className="text-sm leading-snug text-fg-primary">
                                 {title}
                               </div>
-                              {(assignee || due) && (
+                              {(hasAssignees || due) && (
                                 <div className="mt-1 flex items-center gap-2 text-xs text-fg-tertiary">
-                                  {assignee && (
-                                    <span className="font-mono">
-                                      {assignee}
-                                    </span>
+                                  {hasAssignees && (
+                                    <AssigneeAvatarGroup
+                                      userIds={t.assigneeUserIds}
+                                      max={3}
+                                      size={18}
+                                    />
                                   )}
                                   {due && (
                                     <>
-                                      <span>·</span>
+                                      {hasAssignees && <span>·</span>}
                                       <span>до {due}</span>
                                     </>
                                   )}

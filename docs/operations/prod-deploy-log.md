@@ -71,6 +71,32 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-25 — «Единый помощник» Ф6: модель на агента через LlmTaskRoute (без правок кода)
+
+> ТЗ `plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md` (Ф6). Ветка `feature/edinyy-pomoshnik-arhitektura`.
+>
+> **Зачем:** 5 живых агентов «Единого помощника» маршрутизируются на модели из ТЗ §5 — без изменений app-кода, только строки `LlmTaskRoute`. Сид авторитетный (re-point существующих `concierge-respond`/`chat-v2`, заведённых другими сидами), но НИКОГДА не трогает записи с `editedByAdmin=true`.
+>
+> **🟢 НОВЫХ ENV НЕТ · НОВЫХ МИГРАЦИЙ НЕТ · ИЗМЕНЕНИЙ APP-КОДА НЕТ.** 1 новый seed (зарегистрирован в STEPS `phase:'seed-llm-routes'`) + 1 новый диаг-скрипт (read-only). Docker rebuild backend (доставить скрипты).
+>
+> | агент | taskType | primary |
+> |---|---|---|
+> | Мастер (диспетч+действия+render) | `concierge-respond` | `openai-via-proxy` / `gpt-5.4-mini` |
+> | Понимание запроса | `dialog-understand` | `deepseek` / `deepseek-v4-pro` |
+> | Переранжировщик | `rag-rerank` | `deepseek` / `deepseek-v4-flash` |
+> | Синтез ответа | `chat-v2` | `deepseek` / `deepseek-v4-pro` |
+> | Контролёр заземления | `rag-groundedness` | `deepseek` / `deepseek-v4-flash` |
+
+- **Шаг 7 — Seed (идемпотентный, авторитетный upsert, УЖЕ в STEPS `phase:'seed-llm-routes'`):** `docker compose exec backend bun run scripts/seed-llm-task-routes-edinyy-pomoshnik.ts` — маршруты 5 агентов «Единого помощника» (см. таблицу выше + fallback-цепочки secondary/tertiary). Авторитетный: для не-`editedByAdmin` записей создаёт/обновляет `model`/`priority`/`isActive`; `editedByAdmin=true` записи пропускает (защита ручных правок из admin UI). Также прогоняется агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Это once-step (sha256 содержимого) — правка сида ⇒ повторный прогон автоматически.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend` (доставить новые `scripts/*`; правок app-кода нет — `frontend` не нужен).
+- **Шаг 12 — Smoke** (после выката):
+  - `docker compose exec backend bun run scripts/diag-llm-routes.ts` — показывает ожидаемые primary по 5 taskType (`concierge-respond`→`openai-via-proxy:gpt-5.4-mini`, `dialog-understand`→`deepseek:deepseek-v4-pro`, `rag-rerank`→`deepseek:deepseek-v4-flash`, `chat-v2`→`deepseek:deepseek-v4-pro`, `rag-groundedness`→`deepseek:deepseek-v4-flash`). Флаг `--json` — машинный вывод. Read-only, в БД ничего не пишет.
+  - Записи с `[правка-админа]` в выводе сида НЕ перезаписаны (если admin что-то правил вручную).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-25 — Разведение «задача ↔ решение» в извлечении (пороги в крутилки + cosine-гейт дедупа)
 
 > ТЗ `plans/tz/2026-06-25-task-decision-disambiguation.md` (Ф1–Ф7). Ветка `feature/task-decision-disambiguation`.

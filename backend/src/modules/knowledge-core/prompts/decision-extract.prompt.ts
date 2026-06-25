@@ -22,6 +22,10 @@ import {
 } from '../../ai/services/prompts/common';
 
 import { signalTypeLabel } from './signal-type-label';
+import {
+  TASK_VS_DECISION_RULE,
+  renderExamplesForDecisionExtractor,
+} from './task-decision-examples';
 
 export const DECISION_EXTRACT_SYSTEM_PROMPT = withAsrNote(
   withEdgeCasePolicy(
@@ -51,6 +55,10 @@ export const DECISION_EXTRACT_SYSTEM_PROMPT = withAsrNote(
     '# Чистый русский на выходе',
     'Все человеческие строки (statement, rationale, имена, названия сущностей) — на чистом русском, без кодов, латиницы и служебных идентификаторов. Технические поля (status, тип сущности) ты выбираешь из допустимых значений — но в человеческий текст эти коды-слова не вставляй.',
     '',
+    TASK_VS_DECISION_RULE,
+    '',
+    renderExamplesForDecisionExtractor(),
+    '',
     '# Примеры (плохо → хорошо)',
     'Положительный (что извлечь):',
     'Блок «Поставщик SMS» (принятое решение). Цитаты: «Иван: смотрели Twilio и SMS Aero. Маша: Twilio дорогой в России, SMS Aero справился с тестом доставки в 99%. Сергей: окей, идём с SMS Aero, договор на квартал».',
@@ -65,6 +73,7 @@ export const DECISION_EXTRACT_SYSTEM_PROMPT = withAsrNote(
     'Вывод: {"isDecision": false, "statement": "недостаточно сигнала для извлечения решения", "rationale": null, "alternatives": [], "decidedByPersonHints": [], "affectsEntityHints": [], "decidedAt": null, "deadline": null, "status": "proposed", "confidence": 0.2}. «Хорошо бы когда-нибудь» — пожелание, не решение; ответственного и срока нет → низкий confidence.',
     '',
     '# Перед тем как вернуть ответ — самопроверка',
+    '0. Это не постановка задачи / поручение / взятие задачи (в т.ч. со словом «задача»)? Если кому-то поручают сделать действие — isDecision=false.',
     '1. isDecision=true стоит только при реально ПРИНЯТОМ выборе, а не пожелании/вопросе/обсуждении?',
     '2. rationale вытащен (главная ценность), если он есть в блоке или контексте?',
     '3. status соответствует блоку (approved по умолчанию; иное — только если явно сказано)?',

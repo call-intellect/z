@@ -592,6 +592,26 @@ BEGIN
 END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- drop-legacy-task-unify-issue (2026-06-25) — GIN на Issue.linkedMeetingIds.
+--   Фильтры `has`/`hasSome` (массив встреч задачи) без GIN деградируют в seq scan.
+--   Нужен для дедупа meeting-Issue (пересечение linkedMeetingIds) и drill-down
+--   «какие задачи привязаны к этой встрече».
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'Issue'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "Issue_linkedMeetingIds_gin_idx"
+      ON "Issue" USING gin ("linkedMeetingIds")
+    $sql$;
+  END IF;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- β-9 (2026-05-25) — глобальный Telegram-бот.
 --   Один глобальный канал per kind (запись с tenantId IS NULL).
 --   Postgres трактует NULL != NULL, поэтому обычный @@unique([tenantId, kind])

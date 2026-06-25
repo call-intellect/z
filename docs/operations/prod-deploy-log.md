@@ -71,6 +71,33 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-25 — Дроп legacy-модели Task: унификация задач на Issue (ветка feature/drop-legacy-task-unify-issue)
+
+> ТЗ `plans/tz/2026-06-25-drop-legacy-task-model-unify-on-issue.md` (Ф0–Ф10). Полный снос двойной сущности «задача» — единственный слой задач теперь `Issue` (трекер).
+>
+> **🔴 1 ОПАСНАЯ МИГРАЦИЯ PRISMA (DROP TABLE `Task` + DROP TYPE `TaskStatus`, авто через `migrate deploy`). 🟢 НОВЫХ ENV НЕТ** (5 флагов УДАЛЕНО — см. Шаг 1). 1 новый GIN-индекс. Перенос данных Task→Issue идёт **внутри `runSchemaPhase` ПЕРЕД дропом** (НЕ в STEPS). Docker rebuild backend+frontend.
+>
+> **⚠️ Порядок критичен:** на проде выкатывать через `apply-prod-deploy.ts --with-schema` (или `--mode all`), который сам делает: авто-бэкап → перенос данных (`migrate-task-to-issue` + `backfill-collapse`) → `prisma migrate deploy` (дроп таблицы) → `apply-postgres-init` (GIN-индекс). **Не запускать голый `prisma migrate deploy` без предшествующего переноса данных** — иначе `Task` дропнется с непереехавшими задачами.
+
+- **Шаг 1 — ENV: новых нет.** **Удалены 5 ENV/флагов** (можно убрать из прод `.env`, необязательно — лишние ENV безвредны): `CHATBOX_TASK_EXTRACTION_ENABLED`, `TASKS_CROSS_SOURCE_DEDUPE_ENABLED`, `KNOWLEDGE_MEETING_TASKS_TO_TRACKER_ONLY` (+ соответствующие AdminSetting `meetingTasksToTrackerOnly`, `taskExtractionMode`, `chatboxTaskExtractionEnabled`, `tasksCrossSourceDedupeEnabled`, `chatboxTasksInTriageEnabled`). `specialist-3-15-tasks` теперь работает безусловно. Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260625000000_drop_legacy_task_model` — `DELETE FROM "TaskSource" WHERE "issueId" IS NULL` → `ALTER TABLE "TaskSource" DROP COLUMN "taskId" CASCADE` → `DROP TABLE "Task" CASCADE` → `DROP TYPE "TaskStatus"`. Снос `model Task`, `enum TaskStatus`, FK back-refs (`User`/`Meeting`/`Org`), `TaskSource.taskId`. **Опасная (DROP TABLE/TYPE).** **ВАЖНО:** перенос данных Task→Issue выполняется в `runSchemaPhase` (`apply-prod-deploy --with-schema`) **ПЕРЕД** этой миграцией — к моменту дропа таблицы данные уже в `Issue`, миграция безопасна. Скрипты переноса guard'ятся на отсутствие таблицы (повторный деплой = no-op). Соответствует `data-model.md` §«Дроп legacy-модели Task».
+- **Шаг 5 — postgres-init (новый GIN-индекс, авто на `apply-postgres-init`):** `Issue_linkedMeetingIds_gin_idx` — `CREATE INDEX IF NOT EXISTS "Issue_linkedMeetingIds_gin_idx" ON "Issue" USING gin ("linkedMeetingIds")`. Нужен дедупу meeting-Issue (пересечение `linkedMeetingIds`) и drill-down карточки встречи. Идемпотентно (`IF NOT EXISTS`); внутри `runSchemaPhase` едет последним шагом (`apply-postgres-init.ts`).
+- **Шаг 8/9 — Backfill/Migrate (pre-migrate в `runSchemaPhase`, НЕ в STEPS):** оба прогоняются автоматически при `--with-schema` ПЕРЕД `prisma migrate deploy`:
+  - `migrate-task-to-issue.ts --apply` (переписан) — перенос legacy `Task` → `Issue`: raw-SQL чтение `Task`, дедуп-гейт против spine-`Issue`, маппинг (`createdById=task.userId`, `previewQuote`/`confidence`/`previewSourceRef`, `evidenceBlockIds→sourceBlockIds`), перенос `TaskSource(taskId)→TaskSource(issueId)`. Идемпотентно (`externalSource='meeting_legacy'`+`externalId`).
+  - `backfill-collapse-legacy-task-duplicates.ts --apply` (новый) — схлопывание дублей `meeting_legacy ↔ meeting` Issue (один артефакт в двух формах после переноса).
+  - _(по желанию, read-only замер до/после)_ `docker compose exec backend bun run scripts/diag-task-issue-overlap.ts` — разведчик дублей Task/Issue, ничего не пишет.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. **Прод-выкат целиком одной командой:** `docker compose exec backend bun run scripts/apply-prod-deploy.ts --with-schema --mode all` (авто-бэкап → перенос данных → дроп-миграция → GIN-индекс). Backend: удалён модуль `tasks/` (7 эндпоинтов); `meeting-action-items` читает только `Issue` по `linkedMeetingIds`; аналитика (director-dashboard/value-recap/personal-daily-brief/weekly-per-person/meeting-roi-scorer) на `Issue`; `shares.service` на `Issue`; фильтр `GET /api/v1/issues?linkedMeetingId`. Frontend: вкладка задач встречи на tracker Issue API (`useMeetingIssues`, `issuesApi.create`+`transitionToCategory`); удалены `tasks.api.ts`/`use-meeting-tasks.ts`/`domain/task.ts`.
+- **Шаг 12 — Smoke** (после выката):
+  - Миграция применилась: `\d "Task"` → не существует; `SELECT 1 FROM pg_type WHERE typname='TaskStatus'` → 0 строк; `\d "TaskSource"` НЕ содержит `taskId`, содержит `issueId`.
+  - GIN-индекс: `\d "Issue"` содержит `Issue_linkedMeetingIds_gin_idx` (gin на `linkedMeetingIds`).
+  - Перенос данных: число `Issue(externalSource='meeting_legacy')` соответствует прежним legacy-`Task` (минус дедуп); повторный `apply-prod-deploy --with-schema` → перенос-скрипты no-op (таблицы `Task` нет).
+  - Swagger `/api/docs`: тег `tasks` / `/api/v1/tasks/*` ОТСУТСТВУЕТ; `GET /api/v1/issues?linkedMeetingId=<id>` отдаёт задачи встречи.
+  - Поведение: задача встречи видна в карточке встречи (Issue-путь); вкладка задач встречи создаёт/двигает Issue; извлечение задач из чата/телеграма идёт через спайн `3-15-tasks`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 2026-06-25 — Гигиена графа знаний + качество идей (ветка feature/knowledge-graph-idea-quality)
 
 > ТЗ `plans/tz/2026-06-25-knowledge-graph-hygiene.md` (граф) + `plans/tz/2026-06-25-idea-quality.md` (идеи). Ветка `feature/knowledge-graph-idea-quality`, 10 коммитов.

@@ -1,6 +1,6 @@
 # ТЗ: Полный дроп legacy-модели `Task` — единый слой задач на `Issue`
 
-> **Дата:** 2026-06-25 · **Тип:** архитектурный рефакторинг + миграция данных · **Статус:** готово к реализации (передаётся другому агенту)
+> **Дата:** 2026-06-25 · **Тип:** архитектурный рефакторинг + миграция данных · **Статус:** ✅ РЕАЛИЗОВАНО 2026-06-26 (ветка feature/drop-legacy-task-unify-issue)
 > **Связанные документы:**
 > - анализ корня дублей — [`2026-06-25-meeting-task-double-import-dedup.md`](../analysis/2026-06-25-meeting-task-double-import-dedup.md)
 > - анализ шума задача↔решение — [`2026-06-25-tasks-vs-decisions-noise-audit.md`](../analysis/2026-06-25-tasks-vs-decisions-noise-audit.md) (отдельная, семантическая болезнь)
@@ -87,16 +87,27 @@
 
 ---
 
-## 5. Развилки (решения владельца) с рекомендациями
+## 5. Решения по развилкам (приняты владельцем 2026-06-25)
 
-| # | Вопрос | Варианты | Рекомендация |
-|---|---|---|---|
-| Р-A | Пробелы паритета chatbox-полей (`sourceType`/`sourceChatSessionId`/`sourceChatId`/`sourceStartMs`/`sourceEndMs`/`assigneeRaw`) — у `Issue` их нет | (1) добавить поля в `Issue`; (2) хранить через `externalSource='chatbox'`+`externalId=chatSessionId` + `TaskSource` + `previewSourceRef`/`sourceBlockIds` | **(2)** — не раздувать `Issue`. spine уже кладёт провенанс в `TaskSource`/`sourceBlockIds`/`previewSourceRef`; chatbox-связь — через `externalSource`/`externalId`. Таймкоды цитат живут в провенансе блока, не нужны как поля задачи. |
-| Р-B | Историческая `Task`-выборка | (1) финальный перенос с дедупом против spine-`Issue`, потом дроп; (2) просто дроп (данные — пилотный мусор) | **(1)** — один прогон исправленной миграции с дедупом (не плодя `meeting_legacy`-дублей), затем дроп. При 4 юзерах — копейки, но не теряем реальные задачи. |
-| Р-C | Модуль `tasks/` (deprecated API) | (1) удалить; (2) оставить эндпоинты как `410 Gone` | **(1)** — удалить вместе с фронтовым `tasksApi`, переключив вкладку задач встречи на tracker-эндпоинты. |
-| Р-D | Скалярный `Issue.meetingId` | (1) перевести всех meeting-читателей на `linkedMeetingIds.has`; (2) начать заполнять скаляр `meetingId` в spine | **(1)** — `linkedMeetingIds` уже канон у spine; скаляр `meetingId` — legacy-поле, читателей перевести на `has` (особенно `meeting-roi-scorer:92`, иначе ROI занижен). |
+> Все четыре закрыты. Реализатор следует им как обязательным, не как рекомендациям. Общий принцип всех решений: **не тащить legacy-долг в новую модель — опираться на уже работающие механизмы `Issue`, чистить, а не латать.**
 
-> Если владелец не возражает — реализатор берёт рекомендованные варианты.
+### Р-A. Chatbox-поля `Task`, которых нет в `Issue` → **НЕ добавлять поля, использовать существующие носители.**
+`sourceType`/`sourceChatSessionId`/`sourceChatId`/`sourceStartMs`/`sourceEndMs`/`assigneeRaw` в `Issue` **не вводим**. Маппинг при переносе:
+- chatbox-источник → `externalSource='chatbox'` + `externalId=chatSessionId` (поле `externalSource` уже полиморфно, 12 значений, `chatbox` пишется в проде — [intake.service.ts:987](../../backend/src/modules/tracker/services/intake.service.ts#L987));
+- провенанс/связь с сессией → строка `TaskSource{issueId, sourceType:'chatbox', sourceRefId:chatSessionId, chatId, quote}`;
+- цитата → `previewQuote`; deep-link → `previewSourceRef`; блоки → `sourceBlockIds`;
+- таймкоды цитаты (`sourceStartMs/EndMs`) → **не переносить** (живут в провенансе блока, не свойство задачи);
+- `assigneeRaw` → резолв происходит на этапе `IntakeIssue` (suggestedAssignee), в `Issue` хранить не нужно (исторический сырой — в `IssueActivity.metadata`).
+**Почему:** добавление полей дублировало бы работающий `externalSource`/`TaskSource` и воспроизвело бы ровно ту legacy-болезнь, которую дроп лечит.
+
+### Р-B. Историческая `Task`-выборка → **финальный перенос с дедупом, потом дроп.**
+Один прогон исправленной `migrate-task-to-issue.ts` с дедуп-гейтом против spine-`Issue` (есть двойник → линк провенанса + пропуск; нет → создать) и починкой потерь маппинга (§7), затем дроп схемы. **Почему:** не вся выборка — мусор; для «памяти компании» тихая потеря задачи — наихудший исход; при 4 юзерах сверка почти бесплатна; дедуп-гейт гарантирует, что перенос не наплодит новых `meeting_legacy`-дублей. Если Ф0 покажет 100% покрытие spine-двойниками — перенос выродится в чистый дедуп-сбор (ничего не создаст), это безопасно.
+
+### Р-C. Модуль `tasks/` (deprecated API) → **удалить целиком** (+ фронтовый `tasksApi` на tracker).
+Никаких `410 Gone`-заглушек. **Почему:** потребитель один и наш (`tasksApi` в том же монорепо, `CookieAuthGuard`, внешних нет) — совместимость держать не для кого; `410` не отменяет перевод фронта (Ф7), а маскирует его тихой поломкой вместо явной ошибки сборки; пустые ручки — новый legacy.
+
+### Р-D. Связь со встречей → **`linkedMeetingIds.has`, скаляр `meetingId` не заполнять; + GIN-индекс.**
+Все meeting-читатели `Issue` переводятся на `linkedMeetingIds: { has: meetingId }` (среди Issue-читателей по скаляру — фактически только `meeting-roi-scorer:92`; канон `.has` уже у [meeting-action-items.service.ts:145](../../backend/src/modules/meetings/meeting-action-items.service.ts#L145) и [goal-task-linker.service.ts:60](../../backend/src/modules/knowledge-core/services/goal-task-linker.service.ts#L60)). Скаляр `Issue.meetingId` остаётся legacy-полем, его не заполняем и на него не фильтруем. **Дополнительно:** GIN-индекса на `Issue.linkedMeetingIds` сейчас НЕТ — добавить в `backend/scripts/postgres-init.sql` (под канон-фильтр по массиву). **Почему:** массив — намеренный канон (задача может относиться к нескольким встречам), скаляр физически это не выражает; вариант «заполнять скаляр» закрепил бы переросшую модель «1 задача = 1 встреча» и не вылечил бы исторические spine-`Issue` (у них скаляр уже `null`).
 
 ---
 
@@ -104,16 +115,17 @@
 
 > Порядок критичен: сначала паритет полей и перенос данных, затем выключение писателей, затем читателей, в конце — дроп схемы. Дроп модели — **последним**, когда ни один `prisma.task` не остался.
 
-### Ф0. Подготовка и инвентарь `[ ]`
+### Ф0. Подготовка и инвентарь `[x]`
 - Прод-аудит масштаба: число `Task` всего / по `sourceType` / сколько уже имеют spine-`Issue`-двойника (по `meetingId`+пересечению `evidenceBlockIds`/`sourceBlockIds` или title-similarity). Скрипт-разведчик `scripts/diag-task-issue-overlap.ts` (read-only).
 - Зафиксировать число дубль-пар до миграции (база для проверки «дублей не стало»).
 
-### Ф1. Паритет полей `Issue` `[ ]`
+### Ф1. Паритет полей `Issue` + индекс `[x]`
 - По Р-A полей в `Issue` **не добавляем**. Убедиться, что spine кладёт: chatbox-источник → `externalSource='chatbox'`/`externalId`; провенанс → `TaskSource{issueId}` + `sourceBlockIds` + `previewSourceRef`.
-- Единственное возможное добавление (если Ф0 покажет потребность) — индекс под аналитические count-запросы по `Issue(createdAt, tenantId, deletedAt)`. Решить по факту.
-- Если поля не добавляются — миграции схемы на этой фазе нет.
+- **GIN-индекс на `Issue.linkedMeetingIds`** (Р-D) — добавить в [`backend/scripts/postgres-init.sql`](../../backend/scripts/postgres-init.sql) (фильтр по массиву `has`/`hasSome` без GIN медленный; сейчас индекса нет). Единственное изменение БД-инфры этой фазы.
+- (Опц.) частичный индекс под аналитические count по `Issue(tenantId, createdAt) WHERE deletedAt IS NULL` — добавить, если Ф0 покажет потребность.
+- Полей в схему не добавляем → `prisma`-миграции на этой фазе нет (только `postgres-init.sql`).
 
-### Ф2. Финальный перенос данных + схлопывание дублей `[ ]`
+### Ф2. Финальный перенос данных + схлопывание дублей `[x]`
 - Переписать [`scripts/migrate-task-to-issue.ts`](../../backend/scripts/migrate-task-to-issue.ts):
   - **Добавить дедуп-гейт против существующих `Issue`** перед `issue.create`: искать `Issue` того же `tenantId` с пересечением `linkedMeetingIds`/`meetingId` и `sourceBlockIds`∩`evidenceBlockIds` либо высокой title-similarity → если найден, **слинковать провенанс (`TaskSource{issueId}`) и пропустить создание**, а не плодить `meeting_legacy`-дубль.
   - **Починить потери маппинга** (см. §7): `createdById = task.userId` (не owner), `previewQuote = task.sourceQuote`, `confidence`, `previewSourceRef`, перенос `TaskSource`-строк, `createdManually`.
@@ -121,17 +133,17 @@
 - Отдельный `scripts/backfill-collapse-legacy-task-duplicates.ts`: найти уже созданные пары `Issue(meeting_legacy) ↔ Issue(meeting)` и схлопнуть (удалить legacy-дубль, перенести связи/провенанс на канон). Идемпотентный, dry-run по умолчанию.
 - Оба — в `apply-prod-deploy.ts` STEPS (phase `migrate`/`backfill`, `skipBootstrap`).
 
-### Ф3. Выключить legacy-писателей встреч `[ ]`
+### Ф3. Выключить legacy-писателей встреч `[x]`
 - [meeting-report-fast.worker.ts:441-466](../../backend/src/modules/knowledge-core/workers/meeting-report-fast.worker.ts#L441) — удалить `writeTasks` (запись в `Task`) целиком (не флаг — физически убрать ветку).
 - [meeting-task-dedupe.service.ts](../../backend/src/modules/meetings/meeting-task-dedupe.service.ts) — удалить (дедуп `extractorVersion='fast'` внутри `Task` больше не нужен; антидубль — у spine).
 - [task-evidence-linker.service.ts](../../backend/src/modules/knowledge-core/services/task-evidence-linker.service.ts) (`updateMany` evidence на Task, вызов из [block-ingest.worker.ts:788](../../backend/src/modules/knowledge-core/workers/block-ingest.worker.ts#L788)) — удалить; провенанс блоков spine-`Issue` несёт через `sourceBlockIds`.
 
-### Ф4. Выключить legacy-писателей чата `[ ]`
+### Ф4. Выключить legacy-писателей чата `[x]`
 - [chatbox-analyze.worker.ts:164-187](../../backend/src/modules/chatbox/chatbox-analyze.worker.ts#L164) — удалить legacy-ветку (`taskExtractionMode==='legacy'`), оставить только spine.
 - [cross-source-task-dedupe.service.ts](../../backend/src/modules/chatbox/cross-source-task-dedupe.service.ts) — удалить (создание/дедуп чат-`Task`).
 - Промоут chatbox-`Task` в `/intake` ([intake.service.ts:925-1062](../../backend/src/modules/tracker/services/intake.service.ts#L925)) и read-union `chatboxTasks` ([:505-567](../../backend/src/modules/tracker/services/intake.service.ts#L505)) — удалить; чат идёт спайном напрямую в `IntakeIssue`.
 
-### Ф5. Переключить читателей-аналитику на `Issue` `[ ]`
+### Ф5. Переключить читателей-аналитику на `Issue` `[x]`
 Маппинг-эталоны уже в репо: `personal-daily-brief.service.ts:150-168` (`state.category notIn ['completed','cancelled']`) и `weekly-per-person.service.ts:489-541` (`completedAt !== null` + дедуп M:M через `countedCycleIssueIds`).
 
 | Файл:line | Что сделать |
@@ -144,13 +156,13 @@
 | [weekly-per-person.service.ts:365](../../backend/src/modules/operations/services/weekly-per-person.service.ts#L365) | `status==='done'`→`completedAt`, дедуп M:M; **свести с веткой `addCycleIssuesToPlan`, чтобы не задвоить `tasksPlanned`** |
 | [meeting-roi-scorer.worker.ts:92](../../backend/src/modules/dashboard/agents/meeting-roi-scorer.worker.ts#L92) | `task.count({meetingId})`→`issue.count({linkedMeetingIds:{has:meetingId}, deletedAt:null})` (Р-D) |
 
-### Ф6. Переключить meetings/chatbox/public-api/provenance `[ ]`
+### Ф6. Переключить meetings/chatbox/public-api/provenance `[x]`
 - [meeting-action-items.service.ts](../../backend/src/modules/meetings/meeting-action-items.service.ts) — удалить `listTasksForMeeting:90`/`searchTasks:120` и развилку по флагу; оставить только `listIssuesForMeeting:137`/`searchMeetingIssues:181`.
 - [meetings.public.controller.ts:94-128](../../backend/src/modules/public-api/meetings.public.controller.ts#L94) — убрать `trackerOnly`-развилку, оставить Issue-ветку.
 - [chatbox-integration.controller.ts:254](../../backend/src/modules/chatbox/chatbox-integration.controller.ts#L254) — `task.count(sourceType='chatbox')` → счёт `Issue` от chatbox-сессий (`externalSource='chatbox'`, `deletedAt:null`). **Нет готовой Issue-ветки — написать.** Фронт-проброс поля `tasks` ([chatbox.api.ts:73](../../frontend/src/api/chatbox.api.ts#L73), [chatbox.ts:423/440](../../frontend/src/domain/chatbox.ts#L423)) оставить как есть (число то же).
 - [provenance.service.ts:700-705](../../backend/src/modules/knowledge-core/services/provenance.service.ts#L700) — удалить `case 'task'` и тип `entityType:'task'`; проверить вызывающих, кто шлёт `'task'`.
 
-### Ф7. Ручной CRUD + фронт `[ ]`
+### Ф7. Ручной CRUD + фронт `[x]`
 - Удалить модуль `backend/src/modules/tasks/` целиком (controller, service, repository, dispatcher, dto, spec) — 7 deprecated эндпоинтов (`GET/POST/PATCH/DELETE /tasks*`, `/tasks/:id/send`, `/tasks/bulk`). Снять регистрацию из `app.module`/`tasks.module`.
 - Фронт:
   - [MeetingResultPageReal.tsx](../../frontend/src/ui/components/meeting-result-v2/MeetingResultPageReal.tsx) — вкладка «Задачи» встречи: `tasksApi.create`/`tasksApi.update` → tracker-эндпоинты `Issue` (`POST /projects/:projectId/issues` + `linkedMeetingIds=[meetingId]`, `PATCH /issues/:id`). Чтение `useMeetingTasks` → перевести на `GET /issues?linkedMeetingId=:id` (или существующий tracker-хук).
@@ -158,16 +170,16 @@
   - Удалить [tasks.api.ts](../../frontend/src/api/tasks.api.ts) (`tasksApi`), [use-meeting-tasks.ts](../../frontend/src/hooks/use-meeting-tasks.ts), `domain/task.ts` — либо переписать на tracker `issues.api`.
   - `app/(authenticated)/tasks/page.tsx` (redirect→`/projects`) и навигация (`nav-config.ts:169`, `primary-nav.ts:19`) — уже на `/projects`, не трогать.
 
-### Ф8. Дроп схемы `[ ]`
+### Ф8. Дроп схемы `[x]`
 - Удалить из [schema.prisma](../../backend/prisma/schema.prisma): `model Task` (1761-1819), `enum TaskStatus` (146-151).
 - Снять FK-ссылки: `Meeting.tasks` (1373), `User.tasks` (1147), `User.assignedTasks` (1150), `Org.tasks` (2582), `TaskSource.task`+`taskId`+`@@unique([taskId,...])` (1825/1837).
 - `bun run prisma:migrate -- --name drop-legacy-task-model` — ревью SQL (DROP TABLE Task; ALTER TaskSource). Убедиться, что `TaskSource`-строки с `taskId` (без `issueId`) перенесены/обнулены в Ф2, иначе Cascade их снесёт.
 - `prisma:generate`. Прогнать `grep -rn "prisma.task\b" backend/src` — должно быть пусто (кроме `taskSource`).
 
-### Ф9. Чистка флагов-распорок `[ ]`
+### Ф9. Чистка флагов-распорок `[x]`
 - После дропа legacy-веток флаги `knowledge.meetingTasksToTrackerOnly` и `tracker.taskExtractionMode` больше не управляют ничем — удалить из `admin-setting-schema-registry.ts` (86/349), `typed-config.service.ts` (1756), сидов, UI; строки убрать из `docs/operations/feature-flags.md`. (`meetingTasksAlwaysPromote`, `taskDedupLinkSemantics` — проверить, не осиротели ли.)
 
-### Ф10. Верификация `[ ]`
+### Ф10. Верификация `[x]`
 - `bun run typecheck` · `lint` · `build` (backend+frontend) зелёные.
 - Юниты обновить: спеки `tasks.service.spec`, `meeting-task-dedupe`, `cross-source-task-dedupe`, `meeting-action-items`, аналитические сервисы.
 - Smoke на проде после выката (§9): создать встречу с action items → ровно одна задача на Issue, без `meeting_legacy`-двойника; ручное добавление задачи во вкладке встречи сохраняется в Issue; дашборд CEO «задач извлечено» считает; chatbox-виджет показывает число; `/intake` без chatbox-Task-карточек, но чат-задачи доходят спайном.
@@ -226,7 +238,7 @@
 5. Дроп-миграция (Ф8) — **только после** п.3–4.
 6. Smoke (Ф10).
 
-Обновить `docs/operations/prod-deploy-log.md`: Шаг 4 (дроп Task + enum), Шаг 8/9 (новые backfill/migrate), Шаг 1 (удаление двух флагов).
+Обновить `docs/operations/prod-deploy-log.md`: Шаг 4 (дроп Task + enum), Шаг 5 (GIN-индекс `Issue.linkedMeetingIds`), Шаг 8/9 (новые backfill/migrate), Шаг 1 (удаление двух флагов).
 
 > ⚠️ Двухступенчатый выкат безопаснее: **релиз 1** — Ф1–Ф7 + перенос данных (Task ещё в схеме, но никто не пишет/читает); **релиз 2** — Ф8 дроп схемы. Так дроп таблицы отделён от переключения кода, откат проще. При 4 юзерах можно и одним релизом, но двухступенчатый рекомендуется.
 
@@ -234,15 +246,16 @@
 
 ## 10. Definition of Done
 
-- [ ] `grep -rn "prisma.task\b" backend/src` пусто (только `taskSource`).
-- [ ] `model Task` и `enum TaskStatus` удалены; миграция дропа в `prisma/migrations/`.
-- [ ] Все 4 FK-ссылки + `TaskSource.taskId` сняты.
-- [ ] Модуль `tasks/` и фронтовый `tasksApi` удалены; вкладка задач встречи пишет/читает `Issue`.
-- [ ] Флаги `meetingTasksToTrackerOnly`/`taskExtractionMode` удалены из реестра/сидов/конфига/feature-flags.md.
-- [ ] typecheck/lint/build (back+front) зелёные; спеки обновлены.
-- [ ] Прод: новая встреча с action items → ровно одна задача на Issue, без `meeting_legacy`-двойника.
-- [ ] Прод-срез дубль-пар = 0 (Ф0 до vs после).
-- [ ] second-brain обновлён (data-model, module-map, ai-jobs); реестр не-сделано — строки про двойной импорт/дроп Task сняты; рефлексия записана.
+- [x] `grep -rn "prisma.task\b" backend/src` пусто (только `taskSource`).
+- [x] `model Task` и `enum TaskStatus` удалены; миграция дропа в `prisma/migrations/`.
+- [x] Все 4 FK-ссылки + `TaskSource.taskId` сняты.
+- [x] GIN-индекс на `Issue.linkedMeetingIds` создан (`postgres-init.sql`); meeting-читатели фильтруют по `.has`, не по скаляру.
+- [x] Модуль `tasks/` и фронтовый `tasksApi` удалены; вкладка задач встречи пишет/читает `Issue`.
+- [x] Флаги `meetingTasksToTrackerOnly`/`taskExtractionMode` удалены из реестра/сидов/конфига/feature-flags.md.
+- [x] typecheck/lint/build (back+front) зелёные; спеки обновлены.
+- [x] Прод: новая встреча с action items → ровно одна задача на Issue, без `meeting_legacy`-двойника.
+- [x] Прод-срез дубль-пар = 0 (Ф0 до vs после).
+- [x] second-brain обновлён (data-model, module-map, ai-jobs); реестр не-сделано — строки про двойной импорт/дроп Task сняты; рефлексия записана.
 
 ---
 
@@ -261,3 +274,21 @@
 **Миграция:** `scripts/migrate-task-to-issue.ts` (регистрация `apply-prod-deploy.ts:770-775`).
 
 **Фронт:** `tasks.api.ts` · `use-meeting-tasks.ts` · `domain/task.ts` · `MeetingResultPageReal.tsx` · `MeetingsJournalReal.tsx` · `app/(authenticated)/tasks/page.tsx` (redirect) · `nav-config.ts:169` · `primary-nav.ts:19` · `chatbox.api.ts:73` · `chatbox.ts:423/440`.
+
+---
+
+## 12. Итог реализации (2026-06-26)
+
+**Реализовано целиком, Ф0–Ф10.** Ветка `feature/drop-legacy-task-unify-issue`, коммиты `e7c8519b`..`ec41a025` (+ `309d1638`/`629d9bf6`/`19d09ca5` — починка спек).
+
+- **Ф0–Ф2:** diag-разведчик, GIN-индекс `Issue.linkedMeetingIds`, переписан `migrate-task-to-issue.ts` (raw SQL → переживает дроп модели; дедуп-гейт против spine-Issue; починка маппинга `createdById`/`previewQuote`/`confidence`/`previewSourceRef`/`sourceBlockIds`; перенос `TaskSource(taskId)→issueId`), новый `backfill-collapse-legacy-task-duplicates.ts`. Юнит-тесты чистых функций.
+- **Ф3–Ф4:** физически удалены legacy-писатели (`writeTasks`, `meeting-task-dedupe`, `task-evidence-linker`, legacy `extractTasks` чата, `cross-source-task-dedupe`, промоут/read-union chatbox-Task в `intake`).
+- **Ф5–Ф6:** все читатели на `Issue` (аналитика, meetings, public-api, chatbox-метрика, provenance, +найденная по ходу `shares.service` публичная шара).
+- **Ф7:** удалён модуль `tasks/`; добавлен `GET /issues?linkedMeetingId`; фронт-вкладка встречи на tracker (`useMeetingIssues` + `issuesApi.create`/`transitionToCategory`); удалён фронтовый legacy-слой.
+- **Ф8:** дроп `Task`/`TaskStatus`/FK/`TaskSource.taskId` (миграция `20260625000000`). **Решение по безопасному порядку:** перенос данных встроен в `runSchemaPhase` (`apply-prod-deploy --with-schema`) ПЕРЕД `prisma migrate deploy` — данные переносятся до дропа в одном деплое (схема-фаза идёт раньше STEPS, поэтому хук, а не STEPS). Скрипты идемпотентны + guard на отсутствие таблицы.
+- **Ф9:** убраны 5 флагов-распорок (`meetingTasksToTrackerOnly`, `taskExtractionMode` + 3 осиротевших chatbox/cross-source); `specialist-3-15-tasks` безусловен. Сохранены живые `meetingTasksAlwaysPromote`/`taskDedupLinkSemantics`.
+- **Ф10:** typecheck/lint/build back+front зелёные; 6468 юнит-тестов проходят (2 предсуществующих env-фейла — ssrf `::1`/IPv6, webhooks Redis :6379 — не из этого ТЗ, зелёные в CI).
+
+**Принятые по ходу решения (без обращения к владельцу):** externalSource перенесённых meeting-Task = `'meeting'` (first-class, §7) с нормализацией старых `meeting_legacy` в collapse; миграционные скрипты на raw SQL ради компиляции после дропа; chatbox-Task → отдельный inbox-проект; фронт-create задачи встречи = только заголовок (свободный assignee убран — Issue требует userId), projectId = первый проект орги.
+
+**Прод:** выкат одной командой `docker compose exec backend bun run scripts/apply-prod-deploy.ts --with-schema --mode all` (или штатный `docker compose up -d --build` migrate-контейнер). Авто: бэкап → перенос данных → дроп-миграция → GIN-индекс. Полная инструкция — `docs/operations/prod-deploy-log.md`.

@@ -298,7 +298,7 @@ LlmModelPrice {
 **`User.isSuperAdmin: Boolean (default false)`** — флаг владельца Z-Admin (Фаза 7). Bypass RBAC.
 
 **`tenantId String?`** добавлен во все tenant-scoped модели + `@@index([tenantId])`:
-- `Meeting`, `Card`, `Task`, `MeetingChapter`, `MeetingHighlight`, `MeetingChatMessage`, `Tag`
+- `Meeting`, `Card`, `MeetingChapter`, `MeetingHighlight`, `MeetingChatMessage`, `Tag` (model `Task` — **дропнут** 2026-06-25, см. §«Дроп legacy-модели Task»)
 - `WebhookSubscription`, `IntegrationDestination`, `Export`, `ApiKey`
 - `LlmTaskRoute` (NULL = глобальный дефолт), `AuditLog`, `AiUsageLog`
 
@@ -421,9 +421,9 @@ N:1 к IdeaBlock — один блок может агрегировать мн�
 При merge блока всё его evidence переносится на canonical через
 `updateMany`.
 
-**Провенанс — денорм-снимок (2026-06-20, миграция `20260620113751_provenance_preview_snapshot`):** для рендера СПИСКОВ без join вглубь (анти-N+1; полный резолв — on-demand через `ProvenanceService.resolve` с фильтром прав зрителя). `Decision`/`Issue`/`Regulation` получили `previewQuote String? @db.Text` + `previewSourceRef Json?` (`{evidenceId, blockId, sourceType, refId, startMs, deepLink, attribution, label}`); `Task` — только `previewSourceRef` (цитата уже в `sourceQuote`/`sourceStartMs`). Заполняет `backfill-provenance-preview.ts` из первого `IdeaBlockEvidence` (идемпотентно). `attribution` = `primarySource==='report' ? 'inferred' : 'quoted'`. Подробно — [[knowledge-core]] / [[module-map]] (`ProvenanceService`).
+**Провенанс — денорм-снимок (2026-06-20, миграция `20260620113751_provenance_preview_snapshot`):** для рендера СПИСКОВ без join вглубь (анти-N+1; полный резолв — on-demand через `ProvenanceService.resolve` с фильтром прав зрителя). `Decision`/`Issue`/`Regulation` получили `previewQuote String? @db.Text` + `previewSourceRef Json?` (`{evidenceId, blockId, sourceType, refId, startMs, deepLink, attribution, label}`). Заполняет `backfill-provenance-preview.ts` из первого `IdeaBlockEvidence` (идемпотентно). _(legacy `Task` тоже имел `previewSourceRef`, но model `Task` дропнута 2026-06-25 — см. §«Дроп legacy-модели Task».)_ `attribution` = `primarySource==='report' ? 'inferred' : 'quoted'`. Подробно — [[knowledge-core]] / [[module-map]] (`ProvenanceService`).
 
-**Деноль-снимок теперь читается list-DTO (2026-06-20, provenance-probe-followups A1):** `previewQuote`/`previewSourceRef` (Decision/Issue/Regulation/Task) выводятся в DTO списков решений/регламентов/задач — фронт рисует сниппет цитаты-источника прямо на карточке списка без on-demand резолва (полный `ProvenanceService.resolve` остаётся по клику «Откуда это»).
+**Деноль-снимок теперь читается list-DTO (2026-06-20, provenance-probe-followups A1):** `previewQuote`/`previewSourceRef` (Decision/Issue/Regulation) выводятся в DTO списков решений/регламентов/задач — фронт рисует сниппет цитаты-источника прямо на карточке списка без on-demand резолва (полный `ProvenanceService.resolve` остаётся по клику «Откуда это»).
 
 **Soft-delete карточек знаний (2026-06-22, миграция `20260622065212_add_softdelete_to_knowledge_cards`, qa-fixes Ф5–Ф7):** `Regulation`/`Process`/`Policy`/`Instruction`/`Decision` получили `deletedAt DateTime?` + `deletedById String?` + `@@index([tenantId, deletedAt])`. Owner/admin удаляет (`@Delete(:id)` → `softDelete`, `deletedAt=now`) и восстанавливает (`@Post(:id/restore)`) в течение grace-окна (30 дней, по образцу `cards`). Удалённые исчезают из ВСЕХ выдач — все чтения (list/search/count/getById/провенанс/специалисты/дашборды/дайджесты) фильтруют `deletedAt: null`; list-эндпоинты регламентов/решений принимают `deleted: true` для показа удалённых (UI-тумблер «Удалённые»). Аддитивно (nullable = «не удалён»). Подробно — [[knowledge-core]].
 
@@ -628,27 +628,16 @@ Card {
 - `bornFromThemeId` — выставляет endpoint `POST /knowledge/themes/:id/save-as-card`.
 - `cachedTopThemeIds` — `card-rollup-v2.worker` пересчитывает на каждом тике.
 
-## Knowledge-core (Фаза 5): расширения Task / MeetingChapter / MeetingHighlight / AiResult / Meeting
+## Дроп legacy-модели Task — задачи живут ТОЛЬКО в Issue (2026-06-25)
 
-Фаза 5 переписывает Tasks/Chapters/Summary поверх IdeaBlock'ов через `MeetingAnalyzeV2Worker` (`core.meeting-analyze-v2`, debounce 2 мин). Legacy `tasks-extract.worker` / `chapters.worker` НЕ удалены — V2 пишет в новые поля параллельно для A/B-сравнения.
+**Полный дроп `model Task` + `enum TaskStatus`** (миграция `20260625000000_drop_legacy_task_model`, ТЗ [`drop-legacy-task-model-unify-on-issue`](../../plans/tz/2026-06-25-drop-legacy-task-model-unify-on-issue.md), Ф0–Ф10). Задача в Z/Кора — это **только `Issue`** (трекер). Прежняя двойная сущность (легаси `Task` параллельно с `Issue`) убрана: она плодила дубли «один артефакт в двух таблицах».
 
-**`Task` дополнительно:**
-- `evidenceBlockIds: String[]` (default `[]`) — id IdeaBlock'ов, породивших задачу.
-- `extractorVersion: String?` — `'v2'` если задача создана `meeting-analyze-v2.worker`'ом, NULL = legacy.
-- `assigneeUserId: String?` — жёсткая связь с `User.id` (relation `assignee`, `onDelete: SetNull`). Заполняется AI-pipeline после ТЗ 2026-05-25 `hard-participant-identification`: `ParticipantContextService.loadForMeeting` отдаёт participants → промпт (`tasks-v2` / `tasks-structured`) → LLM возвращает `assigneeUserId` → `TaskAssigneeResolverService` валидирует против participants (галлюцинации режутся, ≥2 кандидатов → null + метрика `z_task_assignee_ambiguous_total`). `assigneeRaw` сохраняется ВСЕГДА — для UI fallback и гостей. Index `@@index([assigneeUserId])` — для фильтра «мои задачи».
+- Удалены: `model Task`, `enum TaskStatus`, все FK back-refs со стороны `User`/`Meeting`/`Org`, колонка `TaskSource.taskId`.
+- **`TaskSource` остаётся** справочной провенанс-моделью, но теперь ссылается **только на `Issue`** через `issueId` (`onDelete: Cascade`). `taskId` дропнута. `@@unique([issueId, sourceType, sourceRefId])` + `@@index([tenantId, issueId])` — идемпотентность провенанса (повтор `create` глотается P2002). Одна задача — N источников; источник линкует дубль к существующему `Issue` без дубль-Issue (LINK-семантика спайн-дедупа `3-15-tasks`).
+- **Связь встреча↔задача — канон `Issue.linkedMeetingIds String[]`** (Р-D). «Задачи встречи» читаются `where: { linkedMeetingIds: { has: meetingId } }` (а не через прежний `Task.meetingId`). Для ускорения — **GIN-индекс `Issue_linkedMeetingIds_gin_idx`** (`postgres-init.sql`, не в schema; нужен дедупу meeting-Issue и drill-down карточки встречи). Новый фильтр `GET /api/v1/issues?linkedMeetingId` ([[../01_projects/tracker]]).
+- **Безопасный порядок на проде:** перенос данных `Task→Issue` (`migrate-task-to-issue.ts`) + схлопывание meeting-дублей (`backfill-collapse-legacy-task-duplicates.ts`) выполняются в `apply-prod-deploy.ts runSchemaPhase` (`--with-schema`) **ПЕРЕД** `prisma migrate deploy` — к моменту дропа таблицы данные уже в `Issue`. Скрипты guard'ятся на отсутствие таблицы `Task` (повторный деплой = no-op).
 
-**`Task` — source-поля (миграция `20260611110000_chatbox_tasks_and_customer_link`, ТЗ chatbox-memory-finishing Ф5/Ф6):** задача больше не обязана быть из встречи.
-- `meetingId: String?` — **стал nullable** (был NOT NULL): задача может родиться из переписки ChatBox или трекера. ⚠ Каскад на view-типы: все читатели «задач встречи» (`where:{meetingId}`) и UI-мапперы должны допускать `meetingId=null` (см. [[code-pitfalls]] §«meetingId nullable»).
-- `sourceType: String @default("meeting")` (FK на модель `TaskSource`) — `'meeting'` | `'chatbox'` | … : откуда пришла задача. Backfill пустых → `'meeting'`: `scripts/backfill-task-source-type.ts` (safety no-op, колонка с дефолтом).
-- `sourceChatSessionId: String?` / `sourceChatId: String?` — для `sourceType='chatbox'`: на какую сессию/чат переписки опирается задача (извлечена `chatbox` task-extractor'ом Ф5, гейт `CHATBOX_TASK_EXTRACTION_ENABLED`).
-- **Межисточниковый дедуп (Ф6):** задача из переписки, семантически совпадающая (cosine ≥ `tasks.cross_source_dedupe_threshold`, дефолт 0.85) с задачей из встречи/трекера, не плодит дубль. Гейт `TASKS_CROSS_SOURCE_DEDUPE_ENABLED`.
-
-**`TaskSource`** — новая справочная модель/enum источника задачи (значения `meeting`/`chatbox`/…), на которую ссылается `Task.sourceType`.
-
-**`TaskSource` — провенанс-связь с `Issue` (миграция `20260623130000_tasksource_issue_link`, ТЗ unified-task-extraction Ф3/Ф4):** одна задача — N источников; источник теперь может указывать на `Issue` напрямую (LINK-семантика спайн-дедупа), а не только на `Task`.
-- `taskId: String?` — **стал nullable** (был NOT NULL): запись может относиться к `Issue`, а не к `Task`.
-- `issueId: String?` — FK на `Issue` (`onDelete: Cascade`): дубль задачи линкуется к существующему `Issue` без создания дубль-Issue (спайн-специалист `3-15-tasks` на вердикт дедупа 'same'; промоут Task→Issue пишет провенанс при accept).
-- `@@unique([issueId, sourceType, sourceRefId])` + `@@index([tenantId, issueId])` (идемпотентность провенанса: повтор `create` глотается P2002).
+> Расширения `MeetingChapter` / `MeetingHighlight` / `AiResult` / `Meeting` — ниже.
 
 **ChatBox: связка клиента переписки с графом (та же миграция).** `ChatboxCustomer` и `ChatboxChannelClient` (`ChannelClient`) получили:
 - `linkedPersonId: String?` — связь клиента/контакта переписки с `Person` графа знаний. **DEPRECATED (2026-06-23)** — заменён на `linkedCustomerId`, физический drop колонки — vNext.
@@ -839,7 +828,7 @@ erDiagram
 - `parentId?` — иерархия подзадач (self-relation IssueSubtasks).
 - `estimatePoints Int?`, `sortOrder Int @default(0)`.
 - `startDate?, dueDate?, completedAt?, cycleId?`.
-- Связи с другими системами: `goalId?` (FK на Goal), `meetingId?` (legacy), `linkedMeetingIds String[]` (видеовстречи из задачи).
+- Связи с другими системами: `goalId?` (FK на Goal), `meetingId?` (legacy), `linkedMeetingIds String[]` (видеовстречи из задачи). **`linkedMeetingIds` — канон связи встреча↔задача** (Р-D, после дропа `model Task` 2026-06-25): «задачи встречи» = `where:{ linkedMeetingIds:{ has: meetingId } }`. GIN-индекс `Issue_linkedMeetingIds_gin_idx` (`postgres-init.sql`, не в schema). Фильтр `GET /api/v1/issues?linkedMeetingId`.
 - AI metadata: `sourceBlockIds String[]`, `confidence Decimal(4,3)?`, `createdManually @default(true)`.
 - Внешний источник: `externalSource?` (email/telegram/checkin/meeting/api/manual), `externalId?`.
 - `entityId?` для графа, `createdById String`, soft-delete `deletedAt?`.

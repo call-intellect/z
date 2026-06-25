@@ -737,4 +737,24 @@ themes/ideas/decisions/teams/tables/roles/clones).
 `MutationObserver` (мутаций/сек) в простое + изоляция сравнением страниц
 (зациклена vs здорова → разница в одном хуке). Подробности — [[../05_история/2026-06-22-tracker-breadcrumb-render-loop]].
 
+## `currentOrgId` из getMe: demo_observer-орга как дефолт = 403 на любую запись (2026-06-25)
+
+`AccountsService.getMe` ([accounts.service.ts:578-599](../../backend/src/modules/accounts/accounts.service.ts#L578))
+— **единственная** точка авто-выбора `currentOrgId/Role` для фронта (через `/accounts/me`
+→ auth-context → `X-Org-Id` во ВСЕХ запросах). `switch-org` — явный выбор юзера, не дефолт.
+
+Ловушка: при регистрации владельцу цепляется `Membership(owner)` своей Org +
+`Membership(demo_observer)` эталона (`ZDEMO_ORG_ID`). Если `getMe` ставит demo_observer
+первым (`demoMembership ?? firstOwnedMembership`), то `currentOrgId` = read-only эталон, и
+**любая** org-scoped мутация (онбординг `/orgs/:id/welcome`, создание встреч/задач) ловит
+**403** от `requireOwnerOrAdmin` / глобального `DemoObserverGuard` (`demo_observer_readonly`).
+Фронт-онбординг глотал 403 молча (`catch { setSaving(false) }`) → симптом «кнопка
+нажимается, ничего не происходит / зацикливается / не заходит в кабинет», без ошибки в UI
+(только 403 в консоли).
+
+**Правило:** дефолтный `currentOrgId` — всегда **своя** Org (`firstOwnedMembership ??
+demoMembership`); read-only роль (demo_observer) не должна быть current-оргой по умолчанию.
+Диагностика: `/accounts/me` показывает `currentOrgRole: demo_observer` + 403 на org-scoped
+write. Фикс — коммит `40ce79bd`. Подробности — [[../05_история/2026-06-25-onboarding-demo-org-403-fix]].
+
 [[../index|← index]]

@@ -47,7 +47,7 @@ references:
 **Поток регистрации (новый):**
 1. Signup → `AccountsService.register` создаёт User + свою пустую Org + `Membership(owner)` к своей + `Membership(demo_observer)` к эталону (из ENV `ZDEMO_ORG_ID`) в одной `$transaction`. Идемпотентно через UNIQUE `(orgId, userId)`.
 2. Welcome 6 шагов → `POST /orgs/:orgId/welcome/complete` создаёт документ «Знакомство», ставит `welcomeCompletedAt`, возвращает `{ redirectTo: '/dashboard' }` сразу (никаких очередей).
-3. `AccountsService.getMe` явно предпочитает demo_observer-membership как `currentOrgId/Role` — пользователь по умолчанию видит **эталон** с реальными данными.
+3. `AccountsService.getMe` выбирает `currentOrgId/Role` как `firstOwnedMembership ?? demoMembership` — **по умолчанию своя Org**; эталон доступен через `OrgSwitcher`. ⚠️ **Исправлено 2026-06-25 (коммит `40ce79bd`):** раньше было `demoMembership ?? firstOwnedMembership` («видеть эталон первым», задумано в `plans/archive/2026-06-01-demo-shared-org-model.md`), но это делало `currentOrgId` = read-only эталон → опросник Блока A (`PATCH /orgs/:currentOrgId/welcome`) и любая запись в кабинете ловили **403** (`requireOwnerOrAdmin`/`DemoObserverGuard`) → онбординг зацикливался, в кабинет не пускало (2 реальных юзера застряли). Демо-приоритет несовместим с тем, что welcome-мастер пишет в `currentOrg`. См. [[../05_история/2026-06-25-onboarding-demo-org-403-fix]].
 4. В шапке/sidebar — `OrgSwitcher` показывает обе Org (эталон с бейджем «Демо», своя пустая).
 
 **Поток первой оплаты (DEMO→ACTIVE):**

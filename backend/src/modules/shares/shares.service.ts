@@ -73,6 +73,21 @@ export interface PublicMeetingSharePayload {
   expiresAt: string;
 }
 
+function issueCategoryToStatus(category: string | null | undefined): string {
+  switch (category) {
+    case 'started':
+      return 'in_progress';
+    case 'completed':
+      return 'done';
+    case 'cancelled':
+      return 'cancelled';
+    case 'backlog':
+    case 'unstarted':
+    default:
+      return 'open';
+  }
+}
+
 @Injectable()
 export class SharesService {
   private readonly logger = new Logger(SharesService.name);
@@ -203,7 +218,6 @@ export class SharesService {
       where: { id: share.meetingId },
       include: {
         chapters: { orderBy: { order: 'asc' } },
-        tasks: true,
         aiResult: {
           select: { summaryFast: true, summary: true },
         },
@@ -261,13 +275,22 @@ export class SharesService {
     }
 
     if (share.allowTasks) {
-      payload.tasks = meeting.tasks.map((t) => ({
-        id: t.id,
-        title: t.title,
-        description: t.description,
-        status: t.status,
-        assigneeRaw: t.assigneeRaw,
-        dueDate: t.dueDate?.toISOString() ?? null,
+      const issues = await this.prisma.issue.findMany({
+        where: {
+          tenantId: meeting.tenantId,
+          deletedAt: null,
+          linkedMeetingIds: { has: meeting.id },
+        },
+        orderBy: { createdAt: 'asc' },
+        include: { state: { select: { category: true } } },
+      });
+      payload.tasks = issues.map((issue) => ({
+        id: issue.id,
+        title: issue.title,
+        description: issue.descriptionStripped ?? null,
+        status: issueCategoryToStatus(issue.state?.category),
+        assigneeRaw: null,
+        dueDate: issue.dueDate?.toISOString() ?? null,
       }));
     }
 

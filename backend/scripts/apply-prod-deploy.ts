@@ -739,12 +739,6 @@ const STEPS: Step[] = [
     skipBootstrap: true,
     hint: 'ChatBox клиенты Person{external} → Customer/Entity{customer} + контакты Entity{person}; осиротевшие Person soft-delete',
   },
-  {
-    phase: 'backfill',
-    script: 'scripts/backfill-task-source-type.ts',
-    hint: "Task.sourceType='meeting' где пусто (chatbox-tasks Ф5)",
-    skipBootstrap: true,
-  },
   { phase: 'backfill', script: 'scripts/backfill-purge-junk-entities.ts', skipBootstrap: true },
   {
     phase: 'backfill',
@@ -767,18 +761,12 @@ const STEPS: Step[] = [
   {
     phase: 'backfill',
     script: 'scripts/backfill-provenance-preview.ts',
-    hint: 'previewQuote+previewSourceRef для Decision/Issue/Regulation, previewSourceRef для Task (провенанс Ф2)',
+    hint: 'previewQuote+previewSourceRef для Decision/Issue/Regulation (провенанс Ф2)',
     skipBootstrap: true,
   },
   {
     phase: 'migrate',
     script: 'scripts/migrate-telegram-channels-to-global.ts',
-    skipBootstrap: true,
-  },
-  {
-    phase: 'migrate',
-    script: 'scripts/migrate-task-to-issue.ts',
-    args: ['--apply'],
     skipBootstrap: true,
   },
 ];
@@ -1050,8 +1038,17 @@ async function runSchemaPhase(
 
   if (!(await ensureBaseline())) return false;
 
+  const preMigrate: Step[] = [
+    { phase: 'migrate', script: 'scripts/migrate-task-to-issue.ts', args: ['--apply'] },
+    { phase: 'backfill', script: 'scripts/backfill-collapse-legacy-task-duplicates.ts', args: ['--apply'] },
+  ];
+  for (const s of preMigrate) {
+    const r = await runOne(s, false, verbose);
+    if (!r.ok && !continueOnFail) return false;
+  }
+
   const dbUrl = process.env['DATABASE_URL'];
-   
+
   console.log('\n>>> [schema] bunx prisma migrate deploy');
   const push = Bun.spawn(['bunx', 'prisma', 'migrate', 'deploy'], {
     stdout: 'inherit',

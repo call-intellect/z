@@ -176,8 +176,8 @@ function pickStringArray(obj: unknown, keys: string[]): string[] {
 }
 
 async function readExtraction(infra: HarnessInfra, meetingId: string): Promise<ExtractedResult> {
-  const tasks = await infra.prisma.task.findMany({
-    where: { meetingId },
+  const tasks = await infra.prisma.issue.findMany({
+    where: { linkedMeetingIds: { has: meetingId }, deletedAt: null },
     select: { title: true },
   });
   const aiResult = await infra.prisma.aiResult.findUnique({

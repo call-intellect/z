@@ -21,7 +21,6 @@ interface Stats {
   decisions: number;
   issues: number;
   regulations: number;
-  tasks: number;
 }
 
 async function backfillDecisions(dryRun: boolean): Promise<number> {
@@ -96,43 +95,16 @@ async function backfillRegulations(dryRun: boolean): Promise<number> {
   return updated;
 }
 
-async function backfillTasks(dryRun: boolean): Promise<number> {
-  let updated = 0;
-  const rows = await prisma.task.findMany({
-    where: {
-      previewSourceRef: { equals: Prisma.AnyNull },
-      evidenceBlockIds: { isEmpty: false },
-      tenantId: { not: null },
-    },
-    select: { id: true, tenantId: true, evidenceBlockIds: true },
-    take: 50_000,
-  });
-  for (const r of rows) {
-    if (!r.tenantId) continue;
-    const snap = await provenance.computePreviewSnapshot(r.tenantId, r.evidenceBlockIds);
-    if (!snap.previewSourceRef) continue;
-    if (!dryRun) {
-      await prisma.task.update({
-        where: { id: r.id },
-        data: { previewSourceRef: snap.previewSourceRef as Prisma.InputJsonValue },
-      });
-    }
-    updated++;
-  }
-  return updated;
-}
-
 async function main(args: RunArgs): Promise<void> {
   console.log(`=== backfill-provenance-preview START (dryRun=${args.dryRun}) ===`);
-  const stats: Stats = { decisions: 0, issues: 0, regulations: 0, tasks: 0 };
+  const stats: Stats = { decisions: 0, issues: 0, regulations: 0 };
 
   stats.decisions = await backfillDecisions(args.dryRun);
   stats.issues = await backfillIssues(args.dryRun);
   stats.regulations = await backfillRegulations(args.dryRun);
-  stats.tasks = await backfillTasks(args.dryRun);
 
   console.log(
-    `updated decisions=${stats.decisions}, issues=${stats.issues}, regulations=${stats.regulations}, tasks=${stats.tasks}`,
+    `updated decisions=${stats.decisions}, issues=${stats.issues}, regulations=${stats.regulations}`,
   );
   console.log('=== backfill-provenance-preview DONE ===');
 }

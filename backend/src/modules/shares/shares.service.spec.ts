@@ -18,6 +18,7 @@ describe('SharesService', () => {
   let prisma: {
     meeting: { findUnique: ReturnType<typeof vi.fn> };
     meetingHighlight: { findUnique: ReturnType<typeof vi.fn> };
+    issue: { findMany: ReturnType<typeof vi.fn> };
   };
   let repo: {
     findById: ReturnType<typeof vi.fn>;
@@ -42,6 +43,7 @@ describe('SharesService', () => {
     prisma = {
       meeting: { findUnique: vi.fn() },
       meetingHighlight: { findUnique: vi.fn() },
+      issue: { findMany: vi.fn(async () => []) },
     };
     repo = {
       findById: vi.fn(),
@@ -203,6 +205,7 @@ describe('SharesService', () => {
       repo.findByToken.mockResolvedValue(buildShare());
       prisma.meeting.findUnique.mockResolvedValue({
         id: 'm1',
+        tenantId: 'org1',
         title: 'Demo',
         type: 'team',
         startedAt: new Date('2026-01-01T10:00:00Z'),
@@ -219,20 +222,19 @@ describe('SharesService', () => {
             order: 0,
           },
         ],
-        tasks: [
-          {
-            id: 't1',
-            title: 'Task',
-            description: null,
-            status: 'open',
-            assigneeRaw: null,
-            dueDate: null,
-          },
-        ],
         aiResult: { summaryFast: null, summary: 'Краткое резюме' },
         transcript: null,
         recording: null,
       });
+      prisma.issue.findMany.mockResolvedValue([
+        {
+          id: 't1',
+          title: 'Task',
+          descriptionStripped: null,
+          state: { category: 'backlog' },
+          dueDate: null,
+        },
+      ]);
 
       const svc = make();
       const result = await svc.getPublicMeetingShare('tok', {

@@ -5,6 +5,7 @@ import { TypedConfigService } from '../../common/config/index';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import { MeetingActionItemsService } from '../meetings/meeting-action-items.service';
+import { MeetingVisibilityService } from '../meetings/meeting-visibility.service';
 
 import type { CreateTaskDto } from './dto/create-task.dto';
 import type { BulkTasksDto, ListTasksQuery } from './dto/list-tasks.dto';
@@ -44,6 +45,8 @@ export class TasksService {
     @Inject(AuditLogService) private readonly audit: AuditLogService,
     @Inject(MeetingActionItemsService)
     private readonly actionItems: MeetingActionItemsService,
+    @Inject(MeetingVisibilityService)
+    private readonly visibility: MeetingVisibilityService,
   ) {}
 
   list(userId: string, query: ListTasksQuery): Promise<{ items: Task[]; total: number }> {
@@ -59,14 +62,13 @@ export class TasksService {
   }
 
   async listByMeeting(meetingId: string, userId: string): Promise<MeetingTaskView[]> {
-    const meeting = await this.assertMeetingOwner(meetingId, userId);
+    const meeting = await this.visibility.assertCanView(meetingId, userId);
     if (!(await this.actionItems.isTrackerOnly())) {
       return this.repo.listByMeeting(meetingId, userId);
     }
     const normalized = await this.actionItems.listForMeeting({
       meetingId,
       tenantId: meeting.tenantId ?? '',
-      userId,
     });
     return normalized.map((it) => ({
       id: it.id,

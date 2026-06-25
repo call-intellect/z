@@ -83,6 +83,7 @@ export class ChatV2Controller {
     uncertaintyNote: string | null;
     mode: string;
     cacheHit: boolean;
+    needsClarification: boolean;
   }> {
     const t = this.requireTenant(tenantId);
     await this.requireWriteOwn(user.id, t);

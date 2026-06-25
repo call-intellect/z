@@ -4,6 +4,7 @@ import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
+import type { ChatV2OrchestrationService } from '../../chat-v2/chat-v2.service';
 
 import type { ConciergeContextBuilderService } from './concierge-context-builder.service';
 import type { ConciergeQuotaService } from './concierge-quota.service';
@@ -160,6 +161,17 @@ function buildShadowConciergeService(opts: ShadowOpts) {
 
   const stepScorer = new ConciergeStepScorerService(llm);
 
+  const askEphemeral = vi.fn(async () => ({
+    text: 'Ответ из памяти.',
+    citations: [] as unknown[],
+    needsClarification: false,
+    dataClass: 'internal' as const,
+    usedBlockIds: [] as string[],
+    uncertaintyNote: null,
+    mode: 'factual' as const,
+  }));
+  const chatV2 = { askEphemeral } as unknown as ChatV2OrchestrationService;
+
   const svc = new ConciergeService(
     prisma,
     cfg,
@@ -171,6 +183,7 @@ function buildShadowConciergeService(opts: ShadowOpts) {
     quota,
     aiChatQuota,
     metrics,
+    chatV2,
     stepScorer,
   );
 

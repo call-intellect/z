@@ -1565,6 +1565,12 @@ function buildSettings(): SettingSeed[] {
       'Минимальная уверенность (0-1) классификатора, с которой свободный текст без reply засчитывается ответом на открытый probe (Telegram/MAX)',
     ],
     [
+      'probe.implicit_match_max_age_days',
+      envInt('PROBE_IMPLICIT_MATCH_MAX_AGE_DAYS', 3),
+      'low',
+      'Окно (дни) для неявного зачёта свободного текста ответом на открытый probe: вопросы старше этого возраста не участвуют в неявном сопоставлении (явный reply-to остаётся всегда). По умолчанию 3',
+    ],
+    [
       'probe.qualityJudgeEnabled',
       envBool('PROBE_QUALITY_JUDGE_ENABLED', true),
       'low',

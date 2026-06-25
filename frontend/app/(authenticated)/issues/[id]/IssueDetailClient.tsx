@@ -3,6 +3,7 @@
 import { useAuth } from "@/contexts/auth-context";
 import { useIssue } from "@/hooks/tracker/useIssue";
 import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
+import { ProvenancePreviewSnippet } from "@/ui/components/provenance/ProvenancePreviewSnippet";
 import {
   IssueActivityDigest,
   IssueActivityFeed,
@@ -126,6 +127,8 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
             <h2 className="text-sm font-medium text-fg-primary">Связи</h2>
             <IssueRelations orgId={currentOrgId} issueId={issue.id} />
           </section>
+
+          <ProvenancePreviewSnippet preview={issue.provenancePreview} />
 
           {}
           <IssueSimilar orgId={currentOrgId} issueId={issue.id} />

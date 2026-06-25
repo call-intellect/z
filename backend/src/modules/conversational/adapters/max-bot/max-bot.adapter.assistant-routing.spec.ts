@@ -51,6 +51,7 @@ function makeAdapter(opts: {
   classifyIntent?: 'factual' | 'note' | 'probe_reply';
   classifyConfidence?: number;
   openProbe?: { id: string; payload: Record<string, unknown> } | null;
+  clarifyKeyPresent?: boolean;
 } = {}) {
   const registry = { register: vi.fn() } as unknown as ChannelRegistry;
   const prisma = {
@@ -68,6 +69,7 @@ function makeAdapter(opts: {
     client: {
       incr: vi.fn().mockResolvedValue(1),
       expire: vi.fn().mockResolvedValue(1),
+      get: vi.fn().mockResolvedValue(opts.clarifyKeyPresent ? '1' : null),
     },
   } as unknown as RedisService;
 
@@ -142,7 +144,7 @@ function makeAdapter(opts: {
     classifier,
     cfg,
   );
-  return { adapter, prisma, api, vox, classifier };
+  return { adapter, prisma, api, vox, classifier, redis };
 }
 
 const textUpdate = (text: string): MaxUpdate => ({
@@ -294,5 +296,32 @@ describe('MaxBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', () =>
     expect((result as { type: string }).type).toBe('assistant_turn');
     // Без открытого probe pre-фильтр не вызывает классификатор (экономия).
     expect(vi.mocked(mocks.classifier.classify)).not.toHaveBeenCalled();
+  });
+
+  it('Ф2c: clarify-ключ присутствует → assistant_turn (clarifyResume), classify/findOpenProbe не зовутся', async () => {
+    const mocks = makeAdapter({
+      clarifyKeyPresent: true,
+      assistantChannelRoutingEnabled: false,
+      classifyIntent: 'note',
+      openProbe: { id: 'notif-probe-max-2', payload: { question: 'А вопрос?' } },
+    });
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('июньскую'),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(result).toMatchObject({
+      type: 'assistant_turn',
+      userId: 'user-42',
+      tenantId: 'org-1',
+      text: 'июньскую',
+      metadata: expect.objectContaining({ source: 'max_bot', clarifyResume: true }),
+      originChannelBindingId: 'binding-max-1',
+    });
+    expect(vi.mocked(mocks.classifier.classify)).not.toHaveBeenCalled();
+    expect(vi.mocked(mocks.prisma.notification.findFirst)).not.toHaveBeenCalled();
+    expect(vi.mocked(mocks.redis.client.get)).toHaveBeenCalledWith('concierge:clarify:binding-max-1');
   });
 });

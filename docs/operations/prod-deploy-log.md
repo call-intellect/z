@@ -71,6 +71,56 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-25 — «Единый помощник»: single-pass Мастер + упрощённый chat-v2 + модель на агента (Ф2–Ф6)
+
+> ТЗ `plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md` (Ф2–Ф6). Ветка `feature/edinyy-pomoshnik-arhitektura`, коммиты `f51e5a0e` (Ф4a) … `8dac5210` (Ф1/Ф5).
+>
+> **Зачем:** убрана ReAct-петля Мастера (корень прод-бага с сырым JSON), цепочка chat-v2 свёрнута с ~10 LLM-вызовов до 4 (понимание → rerank → синтез → groundedness; route/plan/sufficiency законсервированы), замкнута петля уточнения (`[[CLARIFY]]`/`needsClarification`), 5 агентов маршрутизированы на модели из ТЗ §5. Фронт частично: «Память»=дверь к реестрам, `/chat-v2`+`/assistant`→`/chat`, видимые «Concierge»→«Мастер».
+>
+> **🟢 НОВЫХ ENV НЕТ · НОВЫХ МИГРАЦИЙ НЕТ.** Изменения app-кода (Ф2–Ф5 backend + Ф1/Ф5 frontend) едут с rebuild образа. 4 новые крутилки AdminSetting (Ф4/Ф5, чистые — без ENV, едут существующими сидами) + 1 новый seed LLM-routes (зарегистрирован в STEPS `phase:'seed-llm-routes'`) + 1 новый диаг-скрипт (read-only). Docker rebuild backend+frontend.
+>
+> | агент | taskType | primary |
+> |---|---|---|
+> | Мастер (диспетч+действия+render) | `concierge-respond` | `openai-via-proxy` / `gpt-5.4-mini` |
+> | Понимание запроса | `dialog-understand` | `deepseek` / `deepseek-v4-pro` |
+> | Переранжировщик | `rag-rerank` | `deepseek` / `deepseek-v4-flash` |
+> | Синтез ответа | `chat-v2` | `deepseek` / `deepseek-v4-pro` |
+> | Контролёр заземления | `rag-groundedness` | `deepseek` / `deepseek-v4-flash` |
+
+- **Шаг 7 — Seed LLM-routes (идемпотентный, авторитетный upsert, УЖЕ в STEPS `phase:'seed-llm-routes'`):** `docker compose exec backend bun run scripts/seed-llm-task-routes-edinyy-pomoshnik.ts` — маршруты 5 агентов «Единого помощника» (см. таблицу выше + fallback-цепочки secondary/tertiary). Авторитетный: для не-`editedByAdmin` записей создаёт/обновляет `model`/`priority`/`isActive`; `editedByAdmin=true` записи пропускает (защита ручных правок из admin UI). Также прогоняется агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Это once-step (sha256 содержимого) — правка сида ⇒ повторный прогон автоматически.
+- **Шаг 7 — Seed крутилок (идемпотентный, УЖЕ в STEPS `phase:'seed-base'`):** 4 новые крутилки Ф4/Ф5 (чистые AdminSetting, без ENV) едут существующими сидами:
+  - `docker compose exec backend bun run scripts/seed-admin-setting-smart-search.ts` — **расширен 3 новыми ключами** (section `smart_search`): `rag.k_retrieve` (30 — размер пула кандидатов до реранка), `rag.k_context` (18 — сколько блоков уходит в синтез после реранка, ≤ `k_retrieve`), `rag.understanding_merged` (kill-switch ON — слитый модуль понимания: 1 LLM-вызов вместо 2; OFF → старый путь мульти-запрос+извлечение-плана).
+  - `docker compose exec backend bun run scripts/seed-admin-settings.ts` — **расширен 1 ключом**: `probe.implicit_match_max_age_days` (3 — окно свежести implicit-матча probe, лечит ложное «Готово»).
+  - Оба сида уважают admin-override; доезжают агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (concierge single-pass + chat-v2 4-вызова + петля уточнения + слитый `dialog-understand`); frontend (Ф1/Ф5: «Память»=дверь, `/chat-v2`+`/assistant`→redirect `/chat`, нейминг «Мастер»).
+- **Шаг 12 — Smoke** (после выката):
+  - `docker compose exec backend bun run scripts/diag-llm-routes.ts` — показывает ожидаемые primary по 5 taskType (`concierge-respond`→`openai-via-proxy:gpt-5.4-mini`, `dialog-understand`→`deepseek:deepseek-v4-pro`, `rag-rerank`→`deepseek:deepseek-v4-flash`, `chat-v2`→`deepseek:deepseek-v4-pro`, `rag-groundedness`→`deepseek:deepseek-v4-flash`). Флаг `--json` — машинный вывод. Read-only, в БД ничего не пишет.
+  - Записи с `[правка-админа]` в выводе сидов НЕ перезаписаны (если admin что-то правил вручную).
+  - Крутилки видны в админке AdminSetting: `rag.k_retrieve` (30), `rag.k_context` (18), `rag.understanding_merged` (ON), `probe.implicit_match_max_age_days` (3).
+  - Прод-регресс `cmqs42gdq01lj01qqsblfdon4` («позиционирование», «сколько встреч с Александром») — чистый текстовый ответ, ни одного сырого JSON, ноль зацикливаний.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-25 — Разведение «задача ↔ решение» в извлечении (пороги в крутилки + cosine-гейт дедупа)
+
+> ТЗ `plans/tz/2026-06-25-task-decision-disambiguation.md` (Ф1–Ф7). Ветка `feature/task-decision-disambiguation`.
+>
+> **Зачем:** реестр решений накапливал переодетые поручения (~треть записей) — извлечение путало «что выбрали» (решение) и «кто что делает» (задача). Симметричные few-shot в `decision-extract`/`task-extract` + усиление `block-ingest` разводят классы по инварименту «решение = ЧТО, задача = КТО»; хардкод-порог извлечения вынесен в крутилки; дедуп решений получил cosine-гейт перед LLM-арбитром.
+>
+> **🟢 НОВЫХ ENV НЕТ · НОВЫХ МИГРАЦИЙ НЕТ** (5 новых ключей — чистые AdminSetting). 1 новый seed (УЖЕ в STEPS `phase:'seed-base'`). Правки промптов knowledge-core (прямой импорт констант, не registry — патчи не нужны). Docker rebuild backend+frontend.
+
+- **Шаг 7 — Seed (идемпотентный, УЖЕ в STEPS `phase:'seed-base'`):** `docker compose exec backend bun run scripts/seed-admin-setting-knowledge-extract.ts` — `knowledge.{decisions,ideas,insights}ExtractMinConfidence` (пороги извлечения, UNIT_INTERVAL, дефолт 0.4) + `knowledge.decisionsDedupe{Threshold(0.86),GrayBand(0.07)}` (cosine-гейт дедупа решений: sim≥0.86 → авто-merge без LLM, sim<0.79 → новое без LLM, серая зона → прежний арбитр). Часть task-decision-disambiguation Ф5. Чистые AdminSetting (без ENV). Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (knowledge-core: единый реестр контрастных пар `prompts/task-decision-examples.ts` → 3 проекции в промпты `decision-extract`/`task-extract`/`block-ingest`; specialist-3-3/3-5/3-6 читают порог извлечения через `@Optional() AdminSettingsService` с code-fallback 0.4; `Specialist33Service.classifyDedupeGate` + KNN-запрос с similarity (1−cosine distance) перед `supersedeDetect`). Frontend (provenance «Откуда это»: IssueSidebar / IssueDetailClient `ProvenancePreviewSnippet` / IdeasListClient `ProvenanceChip`).
+- **Шаг 12 — Smoke** (после выката):
+  - Крутилки видны в админке AdminSetting: `knowledge.{decisions,ideas,insights}ExtractMinConfidence` (0.4), `knowledge.decisionsDedupe{Threshold,GrayBand}` (0.86 / 0.07).
+  - Поведение: реплика-поручение в decision-канале НЕ оседает как Decision (отсекается на `isDecision=false`); зеркальный кейс «решение» не попадает в трекер как задача; два близких решения (sim≥0.86) сливаются без вызова LLM-арбитра.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-24 — ChatBox: полная поддержка групповых чатов
 
 > ТЗ `plans/tz/2026-06-24-chatbox-group-chats.md`. Ветка `feature/chatbox-customer-vs-manager-split`.
@@ -3967,7 +4017,7 @@ docker compose exec backend bun run scripts/seed-llm-default-primary-deepseek-pr
 **Граф знаний v2 + умный поиск (2026-06-24) — 2 новых сид-скрипта крутилок** (оба зарегистрированы в `apply-prod-deploy.ts STEPS` `phase:'seed-base'`, прогоняются агрегатором; защита admin-edited не затирает ручные правки):
 ```bash
 docker compose exec backend bun run scripts/seed-admin-setting-knowledge-graph.ts   # 12 крутилок графа (нарезка/overlap/контекст-заголовок/пороги рёбер/судья/alias/поиск RRF+обход/theme-summary)
-docker compose exec backend bun run scripts/seed-admin-setting-smart-search.ts       # 8 крутилок Мастера (concierge.max_steps + rag.*: сторож/RRF/реранк/достаточность/гейт честности/iterative/cold-start)
+docker compose exec backend bun run scripts/seed-admin-setting-smart-search.ts       # 6 крутилок Мастера (rag.*: RRF/реранк/достаточность/гейт честности/iterative/cold-start)
 ```
 Либо разом через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (прогонит оба + остальные seed/patch).
 

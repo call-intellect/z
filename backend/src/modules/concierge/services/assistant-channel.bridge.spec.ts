@@ -587,6 +587,63 @@ describe('AssistantChannelBridge — Ф6 текст-подтверждение (
   });
 });
 
+describe('AssistantChannelBridge — Ф2c clarify-ключ', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const CLARIFY_KEY = 'concierge:clarify:binding-1';
+
+  it('ход с message needsClarification:true → Redis set clarify-ключа (EX 600)', async () => {
+    const { handler, redisSet } = makeBridge({
+      events: [
+        { type: 'started', conversationId: 'conv-c' },
+        { type: 'message', text: 'Какую именно встречу — июньскую или майскую?', needsClarification: true },
+        { type: 'done', messageId: 'msg-c' },
+      ],
+    });
+
+    await handler(turn());
+
+    expect(redisSet).toHaveBeenCalledWith(CLARIFY_KEY, '1', 'EX', 600);
+  });
+
+  it('обычный ответ (needsClarification отсутствует) → Redis del clarify-ключа', async () => {
+    const { handler, redisSet, redisDel } = makeBridge({
+      events: [
+        { type: 'started', conversationId: 'conv-n' },
+        { type: 'message', text: 'Вот ваши задачи: A, B.' },
+        { type: 'done', messageId: 'msg-n' },
+      ],
+    });
+
+    await handler(turn());
+
+    expect(redisDel).toHaveBeenCalledWith(CLARIFY_KEY);
+    expect(redisSet).not.toHaveBeenCalledWith(CLARIFY_KEY, '1', 'EX', 600);
+  });
+
+  it('confirm_required → clarify-ключ НЕ ставится (set/del clarify не вызываются)', async () => {
+    const { handler, redisSet, redisDel } = makeBridge({
+      events: [
+        { type: 'started', conversationId: 'conv-h' },
+        {
+          type: 'confirm_required',
+          toolName: 'cancel_meeting',
+          params: { id: 'm-1' },
+          preview: 'отменить встречу (id: m-1)',
+        },
+        { type: 'done', messageId: 'msg-hold' },
+      ],
+    });
+
+    await handler(turn());
+
+    expect(redisSet).not.toHaveBeenCalledWith(CLARIFY_KEY, '1', 'EX', 600);
+    expect(redisDel).not.toHaveBeenCalledWith(CLARIFY_KEY);
+  });
+});
+
 describe('AssistantChannelBridge — C-1 совместимость payload с registry', () => {
   beforeEach(() => {
     vi.clearAllMocks();

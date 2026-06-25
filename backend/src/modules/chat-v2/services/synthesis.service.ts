@@ -41,6 +41,7 @@ export interface SynthesisResult {
   llmMeta: Record<string, unknown>;
   uncertaintyNote: string | null;
   dataClass: DataClass;
+  needsClarification: boolean;
 }
 
 @Injectable()
@@ -84,6 +85,7 @@ export class SynthesisService {
           llmMeta: { mode: 'clone_style' },
           uncertaintyNote: null,
           dataClass: 'sensitive',
+          needsClarification: false,
         };
       } catch (err) {
         this.logger.warn(
@@ -186,6 +188,7 @@ export class SynthesisService {
       llmMeta,
       uncertaintyNote,
       dataClass: result.dataClass,
+      needsClarification: result.needsClarification,
     };
   }
 

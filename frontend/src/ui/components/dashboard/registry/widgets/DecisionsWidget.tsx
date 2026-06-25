@@ -1,6 +1,7 @@
 "use client";
 
 import type { FC } from "react";
+import { useState } from "react";
 import { CheckCircle2, Clock } from "lucide-react";
 import useSWR from "swr";
 
@@ -30,6 +31,7 @@ function rangeForRhythm(rhythm: Rhythm): { from: string; to: string } {
 
 export const DecisionsWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
   const { currentOrgId } = useAuth();
+  const [showAll, setShowAll] = useState(false);
   const range = rangeForRhythm(rhythm);
 
   const throughputSwr = useSWR(
@@ -91,7 +93,7 @@ export const DecisionsWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
 
       {stalled.length > 0 && (
         <div className="mt-4 space-y-2">
-          {stalled.map((decision) => (
+          {(showAll ? stalled : stalled.slice(0, 5)).map((decision) => (
             <div
               key={decision.id}
               className="flex items-center gap-3 rounded-xl p-3"
@@ -117,6 +119,16 @@ export const DecisionsWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
               />
             </div>
           ))}
+          {stalled.length > 5 && (
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              className="mt-3 text-sm font-medium transition hover:brightness-110"
+              style={{ color: CHART.dim }}
+            >
+              {showAll ? "Свернуть" : `Показать все (${stalled.length})`}
+            </button>
+          )}
         </div>
       )}
     </GlassCard>

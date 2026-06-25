@@ -21,7 +21,8 @@ export type ProvenanceEntityType =
   | 'instruction'
   | 'block'
   | 'notification'
-  | 'entity';
+  | 'entity'
+  | 'idea';
 
 export interface ProvenanceSourceRef {
   type: ProvenanceSourceType;
@@ -557,6 +558,7 @@ export class ProvenanceService {
       'instruction',
       'block',
       'entity',
+      'idea',
     ];
     if (!VALID.includes(entityType as ProvenanceEntityType)) return [];
     const blockIds = await this.collectSourceBlockIds(
@@ -724,6 +726,13 @@ export class ProvenanceService {
           take: 200,
         });
         return links.map((l) => l.blockId);
+      }
+      case 'idea': {
+        const i = await this.prisma.idea.findFirst({
+          where: { id: entityId, tenantId },
+          select: { sourceBlockIds: true },
+        });
+        return i?.sourceBlockIds ?? [];
       }
       case 'notification':
         return [];

@@ -475,7 +475,11 @@ export class Specialist36Service {
       return { matched: false, ideaId: null };
     }
     if (!embedding) return { matched: false, ideaId: null };
-    const threshold = this.cfg.ideas.clusterThreshold;
+    const threshold = await this.cfg.getDynamic<number>(
+      'knowledge.ideaClusterThreshold',
+      undefined,
+      this.cfg.ideas.clusterThreshold,
+    );
     try {
       const vec = `[${embedding.join(',')}]`;
       const rows = await this.prisma.$queryRawUnsafe<
@@ -530,7 +534,11 @@ export class Specialist36Service {
       return null;
     }
     if (!embedding) return null;
-    const threshold = this.cfg.ideas.clusterThreshold;
+    const threshold = await this.cfg.getDynamic<number>(
+      'knowledge.ideaClusterThreshold',
+      undefined,
+      this.cfg.ideas.clusterThreshold,
+    );
     try {
       const vec = `[${embedding.join(',')}]`;
       const rows = await this.prisma.$queryRawUnsafe<

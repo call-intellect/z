@@ -110,7 +110,11 @@ export class IdeaClustererCron {
       take: IdeaClustererCron.BATCH_LIMIT,
     });
     if (ideas.length === 0) return;
-    const threshold = this.cfg.ideas.clusterThreshold;
+    const threshold = await this.cfg.getDynamic<number>(
+      'knowledge.ideaClusterThreshold',
+      undefined,
+      this.cfg.ideas.clusterThreshold,
+    );
     const minSupporters = this.cfg.ideas.minSupportersForCluster;
     const accumulated: Idea[] = [];
     for (const idea of ideas) {

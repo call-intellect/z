@@ -142,6 +142,7 @@ describe('Specialist36Service.processBlock — direct-path dedup guard', () => {
       aiFeatures: { promptInjectionGuardEnabled: false },
       ideas: { clusterThreshold: 0.8 },
       dataClassPolicy: { enforcement: 'off' },
+      getDynamic: vi.fn(async (_k: string, _e: unknown, def: number) => def),
     };
     const events = { emit: vi.fn() };
 
@@ -394,7 +395,10 @@ function buildRealizedSvc(): {
     $queryRawUnsafe: vi.fn().mockResolvedValue([]),
   };
   const embedder = { embedQuery: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]) };
-  const cfg = { ideas: { clusterThreshold: 0.85 } };
+  const cfg = {
+    ideas: { clusterThreshold: 0.85 },
+    getDynamic: vi.fn(async (_k: string, _e: unknown, def: number) => def),
+  };
   const svc = new Specialist36Service(
     prisma as never,
     {} as never,

@@ -319,8 +319,8 @@ export function CommandPalette() {
       if (res.quotaExceeded) {
         toast.error(
           res.quotaExceeded === "daily"
-            ? "Дневная квота Concierge исчерпана"
-            : "Месячная квота Concierge исчерпана",
+            ? "Дневная квота Мастера исчерпана"
+            : "Месячная квота Мастера исчерпана",
         );
       } else if (res.error) {
         toast.error(res.error.message);
@@ -350,7 +350,7 @@ export function CommandPalette() {
       close();
       setQuery("");
     } catch {
-      toast.error("Concierge недоступен");
+      toast.error("Мастер недоступен");
     } finally {
       setCommandBusy(false);
     }
@@ -419,7 +419,7 @@ export function CommandPalette() {
     >
       <div className="relative">
         <CommandInput
-          placeholder="Поиск, ? — спросить Кору, > — действие Concierge"
+          placeholder="Поиск, ? — спросить Кору, > — действие Мастера"
           value={query}
           onValueChange={setQuery}
         />
@@ -581,7 +581,7 @@ export function CommandPalette() {
                 onSelect={() => {
                   trackRecent({
                     id: "mode:concierge",
-                    label: "Дать команду Concierge…",
+                    label: "Дать команду Мастеру…",
                     subtitle: "Действие",
                     action: { kind: "set-query", value: "> " },
                   });
@@ -590,7 +590,7 @@ export function CommandPalette() {
               >
                 <ResultRow
                   icon={MessageCircle}
-                  title="Дать команду Concierge…"
+                  title="Дать команду Мастеру…"
                   subtitle="> — действие (создать задачу, перенести встречу и т.п.)"
                 />
               </CommandItem>
@@ -633,7 +633,7 @@ export function CommandPalette() {
 
         {}
         {isCommandMode && (
-          <CommandGroup heading="Concierge — действие">
+          <CommandGroup heading="Мастер — действие">
             <CommandItem
               value="concierge-execute"
               onSelect={() => void runCommand()}
@@ -644,8 +644,8 @@ export function CommandPalette() {
                 iconClassName={commandBusy ? "animate-spin" : undefined}
                 title={
                   commandBusy
-                    ? "Concierge выполняет…"
-                    : `Спросить Concierge: «${trimmed.replace(/^>+\s*/, "")}»`
+                    ? "Мастер выполняет…"
+                    : `Спросить Мастера: «${trimmed.replace(/^>+\s*/, "")}»`
                 }
                 subtitle="Enter — отправить"
               />
@@ -730,7 +730,7 @@ export function CommandPalette() {
                       type="button"
                       onClick={() =>
                         go(
-                          `/chat-v2?conversationId=${encodeURIComponent(
+                          `/chat?conversationId=${encodeURIComponent(
                             aiAnswer.conversationId,
                           )}`,
                         )
@@ -989,7 +989,7 @@ const QUICK_NAV_ITEMS: QuickNavItem[] = [
     icon: Brain,
   },
   {
-    href: "/chat-v2",
+    href: "/chat",
     label: "Помощник компании",
     subtitle: "Полноценный диалог с памятью компании",
     icon: Sparkles,

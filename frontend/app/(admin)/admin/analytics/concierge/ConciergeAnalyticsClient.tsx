@@ -43,7 +43,7 @@ export function ConciergeAnalyticsClient() {
 
   return (
     <AdminSection
-      title="Concierge и AI-чат"
+      title="Мастер и ИИ-чат"
       description="Сколько вопросов задают, на сколько мы отвечаем, что не покрывается, обратная связь."
       actions={
         <Select
@@ -356,7 +356,7 @@ function FeedbackTab() {
   return (
     <AdminEmpty
       title="Будет в Фазе 9"
-      description="Сбор отзывов на ответы Concierge (палец вверх/вниз, текстовый фидбек) — отдельная подсистема. Появится после релиза chat-модуля."
+      description="Сбор отзывов на ответы Мастера (палец вверх/вниз, текстовый фидбек) — отдельная подсистема. Появится после релиза chat-модуля."
     />
   );
 }

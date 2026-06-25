@@ -139,7 +139,7 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
       },
       {
         href: "/admin/analytics/concierge",
-        label: "Concierge и AI-чат",
+        label: "Мастер и ИИ-чат",
         icon: Telescope,
         matchPrefix: "/admin/analytics/concierge",
       },

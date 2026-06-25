@@ -21,6 +21,7 @@ export interface DialogProcessInput {
   scope: string;
   scopeRefId: string | null;
   validAt: string | null;
+  intent?: DialogIntent;
 }
 
 export interface DialogProcessResult {
@@ -87,12 +88,21 @@ export class DialogService {
 
     const { summary, history } = await this.loadConversationContext(input.conversationId);
 
-    const cls = await this.classifier.classify({
-      tenantId: input.tenantId,
-      userId: input.userId,
-      question,
-      conversationId: input.conversationId,
-    });
+    let intent: DialogIntent;
+    let classifySeconds: number;
+    if (input.intent) {
+      intent = input.intent;
+      classifySeconds = 0;
+    } else {
+      const cls = await this.classifier.classify({
+        tenantId: input.tenantId,
+        userId: input.userId,
+        question,
+        conversationId: input.conversationId,
+      });
+      intent = cls.intent;
+      classifySeconds = cls.durationSeconds;
+    }
 
     const cachedAnswer = await this.answerCache.get({
       tenantId: input.tenantId,
@@ -103,51 +113,100 @@ export class DialogService {
       validAt: input.validAt,
     });
 
-    const mq = await this.multiQuery.expand({
-      tenantId: input.tenantId,
-      userId: input.userId,
-      question,
-      intent: cls.intent,
-      summary,
-      history,
-      conversationId: input.conversationId,
-    });
+    const merged = await this.cfg.getDynamic<boolean>(
+      'rag.understanding_merged',
+      undefined,
+      true,
+    );
 
+    let queries: string[];
     let queryPlan: QueryPlanResult | null = null;
     let structuralFilters: StructuralRetrievalFilters | null = null;
-    if (this.cfg.dialogLayer.queryPlanExtractionEnabled) {
+    let understandSeconds: number;
+
+    if (merged) {
+      const understandStart = Date.now();
+      const todayIso = input.validAt ?? new Date().toISOString();
+      const org = await this.prisma.org.findUnique({
+        where: { id: input.tenantId },
+        select: { timezone: true },
+      });
+      const understood = await this.queryPlanExtractor.understand({
+        tenantId: input.tenantId,
+        userId: input.userId,
+        question,
+        summary,
+        history,
+        todayIso,
+        orgTimezone: org?.timezone ?? null,
+        conversationId: input.conversationId,
+      });
+      queries = understood.queries;
+      understandSeconds = (Date.now() - understandStart) / 1000;
       try {
-        const todayIso = input.validAt ?? new Date().toISOString();
-        const org = await this.prisma.org.findUnique({
-          where: { id: input.tenantId },
-          select: { timezone: true },
-        });
-        const planQuestions = mq.queries.length > 1 ? mq.queries.slice(1) : [...mq.queries];
-        const plan = await this.queryPlanExtractor.extract({
-          tenantId: input.tenantId,
-          userId: input.userId,
-          questions: planQuestions,
-          todayIso,
-          orgTimezone: org?.timezone ?? null,
-          conversationId: input.conversationId,
-        });
-        queryPlan = plan;
+        queryPlan = understood.queryPlan;
         structuralFilters = await this.queryPlanExtractor.resolveStructuralFilters({
           tenantId: input.tenantId,
           userId: input.userId,
-          plan,
+          plan: understood.queryPlan,
         });
         this.metrics.incQueryPlanExtraction({
-          result: plan.applied ? 'applied' : 'failopen',
+          result: understood.queryPlan.applied ? 'applied' : 'failopen',
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.logger.warn(
           { conversationId: input.conversationId, err: message },
-          'QueryPlan extraction упал — fail-open (без структурного фильтра)',
+          'resolveStructuralFilters (merged) упал — fail-open (без структурного фильтра)',
         );
-        queryPlan = null;
         structuralFilters = null;
+      }
+    } else {
+      const mq = await this.multiQuery.expand({
+        tenantId: input.tenantId,
+        userId: input.userId,
+        question,
+        intent,
+        summary,
+        history,
+        conversationId: input.conversationId,
+      });
+      queries = mq.queries;
+      understandSeconds = mq.durationSeconds;
+      if (this.cfg.dialogLayer.queryPlanExtractionEnabled) {
+        try {
+          const todayIso = input.validAt ?? new Date().toISOString();
+          const org = await this.prisma.org.findUnique({
+            where: { id: input.tenantId },
+            select: { timezone: true },
+          });
+          const planQuestions = mq.queries.length > 1 ? mq.queries.slice(1) : [...mq.queries];
+          const plan = await this.queryPlanExtractor.extract({
+            tenantId: input.tenantId,
+            userId: input.userId,
+            questions: planQuestions,
+            todayIso,
+            orgTimezone: org?.timezone ?? null,
+            conversationId: input.conversationId,
+          });
+          queryPlan = plan;
+          structuralFilters = await this.queryPlanExtractor.resolveStructuralFilters({
+            tenantId: input.tenantId,
+            userId: input.userId,
+            plan,
+          });
+          this.metrics.incQueryPlanExtraction({
+            result: plan.applied ? 'applied' : 'failopen',
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          this.logger.warn(
+            { conversationId: input.conversationId, err: message },
+            'QueryPlan extraction упал — fail-open (без структурного фильтра)',
+          );
+          queryPlan = null;
+          structuralFilters = null;
+        }
       }
     }
 
@@ -160,8 +219,8 @@ export class DialogService {
     return {
       enabled: true,
       standaloneQuestion: question,
-      intent: cls.intent,
-      queries: mq.queries,
+      intent,
+      queries,
       confidence: 1.0,
       cachedAnswer,
       queryPlan,
@@ -169,8 +228,8 @@ export class DialogService {
       steps: {
         contextualize: 0,
         confidence: 0,
-        classify: cls.durationSeconds,
-        multiQuery: mq.durationSeconds,
+        classify: classifySeconds,
+        multiQuery: understandSeconds,
         total: totalSeconds,
       },
     };

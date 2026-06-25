@@ -116,6 +116,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['rag.groundedness_mode', z.enum(['off', 'shadow', 'on'])],
   ['rag.iterative_enabled', z.boolean()],
   ['rag.cold_start_min_blocks', NON_NEGATIVE_INT],
+  ['rag.understanding_merged', z.boolean()],
 
   ['aiFeatures.summaryAgentEnabled', z.boolean()],
   ['aiFeatures.regulationMinMaterializeConfidence', UNIT_INTERVAL],

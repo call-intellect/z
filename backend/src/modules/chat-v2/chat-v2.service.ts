@@ -15,7 +15,10 @@ import { LlmRouterService } from '../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../ai/services/prompts/common';
 import { AnswerCacheService } from '../dialog-layer/services/answer-cache.service';
 import { DialogService } from '../dialog-layer/services/dialog.service';
-import { narrowToChatIntent } from '../dialog-layer/services/query-classifier.service';
+import {
+  type DialogIntent,
+  narrowToChatIntent,
+} from '../dialog-layer/services/query-classifier.service';
 import {
   RAG_GROUNDEDNESS_SYSTEM_PROMPT,
   RagGroundednessSchema,
@@ -36,6 +39,7 @@ export interface AskInput {
   scopeRefId?: string | null;
   asOf?: string;
   channelKindOrigin?: string | null;
+  intent?: DialogIntent;
   onStage?: (stage: ChatV2Stage) => void;
 }
 
@@ -115,6 +119,7 @@ export class ChatV2OrchestrationService {
       scope,
       scopeRefId,
       validAt: validAtIso,
+      intent: input.intent,
     });
 
     await this.conversations.appendMessage({

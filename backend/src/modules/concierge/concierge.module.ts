@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { ChatV2Module } from '../chat-v2/chat-v2.module';
+
 import { ConciergeController } from './concierge.controller';
 import { AssistantChannelBridge } from './services/assistant-channel.bridge';
 import { ConciergeContextBuilderService } from './services/concierge-context-builder.service';
@@ -13,6 +15,7 @@ import { ConciergeConversationSummarizerCron } from './workers/concierge-convers
 import { ConciergeQuotaResetCron } from './workers/concierge-quota-reset.cron';
 
 @Module({
+  imports: [ChatV2Module],
   controllers: [ConciergeController],
   providers: [
     ConciergeService,

@@ -17,24 +17,6 @@ interface SettingSeed {
 
 const SEEDS: SettingSeed[] = [
   {
-    key: 'concierge.max_steps',
-    value: 6,
-    category: 'ai',
-    section: 'smart_search',
-    severity: 'medium',
-    description:
-      'Лимит шагов петли инструментов помощника «Мастер» на один шаг плана. При достижении — честный частичный ответ «не хватило шагов», не пустота. По умолчанию 6.',
-  },
-  {
-    key: 'rag.loop_guard_threshold',
-    value: 1,
-    category: 'ai',
-    section: 'smart_search',
-    severity: 'medium',
-    description:
-      'Сколько раз допускается повтор нормализованного поискового запроса до остановки детерминированным сторожем зацикливания (без LLM). По умолчанию 1.',
-  },
-  {
     key: 'rag.rrf_k',
     value: 60,
     category: 'ai',

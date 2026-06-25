@@ -229,7 +229,7 @@ const STEPS: Step[] = [
   {
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-smart-search.ts',
-    hint: 'concierge.max_steps + rag.* (умный поэтапный поиск Мастера Ф4: сторож, RRF, реранк, достаточность, гейт честности, cold-start)',
+    hint: 'rag.* (умный поэтапный поиск Мастера Ф4: RRF, реранк, достаточность, гейт честности, cold-start)',
   },
   {
     phase: 'seed-base',

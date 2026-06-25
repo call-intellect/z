@@ -3985,7 +3985,7 @@ docker compose exec backend bun run scripts/seed-llm-default-primary-deepseek-pr
 **Граф знаний v2 + умный поиск (2026-06-24) — 2 новых сид-скрипта крутилок** (оба зарегистрированы в `apply-prod-deploy.ts STEPS` `phase:'seed-base'`, прогоняются агрегатором; защита admin-edited не затирает ручные правки):
 ```bash
 docker compose exec backend bun run scripts/seed-admin-setting-knowledge-graph.ts   # 12 крутилок графа (нарезка/overlap/контекст-заголовок/пороги рёбер/судья/alias/поиск RRF+обход/theme-summary)
-docker compose exec backend bun run scripts/seed-admin-setting-smart-search.ts       # 8 крутилок Мастера (concierge.max_steps + rag.*: сторож/RRF/реранк/достаточность/гейт честности/iterative/cold-start)
+docker compose exec backend bun run scripts/seed-admin-setting-smart-search.ts       # 6 крутилок Мастера (rag.*: RRF/реранк/достаточность/гейт честности/iterative/cold-start)
 ```
 Либо разом через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (прогонит оба + остальные seed/patch).
 

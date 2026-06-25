@@ -106,8 +106,6 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['graph.ageEnabled', z.boolean()],
 
-  ['concierge.max_steps', POSITIVE_INT],
-  ['rag.loop_guard_threshold', POSITIVE_INT],
   ['rag.rrf_k', POSITIVE_INT],
   ['rag.k_retrieve', POSITIVE_INT],
   ['rag.k_context', POSITIVE_INT],

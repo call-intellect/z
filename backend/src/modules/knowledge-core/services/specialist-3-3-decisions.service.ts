@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { AdminSettingsService } from '../../admin/settings/admin-settings.service';
 import {
   type LlmCallResult,
   LlmRouterService,
@@ -110,7 +111,19 @@ export class Specialist33Service {
     @Optional()
     @Inject(Specialist36Service)
     private readonly specialist36?: Specialist36Service,
+    @Optional()
+    @Inject(AdminSettingsService)
+    private readonly settings?: AdminSettingsService,
   ) {}
+
+  private async getMinExtractConfidence(): Promise<number> {
+    const v = await this.settings
+      ?.get<number>('knowledge.decisionsExtractMinConfidence')
+      .catch(() => undefined);
+    return typeof v === 'number' && Number.isFinite(v)
+      ? v
+      : Specialist33Service.MIN_EXTRACT_CONFIDENCE;
+  }
 
   /**
    * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
@@ -583,7 +596,8 @@ export class Specialist33Service {
       );
       return null;
     }
-    if ((parsed.confidence ?? 0) < Specialist33Service.MIN_EXTRACT_CONFIDENCE) {
+    const minConfidence = await this.getMinExtractConfidence();
+    if ((parsed.confidence ?? 0) < minConfidence) {
       this.logger.debug(
         { blockId: block.id, confidence: parsed.confidence },
         'specialist-3-3.extractDraft: confidence слишком низкий — skip',

@@ -138,6 +138,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-knowledge-extract.ts',
+    hint: 'knowledge.{decisions,ideas,insights}ExtractMinConfidence — пороги уверенности извлекателей решений/идей/инсайтов (task-decision-disambiguation Ф5)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-documents.ts',
     hint: 'documents.short_text_to_idea_threshold=200 — порог, при котором короткий вставленный текст предлагается отправить в «Идеи» вместо документа (QA-Ф8 R17)',
   },

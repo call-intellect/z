@@ -32,6 +32,9 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.curationAutotuneStep', UNIT_INTERVAL],
   ['knowledge.curationMaxProvisionalOverride', UNIT_INTERVAL],
   ['knowledge.insightSpikeRatio', z.number().min(0).max(100)],
+  ['knowledge.decisionsExtractMinConfidence', UNIT_INTERVAL],
+  ['knowledge.ideasExtractMinConfidence', UNIT_INTERVAL],
+  ['knowledge.insightsExtractMinConfidence', UNIT_INTERVAL],
 
   ['knowledge.distillDebounceMs', POSITIVE_INT],
   ['knowledge.distillKnnTopK', POSITIVE_INT],

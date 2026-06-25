@@ -19,7 +19,7 @@ import type { Rhythm } from "../types";
 
 export const ValueWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
   const { currentOrgId } = useAuth();
-  const period = rhythm === "week" ? "week" : "month";
+  const period = rhythm === "month" ? "month" : "week";
 
   const swr = useSWR(
     currentOrgId ? ["value-director", currentOrgId, period] : null,

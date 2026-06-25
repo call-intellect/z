@@ -22,8 +22,7 @@ import { SourceLink } from "../_kit";
 function rangeForRhythm(rhythm: Rhythm): { from: string; to: string } {
   const today = new Date();
   const to = today.toISOString().slice(0, 10);
-  if (rhythm === "today") return { from: to, to };
-  const days = rhythm === "week" ? 7 : 30;
+  const days = rhythm === "month" ? 30 : 7;
   const fromDate = new Date(today);
   fromDate.setDate(fromDate.getDate() - days);
   return { from: fromDate.toISOString().slice(0, 10), to };
@@ -66,7 +65,21 @@ export const DecisionsWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
   const stalled = stalledSwr.data?.items ?? [];
   const total = throughput?.total ?? 0;
 
-  if (total === 0 && stalled.length === 0) return null;
+  if (total === 0 && stalled.length === 0) {
+    return (
+      <GlassCard>
+        <CardTitle icon={<CheckCircle2 size={16} />} grad={GRAD.teal}>
+          Решения
+        </CardTitle>
+        <p
+          className="mt-6 py-6 text-center text-sm"
+          style={{ color: CHART.faint }}
+        >
+          За период решений не доводилось.
+        </p>
+      </GlassCard>
+    );
+  }
 
   return (
     <GlassCard>
@@ -75,13 +88,24 @@ export const DecisionsWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
       </CardTitle>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <StatCard
-          icon={<CheckCircle2 size={18} />}
-          grad={GRAD.teal}
-          tone={CHART.teal}
-          label={`Доведено: ${throughput?.doneWithOutcomes ?? 0} из ${total}`}
-          value={`${throughput?.throughputPercent ?? 0}%`}
-        />
+        {total === 0 ? (
+          <div
+            className="flex flex-col justify-center rounded-2xl p-4"
+            style={{ background: "var(--surface-inset)" }}
+          >
+            <span className="text-sm" style={{ color: CHART.dim }}>
+              За период решений не доводилось
+            </span>
+          </div>
+        ) : (
+          <StatCard
+            icon={<CheckCircle2 size={18} />}
+            grad={GRAD.teal}
+            tone={CHART.teal}
+            label={`Доведено: ${throughput?.doneWithOutcomes ?? 0} из ${total}`}
+            value={`${throughput?.throughputPercent ?? 0}%`}
+          />
+        )}
         <StatCard
           icon={<Clock size={18} />}
           grad={GRAD.amber}

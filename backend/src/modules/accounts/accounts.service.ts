@@ -590,7 +590,7 @@ export class AccountsService {
         select: { orgId: true, role: true },
       }),
     ]);
-    const defaultMembership = demoMembership ?? firstOwnedMembership;
+    const defaultMembership = firstOwnedMembership ?? demoMembership;
     return {
       ...this.toPublicUser(user),
       isSuperAdmin: fresh?.isSuperAdmin === true,

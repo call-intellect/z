@@ -6,6 +6,8 @@ import { useAuth } from '@/contexts/auth-context';
 import { onboardingApi } from '@/api/onboarding.api';
 import { OnboardingShell } from '../OnboardingShell';
 import { Button } from '@/ui/shadcn/button';
+import { toast } from 'sonner';
+import { humanizeApiError } from '@/api/api-error';
 
 const STACK_OPTIONS = [
   { id: 'video_meetings', label: 'Видеовстречи (Зум, Google Meet, Телемост, Контур.Толк)' },
@@ -35,13 +37,18 @@ export default function Step5Page() {
   };
 
   const handleNext = async () => {
-    if (saving || !currentOrgId) return;
+    if (saving) return;
+    if (!currentOrgId) {
+      toast.error('Данные профиля ещё загружаются — подождите пару секунд и попробуйте снова.');
+      return;
+    }
     setSaving(true);
     try {
       await onboardingApi.patchWelcome(currentOrgId, { currentStack: [...selected] });
       router.push('/onboarding/welcome/step-6');
-    } catch {
+    } catch (e) {
       setSaving(false);
+      toast.error(humanizeApiError(e, 'Не удалось сохранить ответ. Попробуйте ещё раз.'));
     }
   };
 

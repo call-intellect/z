@@ -6,6 +6,8 @@ import { useAuth } from "@/contexts/auth-context";
 import { onboardingApi } from "@/api/onboarding.api";
 import { OnboardingShell } from "../OnboardingShell";
 import { Button } from "@/ui/shadcn/button";
+import { toast } from "sonner";
+import { humanizeApiError } from "@/api/api-error";
 
 const FEATURES = [
   {
@@ -66,7 +68,11 @@ export default function Step6Page() {
   };
 
   const handleComplete = async () => {
-    if (saving || !currentOrgId) return;
+    if (saving) return;
+    if (!currentOrgId) {
+      toast.error("Данные профиля ещё загружаются — подождите пару секунд и попробуйте снова.");
+      return;
+    }
     setSaving(true);
     try {
       await onboardingApi.patchWelcome(currentOrgId, {
@@ -75,8 +81,9 @@ export default function Step6Page() {
       const { redirectTo } = await onboardingApi.completeWelcome(currentOrgId);
       await refresh();
       router.push(redirectTo || "/dashboard");
-    } catch {
+    } catch (e) {
       setSaving(false);
+      toast.error(humanizeApiError(e, "Не удалось завершить. Попробуйте ещё раз."));
     }
   };
 

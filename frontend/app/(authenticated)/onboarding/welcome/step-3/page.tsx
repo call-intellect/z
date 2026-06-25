@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 import { onboardingApi } from '@/api/onboarding.api';
 import { OnboardingShell } from '../OnboardingShell';
+import { toast } from 'sonner';
+import { humanizeApiError } from '@/api/api-error';
 
 const INDUSTRIES = [
   { value: 'software', label: 'Разработка программного обеспечения' },
@@ -23,13 +25,18 @@ export default function Step3Page() {
   const [saving, setSaving] = useState(false);
 
   const handleSelect = async (value: string) => {
-    if (saving || !currentOrgId) return;
+    if (saving) return;
+    if (!currentOrgId) {
+      toast.error('Данные профиля ещё загружаются — подождите пару секунд и попробуйте снова.');
+      return;
+    }
     setSaving(true);
     try {
       await onboardingApi.patchWelcome(currentOrgId, { industry: value });
       router.push('/onboarding/welcome/step-4');
-    } catch {
+    } catch (e) {
       setSaving(false);
+      toast.error(humanizeApiError(e, 'Не удалось сохранить ответ. Попробуйте ещё раз.'));
     }
   };
 

@@ -6,6 +6,8 @@ import { useAuth } from '@/contexts/auth-context';
 import { onboardingApi } from '@/api/onboarding.api';
 import { OnboardingShell } from '../OnboardingShell';
 import { Button } from '@/ui/shadcn/button';
+import { toast } from 'sonner';
+import { humanizeApiError } from '@/api/api-error';
 
 const PAIN_POINTS = [
   { id: 'goals_dissolve', label: 'Цели на квартал растворяются, к середине никто не помнит куда шли' },
@@ -38,13 +40,18 @@ export default function Step4Page() {
   };
 
   const handleNext = async () => {
-    if (saving || !currentOrgId || selected.size === 0) return;
+    if (saving || selected.size === 0) return;
+    if (!currentOrgId) {
+      toast.error('Данные профиля ещё загружаются — подождите пару секунд и попробуйте снова.');
+      return;
+    }
     setSaving(true);
     try {
       await onboardingApi.patchWelcome(currentOrgId, { painPoints: [...selected] });
       router.push('/onboarding/welcome/step-5');
-    } catch {
+    } catch (e) {
       setSaving(false);
+      toast.error(humanizeApiError(e, 'Не удалось сохранить ответ. Попробуйте ещё раз.'));
     }
   };
 

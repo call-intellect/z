@@ -80,6 +80,7 @@ export type ConciergeStreamEvent =
       type: 'message';
       text: string;
       citations?: unknown[];
+      needsClarification?: boolean;
     }
   | { type: 'done'; messageId: string }
   | { type: 'error'; code: string; message: string }
@@ -507,6 +508,7 @@ export class ConciergeService {
     yield {
       type: 'message',
       text: answer.text,
+      needsClarification: answer.needsClarification === true,
       ...(answer.citations.length > 0 ? { citations: answer.citations } : {}),
     };
     yield { type: 'done', messageId: assistantMsg.id };
@@ -556,6 +558,7 @@ export class ConciergeService {
     yield {
       type: 'message',
       text: answer.text,
+      needsClarification: answer.needsClarification === true,
       ...(answer.citations.length > 0 ? { citations: answer.citations } : {}),
     };
     yield { type: 'done', messageId: assistantMsg.id };

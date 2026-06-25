@@ -22,6 +22,7 @@ import { DocumentsService } from '../../../documents/documents.service';
 import { S3Service } from '../../../recordings/s3.service';
 import { ChannelRegistry } from '../../channel-registry';
 import { ConversationalLinkCodeService } from '../../link-code.service';
+import { channelClarifyKey } from '../../types/channel-clarify-key';
 import type { ConversationalJson, IChannel, InboundMessage } from '../../types/channel.types';
 
 import { MaxApiClient, MaxApiError } from './max-api-client';
@@ -267,6 +268,17 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
 
     this.metrics.incBotInbound({ channel: 'max_bot', kind: 'text' });
 
+    if (await this.isClarifyPending(binding.id)) {
+      return {
+        type: 'assistant_turn',
+        userId: binding.userId,
+        tenantId,
+        text,
+        metadata: { source: 'max_bot', chatId, clarifyResume: true },
+        originChannelBindingId: binding.id,
+      };
+    }
+
     const openProbe = await this.findOpenProbe({
       tenantId,
       userId: binding.userId,
@@ -490,6 +502,23 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       return null;
     }
 
+    if (await this.isClarifyPending(args.binding.id)) {
+      return {
+        type: 'assistant_turn',
+        userId: args.binding.userId,
+        tenantId: args.tenantId,
+        text: transcript,
+        metadata: {
+          source: 'max_bot',
+          kind: 'voice',
+          chatId: args.chatId,
+          clarifyResume: true,
+          ...(audioS3Key ? { audioS3Key } : {}),
+        },
+        originChannelBindingId: args.binding.id,
+      };
+    }
+
     if (this.isAssistantRoutingEnabled()) {
       return {
         type: 'assistant_turn',
@@ -669,6 +698,19 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       await this.redis.client.expire(key, 7200);
     }
     return count <= MaxBotChannelAdapter.VOICE_PER_HOUR_PER_USER;
+  }
+
+  private async isClarifyPending(bindingId: string): Promise<boolean> {
+    try {
+      const raw = await this.redis.client.get(channelClarifyKey(bindingId));
+      return raw != null;
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'max inbound: Redis get clarify-ключа упал — обрабатываем как обычный ход',
+      );
+      return false;
+    }
   }
 
   private async requireVerifiedBinding(args: {

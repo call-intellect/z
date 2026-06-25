@@ -23,6 +23,7 @@ import { DocumentsService } from '../../../documents/documents.service';
 import { S3Service } from '../../../recordings/s3.service';
 import { ChannelRegistry } from '../../channel-registry';
 import { ConversationalLinkCodeService } from '../../link-code.service';
+import { channelClarifyKey } from '../../types/channel-clarify-key';
 import type { ConversationalJson, IChannel, InboundMessage } from '../../types/channel.types';
 
 import { formatCheckinAck } from './format-checkin-ack';
@@ -373,6 +374,17 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
 
     this.metrics.incBotInbound({ channel: 'telegram_bot', kind: 'text' });
 
+    if (await this.isClarifyPending(binding.id)) {
+      return {
+        type: 'assistant_turn',
+        userId: binding.userId,
+        tenantId,
+        text: rawText,
+        metadata: { source: 'telegram_bot', chatId: msg.chat.id, clarifyResume: true },
+        originChannelBindingId: binding.id,
+      };
+    }
+
     if (msg.reply_to_message) {
       const probeMatch = await this.tryMatchReplyToProbe({
         reply: msg.reply_to_message,
@@ -697,6 +709,23 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       return null;
     }
 
+    if (await this.isClarifyPending(args.binding.id)) {
+      return {
+        type: 'assistant_turn',
+        userId: args.binding.userId,
+        tenantId: args.tenantId,
+        text: transcript,
+        metadata: {
+          source: 'telegram_bot',
+          kind: 'voice',
+          chatId: args.msg.chat.id,
+          clarifyResume: true,
+          ...(audioS3Key ? { audioS3Key } : {}),
+        },
+        originChannelBindingId: args.binding.id,
+      };
+    }
+
     const intent = await this.classifyIntent({
       text: transcript,
       tenantId: args.tenantId,
@@ -898,6 +927,19 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       await this.redis.client.expire(key, 7200);
     }
     return count <= TelegramBotChannelAdapter.VOICE_PER_HOUR_PER_USER;
+  }
+
+  private async isClarifyPending(bindingId: string): Promise<boolean> {
+    try {
+      const raw = await this.redis.client.get(channelClarifyKey(bindingId));
+      return raw != null;
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'telegram inbound: Redis get clarify-ключа упал — обрабатываем как обычный ход',
+      );
+      return false;
+    }
   }
 
   private async requireVerifiedBinding(args: {

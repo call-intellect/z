@@ -50,6 +50,16 @@ export function renderExamplesForDecisionExtractor(): string {
   ].join('\n');
 }
 
+export function renderExamplesForIdeaExtractor(): string {
+  return [
+    '# Задача — это НЕ идея (НЕ путай)',
+    'Идея — ещё не принятое ПРЕДЛОЖЕНИЕ нового подхода/возможности. Поручение/постановка задачи (в т.ч. со словом «задача», «поручаю», «сделай», «подготовь», «настрой») — это ЗАДАЧА → isIdea=false, её берёт трекер.',
+    ...promptSample().map(
+      (p) => `- ЗАДАЧА (isIdea=false): «${p.task}» — действие к исполнению, не идея.`,
+    ),
+  ].join('\n');
+}
+
 export function renderExamplesForTaskExtractor(): string {
   return [
     '# Примеры: что задача, а что решение (НЕ путай)',

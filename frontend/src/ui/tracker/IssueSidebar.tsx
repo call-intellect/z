@@ -130,7 +130,11 @@ export function IssueSidebar({
             entityId={issue.id}
             title={issue.title}
           />
-        ) : null}
+        ) : (
+          <div className="text-xs text-fg-tertiary">
+            Создано вручную — источника нет
+          </div>
+        )}
         <StartMeetingButton orgId={orgId} issueId={issue.id} />
       </div>
     </aside>

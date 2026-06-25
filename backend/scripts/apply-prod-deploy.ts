@@ -468,7 +468,7 @@ const STEPS: Step[] = [
     script: 'scripts/patch-enable-shipped-flags.ts',
     skipBootstrap: true,
     everyDeploy: true,
-    hint: 'Ship-On: включить готовые фичи (meetingTasksToTrackerOnly, tables_text_to_schema, curationAutotuneEnabled)',
+    hint: 'Ship-On: включить готовые фичи (tables_text_to_schema, curationAutotuneEnabled)',
   },
   {
     phase: 'patch',

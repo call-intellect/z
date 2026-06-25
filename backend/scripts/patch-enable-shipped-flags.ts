@@ -3,7 +3,6 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
 const KEYS = [
-  'knowledge.meetingTasksToTrackerOnly',
   'feature.tables_text_to_schema',
   'knowledge.curationAutotuneEnabled',
 ] as const;

@@ -134,15 +134,6 @@ const SEEDS: SettingSeed[] = [
       'Приоритет уточняющего вопроса об исполнителе задачи (0–1). По умолчанию 0.7.',
   },
   {
-    key: 'tracker.chatboxTasksInTriageEnabled',
-    value: true,
-    category: 'ai',
-    section: 'tracker',
-    severity: 'medium',
-    description:
-      'Показывать задачи из чатов в общей ленте триажа /intake (read-union). Рубильник, по умолчанию вкл (Ship-On).',
-  },
-  {
     key: 'tracker.meetingTasksAlwaysPromote',
     value: true,
     category: 'ai',
@@ -150,15 +141,6 @@ const SEEDS: SettingSeed[] = [
     severity: 'medium',
     description:
       'Задача со встречи всегда становится Issue в трекере (неназначенной, проект «Из встреч»), даже если Кора не распознала исполнителя/срок. Рубильник, по умолчанию вкл (Ship-On). Выкл → встречные задачи без исполнителя остаются в /intake.',
-  },
-  {
-    key: 'tracker.taskExtractionMode',
-    value: 'spine',
-    category: 'tracker',
-    section: 'workers',
-    severity: 'high',
-    description:
-      'Режим извлечения задач из не-meeting каналов. `spine` (по умолчанию, Ship-On) — единый спайн-специалист 3-15-tasks материализует задачи в IntakeIssue; `legacy` — аварийный откат на старые кустарные пути (chatbox task-extraction и т.д.). Рубильник.',
   },
   {
     key: 'tracker.taskDedupLinkSemantics',

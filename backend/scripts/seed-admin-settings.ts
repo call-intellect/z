@@ -730,12 +730,6 @@ function buildSettings(): SettingSeed[] {
       'Привязка автора (subject) на ВСЕ типы знания, не только reasoning (false = только reasoning-семейство)',
     ],
     [
-      'knowledge.meetingTasksToTrackerOnly',
-      envBool('KNOWLEDGE_MEETING_TASKS_TO_TRACKER_ONLY', true),
-      'high',
-      'Единая видимая задача из встречи: true = только tracker Issue (Task не создаётся), false = текущее поведение (Task)',
-    ],
-    [
       'knowledge.ideaDirectPathEnabled',
       envBool('KNOWLEDGE_IDEA_DIRECT_PATH_ENABLED', true),
       'high',

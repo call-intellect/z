@@ -1,7 +1,6 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { type Job } from 'bullmq';
 
-import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { type SpecialistRoutingJobData } from '../../core-queue/queues';
@@ -24,9 +23,6 @@ export class Specialist315TasksWorker {
     private readonly svc: Specialist315TasksService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
-    @Optional()
-    @Inject(TypedConfigService)
-    private readonly cfg?: TypedConfigService,
   ) {}
 
   async handle(job: Job<SpecialistRoutingJobData>): Promise<void> {
@@ -77,24 +73,6 @@ export class Specialist315TasksWorker {
           specialist: Specialist315TasksWorker.SPECIALIST_NAME,
           reason: 'signal_out_of_scope',
         });
-        return;
-      }
-
-      const mode =
-        (await this.cfg?.getDynamic<'spine' | 'legacy'>(
-          'tracker.taskExtractionMode',
-          undefined,
-          'spine',
-        )) ?? 'spine';
-      if (mode === 'legacy') {
-        this.metrics.incCoreSpecialistSkipped({
-          specialist: Specialist315TasksWorker.SPECIALIST_NAME,
-          reason: 'mode_legacy',
-        });
-        this.logger.debug(
-          { blockId },
-          'specialist-3-15: режим legacy — спайн-специалист bypass',
-        );
         return;
       }
 

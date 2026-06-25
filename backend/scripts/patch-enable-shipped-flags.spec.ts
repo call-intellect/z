@@ -50,22 +50,20 @@ function buildPrisma(byKey: Record<string, ExistingSetting | null>) {
 }
 
 describe('patchEnableShippedFlags', () => {
-  it('все три false+updatedBy=null → 3 updated', async () => {
+  it('все false+updatedBy=null → все updated', async () => {
     const prisma = buildPrisma({
-      'knowledge.meetingTasksToTrackerOnly': { value: false, updatedBy: null },
       'feature.tables_text_to_schema': { value: false, updatedBy: null },
       'knowledge.curationAutotuneEnabled': { value: false, updatedBy: null },
     });
 
     const stats = await patchEnableShippedFlags(prisma as unknown as PrismaClient);
 
-    expect(stats.updated).toBe(3);
-    expect(prisma.adminSetting.update).toHaveBeenCalledTimes(3);
+    expect(stats.updated).toBe(2);
+    expect(prisma.adminSetting.update).toHaveBeenCalledTimes(2);
   });
 
   it('идемпотентность: все already-true → 0 updated', async () => {
     const prisma = buildPrisma({
-      'knowledge.meetingTasksToTrackerOnly': { value: true, updatedBy: null },
       'feature.tables_text_to_schema': { value: true, updatedBy: null },
       'knowledge.curationAutotuneEnabled': { value: true, updatedBy: null },
     });
@@ -73,22 +71,21 @@ describe('patchEnableShippedFlags', () => {
     const stats = await patchEnableShippedFlags(prisma as unknown as PrismaClient);
 
     expect(stats.updated).toBe(0);
-    expect(stats.skippedAlreadyTrue).toBe(3);
+    expect(stats.skippedAlreadyTrue).toBe(2);
     expect(prisma.adminSetting.update).not.toHaveBeenCalled();
   });
 
   it('admin-edited и absent не трогаются', async () => {
     const prisma = buildPrisma({
-      'knowledge.meetingTasksToTrackerOnly': { value: false, updatedBy: 'u-1' },
-      'feature.tables_text_to_schema': null,
-      'knowledge.curationAutotuneEnabled': { value: false, updatedBy: null },
+      'feature.tables_text_to_schema': { value: false, updatedBy: 'u-1' },
+      'knowledge.curationAutotuneEnabled': null,
     });
 
     const stats = await patchEnableShippedFlags(prisma as unknown as PrismaClient);
 
-    expect(stats.updated).toBe(1);
+    expect(stats.updated).toBe(0);
     expect(stats.skippedAdminEdited).toBe(1);
     expect(stats.skippedAbsent).toBe(1);
-    expect(prisma.adminSetting.update).toHaveBeenCalledTimes(1);
+    expect(prisma.adminSetting.update).not.toHaveBeenCalled();
   });
 });

@@ -559,16 +559,6 @@ export class TypedConfigService {
         undefined,
         true,
       ),
-      chatboxTaskExtractionEnabled: this.resolveSync<boolean>(
-        'chatbox.taskExtraction.enabled',
-        'CHATBOX_TASK_EXTRACTION_ENABLED',
-        true,
-      ),
-      tasksCrossSourceDedupeEnabled: this.resolveSync<boolean>(
-        'tasks.crossSourceDedupe.enabled',
-        'TASKS_CROSS_SOURCE_DEDUPE_ENABLED',
-        true,
-      ),
       crossSourceDedupeThreshold: this.resolveSync<number>(
         'tasks.cross_source_dedupe_threshold',
         undefined,
@@ -1743,20 +1733,10 @@ export class TypedConfigService {
         undefined,
         0.7,
       ),
-      chatboxTasksInTriageEnabled: this.resolveSync<boolean>(
-        'tracker.chatboxTasksInTriageEnabled',
-        undefined,
-        true,
-      ),
       meetingTasksAlwaysPromote: this.resolveSync<boolean>(
         'tracker.meetingTasksAlwaysPromote',
         undefined,
         true,
-      ),
-      taskExtractionMode: this.resolveSync<'spine' | 'legacy'>(
-        'tracker.taskExtractionMode',
-        undefined,
-        'spine',
       ),
       taskDedupLinkSemantics: this.resolveSync<'link' | 'delete'>(
         'tracker.taskDedupLinkSemantics',

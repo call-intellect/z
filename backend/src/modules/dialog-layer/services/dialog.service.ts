@@ -22,6 +22,8 @@ export interface DialogProcessInput {
   scopeRefId: string | null;
   validAt: string | null;
   intent?: DialogIntent;
+  summaryOverride?: string | null;
+  historyOverride?: Array<{ role: 'user' | 'assistant'; content: string }>;
 }
 
 export interface DialogProcessResult {
@@ -86,7 +88,14 @@ export class DialogService {
 
     const question = input.userMessage;
 
-    const { summary, history } = await this.loadConversationContext(input.conversationId);
+    const hasOverride =
+      input.summaryOverride !== undefined || input.historyOverride !== undefined;
+    const { summary, history } = hasOverride
+      ? {
+          summary: input.summaryOverride ?? null,
+          history: input.historyOverride ?? [],
+        }
+      : await this.loadConversationContext(input.conversationId);
 
     let intent: DialogIntent;
     let classifySeconds: number;

@@ -176,6 +176,7 @@ const registry = new Map<string, ZodTypeAny>([
   // Probe Фаза 2 (2026-06-17) — порог уверенности для распознавания свободного
   // ответа на probe во входном классификаторе (Telegram без reply / MAX).
   ['probe.replyClassifyMinConfidence', UNIT_INTERVAL],
+  ['probe.implicit_match_max_age_days', POSITIVE_INT],
   // Probe Фаза 2 (2026-06-17) — kill-switch LLM-судьи качества формулировки
   // probe-вопроса (один регенерат при браке). ON.
   ['probe.qualityJudgeEnabled', z.boolean()],

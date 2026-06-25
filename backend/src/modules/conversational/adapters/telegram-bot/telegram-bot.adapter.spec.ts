@@ -54,6 +54,7 @@ function makeAdapter(opts: {
     | 'probe_reply';
   classifyConfidence?: number;
   probeReplyMinConfidence?: number;
+  probeImplicitMatchMaxAgeDays?: number;
   withTaskHandler?: boolean;
   classifyThrows?: boolean;
   rateLimitCount?: number;
@@ -145,7 +146,13 @@ function makeAdapter(opts: {
     },
     getDynamic: vi
       .fn()
-      .mockResolvedValue(opts.probeReplyMinConfidence ?? 0.6),
+      .mockImplementation((key: string) =>
+        Promise.resolve(
+          key === 'probe.implicit_match_max_age_days'
+            ? (opts.probeImplicitMatchMaxAgeDays ?? 3)
+            : (opts.probeReplyMinConfidence ?? 0.6),
+        ),
+      ),
   } as unknown as TypedConfigService;
 
   const accounts = (
@@ -743,6 +750,121 @@ describe('TelegramBotChannelAdapter.ingestUpdate (probe_reply без reply)', ()
 
     expect((result as { type: string }).type).not.toBe('response');
     expect((result as { type: string }).type).toBe('free_note');
+  });
+});
+
+describe('TelegramBotChannelAdapter.findOpenProbe — окно свежести', () => {
+  const textUpdate = (text: string, updateId = 410): TelegramUpdate => ({
+    update_id: updateId,
+    message: {
+      message_id: updateId,
+      date: 1700000000,
+      chat: { id: 100 },
+      from: { id: 100 },
+      text,
+    },
+  });
+
+  const probeAged = (ageDays: number) => ({
+    id: 'notif-probe-aged',
+    payload: { question: 'Кто отвечает за это решение?' },
+    createdAt: new Date(Date.now() - ageDays * 24 * 60 * 60 * 1000),
+  });
+
+  const honorFreshness = (
+    mocks: ReturnType<typeof makeAdapter>,
+    probe: ReturnType<typeof probeAged>,
+  ) => {
+    vi.mocked(mocks.prisma.notification.findFirst).mockImplementation(
+      (async (args: { where?: { createdAt?: { gte?: Date } } }) => {
+        const gte = args?.where?.createdAt?.gte;
+        if (gte && probe.createdAt < gte) return null;
+        return probe;
+      }) as never,
+    );
+  };
+
+  it('probe в пределах окна (1 день, окно 3) → type=response (implicit match)', async () => {
+    const mocks = makeAdapter({
+      classifyIntent: 'probe_reply',
+      classifyConfidence: 0.8,
+      probeImplicitMatchMaxAgeDays: 3,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+    honorFreshness(mocks, probeAged(1));
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('Да, отвечает Иванов'),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        type: 'response',
+        notificationId: 'notif-probe-aged',
+        payload: { text: 'Да, отвечает Иванов', kind: 'implicit_response' },
+      }),
+    );
+  });
+
+  it('probe старше окна (18 дней, окно 3) → null → НЕ response', async () => {
+    const mocks = makeAdapter({
+      classifyIntent: 'probe_reply',
+      classifyConfidence: 0.8,
+      probeImplicitMatchMaxAgeDays: 3,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+    honorFreshness(mocks, probeAged(18));
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('Да, отвечает Иванов', 411),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect((result as { type: string }).type).not.toBe('response');
+    const classifyArg = vi.mocked(mocks.classifier.classify).mock
+      .calls[0]?.[0] as { openProbeQuestion?: string };
+    expect(classifyArg.openProbeQuestion).toBeUndefined();
+  });
+
+  it('findFirst получает where.createdAt.gte вычисленный из крутилки', async () => {
+    const mocks = makeAdapter({
+      classifyIntent: 'factual',
+      classifyConfidence: 0.9,
+      probeImplicitMatchMaxAgeDays: 5,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+    vi.mocked(mocks.prisma.notification.findFirst).mockResolvedValue(null);
+
+    const before = Date.now() - 5 * 24 * 60 * 60 * 1000;
+    await mocks.adapter.ingestUpdate({
+      update: textUpdate('Какой бюджет на Q4?', 412),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+    const after = Date.now() - 5 * 24 * 60 * 60 * 1000;
+
+    expect(mocks.prisma.notification.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          responseStatus: 'pending',
+          createdAt: expect.objectContaining({ gte: expect.any(Date) }),
+        }),
+      }),
+    );
+    const callArg = vi.mocked(mocks.prisma.notification.findFirst).mock
+      .calls[0]?.[0] as { where?: { createdAt?: { gte?: Date } } };
+    const gte = callArg?.where?.createdAt?.gte?.getTime();
+    expect(gte).toBeGreaterThanOrEqual(before);
+    expect(gte).toBeLessThanOrEqual(after);
   });
 });
 

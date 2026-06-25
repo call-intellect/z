@@ -743,12 +743,15 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     tenantId: string;
     userId: string;
   }): Promise<{ id: string; question: string } | null> {
+    const maxAgeDays = await this.getProbeImplicitMatchMaxAgeDays();
+    const minCreatedAt = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
     const openProbe = await this.prisma.notification.findFirst({
       where: {
         tenantId: args.tenantId,
         recipientUserId: args.userId,
         eventType: { in: ['probe.question', 'probe.digest'] },
         responseStatus: 'pending',
+        createdAt: { gte: minCreatedAt },
       },
       orderBy: { createdAt: 'desc' },
       select: { id: true, payload: true },
@@ -780,6 +783,18 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       );
     } catch {
       return 0.6;
+    }
+  }
+
+  private async getProbeImplicitMatchMaxAgeDays(): Promise<number> {
+    try {
+      return await this.cfg.getDynamic<number>(
+        'probe.implicit_match_max_age_days',
+        undefined,
+        3,
+      );
+    } catch {
+      return 3;
     }
   }
 

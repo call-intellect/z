@@ -607,6 +607,31 @@ export class Specialist36Service {
     });
   }
 
+  async reextractIdeaForBackfill(args: {
+    tenantId: string;
+    ideaId: string;
+  }): Promise<'updated' | 'skipped' | 'no_block' | 'not_idea'> {
+    const idea = await this.prisma.idea.findFirst({
+      where: { id: args.ideaId, tenantId: args.tenantId },
+    });
+    if (!idea) return 'skipped';
+    if (idea.createdByUserId !== null || idea.rationale !== null) return 'skipped';
+    const blockId = idea.sourceBlockIds[0];
+    if (!blockId) return 'no_block';
+    const block = await this.prisma.ideaBlock.findUnique({
+      where: { id: blockId },
+      include: { evidence: true },
+    });
+    if (!block) return 'no_block';
+    const draft = await this.extractDraft(block);
+    if (!draft || draft.isIdea === false) return 'not_idea';
+    await this.prisma.idea.update({
+      where: { id: idea.id },
+      data: { statement: draft.statement, rationale: draft.rationale ?? null },
+    });
+    return 'updated';
+  }
+
   private async upgradeIdeaQuality(args: {
     existing: Idea;
     block: IdeaBlock & { evidence: IdeaBlockEvidence[] };

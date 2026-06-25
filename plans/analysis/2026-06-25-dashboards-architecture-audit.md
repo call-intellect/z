@@ -44,9 +44,9 @@
 
 Поток: `page.tsx` → `*DesktopClient` → **`DashboardCanvas(role, rhythm)`** → `useDashboardLayout` →
 если API `/dashboard/layout` вернул `null` (а он возвращает `null`), берётся **`DEFAULT_PRESETS[role][rhythm]`** →
-массив id виджетов → из **`WIDGET_REGISTRY`** (20 виджетов) → рендер в **CSS-grid 12 колонок**.
+массив id виджетов → из **`WIDGET_REGISTRY`** (18 виджетов) → рендер в **CSS-grid 12 колонок**.
 
-### Реестр виджетов (20) и на каких ритмах
+### Реестр виджетов (18) и на каких ритмах
 today(10): verdict, goal-vector, plan-fact, load, stale, blockers, ideas, decisions, feed, value
 week(+3): trend, weekly-plan-fact, chains
 month(+5): month-recap, achievements, weekly-dynamics, maturity, bus-factor

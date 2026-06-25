@@ -10,6 +10,8 @@ relates_to:
 ---
 > Анализ: `plans/analysis/2026-06-25-dashboards-architecture-audit.md` (мастер-док, разделы 9–11) · Статус согласования: 2026-06-25
 
+> **Перепроверка кода 2026-06-26** (после параллельных работ Task→Issue и «задача vs решение»): все якоря ТЗ целы — `resolveGoalId`/`isPrimary` (execution-dashboard.service.ts:338-353), `customer-risk listForTenant` (:303), `DashboardCanvas` grid/SIZE_SPAN (:12,33,39), `ValueWidget` period-баг (:22) — без изменений. Модель `Task` удалена, но ТЗ опирается на `Issue/IssueAssignee/PersonGoalContribution/CustomerRiskSnapshot` — все живы. **Рерайт не нужен, добавлены граничные контракты с параллельными ТЗ (ниже).**
+
 # ТЗ — Ремонт дашбордов Коры (Сегодня / Аналитика / Неделя / Месяц)
 
 ## Принцип
@@ -37,7 +39,8 @@ relates_to:
 - **Период «Пользы»:** `ValueWidget.tsx` — `const period = rhythm === "week" ? "week" : "month"` → на `today` берёт month. `director` DTO поддерживает только `z.enum(['week','month'])` (`backend/src/modules/dashboard/dto/director-dashboard.dto.ts:4`) — `day` НЕТ. → today приводим к `week` (как остальные director-виджеты дня). Day-польза — vNext.
 - **Графики:** 8 чарт-компонентов используют `ResponsiveContainer` (`frontend/src/ui/components/dashboard/charts/*` и `.../modern/{GaugeCard,DonutCard,BarTrend,AreaTrend,RadarCard}.tsx`) — часть без гарантированной высоты контейнера → `width(-1) height(-1)`. **Добавляем minHeight, компоненты не удаляем.**
 - **Двойная загрузка:** не из `MobileShell` (он рендерит ровно одно: `frontend/src/ui/mobile/MobileShell.tsx`). Источник — несшеренные SWR-ключи к `director` у нескольких виджетов + повторный mount. **Фаза-investigate с измеримым критерием.**
-- **Битые ссылки:** `weekly-digest?weekStart=...` → 404 на `/month`; `/me/commitments` → 404 (RSC-prefetch). Эндпоинт/маршрут отсутствуют. **Чиним вызов/ссылку.**
+- **Битые ссылки:** `weekly-digest?weekStart=...` → 404 на `/month`; `/me/commitments` → 404 (RSC-prefetch). Эндпоинт/маршрут отсутствуют. **Чиним вызов/ссылку.** ⚠️ Сверить с параллельным `plans/tz/2026-06-25-meeting-tasks-widget-404-fix.md` — возможно, часть 404 уже закрыта там, не дублировать.
+- **Task→Issue унификация (проверено 2026-06-26):** реестр виджетов цел — **18 виджетов** (`verdict, goal-vector, plan-fact, weekly-plan-fact, trend, month-recap, achievements, weekly-dynamics, maturity, bus-factor, load, stale, chains, blockers, ideas, decisions, feed, value`), ни один не удалён. `director-dashboard.service.ts` value-strip переведён с `task.count` на `issue.count({deletedAt:null, archivedAt:null})` (`:714`) — `valueStrip.tasksExtracted` теперь считает Issue. Фаза 4 (период «Пользы») от этого не зависит — баг во фронте (`ValueWidget.tsx:22`). Виджеты `stale`/`chains` уже Issue-based (`StaleIssuesWidget`, `IssueChainsWidget`).
 
 ## Scope
 **Входит:** ремонт 8 классов проблем (фазы 1–9 ниже) на 4 дашбордах + Аналитике, на фронте и бэке.
@@ -49,8 +52,15 @@ relates_to:
 - Backfill `personGoalContribution` для исторических целей → vNext (кроном считается вперёд).
 
 ## Граничные контракты
+### Внутри этого ТЗ
 - Goal-vector фронт (`GoalVectorWidget`) полагается на контракт ответа `getGoalVectorByPerson` из Фазы 1 (`goalId`/`goalTitle`/`rows` + новое поле `goalState`). Фаза 2 не стартует до Фазы 1.
 - Дедуп customer-risk (Фаза 5) меняет только содержимое массива `items` и счётчики — форма `CustomerRiskSnapshotDto` неизменна.
+
+### С параллельными ТЗ (НЕ дублировать, только отображать результат)
+- **`plans/tz/2026-06-25-drop-legacy-task-model-unify-on-issue.md`** — дроп legacy `Task`, унификация на `Issue`. Дашборд-виджеты ОБЯЗАНЫ читать `Issue` (не `Task`). На момент реализации этого ТЗ убедиться, что унификация смержена; `stale`/`chains`/`load`/`plan-fact` уже Issue-based. Это ТЗ **не чинит** саму унификацию.
+- **`plans/tz/2026-06-25-task-decision-disambiguation.md` + `plans/analysis/2026-06-25-tasks-vs-decisions-noise-audit.md`** — чистят КАЧЕСТВО данных реестра решений (что считается решением, мусор). Виджет «Решения» (Фазы 4/8) этого ТЗ чинит ТОЛЬКО **отображение** (окно периода, пустой-стейт, «доведено %»), **НЕ** определяет, что есть решение, и НЕ дедупит сам реестр решений — это владелец того ТЗ. Если «16 застряли»/«0 из 0» исчезнут после их чистки — Фаза 4/8 просто корректно отрисует новый результат.
+- **`plans/tz/2026-06-25-meeting-tasks-widget-404-fix.md`** — фикс 404 виджета задач встречи. Фаза 9 (битые ссылки `/me/commitments`, `weekly-digest`) — сверить, не перекрывается ли; чинить только то, что не закрыто там.
+- **`plans/tz/2026-06-25-edinyy-pomoshnik-*` (master / arhitektura / chat-surface-convergence)** — конвергенция помощника/чата. Виджет «Лента» (Фаза 6) не трогает помощника; если конвергенция меняет источник `feed/cora` — сверить тип-маппинг бейджей перед реализацией Фазы 6.
 
 ---
 

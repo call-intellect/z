@@ -296,4 +296,37 @@ describe('IssuesService.findAllAcrossProjects', () => {
     );
     expect(whereOf(findMany).tenantId).toBe('t-other');
   });
+
+  it('linkedMeetingId + manager+strict + meetingAuthorized → видит все задачи встречи (нет self-scope AND)', async () => {
+    const { svc, findMany } = makeService([]);
+    await svc.findAllAcrossProjects(
+      't1',
+      'me',
+      { ...baseQuery, linkedMeetingId: 'm1' },
+      { isLeadership: false, visibility: 'strict', meetingAuthorized: true },
+    );
+    const where = whereOf(findMany);
+    expect(where.linkedMeetingIds).toEqual({ has: 'm1' });
+    expect(where.AND).toBeUndefined();
+  });
+
+  it('linkedMeetingId + manager+strict БЕЗ meetingAuthorized → self-scope сохраняется', async () => {
+    const { svc, findMany } = makeService([]);
+    await svc.findAllAcrossProjects(
+      't1',
+      'me',
+      { ...baseQuery, linkedMeetingId: 'm1' },
+      { isLeadership: false, visibility: 'strict' },
+    );
+    const where = whereOf(findMany);
+    expect(where.linkedMeetingIds).toEqual({ has: 'm1' });
+    expect(where.AND).toEqual([
+      {
+        OR: [
+          { assignees: { some: { userId: 'me' } } },
+          { createdById: 'me' },
+        ],
+      },
+    ]);
+  });
 });

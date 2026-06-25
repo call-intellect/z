@@ -20,6 +20,7 @@ import {
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
+import { MeetingVisibilityService } from '../../meetings/meeting-visibility.service';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
@@ -48,6 +49,8 @@ export class OrgIssuesController {
   constructor(
     @Inject(IssuesService) private readonly svc: IssuesService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(MeetingVisibilityService)
+    private readonly meetingVisibility: MeetingVisibilityService,
   ) {}
 
   @Get('issues')
@@ -90,9 +93,15 @@ export class OrgIssuesController {
       ctx.role === 'owner' ||
       ctx.role === 'admin' ||
       ctx.role === 'coo';
+    let meetingAuthorized = false;
+    if (query.linkedMeetingId) {
+      await this.meetingVisibility.assertCanView(query.linkedMeetingId, user.id);
+      meetingAuthorized = true;
+    }
     return this.svc.findAllAcrossProjects(t, user.id, query, {
       isLeadership,
       visibility: ctx.visibility,
+      meetingAuthorized,
     });
   }
 

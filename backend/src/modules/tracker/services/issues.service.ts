@@ -520,7 +520,11 @@ export class IssuesService {
     tenantId: string,
     userId: string,
     query: ListOrgIssuesQuery,
-    ctx: { isLeadership: boolean; visibility: 'open' | 'strict' },
+    ctx: {
+      isLeadership: boolean;
+      visibility: 'open' | 'strict';
+      meetingAuthorized?: boolean;
+    },
   ): Promise<ListIssuesResponse> {
     const where: Prisma.IssueWhereInput = { tenantId };
     if (!query.includeDeleted) where.deletedAt = null;
@@ -541,7 +545,10 @@ export class IssuesService {
       ];
     }
     // Р3/Р4 видимость:
-    const seesAll = ctx.isLeadership || ctx.visibility === 'open';
+    const seesAll =
+      ctx.isLeadership ||
+      ctx.visibility === 'open' ||
+      (!!query.linkedMeetingId && ctx.meetingAuthorized === true);
     if (seesAll) {
       if (query.assigneeUserId) {
         where.assignees = { some: { userId: query.assigneeUserId } };

@@ -19,6 +19,7 @@ import type { Rhythm } from "../types";
 import { Chip, PeopleDrawer } from "../_kit";
 
 const GROWING_WEIGHT_THRESHOLD = 3;
+const NO_THEME_CLUSTER_ID = "__no_theme__";
 
 function clusterName(cluster: IdeaClusterApi): string {
   const name = cluster.name?.trim();
@@ -56,12 +57,37 @@ export const IdeasByThemeWidget: FC<{ rhythm: Rhythm }> = () => {
     );
   }
 
-  const clusters = clustersSwr.data?.items ?? [];
-  if (clusters.length === 0) return null;
+  const rawClusters = clustersSwr.data?.items ?? [];
+  if (rawClusters.length === 0) return null;
+
+  const namedClusters = rawClusters.filter((c) => clusterName(c) !== "");
+  const unnamedClusters = rawClusters.filter((c) => clusterName(c) === "");
+  const unnamedClusterIds = new Set(unnamedClusters.map((c) => c.id));
+  const noThemeCluster: IdeaClusterApi | null =
+    unnamedClusters.length > 0
+      ? {
+          ...unnamedClusters[0]!,
+          id: NO_THEME_CLUSTER_ID,
+          name: "",
+          ideaIds: unnamedClusters.flatMap((c) => c.ideaIds),
+          clusterWeight: unnamedClusters.reduce(
+            (sum, c) => sum + c.clusterWeight,
+            0,
+          ),
+        }
+      : null;
+  const clusters = noThemeCluster
+    ? [...namedClusters, noThemeCluster]
+    : namedClusters;
 
   const allIdeas = ideasSwr.data?.items ?? [];
   const activeIdeas = active
-    ? allIdeas.filter((idea) => idea.clusterId === active.id)
+    ? active.id === NO_THEME_CLUSTER_ID
+      ? allIdeas.filter(
+          (idea) =>
+            idea.clusterId != null && unnamedClusterIds.has(idea.clusterId),
+        )
+      : allIdeas.filter((idea) => idea.clusterId === active.id)
     : [];
 
   return (

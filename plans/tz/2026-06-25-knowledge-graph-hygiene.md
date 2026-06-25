@@ -72,7 +72,7 @@ Org «Ооо луа» (`cmpndk2tw000101mwmixvacuj`, `korateam.ru`), `GET /api/v1
 
 ---
 
-## 7. Фаза 1 — чистый модуль качества имени `[ ]`
+## 7. Фаза 1 — чистый модуль качества имени `[x]`
 
 **Цель:** pure-TS предикат «мусорное ли это имя сущности», переиспользуемый в гейте и в backfill-чистке (один источник правды критериев).
 
@@ -119,7 +119,7 @@ export function isJunkEntityName(rawName: string): boolean {
 
 ---
 
-## 8. Фаза 2 — гейт на входе графа `[ ]`
+## 8. Фаза 2 — гейт на входе графа `[x]`
 
 **Цель:** мусорное имя не создаёт сущность; эхо трекера не порождает сущности.
 
@@ -159,7 +159,7 @@ if (isJunkEntityName(args.mention.name)) {
 
 ---
 
-## 9. Фаза 3 — provenance `entity` на бэке `[ ]`
+## 9. Фаза 3 — provenance `entity` на бэке `[x]`
 
 **Цель:** `GET /api/v1/provenance/entity/{id}` возвращает узлы-источники (блоки → встречи + цитаты), как у решений.
 
@@ -201,7 +201,7 @@ case 'entity': {
 
 ---
 
-## 10. Фаза 4 — drill-down к источнику в UI сущностей `[ ]`
+## 10. Фаза 4 — drill-down к источнику в UI сущностей `[x]`
 
 **Цель:** в карточке сущности блок «Блоки знаний» / счётчик источников кликается и открывает `ProvenanceDrawer` (встреча + цитата + дип-линк).
 
@@ -219,7 +219,7 @@ case 'entity': {
 
 ---
 
-## 11. Фаза 5 — чистка существующего мусора `[ ]`
+## 11. Фаза 5 — чистка существующего мусора `[x]`
 
 **Цель:** удалить уже накопившиеся мусорные сущности и их висящие связи. Idempotent, безопасно (dry-run по умолчанию).
 
@@ -270,14 +270,14 @@ case 'entity': {
 
 ## 15. Definition of Done
 
-- [ ] `entity-name-quality.ts` + тест; не тянет NestJS/Prisma.
-- [ ] Гейт в `linkEntity` + пропуск `task_*` echo; юнит-тест воркера.
-- [ ] `provenance/entity` на бэке (DTO enum + сервис + collectSourceBlockIds + VALID); Swagger.
-- [ ] Drill-down к источнику в UI сущностей; русский, парные токены.
-- [ ] `backfill-purge-junk-entities.ts` (dry-run + `--apply`, idempotent) + регистрация в `apply-prod-deploy.ts` + `prod-deploy-log.md` Шаг 8.
-- [ ] `bun run typecheck/lint/build` (backend и frontend) зелёные; `bunx vitest run` для новых тестов зелёный.
-- [ ] second-brain обновлён: `02_architecture/knowledge-core.md` (гейт качества сущностей + provenance entity), `02_architecture/code-pitfalls.md` (EntityLink без FK — чистить вручную).
-- [ ] `docs/operations/prod-deploy-log.md` Шаг 8 обновлён.
+- [x] `entity-name-quality.ts` + тест; не тянет NestJS/Prisma.
+- [x] Гейт в `linkEntity` + пропуск `task_*` echo; юнит-тест воркера.
+- [x] `provenance/entity` на бэке (DTO enum + сервис + collectSourceBlockIds + VALID); Swagger.
+- [x] Drill-down к источнику в UI сущностей; русский, парные токены.
+- [x] `backfill-purge-junk-entities.ts` (dry-run + `--apply`, idempotent) + регистрация в `apply-prod-deploy.ts` + `prod-deploy-log.md` Шаг 8.
+- [x] `bun run typecheck/lint/build` (backend и frontend) зелёные; `bunx vitest run` для новых тестов зелёный.
+- [x] second-brain обновлён: `02_architecture/knowledge-core.md` (гейт качества сущностей + provenance entity), `02_architecture/code-pitfalls.md` (EntityLink без FK — чистить вручную).
+- [x] `docs/operations/prod-deploy-log.md` Шаг 8 обновлён.
 
 ## 16. Команды верификации
 
@@ -290,3 +290,5 @@ cd ../frontend && bun run typecheck && bun run lint && bun run build
 ## Итог
 
 ТЗ самодостаточно. Ядро — Ф1+Ф2 (остановить мусор) и Ф5 (убрать накопленный); Ф3+Ф4 закрывают «провалиться к источнику» для сущностей. Заполнит реализатор (`tz-orchestrator`).
+
+**Реализовано целиком (2026-06-25, ветка `feature/knowledge-graph-idea-quality`).** Ф1 — `entity-name-quality.ts` (pure-предикат `classifyEntityName`/`isJunkEntityName`, отсев ID задач/email/телефонов/<2 букв) + тест. Ф2 — гейт в `block-ingest.worker`: `TRACKER_ECHO_SIGNALS` пропускает извлечение сущностей из эхо-блоков трекера (`task_*`) + `isJunkEntityName` в `linkEntity` (метрика `rejected_junk_name`) + тест воркера. Ф3 — provenance `entity` на бэке (DTO enum += `'entity'`, `ProvenanceEntityType` += `'entity'`, case `'entity'` в `collectSourceBlockIds` через `ideaBlockEntity` с tenant-изоляцией, VALID в `resolveQuotesForJudge`). Ф4 — `<ProvenanceChip entityType="entity">` в карточке сущности (`EntityDetailPane`), `ProvenanceEntityTypeApi` += `"entity"`. Ф5 — `backend/scripts/backfill-purge-junk-entities.ts` (dry-run по умолчанию, `--apply` удаляет мусорные Entity каскадом + полиморфные `EntityLink` вручную, идемпотентно, пропуск сущностей с бизнес-связями), зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: backfill`). Верификация: backend/frontend typecheck/lint/build зелёные, затронутые спеки зелёные; backfill-прогон снимается на проде.

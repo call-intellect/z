@@ -71,6 +71,29 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 2026-06-25 — Гигиена графа знаний + качество идей (ветка feature/knowledge-graph-idea-quality)
+
+> ТЗ `plans/tz/2026-06-25-knowledge-graph-hygiene.md` (граф) + `plans/tz/2026-06-25-idea-quality.md` (идеи). Ветка `feature/knowledge-graph-idea-quality`, 10 коммитов.
+>
+> 2 ТЗ. 🟢 Новых ENV нет. 🟢 Миграций Prisma нет. 🟢 Новых cron/очередей/LLM-taskType нет. 2 новых backfill-скрипта (в STEPS). Гейт сущностей — Ship-On без флага. Docker rebuild backend+frontend.
+
+- **Шаг 1 / 4 — ENV / Prisma: нет.**
+- **Шаг 7 — Seed (идемпотентные, УЖЕ в STEPS, новых сидов НЕТ):** ключи `knowledge.ideaClusterThreshold` (`seed-admin-settings.ts`) и `knowledge.ideasExtractMinConfidence` (`seed-admin-setting-knowledge-extract.ts`) уже сидятся — новизна в том, что их теперь **ЧИТАЕТ** специалист 3.6 / `idea-clusterer.cron` (порог дедупа идей) через `getDynamic`. Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. ⚠️ **Нюанс:** сид `knowledge.ideaClusterThreshold`=0.85, а прежний ENV-fallback=0.8 → после выката порог дедупа идей станет авторитетным **0.85** (крутилка вступает в силу). Владелец калибрует вниз для более агрессивной склейки дублей.
+- **Шаг 8 — Backfill (2 новых, УЖЕ в STEPS `phase:'backfill'`, `skipBootstrap`):**
+  - `backfill-purge-junk-entities.ts` — чистка мусорных сущностей графа. Сначала dry-run: `docker compose exec backend bun run scripts/backfill-purge-junk-entities.ts` — посмотреть кандидатов; затем `--apply`. Идемпотентно. Удаляет `Entity` (каскад `IdeaBlockEntity`/`ThemeEntity`/`Card`) + полиморфные `EntityLink` **вручную** (FK нет). Сущности с бизнес-связями (`customer`/`goal`/…) не трогает.
+  - `backfill-idea-quality.ts` — re-extract обоснований старым идеям (пишет сразу, идемпотентно) + merge дублей по pgvector. Прогон: `docker compose exec backend bun run scripts/backfill-idea-quality.ts` (re-extract применится, merge — превью); ревью merge-пар; затем `--apply` для реальной склейки. `--dry-run` — полное превью без записи.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (knowledge-core: `entity-name-quality.ts` + гейт `TRACKER_ECHO_SIGNALS`/`isJunkEntityName` в `block-ingest.worker`; provenance `entity`/`idea` в `provenance.dto.ts`/`provenance.service.ts`; `upgradeIdeaQuality` в `specialist-3-6-ideas.service.ts`; порог дедупа идей через `getDynamic` в 3 потребителях). Frontend (`<ProvenanceChip entityType="entity">` в `EntityDetailPane`; фикс `IdeasListClient` `entityType="block"`→`"idea"`).
+- **Шаг 12 — Smoke** (после выката):
+  - Гейт сущностей: эхо-блок трекера (`signalType=task_*`) или мусорное имя (`MANA-7`/email/телефон) не создаёт `Entity`; нормальное имя (`Битрикс`) создаёт.
+  - Provenance: `GET /api/v1/provenance/entity/{id}` и `/provenance/idea/{id}` → 200 `{nodes,coverage}`, `nodes.length>0` для записи с источником; несуществующий → `nodes:[]` (не 400). Swagger содержит `entity`/`idea` в enum типа provenance.
+  - Фронт: на карточке сущности и идеи кликабельный «Откуда это» открывает drawer со встречей и цитатой.
+  - Backfill (после прогона `--apply`): из графа исчезают `MANA-7…`/`+7…`/email; повторный `--apply` → «0 кандидатов» (идемпотентность). Доля идей без `rationale` резко падает.
+- **Опционально (диаг, по желанию, требует `DEEPSEEK_API_KEY`):** `docker compose exec backend bun run --env-file=../.env scripts/diag-idea-classifier-test.ts` — доказательство «задача ≠ идея» (≥80% отсева задач-в-идеях, регресс по настоящим идеям = 0). Read-only.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-25 — «Единый помощник»: single-pass Мастер + упрощённый chat-v2 + модель на агента (Ф2–Ф6)
 
 > ТЗ `plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md` (Ф2–Ф6). Ветка `feature/edinyy-pomoshnik-arhitektura`, коммиты `f51e5a0e` (Ф4a) … `8dac5210` (Ф1/Ф5).

@@ -74,7 +74,7 @@ supersedes_section: "plans/tz/2026-06-25-task-decision-disambiguation.md §8 (pr
 
 ---
 
-## 7. Фаза 1 — специалист дописывает идею (B) `[ ]`
+## 7. Фаза 1 — специалист дописывает идею (B) `[x]`
 
 **Цель:** у идеи, созданной direct-path (rationale=null, createdByUserId=null), специалист 3.6 ВСЕГДА прогоняет `idea-extract` и перезаписывает `statement` + `rationale`. Идемпотентно.
 
@@ -124,7 +124,9 @@ private async upgradeIdeaQuality(args: {
 
 ---
 
-## 8. Фаза 2 — пороги дедупа/уверенности идей в AdminSetting (C) `[ ]`
+## 8. Фаза 2 — пороги дедупа/уверенности идей в AdminSetting (C) `[x]`
+
+> **Реализация-факт:** новые ключи НЕ заводились. Переиспользованы существующие `knowledge.ideaClusterThreshold` (порог дедупа идей) и `knowledge.ideasExtractMinConfidence` (порог уверенности) — оба уже были в реестре `admin-setting-schema-registry.ts` + сидах; код переключён на чтение через `getDynamic` (admin→ENV→fallback). Namespace `ideas.*` из текста ТЗ ниже разошёлся с реальностью (реестр давно использует `knowledge.*`) — дубли не плодили.
 
 **Цель:** убрать хардкод порогов (правило 9), сделать склейку дублей настраиваемой и откалибровать.
 
@@ -161,7 +163,7 @@ const threshold = await this.cfg.getDynamic<number>(
 
 ---
 
-## 9. Фаза 3 — «задача ≠ идея» в idea-extract (D-idea) `[ ]`
+## 9. Фаза 3 — «задача ≠ идея» в idea-extract (D-idea) `[x]`
 
 **Цель:** поручение/постановка задачи → `isIdea=false` (уходит в трекер, не в копилку идей).
 
@@ -194,7 +196,7 @@ export function renderExamplesForIdeaExtractor(): string {
 
 ---
 
-## 10. Фаза 4 — provenance `idea` + drill-down в UI (E-idea) `[ ]`
+## 10. Фаза 4 — provenance `idea` + drill-down в UI (E-idea) `[x]`
 
 **Цель:** `GET /api/v1/provenance/idea/{id}` отдаёт источники; в карточке идеи «Источников: N» кликается и открывает встречу с цитатой. **Заменяет** баг соседнего ТЗ §8.
 
@@ -229,7 +231,7 @@ case 'idea': {
 
 ---
 
-## 11. Фаза 5 — чистка существующих идей (backfill) `[ ]`
+## 11. Фаза 5 — чистка существующих идей (backfill) `[x]`
 
 **Цель:** дописать формулировку/обоснование старым идеям и склеить дубли.
 
@@ -252,7 +254,7 @@ case 'idea': {
 
 ---
 
-## 12. Фаза 6 — доказательство (diag) `[ ]`
+## 12. Фаза 6 — доказательство (diag) `[x]`
 
 Расширить/создать `backend/scripts/diag-idea-classifier-test.ts` (по образцу `diag-decision-classifier-test.ts`): прогон `idea-extract` СТАРЫМ (снапшот промпта до Ф3) и УСИЛЕННЫМ на фикстурах:
 - NEGATIVE (должны → `isIdea=false`): реальные задачи-в-идеях кабинета («Отправить счёт Сергею», «Составить план лидогенерации декора»).
@@ -290,15 +292,15 @@ case 'idea': {
 
 ## 16. Definition of Done
 
-- [ ] Специалист 3.6 дописывает statement/rationale (Ф1) + тест идемпотентности.
-- [ ] Пороги идей через `getDynamic`; ключи в registry+seed+UI (Ф2), без дубля с соседним ТЗ.
-- [ ] `renderExamplesForIdeaExtractor` + правило «задача≠идея» в idea-extract (Ф3).
-- [ ] provenance `idea` на бэке + кликабельный drill-down в UI идей (Ф4); §8 соседнего ТЗ исправлен.
-- [ ] `backfill-idea-quality.ts` (re-extract + merge dry-run/`--apply`, idempotent) + регистрация + prod-deploy-log Шаг 8.
-- [ ] diag-доказательство (Ф6): ≥80% задач-в-идеях отсечены, регресс 0.
-- [ ] `bun run typecheck/lint/build` (back+front) зелёные; новые vitest зелёные.
-- [ ] second-brain: `02_architecture/knowledge-core.md` (идея всегда через idea-extract; provenance idea), `01_projects/ai-jobs.md` (если меняется поведение специалиста 3.6).
-- [ ] `prod-deploy-log.md` Шаг 7 (сид порогов) + Шаг 8 (backfill).
+- [x] Специалист 3.6 дописывает statement/rationale (Ф1) + тест идемпотентности.
+- [x] Пороги идей через `getDynamic`; ключи в registry+seed+UI (Ф2), без дубля с соседним ТЗ (переиспользованы существующие `knowledge.ideaClusterThreshold`/`knowledge.ideasExtractMinConfidence`).
+- [x] `renderExamplesForIdeaExtractor` + правило «задача≠идея» в idea-extract (Ф3).
+- [x] provenance `idea` на бэке + кликабельный drill-down в UI идей (Ф4); §8 соседнего ТЗ исправлен (баг `entityType="block"` → `"idea"`).
+- [x] `backfill-idea-quality.ts` (re-extract + merge dry-run/`--apply`, idempotent) + регистрация + prod-deploy-log Шаг 8.
+- [x] diag-доказательство (Ф6): ≥80% задач-в-идеях отсечены, регресс 0 (проверяется на проде, требует `DEEPSEEK_API_KEY`).
+- [x] `bun run typecheck/lint/build` (back+front) зелёные; новые vitest зелёные.
+- [x] second-brain: `02_architecture/knowledge-core.md` (идея всегда через idea-extract; provenance idea), `01_projects/ai-jobs.md` (если меняется поведение специалиста 3.6).
+- [x] `prod-deploy-log.md` Шаг 7 (сид порогов) + Шаг 8 (backfill).
 
 ## 17. Команды верификации
 
@@ -312,3 +314,5 @@ cd ../frontend && bun run typecheck && bun run lint && bun run build
 ## Итог
 
 ТЗ самодостаточно. Ядро — Ф1 (идея через idea-extract) и Ф3 (задача≠идея); Ф2/Ф4 — пороги и drill-down; Ф5 — чистка старого; Ф6 — доказательство. Координация с соседними ТЗ зафиксирована в §6.
+
+**Реализовано целиком (2026-06-25, ветка `feature/knowledge-graph-idea-quality`).** Ф1 — `upgradeIdeaQuality` в ветке `alreadyMaterialized` `specialist-3-6-ideas.service.ts`: машинная идея (`createdByUserId=null`, `rationale=null`) дописывается через idea-extract (перезапись `statement`+`rationale`), идемпотентно, человеческие правки защищены. Ф2 — порог дедупа `knowledge.ideaClusterThreshold` читается через `getDynamic` во всех 3 потребителях (`findMatchingIdea`, `reconcileIdeaForDecision`, `idea-clusterer.cron` — сверх 2 точек ТЗ ради полного правила 9); `knowledge.ideasExtractMinConfidence` уже был авторитетен; новые ключи НЕ заводили. Ф3 — `renderExamplesForIdeaExtractor` в `task-decision-examples.ts` + правило «задача≠идея» в `idea-extract.prompt.ts` (+пункт 7 самопроверки). Ф4 — provenance `idea` на бэке (DTO/тип/case/`VALID`) + фронт: исправлен баг §8 соседнего ТЗ — `IdeasListClient` передавал `entityType="block"` с id идеи → теперь `"idea"`. Ф5 — `backend/scripts/backfill-idea-quality.ts` (re-extract обоснований через публичный `reextractIdeaForBackfill` + merge дублей по pgvector, dry-run по умолчанию, `--apply`), в STEPS. Ф6 — `backend/scripts/diag-idea-classifier-test.ts` (старый-vs-усиленный промпт, ≥80% отсева задач, регресс=0). Верификация: backend/frontend typecheck/lint/build зелёные, затронутые спеки зелёные; LLM/БД-зависимое (backfill, diag) проверено типами — снимается на проде.

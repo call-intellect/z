@@ -31,7 +31,7 @@ describe('ValueRecapService', () => {
 
     const prisma = {
       aiResult: { count: vi.fn(async () => 12) },
-      task: { count: vi.fn(async () => 40) },
+      issue: { count: vi.fn(async () => 40) },
       decision: { count: vi.fn(async () => 8) },
       ideaBlock: {
         count: vi.fn(async () => 15),

@@ -21,6 +21,7 @@ import {
   type EntityListItem,
 } from "@/domain/entity";
 import { Chip } from "@/ui/components/shared/Chip";
+import { ProvenanceChip } from "@/ui/components/provenance/ProvenanceChip";
 import { EmptyState } from "@/ui/components/shared/EmptyState";
 import { Button } from "@/ui/shadcn/button";
 import { Input } from "@/ui/shadcn/input";
@@ -264,6 +265,7 @@ function EntityDetailPane({
   entityId: string;
   onSelectOther: (id: string) => void;
 }) {
+  const { currentOrgId } = useAuth();
   const [detail, setDetail] = useState<EntityDetail | null>(null);
   const [links, setLinks] = useState<EntityLinksGrouped | null>(null);
   const [loading, setLoading] = useState(true);
@@ -341,7 +343,7 @@ function EntityDetailPane({
             </button>
           </p>
         ) : null}
-        <div className="pt-2">
+        <div className="flex flex-wrap items-center gap-3 pt-2">
           <Link
             href={`/entities/${encodeURIComponent(detail.entity.id)}/graph`}
             className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
@@ -349,6 +351,11 @@ function EntityDetailPane({
             <Network size={12} />
             Посмотреть граф связей
           </Link>
+          <ProvenanceChip
+            orgId={currentOrgId}
+            entityType="entity"
+            entityId={detail.entity.id}
+          />
         </div>
       </header>
 

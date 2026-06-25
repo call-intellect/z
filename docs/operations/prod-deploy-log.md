@@ -71,6 +71,24 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-25 — Разведение «задача ↔ решение» в извлечении (пороги в крутилки + cosine-гейт дедупа)
+
+> ТЗ `plans/tz/2026-06-25-task-decision-disambiguation.md` (Ф1–Ф7). Ветка `feature/task-decision-disambiguation`.
+>
+> **Зачем:** реестр решений накапливал переодетые поручения (~треть записей) — извлечение путало «что выбрали» (решение) и «кто что делает» (задача). Симметричные few-shot в `decision-extract`/`task-extract` + усиление `block-ingest` разводят классы по инварименту «решение = ЧТО, задача = КТО»; хардкод-порог извлечения вынесен в крутилки; дедуп решений получил cosine-гейт перед LLM-арбитром.
+>
+> **🟢 НОВЫХ ENV НЕТ · НОВЫХ МИГРАЦИЙ НЕТ** (5 новых ключей — чистые AdminSetting). 1 новый seed (УЖЕ в STEPS `phase:'seed-base'`). Правки промптов knowledge-core (прямой импорт констант, не registry — патчи не нужны). Docker rebuild backend+frontend.
+
+- **Шаг 7 — Seed (идемпотентный, УЖЕ в STEPS `phase:'seed-base'`):** `docker compose exec backend bun run scripts/seed-admin-setting-knowledge-extract.ts` — `knowledge.{decisions,ideas,insights}ExtractMinConfidence` (пороги извлечения, UNIT_INTERVAL, дефолт 0.4) + `knowledge.decisionsDedupe{Threshold(0.86),GrayBand(0.07)}` (cosine-гейт дедупа решений: sim≥0.86 → авто-merge без LLM, sim<0.79 → новое без LLM, серая зона → прежний арбитр). Часть task-decision-disambiguation Ф5. Чистые AdminSetting (без ENV). Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (knowledge-core: единый реестр контрастных пар `prompts/task-decision-examples.ts` → 3 проекции в промпты `decision-extract`/`task-extract`/`block-ingest`; specialist-3-3/3-5/3-6 читают порог извлечения через `@Optional() AdminSettingsService` с code-fallback 0.4; `Specialist33Service.classifyDedupeGate` + KNN-запрос с similarity (1−cosine distance) перед `supersedeDetect`). Frontend (provenance «Откуда это»: IssueSidebar / IssueDetailClient `ProvenancePreviewSnippet` / IdeasListClient `ProvenanceChip`).
+- **Шаг 12 — Smoke** (после выката):
+  - Крутилки видны в админке AdminSetting: `knowledge.{decisions,ideas,insights}ExtractMinConfidence` (0.4), `knowledge.decisionsDedupe{Threshold,GrayBand}` (0.86 / 0.07).
+  - Поведение: реплика-поручение в decision-канале НЕ оседает как Decision (отсекается на `isDecision=false`); зеркальный кейс «решение» не попадает в трекер как задача; два близких решения (sim≥0.86) сливаются без вызова LLM-арбитра.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-24 — ChatBox: полная поддержка групповых чатов
 
 > ТЗ `plans/tz/2026-06-24-chatbox-group-chats.md`. Ветка `feature/chatbox-customer-vs-manager-split`.

@@ -826,6 +826,21 @@ resourceType). Метрики: `curation_provisional_total`, `curation_audit_sam
 - **`Specialist36Service.markRealizedByDecision`** — идемпотентная привязка идеи к решению (`updateMany WHERE realizedAsDecisionId IS NULL` — повтор no-op) + FSM: статус `captured`/`in_discussion` → `accepted`.
 - **`Specialist36Service.reconcileIdeaForDecision`** — при материализации Decision (вызывается из `specialist-3-3-decisions`) делает KNN-сверку по `Idea.embedding` (только `realizedAsDecisionId IS NULL`, статус `captured`/`in_discussion`); при сходстве выше порога — `markRealizedByDecision`. Закрывает кейс «идея и её решение пришли разными блоками».
 
+## Граница «задача ↔ решение» в извлечении (2026-06-25)
+
+**Источник:** ТЗ [`plans/tz/2026-06-25-task-decision-disambiguation.md`](../../plans/tz/2026-06-25-task-decision-disambiguation.md). Анализ — [`plans/analysis/2026-06-25-tasks-vs-decisions-noise-audit.md`](../../plans/analysis/2026-06-25-tasks-vs-decisions-noise-audit.md).
+
+Реестр решений накапливал переодетые поручения (~треть записей): извлечение путало «что выбрали» и «кто что делает», и поручение оседало как Decision. Развели по инварианту на уровне промптов всех трёх экстракторов.
+
+- **Инвариант.** **Решение = ЧТО выбрали; задача = КТО что делает.** Одно решение может породить задачи — это разные сущности, не дубль. Различитель дополняет существующие хелперы `DECISION_DISCRIMINATOR` (решение ↔ пожелание/идея) и `NOT_A_TASK_DISCRIMINATOR` (задача ↔ вопрос) из `ai/services/prompts/common.ts` — те покрывали ДРУГИЕ границы; здесь закрыта непокрытая граница «задача ↔ решение».
+- **Единый реестр контрастных пар.** `backend/src/modules/knowledge-core/prompts/task-decision-examples.ts` — 18 пар (домен · решение ↔ задача) из разных индустрий + правило `TASK_VS_DECISION_RULE` + 3 рендера-проекции (чистый TS без NestJS — импортируется и в проде, и в diag-скриптах). Проекции:
+  - `decision-extract` видит примеры «решение → true / задача → false» + пункт самопроверки;
+  - `task-extract` зеркально «задача → true / решение → false» + пункт самопроверки;
+  - `block-ingest` классифицирует `signalType` — усилены описания `decision` (≠ задача) и `action_item` (слова-триггеры поручения) + секция «Граница задача ↔ решение».
+- **Пороги извлечения — крутилки, не хардкод.** Прежний `MIN_EXTRACT_CONFIDENCE=0.4` вынесен в AdminSetting `knowledge.{decisions,ideas,insights}ExtractMinConfidence` (UNIT_INTERVAL, дефолт 0.4) — читается через `@Optional() AdminSettingsService` с code-fallback в specialist-3-3 / 3-5 / 3-6. Сид `backend/scripts/seed-admin-setting-knowledge-extract.ts` (зарегистрирован в `apply-prod-deploy.ts` STEPS). Подъём порога 0.4→0.5 регресс разведения НЕ лечит — он на уровне булева `isDecision`/`isTask`, не confidence; поэтому дефолт оставлен 0.4.
+- **Дедуп решений — cosine-гейт перед LLM-арбитром.** `Specialist33Service.classifyDedupeGate(sim, threshold, grayBand)` отсекает LLM/debate-арбитр (`supersedeDetect`) на однозначных случаях: `sim ≥ 0.86` → авто-merge без LLM; `sim < 0.79` (= threshold − grayBand) → новое решение без LLM; серая зона → прежний арбитр. KNN-запрос теперь возвращает similarity (1 − cosine distance). Крутилки `knowledge.decisionsDedupe{Threshold(0.86),GrayBand(0.07)}` (AdminSetting, code-fallback).
+- **Provenance на фронте «Откуда это».** IssueSidebar (ветка «Создано вручную — источника нет»), IssueDetailClient (`ProvenancePreviewSnippet` по `issue.provenancePreview`), IdeasListClient (`ProvenanceChip` entityType=block).
+
 ## Группы доступа к знаниям при ingest + расширение провенанса (knowledge-access, 2026-06-06)
 
 **Источник:** [`plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md`](../../plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md). Полная модель доступа и резолвер — [[../01_projects/rbac-access-control]]; разведение с `dataClass` — [[security-and-152fz]] §6.

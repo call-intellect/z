@@ -35,6 +35,8 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.decisionsExtractMinConfidence', UNIT_INTERVAL],
   ['knowledge.ideasExtractMinConfidence', UNIT_INTERVAL],
   ['knowledge.insightsExtractMinConfidence', UNIT_INTERVAL],
+  ['knowledge.decisionsDedupeThreshold', UNIT_INTERVAL],
+  ['knowledge.decisionsDedupeGrayBand', UNIT_INTERVAL],
 
   ['knowledge.distillDebounceMs', POSITIVE_INT],
   ['knowledge.distillKnnTopK', POSITIVE_INT],

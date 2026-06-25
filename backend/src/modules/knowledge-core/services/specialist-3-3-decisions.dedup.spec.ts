@@ -510,3 +510,85 @@ describe('Specialist33Service — Ф4 supersede → review-пометка зад
     );
   });
 });
+
+/**
+ * Фаза 5b — cosine-гейт ПЕРЕД LLM-арбитром дедупа. Очень близкие решения
+ * сливаются без LLM, явно далёкие — новые без LLM, серая зона — отдаём арбитру.
+ */
+describe('Specialist33Service.classifyDedupeGate — чистая логика гейта', () => {
+  it('similarity ≥ threshold → merge', () => {
+    expect(Specialist33Service.classifyDedupeGate(0.92, 0.86, 0.07)).toBe(
+      'merge',
+    );
+  });
+
+  it('similarity < threshold − grayBand → new', () => {
+    expect(Specialist33Service.classifyDedupeGate(0.7, 0.86, 0.07)).toBe('new');
+  });
+
+  it('similarity в серой зоне [threshold − grayBand; threshold) → llm', () => {
+    expect(Specialist33Service.classifyDedupeGate(0.82, 0.86, 0.07)).toBe('llm');
+  });
+
+  it('similarity null/undefined/NaN → llm', () => {
+    expect(Specialist33Service.classifyDedupeGate(null, 0.86, 0.07)).toBe('llm');
+    expect(Specialist33Service.classifyDedupeGate(undefined, 0.86, 0.07)).toBe(
+      'llm',
+    );
+    expect(Specialist33Service.classifyDedupeGate(NaN, 0.86, 0.07)).toBe('llm');
+  });
+});
+
+describe('Specialist33Service.processBlock — cosine-гейт авто-merge без арбитра', () => {
+  let svc: Specialist33Service;
+  let m: Mocks;
+
+  beforeEach(() => {
+    ({ svc, m } = buildService());
+  });
+
+  it('similarity 0.95 ≥ порог (code-fallback 0.86) → merge без вызова decision-supersede-detect', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(block());
+    m.llm.call.mockResolvedValue({ text: draftJson() });
+    // Непустой вектор → pgvector-ветка KNN.
+    m.embedder.embedQuery.mockResolvedValue([0.1, 0.2, 0.3]);
+    // KNN вернул близкий кандидат (cosine 0.95).
+    m.prisma.$queryRawUnsafe.mockResolvedValue([
+      {
+        id: EXISTING_ID,
+        statement: 'Создать группу в Telegram',
+        rationale: null,
+        decidedAt: null,
+        status: 'approved',
+        text: null,
+        similarity: 0.95,
+      },
+    ]);
+    // alreadyMaterialized guard → null; merge-apply findFirst по targetId → existing.
+    m.prisma.decision.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: EXISTING_ID,
+      tenantId: TENANT,
+      statement: 'Создать группу в Telegram',
+      rationale: null,
+      alternatives: null,
+      sourceBlockIds: ['other-block'],
+      decidedByPersonIds: [],
+      affectsEntityIds: [],
+      personSubjectIds: [],
+    });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    // merge применён к существующему решению…
+    expect(m.prisma.decision.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: EXISTING_ID } }),
+    );
+    // …без создания дубля…
+    expect(m.prisma.decision.create).not.toHaveBeenCalled();
+    expect(m.txDecisionCreate).not.toHaveBeenCalled();
+    // …и БЕЗ LLM-арбитра supersede (гейт решил сам).
+    expect(m.llm.call).not.toHaveBeenCalledWith(
+      expect.objectContaining({ taskType: 'decision-supersede-detect' }),
+    );
+  });
+});

@@ -43,6 +43,24 @@ const SEEDS: SettingSeed[] = [
     description:
       'Порог уверенности извлекателя инсайтов (specialist-3-5): инсайт с confidence ниже порога не материализуется. По умолчанию 0.4, диапазон 0–1.',
   },
+  {
+    key: 'knowledge.decisionsDedupeThreshold',
+    value: 0.86,
+    category: 'knowledge',
+    section: 'specialists',
+    severity: 'low',
+    description:
+      'Порог косинусной близости авто-дедупа решений: при сходстве ≥ порога черновик сливается с существующим решением БЕЗ LLM-арбитра. По умолчанию 0.86, диапазон 0–1. Выше — строже (реже авто-merge).',
+  },
+  {
+    key: 'knowledge.decisionsDedupeGrayBand',
+    value: 0.07,
+    category: 'knowledge',
+    section: 'specialists',
+    severity: 'low',
+    description:
+      'Ширина серой зоны дедупа решений: при сходстве в [порог − зона; порог) вердикт выносит LLM/debate-арбитр, а не одна косинусная близость. Ниже [порог − зона] — сразу «новое». По умолчанию 0.07, диапазон 0–1.',
+  },
 ];
 
 interface Counters {

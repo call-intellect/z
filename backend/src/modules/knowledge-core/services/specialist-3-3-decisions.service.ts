@@ -76,6 +76,8 @@ export class Specialist33Service {
   static readonly SPECIALIST_NAME = '3-3-decisions';
   /** Top-K для cosine KNN арбитра дедупа / supersede-detect. */
   private static readonly KNN_TOP_K = 5;
+  private static readonly DEDUPE_THRESHOLD_DEFAULT = 0.86;
+  private static readonly DEDUPE_GRAY_BAND_DEFAULT = 0.07;
   /** Минимальная уверенность extraction, ниже которой пропускаем triage. */
   private static readonly MIN_EXTRACT_CONFIDENCE = 0.4;
   /** Окно ±2 минуты для контекста rationale-extraction. */
@@ -123,6 +125,36 @@ export class Specialist33Service {
     return typeof v === 'number' && Number.isFinite(v)
       ? v
       : Specialist33Service.MIN_EXTRACT_CONFIDENCE;
+  }
+
+  static classifyDedupeGate(
+    similarity: number | null | undefined,
+    threshold: number,
+    grayBand: number,
+  ): 'merge' | 'new' | 'llm' {
+    if (typeof similarity !== 'number' || !Number.isFinite(similarity))
+      return 'llm';
+    if (similarity >= threshold) return 'merge';
+    if (similarity < threshold - grayBand) return 'new';
+    return 'llm';
+  }
+
+  private async getDedupeThreshold(): Promise<number> {
+    const v = await this.settings
+      ?.get<number>('knowledge.decisionsDedupeThreshold')
+      .catch(() => undefined);
+    return typeof v === 'number' && Number.isFinite(v)
+      ? v
+      : Specialist33Service.DEDUPE_THRESHOLD_DEFAULT;
+  }
+
+  private async getDedupeGrayBand(): Promise<number> {
+    const v = await this.settings
+      ?.get<number>('knowledge.decisionsDedupeGrayBand')
+      .catch(() => undefined);
+    return typeof v === 'number' && Number.isFinite(v)
+      ? v
+      : Specialist33Service.DEDUPE_GRAY_BAND_DEFAULT;
   }
 
   /**
@@ -634,9 +666,11 @@ export class Specialist33Service {
             decidedAt: Date | null;
             status: string;
             text: string | null;
+            similarity: number;
           }>
         >(
-          `SELECT "id", "statement", "rationale", "decidedAt", "status", "text"
+          `SELECT "id", "statement", "rationale", "decidedAt", "status", "text",
+                  1 - ("embedding" <=> $2::vector) AS "similarity"
            FROM "decisions"
            WHERE "tenantId" = $1
              AND "deletedAt" IS NULL
@@ -654,6 +688,7 @@ export class Specialist33Service {
             rationale: r.rationale,
             decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
             status: r.status,
+            similarity: r.similarity,
           }));
         }
       } catch (err) {
@@ -702,6 +737,7 @@ export class Specialist33Service {
       rationale: r.rationale,
       decidedAt: r.decidedAt ? r.decidedAt.toISOString() : null,
       status: r.status,
+      similarity: null,
     }));
   }
 
@@ -714,6 +750,29 @@ export class Specialist33Service {
   }): Promise<SupersedeVerdict> {
     if (args.candidates.length === 0) {
       return { verdict: 'new', targetId: null, reasoning: 'нет кандидатов' };
+    }
+
+    const best = args.candidates[0];
+    const threshold = await this.getDedupeThreshold();
+    const grayBand = await this.getDedupeGrayBand();
+    const gate = Specialist33Service.classifyDedupeGate(
+      best?.similarity,
+      threshold,
+      grayBand,
+    );
+    if (gate === 'merge' && best) {
+      return {
+        verdict: 'merge',
+        targetId: best.id,
+        reasoning: `cosine ${best.similarity?.toFixed(3)} ≥ ${threshold} — авто-merge без LLM-арбитра`,
+      };
+    }
+    if (gate === 'new') {
+      return {
+        verdict: 'new',
+        targetId: null,
+        reasoning: `cosine ${best?.similarity?.toFixed(3)} < ${(threshold - grayBand).toFixed(3)} — далеко, точно новое`,
+      };
     }
 
     // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate под флагом.
@@ -1589,6 +1648,7 @@ interface DecisionKnnCandidate {
   rationale: string | null;
   decidedAt: string | null;
   status: string;
+  similarity?: number | null;
 }
 
 interface SupersedeVerdict {

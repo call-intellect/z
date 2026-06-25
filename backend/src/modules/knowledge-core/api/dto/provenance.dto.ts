@@ -8,6 +8,7 @@ export const PROVENANCE_ENTITY_TYPES = [
   'instruction',
   'block',
   'notification',
+  'entity',
 ] as const;
 
 export const ProvenanceEntityTypeSchema = z.enum(PROVENANCE_ENTITY_TYPES);

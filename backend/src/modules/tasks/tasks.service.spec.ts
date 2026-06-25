@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TypedConfigService } from '../../common/config/index';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { AuditLogService } from '../audit/audit-log.service';
-
 import type { MeetingActionItemsService } from '../meetings/meeting-action-items.service';
+import type { MeetingVisibilityService } from '../meetings/meeting-visibility.service';
 
 import type { TasksDispatcherService } from './tasks-dispatcher.service';
 import type { TasksRepository } from './tasks.repository';
@@ -30,6 +30,7 @@ describe('TasksService', () => {
     isTrackerOnly: ReturnType<typeof vi.fn>;
     listForMeeting: ReturnType<typeof vi.fn>;
   };
+  let visibility: { assertCanView: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     prisma = { meeting: { findUnique: vi.fn() } };
@@ -52,6 +53,7 @@ describe('TasksService', () => {
       isTrackerOnly: vi.fn(async () => false),
       listForMeeting: vi.fn(async () => []),
     };
+    visibility = { assertCanView: vi.fn(async () => ({ tenantId: 'org1' })) };
   });
 
   function make(): TasksService {
@@ -62,6 +64,7 @@ describe('TasksService', () => {
       dispatcher as unknown as TasksDispatcherService,
       audit as unknown as AuditLogService,
       actionItems as unknown as MeetingActionItemsService,
+      visibility as unknown as MeetingVisibilityService,
     );
   }
 
@@ -104,6 +107,53 @@ describe('TasksService', () => {
       await expect(svc.create('m1', 'u1', { title: 't' })).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+  });
+
+  describe('listByMeeting', () => {
+    it('авторизует через видимость встречи, а не строгий owner', async () => {
+      actionItems.isTrackerOnly.mockResolvedValue(false);
+      visibility.assertCanView.mockResolvedValue({ tenantId: 'org1' });
+      const svc = make();
+      await svc.listByMeeting('m1', 'viewer');
+      expect(visibility.assertCanView).toHaveBeenCalledWith('m1', 'viewer');
+      expect(prisma.meeting.findUnique).not.toHaveBeenCalled();
+      expect(repo.listByMeeting).toHaveBeenCalledWith('m1', 'viewer');
+    });
+
+    it('tracker-only → все задачи встречи без фильтра по userId', async () => {
+      actionItems.isTrackerOnly.mockResolvedValue(true);
+      visibility.assertCanView.mockResolvedValue({ tenantId: 'org1' });
+      actionItems.listForMeeting.mockResolvedValue([
+        {
+          id: 'i1',
+          meetingId: 'm1',
+          title: 'Изучить скрипт',
+          description: null,
+          status: 'open',
+          assigneeRaw: null,
+          assigneeUserId: 'someone-else',
+          dueDate: null,
+          sourceQuote: null,
+          confidence: null,
+          extractorVersion: 'meeting',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
+      const svc = make();
+      const res = await svc.listByMeeting('m1', 'viewer');
+      expect(actionItems.listForMeeting).toHaveBeenCalledWith({ meetingId: 'm1', tenantId: 'org1' });
+      expect(res).toHaveLength(1);
+      expect(res[0]).toMatchObject({ id: 'i1', title: 'Изучить скрипт', meetingId: 'm1' });
+    });
+
+    it('встреча не видна → пробрасывает ошибку assertCanView', async () => {
+      visibility.assertCanView.mockRejectedValue(new NotFoundException('meeting_not_visible'));
+      const svc = make();
+      await expect(svc.listByMeeting('m1', 'viewer')).rejects.toBeInstanceOf(NotFoundException);
+      expect(repo.listByMeeting).not.toHaveBeenCalled();
+      expect(actionItems.listForMeeting).not.toHaveBeenCalled();
     });
   });
 

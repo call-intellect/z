@@ -99,7 +99,8 @@ type RunRetrievalCtx = {
   scope: 'org';
   scopeId: string | null;
   query: string;
-  topK: number;
+  kRetrieve: number;
+  kContext: number;
   graphHops: number;
   accessWhere: undefined;
 };
@@ -107,7 +108,8 @@ type RunRetrievalCtx = {
 function callRunRetrieval(
   svc: ChatV2Service,
   input: Record<string, unknown>,
-  topK = 20,
+  kRetrieve = 30,
+  kContext = 18,
 ): Promise<string[]> {
   const internal = svc as unknown as {
     runRetrieval: (i: unknown, c: RunRetrievalCtx) => Promise<string[]>;
@@ -119,21 +121,20 @@ function callRunRetrieval(
       scope: 'org',
       scopeId: null,
       query: (input.query as string) ?? 'q',
-      topK,
+      kRetrieve,
+      kContext,
       graphHops: 1,
       accessWhere: undefined,
     },
   );
 }
 
-describe('ChatV2Service — RRF-слияние подзапросов (Ф4.6 Задача 1)', () => {
+describe('ChatV2Service — RRF-слияние подзапросов', () => {
   it('multi-query: блок, высоко в нескольких списках, поднимается за счёт RRF', async () => {
-    // q1: a высоко, b ниже. q2: b высоко, c ниже. b есть в обоих → RRF поднимает.
     const fetchCandidates = vi
       .fn()
       .mockResolvedValueOnce(ranked(['a', 'b', 'x1', 'x2']))
       .mockResolvedValueOnce(ranked(['b', 'c', 'y1', 'y2']));
-    // minPool большой → реранк не вмешивается, видим чистый RRF-порядок.
     const { svc } = makeService({ fetchCandidates, minPool: 100 });
 
     const out = await callRunRetrieval(svc, {
@@ -142,7 +143,6 @@ describe('ChatV2Service — RRF-слияние подзапросов (Ф4.6 З�
     });
 
     expect(fetchCandidates).toHaveBeenCalledTimes(2);
-    // b встречается в обоих списках → его RRF-сумма максимальна → он первый.
     expect(out[0]).toBe('b');
     expect(out).toContain('a');
     expect(out).toContain('c');
@@ -158,21 +158,70 @@ describe('ChatV2Service — RRF-слияние подзапросов (Ф4.6 З�
     expect(out).toEqual(['p', 'q', 'r']);
   });
 
-  it('precomputedBlockIds: возвращаются как есть (без fetchCandidates)', async () => {
+  it('precomputedBlockIds: возвращаются как есть, обрезаны до kContext', async () => {
     const fetchCandidates = vi.fn();
     const { svc } = makeService({ fetchCandidates });
 
-    const out = await callRunRetrieval(svc, {
-      query: 'x',
-      precomputedBlockIds: ['c1', 'c2'],
-    });
+    const out = await callRunRetrieval(
+      svc,
+      { query: 'x', precomputedBlockIds: ['c1', 'c2', 'c3'] },
+      30,
+      2,
+    );
 
     expect(fetchCandidates).not.toHaveBeenCalled();
     expect(out).toEqual(['c1', 'c2']);
   });
 });
 
-describe('ChatV2Service — условный LLM-реранк (Ф4.6 Задача 2)', () => {
+describe('ChatV2Service — split K (kRetrieve пул → реранк → kContext контекст)', () => {
+  it('fetchCandidates получает limit из kRetrieve (single-query)', async () => {
+    const fetchCandidates = vi.fn().mockResolvedValue(ranked(['p', 'q']));
+    const { svc } = makeService({ fetchCandidates, minPool: 100 });
+
+    await callRunRetrieval(svc, { query: 'один' }, 30, 18);
+
+    expect(fetchCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 30 }),
+    );
+  });
+
+  it('пул kRetrieve > rerank_min_pool → реранк ФАЙРИТ; выдача ограничена kContext', async () => {
+    const pool = Array.from({ length: 30 }, (_, i) => `b${i}`);
+    const fetchCandidates = vi.fn().mockResolvedValue(ranked(pool));
+    const keep = pool.slice(0, 20);
+    const llmCall = vi.fn(async () => ({
+      text: JSON.stringify({ keep, dropped: [] }),
+      modelUsed: 'm',
+      inputTokens: 1,
+      outputTokens: 1,
+      cachedTokens: 0,
+      durationMs: 1,
+      tier: 'primary' as const,
+    }));
+    const { svc } = makeService({ fetchCandidates, llmCall, minPool: 12 });
+
+    const out = await callRunRetrieval(svc, { query: 'один' }, 30, 18);
+
+    expect(llmCall).toHaveBeenCalledWith(
+      expect.objectContaining({ taskType: 'rag-rerank' }),
+    );
+    expect(out.length).toBeLessThanOrEqual(18);
+    expect(out).toEqual(keep.slice(0, 18));
+  });
+
+  it('пул <= rerank_min_pool → реранк НЕ файрит (нет rag-rerank вызова)', async () => {
+    const fetchCandidates = vi.fn().mockResolvedValue(ranked(['a', 'b', 'c']));
+    const { svc, llmCall } = makeService({ fetchCandidates, minPool: 12 });
+
+    const out = await callRunRetrieval(svc, { query: 'один' }, 30, 18);
+
+    expect(llmCall).not.toHaveBeenCalled();
+    expect(out).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('ChatV2Service — условный LLM-реранк', () => {
   const bigPool = Array.from({ length: 20 }, (_, i) => `b${i}`);
 
   function callRerank(
@@ -184,6 +233,9 @@ describe('ChatV2Service — условный LLM-реранк (Ф4.6 Задач�
         tenantId: string;
         question: string;
         blockIds: string[];
+        conversationSummary?: string | null;
+        history?: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>;
+        reformulations?: ReadonlyArray<string>;
       }) => Promise<string[]>;
     };
     return internal.conditionalRerank({
@@ -209,6 +261,46 @@ describe('ChatV2Service — условный LLM-реранк (Ф4.6 Задач�
 
     expect(llm).toHaveBeenCalledTimes(1);
     expect(out).toEqual(['b0', 'b2', 'b5']);
+  });
+
+  it('реранк получает контекст диалога (summary/history/переформулировки) в USER', async () => {
+    let captured: { userMessage?: string } = {};
+    const llmCall = vi.fn(async (args: { userMessage: string }) => {
+      captured = { userMessage: args.userMessage };
+      return {
+        text: '{"keep":["b0"],"dropped":[]}',
+        modelUsed: 'm',
+        inputTokens: 1,
+        outputTokens: 1,
+        cachedTokens: 0,
+        durationMs: 1,
+        tier: 'primary' as const,
+      };
+    });
+    const { svc } = makeService({ llmCall, minPool: 12 });
+    const internal = svc as unknown as {
+      conditionalRerank: (a: {
+        tenantId: string;
+        question: string;
+        blockIds: string[];
+        conversationSummary?: string | null;
+        history?: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>;
+        reformulations?: ReadonlyArray<string>;
+      }) => Promise<string[]>;
+    };
+
+    await internal.conditionalRerank({
+      tenantId: 'org-1',
+      question: 'а у него?',
+      blockIds: bigPool,
+      conversationSummary: 'Обсуждали проект Альфа.',
+      history: [{ role: 'user', content: 'Кто ведёт проект Альфа?' }],
+      reformulations: ['а у него?', 'кто отвечает за Альфа'],
+    });
+
+    expect(captured.userMessage).toContain('Обсуждали проект Альфа.');
+    expect(captured.userMessage).toContain('Кто ведёт проект Альфа?');
+    expect(captured.userMessage).toContain('кто отвечает за Альфа');
   });
 
   it('пул <= minPool → реранк пропущен (llm.call НЕ вызван)', async () => {

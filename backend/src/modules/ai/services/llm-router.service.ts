@@ -254,6 +254,9 @@ export type LlmTaskType =
   // запроса (период/типы сигналов/ветки тем/сущности/«я»/агрегация) для
   // recall-safe фильтрации chat-v2. Дешёвый, частый — primary flash (Р9).
   | 'dialog-extract-plan'
+  // Ф4b (edinyy-pomoshnik) — слитый модуль понимания: один вызов выдаёт
+  // 3 переформулировки + 8-осевой план фильтров. Дешёвый, частый.
+  | 'dialog-understand'
   // Support desk Ф3 (support-desk-clone) — клон техподдержки: черновик ответа
   // из закрытого контура (capable, Б9), critic-проверка обоснованности и
   // классификация типа правки (оба дёшево, deepseek-v4-flash, Б9).
@@ -789,6 +792,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'dialog-summarize',
   // Query Understanding Волна 1 (ТЗ 2026-06-10 Tier 0)
   'dialog-extract-plan',
+  // Ф4b (edinyy-pomoshnik) — слитый модуль понимания (queries + план)
+  'dialog-understand',
   // Support desk Ф3 (support-desk-clone)
   'support-clone-draft',
   'support-answer-critic',

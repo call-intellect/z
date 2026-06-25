@@ -37,6 +37,7 @@ interface Mocks {
   classify: ReturnType<typeof vi.fn>;
   expand: ReturnType<typeof vi.fn>;
   extract: ReturnType<typeof vi.fn>;
+  understand: ReturnType<typeof vi.fn>;
   resolveStructuralFilters: ReturnType<typeof vi.fn>;
   answerCacheGet: ReturnType<typeof vi.fn>;
   getDynamic: ReturnType<typeof vi.fn>;
@@ -48,6 +49,9 @@ function makeService(opts: {
   queryPlanExtractionEnabled: boolean;
   dialogLayerEnabled?: boolean;
   expandQueries?: string[];
+  understandingMerged?: boolean;
+  understandQueries?: string[];
+  understandPlan?: QueryPlanResult;
 }): { service: DialogService; mocks: Mocks } {
   const orgFindUnique = vi.fn().mockResolvedValue({ timezone: 'Europe/Moscow' });
   const chatConvFindUnique = vi.fn().mockResolvedValue(null);
@@ -59,7 +63,11 @@ function makeService(opts: {
     org: { findUnique: orgFindUnique },
   } as unknown as PrismaService;
 
-  const getDynamic = vi.fn().mockResolvedValue(4);
+  const merged = opts.understandingMerged ?? false;
+  const getDynamic = vi.fn(async (key: string) => {
+    if (key === 'rag.understanding_merged') return merged;
+    return 4;
+  });
 
   const cfg = {
     dialogLayer: {
@@ -90,9 +98,18 @@ function makeService(opts: {
   const multiQuery = { expand } as unknown as MultiQueryExpansionService;
 
   const extract = vi.fn().mockResolvedValue(emptyPlan(false));
+  const understand = vi.fn().mockResolvedValue({
+    queries: opts.understandQueries ?? [
+      'а сколько это стоит?',
+      'Сколько стоит продукт Маяк?',
+      'Из чего складывается цена Маяк?',
+    ],
+    queryPlan: opts.understandPlan ?? emptyPlan(false),
+  });
   const resolveStructuralFilters = vi.fn().mockResolvedValue(null);
   const queryPlanExtractor = {
     extract,
+    understand,
     resolveStructuralFilters,
   } as unknown as QueryPlanExtractorService;
 
@@ -122,6 +139,7 @@ function makeService(opts: {
       classify,
       expand,
       extract,
+      understand,
       resolveStructuralFilters,
       answerCacheGet,
       getDynamic,
@@ -273,5 +291,85 @@ describe('DialogService — слитый модуль понимания зап�
     expect(res.queryPlan).toBeNull();
     expect(res.structuralFilters).toBeNull();
     expect(res.enabled).toBe(true);
+  });
+});
+
+describe('DialogService — рубильник rag.understanding_merged (Ф4b)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('merged=true → один understand, ноль expand/extract; план резолвится', async () => {
+    const plan = emptyPlan(true);
+    plan.filters.signalTypes = ['decision'];
+    const { service, mocks } = makeService({
+      queryPlanExtractionEnabled: true,
+      understandingMerged: true,
+      understandPlan: plan,
+    });
+    const filters: StructuralRetrievalFilters = {
+      dateFrom: null,
+      dateTo: null,
+      signalTypes: ['decision'],
+      entityIds: [],
+      themeBranches: [],
+      bitemporalActiveOnly: false,
+    };
+    mocks.resolveStructuralFilters.mockResolvedValue(filters);
+
+    const res = await service.process(processInput());
+
+    expect(mocks.understand).toHaveBeenCalledTimes(1);
+    expect(mocks.understand).toHaveBeenCalledWith(
+      expect.objectContaining({ question: 'а сколько это стоит?' }),
+    );
+    expect(mocks.expand).not.toHaveBeenCalled();
+    expect(mocks.extract).not.toHaveBeenCalled();
+    expect(res.queries).toEqual([
+      'а сколько это стоит?',
+      'Сколько стоит продукт Маяк?',
+      'Из чего складывается цена Маяк?',
+    ]);
+    expect(res.queryPlan).toBe(plan);
+    expect(res.structuralFilters).toEqual(filters);
+    expect(mocks.resolveStructuralFilters).toHaveBeenCalledWith(
+      expect.objectContaining({ plan }),
+    );
+  });
+
+  it('merged=false → старый путь: expand + extract, без understand', async () => {
+    const { service, mocks } = makeService({
+      queryPlanExtractionEnabled: true,
+      understandingMerged: false,
+    });
+
+    await service.process(processInput());
+
+    expect(mocks.understand).not.toHaveBeenCalled();
+    expect(mocks.expand).toHaveBeenCalledTimes(1);
+    expect(mocks.extract).toHaveBeenCalledTimes(1);
+  });
+
+  it('input.intent задан → classify НЕ вызывается, intent проброшен', async () => {
+    const { service, mocks } = makeService({
+      queryPlanExtractionEnabled: false,
+      understandingMerged: true,
+    });
+
+    const res = await service.process({ ...processInput(), intent: 'analytical' });
+
+    expect(mocks.classify).not.toHaveBeenCalled();
+    expect(res.intent).toBe('analytical');
+  });
+
+  it('input.intent НЕ задан → classify вызывается как раньше', async () => {
+    const { service, mocks } = makeService({
+      queryPlanExtractionEnabled: false,
+      understandingMerged: true,
+    });
+
+    await service.process(processInput());
+
+    expect(mocks.classify).toHaveBeenCalledTimes(1);
   });
 });

@@ -40,7 +40,8 @@ export function buildRagPlanUser(question: string): string {
   return `Вопрос: ${question}`;
 }
 
-export const RAG_RERANK_SYSTEM_PROMPT = `Ты — фильтр релевантности. Верни JSON: {"keep":["<id>"],"dropped":["<id>"]}. Оставляй ТОЛЬКО блоки по теме вопроса. id бери только из списка.`;
+export const RAG_RERANK_SYSTEM_PROMPT = `Ты — фильтр релевантности. Верни JSON: {"keep":["<id>"],"dropped":["<id>"]}. Оставляй ТОЛЬКО блоки по теме вопроса. id бери только из списка.
+Если есть блок «Контекст диалога» (краткое содержание, последние сообщения, переформулировки вопроса) — используй его как подсказку для уточняющих вопросов («а что по этому?», «а у него?»): тогда тема — то, о чём шла речь выше. Сам контекст не цитируй и не оценивай — он только помогает понять, что именно спрашивают.`;
 
 export const RagRerankSchema = z.object({
   keep: z.array(z.string()).default([]),
@@ -48,8 +49,49 @@ export const RagRerankSchema = z.object({
 });
 export type RagRerank = z.infer<typeof RagRerankSchema>;
 
-export function buildRagRerankUser(question: string, candidates: string): string {
-  return `Вопрос: ${question}\nКандидаты:\n${candidates}`;
+export interface RagRerankUserContext {
+  conversationSummary?: string | null;
+  history?: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>;
+  reformulations?: ReadonlyArray<string>;
+}
+
+export function buildRagRerankUser(
+  question: string,
+  candidates: string,
+  ctx?: RagRerankUserContext,
+): string {
+  const parts: string[] = [];
+  const summary = ctx?.conversationSummary;
+  const history = ctx?.history ?? [];
+  const reformulations = (ctx?.reformulations ?? []).filter(
+    (q) => q && q.trim().length > 0 && q.trim() !== question.trim(),
+  );
+  const hasContext =
+    (summary && summary.trim().length > 0) ||
+    history.length > 0 ||
+    reformulations.length > 0;
+  if (hasContext) {
+    parts.push('Контекст диалога (для понимания вопроса, не для цитирования):');
+    if (summary && summary.trim().length > 0) {
+      parts.push(`Краткое содержание: ${summary.trim()}`);
+    }
+    if (history.length > 0) {
+      const last = history.slice(-5);
+      parts.push('Последние сообщения:');
+      for (const m of last) {
+        const role = m.role === 'user' ? 'Пользователь' : 'Ассистент';
+        const trimmed =
+          m.content.length > 350 ? `${m.content.slice(0, 350)}…` : m.content;
+        parts.push(`- ${role}: ${trimmed}`);
+      }
+    }
+    if (reformulations.length > 0) {
+      parts.push(`Переформулировки вопроса: ${reformulations.join(' | ')}`);
+    }
+    parts.push('');
+  }
+  parts.push(`Вопрос: ${question}`, 'Кандидаты:', candidates);
+  return parts.join('\n');
 }
 
 export const RAG_SUFFICIENCY_SYSTEM_PROMPT = `Ты — судья достаточности. Верни JSON: {"sufficient":bool,"gaps":[str],"nextQuery":str}.

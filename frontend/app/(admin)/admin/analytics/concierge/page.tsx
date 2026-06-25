@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { ConciergeAnalyticsClient } from './ConciergeAnalyticsClient';
 
 export const metadata: Metadata = {
-  title: 'Concierge и AI-чат (аналитика)',
+  title: 'Мастер и ИИ-чат (аналитика)',
 };
 
 export default function ConciergeAnalyticsPage() {

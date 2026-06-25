@@ -5,6 +5,7 @@ import type { BusinessMetricsService } from '../../../common/metrics/business-me
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 import type { AiChatQuotaService } from '../../ai-chat-quota/ai-chat-quota.service';
+import type { ChatV2OrchestrationService } from '../../chat-v2/chat-v2.service';
 
 import type { ConciergeContextBuilderService } from './concierge-context-builder.service';
 import type { ConciergeQuotaService } from './concierge-quota.service';
@@ -37,6 +38,7 @@ function makeService(profileRow: CompanyProfileRow): ConciergeService {
   const metrics = {
     incCompanyCapsuleInjected: vi.fn(),
   } as unknown as BusinessMetricsService;
+  const chatV2 = {} as unknown as ChatV2OrchestrationService;
 
   return new ConciergeService(
     prisma,
@@ -49,6 +51,7 @@ function makeService(profileRow: CompanyProfileRow): ConciergeService {
     quota,
     aiChatQuota,
     metrics,
+    chatV2,
   );
 }
 

@@ -4,6 +4,10 @@ import {
 } from '../../ai/services/prompts/common';
 
 import { signalTypeLabel } from './signal-type-label';
+import {
+  TASK_VS_DECISION_RULE,
+  renderExamplesForTaskExtractor,
+} from './task-decision-examples';
 
 export const TASK_EXTRACT_SYSTEM_PROMPT = withAsrNote(
   withConfidenceCalibration(
@@ -19,6 +23,7 @@ export const TASK_EXTRACT_SYSTEM_PROMPT = withAsrNote(
       'ГЛАВНОЕ ПРАВИЛО — задача, а не разговор:',
       '- Задача — это конкретное «надо сделать X»: «подготовить смету», «обновить договор», «настроить мониторинг», «ответить клиенту».',
       '- НЕ задача (isTask=false): вопрос, обсуждение, расплывчатое «надо бы / неплохо бы», уже сделанное действие, мнение, благодарность, общее пожелание без конкретного действия.',
+      '- НЕ задача (isTask=false): зафиксированный ВЫБОР/решение без конкретного действия — «решили остановиться на варианте Б», «уходим к поставщику Y». Это решение, его берёт другой агент.',
       '- Если из блока не вычленяется ОДНО конкретное действие к исполнению — isTask=false, низкий confidence.',
       '',
       'Поля:',
@@ -28,6 +33,10 @@ export const TASK_EXTRACT_SYSTEM_PROMPT = withAsrNote(
       '- dueHint — срок в формате ISO YYYY-MM-DD, если в блоке явно назван срок; срока нет или он расплывчатый — пустая строка. Не выдумывай дату.',
       '- priorityHint — «low» | «medium» | «high», если приоритет очевиден из формулировки (срочность, важность); иначе пустая строка.',
       '- confidence — уверенность 0..1, что это настоящая конкретная задача.',
+      '',
+      TASK_VS_DECISION_RULE,
+      '',
+      renderExamplesForTaskExtractor(),
       '',
       '# Примеры (плохо → хорошо)',
       'Пример 1 (good — задача с исполнителем):',
@@ -44,6 +53,7 @@ export const TASK_EXTRACT_SYSTEM_PROMPT = withAsrNote(
       '3. dueHint — ISO-дата только при явном сроке, иначе пустая строка?',
       '4. Ничего не выдумано вне блока?',
       '5. title — чистый русский без кодов и латиницы лишней?',
+      '6. Это не зафиксированный выбор/решение без действия? Если фрагмент — выбор между вариантами, а не поручение действия — isTask=false.',
       '',
       'Верни строго JSON по схеме task_extract. Никакого текста вне JSON.',
     ].join('\n'),

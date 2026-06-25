@@ -1,14 +1,22 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { $Enums } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
+import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
 import {
   EXTRACT_PLAN_JSON_SCHEMA,
   EXTRACT_PLAN_SYSTEM_PROMPT,
   buildExtractPlanUserPrompt,
 } from '../prompts/extract-plan.prompt';
+import {
+  DIALOG_UNDERSTAND_JSON_SCHEMA,
+  DIALOG_UNDERSTAND_SYSTEM_PROMPT,
+  buildUnderstandUserPrompt,
+} from '../prompts/understand.prompt';
 
 import { type PeriodExpr, resolvePeriod } from './period-resolver';
 
@@ -47,6 +55,22 @@ export interface QueryPlanExtractInput {
   todayIso: string;
   orgTimezone: string | null;
   conversationId: string | null;
+}
+
+export interface UnderstandInput {
+  tenantId: string;
+  userId: string;
+  question: string;
+  summary: string | null;
+  history: Array<{ role: 'user' | 'assistant'; content: string }>;
+  todayIso: string;
+  orgTimezone: string | null;
+  conversationId: string | null;
+}
+
+export interface UnderstandResult {
+  queries: string[];
+  queryPlan: QueryPlanResult;
 }
 
 export const QUERY_PLAN_MIN_CONFIDENCE = 0.6;
@@ -88,7 +112,91 @@ export class QueryPlanExtractorService {
   constructor(
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
   ) {}
+
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
+
+  async understand(input: UnderstandInput): Promise<UnderstandResult> {
+    const startedAt = Date.now();
+    const orgTimezone = input.orgTimezone ?? 'Europe/Moscow';
+
+    let rawText: string;
+    try {
+      const guardOn = this.isPromptInjectionGuardEnabled();
+      if (guardOn) {
+        const sanitized = sanitizeCustomPrompt(input.question);
+        for (const pattern of sanitized.reasons) {
+          this.metrics.incPromptInjectionAttempt({ source: 'chat', pattern });
+        }
+      }
+      const rawUser = buildUnderstandUserPrompt({
+        summary: input.summary,
+        history: input.history,
+        question: input.question,
+        todayIso: input.todayIso,
+        orgTimezone,
+      });
+      const systemPrompt = guardOn
+        ? withInjectionGuard(DIALOG_UNDERSTAND_SYSTEM_PROMPT)
+        : DIALOG_UNDERSTAND_SYSTEM_PROMPT;
+      const userMessage = guardOn ? wrapUserData(rawUser) : rawUser;
+
+      const result = await this.llm.call({
+        taskType: 'dialog-understand',
+        tenantId: input.tenantId,
+        userId: input.userId,
+        systemPrompt,
+        userMessage,
+        maxTokens: 1500,
+        responseFormat: {
+          type: 'json_schema',
+          name: 'dialog_understand_v1',
+          strict: true,
+          schema: DIALOG_UNDERSTAND_JSON_SCHEMA,
+        },
+        sourceRef: input.conversationId
+          ? { type: 'chat_v2_conversation', id: input.conversationId }
+          : null,
+      });
+      rawText = result.text;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        { conversationId: input.conversationId, err: message },
+        'Understand LLM упал — fail-open (только оригинальный вопрос, без плана)',
+      );
+      return { queries: [input.question], queryPlan: this.failOpen(startedAt) };
+    }
+
+    const parsed = this.parseUnderstandJson(rawText);
+    if (parsed === null) {
+      this.metrics.incPromptInvalidResponse({
+        taskType: 'dialog-understand',
+        model: 'unknown',
+        reason: 'json_parse',
+      });
+      return { queries: [input.question], queryPlan: this.failOpen(startedAt) };
+    }
+
+    const queries = this.buildQueries(input.question, parsed.queries);
+    const queryPlan = this.buildPlanFromRaw(
+      parsed.plan,
+      parsed.confidence,
+      input.todayIso,
+      orgTimezone,
+      startedAt,
+    );
+    return { queries, queryPlan };
+  }
 
   async extract(input: QueryPlanExtractInput): Promise<QueryPlanResult> {
     const startedAt = Date.now();
@@ -136,18 +244,33 @@ export class QueryPlanExtractorService {
       return this.failOpen(startedAt);
     }
 
-    const periodExpr = this.coercePeriodExpr(parsed.periodExpr);
-    const periodDays = this.coercePeriodDays(parsed.periodDays);
-    const signalTypes = this.sanitizeEnumArray(parsed.signalTypes, this.validSignalTypes);
-    const themeBranches = this.sanitizeEnumArray(parsed.themeBranches, this.validThemeBranches);
-    const entityHints = this.sanitizeEntityHints(parsed.entityHints);
-    const personScope = this.coerceBool(parsed.personScope);
-    const aggregation = this.coerceBool(parsed.aggregation);
-    const needsAction = this.coerceBool(parsed.needsAction);
-    const activeNow = this.coerceBool(parsed.activeNow);
-    const confidence = this.coerceConfidence(parsed.confidence);
+    return this.buildPlanFromRaw(
+      parsed,
+      this.coerceConfidence(parsed.confidence),
+      input.todayIso,
+      orgTimezone,
+      startedAt,
+    );
+  }
 
-    const period = resolvePeriod(periodExpr, input.todayIso, orgTimezone, periodDays);
+  private buildPlanFromRaw(
+    raw: RawPlan,
+    confidence: number,
+    todayIso: string,
+    orgTimezone: string,
+    startedAt: number,
+  ): QueryPlanResult {
+    const periodExpr = this.coercePeriodExpr(raw.periodExpr);
+    const periodDays = this.coercePeriodDays(raw.periodDays);
+    const signalTypes = this.sanitizeEnumArray(raw.signalTypes, this.validSignalTypes);
+    const themeBranches = this.sanitizeEnumArray(raw.themeBranches, this.validThemeBranches);
+    const entityHints = this.sanitizeEntityHints(raw.entityHints);
+    const personScope = this.coerceBool(raw.personScope);
+    const aggregation = this.coerceBool(raw.aggregation);
+    const needsAction = this.coerceBool(raw.needsAction);
+    const activeNow = this.coerceBool(raw.activeNow);
+
+    const period = resolvePeriod(periodExpr, todayIso, orgTimezone, periodDays);
 
     const hasAnyFilter =
       !!(period.dateFrom || period.dateTo) ||
@@ -185,6 +308,45 @@ export class QueryPlanExtractorService {
       applied: true,
       durationSeconds,
     };
+  }
+
+  private buildQueries(question: string, rawQueries: unknown): string[] {
+    const expansions = Array.isArray(rawQueries)
+      ? rawQueries
+          .filter((q): q is string => typeof q === 'string' && q.trim().length > 0)
+          .slice(0, 3)
+      : [];
+    const seen = new Set<string>();
+    return [question, ...expansions]
+      .map((q) => q.trim())
+      .filter((q) => {
+        if (q.length === 0) return false;
+        const k = q.toLowerCase();
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })
+      .slice(0, 3);
+  }
+
+  private parseUnderstandJson(
+    text: string,
+  ): { queries: unknown; plan: RawPlan; confidence: number } | null {
+    try {
+      const cleaned = this.stripCodeFence(text).trim();
+      const parsed = JSON.parse(cleaned) as unknown;
+      if (parsed === null || typeof parsed !== 'object') return null;
+      const obj = parsed as { queries?: unknown; plan?: unknown; confidence?: unknown };
+      const plan =
+        obj.plan !== null && typeof obj.plan === 'object' ? (obj.plan as RawPlan) : {};
+      return {
+        queries: obj.queries,
+        plan,
+        confidence: this.coerceConfidence(obj.confidence),
+      };
+    } catch {
+      return null;
+    }
   }
 
   async resolveSelfPersonId(tenantId: string, userId: string): Promise<string | null> {

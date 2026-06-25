@@ -194,12 +194,13 @@ Concierge (γ-2) подключён к 4 dialog-layer taskType'ам при `CONC
 
 - `dialog-contextualize` — «а почему?» → standalone-вопрос с учётом истории.
 - `dialog-confidence` — оценка качества standalone (≥ threshold → используем; иначе fallback на raw).
-- `dialog-classify` — intent (`factual` / `exploratory` / `analytical` / `clone_roleplay`).
-- `dialog-multi-query` — 3 переформулировки для `exploratory`/`analytical`; для `factual` — оригинал.
+- `dialog-classify` — intent (`factual` / `exploratory` / `analytical` / `clone_roleplay`). **С 2026-06-25 в chat-v2 пропускается**, когда intent приходит из Слоя 2 Мастера (`AskInput.intent`).
+- `dialog-multi-query` — 3 переформулировки для `exploratory`/`analytical`; для `factual` — оригинал. **С 2026-06-25 СЛИТ** с `dialog-extract-plan` в один вызов `dialog-understand`.
+- **`dialog-understand`** (Ф4b, 2026-06-25, primary **DeepSeek V4 Pro** через route Ф6) — слитый модуль понимания: один LLM-вызов выдаёт сразу 3 переформулировки + 8-осевой план фильтров (вместо двух раздельных `dialog-multi-query` + `dialog-extract-plan`). Метод `QueryPlanExtractorService.understand()`, kill-switch `rag.understanding_merged` (ON; OFF → два прежних вызова как fallback). Сид маршрута — `seed-llm-task-routes-edinyy-pomoshnik.ts`.
 
-Все 4 — primary `DeepSeek V4 Pro` (γ-1 raised on Фаза 4 §2 LLM-migration, см. §«Массовая миграция на DeepSeek V4 Pro»). После dialog-layer → параллельный pre-retrieval через `ToolRouter.execute('search_knowledge')` (до 3 queries, per-query timeout 3000ms, cumulative top-K 12). Подробности pipeline и метрик — [`concierge-agent.md`](concierge-agent.md).
+`dialog-contextualize`/`-confidence`/`-classify`/`-multi-query` — primary `DeepSeek V4 Pro` (γ-1 raised on Фаза 4 §2 LLM-migration, см. §«Массовая миграция на DeepSeek V4 Pro»). Подробности pipeline и метрик — [`concierge-agent.md`](concierge-agent.md).
 
-Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2), clones v2 (`dialog-multi-query-clone`, Фаза 7 §9), **Concierge (с ТЗ 2026-05-27)**.
+Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2; с 2026-06-25 — `dialog-understand`), clones v2 (`dialog-multi-query-clone`, Фаза 7 §9), **Concierge (с ТЗ 2026-05-27)**.
 
 [[../index|← index]]
 
@@ -314,13 +315,16 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2), clones v2 (`dia
 | `entity-name-resolve` | LLM-арбитр cross-source идентичности «псевдоним → тот же человек/сущность?» в каскаде `resolvePersonByHint` (после alias-cache `EntityAlias` + embedding-склейки); **fail-closed null** (R-2 — не склеиваем разных) | DeepSeek-flash → OpenAI-mini → Ollama |
 | `block-link-confirm` | композитный судья-скептик опасных рёбер графа `contradicts`/`supersedes`/`causes` (и fact-supersede); **fail-closed** — при сомнении ребро отвергаем (R-1 — ложное «устарело» не прячет факт); метрика `kc_risk_edge_total` | DeepSeek-flash → OpenAI-mini → Ollama |
 | `theme-summarize` | авто-резюме темы (`Theme.summary`) — cron `theme-summarize`, инкрементально (только изменившиеся темы), kill-switch `knowledge.theme_summary_enabled` | DeepSeek-flash → OpenAI-mini → Ollama |
-| `rag-route` | роутер сложности вопроса: простой → короткий путь, сложный → поэтапный (гейт `rag.iterative_enabled`) | DeepSeek-flash → OpenAI-mini → Ollama |
-| `rag-plan` | ReWOO-план (Reasoning WithOut Observation): раскладывает сложный вопрос на под-вопросы заранее | DeepSeek-flash → OpenAI-mini → Ollama |
-| `rag-sufficiency` | судья достаточности после каждого шага retrieval: хватает ли собранного для ответа | DeepSeek-flash → OpenAI-mini → Ollama |
-| `rag-rerank` | условный LLM-реранк кандидатов (только при большом пуле, порог `rag.rerank_min_pool`) после RRF-слияния подзапросов | DeepSeek-flash → OpenAI-mini → Ollama |
-| `rag-groundedness` | гейт честности после синтеза (`chat-v2.service applyGroundednessGate`, режим `rag.groundedness_mode`): отсекает невыводимые из источников утверждения; метрика `rag_abstain_total` | DeepSeek-flash → OpenAI-mini → Ollama |
+| `rag-rerank` | условный LLM-реранк кандидатов (только при пуле > `rag.rerank_min_pool` 12) после RRF-слияния подзапросов; сужает `rag.k_retrieve` 30 → `rag.k_context` 18. **С 2026-06-25 ОЖИВЛЁН** (раньше был мёртв: порог ≥ среза) и накормлен summary+история+вопрос+3 формулировки | **DeepSeek flash** (route Ф6) → OpenAI-mini → Ollama |
+| `rag-groundedness` | гейт честности после синтеза (`chat-v2.service applyGroundednessGate`, режим `rag.groundedness_mode`): отсекает невыводимые из источников утверждения; метрика `rag_abstain_total`. При `needsClarification` (переспрос) **пропускается** | **DeepSeek flash** (route Ф6) → OpenAI-mini → Ollama |
+| `chat-v2` | синтез финального ответа из 18 блоков; переспрос-при-вариантах помечает первую строку токеном `[[CLARIFY]]` → флаг `needsClarification` | **DeepSeek pro** (route Ф6) → `gpt-5.4` → Gemini |
+| ~~`rag-route`~~ | ⚠️ **ЗАКОНСЕРВИРОВАН** (изъят из горячего пути chat-v2 2026-06-25): был роутер сложности вопроса. Промпт `RAG_ROUTE_SYSTEM_PROMPT` сохранён как export для будущей фичи «Большой анализ» | — |
+| ~~`rag-plan`~~ | ⚠️ **ЗАКОНСЕРВИРОВАН**: был ReWOO-план под-вопросов. Промпт `RAG_PLAN_SYSTEM_PROMPT` сохранён как export | — |
+| ~~`rag-sufficiency`~~ | ⚠️ **ЗАКОНСЕРВИРОВАН**: был судья достаточности после шага retrieval. Промпт `RAG_SUFFICIENCY_SYSTEM_PROMPT` сохранён как export | — |
 
-Промпты-победители поэтапного поиска — `knowledge-core/prompts/rag-pipeline.prompts.ts`. Сторож зацикливания Concierge (`loop-guard.ts`, `concierge.max_steps`) и строгий гейт переспроса в `concierge-respond` — без отдельного taskType (детерминированная защита + правило в промпте).
+> **Единый помощник (2026-06-25, ТЗ `plans/tz/2026-06-25-edinyy-pomoshnik-arhitektura.md` Ф2–Ф6).** Цепочка chat-v2 свёрнута с ~10 LLM-вызовов до **4**: понимание (`dialog-understand`) → rerank (`rag-rerank`) → синтез (`chat-v2`) → groundedness (`rag-groundedness`). Многошаговая ветка `rag-route`/`rag-plan`/`rag-sufficiency` законсервирована (см. выше + [`plans/analysis/2026-06-25-iterative-rag-method-parked.md`](../../plans/analysis/2026-06-25-iterative-rag-method-parked.md)). Мастер (`concierge-respond`) — single-pass без ReAct-петли; сторож зацикливания `loop-guard.ts` и крутилка `concierge.max_steps` **удалены**. Модели по 5 агентам через `LlmTaskRoute` (Ф6, сид `seed-llm-task-routes-edinyy-pomoshnik.ts`, diag `diag-llm-routes.ts`): `concierge-respond`→`openai-via-proxy:gpt-5.4-mini`; `dialog-understand`→`deepseek:deepseek-v4-pro`; `rag-rerank`→`deepseek:deepseek-v4-flash`; `chat-v2`→`deepseek:deepseek-v4-pro`; `rag-groundedness`→`deepseek:deepseek-v4-flash`.
+
+Промпты-победители поэтапного поиска — `knowledge-core/prompts/rag-pipeline.prompts.ts`.
 
 [[../index|← index]]
 

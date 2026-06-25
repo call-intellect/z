@@ -22,6 +22,7 @@ import { DocumentsService } from '../../../documents/documents.service';
 import { S3Service } from '../../../recordings/s3.service';
 import { ChannelRegistry } from '../../channel-registry';
 import { ConversationalLinkCodeService } from '../../link-code.service';
+import { channelClarifyKey } from '../../types/channel-clarify-key';
 import type { ConversationalJson, IChannel, InboundMessage } from '../../types/channel.types';
 
 import { MaxApiClient, MaxApiError } from './max-api-client';
@@ -267,6 +268,17 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
 
     this.metrics.incBotInbound({ channel: 'max_bot', kind: 'text' });
 
+    if (await this.isClarifyPending(binding.id)) {
+      return {
+        type: 'assistant_turn',
+        userId: binding.userId,
+        tenantId,
+        text,
+        metadata: { source: 'max_bot', chatId, clarifyResume: true },
+        originChannelBindingId: binding.id,
+      };
+    }
+
     const openProbe = await this.findOpenProbe({
       tenantId,
       userId: binding.userId,
@@ -490,6 +502,23 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       return null;
     }
 
+    if (await this.isClarifyPending(args.binding.id)) {
+      return {
+        type: 'assistant_turn',
+        userId: args.binding.userId,
+        tenantId: args.tenantId,
+        text: transcript,
+        metadata: {
+          source: 'max_bot',
+          kind: 'voice',
+          chatId: args.chatId,
+          clarifyResume: true,
+          ...(audioS3Key ? { audioS3Key } : {}),
+        },
+        originChannelBindingId: args.binding.id,
+      };
+    }
+
     if (this.isAssistantRoutingEnabled()) {
       return {
         type: 'assistant_turn',
@@ -671,6 +700,19 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     return count <= MaxBotChannelAdapter.VOICE_PER_HOUR_PER_USER;
   }
 
+  private async isClarifyPending(bindingId: string): Promise<boolean> {
+    try {
+      const raw = await this.redis.client.get(channelClarifyKey(bindingId));
+      return raw != null;
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'max inbound: Redis get clarify-ключа упал — обрабатываем как обычный ход',
+      );
+      return false;
+    }
+  }
+
   private async requireVerifiedBinding(args: {
     externalUserId: string;
     channelId: string;
@@ -701,12 +743,15 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     tenantId: string;
     userId: string;
   }): Promise<{ id: string; question: string } | null> {
+    const maxAgeDays = await this.getProbeImplicitMatchMaxAgeDays();
+    const minCreatedAt = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
     const openProbe = await this.prisma.notification.findFirst({
       where: {
         tenantId: args.tenantId,
         recipientUserId: args.userId,
         eventType: { in: ['probe.question', 'probe.digest'] },
         responseStatus: 'pending',
+        createdAt: { gte: minCreatedAt },
       },
       orderBy: { createdAt: 'desc' },
       select: { id: true, payload: true },
@@ -738,6 +783,18 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       );
     } catch {
       return 0.6;
+    }
+  }
+
+  private async getProbeImplicitMatchMaxAgeDays(): Promise<number> {
+    try {
+      return await this.cfg.getDynamic<number>(
+        'probe.implicit_match_max_age_days',
+        undefined,
+        3,
+      );
+    } catch {
+      return 3;
     }
   }
 

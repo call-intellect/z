@@ -138,6 +138,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-knowledge-extract.ts',
+    hint: 'knowledge.{decisions,ideas,insights}ExtractMinConfidence — пороги уверенности извлекателей решений/идей/инсайтов (task-decision-disambiguation Ф5)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-documents.ts',
     hint: 'documents.short_text_to_idea_threshold=200 — порог, при котором короткий вставленный текст предлагается отправить в «Идеи» вместо документа (QA-Ф8 R17)',
   },
@@ -224,7 +229,7 @@ const STEPS: Step[] = [
   {
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-smart-search.ts',
-    hint: 'concierge.max_steps + rag.* (умный поэтапный поиск Мастера Ф4: сторож, RRF, реранк, достаточность, гейт честности, cold-start)',
+    hint: 'rag.* (умный поэтапный поиск Мастера Ф4: RRF, реранк, достаточность, гейт честности, cold-start)',
   },
   {
     phase: 'seed-base',
@@ -335,6 +340,7 @@ const STEPS: Step[] = [
     'conflict-arbiter',
     'clone-method',
     'day-signal',
+    'edinyy-pomoshnik',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,

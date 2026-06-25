@@ -15,7 +15,10 @@ import { LlmRouterService } from '../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../ai/services/prompts/common';
 import { AnswerCacheService } from '../dialog-layer/services/answer-cache.service';
 import { DialogService } from '../dialog-layer/services/dialog.service';
-import { narrowToChatIntent } from '../dialog-layer/services/query-classifier.service';
+import {
+  type DialogIntent,
+  narrowToChatIntent,
+} from '../dialog-layer/services/query-classifier.service';
 import {
   RAG_GROUNDEDNESS_SYSTEM_PROMPT,
   RagGroundednessSchema,
@@ -36,6 +39,7 @@ export interface AskInput {
   scopeRefId?: string | null;
   asOf?: string;
   channelKindOrigin?: string | null;
+  intent?: DialogIntent;
   onStage?: (stage: ChatV2Stage) => void;
 }
 
@@ -48,6 +52,43 @@ export interface ChatAnswer {
   mode: ChatV2Mode;
   cacheHit: boolean;
   dataClass: DataClass;
+  needsClarification: boolean;
+}
+
+export interface EphemeralAnswer {
+  text: string;
+  citations: unknown[];
+  needsClarification: boolean;
+  dataClass: DataClass;
+  usedBlockIds: string[];
+  uncertaintyNote: string | null;
+  mode: ChatV2Mode;
+}
+
+interface ResolveAnswerArgs {
+  tenantId: string;
+  userId: string;
+  question: string;
+  scope: ChatV2Scope;
+  scopeRefId: string | null;
+  mode: ChatV2Mode;
+  validAt: Date | null;
+  validAtIso: string | null;
+  intent?: DialogIntent;
+  history: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>;
+  conversationSummary: string | null;
+  onStage?: (stage: ChatV2Stage) => void;
+}
+
+interface ResolvedAnswer {
+  text: string;
+  citations: unknown[];
+  needsClarification: boolean;
+  dataClass: DataClass;
+  usedBlockIds: string[];
+  uncertaintyNote: string | null;
+  mode: ChatV2Mode;
+  cacheHit: boolean;
 }
 
 @Injectable()
@@ -107,100 +148,29 @@ export class ChatV2OrchestrationService {
       isFirstUserMessage = true;
     }
 
-    const dialogResult = await this.dialog.process({
-      tenantId: input.tenantId,
-      userId: input.userId,
-      userMessage: input.question,
-      conversationId: conversation.id,
-      scope,
-      scopeRefId,
-      validAt: validAtIso,
-    });
-
     await this.conversations.appendMessage({
       conversationId: conversation.id,
       role: 'user',
       text: input.question,
     });
 
-    const startedAt = Date.now();
-
-    if (dialogResult.cachedAnswer) {
-      const cached = dialogResult.cachedAnswer;
-      const assistantMessage = await this.conversations.appendMessage({
-        conversationId: conversation.id,
-        role: 'assistant',
-        mode,
-        text: cached.text,
-        citations:
-          cached.citations.length > 0
-            ? (cached.citations as unknown as Prisma.InputJsonValue)
-            : Prisma.JsonNull,
-        retrievalMeta: {
-          usedBlockIds: cached.usedBlockIds,
-          fromCache: true,
-        } as Prisma.InputJsonValue,
-        llmMeta: { fromCache: true } as Prisma.InputJsonValue,
-      });
-      const durationSeconds = (Date.now() - startedAt) / 1000;
-      this.metrics.observeChatV2SynthesisDuration({
-        mode,
-        seconds: durationSeconds,
-      });
-      this.metrics.incChatV2Query({
-        mode,
-        channelOrigin: conversation.channelKindOrigin ?? input.channelKindOrigin ?? 'web',
-      });
-      this.metrics.observeChatV2RetrievalBlocks({
-        mode,
-        count: cached.usedBlockIds.length,
-      });
-      if (isFirstUserMessage) {
-        void this.conversations
-          .generateTitle({
-            tenantId: input.tenantId,
-            conversationId: conversation.id,
-            firstUserMessage: input.question,
-          })
-          .catch((err) => {
-            this.logger.warn(
-              { err: err instanceof Error ? err.message : String(err) },
-              'generateTitle promise rejected (handled inside)',
-            );
-          });
-      }
-      return {
-        conversationId: conversation.id,
-        messageId: assistantMessage.id,
-        text: cached.text,
-        citations: cached.citations,
-        uncertaintyNote: cached.uncertaintyNote,
-        mode,
-        cacheHit: true,
-        dataClass: coerceDataClass(cached.dataClass),
-      };
-    }
-
     const history = await this.loadHistory(conversation.id, this.cfg.chatV2.historyMessages);
     const convSummary = await this.loadConversationSummary(conversation.id);
 
-    const result = await this.synthesis.synthesize({
+    const startedAt = Date.now();
+
+    const resolved = await this.resolveAnswer({
       tenantId: input.tenantId,
       userId: input.userId,
       question: input.question,
-      mode,
       scope,
       scopeRefId,
-      history,
-      standaloneQuestion: dialogResult.standaloneQuestion,
-      queries: dialogResult.queries,
+      mode,
       validAt,
-      structuralFilters: dialogResult.structuralFilters ?? null,
-      tableEntityHints: dialogResult.queryPlan?.filters.entityHints ?? [],
-      tableEntityIds: dialogResult.structuralFilters?.entityIds ?? [],
-      tableAggregation: dialogResult.queryPlan?.filters.aggregation ?? false,
+      validAtIso,
+      intent: input.intent,
+      history,
       conversationSummary: convSummary,
-      intent: narrowToChatIntent(dialogResult.intent),
       onStage: input.onStage,
     });
 
@@ -213,48 +183,193 @@ export class ChatV2OrchestrationService {
       mode,
       channelOrigin: conversation.channelKindOrigin ?? input.channelKindOrigin ?? 'web',
     });
-    const usedBlockIds = (result.retrievalMeta?.usedBlockIds as string[] | undefined) ?? [];
     this.metrics.observeChatV2RetrievalBlocks({
       mode,
-      count: usedBlockIds.length,
+      count: resolved.usedBlockIds.length,
     });
-    if (result.citations.length === 0) {
-      this.metrics.incChatV2NoEvidence({ mode });
+    if (!resolved.cacheHit) {
+      if (resolved.citations.length === 0) {
+        this.metrics.incChatV2NoEvidence({ mode });
+      }
+      if (resolved.uncertaintyNote) {
+        this.metrics.incChatV2UncertaintyMarked({ mode });
+      }
     }
-    if (result.uncertaintyNote) {
-      this.metrics.incChatV2UncertaintyMarked({ mode });
-    }
-
-    const gated = await this.applyGroundednessGate({
-      tenantId: input.tenantId,
-      userId: input.userId,
-      question: input.question,
-      text: result.text,
-      citations: result.citations,
-      usedBlockIds,
-    });
-    const answerText = gated.text;
-    const answerCitations = gated.citations;
 
     const assistantMessage = await this.conversations.appendMessage({
       conversationId: conversation.id,
       role: 'assistant',
       mode,
-      text: answerText,
+      text: resolved.text,
       citations:
-        answerCitations.length > 0
-          ? (answerCitations as unknown as Prisma.InputJsonValue)
+        resolved.citations.length > 0
+          ? (resolved.citations as unknown as Prisma.InputJsonValue)
           : Prisma.JsonNull,
-      retrievalMeta: result.retrievalMeta as Prisma.InputJsonValue,
-      llmMeta: result.llmMeta as Prisma.InputJsonValue,
+      retrievalMeta: resolved.retrievalMeta as Prisma.InputJsonValue,
+      llmMeta: resolved.llmMeta as Prisma.InputJsonValue,
     });
 
-    if (dialogResult.enabled && answerText.length > 0) {
+    if (isFirstUserMessage) {
+      void this.conversations
+        .generateTitle({
+          tenantId: input.tenantId,
+          conversationId: conversation.id,
+          firstUserMessage: input.question,
+        })
+        .catch((err) => {
+          this.logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            'generateTitle promise rejected (handled inside)',
+          );
+        });
+    }
+
+    return {
+      conversationId: conversation.id,
+      messageId: assistantMessage.id,
+      text: resolved.text,
+      citations: resolved.citations,
+      uncertaintyNote: resolved.uncertaintyNote,
+      mode,
+      cacheHit: resolved.cacheHit,
+      dataClass: resolved.dataClass,
+      needsClarification: resolved.needsClarification,
+    };
+  }
+
+  async askEphemeral(input: {
+    tenantId: string;
+    userId: string;
+    question: string;
+    history: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>;
+    conversationSummary?: string | null;
+    scope?: ChatV2Scope;
+    scopeRefId?: string | null;
+    mode?: ChatV2Mode;
+    intent?: DialogIntent;
+    asOf?: string;
+    onStage?: (stage: ChatV2Stage) => void;
+  }): Promise<EphemeralAnswer> {
+    const mode: ChatV2Mode = input.mode ?? this.cfg.chatV2.defaultMode;
+    const scope: ChatV2Scope = input.scope ?? 'org';
+    const scopeRefId = input.scopeRefId ?? null;
+
+    const validAtDate = input.asOf ? new Date(input.asOf) : null;
+    const validAt = validAtDate && !Number.isNaN(validAtDate.getTime()) ? validAtDate : null;
+    if (input.asOf && !validAt) {
+      this.logger.warn(
+        { asOf: input.asOf },
+        'ChatV2OrchestrationService.askEphemeral: невалидный asOf, игнор → now()',
+      );
+    }
+    const validAtIso = validAt ? validAt.toISOString() : null;
+
+    const resolved = await this.resolveAnswer({
+      tenantId: input.tenantId,
+      userId: input.userId,
+      question: input.question,
+      scope,
+      scopeRefId,
+      mode,
+      validAt,
+      validAtIso,
+      intent: input.intent,
+      history: input.history,
+      conversationSummary: input.conversationSummary ?? null,
+      onStage: input.onStage,
+    });
+
+    return {
+      text: resolved.text,
+      citations: resolved.citations,
+      needsClarification: resolved.needsClarification,
+      dataClass: resolved.dataClass,
+      usedBlockIds: resolved.usedBlockIds,
+      uncertaintyNote: resolved.uncertaintyNote,
+      mode,
+    };
+  }
+
+  private async resolveAnswer(
+    args: ResolveAnswerArgs,
+  ): Promise<
+    ResolvedAnswer & {
+      llmMeta: Record<string, unknown>;
+      retrievalMeta: Record<string, unknown>;
+    }
+  > {
+    const { tenantId, userId, question, scope, scopeRefId, mode, validAt, validAtIso } = args;
+
+    const dialogResult = await this.dialog.process({
+      tenantId,
+      userId,
+      userMessage: question,
+      conversationId: null,
+      scope,
+      scopeRefId,
+      validAt: validAtIso,
+      intent: args.intent,
+      summaryOverride: args.conversationSummary,
+      historyOverride: [...args.history],
+    });
+
+    if (dialogResult.cachedAnswer) {
+      const cached = dialogResult.cachedAnswer;
+      return {
+        text: cached.text,
+        citations: cached.citations,
+        needsClarification: false,
+        dataClass: coerceDataClass(cached.dataClass),
+        usedBlockIds: cached.usedBlockIds,
+        uncertaintyNote: cached.uncertaintyNote,
+        mode,
+        cacheHit: true,
+        llmMeta: { fromCache: true },
+        retrievalMeta: { usedBlockIds: cached.usedBlockIds, fromCache: true },
+      };
+    }
+
+    const result = await this.synthesis.synthesize({
+      tenantId,
+      userId,
+      question,
+      mode,
+      scope,
+      scopeRefId,
+      history: args.history,
+      standaloneQuestion: dialogResult.standaloneQuestion,
+      queries: dialogResult.queries,
+      validAt,
+      structuralFilters: dialogResult.structuralFilters ?? null,
+      tableEntityHints: dialogResult.queryPlan?.filters.entityHints ?? [],
+      tableEntityIds: dialogResult.structuralFilters?.entityIds ?? [],
+      tableAggregation: dialogResult.queryPlan?.filters.aggregation ?? false,
+      conversationSummary: args.conversationSummary,
+      intent: narrowToChatIntent(dialogResult.intent),
+      onStage: args.onStage,
+    });
+
+    const usedBlockIds = (result.retrievalMeta?.usedBlockIds as string[] | undefined) ?? [];
+
+    const gated = result.needsClarification
+      ? { text: result.text, citations: result.citations }
+      : await this.applyGroundednessGate({
+          tenantId,
+          userId,
+          question,
+          text: result.text,
+          citations: result.citations,
+          usedBlockIds,
+        });
+    const answerText = gated.text;
+    const answerCitations = gated.citations;
+
+    if (dialogResult.enabled && answerText.length > 0 && !result.needsClarification) {
       void this.answerCache
         .set(
           {
-            tenantId: input.tenantId,
-            userId: input.userId,
+            tenantId,
+            userId,
             standaloneQuestion: dialogResult.standaloneQuestion,
             scope,
             scopeRefId,
@@ -278,30 +393,17 @@ export class ChatV2OrchestrationService {
         });
     }
 
-    if (isFirstUserMessage) {
-      void this.conversations
-        .generateTitle({
-          tenantId: input.tenantId,
-          conversationId: conversation.id,
-          firstUserMessage: input.question,
-        })
-        .catch((err) => {
-          this.logger.warn(
-            { err: err instanceof Error ? err.message : String(err) },
-            'generateTitle promise rejected (handled inside)',
-          );
-        });
-    }
-
     return {
-      conversationId: conversation.id,
-      messageId: assistantMessage.id,
       text: answerText,
       citations: answerCitations,
+      needsClarification: result.needsClarification,
+      dataClass: result.dataClass,
+      usedBlockIds,
       uncertaintyNote: result.uncertaintyNote,
       mode,
       cacheHit: false,
-      dataClass: result.dataClass,
+      llmMeta: result.llmMeta,
+      retrievalMeta: result.retrievalMeta,
     };
   }
 

@@ -168,6 +168,7 @@ export interface ChatV2Output {
    * (ответ-заглушка без данных).
    */
   dataClass: DataClass;
+  needsClarification: boolean;
 }
 
 /**
@@ -383,6 +384,9 @@ function dedupe(items: string[]): string[] {
 
 const BLOCK_REF_REGEX = /\[BLOCK:([a-z0-9]+)\]/gi;
 
+const CLARIFY_MARKER_REGEX = /^\s*\[\[CLARIFY\]\]/;
+const CLARIFY_MARKER_STRIP_REGEX = /\[\[CLARIFY\]\]/g;
+
 /**
  * §1 Ф5 (2026-06-11) — вырезает технические маркеры цитат из текста ответа
  * AI-чата (chat-v2), чтобы они не утекали в UI. Цитаты сохраняются отдельно
@@ -514,6 +518,23 @@ export const BASE_SYSTEM_PROMPT = `## Роль
 6. Конфликт не заглаживай. Если факты спорят — назови оба
    ([BLOCK:<id1>] vs [BLOCK:<id2>]) и предложи человеку уточнить, какой
    актуальный. Никогда не выбирай «правильный» сам.
+7. Структура по содержанию. Простой факт — 1-2 предложения. Составной ответ
+   (несколько частей, пунктов, сущностей) — короткая вводная фраза, затем
+   список или разделы. Структурируй ради ясности, а не ради объёма.
+
+## Переспрос при нескольких РАЗНЫХ объектах
+Это не про конфликт фактов (правило 6 — когда факты спорят об ОДНОМ объекте).
+Здесь речь о другом: под вопрос подходит несколько РАЗНЫХ объектов, и выбрать
+один нельзя (например, «что решили на встрече с Александром», а в памяти три
+разные встречи с Александром). В таком случае:
+- Не выдумывай единый ответ и не сваливай всё подряд.
+- Опиши КАЖДЫЙ вариант человеческим языком (что это, когда, о чём шла речь) и
+  подкрепи его источником-маркером [BLOCK:<id>].
+- В конце задай ОДИН короткий уточняющий вопрос, какой из вариантов имеется
+  в виду.
+- Начни такой ответ со служебного токена [[CLARIFY]] в самой первой строке.
+  Это внутренняя метка для системы — её вырежут до показа, человек её никогда
+  не увидит. В обычном ответе токен не пиши.
 
 ## Особые пометки в контексте (подсказки для тебя; в ответе их не показывай)
 - «Цепочка рассуждения к факту» — разложенное «почему»: решение ← обоснование
@@ -736,6 +757,7 @@ export class ChatV2Service {
         outputTokens: 0,
         // M-1 — пустой контекст: ответ-заглушка без данных.
         dataClass: 'internal',
+        needsClarification: false,
       };
     }
 
@@ -870,17 +892,18 @@ export class ChatV2Service {
       timeoutMs: this.cfg.knowledgeCore.chatV2SynthesisTimeoutMs,
     });
 
+    const needsClarification = CLARIFY_MARKER_REGEX.test(result.text);
+    const clarifyStripped = result.text.replace(CLARIFY_MARKER_STRIP_REGEX, '');
+
     // 6) Парсим citations: [BLOCK:<id>] → primaryMeetingEvidence блока.
     const citations = this.parseCitationsFromAnswer(
-      result.text,
+      clarifyStripped,
       contextBlocks,
     );
-    const usedBlockIds = this.parseUsedBlockIds(result.text, contextBlocks);
+    const usedBlockIds = this.parseUsedBlockIds(clarifyStripped, contextBlocks);
 
     return {
-      // §1 Ф5 — strip технических маркеров из видимого текста; парс цитат выше
-      // уже сделан на СЫРОМ result.text (с маркерами), поэтому citations целы.
-      message: stripBlockMarkers(result.text),
+      message: stripBlockMarkers(clarifyStripped),
       citations,
       modelUsed: result.modelUsed,
       usedBlockIds,
@@ -888,6 +911,7 @@ export class ChatV2Service {
       outputTokens: result.outputTokens,
       // M-1 — derived класс ответа (тот же, что ушёл в llm.call).
       dataClass: effectiveDataClass,
+      needsClarification,
     };
   }
 

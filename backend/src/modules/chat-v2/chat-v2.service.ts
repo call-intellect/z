@@ -52,6 +52,7 @@ export interface ChatAnswer {
   mode: ChatV2Mode;
   cacheHit: boolean;
   dataClass: DataClass;
+  needsClarification: boolean;
 }
 
 @Injectable()
@@ -183,6 +184,7 @@ export class ChatV2OrchestrationService {
         mode,
         cacheHit: true,
         dataClass: coerceDataClass(cached.dataClass),
+        needsClarification: false,
       };
     }
 
@@ -230,14 +232,16 @@ export class ChatV2OrchestrationService {
       this.metrics.incChatV2UncertaintyMarked({ mode });
     }
 
-    const gated = await this.applyGroundednessGate({
-      tenantId: input.tenantId,
-      userId: input.userId,
-      question: input.question,
-      text: result.text,
-      citations: result.citations,
-      usedBlockIds,
-    });
+    const gated = result.needsClarification
+      ? { text: result.text, citations: result.citations }
+      : await this.applyGroundednessGate({
+          tenantId: input.tenantId,
+          userId: input.userId,
+          question: input.question,
+          text: result.text,
+          citations: result.citations,
+          usedBlockIds,
+        });
     const answerText = gated.text;
     const answerCitations = gated.citations;
 
@@ -254,7 +258,11 @@ export class ChatV2OrchestrationService {
       llmMeta: result.llmMeta as Prisma.InputJsonValue,
     });
 
-    if (dialogResult.enabled && answerText.length > 0) {
+    if (
+      dialogResult.enabled &&
+      answerText.length > 0 &&
+      !result.needsClarification
+    ) {
       void this.answerCache
         .set(
           {
@@ -307,6 +315,7 @@ export class ChatV2OrchestrationService {
       mode,
       cacheHit: false,
       dataClass: result.dataClass,
+      needsClarification: result.needsClarification,
     };
   }
 

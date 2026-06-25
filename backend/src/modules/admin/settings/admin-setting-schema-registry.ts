@@ -109,6 +109,8 @@ const registry = new Map<string, ZodTypeAny>([
   ['concierge.max_steps', POSITIVE_INT],
   ['rag.loop_guard_threshold', POSITIVE_INT],
   ['rag.rrf_k', POSITIVE_INT],
+  ['rag.k_retrieve', POSITIVE_INT],
+  ['rag.k_context', POSITIVE_INT],
   ['rag.rerank_min_pool', POSITIVE_INT],
   ['rag.multiquery_count', POSITIVE_INT],
   ['rag.groundedness_mode', z.enum(['off', 'shadow', 'on'])],

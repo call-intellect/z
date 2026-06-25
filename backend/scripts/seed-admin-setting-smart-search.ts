@@ -44,6 +44,24 @@ const SEEDS: SettingSeed[] = [
       'Параметр k для слияния рангов RRF при объединении результатов нескольких подзапросов поиска (стандартно 60). По умолчанию 60.',
   },
   {
+    key: 'rag.k_retrieve',
+    value: 30,
+    category: 'ai',
+    section: 'smart_search',
+    severity: 'medium',
+    description:
+      'Сколько блоков-кандидатов поднимать в пул поиска (до реранка): больший пул даёт реранку из чего выбирать. По умолчанию 30.',
+  },
+  {
+    key: 'rag.k_context',
+    value: 18,
+    category: 'ai',
+    section: 'smart_search',
+    severity: 'medium',
+    description:
+      'Сколько отобранных блоков уходит в контекст синтеза ответа (после реранка). Должно быть ≤ rag.k_retrieve. По умолчанию 18.',
+  },
+  {
     key: 'rag.rerank_min_pool',
     value: 12,
     category: 'ai',

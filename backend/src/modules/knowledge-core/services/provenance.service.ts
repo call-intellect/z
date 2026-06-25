@@ -16,7 +16,6 @@ export type ProvenanceSourceType =
 export type ProvenanceEntityType =
   | 'decision'
   | 'issue'
-  | 'task'
   | 'regulation'
   | 'instruction'
   | 'block'
@@ -553,7 +552,6 @@ export class ProvenanceService {
     const VALID: ReadonlyArray<ProvenanceEntityType> = [
       'decision',
       'issue',
-      'task',
       'regulation',
       'instruction',
       'block',
@@ -700,13 +698,6 @@ export class ProvenanceService {
           select: { sourceBlockIds: true },
         });
         return i?.sourceBlockIds ?? [];
-      }
-      case 'task': {
-        const t = await this.prisma.task.findFirst({
-          where: { id: entityId, tenantId },
-          select: { evidenceBlockIds: true },
-        });
-        return t?.evidenceBlockIds ?? [];
       }
       case 'regulation':
       case 'instruction': {

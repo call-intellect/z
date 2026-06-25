@@ -91,14 +91,6 @@ export class MeetingsPublicController {
   @ApiOperation({ summary: 'Задачи встречи' })
   async tasks(@CurrentApiUserId() userId: string, @Param('id') id: string) {
     const tenantId = await this.assertOwned(id, userId);
-    const trackerOnly = await this.actionItems.isTrackerOnly();
-    if (!trackerOnly) {
-      const items = await this.prisma.task.findMany({
-        where: { meetingId: id, userId },
-        orderBy: { createdAt: 'asc' },
-      });
-      return { items };
-    }
     const normalized = await this.actionItems.listForMeeting({
       meetingId: id,
       tenantId: tenantId ?? '',

@@ -1,15 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { TypedConfigService } from '../../common/config/index';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 
 import { MeetingActionItemsService } from './meeting-action-items.service';
-
-function makeCfg(trackerOnly: boolean): TypedConfigService {
-  return {
-    getDynamic: vi.fn(async () => trackerOnly),
-  } as unknown as TypedConfigService;
-}
 
 function firstCallArg(fn: ReturnType<typeof vi.fn>): {
   where: Record<string, unknown>;
@@ -19,68 +12,7 @@ function firstCallArg(fn: ReturnType<typeof vi.fn>): {
 }
 
 describe('MeetingActionItemsService.listForMeeting', () => {
-  it('флаг OFF → читает Task с фильтром по meetingId/tenantId и нормализует', async () => {
-    const findMany = vi.fn(async () => [
-      {
-        id: 't1',
-        meetingId: 'm1',
-        title: 'Подготовить отчёт',
-        description: 'desc',
-        status: 'open',
-        assigneeRaw: 'Настя',
-        assigneeUserId: 'u-nastya',
-        dueDate: new Date('2026-07-01T00:00:00.000Z'),
-        sourceQuote: 'цитата',
-        confidence: 0.9,
-        extractorVersion: 'fast',
-        createdAt: new Date('2026-06-01T00:00:00.000Z'),
-        updatedAt: new Date('2026-06-02T00:00:00.000Z'),
-      },
-    ]);
-    const prisma = {
-      task: { findMany },
-      issue: { findMany: vi.fn() },
-    } as unknown as PrismaService;
-
-    const svc = new MeetingActionItemsService(prisma, makeCfg(false));
-    const out = await svc.listForMeeting({ meetingId: 'm1', tenantId: 't1' });
-
-    expect(findMany).toHaveBeenCalledTimes(1);
-    const arg = firstCallArg(findMany);
-    expect(arg.where.meetingId).toBe('m1');
-    expect(arg.where.tenantId).toBe('t1');
-
-    expect(out).toHaveLength(1);
-    expect(out[0]).toMatchObject({
-      id: 't1',
-      meetingId: 'm1',
-      title: 'Подготовить отчёт',
-      status: 'open',
-      assigneeUserId: 'u-nastya',
-      assigneeRaw: 'Настя',
-      sourceQuote: 'цитата',
-      confidence: 0.9,
-      extractorVersion: 'fast',
-    });
-    expect(out[0]?.dueDate).toBeInstanceOf(Date);
-  });
-
-  it('флаг OFF без tenantId → не добавляет tenant-фильтр (legacy null-tenant встречи)', async () => {
-    const findMany = vi.fn(async () => []);
-    const prisma = {
-      task: { findMany },
-      issue: { findMany: vi.fn() },
-    } as unknown as PrismaService;
-
-    const svc = new MeetingActionItemsService(prisma, makeCfg(false));
-    await svc.listForMeeting({ meetingId: 'm1', tenantId: '' });
-
-    const arg = firstCallArg(findMany);
-    expect(arg.where.meetingId).toBe('m1');
-    expect('tenantId' in arg.where).toBe(false);
-  });
-
-  it('флаг ON → читает Issue по linkedMeetingIds и маппит Issue→MeetingActionItem', async () => {
+  it('читает Issue по linkedMeetingIds и маппит Issue→MeetingActionItem', async () => {
     const issueFindMany = vi.fn(async () => [
       {
         id: 'i1',
@@ -96,11 +28,10 @@ describe('MeetingActionItemsService.listForMeeting', () => {
       },
     ]);
     const prisma = {
-      task: { findMany: vi.fn() },
       issue: { findMany: issueFindMany },
     } as unknown as PrismaService;
 
-    const svc = new MeetingActionItemsService(prisma, makeCfg(true));
+    const svc = new MeetingActionItemsService(prisma);
     const out = await svc.listForMeeting({
       meetingId: 'm1',
       tenantId: 't1',
@@ -150,10 +81,9 @@ describe('MeetingActionItemsService.listForMeeting', () => {
         },
       ]);
       const prisma = {
-        task: { findMany: vi.fn() },
         issue: { findMany: issueFindMany },
       } as unknown as PrismaService;
-      const svc = new MeetingActionItemsService(prisma, makeCfg(true));
+      const svc = new MeetingActionItemsService(prisma);
       const out = await svc.listForMeeting({ meetingId: 'm1', tenantId: 't1' });
       expect(out[0]?.status).toBe(expected);
       expect(out[0]?.assigneeUserId).toBeNull();
@@ -162,27 +92,7 @@ describe('MeetingActionItemsService.listForMeeting', () => {
 });
 
 describe('MeetingActionItemsService.searchTitlesForUser', () => {
-  it('флаг OFF → ищет по Task пользователя, форма {id,title,status,meetingId}', async () => {
-    const findMany = vi.fn(async () => [
-      { id: 't1', title: 'Найти', status: 'open', meetingId: 'm1' },
-    ]);
-    const prisma = {
-      task: { findMany },
-      issue: { findMany: vi.fn() },
-    } as unknown as PrismaService;
-    const svc = new MeetingActionItemsService(prisma, makeCfg(false));
-    const out = await svc.searchTitlesForUser({
-      tenantId: 't1',
-      userId: 'u1',
-      query: 'Най',
-      limit: 10,
-    });
-    const arg = firstCallArg(findMany);
-    expect(arg.where.userId).toBe('u1');
-    expect(out).toEqual([{ id: 't1', title: 'Найти', status: 'open', meetingId: 'm1' }]);
-  });
-
-  it('флаг ON → ищет по Issue (externalSource=meeting), meetingId из linkedMeetingIds[0]', async () => {
+  it('ищет по Issue (externalSource=meeting), meetingId из linkedMeetingIds[0]', async () => {
     const issueFindMany = vi.fn(async () => [
       {
         id: 'i1',
@@ -192,10 +102,9 @@ describe('MeetingActionItemsService.searchTitlesForUser', () => {
       },
     ]);
     const prisma = {
-      task: { findMany: vi.fn() },
       issue: { findMany: issueFindMany },
     } as unknown as PrismaService;
-    const svc = new MeetingActionItemsService(prisma, makeCfg(true));
+    const svc = new MeetingActionItemsService(prisma);
     const out = await svc.searchTitlesForUser({
       tenantId: 't1',
       userId: 'u1',

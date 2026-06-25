@@ -27,61 +27,12 @@ const TASK_CONTRACT_FIELDS = [
   'updatedAt',
 ] as const;
 
-function makeFullTask() {
-  return {
-    id: 't1',
-    tenantId: 'tenant-1',
-    meetingId: 'm1',
-    userId: 'u1',
-    title: 'Задача',
-    description: null,
-    status: 'open',
-    assigneeRaw: 'Настя',
-    assigneeUserId: 'u-nastya',
-    dueDate: new Date('2026-07-01T00:00:00.000Z'),
-    sourceStartMs: 1000,
-    sourceEndMs: 2000,
-    sourceQuote: 'цитата',
-    confidence: 0.9,
-    createdManually: false,
-    evidenceBlockIds: [] as string[],
-    extractorVersion: 'fast',
-    createdAt: new Date('2026-06-01T00:00:00.000Z'),
-    updatedAt: new Date('2026-06-02T00:00:00.000Z'),
-  };
-}
-
 describe('MeetingsPublicController GET /meetings/:id/tasks — контракт Ф5.2', () => {
-  it('флаг OFF → отдаёт полный Task; форма ответа прежняя', async () => {
-    const taskFindMany = vi.fn(async () => [makeFullTask()]);
+  it('отдаёт Issue в наборе полей контракта', async () => {
     const prisma = {
       meeting: {
         findFirst: vi.fn(async () => ({ id: 'm1', tenantId: 'tenant-1' })),
       },
-      task: { findMany: taskFindMany },
-    } as unknown as PrismaService;
-    const actionItems = {
-      isTrackerOnly: vi.fn(async () => false),
-      listForMeeting: vi.fn(),
-    } as unknown as MeetingActionItemsService;
-
-    const ctrl = new MeetingsPublicController(prisma, actionItems);
-    const res = await ctrl.tasks('u1', 'm1');
-
-    expect(taskFindMany).toHaveBeenCalledTimes(1);
-    expect(res.items).toHaveLength(1);
-    for (const f of TASK_CONTRACT_FIELDS) {
-      expect(Object.prototype.hasOwnProperty.call(res.items[0], f)).toBe(true);
-    }
-    expect(res.items[0]).toMatchObject({ id: 't1', meetingId: 'm1', userId: 'u1' });
-  });
-
-  it('флаг ON → отдаёт Issue, но в ТОМ ЖЕ наборе полей контракта', async () => {
-    const prisma = {
-      meeting: {
-        findFirst: vi.fn(async () => ({ id: 'm1', tenantId: 'tenant-1' })),
-      },
-      task: { findMany: vi.fn() },
     } as unknown as PrismaService;
     const listForMeeting = vi.fn(async () => [
       {
@@ -101,7 +52,6 @@ describe('MeetingsPublicController GET /meetings/:id/tasks — контракт 
       },
     ]);
     const actionItems = {
-      isTrackerOnly: vi.fn(async () => true),
       listForMeeting,
     } as unknown as MeetingActionItemsService;
 

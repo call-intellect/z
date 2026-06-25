@@ -3,7 +3,6 @@ import { z } from 'zod';
 export const PROVENANCE_ENTITY_TYPES = [
   'decision',
   'issue',
-  'task',
   'regulation',
   'instruction',
   'block',

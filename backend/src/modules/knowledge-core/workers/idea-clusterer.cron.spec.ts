@@ -115,6 +115,7 @@ function makeCron(args: {
       clusterThreshold: threshold,
       minSupportersForCluster: minSupporters,
     },
+    getDynamic: vi.fn(async (_k: string, _e: unknown, def: number) => def),
   } as unknown as ConstructorParameters<typeof IdeaClustererCron>[1];
 
   const fakeEmbedder = {} as unknown as ConstructorParameters<

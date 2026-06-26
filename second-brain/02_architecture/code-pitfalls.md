@@ -757,4 +757,17 @@ demoMembership`); read-only роль (demo_observer) не должна быть 
 Диагностика: `/accounts/me` показывает `currentOrgRole: demo_observer` + 403 на org-scoped
 write. Фикс — коммит `40ce79bd`. Подробности — [[../05_история/2026-06-25-onboarding-demo-org-403-fix]].
 
+## `EntityLink` — полиморфная модель БЕЗ FK на `Entity`: каскада нет, рёбра чистить вручную (2026-06-25)
+
+`EntityLink` несёт `fromEntityId`/`toEntityId` + `fromType`/`toType` (полиморфные:
+`NULL` трактуется как legacy `'entity'`) и **не имеет FK на `Entity`**. Поэтому при
+hard-delete `Entity` каскад срабатывает только на связи С FK (`IdeaBlockEntity` →
+`onDelete: Cascade`, `ThemeEntity`, `Card`), а строки `EntityLink` **остаются висящими
+рёбрами** — БД их не удалит.
+
+**Правило:** удаляя `Entity`, рёбра `EntityLink` снимай вручную `deleteMany` по **обеим**
+сторонам с учётом legacy-NULL — `(fromEntityId = id AND fromType IN (NULL,'entity'))
+OR (toEntityId = id AND toType IN (NULL,'entity'))`. Образец — `backend/scripts/backfill-purge-junk-entities.ts`
+(чистка мусорных сущностей графа, ТЗ [`2026-06-25-knowledge-graph-hygiene.md`](../../plans/tz/2026-06-25-knowledge-graph-hygiene.md) Ф5).
+
 [[../index|← index]]

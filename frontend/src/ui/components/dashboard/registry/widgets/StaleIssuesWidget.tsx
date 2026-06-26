@@ -1,6 +1,7 @@
 "use client";
 
 import type { FC } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { Hourglass } from "lucide-react";
 import useSWR from "swr";
@@ -19,6 +20,7 @@ import type { Rhythm } from "../types";
 
 export const StaleIssuesWidget: FC<{ rhythm: Rhythm }> = () => {
   const { currentOrgId } = useAuth();
+  const [showAll, setShowAll] = useState(false);
 
   const staleSwr = useSWR(
     currentOrgId ? ["stale-issues", currentOrgId] : null,
@@ -70,7 +72,7 @@ export const StaleIssuesWidget: FC<{ rhythm: Rhythm }> = () => {
       </p>
 
       <ul className="mt-4 space-y-2">
-        {items.map((item) => (
+        {(showAll ? items : items.slice(0, 5)).map((item) => (
           <li key={item.issueId}>
             <Link
               href={`/issues/${item.issueId}`}
@@ -98,6 +100,17 @@ export const StaleIssuesWidget: FC<{ rhythm: Rhythm }> = () => {
           </li>
         ))}
       </ul>
+
+      {items.length > 5 && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="mt-3 text-sm font-medium transition hover:brightness-110"
+          style={{ color: CHART.dim }}
+        >
+          {showAll ? "Свернуть" : `Показать все (${items.length})`}
+        </button>
+      )}
     </GlassCard>
   );
 };

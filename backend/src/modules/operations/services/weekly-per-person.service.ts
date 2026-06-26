@@ -40,6 +40,7 @@ interface PersonAcc {
   tasksDone: number;
   tasksPlanned: number;
   tasksPlannedDone: number;
+  countedDoneIssueIds: Set<string>;
   countedCycleIssueIds: Set<string>;
   checkInsCompleted: number;
   countedCommitmentBlockIds: Set<string>;
@@ -147,18 +148,20 @@ export class WeeklyPerPersonService {
         select: { name: true, commitmentStatus: true, commitmentDueDate: true },
       }),
       person?.userId
-        ? this.prisma.task.findMany({
+        ? this.prisma.issue.findMany({
             where: {
               tenantId,
-              assigneeUserId: person.userId,
+              assignees: { some: { userId: person.userId } },
               dueDate: { gte: weekStartDate, lte: weekEndDate },
+              deletedAt: null,
+              archivedAt: null,
             },
-            select: { title: true, status: true, dueDate: true },
+            select: { title: true, completedAt: true, dueDate: true },
           })
         : Promise.resolve(
             [] as Array<{
               title: string;
-              status: string;
+              completedAt: Date | null;
               dueDate: Date | null;
             }>,
           ),
@@ -191,7 +194,7 @@ export class WeeklyPerPersonService {
 
     for (const t of taskRows) {
       const dueMs = t.dueDate?.getTime();
-      const factStatus = this.taskFactStatus(t.status, dueMs, nowMs);
+      const factStatus = this.taskFactStatus(t.completedAt !== null, dueMs, nowMs);
       items.push({
         kind: 'task',
         title: t.title,
@@ -236,11 +239,11 @@ export class WeeklyPerPersonService {
   }
 
   private taskFactStatus(
-    status: string,
+    done: boolean,
     dueMs: number | undefined,
     nowMs: number,
   ): WeeklyPersonItemFactStatus {
-    if (status === 'done') return 'done';
+    if (done) return 'done';
     if (dueMs !== undefined && dueMs < nowMs) return 'overdue';
     return 'open';
   }
@@ -343,41 +346,63 @@ export class WeeklyPerPersonService {
     }
     const authorUserIds = [...userIdToPersonId.keys()];
     if (authorUserIds.length > 0) {
-      const doneTasks = await this.prisma.task.findMany({
+      const authorUserIdSet = new Set(authorUserIds);
+
+      const doneIssues = await this.prisma.issue.findMany({
         where: {
           tenantId,
-          status: 'done',
-          assigneeUserId: { in: authorUserIds },
-          updatedAt: { gte: weekStartDate, lte: weekEndDate },
+          completedAt: { not: null, gte: weekStartDate, lte: weekEndDate },
+          assignees: { some: { userId: { in: authorUserIds } } },
+          deletedAt: null,
+          archivedAt: null,
         },
-        select: { assigneeUserId: true, evidenceBlockIds: true },
+        select: {
+          id: true,
+          sourceBlockIds: true,
+          assignees: { select: { userId: true } },
+        },
       });
-      for (const t of doneTasks) {
-        if (!t.assigneeUserId) continue;
-        const personId = userIdToPersonId.get(t.assigneeUserId);
-        if (!personId) continue;
-        const acc = accByPerson.get(personId);
-        if (!acc) continue;
-        if (this.taskFromCountedCommitment(t.evidenceBlockIds, acc)) continue;
-        acc.tasksDone += 1;
+      for (const issue of doneIssues) {
+        for (const a of issue.assignees) {
+          if (!authorUserIdSet.has(a.userId)) continue;
+          const personId = userIdToPersonId.get(a.userId);
+          if (!personId) continue;
+          const acc = accByPerson.get(personId);
+          if (!acc) continue;
+          if (acc.countedDoneIssueIds.has(issue.id)) continue;
+          acc.countedDoneIssueIds.add(issue.id);
+          if (this.taskFromCountedCommitment(issue.sourceBlockIds, acc)) continue;
+          acc.tasksDone += 1;
+        }
       }
 
-      const plannedTasks = await this.prisma.task.findMany({
+      const plannedIssues = await this.prisma.issue.findMany({
         where: {
           tenantId,
-          assigneeUserId: { in: authorUserIds },
+          assignees: { some: { userId: { in: authorUserIds } } },
           dueDate: { gte: weekStartDate, lte: weekEndDate },
+          deletedAt: null,
+          archivedAt: null,
         },
-        select: { assigneeUserId: true, status: true },
+        select: {
+          id: true,
+          completedAt: true,
+          assignees: { select: { userId: true } },
+        },
       });
-      for (const t of plannedTasks) {
-        if (!t.assigneeUserId) continue;
-        const personId = userIdToPersonId.get(t.assigneeUserId);
-        if (!personId) continue;
-        const acc = accByPerson.get(personId);
-        if (!acc) continue;
-        acc.tasksPlanned += 1;
-        if (t.status === 'done') acc.tasksPlannedDone += 1;
+      for (const issue of plannedIssues) {
+        const isDone = issue.completedAt !== null;
+        for (const a of issue.assignees) {
+          if (!authorUserIdSet.has(a.userId)) continue;
+          const personId = userIdToPersonId.get(a.userId);
+          if (!personId) continue;
+          const acc = accByPerson.get(personId);
+          if (!acc) continue;
+          if (acc.countedCycleIssueIds.has(issue.id)) continue;
+          acc.countedCycleIssueIds.add(issue.id);
+          acc.tasksPlanned += 1;
+          if (isDone) acc.tasksPlannedDone += 1;
+        }
       }
 
       await this.addCycleIssuesToPlan(
@@ -464,6 +489,7 @@ export class WeeklyPerPersonService {
         tasksDone: 0,
         tasksPlanned: 0,
         tasksPlannedDone: 0,
+        countedDoneIssueIds: new Set<string>(),
         countedCycleIssueIds: new Set<string>(),
         checkInsCompleted: 0,
         countedCommitmentBlockIds: new Set<string>(),
@@ -474,13 +500,13 @@ export class WeeklyPerPersonService {
   }
 
   private taskFromCountedCommitment(
-    evidenceBlockIds: string[] | null | undefined,
+    sourceBlockIds: string[] | null | undefined,
     acc: PersonAcc,
   ): boolean {
-    if (!Array.isArray(evidenceBlockIds) || evidenceBlockIds.length === 0) {
+    if (!Array.isArray(sourceBlockIds) || sourceBlockIds.length === 0) {
       return false;
     }
-    for (const blockId of evidenceBlockIds) {
+    for (const blockId of sourceBlockIds) {
       if (acc.countedCommitmentBlockIds.has(blockId)) return true;
     }
     return false;

@@ -3,11 +3,12 @@ import { z } from 'zod';
 export const PROVENANCE_ENTITY_TYPES = [
   'decision',
   'issue',
-  'task',
   'regulation',
   'instruction',
   'block',
   'notification',
+  'entity',
+  'idea',
 ] as const;
 
 export const ProvenanceEntityTypeSchema = z.enum(PROVENANCE_ENTITY_TYPES);

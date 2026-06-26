@@ -701,8 +701,8 @@ describe('AccountsService', () => {
     });
   });
 
-  describe('getMe: default membership prefers demo_observer', () => {
-    it('есть demo + owner → currentOrgRole=demo_observer (предпочтение demo)', async () => {
+  describe('getMe: default membership prefers own org', () => {
+    it('есть demo + owner → currentOrgRole=owner (своя орга первична)', async () => {
       repo.findById.mockResolvedValueOnce(makeUser({ id: 'u1' }));
       prisma.user.findUnique.mockResolvedValueOnce({ isSuperAdmin: false });
       prisma.membership.findFirst
@@ -712,8 +712,8 @@ describe('AccountsService', () => {
       const svc = make();
       const me = await svc.getMe('u1');
 
-      expect(me?.currentOrgRole).toBe('demo_observer');
-      expect(me?.currentOrgId).toBe('demo-org');
+      expect(me?.currentOrgRole).toBe('owner');
+      expect(me?.currentOrgId).toBe('own-org');
     });
 
     it('нет demo, есть owner → currentOrgRole=owner', async () => {

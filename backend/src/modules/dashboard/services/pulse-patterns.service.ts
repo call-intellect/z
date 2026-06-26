@@ -18,6 +18,20 @@ import type {
   PulsePatternsDto,
 } from '../dto/pulse-patterns.dto';
 
+export function dedupeLatestRecurringTopicByTheme<
+  T extends { themeId: string | null; themeName: string; snapshotAt: Date },
+>(rows: T[]): T[] {
+  const latest = new Map<string, T>();
+  for (const row of rows) {
+    const key = row.themeId ?? `name:${row.themeName}`;
+    const prev = latest.get(key);
+    if (!prev || row.snapshotAt.getTime() > prev.snapshotAt.getTime()) {
+      latest.set(key, row);
+    }
+  }
+  return [...latest.values()];
+}
+
 @Injectable()
 export class PulsePatternsService {
   private readonly logger = new Logger(PulsePatternsService.name);
@@ -138,10 +152,9 @@ export class PulsePatternsService {
     now: Date,
   ): Promise<PulsePatternRecurringTopicDto> {
     const since = new Date(now.getTime() - 14 * 24 * 3600 * 1000);
-    const topics = await this.prisma.recurringTopic.findMany({
+    const rawTopics = await this.prisma.recurringTopic.findMany({
       where: { tenantId, snapshotAt: { gte: since } },
-      orderBy: { mentionCount: 'desc' },
-      take: PulsePatternsService.RECURRING_TOP,
+      orderBy: { snapshotAt: 'desc' },
       select: {
         themeId: true,
         themeName: true,
@@ -149,8 +162,12 @@ export class PulsePatternsService {
         meetingCount: true,
         windowStart: true,
         windowEnd: true,
+        snapshotAt: true,
       },
     });
+    const topics = dedupeLatestRecurringTopicByTheme(rawTopics)
+      .sort((a, b) => b.mentionCount - a.mentionCount)
+      .slice(0, PulsePatternsService.RECURRING_TOP);
 
     return {
       topics: topics.map((t) => ({

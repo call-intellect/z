@@ -90,14 +90,28 @@ export const TrendWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
   }
 
   const current = trendSwr.data?.current ?? null;
-  if (!current) return null;
-
   const deltas = trendSwr.data?.deltas ?? {};
-  const rows = TREND_METRICS.filter(
-    (m) => typeof current[m.key] === "number",
-  );
+  const rows = current
+    ? TREND_METRICS.filter((m) => typeof current[m.key] === "number")
+    : [];
 
-  if (rows.length === 0) return null;
+  if (!current || rows.length === 0) {
+    return (
+      <GlassCard>
+        <CardTitle icon={<TrendingUp size={16} />} grad={GRAD.teal}>
+          {title}
+        </CardTitle>
+        <p
+          className="mt-6 py-6 text-center text-sm"
+          style={{ color: CHART.faint }}
+        >
+          {period === "month"
+            ? "Недостаточно данных за месяц"
+            : "Недостаточно данных за неделю"}
+        </p>
+      </GlassCard>
+    );
+  }
 
   return (
     <GlassCard>

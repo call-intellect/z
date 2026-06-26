@@ -253,8 +253,6 @@ const AiFeatureFlagsSchema = z.object({
   CLIENT_PROTOCOL_ENABLED: zBool(true),
   DOC_COMPILER_ENABLED: zBool(true),
   REGULATION_GATE_STRICT_ENABLED: zBool(true),
-  CHATBOX_TASK_EXTRACTION_ENABLED: zBool(true),
-  TASKS_CROSS_SOURCE_DEDUPE_ENABLED: zBool(true),
   ASSIGNMENT_NOTIFICATIONS_ENABLED: zBool(true),
 });
 

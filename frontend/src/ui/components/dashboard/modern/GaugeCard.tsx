@@ -34,7 +34,7 @@ export function GaugeCard({
       </CardTitle>
       <div className="relative mt-2 flex-1">
         <div className="h-[210px]">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={160}>
             <RadialBarChart
               innerRadius="68%"
               outerRadius="100%"

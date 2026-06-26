@@ -231,7 +231,7 @@ LiveKit чистит атрибуты автоматически при disconne
 ### `backend/src/modules/dashboard/` (Phase 8)
 - `dashboard.module.ts`, `services/director-dashboard.service.ts`, `director-dashboard.controller.ts`, `dto/director-dashboard.dto.ts`, `prompts/dashboard-summary.prompt.ts`.
 - `GET /api/v1/dashboard/director?period=week|month` под `RbacService.canViewDirectorDashboard`.
-- **Модульные дашборды исполнения (ТЗ 2026-06-21):** `execution-dashboard.controller.ts` (`ExecutionDashboardController`, `@Controller('api/v1/dashboard')`) + `services/execution-dashboard.service.ts` + `dto/execution-dashboard.dto.ts`. 5 GET под `CookieAuthGuard+TenantGuard`+`canViewDirectorDashboard`: `layout` (раскладка ролевого пресета — override AdminSetting или `null`), `goal-vector/by-person`, `issue-chains`, `load/by-person`, `operations/trend`. Тег Swagger `dashboard-execution`. Фронтовый слой — реестр виджетов `frontend/src/ui/components/dashboard/registry/*` (`widget-registry.ts` — 18 виджетов, `presets.ts` — 3 роли×3 ритма, `DashboardCanvas.tsx` — рендер по `{role,rhythm}`, `use-dashboard-layout.ts` — override/code-fallback); экраны `/dashboard`,`/week`,`/month` собраны канвасом. См. [[../01_projects/director-dashboard]] §«Модульные дашборды исполнения».
+- **Модульные дашборды исполнения (ТЗ 2026-06-21):** `execution-dashboard.controller.ts` (`ExecutionDashboardController`, `@Controller('api/v1/dashboard')`) + `services/execution-dashboard.service.ts` + `dto/execution-dashboard.dto.ts`. 5 GET под `CookieAuthGuard+TenantGuard`+`canViewDirectorDashboard`: `layout` (раскладка ролевого пресета — override AdminSetting или `null`), `goal-vector/by-person` (с 2026-06-26 ответ содержит `goalState ∈ {primary,active_fallback,none}`; `resolveGoalId` имеет 4-й fallback на активную цель), `issue-chains`, `load/by-person`, `operations/trend`. Тег Swagger `dashboard-execution`. Фронтовый слой — реестр виджетов `frontend/src/ui/components/dashboard/registry/*` (`widget-registry.ts` — 18 виджетов, `presets.ts` — 3 роли×3 ритма, `DashboardCanvas.tsx` — рендер по `{role,rhythm}`, `use-dashboard-layout.ts` — override/code-fallback); экраны `/dashboard`,`/week`,`/month` собраны канвасом. См. [[../01_projects/director-dashboard]] §«Модульные дашборды исполнения».
 
 ### `backend/src/modules/goals/` (Phase 9)
 - `goals.module.ts`, `services/goals.service.ts`, `goals.controller.ts`, `dto/goals.dto.ts`.
@@ -1383,7 +1383,7 @@ Assignee resolution 4 ступени: `Task.assigneeUserId` FK → email exact (
 
 Status mapping: `open→backlog`, `in_progress→started`, `done→completed`, `cancelled→cancelled` (в schema используется `started`, не `in_progress`).
 
-Legacy `/api/v1/tasks/*` помечен `@ApiOperation({ deprecated: true })` на каждом из 7 endpoints (TasksController), endpoints продолжают работать.
+Legacy `/api/v1/tasks/*` (модуль `tasks/`, 7 endpoints `TasksController`) — **УДАЛЁН целиком 2026-06-25** (дроп legacy-модели `Task`, см. §«Дроп legacy-модели Task» ниже). Ручной CRUD задач — только через трекер (`Issue`); сам `migrate-task-to-issue.ts` сохранён и переписан под безопасный прод-перенос данных перед дропом таблицы.
 
 ### `backend/src/common/idempotency/` — общий IdempotencyService
 
@@ -2253,8 +2253,8 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 ### Единая задача встречи: `MeetingActionItemsService` (Ф5.2)
 
-- **`backend/src/modules/meetings/` — `MeetingActionItemsService`** (новый, в `@Global() MeetingsModule` — инжектится без `imports`). Единая точка чтения «задач встречи»: флаг `AdminSetting knowledge.meetingTasksToTrackerOnly` (code-fallback **FALSE**) — `OFF` → читаем `Task`, `ON` → `Issue` по `linkedMeetingIds`. Репойнт 7 потребителей: public-api (`GET /meetings/:id/tasks` с сохранением контракта), admin, chat, search, exports (md + docx), bulk-zip, внутренний `tasks.service` для фронта. Фронт не тронут (его эндпоинт gate-coupled на бэке). Грабля «два артефакта Task+Issue» — [[code-pitfalls]].
-- `meeting-report-fast.worker.writeTasks` получил gate: при `ON` `Task` для action-items не создаётся.
+- **`backend/src/modules/meetings/` — `MeetingActionItemsService`** (в `@Global() MeetingsModule` — инжектится без `imports`). Единая точка чтения «задач встречи». **С 2026-06-25 (дроп `model Task`) читает ТОЛЬКО `Issue` по `linkedMeetingIds`** — флаг `knowledge.meetingTasksToTrackerOnly` удалён (см. §«Дроп legacy-модели Task»). Питает потребителей: public-api (`GET /meetings/:id/tasks` с сохранением контракта), admin, chat, search, exports (md + docx), bulk-zip.
+- `meeting-report-fast.worker` для встреч пишет ТОЛЬКО `chapters`/`summary`/`qualityScore` — `writeTasks` удалён (action-items встречи извлекаются по Issue-пути `meeting-action-items`, а не записью `Task`).
 
 ### Скрипты
 
@@ -2414,7 +2414,7 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 ### Новые сервисы
 
-- **`backend/src/modules/meetings/ — MeetingTaskDedupeService`** (Ф5 Р2) — семантический дедуп задач встречи: embedding-KNN-кандидаты + LLM-арбитр серой зоны (taskType `task-dedupe`, `deepseek-v4-flash`) → удаляет fast-черновики-дубли. Вызывается из `tasks-extract.worker` + `meeting-report-fast.worker`. Флаг `AdminSetting.meetings.taskDedupeEnabled` (default **OFF**) + порог `meetings.taskDedupeThreshold` (0.85). Метрика `z_task_dedupe_total{result}`. Маршрут — `seed-llm-task-routes-task-dedupe.ts` (в `apply-prod-deploy.ts` STEPS).
+- **`MeetingTaskDedupeService`** (Ф5 Р2) — семантический дедуп задач встречи (taskType `task-dedupe`). **УДАЛЁН 2026-06-25** вместе с дропом legacy-модели `Task` (дедуп задач теперь — единый спайн-путь `3-15-tasks` + общий `task-dedup-matcher.util` с LINK-семантикой против открытых `Issue`, см. §«Дроп legacy-модели Task» и [[../01_projects/tracker]] §«Спайн-специалист задач»).
 - **`backend/src/modules/knowledge-core/ — GoalTaskLinkerService`** + **`GoalTaskLinkerCron`** (Ф4.1, `@Cron` 30 мин, per-Org, `WorkerOrgGate`, в `ai/workers.module`) + on-event из специалиста `3-14-goals` — LLM-арбитр `goal-task-link` (`deepseek-v4-flash`) привязывает AI-цель встречи к её задачам (`Issue.goalId`, non-destructive). Флаг `AdminSetting.goals.goalTaskLinkEnabled` (default **OFF**). Метрика `z_goal_task_link_total{result}`. Закрывает «LLM-арбитр Goal↔Task (Ф4.1) отложен» из §«Авто-привязка Goal↔Theme». Маршрут — `seed-llm-task-routes-goal-task-link.ts` (в STEPS).
 
 ### Прочие правки (Ф1/Ф2/Ф6 + ТЗ B/D)
@@ -2512,7 +2512,7 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 **Источник:** ТЗ [`plans/tz/2026-06-20-provenance-probe-followups.md`](../../plans/tz/2026-06-20-provenance-probe-followups.md) (Блок A + Блок B), [`plans/tz/2026-06-20-config-knobs-to-admin-settings.md`](../../plans/tz/2026-06-20-config-knobs-to-admin-settings.md) (Шаги 2–8). Эндпоинты — [[../01_projects/api-layer]]; крутилки — [[../01_projects/admin]]; поля — [[data-model]].
 
-- **`knowledge-core/services/task-evidence-linker.service.ts`** (`TaskEvidenceLinkerService`, B2) — матчит fast-задачу встречи к породившему `IdeaBlock` по цитате (fast-задачи приходят с пустым `evidenceBlockIds`); проставляет провенанс-привязку, делая «Откуда это» рабочим и для задач из встреч.
+- **`TaskEvidenceLinkerService`** (B2) — матчил fast-задачу встречи к породившему `IdeaBlock` по цитате. **УДАЛЁН 2026-06-25** вместе с дропом legacy-модели `Task` (провенанс задачи теперь живёт на `Issue` через `TaskSource{issueId}` / `sourceBlockIds`, см. §«Дроп legacy-модели Task»).
 - **`knowledge-core/crons/voice-note-audio-retention.cron.ts`** (`VoiceNoteAudioRetentionCron`, B3) — уборка аудио голосовых из S3 (`voice-notes/`) старше `provenance.voiceNoteAudioRetentionDays` (AdminSetting, default 90). Эндпоинт выдачи — `provenance/voice-note/:rawEventId/audio` (presigned, TTL `voiceNoteAudioPresignTtlSeconds`=600).
 - **`ingest/adapters/phone-call.adapter.ts`** (`PhoneCallIngestAdapter`, B5) — Mango: запись звонка из S3 → Vox ASR → структурный payload `{ kind:'phone_call', callId, participants, recordingS3Key, fullText, … }` → `IngestService.ingest` (`Source.type='phone_call'`). Mango-вебхук починен (был сырой JSON-шум вместо структурного события).
 - **`common/config/env-classification.ts`** (config-knobs Шаг 2) — `KEEP_ENV_KEYS` (секреты/connection/bootstrap, остаются в ENV) + `ADMIN_FALLBACK_ENV_KEYS` (ENV как fallback к AdminSetting). Гард-тесты `env-classification.guard.spec.ts` (новая ENV без классификации валит CI) и `no-direct-process-env.guard.spec.ts` (прямой `process.env.*` вне whitelist запрещён). Серверная валидация — `AdminSettingsService.set()` (Zod по реестру + reason-gate для severity high/destructive, `MIN_REASON_LENGTH=10`).
@@ -2560,5 +2560,24 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **`knowledge-core/prompts/rag-pipeline.prompts.ts`** — промпты-победители многошаговой ветки: роутер сложности `rag-route` → ReWOO-план `rag-plan` → пошаговый retrieval с судьёй достаточности `rag-sufficiency` → условный LLM-реранк `rag-rerank` (`rag.rerank_min_pool`). Гейт `rag.iterative_enabled` + cold-start `rag.cold_start_min_blocks`, fail-open до одношагового.
 - **`chat-v2.service` `applyGroundednessGate`** — гейт честности после синтеза (taskType `rag-groundedness`, режим `rag.groundedness_mode`, метрика `rag_abstain_total`).
 - **`concierge/utils/loop-guard.ts`** — сторож зацикливания (лимит `concierge.max_steps` AdminSetting, честный частичный ответ при лимите); строгий гейт переспроса в промпте `concierge-respond`.
+
+[[../index|← index]]
+
+## Дроп legacy-модели Task — унификация задач на Issue (2026-06-25)
+
+**Источник:** ТЗ [`plans/tz/2026-06-25-drop-legacy-task-model-unify-on-issue.md`](../../plans/tz/2026-06-25-drop-legacy-task-model-unify-on-issue.md) (Ф0–Ф10). Полный снос двойной сущности «задача» — единственный слой задач теперь `Issue` (трекер). Схема/индексы — [[data-model]] §«Дроп legacy-модели Task»; AI-jobs — [[../01_projects/ai-jobs]]; трекер — [[../01_projects/tracker]].
+
+### Удалено
+- **Модуль `backend/src/modules/tasks/`** (7 deprecated REST-эндпоинтов `TasksController`) — целиком. Ручной CRUD задач — только через трекер (`Issue`).
+- **Писатели `Task` встречи:** `meeting-report-fast.worker.writeTasks`, сервисы `MeetingTaskDedupeService` (`meetings/`) и `TaskEvidenceLinkerService` (`knowledge-core/`).
+- **Писатели `Task` чата:** legacy-ветка `extractTasks` в `chatbox-analyze.worker`, `CrossSourceTaskDedupeService`, промоут/read-union chatbox-`Task` в `intake.service`.
+- **Флаги:** `meetingTasksToTrackerOnly`, `taskExtractionMode`, `chatboxTaskExtractionEnabled`, `tasksCrossSourceDedupeEnabled`, `chatboxTasksInTriageEnabled` (`specialist-3-15-tasks` теперь работает безусловно). Живут: `meetingTasksAlwaysPromote`, `taskDedupLinkSemantics`.
+- **Схема:** `model Task`, `enum TaskStatus`, FK back-refs (`User`/`Meeting`/`Org`), `TaskSource.taskId` (миграция `20260625000000_drop_legacy_task_model`).
+
+### Канон после дропа
+- **Извлечение задач — только спайн** (`specialist-3-15-tasks`: `IdeaBlock(action_item)` → `task-extract` → `IntakeIssue` → `Issue`). Встречи — через `meeting-action-items` (Issue-путь по `linkedMeetingIds`).
+- **Аналитика** (director-dashboard, value-recap, personal-daily-brief, weekly-per-person, meeting-roi-scorer) читает `Issue`, не `Task`.
+- **Связь встреча↔задача** — `Issue.linkedMeetingIds` (GIN-индекс `Issue_linkedMeetingIds_gin_idx`); новый фильтр `GET /api/v1/issues?linkedMeetingId`; вкладка задач встречи на фронте пишет/читает Issue (`useMeetingIssues`, `issuesApi`).
+- **`shares.service`** (публичная шара) переведён на `Issue`. `TaskSource` остаётся провенанс-моделью (только `issueId`).
 
 [[../index|← index]]

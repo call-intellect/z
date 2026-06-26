@@ -46,6 +46,7 @@ type: project
 
 - **Хост** — всегда.
 - **Гости** — через публичную share-ссылку. Хост создаёт `MeetingShare` (опц. `allowChat`), гость без аккаунта открывает `/share/[token]` (бэк `GET /api/v1/public/share/:token`).
+- **Задачи встречи** (виджет «Задачи», источник — tracker `Issue.linkedMeetingIds`) — видны любому, кто видит встречу (**вариант A**). `GET /api/v1/issues?linkedMeetingId` гейтится `MeetingVisibilityService.assertCanView` и минует strict self-scope трекера, иначе manager+strict видел бы только свои. ТЗ: [meeting-tasks-widget-404-fix](../../plans/tz/2026-06-25-meeting-tasks-widget-404-fix.md).
 
 ## Состояния
 

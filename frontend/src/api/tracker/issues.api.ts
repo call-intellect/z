@@ -43,6 +43,7 @@ export interface ListIssuesRequest {
  */
 export interface ListOrgIssuesRequest {
   projectId?: string;
+  linkedMeetingId?: string;
   assigneeUserId?: string;
   stateCategory?: IssueStateCategory;
   priority?: IssuePriority;
@@ -74,6 +75,7 @@ export interface CreateIssueRequest {
   boardId?: string | null;
   assigneeUserIds?: string[];
   labelIds?: string[];
+  linkedMeetingIds?: string[];
   externalSource?: string | null;
   externalId?: string | null;
   inferSuggestions?: boolean;

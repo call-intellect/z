@@ -8,7 +8,9 @@ export type ProvenanceEntityTypeApi =
   | "regulation"
   | "instruction"
   | "block"
-  | "notification";
+  | "notification"
+  | "entity"
+  | "idea";
 
 export interface ProvenanceSourceRefApi {
   type: string;

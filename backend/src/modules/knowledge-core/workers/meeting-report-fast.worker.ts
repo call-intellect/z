@@ -10,7 +10,6 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
-import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
@@ -30,17 +29,13 @@ import {
   MeetingReportFastSchema,
   type MeetingReportFastChapter,
   type MeetingReportFastOutput,
-  type MeetingReportFastTask,
 } from '../../ai/services/prompts/meeting-report-fast.prompt';
-import type { AiParticipantContext } from '../../ai/services/prompts/participant-context';
 import {
   CORE_QUEUE_NAMES,
   type MeetingReportFastJobData,
 } from '../../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
-import { MeetingTaskDedupeService } from '../../meetings/meeting-task-dedupe.service';
 import { MeetingTitleService } from '../services/meeting-title.service';
-import { TaskAssigneeResolverService } from '../services/task-assignee-resolver.service';
 
 const MAX_LLM_RETRIES = 2;
 
@@ -58,12 +53,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(LlmRouterService) private readonly router: LlmRouterService,
     @Inject(ParticipantContextService)
     private readonly participantContext: ParticipantContextService,
-    @Inject(TaskAssigneeResolverService)
-    private readonly assigneeResolver: TaskAssigneeResolverService,
-    @Inject(MeetingTaskDedupeService)
-    private readonly taskDedupe: MeetingTaskDedupeService,
-    @Inject(TypedConfigService)
-    private readonly cfg: TypedConfigService,
     @Optional()
     @Inject(EventEmitter2)
     private readonly events?: EventEmitter2,
@@ -287,18 +276,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      await this.writeTasks({
-        meetingId,
-        tenantId,
-        ownerId: meeting.ownerId,
-        tasks: parsed.tasks,
-        participants,
-      });
-    } catch (err) {
-      failures.push(`tasks-write: ${err instanceof Error ? err.message : String(err)}`);
-    }
-
-    try {
       await this.writeSummary({
         meetingId,
         meetingType: meeting.type,
@@ -325,7 +302,7 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const allFailed = failures.length === 3;
+    const allFailed = failures.length === 2;
     const someFailed = failures.length > 0 && !allFailed;
     const status: 'ready' | 'partial' | 'failed' = allFailed
       ? 'failed'
@@ -379,7 +356,7 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     );
 
     if (allFailed) {
-      throw new Error(`meeting-report-fast: все три writer'а упали — ${failures.join('; ')}`);
+      throw new Error(`meeting-report-fast: оба writer'а упали — ${failures.join('; ')}`);
     }
   }
 
@@ -411,108 +388,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
         extractorVersion: 'fast',
       })),
     });
-  }
-
-  private async writeTasks(args: {
-    meetingId: string;
-    tenantId: string;
-    ownerId: string;
-    tasks: MeetingReportFastTask[];
-    participants: readonly AiParticipantContext[];
-  }): Promise<void> {
-    if (args.tasks.length === 0) return;
-
-    const trackerOnly = await this.cfg.getDynamic<boolean>(
-      'knowledge.meetingTasksToTrackerOnly',
-      undefined,
-      false,
-    );
-    if (trackerOnly) {
-      this.logger.debug(
-        { meetingId: args.meetingId, tasks: args.tasks.length },
-        'meeting-report-fast: meetingTasksToTrackerOnly=on — пропуск создания Task (видимая задача = tracker Issue)',
-      );
-      return;
-    }
-
-    const resolved = this.assigneeResolver.resolve(
-      args.tasks.map((t) => ({
-        assigneeRaw: t.assigneeRaw ?? null,
-        assigneeUserId: null,
-      })),
-      args.participants,
-      args.tenantId,
-    );
-
-    const existing = await this.prisma.task.findMany({
-      where: { meetingId: args.meetingId },
-      select: { title: true },
-    });
-    const existingTitles = new Set(existing.map((t) => t.title.trim().toLowerCase()));
-
-    let created = 0;
-    let skipped = 0;
-    for (let idx = 0; idx < args.tasks.length; idx++) {
-      const task = args.tasks[idx]!;
-      const r = resolved[idx];
-      const normalized = task.title.trim();
-      if (normalized.length === 0) continue;
-      if (existingTitles.has(normalized.toLowerCase())) {
-        skipped += 1;
-        continue;
-      }
-      const confidence = clamp01(task.confidence);
-      try {
-        await this.prisma.task.create({
-          data: {
-            tenantId: args.tenantId,
-            meetingId: args.meetingId,
-            userId: args.ownerId,
-            title: normalized,
-            description: null,
-            status: 'open',
-            assigneeRaw: r?.assigneeRaw ?? task.assigneeRaw ?? null,
-            assigneeUserId: r?.assigneeUserId ?? null,
-            dueDate: parseDueDateIso(task.dueDateIso ?? null),
-            sourceQuote: task.sourceQuote ?? null,
-            confidence,
-            createdManually: false,
-            evidenceBlockIds: [],
-            extractorVersion: 'fast',
-          },
-        });
-        created += 1;
-        existingTitles.add(normalized.toLowerCase());
-      } catch (err) {
-        this.logger.warn(
-          {
-            meetingId: args.meetingId,
-            title: normalized,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          'meeting-report-fast: tasks insert failed (skip task)',
-        );
-      }
-    }
-    this.logger.debug(
-      { meetingId: args.meetingId, created, skipped },
-      'meeting-report-fast: tasks-write done',
-    );
-
-    try {
-      await this.taskDedupe.dedupeForMeeting({
-        tenantId: args.tenantId,
-        meetingId: args.meetingId,
-      });
-    } catch (err) {
-      this.logger.warn(
-        {
-          meetingId: args.meetingId,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        'meeting-report-fast: task-dedupe упал (игнорируем)',
-      );
-    }
   }
 
   private async writeSummary(args: {
@@ -688,24 +563,4 @@ function stripCodeFence(raw: string): string {
   const fence = /^```(?:json)?\s*([\s\S]*?)\s*```$/u.exec(trimmed);
   if (fence && typeof fence[1] === 'string') return fence[1];
   return trimmed;
-}
-
-function clamp01(v: number): number {
-  if (!Number.isFinite(v)) return 0;
-  if (v < 0) return 0;
-  if (v > 1) return 1;
-  return v;
-}
-
-function parseDueDateIso(raw: string | null): Date | null {
-  if (!raw) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/u.test(raw)) {
-    const d = new Date(`${raw}T00:00:00.000Z`);
-    return Number.isNaN(d.getTime()) ? null : d;
-  }
-  if (/^\d{4}-\d{2}-\d{2}T/u.test(raw)) {
-    const d = new Date(raw);
-    return Number.isNaN(d.getTime()) ? null : d;
-  }
-  return null;
 }

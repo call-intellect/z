@@ -753,7 +753,7 @@ export function IdeaDetailPane({
         {idea.sourceBlockIds.length > 0 ? (
           <ProvenanceChip
             orgId={currentOrgId}
-            entityType="block"
+            entityType="idea"
             entityId={idea.id}
           />
         ) : (

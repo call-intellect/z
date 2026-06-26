@@ -1,4 +1,4 @@
-import { PrismaClient, type User } from '@prisma/client';
+import { type User } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
@@ -115,17 +115,6 @@ async function main(): Promise<void> {
   }
   // eslint-disable-next-line no-console
   console.log(`Card.tenantId backfilled: ${cardUpdated}`);
-
-  let taskUpdated = 0;
-  for (const [userId, orgId] of userToOrg) {
-    const res = await prisma.task.updateMany({
-      where: { userId, tenantId: null },
-      data: { tenantId: orgId },
-    });
-    taskUpdated += res.count;
-  }
-  // eslint-disable-next-line no-console
-  console.log(`Task.tenantId backfilled: ${taskUpdated}`);
 
   const chapters = await prisma.meetingChapter.findMany({
     where: { tenantId: null },

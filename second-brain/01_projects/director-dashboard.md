@@ -165,3 +165,17 @@ LLM-резюме «Главное за неделю» — 3-4 факта + 1 р�
 - **Кросс-проектные зависшие (D2):** новый `GET /api/v1/dashboard/stuck/cross-project` — задачи без движения вне спринта, порог-крутилка `dashboard.stuck.staleDaysThreshold` (AdminSetting, сид `seed-admin-setting-dashboard-main.ts`).
 - **Решение↔задача замкнуты (D3, см. [[decisions]]):** обратная линковка `linkDerivedTasksForDecision` + переход Decision→`implemented` при закрытии всех связанных задач.
 - ТЗ [`2026-06-22-tasks-subsystem-unified-fix`](../../plans/tz/2026-06-22-tasks-subsystem-unified-fix.md) (Блок D).
+
+## Ремонт дашбордов (2026-06-26, ТЗ dashboards-repair)
+
+Принцип: чиним и переставляем, ничего не удаляем (решение владельца Р5). 9 классов проблем на 4 дашбордах + Аналитике.
+
+- **Контракт goal-vector расширен:** `getGoalVectorByPerson` + DTO `GoalVectorByPersonResponse` теперь возвращают поле `goalState ∈ {primary, active_fallback, none}`. `resolveGoalId` получил 4-й fallback — активная цель (`status: 'active'`, orderBy `isPrimary→weight→createdAt`, tenant-изоляция) после ветки `personGoalContribution`. `GoalVectorWidget` показывает пустой-стейт по `goalState` (none → CTA «Задать главную цель»; active_fallback → «Кора предложила — подтвердить главной» + название цели), вместо безусловного «Цель компании не задана».
+- **Раскладка без пустот:** размеры в `widget-registry.ts` (plan-fact/trend/weekly-dynamics/maturity/blockers→md, feed→xl), порядок в `presets.ts` (owner+coo today/week/month — md-виджеты парами, состав 10/13/18 сохранён), `DashboardCanvas` — `grid-flow-row-dense`. Списочные (`stale`/`decisions`/`ideas`) — топ-5 + «Показать все (N)». Чартам `modern/*` — `minHeight={160}`.
+- **Единый период экрана:** `ValueWidget` today→week (был month); `DecisionsWidget` today-окно=7д + пустой-стейт вместо «0 из 0»; `TrendWidget` — «Недостаточно данных» вместо пустого графика.
+- **Дедуп выборок (бэк):** `CustomerRiskRadarService` (`dedupeLatestSnapshotPerCustomer` — последний снимок на `customerEntityId`, применён в listForTenant/listForResponsible/topForDigest, counts по дедуп-набору); `PulsePatternsService` recurringTopics (`dedupeLatestRecurringTopicByTheme`). Идеи «Без темы» схлопнуты в один агрегат.
+- **Лента:** текстовые бейджи типов (парные `--chip-*` токены) + клиентский фильтр Все/События/Вопросы/Риски.
+- **План и факт:** «сдали X / ожидалось Y / всего Z сотрудников» (Z=`missing.totalEmployees`); «По людям» из `checkin-discipline.byPerson` со ссылкой на `/persons/[id]/pulse`.
+- **Аналитика:** пустые-стейты вместо сетки нулей (сводка «Пока спокойно», «Накапливаем данные», «Пересечений между командами пока нет»); promise-network честно подписан «в сети N связанных».
+- **Дедуп запросов:** единый SWR-ключ `["director", orgId, period]` во всех 4 потребителях (Verdict/Goal/Value/MobileOverview) — SWR дедупит до 1 запроса. `weekly-digest` 404 (digest_not_found) ловится → виджет скрывается без красной ошибки.
+- Без миграций/seed/ENV/очередей. ТЗ [`2026-06-25-dashboards-repair`](../../plans/tz/2026-06-25-dashboards-repair.md).

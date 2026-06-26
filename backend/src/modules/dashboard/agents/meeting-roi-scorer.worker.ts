@@ -89,8 +89,8 @@ export class MeetingRoiScorerWorker implements OnModuleInit, OnModuleDestroy {
 
     const commitments = await this.countCommitments(meetingId, meeting.tenantId);
 
-    const tasks = await this.prisma.task.count({
-      where: { meetingId, tenantId: meeting.tenantId },
+    const tasks = await this.prisma.issue.count({
+      where: { tenantId: meeting.tenantId, linkedMeetingIds: { has: meetingId }, deletedAt: null },
     });
 
     const durationMs = computeDurationMs(meeting.startedAt, meeting.endedAt, meeting.durationMs);

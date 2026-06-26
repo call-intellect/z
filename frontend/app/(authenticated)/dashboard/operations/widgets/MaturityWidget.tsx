@@ -196,7 +196,7 @@ function DomainList(props: {
       </h3>
       {props.items.length === 0 ? (
         <p className="text-xs" style={{ color: CHART.faint }}>
-          Нет данных
+          Накапливаем данные
         </p>
       ) : (
         <ul className="space-y-1.5">

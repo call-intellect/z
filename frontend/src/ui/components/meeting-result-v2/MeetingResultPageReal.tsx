@@ -39,13 +39,14 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { meetingsApi } from '@/api/meetings.api';
 import { templatesApi } from '@/api/templates.api';
 import { chaptersApi } from '@/api/chapters.api';
-import { tasksApi } from '@/api/tasks.api';
+import { issuesApi } from '@/api/tracker/issues.api';
 import { highlightsApi } from '@/api/highlights.api';
 import { exportsApi } from '@/api/exports.api';
 import { ApiError, humanizeApiError } from '@/api/api-error';
 import { useMeeting } from '@/hooks/use-meeting';
 import { useMeetingChapters } from '@/hooks/use-meeting-chapters';
-import { useMeetingTasks } from '@/hooks/use-meeting-tasks';
+import { useMeetingIssues } from '@/hooks/tracker/use-meeting-issues';
+import { useProjects } from '@/hooks/tracker/useProjects';
 import { useMeetingHighlights } from '@/hooks/use-meeting-highlights';
 import { useMeetingRoomMessages } from '@/hooks/use-meeting-room-messages';
 import { useVideoPlayer } from '@/hooks/use-video-player';
@@ -66,8 +67,9 @@ import {
 } from '@/domain/meeting';
 import type { MeetingType } from '@/domain/enums';
 import { templateFromApi } from '@/domain/template';
-import type { TaskDomain } from '@/domain/task';
-import { pickPrimaryTasks } from '@/domain/task';
+import type { Issue } from '@/domain/tracker';
+import { useAuth } from '@/contexts/auth-context';
+import { AssigneeAvatarGroup } from '@/ui/tracker';
 
 import { MeetingBehaviorSection } from '@/ui/components/behavior-metrics/MeetingBehaviorSection';
 import { MeetingQualityScoreSection } from '@/ui/components/quality-score/MeetingQualityScoreSection';
@@ -143,6 +145,8 @@ export type MeetingResultPageRealProps = {
 export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps) {
   useTour('meeting');
 
+  const { currentOrgId } = useAuth();
+
   const {
     meeting,
     isLoading: meetingLoading,
@@ -163,7 +167,11 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
   );
 
   const { chapters, mutate: mutateChapters } = useMeetingChapters(meetingId);
-  const { tasks, mutate: mutateTasks } = useMeetingTasks(meetingId);
+  const { issues, mutate: mutateIssues } = useMeetingIssues(
+    currentOrgId,
+    meetingId,
+  );
+  const { projects } = useProjects(currentOrgId);
   const { highlights, mutate: mutateHighlights } = useMeetingHighlights(meetingId);
   const { messages: roomMessages } = useMeetingRoomMessages(meetingId);
 
@@ -197,8 +205,6 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
     () => pickPrimaryChapters(chapters),
     [chapters],
   );
-
-  const primaryTasks = useMemo(() => pickPrimaryTasks(tasks), [tasks]);
 
   const isRecordingReady = result?.recording?.hasRecording === true;
   const { data: downloadData } = useSWR(
@@ -372,9 +378,9 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
             <TabsTrigger value="tasks" data-tour-target="meeting.tasks">
               <ListChecks size={14} strokeWidth={1.75} />
               Задачи
-              {primaryTasks.length > 0 && (
+              {issues.length > 0 && (
                 <span className="ml-1 rounded-full bg-bg-overlay px-1.5 py-0.5 font-mono text-[10px] text-fg-tertiary">
-                  {primaryTasks.length}
+                  {issues.length}
                 </span>
               )}
             </TabsTrigger>
@@ -396,7 +402,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
                   structuredData={aiResult?.structuredData ?? null}
                   customMd={aiResult?.customOutputMd ?? null}
                   chaptersCount={primaryChapters.length}
-                  tasksCount={primaryTasks.length}
+                  tasksCount={issues.length}
                   highlightsCount={highlights.length}
                 />
                 {result?.participants && (
@@ -448,9 +454,10 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
           <TabsContent value="tasks">
             <TasksTab
               meetingId={meetingId}
-              tasks={primaryTasks}
-              onSeek={onSeek}
-              onMutate={mutateTasks}
+              orgId={currentOrgId}
+              projectId={projects[0]?.id ?? null}
+              issues={issues}
+              onMutate={mutateIssues}
             />
           </TabsContent>
         </Tabs>
@@ -1587,25 +1594,29 @@ function formatSec(sec: number): string {
 
 function TasksTab({
   meetingId,
-  tasks,
-  onSeek,
+  orgId,
+  projectId,
+  issues,
   onMutate,
 }: {
   meetingId: string;
-  tasks: TaskDomain[];
-  onSeek: (ms: number) => void;
+  orgId: string | null;
+  projectId: string | null;
+  issues: Issue[];
   onMutate: () => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const canAdd = !!orgId && !!projectId;
 
   const onAdd = async (form: HTMLFormElement) => {
+    if (!orgId || !projectId) return;
     const fd = new FormData(form);
     const title = String(fd.get('title') ?? '').trim();
     if (!title) return;
     try {
-      await tasksApi.create(meetingId, {
+      await issuesApi.create(orgId, projectId, {
         title,
-        assigneeRaw: String(fd.get('assignee') ?? '') || null,
+        linkedMeetingIds: [meetingId],
       });
       toast.success('Задача добавлена');
       setAdding(false);
@@ -1617,10 +1628,15 @@ function TasksTab({
     }
   };
 
-  const onToggleDone = async (task: TaskDomain) => {
-    const next = task.status === 'done' ? 'open' : 'done';
+  const onToggleDone = async (issue: Issue) => {
+    if (!orgId) return;
+    const done = issue.isCompleted || issue.stateCategory === 'completed';
     try {
-      await tasksApi.update(task.id, { status: next });
+      await issuesApi.transitionToCategory(
+        orgId,
+        issue.id,
+        done ? 'unstarted' : 'completed',
+      );
       onMutate();
     } catch (e) {
       const msg = humanizeApiError(e, 'Ошибка');
@@ -1630,7 +1646,7 @@ function TasksTab({
 
   return (
     <div className="flex flex-col gap-2.5">
-      {tasks.length === 0 && !adding && (
+      {issues.length === 0 && !adding && (
         <Card>
           <div className="py-6 text-center text-sm text-fg-secondary">
             Задач пока нет. Кора определит их при следующем анализе или добавьте вручную.
@@ -1638,66 +1654,67 @@ function TasksTab({
         </Card>
       )}
 
-      {tasks.map((t) => (
-        <article
-          key={t.id}
-          className="rounded-md border border-border-subtle bg-bg-card p-4"
-        >
-          <div className="flex items-start gap-3">
-            <button
-              type="button"
-              onClick={() => void onToggleDone(t)}
-              className={cn(
-                'mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 transition-colors',
-                t.status === 'done'
-                  ? 'border-accent bg-accent text-accent-fg'
-                  : 'border-border-strong text-transparent hover:border-accent',
-              )}
-              aria-label="Отметить выполненной"
-            >
-              <CheckCircle2 size={12} strokeWidth={3} />
-            </button>
-            <div className="min-w-0 flex-1">
-              <div
+      {issues.map((issue) => {
+        const done = issue.isCompleted || issue.stateCategory === 'completed';
+        return (
+          <article
+            key={issue.id}
+            className="rounded-md border border-border-subtle bg-bg-card p-4"
+          >
+            <div className="flex items-start gap-3">
+              <button
+                type="button"
+                onClick={() => void onToggleDone(issue)}
                 className={cn(
-                  'text-sm leading-snug',
-                  t.status === 'done' ? 'text-fg-tertiary line-through' : 'text-fg-primary',
+                  'mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 transition-colors',
+                  done
+                    ? 'border-accent bg-accent text-accent-fg'
+                    : 'border-border-strong text-transparent hover:border-accent',
                 )}
+                aria-label="Отметить выполненной"
               >
-                {t.title}
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-fg-tertiary">
-                {t.assignee && (
-                  <span className="rounded border border-border-subtle bg-bg-base px-2 py-0.5">
-                    <span className="font-mono">{t.assignee}</span>
-                  </span>
-                )}
-                {t.dueDate && (
-                  <span className="rounded border border-border-subtle bg-bg-base px-2 py-0.5">
-                    до {t.dueDate.toLocaleDateString('ru-RU')}
-                  </span>
-                )}
-                {typeof t.confidence === 'number' && (
-                  <span className="rounded border border-border-subtle bg-bg-base px-2 py-0.5">
-                    Кора · {(t.confidence * 100).toFixed(0)}%
-                  </span>
-                )}
-                {typeof t.sourceStartMs === 'number' && (
-                  <button
-                    type="button"
-                    onClick={() => onSeek(t.sourceStartMs!)}
-                    className="rounded border border-accent-border bg-accent-muted px-2 py-0.5 font-mono text-accent hover:bg-accent-muted-strong"
-                  >
-                    {fmtTime(t.sourceStartMs)} ›
-                  </button>
-                )}
+                <CheckCircle2 size={12} strokeWidth={3} />
+              </button>
+              <div className="min-w-0 flex-1">
+                <div
+                  className={cn(
+                    'text-sm leading-snug',
+                    done ? 'text-fg-tertiary line-through' : 'text-fg-primary',
+                  )}
+                >
+                  {issue.title}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-fg-tertiary">
+                  {issue.assigneeUserIds.length > 0 && (
+                    <AssigneeAvatarGroup
+                      userIds={issue.assigneeUserIds}
+                      max={3}
+                      size={20}
+                    />
+                  )}
+                  {issue.dueDate && (
+                    <span className="rounded border border-border-subtle bg-bg-base px-2 py-0.5">
+                      до {issue.dueDate.toLocaleDateString('ru-RU')}
+                    </span>
+                  )}
+                  {done && (
+                    <span className="rounded border border-border-subtle bg-bg-base px-2 py-0.5">
+                      Выполнено
+                    </span>
+                  )}
+                  {typeof issue.confidence === 'number' && (
+                    <span className="rounded border border-border-subtle bg-bg-base px-2 py-0.5">
+                      Кора · {(issue.confidence * 100).toFixed(0)}%
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        </article>
-      ))}
+          </article>
+        );
+      })}
 
-      {adding ? (
+      {canAdd && adding ? (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -1711,17 +1728,12 @@ function TasksTab({
             className="flex-1 rounded-md border border-border-subtle bg-bg-overlay px-3 py-1.5 text-sm outline-none placeholder:text-fg-tertiary"
             required
           />
-          <input
-            name="assignee"
-            placeholder="Кому (опционально)"
-            className="w-48 rounded-md border border-border-subtle bg-bg-overlay px-3 py-1.5 text-sm outline-none placeholder:text-fg-tertiary"
-          />
           <Button type="submit" size="sm">Сохранить</Button>
           <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(false)}>
             Отмена
           </Button>
         </form>
-      ) : (
+      ) : canAdd ? (
         <button
           type="button"
           onClick={() => setAdding(true)}
@@ -1730,6 +1742,10 @@ function TasksTab({
           <Plus size={13} />
           Добавить задачу вручную
         </button>
+      ) : (
+        <div className="self-start rounded-md border border-dashed border-border bg-transparent px-3 py-2 text-sm text-fg-tertiary">
+          Создайте проект, чтобы добавлять задачи
+        </div>
       )}
     </div>
   );

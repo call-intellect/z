@@ -39,7 +39,7 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 | specialist 3.6 (Ideas) | `idea-extract`, `idea-cluster-merge`, `idea-status-summarize` | DeepSeek-flash → OpenAI-mini → Ollama |
 | specialist 3.7 (Skill) | `skill-trait-detect`, `skill-trait-merge`, `executable-persona-compile`, `clone-respond` | **GPT-5.4 capable primary** (КРИТИЧНО) → OpenAI-mini → Ollama |
 | specialist 3.8 (Helpfulness) | `helpfulness-detect`, `helpfulness-trait-merge`, `helpfulness-spotlight-formulate` | DeepSeek-flash → OpenAI-mini → Ollama |
-| **specialist 3-15 (Tasks, unified-task-extraction Ф1, 2026-06-23)** | `task-extract` | DeepSeek-flash → OpenAI-mini → Ollama. Спайн-извлечение задач из НЕ-meeting-каналов: canonical `IdeaBlock(action_item)` → задача (стабильный SYSTEM, json_schema strict, injection guard) → `IntakeIssue`. Воркер `Specialist315TasksWorker` (`3-15-tasks` в `core.specialist-routing`), сервис `Specialist315TasksService`. Гейт уверенности `tracker.taskExtractMinConfidence` (0.45); LINK-дедуп против открытых Issue (`TaskDedupService` + `task-dedup-matcher.util`). Kill-switch `tracker.taskExtractionMode` (spine\|legacy). См. [[../02_architecture/knowledge-core]] §RouterService, [[tracker]] §«Спайн-специалист задач». |
+| **specialist 3-15 (Tasks, unified-task-extraction Ф1, 2026-06-23)** | `task-extract` | DeepSeek-flash → OpenAI-mini → Ollama. Спайн-извлечение задач из НЕ-meeting-каналов: canonical `IdeaBlock(action_item)` → задача (стабильный SYSTEM, json_schema strict, injection guard) → `IntakeIssue`. Воркер `Specialist315TasksWorker` (`3-15-tasks` в `core.specialist-routing`), сервис `Specialist315TasksService`. **Единственный путь извлечения задач** (после дропа legacy-`Task` 2026-06-25 — флаг `tracker.taskExtractionMode` удалён, работает безусловно). Гейт уверенности `tracker.taskExtractMinConfidence` (0.45); LINK-дедуп против открытых Issue (`TaskDedupService` + `task-dedup-matcher.util`). См. [[../02_architecture/knowledge-core]] §RouterService, [[tracker]] §«Спайн-специалист задач». |
 | probe + dialog | `probe-formulate` (переписан Probe Ф1 2026-06-11 — персона+few-shot, schema `probe_formulate_v3`, USER без машинных кодов), `probe-quality-judge` (Probe Ф2 2026-06-18 — LLM-судья качества формулировки вопроса, см. §«Probe-система Фаза 2» ниже), `concierge-parse` | DeepSeek-flash → OpenAI-mini → Ollama |
 | recognition | `recognition-formulate` | DeepSeek-flash → OpenAI-mini → Ollama |
 | tracker AI (Phase 3) | `meeting-extract-actions`, `intake-auto-triage`, `issue-infer-fields`, `issue-goal-suggest` | DeepSeek-flash → OpenAI-mini → Ollama |
@@ -169,7 +169,7 @@ Legacy `meeting-analyze-v2.worker` остаётся работать **пара�
 - `ParticipantContextService.loadForMeeting(meetingId)` (`backend/src/modules/ai/services/participant-context.service.ts`) загружает `Participant + User` для встречи и возвращает `AiParticipantContext[]` — `{livekitIdentity, displayName, userId, fullName, role}`.
 - Промпты `tasks-v2.prompt.ts`, `tasks-unified.ts`, `tasks-structured.ts` принимают `participants` через BuildArgs. Когда непустой — добавляют блок «Участники этой встречи» в user-сообщение + правила `PARTICIPANT_IDENTIFICATION_RULES` в system + поле `assigneeUserId: string | null` в Zod/JSON-schema.
 - `TaskAssigneeResolverService.resolve()` (`backend/src/modules/knowledge-core/services/task-assignee-resolver.service.ts`) валидирует ответ LLM: (1) валидный userId из списка → принимаем; (2) галлюцинация (userId не в participants) → null + метрика `llm_hallucination`; (3) только `assigneeRaw` → точный case-insensitive матч по `displayName`/`fullName`; (4) ≥2 матча → null + метрика `duplicate_name`.
-- `tasks-extract.worker` и `meeting-analyze-v2.worker` загружают participants → пробрасывают в extractor → резолвят результат → пишут `assigneeUserId` в `Task`. Эталон жёсткого+мягкого матча — `behavior-metrics-calculator.ts:253-268`.
+- Резолвер исполнителя загружает participants → пробрасывает в extractor → резолвит результат → пишет `assigneeUserId`. **С 2026-06-25 (дроп legacy-`Task`) пишется в `Issue` (трекер)**, а не в `Task`; путь встречи — `meeting-extract-actions`/`meeting-report-fast` → Issue. Эталон жёсткого+мягкого матча — `behavior-metrics-calculator.ts:253-268`.
 - Метрика: `z_task_assignee_ambiguous_total{tenant, reason}` (`reason ∈ duplicate_name | llm_hallucination`).
 - Гость остаётся с `assigneeUserId=null` (нет `User.id`).
 
@@ -241,7 +241,7 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2; с 2026-06-25 �
 
 ### `meeting-report-fast` ставит `assigneeUserId` (Ф4, коммит `d0609a90`)
 
-`meeting-report-fast.worker` резолвит `Task.assigneeUserId` **пост-фактум** из `assigneeRaw` через `TaskAssigneeResolverService` против участников встречи (`ParticipantContextService.loadForMeeting`). LLM-промпт **не тронут** (prompt-cache сохранён) — резолв чисто детерминированный, после генерации. Тот же резолвер используется в legacy `tasks-extract` / `meeting-analyze-v2` (см. §«Hard participant identification» выше).
+`meeting-report-fast.worker` резолвил исполнителя **пост-фактум** из `assigneeRaw` через `TaskAssigneeResolverService` против участников встречи (`ParticipantContextService.loadForMeeting`). LLM-промпт **не тронут** (prompt-cache сохранён) — резолв чисто детерминированный, после генерации. **С 2026-06-25 (дроп legacy-`Task`) `writeTasks` из этого воркера удалён** — задачи встречи материализуются по Issue-пути (`meeting-action-items`/`meeting-extract-actions`); сам резолвер исполнителя сохранён и питает Issue.
 
 ### Голос → задача в тректоре (Ф5.1, коммит `779b4811`)
 
@@ -388,12 +388,12 @@ Golden-харнесс на инфре `combat-harness` (без Nest, prod-guard)
 
 | taskType | Что делает | Цепочка | Флаг | Метрика |
 |---|---|---|---|---|
-| `task-dedupe` | семантический дедуп задач встречи: embedding-KNN-кандидаты + LLM-арбитр **серой зоны** (одна задача в двух формулировках) → удаляет fast-черновики-дубли | `deepseek-v4-flash` (cheap) | `meetings.taskDedupeEnabled` (default **OFF**), порог `meetings.taskDedupeThreshold` (0.85) | `z_task_dedupe_total{result}` |
+| `task-dedupe` | семантический дедуп задач встречи через `MeetingTaskDedupeService`. **Сервис УДАЛЁН 2026-06-25** (дроп legacy-`Task`) — дедуп задач теперь единый спайн-путь (`task-dedup-matcher.util` + LINK-семантика против открытых `Issue`, см. [[tracker]] §«Спайн-специалист задач»). | — | — | — |
 | `goal-task-link` | привязка AI-цели встречи к её задачам: LLM-арбитр «какая задача относится к этой цели» → пишет `Issue.goalId` (non-destructive) | `deepseek-v4-flash` (cheap) | `goals.goalTaskLinkEnabled` (default **OFF**) | `z_goal_task_link_total{result}` |
 
 Оба маршрута засеиваются `seed-llm-task-routes-task-dedupe.ts` / `seed-llm-task-routes-goal-task-link.ts` (зарегистрированы в `apply-prod-deploy.ts` STEPS, phase `seed-llm-routes`). Без маршрута вызов при включении флага упал бы на аварийный `DEFAULT_FALLBACK_CHAIN` — поэтому маршрут заведён заранее, до флипа флага. **Оба флага OFF по умолчанию** (data-affecting: дедуп удаляет Task-черновики, link пишет `Issue.goalId`) — владелец включает после прод-наблюдения.
 
-- `task-dedupe` вызывается из `tasks-extract.worker` + `meeting-report-fast.worker` (сервис `MeetingTaskDedupeService`, modules/meetings).
+- `task-dedupe` — сервис `MeetingTaskDedupeService` (modules/meetings) **удалён 2026-06-25** при дропе legacy-`Task`; дедуп задач перешёл на спайн (`3-15-tasks`).
 - `goal-task-link` вызывается из cron `GoalTaskLinkerCron` (@Cron 30m) + on-event из специалиста `3-14-goals` (сервис `GoalTaskLinkerService`, modules/knowledge-core).
 
 ### Idea direct-path в block-ingest (без LLM)
@@ -539,7 +539,7 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 
 Три отдельных LLM-job'а **удалены** (`meeting-report-fast` уже делал то же ядро одним вызовом):
 - **`chapters`** (бывший воркер `ai/workers/chapters.worker.ts` + очередь `ai.chapters`) — главы теперь только из fast (`MeetingChapter` версии `fast`).
-- **`tasks-extract`** (воркер `ai/workers/tasks-extract.worker.ts` + очередь `ai.tasks`) — задачи только из fast. ⚠ `task-extraction.service` + `prompts/tasks-structured` **НЕ** удалены (использует `chatbox-analyze.worker`); удалён сам воркер.
+- **`tasks-extract`** (воркер `ai/workers/tasks-extract.worker.ts` + очередь `ai.tasks`) — удалён ещё 2026-06-11; задачи встречи шли из fast. **С 2026-06-25 (дроп legacy-`Task`)** legacy-ветка `extractTasks` в `chatbox-analyze.worker` тоже удалена — извлечение задач из всех каналов идёт через спайн `3-15-tasks` (`task-extract`). `task-extraction.service` / `prompts/tasks-structured` — следуй за актуальным состоянием кода.
 - **`quality-score`** (воркер `ai/workers/quality-score.worker.ts` + очередь `ai.quality-score`) — качество теперь пишет `meeting-report-fast.worker.writeQualityScore` в каноничную таблицу `MeetingQualityScore` (+ `Meeting.qualityScoreStatus='ready'`); читатели `QualityScoreService` без изменений.
 
 `LlmTaskType` `chapters`/`tasks`/`meeting-quality-score` оставлены в union мёртвыми (как мёртвые колонки). Регенерация глав/качества/полного отчёта перенаправлена на `CoreQueueService.enqueueMeetingReportFast`.

@@ -38,6 +38,7 @@ export const GoalVectorByPersonResponseSchema = z.object({
   goalId: z.string().nullable(),
   goalTitle: z.string().nullable(),
   rows: z.array(GoalVectorPersonRowSchema),
+  goalState: z.enum(['primary', 'active_fallback', 'none']),
 });
 export type GoalVectorByPersonResponse = z.infer<typeof GoalVectorByPersonResponseSchema>;
 export class GoalVectorByPersonResponseDto extends createZodDto(

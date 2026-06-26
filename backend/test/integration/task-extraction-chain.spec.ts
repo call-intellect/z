@@ -266,7 +266,6 @@ interface BuildArgs {
     | { kind: 'resolved'; userId: string; name: string; via: 'name' }
     | { kind: 'not_found' };
   dedup?: { verdict: 'same' | 'different' | 'nil'; matchedIssueId: string | null };
-  mode?: 'spine' | 'legacy';
   linkSemantics?: 'link' | 'delete';
 }
 
@@ -304,7 +303,6 @@ function build(store: MemStore, args: BuildArgs): Harness {
   const cfg = {
     getDynamic: vi.fn(
       async (key: string, _env: string | undefined, def: unknown) => {
-        if (key === 'tracker.taskExtractionMode') return args.mode ?? 'spine';
         if (key === 'tracker.taskDedupLinkSemantics')
           return args.linkSemantics ?? 'link';
         return def;
@@ -344,7 +342,7 @@ function build(store: MemStore, args: BuildArgs): Harness {
     taskDedup,
   );
 
-  const worker = new Specialist315TasksWorker(prisma, service, metrics, cfg);
+  const worker = new Specialist315TasksWorker(prisma, service, metrics);
 
   return { worker, store, enqueue, llmCall };
 }
@@ -541,29 +539,6 @@ describe('Integration: unified task-extraction chain (worker + service + statefu
 
     expect(store.intakeIssues).toHaveLength(1);
     expect(harnessB.enqueue).not.toHaveBeenCalled();
-  });
-
-  it('5. kill-switch legacy: mode=legacy → processBlock skip на уровне воркера, IntakeIssue не создаётся', async () => {
-    const store = emptyStore();
-    const block = seedBlock(store, {
-      evidence: [{ quote: 'подготовь смету', sourceType: 'chatbox', sourceTimestamp: null }],
-    });
-    const { worker, llmCall, enqueue } = build(store, {
-      draft: {
-        isTask: true,
-        title: 'Подготовить смету',
-        sourceQuote: 'смета',
-        assigneeHint: '',
-        confidence: 0.9,
-      },
-      mode: 'legacy',
-    });
-
-    await worker.handle(jobFor(block.id));
-
-    expect(store.intakeIssues).toHaveLength(0);
-    expect(llmCall).not.toHaveBeenCalled();
-    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it('6. новый канал без нового кода: evidence sourceType=external → IntakeIssue с source:api', async () => {

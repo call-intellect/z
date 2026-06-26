@@ -16,11 +16,12 @@ export type ProvenanceSourceType =
 export type ProvenanceEntityType =
   | 'decision'
   | 'issue'
-  | 'task'
   | 'regulation'
   | 'instruction'
   | 'block'
-  | 'notification';
+  | 'notification'
+  | 'entity'
+  | 'idea';
 
 export interface ProvenanceSourceRef {
   type: ProvenanceSourceType;
@@ -551,10 +552,11 @@ export class ProvenanceService {
     const VALID: ReadonlyArray<ProvenanceEntityType> = [
       'decision',
       'issue',
-      'task',
       'regulation',
       'instruction',
       'block',
+      'entity',
+      'idea',
     ];
     if (!VALID.includes(entityType as ProvenanceEntityType)) return [];
     const blockIds = await this.collectSourceBlockIds(
@@ -697,13 +699,6 @@ export class ProvenanceService {
         });
         return i?.sourceBlockIds ?? [];
       }
-      case 'task': {
-        const t = await this.prisma.task.findFirst({
-          where: { id: entityId, tenantId },
-          select: { evidenceBlockIds: true },
-        });
-        return t?.evidenceBlockIds ?? [];
-      }
       case 'regulation':
       case 'instruction': {
         const r = await this.prisma.regulation.findFirst({
@@ -714,6 +709,22 @@ export class ProvenanceService {
       }
       case 'block':
         return [entityId];
+      case 'entity': {
+        const links = await this.prisma.ideaBlockEntity.findMany({
+          where: { entityId, block: { tenantId } },
+          select: { blockId: true },
+          orderBy: { createdAt: 'asc' },
+          take: 200,
+        });
+        return links.map((l) => l.blockId);
+      }
+      case 'idea': {
+        const i = await this.prisma.idea.findFirst({
+          where: { id: entityId, tenantId },
+          select: { sourceBlockIds: true },
+        });
+        return i?.sourceBlockIds ?? [];
+      }
       case 'notification':
         return [];
     }

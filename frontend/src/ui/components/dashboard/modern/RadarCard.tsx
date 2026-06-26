@@ -29,7 +29,7 @@ export function RadarCard({
         {title}
       </CardTitle>
       <div className="mt-2 h-[220px]">
-        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={160}>
           <RadarChart data={data} outerRadius="72%">
             <defs>
               <linearGradient id="radar" x1="0" y1="0" x2="1" y2="1">

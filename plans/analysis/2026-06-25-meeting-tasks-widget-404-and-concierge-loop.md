@@ -90,8 +90,8 @@ GET /api/v1/meetings/01KVW4TQQ9CK3NT4NPTBHZKM9E/tasks
 ---
 
 ## Открытые вопросы / следующие шаги
-- [ ] Баг 1: брать мою правку `tasks.service.*` как есть или реализовать в рамках общего ТЗ (тогда откатить мою).
-- [ ] Баг 1: нужен ли единый контракт «задачи встречи» (сейчас три точки: deprecated `TasksController`, public-api, admin) — свести к одному сервису-источнику `MeetingActionItemsService`.
+- [x] Баг 1: разрешено унификацией Task→Issue. Модуль `tasks/` и правка `ac7ca44e` снесены (Ф7a/Ф7b/Ф8); виджет переехал на tracker `GET /issues?linkedMeetingId`. Фикс переписан на новый путь — гейт `assertCanView` + байпас strict-scope в `findAllAcrossProjects` (коммит `f03ce25b`, ТЗ [2026-06-25-meeting-tasks-widget-404-fix.md](../tz/2026-06-25-meeting-tasks-widget-404-fix.md)). Вариант A сохранён.
+- [x] Баг 1: «три точки контракта задач встречи» схлопнуты унификацией — deprecated `TasksController` удалён, источник один (tracker `Issue.linkedMeetingIds`).
 - [ ] Баг 2: интерим-заплатка сейчас vs ждать single-pass ТЗ (решение владельца — в работе).
 - [ ] Баг 2 (вторичное): прокинуть дату встречи в метаданные карточек памяти / дать инструмент «встречи за период», иначе запросы «по дате» останутся слабыми и после фикса петли.
 - [ ] Проверить значение флага `knowledge.meetingTasksToTrackerOnly` в проде (по данным — фактически ON: задачи лежат как `Issue`).

@@ -29,7 +29,7 @@ export function DonutCard({
       </CardTitle>
       <div className="mt-2 flex items-center gap-3">
         <div className="relative h-[180px] w-[180px]">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={160}>
             <PieChart>
               <Pie
                 data={data}

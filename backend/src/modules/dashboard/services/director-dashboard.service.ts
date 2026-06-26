@@ -714,8 +714,8 @@ export class DirectorDashboardService {
             ],
           },
         }),
-        this.prisma.task.count({
-          where: { tenantId, createdAt: { gte: since } },
+        this.prisma.issue.count({
+          where: { tenantId, createdAt: { gte: since }, deletedAt: null, archivedAt: null },
         }),
         this.prisma.decision.count({
           where: { tenantId, createdAt: { gte: since }, deletedAt: null },

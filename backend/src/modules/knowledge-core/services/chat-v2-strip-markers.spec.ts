@@ -55,6 +55,24 @@ describe('stripBlockMarkers', () => {
     expect(out).not.toContain('ТАБЛИЦА');
   });
 
+  it('убирает русский тег [ИТОГ ПЕРИОДА: <label>]', () => {
+    const out = stripBlockMarkers('Свёртка [ИТОГ ПЕРИОДА: месяц 2026-05] показала рост');
+    expect(out).toBe('Свёртка показала рост');
+    expect(out).not.toContain('ИТОГ ПЕРИОДА');
+  });
+
+  it('убирает русский тег [ТЕМА: <id>] (карта тем, Ф6)', () => {
+    const out = stripBlockMarkers('Раздел [ТЕМА: th-sales] о продажах');
+    expect(out).toBe('Раздел о продажах');
+    expect(out).not.toContain('ТЕМА');
+  });
+
+  it('убирает маркер эпизода [ИСТОЧНИК:<id>] (список К1, Ф10)', () => {
+    const out = stripBlockMarkers('Планёрка по запуску [ИСТОЧНИК:re-1]');
+    expect(out).toBe('Планёрка по запуску');
+    expect(out).not.toContain('ИСТОЧНИК');
+  });
+
   it('текст без маркеров возвращается как есть', () => {
     const text = 'Обычный ответ без маркеров, с **markdown** и [ссылкой](https://x).';
     expect(stripBlockMarkers(text)).toBe(text);

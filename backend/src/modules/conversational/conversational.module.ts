@@ -25,6 +25,7 @@ import { ConversationalService } from './conversational.service';
 import { IssueAssignmentNotifierService } from './issue-assignment-notifier.service';
 import { ConversationalLinkCodeService } from './link-code.service';
 import { NotificationBudgetService } from './notification-budget.service';
+import { ProbeResponseInboundBridge } from './probe-response-inbound.bridge';
 import { AssistantInboundQueueService } from './queue/assistant-inbound-queue.service';
 import { AssistantInboundWorker } from './queue/assistant-inbound.worker';
 import { ConversationalQueueService } from './queue/conversational-queue.service';
@@ -126,6 +127,7 @@ export class ConversationalFreeNoteBridge implements OnModuleInit {
     MaxApiClient,
     MaxBotChannelAdapter,
     ConversationalFreeNoteBridge,
+    ProbeResponseInboundBridge,
     IssueAssignmentNotifierService,
   ],
   exports: [

@@ -1085,7 +1085,7 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       where: {
         tenantId: args.tenantId,
         recipientUserId: args.userId,
-        eventType: { in: ['probe.question', 'probe.digest'] },
+        eventType: { in: ['probe.question', 'probe.digest', 'probe.clarify', 'probe.confirm'] },
         responseStatus: 'pending',
         createdAt: { gte: minCreatedAt },
       },
@@ -1138,6 +1138,20 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         const body = escapeHtml(q);
         const tail = ctx ? `\n\n<i>${escapeHtml(ctx)}</i>` : '';
         return `${head}\n\n${body}${tail}\n\nОтветьте текстом этим же сообщением.`.slice(0, 4000);
+      }
+      case 'probe.clarify': {
+        const q = (payload['question'] as string | undefined) ?? '';
+        return `<b>Кора уточняет</b>\n\n${escapeHtml(q)}\n\nОтветьте текстом этим же сообщением.`.slice(
+          0,
+          4000,
+        );
+      }
+      case 'probe.confirm': {
+        const q = (payload['question'] as string | undefined) ?? '';
+        return `<b>Кора уточняет, всё ли верно</b>\n\n${escapeHtml(q)}\n\nОтветьте «да» или поправьте.`.slice(
+          0,
+          4000,
+        );
       }
       case 'specialist.probe': {
         const msg = (payload['message'] as string | undefined) ?? '';

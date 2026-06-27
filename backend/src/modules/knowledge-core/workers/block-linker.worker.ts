@@ -79,7 +79,7 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
 
   private async process(job: Job<BlockLinkerJobData>): Promise<void> {
     const { blockId } = job.data;
-    const block = await this.prisma.ideaBlock.findUnique({
+    const block = await this.prisma.ideaBlock.findFirst({
       where: { id: blockId },
     });
     if (!block) {
@@ -184,10 +184,11 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
 
         const upserted = await this.prisma.ideaBlockLink.upsert({
           where: {
-            fromBlockId_toBlockId_relationType: {
+            fromBlockId_toBlockId_relationType_tenantId: {
               fromBlockId: block.id,
               toBlockId: candidate.id,
               relationType,
+              tenantId: block.tenantId,
             },
           },
           update: {

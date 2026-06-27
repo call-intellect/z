@@ -2,7 +2,12 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { DIALOG_CLASSIFY_JSON_SCHEMA } from '../prompts/classify.prompt';
 
-import { QueryClassifierService, type DialogIntent } from './query-classifier.service';
+import {
+  classifyQueryClass,
+  QueryClassifierService,
+  type DialogIntent,
+  type QueryClass,
+} from './query-classifier.service';
 
 describe('QueryClassifierService', () => {
   let llmCallMock: ReturnType<typeof vi.fn>;
@@ -250,5 +255,48 @@ describe('QueryClassifierService', () => {
     // Без openProbeQuestion блок в USER не добавляется.
     const callArg = llmCallMock.mock.calls[0]?.[0] as { userMessage?: string };
     expect(callArg.userMessage).not.toContain('Открытый вопрос Коры тебе сейчас');
+  });
+});
+
+describe('classifyQueryClass — детерминированный роутер 5 классов (Ф3)', () => {
+  const cases: Array<{ q: string; expected: QueryClass }> = [
+    { q: 'какие встречи с Ивановым', expected: 'list' },
+    { q: 'все встречи где обсуждали бюджет', expected: 'list' },
+    { q: 'покажи все задачи по проекту', expected: 'list' },
+    { q: 'с кем встречались на прошлой неделе', expected: 'list' },
+    { q: 'документы про логистику', expected: 'list' },
+    { q: 'итоги за месяц', expected: 'temporal' },
+    { q: 'как прошла неделя у отдела продаж', expected: 'temporal' },
+    { q: 'результаты за квартал', expected: 'temporal' },
+    { q: 'что у нас по продажам', expected: 'overview' },
+    { q: 'обзор по маркетингу', expected: 'overview' },
+    { q: 'как дела с продуктом', expected: 'overview' },
+    { q: 'что решили по бюджету', expected: 'fact' },
+    { q: 'когда следующая встреча', expected: 'fact' },
+    { q: 'сколько стоит лицензия', expected: 'fact' },
+    { q: 'какой статус задачи по найму', expected: 'fact' },
+    { q: 'обсуждали реструктуризацию', expected: 'topic' },
+    { q: 'что говорили про найм инженеров', expected: 'topic' },
+  ];
+
+  for (const { q, expected } of cases) {
+    it(`«${q}» → ${expected}`, () => {
+      expect(classifyQueryClass(q).class).toBe(expected);
+    });
+  }
+
+  it('уверенный regex-match даёт высокую уверенность (≥0.7)', () => {
+    expect(classifyQueryClass('какие встречи с Ивановым').confidence).toBeGreaterThanOrEqual(0.7);
+  });
+
+  it('дефолтный topic при отсутствии паттерна → низкая уверенность (<0.6)', () => {
+    const r = classifyQueryClass('хм непонятная фраза без ключевых слов');
+    expect(r.class).toBe('topic');
+    expect(r.confidence).toBeLessThan(0.6);
+  });
+
+  it('пустой/нестроковый вход → topic, не падает', () => {
+    expect(classifyQueryClass('').class).toBe('topic');
+    expect(classifyQueryClass(undefined as unknown as string).class).toBe('topic');
   });
 });

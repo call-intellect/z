@@ -584,6 +584,65 @@ Per-Org кэш cross-source идентичности «псевдоним → Pe
 `entity-name-resolve`) → **fail-closed null** (инвариант R-2: разных людей не
 склеиваем). Подробно — [[knowledge-core]] §«Cross-source идентичность».
 
+## Слой источника (Ф2 слой-источника+маршрутизатор, 2026-06-27)
+
+**Источник:** ТЗ [`2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md`](../../plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md) (миграция `20260627130000_source_layer`). Подробно — [[knowledge-core]] §«Слой источника + многомаршрутный retrieval». Источник (встреча/документ/чат-тред) материализован как первоклассный объект поиска параллельно поблочному `IdeaBlock`. Все три модели несут `tenantId` явно (`Participant` его НЕ имеет). Заполняются при ingest (`block-ingest.worker.persistSourceLayer`, best-effort/идемпотентно); backfill — `backfill-source-layer.ts`.
+
+### SourceEpisode
+
+```
+SourceEpisode {
+  id, tenantId (FK Org, Cascade), rawEventId @unique → RawEvent (Cascade),
+  kind VARCHAR(16)        -- 'meeting' | 'document' | 'chat'
+  title, occurredAt, summary? @Text,
+  embedding vector(1536), embeddingModelVersion? VARCHAR(40),
+  branch? ThemeBranch,
+  createdAt, updatedAt
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, kind, occurredAt])
+}
+```
+
+Один на `RawEvent`. Несёт human-резюме + собственный вектор для семантического поиска ПО ИСТОЧНИКУ (К2/К4), отдельно от `IdeaBlock.embedding`. HNSW на `embedding` (партиц. по tenantId как Ф1) — в `postgres-init.sql`.
+
+### SourceParticipant
+
+```
+SourceParticipant {
+  rawEventId → RawEvent (Cascade), personId → Person (Cascade), tenantId → Org (Cascade),
+  role VARCHAR(16)        -- 'host' | 'guest' | 'author' | 'member'
+  speakingShare? Decimal(4,3),   -- доля реплик 0..1, null для не-встреч (для ранжирования)
+  createdAt
+  @@id([rawEventId, personId])
+  @@index([tenantId, personId, createdAt])
+}
+```
+
+Ребро «человек присутствовал в источнике» на уровне ИСТОЧНИКА (НЕ линк на каждый блок) — детерминированный фундамент маршрута К1 «все встречи/чаты с человеком X».
+
+### SourceEntity
+
+```
+SourceEntity {
+  rawEventId → RawEvent (Cascade), entityId → Entity (Cascade), tenantId → Org (Cascade),
+  mentionsCount Int @default(0), createdAt
+  @@id([rawEventId, entityId])
+  @@index([tenantId, entityId, createdAt])
+}
+```
+
+Ребро «компания/сущность упомянута в источнике» — агрегат на уровне источника (НЕ дубль `IdeaBlockEntity`, который mention на уровне блока). Только из извлечённых `IdeaBlockEntity` (НЕ из текста summary — защита от ложных сущностей). Для К1/К4.
+
+## Партиционирование IdeaBlock/Entity по tenantId (Ф1 слой-источника+маршрутизатор, 2026-06-27)
+
+**Источник:** ТЗ [`2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md`](../../plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md) Ф1 (миграция `20260627120000_partition_idea_block_entity_by_tenant`). Снимает scale-killer «глобальный HNSW + `WHERE tenantId`» до наполнения прода (проектирование под 100–200k тенантов).
+
+- `IdeaBlock` и `Entity` — декларативное **HASH-партиционирование по `tenantId`** (64 партиции). Postgres требует партиционный ключ во всех unique-ограничениях → **PK становится составным** `@@id([id, tenantId])`.
+- Все входящие FK переведены на составные `(blockId/entityId, tenantId)`: Cascade-связи переиспользуют `tenantId`; SetNull/self-связи получили nullable-компаньоны (`mergedIntoTenantId`, `supersededByTenantId`, `entityTenantId`, `sourceIdeaBlockTenantId`). Join-таблицы (`IdeaBlockEntity`/`IdeaBlockAccess`, `ThemeIdeaBlock`/`ThemeEntity`) и 1:1-unique получили `tenantId`.
+- **Новое поле `IdeaBlock.contextHeaderVersion`** (миграция `20260627140000_idea_block_context_header_version`, Ф7) — версия contextual-header, гейт идемпотентности ре-эмбеддинга (`backfill-context-header-reembed.ts`). Подробно — [[knowledge-core]] §«Contextual-header v2».
+- HNSW-параметры `m=16, ef_construction=128` на IdeaBlock/Entity + новый HNSW на `Theme.embedding` и `SourceEpisode.embedding`; `ef_search` — крутилка `knowledge.hnsw_ef_search` (100). Всё в `postgres-init.sql`.
+- ⚠️ **БД-приёмка миграции** (партиц-swap, FK-рефактор) выполняется на проде/staging — локальной БД в среде разработки не было (см. [[../04_не-сделано/README]]).
+
 ### ThemeIdeaBlock (M:M)
 
 ```
@@ -1096,6 +1155,33 @@ Autonomy W2 (2026-06-12) добавила **ещё два значения** (м
 
 Автономизация — убрать лишние подтверждения (2026-06-23, Блок D) добавила **ещё одно значение** (миграция `20260623151703_add_probe_suppressed_by_memory`, `ALTER TYPE "ProbeStatus" ADD VALUE 'suppressed_by_memory'`, аддитивно):
 - **`suppressed_by_memory`** — висящий **pending-probe погашен дочисткой по выученному правилу** `SubjectMemory` (`SubjectMemoryService.sweepPendingDuplicates`): при активации нового правила самообучения близкие к нему ожидающие probe закрываются, человека не переспрашивают то, что Кора уже выучила. Kill-switch `subjectMemory.sweepPendingOnLearnEnabled` (ON), метрика `subject_memory_pending_swept_total`. См. [[../01_projects/probe-agent]] §«Наблюдаемость самообучения SubjectMemory».
+
+### Диалоговое уточнение probe — `ProbeDialogState` + `ProbeDialogPhase` + 4 значения `ProbeStatus` (2026-06-27)
+
+**Источник:** ТЗ [`plans/tz/2026-06-27-probe-clarify-dialog-tz.md`](../../plans/tz/2026-06-27-probe-clarify-dialog-tz.md). Полная карта движка — [[../01_projects/probe-agent]] §«Диалоговое уточнение probe». Миграция `20260627000000_probe_dialog_state` (CREATE TYPE + ALTER TYPE + CREATE TABLE, аддитивная, без потери данных, backfill не нужен).
+
+Новая модель **`ProbeDialogState`** — состояние диалоговой петли probe, 1:1 с `ProbeEvent`:
+
+| Поле | Тип | Значение |
+|---|---|---|
+| `probeEventId` | string `@unique` | FK → `probe_events` (`ON DELETE CASCADE`); 1:1, одна активная строка на probe |
+| `phase` | ProbeDialogPhase | текущая фаза петли |
+| `outcome` | string? | сохранённый исход последнего хода классификатора (`apply`/`delete`/`refine`/`counter_question`/`unclear`) |
+| `collectedValue` | string? | извлечённое значение (новое имя/срок/итог) — применяется при подтверждении, НЕ текст «да» |
+| `confidence` | float? | уверенность последнего хода (только маршрутизация, не запись) |
+| `turnCount` | int | счётчик ходов диалога (инкремент в `recordTurn`); `> probe.dialogMaxTurns` → эскалация owner/admin |
+| `tenantId` | string | tenant-изоляция |
+| `recipientUserId` | string? | адресат петли |
+
+Индексы: unique по `probeEventId` + 2 индекса (по выборке активных/tenant). Сервис `ProbeDialogService.finalizeIfPending` использует CAS `phase → resolved` как **идемпотентный ключ финализации** (ровно одно применение).
+
+Новый enum **`ProbeDialogPhase`** (4 значения): `awaiting_answer` → `awaiting_clarification` (отправлен уточняющий `probe.clarify`) / `awaiting_confirmation` (отправлен echo-back `probe.confirm`) → `resolved` (применено / эскалировано / abandoned).
+
+**+4 аддитивных значения `ProbeStatus`** (`ALTER TYPE "ProbeStatus" ADD VALUE`, аддитивно, поверх прежних `pending`/`dispatched`/`dropped_*`/`expired`/`queued_digest`/`suppressed_stale`/`dropped_low_value`/`routed_to_digest`/`suppressed_by_memory`):
+- **`awaiting_dialog`** — probe в активной диалоговой петле (отправлен уточняющий ход / echo-back, ждём доответа).
+- **`applied`** — намерение ответа применено детерминированным apply-слоем (после подтверждения echo-back).
+- **`escalated_to_human`** — диалог превысил `probe.dialogMaxTurns` → передан owner/admin терминальным FYI.
+- **`abandoned`** — диалог не доведён до подтверждения дольше `probe.dialogConfirmTtlHours` → закрыт `ProbeDialogTtlCron`.
 
 ## PersonLeave — отпуска / отсутствия сотрудника (2026-06-21)
 

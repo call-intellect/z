@@ -287,7 +287,7 @@ export class OrgAdminKnowledgeService {
       data.aliases = aliases;
     }
     if (Object.keys(data).length === 0) return { ok: true };
-    await this.prisma.entity.update({ where: { id: entityId }, data });
+    await this.prisma.entity.update({ where: { id_tenantId: { id: entityId, tenantId } }, data });
     await this.prisma.auditLog.create({
       data: {
         tenantId,

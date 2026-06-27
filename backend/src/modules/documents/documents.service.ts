@@ -689,6 +689,7 @@ export class DocumentsService {
         data: blockIds.map((blockId) => ({
           themeId: attachedThemeId,
           blockId,
+          tenantId,
           weight: new Prisma.Decimal('0.8'),
         })),
         skipDuplicates: true,

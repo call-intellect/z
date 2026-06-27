@@ -948,5 +948,51 @@ ReportIngestListener (@OnEvent, в ingest/knowledge-core)
 
 Единое ядро отчёта встречи теперь делает **только** `meeting-report-fast` (один LLM-вызов): главы, задачи, резюме И качество. Дублирующие воркеры `chapters` / `tasks-extract` / `quality-score` (+ их очереди `ai.chapters`/`ai.tasks`/`ai.quality-score` и enqueue-методы) **удалены**. `meeting-report-fast.worker` пишет качество в каноничную таблицу `MeetingQualityScore` (+ `Meeting.qualityScoreStatus='ready'`) — читатели `QualityScoreService` без изменений. Перегенерация глав/качества/полного отчёта перенаправлена на `CoreQueueService.enqueueMeetingReportFast`. `LlmTaskType` `chapters`/`tasks`/`meeting-quality-score` оставлены в union мёртвыми (как мёртвые колонки). Деталь — [[../01_projects/ai-jobs]] и [[../01_projects/workers-queues]].
 
+## Слой источника + многомаршрутный retrieval (2026-06-27)
+
+**Источник:** ТЗ [`plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md`](../../plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md) (Ф1–Ф10, ветка `feature/sloy-istochnika-marshrutizator`). Анализ — [`plans/analysis/2026-06-27-sloy-istochnika-i-marshrutizator-poiska.md`](../../plans/analysis/2026-06-27-sloy-istochnika-i-marshrutizator-poiska.md).
+
+Поиск памяти перестал отвечать на любой вопрос плоским векторным top-k по `IdeaBlock`. Добавлены: партиционирование векторных индексов по тенанту, **слой источника как первоклассный объект**, **роутер 5 классов запроса** с confidence-gated both-ways, и **синтез ответа по классу**. Половина инфраструктуры (гибрид dense+BM25+RRF, recall-safe структурный путь, эпизод-узел встречи) уже была — это достройка связок.
+
+### Слой источника (`SourceEpisode` / `SourceParticipant` / `SourceEntity`)
+
+Источник (встреча / документ / чат-тред) материализован как первоклассный объект поиска — параллельно поблочному `IdeaBlock`. Модели — [[data-model]] §«Слой источника». Заполняется при ingest в `block-ingest.worker.persistSourceLayer` (best-effort, идемпотентно — upsert по составному PK); для старых `RawEvent` — backfill `scripts/backfill-source-layer.ts`. `SourceEntity` собирается только из извлечённых `IdeaBlockEntity` источника (НЕ из текста summary — защита от ложных сущностей).
+
+- `SourceEpisode` — один на `RawEvent`: `kind` (`meeting`/`document`/`chat`), `title`, `occurredAt`, `summary`, собственный `embedding`+HNSW (партиц. по `tenantId`) для семантики ПО ИСТОЧНИКУ (К2/К4).
+- `SourceParticipant` — ребро «человек присутствовал в источнике» на уровне источника (НЕ линк на каждый блок) — детерминированный фундамент К1.
+- `SourceEntity` — ребро «компания/сущность упомянута в источнике» (агрегат, `mentionsCount`) для К1/К4.
+
+### Роутер 5 классов + both-ways (Ф3)
+
+`understand` (общий промпт `query-understand`) выделяет `QueryClass = list | topic | temporal | overview | fact` (К1–К5) + ось `personIds` + переформулировки в ОДНОМ вызове. Классификация **детерминированная** (`classifyQueryClass` поверх regex-эвристик, LLM-тай-брейк только ниже порога). Шаг понимания+переформулировки (history-aware) выполняется для ВСЕХ классов (разрешение анафоры — «найди по нему встречи» → самодостаточный вопрос); параллельный семантический фан-аут по блокам — только для К2/К5.
+
+**both-ways в `runRetrieval`:** при `confidence < knowledge.router_confidence_threshold` (0.6) ИЛИ К1/К3/К4 — структурный И семантический маршруты параллельно (`Promise.allSettled`) + слияние `fuseRankedLists` (RRF). Уверенный К2/К5 → один путь. Инвариант: пустой структурный → семантический fallback подмешан всегда (никогда не пусто). Kill-switch `knowledge.router_v2_enabled` (ON), метрики `router_query_class`/`router_both_ways`.
+
+### Маршруты К1 / К3 / К4
+
+- **К1 (список/агрегат по человеку/группе)** — `resolvePersonCandidates`: нечёткий резолвинг имени (нормализация → `EntityAlias` → триграммы `pg_trgm` на `Entity.canonicalName`/`Person.name` → близость `Entity.embedding`, merged-канон, контекст-сущность сужает выбор). Точное равенство имени запрещено — детерминизм в ОБХОДЕ по разрешённым id: `runStructuralAggregate` (SQL `SourceParticipant`/`SourceEntity` → `IdeaBlockEvidence` → `blockId`). ≥2 равноуверенных кандидата → уточняющий вопрос (`needsClarification`); резолвинг пуст → семантическая страховка. Крутилки `person_resolve_trgm_threshold` (0.3) / `person_resolve_ambiguity_delta` (0.1).
+- **К3 (временной итог)** — `runTemporalBranch` читает `WeeklyOperationsDigest`/`ValueRecapSnapshot` по периоду тенанта → markdown-свёртка в синтез. Фикс tz-бага `period-resolver` (реальный IANA-tz организации через `Intl`, не жёсткий МСК+180).
+- **К4 (обзор/карта тем)** — `selectTopThemes` (top-N тем по `Theme.embedding <=> qvec`, lazy, query-time, крутилка `overview_top_themes` 5) → `runOverviewBranch` подаёт `Theme.summary` в синтез + погружение в блоки выбранных тем (`poolByThemes` в RRF). Без предрасчитанной community-иерархии — вязка на embedding-близость.
+
+### Contextual-header v2 (Ф7)
+
+`buildMetaLine` обогащён упомянутыми компаниями (`SourceEntity`), полным составом участников (`SourceParticipant`), `RawEvent.sourceTitle` — встроено в эмбеддинг блока для recall класса К2. Header — стабильный префикс (prompt-cache). Поле `IdeaBlock.contextHeaderVersion` — гейт идемпотентности ре-эмбеддинга. Backfill `scripts/backfill-context-header-reembed.ts` (ре-эмбеддинг старых блоков + REINDEX HNSW-партиций).
+
+### Документы как первоклассный объект (Ф8)
+
+Документ получает AI-`title`+`summary` (taskType `document-summarize`, code-fallback `ai/services/prompts/document-summarize.prompt.ts`, `DocumentSummaryService`, крутилка `document_summary_input_chars` 12000); `sourceTitle` передаётся в ingest; гейт summary-узла (`maybePersistMeetingSummary`) обобщён с `meeting` на `document`/`chat`. Битрикс-чат (`kind='chat'`) — код-способность готова, наполнение данными вне scope (внешний блокер — см. [[../04_не-сделано/README]]).
+
+### Синтез ответа по классу — контракт `answerKind` (Ф10)
+
+Сборка контекста перед LLM ветвится по `QueryClass`: К1 → список эпизодов (`listEpisodesByActors`, крутилка `list_episodes_limit` 30), К3 → markdown-свёртка, К4 → карта тем (`Theme.summary`), К2/К5 → блочный синтез. Результат `ask` несёт `answerKind = list | recap | overview | prose` + структурную часть `episodes[]` (id эпизодов для кликабельных ссылок) — течёт `ChatV2Output → SynthesisResult → ChatAnswer → API DTO контроллера`, чтобы UI «Мастера» отрисовал список/карту, а не только текст. Системный промпт chat-v2 (`BASE_SYSTEM_PROMPT`) описывает структуру памяти (источники-объекты, участники, карта тем, итоги периодов) + режимы ответа по классу. UI-рендер форм `answerKind` отложен (vNext-ТЗ фронта — [[../04_не-сделано/README]]).
+
+### Rerank-доводка (Ф9)
+
+`conditionalRerank` (LLM-as-reranker) применяется к both-ways-merged-результату; размер пула вынесен из хардкода в крутилку `rag.rerank_pool_size` (30, registry + сид smart-search).
+
+### Партиционирование + HNSW (Ф1)
+
+`IdeaBlock`/`Entity` HASH-партиционированы по `tenantId` (64 партиции, составной PK) — снят scale-killer «глобальный HNSW + `WHERE tenantId`». HNSW-параметры `m=16, ef_construction=128` на IdeaBlock/Entity + новые HNSW на `Theme.embedding` и `SourceEpisode.embedding`, `ef_search` — крутилка `knowledge.hnsw_ef_search` (100). Все в `postgres-init.sql` (Prisma 7 их не умеет). Детали схемы/FK-рефактора — [[data-model]] §«Партиционирование IdeaBlock/Entity по tenantId».
+
 [[../index|← index]] · [[../01_projects/ingest-and-sources|Фаза 1: ingest]] ·
 [[../01_projects/llm-router|LLM Router]]

@@ -307,8 +307,8 @@ export class EntityMergeService {
     }
 
     const [fromEntity, intoEntity] = await Promise.all([
-      this.prisma.entity.findUnique({ where: { id: fromEntityId } }),
-      this.prisma.entity.findUnique({ where: { id: intoEntityId } }),
+      this.prisma.entity.findUnique({ where: { id_tenantId: { id: fromEntityId, tenantId } } }),
+      this.prisma.entity.findUnique({ where: { id_tenantId: { id: intoEntityId, tenantId } } }),
     ]);
     if (!fromEntity) throw new Error(`Entity not found: ${fromEntityId}`);
     if (!intoEntity) throw new Error(`Entity not found: ${intoEntityId}`);
@@ -333,19 +333,19 @@ export class EntityMergeService {
         // не выполняется. Проверяем целевую пару (blockId, intoEntityId) заранее.
         const conflicting = await tx.ideaBlockEntity.findUnique({
           where: {
-            blockId_entityId: { blockId: m.blockId, entityId: intoEntityId },
+            blockId_entityId_tenantId: { blockId: m.blockId, entityId: intoEntityId, tenantId },
           },
         });
         if (conflicting) {
           // Уже есть пара (blockId, intoEntityId) — просто удаляем from-запись.
           await tx.ideaBlockEntity.delete({
             where: {
-              blockId_entityId: { blockId: m.blockId, entityId: fromEntityId },
+              blockId_entityId_tenantId: { blockId: m.blockId, entityId: fromEntityId, tenantId },
             },
           });
         } else {
           await tx.ideaBlockEntity.update({
-            where: { blockId_entityId: { blockId: m.blockId, entityId: fromEntityId } },
+            where: { blockId_entityId_tenantId: { blockId: m.blockId, entityId: fromEntityId, tenantId } },
             data: { entityId: intoEntityId },
           });
         }
@@ -416,7 +416,7 @@ export class EntityMergeService {
         ]),
       );
       await tx.entity.update({
-        where: { id: intoEntityId },
+        where: { id_tenantId: { id: intoEntityId, tenantId } },
         data: {
           mentionsCount: intoEntity.mentionsCount + fromEntity.mentionsCount,
           aliases: aliasesUnion,
@@ -425,7 +425,7 @@ export class EntityMergeService {
 
       // fromEntity → merged_into.
       await tx.entity.update({
-        where: { id: fromEntityId },
+        where: { id_tenantId: { id: fromEntityId, tenantId } },
         data: { mergedIntoId: intoEntityId },
       });
     });

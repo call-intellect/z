@@ -53,6 +53,15 @@ const SEEDS: SettingSeed[] = [
       'Минимальный размер пула кандидатов, при котором включается LLM-реранк (на меньшем/чистом пуле реранк бесполезен и только дороже). По умолчанию 12.',
   },
   {
+    key: 'rag.rerank_pool_size',
+    value: 30,
+    category: 'ai',
+    section: 'smart_search',
+    severity: 'medium',
+    description:
+      'Сколько верхних кандидатов (после both-ways слияния/RRF) уходит в LLM-реранк на финальную переранжировку. По умолчанию 30.',
+  },
+  {
     key: 'rag.multiquery_count',
     value: 3,
     category: 'ai',

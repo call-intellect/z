@@ -6,10 +6,16 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { AnswerCacheService, type AnswerCacheEntry } from './answer-cache.service';
 import { MultiQueryExpansionService } from './multi-query-expansion.service';
-import { QueryClassifierService, type DialogIntent } from './query-classifier.service';
+import {
+  classifyQueryClass,
+  QueryClassifierService,
+  type DialogIntent,
+  type QueryClass,
+} from './query-classifier.service';
 import {
   QueryPlanExtractorService,
   type QueryPlanResult,
+  type StructuralFilterClarification,
   type StructuralRetrievalFilters,
 } from './query-plan-extractor.service';
 
@@ -30,11 +36,18 @@ export interface DialogProcessResult {
   enabled: boolean;
   standaloneQuestion: string;
   intent: DialogIntent;
+  queryClass: QueryClass;
+  queryClassConfidence: number;
   queries: string[];
   confidence: number;
   cachedAnswer: AnswerCacheEntry | null;
   queryPlan?: QueryPlanResult | null;
   structuralFilters?: StructuralRetrievalFilters | null;
+  /**
+   * Слой источника Ф4 (R14) — настоящая неоднозначность имени в К1: вместо
+   * слепого поиска оркестратор короткозамыкает на свободный уточняющий вопрос.
+   */
+  clarification?: StructuralFilterClarification | null;
   steps: {
     contextualize: number;
     confidence: number;
@@ -73,15 +86,19 @@ export class DialogService {
     };
 
     if (!this.cfg.dialogLayer.enabled) {
+      const fallbackClass = classifyQueryClass(input.userMessage);
       return {
         enabled: false,
         standaloneQuestion: input.userMessage,
         intent: 'factual',
+        queryClass: fallbackClass.class,
+        queryClassConfidence: fallbackClass.confidence,
         queries: [input.userMessage],
         confidence: 1.0,
         cachedAnswer: null,
         queryPlan: null,
         structuralFilters: null,
+        clarification: null,
         steps: noopSteps,
       };
     }
@@ -131,6 +148,7 @@ export class DialogService {
     let queries: string[];
     let queryPlan: QueryPlanResult | null = null;
     let structuralFilters: StructuralRetrievalFilters | null = null;
+    let clarification: StructuralFilterClarification | null = null;
     let understandSeconds: number;
 
     if (merged) {
@@ -154,11 +172,13 @@ export class DialogService {
       understandSeconds = (Date.now() - understandStart) / 1000;
       try {
         queryPlan = understood.queryPlan;
-        structuralFilters = await this.queryPlanExtractor.resolveStructuralFilters({
+        const resolved = await this.queryPlanExtractor.resolveStructuralFiltersWithClarify({
           tenantId: input.tenantId,
           userId: input.userId,
           plan: understood.queryPlan,
         });
+        structuralFilters = resolved.filters;
+        clarification = resolved.clarification;
         this.metrics.incQueryPlanExtraction({
           result: understood.queryPlan.applied ? 'applied' : 'failopen',
         });
@@ -169,6 +189,7 @@ export class DialogService {
           'resolveStructuralFilters (merged) упал — fail-open (без структурного фильтра)',
         );
         structuralFilters = null;
+        clarification = null;
       }
     } else {
       const mq = await this.multiQuery.expand({
@@ -225,15 +246,24 @@ export class DialogService {
       seconds: totalSeconds,
     });
 
+    const deterministicClass = classifyQueryClass(question);
+    const queryClass = queryPlan?.queryClass ?? deterministicClass.class;
+    const queryClassConfidence =
+      queryPlan?.queryClassConfidence ?? deterministicClass.confidence;
+    this.metrics.incRouterQueryClass({ class: queryClass });
+
     return {
       enabled: true,
       standaloneQuestion: question,
       intent,
+      queryClass,
+      queryClassConfidence,
       queries,
       confidence: 1.0,
       cachedAnswer,
       queryPlan,
       structuralFilters,
+      clarification,
       steps: {
         contextualize: 0,
         confidence: 0,

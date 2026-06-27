@@ -176,14 +176,16 @@ async function case1ProbeResponseClassify(): Promise<void> {
       response: 'да я с ним вчера переговорил, он одобрил, можем катить',
     }),
     validate: (p) => {
-      const x = p as { answer: string; confidence: number; requiresFollowup: boolean };
+      const x = p as { reasoning: string; outcome: string; value: string; confidence: number };
+      const outcomes = ['apply', 'delete', 'refine', 'counter_question', 'unclear'];
       return (
-        typeof x.answer === 'string' &&
-        x.answer.length > 0 &&
+        typeof x.reasoning === 'string' &&
+        outcomes.includes(x.outcome) &&
+        typeof x.value === 'string' &&
         typeof x.confidence === 'number' &&
         x.confidence >= 0 &&
         x.confidence <= 1 &&
-        typeof x.requiresFollowup === 'boolean' &&
+        x.outcome === 'apply' &&
         x.confidence >= 0.6
       );
     },

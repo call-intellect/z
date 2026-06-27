@@ -119,7 +119,7 @@ export class KnowledgeBlocksController {
     }
 
     const requested = await this.prisma.ideaBlock.findUnique({
-      where: { id },
+      where: { id_tenantId: { id, tenantId } },
     });
     if (!requested || requested.tenantId !== tenantId) {
       throw new NotFoundException({
@@ -132,7 +132,7 @@ export class KnowledgeBlocksController {
     let redirected = false;
     if (target.status === 'merged_into' && target.mergedIntoId) {
       const canonical = await this.prisma.ideaBlock.findUnique({
-        where: { id: target.mergedIntoId },
+        where: { id_tenantId: { id: target.mergedIntoId, tenantId } },
       });
       if (canonical && canonical.tenantId === tenantId) {
         target = canonical;
@@ -227,7 +227,7 @@ export class KnowledgeBlocksController {
       });
     }
     const block = await this.prisma.ideaBlock.findUnique({
-      where: { id },
+      where: { id_tenantId: { id, tenantId } },
       select: { id: true, tenantId: true },
     });
     if (!block || block.tenantId !== tenantId) {
@@ -349,7 +349,7 @@ export class KnowledgeBlocksController {
       });
     }
     const block = await this.prisma.ideaBlock.findUnique({
-      where: { id },
+      where: { id_tenantId: { id, tenantId } },
       select: { id: true, tenantId: true },
     });
     if (!block || block.tenantId !== tenantId) {

@@ -44,7 +44,7 @@ describe('BlockLinkerWorker.process — Б16 re-upsert + Ф6 риск-тирин
 
     const prisma = {
       ideaBlock: {
-        findUnique: vi.fn(async () => block),
+        findFirst: vi.fn(async () => block),
         count: vi.fn(async () => 100),
       },
       ideaBlockLink: { upsert },

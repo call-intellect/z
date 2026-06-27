@@ -14,14 +14,47 @@ export interface ResolvedPeriod {
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const DEFAULT_TIMEZONE = 'Europe/Moscow';
+const DEFAULT_OFFSET_MIN = 180;
 
-function offsetMinutes(orgTimezone?: string | null): number {
-  switch (orgTimezone) {
-    case 'Europe/Moscow':
-      return 180;
-    default:
-      return 180;
+function tzOffsetMinutes(instantMs: number, timeZone: string): number | null {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(new Date(instantMs));
+    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+    let hour = get('hour');
+    if (hour === 24) hour = 0;
+    const asUtc = Date.UTC(
+      get('year'),
+      get('month') - 1,
+      get('day'),
+      hour,
+      get('minute'),
+      get('second'),
+    );
+    if (Number.isNaN(asUtc)) return null;
+    return Math.round((asUtc - instantMs) / 60_000);
+  } catch {
+    return null;
   }
+}
+
+function offsetMinutes(instantMs: number, orgTimezone?: string | null): number {
+  const tz = orgTimezone && orgTimezone.length > 0 ? orgTimezone : DEFAULT_TIMEZONE;
+  const off = tzOffsetMinutes(instantMs, tz);
+  if (off == null) {
+    return tzOffsetMinutes(instantMs, DEFAULT_TIMEZONE) ?? DEFAULT_OFFSET_MIN;
+  }
+  return off;
 }
 
 function localCalendar(
@@ -59,7 +92,7 @@ export function resolvePeriod(
   if (Number.isNaN(nowMs)) {
     return { dateFrom: null, dateTo: null };
   }
-  const offMin = offsetMinutes(orgTimezone);
+  const offMin = offsetMinutes(nowMs, orgTimezone);
   const today = localCalendar(nowMs, offMin);
   const todayMidnight = localMidnightUtc(today.year, today.month0, today.day, offMin);
 

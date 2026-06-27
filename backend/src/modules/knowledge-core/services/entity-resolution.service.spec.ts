@@ -72,7 +72,9 @@ describe('EntityResolutionService (integration)', () => {
       expect(entity.mentionsCount).toBe(1);
       expect(entity.canonicalName).toBe(`${PREFIX}-новая-тема`);
 
-      await prisma.entity.delete({ where: { id: entity.id } }).catch(() => undefined);
+      await prisma.entity
+        .delete({ where: { id_tenantId: { id: entity.id, tenantId: entity.tenantId } } })
+        .catch(() => undefined);
     });
 
     it('увеличивает mentionsCount при повторном точном совпадении', async (testCtx) => {
@@ -94,7 +96,9 @@ describe('EntityResolutionService (integration)', () => {
       expect(r2.created).toBe(false);
       expect(r2.entity.mentionsCount).toBe(2);
 
-      await prisma.entity.delete({ where: { id: r2.entity.id } }).catch(() => undefined);
+      await prisma.entity
+        .delete({ where: { id_tenantId: { id: r2.entity.id, tenantId: r2.entity.tenantId } } })
+        .catch(() => undefined);
     });
 
     it('дедуплицирует case-insensitive: «Альфа» === «АЛЬФА»', async (testCtx) => {
@@ -116,7 +120,9 @@ describe('EntityResolutionService (integration)', () => {
       expect(upper.entity.id).toBe(lower.entity.id);
       expect(upper.entity.mentionsCount).toBe(2);
 
-      await prisma.entity.delete({ where: { id: lower.entity.id } }).catch(() => undefined);
+      await prisma.entity
+        .delete({ where: { id_tenantId: { id: lower.entity.id, tenantId: lower.entity.tenantId } } })
+        .catch(() => undefined);
     });
 
     it('изоляция per-tenant: одно имя в двух Org → две разные Entity', async (testCtx) => {
@@ -138,8 +144,12 @@ describe('EntityResolutionService (integration)', () => {
       expect(a.entity.tenantId).toBe(f.orgAId);
       expect(b.entity.tenantId).toBe(f.orgBId);
 
-      await prisma.entity.delete({ where: { id: a.entity.id } }).catch(() => undefined);
-      await prisma.entity.delete({ where: { id: b.entity.id } }).catch(() => undefined);
+      await prisma.entity
+        .delete({ where: { id_tenantId: { id: a.entity.id, tenantId: a.entity.tenantId } } })
+        .catch(() => undefined);
+      await prisma.entity
+        .delete({ where: { id_tenantId: { id: b.entity.id, tenantId: b.entity.tenantId } } })
+        .catch(() => undefined);
     });
 
     it('кидает Error на пустое имя', async (testCtx) => {
@@ -190,7 +200,9 @@ describe('EntityResolutionService (integration)', () => {
       expect(r3.entity.id).toBe(r1.entity.id);
       expect(r3.entity.mentionsCount).toBe(3);
 
-      await prisma.entity.delete({ where: { id: r1.entity.id } }).catch(() => undefined);
+      await prisma.entity
+        .delete({ where: { id_tenantId: { id: r1.entity.id, tenantId: r1.entity.tenantId } } })
+        .catch(() => undefined);
     });
 
     it('fallback на name/KNN если strong-IDs не заданы или не найдены', async (testCtx) => {
@@ -216,7 +228,9 @@ describe('EntityResolutionService (integration)', () => {
       expect(r2.entity.id).toBe(r1.entity.id);
       expect(r2.entity.inn).toBe('1234567890');
 
-      await prisma.entity.delete({ where: { id: r1.entity.id } }).catch(() => undefined);
+      await prisma.entity
+        .delete({ where: { id_tenantId: { id: r1.entity.id, tenantId: r1.entity.tenantId } } })
+        .catch(() => undefined);
     });
 
     it('изоляция per-tenant: одинаковый ИНН в двух Org → две разные Entity', async (testCtx) => {
@@ -240,8 +254,12 @@ describe('EntityResolutionService (integration)', () => {
       expect(a.entity.tenantId).toBe(f.orgAId);
       expect(b.entity.tenantId).toBe(f.orgBId);
 
-      await prisma.entity.delete({ where: { id: a.entity.id } }).catch(() => undefined);
-      await prisma.entity.delete({ where: { id: b.entity.id } }).catch(() => undefined);
+      await prisma.entity
+        .delete({ where: { id_tenantId: { id: a.entity.id, tenantId: a.entity.tenantId } } })
+        .catch(() => undefined);
+      await prisma.entity
+        .delete({ where: { id_tenantId: { id: b.entity.id, tenantId: b.entity.tenantId } } })
+        .catch(() => undefined);
     });
 
     it('резолвит по email — case-insensitive нормализация', async (testCtx) => {
@@ -267,7 +285,9 @@ describe('EntityResolutionService (integration)', () => {
       expect(r2.created).toBe(false);
       expect(r2.entity.id).toBe(r1.entity.id);
 
-      await prisma.entity.delete({ where: { id: r1.entity.id } }).catch(() => undefined);
+      await prisma.entity
+        .delete({ where: { id_tenantId: { id: r1.entity.id, tenantId: r1.entity.tenantId } } })
+        .catch(() => undefined);
     });
   });
 });
@@ -793,7 +813,7 @@ describe('EntityResolutionService.findOrCreateCustomerEntity (unit)', () => {
     );
     expect(entityUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'ent-1' },
+        where: { id_tenantId: { id: 'ent-1', tenantId: 't1' } },
         data: { mentionsCount: { increment: 1 } },
       }),
     );

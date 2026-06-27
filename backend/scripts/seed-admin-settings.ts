@@ -1647,6 +1647,20 @@ function buildSettings(): SettingSeed[] {
       'low',
       'Probe: для каких поводов Кора готовит черновик ответа из памяти',
     ],
+    ['probe.dialogEnabled', true, 'low', 'Рубильник диалогового уточнения probe (kill-switch, ON)'],
+    [
+      'probe.dialogEscalateMaxConfidence',
+      0.6,
+      'low',
+      'Ниже этого confidence ответ уходит в уточняющий ход, а не применяется',
+    ],
+    ['probe.dialogMaxTurns', 2, 'low', 'Лимит ходов диалога до эскалации probe владельцу/админу'],
+    [
+      'probe.dialogConfirmTtlHours',
+      48,
+      'low',
+      'TTL ожидания подтверждения/уточнения до перевода в abandoned (часы)',
+    ],
   ];
   for (const [key, value, severity, description] of probe) {
     out.push({ key, value, category: 'platform', section: 'probe', severity, description });

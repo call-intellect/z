@@ -339,6 +339,272 @@ export class ChatV2RetrievalService {
   }
 
   /**
+   * Слой источника Ф4 (R1) — обход (точный, по разрешённым id) маршрута К1.
+   *
+   * По разрешённым personIds/entityIds детерминированно собирает источники
+   * (rawEventId) уровня источника: участие — `SourceParticipant`, упоминание
+   * компании — `SourceEntity`; их объединение → блоки через
+   * `IdeaBlockEvidence` (distinct blockId), упорядоченные по свежести источника
+   * (`SourceEpisode.occurredAt DESC`, fallback `RawEvent.occurredAt`). Полнота,
+   * не «похожее»: точное равенство по уже разрешённым id (нечёткость — в стадии
+   * резолва, R14). Все WHERE tenant-скоупны (изоляция + partition-pruning).
+   * Возвращает blockIds (top-`limit`); пустой вход → [].
+   */
+  async runStructuralAggregate(args: {
+    tenantId: string;
+    personIds: ReadonlyArray<string>;
+    entityIds: ReadonlyArray<string>;
+    limit: number;
+  }): Promise<string[]> {
+    const { tenantId, personIds, entityIds, limit } = args;
+    if (personIds.length === 0 && entityIds.length === 0) return [];
+    if (limit <= 0) return [];
+
+    const params: unknown[] = [];
+    const pushParam = (v: unknown): string => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+    const pTenant = pushParam(tenantId);
+
+    const sourceUnions: string[] = [];
+    if (personIds.length > 0) {
+      const pPersons = pushParam([...personIds]);
+      sourceUnions.push(
+        `SELECT "rawEventId" FROM "SourceParticipant" ` +
+          `WHERE "tenantId" = ${pTenant} AND "personId" = ANY(${pPersons}::text[])`,
+      );
+    }
+    if (entityIds.length > 0) {
+      const pEntities = pushParam([...entityIds]);
+      sourceUnions.push(
+        `SELECT "rawEventId" FROM "SourceEntity" ` +
+          `WHERE "tenantId" = ${pTenant} AND "entityId" = ANY(${pEntities}::text[])`,
+      );
+    }
+    if (sourceUnions.length === 0) return [];
+
+    const pLimit = pushParam(limit);
+
+    interface Row {
+      blockId: string;
+      occurredAt: Date | null;
+    }
+    let rows: Row[];
+    try {
+      rows = await this.prisma.$queryRawUnsafe<Row[]>(
+        `
+        SELECT t."blockId" AS "blockId", t."occurredAt" AS "occurredAt"
+        FROM (
+          SELECT DISTINCT ON (ev."blockId")
+                 ev."blockId" AS "blockId",
+                 COALESCE(ep."occurredAt", re."occurredAt") AS "occurredAt"
+          FROM "IdeaBlockEvidence" ev
+          JOIN (
+            ${sourceUnions.join('\n            UNION\n            ')}
+          ) src ON src."rawEventId" = ev."rawEventId"
+          LEFT JOIN "SourceEpisode" ep
+            ON ep."rawEventId" = ev."rawEventId" AND ep."tenantId" = ${pTenant}
+          LEFT JOIN "RawEvent" re
+            ON re.id = ev."rawEventId" AND re."tenantId" = ${pTenant}
+          JOIN "IdeaBlock" b
+            ON b.id = ev."blockId" AND b."tenantId" = ${pTenant} AND b.status = 'canonical'
+          WHERE ev."tenantId" = ${pTenant}
+        ) t
+        ORDER BY t."occurredAt" DESC NULLS LAST
+        LIMIT ${pLimit}
+        `,
+        ...params,
+      );
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 retrieval: runStructuralAggregate упал — возвращаем []',
+      );
+      return [];
+    }
+    return rows.map((r) => r.blockId);
+  }
+
+  /**
+   * Слой источника Ф10 (R12) — маршрут К1 «список источников по человеку/группе»
+   * на уровне ИСТОЧНИКА (не блока): по разрешённым personIds/entityIds
+   * детерминированно собирает эпизоды (`SourceEpisode`), не абзац из блоков.
+   * Union участия (`SourceParticipant`) и упоминания (`SourceEntity`) →
+   * distinct rawEventId → эпизод (id/title/occurredAt/kind/rawEventId),
+   * по свежести `occurredAt DESC`. Все WHERE tenant-скоупны (изоляция +
+   * partition-pruning). Пустой вход / пустой limit → [].
+   */
+  async listEpisodesByActors(args: {
+    tenantId: string;
+    personIds: ReadonlyArray<string>;
+    entityIds: ReadonlyArray<string>;
+    limit: number;
+  }): Promise<
+    Array<{
+      id: string;
+      title: string;
+      occurredAt: Date;
+      kind: string;
+      rawEventId: string;
+    }>
+  > {
+    const { tenantId, personIds, entityIds, limit } = args;
+    if (personIds.length === 0 && entityIds.length === 0) return [];
+    if (limit <= 0) return [];
+
+    const params: unknown[] = [];
+    const pushParam = (v: unknown): string => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+    const pTenant = pushParam(tenantId);
+
+    const sourceUnions: string[] = [];
+    if (personIds.length > 0) {
+      const pPersons = pushParam([...personIds]);
+      sourceUnions.push(
+        `SELECT "rawEventId" FROM "SourceParticipant" ` +
+          `WHERE "tenantId" = ${pTenant} AND "personId" = ANY(${pPersons}::text[])`,
+      );
+    }
+    if (entityIds.length > 0) {
+      const pEntities = pushParam([...entityIds]);
+      sourceUnions.push(
+        `SELECT "rawEventId" FROM "SourceEntity" ` +
+          `WHERE "tenantId" = ${pTenant} AND "entityId" = ANY(${pEntities}::text[])`,
+      );
+    }
+    if (sourceUnions.length === 0) return [];
+
+    const pLimit = pushParam(limit);
+
+    interface EpisodeRow {
+      id: string;
+      title: string;
+      occurredAt: Date;
+      kind: string;
+      rawEventId: string;
+    }
+    let rows: EpisodeRow[];
+    try {
+      rows = await this.prisma.$queryRawUnsafe<EpisodeRow[]>(
+        `
+        SELECT ep.id AS "id",
+               ep.title AS "title",
+               ep."occurredAt" AS "occurredAt",
+               ep.kind AS "kind",
+               ep."rawEventId" AS "rawEventId"
+        FROM "SourceEpisode" ep
+        JOIN (
+          SELECT DISTINCT "rawEventId" FROM (
+            ${sourceUnions.join('\n            UNION\n            ')}
+          ) u
+        ) src ON src."rawEventId" = ep."rawEventId"
+        WHERE ep."tenantId" = ${pTenant}
+        ORDER BY ep."occurredAt" DESC
+        LIMIT ${pLimit}
+        `,
+        ...params,
+      );
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 retrieval: listEpisodesByActors упал — возвращаем []',
+      );
+      return [];
+    }
+    return rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      occurredAt: r.occurredAt,
+      kind: r.kind,
+      rawEventId: r.rawEventId,
+    }));
+  }
+
+  async selectTopThemes(args: {
+    tenantId: string;
+    query: string;
+    limit: number;
+    branches?: ReadonlyArray<string>;
+  }): Promise<Array<{ id: string; summary: string | null }>> {
+    const { tenantId, query, limit } = args;
+    if (limit <= 0) return [];
+
+    let rawVec: number[] | null;
+    try {
+      rawVec = await this.embeddings.embedQuery(query);
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 retrieval: selectTopThemes embedQuery упал — []',
+      );
+      return [];
+    }
+    if (!rawVec) return [];
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    if (buildVectorLiteral(rawVec, expectedDim).literal === null) return [];
+    const qvec = rawVec;
+
+    const branches =
+      args.branches && args.branches.length > 0 ? [...new Set(args.branches)] : null;
+
+    const params: unknown[] = [];
+    const pushParam = (v: unknown): string => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+    const pTenant = pushParam(tenantId);
+    const pVec = pushParam(toVectorLiteral(qvec));
+    const branchClause = branches
+      ? ` AND "branch" = ANY(${pushParam(branches)}::text[])`
+      : '';
+    const pLimit = pushParam(limit);
+
+    interface ThemeRow {
+      id: string;
+      summary: string | null;
+    }
+    let rows: ThemeRow[];
+    try {
+      rows = await this.prisma.$queryRawUnsafe<ThemeRow[]>(
+        `
+        SELECT id, summary
+        FROM "Theme"
+        WHERE "tenantId" = ${pTenant}
+          AND status = 'active'
+          AND embedding IS NOT NULL${branchClause}
+        ORDER BY embedding <=> ${pVec}::vector(1536)
+        LIMIT ${pLimit}
+        `,
+        ...params,
+      );
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 retrieval: selectTopThemes упал — []',
+      );
+      return [];
+    }
+    return rows.map((r) => ({ id: r.id, summary: r.summary ?? null }));
+  }
+
+  async poolByThemes(
+    tenantId: string,
+    themeIds: ReadonlyArray<string>,
+    limit: number,
+  ): Promise<string[]> {
+    if (themeIds.length === 0 || limit <= 0) return [];
+    const out: string[] = [];
+    for (const themeId of themeIds) {
+      const ids = await this.poolByTheme(tenantId, themeId);
+      for (const id of ids) out.push(id);
+    }
+    return uniqueIds(out).slice(0, limit);
+  }
+
+  /**
    * SBA α-5 dialog-layer — temporal-фильтр пула блоков.
    * Оставляет только блоки, у которых `createdAt <= validAt` (т.е.
    * существовавшие на момент Х). Возвращает отфильтрованный массив id'ов.
@@ -666,7 +932,7 @@ export class ChatV2RetrievalService {
   ): Promise<string[]> {
     // Проверим, что Entity принадлежит тенанту.
     const ent = await this.prisma.entity.findUnique({
-      where: { id: entityId },
+      where: { id_tenantId: { id: entityId, tenantId } },
       select: { id: true, tenantId: true },
     });
     if (!ent || ent.tenantId !== tenantId) return [];

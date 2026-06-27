@@ -245,12 +245,12 @@ export class RetentionService {
       });
       if (actualCount === 0) {
         await this.prisma.ideaBlock.update({
-          where: { id: block.id },
+          where: { id_tenantId: { id: block.id, tenantId } },
           data: { status: 'archived', evidenceCount: 0 },
         });
       } else if (actualCount !== undefined) {
         await this.prisma.ideaBlock.update({
-          where: { id: block.id },
+          where: { id_tenantId: { id: block.id, tenantId } },
           data: { evidenceCount: actualCount },
         });
       }
@@ -285,7 +285,9 @@ export class RetentionService {
 
         for (const block of candidates) {
           try {
-            await this.prisma.ideaBlock.delete({ where: { id: block.id } });
+            await this.prisma.ideaBlock.delete({
+              where: { id_tenantId: { id: block.id, tenantId: block.tenantId } },
+            });
             processed += 1;
             this.metrics.incCoreRetentionDeleted({ kind: 'block' });
             void this.audit.log({

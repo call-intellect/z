@@ -15,6 +15,7 @@ const CLARIFY_GOLDEN: SynthesisResult = {
   uncertaintyNote: null,
   dataClass: 'internal',
   needsClarification: true,
+  answerKind: 'prose',
 };
 
 const NORMAL_GOLDEN: SynthesisResult = {
@@ -25,6 +26,7 @@ const NORMAL_GOLDEN: SynthesisResult = {
   uncertaintyNote: null,
   dataClass: 'internal',
   needsClarification: false,
+  answerKind: 'prose',
 };
 
 interface Harness {

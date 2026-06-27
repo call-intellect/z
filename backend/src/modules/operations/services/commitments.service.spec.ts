@@ -172,7 +172,7 @@ describe('CommitmentsService', () => {
       body: { status: 'fulfilled', note: 'OK' },
     });
     expect(prisma.ideaBlock.update).toHaveBeenCalledWith({
-      where: { id: 'b1' },
+      where: { id_tenantId: { id: 'b1', tenantId: 't1' } },
       data: expect.objectContaining({
         commitmentStatus: 'fulfilled',
         trustedAnswer: expect.stringContaining('[fulfilled] OK'),

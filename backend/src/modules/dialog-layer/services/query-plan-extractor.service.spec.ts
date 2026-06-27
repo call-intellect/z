@@ -325,3 +325,132 @@ describe('QueryPlanExtractorService.understand — слитый модуль (Ф
     expect(res.queryPlan.filters.signalTypes).toEqual([]);
   });
 });
+
+describe('QueryPlanExtractorService — ось personIds + queryClass (Ф3)', () => {
+  function makeServiceWithResolver(args: {
+    callImpl: () => unknown;
+    resolvePersonByHint?: ReturnType<typeof vi.fn>;
+  }) {
+    const llm = { call: vi.fn(args.callImpl) } as unknown as LlmRouterService;
+    const prisma = {
+      person: { findFirst: vi.fn().mockResolvedValue({ id: 'self-person', entityId: null }) },
+      entity: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+    const resolvePersonByHint =
+      args.resolvePersonByHint ?? vi.fn().mockResolvedValue(null);
+    const entityResolution = { resolvePersonByHint } as unknown as never;
+    const service = new QueryPlanExtractorService(
+      llm,
+      prisma,
+      makeCfg(),
+      makeMetrics(),
+      entityResolution,
+    );
+    return { service, resolvePersonByHint };
+  }
+
+  it('understand отдаёт queryClass из детерминированного роутера (вопрос-список → list)', async () => {
+    const json = JSON.stringify({
+      queries: ['какие встречи с Ивановым были по логистике?'],
+      plan: {
+        periodExpr: 'none',
+        periodDays: null,
+        signalTypes: [],
+        themeBranches: [],
+        entityHints: ['Иванов'],
+        personHints: ['Иванов'],
+        queryClass: 'topic',
+        personScope: false,
+        aggregation: false,
+        needsAction: false,
+        activeNow: false,
+      },
+      confidence: 0.85,
+    });
+    const { service } = makeServiceWithResolver({
+      callImpl: () => Promise.resolve(llmResult(json)),
+    });
+
+    const res = await service.understand({
+      tenantId: 'org-1',
+      userId: 'user-1',
+      question: 'какие встречи с Ивановым',
+      summary: null,
+      history: [],
+      todayIso: TODAY,
+      orgTimezone: null,
+      conversationId: null,
+    });
+
+    expect(res.queryPlan.queryClass).toBe('list');
+  });
+
+  it('resolveStructuralFilters заполняет personIds через резолвер имён людей', async () => {
+    const resolvePersonByHint = vi.fn().mockResolvedValue('person-iv');
+    const { service } = makeServiceWithResolver({
+      callImpl: () => Promise.resolve(llmResult('{}')),
+      resolvePersonByHint,
+    });
+
+    const plan = {
+      filters: {
+        dateFrom: null,
+        dateTo: null,
+        signalTypes: [],
+        themeBranches: [],
+        entityHints: ['Иванов'],
+        personHints: ['Иванов'],
+        personScope: false,
+        aggregation: false,
+        needsAction: false,
+        activeNow: false,
+      },
+      queryClass: 'list' as const,
+      queryClassConfidence: 0.9,
+      confidence: 0.85,
+      applied: true,
+      durationSeconds: 0.01,
+    };
+
+    const filters = await service.resolveStructuralFilters({
+      tenantId: 'org-1',
+      userId: 'user-1',
+      plan,
+    });
+
+    expect(filters).not.toBeNull();
+    expect(filters?.personIds).toContain('person-iv');
+    expect(resolvePersonByHint).toHaveBeenCalled();
+  });
+
+  it('без EntityResolutionService → personIds пуст (fail-open), не падает', async () => {
+    const { service } = makeService(() => Promise.resolve(llmResult('{}')));
+    const plan = {
+      filters: {
+        dateFrom: null,
+        dateTo: null,
+        signalTypes: ['decision'],
+        themeBranches: [],
+        entityHints: [],
+        personHints: ['Иванов'],
+        personScope: false,
+        aggregation: false,
+        needsAction: false,
+        activeNow: false,
+      },
+      queryClass: 'list' as const,
+      queryClassConfidence: 0.9,
+      confidence: 0.85,
+      applied: true,
+      durationSeconds: 0.01,
+    };
+
+    const filters = await service.resolveStructuralFilters({
+      tenantId: 'org-1',
+      userId: 'user-1',
+      plan,
+    });
+
+    expect(filters?.personIds).toEqual([]);
+  });
+});

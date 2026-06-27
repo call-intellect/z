@@ -22,11 +22,14 @@ function emptyPlan(applied: boolean): QueryPlanResult {
       signalTypes: [],
       themeBranches: [],
       entityHints: [],
+      personHints: [],
       personScope: false,
       aggregation: false,
       needsAction: false,
       activeNow: false,
     },
+    queryClass: 'topic',
+    queryClassConfidence: 0.4,
     confidence: applied ? 0.9 : 0.2,
     applied,
     durationSeconds: 0.01,
@@ -39,6 +42,7 @@ interface Mocks {
   extract: ReturnType<typeof vi.fn>;
   understand: ReturnType<typeof vi.fn>;
   resolveStructuralFilters: ReturnType<typeof vi.fn>;
+  resolveStructuralFiltersWithClarify: ReturnType<typeof vi.fn>;
   answerCacheGet: ReturnType<typeof vi.fn>;
   getDynamic: ReturnType<typeof vi.fn>;
   chatMessageFindMany: ReturnType<typeof vi.fn>;
@@ -107,10 +111,14 @@ function makeService(opts: {
     queryPlan: opts.understandPlan ?? emptyPlan(false),
   });
   const resolveStructuralFilters = vi.fn().mockResolvedValue(null);
+  const resolveStructuralFiltersWithClarify = vi
+    .fn()
+    .mockResolvedValue({ filters: null, clarification: null });
   const queryPlanExtractor = {
     extract,
     understand,
     resolveStructuralFilters,
+    resolveStructuralFiltersWithClarify,
   } as unknown as QueryPlanExtractorService;
 
   const answerCacheGet = vi.fn().mockResolvedValue(null);
@@ -121,6 +129,7 @@ function makeService(opts: {
   const metrics = {
     observeDialogProcessingDuration: vi.fn(),
     incQueryPlanExtraction: vi.fn(),
+    incRouterQueryClass: vi.fn(),
   } as unknown as BusinessMetricsService;
 
   const service = new DialogService(
@@ -141,6 +150,7 @@ function makeService(opts: {
       extract,
       understand,
       resolveStructuralFilters,
+      resolveStructuralFiltersWithClarify,
       answerCacheGet,
       getDynamic,
       chatMessageFindMany,
@@ -268,6 +278,7 @@ describe('DialogService — слитый модуль понимания зап�
       dateTo: null,
       signalTypes: ['decision'],
       entityIds: [],
+      personIds: [],
       themeBranches: [],
       bitemporalActiveOnly: false,
     };
@@ -312,10 +323,14 @@ describe('DialogService — рубильник rag.understanding_merged (Ф4b)',
       dateTo: null,
       signalTypes: ['decision'],
       entityIds: [],
+      personIds: [],
       themeBranches: [],
       bitemporalActiveOnly: false,
     };
-    mocks.resolveStructuralFilters.mockResolvedValue(filters);
+    mocks.resolveStructuralFiltersWithClarify.mockResolvedValue({
+      filters,
+      clarification: null,
+    });
 
     const res = await service.process(processInput());
 
@@ -332,7 +347,7 @@ describe('DialogService — рубильник rag.understanding_merged (Ф4b)',
     ]);
     expect(res.queryPlan).toBe(plan);
     expect(res.structuralFilters).toEqual(filters);
-    expect(mocks.resolveStructuralFilters).toHaveBeenCalledWith(
+    expect(mocks.resolveStructuralFiltersWithClarify).toHaveBeenCalledWith(
       expect.objectContaining({ plan }),
     );
   });

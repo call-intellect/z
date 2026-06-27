@@ -298,6 +298,7 @@ export class ThemeClustererCron {
 
       await tx.themeIdeaBlock.createMany({
         data: attachedBlockIds.map((blockId) => ({
+          tenantId,
           themeId: created.id,
           blockId,
           weight: new Prisma.Decimal('1.000'),
@@ -307,6 +308,7 @@ export class ThemeClustererCron {
       if (topEntities.length > 0) {
         await tx.themeEntity.createMany({
           data: topEntities.map((e) => ({
+            tenantId,
             themeId: created.id,
             entityId: e.id,
             mentionsCount: entityMentionsByEntity.get(e.id) ?? 0,
@@ -368,10 +370,11 @@ export class ThemeClustererCron {
         try {
           await this.prisma.ideaBlockLink.upsert({
             where: {
-              fromBlockId_toBlockId_relationType: {
+              fromBlockId_toBlockId_relationType_tenantId: {
                 fromBlockId,
                 toBlockId,
                 relationType: 'shares_topic',
+                tenantId,
               },
             },
             create: {

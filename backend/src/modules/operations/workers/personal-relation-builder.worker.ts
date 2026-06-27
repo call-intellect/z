@@ -41,11 +41,11 @@ export class PersonalRelationBuilderWorker {
 
     try {
       const block = await this.prisma.ideaBlock.findUnique({
-        where: { id: blockId },
+        where: { id_tenantId: { id: blockId, tenantId } },
         include: {
           entities: {
             include: {
-              entity: { select: { id: true, type: true, name: true } },
+              entity: { select: { id: true, type: true, canonicalName: true } },
             },
           },
         },

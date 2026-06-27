@@ -97,7 +97,7 @@ export class ReasoningChainService {
     const depthLimit = Math.max(0, Math.min(3, maxDepth));
 
     // Seed.
-    const seed = await this.prisma.ideaBlock.findUnique({
+    const seed = await this.prisma.ideaBlock.findFirst({
       where: { id: blockId },
       select: {
         id: true,

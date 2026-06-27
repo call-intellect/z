@@ -29,7 +29,7 @@ export class Specialist314GoalsWorker {
 
     try {
       const block = await this.prisma.ideaBlock.findUnique({
-        where: { id: blockId },
+        where: { id_tenantId: { id: blockId, tenantId } },
         select: { id: true, tenantId: true, status: true, signalType: true },
       });
       if (!block) {

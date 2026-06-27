@@ -116,6 +116,29 @@ operations, team, finance, technology, production, partnerships, legal.
 («сейчас», «актуальные», «действующие», «текущие»), иначе false.
 
 ──────────────────────────────────────────────────────────────────
+ОСЬ 9 — personHints (имена людей и групп людей)
+Массив имён КОНКРЕТНЫХ ЛЮДЕЙ или групп людей, о ком вопрос («встречи с
+Ивановым», «что решал Александр», «команда продаж»), КАК НАПИСАНО. Это
+подмножество имён собственных, относящееся к ЛЮДЯМ, а не к компаниям/
+проектам. Если людей в запросе нет — [].
+
+──────────────────────────────────────────────────────────────────
+ОСЬ 10 — queryClass (класс вопроса, один токен)
+Определи, к какому из пяти классов относится запрос:
+  • list — список/перечень источников по человеку или группе: «какие
+    встречи с Ивановым», «все встречи где обсуждали бюджет», «с кем
+    встречались на той неделе», «документы про логистику».
+  • temporal — итог за период: «итоги за месяц», «как прошла неделя»,
+    «результаты за квартал», «что было за прошлую неделю».
+  • overview — широкий обзор направления: «что у нас по продажам»,
+    «обзор по маркетингу», «как дела с продуктом».
+  • fact — конкретный единичный факт: «что решили по бюджету», «когда
+    встреча», «сколько стоит», «какой статус задачи».
+  • topic — всё остальное, смысловой запрос по теме: «обсуждали
+    реструктуризацию», «что говорили про найм».
+Если сомневаешься — topic.
+
+──────────────────────────────────────────────────────────────────
 confidence — уверенность в собранном плане, 0..1.
   • 0.9-1.0 — оси явные. • 0.6-0.89 — уверен, одна ось под вопросом.
   • <0.6 — почти угадываешь (система проигнорирует слабый план).
@@ -147,9 +170,9 @@ confidence — уверенность в собранном плане, 0..1.
   "Какие условия оплаты и из чего складывается цена системы Маяк для логистики?",
   "Обсуждали ли скидки или особые условия по стоимости продукта Маяк?"
  ],
- "plan":{"periodExpr":"none","periodDays":null,"signalTypes":[],"themeBranches":[],"entityHints":["Маяк"],"personScope":false,"aggregation":true,"needsAction":false,"activeNow":false},
+ "plan":{"periodExpr":"none","periodDays":null,"signalTypes":[],"themeBranches":[],"entityHints":["Маяк"],"personHints":[],"queryClass":"fact","personScope":false,"aggregation":true,"needsAction":false,"activeNow":false},
  "confidence":0.7}
-(«сколько» → aggregation; «Маяк» → entityHint; периода/типа/темы в запросе нет)
+(«сколько» → aggregation; «Маяк» → entityHint; единичный факт → queryClass=fact; периода/типа/темы/людей в запросе нет)
 
 [Пример 2 — аналитический follow-up по продажам за период]
 Краткое содержание: Обсуждали квартал отдела продаж.
@@ -162,9 +185,9 @@ confidence — уверенность в собранном плане, 0..1.
   "Какие меры по слабым продажам обсуждали на встречах на этой неделе?",
   "Какие решения по выручке отдела продаж приняты на этой неделе?"
  ],
- "plan":{"periodExpr":"this_week","periodDays":null,"signalTypes":["decision"],"themeBranches":["sales"],"entityHints":[],"personScope":false,"aggregation":false,"needsAction":false,"activeNow":false},
+ "plan":{"periodExpr":"this_week","periodDays":null,"signalTypes":["decision"],"themeBranches":["sales"],"entityHints":[],"personHints":[],"queryClass":"fact","personScope":false,"aggregation":false,"needsAction":false,"activeNow":false},
  "confidence":0.85}
-(«на этой неделе» → this_week; «решили» → decision; «отдел продаж» → sales)
+(«на этой неделе» → this_week; «решили» → decision; «отдел продаж» → sales; конкретное решение → queryClass=fact)
 
 [Пример 3 — реплика уже полная, истории нет: не выдумывай]
 Краткое содержание: (нет)
@@ -175,12 +198,25 @@ confidence — уверенность в собранном плане, 0..1.
   "Что может сорвать сроки или бюджет внедрения 1С?",
   "Кто отвечает за риски проекта 1С и какие меры уже приняли?"
  ],
- "plan":{"periodExpr":"none","periodDays":null,"signalTypes":["risk"],"themeBranches":[],"entityHints":["1С"],"personScope":false,"aggregation":false,"needsAction":false,"activeNow":false},
+ "plan":{"periodExpr":"none","periodDays":null,"signalTypes":["risk"],"themeBranches":[],"entityHints":["1С"],"personHints":[],"queryClass":"topic","personScope":false,"aggregation":false,"needsAction":false,"activeNow":false},
  "confidence":0.8}
+
+[Пример 4 — список встреч по человеку]
+Краткое содержание: (нет)
+Последние сообщения: (диалог только начался)
+Реплика: какие встречи были с Ивановым по логистике?
+{"queries":[
+  "Какие встречи проходили с Ивановым по логистике?",
+  "Когда и о чём договаривались с Ивановым по теме логистики?",
+  "Список встреч с участием Иванова, где обсуждалась логистика?"
+ ],
+ "plan":{"periodExpr":"none","periodDays":null,"signalTypes":[],"themeBranches":["operations"],"entityHints":["Иванов"],"personHints":["Иванов"],"queryClass":"list","personScope":false,"aggregation":false,"needsAction":false,"activeNow":false},
+ "confidence":0.85}
+(«какие встречи с» → queryClass=list; «Иванов» → человек → personHints; «логистика» → operations)
 
 ФОРМАТ ОТВЕТА.
 Верни строго JSON, без markdown, без пояснений. Все поля обязательны:
-{"queries":["…","…","…"],"plan":{"periodExpr":"<токен>","periodDays":<число|null>,"signalTypes":[...],"themeBranches":[...],"entityHints":[...],"personScope":<bool>,"aggregation":<bool>,"needsAction":<bool>,"activeNow":<bool>},"confidence":<0..1>}`;
+{"queries":["…","…","…"],"plan":{"periodExpr":"<токен>","periodDays":<число|null>,"signalTypes":[...],"themeBranches":[...],"entityHints":[...],"personHints":[...],"queryClass":"<list|topic|temporal|overview|fact>","personScope":<bool>,"aggregation":<bool>,"needsAction":<bool>,"activeNow":<bool>},"confidence":<0..1>}`;
 
 export const DIALOG_UNDERSTAND_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
@@ -202,6 +238,8 @@ export const DIALOG_UNDERSTAND_JSON_SCHEMA: Record<string, unknown> = {
         'signalTypes',
         'themeBranches',
         'entityHints',
+        'personHints',
+        'queryClass',
         'personScope',
         'aggregation',
         'needsAction',
@@ -231,6 +269,11 @@ export const DIALOG_UNDERSTAND_JSON_SCHEMA: Record<string, unknown> = {
           items: { type: 'string', enum: [...THEME_BRANCH_ENUM] },
         },
         entityHints: { type: 'array', items: { type: 'string' } },
+        personHints: { type: 'array', items: { type: 'string' } },
+        queryClass: {
+          type: 'string',
+          enum: ['list', 'topic', 'temporal', 'overview', 'fact'],
+        },
         personScope: { type: 'boolean' },
         aggregation: { type: 'boolean' },
         needsAction: { type: 'boolean' },

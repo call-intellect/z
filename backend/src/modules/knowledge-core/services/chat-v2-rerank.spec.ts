@@ -69,7 +69,9 @@ function makeService(over: Partial<Deps> = {}): {
   const fetchCandidates = over.fetchCandidates ?? vi.fn();
   const retrieval = { fetchCandidates } as unknown as ChatV2RetrievalService;
 
-  const metrics = {} as unknown as BusinessMetricsService;
+  const metrics = {
+    incRouterBothWays: vi.fn(),
+  } as unknown as BusinessMetricsService;
   const accessResolver = {} as unknown as KnowledgeAccessResolver;
   const provenance = {} as unknown as ProvenanceService;
 
@@ -355,5 +357,116 @@ describe('ChatV2Service — условный LLM-реранк', () => {
     const out = await callRerank(svc, bigPool);
 
     expect(out).toEqual(bigPool);
+  });
+});
+
+describe('ChatV2Service — both-ways роутер по классу запроса (Ф3)', () => {
+  it('уверенный fact → только семантика, структурный маршрут НЕ подмешан (both-ways off)', async () => {
+    const fetchCandidates = vi.fn().mockResolvedValueOnce(ranked(['a', 'b', 'c']));
+    const { svc } = makeService({ fetchCandidates, minPool: 100 });
+
+    const out = await callRunRetrieval(svc, {
+      query: 'что решили по бюджету',
+      queries: ['что решили по бюджету'],
+      queryClass: 'fact',
+      queryClassConfidence: 0.9,
+    });
+
+    expect(fetchCandidates).toHaveBeenCalledTimes(1);
+    expect(out).toEqual(['a', 'b', 'c']);
+  });
+
+  it('низкая уверенность (<0.6) → both-ways: структурный(stub=[]) + семантика, результат не пуст', async () => {
+    const fetchCandidates = vi.fn().mockResolvedValueOnce(ranked(['a', 'b']));
+    const { svc } = makeService({ fetchCandidates, minPool: 100 });
+
+    const out = await callRunRetrieval(svc, {
+      query: 'непонятный вопрос',
+      queries: ['непонятный вопрос'],
+      queryClass: 'topic',
+      queryClassConfidence: 0.4,
+    });
+
+    expect(out).toContain('a');
+    expect(out).toContain('b');
+    expect(out.length).toBeGreaterThan(0);
+  });
+
+  it('class=list → both-ways включён; семантика идёт ОДНИМ standalone-запросом (нет фан-аута по блокам)', async () => {
+    const fetchCandidates = vi.fn().mockResolvedValueOnce(ranked(['a', 'b']));
+    const { svc } = makeService({ fetchCandidates, minPool: 100 });
+
+    const out = await callRunRetrieval(svc, {
+      query: 'какие встречи с Ивановым',
+      queries: ['какие встречи с Ивановым', 'перефраз 1', 'перефраз 2'],
+      queryClass: 'list',
+      queryClassConfidence: 0.9,
+    });
+
+    expect(fetchCandidates).toHaveBeenCalledTimes(1);
+    const calledQuery = fetchCandidates.mock.calls[0]?.[0]?.query as string;
+    expect(calledQuery).toBe('какие встречи с Ивановым');
+    expect(out.length).toBeGreaterThan(0);
+  });
+
+  it('class=temporal → семантика одним запросом (фан-аут по блокам не запускается)', async () => {
+    const fetchCandidates = vi.fn().mockResolvedValueOnce(ranked(['a']));
+    const { svc } = makeService({ fetchCandidates, minPool: 100 });
+
+    await callRunRetrieval(svc, {
+      query: 'итоги за месяц',
+      queries: ['итоги за месяц', 'перефраз', 'ещё'],
+      queryClass: 'temporal',
+      queryClassConfidence: 0.9,
+    });
+
+    expect(fetchCandidates).toHaveBeenCalledTimes(1);
+  });
+
+  it('class=topic с переформулировками → семантический фан-аут по блокам (N запросов + RRF)', async () => {
+    const fetchCandidates = vi
+      .fn()
+      .mockResolvedValueOnce(ranked(['a', 'b']))
+      .mockResolvedValueOnce(ranked(['b', 'c']));
+    const { svc } = makeService({ fetchCandidates, minPool: 100 });
+
+    const out = await callRunRetrieval(svc, {
+      query: 'обсуждали реструктуризацию',
+      queries: ['обсуждали реструктуризацию', 'перефраз про реструктуризацию'],
+      queryClass: 'topic',
+      queryClassConfidence: 0.9,
+    });
+
+    expect(fetchCandidates).toHaveBeenCalledTimes(2);
+    expect(out).toContain('a');
+    expect(out).toContain('c');
+  });
+
+  it('router_v2_enabled=false → single-route как раньше (фан-аут по классу не гейтится)', async () => {
+    const fetchCandidates = vi
+      .fn()
+      .mockResolvedValueOnce(ranked(['a']))
+      .mockResolvedValueOnce(ranked(['b']))
+      .mockResolvedValueOnce(ranked(['c']));
+    const { svc } = makeService({ fetchCandidates, minPool: 100 });
+    const internalCfg = (svc as unknown as { cfg: { getDynamic: ReturnType<typeof vi.fn> } }).cfg;
+    internalCfg.getDynamic.mockImplementation(
+      async (key: string, _env: unknown, def: unknown) => {
+        if (key === 'knowledge.router_v2_enabled') return false;
+        if (key === 'rag.rrf_k') return 60;
+        if (key === 'rag.rerank_min_pool') return 100;
+        return def;
+      },
+    );
+
+    const out = await callRunRetrieval(svc, {
+      query: 'какие встречи с Ивановым',
+      queries: ['какие встречи с Ивановым', 'перефраз 1', 'перефраз 2'],
+      queryClass: 'list',
+      queryClassConfidence: 0.9,
+    });
+
+    expect(fetchCandidates).toHaveBeenCalledTimes(3);
+    expect(out.length).toBeGreaterThan(0);
   });
 });

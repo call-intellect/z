@@ -121,7 +121,7 @@ describe('SupportContourService', () => {
       expect(createArg.data.signalType).toBe('expertise');
       expect(createArg.data.tenantId).toBe(VENDOR);
       expect(prismaStub.ideaBlockAccess.create).toHaveBeenCalledWith({
-        data: { blockId: 'blk-1', groupId: GROUP, via: 'closed' },
+        data: { blockId: 'blk-1', groupId: GROUP, tenantId: VENDOR, via: 'closed' },
       });
     });
 

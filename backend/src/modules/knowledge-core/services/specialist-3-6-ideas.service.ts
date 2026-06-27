@@ -114,7 +114,7 @@ export class Specialist36Service {
     blockId: string;
   }): Promise<void> {
     const block = await this.prisma.ideaBlock.findUnique({
-      where: { id: args.blockId },
+      where: { id_tenantId: { id: args.blockId, tenantId: args.tenantId } },
       include: { evidence: true },
     });
     if (!block) return;
@@ -619,7 +619,7 @@ export class Specialist36Service {
     const blockId = idea.sourceBlockIds[0];
     if (!blockId) return 'no_block';
     const block = await this.prisma.ideaBlock.findUnique({
-      where: { id: blockId },
+      where: { id_tenantId: { id: blockId, tenantId: args.tenantId } },
       include: { evidence: true },
     });
     if (!block) return 'no_block';

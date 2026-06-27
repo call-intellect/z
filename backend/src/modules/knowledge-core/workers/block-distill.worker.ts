@@ -102,7 +102,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
 
   private async process(job: Job<BlockDistillJobData>): Promise<void> {
     const { blockId } = job.data;
-    const block = await this.prisma.ideaBlock.findUnique({
+    const block = await this.prisma.ideaBlock.findFirst({
       where: { id: blockId },
       include: { evidence: true, entities: true },
     });
@@ -167,7 +167,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
 
   private async markCanonical(block: IdeaBlock): Promise<void> {
     await this.prisma.ideaBlock.update({
-      where: { id: block.id },
+      where: { id_tenantId: { id: block.id, tenantId: block.tenantId } },
       data: { status: 'canonical' },
     });
     await this.coreQueue.enqueueBlockLinker(block.id).catch((err) => {
@@ -274,7 +274,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
 
     await this.prisma.$transaction(async (tx) => {
       const canonical = await tx.ideaBlock.findUnique({
-        where: { id: canonicalId },
+        where: { id_tenantId: { id: canonicalId, tenantId: block.tenantId } },
       });
       if (!canonical) {
         throw new Error(`block-distill: canonical ${canonicalId} не найден — abort merge`);
@@ -287,7 +287,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       }
 
       await tx.ideaBlock.update({
-        where: { id: block.id },
+        where: { id_tenantId: { id: block.id, tenantId: block.tenantId } },
         data: {
           status: 'merged_into',
           mergedIntoId: canonicalId,
@@ -299,29 +299,39 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         data: { blockId: canonicalId },
       });
 
-      // 3. Переносим entity-mention'ы. Composite PK (blockId, entityId) может
-      //    конфликтовать, если canonical уже линкован к той же entity —
-      //    делаем по одному с pre-check целевой пары, иначе update
-      //    (Б1: без catch P2002 в tx).
       const mentions = await tx.ideaBlockEntity.findMany({
         where: { blockId: block.id },
       });
       for (const m of mentions) {
-        // Б1: pre-check вместо catch(P2002) внутри tx — иначе ошибка SQL
-        // абортит всю транзакцию (PostgreSQL 25P02), и шаг 4 (обновление
-        // canonical) не выполнится. Проверяем целевую пару (canonicalId, entityId).
         const conflicting = await tx.ideaBlockEntity.findUnique({
-          where: { blockId_entityId: { blockId: canonicalId, entityId: m.entityId } },
+          where: {
+            blockId_entityId_tenantId: {
+              blockId: canonicalId,
+              entityId: m.entityId,
+              tenantId: block.tenantId,
+            },
+          },
         });
         if (conflicting) {
-          // Дубль — удаляем mention со старого блока, оставляем canonical-вариант.
           await tx.ideaBlockEntity.delete({
-            where: { blockId_entityId: { blockId: block.id, entityId: m.entityId } },
+            where: {
+              blockId_entityId_tenantId: {
+                blockId: block.id,
+                entityId: m.entityId,
+                tenantId: block.tenantId,
+              },
+            },
           });
           continue;
         }
         await tx.ideaBlockEntity.update({
-          where: { blockId_entityId: { blockId: block.id, entityId: m.entityId } },
+          where: {
+            blockId_entityId_tenantId: {
+              blockId: block.id,
+              entityId: m.entityId,
+              tenantId: block.tenantId,
+            },
+          },
           data: { blockId: canonicalId },
         });
       }
@@ -346,7 +356,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       ]);
 
       await tx.ideaBlock.update({
-        where: { id: canonicalId },
+        where: { id_tenantId: { id: canonicalId, tenantId: block.tenantId } },
         data: {
           evidenceCount: newEvidenceCount,
           confidence: new Prisma.Decimal(avgConf.toFixed(3)),
@@ -416,7 +426,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
 
     await this.prisma.$transaction(async (tx) => {
       const reportCanonical = await tx.ideaBlock.findUnique({
-        where: { id: reportCanonicalId },
+        where: { id_tenantId: { id: reportCanonicalId, tenantId: transcriptBlock.tenantId } },
       });
       if (!reportCanonical) {
         throw new Error(
@@ -432,7 +442,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       canonicalSignalType = transcriptBlock.signalType;
 
       await tx.ideaBlock.update({
-        where: { id: reportCanonicalId },
+        where: { id_tenantId: { id: reportCanonicalId, tenantId: transcriptBlock.tenantId } },
         data: {
           status: 'merged_into',
           mergedIntoId: transcriptBlock.id,
@@ -448,23 +458,22 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         where: { blockId: reportCanonicalId },
       });
       for (const m of mentions) {
-        // Б1: pre-check вместо catch(P2002) внутри tx — иначе ошибка SQL
-        // абортит всю транзакцию (PostgreSQL 25P02), и шаг 5 (canonical-носитель)
-        // не выполнится. Проверяем целевую пару (transcriptBlock.id, entityId).
         const conflicting = await tx.ideaBlockEntity.findUnique({
           where: {
-            blockId_entityId: {
+            blockId_entityId_tenantId: {
               blockId: transcriptBlock.id,
               entityId: m.entityId,
+              tenantId: transcriptBlock.tenantId,
             },
           },
         });
         if (conflicting) {
           await tx.ideaBlockEntity.delete({
             where: {
-              blockId_entityId: {
+              blockId_entityId_tenantId: {
                 blockId: reportCanonicalId,
                 entityId: m.entityId,
+                tenantId: transcriptBlock.tenantId,
               },
             },
           });
@@ -472,9 +481,10 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         }
         await tx.ideaBlockEntity.update({
           where: {
-            blockId_entityId: {
+            blockId_entityId_tenantId: {
               blockId: reportCanonicalId,
               entityId: m.entityId,
+              tenantId: transcriptBlock.tenantId,
             },
           },
           data: { blockId: transcriptBlock.id },
@@ -500,7 +510,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       ]);
 
       await tx.ideaBlock.update({
-        where: { id: transcriptBlock.id },
+        where: { id_tenantId: { id: transcriptBlock.id, tenantId: transcriptBlock.tenantId } },
         data: {
           status: 'canonical',
           mergedIntoId: null,

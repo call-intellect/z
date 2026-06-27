@@ -71,6 +71,64 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-27 — Слой источника + маршрутизатор поиска по классу запроса (ветка feature/sloy-istochnika-marshrutizator)
+
+> ТЗ `plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md` (Ф1–Ф10). Многомаршрутный retrieval: роутер 5 классов запроса (`QueryClass`) + confidence-gated both-ways + слой источника как первоклассный объект (`SourceEpisode`/`SourceParticipant`/`SourceEntity`) + партиционирование векторных индексов по тенанту + синтез ответа по классу (`answerKind`). Коммиты `df33ea2a` (Ф1) … `e588df15` (Ф9).
+>
+> **🔴 3 МИГРАЦИИ PRISMA (авто через `migrate deploy`): `20260627120000` — ОПАСНАЯ (HASH-партиционирование `IdeaBlock`/`Entity` по `tenantId`, составной PK + FK-рефактор), `20260627130000` (слой источника, аддитивная), `20260627140000` (`IdeaBlock.contextHeaderVersion`, аддитивная). 🟢 НОВЫХ ENV НЕТ** (8 крутилок — чистые AdminSetting). 1 новый kill-switch `knowledge.router_v2_enabled` (ON). HNSW/триграммы в `postgres-init.sql`. 2 новых backfill (в STEPS). Docker rebuild backend.
+>
+> **⚠️ Партиц-миграция `20260627120000` писалась БЕЗ локальной БД (в среде разработки БД не было) — прогнать на staging/пустом проде ДО выката и проверить swap.** Прод почти пуст → swap дёшев; на масштабе конверсия = простой (решение владельца Р8).
+
+- **Шаг 1 — ENV: новых нет.** 8 крутилок — чистые AdminSetting (см. Шаг 7). 1 новый kill-switch `knowledge.router_v2_enabled` (тип A, ВКЛ — действий владельца не требует; выкл → откат на текущий single-route retrieval). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`):
+  - `20260627120000_partition_idea_block_entity_by_tenant` — **ОПАСНАЯ**: HASH-партиционирование `IdeaBlock`/`Entity` по `tenantId` (64 партиции), PK → составной `@@id([id, tenantId])`, все входящие FK (10 на IdeaBlock, 15 на Entity) → составные `(blockId/entityId, tenantId)` (Cascade переиспользуют tenantId; SetNull/self → nullable-компаньоны `mergedIntoTenantId`/`supersededByTenantId`/`entityTenantId`/`sourceIdeaBlockTenantId`), join-таблицы + 1:1-unique получили `tenantId`. **Swap на пустом/почти-пустом проде.** Прогнать на staging до выката (писалась без локальной БД).
+  - `20260627130000_source_layer` — аддитивная: `CREATE TABLE SourceEpisode` (партиц. по tenantId, embedding) / `SourceParticipant` / `SourceEntity` + обратные связи в `RawEvent`/`Org`/`Person`/`Entity`. Без потери данных.
+  - `20260627140000_idea_block_context_header_version` — аддитивная: `IdeaBlock.contextHeaderVersion` (nullable, гейт идемпотентности ре-эмбеддинга Ф7).
+  - Соответствует `data-model.md` §«Слой источника» + §«Партиционирование IdeaBlock/Entity по tenantId».
+- **Шаг 5 — postgres-init (HNSW + триграммы, авто на `apply-postgres-init`):** новые HNSW `Theme_embedding_hnsw_cosine_idx` + `SourceEpisode_embedding_hnsw_cosine_idx` (`m=16, ef_construction=128`); HNSW-параметры `m=16, ef_construction=128` на `IdeaBlock`/`Entity` (было дефолтное 64); триграммные GIN `Entity.canonicalName` (`gin_trgm_ops`) + `persons.name` (`gin_trgm_ops`) для нечёткого резолвинга К1. Все идемпотентны (`IF NOT EXISTS`); внутри `runSchemaPhase` едет последним шагом. Прогон: внутри `apply-prod-deploy --with-schema` или вручную `docker compose exec backend bun run apply-postgres-init`.
+- **Шаг 7 — Seed крутилок (идемпотентные, УЖЕ в STEPS `phase:'seed-base'`, новых сидов НЕТ — расширены существующие):** 8 крутилок едут существующими сидами (уважают admin-override):
+  - `seed-admin-setting-knowledge-graph.ts` — `knowledge.hnsw_ef_search` (100), `knowledge.router_v2_enabled` (kill-switch ON), `knowledge.router_confidence_threshold` (0.6), `knowledge.person_resolve_trgm_threshold` (0.3), `knowledge.person_resolve_ambiguity_delta` (0.1), `knowledge.overview_top_themes` (5), `knowledge.list_episodes_limit` (30).
+  - `seed-admin-setting-documents.ts` — `knowledge.document_summary_input_chars` (12000, Ф8).
+  - `seed-admin-setting-smart-search.ts` — расширен `rag.rerank_pool_size` (30, Ф9 — хардкод размера пула → крутилка).
+  - Доезжают агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 8 — Backfill (2 новых, УЖЕ в STEPS `phase:'backfill'`, `skipBootstrap`):** оба идемпотентны, **порядок важен** (source-layer ПЕРВЫМ):
+  - `backfill-source-layer.ts` — создаёт `SourceEpisode`/`SourceParticipant`/`SourceEntity` для существующих `RawEvent` (Ф2). Прогон: `docker compose exec backend bun run scripts/backfill-source-layer.ts`. Повтор = no-op.
+  - `backfill-context-header-reembed.ts` — ре-эмбеддинг существующих `IdeaBlock` с contextual-header v2 (компании/состав/заголовок источника) + REINDEX HNSW-партиций (Ф7). Идемпотентно по `IdeaBlock.contextHeaderVersion`. Прогон ПОСЛЕ source-layer: `docker compose exec backend bun run scripts/backfill-context-header-reembed.ts`.
+  - Оба прогоняются агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. **Прод-выкат с опасной миграцией:** через `docker compose exec backend bun run scripts/apply-prod-deploy.ts --with-schema --mode all` (авто-бэкап → `prisma migrate deploy` → `apply-postgres-init` → seed → backfill). Backend (knowledge-core: роутер 5 классов `classifyQueryClass` + both-ways в `runRetrieval`; маршруты К1 `resolvePersonCandidates`/`runStructuralAggregate`, К3 `runTemporalBranch`+фикс tz `period-resolver`, К4 `selectTopThemes`/`runOverviewBranch`; `persistSourceLayer` в `block-ingest.worker`; contextual-header v2 `buildMetaLine`; `DocumentSummaryService` + taskType `document-summarize`; синтез по классу `answerKind`+`episodes[]`; `conditionalRerank` на both-ways-merged).
+- **Шаг 12 — Smoke** (после выката):
+  - Миграция/партиции: `\d+ "IdeaBlock"` показывает `Partition key: HASH ("tenantId")` и ≥1 партицию; `\d "SourceEpisode"` существует (FK на `RawEvent`); `\d "IdeaBlock"` содержит `contextHeaderVersion`.
+  - HNSW/триграммы: в `postgres-init`-выводе присутствуют `Theme_embedding_hnsw_cosine_idx` + `SourceEpisode_embedding_hnsw_cosine_idx`; `\d "Entity"`/`\d "persons"` содержат `gin_trgm`-индексы на `canonicalName`/`name`.
+  - Метрики: `curl -s localhost:3000/metrics | grep -E 'router_query_class|router_both_ways'` → счётчики присутствуют.
+  - Крутилки видны в админке AdminSetting: `knowledge.router_v2_enabled` (ON), `knowledge.hnsw_ef_search` (100), `knowledge.router_confidence_threshold` (0.6), `knowledge.person_resolve_trgm_threshold` (0.3), `knowledge.person_resolve_ambiguity_delta` (0.1), `knowledge.overview_top_themes` (5), `knowledge.list_episodes_limit` (30), `knowledge.document_summary_input_chars` (12000), `rag.rerank_pool_size` (30).
+  - Поведение: «какие встречи с <Имя>» → `answerKind='list'`, перечисление эпизодов; «итоги за месяц» → `answerKind='recap'`; «что у нас по <тема>» → `answerKind='overview'`; обычный вопрос → `answerKind='prose'` (К2/К5 без регресса).
+  - Backfill (после прогона): новые `SourceEpisode`/`SourceParticipant`/`SourceEntity` для исторических `RawEvent`; повтор обоих backfill → no-op.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-27 — Диалоговое уточнение probe (probe-clarify-dialog, ветка feature/probe-clarify-dialog)
+
+> ТЗ `plans/tz/2026-06-27-probe-clarify-dialog-tz.md` (Ф1–Ф6) + анализ `plans/analysis/2026-06-27-probe-clarify-dialog-reliability.md`. Одноразовый probe-ответ → надёжная диалоговая петля: LLM решает ЧТО имел в виду человек, код решает КАК записать (детерминированный идемпотентный apply-слой), человек подтверждает echo-back перед записью. Коммиты `12581516` (Ф1) … `68b1cab2` (Ф6).
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (CREATE TYPE/TABLE + ALTER TYPE ADD VALUE ×4, авто через `migrate deploy`, без потери данных). 🟢 НОВЫХ ENV НЕТ** (4 крутилки — чистые AdminSetting). Новые eventType `probe.clarify`/`probe.confirm` + новый cron `ProbeDialogTtlCron` + 3 новые метрики. Docker rebuild backend. Ship-On: `probe.dialogEnabled` ON.
+
+- **Шаг 1 — ENV: новых нет.** Все 4 параметра — чистые AdminSetting-крутилки (см. Шаг 7), без `.env`. 1 новый kill-switch `probe.dialogEnabled` (тип A, ВКЛ — действий владельца не требует; выкл → откат к one-shot без диалога). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260627000000_probe_dialog_state` — `CREATE TYPE "ProbeDialogPhase"` (`awaiting_answer`/`awaiting_clarification`/`awaiting_confirmation`/`resolved`) + `ALTER TYPE "ProbeStatus" ADD VALUE` ×4 (`awaiting_dialog`/`applied`/`escalated_to_human`/`abandoned`) + `CREATE TABLE "ProbeDialogState"` (unique `probeEventId`, 2 индекса, FK → `probe_events` `ON DELETE CASCADE`). Аддитивная (CREATE TYPE/TABLE + ADD VALUE, без DROP), без потери данных, backfill не нужен. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«Диалоговое уточнение probe — `ProbeDialogState`».
+- **Шаг 7 — Seed крутилок (идемпотентный, УЖЕ в STEPS `phase:'seed-base'`):** 4 чистые AdminSetting-крутилки секции `probe` едут существующим `seed-admin-settings.ts` (уважает admin-override): `probe.dialogEnabled` (true, kill-switch), `probe.dialogEscalateMaxConfidence` (0.6 — ниже порога ответ уходит в уточняющий ход, не применяется), `probe.dialogMaxTurns` (2 — лимит ходов до эскалации owner/admin), `probe.dialogConfirmTtlHours` (48 — TTL ожидания подтверждения/уточнения до `abandoned`). Без новых ENV. Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: `ProbeResponseHandler` (детерминированный apply-слой, ветвление по `outcome`), `ProbeDialogService` (`ensureState`/`getActive`/`recordTurn`/`setPhase`/`finalizeIfPending` CAS), `routeClarifyOrEscalate`/`escalateToHuman`/echo-back, классификатор `probe_response_classify`, `ProbeResponseInboundBridge` (`subscribeInbound('response')`), `ProbeDialogTtlCron`, eventType `probe.clarify`/`probe.confirm` (Zod + рендер telegram/max + фронт-label).
+- **Шаг 12 — Smoke** (после выката):
+  - Метрики: `curl -s localhost:3000/metrics | grep -E 'probe_dialog_(transition|outcome|degraded)_total'` → счётчики присутствуют (`probe_dialog_transition_total{from,to}`, `probe_dialog_outcome_total{outcome}`, `probe_dialog_degraded_total{reason}`).
+  - eventType зарегистрированы: `probe.clarify` и `probe.confirm` присутствуют в registry/Swagger (channel-policy `['telegram_bot','max_bot','in_app']`, responseStatus='pending').
+  - Cron поднялся: лог `ProbeDialogTtlCron` (`@Cron 17 * * * *`) виден при старте (`docker compose logs backend | grep -i ProbeDialogTtlCron`).
+  - Миграция применилась: `\d "ProbeDialogState"` существует (unique `probeEventId`, FK на `probe_events`); `SELECT unnest(enum_range(NULL::"ProbeStatus"))` содержит `awaiting_dialog`/`applied`/`escalated_to_human`/`abandoned`; `ProbeDialogPhase` существует.
+  - Крутилки видны в админке AdminSetting: `probe.dialogEnabled` (ON), `probe.dialogEscalateMaxConfidence` (0.6), `probe.dialogMaxTurns` (2), `probe.dialogConfirmTtlHours` (48).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-25 — Дроп legacy-модели Task: унификация задач на Issue (ветка feature/drop-legacy-task-unify-issue)
 
 > ТЗ `plans/tz/2026-06-25-drop-legacy-task-model-unify-on-issue.md` (Ф0–Ф10). Полный снос двойной сущности «задача» — единственный слой задач теперь `Issue` (трекер).

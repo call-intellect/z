@@ -8,10 +8,7 @@ export interface DynamicAdminSettingsReader {
 
 export const ADMIN_SETTINGS_READER_TOKEN = 'AdminSettingsService' as const;
 
-const SUBJECT_MEMORY_DEFAULT_JUDGE_MODELS = [
-  'deepseek-v4-flash',
-  'gpt-5.4-mini',
-] as const;
+const SUBJECT_MEMORY_DEFAULT_JUDGE_MODELS = ['deepseek-v4-flash', 'gpt-5.4-mini'] as const;
 
 @Injectable()
 export class TypedConfigService {
@@ -50,7 +47,11 @@ export class TypedConfigService {
 
   get logging() {
     return {
-      dbLoggingEnabled: this.resolveSync<boolean>('logging.dbLoggingEnabled', 'LOG_DB_ENABLED', true),
+      dbLoggingEnabled: this.resolveSync<boolean>(
+        'logging.dbLoggingEnabled',
+        'LOG_DB_ENABLED',
+        true,
+      ),
       minLevel: this.resolveSync<string>('logging.minLevel', 'LOG_DB_MIN_LEVEL', 'INFO'),
       batchSize: this.resolveSync<number>('logging.batchSize', 'LOG_DB_BATCH_SIZE', 50),
       flushIntervalMs: this.resolveSync<number>(
@@ -59,11 +60,7 @@ export class TypedConfigService {
         5_000,
       ),
       maxBufferSize: this.resolveSync<number>('logging.maxBufferSize', 'LOG_DB_MAX_BUFFER', 5_000),
-      retentionDays: this.resolveSync<number>(
-        'logging.retentionDays',
-        'LOG_DB_RETENTION_DAYS',
-        30,
-      ),
+      retentionDays: this.resolveSync<number>('logging.retentionDays', 'LOG_DB_RETENTION_DAYS', 30),
       logStackTraces: this.resolveSync<boolean>(
         'logging.logStackTraces',
         'LOG_DB_STACK_TRACES',
@@ -215,7 +212,11 @@ export class TypedConfigService {
     return {
       anthropic: {
         apiKey: this.get('ANTHROPIC_API_KEY'),
-        model: this.resolveSync<string>('ai.anthropic.model', 'ANTHROPIC_MODEL', 'claude-sonnet-4-6'),
+        model: this.resolveSync<string>(
+          'ai.anthropic.model',
+          'ANTHROPIC_MODEL',
+          'claude-sonnet-4-6',
+        ),
         useProxy: this.get('ANTHROPIC_USE_PROXY'),
         proxyUrl: this.get('ANTHROPIC_PROXY_URL'),
       },
@@ -1202,16 +1203,13 @@ export class TypedConfigService {
         'PROBE_RESPONSE_CLASSIFY_MIN_CONFIDENCE',
         0.5,
       ),
-      draftReasons: this.resolveSync<readonly string[]>(
-        'probe.draftReasons',
-        undefined,
-        [
-          'experiment.result_without_lesson',
-          'companyprofile.missing_mission',
-          'companyprofile.missing_vision',
-          'companyprofile.missing_strategy',
-        ],
-      ),
+      dialogEnabled: this.resolveSync<boolean>('probe.dialogEnabled', undefined, true),
+      draftReasons: this.resolveSync<readonly string[]>('probe.draftReasons', undefined, [
+        'experiment.result_without_lesson',
+        'companyprofile.missing_mission',
+        'companyprofile.missing_vision',
+        'companyprofile.missing_strategy',
+      ]),
     } as const;
   }
 
@@ -1286,8 +1284,16 @@ export class TypedConfigService {
   get taskRouting() {
     return {
       enabled: this.resolveSync<boolean>('taskRouting.enabled', undefined, true),
-      suggestMinConfidence: this.resolveSync<number>('taskRouting.suggestMinConfidence', undefined, 0.6),
-      autoAssignMinConfidence: this.resolveSync<number>('taskRouting.autoAssignMinConfidence', undefined, 0.75),
+      suggestMinConfidence: this.resolveSync<number>(
+        'taskRouting.suggestMinConfidence',
+        undefined,
+        0.6,
+      ),
+      autoAssignMinConfidence: this.resolveSync<number>(
+        'taskRouting.autoAssignMinConfidence',
+        undefined,
+        0.75,
+      ),
       topK: this.resolveSync<number>('taskRouting.topK', undefined, 3),
     } as const;
   }
@@ -1620,7 +1626,9 @@ export class TypedConfigService {
       ),
       1,
     );
-    const loopbackBaseUrlRaw = (this.get('CONCIERGE_LOOPBACK_BASE_URL') as string | undefined)?.trim();
+    const loopbackBaseUrlRaw = (
+      this.get('CONCIERGE_LOOPBACK_BASE_URL') as string | undefined
+    )?.trim();
     let loopbackBaseUrl = 'http://127.0.0.1:3000';
     if (loopbackBaseUrlRaw) {
       try {
@@ -1763,11 +1771,7 @@ export class TypedConfigService {
         undefined,
         true,
       ),
-      livingCardEnabled: this.resolveSync<boolean>(
-        'tracker.livingCardEnabled',
-        undefined,
-        true,
-      ),
+      livingCardEnabled: this.resolveSync<boolean>('tracker.livingCardEnabled', undefined, true),
     } as const;
   }
 

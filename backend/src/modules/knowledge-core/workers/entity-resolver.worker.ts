@@ -97,7 +97,7 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
 
   private async process(job: Job<EntityResolverJobData>): Promise<void> {
     const { entityId } = job.data;
-    const entity = await this.prisma.entity.findUnique({ where: { id: entityId } });
+    const entity = await this.prisma.entity.findFirst({ where: { id: entityId } });
     if (!entity) {
       this.logger.warn({ entityId }, 'entity-resolver: Entity не найдена — skip');
       return;
@@ -186,12 +186,16 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      const fresh = await tx.entity.findUnique({ where: { id: entity.id } });
+      const fresh = await tx.entity.findUnique({
+        where: { id_tenantId: { id: entity.id, tenantId: entity.tenantId } },
+      });
       if (!fresh) throw new Error(`entity ${entity.id} not found in tx`);
       if (fresh.mergedIntoId !== null) {
         throw new Error(`entity ${entity.id} уже merged_into=${fresh.mergedIntoId} — abort`);
       }
-      const target = await tx.entity.findUnique({ where: { id: targetId } });
+      const target = await tx.entity.findUnique({
+        where: { id_tenantId: { id: targetId, tenantId: entity.tenantId } },
+      });
       if (!target) {
         throw new Error(`target ${targetId} не найден — abort`);
       }
@@ -208,7 +212,7 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
       }
 
       await tx.entity.update({
-        where: { id: fresh.id },
+        where: { id_tenantId: { id: fresh.id, tenantId: fresh.tenantId } },
         data: { mergedIntoId: targetId },
       });
 
@@ -216,40 +220,45 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
         new Set([...target.aliases, fresh.canonicalName, ...fresh.aliases]),
       ).filter((a) => a !== target.canonicalName);
       await tx.entity.update({
-        where: { id: targetId },
+        where: { id_tenantId: { id: targetId, tenantId: fresh.tenantId } },
         data: {
           mentionsCount: { increment: fresh.mentionsCount },
           aliases: newAliases,
         },
       });
 
-      // 3. Переносим IdeaBlockEntity'и: entityId=fresh.id → targetId.
-      //    Composite PK (blockId, entityId) может конфликтовать — идём по одному
-      //    с pre-check целевой пары (если в block уже есть mention target'а,
-      //    удаляем mention entity), иначе update (Б1: без catch P2002 в tx).
       const mentions = await tx.ideaBlockEntity.findMany({
         where: { entityId: fresh.id },
       });
       for (const m of mentions) {
-        // Б1: pre-check вместо catch(P2002) внутри tx — иначе ошибка SQL
-        // абортит всю транзакцию (PostgreSQL 25P02). Проверяем целевую пару
-        // (blockId, targetId) заранее.
         const conflicting = await tx.ideaBlockEntity.findUnique({
           where: {
-            blockId_entityId: { blockId: m.blockId, entityId: targetId },
+            blockId_entityId_tenantId: {
+              blockId: m.blockId,
+              entityId: targetId,
+              tenantId: fresh.tenantId,
+            },
           },
         });
         if (conflicting) {
           await tx.ideaBlockEntity.delete({
             where: {
-              blockId_entityId: { blockId: m.blockId, entityId: fresh.id },
+              blockId_entityId_tenantId: {
+                blockId: m.blockId,
+                entityId: fresh.id,
+                tenantId: fresh.tenantId,
+              },
             },
           });
           continue;
         }
         await tx.ideaBlockEntity.update({
           where: {
-            blockId_entityId: { blockId: m.blockId, entityId: fresh.id },
+            blockId_entityId_tenantId: {
+              blockId: m.blockId,
+              entityId: fresh.id,
+              tenantId: fresh.tenantId,
+            },
           },
           data: { entityId: targetId },
         });

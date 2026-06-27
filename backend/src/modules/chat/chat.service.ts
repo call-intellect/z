@@ -793,7 +793,7 @@ export class ChatService {
         });
       }
       const entity = await this.prisma.entity.findUnique({
-        where: { id: scopeId },
+        where: { id_tenantId: { id: scopeId, tenantId } },
         select: { id: true, tenantId: true },
       });
       if (!entity || entity.tenantId !== tenantId) {

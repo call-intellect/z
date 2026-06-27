@@ -79,7 +79,7 @@ export class AxisClassifierService {
 
     try {
       const block = await this.prisma.ideaBlock.findUnique({
-        where: { id: args.blockId },
+        where: { id_tenantId: { id: args.blockId, tenantId: args.tenantId } },
         select: {
           id: true,
           tenantId: true,

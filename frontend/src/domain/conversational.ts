@@ -77,6 +77,8 @@ const STATUS_LABELS: Record<NotificationStatus, string> = {
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   "probe.question": "Уточняющий вопрос",
+  "probe.clarify": "Уточнение",
+  "probe.confirm": "Подтверждение",
   "probe.digest": "Вопросы от Коры",
   "probe.answer_acknowledged": "Ответ записан",
   "specialist.probe": "Подсказка специалиста",

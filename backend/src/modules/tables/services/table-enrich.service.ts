@@ -118,7 +118,7 @@ export class TableEnrichService {
       const fillableIds = new Set(fillable.map((p) => p.id));
 
       for (const row of rows) {
-        const entityLabel = await this.entityLabel(row.entityId);
+        const entityLabel = await this.entityLabel(args.tenantId, row.entityId);
         const facts = await this.extractFacts({
           tenantId: args.tenantId,
           meetingId: args.meetingId,
@@ -725,10 +725,10 @@ export class TableEnrichService {
     return Math.min(Math.max(n, 0), 1);
   }
 
-  private async entityLabel(entityId: string | null): Promise<string> {
+  private async entityLabel(tenantId: string, entityId: string | null): Promise<string> {
     if (!entityId) return 'сущность';
     const e = await this.prisma.entity.findUnique({
-      where: { id: entityId },
+      where: { id_tenantId: { id: entityId, tenantId } },
       select: { canonicalName: true },
     });
     return e?.canonicalName?.trim() || 'сущность';

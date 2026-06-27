@@ -13,8 +13,8 @@ function makeMocks(opts: { threshold?: number; cacheTtl?: number } = {}) {
   const queryRawUnsafe = vi.fn();
   const executeRawUnsafe = vi.fn(async () => 1);
   const entityFindUnique = vi.fn();
-  const entityUpdate = vi.fn(async (args: { where: { id: string } }) => ({
-    id: args.where.id,
+  const entityUpdate = vi.fn(async (args: { where: { id_tenantId: { id: string } } }) => ({
+    id: args.where.id_tenantId.id,
     tenantId: 'org-1',
     type: 'topic',
     canonicalName: 'cached entity',
@@ -272,7 +272,7 @@ describe('EntityResolutionService.findOrCreateEntity (W1.5 ingest-time KNN)', ()
     // entity.update должен backfill'ить пустые strong-поля из нового вызова.
     expect(m.spies.entityUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'ent-knn' },
+        where: { id_tenantId: { id: 'ent-knn', tenantId: 'org-1' } },
         data: expect.objectContaining({
           inn: '7700000000',
           domain: 'romashka.ru',

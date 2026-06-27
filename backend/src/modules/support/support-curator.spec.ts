@@ -145,7 +145,7 @@ describe('SupportCuratorService', () => {
     expect(debateStub.judge).toHaveBeenCalledTimes(1);
     expect(prismaStub.ideaBlock.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'b1' },
+        where: { id_tenantId: { id: 'b1', tenantId: VENDOR } },
         data: expect.objectContaining({
           status: 'archived',
           supersededAt: now,
@@ -190,7 +190,7 @@ describe('SupportCuratorService', () => {
     const res = await svc.runOnce(new Date('2026-06-09T03:00:00Z'));
 
     expect(prismaStub.ideaBlock.update).toHaveBeenCalledWith({
-      where: { id: 'b1' },
+      where: { id_tenantId: { id: 'b1', tenantId: VENDOR } },
       data: { status: 'merged_into', mergedIntoId: 'b2' },
     });
     expect(res.applied).toBe(1);

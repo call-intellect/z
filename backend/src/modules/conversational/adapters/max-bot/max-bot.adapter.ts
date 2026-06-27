@@ -749,7 +749,7 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       where: {
         tenantId: args.tenantId,
         recipientUserId: args.userId,
-        eventType: { in: ['probe.question', 'probe.digest'] },
+        eventType: { in: ['probe.question', 'probe.digest', 'probe.clarify', 'probe.confirm'] },
         responseStatus: 'pending',
         createdAt: { gte: minCreatedAt },
       },
@@ -874,6 +874,14 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
         const head = 'Кора уточняет:';
         const tail = ctx ? `\n\n${ctx}` : '';
         return `${head}\n\n${q}${tail}\n\nОтветьте текстом этим же сообщением.`.slice(0, 4000);
+      }
+      case 'probe.clarify': {
+        const q = (payload['question'] as string | undefined) ?? '';
+        return `Кора уточняет\n\n${q}\n\nОтветьте текстом этим же сообщением.`.slice(0, 4000);
+      }
+      case 'probe.confirm': {
+        const q = (payload['question'] as string | undefined) ?? '';
+        return `Кора уточняет, всё ли верно\n\n${q}\n\nОтветьте «да» или поправьте.`.slice(0, 4000);
       }
       case 'specialist.probe': {
         const msg = (payload['message'] as string | undefined) ?? '';

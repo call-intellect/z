@@ -180,7 +180,7 @@ export class CommitmentsService {
       ? `\n\n[${args.body.status}] ${args.body.note}`
       : `\n\n[${args.body.status}]`;
     const updated = await this.prisma.ideaBlock.update({
-      where: { id: block.id },
+      where: { id_tenantId: { id: block.id, tenantId: args.tenantId } },
       data: {
         commitmentStatus: args.body.status,
         trustedAnswer: `${block.trustedAnswer}${noteSuffix}`.slice(0, 8_000),
@@ -249,7 +249,7 @@ export class CommitmentsService {
       ? `\n\n[reschedule → ${newDue.toISOString()}] ${args.body.note}`
       : `\n\n[reschedule → ${newDue.toISOString()}]`;
     const updated = await this.prisma.ideaBlock.update({
-      where: { id: block.id },
+      where: { id_tenantId: { id: block.id, tenantId: args.tenantId } },
       data: {
         commitmentDueDate: newDue,
         commitmentStatus: 'open',

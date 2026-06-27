@@ -133,6 +133,8 @@ export class BusinessMetricsService implements OnModuleInit {
   private queryPlanExtractionTotal!: Counter<'result'>;
   private queryPlanRetrievalFilteredTotal!: Counter<'filtered'>;
   private queryPlanEmptyPoolTotal!: Counter<'result'>;
+  private routerQueryClassTotal!: Counter<'class'>;
+  private routerBothWaysTotal!: Counter<'triggered'>;
 
   // ── task assignee resolver (ТЗ 2026-05-25 hard-participant-identification) ─
   // Инкрементируется в `TaskAssigneeResolverService`, когда участников с
@@ -652,6 +654,10 @@ export class BusinessMetricsService implements OnModuleInit {
   private probeResponseUnclearTotal!: Counter<'original_reason'>;
   // ── Probe Фаза 5 (2026-06-11) — исход probe (калибровка Фазы 2) ──
   private probeOutcomeTotal!: Counter<'outcome' | 'reason'>;
+  // ── Probe-clarify Фаза 6 (2026-06-27) — диалоговое уточнение ──
+  private probeDialogTransitionTotal!: Counter<'from' | 'to'>;
+  private probeDialogOutcomeTotal!: Counter<'outcome'>;
+  private probeDialogDegradedTotal!: Counter<'reason'>;
   // ── Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки вопроса ──
   private probeQualityJudgedTotal!: Counter<'verdict'>;
   // ── Probe Фаза 4 (2026-06-20) — LLM-гейт ценности probe-вопроса ──
@@ -1406,6 +1412,16 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_query_plan_empty_pool_total',
       help: 'Query Understanding Волна 1 — misroute-proxy: применённый структурный фильтр дал ПУСТОЙ пул (честный ответ «в памяти нет»). Рост может означать слишком узкий/неверный фильтр.',
       labelNames: ['result'] as const,
+    });
+    this.routerQueryClassTotal = this.getOrCreateCounter({
+      name: 'z_router_query_class_total',
+      help: 'Слой источника Ф3 — детерминированный роутер запроса: распределение запросов по 5 классам (list/topic/temporal/overview/fact).',
+      labelNames: ['class'] as const,
+    });
+    this.routerBothWaysTotal = this.getOrCreateCounter({
+      name: 'z_router_both_ways_total',
+      help: 'Слой источника Ф3 — confidence-gated both-ways в retrieval: triggered="yes" запущены структурный И семантический маршруты параллельно (RRF), "no" только семантика (уверенный topic/fact).',
+      labelNames: ['triggered'] as const,
     });
 
     this.taskAssigneeAmbiguousTotal = this.getOrCreateCounter({
@@ -2763,6 +2779,21 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'probe_outcome_total',
       help: 'Probe Фаза 5 — исход probe: answered (ответил) | ignored (истёк без ответа), по reason. Калибровочный сигнал для Фазы 2 (LLM-judge ценности вопроса).',
       labelNames: ['outcome', 'reason'] as const,
+    });
+    this.probeDialogTransitionTotal = this.getOrCreateCounter({
+      name: 'probe_dialog_transition_total',
+      help: 'Probe-clarify Ф6 — переход фазы диалогового уточнения (from → to).',
+      labelNames: ['from', 'to'] as const,
+    });
+    this.probeDialogOutcomeTotal = this.getOrCreateCounter({
+      name: 'probe_dialog_outcome_total',
+      help: 'Probe-clarify Ф6 — терминальный исход диалога: applied | escalated_to_human | abandoned.',
+      labelNames: ['outcome'] as const,
+    });
+    this.probeDialogDegradedTotal = this.getOrCreateCounter({
+      name: 'probe_dialog_degraded_total',
+      help: 'Probe-clarify Ф6 — откат к детерминированному one-shot из-за недоступности LLM-классификатора.',
+      labelNames: ['reason'] as const,
     });
     // ── Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки вопроса ──
     this.probeQualityJudgedTotal = this.getOrCreateCounter({
@@ -4201,6 +4232,16 @@ export class BusinessMetricsService implements OnModuleInit {
     this.queryPlanRetrievalFilteredTotal.inc({ filtered: args.filtered });
   }
   /** Query Understanding Волна 1 — применённый фильтр дал пустой пул (misroute-proxy). */
+  incRouterQueryClass(args: {
+    class: 'list' | 'topic' | 'temporal' | 'overview' | 'fact';
+  }): void {
+    this.routerQueryClassTotal.inc({ class: args.class });
+  }
+
+  incRouterBothWays(args: { triggered: 'yes' | 'no' }): void {
+    this.routerBothWaysTotal.inc({ triggered: args.triggered });
+  }
+
   incQueryPlanEmptyPool(args: { result: 'empty' }): void {
     this.queryPlanEmptyPoolTotal.inc({ result: args.result });
   }
@@ -6441,6 +6482,20 @@ export class BusinessMetricsService implements OnModuleInit {
     reason: string;
   }): void {
     this.probeOutcomeTotal.inc({ outcome: args.outcome, reason: args.reason });
+  }
+
+  incProbeDialogTransition(args: { from: string; to: string }): void {
+    this.probeDialogTransitionTotal.inc({ from: args.from, to: args.to });
+  }
+
+  incProbeDialogOutcome(args: {
+    outcome: 'applied' | 'escalated_to_human' | 'abandoned';
+  }): void {
+    this.probeDialogOutcomeTotal.inc({ outcome: args.outcome });
+  }
+
+  incProbeDialogDegraded(): void {
+    this.probeDialogDegradedTotal.inc({ reason: 'classify_failed' });
   }
 
   /**

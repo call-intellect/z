@@ -6,6 +6,8 @@ import { CurationModule } from '../curation/curation.module';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
 import { TrackerModule } from '../tracker/tracker.module';
 
+import { ProbeDialogService } from './probe-dialog.service';
+import { ProbeDialogTtlCron } from './probe-dialog-ttl.cron';
 import { ProbeDigestCron } from './probe-digest.cron';
 import { ProbeDispatcherWorker } from './probe-dispatcher.worker';
 import { ProbeFormulationService } from './probe-formulation.service';
@@ -32,9 +34,11 @@ import { SubjectMemoryService } from './subject-memory/subject-memory.service';
   providers: [
     ProbeService,
     ProbeFormulationService,
+    ProbeDialogService,
     ProbeDispatcherWorker,
     ProbePriorityCron,
     ProbeDigestCron,
+    ProbeDialogTtlCron,
     ProbeResponseHandler,
     SubjectMemoryService,
     SubjectMemoryDeriveWorker,

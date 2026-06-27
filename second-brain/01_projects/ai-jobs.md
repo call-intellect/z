@@ -328,6 +328,23 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2; с 2026-06-25 �
 
 [[../index|← index]]
 
+## Слой источника + маршрутизатор поиска — `document-summarize` + 2 backfill (2026-06-27)
+
+**Источник:** ТЗ [`plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md`](../../plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md) (Ф1–Ф10). Полная карта — [[../02_architecture/knowledge-core]] §«Слой источника + многомаршрутный retrieval»; модели — [[../02_architecture/data-model]].
+
+| taskType | Что делает | Цепочка |
+|---|---|---|
+| `document-summarize` | AI-заголовок + краткое описание документа из `parsedText` (Ф8 — документ как первоклассный объект поиска: ищется по теме, а не по имени файла); `DocumentSummaryService`, code-fallback `ai/services/prompts/document-summarize.prompt.ts`, крутилка `knowledge.document_summary_input_chars` (12000); cache-friendly (стабильный SYSTEM) | DeepSeek-flash → OpenAI-mini → Ollama |
+
+**Новых cron/очередей нет** (заполнение слоя источника — best-effort внутри `block-ingest.worker.persistSourceLayer`). 2 новых backfill-скрипта (идемпотентны, зарегистрированы в `apply-prod-deploy.ts` STEPS `phase:'backfill'`):
+
+- `backfill-source-layer.ts` — создаёт `SourceEpisode`/`SourceParticipant`/`SourceEntity` для существующих `RawEvent` (Ф2). Повтор = no-op.
+- `backfill-context-header-reembed.ts` — ре-эмбеддинг существующих `IdeaBlock` с contextual-header v2 (компании/состав/заголовок источника) + REINDEX HNSW-партиций (Ф7). Идемпотентно по `IdeaBlock.contextHeaderVersion`. Запускать ПОСЛЕ `backfill-source-layer.ts`.
+
+**Роутер 5 классов (`QueryClass`) и both-ways** — внутри chat-v2 retrieval (НЕ отдельный taskType): kill-switch `knowledge.router_v2_enabled` (ON), общий промпт `query-understand` (расширен `QueryClass`+`personIds`). Синтез по классу несёт `answerKind` наружу. Детали — [[../02_architecture/knowledge-core]].
+
+[[../index|← index]]
+
 ## Качество извлечения + устойчивость арбитра графа + измеритель (ТЗ-3/4/6, 2026-06-06)
 
 **Источник:** ТЗ-3 (устойчивость JSON-арбитра графа), ТЗ-4 (качество задач), ТЗ-6 (golden-измеритель), ветка `feature/prod-stability-2026-06-06`.

@@ -402,7 +402,7 @@ describe('IssuesService — subtasks parent validation', () => {
       issueLabel: { createMany: ReturnType<typeof vi.fn> };
       label: { findMany: ReturnType<typeof vi.fn> };
       issueState: { findUnique: ReturnType<typeof vi.fn> };
-      $queryRaw: ReturnType<typeof vi.fn>;
+      $executeRaw: ReturnType<typeof vi.fn>;
     };
 
     const prisma = {
@@ -419,7 +419,7 @@ describe('IssuesService — subtasks parent validation', () => {
           issueLabel: { createMany: vi.fn() },
           label: { findMany: vi.fn().mockResolvedValue([]) },
           issueState: { findUnique: vi.fn().mockResolvedValue(null) },
-          $queryRaw: vi.fn().mockResolvedValue([]),
+          $executeRaw: vi.fn().mockResolvedValue(0),
         }),
       issue: { findFirst: issueFindFirst, findMany: issueFindMany },
       issueState: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -635,13 +635,13 @@ describe('IssuesService — Б9 advisory_xact_lock', () => {
     serializeLock?: boolean;
   }): {
     service: IssuesService;
-    queryRawCalls: Array<unknown[]>;
+    executeRawCalls: Array<unknown[]>;
   } {
-    const queryRawCalls: Array<unknown[]> = [];
+    const executeRawCalls: Array<unknown[]> = [];
     let lockHeld = false;
     const lockQueue: Array<() => void> = [];
-    const queryRawMock = vi.fn().mockImplementation(async (...args: unknown[]) => {
-      queryRawCalls.push(args);
+    const executeRawMock = vi.fn().mockImplementation(async (...args: unknown[]) => {
+      executeRawCalls.push(args);
       if (opts.serializeLock) {
         if (lockHeld) {
           await new Promise<void>((r) => lockQueue.push(r));
@@ -703,7 +703,7 @@ describe('IssuesService — Б9 advisory_xact_lock', () => {
             issueLabel: { createMany: vi.fn() },
             label: { findMany: vi.fn().mockResolvedValue([]) },
             issueState: { findUnique: vi.fn().mockResolvedValue(null) },
-            $queryRaw: queryRawMock,
+            $executeRaw: executeRawMock,
           });
         } finally {
           releaseLock();
@@ -739,11 +739,11 @@ describe('IssuesService — Б9 advisory_xact_lock', () => {
 
     const service = new IssuesService(prisma, activity, projects, events, webhooks, emitter);
 
-    return { service, queryRawCalls };
+    return { service, executeRawCalls };
   }
 
-  it('$queryRaw(pg_advisory_xact_lock) вызывается ≥1 раз при update с parentId', async () => {
-    const { service, queryRawCalls } = buildServiceWithLockTracking({
+  it('$executeRaw(pg_advisory_xact_lock) вызывается ≥1 раз при update с parentId', async () => {
+    const { service, executeRawCalls } = buildServiceWithLockTracking({
       parentLookup: (id) =>
         id === 'i_new_parent' ? { id: 'i_new_parent', projectId: 'p1', parentId: null } : null,
       existing: baseIssue,
@@ -756,11 +756,11 @@ describe('IssuesService — Б9 advisory_xact_lock', () => {
       'u1',
     );
 
-    expect(queryRawCalls.length).toBeGreaterThan(0);
+    expect(executeRawCalls.length).toBeGreaterThan(0);
   });
 
-  it("concurrent update: обе tx выполняются, обе дёргают $queryRaw на пересекающихся parent'ах", async () => {
-    const { service, queryRawCalls } = buildServiceWithLockTracking({
+  it("concurrent update: обе tx выполняются, обе дёргают $executeRaw на пересекающихся parent'ах", async () => {
+    const { service, executeRawCalls } = buildServiceWithLockTracking({
       parentLookup: (id) =>
         id === 'p_shared' ? { id: 'p_shared', projectId: 'p1', parentId: null } : null,
       existing: baseIssue,
@@ -771,7 +771,7 @@ describe('IssuesService — Б9 advisory_xact_lock', () => {
       service.update('i1', { parentId: 'p_shared' } as unknown as UpdateIssueDto, 'org_1', 'u1'),
     ]);
 
-    expect(queryRawCalls.length).toBeGreaterThanOrEqual(2);
+    expect(executeRawCalls.length).toBeGreaterThanOrEqual(2);
   });
 });
 

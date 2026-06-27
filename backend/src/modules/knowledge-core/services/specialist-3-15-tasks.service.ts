@@ -181,7 +181,7 @@ export class Specialist315TasksService {
     let created: CreateOutcome;
     try {
       created = await this.prisma.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${block.tenantId + ':' + normTitle}))`;
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${block.tenantId + ':' + normTitle}))`;
         if (linkSemantics === 'link') {
           if (!matchedIssueId) {
             const exact = await tx.issue.findFirst({

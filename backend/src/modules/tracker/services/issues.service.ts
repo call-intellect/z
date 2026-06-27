@@ -1943,7 +1943,7 @@ export class IssuesService {
     // Сортируем строки → стабильный порядок lock'ов.
     lockKeys.sort();
     for (const key of lockKeys) {
-      await args.tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+      await args.tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
     }
 
     const parent = await args.tx.issue.findFirst({

@@ -67,6 +67,7 @@ interface Mocks {
     membership: { findFirst: ReturnType<typeof vi.fn> };
     person: { findMany: ReturnType<typeof vi.fn> };
     $queryRaw: ReturnType<typeof vi.fn>;
+    $executeRaw: ReturnType<typeof vi.fn>;
     $transaction: ReturnType<typeof vi.fn>;
   };
   llm: { call: ReturnType<typeof vi.fn> };
@@ -108,6 +109,7 @@ function buildService(linkSemantics: 'link' | 'delete' = 'link'): {
       },
       person: { findMany: vi.fn().mockResolvedValue([]) },
       $queryRaw: vi.fn().mockResolvedValue([]),
+      $executeRaw: vi.fn().mockResolvedValue(0),
       $transaction: vi.fn(),
     },
     llm: { call: vi.fn() },
@@ -490,5 +492,19 @@ describe('Specialist315TasksService.processBlock', () => {
     const callArg = m.llm.call.mock.calls[0]![0] as { userMessage: string };
     expect(callArg.userMessage).not.toContain('— автор:');
     expect(m.prisma.person.findMany).not.toHaveBeenCalled();
+  });
+
+  it('advisory-lock через $executeRaw — путь создания задачи не бросает (Prisma 7 void fix)', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson()));
+
+    await expect(
+      svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID }),
+    ).resolves.not.toThrow();
+
+    expect(m.prisma.$executeRaw).toHaveBeenCalled();
+    const sqlArg = m.prisma.$executeRaw.mock.calls[0]![0] as TemplateStringsArray;
+    expect(sqlArg.join('')).toContain('pg_advisory_xact_lock');
+    expect(m.prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
   });
 });

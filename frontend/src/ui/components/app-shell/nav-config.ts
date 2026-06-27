@@ -178,7 +178,6 @@ const WORK_SECTION: NavConfigSection = {
       label: "Спросить",
       icon: MessageCircle,
       matchPrefix: "/chat",
-      roles: ["manager"],
       gateFeature: "feature.chat_org",
       overviewTarget: "overview.chat",
     },

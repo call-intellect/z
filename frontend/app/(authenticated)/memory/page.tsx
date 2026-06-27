@@ -79,6 +79,24 @@ export default function MemoryHubPage() {
         </p>
       </header>
 
+      <Link
+        href="/chat"
+        className="mb-6 flex items-center gap-4 rounded-lg border border-accent bg-accent/10 px-5 py-4 transition-colors hover:bg-accent/15"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-accent-fg">
+          <Sparkles size={20} />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold text-fg-primary">
+            Спросить у Мастера
+          </span>
+          <span className="block text-xs text-fg-secondary">
+            Задайте вопрос по памяти компании — Мастер найдёт ответ и сделает
+            действие
+          </span>
+        </span>
+      </Link>
+
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-fg-secondary">
         Реестры
       </h2>

@@ -318,6 +318,42 @@ function signalTypeContextRu(signalType: string): string {
   );
 }
 
+function isoDateKey(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function monthKeysBetween(from: Date, to: Date): string[] {
+  if (from.getTime() > to.getTime()) return [];
+  const keys: string[] = [];
+  let year = from.getUTCFullYear();
+  let month0 = from.getUTCMonth();
+  const endYear = to.getUTCFullYear();
+  const endMonth0 = to.getUTCMonth();
+  const MAX = 36;
+  let guard = 0;
+  while ((year < endYear || (year === endYear && month0 <= endMonth0)) && guard < MAX) {
+    keys.push(`${year}-${String(month0 + 1).padStart(2, '0')}`);
+    month0 += 1;
+    if (month0 > 11) {
+      month0 = 0;
+      year += 1;
+    }
+    guard += 1;
+  }
+  return keys;
+}
+
+export function extractRecapNarrative(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const narrative = (payload as Record<string, unknown>).narrative;
+  if (typeof narrative !== 'string') return null;
+  const trimmed = narrative.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 /**
  * Chat-v2 единый промпт (ТЗ 2026-06-15 §6.1) — ИМЕНОВАННЫЕ КОНСТАНТЫ русских
  * тегов контекста. Единый источник для билдера (buildUserMessage) и чистилки
@@ -330,6 +366,7 @@ export const CONTRADICTING_FACT_TAG = '[ПРОТИВОРЕЧАЩИЙ ФАКТ]';
 export const CONTRADICTIONS_HEADER = 'Противоречащие факты:';
 /** Префикс блока «Данные из таблиц» (наполняет ЧАСТЬ B; константа и strip — здесь). */
 export const TABLE_TAG_PREFIX = '[ТАБЛИЦА:';
+export const TEMPORAL_ROLLUP_TAG_PREFIX = '[ИТОГ ПЕРИОДА:';
 
 /**
  * Query Understanding Ф4 (R10) — карта ветки темы → человекочитаемый русский
@@ -428,6 +465,7 @@ export function stripBlockMarkers(text: string): string {
     .replace(/\[ПРОТИВОРЕЧАЩИЙ ФАКТ[^\]]*\]/g, '')
     .replace(/\[ЦЕПОЧКА РАССУЖДЕНИЯ К ФАКТУ[^\]]*\]/g, '')
     .replace(/\[ТАБЛИЦА:[^\]]*\]/g, '')
+    .replace(/\[ИТОГ ПЕРИОДА:[^\]]*\]/g, '')
     .replace(/\[BLOCK:[a-zA-Z0-9_-]+(?:\s*[—-][^\]]*)?\]/gu, '')
     .replace(/[ \t]{2,}/g, ' ') // схлопнуть двойные пробелы от вырезанных маркеров
     .replace(/ +([.,;:!?])/g, '$1') // убрать пробел перед пунктуацией
@@ -557,6 +595,10 @@ export const BASE_SYSTEM_PROMPT = `## Роль
 - «Данные из таблиц» — строки из умных таблиц компании. Используй наравне с
   фактами; при ссылке указывай таблицу «<название>» (цитата подставится сама).
   На счётный вопрос («сколько…») посчитай по строкам и дай число.
+- «Итоги периода» — готовая свёртка недели/месяца (что наработали, как с
+  обещаниями, что зависло, почему). На вопрос про итоги периода («как прошёл
+  месяц», «итоги недели») опирайся прежде всего на эту свёртку, а не на
+  разрозненные факты; подведи итог человеческим языком.
 
 ## Примеры (плохо → хорошо)
 1. Два факта спорят.
@@ -697,7 +739,7 @@ export class ChatV2Service {
     // ЧАСТЬ B (ТЗ 2026-06-15 §7) — табличная ветка (fetchTableContext) идёт
     // ОДНОВРЕМЕННО с графовым retrieval через Promise.allSettled: по времени
     // почти не дороже. Падение ветки таблиц НЕ валит ответ (граф отвечает).
-    const [retrievalSettled, tableSettled] = await Promise.allSettled([
+    const [retrievalSettled, tableSettled, temporalSettled] = await Promise.allSettled([
       this.runRetrieval(input, {
         tenantId,
         scope,
@@ -709,6 +751,7 @@ export class ChatV2Service {
         accessWhere,
       }),
       this.runTableBranch(input, tenantId),
+      this.runTemporalBranch(input, tenantId),
     ]);
 
     const rankedBlockIds: string[] =
@@ -729,6 +772,11 @@ export class ChatV2Service {
     // tableRows — fail-safe: ветка таблиц никогда не должна валить ответ.
     const tableRows: Array<{ tableName: string; cells: string }> =
       tableSettled.status === 'fulfilled' ? tableSettled.value : [];
+    // Ф5 мост К3 — temporal-свёртки (ValueRecapSnapshot/WeeklyOperationsDigest).
+    // Best-effort: rejected/нет свёртки → []. Не валит ответ — both-ways семантика
+    // остаётся (R3 fallback).
+    const temporalRollups: Array<{ label: string; markdown: string }> =
+      temporalSettled.status === 'fulfilled' ? temporalSettled.value : [];
 
     // 2) Выгружаем сами блоки + первую evidence из встреч + meeting title.
     //    Ф4 — главный выходной шлюз доступа (см. loadContextBlocks).
@@ -746,7 +794,7 @@ export class ChatV2Service {
     //    ЧАСТЬ B (ТЗ 2026-06-15 §7): но если граф пуст, А ТАБЛИЦЫ дали строки
     //    (например «сколько клиентов из Москвы») — НЕ возвращаем заглушку, а идём
     //    в синтез с одними табличными данными (счётный вопрос считается по строкам).
-    if (contextBlocks.length === 0 && tableRows.length === 0) {
+    if (contextBlocks.length === 0 && tableRows.length === 0 && temporalRollups.length === 0) {
       const desc = input.structuralFilters
         ? describeStructuralFilters(input.structuralFilters)
         : '';
@@ -821,6 +869,8 @@ export class ChatV2Service {
         // ЧАСТЬ B — строки умных таблиц (параллельная ветка). Пусто → секция
         // «Данные из таблиц» не выводится.
         tableRows,
+        // Ф5 мост К3 — свёртки периода. Пусто → секция «Итоги периода» не выводится.
+        temporalRollups,
       },
     );
 
@@ -1229,6 +1279,71 @@ export class ChatV2Service {
     }
   }
 
+  private async runTemporalBranch(
+    input: ChatV2Input,
+    tenantId: string,
+  ): Promise<Array<{ label: string; markdown: string }>> {
+    if (input.queryClass !== 'temporal') return [];
+    const dateFrom = input.structuralFilters?.dateFrom ?? null;
+    const dateTo = input.structuralFilters?.dateTo ?? null;
+    if (!dateFrom || !dateTo) return [];
+    try {
+      const [recaps, digests] = await Promise.all([
+        this.loadValueRecaps(tenantId, dateFrom, dateTo),
+        this.loadWeeklyDigests(tenantId, dateFrom, dateTo),
+      ]);
+      return [...recaps, ...digests];
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 runTemporalBranch: сбой — возвращаем [] (семантика отвечает)',
+      );
+      return [];
+    }
+  }
+
+  private async loadValueRecaps(
+    tenantId: string,
+    dateFrom: Date,
+    dateTo: Date,
+  ): Promise<Array<{ label: string; markdown: string }>> {
+    const periodYms = monthKeysBetween(dateFrom, dateTo);
+    if (periodYms.length === 0) return [];
+    const rows = await this.prisma.valueRecapSnapshot.findMany({
+      where: { tenantId, periodYm: { in: periodYms } },
+      orderBy: { periodYm: 'asc' },
+      select: { periodYm: true, payloadJson: true },
+    });
+    const out: Array<{ label: string; markdown: string }> = [];
+    for (const row of rows) {
+      const narrative = extractRecapNarrative(row.payloadJson);
+      if (!narrative) continue;
+      out.push({ label: `месяц ${row.periodYm}`, markdown: narrative });
+    }
+    return out;
+  }
+
+  private async loadWeeklyDigests(
+    tenantId: string,
+    dateFrom: Date,
+    dateTo: Date,
+  ): Promise<Array<{ label: string; markdown: string }>> {
+    const fromKey = isoDateKey(dateFrom);
+    const toKey = isoDateKey(dateTo);
+    const rows = await this.prisma.weeklyOperationsDigest.findMany({
+      where: { tenantId, weekStart: { gte: fromKey, lte: toKey } },
+      orderBy: { weekStart: 'asc' },
+      select: { weekStart: true, weekEnd: true, bodyMarkdown: true },
+    });
+    const out: Array<{ label: string; markdown: string }> = [];
+    for (const row of rows) {
+      const body = (row.bodyMarkdown ?? '').trim();
+      if (!body) continue;
+      out.push({ label: `неделя ${row.weekStart}–${row.weekEnd}`, markdown: body });
+    }
+    return out;
+  }
+
   /**
    * Выгружает блоки + первую evidence (привязанную к meeting RawEvent).
    * Сохраняет порядок blockIds (он отражает релевантность).
@@ -1591,6 +1706,7 @@ export class ChatV2Service {
        * секция не выводится.
        */
       tableRows?: ReadonlyArray<{ tableName: string; cells: string }>;
+      temporalRollups?: ReadonlyArray<{ label: string; markdown: string }>;
     },
   ): string {
     const parts: string[] = [];
@@ -1658,6 +1774,17 @@ export class ChatV2Service {
       parts.push('Данные из таблиц:');
       for (const r of tableRows) {
         parts.push(`${TABLE_TAG_PREFIX} ${r.tableName}] ${r.cells}`);
+      }
+    }
+
+    // Ф5 мост К3 — итоги периода (свёртки ValueRecapSnapshot/WeeklyOperationsDigest).
+    const temporalRollups = extra?.temporalRollups;
+    if (temporalRollups && temporalRollups.length > 0) {
+      parts.push('');
+      parts.push('Итоги периода:');
+      for (const r of temporalRollups) {
+        parts.push(`${TEMPORAL_ROLLUP_TAG_PREFIX} ${r.label}]`);
+        parts.push(r.markdown);
       }
     }
 

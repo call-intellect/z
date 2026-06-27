@@ -65,8 +65,35 @@ describe('resolvePeriod (Europe/Moscow, UTC+3)', () => {
     expect(r.dateTo).toBeNull();
   });
 
-  it('неизвестная таймзона → дефолт МСК (+3)', () => {
-    const r = resolvePeriod('today', TODAY, 'Asia/Tokyo');
+  it('невалидная таймзона → дефолт МСК (+3)', () => {
+    const r = resolvePeriod('today', TODAY, 'Not/AZone');
     expect(r.dateFrom?.toISOString()).toBe('2026-06-09T21:00:00.000Z');
+  });
+
+  it('пустая таймзона → дефолт МСК (+3)', () => {
+    const r = resolvePeriod('today', TODAY, '');
+    expect(r.dateFrom?.toISOString()).toBe('2026-06-09T21:00:00.000Z');
+  });
+});
+
+describe('resolvePeriod (Asia/Yekaterinburg, UTC+5)', () => {
+  it('last_month → границы сдвинуты на +300 мин (не +180)', () => {
+    const r = resolvePeriod('last_month', TODAY, 'Asia/Yekaterinburg');
+    expect(r.dateFrom?.toISOString()).toBe('2026-04-30T19:00:00.000Z');
+    expect(r.dateTo?.toISOString()).toBe('2026-05-31T18:59:59.999Z');
+  });
+
+  it('today → полный локальный день при +5', () => {
+    const r = resolvePeriod('today', TODAY, 'Asia/Yekaterinburg');
+    expect(r.dateFrom?.toISOString()).toBe('2026-06-09T19:00:00.000Z');
+    expect(r.dateTo?.toISOString()).toBe('2026-06-10T18:59:59.999Z');
+  });
+});
+
+describe('resolvePeriod (Europe/Moscow явно, регресс-guard +180)', () => {
+  it('last_month при явном Europe/Moscow → те же границы, что и по дефолту', () => {
+    const r = resolvePeriod('last_month', TODAY, 'Europe/Moscow');
+    expect(r.dateFrom?.toISOString()).toBe('2026-04-30T21:00:00.000Z');
+    expect(r.dateTo?.toISOString()).toBe('2026-05-31T20:59:59.999Z');
   });
 });

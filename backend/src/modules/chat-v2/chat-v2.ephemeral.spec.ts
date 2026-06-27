@@ -11,6 +11,7 @@ const NORMAL_GOLDEN: SynthesisResult = {
   uncertaintyNote: null,
   dataClass: 'internal',
   needsClarification: false,
+  answerKind: 'prose',
 };
 
 const CLARIFY_GOLDEN: SynthesisResult = {
@@ -21,6 +22,7 @@ const CLARIFY_GOLDEN: SynthesisResult = {
   uncertaintyNote: null,
   dataClass: 'internal',
   needsClarification: true,
+  answerKind: 'prose',
 };
 
 interface Harness {
@@ -144,11 +146,42 @@ describe('ChatV2OrchestrationService.askEphemeral — безпамятный в�
         usedBlockIds: ['aaa111'],
         uncertaintyNote: null,
         mode: 'synthetic',
+        answerKind: 'prose',
       }),
     );
     expect(h.conversationsCreate).not.toHaveBeenCalled();
     expect(h.appendMessage).not.toHaveBeenCalled();
     expect(h.generateTitle).not.toHaveBeenCalled();
+  });
+
+  it('answerKind=list + episodes проброшены из synthesis в ответ (Ф10 R12)', async () => {
+    const LIST_GOLDEN: SynthesisResult = {
+      text: 'Нашёл встречи: список.',
+      citations: [],
+      retrievalMeta: { usedBlockIds: ['aaa111'] },
+      llmMeta: { model: 'deepseek', inputTokens: 1, outputTokens: 1 },
+      uncertaintyNote: null,
+      dataClass: 'internal',
+      needsClarification: false,
+      answerKind: 'list',
+      episodes: [
+        {
+          id: 'ep-1',
+          title: 'Планёрка',
+          occurredAt: new Date('2026-06-20'),
+          kind: 'meeting',
+          rawEventId: 're-1',
+        },
+      ],
+    };
+    const h = makeHarness(LIST_GOLDEN);
+
+    const answer = await h.service.askEphemeral({ ...baseInput });
+
+    expect(answer.answerKind).toBe('list');
+    expect(answer.episodes).toBeDefined();
+    expect(answer.episodes!.length).toBe(1);
+    expect(answer.episodes![0]!.rawEventId).toBe('re-1');
   });
 
   it('переданные history + summary проброшены в dialog.process как override', async () => {

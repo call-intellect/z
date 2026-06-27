@@ -84,6 +84,14 @@ export class ChatV2Controller {
     mode: string;
     cacheHit: boolean;
     needsClarification: boolean;
+    answerKind: 'list' | 'recap' | 'overview' | 'prose';
+    episodes?: Array<{
+      id: string;
+      title: string;
+      occurredAt: Date;
+      kind: string;
+      rawEventId: string;
+    }>;
   }> {
     const t = this.requireTenant(tenantId);
     await this.requireWriteOwn(user.id, t);

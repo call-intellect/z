@@ -64,6 +64,38 @@ export type { ChatV2Scope } from './chat-v2-retrieval.service';
  */
 export type ChatV2Stage = 'understanding' | 'searching' | 'writing';
 
+/**
+ * Слой источника Ф10 (R12) — форма ответа для UI помощника. Деривация из
+ * `QueryClass`: list→'list', temporal→'recap', overview→'overview',
+ * topic/fact/неизвестно→'prose'. UI рисует список/карту/итог, а не только текст.
+ */
+export type ChatV2AnswerKind = 'list' | 'recap' | 'overview' | 'prose';
+
+/**
+ * Слой источника Ф10 (R12) — структурная часть ответа класса К1 (list):
+ * перечень эпизодов-источников с id для кликабельных ссылок UI.
+ */
+export interface ChatV2Episode {
+  id: string;
+  title: string;
+  occurredAt: Date;
+  kind: string;
+  rawEventId: string;
+}
+
+export function deriveAnswerKind(queryClass?: QueryClass | null): ChatV2AnswerKind {
+  switch (queryClass) {
+    case 'list':
+      return 'list';
+    case 'temporal':
+      return 'recap';
+    case 'overview':
+      return 'overview';
+    default:
+      return 'prose';
+  }
+}
+
 export interface ChatV2Input {
   tenantId: string;
   userId: string;
@@ -181,6 +213,16 @@ export interface ChatV2Output {
    */
   dataClass: DataClass;
   needsClarification: boolean;
+  /**
+   * Слой источника Ф10 (R12) — форма ответа для UI помощника (list|recap|
+   * overview|prose), деривация из queryClass. UI рисует ответ под форму.
+   */
+  answerKind: ChatV2AnswerKind;
+  /**
+   * Слой источника Ф10 (R12) — для К1 (list): перечень эпизодов-источников с id
+   * для кликабельных ссылок. Для прочих классов — undefined.
+   */
+  episodes?: ChatV2Episode[];
 }
 
 /**
@@ -368,6 +410,14 @@ export const CONTRADICTIONS_HEADER = 'Противоречащие факты:';
 export const TABLE_TAG_PREFIX = '[ТАБЛИЦА:';
 export const TEMPORAL_ROLLUP_TAG_PREFIX = '[ИТОГ ПЕРИОДА:';
 export const THEME_MAP_TAG_PREFIX = '[ТЕМА:';
+/** Префикс маркера эпизода-источника для К1 (list): [ИСТОЧНИК:<rawEventId>]. */
+export const EPISODE_TAG_PREFIX = '[ИСТОЧНИК:';
+
+const EPISODE_KIND_RU: Record<string, string> = {
+  meeting: 'встреча',
+  document: 'документ',
+  chat: 'переписка',
+};
 
 /**
  * Query Understanding Ф4 (R10) — карта ветки темы → человекочитаемый русский
@@ -468,6 +518,7 @@ export function stripBlockMarkers(text: string): string {
     .replace(/\[ТАБЛИЦА:[^\]]*\]/g, '')
     .replace(/\[ИТОГ ПЕРИОДА:[^\]]*\]/g, '')
     .replace(/\[ТЕМА:[^\]]*\]/g, '')
+    .replace(/\[ИСТОЧНИК:[^\]]*\]/g, '')
     .replace(/\[BLOCK:[a-zA-Z0-9_-]+(?:\s*[—-][^\]]*)?\]/gu, '')
     .replace(/[ \t]{2,}/g, ' ') // схлопнуть двойные пробелы от вырезанных маркеров
     .replace(/ +([.,;:!?])/g, '$1') // убрать пробел перед пунктуацией
@@ -528,6 +579,21 @@ export const BASE_SYSTEM_PROMPT = `## Роль
 на их вопросы, опираясь ТОЛЬКО на то, что компания уже зафиксировала: встречи,
 переписки, решения, документы. Ты не универсальный чат-бот — ты память
 и аналитик одной конкретной компании (она описана в разделе «О компании» ниже).
+
+## Как устроена память компании
+Память — это не плоский набор фрагментов, а связанная структура:
+- Источники-объекты: встречи, документы, переписки — каждый со своим заголовком
+  и датой. На них можно ссылаться как на отдельные источники.
+- Участники и сущности: кто был в источнике, какие компании/проекты упоминались.
+  Отсюда берутся ответы «все встречи с человеком X», «по клиенту Y».
+- Факты (блоки знаний) с маркером [BLOCK:<id>] — атомарные знания внутри
+  источников: решения, обязательства, риски, идеи.
+- Карта тем: крупные смысловые разделы с готовыми свёртками — для обзора «что
+  у нас по направлению».
+- Итоги периодов: готовые свёртки недели/месяца — для вопросов «как прошёл
+  период».
+Какие из этих форм пришли в контекст — зависит от вопроса. Отвечай в форме,
+которая соответствует пришедшим данным (см. «Режим ответа по форме результата»).
 
 ## Кому ты отвечаешь и что будет с ответом
 - Спрашивает сотрудник компании — из кабинета или из мессенджера. Он может быть
@@ -601,6 +667,25 @@ export const BASE_SYSTEM_PROMPT = `## Роль
   обещаниями, что зависло, почему). На вопрос про итоги периода («как прошёл
   месяц», «итоги недели») опирайся прежде всего на эту свёртку, а не на
   разрозненные факты; подведи итог человеческим языком.
+- «Карта тем» — крупные смысловые разделы компании со свёрткой по каждому. На
+  обзорный вопрос («что у нас по продажам», «как дела с наймом») построй обзор
+  с разбивкой по этим разделам, а не свали факты в кучу.
+- «Источники (встречи/документы/чаты)» — перечень источников-объектов с
+  заголовком, типом и датой; каждый помечен маркером [ИСТОЧНИК:<id>]. На вопрос-
+  список («все встречи с человеком X», «какие были созвоны по клиенту Y»)
+  отвечай ПЕРЕЧИСЛЕНИЕМ этих источников со ссылкой-маркером у каждого, а НЕ
+  абзацем-синтезом из фактов.
+
+## Режим ответа по форме результата
+Форма ответа должна соответствовать тому, что пришло в контекст:
+- Есть «Источники» (вопрос-список) → дай перечисление: по строке на источник,
+  у каждого маркер [ИСТОЧНИК:<id>], кратко что это, когда. Не превращай список
+  в единый абзац и ничего не выдумывай сверх списка.
+- Есть «Итоги периода» (вопрос про период) → подведи итог периода своими
+  словами из свёртки, не пересказывай разрозненные факты.
+- Есть «Карта тем» (обзорный вопрос) → дай обзор с разбивкой по разделам.
+- В остальных случаях → обычный ответ из фактов с маркерами [BLOCK:<id>], как
+  описано выше.
 
 ## Примеры (плохо → хорошо)
 1. Два факта спорят.
@@ -618,20 +703,27 @@ export const BASE_SYSTEM_PROMPT = `## Роль
    ✗ перечисляет каждое звено цепочки как отдельный факт с кучей маркеров.
    ✓ «Скидку убрали: она съедала маржу и не давала роста повторных
      продаж [BLOCK:5].»
+5. Вопрос-список «все встречи с Ивановым».
+   ✗ «С Ивановым обсуждали запуск и бюджет.»  (синтез абзаца вместо списка)
+   ✓ «Нашёл встречи с Ивановым:
+     - Планёрка по запуску — встреча, 2026-06-20 [ИСТОЧНИК:abc]
+     - Разбор бюджета — встреча, 2026-06-05 [ИСТОЧНИК:def]»
 
 ## Самопроверка перед ответом
 - Вопрос вообще про дела компании? Если нет — вежливый отказ, без выдумок.
 - Каждый факт подкреплён [BLOCK:<id>] из контекста? Нет выдуманных номеров?
 - Если данных не было — сказал честно, не досочинил?
 - Конфликт назван, а не заглажен?
+- Если это вопрос-список — ответ перечислением источников с маркерами
+  [ИСТОЧНИК:<id>], а не абзацем?
 - В тексте нет ни одного английского/служебного слова, кроме маркеров
-  [BLOCK:<id>]?
+  [BLOCK:<id>] и [ИСТОЧНИК:<id>]?
 Если что-то не так — перепиши, и только потом отвечай.
 
 ## Запреты
 - Никаких английских слов, кодов, технических названий в тексте ответа
-  (кроме маркеров [BLOCK:<id>], которые станут ссылками). Даже если они есть
-  во входе — переводи на человеческий русский.
+  (кроме маркеров [BLOCK:<id>] и [ИСТОЧНИК:<id>], которые станут ссылками).
+  Даже если они есть во входе — переводи на человеческий русский.
 - Не выдумывай факты, даты, имена, решения, которых нет в контексте.
 - Не выбирай «победителя» при споре двух фактов.`;
 
@@ -741,22 +833,28 @@ export class ChatV2Service {
     // ЧАСТЬ B (ТЗ 2026-06-15 §7) — табличная ветка (fetchTableContext) идёт
     // ОДНОВРЕМЕННО с графовым retrieval через Promise.allSettled: по времени
     // почти не дороже. Падение ветки таблиц НЕ валит ответ (граф отвечает).
-    const [retrievalSettled, tableSettled, temporalSettled, overviewSettled] =
-      await Promise.allSettled([
-        this.runRetrieval(input, {
-          tenantId,
-          scope,
-          scopeId: scopeId ?? null,
-          query,
-          kRetrieve,
-          kContext,
-          graphHops,
-          accessWhere,
-        }),
-        this.runTableBranch(input, tenantId),
-        this.runTemporalBranch(input, tenantId),
-        this.runOverviewBranch(input, tenantId),
-      ]);
+    const [
+      retrievalSettled,
+      tableSettled,
+      temporalSettled,
+      overviewSettled,
+      episodesSettled,
+    ] = await Promise.allSettled([
+      this.runRetrieval(input, {
+        tenantId,
+        scope,
+        scopeId: scopeId ?? null,
+        query,
+        kRetrieve,
+        kContext,
+        graphHops,
+        accessWhere,
+      }),
+      this.runTableBranch(input, tenantId),
+      this.runTemporalBranch(input, tenantId),
+      this.runOverviewBranch(input, tenantId),
+      this.runEpisodesBranch(input, tenantId),
+    ]);
 
     const rankedBlockIds: string[] =
       retrievalSettled.status === 'fulfilled' ? retrievalSettled.value : [];
@@ -785,6 +883,12 @@ export class ChatV2Service {
     // тем → []. Не валит ответ — both-ways семантика остаётся (R4 fallback).
     const themeMap: Array<{ label: string; markdown: string }> =
       overviewSettled.status === 'fulfilled' ? overviewSettled.value : [];
+    // Ф10 мост К1 — список эпизодов-источников (SourceEpisode по разрешённым
+    // personIds/entityIds). Best-effort: rejected/нет эпизодов → []. Несёт
+    // структурную часть ответа (episodes) + перечисление в контекст.
+    const episodes: ChatV2Episode[] =
+      episodesSettled.status === 'fulfilled' ? episodesSettled.value : [];
+    const answerKind = deriveAnswerKind(input.queryClass);
 
     // 2) Выгружаем сами блоки + первую evidence из встреч + meeting title.
     //    Ф4 — главный выходной шлюз доступа (см. loadContextBlocks).
@@ -806,7 +910,8 @@ export class ChatV2Service {
       contextBlocks.length === 0 &&
       tableRows.length === 0 &&
       temporalRollups.length === 0 &&
-      themeMap.length === 0
+      themeMap.length === 0 &&
+      episodes.length === 0
     ) {
       const desc = input.structuralFilters
         ? describeStructuralFilters(input.structuralFilters)
@@ -831,6 +936,8 @@ export class ChatV2Service {
         // M-1 — пустой контекст: ответ-заглушка без данных.
         dataClass: 'internal',
         needsClarification: false,
+        answerKind,
+        episodes: undefined,
       };
     }
 
@@ -886,6 +993,8 @@ export class ChatV2Service {
         temporalRollups,
         // Ф6 мост К4 — карта тем. Пусто → секция «Карта тем» не выводится.
         themeMap,
+        // Ф10 мост К1 — список эпизодов-источников. Пусто → секция «Источники» не выводится.
+        episodes,
       },
     );
 
@@ -989,6 +1098,8 @@ export class ChatV2Service {
       // M-1 — derived класс ответа (тот же, что ушёл в llm.call).
       dataClass: effectiveDataClass,
       needsClarification,
+      answerKind,
+      episodes: episodes.length > 0 ? episodes : undefined,
     };
   }
 
@@ -1371,6 +1482,35 @@ export class ChatV2Service {
       this.logger.warn(
         { tenantId, err: err instanceof Error ? err.message : String(err) },
         'chat-v2 runOverviewBranch: сбой — возвращаем [] (семантика отвечает)',
+      );
+      return [];
+    }
+  }
+
+  private async runEpisodesBranch(
+    input: ChatV2Input,
+    tenantId: string,
+  ): Promise<ChatV2Episode[]> {
+    if (input.queryClass !== 'list') return [];
+    const personIds = input.structuralFilters?.personIds ?? [];
+    const entityIds = input.structuralFilters?.entityIds ?? [];
+    if (personIds.length === 0 && entityIds.length === 0) return [];
+    const limit = await this.cfg.getDynamic<number>(
+      'knowledge.list_episodes_limit',
+      undefined,
+      30,
+    );
+    try {
+      return await this.retrieval.listEpisodesByActors({
+        tenantId,
+        personIds,
+        entityIds,
+        limit,
+      });
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 runEpisodesBranch: сбой — возвращаем [] (семантика отвечает)',
       );
       return [];
     }
@@ -1782,6 +1922,7 @@ export class ChatV2Service {
       tableRows?: ReadonlyArray<{ tableName: string; cells: string }>;
       temporalRollups?: ReadonlyArray<{ label: string; markdown: string }>;
       themeMap?: ReadonlyArray<{ label: string; markdown: string }>;
+      episodes?: ReadonlyArray<ChatV2Episode>;
     },
   ): string {
     const parts: string[] = [];
@@ -1871,6 +2012,22 @@ export class ChatV2Service {
       for (const r of themeMap) {
         parts.push(`${THEME_MAP_TAG_PREFIX} ${r.label}]`);
         parts.push(r.markdown);
+      }
+    }
+
+    // Ф10 мост К1 — список эпизодов-источников (встречи/документы/чаты) по
+    // разрешённым участникам/сущностям. Ответ — перечисление со ссылками-
+    // маркерами на источники, НЕ абзац-синтез из блоков.
+    const episodes = extra?.episodes;
+    if (episodes && episodes.length > 0) {
+      parts.push('');
+      parts.push('Источники (встречи/документы/чаты):');
+      for (const ep of episodes) {
+        const kindRu = EPISODE_KIND_RU[ep.kind] ?? ep.kind;
+        const when = isoDateKey(ep.occurredAt);
+        parts.push(
+          `${EPISODE_TAG_PREFIX}${ep.rawEventId}] ${ep.title} — ${kindRu}, ${when}`,
+        );
       }
     }
 

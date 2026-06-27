@@ -17,6 +17,7 @@ function makeAnswer(over?: Partial<ChatAnswer>): ChatAnswer {
     cacheHit: false,
     dataClass: 'internal',
     needsClarification: false,
+    answerKind: 'prose',
     ...over,
   };
 }

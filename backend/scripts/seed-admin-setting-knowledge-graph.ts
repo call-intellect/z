@@ -161,6 +161,15 @@ const SEEDS: SettingSeed[] = [
       'Сколько верхних тем (по близости Theme.embedding к вопросу) брать для обзорного класса (К4, слой источника Ф6). Карта строится lazy на лету из Theme.summary выбранных тем; затем — погружение в блоки этих тем. Привязка к близости embedding, ветка темы лишь сужает. По умолчанию 5.',
   },
   {
+    key: 'knowledge.list_episodes_limit',
+    value: 30,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Сколько эпизодов-источников (SourceEpisode: встречи/документы/чаты по occurredAt DESC) брать для класса-списка (К1, слой источника Ф10). Ответ — перечисление источников со ссылками, а не абзац-синтез из блоков. По умолчанию 30.',
+  },
+  {
     key: 'knowledge.person_resolve_trgm_threshold',
     value: 0.3,
     category: 'ai',

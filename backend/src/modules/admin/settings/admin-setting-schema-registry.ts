@@ -58,6 +58,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.router_confidence_threshold', UNIT_INTERVAL],
   ['knowledge.router_v2_enabled', z.boolean()],
   ['knowledge.overview_top_themes', POSITIVE_INT],
+  ['knowledge.list_episodes_limit', POSITIVE_INT],
   ['knowledge.person_resolve_trgm_threshold', UNIT_INTERVAL],
   ['knowledge.person_resolve_ambiguity_delta', UNIT_INTERVAL],
   ['knowledge.linkKnnTopK', POSITIVE_INT],

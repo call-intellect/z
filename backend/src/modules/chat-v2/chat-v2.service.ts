@@ -24,7 +24,11 @@ import {
   RagGroundednessSchema,
   buildRagGroundednessUser,
 } from '../knowledge-core/prompts/rag-pipeline.prompts';
-import type { ChatV2Stage } from '../knowledge-core/services/chat-v2.service';
+import type {
+  ChatV2AnswerKind,
+  ChatV2Episode,
+  ChatV2Stage,
+} from '../knowledge-core/services/chat-v2.service';
 
 import { ChatV2ConversationsService } from './services/conversations.service';
 import { SynthesisService } from './services/synthesis.service';
@@ -53,6 +57,8 @@ export interface ChatAnswer {
   cacheHit: boolean;
   dataClass: DataClass;
   needsClarification: boolean;
+  answerKind: ChatV2AnswerKind;
+  episodes?: ChatV2Episode[];
 }
 
 export interface EphemeralAnswer {
@@ -63,6 +69,8 @@ export interface EphemeralAnswer {
   usedBlockIds: string[];
   uncertaintyNote: string | null;
   mode: ChatV2Mode;
+  answerKind: ChatV2AnswerKind;
+  episodes?: ChatV2Episode[];
 }
 
 interface ResolveAnswerArgs {
@@ -89,6 +97,8 @@ interface ResolvedAnswer {
   uncertaintyNote: string | null;
   mode: ChatV2Mode;
   cacheHit: boolean;
+  answerKind: ChatV2AnswerKind;
+  episodes?: ChatV2Episode[];
 }
 
 @Injectable()
@@ -234,6 +244,8 @@ export class ChatV2OrchestrationService {
       cacheHit: resolved.cacheHit,
       dataClass: resolved.dataClass,
       needsClarification: resolved.needsClarification,
+      answerKind: resolved.answerKind,
+      episodes: resolved.episodes,
     };
   }
 
@@ -287,6 +299,8 @@ export class ChatV2OrchestrationService {
       usedBlockIds: resolved.usedBlockIds,
       uncertaintyNote: resolved.uncertaintyNote,
       mode,
+      answerKind: resolved.answerKind,
+      episodes: resolved.episodes,
     };
   }
 
@@ -324,6 +338,8 @@ export class ChatV2OrchestrationService {
         uncertaintyNote: cached.uncertaintyNote,
         mode,
         cacheHit: true,
+        answerKind: 'prose',
+        episodes: undefined,
         llmMeta: { fromCache: true },
         retrievalMeta: { usedBlockIds: cached.usedBlockIds, fromCache: true },
       };
@@ -339,6 +355,8 @@ export class ChatV2OrchestrationService {
         uncertaintyNote: null,
         mode,
         cacheHit: false,
+        answerKind: 'prose',
+        episodes: undefined,
         llmMeta: { clarification: true },
         retrievalMeta: { usedBlockIds: [], clarification: true },
       };
@@ -419,6 +437,8 @@ export class ChatV2OrchestrationService {
       uncertaintyNote: result.uncertaintyNote,
       mode,
       cacheHit: false,
+      answerKind: result.answerKind,
+      episodes: result.episodes,
       llmMeta: result.llmMeta,
       retrievalMeta: result.retrievalMeta,
     };

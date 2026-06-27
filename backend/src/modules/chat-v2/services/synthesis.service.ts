@@ -9,7 +9,9 @@ import type { StructuralRetrievalFilters } from '../../dialog-layer/services/que
 import { RetrievalCacheService } from '../../dialog-layer/services/retrieval-cache.service';
 import {
   ChatV2Service as KnowledgeCoreChatV2Service,
+  type ChatV2AnswerKind,
   type ChatV2Citation,
+  type ChatV2Episode,
   type ChatV2Output,
   type ChatV2Scope as KnowledgeChatV2Scope,
   type ChatV2Stage,
@@ -45,6 +47,8 @@ export interface SynthesisResult {
   uncertaintyNote: string | null;
   dataClass: DataClass;
   needsClarification: boolean;
+  answerKind: ChatV2AnswerKind;
+  episodes?: ChatV2Episode[];
 }
 
 @Injectable()
@@ -89,6 +93,8 @@ export class SynthesisService {
           uncertaintyNote: null,
           dataClass: 'sensitive',
           needsClarification: false,
+          answerKind: 'prose',
+          episodes: undefined,
         };
       } catch (err) {
         this.logger.warn(
@@ -194,6 +200,8 @@ export class SynthesisService {
       uncertaintyNote,
       dataClass: result.dataClass,
       needsClarification: result.needsClarification,
+      answerKind: result.answerKind,
+      episodes: result.episodes,
     };
   }
 

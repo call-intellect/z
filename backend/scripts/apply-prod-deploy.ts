@@ -771,6 +771,12 @@ const STEPS: Step[] = [
     skipBootstrap: true,
   },
   {
+    phase: 'backfill',
+    script: 'scripts/backfill-context-header-reembed.ts',
+    hint: 'ре-эмбеддинг IdeaBlock с contextual-header v2 (компании/состав/заголовок источника) + REINDEX HNSW; идемпотентно по contextHeaderVersion (Ф7). Запускать ПОСЛЕ backfill-source-layer',
+    skipBootstrap: true,
+  },
+  {
     phase: 'migrate',
     script: 'scripts/migrate-telegram-channels-to-global.ts',
     skipBootstrap: true,

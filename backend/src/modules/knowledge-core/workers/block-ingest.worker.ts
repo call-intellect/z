@@ -36,7 +36,12 @@ import {
   type ExtractedBlock,
   type ExtractedEntityMention,
 } from '../services/block-extraction.service';
-import { ChunkContextService } from '../services/chunk-context.service';
+import { ChunkContextService, CONTEXT_HEADER_VERSION } from '../services/chunk-context.service';
+import {
+  isCompanyEntityType,
+  makeContextHeaderInput,
+  resolveContextHeaderTitle,
+} from '../services/context-header-input';
 import { KnowledgeEmbeddingService } from '../services/embedding.service';
 import { isJunkEntityName } from '../services/entity-name-quality';
 import { EntityResolutionService } from '../services/entity-resolution.service';
@@ -274,15 +279,21 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         'block-ingest: извлечение завершено',
       );
 
+      const headerInput = makeContextHeaderInput({
+        sourceTitle: resolveContextHeaderTitle({
+          sourceTitle: event.sourceTitle,
+          payloadTitle: meetingTitle ?? null,
+          sourceExternalId: event.sourceExternalId,
+          fallback: `${event.sourceType}:${event.id}`,
+        }),
+        companies: this.collectCompanyNames(blocksInOrder),
+        participants: this.tryGetParticipantNames(payload) ?? [],
+        meetingType: this.tryGetMeetingType(payload) ?? null,
+        meetingDateIso: event.occurredAt.toISOString(),
+      });
       const contextHeader = this.chunkContext
         ? await this.chunkContext
-            .buildContextHeader({
-              tenantId: event.tenantId,
-              meetingTitle,
-              meetingType: this.tryGetMeetingType(payload),
-              meetingDateIso: event.occurredAt.toISOString(),
-              participants: this.tryGetParticipantNames(payload),
-            })
+            .buildContextHeader({ tenantId: event.tenantId, ...headerInput })
             .catch(() => '')
         : '';
 
@@ -861,6 +872,19 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     return undefined;
   }
 
+  private collectCompanyNames(blocks: ExtractedBlock[]): string[] {
+    const names: string[] = [];
+    for (const b of blocks) {
+      for (const ent of b.mentionedEntities ?? []) {
+        if (isCompanyEntityType(ent.type) && typeof ent.name === 'string') {
+          const trimmed = ent.name.trim();
+          if (trimmed.length > 0) names.push(trimmed);
+        }
+      }
+    }
+    return names;
+  }
+
   private tryGetParticipantNames(payload: unknown): string[] | undefined {
     if (typeof payload !== 'object' || payload === null) return undefined;
     const parts = (payload as { participants?: unknown }).participants;
@@ -1290,9 +1314,11 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         });
         if (embedding && embedding.length > 0) {
           await tx.$executeRawUnsafe(
-            'UPDATE "IdeaBlock" SET embedding = $1::vector(1536) WHERE id = $2',
+            'UPDATE "IdeaBlock" SET embedding = $1::vector(1536), "contextHeaderVersion" = $2 WHERE id = $3 AND "tenantId" = $4',
             this.toVectorLiteral(embedding),
+            CONTEXT_HEADER_VERSION,
             ideaBlock.id,
+            event.tenantId,
           );
         }
         const evidence = await tx.ideaBlockEvidence.create({

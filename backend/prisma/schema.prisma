@@ -3413,6 +3413,7 @@ model IdeaBlock {
   confidence                  Decimal                      @default(0.5) @db.Decimal(4, 3)
   dataClass                   DataClass                    @default(internal)
   embedding                   Unsupported("vector(1536)")?
+  contextHeaderVersion        String?                      @db.VarChar(16)
   status                      IdeaBlockStatus              @default(draft)
   mergedIntoId                String?
   /// Ф1 партиционирование — nullable-компаньон tenantId для составного

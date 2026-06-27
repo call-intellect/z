@@ -223,7 +223,7 @@ LLM недоступен ──► graceful degradation: нынешний дет
 - `grep -n "ProbeDialogState" prisma/schema.prisma` + `@@index([tenantId, probeEventId])` присутствует.
 **Закрывает:** R4, R9.
 
-### Ф3 — Эскалация в один уточняющий ход `[ ]`
+### Ф3 — Эскалация в один уточняющий ход `[x]`
 **Цель:** при сомнении/встречном вопросе/нераспознанном значении — задать ОДИН уточняющий вопрос, не терять и не угадывать.
 **Файлы:** `probe/probe-response.handler.ts`, `probe/probe-dialog.service.ts`, `conversational.service.ts` (отправка `probe.clarify`), `event-payload.registry.ts`, `typed-config.service.ts` + `admin-setting-schema-registry.ts` + `seed-admin-settings.ts` (крутилки Б6).
 **Что входит:**

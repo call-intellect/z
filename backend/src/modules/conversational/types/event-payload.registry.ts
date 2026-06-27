@@ -28,6 +28,15 @@ const ProbeDigestPayloadSchema = z
   })
   .strict();
 
+const ProbeClarifyPayloadSchema = z
+  .object({
+    question: z.string().min(1).max(4_000),
+    objectTitle: z.string().max(200).optional(),
+    probeEventId: z.string().optional(),
+    summary: z.string().max(4_000).optional(),
+  })
+  .strict();
+
 const ProbeAnswerAckPayloadSchema = z
   .object({
     text: z.string().min(1).max(400),
@@ -278,6 +287,7 @@ const SupportTicketEventPayloadSchema = z
 const registry = new Map<string, z.ZodTypeAny>([
   ['probe.question', ProbeQuestionPayloadSchema],
   ['probe.digest', ProbeDigestPayloadSchema],
+  ['probe.clarify', ProbeClarifyPayloadSchema],
   ['probe.answer_acknowledged', ProbeAnswerAckPayloadSchema],
   ['curation.pending', CurationPendingPayloadSchema],
   ['system.message', SystemMessagePayloadSchema],

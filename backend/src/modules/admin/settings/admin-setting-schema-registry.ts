@@ -209,6 +209,10 @@ const registry = new Map<string, ZodTypeAny>([
   ['probe.existenceConfirmEnabled', z.boolean()],
   ['probe.machineFillableReasons', z.array(z.string())],
   ['probe.draftReasons', z.array(z.string())],
+  ['probe.dialogEnabled', z.boolean()],
+  ['probe.dialogEscalateMaxConfidence', UNIT_INTERVAL],
+  ['probe.dialogMaxTurns', POSITIVE_INT],
+  ['probe.dialogConfirmTtlHours', POSITIVE_INT],
 
   ['subjectMemory.enabled', z.boolean()],
   ['subjectMemory.retrieveBeforeAskEnabled', z.boolean()],

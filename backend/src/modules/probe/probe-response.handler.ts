@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { Prisma, type DataClass } from '@prisma/client';
+import { Prisma, type DataClass, type ProbeDialogState, type ProbeEvent } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
@@ -26,12 +26,7 @@ import {
   PROBE_RESPONSE_CLASSIFY_USER_TEMPLATE,
 } from './prompts/probe-response-classify.prompt';
 
-type ProbeResponseOutcome =
-  | 'apply'
-  | 'delete'
-  | 'refine'
-  | 'counter_question'
-  | 'unclear';
+type ProbeResponseOutcome = 'apply' | 'delete' | 'refine' | 'counter_question' | 'unclear';
 
 interface ProbeClassification {
   answer: string;
@@ -102,7 +97,13 @@ export class ProbeResponseHandler {
           dispatchedNotificationId: event.notificationId,
         },
       });
-      if (!probe) return;
+      if (!probe) {
+        this.logger.debug(
+          { notificationId: event.notificationId, tenantId: event.tenantId },
+          'probe-response: ответ на уведомление без активного ProbeEvent (вероятно устаревший/эскалированный notif) — пропускаю',
+        );
+        return;
+      }
       const kind = await this.lookupDeliveryKind(event.notificationId);
 
       this.metrics.incProbeResponse({
@@ -161,8 +162,7 @@ export class ProbeResponseHandler {
         classification.answer
       ) {
         try {
-          const questionText =
-            this.extractQuestionText(probePayload) ?? probe.reason;
+          const questionText = this.extractQuestionText(probePayload) ?? probe.reason;
           await this.coreQueue.enqueueSubjectMemoryDerive({
             tenantId: event.tenantId,
             probeEventId: probe.id,
@@ -181,15 +181,16 @@ export class ProbeResponseHandler {
         }
       }
 
+      let dialogState: ProbeDialogState | null = null;
       if (this.dialog) {
         try {
-          await this.dialog.ensureState({
+          dialogState = await this.dialog.ensureState({
             tenantId: event.tenantId,
             probeEventId: probe.id,
             recipientUserId: event.recipientUserId,
           });
           if (classification) {
-            await this.dialog.recordTurn({
+            dialogState = await this.dialog.recordTurn({
               probeEventId: probe.id,
               outcome: classification.outcome,
               collectedValue: classification.value,
@@ -204,81 +205,65 @@ export class ProbeResponseHandler {
         }
       }
 
+      const dialogEnabled = this.cfg.probe.dialogEnabled === true;
+      const dialogActive = dialogEnabled && this.dialog !== undefined && classification !== null;
+      let escalateThreshold = 1;
+      let maxTurns = 0;
+      if (dialogActive) {
+        escalateThreshold = await this.cfg.getDynamic<number>(
+          'probe.dialogEscalateMaxConfidence',
+          undefined,
+          0.6,
+        );
+        maxTurns = await this.cfg.getDynamic<number>('probe.dialogMaxTurns', undefined, 2);
+      }
+      const preApplyClarify =
+        dialogActive &&
+        classification !== null &&
+        (classification.outcome === 'unclear' ||
+          classification.outcome === 'counter_question' ||
+          classification.outcome === 'refine' ||
+          classification.confidence < escalateThreshold);
+
       let applyResult: ApplyResult | null = null;
+      let routed = false;
 
-      if (probe.reason === 'regulation.existence_confirm') {
-        applyResult = await this.maybeDecideExistenceConfirm({
-          tenantId: event.tenantId,
-          reviewerUserId: event.recipientUserId,
+      if (preApplyClarify) {
+        await this.routeClarifyOrEscalate({
+          probe,
+          event,
           probePayload,
-          eventPayload: event.payload,
-          classification,
+          dialogState,
+          maxTurns,
         });
-      }
-
-      if (
-        probe.reason === 'task.assignee_unresolved' ||
-        probe.reason === 'task.due_date_missing' ||
-        probe.reason === 'task.poorly_specified' ||
-        probe.reason === 'task.false_positive'
-      ) {
-        applyResult = await this.maybeApplyTaskProbeAnswer({
-          tenantId: event.tenantId,
-          reason: probe.reason,
-          actorUserId: event.recipientUserId,
+        routed = true;
+      } else {
+        applyResult = await this.dispatchApply({
+          probe,
+          event,
           probePayload,
-          eventPayload: event.payload,
           classification,
         });
+        if (dialogActive && applyResult !== null && applyResult.status === 'needs_clarification') {
+          await this.routeClarifyOrEscalate({
+            probe,
+            event,
+            probePayload,
+            dialogState,
+            maxTurns,
+          });
+          routed = true;
+        }
       }
 
-      if (probe.reason === 'task.completion_detail_missing') {
-        applyResult = await this.maybeApplyCompletionDetailAnswer({
+      if (!routed) {
+        await this.sendAnswerAck({
           tenantId: event.tenantId,
-          actorUserId: event.recipientUserId,
+          recipientUserId: event.recipientUserId,
           probePayload,
-          eventPayload: event.payload,
-          classification,
+          probeId: probe.id,
         });
       }
-
-      if (probe.reason.startsWith('decision.')) {
-        applyResult = await this.maybeApplyDecisionProbeAnswer({
-          tenantId: event.tenantId,
-          reason: probe.reason,
-          actorUserId: event.recipientUserId,
-          probePayload,
-          eventPayload: event.payload,
-          classification,
-        });
-      }
-
-      if (probe.reason === 'experiment.result_without_lesson') {
-        applyResult = await this.maybeApplyExperimentLessonAnswer({
-          tenantId: event.tenantId,
-          actorUserId: event.recipientUserId,
-          probePayload,
-          eventPayload: event.payload,
-          classification,
-        });
-      }
-
-      if (probe.reason.startsWith('companyprofile.missing_')) {
-        applyResult = await this.maybeApplyCompanyProfileAnswer({
-          tenantId: event.tenantId,
-          reason: probe.reason,
-          actorUserId: event.recipientUserId,
-          eventPayload: event.payload,
-          classification,
-        });
-      }
-
-      await this.sendAnswerAck({
-        tenantId: event.tenantId,
-        recipientUserId: event.recipientUserId,
-        probePayload,
-        probeId: probe.id,
-      });
 
       const applySummary = applyResult
         ? applyResult.status === 'needs_clarification'
@@ -286,7 +271,7 @@ export class ProbeResponseHandler {
           : `apply=${applyResult.status}`
         : 'apply=none';
       this.logger.log(
-        `probe.responded: probeId=${probe.id} eventType=${event.eventType} kind=${kind ?? 'unknown'} classified=${classification ? `${classification.unclear ? 'unclear' : 'ok'}(${classification.confidence.toFixed(2)})` : 'skipped'} ${applySummary} (closing-loop applied)`,
+        `probe.responded: probeId=${probe.id} eventType=${event.eventType} kind=${kind ?? 'unknown'} classified=${classification ? `${classification.unclear ? 'unclear' : 'ok'}(${classification.confidence.toFixed(2)})` : 'skipped'} ${applySummary} routed=${routed ? 'clarify/escalate' : 'ack'} (closing-loop applied)`,
       );
     } catch (err) {
       this.logger.warn(
@@ -295,6 +280,200 @@ export class ProbeResponseHandler {
           err: err instanceof Error ? err.message : String(err),
         },
         'ProbeResponseHandler: внутренняя ошибка — пропускаю',
+      );
+    }
+  }
+
+  private async dispatchApply(args: {
+    probe: ProbeEvent;
+    event: NotificationRespondedPayload;
+    probePayload: Record<string, unknown>;
+    classification: ProbeClassification | null;
+  }): Promise<ApplyResult | null> {
+    const { probe, event, probePayload, classification } = args;
+    let applyResult: ApplyResult | null = null;
+
+    if (probe.reason === 'regulation.existence_confirm') {
+      applyResult = await this.maybeDecideExistenceConfirm({
+        tenantId: event.tenantId,
+        reviewerUserId: event.recipientUserId,
+        probePayload,
+        eventPayload: event.payload,
+        classification,
+      });
+    }
+
+    if (
+      probe.reason === 'task.assignee_unresolved' ||
+      probe.reason === 'task.due_date_missing' ||
+      probe.reason === 'task.poorly_specified' ||
+      probe.reason === 'task.false_positive'
+    ) {
+      applyResult = await this.maybeApplyTaskProbeAnswer({
+        tenantId: event.tenantId,
+        reason: probe.reason,
+        actorUserId: event.recipientUserId,
+        probePayload,
+        eventPayload: event.payload,
+        classification,
+      });
+    }
+
+    if (probe.reason === 'task.completion_detail_missing') {
+      applyResult = await this.maybeApplyCompletionDetailAnswer({
+        tenantId: event.tenantId,
+        actorUserId: event.recipientUserId,
+        probePayload,
+        eventPayload: event.payload,
+        classification,
+      });
+    }
+
+    if (probe.reason.startsWith('decision.')) {
+      applyResult = await this.maybeApplyDecisionProbeAnswer({
+        tenantId: event.tenantId,
+        reason: probe.reason,
+        actorUserId: event.recipientUserId,
+        probePayload,
+        eventPayload: event.payload,
+        classification,
+      });
+    }
+
+    if (probe.reason === 'experiment.result_without_lesson') {
+      applyResult = await this.maybeApplyExperimentLessonAnswer({
+        tenantId: event.tenantId,
+        actorUserId: event.recipientUserId,
+        probePayload,
+        eventPayload: event.payload,
+        classification,
+      });
+    }
+
+    if (probe.reason.startsWith('companyprofile.missing_')) {
+      applyResult = await this.maybeApplyCompanyProfileAnswer({
+        tenantId: event.tenantId,
+        reason: probe.reason,
+        actorUserId: event.recipientUserId,
+        eventPayload: event.payload,
+        classification,
+      });
+    }
+
+    return applyResult;
+  }
+
+  private async routeClarifyOrEscalate(args: {
+    probe: ProbeEvent;
+    event: NotificationRespondedPayload;
+    probePayload: Record<string, unknown>;
+    dialogState: ProbeDialogState | null;
+    maxTurns: number;
+  }): Promise<void> {
+    const turnCount = args.dialogState?.turnCount ?? 1;
+    const title = this.toStringOrUndef(args.probePayload.contextCardTitle);
+    const question = this.extractQuestionText(args.probePayload) ?? args.probe.reason;
+    const dataClass = this.extractDataClass(args.probePayload);
+
+    if (turnCount > args.maxTurns) {
+      const userAnswer =
+        this.toStringOrUndef(args.dialogState?.collectedValue ?? undefined) ??
+        this.extractResponseText(args.event.payload);
+      await this.escalateToHuman({
+        probe: args.probe,
+        question,
+        title,
+        dataClass,
+        userAnswer,
+      });
+      return;
+    }
+
+    try {
+      const clarifyText = `Не до конца понял ваш ответ. Уточните, пожалуйста: «${question}»`;
+      const notif = await this.conversational.sendNotification({
+        tenantId: args.probe.tenantId,
+        recipientUserId: args.event.recipientUserId,
+        eventType: 'probe.clarify',
+        payload: {
+          question: clarifyText,
+          ...(title ? { objectTitle: title } : {}),
+          probeEventId: args.probe.id,
+        },
+        dataClass,
+      });
+      await this.prisma.probeEvent.update({
+        where: { id: args.probe.id },
+        data: { status: 'awaiting_dialog', dispatchedNotificationId: notif.id },
+      });
+      if (this.dialog) {
+        await this.dialog.setPhase({
+          probeEventId: args.probe.id,
+          phase: 'awaiting_clarification',
+        });
+      }
+      this.logger.log(
+        `probe-clarify: задан уточняющий ход probe=${args.probe.id} turn=${turnCount}`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        {
+          probeId: args.probe.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'probe-clarify: отправка уточнения упала (best-effort)',
+      );
+    }
+  }
+
+  private async escalateToHuman(args: {
+    probe: ProbeEvent;
+    question: string;
+    title?: string;
+    dataClass: DataClass;
+    userAnswer?: string;
+  }): Promise<void> {
+    try {
+      const recipients = await this.prisma.membership.findMany({
+        where: { orgId: args.probe.tenantId, role: { in: ['owner', 'admin'] } },
+        select: { userId: true },
+      });
+      const userIds = Array.from(new Set(recipients.map((m) => m.userId)));
+      const text = `Кора не смогла разобрать ответ на вопрос: «${args.question}».${args.userAnswer ? ` Ответ человека: «${args.userAnswer}».` : ''} Посмотрите, пожалуйста.`;
+      for (const userId of userIds) {
+        const notif = await this.conversational.sendNotification({
+          tenantId: args.probe.tenantId,
+          recipientUserId: userId,
+          eventType: 'probe.clarify',
+          payload: {
+            question: text,
+            ...(args.title ? { objectTitle: args.title } : {}),
+            probeEventId: args.probe.id,
+          },
+          dataClass: args.dataClass,
+        });
+        await this.prisma.notification.update({
+          where: { id: notif.id },
+          data: { responseStatus: null },
+        });
+      }
+      await this.prisma.probeEvent.update({
+        where: { id: args.probe.id },
+        data: { status: 'escalated_to_human' },
+      });
+      if (this.dialog) {
+        await this.dialog.setPhase({ probeEventId: args.probe.id, phase: 'resolved' });
+      }
+      this.logger.log(
+        `probe-escalate: probe=${args.probe.id} → escalated_to_human, уведомлены owner/admin (${userIds.length})`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        {
+          probeId: args.probe.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'probe-escalate: эскалация упала (best-effort)',
       );
     }
   }
@@ -311,8 +490,7 @@ export class ProbeResponseHandler {
     if (!contextCardId) return { status: 'noop' };
 
     const rawAnswer =
-      args.classification?.value?.trim() ||
-      this.extractResponseText(args.eventPayload);
+      args.classification?.value?.trim() || this.extractResponseText(args.eventPayload);
     if (!rawAnswer) return { status: 'noop' };
 
     const mode = this.resolveApplyMode(args.classification, rawAnswer);
@@ -365,9 +543,10 @@ export class ProbeResponseHandler {
     }
   }
 
-  private existenceConfirmDecision(
-    mode: ApplyMode,
-  ): { decisionType: 'approve' | 'approve_with_edits' | 'reject'; payload?: Record<string, unknown> } | null {
+  private existenceConfirmDecision(mode: ApplyMode): {
+    decisionType: 'approve' | 'approve_with_edits' | 'reject';
+    payload?: Record<string, unknown>;
+  } | null {
     if (mode.kind === 'delete') return { decisionType: 'reject' };
     if (mode.kind === 'value') {
       if (mode.refine && mode.value.trim().length > 0) {
@@ -396,12 +575,9 @@ export class ProbeResponseHandler {
   }): Promise<ApplyResult> {
     const issueId = this.toStringOrUndef(args.probePayload.contextCardId);
     if (!issueId) return { status: 'noop' };
-    const contextCardKind = this.toStringOrUndef(
-      args.probePayload.contextCardKind,
-    );
+    const contextCardKind = this.toStringOrUndef(args.probePayload.contextCardKind);
     const rawAnswer =
-      args.classification?.value?.trim() ||
-      this.extractResponseText(args.eventPayload);
+      args.classification?.value?.trim() || this.extractResponseText(args.eventPayload);
     if (!rawAnswer) return { status: 'noop' };
 
     const mode = this.resolveApplyMode(args.classification, rawAnswer);
@@ -436,10 +612,7 @@ export class ProbeResponseHandler {
 
       const answer = mode.kind === 'value' ? mode.value : mode.answer;
 
-      if (
-        args.reason === 'task.poorly_specified' ||
-        args.reason === 'task.false_positive'
-      ) {
+      if (args.reason === 'task.poorly_specified' || args.reason === 'task.false_positive') {
         await this.appendTaskDescription({
           tenantId: args.tenantId,
           issueId,
@@ -540,8 +713,7 @@ export class ProbeResponseHandler {
     const issueId = this.toStringOrUndef(args.probePayload.contextCardId);
     if (!issueId) return { status: 'noop' };
     const rawAnswer =
-      args.classification?.value?.trim() ||
-      this.extractResponseText(args.eventPayload);
+      args.classification?.value?.trim() || this.extractResponseText(args.eventPayload);
     if (!rawAnswer) return { status: 'noop' };
 
     const mode = this.resolveApplyMode(args.classification, rawAnswer);
@@ -653,8 +825,7 @@ export class ProbeResponseHandler {
     const decisionId = this.toStringOrUndef(args.probePayload.contextCardId);
     if (!decisionId) return { status: 'noop' };
     const rawAnswer =
-      args.classification?.value?.trim() ||
-      this.extractResponseText(args.eventPayload);
+      args.classification?.value?.trim() || this.extractResponseText(args.eventPayload);
     if (!rawAnswer) return { status: 'noop' };
 
     const mode = this.resolveApplyMode(args.classification, rawAnswer);
@@ -704,10 +875,7 @@ export class ProbeResponseHandler {
         return { status: 'applied' };
       }
 
-      if (
-        args.reason === 'decision.no_deadline_critical' ||
-        args.reason === 'decision.overdue'
-      ) {
+      if (args.reason === 'decision.no_deadline_critical' || args.reason === 'decision.overdue') {
         const due = parseRussianDueDate(answer, new Date());
         if (!due) {
           if (mode.kind === 'value') {
@@ -775,8 +943,7 @@ export class ProbeResponseHandler {
     const experimentId = this.toStringOrUndef(args.probePayload.contextCardId);
     if (!experimentId) return { status: 'noop' };
     const rawAnswer =
-      args.classification?.value?.trim() ||
-      this.extractResponseText(args.eventPayload);
+      args.classification?.value?.trim() || this.extractResponseText(args.eventPayload);
     if (!rawAnswer) return { status: 'noop' };
 
     const mode = this.resolveApplyMode(args.classification, rawAnswer);
@@ -802,9 +969,7 @@ export class ProbeResponseHandler {
         select: { lessonsJson: true },
       });
       if (!exp) return { status: 'noop' };
-      const existing = Array.isArray(exp.lessonsJson)
-        ? (exp.lessonsJson as unknown[])
-        : [];
+      const existing = Array.isArray(exp.lessonsJson) ? (exp.lessonsJson as unknown[]) : [];
       const alreadyHas = existing.some(
         (l) =>
           l !== null &&
@@ -813,10 +978,7 @@ export class ProbeResponseHandler {
           (l as { text: string }).text.trim() === lessonText,
       );
       if (alreadyHas) return { status: 'noop' };
-      const next = [
-        ...existing,
-        { text: lessonText, type: 'manual', sourceBlockId: null },
-      ];
+      const next = [...existing, { text: lessonText, type: 'manual', sourceBlockId: null }];
       await this.prisma.experiment.update({
         where: { id: experimentId },
         data: { lessonsJson: next as unknown as Prisma.InputJsonValue },
@@ -847,8 +1009,7 @@ export class ProbeResponseHandler {
   }): Promise<ApplyResult> {
     if (!this.companyProfile) return { status: 'noop' };
     const rawAnswer =
-      args.classification?.value?.trim() ||
-      this.extractResponseText(args.eventPayload);
+      args.classification?.value?.trim() || this.extractResponseText(args.eventPayload);
     if (!rawAnswer) return { status: 'noop' };
 
     const mode = this.resolveApplyMode(args.classification, rawAnswer);
@@ -920,10 +1081,7 @@ export class ProbeResponseHandler {
     return typeof contentMd === 'string' && contentMd.trim().length > 0;
   }
 
-  private async resolveDeciderPersonId(
-    tenantId: string,
-    answer: string,
-  ): Promise<string | null> {
+  private async resolveDeciderPersonId(tenantId: string, answer: string): Promise<string | null> {
     if (this.assigneeResolver) {
       const resolution = await this.assigneeResolver.resolve(tenantId, answer);
       if (resolution.kind === 'resolved') {

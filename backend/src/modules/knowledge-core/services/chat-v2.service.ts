@@ -1341,8 +1341,14 @@ export class ChatV2Service {
     );
     if (blockIds.length <= minPool) return blockIds;
 
+    const poolSize = await this.cfg.getDynamic<number>(
+      'rag.rerank_pool_size',
+      undefined,
+      30,
+    );
+
     try {
-      const poolIds = blockIds.slice(0, 30);
+      const poolIds = blockIds.slice(0, poolSize);
       const rows = await this.prisma.ideaBlock.findMany({
         where: { id: { in: poolIds }, tenantId, status: 'canonical' },
         select: { id: true, name: true, trustedAnswer: true },

@@ -52,6 +52,7 @@ export interface MasterScopedChatProps {
   emptyHint?: string;
   enableVoice?: boolean;
   enableTts?: boolean;
+  suggestedPrompts?: string[];
   className?: string;
 }
 
@@ -74,6 +75,7 @@ export function MasterScopedChat({
   emptyHint = "Спросите о памяти компании или попросите выполнить действие — каждый ответ подкреплён цитатами из источников.",
   enableVoice = false,
   enableTts = false,
+  suggestedPrompts,
   className,
 }: MasterScopedChatProps): ReactElement {
   const router = useRouter();
@@ -481,8 +483,9 @@ export function MasterScopedChat({
   return (
     <div
       className={
-        className ??
-        "flex flex-col gap-3 rounded-md border border-border-subtle bg-bg-elevated"
+        className
+          ? `flex flex-col gap-3 ${className}`
+          : "flex flex-col gap-3 rounded-md border border-border-subtle bg-bg-elevated"
       }
     >
       <div
@@ -495,6 +498,20 @@ export function MasterScopedChat({
               {emptyTitle}
             </div>
             <div className="mt-1 text-xs text-fg-tertiary">{emptyHint}</div>
+            {suggestedPrompts && suggestedPrompts.length > 0 ? (
+              <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+                {suggestedPrompts.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setInput(p)}
+                    className="rounded-full border border-border-subtle bg-bg-elevated px-3 py-1.5 text-xs text-fg-secondary transition-colors hover:border-accent/60 hover:text-accent"
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
 

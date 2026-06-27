@@ -108,6 +108,23 @@ describe("MasterScopedChat", () => {
     expect(screen.getByLabelText("Отправить вопрос")).toBeInTheDocument();
   });
 
+  it("рендерит чипы подсказок и подставляет текст в поле по клику", () => {
+    render(
+      <MasterScopedChat
+        scope="org"
+        orgId="org-1"
+        suggestedPrompts={["Сводка за неделю"]}
+      />,
+    );
+
+    const chip = screen.getByRole("button", { name: "Сводка за неделю" });
+    expect(chip).toBeInTheDocument();
+    fireEvent.click(chip);
+    expect(screen.getByLabelText("Вопрос к Коре")).toHaveValue(
+      "Сводка за неделю",
+    );
+  });
+
   it("показывает кнопку микрофона при enableVoice", () => {
     render(
       <MasterScopedChat

@@ -6,17 +6,19 @@ vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({ currentOrgRole: role, currentOrgId: "org-test" }),
 }));
 
-vi.mock("@/api/chat.api", () => ({
-  chatApi: {
-    historyGlobal: vi.fn().mockResolvedValue({ items: [] }),
-    askV2: vi.fn(),
-    sendGlobal: vi.fn(),
-  },
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
+  usePathname: () => "/chat",
+  useSearchParams: () => new URLSearchParams(),
 }));
 
-vi.mock("@/ui/components/voice/VoiceInputButton", () => ({
-  VoiceInputButton: () => <button type="button">Голосовой ввод</button>,
-  appendTranscript: (prev: string, t: string) => (prev ? `${prev} ${t}` : t),
+vi.mock("@/api/concierge.api", () => ({
+  conciergeApi: { askOnce: vi.fn(), undo: vi.fn() },
+  conciergeStreamApi: vi.fn(),
+}));
+
+vi.mock("@/api/voice.api", () => ({
+  voiceApi: { transcribe: vi.fn(), synthesize: vi.fn() },
 }));
 
 import { MobileAskClient } from "./MobileAskClient";
@@ -41,10 +43,10 @@ describe("MobileAskClient", () => {
     render(<MobileAskClient />);
     const chip = screen.getByText("Риски по проекту");
     fireEvent.click(chip);
-    const textarea = screen.getByPlaceholderText(
+    const field = screen.getByPlaceholderText(
       "Спросите Кору о памяти компании…",
-    ) as HTMLTextAreaElement;
-    expect(textarea.value).toBe("Риски по проекту");
+    ) as HTMLInputElement;
+    expect(field.value).toBe("Риски по проекту");
   });
 
   it("(в) manager-роль — manager-промпты, нет exec-набора", () => {

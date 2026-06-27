@@ -325,4 +325,8 @@ LLM недоступен ──► graceful degradation: нынешний дет
 - Рефлексия в `05_история/`.
 
 ## Итог
-_(заполнит tz-orchestrator по завершении: что реализовано целиком, что осталось.)_
+**Реализовано целиком (Ф1–Ф6), ветка `feature/probe-clarify-dialog`.** Коммиты: Ф1 `12581516`, Ф2 `0cb7f63b`, Ф3 `8ab2d22d`, Ф4 `77cc81a5`, Ф5 `63aa03a9`, Ф6 `68b1cab2`. Верификация: `typecheck`/`lint`/`build` зелёные; vitest probe **298** + conversational **273** зелёные; миграция `20260627000000_probe_dialog_state` (аддитивная, `prisma validate` ок — локальной БД нет, apply на проде через `migrate deploy`). Состязательное ревью Ф3 + саморевью Ф4 + фиксы внесённых дефектов (orphan-pending эскалации Ф3; адресность explicit-lookup Ф5). Все R1–R17 закрыты.
+
+**Осталось (vNext, вне scope этой итерации, с подтверждения владельца):** полный диалоговый Мастер от probe (`plans/tz/vNext-probe-master-full-dialog.md`, В1); применение для доменов без apply (`plans/tz/vNext-probe-apply-remaining-domains.md`, В4). Follow-up'ы (дайджест закрывается после одного ответа; ответ owner на эскалацию не авто-применяется; curation не материализует rename; existence-confirm owner-assign только в degraded) — строки в `second-brain/04_не-сделано/README.md`.
+
+**Прод:** kill-switch `probe.dialogEnabled` ON (Ship-On). Операции — `docs/operations/prod-deploy-log.md` блок 2026-06-27 (миграция авто + 4 крутилки агрегатором + smoke).

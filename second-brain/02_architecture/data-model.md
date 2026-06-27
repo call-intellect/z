@@ -1097,6 +1097,33 @@ Autonomy W2 (2026-06-12) добавила **ещё два значения** (м
 Автономизация — убрать лишние подтверждения (2026-06-23, Блок D) добавила **ещё одно значение** (миграция `20260623151703_add_probe_suppressed_by_memory`, `ALTER TYPE "ProbeStatus" ADD VALUE 'suppressed_by_memory'`, аддитивно):
 - **`suppressed_by_memory`** — висящий **pending-probe погашен дочисткой по выученному правилу** `SubjectMemory` (`SubjectMemoryService.sweepPendingDuplicates`): при активации нового правила самообучения близкие к нему ожидающие probe закрываются, человека не переспрашивают то, что Кора уже выучила. Kill-switch `subjectMemory.sweepPendingOnLearnEnabled` (ON), метрика `subject_memory_pending_swept_total`. См. [[../01_projects/probe-agent]] §«Наблюдаемость самообучения SubjectMemory».
 
+### Диалоговое уточнение probe — `ProbeDialogState` + `ProbeDialogPhase` + 4 значения `ProbeStatus` (2026-06-27)
+
+**Источник:** ТЗ [`plans/tz/2026-06-27-probe-clarify-dialog-tz.md`](../../plans/tz/2026-06-27-probe-clarify-dialog-tz.md). Полная карта движка — [[../01_projects/probe-agent]] §«Диалоговое уточнение probe». Миграция `20260627000000_probe_dialog_state` (CREATE TYPE + ALTER TYPE + CREATE TABLE, аддитивная, без потери данных, backfill не нужен).
+
+Новая модель **`ProbeDialogState`** — состояние диалоговой петли probe, 1:1 с `ProbeEvent`:
+
+| Поле | Тип | Значение |
+|---|---|---|
+| `probeEventId` | string `@unique` | FK → `probe_events` (`ON DELETE CASCADE`); 1:1, одна активная строка на probe |
+| `phase` | ProbeDialogPhase | текущая фаза петли |
+| `outcome` | string? | сохранённый исход последнего хода классификатора (`apply`/`delete`/`refine`/`counter_question`/`unclear`) |
+| `collectedValue` | string? | извлечённое значение (новое имя/срок/итог) — применяется при подтверждении, НЕ текст «да» |
+| `confidence` | float? | уверенность последнего хода (только маршрутизация, не запись) |
+| `turnCount` | int | счётчик ходов диалога (инкремент в `recordTurn`); `> probe.dialogMaxTurns` → эскалация owner/admin |
+| `tenantId` | string | tenant-изоляция |
+| `recipientUserId` | string? | адресат петли |
+
+Индексы: unique по `probeEventId` + 2 индекса (по выборке активных/tenant). Сервис `ProbeDialogService.finalizeIfPending` использует CAS `phase → resolved` как **идемпотентный ключ финализации** (ровно одно применение).
+
+Новый enum **`ProbeDialogPhase`** (4 значения): `awaiting_answer` → `awaiting_clarification` (отправлен уточняющий `probe.clarify`) / `awaiting_confirmation` (отправлен echo-back `probe.confirm`) → `resolved` (применено / эскалировано / abandoned).
+
+**+4 аддитивных значения `ProbeStatus`** (`ALTER TYPE "ProbeStatus" ADD VALUE`, аддитивно, поверх прежних `pending`/`dispatched`/`dropped_*`/`expired`/`queued_digest`/`suppressed_stale`/`dropped_low_value`/`routed_to_digest`/`suppressed_by_memory`):
+- **`awaiting_dialog`** — probe в активной диалоговой петле (отправлен уточняющий ход / echo-back, ждём доответа).
+- **`applied`** — намерение ответа применено детерминированным apply-слоем (после подтверждения echo-back).
+- **`escalated_to_human`** — диалог превысил `probe.dialogMaxTurns` → передан owner/admin терминальным FYI.
+- **`abandoned`** — диалог не доведён до подтверждения дольше `probe.dialogConfirmTtlHours` → закрыт `ProbeDialogTtlCron`.
+
 ## PersonLeave — отпуска / отсутствия сотрудника (2026-06-21)
 
 **Источник:** ТЗ [`plans/tz/2026-06-21-daily-reminders-delivery-fix-and-work-calendar.md`](../../plans/tz/2026-06-21-daily-reminders-delivery-fix-and-work-calendar.md) (Ф3, рабочий календарь). Миграция `20260621122719_person_leave` (CREATE TABLE, аддитивная). Полная карта надёжных напоминаний — [[../01_projects/operations]] (при наличии).

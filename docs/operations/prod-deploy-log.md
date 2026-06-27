@@ -71,6 +71,27 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-27 — Диалоговое уточнение probe (probe-clarify-dialog, ветка feature/probe-clarify-dialog)
+
+> ТЗ `plans/tz/2026-06-27-probe-clarify-dialog-tz.md` (Ф1–Ф6) + анализ `plans/analysis/2026-06-27-probe-clarify-dialog-reliability.md`. Одноразовый probe-ответ → надёжная диалоговая петля: LLM решает ЧТО имел в виду человек, код решает КАК записать (детерминированный идемпотентный apply-слой), человек подтверждает echo-back перед записью. Коммиты `12581516` (Ф1) … `68b1cab2` (Ф6).
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (CREATE TYPE/TABLE + ALTER TYPE ADD VALUE ×4, авто через `migrate deploy`, без потери данных). 🟢 НОВЫХ ENV НЕТ** (4 крутилки — чистые AdminSetting). Новые eventType `probe.clarify`/`probe.confirm` + новый cron `ProbeDialogTtlCron` + 3 новые метрики. Docker rebuild backend. Ship-On: `probe.dialogEnabled` ON.
+
+- **Шаг 1 — ENV: новых нет.** Все 4 параметра — чистые AdminSetting-крутилки (см. Шаг 7), без `.env`. 1 новый kill-switch `probe.dialogEnabled` (тип A, ВКЛ — действий владельца не требует; выкл → откат к one-shot без диалога). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260627000000_probe_dialog_state` — `CREATE TYPE "ProbeDialogPhase"` (`awaiting_answer`/`awaiting_clarification`/`awaiting_confirmation`/`resolved`) + `ALTER TYPE "ProbeStatus" ADD VALUE` ×4 (`awaiting_dialog`/`applied`/`escalated_to_human`/`abandoned`) + `CREATE TABLE "ProbeDialogState"` (unique `probeEventId`, 2 индекса, FK → `probe_events` `ON DELETE CASCADE`). Аддитивная (CREATE TYPE/TABLE + ADD VALUE, без DROP), без потери данных, backfill не нужен. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«Диалоговое уточнение probe — `ProbeDialogState`».
+- **Шаг 7 — Seed крутилок (идемпотентный, УЖЕ в STEPS `phase:'seed-base'`):** 4 чистые AdminSetting-крутилки секции `probe` едут существующим `seed-admin-settings.ts` (уважает admin-override): `probe.dialogEnabled` (true, kill-switch), `probe.dialogEscalateMaxConfidence` (0.6 — ниже порога ответ уходит в уточняющий ход, не применяется), `probe.dialogMaxTurns` (2 — лимит ходов до эскалации owner/admin), `probe.dialogConfirmTtlHours` (48 — TTL ожидания подтверждения/уточнения до `abandoned`). Без новых ENV. Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: `ProbeResponseHandler` (детерминированный apply-слой, ветвление по `outcome`), `ProbeDialogService` (`ensureState`/`getActive`/`recordTurn`/`setPhase`/`finalizeIfPending` CAS), `routeClarifyOrEscalate`/`escalateToHuman`/echo-back, классификатор `probe_response_classify`, `ProbeResponseInboundBridge` (`subscribeInbound('response')`), `ProbeDialogTtlCron`, eventType `probe.clarify`/`probe.confirm` (Zod + рендер telegram/max + фронт-label).
+- **Шаг 12 — Smoke** (после выката):
+  - Метрики: `curl -s localhost:3000/metrics | grep -E 'probe_dialog_(transition|outcome|degraded)_total'` → счётчики присутствуют (`probe_dialog_transition_total{from,to}`, `probe_dialog_outcome_total{outcome}`, `probe_dialog_degraded_total{reason}`).
+  - eventType зарегистрированы: `probe.clarify` и `probe.confirm` присутствуют в registry/Swagger (channel-policy `['telegram_bot','max_bot','in_app']`, responseStatus='pending').
+  - Cron поднялся: лог `ProbeDialogTtlCron` (`@Cron 17 * * * *`) виден при старте (`docker compose logs backend | grep -i ProbeDialogTtlCron`).
+  - Миграция применилась: `\d "ProbeDialogState"` существует (unique `probeEventId`, FK на `probe_events`); `SELECT unnest(enum_range(NULL::"ProbeStatus"))` содержит `awaiting_dialog`/`applied`/`escalated_to_human`/`abandoned`; `ProbeDialogPhase` существует.
+  - Крутилки видны в админке AdminSetting: `probe.dialogEnabled` (ON), `probe.dialogEscalateMaxConfidence` (0.6), `probe.dialogMaxTurns` (2), `probe.dialogConfirmTtlHours` (48).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-25 — Дроп legacy-модели Task: унификация задач на Issue (ветка feature/drop-legacy-task-unify-issue)
 
 > ТЗ `plans/tz/2026-06-25-drop-legacy-task-model-unify-on-issue.md` (Ф0–Ф10). Полный снос двойной сущности «задача» — единственный слой задач теперь `Issue` (трекер).

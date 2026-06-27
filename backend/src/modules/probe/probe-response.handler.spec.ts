@@ -1873,3 +1873,68 @@ describe('ProbeResponseHandler — Ф4 echo-back подтверждение', ()
     expect(mocks.dialogFinalize).not.toHaveBeenCalled();
   });
 });
+
+describe('ProbeResponseHandler — Ф5 адресность дайджеста (explicit probeEventId)', () => {
+  let mocks: Mocks;
+
+  beforeEach(() => {
+    mocks = makeMocks();
+  });
+
+  it('payload.probeEventId → lookup по {id, tenantId, dispatchedNotificationId} (адресность сохранена)', async () => {
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({
+      ...event,
+      eventType: 'probe.digest',
+      payload: { text: 'дедлайн до пятницы', probeEventId: 'probe-explicit-1' },
+    });
+
+    const findFirst = mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>;
+    expect(findFirst).toHaveBeenCalledTimes(1);
+    const where = findFirst.mock.calls[0]![0] as {
+      where: { id?: string; tenantId: string; dispatchedNotificationId?: string };
+    };
+    expect(where.where.id).toBe('probe-explicit-1');
+    expect(where.where.tenantId).toBe('org-classify');
+    expect(where.where.dispatchedNotificationId).toBe('notif-classify-1');
+  });
+
+  it('инъекция чужого probeEventId (probe не привязан к notificationId) → no-op, не падает', async () => {
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi
+      .fn()
+      .mockResolvedValue(null);
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await expect(
+      handler.handle({
+        ...event,
+        eventType: 'probe.digest',
+        payload: { text: 'любой ответ', probeEventId: 'probe-чужой-X' },
+      }),
+    ).resolves.toBeUndefined();
+
+    const findFirst = mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>;
+    const where = findFirst.mock.calls[0]![0] as {
+      where: { id?: string; dispatchedNotificationId?: string };
+    };
+    expect(where.where.id).toBe('probe-чужой-X');
+    expect(where.where.dispatchedNotificationId).toBe('notif-classify-1');
+    expect(mocks.ingestArgs).toHaveLength(0);
+    expect(mocks.decisionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.sendNotification).not.toHaveBeenCalled();
+  });
+
+  it('без payload.probeEventId → lookup по dispatchedNotificationId (старый путь)', async () => {
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({ ...event, payload: { text: 'ответ' } });
+
+    const findFirst = mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>;
+    const where = findFirst.mock.calls[0]![0] as {
+      where: { id?: string; dispatchedNotificationId?: string };
+    };
+    expect(where.where.id).toBeUndefined();
+    expect(where.where.dispatchedNotificationId).toBe('notif-classify-1');
+  });
+});

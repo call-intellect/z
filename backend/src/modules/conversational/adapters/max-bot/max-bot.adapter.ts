@@ -749,7 +749,7 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       where: {
         tenantId: args.tenantId,
         recipientUserId: args.userId,
-        eventType: { in: ['probe.question', 'probe.digest'] },
+        eventType: { in: ['probe.question', 'probe.digest', 'probe.clarify', 'probe.confirm'] },
         responseStatus: 'pending',
         createdAt: { gte: minCreatedAt },
       },

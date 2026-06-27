@@ -256,7 +256,7 @@ LLM недоступен ──► graceful degradation: нынешний дет
 - Unit: ответ-поправка на `probe.confirm` → повторный classify, `turnCount++`, не применение.
 **Закрывает:** R7, R11, R12.
 
-### Ф5 — Подписчик ботов + адресность дайджеста `[ ]`
+### Ф5 — Подписчик ботов + адресность дайджеста `[x]`
 **Цель:** имплицитный probe-ответ из ботов доходит до диалога; в дайджесте понятно, на какой вопрос отвечают.
 **Файлы:** `conversational/*` (где `subscribeInbound`), `telegram-bot.adapter.ts`, `max-bot.adapter.ts`, `query-classifier.service.ts`, `channel.types.ts`.
 **Что входит:**

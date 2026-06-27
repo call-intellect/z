@@ -91,12 +91,24 @@ export class ProbeResponseHandler {
   async handle(event: NotificationRespondedPayload): Promise<void> {
     try {
       if (!event.eventType.startsWith('probe.')) return;
-      const probe = await this.prisma.probeEvent.findFirst({
-        where: {
-          tenantId: event.tenantId,
-          dispatchedNotificationId: event.notificationId,
-        },
-      });
+      const explicitProbeId =
+        typeof (event.payload as Record<string, unknown>)?.['probeEventId'] === 'string'
+          ? ((event.payload as Record<string, unknown>)['probeEventId'] as string)
+          : undefined;
+      const probe = explicitProbeId
+        ? await this.prisma.probeEvent.findFirst({
+            where: {
+              id: explicitProbeId,
+              tenantId: event.tenantId,
+              dispatchedNotificationId: event.notificationId,
+            },
+          })
+        : await this.prisma.probeEvent.findFirst({
+            where: {
+              tenantId: event.tenantId,
+              dispatchedNotificationId: event.notificationId,
+            },
+          });
       if (!probe) {
         this.logger.debug(
           { notificationId: event.notificationId, tenantId: event.tenantId },

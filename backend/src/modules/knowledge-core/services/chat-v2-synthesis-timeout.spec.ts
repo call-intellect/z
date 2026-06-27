@@ -34,6 +34,7 @@ function makeService(): {
 
   const metrics = {
     incQueryPlanRetrievalFiltered: vi.fn(),
+    incRouterBothWays: vi.fn(),
     incQueryPlanEmptyPool: vi.fn(),
   } as unknown as BusinessMetricsService;
 

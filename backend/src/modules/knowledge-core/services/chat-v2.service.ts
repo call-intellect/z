@@ -14,7 +14,11 @@ import {
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
-import type { StructuralRetrievalFilters } from '../../dialog-layer/services/query-plan-extractor.service';
+import type { QueryClass } from '../../dialog-layer/services/query-classifier.service';
+import {
+  QUERY_PLAN_MIN_CONFIDENCE,
+  type StructuralRetrievalFilters,
+} from '../../dialog-layer/services/query-plan-extractor.service';
 import {
   KnowledgeAccessResolver,
   type KnowledgeAccessContext,
@@ -115,6 +119,14 @@ export interface ChatV2Input {
    * tuning'а retrieval-параметров (например, topK по intent).
    */
   intent?: 'factual' | 'exploratory' | 'analytical' | 'clone_roleplay';
+  /**
+   * Слой источника Ф3 — класс запроса роутера (list/topic/temporal/overview/
+   * fact) и уверенность в нём. Определяют both-ways-развилку и гейт
+   * семантического фан-аута по блокам в runRetrieval. Если не задан —
+   * текущее single-route поведение (как до Ф3).
+   */
+  queryClass?: QueryClass;
+  queryClassConfidence?: number;
   /**
    * Override системного промпта. ТЗ 2026-06-15 — режимы factual/synthetic/
    * clone_style как «текст промпта» удалены: графовый ответ идёт на единый
@@ -943,8 +955,7 @@ export class ChatV2Service {
     input: ChatV2Input,
     ctx: RetrievalCtx,
   ): Promise<string[]> {
-    const { tenantId, scope, scopeId, query, kRetrieve, kContext, graphHops, accessWhere } =
-      ctx;
+    const { tenantId, query, kRetrieve, kContext } = ctx;
 
     if (input.precomputedBlockIds && input.precomputedBlockIds.length > 0) {
       return [...input.precomputedBlockIds].slice(0, kContext);
@@ -952,6 +963,100 @@ export class ChatV2Service {
 
     const queries: string[] =
       input.queries && input.queries.length > 0 ? [...input.queries] : [query];
+
+    const routerEnabled = await this.cfg.getDynamic<boolean>(
+      'knowledge.router_v2_enabled',
+      undefined,
+      true,
+    );
+    const threshold = await this.cfg.getDynamic<number>(
+      'knowledge.router_confidence_threshold',
+      undefined,
+      QUERY_PLAN_MIN_CONFIDENCE,
+    );
+
+    const queryClass = input.queryClass ?? null;
+    const queryClassConfidence = input.queryClassConfidence ?? 1;
+    const isStructuralClass =
+      queryClass === 'list' || queryClass === 'temporal' || queryClass === 'overview';
+    const bothWays =
+      routerEnabled && (queryClassConfidence < threshold || isStructuralClass);
+
+    this.metrics.incRouterBothWays({ triggered: bothWays ? 'yes' : 'no' });
+
+    const useSingleSemanticQuery = routerEnabled && isStructuralClass;
+    const semanticQueries = useSingleSemanticQuery ? [query] : queries;
+
+    const rrfK = await this.cfg.getDynamic<number>('rag.rrf_k', undefined, 60);
+
+    if (!bothWays) {
+      const semantic = await this.runSemanticRoute(input, ctx, semanticQueries, rrfK);
+      if (semantic.length === 0) return [];
+      const reranked = await this.conditionalRerank({
+        tenantId,
+        question: query,
+        blockIds: semantic,
+        conversationSummary: input.conversationSummary ?? null,
+        history: input.history,
+        reformulations: queries,
+      });
+      return reranked.slice(0, kContext);
+    }
+
+    const [semanticSettled, structuralSettled] = await Promise.allSettled([
+      this.runSemanticRoute(input, ctx, semanticQueries, rrfK),
+      this.runStructuralRoute(input, ctx),
+    ]);
+
+    const semantic =
+      semanticSettled.status === 'fulfilled' ? semanticSettled.value : [];
+    const structural =
+      structuralSettled.status === 'fulfilled' ? structuralSettled.value : [];
+
+    if (structuralSettled.status === 'rejected') {
+      this.logger.warn(
+        {
+          err:
+            structuralSettled.reason instanceof Error
+              ? structuralSettled.reason.message
+              : String(structuralSettled.reason),
+        },
+        'chat-v2 runRetrieval: структурный маршрут упал — отдаём только семантику',
+      );
+    }
+
+    if (semantic.length === 0 && structural.length === 0) return [];
+
+    const merged =
+      structural.length > 0
+        ? fuseRankedLists(
+            [
+              structural.map((id) => ({ id })),
+              semantic.map((id) => ({ id })),
+            ],
+            rrfK,
+          ).slice(0, kRetrieve)
+        : semantic.slice(0, kRetrieve);
+
+    const reranked = await this.conditionalRerank({
+      tenantId,
+      question: query,
+      blockIds: merged,
+      conversationSummary: input.conversationSummary ?? null,
+      history: input.history,
+      reformulations: queries,
+    });
+    return reranked.slice(0, kContext);
+  }
+
+  private async runSemanticRoute(
+    input: ChatV2Input,
+    ctx: RetrievalCtx,
+    queries: ReadonlyArray<string>,
+    rrfK: number,
+  ): Promise<string[]> {
+    const { tenantId, scope, scopeId, kRetrieve, graphHops, accessWhere } = ctx;
+
     const perQueryLimit =
       queries.length > 1
         ? Math.max(4, Math.ceil(kRetrieve / queries.length) + 2)
@@ -983,23 +1088,19 @@ export class ChatV2Service {
 
     if (perQuery.length === 0) return [];
 
-    const ranked =
-      perQuery.length > 1
-        ? fuseRankedLists(
-            perQuery.map((list) => list.map((r) => ({ id: r.blockId }))),
-            await this.cfg.getDynamic<number>('rag.rrf_k', undefined, 60),
-          ).slice(0, kRetrieve)
-        : perQuery[0]!.slice(0, kRetrieve).map((r) => r.blockId);
+    return perQuery.length > 1
+      ? fuseRankedLists(
+          perQuery.map((list) => list.map((r) => ({ id: r.blockId }))),
+          rrfK,
+        ).slice(0, kRetrieve)
+      : perQuery[0]!.slice(0, kRetrieve).map((r) => r.blockId);
+  }
 
-    const reranked = await this.conditionalRerank({
-      tenantId,
-      question: query,
-      blockIds: ranked,
-      conversationSummary: input.conversationSummary ?? null,
-      history: input.history,
-      reformulations: queries,
-    });
-    return reranked.slice(0, kContext);
+  private async runStructuralRoute(
+    _input: ChatV2Input,
+    _ctx: RetrievalCtx,
+  ): Promise<string[]> {
+    return [];
   }
 
   private async conditionalRerank(args: {

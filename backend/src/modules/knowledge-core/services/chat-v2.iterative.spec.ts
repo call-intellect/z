@@ -84,7 +84,9 @@ function makeService(over: Over = {}): {
   const retrieval = {
     fetchCandidates,
   } as unknown as ChatV2RetrievalService;
-  const metrics = {} as unknown as BusinessMetricsService;
+  const metrics = {
+    incRouterBothWays: vi.fn(),
+  } as unknown as BusinessMetricsService;
   const accessResolver = {} as unknown as KnowledgeAccessResolver;
   const provenance = {} as unknown as ProvenanceService;
 

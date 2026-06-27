@@ -22,11 +22,14 @@ function emptyPlan(applied: boolean): QueryPlanResult {
       signalTypes: [],
       themeBranches: [],
       entityHints: [],
+      personHints: [],
       personScope: false,
       aggregation: false,
       needsAction: false,
       activeNow: false,
     },
+    queryClass: 'topic',
+    queryClassConfidence: 0.4,
     confidence: applied ? 0.9 : 0.2,
     applied,
     durationSeconds: 0.01,
@@ -121,6 +124,7 @@ function makeService(opts: {
   const metrics = {
     observeDialogProcessingDuration: vi.fn(),
     incQueryPlanExtraction: vi.fn(),
+    incRouterQueryClass: vi.fn(),
   } as unknown as BusinessMetricsService;
 
   const service = new DialogService(
@@ -268,6 +272,7 @@ describe('DialogService — слитый модуль понимания зап�
       dateTo: null,
       signalTypes: ['decision'],
       entityIds: [],
+      personIds: [],
       themeBranches: [],
       bitemporalActiveOnly: false,
     };
@@ -312,6 +317,7 @@ describe('DialogService — рубильник rag.understanding_merged (Ф4b)',
       dateTo: null,
       signalTypes: ['decision'],
       entityIds: [],
+      personIds: [],
       themeBranches: [],
       bitemporalActiveOnly: false,
     };

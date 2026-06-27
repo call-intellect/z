@@ -346,6 +346,8 @@ export class ChatV2OrchestrationService {
       tableAggregation: dialogResult.queryPlan?.filters.aggregation ?? false,
       conversationSummary: args.conversationSummary,
       intent: narrowToChatIntent(dialogResult.intent),
+      queryClass: dialogResult.queryClass,
+      queryClassConfidence: dialogResult.queryClassConfidence,
       onStage: args.onStage,
     });
 

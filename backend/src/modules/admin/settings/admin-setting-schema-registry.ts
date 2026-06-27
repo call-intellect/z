@@ -54,6 +54,8 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.search_expand_hops', z.number().int().min(0).max(3)],
   ['knowledge.search_rrf_k', POSITIVE_INT],
   ['knowledge.hnsw_ef_search', z.number().int().min(1).max(1000)],
+  ['knowledge.router_confidence_threshold', UNIT_INTERVAL],
+  ['knowledge.router_v2_enabled', z.boolean()],
   ['knowledge.linkKnnTopK', POSITIVE_INT],
   ['knowledge.blockDynamicScoreDecayDays', POSITIVE_INT],
   ['knowledge.entityGraphMinComentions', POSITIVE_INT],

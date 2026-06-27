@@ -4,6 +4,7 @@ import type { ChatV2Mode, ChatV2Scope, DataClass } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { BrandVoiceService } from '../../brand-voice/services/brand-voice.service';
 import { ClonesService } from '../../clones/services/clones.service';
+import type { QueryClass } from '../../dialog-layer/services/query-classifier.service';
 import type { StructuralRetrievalFilters } from '../../dialog-layer/services/query-plan-extractor.service';
 import { RetrievalCacheService } from '../../dialog-layer/services/retrieval-cache.service';
 import {
@@ -31,6 +32,8 @@ export interface SynthesisInput {
   tableAggregation?: boolean;
   conversationSummary?: string | null;
   intent?: 'factual' | 'exploratory' | 'analytical' | 'clone_roleplay' | null;
+  queryClass?: QueryClass | null;
+  queryClassConfidence?: number | null;
   onStage?: (stage: ChatV2Stage) => void;
 }
 
@@ -150,6 +153,8 @@ export class SynthesisService {
       tableEntityIds: input.tableEntityIds,
       tableAggregation: input.tableAggregation,
       intent: input.intent ?? undefined,
+      queryClass: input.queryClass ?? undefined,
+      queryClassConfidence: input.queryClassConfidence ?? undefined,
       systemPromptOverride,
       precomputedBlockIds: cachedRetrieval?.blockIds,
       onStage: input.onStage,

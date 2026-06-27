@@ -133,6 +133,24 @@ const SEEDS: SettingSeed[] = [
     description:
       'Параметр hnsw.ef_search для векторного поиска по HNSW-индексам (IdeaBlock/Entity/Theme): размер списка кандидатов при обходе графа. Выше — точнее recall, но медленнее. Применяется через SET LOCAL в рамках запроса (1–1000). По умолчанию 100.',
   },
+  {
+    key: 'knowledge.router_confidence_threshold',
+    value: 0.6,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Порог уверенности роутера класса запроса (0–1, слой источника Ф3). Если уверенность в классе ниже порога ИЛИ класс ∈ {список, итог за период, обзор} — retrieval запускает структурный И семантический маршруты параллельно и сливает RRF (both-ways, никогда не пусто). Уверенный topic/fact — только семантика. По умолчанию 0.6.',
+  },
+  {
+    key: 'knowledge.router_v2_enabled',
+    value: true,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'high',
+    description:
+      'Аварийный рубильник роутера 5 классов + confidence-gated both-ways (слой источника Ф3). ON по умолчанию (Ship-On). Выкл → откат на прежний single-route retrieval (семантический путь без структурной подстраховки и без гейта фан-аута по классу).',
+  },
 ];
 
 interface Counters {

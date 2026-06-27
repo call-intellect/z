@@ -6,7 +6,12 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { AnswerCacheService, type AnswerCacheEntry } from './answer-cache.service';
 import { MultiQueryExpansionService } from './multi-query-expansion.service';
-import { QueryClassifierService, type DialogIntent } from './query-classifier.service';
+import {
+  classifyQueryClass,
+  QueryClassifierService,
+  type DialogIntent,
+  type QueryClass,
+} from './query-classifier.service';
 import {
   QueryPlanExtractorService,
   type QueryPlanResult,
@@ -30,6 +35,8 @@ export interface DialogProcessResult {
   enabled: boolean;
   standaloneQuestion: string;
   intent: DialogIntent;
+  queryClass: QueryClass;
+  queryClassConfidence: number;
   queries: string[];
   confidence: number;
   cachedAnswer: AnswerCacheEntry | null;
@@ -73,10 +80,13 @@ export class DialogService {
     };
 
     if (!this.cfg.dialogLayer.enabled) {
+      const fallbackClass = classifyQueryClass(input.userMessage);
       return {
         enabled: false,
         standaloneQuestion: input.userMessage,
         intent: 'factual',
+        queryClass: fallbackClass.class,
+        queryClassConfidence: fallbackClass.confidence,
         queries: [input.userMessage],
         confidence: 1.0,
         cachedAnswer: null,
@@ -225,10 +235,18 @@ export class DialogService {
       seconds: totalSeconds,
     });
 
+    const deterministicClass = classifyQueryClass(question);
+    const queryClass = queryPlan?.queryClass ?? deterministicClass.class;
+    const queryClassConfidence =
+      queryPlan?.queryClassConfidence ?? deterministicClass.confidence;
+    this.metrics.incRouterQueryClass({ class: queryClass });
+
     return {
       enabled: true,
       standaloneQuestion: question,
       intent,
+      queryClass,
+      queryClassConfidence,
       queries,
       confidence: 1.0,
       cachedAnswer,

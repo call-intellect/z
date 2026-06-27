@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { $Enums } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -7,6 +7,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
+import { EntityResolutionService } from '../../knowledge-core/services/entity-resolution.service';
 import {
   EXTRACT_PLAN_JSON_SCHEMA,
   EXTRACT_PLAN_SYSTEM_PROMPT,
@@ -19,6 +20,7 @@ import {
 } from '../prompts/understand.prompt';
 
 import { type PeriodExpr, resolvePeriod } from './period-resolver';
+import { classifyQueryClass, isQueryClass, type QueryClass } from './query-classifier.service';
 
 export interface QueryPlanFilters {
   dateFrom: Date | null;
@@ -26,6 +28,7 @@ export interface QueryPlanFilters {
   signalTypes: string[];
   themeBranches: string[];
   entityHints: string[];
+  personHints: string[];
   personScope: boolean;
   aggregation: boolean;
   needsAction: boolean;
@@ -37,12 +40,15 @@ export interface StructuralRetrievalFilters {
   dateTo: Date | null;
   signalTypes: string[];
   entityIds: string[];
+  personIds: string[];
   themeBranches: string[];
   bitemporalActiveOnly: boolean;
 }
 
 export interface QueryPlanResult {
   filters: QueryPlanFilters;
+  queryClass: QueryClass;
+  queryClassConfidence: number;
   confidence: number;
   applied: boolean;
   durationSeconds: number;
@@ -75,6 +81,8 @@ export interface UnderstandResult {
 
 export const QUERY_PLAN_MIN_CONFIDENCE = 0.6;
 
+const QUERY_CLASS_TIEBREAK_FLOOR = 0.7;
+
 const ENTITY_HINT_MAX_LENGTH = 200;
 const ENTITY_HINT_MAX_COUNT = 10;
 
@@ -84,6 +92,8 @@ interface RawPlan {
   signalTypes?: unknown;
   themeBranches?: unknown;
   entityHints?: unknown;
+  personHints?: unknown;
+  queryClass?: unknown;
   personScope?: unknown;
   aggregation?: unknown;
   needsAction?: unknown;
@@ -115,6 +125,9 @@ export class QueryPlanExtractorService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Optional()
+    @Inject(EntityResolutionService)
+    private readonly entityResolution?: EntityResolutionService,
   ) {}
 
   private isPromptInjectionGuardEnabled(): boolean {
@@ -174,7 +187,10 @@ export class QueryPlanExtractorService {
         { conversationId: input.conversationId, err: message },
         'Understand LLM упал — fail-open (только оригинальный вопрос, без плана)',
       );
-      return { queries: [input.question], queryPlan: this.failOpen(startedAt) };
+      return {
+        queries: [input.question],
+        queryPlan: this.failOpen(startedAt, input.question),
+      };
     }
 
     const parsed = this.parseUnderstandJson(rawText);
@@ -184,7 +200,10 @@ export class QueryPlanExtractorService {
         model: 'unknown',
         reason: 'json_parse',
       });
-      return { queries: [input.question], queryPlan: this.failOpen(startedAt) };
+      return {
+        queries: [input.question],
+        queryPlan: this.failOpen(startedAt, input.question),
+      };
     }
 
     const queries = this.buildQueries(input.question, parsed.queries);
@@ -194,6 +213,7 @@ export class QueryPlanExtractorService {
       input.todayIso,
       orgTimezone,
       startedAt,
+      input.question,
     );
     return { queries, queryPlan };
   }
@@ -236,12 +256,12 @@ export class QueryPlanExtractorService {
         { conversationId: input.conversationId, err: message },
         'QueryPlanExtractor LLM упал — fail-open (план не применяется)',
       );
-      return this.failOpen(startedAt);
+      return this.failOpen(startedAt, input.questions.join(' '));
     }
 
     const parsed = this.parsePlanJson(rawText);
     if (parsed === null) {
-      return this.failOpen(startedAt);
+      return this.failOpen(startedAt, input.questions.join(' '));
     }
 
     return this.buildPlanFromRaw(
@@ -250,7 +270,28 @@ export class QueryPlanExtractorService {
       input.todayIso,
       orgTimezone,
       startedAt,
+      input.questions.join(' '),
     );
+  }
+
+  private resolveQueryClass(
+    raw: RawPlan,
+    question: string,
+  ): { queryClass: QueryClass; queryClassConfidence: number } {
+    const deterministic = classifyQueryClass(question);
+    if (deterministic.confidence >= QUERY_CLASS_TIEBREAK_FLOOR) {
+      return {
+        queryClass: deterministic.class,
+        queryClassConfidence: deterministic.confidence,
+      };
+    }
+    if (isQueryClass(raw.queryClass)) {
+      return { queryClass: raw.queryClass, queryClassConfidence: 0.6 };
+    }
+    return {
+      queryClass: deterministic.class,
+      queryClassConfidence: deterministic.confidence,
+    };
   }
 
   private buildPlanFromRaw(
@@ -259,16 +300,20 @@ export class QueryPlanExtractorService {
     todayIso: string,
     orgTimezone: string,
     startedAt: number,
+    question: string,
   ): QueryPlanResult {
     const periodExpr = this.coercePeriodExpr(raw.periodExpr);
     const periodDays = this.coercePeriodDays(raw.periodDays);
     const signalTypes = this.sanitizeEnumArray(raw.signalTypes, this.validSignalTypes);
     const themeBranches = this.sanitizeEnumArray(raw.themeBranches, this.validThemeBranches);
     const entityHints = this.sanitizeEntityHints(raw.entityHints);
+    const personHints = this.sanitizeEntityHints(raw.personHints);
     const personScope = this.coerceBool(raw.personScope);
     const aggregation = this.coerceBool(raw.aggregation);
     const needsAction = this.coerceBool(raw.needsAction);
     const activeNow = this.coerceBool(raw.activeNow);
+
+    const { queryClass, queryClassConfidence } = this.resolveQueryClass(raw, question);
 
     const period = resolvePeriod(periodExpr, todayIso, orgTimezone, periodDays);
 
@@ -277,6 +322,7 @@ export class QueryPlanExtractorService {
       signalTypes.length > 0 ||
       themeBranches.length > 0 ||
       entityHints.length > 0 ||
+      personHints.length > 0 ||
       personScope ||
       activeNow;
 
@@ -286,6 +332,8 @@ export class QueryPlanExtractorService {
     if (!applied) {
       return {
         filters: this.emptyFilters(),
+        queryClass,
+        queryClassConfidence,
         confidence,
         applied: false,
         durationSeconds,
@@ -299,11 +347,14 @@ export class QueryPlanExtractorService {
         signalTypes,
         themeBranches,
         entityHints,
+        personHints,
         personScope,
         aggregation,
         needsAction,
         activeNow,
       },
+      queryClass,
+      queryClassConfidence,
       confidence,
       applied: true,
       durationSeconds,
@@ -375,11 +426,23 @@ export class QueryPlanExtractorService {
         }
       }
 
+      const personIds = await this.resolvePersonHints(tenantId, [
+        ...plan.filters.personHints,
+        ...plan.filters.entityHints,
+      ]);
+      if (plan.filters.personScope) {
+        const selfPersonId = await this.resolveSelfPersonId(tenantId, userId);
+        if (selfPersonId && !personIds.includes(selfPersonId)) {
+          personIds.push(selfPersonId);
+        }
+      }
+
       const filters: StructuralRetrievalFilters = {
         dateFrom: plan.filters.dateFrom,
         dateTo: plan.filters.dateTo,
         signalTypes: plan.filters.signalTypes,
         entityIds,
+        personIds,
         themeBranches: plan.filters.themeBranches,
         bitemporalActiveOnly: plan.filters.activeNow,
       };
@@ -389,6 +452,7 @@ export class QueryPlanExtractorService {
         !filters.dateTo &&
         filters.signalTypes.length === 0 &&
         filters.entityIds.length === 0 &&
+        filters.personIds.length === 0 &&
         filters.themeBranches.length === 0 &&
         !filters.bitemporalActiveOnly;
       if (nothingToFilter) return null;
@@ -430,6 +494,29 @@ export class QueryPlanExtractorService {
     return out;
   }
 
+  private async resolvePersonHints(tenantId: string, hints: string[]): Promise<string[]> {
+    if (!this.entityResolution) return [];
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const seenHints = new Set<string>();
+    for (const rawHint of hints) {
+      const hint = rawHint.trim();
+      if (!hint) continue;
+      const hintKey = hint.toLowerCase();
+      if (seenHints.has(hintKey)) continue;
+      seenHints.add(hintKey);
+      const personId = await this.entityResolution
+        .resolvePersonByHint(tenantId, hint)
+        .catch(() => null);
+      if (!personId) continue;
+      if (seen.has(personId)) continue;
+      seen.add(personId);
+      out.push(personId);
+      if (out.length >= ENTITY_HINT_MAX_COUNT) break;
+    }
+    return out;
+  }
+
   private async resolveSelfEntityId(tenantId: string, userId: string): Promise<string | null> {
     const person = await this.prisma.person.findFirst({
       where: { tenantId, userId, deletedAt: null },
@@ -445,6 +532,7 @@ export class QueryPlanExtractorService {
       signalTypes: [],
       themeBranches: [],
       entityHints: [],
+      personHints: [],
       personScope: false,
       aggregation: false,
       needsAction: false,
@@ -452,9 +540,12 @@ export class QueryPlanExtractorService {
     };
   }
 
-  private failOpen(startedAt: number): QueryPlanResult {
+  private failOpen(startedAt: number, question?: string): QueryPlanResult {
+    const deterministic = classifyQueryClass(question ?? '');
     return {
       filters: this.emptyFilters(),
+      queryClass: deterministic.class,
+      queryClassConfidence: deterministic.confidence,
       confidence: 0,
       applied: false,
       durationSeconds: (Date.now() - startedAt) / 1000,

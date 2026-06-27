@@ -133,6 +133,8 @@ export class BusinessMetricsService implements OnModuleInit {
   private queryPlanExtractionTotal!: Counter<'result'>;
   private queryPlanRetrievalFilteredTotal!: Counter<'filtered'>;
   private queryPlanEmptyPoolTotal!: Counter<'result'>;
+  private routerQueryClassTotal!: Counter<'class'>;
+  private routerBothWaysTotal!: Counter<'triggered'>;
 
   // ── task assignee resolver (ТЗ 2026-05-25 hard-participant-identification) ─
   // Инкрементируется в `TaskAssigneeResolverService`, когда участников с
@@ -1410,6 +1412,16 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_query_plan_empty_pool_total',
       help: 'Query Understanding Волна 1 — misroute-proxy: применённый структурный фильтр дал ПУСТОЙ пул (честный ответ «в памяти нет»). Рост может означать слишком узкий/неверный фильтр.',
       labelNames: ['result'] as const,
+    });
+    this.routerQueryClassTotal = this.getOrCreateCounter({
+      name: 'z_router_query_class_total',
+      help: 'Слой источника Ф3 — детерминированный роутер запроса: распределение запросов по 5 классам (list/topic/temporal/overview/fact).',
+      labelNames: ['class'] as const,
+    });
+    this.routerBothWaysTotal = this.getOrCreateCounter({
+      name: 'z_router_both_ways_total',
+      help: 'Слой источника Ф3 — confidence-gated both-ways в retrieval: triggered="yes" запущены структурный И семантический маршруты параллельно (RRF), "no" только семантика (уверенный topic/fact).',
+      labelNames: ['triggered'] as const,
     });
 
     this.taskAssigneeAmbiguousTotal = this.getOrCreateCounter({
@@ -4220,6 +4232,16 @@ export class BusinessMetricsService implements OnModuleInit {
     this.queryPlanRetrievalFilteredTotal.inc({ filtered: args.filtered });
   }
   /** Query Understanding Волна 1 — применённый фильтр дал пустой пул (misroute-proxy). */
+  incRouterQueryClass(args: {
+    class: 'list' | 'topic' | 'temporal' | 'overview' | 'fact';
+  }): void {
+    this.routerQueryClassTotal.inc({ class: args.class });
+  }
+
+  incRouterBothWays(args: { triggered: 'yes' | 'no' }): void {
+    this.routerBothWaysTotal.inc({ triggered: args.triggered });
+  }
+
   incQueryPlanEmptyPool(args: { result: 'empty' }): void {
     this.queryPlanEmptyPoolTotal.inc({ result: args.result });
   }

@@ -6481,6 +6481,9 @@ model Decision {
   /// раз проверял внедрение решения.
   implementationCheckedAt DateTime?
 
+  impliesAction     Boolean   @default(false)
+  actionExtractedAt DateTime?
+
   deletedAt   DateTime?
   deletedById String?
 

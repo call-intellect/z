@@ -8,6 +8,7 @@ export const IntakeSourceSchema = z.enum([
   'meeting',
   'api',
   'concierge',
+  'decision',
 ]);
 
 export const CreateIntakeSchema = z

@@ -30,6 +30,7 @@ import { CurationService } from '../../curation/services/curation.service';
 import { SystemLogPipeline } from '../../logging/log-pipeline';
 import { LogService } from '../../logging/log.service';
 import { linkDerivedTasksForDecision } from '../../tracker/services/decision-task-link.util';
+import { IntakeService } from '../../tracker/services/intake.service';
 import {
   DECISION_EXTRACT_JSON_SCHEMA,
   DECISION_EXTRACT_SCHEMA_NAME,
@@ -116,6 +117,9 @@ export class Specialist33Service {
     @Optional()
     @Inject(AdminSettingsService)
     private readonly settings?: AdminSettingsService,
+    @Optional()
+    @Inject(IntakeService)
+    private readonly intake?: IntakeService,
   ) {}
 
   private async getMinExtractConfidence(): Promise<number> {
@@ -458,6 +462,8 @@ export class Specialist33Service {
           );
         }
       }
+
+      await this.maybeEnqueueActionableTask(decision, draft, block);
 
       // Triage — Decision всегда critical → deep review.
       await this.triageProposed({
@@ -1095,6 +1101,7 @@ export class Specialist33Service {
           validFrom: args.validFrom ?? args.decidedAt ?? null,
           raisedCount: 1,
           lastRaisedAt: new Date(),
+          impliesAction: args.draft.impliesAction ?? false,
         },
       });
 
@@ -1492,6 +1499,89 @@ export class Specialist33Service {
     }
   }
 
+  // ─────────────────────────── actionable → задача ───────────────────────────
+
+  private async maybeEnqueueActionableTask(
+    decision: Decision,
+    draft: DecisionDraft,
+    block: IdeaBlock,
+  ): Promise<void> {
+    if (!this.intake) return;
+    if (!(draft.impliesAction === true || decision.impliesAction === true)) {
+      return;
+    }
+    if (decision.impliesAction !== true) {
+      try {
+        await this.prisma.decision.update({
+          where: { id: decision.id },
+          data: { impliesAction: true },
+        });
+        decision = { ...decision, impliesAction: true };
+      } catch (err) {
+        this.logger.warn(
+          {
+            decisionId: decision.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'specialist-3-3: пометка impliesAction=true на merge-решении упала (best-effort)',
+        );
+      }
+    }
+    if (decision.actionExtractedAt) return;
+
+    const blockIds = (decision.sourceBlockIds ?? []).filter(
+      (s) => typeof s === 'string' && s.length > 0,
+    );
+    if (blockIds.length === 0) return;
+
+    const already = await this.prisma.intakeIssue.findFirst({
+      where: {
+        tenantId: decision.tenantId,
+        sourceBlockIds: { hasSome: blockIds },
+      },
+      select: { id: true },
+    });
+    if (already) {
+      await this.prisma.decision.update({
+        where: { id: decision.id },
+        data: { actionExtractedAt: new Date() },
+      });
+      return;
+    }
+
+    const title = (draft.actionTitle && draft.actionTitle.trim()) || draft.statement;
+    const confidenceNum =
+      decision.confidence != null ? Number(decision.confidence) : draft.confidence ?? 0.7;
+    try {
+      await this.intake.create(
+        {
+          source: 'decision',
+          externalSource: 'decision',
+          externalId: block.id,
+          rawContent: draft.statement,
+          extractedTitle: title.slice(0, 300),
+          extractedDescription: draft.statement,
+          sourceBlockIds: blockIds,
+          suggestedLabels: [],
+          confidence: confidenceNum,
+        },
+        decision.tenantId,
+      );
+      await this.prisma.decision.update({
+        where: { id: decision.id },
+        data: { actionExtractedAt: new Date() },
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          decisionId: decision.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-3: завести задачу из actionable-решения не удалось (best-effort)',
+      );
+    }
+  }
+
   // ─────────────────────────── triage ───────────────────────────
 
   private async triageProposed(args: {
@@ -1640,6 +1730,8 @@ export interface DecisionDraft {
   deadline?: string | null;
   status?: DecisionStatus | string | null;
   confidence: number;
+  impliesAction?: boolean;
+  actionTitle?: string | null;
 }
 
 interface DecisionKnnCandidate {

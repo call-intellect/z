@@ -71,6 +71,29 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-27 — Задача·решение·исполнение — единый контур (ветка feature/task-decision-execution-unified)
+
+> ТЗ `plans/tz/2026-06-27-task-decision-execution-unified-tz.md` (Ф0–Ф5). P0-фикс краша создания задач (advisory-lock Prisma 7) + три класса извлечения (idea/задача/решение) + actionable-решение авто-заводит задачу (`Decision.impliesAction`) + закрытие из разговора (embed-resilience + журнал хода) + дашборд на исполнении + надёжность пайплайна (не терять RawEvent + JSON-ремонт воркеров). Коммиты `66c69295` (Ф0) … `1b27ff2a` (Ф5).
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260627210000` (Decision += impliesAction/actionExtractedAt). 🟢 НОВЫХ ENV НЕТ** (все крутилки — чистые AdminSetting). 1 новый kill-switch `knowledge.rawEventRecoveryEnabled` (ON). 1 новый @Cron `raw-event-recovery` (15 мин). Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** Все крутилки — чистые AdminSetting (см. Шаг 7). 1 новый kill-switch `knowledge.rawEventRecoveryEnabled` (тип A, ВКЛ — действий владельца не требует; выкл → cron восстановления RawEvent не реэнкьюит застрявшие события). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260627210000_decision_implies_action` — `ALTER TABLE "decisions" ADD COLUMN "impliesAction" BOOLEAN NOT NULL DEFAULT false` + `ADD COLUMN "actionExtractedAt" TIMESTAMP(3)`. Аддитивная (ADD COLUMN, без DROP), без потери данных, backfill не нужен (дефолт `false`). **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«impliesAction». ⚠️ Старые решения по дефолту `impliesAction=false` → выпадают из дашборд-метрик stalled/throughput до LLM-ре-экстракции (бэкфилл отложен — см. `second-brain/04_не-сделано/README.md`).
+- **Шаг 7 — Seed крутилок (идемпотентные, ОБА сида УЖЕ в STEPS, новых сидов НЕТ — расширены существующие):** доезжают агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`:
+  - `seed-admin-setting-tracker.ts` (`phase:'seed-base'`) — `tracker.progressFromConversationMinConfidence` (0.6 — порог записи хода выполнения задачи из разговорного блока, анти-fatigue) + `taskClosure.embedMaxAttempts` (3 — ретраев эмбеддера при флапе, корень P7).
+  - `seed-admin-setting-worker-knobs.ts` (`phase:'seed-base'`) — `knowledge.rawEventRecoveryEnabled` (kill-switch ON) + `knowledge.rawEventRecoveryStaleMinutes` (30) + `knowledge.rawEventRecoveryMaxAgeHours` (24) + `knowledge.rawEventRecoveryBatchLimit` (200).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (knowledge-core: Ф0 advisory-lock `$queryRaw`→`$executeRaw` в `specialist-3-15-tasks.service`/`issues.service`; Ф1 три класса в `block-ingest`/`decision-extract`/`task-decision-examples`; Ф2 `decision-extract` += `impliesAction`/`actionTitle` + `specialist-3-3-decisions.maybeEnqueueActionableTask` → intake `source='decision'`; Ф3 `task-completion.handler` embed-ретрай + `IssueProgressUpdate` из разговора; Ф4 `decision-implementation.scoring`/`.service` += `impliesAction`; Ф5 `raw-event-recovery.cron` + `strategic-alignment.worker` JSON-ремонт). Frontend (Ф4 `DecisionsWidget`: today→индикатор-утечка «Решения без действия», список+throughput только в week/month).
+- **Шаг 12 — Smoke** (после выката):
+  - `docker compose logs backend | grep -i "raw-event-recovery"` — новый @Cron тикает (15 мин); при застрявших RawEvent — `реэнкьюй`/`DEAD-LETTER` в логах, метрики `raw_event_recovery_reenqueued_total`/`raw_event_recovery_dead_lettered_total` в `/metrics`.
+  - **P0-смоук Ф0:** `diag logs --search "3-15-tasks"` без `Failed to deserialize column of type 'void'` / failed-транзакций; новая загрузка/встреча с поручением → задачи реально появляются в трекере (раньше дельта 0).
+  - **Ф2:** новое actionable-решение → авто-`Issue` с `DecisionTaskLink('derived')`; `Decision.impliesAction=true`, `actionExtractedAt` проставлен (идемпотентность — повтор не плодит второй intake).
+  - `/metrics` содержит `strategic_alignment_parse_skip_total` (битый ответ LLM → skip, job не падает).
+- **Откат:** kill-switch `knowledge.rawEventRecoveryEnabled=false` (cron-страховка). Миграция аддитивна — отката схемы не требует.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-27 — Слой источника + маршрутизатор поиска по классу запроса (ветка feature/sloy-istochnika-marshrutizator)
 
 > ТЗ `plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md` (Ф1–Ф10). Многомаршрутный retrieval: роутер 5 классов запроса (`QueryClass`) + confidence-gated both-ways + слой источника как первоклассный объект (`SourceEpisode`/`SourceParticipant`/`SourceEntity`) + партиционирование векторных индексов по тенанту + синтез ответа по классу (`answerKind`). Коммиты `df33ea2a` (Ф1) … `e588df15` (Ф9).

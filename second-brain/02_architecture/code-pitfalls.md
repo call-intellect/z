@@ -100,6 +100,12 @@ Rust-движок убран. `url` в `datasource` запрещён → вын�
 
 **Как обойти:** `PrismaService` и `prisma/seed.ts` — через `@prisma/adapter-pg`. `prisma.config.ts`: `import 'dotenv/config'` (Prisma CLI не видит bun-автозагрузку `.env`) + `url: process.env['DATABASE_URL'] ?? ''` (фолбэк, чтобы `prisma generate` не падал без БД в Docker-сборке).
 
+### 8a. Prisma 7: `$queryRaw` падает на функции, возвращающей `void` (advisory-lock) — нужен `$executeRaw` (2026-06-27)
+
+`SELECT pg_advisory_xact_lock(...)` возвращает колонку типа `void`. Под Prisma 7 (Rust-движок убран, десериализация в JS) `$queryRaw` пытается десериализовать результат и падает: `Failed to deserialize column of type 'void'` → `PrismaClientKnownRequestError`. В транзакции создания задачи (advisory-lock на `tenantId:normTitle`) это роняло весь `$transaction` → задачи/intake не создавались (дельта 0, P0). Симптом коварен: блокировка берётся корректно, но запрос лочит на **чтении результата**, а не на исполнении.
+
+**Как обойти:** для запросов без значимого результата (advisory-lock, `SET`, DDL) — `$executeRaw` / `$executeRawUnsafe` (не десериализуют колонки, tagged-template параметризация сохраняется). `$queryRaw` — только когда реально читаешь строки. Фикс: `specialist-3-15-tasks.service.ts`, `issues.service.ts` (advisory-lock в `acquireIssueLocks`). Сайты с `pg_advisory_unlock` (возвращает `bool`) могут оставаться на `$queryRaw` — `bool` десериализуется.
+
 ### 9. tsc не копирует non-TS ассеты в dist
 
 `RbacService` читает `policies/policy.csv` через `readFileSync(join(__dirname, ...))`. `bun run dev` (из `src/`) работает, а собранный `bun dist/main.js` падает с ENOENT — `tsc` копирует только `.ts`.

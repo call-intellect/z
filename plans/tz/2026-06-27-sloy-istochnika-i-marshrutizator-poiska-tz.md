@@ -345,4 +345,20 @@ model SourceEntity {
 - Рефлексия в `second-brain/05_история/`.
 
 ## Итог
-*(заполнит tz-orchestrator по завершении: реализовано целиком/частично, что осталось.)*
+
+**Реализовано ЦЕЛИКОМ (Ф1–Ф10), ветка `feature/sloy-istochnika-marshrutizator`, коммиты `df33ea2a..e588df15`.**
+
+| Фаза | Коммит | Суть |
+|---|---|---|
+| Ф1 | `df33ea2a` | HASH-партиционирование `IdeaBlock`/`Entity` по `tenantId` (64 партиции, составной PK `(id, tenantId)`, FK-рефактор: Cascade→составные, SetNull/self→nullable-компаньоны), миграция `20260627120000`, HNSW IdeaBlock/Entity (`m=16, ef_construction=128`) + HNSW `Theme.embedding`, крутилка `knowledge.hnsw_ef_search` (100) |
+| Ф2 | `5151d9df` | Слой источника: `SourceEpisode` (партиц. + embedding+HNSW) / `SourceParticipant` / `SourceEntity`, миграция `20260627130000`, заполнение при ingest (`persistSourceLayer`, best-effort/идемпотентно), backfill `backfill-source-layer.ts` (в STEPS) |
+| Ф3 | `8200040e` | Роутер 5 классов `QueryClass(list\|topic\|temporal\|overview\|fact)` (детерминированный + тай-брейк), ось `personIds`, confidence-gated both-ways (структурный+семантический+RRF), промпт `query-understand`, крутилки `router_confidence_threshold` (0.6) + kill-switch `router_v2_enabled` (ON), метрики `router_query_class`/`both_ways` |
+| Ф4 | `3e5c423d` | Маршрут К1: нечёткий резолвинг `resolvePersonCandidates` (alias→триграмма→embedding, merged-канон, контекст-сужение), точный обход `runStructuralAggregate`, уточнение при неоднозначности, триграммные GIN `Entity.canonicalName`/`persons.name`, крутилки `person_resolve_trgm_threshold` (0.3)/`person_resolve_ambiguity_delta` (0.1) |
+| Ф5 | `3bdeca0d` | Мост К3: фикс tz-бага `period-resolver` (реальный IANA-tz через `Intl`), `runTemporalBranch` читает `ValueRecapSnapshot`/`WeeklyOperationsDigest` → markdown в синтез |
+| Ф6 | `5183f467` | Мост К4: `selectTopThemes` (top-N по `Theme.embedding<=>qvec`), `runOverviewBranch` (`Theme.summary`→карта тем), `poolByThemes` в RRF, крутилка `overview_top_themes` (5) |
+| Ф7 | `5b1214f3` | Contextual-header v2: `buildMetaLine` обогащён (компании/участники/sourceTitle), поле `IdeaBlock.contextHeaderVersion`, миграция `20260627140000`, backfill `backfill-context-header-reembed.ts` (+REINDEX, в STEPS) |
+| Ф8 | `61b0a2b6` | Документы первокласс: AI-title+summary (taskType `document-summarize`, code-fallback `document-summarize.prompt.ts`, `DocumentSummaryService`), `sourceTitle`→ingest, гейт summary-узла обобщён, крутилка `document_summary_input_chars` (12000), сид `seed-admin-setting-documents.ts` |
+| Ф10 | `4abce29f` | Синтез по классу: контракт `answerKind(list\|recap\|overview\|prose)` + `episodes[]` через `ChatV2Output→synthesis→ChatAnswer→API DTO`, ветвление контекста (К1/К3/К4/К2-К5), системный промпт chat-v2 (`BASE_SYSTEM_PROMPT`), крутилка `list_episodes_limit` (30) |
+| Ф9 | `e588df15` | Rerank-доводка: `conditionalRerank` на both-ways-merged, хардкод размера пула → крутилка `rag.rerank_pool_size` (30, registry+сид smart-search) |
+
+**БД-приёмка (миграции / HNSW / партиции) выполняется на проде** — локальной БД в среде разработки не было, поэтому приёмка партиц-миграции/HNSW переносится на staging/пустой прод (см. `04_не-сделано/README.md` и `prod-deploy-log.md` Шаг 4). 2 средовых теста (Redis/DNS) к фиче не относятся.

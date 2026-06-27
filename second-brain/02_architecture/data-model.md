@@ -584,6 +584,65 @@ Per-Org кэш cross-source идентичности «псевдоним → Pe
 `entity-name-resolve`) → **fail-closed null** (инвариант R-2: разных людей не
 склеиваем). Подробно — [[knowledge-core]] §«Cross-source идентичность».
 
+## Слой источника (Ф2 слой-источника+маршрутизатор, 2026-06-27)
+
+**Источник:** ТЗ [`2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md`](../../plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md) (миграция `20260627130000_source_layer`). Подробно — [[knowledge-core]] §«Слой источника + многомаршрутный retrieval». Источник (встреча/документ/чат-тред) материализован как первоклассный объект поиска параллельно поблочному `IdeaBlock`. Все три модели несут `tenantId` явно (`Participant` его НЕ имеет). Заполняются при ingest (`block-ingest.worker.persistSourceLayer`, best-effort/идемпотентно); backfill — `backfill-source-layer.ts`.
+
+### SourceEpisode
+
+```
+SourceEpisode {
+  id, tenantId (FK Org, Cascade), rawEventId @unique → RawEvent (Cascade),
+  kind VARCHAR(16)        -- 'meeting' | 'document' | 'chat'
+  title, occurredAt, summary? @Text,
+  embedding vector(1536), embeddingModelVersion? VARCHAR(40),
+  branch? ThemeBranch,
+  createdAt, updatedAt
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, kind, occurredAt])
+}
+```
+
+Один на `RawEvent`. Несёт human-резюме + собственный вектор для семантического поиска ПО ИСТОЧНИКУ (К2/К4), отдельно от `IdeaBlock.embedding`. HNSW на `embedding` (партиц. по tenantId как Ф1) — в `postgres-init.sql`.
+
+### SourceParticipant
+
+```
+SourceParticipant {
+  rawEventId → RawEvent (Cascade), personId → Person (Cascade), tenantId → Org (Cascade),
+  role VARCHAR(16)        -- 'host' | 'guest' | 'author' | 'member'
+  speakingShare? Decimal(4,3),   -- доля реплик 0..1, null для не-встреч (для ранжирования)
+  createdAt
+  @@id([rawEventId, personId])
+  @@index([tenantId, personId, createdAt])
+}
+```
+
+Ребро «человек присутствовал в источнике» на уровне ИСТОЧНИКА (НЕ линк на каждый блок) — детерминированный фундамент маршрута К1 «все встречи/чаты с человеком X».
+
+### SourceEntity
+
+```
+SourceEntity {
+  rawEventId → RawEvent (Cascade), entityId → Entity (Cascade), tenantId → Org (Cascade),
+  mentionsCount Int @default(0), createdAt
+  @@id([rawEventId, entityId])
+  @@index([tenantId, entityId, createdAt])
+}
+```
+
+Ребро «компания/сущность упомянута в источнике» — агрегат на уровне источника (НЕ дубль `IdeaBlockEntity`, который mention на уровне блока). Только из извлечённых `IdeaBlockEntity` (НЕ из текста summary — защита от ложных сущностей). Для К1/К4.
+
+## Партиционирование IdeaBlock/Entity по tenantId (Ф1 слой-источника+маршрутизатор, 2026-06-27)
+
+**Источник:** ТЗ [`2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md`](../../plans/tz/2026-06-27-sloy-istochnika-i-marshrutizator-poiska-tz.md) Ф1 (миграция `20260627120000_partition_idea_block_entity_by_tenant`). Снимает scale-killer «глобальный HNSW + `WHERE tenantId`» до наполнения прода (проектирование под 100–200k тенантов).
+
+- `IdeaBlock` и `Entity` — декларативное **HASH-партиционирование по `tenantId`** (64 партиции). Postgres требует партиционный ключ во всех unique-ограничениях → **PK становится составным** `@@id([id, tenantId])`.
+- Все входящие FK переведены на составные `(blockId/entityId, tenantId)`: Cascade-связи переиспользуют `tenantId`; SetNull/self-связи получили nullable-компаньоны (`mergedIntoTenantId`, `supersededByTenantId`, `entityTenantId`, `sourceIdeaBlockTenantId`). Join-таблицы (`IdeaBlockEntity`/`IdeaBlockAccess`, `ThemeIdeaBlock`/`ThemeEntity`) и 1:1-unique получили `tenantId`.
+- **Новое поле `IdeaBlock.contextHeaderVersion`** (миграция `20260627140000_idea_block_context_header_version`, Ф7) — версия contextual-header, гейт идемпотентности ре-эмбеддинга (`backfill-context-header-reembed.ts`). Подробно — [[knowledge-core]] §«Contextual-header v2».
+- HNSW-параметры `m=16, ef_construction=128` на IdeaBlock/Entity + новый HNSW на `Theme.embedding` и `SourceEpisode.embedding`; `ef_search` — крутилка `knowledge.hnsw_ef_search` (100). Всё в `postgres-init.sql`.
+- ⚠️ **БД-приёмка миграции** (партиц-swap, FK-рефактор) выполняется на проде/staging — локальной БД в среде разработки не было (см. [[../04_не-сделано/README]]).
+
 ### ThemeIdeaBlock (M:M)
 
 ```

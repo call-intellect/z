@@ -41,7 +41,7 @@ import {
 import { AssistantMarkdown } from "@/ui/components/chat-v2/AssistantMarkdown";
 import { AssistantTargetSelect } from "@/ui/components/chat-v2/AssistantTargetSelect";
 import { TableSchemaPreview } from "@/ui/concierge/TableSchemaPreview";
-import { masterRowsFromEvent, type MasterRow } from "./master-chat-events";
+import { masterRowsFromEvent, type MasterRow } from "@/ui/chat/master-chat-events";
 
 const SOURCE_UNAVAILABLE_CODES = new Set([
   "meeting_not_found",

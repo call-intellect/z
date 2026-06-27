@@ -96,6 +96,42 @@ const SEEDS: SettingSeed[] = [
     description:
       'Сколько минут после окончания встречи ждать egress-вебхук аудио-дорожки, прежде чем считать её застрявшей и деградировать (исключить из готовности, чтобы транскрипция стартовала по готовым дорожкам). По умолчанию 20.',
   },
+  {
+    key: 'knowledge.rawEventRecoveryEnabled',
+    value: true,
+    category: 'knowledge',
+    section: 'workers',
+    severity: 'high',
+    description:
+      'Рубильник восстановления застрявших RawEvent: block-ingest не довёл событие из-за затяжного сбоя LLM (BullMQ-ретраи исчерпаны), RawEvent навсегда в processingStatus=received. Cron каждые 15 мин реэнкьюит застрявшие в block-ingest. По умолчанию вкл (Ship-On).',
+  },
+  {
+    key: 'knowledge.rawEventRecoveryStaleMinutes',
+    value: 30,
+    category: 'knowledge',
+    section: 'workers',
+    severity: 'low',
+    description:
+      'Сколько минут RawEvent должен пробыть в processingStatus=received, прежде чем считать его застрявшим и реэнкьюить в block-ingest. Меньше — реже ждём недообработанное событие, но риск гонки с активным ingest. По умолчанию 30.',
+  },
+  {
+    key: 'knowledge.rawEventRecoveryMaxAgeHours',
+    value: 24,
+    category: 'knowledge',
+    section: 'workers',
+    severity: 'low',
+    description:
+      'RawEvent старше этого возраста и всё ещё в processingStatus=received не реэнкьюится (анти-бесконечность), а попадает в dead-letter алерт для оператора. По умолчанию 24 ч.',
+  },
+  {
+    key: 'knowledge.rawEventRecoveryBatchLimit',
+    value: 200,
+    category: 'knowledge',
+    section: 'workers',
+    severity: 'low',
+    description:
+      'Сколько застрявших RawEvent обрабатывать за один проход cron-а восстановления. По умолчанию 200.',
+  },
 ];
 
 interface Counters {

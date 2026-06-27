@@ -17,6 +17,7 @@ import { AssigneeResolverService } from '../tracker/services/assignee-resolver.s
 import { IssuesService } from '../tracker/services/issues.service';
 
 import { mapExistenceConfirmAnswer } from './existence-confirm.util';
+import { ProbeDialogService } from './probe-dialog.service';
 import type { NotificationRespondedPayload } from './probe.types';
 import {
   PROBE_RESPONSE_CLASSIFY_JSON_SCHEMA,
@@ -86,6 +87,9 @@ export class ProbeResponseHandler {
     @Optional()
     @Inject(CompanyProfileService)
     private readonly companyProfile?: CompanyProfileService,
+    @Optional()
+    @Inject(ProbeDialogService)
+    private readonly dialog?: ProbeDialogService,
   ) {}
 
   @OnEvent('notification.responded')
@@ -173,6 +177,29 @@ export class ProbeResponseHandler {
               err: err instanceof Error ? err.message : String(err),
             },
             'subject-memory: enqueue derive не удался — пропускаю',
+          );
+        }
+      }
+
+      if (this.dialog) {
+        try {
+          await this.dialog.ensureState({
+            tenantId: event.tenantId,
+            probeEventId: probe.id,
+            recipientUserId: event.recipientUserId,
+          });
+          if (classification) {
+            await this.dialog.recordTurn({
+              probeEventId: probe.id,
+              outcome: classification.outcome,
+              collectedValue: classification.value,
+              confidence: classification.confidence,
+            });
+          }
+        } catch (err) {
+          this.logger.debug(
+            { probeId: probe.id, err: err instanceof Error ? err.message : String(err) },
+            'probe-dialog: persist state не удался — пропускаю',
           );
         }
       }

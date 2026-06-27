@@ -13,6 +13,7 @@ import type { CurationService } from '../curation/services/curation.service';
 import type { AssigneeResolverService } from '../tracker/services/assignee-resolver.service';
 import type { IssuesService } from '../tracker/services/issues.service';
 
+import type { ProbeDialogService } from './probe-dialog.service';
 import { ProbeResponseHandler } from './probe-response.handler';
 import type { NotificationRespondedPayload } from './probe.types';
 
@@ -72,6 +73,9 @@ interface Mocks {
   experimentUpdate: ReturnType<typeof vi.fn>;
   companyProfileUpdate: ReturnType<typeof vi.fn>;
   companyProfileGetRaw: ReturnType<typeof vi.fn>;
+  dialog: ProbeDialogService;
+  dialogEnsureState: ReturnType<typeof vi.fn>;
+  dialogRecordTurn: ReturnType<typeof vi.fn>;
 }
 
 function makeMocks(): Mocks {
@@ -104,6 +108,14 @@ function makeMocks(): Mocks {
   const experimentUpdate = vi.fn().mockResolvedValue({ id: 'exp-1' });
   const companyProfileUpdate = vi.fn().mockResolvedValue({ id: 'cp-1' });
   const companyProfileGetRaw = vi.fn().mockResolvedValue(null);
+  const dialogEnsureState = vi.fn().mockResolvedValue({ id: 'pds-1' });
+  const dialogRecordTurn = vi.fn().mockResolvedValue({ id: 'pds-1' });
+  const dialog = {
+    ensureState: dialogEnsureState,
+    recordTurn: dialogRecordTurn,
+    getActive: vi.fn().mockResolvedValue(null),
+    setPhase: vi.fn().mockResolvedValue(undefined),
+  } as unknown as ProbeDialogService;
 
   const prisma = {
     probeEvent: {
@@ -189,6 +201,9 @@ function makeMocks(): Mocks {
     experimentUpdate,
     companyProfileUpdate,
     companyProfileGetRaw,
+    dialog,
+    dialogEnsureState,
+    dialogRecordTurn,
   };
 }
 
@@ -242,6 +257,7 @@ function makeHandler(args: {
     assigneeResolver,
     issues,
     companyProfile,
+    args.mocks.dialog,
   );
 }
 
@@ -1462,5 +1478,51 @@ describe('ProbeResponseHandler — Ф1 typed-intent (outcome-маршрутиз�
     await handler.handle({ ...event, payload: { text: 'новая миссия' } });
 
     expect(mocks.companyProfileUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProbeResponseHandler — Ф2 dialog-state привязка', () => {
+  it('валидный ответ — ensureState({tenantId, probeEventId, recipientUserId}) + recordTurn(outcome/value/confidence)', async () => {
+    const mocks = makeMocks();
+    mocks.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        reasoning: 'Имя названо',
+        outcome: 'apply',
+        value: 'Анна',
+        confidence: 0.9,
+      }),
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: true });
+
+    await handler.handle(event);
+
+    expect(mocks.dialogEnsureState).toHaveBeenCalledWith({
+      tenantId: 'org-classify',
+      probeEventId: 'probe-classify-1',
+      recipientUserId: 'user-1',
+    });
+    expect(mocks.dialogRecordTurn).toHaveBeenCalledWith({
+      probeEventId: 'probe-classify-1',
+      outcome: 'apply',
+      collectedValue: 'Анна',
+      confidence: 0.9,
+    });
+  });
+
+  it('ошибка dialog (ensureState throws) НЕ роняет handle', async () => {
+    const mocks = makeMocks();
+    mocks.dialogEnsureState.mockRejectedValueOnce(new Error('db down'));
+    mocks.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        reasoning: 'Имя названо',
+        outcome: 'apply',
+        value: 'Анна',
+        confidence: 0.9,
+      }),
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: true });
+
+    await expect(handler.handle(event)).resolves.toBeUndefined();
+    expect(mocks.dialogRecordTurn).not.toHaveBeenCalled();
   });
 });

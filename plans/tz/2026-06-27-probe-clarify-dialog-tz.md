@@ -209,7 +209,7 @@ LLM недоступен ──► graceful degradation: нынешний дет
 - `bun run typecheck && bun run lint && bunx vitest run src/modules/probe/probe-response.handler.spec.ts`.
 **Закрывает:** R1, R2, R3, R8.
 
-### Ф2 — Контракт намерения + персистентное состояние `[ ]`
+### Ф2 — Контракт намерения + персистентное состояние `[x]`
 **Цель:** хранить собранное намерение и фазу между ходами.
 **Файлы:** `prisma/schema.prisma` (`ProbeDialogState` + `ProbeDialogPhase`, Б2; новые `ProbeStatus`, Б3), миграция-файл, `probe/probe-response.handler.ts`, новый `probe/probe-dialog.service.ts`.
 **Что входит:**

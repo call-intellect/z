@@ -6509,6 +6509,14 @@ enum ProbeStatus {
   /// SubjectMemory Ф2 — висящий дубль-probe погашен выводом/активацией
   /// правила той же Org (sweepPendingDuplicates) — вопрос уже не задаём.
   suppressed_by_memory
+  /// Probe-clarify Ф2 — диалог: задан уточняющий/подтверждающий ход, ждём ответ человека.
+  awaiting_dialog
+  /// Probe-clarify Ф4 — диалог: ответ применён в данные после echo-back подтверждения.
+  applied
+  /// Probe-clarify Ф3 — диалог: не доразобрали за лимит ходов → отдано человеку (owner/admin).
+  escalated_to_human
+  /// Probe-clarify Ф6 — диалог: человек не довёл уточнение до конца (истёк TTL/бросил).
+  abandoned
 }
 
 /// Idea — карточка идеи / запроса. SBA β-5 §4.1.
@@ -6635,10 +6643,39 @@ model ProbeEvent {
 
   org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  probeDialogState ProbeDialogState?
+
   @@index([tenantId, status])
   @@index([tenantId, emittedByService])
   @@index([contentHash])
   @@map("probe_events")
+}
+
+/// Probe-clarify Ф2 — состояние одного диалогового probe-уточнения: собранное намерение + фаза.
+/// Один ProbeEvent → ровно одна строка (probeEventId @unique), проходит фазы до resolved.
+model ProbeDialogState {
+  id              String           @id @default(cuid())
+  tenantId        String
+  probeEventId    String           @unique
+  recipientUserId String
+  phase           ProbeDialogPhase @default(awaiting_answer)
+  outcome         String?
+  collectedValue  String?
+  confidence      Float?
+  turnCount       Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  probeEvent      ProbeEvent       @relation(fields: [probeEventId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, probeEventId])
+  @@index([tenantId, recipientUserId, phase])
+}
+
+enum ProbeDialogPhase {
+  awaiting_answer
+  awaiting_clarification
+  awaiting_confirmation
+  resolved
 }
 
 // ─────────────────────────────────────────────────────────────────────────

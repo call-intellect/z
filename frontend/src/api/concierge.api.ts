@@ -1,4 +1,5 @@
 import { apiClient, getApiClientOrgId } from "./api-client";
+import type { ChatV2CitationApi, ChatV2ScopeApi } from "./chat-v2.api";
 
 export interface ConciergePageContextApi {
   clientPath?: string;
@@ -12,6 +13,9 @@ export interface ConciergePostMessageBody {
   conversationId?: string;
   pageContext?: ConciergePageContextApi;
   noStream?: boolean;
+  scope?: ChatV2ScopeApi;
+  scopeRefId?: string | null;
+  asOf?: string;
 }
 
 export type ConciergeStreamEvent =
@@ -32,7 +36,18 @@ export type ConciergeStreamEvent =
       preview: string;
       data?: unknown;
     }
-  | { type: "message"; text: string }
+  | {
+      type: "confirm_required";
+      toolName: string;
+      params: Record<string, unknown>;
+      preview: string;
+    }
+  | {
+      type: "message";
+      text: string;
+      citations?: ChatV2CitationApi[];
+      needsClarification?: boolean;
+    }
   | { type: "done"; messageId: string }
   | { type: "error"; code: string; message: string }
   | { type: "quota_exceeded"; scope: "daily" | "monthly" };
@@ -49,6 +64,7 @@ export interface ConciergeOnceResponseApi {
   }>;
   quotaExceeded?: "daily" | "monthly";
   error?: { code: string; message: string };
+  citations?: ChatV2CitationApi[];
 }
 
 export interface ConciergeConversationApi {
@@ -56,6 +72,7 @@ export interface ConciergeConversationApi {
   startedAt: string;
   lastMessageAt: string | null;
   summary: string | null;
+  titlePreview: string | null;
   archivedAt: string | null;
 }
 

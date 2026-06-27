@@ -269,7 +269,7 @@ LLM недоступен ──► graceful degradation: нынешний дет
 - Unit: ответ на дайджест из 3 вопросов привязывается к правильному `probeEventId`.
 **Закрывает:** R13, R14.
 
-### Ф6 — Терминалы, наблюдаемость, деградация `[ ]`
+### Ф6 — Терминалы, наблюдаемость, деградация `[x]`
 **Цель:** честные исходы, метрики переходов, отказоустойчивость.
 **Файлы:** `probe/probe-dialog.service.ts`, `probe/probe-response.handler.ts`, `business-metrics.service.ts`, cron очистки (TTL `awaiting_*` → `abandoned`).
 **Что входит:**

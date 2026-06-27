@@ -652,6 +652,10 @@ export class BusinessMetricsService implements OnModuleInit {
   private probeResponseUnclearTotal!: Counter<'original_reason'>;
   // ── Probe Фаза 5 (2026-06-11) — исход probe (калибровка Фазы 2) ──
   private probeOutcomeTotal!: Counter<'outcome' | 'reason'>;
+  // ── Probe-clarify Фаза 6 (2026-06-27) — диалоговое уточнение ──
+  private probeDialogTransitionTotal!: Counter<'from' | 'to'>;
+  private probeDialogOutcomeTotal!: Counter<'outcome'>;
+  private probeDialogDegradedTotal!: Counter<'reason'>;
   // ── Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки вопроса ──
   private probeQualityJudgedTotal!: Counter<'verdict'>;
   // ── Probe Фаза 4 (2026-06-20) — LLM-гейт ценности probe-вопроса ──
@@ -2763,6 +2767,21 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'probe_outcome_total',
       help: 'Probe Фаза 5 — исход probe: answered (ответил) | ignored (истёк без ответа), по reason. Калибровочный сигнал для Фазы 2 (LLM-judge ценности вопроса).',
       labelNames: ['outcome', 'reason'] as const,
+    });
+    this.probeDialogTransitionTotal = this.getOrCreateCounter({
+      name: 'probe_dialog_transition_total',
+      help: 'Probe-clarify Ф6 — переход фазы диалогового уточнения (from → to).',
+      labelNames: ['from', 'to'] as const,
+    });
+    this.probeDialogOutcomeTotal = this.getOrCreateCounter({
+      name: 'probe_dialog_outcome_total',
+      help: 'Probe-clarify Ф6 — терминальный исход диалога: applied | escalated_to_human | abandoned.',
+      labelNames: ['outcome'] as const,
+    });
+    this.probeDialogDegradedTotal = this.getOrCreateCounter({
+      name: 'probe_dialog_degraded_total',
+      help: 'Probe-clarify Ф6 — откат к детерминированному one-shot из-за недоступности LLM-классификатора.',
+      labelNames: ['reason'] as const,
     });
     // ── Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки вопроса ──
     this.probeQualityJudgedTotal = this.getOrCreateCounter({
@@ -6441,6 +6460,20 @@ export class BusinessMetricsService implements OnModuleInit {
     reason: string;
   }): void {
     this.probeOutcomeTotal.inc({ outcome: args.outcome, reason: args.reason });
+  }
+
+  incProbeDialogTransition(args: { from: string; to: string }): void {
+    this.probeDialogTransitionTotal.inc({ from: args.from, to: args.to });
+  }
+
+  incProbeDialogOutcome(args: {
+    outcome: 'applied' | 'escalated_to_human' | 'abandoned';
+  }): void {
+    this.probeDialogOutcomeTotal.inc({ outcome: args.outcome });
+  }
+
+  incProbeDialogDegraded(): void {
+    this.probeDialogDegradedTotal.inc({ reason: 'classify_failed' });
   }
 
   /**

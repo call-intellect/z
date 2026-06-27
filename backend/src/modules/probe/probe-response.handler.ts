@@ -240,6 +240,7 @@ export class ProbeResponseHandler {
 
       const respondingToConfirm =
         dialogActive && priorState?.phase === 'awaiting_confirmation';
+      const fromPhase = priorState?.phase ?? 'awaiting_answer';
 
       if (respondingToConfirm && this.isAffirmation(answerText)) {
         routed = await this.finalizeConfirmedIntent({
@@ -255,7 +256,7 @@ export class ProbeResponseHandler {
           classification.outcome === 'delete' ||
           (classification.outcome === 'apply' && classification.confidence >= escalateThreshold)
         ) {
-          await this.sendConfirm({ probe, event, probePayload, classification });
+          await this.sendConfirm({ probe, event, probePayload, classification, fromPhase });
           routed = true;
         } else {
           await this.routeClarifyOrEscalate({
@@ -264,6 +265,7 @@ export class ProbeResponseHandler {
             probePayload,
             dialogState,
             maxTurns,
+            fromPhase,
           });
           routed = true;
         }
@@ -389,6 +391,7 @@ export class ProbeResponseHandler {
     probePayload: Record<string, unknown>;
     dialogState: ProbeDialogState | null;
     maxTurns: number;
+    fromPhase: string;
   }): Promise<void> {
     const turnCount = args.dialogState?.turnCount ?? 1;
     const title = this.toStringOrUndef(args.probePayload.contextCardTitle);
@@ -406,6 +409,8 @@ export class ProbeResponseHandler {
         dataClass,
         userAnswer,
       });
+      this.metrics.incProbeDialogTransition({ from: args.fromPhase, to: 'resolved' });
+      this.metrics.incProbeDialogOutcome({ outcome: 'escalated_to_human' });
       return;
     }
 
@@ -432,6 +437,10 @@ export class ProbeResponseHandler {
           phase: 'awaiting_clarification',
         });
       }
+      this.metrics.incProbeDialogTransition({
+        from: args.fromPhase,
+        to: 'awaiting_clarification',
+      });
       this.logger.log(
         `probe-clarify: задан уточняющий ход probe=${args.probe.id} turn=${turnCount}`,
       );
@@ -466,6 +475,7 @@ export class ProbeResponseHandler {
     event: NotificationRespondedPayload;
     probePayload: Record<string, unknown>;
     classification: ProbeClassification;
+    fromPhase: string;
   }): Promise<void> {
     const title = this.toStringOrUndef(args.probePayload.contextCardTitle);
     const verb = args.classification.outcome === 'delete' ? 'удалить' : 'записать';
@@ -493,6 +503,10 @@ export class ProbeResponseHandler {
           phase: 'awaiting_confirmation',
         });
       }
+      this.metrics.incProbeDialogTransition({
+        from: args.fromPhase,
+        to: 'awaiting_confirmation',
+      });
       this.logger.log(
         `probe-confirm: echo-back отправлен probe=${args.probe.id} outcome=${args.classification.outcome}`,
       );
@@ -540,6 +554,7 @@ export class ProbeResponseHandler {
         probePayload: args.probePayload,
         dialogState: args.dialogState,
         maxTurns: args.maxTurns,
+        fromPhase: 'awaiting_confirmation',
       });
       return true;
     }
@@ -547,6 +562,8 @@ export class ProbeResponseHandler {
       where: { id: args.probe.id },
       data: { status: 'applied' },
     });
+    this.metrics.incProbeDialogTransition({ from: 'awaiting_confirmation', to: 'resolved' });
+    this.metrics.incProbeDialogOutcome({ outcome: 'applied' });
     await this.sendAnswerAck({
       tenantId: args.event.tenantId,
       recipientUserId: args.event.recipientUserId,
@@ -1387,6 +1404,7 @@ export class ProbeResponseHandler {
         },
         'ProbeResponseHandler: probe-response-classify упал — пропускаю классификацию',
       );
+      this.metrics.incProbeDialogDegraded();
       return null;
     }
   }

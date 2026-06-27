@@ -187,6 +187,9 @@ function makeMocks(): Mocks {
     incProbeResponseClassified: vi.fn(),
     incProbeResponseUnclear: vi.fn(),
     incProbeOutcome: vi.fn(),
+    incProbeDialogTransition: vi.fn(),
+    incProbeDialogOutcome: vi.fn(),
+    incProbeDialogDegraded: vi.fn(),
   } as unknown as BusinessMetricsService;
 
   const ingestAdapter = {
@@ -1936,5 +1939,36 @@ describe('ProbeResponseHandler — Ф5 адресность дайджеста (
     };
     expect(where.where.id).toBeUndefined();
     expect(where.where.dispatchedNotificationId).toBe('notif-classify-1');
+  });
+});
+
+describe('ProbeResponseHandler — Ф6 деградация (LLM-классификатор упал)', () => {
+  function setExistenceConfirmProbe(mocks: Mocks): void {
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi.fn().mockResolvedValue({
+      ...buildProbe(),
+      reason: 'regulation.existence_confirm',
+      payload: {
+        message: 'Кора зафиксировала регламент «Возвраты». Оставить, переименовать или удалить?',
+        contextCardId: 'reg-99',
+        contextCardKind: 'regulation',
+      },
+    });
+  }
+
+  it('classify throws → incProbeDialogDegraded, handler не падает, детерминированный one-shot применён', async () => {
+    const mocks = makeMocks();
+    setExistenceConfirmProbe(mocks);
+    mocks.llmCall.mockRejectedValueOnce(new Error('llm proxy 500'));
+    const handler = makeHandler({ mocks, classifyEnabled: true, dialogEnabled: true });
+
+    await expect(
+      handler.handle({ ...event, payload: { text: 'Удалить, это устарело' } }),
+    ).resolves.toBeUndefined();
+
+    expect(mocks.metrics.incProbeDialogDegraded).toHaveBeenCalledTimes(1);
+    expect(mocks.curationDecide).toHaveBeenCalledTimes(1);
+    const decideArg = mocks.curationDecide.mock.calls[0]![0] as { decisionType: string };
+    expect(decideArg.decisionType).toBe('reject');
+    expect(mocks.metrics.incProbeResponseClassified).not.toHaveBeenCalled();
   });
 });

@@ -57,6 +57,7 @@ export interface ProcessInput {
   confirmHold?: boolean;
   scope?: ChatV2Scope;
   scopeRefId?: string | null;
+  asOf?: string;
 }
 
 export type ConciergeStreamEvent =
@@ -493,6 +494,7 @@ export class ConciergeService {
         intent: 'factual',
         ...(args.input.scope ? { scope: args.input.scope } : {}),
         ...(args.input.scopeRefId != null ? { scopeRefId: args.input.scopeRefId } : {}),
+        ...(args.input.asOf ? { asOf: args.input.asOf } : {}),
       });
     } catch (err) {
       this.logger.error(
@@ -545,6 +547,7 @@ export class ConciergeService {
         intent: 'factual',
         ...(args.input.scope ? { scope: args.input.scope } : {}),
         ...(args.input.scopeRefId != null ? { scopeRefId: args.input.scopeRefId } : {}),
+        ...(args.input.asOf ? { asOf: args.input.asOf } : {}),
       });
     } catch (err) {
       this.logger.error(

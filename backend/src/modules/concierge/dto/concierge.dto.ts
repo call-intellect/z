@@ -19,6 +19,7 @@ export const PostConciergeMessageBodySchema = z.object({
   pageContext: PageContextSchema.optional(),
   scope: ChatV2ScopeEnum.optional(),
   scopeRefId: z.string().min(1).max(128).optional().nullable(),
+  asOf: z.string().datetime().optional(),
   noStream: z.boolean().optional(),
 });
 export type PostConciergeMessageBodyDto = z.infer<typeof PostConciergeMessageBodySchema>;

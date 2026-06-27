@@ -482,6 +482,28 @@ describe('ConciergeService.process() — scope проброс', () => {
     );
   });
 
+  it('process({ asOf }) → askEphemeral получает asOf', async () => {
+    const { svc, mocks } = buildConciergeService({
+      nativeToolsEnabled: true,
+      ephemeralAnswer: { text: 'Ответ на дату.' },
+    });
+    mocks.llmCall.mockResolvedValueOnce(nativeToolCall('ask_chat_v2', { question: 'что было?' }));
+
+    await collect(
+      svc.process({
+        userMessage: 'Что было на эту дату?',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+        asOf: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+
+    expect(mocks.askEphemeral).toHaveBeenCalledWith(
+      expect.objectContaining({ asOf: '2026-01-01T00:00:00.000Z' }),
+    );
+  });
+
   it('process() без scope → askEphemeral вызван, без ключей scope/scopeRefId', async () => {
     const { svc, mocks } = buildConciergeService({
       nativeToolsEnabled: true,

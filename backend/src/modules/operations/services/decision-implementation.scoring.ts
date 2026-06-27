@@ -18,7 +18,9 @@ export function classifyImplementationStatus(args: {
   linkedTaskCount: number;
   hasOutcomes: boolean;
   staleDays: number;
+  impliesAction: boolean;
 }): DecisionImplementationStatus {
+  if (!args.impliesAction) return 'not_started';
   if (args.hasOutcomes) return 'done';
   if (
     isDecisionStalled({

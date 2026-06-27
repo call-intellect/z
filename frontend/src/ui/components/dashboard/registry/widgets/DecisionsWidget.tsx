@@ -31,10 +31,11 @@ function rangeForRhythm(rhythm: Rhythm): { from: string; to: string } {
 export const DecisionsWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
   const { currentOrgId } = useAuth();
   const [showAll, setShowAll] = useState(false);
+  const isDaily = rhythm === "today";
   const range = rangeForRhythm(rhythm);
 
   const throughputSwr = useSWR(
-    currentOrgId
+    currentOrgId && !isDaily
       ? ["decisions-throughput", currentOrgId, range.from, range.to]
       : null,
     async () => operationsDashboardApi.getDecisionThroughput(range),
@@ -64,6 +65,38 @@ export const DecisionsWidget: FC<{ rhythm: Rhythm }> = ({ rhythm }) => {
   const throughput = throughputSwr.data;
   const stalled = stalledSwr.data?.items ?? [];
   const total = throughput?.total ?? 0;
+
+  if (isDaily) {
+    return (
+      <GlassCard>
+        <CardTitle icon={<CheckCircle2 size={16} />} grad={GRAD.teal}>
+          Решения
+        </CardTitle>
+
+        {stalled.length === 0 ? (
+          <p
+            className="mt-6 py-6 text-center text-sm"
+            style={{ color: CHART.faint }}
+          >
+            Все решения в работе.
+          </p>
+        ) : (
+          <div className="mt-4 flex flex-col gap-3">
+            <StatCard
+              icon={<Clock size={18} />}
+              grad={GRAD.amber}
+              tone={CHART.amber}
+              label="Решения без действия"
+              value={String(stalled.length)}
+            />
+            <div className="flex">
+              <SourceLink href="/decisions" label="Смотреть решения" />
+            </div>
+          </div>
+        )}
+      </GlassCard>
+    );
+  }
 
   if (total === 0 && stalled.length === 0) {
     return (

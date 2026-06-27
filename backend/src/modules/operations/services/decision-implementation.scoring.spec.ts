@@ -72,6 +72,7 @@ describe('decision-implementation.scoring', () => {
           linkedTaskCount: 0,
           hasOutcomes: true,
           staleDays: 21,
+          impliesAction: true,
         }),
       ).toBe('done');
     });
@@ -82,6 +83,7 @@ describe('decision-implementation.scoring', () => {
           linkedTaskCount: 0,
           hasOutcomes: false,
           staleDays: 21,
+          impliesAction: true,
         }),
       ).toBe('stalled');
     });
@@ -92,6 +94,7 @@ describe('decision-implementation.scoring', () => {
           linkedTaskCount: 3,
           hasOutcomes: false,
           staleDays: 21,
+          impliesAction: true,
         }),
       ).toBe('in_progress');
     });
@@ -102,8 +105,31 @@ describe('decision-implementation.scoring', () => {
           linkedTaskCount: 0,
           hasOutcomes: false,
           staleDays: 21,
+          impliesAction: true,
         }),
       ).toBe('not_started');
+    });
+    it('impliesAction=false + старое без задач/outcomes → not_started (НЕ stalled)', () => {
+      expect(
+        classifyImplementationStatus({
+          ageDays: 30,
+          linkedTaskCount: 0,
+          hasOutcomes: false,
+          staleDays: 21,
+          impliesAction: false,
+        }),
+      ).toBe('not_started');
+    });
+    it('impliesAction=true + те же условия → stalled (регресс прежнего поведения)', () => {
+      expect(
+        classifyImplementationStatus({
+          ageDays: 30,
+          linkedTaskCount: 0,
+          hasOutcomes: false,
+          staleDays: 21,
+          impliesAction: true,
+        }),
+      ).toBe('stalled');
     });
   });
 

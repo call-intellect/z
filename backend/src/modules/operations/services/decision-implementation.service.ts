@@ -63,6 +63,7 @@ export class DecisionImplementationService {
         linkedTaskCount: true,
         actualOutcomes: true,
         implementationStatus: true,
+        impliesAction: true,
       },
       take: 10_000,
     });
@@ -84,6 +85,7 @@ export class DecisionImplementationService {
         linkedTaskCount: d.linkedTaskCount,
         hasOutcomes,
         staleDays,
+        impliesAction: d.impliesAction,
       });
 
       if (d.status === 'approved') {
@@ -186,6 +188,7 @@ export class DecisionImplementationService {
       tenantId: args.tenantId,
       deletedAt: null,
       status: { in: [...DecisionImplementationService.CONTROLLED_STATUSES] },
+      impliesAction: true,
       OR: [
         { decidedAt: { gte: args.from, lte: args.to } },
         { decidedAt: null, createdAt: { gte: args.from, lte: args.to } },
@@ -228,6 +231,7 @@ export class DecisionImplementationService {
         linkedTaskCount: true,
         actualOutcomes: true,
         implementationStatus: true,
+        impliesAction: true,
       },
       take: 5_000,
     });
@@ -255,6 +259,7 @@ export class DecisionImplementationService {
       linkedTaskCount: number;
       actualOutcomes: string | null;
       implementationStatus: string | null;
+      impliesAction: boolean;
     },
     staleDays: number,
     now: Date,
@@ -275,6 +280,7 @@ export class DecisionImplementationService {
       linkedTaskCount: d.linkedTaskCount,
       hasOutcomes,
       staleDays,
+      impliesAction: d.impliesAction,
     });
   }
 

@@ -25,6 +25,7 @@ describe('DecisionImplementationService', () => {
       linkedTaskCount: number;
       actualOutcomes: string | null;
       implementationStatus: string | null;
+      impliesAction?: boolean;
     }>;
     counts?: { total: number; done: number };
     taskLinksByDecision?: Record<string, Array<{ issue: { completedAt: Date | null } | null }>>;
@@ -35,12 +36,18 @@ describe('DecisionImplementationService', () => {
       decision: {
         findMany: vi
           .fn()
-          .mockResolvedValue((opts.decisions ?? []).map((d) => ({ status: 'approved', ...d }))),
+          .mockResolvedValue(
+            (opts.decisions ?? []).map((d) => ({
+              status: 'approved',
+              impliesAction: true,
+              ...d,
+            })),
+          ),
         update: vi.fn(async (arg: { where: unknown; data: unknown }) => {
           updates.push(arg);
           return { id: 'd1' };
         }),
-        count: vi.fn(async () => {
+        count: vi.fn(async (_arg?: { where?: unknown }) => {
           const v = countCall === 0 ? (opts.counts?.total ?? 0) : (opts.counts?.done ?? 0);
           countCall++;
           return v;
@@ -130,6 +137,42 @@ describe('DecisionImplementationService', () => {
     });
     const res = await svc.computeForTenant({ tenantId: 't1', now });
     expect(res.stalled).toHaveLength(0);
+  });
+
+  it('смесь impliesAction: в stalled[] попадают только actionable-решения', async () => {
+    const { svc } = build({
+      decisions: [
+        {
+          id: 'd-actionable',
+          statement: 'Внедрить новый процесс онбординга',
+          text: null,
+          status: 'implemented',
+          decidedByPersonIds: ['p1'],
+          decidedAt: new Date('2026-05-01T00:00:00Z'),
+          createdAt: new Date('2026-05-01T00:00:00Z'),
+          linkedTaskCount: 0,
+          actualOutcomes: null,
+          implementationStatus: null,
+          impliesAction: true,
+        },
+        {
+          id: 'd-strategy',
+          statement: 'Решили НЕ выходить на рынок ЕС',
+          text: null,
+          status: 'implemented',
+          decidedByPersonIds: ['p2'],
+          decidedAt: new Date('2026-05-01T00:00:00Z'),
+          createdAt: new Date('2026-05-01T00:00:00Z'),
+          linkedTaskCount: 0,
+          actualOutcomes: null,
+          implementationStatus: null,
+          impliesAction: false,
+        },
+      ],
+      counts: { total: 1, done: 0 },
+    });
+    const res = await svc.computeForTenant({ tenantId: 't1', now });
+    expect(res.stalled.map((s) => s.id)).toEqual(['d-actionable']);
   });
 
   describe('auto-implement (редизайн Ф8.1)', () => {
@@ -287,6 +330,20 @@ describe('DecisionImplementationService', () => {
         to: now,
       });
       expect(tp.throughputPercent).toBe(0);
+    });
+
+    it('count вызывается с where, содержащим impliesAction: true (знаменатель только actionable)', async () => {
+      const { svc, prisma } = build({ counts: { total: 5, done: 2 } });
+      await svc.getDecisionThroughput({
+        tenantId: 't1',
+        from: new Date('2026-03-01'),
+        to: now,
+      });
+      expect(prisma.decision.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ impliesAction: true }),
+        }),
+      );
     });
   });
 

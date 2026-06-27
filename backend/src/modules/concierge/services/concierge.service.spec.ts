@@ -458,6 +458,58 @@ describe('ConciergeService.process() — единый проход: ask_chat_v2 
   });
 });
 
+describe('ConciergeService.process() — scope проброс', () => {
+  it('process({ scope: issue, scopeRefId }) → askEphemeral получает scope/scopeRefId', async () => {
+    const { svc, mocks } = buildConciergeService({
+      nativeToolsEnabled: true,
+      ephemeralAnswer: { text: 'Ответ по задаче.' },
+    });
+    mocks.llmCall.mockResolvedValueOnce(nativeToolCall('ask_chat_v2', { question: 'что по задаче?' }));
+
+    await collect(
+      svc.process({
+        userMessage: 'Что по задаче?',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+        scope: 'issue',
+        scopeRefId: 'issue-42',
+      }),
+    );
+
+    expect(mocks.askEphemeral).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: 'issue', scopeRefId: 'issue-42' }),
+    );
+  });
+
+  it('process() без scope → askEphemeral вызван, без ключей scope/scopeRefId', async () => {
+    const { svc, mocks } = buildConciergeService({
+      nativeToolsEnabled: true,
+      ephemeralAnswer: { text: 'Ответ.' },
+    });
+    mocks.llmCall.mockResolvedValueOnce(nativeToolCall('ask_chat_v2', { question: 'что решили?' }));
+
+    await collect(
+      svc.process({
+        userMessage: 'Что решили?',
+        userId: 'u-1',
+        tenantId: 't-1',
+        baseUrl: 'http://localhost:3000',
+      }),
+    );
+
+    expect(mocks.askEphemeral).toHaveBeenCalledWith(
+      expect.objectContaining({ question: expect.any(String) }),
+    );
+    expect(mocks.askEphemeral).toHaveBeenCalledWith(
+      expect.not.objectContaining({ scope: expect.anything() }),
+    );
+    expect(mocks.askEphemeral).toHaveBeenCalledWith(
+      expect.not.objectContaining({ scopeRefId: expect.anything() }),
+    );
+  });
+});
+
 describe('ConciergeService.process() — read-tool рендер', () => {
   it('(2) list_meetings → execute 1 раз + ровно 1 render-LLM → message = render text (LLM ровно 2)', async () => {
     const { svc, mocks } = buildConciergeService({

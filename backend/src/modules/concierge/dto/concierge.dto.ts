@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { ChatV2ScopeEnum } from '../../chat-v2/dto/chat-v2.dto';
+
 export const PageContextSchema = z
   .object({
     clientPath: z.string().max(2048).optional(),
@@ -15,6 +17,8 @@ export const PostConciergeMessageBodySchema = z.object({
   userMessage: z.string().trim().min(1).max(4000),
   conversationId: z.string().min(1).max(128).optional(),
   pageContext: PageContextSchema.optional(),
+  scope: ChatV2ScopeEnum.optional(),
+  scopeRefId: z.string().min(1).max(128).optional().nullable(),
   noStream: z.boolean().optional(),
 });
 export type PostConciergeMessageBodyDto = z.infer<typeof PostConciergeMessageBodySchema>;

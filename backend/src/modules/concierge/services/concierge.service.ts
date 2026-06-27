@@ -1,5 +1,10 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { type ConciergeConversation, type ConciergeMessage, Prisma } from '@prisma/client';
+import {
+  type ChatV2Scope,
+  type ConciergeConversation,
+  type ConciergeMessage,
+  Prisma,
+} from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -50,6 +55,8 @@ export interface ProcessInput {
   authMode?: 'cookie' | 'service';
   toolWhitelist?: string[];
   confirmHold?: boolean;
+  scope?: ChatV2Scope;
+  scopeRefId?: string | null;
 }
 
 export type ConciergeStreamEvent =
@@ -484,6 +491,8 @@ export class ConciergeService {
         history: this.toChatV2History(args.history),
         conversationSummary: args.summary,
         intent: 'factual',
+        ...(args.input.scope ? { scope: args.input.scope } : {}),
+        ...(args.input.scopeRefId != null ? { scopeRefId: args.input.scopeRefId } : {}),
       });
     } catch (err) {
       this.logger.error(
@@ -534,6 +543,8 @@ export class ConciergeService {
         history: this.toChatV2History(args.history),
         conversationSummary: args.summary,
         intent: 'factual',
+        ...(args.input.scope ? { scope: args.input.scope } : {}),
+        ...(args.input.scopeRefId != null ? { scopeRefId: args.input.scopeRefId } : {}),
       });
     } catch (err) {
       this.logger.error(

@@ -45,6 +45,23 @@ export interface StructuralRetrievalFilters {
   bitemporalActiveOnly: boolean;
 }
 
+/**
+ * Слой источника Ф4 (R14) — сигнал настоящей неоднозначности имени в К1.
+ * Возникает, когда подсказка-имя дала ≥2 равноуверенных кандидата И контекст-
+ * сущность не сузила выбор до одного. Помощник короткозамыкает на уточняющий
+ * вопрос (свободный текст), не подставляя personIds вслепую.
+ */
+export interface StructuralFilterClarification {
+  question: string;
+  hint: string;
+  candidatePersonIds: string[];
+}
+
+export interface ResolvedStructuralFilters {
+  filters: StructuralRetrievalFilters | null;
+  clarification: StructuralFilterClarification | null;
+}
+
 export interface QueryPlanResult {
   filters: QueryPlanFilters;
   queryClass: QueryClass;
@@ -466,6 +483,155 @@ export class QueryPlanExtractorService {
       );
       return null;
     }
+  }
+
+  /**
+   * Слой источника Ф4 (R14) — резолв структурных фильтров с детектом настоящей
+   * неоднозначности имени для маршрута К1 (class='list'). Имена-подсказки
+   * резолвятся через нечёткий `resolvePersonCandidates` (НЕ точное равенство):
+   *   - единственный уверенный кандидат / контекст сузил → personIds, как обычно;
+   *   - ≥2 кандидата с близкой уверенностью (дельта < knowledge.
+   *     person_resolve_ambiguity_delta) И контекст-сущность не сузила до одного
+   *     → clarification (свободный вопрос), personIds НЕ подставляются.
+   * Остальные оси (дата/тип/тема/сущности) — как в resolveStructuralFilters.
+   * Fail-open: при сбое — без фильтра и без clarification.
+   */
+  async resolveStructuralFiltersWithClarify(args: {
+    tenantId: string;
+    userId: string;
+    plan: QueryPlanResult;
+  }): Promise<ResolvedStructuralFilters> {
+    const { tenantId, userId, plan } = args;
+    if (!plan.applied) return { filters: null, clarification: null };
+
+    try {
+      const entityIds = await this.resolveEntityHints(tenantId, plan.filters.entityHints);
+
+      if (plan.filters.personScope) {
+        const selfEntityId = await this.resolveSelfEntityId(tenantId, userId);
+        if (selfEntityId && !entityIds.includes(selfEntityId)) {
+          entityIds.push(selfEntityId);
+        }
+      }
+
+      const isList = plan.queryClass === 'list';
+      const personHints = isList
+        ? [...plan.filters.personHints, ...plan.filters.entityHints]
+        : [];
+
+      const { personIds, clarification } = isList
+        ? await this.resolvePersonHintsWithClarify(tenantId, personHints, entityIds)
+        : { personIds: [] as string[], clarification: null };
+
+      if (clarification) {
+        return { filters: null, clarification };
+      }
+
+      if (plan.filters.personScope) {
+        const selfPersonId = await this.resolveSelfPersonId(tenantId, userId);
+        if (selfPersonId && !personIds.includes(selfPersonId)) {
+          personIds.push(selfPersonId);
+        }
+      }
+
+      const filters: StructuralRetrievalFilters = {
+        dateFrom: plan.filters.dateFrom,
+        dateTo: plan.filters.dateTo,
+        signalTypes: plan.filters.signalTypes,
+        entityIds,
+        personIds,
+        themeBranches: plan.filters.themeBranches,
+        bitemporalActiveOnly: plan.filters.activeNow,
+      };
+
+      const nothingToFilter =
+        !filters.dateFrom &&
+        !filters.dateTo &&
+        filters.signalTypes.length === 0 &&
+        filters.entityIds.length === 0 &&
+        filters.personIds.length === 0 &&
+        filters.themeBranches.length === 0 &&
+        !filters.bitemporalActiveOnly;
+      if (nothingToFilter) return { filters: null, clarification: null };
+
+      return { filters, clarification: null };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        { tenantId, err: message },
+        'resolveStructuralFiltersWithClarify упал — fail-open (без фильтра и без уточнения)',
+      );
+      return { filters: null, clarification: null };
+    }
+  }
+
+  /**
+   * Слой источника Ф4 (R14) — резолв имён-подсказок в personIds с детектом
+   * неоднозначности. На каждую уникальную подсказку берёт ранжированных
+   * кандидатов (`resolvePersonCandidates`, контекст-сущности сужают):
+   *   - 0 кандидатов → пропуск (семантическая страховка позже);
+   *   - 1 кандидат → personId;
+   *   - ≥2 кандидата, дельта top1−top2 < delta → clarification (короткое замыкание);
+   *   - ≥2 кандидата, дельта ≥ delta → берём top1 (контекст/уверенность развели).
+   * Первая встреченная неоднозначность возвращается как clarification.
+   */
+  private async resolvePersonHintsWithClarify(
+    tenantId: string,
+    hints: string[],
+    contextEntityIds: string[],
+  ): Promise<{
+    personIds: string[];
+    clarification: StructuralFilterClarification | null;
+  }> {
+    if (!this.entityResolution) return { personIds: [], clarification: null };
+
+    const delta =
+      (await this.cfg
+        .getDynamic<number>('knowledge.person_resolve_ambiguity_delta', undefined, 0.1)
+        .catch(() => 0.1)) ?? 0.1;
+
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const seenHints = new Set<string>();
+
+    for (const rawHint of hints) {
+      const hint = rawHint.trim();
+      if (!hint) continue;
+      const hintKey = hint.toLowerCase();
+      if (seenHints.has(hintKey)) continue;
+      seenHints.add(hintKey);
+
+      const candidates = await this.entityResolution
+        .resolvePersonCandidates({ tenantId, hint, contextEntityIds })
+        .catch(() => [] as Array<{ personId: string; confidence: number }>);
+
+      if (candidates.length === 0) continue;
+
+      const top = candidates[0]!;
+      const second = candidates[1];
+      const ambiguous =
+        candidates.length >= 2 &&
+        second !== undefined &&
+        top.confidence - second.confidence < delta;
+
+      if (ambiguous) {
+        return {
+          personIds: [],
+          clarification: {
+            question: `Уточните, пожалуйста: про какого «${hint}» речь? В памяти есть несколько разных людей с таким именем. Подскажите компанию, отдел или о чём была встреча — и я найду нужные источники.`,
+            hint,
+            candidatePersonIds: candidates.map((c) => c.personId),
+          },
+        };
+      }
+
+      if (seen.has(top.personId)) continue;
+      seen.add(top.personId);
+      out.push(top.personId);
+      if (out.length >= ENTITY_HINT_MAX_COUNT) break;
+    }
+
+    return { personIds: out, clarification: null };
   }
 
   private async resolveEntityHints(tenantId: string, hints: string[]): Promise<string[]> {

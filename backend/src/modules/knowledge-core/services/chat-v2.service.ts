@@ -1096,11 +1096,31 @@ export class ChatV2Service {
       : perQuery[0]!.slice(0, kRetrieve).map((r) => r.blockId);
   }
 
+  /**
+   * Слой источника Ф4 (R1) — маршрут К1 «список/агрегат по человеку/группе».
+   * Точный детерминированный обход по уже разрешённым (Ф3) personIds/entityIds
+   * через `SourceParticipant`/`SourceEntity` → блоки. Семантическая страховка —
+   * both-ways в runRetrieval (этот маршрут отдаёт только структурную ногу).
+   *
+   * Возвращает [] (общий результат = семантика) если:
+   *   - класс не 'list' (К3/К4/К2/К5 — другие маршруты / семантика), ИЛИ
+   *   - нет разрешённых personIds и entityIds (резолв пуст → страховка).
+   */
   private async runStructuralRoute(
-    _input: ChatV2Input,
-    _ctx: RetrievalCtx,
+    input: ChatV2Input,
+    ctx: RetrievalCtx,
   ): Promise<string[]> {
-    return [];
+    if (input.queryClass !== 'list') return [];
+    const personIds = input.structuralFilters?.personIds ?? [];
+    const entityIds = input.structuralFilters?.entityIds ?? [];
+    if (personIds.length === 0 && entityIds.length === 0) return [];
+
+    return this.retrieval.runStructuralAggregate({
+      tenantId: ctx.tenantId,
+      personIds,
+      entityIds,
+      limit: ctx.kRetrieve,
+    });
   }
 
   private async conditionalRerank(args: {

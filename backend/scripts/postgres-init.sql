@@ -702,6 +702,44 @@ BEGIN
 END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- Слой источника Ф4 (2026-06-27) — триграммные GIN индексы для нечёткого
+--   резолва имени/компании в К1-маршруте (resolvePersonCandidates /
+--   resolveEntityCandidates): `name % $hint` / `similarity(name, $hint)` по
+--   pg_trgm. Точное равенство строки в резолве запрещено (R14) — триграмма
+--   даёт устойчивость к опечаткам/транскрибации.
+--   Partial WHERE отсекает merged/удалённые строки (резолв в канон/живых).
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'Entity'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "Entity_canonicalName_trgm_idx"
+      ON "Entity" USING gin ("canonicalName" gin_trgm_ops)
+      WHERE "mergedIntoId" IS NULL
+    $sql$;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'persons'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "Person_name_trgm_idx"
+      ON "persons" USING gin ("name" gin_trgm_ops)
+      WHERE "deletedAt" IS NULL
+    $sql$;
+  END IF;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow mode).
 --   HNSW индексы на vector(1536):
 --     a) PromptFeedback.inputEmbedding — KNN-группировка похожих контекстов

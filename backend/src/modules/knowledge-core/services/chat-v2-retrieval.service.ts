@@ -339,6 +339,94 @@ export class ChatV2RetrievalService {
   }
 
   /**
+   * Слой источника Ф4 (R1) — обход (точный, по разрешённым id) маршрута К1.
+   *
+   * По разрешённым personIds/entityIds детерминированно собирает источники
+   * (rawEventId) уровня источника: участие — `SourceParticipant`, упоминание
+   * компании — `SourceEntity`; их объединение → блоки через
+   * `IdeaBlockEvidence` (distinct blockId), упорядоченные по свежести источника
+   * (`SourceEpisode.occurredAt DESC`, fallback `RawEvent.occurredAt`). Полнота,
+   * не «похожее»: точное равенство по уже разрешённым id (нечёткость — в стадии
+   * резолва, R14). Все WHERE tenant-скоупны (изоляция + partition-pruning).
+   * Возвращает blockIds (top-`limit`); пустой вход → [].
+   */
+  async runStructuralAggregate(args: {
+    tenantId: string;
+    personIds: ReadonlyArray<string>;
+    entityIds: ReadonlyArray<string>;
+    limit: number;
+  }): Promise<string[]> {
+    const { tenantId, personIds, entityIds, limit } = args;
+    if (personIds.length === 0 && entityIds.length === 0) return [];
+    if (limit <= 0) return [];
+
+    const params: unknown[] = [];
+    const pushParam = (v: unknown): string => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+    const pTenant = pushParam(tenantId);
+
+    const sourceUnions: string[] = [];
+    if (personIds.length > 0) {
+      const pPersons = pushParam([...personIds]);
+      sourceUnions.push(
+        `SELECT "rawEventId" FROM "SourceParticipant" ` +
+          `WHERE "tenantId" = ${pTenant} AND "personId" = ANY(${pPersons}::text[])`,
+      );
+    }
+    if (entityIds.length > 0) {
+      const pEntities = pushParam([...entityIds]);
+      sourceUnions.push(
+        `SELECT "rawEventId" FROM "SourceEntity" ` +
+          `WHERE "tenantId" = ${pTenant} AND "entityId" = ANY(${pEntities}::text[])`,
+      );
+    }
+    if (sourceUnions.length === 0) return [];
+
+    const pLimit = pushParam(limit);
+
+    interface Row {
+      blockId: string;
+      occurredAt: Date | null;
+    }
+    let rows: Row[];
+    try {
+      rows = await this.prisma.$queryRawUnsafe<Row[]>(
+        `
+        SELECT t."blockId" AS "blockId", t."occurredAt" AS "occurredAt"
+        FROM (
+          SELECT DISTINCT ON (ev."blockId")
+                 ev."blockId" AS "blockId",
+                 COALESCE(ep."occurredAt", re."occurredAt") AS "occurredAt"
+          FROM "IdeaBlockEvidence" ev
+          JOIN (
+            ${sourceUnions.join('\n            UNION\n            ')}
+          ) src ON src."rawEventId" = ev."rawEventId"
+          LEFT JOIN "SourceEpisode" ep
+            ON ep."rawEventId" = ev."rawEventId" AND ep."tenantId" = ${pTenant}
+          LEFT JOIN "RawEvent" re
+            ON re.id = ev."rawEventId" AND re."tenantId" = ${pTenant}
+          JOIN "IdeaBlock" b
+            ON b.id = ev."blockId" AND b."tenantId" = ${pTenant} AND b.status = 'canonical'
+          WHERE ev."tenantId" = ${pTenant}
+        ) t
+        ORDER BY t."occurredAt" DESC NULLS LAST
+        LIMIT ${pLimit}
+        `,
+        ...params,
+      );
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 retrieval: runStructuralAggregate упал — возвращаем []',
+      );
+      return [];
+    }
+    return rows.map((r) => r.blockId);
+  }
+
+  /**
    * SBA α-5 dialog-layer — temporal-фильтр пула блоков.
    * Оставляет только блоки, у которых `createdAt <= validAt` (т.е.
    * существовавшие на момент Х). Возвращает отфильтрованный массив id'ов.

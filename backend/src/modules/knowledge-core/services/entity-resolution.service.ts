@@ -838,6 +838,191 @@ export class EntityResolutionService {
   }
 
   /**
+   * Слой источника Ф4 (R14) — нечёткий резолв имени в РАНЖИРОВАННЫХ кандидатов
+   * Person с уверенностью (0..1). Каскад без точного равенства строки как
+   * решающего: EntityAlias (кэш) → триграммное сходство (pg_trgm) →
+   * близость Person→Entity.embedding. Кандидаты дедупятся по personId с
+   * максимумом уверенности. `contextEntityIds` (например «Молочные реки») сужают
+   * выбор: кандидаты, связанные с контекст-сущностью через общий источник
+   * (SourceParticipant↔SourceEntity) или IdeaBlockEntity, остаются; если хотя бы
+   * один такой найден — несвязанные отбрасываются (контекст сужает до одного).
+   * Возвращает по убыванию уверенности. Детерминизм К1 — в ОБХОДЕ по этим id,
+   * не в этом резолве.
+   */
+  async resolvePersonCandidates(args: {
+    tenantId: string;
+    hint: string;
+    contextEntityIds?: string[];
+  }): Promise<Array<{ personId: string; confidence: number }>> {
+    const { tenantId } = args;
+    const normalized = this.normalizeName(args.hint);
+    if (normalized.length === 0) return [];
+    const lowered = normalized.toLowerCase();
+
+    const byPerson = new Map<string, number>();
+    const bump = (personId: string, confidence: number): void => {
+      const prev = byPerson.get(personId);
+      if (prev === undefined || confidence > prev) {
+        byPerson.set(personId, confidence);
+      }
+    };
+
+    const cached = await this.prisma.entityAlias
+      .findUnique({
+        where: { tenantId_alias: { tenantId, alias: lowered } },
+        select: { personId: true },
+      })
+      .catch(() => null);
+    if (cached?.personId) {
+      const alive = await this.prisma.person
+        .findFirst({
+          where: { id: cached.personId, tenantId, deletedAt: null },
+          select: { id: true },
+        })
+        .catch(() => null);
+      if (alive) bump(alive.id, 1);
+    }
+
+    for (const c of await this.resolvePersonByTrigram(tenantId, normalized)) {
+      bump(c.id, c.score);
+    }
+
+    for (const c of await this.resolvePersonByEmbedding(tenantId, normalized)) {
+      bump(c.id, c.score);
+    }
+
+    let candidates = [...byPerson.entries()]
+      .map(([personId, confidence]) => ({ personId, confidence }))
+      .sort((a, b) => b.confidence - a.confidence);
+
+    if (
+      candidates.length > 1 &&
+      args.contextEntityIds &&
+      args.contextEntityIds.length > 0
+    ) {
+      const narrowed = await this.narrowByContextEntities(
+        tenantId,
+        candidates.map((c) => c.personId),
+        args.contextEntityIds,
+      );
+      if (narrowed.size > 0) {
+        candidates = candidates.filter((c) => narrowed.has(c.personId));
+      }
+    }
+
+    return candidates;
+  }
+
+  /**
+   * Триграммное сходство имени Person (pg_trgm). Возвращает кандидатов
+   * `similarity(name, hint) >= порог` (knowledge.person_resolve_trgm_threshold,
+   * default 0.3), top-5 по убыванию. tenantId + deletedAt IS NULL в WHERE.
+   * Параметризованный SQL; при недоступности pg_trgm — пустой массив.
+   */
+  private async resolvePersonByTrigram(
+    tenantId: string,
+    name: string,
+  ): Promise<Array<{ id: string; score: number }>> {
+    const threshold =
+      (await this.cfg
+        ?.getDynamic<number>('knowledge.person_resolve_trgm_threshold', undefined, 0.3)
+        .catch(() => 0.3)) ?? 0.3;
+
+    interface Row {
+      id: string;
+      score: string | number;
+    }
+    let rows: Row[];
+    try {
+      rows = await this.prisma.$queryRawUnsafe<Row[]>(
+        `
+        SELECT id, similarity("name", $2) AS score
+        FROM "persons"
+        WHERE "tenantId" = $1
+          AND "deletedAt" IS NULL
+          AND similarity("name", $2) >= $3
+        ORDER BY score DESC
+        LIMIT 5
+        `,
+        tenantId,
+        name,
+        threshold,
+      );
+    } catch {
+      return [];
+    }
+    const out: Array<{ id: string; score: number }> = [];
+    for (const r of rows) {
+      const score = typeof r.score === 'string' ? Number(r.score) : r.score;
+      if (Number.isFinite(score)) out.push({ id: r.id, score });
+    }
+    return out;
+  }
+
+  /**
+   * Контекст-сужение: возвращает подмножество personId, которые встречаются в
+   * одном источнике с контекст-сущностью (через SourceParticipant↔SourceEntity
+   * по общему rawEventId) ИЛИ совместно упомянуты в блоке (IdeaBlockEntity).
+   * Резолвит merged-сущности в канон до сравнения. tenantId во всех WHERE.
+   */
+  private async narrowByContextEntities(
+    tenantId: string,
+    personIds: string[],
+    contextEntityIds: string[],
+  ): Promise<Set<string>> {
+    if (personIds.length === 0 || contextEntityIds.length === 0) {
+      return new Set();
+    }
+    const canonIds = await this.canonicalizeEntityIds(tenantId, contextEntityIds);
+    if (canonIds.length === 0) return new Set();
+
+    interface Row {
+      personId: string;
+    }
+    let rows: Row[];
+    try {
+      rows = await this.prisma.$queryRawUnsafe<Row[]>(
+        `
+        SELECT DISTINCT sp."personId" AS "personId"
+        FROM "SourceParticipant" sp
+        JOIN "SourceEntity" se
+          ON se."rawEventId" = sp."rawEventId"
+         AND se."tenantId" = sp."tenantId"
+        WHERE sp."tenantId" = $1
+          AND sp."personId" = ANY($2::text[])
+          AND se."entityId" = ANY($3::text[])
+        `,
+        tenantId,
+        personIds,
+        canonIds,
+      );
+    } catch {
+      return new Set();
+    }
+    return new Set(rows.map((r) => r.personId));
+  }
+
+  /**
+   * Резолв merged-сущностей в канон: для каждого entityId, если у него задан
+   * mergedIntoId — берём канон. tenantId в WHERE. Дедуп.
+   */
+  private async canonicalizeEntityIds(
+    tenantId: string,
+    entityIds: string[],
+  ): Promise<string[]> {
+    if (entityIds.length === 0) return [];
+    const rows = await this.prisma.entity.findMany({
+      where: { id: { in: entityIds }, tenantId },
+      select: { id: true, mergedIntoId: true },
+    });
+    const out = new Set<string>();
+    for (const r of rows) {
+      out.add(r.mergedIntoId ?? r.id);
+    }
+    return [...out];
+  }
+
+  /**
    * Per-Org alias-cache: upsert EntityAlias по (tenantId, alias)→personId.
    * Best-effort — на ошибке debug-лог, не бросаем (резолв уже состоялся).
    */

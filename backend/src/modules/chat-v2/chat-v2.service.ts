@@ -329,6 +329,21 @@ export class ChatV2OrchestrationService {
       };
     }
 
+    if (dialogResult.clarification) {
+      return {
+        text: dialogResult.clarification.question,
+        citations: [],
+        needsClarification: true,
+        dataClass: 'internal',
+        usedBlockIds: [],
+        uncertaintyNote: null,
+        mode,
+        cacheHit: false,
+        llmMeta: { clarification: true },
+        retrievalMeta: { usedBlockIds: [], clarification: true },
+      };
+    }
+
     const result = await this.synthesis.synthesize({
       tenantId,
       userId,

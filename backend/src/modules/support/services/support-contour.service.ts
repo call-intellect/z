@@ -220,7 +220,7 @@ export class SupportContourService {
     }
 
     await this.prisma.ideaBlockAccess.create({
-      data: { blockId: block.id, groupId, via: 'closed' },
+      data: { tenantId: vendorOrgId, blockId: block.id, groupId, via: 'closed' },
     });
 
     return { created: true, blockId: block.id };

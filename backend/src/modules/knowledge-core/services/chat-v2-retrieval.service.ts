@@ -666,7 +666,7 @@ export class ChatV2RetrievalService {
   ): Promise<string[]> {
     // Проверим, что Entity принадлежит тенанту.
     const ent = await this.prisma.entity.findUnique({
-      where: { id: entityId },
+      where: { id_tenantId: { id: entityId, tenantId } },
       select: { id: true, tenantId: true },
     });
     if (!ent || ent.tenantId !== tenantId) return [];

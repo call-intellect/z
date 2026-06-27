@@ -1191,8 +1191,9 @@ export const seedKnowledgeGraph: SeedFn = async (ctx: SeedContext, ids: IdMap) =
     if (!entityId) continue;
 
     await prisma.ideaBlockEntity.upsert({
-      where: { blockId_entityId: { blockId: block.id, entityId } },
+      where: { blockId_entityId_tenantId: { blockId: block.id, entityId, tenantId } },
       create: {
+        tenantId,
         blockId: block.id,
         entityId,
         mentionContext: 'author',
@@ -1287,6 +1288,7 @@ export const seedKnowledgeGraph: SeedFn = async (ctx: SeedContext, ids: IdMap) =
     for (const blockKey of blockKeys) {
       await prisma.themeIdeaBlock.create({
         data: {
+          tenantId,
           themeId: ids.themes[themeKey]!,
           blockId: ids.ideaBlocks[blockKey]!,
           weight: 1.0,
@@ -1305,6 +1307,7 @@ export const seedKnowledgeGraph: SeedFn = async (ctx: SeedContext, ids: IdMap) =
     for (const entityKey of entityKeys) {
       await prisma.themeEntity.create({
         data: {
+          tenantId,
           themeId: ids.themes[themeKey]!,
           entityId: ids.entities[entityKey]!,
         },

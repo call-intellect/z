@@ -47,10 +47,10 @@ describe('BlockIngestWorker.createStructuralEntityEdges — детерминир
     await (worker as any).createStructuralEntityEdges('t-1', ['b1']);
     expect(upsert).toHaveBeenCalledTimes(1);
     const call = upsert.mock.calls[0]![0] as unknown as {
-      where: { fromBlockId_toBlockId_relationType: Record<string, unknown> };
+      where: { fromBlockId_toBlockId_relationType_tenantId: Record<string, unknown> };
       create: Record<string, unknown>;
     };
-    expect(call.where.fromBlockId_toBlockId_relationType).toMatchObject({
+    expect(call.where.fromBlockId_toBlockId_relationType_tenantId).toMatchObject({
       fromBlockId: 'b1',
       toBlockId: 'b2',
       relationType: 'shares_entity',

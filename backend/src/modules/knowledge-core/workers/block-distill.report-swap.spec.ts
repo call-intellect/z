@@ -26,7 +26,11 @@ interface Deps {
     judgeMerge: ReturnType<typeof vi.fn>;
   };
   prisma: {
-    ideaBlock: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
+    ideaBlock: {
+      findFirst: ReturnType<typeof vi.fn>;
+      findUnique: ReturnType<typeof vi.fn>;
+      update: ReturnType<typeof vi.fn>;
+    };
     $transaction: ReturnType<typeof vi.fn>;
   };
   tx: {
@@ -68,6 +72,7 @@ function buildWorker(opts: {
 
   const prisma = {
     ideaBlock: {
+      findFirst: vi.fn(async () => opts.draftBlock),
       findUnique: vi.fn(async () => opts.draftBlock),
       update: vi.fn(async () => undefined),
     },
@@ -129,13 +134,13 @@ describe('BlockDistillWorker — Ф4 ГАРД B (report swapDirection)', () => {
 
     expect(deps.tx.ideaBlock.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'new-t' },
+        where: { id_tenantId: { id: 'new-t', tenantId: 'tenant-1' } },
         data: { status: 'merged_into', mergedIntoId: 'canon-t' },
       }),
     );
     expect(deps.tx.ideaBlock.update).not.toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'canon-t' },
+        where: { id_tenantId: { id: 'canon-t', tenantId: 'tenant-1' } },
         data: expect.objectContaining({ mergedIntoId: 'new-t' }),
       }),
     );
@@ -162,13 +167,13 @@ describe('BlockDistillWorker — Ф4 ГАРД B (report swapDirection)', () => {
 
     expect(deps.tx.ideaBlock.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'new-r' },
+        where: { id_tenantId: { id: 'new-r', tenantId: 'tenant-1' } },
         data: { status: 'merged_into', mergedIntoId: 'canon-r' },
       }),
     );
     expect(deps.tx.ideaBlock.update).not.toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'canon-r' },
+        where: { id_tenantId: { id: 'canon-r', tenantId: 'tenant-1' } },
         data: expect.objectContaining({ mergedIntoId: 'new-r' }),
       }),
     );
@@ -201,12 +206,12 @@ describe('BlockDistillWorker — Ф4 ГАРД B (report swapDirection)', () => {
 
     expect(deps.tx.ideaBlock.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'canon-r' },
+        where: { id_tenantId: { id: 'canon-r', tenantId: 'tenant-1' } },
         data: { status: 'merged_into', mergedIntoId: 'new-t' },
       }),
     );
     const swapUpdate = deps.tx.ideaBlock.update.mock.calls.find(
-      (c) => (c[0] as { where: { id: string } }).where.id === 'new-t',
+      (c) => (c[0] as { where: { id_tenantId: { id: string } } }).where.id_tenantId.id === 'new-t',
     );
     expect(swapUpdate).toBeDefined();
     const swapData = (swapUpdate![0] as { data: Record<string, unknown> }).data;
@@ -240,7 +245,7 @@ describe('BlockDistillWorker — Ф4 ГАРД B (report swapDirection)', () => {
     await runProcess(worker, 'new-r');
 
     expect(deps.prisma.ideaBlock.update).toHaveBeenCalledWith({
-      where: { id: 'new-r' },
+      where: { id_tenantId: { id: 'new-r', tenantId: 'tenant-1' } },
       data: { status: 'canonical' },
     });
     expect(deps.coreQueue.enqueueBlockLinker).toHaveBeenCalledWith('new-r');
@@ -270,7 +275,7 @@ describe('BlockDistillWorker — Ф4 ГАРД B (report swapDirection)', () => {
     await runProcess(worker, 'new-t');
 
     const swapUpdate = deps.tx.ideaBlock.update.mock.calls.find(
-      (c) => (c[0] as { where: { id: string } }).where.id === 'new-t',
+      (c) => (c[0] as { where: { id_tenantId: { id: string } } }).where.id_tenantId.id === 'new-t',
     );
     const swapData = (swapUpdate![0] as { data: Record<string, unknown> }).data;
     expect(String(swapData.confidence)).toBe('0.6');

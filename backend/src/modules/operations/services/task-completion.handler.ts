@@ -124,7 +124,7 @@ export class TaskCompletionHandler {
 
       // 2. Блок-сигнал.
       const block = await this.prisma.ideaBlock.findUnique({
-        where: { id: event.blockId },
+        where: { id_tenantId: { id: event.blockId, tenantId: event.tenantId } },
         select: {
           id: true,
           tenantId: true,

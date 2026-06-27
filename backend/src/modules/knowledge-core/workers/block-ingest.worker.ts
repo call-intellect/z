@@ -1089,6 +1089,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         }
         const evidence = await tx.ideaBlockEvidence.create({
           data: {
+            tenantId: event.tenantId,
             blockId: ideaBlock.id,
             rawEventId: event.id,
             sourceType: event.sourceType,
@@ -1104,7 +1105,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         const propertySpansValue = this.buildPropertySpans(block, evidence.id);
         if (propertySpansValue !== null && propertySpansValue.length > 0) {
           await tx.ideaBlock.update({
-            where: { id: ideaBlock.id },
+            where: { id_tenantId: { id: ideaBlock.id, tenantId: event.tenantId } },
             data: {
               propertySpans: propertySpansValue as unknown as Prisma.InputJsonValue,
             },
@@ -1277,9 +1278,14 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
 
     await this.prisma.ideaBlockEntity.upsert({
       where: {
-        blockId_entityId: { blockId: args.blockId, entityId: subjectEntityId },
+        blockId_entityId_tenantId: {
+          blockId: args.blockId,
+          entityId: subjectEntityId,
+          tenantId: args.event.tenantId,
+        },
       },
       create: {
+        tenantId: args.event.tenantId,
         blockId: args.blockId,
         entityId: subjectEntityId,
         mentionContext: 'author',
@@ -1359,7 +1365,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     if (!authorPersonId) return;
 
     await this.prisma.ideaBlock.update({
-      where: { id: args.blockId },
+      where: { id_tenantId: { id: args.blockId, tenantId: args.event.tenantId } },
       data: { commitmentAuthorPersonId: authorPersonId },
     });
 
@@ -1411,6 +1417,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     try {
       await this.prisma.ideaBlockEntity.create({
         data: {
+          tenantId: args.tenantId,
           blockId: args.blockId,
           entityId: entity.id,
           mentionContext: args.mention.mentionContext,
@@ -1669,7 +1676,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     const personId = candidates[0]?.id;
     if (!personId) return;
     await this.prisma.ideaBlock.update({
-      where: { id: args.blockId },
+      where: { id_tenantId: { id: args.blockId, tenantId: args.tenantId } },
       data: { commitmentRecipientPersonId: personId },
     });
   }
@@ -1730,6 +1737,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       const themeId = p.attachedThemeId;
       await this.prisma.themeIdeaBlock.createMany({
         data: blockIds.map((blockId) => ({
+          tenantId: event.tenantId,
           themeId,
           blockId,
           weight: new Prisma.Decimal('0.8'),
@@ -1764,10 +1772,11 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         await this.prisma.ideaBlockLink
           .upsert({
             where: {
-              fromBlockId_toBlockId_relationType: {
+              fromBlockId_toBlockId_relationType_tenantId: {
                 fromBlockId: blockId,
                 toBlockId: o.blockId,
                 relationType: 'shares_entity',
+                tenantId,
               },
             },
             update: { status: 'active', deletedAt: null, deletedBy: null },

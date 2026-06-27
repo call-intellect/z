@@ -26,7 +26,7 @@ export class Specialist31RegulationsWorker {
 
     try {
       const block = await this.prisma.ideaBlock.findUnique({
-        where: { id: blockId },
+        where: { id_tenantId: { id: blockId, tenantId } },
         include: {
           evidence: true,
           entities: true,

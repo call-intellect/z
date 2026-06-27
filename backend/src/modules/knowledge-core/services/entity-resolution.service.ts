@@ -144,7 +144,7 @@ export class EntityResolutionService {
     if (strongHit) {
       const merged = this.mergeMetadata(strongHit.metadata, args.metadata);
       const updated = await this.prisma.entity.update({
-        where: { id: strongHit.id },
+        where: { id_tenantId: { id: strongHit.id, tenantId: args.tenantId } },
         data: {
           mentionsCount: { increment: 1 },
           // Заполняем пустые strong-поля (если новый вызов принёс данные,
@@ -171,13 +171,13 @@ export class EntityResolutionService {
     const cachedId = await this.readCache(cacheKey);
     if (cachedId) {
       const cached = await this.prisma.entity.findUnique({
-        where: { id: cachedId },
+        where: { id_tenantId: { id: cachedId, tenantId: args.tenantId } },
       });
       // mergedIntoId ≠ null означает, что cache устарел: сущность слита.
       if (cached && cached.mergedIntoId === null) {
         const merged = this.mergeMetadata(cached.metadata, args.metadata);
         const updated = await this.prisma.entity.update({
-          where: { id: cached.id },
+          where: { id_tenantId: { id: cached.id, tenantId: args.tenantId } },
           data: {
             mentionsCount: { increment: 1 },
             ...(merged !== undefined ? { metadata: merged } : {}),
@@ -200,12 +200,12 @@ export class EntityResolutionService {
     );
     if (exact) {
       const found = await this.prisma.entity.findUnique({
-        where: { id: exact.id },
+        where: { id_tenantId: { id: exact.id, tenantId: args.tenantId } },
       });
       if (found) {
         const merged = this.mergeMetadata(found.metadata, args.metadata);
         const updated = await this.prisma.entity.update({
-          where: { id: found.id },
+          where: { id_tenantId: { id: found.id, tenantId: args.tenantId } },
           data: {
             mentionsCount: { increment: 1 },
             // W3.4 backfill: если caller передал strong-ID, которого нет у
@@ -251,7 +251,7 @@ export class EntityResolutionService {
     if (knnHit) {
       const merged = this.mergeMetadata(knnHit.metadata, args.metadata);
       const updated = await this.prisma.entity.update({
-        where: { id: knnHit.id },
+        where: { id_tenantId: { id: knnHit.id, tenantId: args.tenantId } },
         data: {
           mentionsCount: { increment: 1 },
           // Б44 [K4] W3.4 backfill: если caller передал strong-ID, которого
@@ -457,7 +457,7 @@ export class EntityResolutionService {
     const similarity = 1 - dist;
     if (similarity < threshold) return null;
     const entity = await this.prisma.entity.findUnique({
-      where: { id: best.id },
+      where: { id_tenantId: { id: best.id, tenantId: args.tenantId } },
     });
     return entity;
   }
@@ -547,7 +547,9 @@ export class EntityResolutionService {
       );
       const hit = rows[0];
       if (!hit) return null;
-      return this.prisma.entity.findUnique({ where: { id: hit.id } });
+      return this.prisma.entity.findUnique({
+        where: { id_tenantId: { id: hit.id, tenantId: args.tenantId } },
+      });
     };
 
     if (args.inn) {
@@ -1111,7 +1113,7 @@ export class EntityResolutionService {
     entityId: string;
   }): Promise<void> {
     const entity = await this.prisma.entity.findUnique({
-      where: { id: args.entityId },
+      where: { id_tenantId: { id: args.entityId, tenantId: args.tenantId } },
       select: { tenantId: true, type: true, canonicalName: true },
     });
     if (
@@ -1411,11 +1413,11 @@ export class EntityResolutionService {
       });
       if (byInn) {
         const ent = await this.prisma.entity.findUnique({
-          where: { id: byInn.entityId },
+          where: { id_tenantId: { id: byInn.entityId, tenantId: args.tenantId } },
         });
         if (ent) {
           await this.prisma.entity.update({
-            where: { id: ent.id },
+            where: { id_tenantId: { id: ent.id, tenantId: args.tenantId } },
             data: { mentionsCount: { increment: 1 } },
           });
           return { entity: ent, vendorId: byInn.id, created: false };
@@ -1486,11 +1488,11 @@ export class EntityResolutionService {
       });
       if (byCrm) {
         const ent = await this.prisma.entity.findUnique({
-          where: { id: byCrm.entityId },
+          where: { id_tenantId: { id: byCrm.entityId, tenantId: args.tenantId } },
         });
         if (ent) {
           const updated = await this.prisma.entity.update({
-            where: { id: ent.id },
+            where: { id_tenantId: { id: ent.id, tenantId: args.tenantId } },
             data: { mentionsCount: { increment: 1 } },
           });
           return { entity: updated, customerId: byCrm.id, created: false };
@@ -1575,11 +1577,11 @@ export class EntityResolutionService {
     });
     if (existing) {
       const ent = await this.prisma.entity.findUnique({
-        where: { id: existing.entityId },
+        where: { id_tenantId: { id: existing.entityId, tenantId: args.tenantId } },
       });
       if (ent) {
         await this.prisma.entity.update({
-          where: { id: ent.id },
+          where: { id_tenantId: { id: ent.id, tenantId: args.tenantId } },
           data: { mentionsCount: { increment: 1 } },
         });
         return { entity: ent, eventId: existing.id, created: false };

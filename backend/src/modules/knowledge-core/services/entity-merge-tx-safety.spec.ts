@@ -114,8 +114,8 @@ describe('EntityMergeService.mergeManually — tx-safety (Б1)', () => {
       undefined,
     );
     // Загрузка from/into ВНЕ tx (Promise.all): from, потом into.
-    m.entityFindUnique.mockImplementation(async (arg: { where: { id: string } }) => {
-      const id = arg.where.id;
+    m.entityFindUnique.mockImplementation(async (arg: { where: { id_tenantId: { id: string } } }) => {
+      const id = arg.where.id_tenantId.id;
       if (id === FROM_ID) return entityRow(FROM_ID);
       if (id === INTO_ID) return entityRow(INTO_ID);
       return null;
@@ -143,13 +143,25 @@ describe('EntityMergeService.mergeManually — tx-safety (Б1)', () => {
     // 1. Pre-check на ЦЕЛЕВУЮ пару (blockId, intoEntityId) выполнен.
     expect(m.ideaBlockEntityFindUnique).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { blockId_entityId: { blockId: 'blk-1', entityId: INTO_ID } },
+        where: {
+          blockId_entityId_tenantId: {
+            blockId: 'blk-1',
+            entityId: INTO_ID,
+            tenantId: TENANT,
+          },
+        },
       }),
     );
     // 2. Пошли по ветке delete дубля-источника (from-запись).
     expect(m.ideaBlockEntityDelete).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { blockId_entityId: { blockId: 'blk-1', entityId: FROM_ID } },
+        where: {
+          blockId_entityId_tenantId: {
+            blockId: 'blk-1',
+            entityId: FROM_ID,
+            tenantId: TENANT,
+          },
+        },
       }),
     );
     // 3. Падающий ранее update конфликтного mention НЕ вызван.
@@ -157,10 +169,14 @@ describe('EntityMergeService.mergeManually — tx-safety (Б1)', () => {
     // 4. Транзакция дошла до финальных обновлений (slияние применилось целиком,
     //    а не оборвалось на абортнутой tx): intoEntity + fromEntity → merged_into.
     expect(m.entityUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: FROM_ID } }),
+      expect.objectContaining({
+        where: { id_tenantId: { id: FROM_ID, tenantId: TENANT } },
+      }),
     );
     expect(m.entityUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: INTO_ID } }),
+      expect.objectContaining({
+        where: { id_tenantId: { id: INTO_ID, tenantId: TENANT } },
+      }),
     );
   });
 
@@ -180,13 +196,25 @@ describe('EntityMergeService.mergeManually — tx-safety (Б1)', () => {
 
     expect(m.ideaBlockEntityFindUnique).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { blockId_entityId: { blockId: 'blk-2', entityId: INTO_ID } },
+        where: {
+          blockId_entityId_tenantId: {
+            blockId: 'blk-2',
+            entityId: INTO_ID,
+            tenantId: TENANT,
+          },
+        },
       }),
     );
     // Перенос mention обычным update (from → into).
     expect(m.ideaBlockEntityUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { blockId_entityId: { blockId: 'blk-2', entityId: FROM_ID } },
+        where: {
+          blockId_entityId_tenantId: {
+            blockId: 'blk-2',
+            entityId: FROM_ID,
+            tenantId: TENANT,
+          },
+        },
         data: { entityId: INTO_ID },
       }),
     );

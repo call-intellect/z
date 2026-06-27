@@ -148,7 +148,7 @@ describe('BlockIngestWorker — Фаза 1.2 атрибуция role=subject', (
     expect(mocks.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          blockId_entityId: expect.objectContaining({ entityId: 'e1' }),
+          blockId_entityId_tenantId: expect.objectContaining({ entityId: 'e1' }),
         }),
         create: expect.objectContaining({ role: 'subject', mentionContext: 'author' }),
         update: expect.objectContaining({ role: 'subject' }),
@@ -185,7 +185,7 @@ describe('BlockIngestWorker — Фаза 1.2 атрибуция role=subject', (
     expect(mocks.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          blockId_entityId: expect.objectContaining({ entityId: 'e2' }),
+          blockId_entityId_tenantId: expect.objectContaining({ entityId: 'e2' }),
         }),
       }),
     );
@@ -302,7 +302,7 @@ describe('BlockIngestWorker — Фаза 1.2 атрибуция role=subject', (
     expect(mocks.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          blockId_entityId: expect.objectContaining({ entityId: 'e3' }),
+          blockId_entityId_tenantId: expect.objectContaining({ entityId: 'e3' }),
         }),
         create: expect.objectContaining({ role: 'subject' }),
         update: expect.objectContaining({ role: 'subject' }),
@@ -342,7 +342,7 @@ describe('BlockIngestWorker — Фаза 1.2 атрибуция role=subject', (
     expect(mocks.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          blockId_entityId: expect.objectContaining({ entityId: 'e4' }),
+          blockId_entityId_tenantId: expect.objectContaining({ entityId: 'e4' }),
         }),
       }),
     );

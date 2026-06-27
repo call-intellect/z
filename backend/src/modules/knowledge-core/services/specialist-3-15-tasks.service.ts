@@ -84,7 +84,7 @@ export class Specialist315TasksService {
 
   async processBlock(args: { tenantId: string; blockId: string }): Promise<void> {
     const block = await this.prisma.ideaBlock.findUnique({
-      where: { id: args.blockId },
+      where: { id_tenantId: { id: args.blockId, tenantId: args.tenantId } },
       include: { evidence: { orderBy: { sourceTimestamp: { sort: 'asc', nulls: 'last' } } } },
     });
     if (!block) return;

@@ -410,6 +410,7 @@ export class ReframingCron {
       if (sourceBlocks.length > 0) {
         await tx.themeIdeaBlock.createMany({
           data: sourceBlocks.map((b) => ({
+            tenantId,
             themeId: targetId,
             blockId: b.blockId,
             weight: b.weight,
@@ -426,6 +427,7 @@ export class ReframingCron {
       if (sourceEntities.length > 0) {
         await tx.themeEntity.createMany({
           data: sourceEntities.map((e) => ({
+            tenantId,
             themeId: targetId,
             entityId: e.entityId,
             mentionsCount: e.mentionsCount,

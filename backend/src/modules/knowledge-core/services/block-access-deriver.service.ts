@@ -41,7 +41,12 @@ export class BlockAccessDeriverService {
       if (groupIds.length === 0) return;
 
       await this.prisma.ideaBlockAccess.createMany({
-        data: groupIds.map((g) => ({ blockId: args.blockId, groupId: g.groupId, via: g.via })),
+        data: groupIds.map((g) => ({
+          tenantId: args.tenantId,
+          blockId: args.blockId,
+          groupId: g.groupId,
+          via: g.via,
+        })),
         skipDuplicates: true,
       });
     } catch (err) {
@@ -66,7 +71,12 @@ export class BlockAccessDeriverService {
       });
       if (deptIds.length === 0) return;
 
-      const data: Array<{ blockId: string; groupId: string; via: 'department' }> = [];
+      const data: Array<{
+        tenantId: string;
+        blockId: string;
+        groupId: string;
+        via: 'department';
+      }> = [];
       for (const departmentId of deptIds) {
         const g = await this.ensureGroup({
           tenantId: args.tenantId,
@@ -74,7 +84,7 @@ export class BlockAccessDeriverService {
           refId: departmentId,
           isClosed: false,
         });
-        if (g) data.push({ blockId: args.blockId, groupId: g, via: 'department' });
+        if (g) data.push({ tenantId: args.tenantId, blockId: args.blockId, groupId: g, via: 'department' });
       }
       if (data.length === 0) return;
 

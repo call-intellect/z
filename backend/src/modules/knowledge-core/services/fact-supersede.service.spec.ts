@@ -11,6 +11,7 @@ import type { BlockLinkService } from './block-link.service';
 import { FactSupersedeService } from './fact-supersede.service';
 
 function makeMocks() {
+  const blockFindFirst = vi.fn();
   const blockUnique = vi.fn();
   const blockUpdateMany = vi.fn();
   const linkUpsert = vi.fn();
@@ -22,7 +23,7 @@ function makeMocks() {
     });
   });
   const prisma = {
-    ideaBlock: { findUnique: blockUnique },
+    ideaBlock: { findFirst: blockFindFirst, findUnique: blockUnique },
     $queryRawUnsafe: queryRawUnsafe,
     $transaction: transaction,
   } as unknown as PrismaService;
@@ -69,6 +70,7 @@ function makeMocks() {
     metrics,
     cfg,
     spies: {
+      blockFindFirst,
       blockUnique,
       blockUpdateMany,
       linkUpsert,
@@ -108,7 +110,7 @@ describe('FactSupersedeService', () => {
 
   it('skip_not_fact_signal — signalType не в списке factual', async () => {
     const m = makeMocks();
-    m.spies.blockUnique.mockResolvedValueOnce(makeBlock({ signalType: 'pain' }));
+    m.spies.blockFindFirst.mockResolvedValueOnce(makeBlock({ signalType: 'pain' }));
     const svc = new FactSupersedeService(m.prisma, m.redis, m.llm, m.conflicts, m.metrics, m.cfg);
 
     const r = await svc.processNewBlock('blk-new');
@@ -124,7 +126,7 @@ describe('FactSupersedeService', () => {
 
   it('skip_no_candidates — KNN вернул пусто, LLM не вызывается', async () => {
     const m = makeMocks();
-    m.spies.blockUnique.mockResolvedValueOnce(makeBlock());
+    m.spies.blockFindFirst.mockResolvedValueOnce(makeBlock());
     m.spies.queryRawUnsafe.mockResolvedValueOnce([]);
     const svc = new FactSupersedeService(m.prisma, m.redis, m.llm, m.conflicts, m.metrics, m.cfg);
 
@@ -141,7 +143,7 @@ describe('FactSupersedeService', () => {
 
   it('supersedes happy path — closes old block + creates link + conflict', async () => {
     const m = makeMocks();
-    m.spies.blockUnique.mockResolvedValueOnce(makeBlock());
+    m.spies.blockFindFirst.mockResolvedValueOnce(makeBlock());
     m.spies.queryRawUnsafe.mockResolvedValueOnce([
       {
         id: 'blk-old',
@@ -222,7 +224,7 @@ describe('FactSupersedeService', () => {
 
   it('race-condition — два параллельных вызова: один applied, второй skip_race_lost', async () => {
     const m = makeMocks();
-    m.spies.blockUnique.mockResolvedValue(makeBlock());
+    m.spies.blockFindFirst.mockResolvedValue(makeBlock());
     m.spies.queryRawUnsafe.mockResolvedValue([
       {
         id: 'blk-old',
@@ -268,12 +270,15 @@ describe('FactSupersedeService', () => {
 
   function makeSupersedeMocks() {
     const m = makeMocks();
-    m.spies.blockUnique.mockImplementation(async (args: { where: { id: string } }) => {
-      if (args.where.id === 'blk-old') {
-        return makeBlock({ id: 'blk-old', trustedAnswer: 'old a' });
-      }
-      return makeBlock();
-    });
+    m.spies.blockFindFirst.mockResolvedValue(makeBlock());
+    m.spies.blockUnique.mockImplementation(
+      async (args: { where: { id_tenantId: { id: string } } }) => {
+        if (args.where.id_tenantId.id === 'blk-old') {
+          return makeBlock({ id: 'blk-old', trustedAnswer: 'old a' });
+        }
+        return makeBlock();
+      },
+    );
     m.spies.queryRawUnsafe.mockResolvedValue([
       {
         id: 'blk-old',

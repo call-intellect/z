@@ -90,7 +90,7 @@ export class CommitmentResponseHandler {
       if (rawText.trim().length === 0) return;
 
       const original = await this.prisma.ideaBlock.findUnique({
-        where: { id: contextBlockId },
+        where: { id_tenantId: { id: contextBlockId, tenantId: event.tenantId } },
         select: {
           id: true,
           tenantId: true,
@@ -166,7 +166,7 @@ export class CommitmentResponseHandler {
             throw err;
           });
         await tx.ideaBlock.update({
-          where: { id: original.id },
+          where: { id_tenantId: { id: original.id, tenantId: original.tenantId } },
           data: {
             commitmentStatus: parsed.status,
           },

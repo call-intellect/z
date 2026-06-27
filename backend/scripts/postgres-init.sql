@@ -61,6 +61,10 @@ BEGIN
 END $$;
 
 -- 3. knowledge-core (Фаза 2) — pgvector HNSW indexes (cosine).
+--    Ф1 (2026-06-27) — IdeaBlock/Entity HASH-партиционированы по tenantId:
+--    CREATE INDEX на родителе распространяется на все 64 партиции (pgvector).
+--    Параметры m=16, ef_construction=128 (дефолт 64 мал — AWS pgvector prod).
+--    ef_search задаётся в рантайме через AdminSetting knowledge.hnsw_ef_search.
 DO $$
 BEGIN
   IF EXISTS (
@@ -71,6 +75,7 @@ BEGIN
     EXECUTE $sql$
       CREATE INDEX IF NOT EXISTS "IdeaBlock_embedding_hnsw_cosine_idx"
       ON "IdeaBlock" USING hnsw (embedding vector_cosine_ops)
+      WITH (m = 16, ef_construction = 128)
       WHERE embedding IS NOT NULL
     $sql$;
   END IF;
@@ -86,6 +91,24 @@ BEGIN
     EXECUTE $sql$
       CREATE INDEX IF NOT EXISTS "Entity_embedding_hnsw_cosine_idx"
       ON "Entity" USING hnsw (embedding vector_cosine_ops)
+      WITH (m = 16, ef_construction = 128)
+      WHERE embedding IS NOT NULL
+    $sql$;
+  END IF;
+END $$;
+
+-- 3-Ф1. HNSW на Theme.embedding (раньше только b-tree) — нужен для К4 (обзор-карта).
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'Theme'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "Theme_embedding_hnsw_cosine_idx"
+      ON "Theme" USING hnsw (embedding vector_cosine_ops)
+      WITH (m = 16, ef_construction = 128)
       WHERE embedding IS NOT NULL
     $sql$;
   END IF;

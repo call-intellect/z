@@ -124,6 +124,15 @@ const SEEDS: SettingSeed[] = [
     description:
       'Параметр k для слияния рангов RRF в поиске (стандартно 60): сглаживает вклад позиции при объединении гибридного списка и связей графа. По умолчанию 60.',
   },
+  {
+    key: 'knowledge.hnsw_ef_search',
+    value: 100,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Параметр hnsw.ef_search для векторного поиска по HNSW-индексам (IdeaBlock/Entity/Theme): размер списка кандидатов при обходе графа. Выше — точнее recall, но медленнее. Применяется через SET LOCAL в рамках запроса (1–1000). По умолчанию 100.',
+  },
 ];
 
 interface Counters {

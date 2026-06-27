@@ -37,7 +37,7 @@ export class PersonalDataDeletionService {
 
   async eraseEntity(input: EraseInput): Promise<EraseReport> {
     const entity = await this.prisma.entity.findUnique({
-      where: { id: input.entityId },
+      where: { id_tenantId: { id: input.entityId, tenantId: input.tenantId } },
     });
     if (!entity) {
       throw new NotFoundException({
@@ -105,19 +105,19 @@ export class PersonalDataDeletionService {
         });
         if (evCount === 0) {
           const block = await tx.ideaBlock.findUnique({
-            where: { id: blockId },
+            where: { id_tenantId: { id: blockId, tenantId: entity.tenantId } },
             select: { status: true },
           });
           if (block && block.status !== 'archived' && block.status !== 'merged_into') {
             await tx.ideaBlock.update({
-              where: { id: blockId },
+              where: { id_tenantId: { id: blockId, tenantId: entity.tenantId } },
               data: { status: 'archived', evidenceCount: 0 },
             });
             archivedCount += 1;
           }
         } else {
           await tx.ideaBlock.update({
-            where: { id: blockId },
+            where: { id_tenantId: { id: blockId, tenantId: entity.tenantId } },
             data: { evidenceCount: evCount },
           });
         }
@@ -135,7 +135,7 @@ export class PersonalDataDeletionService {
         reason: input.reason,
       };
       await tx.entity.update({
-        where: { id: entity.id },
+        where: { id_tenantId: { id: entity.id, tenantId: entity.tenantId } },
         data: {
           canonicalName: ERASED_NAME,
           aliases: [],

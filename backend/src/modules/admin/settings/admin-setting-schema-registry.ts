@@ -43,6 +43,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.regulationDedupeTopK', POSITIVE_INT],
   ['knowledge.blockIngestWindowSegments', POSITIVE_INT],
   ['knowledge.blockIngestMaxTokensPerSegment', POSITIVE_INT],
+  ['knowledge.document_summary_input_chars', z.number().int().min(500).max(60000)],
   ['knowledge.segment_max_tokens', z.number().int().min(200).max(2000)],
   ['knowledge.segment_overlap_ratio', UNIT_INTERVAL],
   ['knowledge.contextual_header_enabled', z.boolean()],

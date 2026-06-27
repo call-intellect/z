@@ -345,14 +345,14 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      const summary = await this.maybePersistMeetingSummary({
+      const summary = await this.maybePersistSourceSummary({
         event,
         payload,
         contextHeader,
       }).catch((err) => {
         this.logger.warn(
           { rawEventId, err: err instanceof Error ? err.message : String(err) },
-          'block-ingest: summary-блок «суть встречи» не создан — пропуск',
+          'block-ingest: summary-блок «суть источника» не создан — пропуск',
         );
         return { blockId: null, text: null, vector: null } as MeetingSummaryResult;
       });
@@ -1027,21 +1027,59 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     return md.length > 0 ? md : null;
   }
 
-  private async maybePersistMeetingSummary(args: {
+  private tryGetDocumentSummary(payload: unknown): string | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const v = (payload as { documentSummary?: unknown }).documentSummary;
+    const text = typeof v === 'string' ? v.trim() : '';
+    return text.length > 0 ? text : null;
+  }
+
+  private resolveSourceSummaryText(
+    kind: 'meeting' | 'document' | 'chat',
+    payload: unknown,
+  ): string | null {
+    if (kind === 'meeting') return this.tryGetReportSummaryMarkdown(payload);
+    if (kind === 'document') return this.tryGetDocumentSummary(payload);
+    return null;
+  }
+
+  private buildSourceSummaryBlockTitle(
+    kind: 'meeting' | 'document' | 'chat',
+    payload: unknown,
+    event: RawEvent,
+  ): string {
+    if (kind === 'meeting') {
+      const meetingTitle = this.tryGetMeetingTitle(payload);
+      return (meetingTitle ? `Суть встречи: ${meetingTitle}` : 'Суть встречи').slice(0, 200);
+    }
+    if (kind === 'document') {
+      const title = event.sourceTitle?.trim();
+      return (title ? `Суть документа: ${title}` : 'Суть документа').slice(0, 200);
+    }
+    return 'Суть переписки'.slice(0, 200);
+  }
+
+  private buildSourceSummaryCriticalQuestion(kind: 'meeting' | 'document' | 'chat'): string {
+    if (kind === 'meeting') return 'О чём была встреча и что главное?';
+    if (kind === 'document') return 'О чём этот документ и что главное?';
+    return 'О чём эта переписка и что главное?';
+  }
+
+  private async maybePersistSourceSummary(args: {
     event: RawEvent;
     payload: unknown;
     contextHeader: string;
   }): Promise<MeetingSummaryResult> {
     const { event, payload, contextHeader } = args;
-    if (event.sourceType !== 'meeting_report') return { blockId: null, text: null, vector: null };
-    const summaryMd = this.tryGetReportSummaryMarkdown(payload);
-    if (!summaryMd) return { blockId: null, text: null, vector: null };
+    const kind = this.resolveSourceEpisodeKind(event.sourceType);
+    if (!kind) return { blockId: null, text: null, vector: null };
+    const summaryText = this.resolveSourceSummaryText(kind, payload);
+    if (!summaryText) return { blockId: null, text: null, vector: null };
 
-    const meetingTitle = this.tryGetMeetingTitle(payload);
-    const answer = summaryMd.slice(0, 4000);
+    const answer = summaryText.slice(0, 4000);
     const summaryBlock: ExtractedBlock = {
-      name: (meetingTitle ? `Суть встречи: ${meetingTitle}` : 'Суть встречи').slice(0, 200),
-      criticalQuestion: 'О чём была встреча и что главное?',
+      name: this.buildSourceSummaryBlockTitle(kind, payload, event),
+      criticalQuestion: this.buildSourceSummaryCriticalQuestion(kind),
       trustedAnswer: answer,
       signalType: 'fact',
       tags: [],

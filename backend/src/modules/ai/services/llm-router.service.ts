@@ -659,6 +659,10 @@ export type LlmTaskType =
   // Cache-friendly: SYSTEM статичен (инструкция + enum DocumentType + JSON-форма),
   // переменное (текст + темы) в КОНЦЕ user.
   | 'document-attribution-suggest'
+  // Слой источника Ф8 (2026-06-27) — document-summarize: AI-заголовок + резюме
+  // загруженного документа из parsedText (cache-friendly: стабильный SYSTEM,
+  // текст в конце user). Дешёвый, едет по DEFAULT_FALLBACK_CHAIN, best-effort.
+  | 'document-summarize'
   // Волна 4 B0 (2026-06-10) — client-meeting-split: нейтральный ПРОТОКОЛ встречи
   // НАРУЖУ для клиента (free-text Markdown, как summary; без tool/JSON-схемы).
   // Запускается в analyze.worker для клиентских типов (sales/customer_success/
@@ -934,6 +938,9 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // ТЗ-4 Ф10 (2026-06-09) — document-attribution-suggest (подсказка docType +
   // темы для загруженного документа без явной атрибуции; human-in-the-loop).
   'document-attribution-suggest',
+  // Слой источника Ф8 (2026-06-27) — document-summarize (AI-заголовок + резюме
+  // документа из parsedText; DEFAULT-маршрут, best-effort).
+  'document-summarize',
   // Волна 4 B0 (2026-06-10) — client-meeting-split (нейтральный протокол встречи
   // наружу для клиента, free-text; DEFAULT-маршрут, за kill-switch ON).
   'client-meeting-split',

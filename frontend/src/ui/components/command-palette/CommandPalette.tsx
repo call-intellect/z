@@ -29,7 +29,7 @@ import {
 
 import { searchApi, type SearchResponse } from "@/api/search.api";
 import { conciergeApi } from "@/api/concierge.api";
-import { chatV2Api, type ChatV2AskResponseApi } from "@/api/chat-v2.api";
+import type { ChatV2CitationApi } from "@/api/chat-v2.api";
 import { voiceApi } from "@/api/voice.api";
 import { ApiError, humanizeApiError } from "@/api/api-error";
 import { toast } from "sonner";
@@ -54,6 +54,12 @@ import {
   type PaletteRecentItem,
 } from "./recent-storage";
 
+type PaletteAiAnswer = {
+  text: string;
+  citations: ChatV2CitationApi[];
+  conversationId: string;
+};
+
 export function CommandPalette() {
   const router = useRouter();
   const pathname = usePathname();
@@ -73,7 +79,7 @@ export function CommandPalette() {
   const [loading, setLoading] = useState(false);
   const [commandBusy, setCommandBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
-  const [aiAnswer, setAiAnswer] = useState<ChatV2AskResponseApi | null>(null);
+  const [aiAnswer, setAiAnswer] = useState<PaletteAiAnswer | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [lastAskedQuestion, setLastAskedQuestion] = useState<string | null>(
     null,
@@ -364,12 +370,25 @@ export function CommandPalette() {
     setAiAnswer(null);
     setLastAskedQuestion(text);
     try {
-      const res = await chatV2Api.ask({
-        question: text,
-        scope: "org",
-        mode: "synthetic",
+      const res = await conciergeApi.askOnce({
+        userMessage: text,
+        pageContext: { clientPath: pathname ?? undefined },
       });
-      setAiAnswer(res);
+      if (res.quotaExceeded) {
+        setAiError(
+          res.quotaExceeded === "daily"
+            ? "Дневная квота Мастера исчерпана"
+            : "Месячная квота Мастера исчерпана",
+        );
+      } else if (res.error) {
+        setAiError(res.error.message);
+      } else {
+        setAiAnswer({
+          text: res.text,
+          citations: res.citations ?? [],
+          conversationId: res.conversationId,
+        });
+      }
     } catch (err) {
       const message =
         err instanceof ApiError
@@ -625,7 +644,7 @@ export function CommandPalette() {
                     ? "Кора ищет ответ…"
                     : `Спросить Кору: «${trimmed.replace(/^\?+\s*/, "")}»`
                 }
-                subtitle="Enter — отправить (chat-v2 · org · synthetic)"
+                subtitle="Enter — отправить"
               />
             </CommandItem>
           </CommandGroup>
@@ -681,11 +700,6 @@ export function CommandPalette() {
                   <div className="whitespace-pre-wrap text-sm text-fg-primary">
                     {aiAnswer.text}
                   </div>
-                  {aiAnswer.uncertaintyNote && (
-                    <div className="text-xs text-fg-tertiary">
-                      {aiAnswer.uncertaintyNote}
-                    </div>
-                  )}
                   {aiAnswer.citations.length > 0 && (
                     <div className="space-y-1">
                       <div className="text-xs font-medium text-fg-tertiary">
@@ -720,12 +734,7 @@ export function CommandPalette() {
                       </ul>
                     </div>
                   )}
-                  <div className="flex items-center justify-between pt-1">
-                    {aiAnswer.cacheHit && (
-                      <span className="text-[10px] uppercase tracking-wider text-fg-tertiary">
-                        из кэша
-                      </span>
-                    )}
+                  <div className="flex items-center pt-1">
                     <button
                       type="button"
                       onClick={() =>

@@ -4,11 +4,13 @@
 
 ## REST API
 
-- `POST /api/v1/concierge/messages` — SSE-стрим ответа (`started → thinking → tool_call → tool_result → message → done`).
-- `POST /api/v1/concierge/messages/once` — polling fallback, один JSON.
-- `GET /api/v1/concierge/conversations` / `:id` — история диалогов пользователя.
+- `POST /api/v1/concierge/messages` — SSE-стрим ответа (`started → thinking → tool_call → tool_result → message → done`). Body (`PostConciergeMessageBodySchema`) с 2026-06-28 принимает опц. `scope?` / `scopeRefId?` / `asOf?` — Мастер протаскивает их в `chatV2.askEphemeral` (оба пути: `dispatchAskChatV2` и `resumeClarify`), питая scoped-чат (issue/org/…) и снимок «на дату».
+- `POST /api/v1/concierge/messages/once` — polling fallback, один JSON. Те же `scope?/scopeRefId?/asOf?`.
+- `GET /api/v1/concierge/conversations` — история диалогов пользователя; с 2026-06-28 каждая запись несёт `titlePreview` (первое user-сообщение, обрезано до 80 симв., хелпер `backend/src/modules/concierge/concierge-title-preview.ts`) — фронт берёт его для названия диалога вместо «Новый диалог». `:id` — конкретный диалог.
 - `POST /api/v1/concierge/undo/:logId` — откат мутирующего tool-call'а.
 - `GET /api/v1/concierge/quota` — текущая квота.
+
+**SSE-эвент `message`** несёт (фронт `ConciergeStreamEvent`, 2026-06-28): текст + `citations` (passthrough из chat-v2) + `needsClarification`; добавлен эвент `confirm_required` (preview подтверждения мутации). Эти поля питают единый дом Мастера `/chat` (`MasterChatHome`) и scoped-чат `MasterScopedChat` — см. [[frontend-pages]] §`/chat`.
 
 ## Квоты — две ступени (ТЗ 2026-05-31)
 

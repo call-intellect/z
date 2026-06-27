@@ -9,6 +9,24 @@ covers: React-контексты и кросс-компонентные патт
 Точечный реестр кросс-компонентных механизмов фронтенда (`frontend/src/contexts`,
 `frontend/src/hooks` и связанные событийные шины). Пополняется по факту.
 
+## Диалоги Мастера — data-слой дома `/chat` (2026-06-28)
+
+Хуки и маппер для дома Мастера (`MasterChatHome`, см. [[frontend-pages]] §`/chat`) — список
+диалогов слева + история по выбору, на движке concierge (SWR).
+
+- **`src/hooks/useConciergeConversations.ts`** — SWR-список диалогов пользователя
+  (`conciergeApi.listConversations`); каждый несёт `titlePreview` (первое user-сообщение,
+  ≤80 симв., с бэка) — название диалога вместо «Новый диалог», фолбэк на `summary`.
+- **`src/hooks/useConciergeConversation.ts`** — SWR-загрузка истории одного диалога по `id`
+  (`conciergeApi.getConversation`) при выборе в списке.
+- **`src/domain/concierge-conversation.ts`** — маппер ApiDto→DomainModel (`titlePreview`/`summary`
+  → отображаемое название, нормализация сообщений). `concierge.api.ts`: `ConciergeStreamEvent.message`
+  += `citations`/`needsClarification`, добавлен эвент `confirm_required`; body += `scope`/`scopeRefId`/`asOf`;
+  `ConciergeConversationApi` += `titlePreview`.
+- Редьюсер потока сообщений — `src/ui/chat/master-chat-events.ts` (SSE+fallback → состояние нити).
+- Источник: ТЗ [`2026-06-25-edinyy-pomoshnik-chat-surface-convergence.md`](../../plans/tz/2026-06-25-edinyy-pomoshnik-chat-surface-convergence.md)
+  (КФ1–КФ5, коммиты `7d111a94`..`c5b7ec10`). См. [[concierge-agent]] · [[api-layer]].
+
 ## Единый плавающий помощник кабинета (2026-06-06 → пересмотрено 2026-06-20)
 
 > ⚠️ **Пересмотрено 2026-06-20** (см. §«Яркий FAB-помощник + сигналы колокольчика» ниже): теперь единственный плавающий вход — `ConciergeFloatingButton` (вернулась видимая кнопка, чат в 1 клик), а `AssistantSidebar` **удалён**. Запись ниже — исторический контекст промежуточного состояния 2026-06-06.

@@ -367,6 +367,7 @@ export const CONTRADICTIONS_HEADER = 'Противоречащие факты:';
 /** Префикс блока «Данные из таблиц» (наполняет ЧАСТЬ B; константа и strip — здесь). */
 export const TABLE_TAG_PREFIX = '[ТАБЛИЦА:';
 export const TEMPORAL_ROLLUP_TAG_PREFIX = '[ИТОГ ПЕРИОДА:';
+export const THEME_MAP_TAG_PREFIX = '[ТЕМА:';
 
 /**
  * Query Understanding Ф4 (R10) — карта ветки темы → человекочитаемый русский
@@ -466,6 +467,7 @@ export function stripBlockMarkers(text: string): string {
     .replace(/\[ЦЕПОЧКА РАССУЖДЕНИЯ К ФАКТУ[^\]]*\]/g, '')
     .replace(/\[ТАБЛИЦА:[^\]]*\]/g, '')
     .replace(/\[ИТОГ ПЕРИОДА:[^\]]*\]/g, '')
+    .replace(/\[ТЕМА:[^\]]*\]/g, '')
     .replace(/\[BLOCK:[a-zA-Z0-9_-]+(?:\s*[—-][^\]]*)?\]/gu, '')
     .replace(/[ \t]{2,}/g, ' ') // схлопнуть двойные пробелы от вырезанных маркеров
     .replace(/ +([.,;:!?])/g, '$1') // убрать пробел перед пунктуацией
@@ -739,20 +741,22 @@ export class ChatV2Service {
     // ЧАСТЬ B (ТЗ 2026-06-15 §7) — табличная ветка (fetchTableContext) идёт
     // ОДНОВРЕМЕННО с графовым retrieval через Promise.allSettled: по времени
     // почти не дороже. Падение ветки таблиц НЕ валит ответ (граф отвечает).
-    const [retrievalSettled, tableSettled, temporalSettled] = await Promise.allSettled([
-      this.runRetrieval(input, {
-        tenantId,
-        scope,
-        scopeId: scopeId ?? null,
-        query,
-        kRetrieve,
-        kContext,
-        graphHops,
-        accessWhere,
-      }),
-      this.runTableBranch(input, tenantId),
-      this.runTemporalBranch(input, tenantId),
-    ]);
+    const [retrievalSettled, tableSettled, temporalSettled, overviewSettled] =
+      await Promise.allSettled([
+        this.runRetrieval(input, {
+          tenantId,
+          scope,
+          scopeId: scopeId ?? null,
+          query,
+          kRetrieve,
+          kContext,
+          graphHops,
+          accessWhere,
+        }),
+        this.runTableBranch(input, tenantId),
+        this.runTemporalBranch(input, tenantId),
+        this.runOverviewBranch(input, tenantId),
+      ]);
 
     const rankedBlockIds: string[] =
       retrievalSettled.status === 'fulfilled' ? retrievalSettled.value : [];
@@ -777,6 +781,10 @@ export class ChatV2Service {
     // остаётся (R3 fallback).
     const temporalRollups: Array<{ label: string; markdown: string }> =
       temporalSettled.status === 'fulfilled' ? temporalSettled.value : [];
+    // Ф6 мост К4 — карта тем (Theme.summary lazy-map). Best-effort: rejected/нет
+    // тем → []. Не валит ответ — both-ways семантика остаётся (R4 fallback).
+    const themeMap: Array<{ label: string; markdown: string }> =
+      overviewSettled.status === 'fulfilled' ? overviewSettled.value : [];
 
     // 2) Выгружаем сами блоки + первую evidence из встреч + meeting title.
     //    Ф4 — главный выходной шлюз доступа (см. loadContextBlocks).
@@ -794,7 +802,12 @@ export class ChatV2Service {
     //    ЧАСТЬ B (ТЗ 2026-06-15 §7): но если граф пуст, А ТАБЛИЦЫ дали строки
     //    (например «сколько клиентов из Москвы») — НЕ возвращаем заглушку, а идём
     //    в синтез с одними табличными данными (счётный вопрос считается по строкам).
-    if (contextBlocks.length === 0 && tableRows.length === 0 && temporalRollups.length === 0) {
+    if (
+      contextBlocks.length === 0 &&
+      tableRows.length === 0 &&
+      temporalRollups.length === 0 &&
+      themeMap.length === 0
+    ) {
       const desc = input.structuralFilters
         ? describeStructuralFilters(input.structuralFilters)
         : '';
@@ -871,6 +884,8 @@ export class ChatV2Service {
         tableRows,
         // Ф5 мост К3 — свёртки периода. Пусто → секция «Итоги периода» не выводится.
         temporalRollups,
+        // Ф6 мост К4 — карта тем. Пусто → секция «Карта тем» не выводится.
+        themeMap,
       },
     );
 
@@ -1160,6 +1175,9 @@ export class ChatV2Service {
     input: ChatV2Input,
     ctx: RetrievalCtx,
   ): Promise<string[]> {
+    if (input.queryClass === 'overview') {
+      return this.runOverviewStructuralRoute(input, ctx);
+    }
     if (input.queryClass !== 'list') return [];
     const personIds = input.structuralFilters?.personIds ?? [];
     const entityIds = input.structuralFilters?.entityIds ?? [];
@@ -1171,6 +1189,29 @@ export class ChatV2Service {
       entityIds,
       limit: ctx.kRetrieve,
     });
+  }
+
+  private async runOverviewStructuralRoute(
+    input: ChatV2Input,
+    ctx: RetrievalCtx,
+  ): Promise<string[]> {
+    const topThemes = await this.cfg.getDynamic<number>(
+      'knowledge.overview_top_themes',
+      undefined,
+      5,
+    );
+    const themes = await this.retrieval.selectTopThemes({
+      tenantId: ctx.tenantId,
+      query: ctx.query,
+      limit: topThemes,
+      branches: input.structuralFilters?.themeBranches,
+    });
+    if (themes.length === 0) return [];
+    return this.retrieval.poolByThemes(
+      ctx.tenantId,
+      themes.map((t) => t.id),
+      ctx.kRetrieve,
+    );
   }
 
   private async conditionalRerank(args: {
@@ -1297,6 +1338,39 @@ export class ChatV2Service {
       this.logger.warn(
         { tenantId, err: err instanceof Error ? err.message : String(err) },
         'chat-v2 runTemporalBranch: сбой — возвращаем [] (семантика отвечает)',
+      );
+      return [];
+    }
+  }
+
+  private async runOverviewBranch(
+    input: ChatV2Input,
+    tenantId: string,
+  ): Promise<Array<{ label: string; markdown: string }>> {
+    if (input.queryClass !== 'overview') return [];
+    try {
+      const topThemes = await this.cfg.getDynamic<number>(
+        'knowledge.overview_top_themes',
+        undefined,
+        5,
+      );
+      const themes = await this.retrieval.selectTopThemes({
+        tenantId,
+        query: input.query,
+        limit: topThemes,
+        branches: input.structuralFilters?.themeBranches,
+      });
+      const out: Array<{ label: string; markdown: string }> = [];
+      for (const theme of themes) {
+        const summary = (theme.summary ?? '').trim();
+        if (!summary) continue;
+        out.push({ label: theme.id, markdown: summary });
+      }
+      return out;
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 runOverviewBranch: сбой — возвращаем [] (семантика отвечает)',
       );
       return [];
     }
@@ -1707,6 +1781,7 @@ export class ChatV2Service {
        */
       tableRows?: ReadonlyArray<{ tableName: string; cells: string }>;
       temporalRollups?: ReadonlyArray<{ label: string; markdown: string }>;
+      themeMap?: ReadonlyArray<{ label: string; markdown: string }>;
     },
   ): string {
     const parts: string[] = [];
@@ -1784,6 +1859,17 @@ export class ChatV2Service {
       parts.push('Итоги периода:');
       for (const r of temporalRollups) {
         parts.push(`${TEMPORAL_ROLLUP_TAG_PREFIX} ${r.label}]`);
+        parts.push(r.markdown);
+      }
+    }
+
+    // Ф6 мост К4 — карта тем (Theme.summary выбранных по близости тем).
+    const themeMap = extra?.themeMap;
+    if (themeMap && themeMap.length > 0) {
+      parts.push('');
+      parts.push('Карта тем:');
+      for (const r of themeMap) {
+        parts.push(`${THEME_MAP_TAG_PREFIX} ${r.label}]`);
         parts.push(r.markdown);
       }
     }

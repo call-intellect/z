@@ -426,6 +426,87 @@ export class ChatV2RetrievalService {
     return rows.map((r) => r.blockId);
   }
 
+  async selectTopThemes(args: {
+    tenantId: string;
+    query: string;
+    limit: number;
+    branches?: ReadonlyArray<string>;
+  }): Promise<Array<{ id: string; summary: string | null }>> {
+    const { tenantId, query, limit } = args;
+    if (limit <= 0) return [];
+
+    let rawVec: number[] | null;
+    try {
+      rawVec = await this.embeddings.embedQuery(query);
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 retrieval: selectTopThemes embedQuery упал — []',
+      );
+      return [];
+    }
+    if (!rawVec) return [];
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    if (buildVectorLiteral(rawVec, expectedDim).literal === null) return [];
+    const qvec = rawVec;
+
+    const branches =
+      args.branches && args.branches.length > 0 ? [...new Set(args.branches)] : null;
+
+    const params: unknown[] = [];
+    const pushParam = (v: unknown): string => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+    const pTenant = pushParam(tenantId);
+    const pVec = pushParam(toVectorLiteral(qvec));
+    const branchClause = branches
+      ? ` AND "branch" = ANY(${pushParam(branches)}::text[])`
+      : '';
+    const pLimit = pushParam(limit);
+
+    interface ThemeRow {
+      id: string;
+      summary: string | null;
+    }
+    let rows: ThemeRow[];
+    try {
+      rows = await this.prisma.$queryRawUnsafe<ThemeRow[]>(
+        `
+        SELECT id, summary
+        FROM "Theme"
+        WHERE "tenantId" = ${pTenant}
+          AND status = 'active'
+          AND embedding IS NOT NULL${branchClause}
+        ORDER BY embedding <=> ${pVec}::vector(1536)
+        LIMIT ${pLimit}
+        `,
+        ...params,
+      );
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 retrieval: selectTopThemes упал — []',
+      );
+      return [];
+    }
+    return rows.map((r) => ({ id: r.id, summary: r.summary ?? null }));
+  }
+
+  async poolByThemes(
+    tenantId: string,
+    themeIds: ReadonlyArray<string>,
+    limit: number,
+  ): Promise<string[]> {
+    if (themeIds.length === 0 || limit <= 0) return [];
+    const out: string[] = [];
+    for (const themeId of themeIds) {
+      const ids = await this.poolByTheme(tenantId, themeId);
+      for (const id of ids) out.push(id);
+    }
+    return uniqueIds(out).slice(0, limit);
+  }
+
   /**
    * SBA α-5 dialog-layer — temporal-фильтр пула блоков.
    * Оставляет только блоки, у которых `createdAt <= validAt` (т.е.

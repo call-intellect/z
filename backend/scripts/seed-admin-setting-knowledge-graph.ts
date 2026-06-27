@@ -152,6 +152,15 @@ const SEEDS: SettingSeed[] = [
       'Аварийный рубильник роутера 5 классов + confidence-gated both-ways (слой источника Ф3). ON по умолчанию (Ship-On). Выкл → откат на прежний single-route retrieval (семантический путь без структурной подстраховки и без гейта фан-аута по классу).',
   },
   {
+    key: 'knowledge.overview_top_themes',
+    value: 5,
+    category: 'ai',
+    section: 'knowledge',
+    severity: 'medium',
+    description:
+      'Сколько верхних тем (по близости Theme.embedding к вопросу) брать для обзорного класса (К4, слой источника Ф6). Карта строится lazy на лету из Theme.summary выбранных тем; затем — погружение в блоки этих тем. Привязка к близости embedding, ветка темы лишь сужает. По умолчанию 5.',
+  },
+  {
     key: 'knowledge.person_resolve_trgm_threshold',
     value: 0.3,
     category: 'ai',

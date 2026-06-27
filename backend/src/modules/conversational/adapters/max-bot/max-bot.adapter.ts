@@ -875,6 +875,14 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
         const tail = ctx ? `\n\n${ctx}` : '';
         return `${head}\n\n${q}${tail}\n\nОтветьте текстом этим же сообщением.`.slice(0, 4000);
       }
+      case 'probe.clarify': {
+        const q = (payload['question'] as string | undefined) ?? '';
+        return `Кора уточняет\n\n${q}\n\nОтветьте текстом этим же сообщением.`.slice(0, 4000);
+      }
+      case 'probe.confirm': {
+        const q = (payload['question'] as string | undefined) ?? '';
+        return `Кора уточняет, всё ли верно\n\n${q}\n\nОтветьте «да» или поправьте.`.slice(0, 4000);
+      }
       case 'specialist.probe': {
         const msg = (payload['message'] as string | undefined) ?? '';
         const reason = (payload['reason'] as string | undefined) ?? '';

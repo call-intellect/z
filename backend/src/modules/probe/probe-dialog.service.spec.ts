@@ -9,6 +9,7 @@ function makeService(): {
   upsert: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
   findFirst: ReturnType<typeof vi.fn>;
+  updateMany: ReturnType<typeof vi.fn>;
 } {
   const row = {
     id: 'pds-1',
@@ -19,10 +20,11 @@ function makeService(): {
   const upsert = vi.fn().mockResolvedValue(row);
   const update = vi.fn().mockResolvedValue(row);
   const findFirst = vi.fn().mockResolvedValue(null);
+  const updateMany = vi.fn().mockResolvedValue({ count: 1 });
   const prisma = {
-    probeDialogState: { upsert, update, findFirst },
+    probeDialogState: { upsert, update, findFirst, updateMany },
   } as unknown as PrismaService;
-  return { service: new ProbeDialogService(prisma), upsert, update, findFirst };
+  return { service: new ProbeDialogService(prisma), upsert, update, findFirst, updateMany };
 }
 
 describe('ProbeDialogService', () => {
@@ -122,5 +124,40 @@ describe('ProbeDialogService', () => {
     };
     expect(arg.where).toEqual({ probeEventId: 'p1' });
     expect(arg.data.phase).toBe('resolved');
+  });
+
+  it('finalizeIfPending — updateMany по probeEventId с where.phase.in активных фаз и data.phase=resolved', async () => {
+    const { service, updateMany } = makeService();
+
+    await service.finalizeIfPending('p1');
+
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    const arg = updateMany.mock.calls[0]![0] as {
+      where: { probeEventId: string; phase: { in: string[] } };
+      data: { phase: string };
+    };
+    expect(arg.where.probeEventId).toBe('p1');
+    expect(arg.where.phase.in).toContain('awaiting_answer');
+    expect(arg.where.phase.in).toContain('awaiting_clarification');
+    expect(arg.where.phase.in).toContain('awaiting_confirmation');
+    expect(arg.data.phase).toBe('resolved');
+  });
+
+  it('finalizeIfPending — возвращает true при count===1 (первая финализация выиграла)', async () => {
+    const { service, updateMany } = makeService();
+    updateMany.mockResolvedValueOnce({ count: 1 });
+
+    const result = await service.finalizeIfPending('p1');
+
+    expect(result).toBe(true);
+  });
+
+  it('finalizeIfPending — возвращает false при count===0 (повторная финализация = no-op)', async () => {
+    const { service, updateMany } = makeService();
+    updateMany.mockResolvedValueOnce({ count: 0 });
+
+    const result = await service.finalizeIfPending('p1');
+
+    expect(result).toBe(false);
   });
 });

@@ -61,6 +61,7 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   'probe.question': ['telegram_bot', 'max_bot', 'in_app'],
   'probe.digest': ['telegram_bot', 'max_bot', 'in_app'],
   'probe.clarify': ['telegram_bot', 'max_bot', 'in_app'],
+  'probe.confirm': ['telegram_bot', 'max_bot', 'in_app'],
   'probe.answer_acknowledged': ['telegram_bot', 'max_bot', 'in_app'],
   'curation.pending': ['in_app', 'email_smtp'],
   'system.message': ['in_app', 'email_smtp'],
@@ -143,7 +144,9 @@ export class ConversationalService {
         expiresAt,
         priorityTier: input.priorityTier ?? 2,
         responseStatus:
-          input.eventType === 'probe.question' || input.eventType === 'probe.clarify'
+          input.eventType === 'probe.question' ||
+          input.eventType === 'probe.clarify' ||
+          input.eventType === 'probe.confirm'
             ? 'pending'
             : null,
       },

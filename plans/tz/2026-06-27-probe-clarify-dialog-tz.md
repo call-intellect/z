@@ -240,7 +240,7 @@ LLM недоступен ──► graceful degradation: нынешний дет
 - `bunx vitest run src/modules/probe/probe-dialog.service.spec.ts`.
 **Закрывает:** R5, R6, R10.
 
-### Ф4 — Echo-back подтверждение перед применением `[ ]`
+### Ф4 — Echo-back подтверждение перед применением `[x]`
 **Цель:** перед любой записью — «Понял так: …. Применить?»; для необратимого — обязательное подтверждение.
 **Файлы:** `probe/probe-response.handler.ts`, `probe/probe-dialog.service.ts`, `conversational.service.ts` (`probe.confirm`), `event-payload.registry.ts`, адаптеры ботов (рендер).
 **Что входит:**

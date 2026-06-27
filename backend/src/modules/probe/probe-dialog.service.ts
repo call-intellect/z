@@ -67,4 +67,15 @@ export class ProbeDialogService {
       data: { phase: args.phase },
     });
   }
+
+  async finalizeIfPending(probeEventId: string): Promise<boolean> {
+    const res = await this.prisma.probeDialogState.updateMany({
+      where: {
+        probeEventId,
+        phase: { in: ['awaiting_answer', 'awaiting_clarification', 'awaiting_confirmation'] },
+      },
+      data: { phase: 'resolved' },
+    });
+    return res.count === 1;
+  }
 }

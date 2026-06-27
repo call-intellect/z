@@ -181,9 +181,14 @@ export class ProbeResponseHandler {
         }
       }
 
+      let priorState: ProbeDialogState | null = null;
       let dialogState: ProbeDialogState | null = null;
       if (this.dialog) {
         try {
+          priorState = await this.dialog.getActive({
+            tenantId: event.tenantId,
+            probeEventId: probe.id,
+          });
           dialogState = await this.dialog.ensureState({
             tenantId: event.tenantId,
             probeEventId: probe.id,
@@ -217,34 +222,30 @@ export class ProbeResponseHandler {
         );
         maxTurns = await this.cfg.getDynamic<number>('probe.dialogMaxTurns', undefined, 2);
       }
-      const preApplyClarify =
-        dialogActive &&
-        classification !== null &&
-        (classification.outcome === 'unclear' ||
-          classification.outcome === 'counter_question' ||
-          classification.outcome === 'refine' ||
-          classification.confidence < escalateThreshold);
-
+      const answerText = this.extractResponseText(event.payload) ?? '';
       let applyResult: ApplyResult | null = null;
       let routed = false;
 
-      if (preApplyClarify) {
-        await this.routeClarifyOrEscalate({
+      const respondingToConfirm =
+        dialogActive && priorState?.phase === 'awaiting_confirmation';
+
+      if (respondingToConfirm && this.isAffirmation(answerText)) {
+        routed = await this.finalizeConfirmedIntent({
           probe,
           event,
           probePayload,
+          priorState,
           dialogState,
           maxTurns,
         });
-        routed = true;
-      } else {
-        applyResult = await this.dispatchApply({
-          probe,
-          event,
-          probePayload,
-          classification,
-        });
-        if (dialogActive && applyResult !== null && applyResult.status === 'needs_clarification') {
+      } else if (dialogActive && classification !== null) {
+        if (
+          classification.outcome === 'delete' ||
+          (classification.outcome === 'apply' && classification.confidence >= escalateThreshold)
+        ) {
+          await this.sendConfirm({ probe, event, probePayload, classification });
+          routed = true;
+        } else {
           await this.routeClarifyOrEscalate({
             probe,
             event,
@@ -254,6 +255,13 @@ export class ProbeResponseHandler {
           });
           routed = true;
         }
+      } else {
+        applyResult = await this.dispatchApply({
+          probe,
+          event,
+          probePayload,
+          classification,
+        });
       }
 
       if (!routed) {
@@ -271,7 +279,7 @@ export class ProbeResponseHandler {
           : `apply=${applyResult.status}`
         : 'apply=none';
       this.logger.log(
-        `probe.responded: probeId=${probe.id} eventType=${event.eventType} kind=${kind ?? 'unknown'} classified=${classification ? `${classification.unclear ? 'unclear' : 'ok'}(${classification.confidence.toFixed(2)})` : 'skipped'} ${applySummary} routed=${routed ? 'clarify/escalate' : 'ack'} (closing-loop applied)`,
+        `probe.responded: probeId=${probe.id} eventType=${event.eventType} kind=${kind ?? 'unknown'} classified=${classification ? `${classification.unclear ? 'unclear' : 'ok'}(${classification.confidence.toFixed(2)})` : 'skipped'} ${applySummary} routed=${routed ? 'dialog' : 'ack'} (closing-loop applied)`,
       );
     } catch (err) {
       this.logger.warn(
@@ -424,6 +432,117 @@ export class ProbeResponseHandler {
         'probe-clarify: отправка уточнения упала (best-effort)',
       );
     }
+  }
+
+  private isAffirmation(text: string): boolean {
+    const t = (text ?? '').toLowerCase().trim().replace(/[!.\s]+$/u, '');
+    if (!t) return false;
+    if (
+      /(?:^|[^а-яёa-z])(нет|не|но|вместо|замен[а-яё]*|исправ[а-яё]*|поправ[а-яё]*|друг[а-яё]*)(?![а-яёa-z])/u.test(
+        t,
+      )
+    ) {
+      return false;
+    }
+    return /^(да|ага|угу|ок|окей|верно|подтвержд[а-яё]*|применя[а-яё]*|применить|согласн[а-яё]*|именно|правильно|давай[а-яё]*|всё верно|все верно)(?![а-яёa-z])/u.test(
+      t,
+    );
+  }
+
+  private async sendConfirm(args: {
+    probe: ProbeEvent;
+    event: NotificationRespondedPayload;
+    probePayload: Record<string, unknown>;
+    classification: ProbeClassification;
+  }): Promise<void> {
+    const title = this.toStringOrUndef(args.probePayload.contextCardTitle);
+    const verb = args.classification.outcome === 'delete' ? 'удалить' : 'записать';
+    const subject = args.classification.value.trim() || title || 'это';
+    const preview = `Понял так: ${verb} «${subject}». Применить? Ответьте «да» или поправьте.`;
+    try {
+      const notif = await this.conversational.sendNotification({
+        tenantId: args.probe.tenantId,
+        recipientUserId: args.event.recipientUserId,
+        eventType: 'probe.confirm',
+        payload: {
+          question: preview,
+          ...(title ? { objectTitle: title } : {}),
+          probeEventId: args.probe.id,
+        },
+        dataClass: this.extractDataClass(args.probePayload),
+      });
+      await this.prisma.probeEvent.update({
+        where: { id: args.probe.id },
+        data: { status: 'awaiting_dialog', dispatchedNotificationId: notif.id },
+      });
+      if (this.dialog) {
+        await this.dialog.setPhase({
+          probeEventId: args.probe.id,
+          phase: 'awaiting_confirmation',
+        });
+      }
+      this.logger.log(
+        `probe-confirm: echo-back отправлен probe=${args.probe.id} outcome=${args.classification.outcome}`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        {
+          probeId: args.probe.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'probe-confirm: отправка echo-back упала (best-effort)',
+      );
+    }
+  }
+
+  private async finalizeConfirmedIntent(args: {
+    probe: ProbeEvent;
+    event: NotificationRespondedPayload;
+    probePayload: Record<string, unknown>;
+    priorState: ProbeDialogState | null;
+    dialogState: ProbeDialogState | null;
+    maxTurns: number;
+  }): Promise<boolean> {
+    const won = this.dialog ? await this.dialog.finalizeIfPending(args.probe.id) : true;
+    if (!won) {
+      this.logger.log(`probe-confirm: уже финализировано probe=${args.probe.id} — no-op`);
+      return true;
+    }
+    const stored: ProbeClassification = {
+      outcome: this.normalizeOutcome(args.priorState?.outcome),
+      value: args.priorState?.collectedValue ?? '',
+      answer: args.priorState?.collectedValue ?? '',
+      confidence: args.priorState?.confidence ?? 1,
+      unclear: false,
+    };
+    const applyResult = await this.dispatchApply({
+      probe: args.probe,
+      event: args.event,
+      probePayload: args.probePayload,
+      classification: stored,
+    });
+    if (applyResult !== null && applyResult.status === 'needs_clarification') {
+      await this.routeClarifyOrEscalate({
+        probe: args.probe,
+        event: args.event,
+        probePayload: args.probePayload,
+        dialogState: args.dialogState,
+        maxTurns: args.maxTurns,
+      });
+      return true;
+    }
+    await this.prisma.probeEvent.update({
+      where: { id: args.probe.id },
+      data: { status: 'applied' },
+    });
+    await this.sendAnswerAck({
+      tenantId: args.event.tenantId,
+      recipientUserId: args.event.recipientUserId,
+      probePayload: args.probePayload,
+      probeId: args.probe.id,
+    });
+    this.logger.log(`probe-confirm: применено probe=${args.probe.id}`);
+    return true;
   }
 
   private async escalateToHuman(args: {

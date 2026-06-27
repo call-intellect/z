@@ -81,6 +81,8 @@ interface Mocks {
   dialogEnsureState: ReturnType<typeof vi.fn>;
   dialogRecordTurn: ReturnType<typeof vi.fn>;
   dialogSetPhase: ReturnType<typeof vi.fn>;
+  dialogGetActive: ReturnType<typeof vi.fn>;
+  dialogFinalize: ReturnType<typeof vi.fn>;
 }
 
 function makeMocks(): Mocks {
@@ -114,11 +116,14 @@ function makeMocks(): Mocks {
     .fn()
     .mockResolvedValue({ id: 'pds-1', turnCount: 1, phase: 'awaiting_answer' });
   const dialogSetPhase = vi.fn().mockResolvedValue(undefined);
+  const dialogGetActive = vi.fn().mockResolvedValue(null);
+  const dialogFinalize = vi.fn().mockResolvedValue(true);
   const dialog = {
     ensureState: dialogEnsureState,
     recordTurn: dialogRecordTurn,
-    getActive: vi.fn().mockResolvedValue(null),
+    getActive: dialogGetActive,
     setPhase: dialogSetPhase,
+    finalizeIfPending: dialogFinalize,
   } as unknown as ProbeDialogService;
   const membershipFindMany = vi
     .fn()
@@ -224,6 +229,8 @@ function makeMocks(): Mocks {
     dialogEnsureState,
     dialogRecordTurn,
     dialogSetPhase,
+    dialogGetActive,
+    dialogFinalize,
   };
 }
 
@@ -240,7 +247,7 @@ function makeHandler(args: {
       responseClassifyEnabled: args.classifyEnabled,
       voiceInputEnabled: true,
       responseClassifyMinConfidence: args.minConfidence ?? 0.5,
-      dialogEnabled: args.dialogEnabled ?? true,
+      dialogEnabled: args.dialogEnabled ?? false,
     },
     subjectMemory: { enabled: false },
     getDynamic: vi
@@ -1555,7 +1562,7 @@ describe('ProbeResponseHandler — Ф3 clarify/escalate', () => {
         confidence: 0.4,
       }),
     });
-    const handler = makeHandler({ mocks, classifyEnabled: true });
+    const handler = makeHandler({ mocks, classifyEnabled: true, dialogEnabled: true });
 
     await handler.handle({ ...event, payload: { text: 'ну как бы да' } });
 
@@ -1599,7 +1606,7 @@ describe('ProbeResponseHandler — Ф3 clarify/escalate', () => {
         confidence: 0.9,
       }),
     });
-    const handler = makeHandler({ mocks, classifyEnabled: true });
+    const handler = makeHandler({ mocks, classifyEnabled: true, dialogEnabled: true });
 
     await handler.handle({ ...event, payload: { text: 'а кто свободен?' } });
 
@@ -1632,7 +1639,7 @@ describe('ProbeResponseHandler — Ф3 clarify/escalate', () => {
         confidence: 0.3,
       }),
     });
-    const handler = makeHandler({ mocks, classifyEnabled: true });
+    const handler = makeHandler({ mocks, classifyEnabled: true, dialogEnabled: true });
 
     await handler.handle({ ...event, payload: { text: 'хз' } });
 
@@ -1677,5 +1684,192 @@ describe('ProbeResponseHandler — Ф3 clarify/escalate', () => {
       probeEventId: 'probe-classify-1',
       phase: 'resolved',
     });
+  });
+});
+
+describe('ProbeResponseHandler — Ф4 echo-back подтверждение', () => {
+  function setProbe(mocks: Mocks, reason: string, payload: Record<string, unknown>): void {
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi
+      .fn()
+      .mockResolvedValue({ ...buildProbe(), reason, payload });
+  }
+
+  it('apply conf 0.95 → сперва probe.confirm, без мутации', async () => {
+    const mocks = makeMocks();
+    setProbe(mocks, 'decision.outcome_unknown', {
+      contextCardId: 'dec-9',
+      contextCardKind: 'decision',
+      contextCardTitle: 'Миграция на DeepSeek',
+      suggestedQuestion: 'Какой итог решения?',
+    });
+    mocks.dialogGetActive.mockResolvedValue(null);
+    mocks.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        reasoning: 'Уверенный результат',
+        outcome: 'apply',
+        value: 'Выручка выросла',
+        confidence: 0.95,
+      }),
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: true, dialogEnabled: true });
+
+    await handler.handle({ ...event, payload: { text: 'выручка выросла на 20%' } });
+
+    expect(mocks.sendNotification).toHaveBeenCalledTimes(1);
+    const callArg = mocks.sendNotification.mock.calls[0]![0] as { eventType: string };
+    expect(callArg.eventType).toBe('probe.confirm');
+    expect(mocks.decisionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.probeEventUpdate).toHaveBeenCalledTimes(1);
+    const updateArg = mocks.probeEventUpdate.mock.calls[0]![0] as {
+      data: { status: string; dispatchedNotificationId: string };
+    };
+    expect(updateArg.data.status).toBe('awaiting_dialog');
+    expect(updateArg.data.dispatchedNotificationId).toBe('clarify-notif-1');
+    expect(mocks.dialogSetPhase).toHaveBeenCalledWith({
+      probeEventId: 'probe-classify-1',
+      phase: 'awaiting_confirmation',
+    });
+  });
+
+  it('подтверждение «да» → применение сохранённого намерения (из priorState, не из «да»)', async () => {
+    const mocks = makeMocks();
+    setProbe(mocks, 'decision.outcome_unknown', {
+      contextCardId: 'dec-9',
+      contextCardKind: 'decision',
+      contextCardTitle: 'Миграция на DeepSeek',
+      suggestedQuestion: 'Какой итог решения?',
+    });
+    mocks.dialogGetActive.mockResolvedValue({
+      id: 'pds-1',
+      turnCount: 1,
+      phase: 'awaiting_confirmation',
+      outcome: 'apply',
+      collectedValue: 'Выручка выросла',
+      confidence: 0.95,
+    });
+    mocks.dialogFinalize.mockResolvedValue(true);
+    mocks.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        reasoning: 'Подтверждение',
+        outcome: 'apply',
+        value: 'да',
+        confidence: 0.9,
+      }),
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: true, dialogEnabled: true });
+
+    await handler.handle({ ...event, payload: { text: 'да' } });
+
+    expect(mocks.dialogFinalize).toHaveBeenCalledTimes(1);
+    expect(mocks.decisionUpdateMany).toHaveBeenCalledTimes(1);
+    const call = mocks.decisionUpdateMany.mock.calls[0]![0] as {
+      data: { actualOutcomes: string };
+    };
+    expect(call.data.actualOutcomes).toBe('Выручка выросла');
+    const statuses = mocks.probeEventUpdate.mock.calls.map(
+      (c) => (c[0] as { data: { status?: string } }).data.status,
+    );
+    expect(statuses).toContain('applied');
+    const ackCall = mocks.sendNotification.mock.calls.find(
+      (c) => (c[0] as { eventType: string }).eventType === 'probe.answer_acknowledged',
+    );
+    expect(ackCall).toBeDefined();
+  });
+
+  it('delete при любой уверенности → echo-back, без авто-удаления', async () => {
+    const mocks = makeMocks();
+    setProbe(mocks, 'decision.missing_decider', {
+      contextCardId: 'dec-9',
+      contextCardKind: 'decision',
+      contextCardTitle: 'Миграция на DeepSeek',
+      suggestedQuestion: 'Кто принял решение?',
+    });
+    mocks.dialogGetActive.mockResolvedValue(null);
+    mocks.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        reasoning: 'Человек просит удалить',
+        outcome: 'delete',
+        value: '',
+        confidence: 0.95,
+      }),
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: true, dialogEnabled: true });
+
+    await handler.handle({ ...event, payload: { text: 'это не решение, удали' } });
+
+    expect(mocks.sendNotification).toHaveBeenCalledTimes(1);
+    const callArg = mocks.sendNotification.mock.calls[0]![0] as { eventType: string };
+    expect(callArg.eventType).toBe('probe.confirm');
+    expect(mocks.decisionUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('двойной «да» → применение ровно один раз (идемпотентность)', async () => {
+    const mocks = makeMocks();
+    setProbe(mocks, 'decision.outcome_unknown', {
+      contextCardId: 'dec-9',
+      contextCardKind: 'decision',
+      contextCardTitle: 'Миграция на DeepSeek',
+      suggestedQuestion: 'Какой итог решения?',
+    });
+    mocks.dialogGetActive.mockResolvedValue({
+      id: 'pds-1',
+      turnCount: 1,
+      phase: 'awaiting_confirmation',
+      outcome: 'apply',
+      collectedValue: 'Выручка выросла',
+      confidence: 0.95,
+    });
+    mocks.dialogFinalize.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    mocks.llmCall.mockResolvedValue({
+      text: JSON.stringify({
+        reasoning: 'Подтверждение',
+        outcome: 'apply',
+        value: 'да',
+        confidence: 0.9,
+      }),
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: true, dialogEnabled: true });
+
+    await handler.handle({ ...event, payload: { text: 'да' } });
+    await handler.handle({ ...event, payload: { text: 'да' } });
+
+    expect(mocks.dialogFinalize).toHaveBeenCalledTimes(2);
+    expect(mocks.decisionUpdateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('поправка на confirm → повторный classify, turnCount++, не применение', async () => {
+    const mocks = makeMocks();
+    setProbe(mocks, 'decision.missing_decider', {
+      contextCardId: 'dec-9',
+      contextCardKind: 'decision',
+      contextCardTitle: 'Миграция на DeepSeek',
+      suggestedQuestion: 'Кто принял решение?',
+    });
+    mocks.dialogGetActive.mockResolvedValue({
+      id: 'pds-1',
+      turnCount: 1,
+      phase: 'awaiting_confirmation',
+      outcome: 'apply',
+      collectedValue: 'старое',
+      confidence: 0.9,
+    });
+    mocks.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        reasoning: 'Поправка ответственного',
+        outcome: 'apply',
+        value: 'Пётр',
+        confidence: 0.9,
+      }),
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: true, dialogEnabled: true });
+
+    await handler.handle({ ...event, payload: { text: 'нет, ответственный Пётр' } });
+
+    expect(mocks.sendNotification).toHaveBeenCalledTimes(1);
+    const callArg = mocks.sendNotification.mock.calls[0]![0] as { eventType: string };
+    expect(callArg.eventType).toBe('probe.confirm');
+    expect(mocks.dialogRecordTurn).toHaveBeenCalledTimes(1);
+    expect(mocks.decisionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.dialogFinalize).not.toHaveBeenCalled();
   });
 });

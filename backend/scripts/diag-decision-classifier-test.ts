@@ -9,7 +9,7 @@ import {
 import { buildBlockIngestPrompt } from '../src/modules/knowledge-core/prompts/block-ingest.prompt';
 import { TASK_VS_DECISION_PAIRS } from '../src/modules/knowledge-core/prompts/task-decision-examples';
 
-type FixtureClass = 'decision' | 'task';
+type FixtureClass = 'decision' | 'task' | 'idea';
 
 type Fixture = {
   id: string;
@@ -17,6 +17,8 @@ type Fixture = {
   quote: string;
   cls: FixtureClass;
   note: string;
+  expectIngestIncludes?: string[];
+  expectIngestExcludes?: string[];
 };
 
 const NEGATIVE_DECISION_EXTRACT: Fixture[] = [
@@ -60,10 +62,31 @@ function buildSyntheticFixtures(): Fixture[] {
 
 const SYNTHETIC: Fixture[] = buildSyntheticFixtures();
 
+const MIXED_THREE_CLASS: Fixture[] = [
+  {
+    id: 'M1',
+    statement: 'Анна предлагает backoff, Михаил берёт реализацию',
+    quote: 'предлагаю реализовать exponential backoff для Битрикс API; окей, беру реализацию на себя',
+    cls: 'idea',
+    note: 'предложение + поручение — ожидаем idea И commitment/action_item, без decision',
+    expectIngestIncludes: ['idea', 'commitment', 'action_item'],
+    expectIngestExcludes: ['decision'],
+  },
+  {
+    id: 'M2',
+    statement: 'Елена пока не заводит задачу по жалобе на плеер',
+    quote: 'отдельную задачу по жалобе на плеер пока не завожу',
+    cls: 'idea',
+    note: 'бытовое не-действие — не decision и не action_item; decision-extract → isDecision=false',
+    expectIngestExcludes: ['decision', 'action_item'],
+  },
+];
+
 const ALL_FIXTURES: Fixture[] = [
   ...NEGATIVE_DECISION_EXTRACT,
   ...POSITIVE_DECISION_EXTRACT,
   ...SYNTHETIC,
+  ...MIXED_THREE_CLASS,
 ];
 
 const API_KEY = process.env.DEEPSEEK_API_KEY ?? '';
@@ -182,6 +205,17 @@ function collectSignalTypes(parsed: Record<string, unknown> | null): string[] {
 
 const ACTION_LIKE = new Set(['action_item', 'commitment']);
 
+function checkExplicitIngest(f: Fixture, set: Set<string>): boolean {
+  const includes = f.expectIngestIncludes ?? [];
+  const excludes = f.expectIngestExcludes ?? [];
+  const actionExpected = includes.filter((t) => ACTION_LIKE.has(t));
+  const plainExpected = includes.filter((t) => !ACTION_LIKE.has(t));
+  const plainOk = plainExpected.every((t) => set.has(t));
+  const actionOk = actionExpected.length === 0 || actionExpected.some((t) => set.has(t));
+  const excludesOk = excludes.every((t) => !set.has(t));
+  return plainOk && actionOk && excludesOk;
+}
+
 async function runBlockIngest(f: Fixture): Promise<RunOutcome> {
   try {
     const { system, user } = blockIngestUser(f);
@@ -189,9 +223,12 @@ async function runBlockIngest(f: Fixture): Promise<RunOutcome> {
     const types = collectSignalTypes(parsed);
     if (types.length === 0) return { ok: null, detail: 'нет blocks' };
     const set = new Set(types);
+    const detail = `signalType=[${types.join(',')}]`;
+    if (f.expectIngestIncludes || f.expectIngestExcludes) {
+      return { ok: checkExplicitIngest(f, set), detail };
+    }
     const hasDecision = set.has('decision');
     const hasAction = [...set].some((t) => ACTION_LIKE.has(t));
-    const detail = `signalType=[${types.join(',')}]`;
     if (f.cls === 'decision') {
       return { ok: hasDecision && !hasAction, detail };
     }
@@ -269,10 +306,15 @@ async function main(): Promise<void> {
 
   const decisionFixtures = ALL_FIXTURES.filter((f) => f.cls === 'decision');
   const taskFixtures = ALL_FIXTURES.filter((f) => f.cls === 'task');
+  const ideaFixtures = ALL_FIXTURES.filter((f) => f.cls === 'idea');
 
   console.log(`Модель: ${MODEL} · endpoint: ${ENDPOINT}`);
-  console.log(`Фикстур всего: ${ALL_FIXTURES.length} (решений=${decisionFixtures.length}, задач=${taskFixtures.length})`);
+  console.log(`Фикстур всего: ${ALL_FIXTURES.length} (решений=${decisionFixtures.length}, задач=${taskFixtures.length}, идей=${ideaFixtures.length})`);
   console.log(`  decision-extract: NEGATIVE=${NEGATIVE_DECISION_EXTRACT.length}, POSITIVE=${POSITIVE_DECISION_EXTRACT.length}, синтетика=${SYNTHETIC.length}`);
+  console.log(`  трёхклассовые (idea+поручение / бытовое не-действие): ${MIXED_THREE_CLASS.length}`);
+  for (const f of MIXED_THREE_CLASS) {
+    console.log(`    ${f.id} [${f.cls}] inc=[${(f.expectIngestIncludes ?? []).join(',')}] exc=[${(f.expectIngestExcludes ?? []).join(',')}] — ${f.note}`);
+  }
   console.log(`Ориентировочно LLM-вызовов: ${ALL_FIXTURES.length * 3} (${ALL_FIXTURES.length} фикстур × 3 агента)`);
 
   const decisionResults = await runAgent(
@@ -311,6 +353,8 @@ async function main(): Promise<void> {
   console.log('block-ingest:');
   const ingestDecisions = summarize('решения (→ decision)', ingestResults, ALL_FIXTURES.filter((f) => f.cls === 'decision'));
   const ingestTasks = summarize('задачи (→ action_item/commitment)', ingestResults, ALL_FIXTURES.filter((f) => f.cls === 'task'));
+  const ingestMixed = summarize('трёхклассовые (idea+поручение / бытовое не-действие)', ingestResults, MIXED_THREE_CLASS);
+  summarize('decision-extract по трёхклассовым (→ false)', decisionResults, MIXED_THREE_CLASS);
 
   console.log('\n=== ИТОГ ===');
   const negJunk = summarize('decision-extract: отсев мусора (псевдо-решения → false)', decisionResults, NEGATIVE_DECISION_EXTRACT);
@@ -323,6 +367,9 @@ async function main(): Promise<void> {
   );
   console.log(
     `Классификация block-ingest: решения→decision ${ingestDecisions.pass}/${ingestDecisions.pass + ingestDecisions.fail + ingestDecisions.unknown}, задачи→action ${ingestTasks.pass}/${ingestTasks.pass + ingestTasks.fail + ingestTasks.unknown}.`,
+  );
+  console.log(
+    `Трёхклассовые (idea отдельно от поручения, бытовое не-действие без decision/action): ${ingestMixed.pass}/${MIXED_THREE_CLASS.length}.`,
   );
 }
 

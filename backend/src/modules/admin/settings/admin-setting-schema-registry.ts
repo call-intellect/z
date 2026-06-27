@@ -366,11 +366,13 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.completionDetailGateEnabled', z.boolean()],
   ['tracker.closureNotifyCreatorEnabled', z.boolean()],
   ['tracker.livingCardEnabled', z.boolean()],
+  ['tracker.progressFromConversationMinConfidence', UNIT_INTERVAL],
   ['chatbox.analyze.stuckAnalyzingMin', POSITIVE_INT],
 
   ['taskClosure.enabled', z.boolean()],
   ['taskClosure.matchThreshold', UNIT_INTERVAL],
   ['taskClosure.embedTimeoutMs', POSITIVE_INT],
+  ['taskClosure.embedMaxAttempts', POSITIVE_INT],
   ['taskClosure.candidateTtlDays', POSITIVE_INT],
   ['taskClosure.lexicalFallbackMinOverlap', UNIT_INTERVAL],
 

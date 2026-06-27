@@ -71,6 +71,7 @@ interface Mocks {
   experimentFindFirst: ReturnType<typeof vi.fn>;
   experimentUpdate: ReturnType<typeof vi.fn>;
   companyProfileUpdate: ReturnType<typeof vi.fn>;
+  companyProfileGetRaw: ReturnType<typeof vi.fn>;
 }
 
 function makeMocks(): Mocks {
@@ -102,6 +103,7 @@ function makeMocks(): Mocks {
     .mockResolvedValue({ lessonsJson: null });
   const experimentUpdate = vi.fn().mockResolvedValue({ id: 'exp-1' });
   const companyProfileUpdate = vi.fn().mockResolvedValue({ id: 'cp-1' });
+  const companyProfileGetRaw = vi.fn().mockResolvedValue(null);
 
   const prisma = {
     probeEvent: {
@@ -186,6 +188,7 @@ function makeMocks(): Mocks {
     experimentFindFirst,
     experimentUpdate,
     companyProfileUpdate,
+    companyProfileGetRaw,
   };
 }
 
@@ -225,6 +228,7 @@ function makeHandler(args: {
     : undefined;
   const companyProfile = {
     update: args.mocks.companyProfileUpdate,
+    getRaw: args.mocks.companyProfileGetRaw,
   } as unknown as CompanyProfileService;
   return new ProbeResponseHandler(
     args.mocks.prisma,
@@ -261,9 +265,10 @@ describe('ProbeResponseHandler — Agents v2 Фаза 0.1 classifier', () => {
   it('high confidence (0.9) — parsedAnswer/parsedConfidence в payload, bucket=high', async () => {
     mocks.llmCall.mockResolvedValueOnce({
       text: JSON.stringify({
-        answer: 'Да, согласовано',
+        reasoning: 'Человек подтвердил согласование',
+        outcome: 'apply',
+        value: 'Да, согласовано',
         confidence: 0.9,
-        requiresFollowup: false,
       }),
     });
 
@@ -286,9 +291,10 @@ describe('ProbeResponseHandler — Agents v2 Фаза 0.1 classifier', () => {
   it('low confidence (0.3) — bucket=low + unclear, payload помечен, closing-loop НЕ блокируется', async () => {
     mocks.llmCall.mockResolvedValueOnce({
       text: JSON.stringify({
-        answer: 'непонятно',
+        reasoning: 'Ответ невозможно разобрать',
+        outcome: 'unclear',
+        value: 'непонятно',
         confidence: 0.3,
-        requiresFollowup: true,
       }),
     });
 
@@ -351,9 +357,10 @@ describe('ProbeResponseHandler — Agents v2 Фаза 0.1 classifier', () => {
 
     mocks.llmCall.mockResolvedValueOnce({
       text: JSON.stringify({
-        answer: 'Да',
+        reasoning: 'Подтверждение',
+        outcome: 'apply',
+        value: 'Да',
         confidence: 0.9,
-        requiresFollowup: false,
       }),
     });
 
@@ -385,9 +392,10 @@ describe('ProbeResponseHandler — Agents v2 Фаза 0.1 classifier', () => {
       .mockResolvedValue(probeCdm);
     mocks.llmCall.mockResolvedValueOnce({
       text: JSON.stringify({
-        answer: 'Рассматривал выкат в пятницу',
+        reasoning: 'Описал рассмотренные альтернативы',
+        outcome: 'apply',
+        value: 'Рассматривал выкат в пятницу',
         confidence: 0.9,
-        requiresFollowup: false,
       }),
     });
 
@@ -403,9 +411,10 @@ describe('ProbeResponseHandler — Agents v2 Фаза 0.1 classifier', () => {
   it('обычный reason → signalTypeHint НЕ передаётся (undefined), questionText из каскада есть', async () => {
     mocks.llmCall.mockResolvedValueOnce({
       text: JSON.stringify({
-        answer: 'Да',
+        reasoning: 'Подтверждение',
+        outcome: 'apply',
+        value: 'Да',
         confidence: 0.9,
-        requiresFollowup: false,
       }),
     });
 
@@ -1278,6 +1287,179 @@ describe('ProbeResponseHandler — companyprofile.missing_* → запись в 
     const handler = makeHandler({ mocks, classifyEnabled: false });
 
     await handler.handle({ ...event, payload: {} });
+
+    expect(mocks.companyProfileUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProbeResponseHandler — Ф1 typed-intent (outcome-маршрутизация)', () => {
+  function setProbe(
+    mocks: Mocks,
+    reason: string,
+    payload: Record<string, unknown>,
+  ): void {
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi
+      .fn()
+      .mockResolvedValue({ ...buildProbe(), reason, payload });
+  }
+
+  it('outcome=unclear → 0 мутаций (decision.outcome_unknown)', async () => {
+    const mocks = makeMocks();
+    setProbe(mocks, 'decision.outcome_unknown', {
+      contextCardId: 'dec-9',
+      contextCardKind: 'decision',
+      suggestedQuestion: 'Какой итог решения?',
+    });
+    mocks.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        reasoning: 'Невозможно разобрать',
+        outcome: 'unclear',
+        value: '',
+        confidence: 0.2,
+      }),
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: true });
+
+    await handler.handle({ ...event, payload: { text: 'эээ ну хз' } });
+
+    expect(mocks.decisionUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('outcome=refine НЕ удаляет — дополняет описание (task.poorly_specified, issue)', async () => {
+    const mocks = makeMocks();
+    setProbe(mocks, 'task.poorly_specified', {
+      contextCardId: 'issue-7',
+      contextCardKind: 'issue',
+      suggestedQuestion: 'Уточните описание',
+    });
+    mocks.issueFindFirst.mockResolvedValueOnce({
+      description: '{"type":"doc"}',
+      descriptionStripped: 'Описание про дедлайн до пятницы',
+    });
+    mocks.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        reasoning: 'Уточнение текста, не удаление объекта',
+        outcome: 'refine',
+        value: 'убрать упоминание про дедлайн',
+        confidence: 0.9,
+      }),
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: true });
+
+    await handler.handle({
+      ...event,
+      payload: { text: 'удалить упоминание про дедлайн из описания' },
+    });
+
+    expect(mocks.softDelete).not.toHaveBeenCalled();
+    expect(mocks.intakeIssueUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.issueUpdateMany).toHaveBeenCalledTimes(1);
+    const call = mocks.issueUpdateMany.mock.calls[0]![0] as {
+      data: { descriptionStripped: string };
+    };
+    expect(call.data.descriptionStripped).toContain('убрать упоминание про дедлайн');
+  });
+
+  it('experiment идемпотентность — дубликат по text → experiment.update НЕ вызван', async () => {
+    const mocks = makeMocks();
+    setProbe(mocks, 'experiment.result_without_lesson', {
+      contextCardId: 'exp-1',
+      contextCardKind: 'experiment',
+      suggestedQuestion: 'Какой урок?',
+    });
+    mocks.experimentFindFirst.mockResolvedValueOnce({
+      lessonsJson: [
+        { text: 'Не мигрировать в пик', type: 'manual', sourceBlockId: null },
+      ],
+    });
+    mocks.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        reasoning: 'Тот же урок',
+        outcome: 'apply',
+        value: 'Не мигрировать в пик',
+        confidence: 0.9,
+      }),
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: true });
+
+    await handler.handle({ ...event, payload: { text: 'Не мигрировать в пик' } });
+
+    expect(mocks.experimentUpdate).not.toHaveBeenCalled();
+  });
+
+  it('decision.overdue — идемпотентный guard where.deadline={not: Date}', async () => {
+    const mocks = makeMocks();
+    setProbe(mocks, 'decision.overdue', {
+      contextCardId: 'dec-9',
+      contextCardKind: 'decision',
+      suggestedQuestion: 'Когда новый срок?',
+    });
+    mocks.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        reasoning: 'Новый срок',
+        outcome: 'apply',
+        value: 'до пятницы',
+        confidence: 0.9,
+      }),
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: true });
+
+    await handler.handle({ ...event, payload: { text: 'до пятницы' } });
+
+    expect(mocks.decisionUpdateMany).toHaveBeenCalledTimes(1);
+    const call = mocks.decisionUpdateMany.mock.calls[0]![0] as {
+      where: { deadline?: { not?: Date } };
+    };
+    expect(call.where.deadline).toBeDefined();
+    expect(call.where.deadline?.not).toBeInstanceOf(Date);
+  });
+
+  it('assignee не зарезолвлен → needs_clarification, addAssignee НЕ вызван', async () => {
+    const mocks = makeMocks();
+    setProbe(mocks, 'task.assignee_unresolved', {
+      contextCardId: 'issue-7',
+      contextCardKind: 'issue',
+      suggestedQuestion: 'Кому поручить?',
+    });
+    mocks.assigneeResolve.mockResolvedValueOnce({ kind: 'not_found' });
+    mocks.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        reasoning: 'Имя непонятное',
+        outcome: 'apply',
+        value: 'кто-то непонятный',
+        confidence: 0.9,
+      }),
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: true });
+
+    await expect(
+      handler.handle({ ...event, payload: { text: 'кто-то непонятный' } }),
+    ).resolves.toBeUndefined();
+
+    expect(mocks.addAssignee).not.toHaveBeenCalled();
+  });
+
+  it('companyprofile guard — поле уже заполнено вручную → update НЕ вызван', async () => {
+    const mocks = makeMocks();
+    setProbe(mocks, 'companyprofile.missing_mission', {
+      contextCardId: 'cp-1',
+      contextCardKind: 'company_profile',
+      suggestedQuestion: 'Какая миссия?',
+    });
+    mocks.companyProfileGetRaw.mockResolvedValueOnce({
+      missionJson: { contentMd: 'Уже заполнено вручную' },
+    });
+    mocks.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        reasoning: 'Новая миссия',
+        outcome: 'apply',
+        value: 'новая миссия',
+        confidence: 0.9,
+      }),
+    });
+    const handler = makeHandler({ mocks, classifyEnabled: true });
+
+    await handler.handle({ ...event, payload: { text: 'новая миссия' } });
 
     expect(mocks.companyProfileUpdate).not.toHaveBeenCalled();
   });

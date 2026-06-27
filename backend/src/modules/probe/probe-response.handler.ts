@@ -25,6 +25,40 @@ import {
   PROBE_RESPONSE_CLASSIFY_USER_TEMPLATE,
 } from './prompts/probe-response-classify.prompt';
 
+type ProbeResponseOutcome =
+  | 'apply'
+  | 'delete'
+  | 'refine'
+  | 'counter_question'
+  | 'unclear';
+
+interface ProbeClassification {
+  answer: string;
+  value: string;
+  outcome: ProbeResponseOutcome;
+  confidence: number;
+  unclear: boolean;
+}
+
+type ClarifyGap =
+  | 'assignee_unresolved'
+  | 'date_unparsed'
+  | 'decider_unresolved'
+  | 'counter_question';
+
+type ApplyResult =
+  | { status: 'applied' }
+  | { status: 'noop' }
+  | { status: 'skipped_unclear' }
+  | { status: 'needs_clarification'; gap: ClarifyGap };
+
+type ApplyMode =
+  | { kind: 'unclear' }
+  | { kind: 'delete' }
+  | { kind: 'counter_question' }
+  | { kind: 'value'; value: string; refine: boolean }
+  | { kind: 'degraded'; answer: string };
+
 @Injectable()
 export class ProbeResponseHandler {
   private readonly logger = new Logger(ProbeResponseHandler.name);
@@ -143,13 +177,15 @@ export class ProbeResponseHandler {
         }
       }
 
+      let applyResult: ApplyResult | null = null;
+
       if (probe.reason === 'regulation.existence_confirm') {
-        await this.maybeDecideExistenceConfirm({
+        applyResult = await this.maybeDecideExistenceConfirm({
           tenantId: event.tenantId,
           reviewerUserId: event.recipientUserId,
           probePayload,
           eventPayload: event.payload,
-          classifiedAnswer: classification?.answer,
+          classification,
         });
       }
 
@@ -159,54 +195,54 @@ export class ProbeResponseHandler {
         probe.reason === 'task.poorly_specified' ||
         probe.reason === 'task.false_positive'
       ) {
-        await this.maybeApplyTaskProbeAnswer({
+        applyResult = await this.maybeApplyTaskProbeAnswer({
           tenantId: event.tenantId,
           reason: probe.reason,
           actorUserId: event.recipientUserId,
           probePayload,
           eventPayload: event.payload,
-          classifiedAnswer: classification?.answer,
+          classification,
         });
       }
 
       if (probe.reason === 'task.completion_detail_missing') {
-        await this.maybeApplyCompletionDetailAnswer({
+        applyResult = await this.maybeApplyCompletionDetailAnswer({
           tenantId: event.tenantId,
           actorUserId: event.recipientUserId,
           probePayload,
           eventPayload: event.payload,
-          classifiedAnswer: classification?.answer,
+          classification,
         });
       }
 
       if (probe.reason.startsWith('decision.')) {
-        await this.maybeApplyDecisionProbeAnswer({
+        applyResult = await this.maybeApplyDecisionProbeAnswer({
           tenantId: event.tenantId,
           reason: probe.reason,
           actorUserId: event.recipientUserId,
           probePayload,
           eventPayload: event.payload,
-          classifiedAnswer: classification?.answer,
+          classification,
         });
       }
 
       if (probe.reason === 'experiment.result_without_lesson') {
-        await this.maybeApplyExperimentLessonAnswer({
+        applyResult = await this.maybeApplyExperimentLessonAnswer({
           tenantId: event.tenantId,
           actorUserId: event.recipientUserId,
           probePayload,
           eventPayload: event.payload,
-          classifiedAnswer: classification?.answer,
+          classification,
         });
       }
 
       if (probe.reason.startsWith('companyprofile.missing_')) {
-        await this.maybeApplyCompanyProfileAnswer({
+        applyResult = await this.maybeApplyCompanyProfileAnswer({
           tenantId: event.tenantId,
           reason: probe.reason,
           actorUserId: event.recipientUserId,
           eventPayload: event.payload,
-          classifiedAnswer: classification?.answer,
+          classification,
         });
       }
 
@@ -217,8 +253,13 @@ export class ProbeResponseHandler {
         probeId: probe.id,
       });
 
+      const applySummary = applyResult
+        ? applyResult.status === 'needs_clarification'
+          ? `apply=needs_clarification(${applyResult.gap})`
+          : `apply=${applyResult.status}`
+        : 'apply=none';
       this.logger.log(
-        `probe.responded: probeId=${probe.id} eventType=${event.eventType} kind=${kind ?? 'unknown'} classified=${classification ? `${classification.unclear ? 'unclear' : 'ok'}(${classification.confidence.toFixed(2)})` : 'skipped'} (closing-loop applied)`,
+        `probe.responded: probeId=${probe.id} eventType=${event.eventType} kind=${kind ?? 'unknown'} classified=${classification ? `${classification.unclear ? 'unclear' : 'ok'}(${classification.confidence.toFixed(2)})` : 'skipped'} ${applySummary} (closing-loop applied)`,
       );
     } catch (err) {
       this.logger.warn(
@@ -236,20 +277,25 @@ export class ProbeResponseHandler {
     reviewerUserId: string;
     probePayload: Record<string, unknown>;
     eventPayload: Record<string, unknown>;
-    classifiedAnswer?: string;
-  }): Promise<void> {
-    if (!this.curation) return;
+    classification: ProbeClassification | null;
+  }): Promise<ApplyResult> {
+    if (!this.curation) return { status: 'noop' };
     const contextCardId = this.toStringOrUndef(args.probePayload.contextCardId);
-    if (!contextCardId) return;
+    if (!contextCardId) return { status: 'noop' };
 
-    const answer =
-      args.classifiedAnswer && args.classifiedAnswer.trim().length > 0
-        ? args.classifiedAnswer
-        : this.extractResponseText(args.eventPayload);
-    if (!answer) return;
+    const rawAnswer =
+      args.classification?.value?.trim() ||
+      this.extractResponseText(args.eventPayload);
+    if (!rawAnswer) return { status: 'noop' };
 
-    const mapped = mapExistenceConfirmAnswer(answer);
-    if (!mapped) return;
+    const mode = this.resolveApplyMode(args.classification, rawAnswer);
+    if (mode.kind === 'unclear') return { status: 'skipped_unclear' };
+    if (mode.kind === 'counter_question') {
+      return { status: 'needs_clarification', gap: 'counter_question' };
+    }
+
+    const decision = this.existenceConfirmDecision(mode);
+    if (!decision) return { status: 'noop' };
 
     try {
       const item = await this.prisma.curationItem.findFirst({
@@ -263,20 +309,22 @@ export class ProbeResponseHandler {
       });
       if (!item) {
         this.logger.log(
-          `existence-confirm: pending CurationItem не найден (tenant=${args.tenantId} card=${contextCardId} decision=${mapped.decisionType}) — пропускаю проводку`,
+          `existence-confirm: pending CurationItem не найден (tenant=${args.tenantId} card=${contextCardId} decision=${decision.decisionType}) — пропускаю проводку`,
         );
-        return;
+        return { status: 'noop' };
       }
       await this.curation.decide({
         tenantId: args.tenantId,
         curationItemId: item.id,
         reviewerUserId: args.reviewerUserId,
-        decisionType: mapped.decisionType,
+        decisionType: decision.decisionType,
+        ...(decision.payload ? { payload: decision.payload } : {}),
         reasoning: 'existence-confirm: ответ на probe regulation.existence_confirm',
       });
       this.logger.log(
-        `existence-confirm: CurationItem ${item.id} → ${mapped.decisionType} (tenant=${args.tenantId} card=${contextCardId})`,
+        `existence-confirm: CurationItem ${item.id} → ${decision.decisionType} (tenant=${args.tenantId} card=${contextCardId})`,
       );
+      return { status: 'applied' };
     } catch (err) {
       this.logger.warn(
         {
@@ -286,7 +334,29 @@ export class ProbeResponseHandler {
         },
         'existence-confirm: проводка ответа в curation упала (best-effort)',
       );
+      return { status: 'noop' };
     }
+  }
+
+  private existenceConfirmDecision(
+    mode: ApplyMode,
+  ): { decisionType: 'approve' | 'approve_with_edits' | 'reject'; payload?: Record<string, unknown> } | null {
+    if (mode.kind === 'delete') return { decisionType: 'reject' };
+    if (mode.kind === 'value') {
+      if (mode.refine && mode.value.trim().length > 0) {
+        return {
+          decisionType: 'approve_with_edits',
+          payload: { editedName: mode.value.trim() },
+        };
+      }
+      return { decisionType: 'approve' };
+    }
+    if (mode.kind === 'degraded') {
+      const mapped = mapExistenceConfirmAnswer(mode.answer);
+      if (!mapped) return null;
+      return { decisionType: mapped.decisionType };
+    }
+    return null;
   }
 
   private async maybeApplyTaskProbeAnswer(args: {
@@ -295,22 +365,30 @@ export class ProbeResponseHandler {
     actorUserId: string;
     probePayload: Record<string, unknown>;
     eventPayload: Record<string, unknown>;
-    classifiedAnswer?: string;
-  }): Promise<void> {
+    classification: ProbeClassification | null;
+  }): Promise<ApplyResult> {
     const issueId = this.toStringOrUndef(args.probePayload.contextCardId);
-    if (!issueId) return;
+    if (!issueId) return { status: 'noop' };
     const contextCardKind = this.toStringOrUndef(
       args.probePayload.contextCardKind,
     );
-    const answer =
-      args.classifiedAnswer && args.classifiedAnswer.trim().length > 0
-        ? args.classifiedAnswer
-        : this.extractResponseText(args.eventPayload);
-    if (!answer) return;
+    const rawAnswer =
+      args.classification?.value?.trim() ||
+      this.extractResponseText(args.eventPayload);
+    if (!rawAnswer) return { status: 'noop' };
+
+    const mode = this.resolveApplyMode(args.classification, rawAnswer);
+    if (mode.kind === 'unclear') return { status: 'skipped_unclear' };
+    if (mode.kind === 'counter_question') {
+      return { status: 'needs_clarification', gap: 'counter_question' };
+    }
 
     try {
-      const mapped = mapExistenceConfirmAnswer(answer);
-      if (mapped?.decisionType === 'reject') {
+      const isReject =
+        mode.kind === 'delete' ||
+        (mode.kind === 'degraded' &&
+          mapExistenceConfirmAnswer(mode.answer)?.decisionType === 'reject');
+      if (isReject) {
         if (contextCardKind === 'intake_issue') {
           await this.prisma.intakeIssue.updateMany({
             where: { id: issueId, tenantId: args.tenantId, status: 'pending' },
@@ -326,8 +404,10 @@ export class ProbeResponseHandler {
         this.logger.log(
           `task-probe-apply: dismissed issue=${issueId} reason=${args.reason} kind=${contextCardKind ?? 'issue'} (мягкое удаление по ответу человека)`,
         );
-        return;
+        return { status: 'applied' };
       }
+
+      const answer = mode.kind === 'value' ? mode.value : mode.answer;
 
       if (
         args.reason === 'task.poorly_specified' ||
@@ -339,12 +419,17 @@ export class ProbeResponseHandler {
           contextCardKind,
           answer,
         });
-        return;
+        return { status: 'applied' };
       }
 
       if (args.reason === 'task.due_date_missing') {
         const due = parseRussianDueDate(answer, new Date());
-        if (!due) return;
+        if (!due) {
+          if (mode.kind === 'value') {
+            return { status: 'needs_clarification', gap: 'date_unparsed' };
+          }
+          return { status: 'noop' };
+        }
         if (contextCardKind === 'intake_issue') {
           await this.prisma.intakeIssue.updateMany({
             where: {
@@ -355,19 +440,24 @@ export class ProbeResponseHandler {
             },
             data: { suggestedDueDate: due },
           });
-          return;
+          return { status: 'applied' };
         }
         await this.prisma.issue.updateMany({
           where: { id: issueId, tenantId: args.tenantId, dueDate: null, deletedAt: null },
           data: { dueDate: due },
         });
-        return;
+        return { status: 'applied' };
       }
 
       if (contextCardKind === 'intake_issue') {
-        if (!this.assigneeResolver) return;
+        if (!this.assigneeResolver) return { status: 'noop' };
         const resolution = await this.assigneeResolver.resolve(args.tenantId, answer);
-        if (resolution.kind !== 'resolved') return;
+        if (resolution.kind !== 'resolved') {
+          if (mode.kind === 'value') {
+            return { status: 'needs_clarification', gap: 'assignee_unresolved' };
+          }
+          return { status: 'noop' };
+        }
         await this.prisma.intakeIssue.updateMany({
           where: {
             id: issueId,
@@ -377,23 +467,29 @@ export class ProbeResponseHandler {
           },
           data: { suggestedAssigneeId: resolution.userId },
         });
-        return;
+        return { status: 'applied' };
       }
 
-      if (!this.assigneeResolver || !this.issues) return;
+      if (!this.assigneeResolver || !this.issues) return { status: 'noop' };
       const existing = await this.prisma.issueAssignee.findFirst({
         where: { issueId },
         select: { id: true },
       });
-      if (existing) return;
+      if (existing) return { status: 'noop' };
       const resolution = await this.assigneeResolver.resolve(args.tenantId, answer);
-      if (resolution.kind !== 'resolved') return;
+      if (resolution.kind !== 'resolved') {
+        if (mode.kind === 'value') {
+          return { status: 'needs_clarification', gap: 'assignee_unresolved' };
+        }
+        return { status: 'noop' };
+      }
       await this.issues.addAssignee(
         issueId,
         resolution.userId,
         args.tenantId,
         this.toStringOrUndef(args.actorUserId) ?? resolution.userId,
       );
+      return { status: 'applied' };
     } catch (err) {
       this.logger.warn(
         {
@@ -403,6 +499,7 @@ export class ProbeResponseHandler {
         },
         'task-probe-apply: best-effort, пропускаю',
       );
+      return { status: 'noop' };
     }
   }
 
@@ -411,18 +508,29 @@ export class ProbeResponseHandler {
     actorUserId: string;
     probePayload: Record<string, unknown>;
     eventPayload: Record<string, unknown>;
-    classifiedAnswer?: string;
-  }): Promise<void> {
+    classification: ProbeClassification | null;
+  }): Promise<ApplyResult> {
     const issueId = this.toStringOrUndef(args.probePayload.contextCardId);
-    if (!issueId) return;
-    const answer =
-      args.classifiedAnswer && args.classifiedAnswer.trim().length > 0
-        ? args.classifiedAnswer
-        : this.extractResponseText(args.eventPayload);
-    if (!answer) return;
+    if (!issueId) return { status: 'noop' };
+    const rawAnswer =
+      args.classification?.value?.trim() ||
+      this.extractResponseText(args.eventPayload);
+    if (!rawAnswer) return { status: 'noop' };
 
-    if (mapExistenceConfirmAnswer(answer)?.decisionType === 'reject') return;
+    const mode = this.resolveApplyMode(args.classification, rawAnswer);
+    if (mode.kind === 'unclear') return { status: 'skipped_unclear' };
+    if (mode.kind === 'counter_question') {
+      return { status: 'needs_clarification', gap: 'counter_question' };
+    }
+    if (mode.kind === 'delete') return { status: 'noop' };
+    if (
+      mode.kind === 'degraded' &&
+      mapExistenceConfirmAnswer(mode.answer)?.decisionType === 'reject'
+    ) {
+      return { status: 'noop' };
+    }
 
+    const answer = mode.kind === 'value' ? mode.value : mode.answer;
     const sourceBlockId = `concierge-complete:${args.actorUserId}`;
     const evidenceQuote = answer.slice(0, 2000);
     try {
@@ -448,6 +556,7 @@ export class ProbeResponseHandler {
       this.logger.log(
         `completion-detail-apply: создан/обновлён кандидат на закрытие issue=${issueId} (tenant=${args.tenantId})`,
       );
+      return { status: 'applied' };
     } catch (err) {
       this.logger.warn(
         {
@@ -457,6 +566,7 @@ export class ProbeResponseHandler {
         },
         'completion-detail-apply: best-effort, пропускаю',
       );
+      return { status: 'noop' };
     }
   }
 
@@ -476,6 +586,7 @@ export class ProbeResponseHandler {
       });
       if (!existing) return;
       const prev = existing.extractedDescription?.trim() ?? '';
+      if (prev.includes(addition)) return;
       const next = prev ? `${prev}\n\n${addition}` : addition;
       await this.prisma.intakeIssue.updateMany({
         where: { id: args.issueId, tenantId: args.tenantId, status: 'pending' },
@@ -490,6 +601,7 @@ export class ProbeResponseHandler {
     });
     if (!issue) return;
     const prevStripped = issue.descriptionStripped?.trim() ?? '';
+    if (prevStripped.includes(addition)) return;
     const nextStripped = prevStripped ? `${prevStripped}\n\n${addition}` : addition;
     const data: { descriptionStripped: string; description?: string } = {
       descriptionStripped: nextStripped,
@@ -509,19 +621,27 @@ export class ProbeResponseHandler {
     actorUserId: string;
     probePayload: Record<string, unknown>;
     eventPayload: Record<string, unknown>;
-    classifiedAnswer?: string;
-  }): Promise<void> {
+    classification: ProbeClassification | null;
+  }): Promise<ApplyResult> {
     const decisionId = this.toStringOrUndef(args.probePayload.contextCardId);
-    if (!decisionId) return;
-    const answer =
-      args.classifiedAnswer && args.classifiedAnswer.trim().length > 0
-        ? args.classifiedAnswer
-        : this.extractResponseText(args.eventPayload);
-    if (!answer) return;
+    if (!decisionId) return { status: 'noop' };
+    const rawAnswer =
+      args.classification?.value?.trim() ||
+      this.extractResponseText(args.eventPayload);
+    if (!rawAnswer) return { status: 'noop' };
+
+    const mode = this.resolveApplyMode(args.classification, rawAnswer);
+    if (mode.kind === 'unclear') return { status: 'skipped_unclear' };
+    if (mode.kind === 'counter_question') {
+      return { status: 'needs_clarification', gap: 'counter_question' };
+    }
 
     try {
-      const mapped = mapExistenceConfirmAnswer(answer);
-      if (mapped?.decisionType === 'reject') {
+      const isReject =
+        mode.kind === 'delete' ||
+        (mode.kind === 'degraded' &&
+          mapExistenceConfirmAnswer(mode.answer)?.decisionType === 'reject');
+      if (isReject) {
         await this.prisma.decision.updateMany({
           where: { id: decisionId, tenantId: args.tenantId, deletedAt: null },
           data: { deletedAt: new Date() },
@@ -529,12 +649,19 @@ export class ProbeResponseHandler {
         this.logger.log(
           `decision-probe-apply: dismissed decision=${decisionId} reason=${args.reason} (мягкое удаление по ответу человека)`,
         );
-        return;
+        return { status: 'applied' };
       }
+
+      const answer = mode.kind === 'value' ? mode.value : mode.answer;
 
       if (args.reason === 'decision.missing_decider') {
         const personId = await this.resolveDeciderPersonId(args.tenantId, answer);
-        if (!personId) return;
+        if (!personId) {
+          if (mode.kind === 'value') {
+            return { status: 'needs_clarification', gap: 'decider_unresolved' };
+          }
+          return { status: 'noop' };
+        }
         await this.prisma.decision.updateMany({
           where: {
             id: decisionId,
@@ -547,7 +674,7 @@ export class ProbeResponseHandler {
             decidedByPersonIds: [personId],
           },
         });
-        return;
+        return { status: 'applied' };
       }
 
       if (
@@ -555,7 +682,12 @@ export class ProbeResponseHandler {
         args.reason === 'decision.overdue'
       ) {
         const due = parseRussianDueDate(answer, new Date());
-        if (!due) return;
+        if (!due) {
+          if (mode.kind === 'value') {
+            return { status: 'needs_clarification', gap: 'date_unparsed' };
+          }
+          return { status: 'noop' };
+        }
         if (args.reason === 'decision.no_deadline_critical') {
           await this.prisma.decision.updateMany({
             where: {
@@ -566,13 +698,18 @@ export class ProbeResponseHandler {
             },
             data: { deadline: due },
           });
-          return;
+          return { status: 'applied' };
         }
         await this.prisma.decision.updateMany({
-          where: { id: decisionId, tenantId: args.tenantId, deletedAt: null },
+          where: {
+            id: decisionId,
+            tenantId: args.tenantId,
+            deletedAt: null,
+            deadline: { not: due },
+          },
           data: { deadline: due },
         });
-        return;
+        return { status: 'applied' };
       }
 
       if (args.reason === 'decision.outcome_unknown') {
@@ -585,8 +722,9 @@ export class ProbeResponseHandler {
           },
           data: { actualOutcomes: answer.trim() },
         });
-        return;
+        return { status: 'applied' };
       }
+      return { status: 'noop' };
     } catch (err) {
       this.logger.warn(
         {
@@ -596,6 +734,7 @@ export class ProbeResponseHandler {
         },
         'decision-probe-apply: best-effort, пропускаю',
       );
+      return { status: 'noop' };
     }
   }
 
@@ -604,29 +743,49 @@ export class ProbeResponseHandler {
     actorUserId: string;
     probePayload: Record<string, unknown>;
     eventPayload: Record<string, unknown>;
-    classifiedAnswer?: string;
-  }): Promise<void> {
+    classification: ProbeClassification | null;
+  }): Promise<ApplyResult> {
     const experimentId = this.toStringOrUndef(args.probePayload.contextCardId);
-    if (!experimentId) return;
-    const answer =
-      args.classifiedAnswer && args.classifiedAnswer.trim().length > 0
-        ? args.classifiedAnswer
-        : this.extractResponseText(args.eventPayload);
-    if (!answer) return;
-    if (mapExistenceConfirmAnswer(answer)?.decisionType === 'reject') return;
+    if (!experimentId) return { status: 'noop' };
+    const rawAnswer =
+      args.classification?.value?.trim() ||
+      this.extractResponseText(args.eventPayload);
+    if (!rawAnswer) return { status: 'noop' };
 
+    const mode = this.resolveApplyMode(args.classification, rawAnswer);
+    if (mode.kind === 'unclear') return { status: 'skipped_unclear' };
+    if (mode.kind === 'counter_question') {
+      return { status: 'needs_clarification', gap: 'counter_question' };
+    }
+    if (mode.kind === 'delete') return { status: 'noop' };
+    if (
+      mode.kind === 'degraded' &&
+      mapExistenceConfirmAnswer(mode.answer)?.decisionType === 'reject'
+    ) {
+      return { status: 'noop' };
+    }
+
+    const answer = mode.kind === 'value' ? mode.value : mode.answer;
     const lessonText = answer.trim().slice(0, 2000);
-    if (!lessonText) return;
+    if (!lessonText) return { status: 'noop' };
 
     try {
       const exp = await this.prisma.experiment.findFirst({
         where: { id: experimentId, tenantId: args.tenantId },
         select: { lessonsJson: true },
       });
-      if (!exp) return;
+      if (!exp) return { status: 'noop' };
       const existing = Array.isArray(exp.lessonsJson)
         ? (exp.lessonsJson as unknown[])
         : [];
+      const alreadyHas = existing.some(
+        (l) =>
+          l !== null &&
+          typeof l === 'object' &&
+          typeof (l as { text?: unknown }).text === 'string' &&
+          (l as { text: string }).text.trim() === lessonText,
+      );
+      if (alreadyHas) return { status: 'noop' };
       const next = [
         ...existing,
         { text: lessonText, type: 'manual', sourceBlockId: null },
@@ -638,6 +797,7 @@ export class ProbeResponseHandler {
       this.logger.log(
         `experiment-lesson-apply: урок дозаписан experiment=${experimentId} (tenant=${args.tenantId})`,
       );
+      return { status: 'applied' };
     } catch (err) {
       this.logger.warn(
         {
@@ -647,6 +807,7 @@ export class ProbeResponseHandler {
         },
         'experiment-lesson-apply: best-effort, пропускаю',
       );
+      return { status: 'noop' };
     }
   }
 
@@ -655,30 +816,55 @@ export class ProbeResponseHandler {
     reason: string;
     actorUserId: string;
     eventPayload: Record<string, unknown>;
-    classifiedAnswer?: string;
-  }): Promise<void> {
-    if (!this.companyProfile) return;
-    const answer =
-      args.classifiedAnswer && args.classifiedAnswer.trim().length > 0
-        ? args.classifiedAnswer
-        : this.extractResponseText(args.eventPayload);
-    if (!answer) return;
-    if (mapExistenceConfirmAnswer(answer)?.decisionType === 'reject') return;
+    classification: ProbeClassification | null;
+  }): Promise<ApplyResult> {
+    if (!this.companyProfile) return { status: 'noop' };
+    const rawAnswer =
+      args.classification?.value?.trim() ||
+      this.extractResponseText(args.eventPayload);
+    if (!rawAnswer) return { status: 'noop' };
 
+    const mode = this.resolveApplyMode(args.classification, rawAnswer);
+    if (mode.kind === 'unclear') return { status: 'skipped_unclear' };
+    if (mode.kind === 'counter_question') {
+      return { status: 'needs_clarification', gap: 'counter_question' };
+    }
+    if (mode.kind === 'delete') return { status: 'noop' };
+    if (
+      mode.kind === 'degraded' &&
+      mapExistenceConfirmAnswer(mode.answer)?.decisionType === 'reject'
+    ) {
+      return { status: 'noop' };
+    }
+
+    const answer = mode.kind === 'value' ? mode.value : mode.answer;
     const contentMd = answer.trim().slice(0, 8000);
-    if (!contentMd) return;
+    if (!contentMd) return { status: 'noop' };
     const value = { contentMd };
-    const body =
+    const field =
       args.reason === 'companyprofile.missing_mission'
-        ? { mission: value }
+        ? 'missionJson'
         : args.reason === 'companyprofile.missing_vision'
-          ? { vision: value }
+          ? 'visionJson'
           : args.reason === 'companyprofile.missing_strategy'
-            ? { strategy: value }
+            ? 'strategyJson'
             : null;
-    if (!body) return;
+    if (!field) return { status: 'noop' };
 
     try {
+      const existing = await this.companyProfile.getRaw(args.tenantId);
+      const existingField = existing
+        ? (existing as unknown as Record<string, unknown>)[field]
+        : null;
+      if (this.hasNonEmptyContentMd(existingField)) {
+        return { status: 'noop' };
+      }
+      const body =
+        field === 'missionJson'
+          ? { mission: value }
+          : field === 'visionJson'
+            ? { vision: value }
+            : { strategy: value };
       await this.companyProfile.update({
         tenantId: args.tenantId,
         userId: args.actorUserId,
@@ -687,6 +873,7 @@ export class ProbeResponseHandler {
       this.logger.log(
         `company-profile-apply: ${args.reason} записано в профиль (tenant=${args.tenantId})`,
       );
+      return { status: 'applied' };
     } catch (err) {
       this.logger.warn(
         {
@@ -696,7 +883,14 @@ export class ProbeResponseHandler {
         },
         'company-profile-apply: best-effort, пропускаю',
       );
+      return { status: 'noop' };
     }
+  }
+
+  private hasNonEmptyContentMd(raw: unknown): boolean {
+    if (raw === null || typeof raw !== 'object') return false;
+    const contentMd = (raw as { contentMd?: unknown }).contentMd;
+    return typeof contentMd === 'string' && contentMd.trim().length > 0;
   }
 
   private async resolveDeciderPersonId(
@@ -766,17 +960,49 @@ export class ProbeResponseHandler {
     return 'internal';
   }
 
+  private normalizeOutcome(raw: unknown): ProbeResponseOutcome {
+    if (
+      raw === 'apply' ||
+      raw === 'delete' ||
+      raw === 'refine' ||
+      raw === 'counter_question' ||
+      raw === 'unclear'
+    ) {
+      return raw;
+    }
+    return 'unclear';
+  }
+
+  private resolveApplyMode(
+    classification: ProbeClassification | null,
+    rawAnswer: string,
+  ): ApplyMode {
+    if (!classification) return { kind: 'degraded', answer: rawAnswer };
+    if (classification.unclear) return { kind: 'unclear' };
+    switch (classification.outcome) {
+      case 'delete':
+        return { kind: 'delete' };
+      case 'counter_question':
+        return { kind: 'counter_question' };
+      case 'refine':
+        return { kind: 'value', value: classification.value || rawAnswer, refine: true };
+      case 'apply':
+      default:
+        return {
+          kind: 'value',
+          value: classification.value || rawAnswer,
+          refine: false,
+        };
+    }
+  }
+
   private async tryClassifyResponse(args: {
     eventPayload: Record<string, unknown>;
     probePayload: Record<string, unknown>;
     tenantId: string;
     probeId: string;
     probeReason: string;
-  }): Promise<{
-    answer: string;
-    confidence: number;
-    unclear: boolean;
-  } | null> {
+  }): Promise<ProbeClassification | null> {
     if (!this.cfg.probe.responseClassifyEnabled) return null;
 
     const response = this.extractResponseText(args.eventPayload);
@@ -811,28 +1037,32 @@ export class ProbeResponseHandler {
       });
 
       const parsed = JSON.parse(result.text) as {
-        answer?: unknown;
+        reasoning?: unknown;
+        outcome?: unknown;
+        value?: unknown;
         confidence?: unknown;
-        requiresFollowup?: unknown;
       };
-      const answer = typeof parsed.answer === 'string' ? parsed.answer : '';
+      const outcome = this.normalizeOutcome(parsed.outcome);
+      const value = typeof parsed.value === 'string' ? parsed.value : '';
       const confidence =
         typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)
           ? Math.max(0, Math.min(1, parsed.confidence))
           : 0;
 
       const minConfidence = this.cfg.probe.responseClassifyMinConfidence;
-      if (confidence >= minConfidence) {
+      const unclear = outcome === 'unclear' || confidence < minConfidence;
+
+      if (!unclear) {
         const bucket: 'high' | 'medium' = confidence >= 0.85 ? 'high' : 'medium';
         this.metrics.incProbeResponseClassified({ confidence_bucket: bucket });
-        return { answer, confidence, unclear: false };
+        return { answer: value, value, outcome, confidence, unclear: false };
       }
 
       this.metrics.incProbeResponseUnclear({
         originalReason: args.probeReason,
       });
       this.metrics.incProbeResponseClassified({ confidence_bucket: 'low' });
-      return { answer, confidence, unclear: true };
+      return { answer: value, value, outcome, confidence, unclear: true };
     } catch (err) {
       this.logger.warn(
         {

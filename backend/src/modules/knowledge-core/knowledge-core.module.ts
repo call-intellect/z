@@ -5,6 +5,7 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { CurationModule } from '../curation/curation.module';
 import { S3Service } from '../recordings/s3.service';
 import { TablesModule } from '../tables/tables.module';
+import { TrackerModule } from '../tracker/tracker.module';
 
 import { SearchService } from './api/search.service';
 import { AxisClassifierService } from './services/axis-classifier.service';
@@ -81,7 +82,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
 
 @Global()
 @Module({
-  imports: [ConfigModule, PrismaModule, CurationModule, TablesModule],
+  imports: [ConfigModule, PrismaModule, CurationModule, TablesModule, TrackerModule],
   providers: [
     RoleClonePersonaVersioningHandler,
     S3Service,

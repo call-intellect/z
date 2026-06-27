@@ -32,10 +32,13 @@ describe('TaskCompletionHandler', () => {
     llmResponse?: string;
     candidateCreateThrows?: unknown;
     livingCardEnabled?: boolean;
-    existingLivingNote?: { id: string } | null;
+    progressFromConversationMinConfidence?: number;
+    embedMaxAttempts?: number;
+    existingProgressUpdate?: { id: string } | null;
+    embedImpl?: () => Promise<number[][]>;
   }) {
     const created: Array<Record<string, unknown>> = [];
-    const livingNotes: Array<Record<string, unknown>> = [];
+    const progressUpdates: Array<Record<string, unknown>> = [];
     const prisma = {
       ideaBlock: {
         findUnique: vi.fn().mockResolvedValue(
@@ -60,13 +63,13 @@ describe('TaskCompletionHandler', () => {
           return Promise.resolve({ id: `cand-${created.length}`, ...data });
         }),
       },
-      issueActivity: {
+      issueProgressUpdate: {
         findFirst: vi
           .fn()
-          .mockResolvedValue(overrides.existingLivingNote ?? null),
+          .mockResolvedValue(overrides.existingProgressUpdate ?? null),
         create: vi.fn().mockImplementation(({ data }) => {
-          livingNotes.push(data);
-          return Promise.resolve({ id: `act-${livingNotes.length}`, ...data });
+          progressUpdates.push(data);
+          return Promise.resolve({ id: `upd-${progressUpdates.length}`, ...data });
         }),
       },
     };
@@ -91,7 +94,9 @@ describe('TaskCompletionHandler', () => {
       ),
     };
     const embeddings = {
-      embed: vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]),
+      embed: overrides.embedImpl
+        ? vi.fn().mockImplementation(overrides.embedImpl)
+        : vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]),
     };
     const settings = {
       get: vi.fn().mockImplementation((key: string) => {
@@ -106,6 +111,14 @@ describe('TaskCompletionHandler', () => {
         }
         if (key === 'taskClosure.candidateTtlDays') {
           return Promise.resolve(overrides.candidateTtlDays ?? 14);
+        }
+        if (key === 'taskClosure.embedMaxAttempts') {
+          return Promise.resolve(overrides.embedMaxAttempts ?? 3);
+        }
+        if (key === 'tracker.progressFromConversationMinConfidence') {
+          return Promise.resolve(
+            overrides.progressFromConversationMinConfidence ?? 0.6,
+          );
         }
         return Promise.resolve(undefined);
       }),
@@ -147,7 +160,7 @@ describe('TaskCompletionHandler', () => {
       embeddings,
       settings,
       created,
-      livingNotes,
+      progressUpdates,
       eventEmitter,
       emitted,
       metrics,
@@ -367,58 +380,122 @@ describe('TaskCompletionHandler', () => {
     expect(outcomes).toEqual(['created']);
   });
 
-  describe('живая карточка (Ф9): прогресс по существующей задаче', () => {
+  describe('живая карточка (Ф3): ход выполнения из разговорного блока', () => {
     const notDoneResponse = JSON.stringify({
       done: false,
-      confidence: 0.5,
+      confidence: 0.8,
       rationale: 'Работа идёт, но ещё не завершена.',
       positiveSignals: ['начал'],
       negativeSignals: ['не завершено'],
     });
 
-    it('матч + done=false + kill-switch ON → дозапись conversation_note, кандидат НЕ создан', async () => {
-      const { handler, prisma, livingNotes, created } = build({
+    it('матч + done=false + conf≥порога → создан IssueProgressUpdate, кандидат НЕ создан', async () => {
+      const { handler, prisma, progressUpdates, created } = build({
         llmResponse: notDoneResponse,
       });
       await handler.handle(baseEvent);
-      expect(prisma.issueActivity.create).toHaveBeenCalledWith(
+      expect(prisma.issueProgressUpdate.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ verb: 'conversation_note' }),
+          data: expect.objectContaining({
+            authorType: 'ai_agent',
+            draftState: 'pending',
+            sourceBlockIds: ['blk-1'],
+          }),
         }),
       );
-      expect(livingNotes).toHaveLength(1);
-      expect(livingNotes[0]!.metadata).toMatchObject({ sourceBlockId: 'blk-1' });
+      expect(progressUpdates).toHaveLength(1);
+      expect(progressUpdates[0]!.sourceBlockIds).toEqual(['blk-1']);
+      expect(progressUpdates[0]!.evidenceQuote).toContain('КП');
       expect(created).toHaveLength(0);
       expect(prisma.taskClosureCandidate.create).not.toHaveBeenCalled();
     });
 
-    it('идемпотентность: заметка по блоку уже есть → create НЕ вызван', async () => {
-      const { handler, prisma, livingNotes } = build({
-        llmResponse: notDoneResponse,
-        existingLivingNote: { id: 'act-existing' },
+    it('done=false + conf<порога → IssueProgressUpdate НЕ создан (R18 анти-fatigue)', async () => {
+      const { handler, prisma, progressUpdates } = build({
+        llmResponse: JSON.stringify({
+          done: false,
+          confidence: 0.4,
+          rationale: 'Неуверенно.',
+          positiveSignals: [],
+          negativeSignals: ['не завершено'],
+        }),
       });
       await handler.handle(baseEvent);
-      expect(prisma.issueActivity.findFirst).toHaveBeenCalled();
-      expect(prisma.issueActivity.create).not.toHaveBeenCalled();
-      expect(livingNotes).toHaveLength(0);
+      expect(prisma.issueProgressUpdate.findFirst).toHaveBeenCalled();
+      expect(prisma.issueProgressUpdate.create).not.toHaveBeenCalled();
+      expect(progressUpdates).toHaveLength(0);
     });
 
-    it('kill-switch OFF → дозаписи нет', async () => {
-      const { handler, prisma, livingNotes } = build({
+    it('идемпотентность: IssueProgressUpdate по блоку уже есть → create НЕ вызван', async () => {
+      const { handler, prisma, progressUpdates } = build({
+        llmResponse: notDoneResponse,
+        existingProgressUpdate: { id: 'upd-existing' },
+      });
+      await handler.handle(baseEvent);
+      expect(prisma.issueProgressUpdate.findFirst).toHaveBeenCalled();
+      expect(prisma.issueProgressUpdate.create).not.toHaveBeenCalled();
+      expect(progressUpdates).toHaveLength(0);
+    });
+
+    it('kill-switch OFF (livingCardEnabled) → записи нет', async () => {
+      const { handler, prisma, progressUpdates } = build({
         llmResponse: notDoneResponse,
         livingCardEnabled: false,
       });
       await handler.handle(baseEvent);
-      expect(prisma.issueActivity.create).not.toHaveBeenCalled();
-      expect(livingNotes).toHaveLength(0);
+      expect(prisma.issueProgressUpdate.create).not.toHaveBeenCalled();
+      expect(progressUpdates).toHaveLength(0);
     });
 
-    it('done=true → прежний путь (кандидат), заметка НЕ дописывается', async () => {
-      const { handler, prisma, created, livingNotes } = build({});
+    it('блокер в negativeSignals → health at_risk', async () => {
+      const { handler, progressUpdates } = build({
+        llmResponse: JSON.stringify({
+          done: false,
+          confidence: 0.9,
+          rationale: 'Застрял на согласовании.',
+          positiveSignals: [],
+          negativeSignals: ['ждём ответа от юристов, заблокированы'],
+        }),
+      });
+      await handler.handle(baseEvent);
+      expect(progressUpdates).toHaveLength(1);
+      expect(progressUpdates[0]!.health).toBe('at_risk');
+    });
+
+    it('done=true → прежний путь (кандидат), запись прогресса НЕ создаётся', async () => {
+      const { handler, prisma, created, progressUpdates } = build({});
       await handler.handle(baseEvent);
       expect(created).toHaveLength(1);
-      expect(prisma.issueActivity.create).not.toHaveBeenCalled();
-      expect(livingNotes).toHaveLength(0);
+      expect(prisma.issueProgressUpdate.create).not.toHaveBeenCalled();
+      expect(progressUpdates).toHaveLength(0);
+    });
+  });
+
+  describe('R14b: embed-resilience (ретрай эмбеддера)', () => {
+    it('единичный сбой эмбеддера → ретрай → матч найден, путь продолжается', async () => {
+      let calls = 0;
+      const { handler, created, embeddings } = build({
+        embedImpl: () => {
+          calls += 1;
+          if (calls === 1) return Promise.reject(new Error('эмбеддер флапнул'));
+          return Promise.resolve([[0.1, 0.2, 0.3]]);
+        },
+      });
+      await handler.handle(baseEvent);
+      expect(embeddings.embed).toHaveBeenCalledTimes(2);
+      expect(created).toHaveLength(1);
+    });
+
+    it('эмбеддер падает на всех попытках → embed_fail, кандидат не создан', async () => {
+      const { handler, created, embeddings, similar, outcomes } = build({
+        embedMaxAttempts: 2,
+        embedImpl: () => Promise.reject(new Error('эмбеддер мёртв')),
+      });
+      await handler.handle(baseEvent);
+      expect(embeddings.embed).toHaveBeenCalledTimes(2);
+      expect(similar.findSimilarByVector).not.toHaveBeenCalled();
+      expect(created).toHaveLength(0);
+      expect(outcomes).toEqual(['embed_fail']);
     });
   });
 

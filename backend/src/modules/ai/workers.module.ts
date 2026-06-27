@@ -38,6 +38,7 @@ import { MeetingReportFastWorker } from '../knowledge-core/workers/meeting-repor
 import { PersonaLayerValidationCron } from '../knowledge-core/workers/persona-layer-validation.cron';
 import { ProcessDetectorWorker } from '../knowledge-core/workers/process-detector.worker';
 import { ProcessTemplateCompletenessCron } from '../knowledge-core/workers/process-template-completeness.cron';
+import { RawEventRecoveryCron } from '../knowledge-core/workers/raw-event-recovery.cron';
 import { ReframingCron } from '../knowledge-core/workers/reframing.cron';
 import { RegulationConsolidatorCronService } from '../knowledge-core/workers/regulation-consolidator.cron';
 import { RegulationConsolidatorWorker } from '../knowledge-core/workers/regulation-consolidator.worker';
@@ -146,6 +147,7 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // (jobId-дедуп + skip not-draft в distill-worker). WorkerOrgGate / CoreQueue —
     // из @Global CoreQueueModule.
     BlockDistillReconcileCron,
+    RawEventRecoveryCron,
     // Agent-chain overhaul Фаза 4.2 (2026-06-07) — cron каждые 30 мин:
     // догоночная авто-привязка тем к AI-целям без единой темы (провенанс +
     // co-mention, GoalTheme source='ai'). Закрывает «0 тем», из-за которых

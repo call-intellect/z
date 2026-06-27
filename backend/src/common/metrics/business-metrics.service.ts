@@ -480,6 +480,9 @@ export class BusinessMetricsService implements OnModuleInit {
   // 'llm_error', 'json_parse', 'schema_validation', 'arbiter_skip', ...).
   private coreSpecialistExtractionFailuresTotal!: Counter<'type' | 'reason'>;
   private corePartialLossTotal!: Counter<'reason'>;
+  private strategicAlignmentParseSkipTotal!: Counter<'reason'>;
+  private rawEventRecoveryReenqueuedTotal!: Counter<string>;
+  private rawEventRecoveryDeadLetteredTotal!: Counter<string>;
   private blockWithoutEvidenceTotal!: Counter<'reason'>;
   private riskEdgeTotal!: Counter<'relation' | 'outcome'>;
   private ragAbstainTotal!: Counter<'mode'>;
@@ -2453,6 +2456,19 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'core_partial_loss_total',
       help: 'block-ingest: частичная/полная потеря блоков (reason). reason: extraction_window_failed | persist_null',
       labelNames: ['reason'] as const,
+    });
+    this.strategicAlignmentParseSkipTotal = this.getOrCreateCounter({
+      name: 'strategic_alignment_parse_skip_total',
+      help: 'strategic-alignment.worker: ответ LLM не разобран → graceful skip (job НЕ падает). reason: empty | invalid_json | schema_mismatch',
+      labelNames: ['reason'] as const,
+    });
+    this.rawEventRecoveryReenqueuedTotal = this.getOrCreateCounter({
+      name: 'raw_event_recovery_reenqueued_total',
+      help: 'raw-event-recovery.cron: RawEvent застрял в processingStatus=received и повторно поставлен в block-ingest.',
+    });
+    this.rawEventRecoveryDeadLetteredTotal = this.getOrCreateCounter({
+      name: 'raw_event_recovery_dead_lettered_total',
+      help: 'raw-event-recovery.cron: RawEvent старше maxAge всё ещё в processingStatus=received → dead-letter алерт (НЕ реэнкьюим).',
     });
     this.blockWithoutEvidenceTotal = this.getOrCreateCounter({
       name: 'kc_block_without_evidence_total',
@@ -6081,6 +6097,18 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incCorePartialLoss(args: { reason: string; count?: number }): void {
     this.corePartialLossTotal.inc({ reason: args.reason }, args.count ?? 1);
+  }
+
+  incStrategicAlignmentParseSkip(args: { reason: string }): void {
+    this.strategicAlignmentParseSkipTotal.inc({ reason: args.reason });
+  }
+
+  incRawEventRecoveryReenqueued(count = 1): void {
+    this.rawEventRecoveryReenqueuedTotal.inc(count);
+  }
+
+  incRawEventRecoveryDeadLettered(count = 1): void {
+    this.rawEventRecoveryDeadLetteredTotal.inc(count);
   }
 
   incBlockWithoutEvidence(args: { reason: string }): void {

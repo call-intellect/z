@@ -51,6 +51,8 @@ export const DECISION_EXTRACT_SYSTEM_PROMPT = withAsrNote(
     '- decidedAt — ISO-8601, если в блоке есть конкретная дата; иначе null. deadline — срок исполнения; нет — null.',
     '- status — по умолчанию "approved" (решение принято и зафиксировано). Иное значение — только если в блоке явно сказано (отклонили, внедрили, отменили).',
     '- confidence — насколько уверенно извлёк суть решения (0..1).',
+    '- impliesAction — true, если решение влечёт КОНКРЕТНУЮ работу к исполнению (мигрировать, настроить, подготовить, заключить). «Решили НЕ делать X», стратегический/ценностный выбор без конкретного действия → false.',
+    '- actionTitle — если impliesAction=true: суть действия в ПОВЕЛИТЕЛЬНОМ наклонении («Подготовить смету», «Настроить мониторинг»); иначе null.',
     '',
     '# Чистый русский на выходе',
     'Все человеческие строки (statement, rationale, имена, названия сущностей) — на чистом русском, без кодов, латиницы и служебных идентификаторов. Технические поля (status, тип сущности) ты выбираешь из допустимых значений — но в человеческий текст эти коды-слова не вставляй.',
@@ -72,8 +74,13 @@ export const DECISION_EXTRACT_SYSTEM_PROMPT = withAsrNote(
     'Блок «Дизайн админки». Цитаты: «Анна: хорошо бы когда-нибудь переделать админку под тёмную тему. Иван: да, не помешало бы».',
     'Вывод: {"isDecision": false, "statement": "недостаточно сигнала для извлечения решения", "rationale": null, "alternatives": [], "decidedByPersonHints": [], "affectsEntityHints": [], "decidedAt": null, "deadline": null, "status": "proposed", "confidence": 0.2}. «Хорошо бы когда-нибудь» — пожелание, не решение; ответственного и срока нет → низкий confidence.',
     '',
+    'Что НЕ делать (бытовое не-действие):',
+    'Блок «Жалоба на плеер». Цитаты: «Елена: отдельную задачу по жалобе на плеер пока не завожу».',
+    'Вывод: {"isDecision": false, "statement": "недостаточно сигнала для извлечения решения", "rationale": null, "alternatives": [], "decidedByPersonHints": [], "affectsEntityHints": [], "decidedAt": null, "deadline": null, "status": "proposed", "confidence": 0.15}. Индивидуальный отказ завести задачу мимоходом — не зафиксированное решение команды; не decision и не задача. (Иное — «решили НЕ делать X» с обоснованием командой → isDecision=true, status=rejected.)',
+    '',
     '# Перед тем как вернуть ответ — самопроверка',
     '0. Это не постановка задачи / поручение / взятие задачи (в т.ч. со словом «задача»)? Если кому-то поручают сделать действие — isDecision=false.',
+    '0b. Это не бытовое индивидуальное «пока не завожу / не будем сейчас» мимоходом? Если да — isDecision=false (не решение команды).',
     '1. isDecision=true стоит только при реально ПРИНЯТОМ выборе, а не пожелании/вопросе/обсуждении?',
     '2. rationale вытащен (главная ценность), если он есть в блоке или контексте?',
     '3. status соответствует блоку (approved по умолчанию; иное — только если явно сказано)?',
@@ -127,12 +134,23 @@ export const DECISION_EXTRACT_USER_TEMPLATE = (args: {
 export const DECISION_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
-  required: ['isDecision', 'statement', 'confidence'],
+  required: ['isDecision', 'statement', 'confidence', 'impliesAction'],
   properties: {
     isDecision: {
       type: 'boolean',
       description:
         'true — фрагмент содержит принятое решение; false — пожелание/обсуждение/вопрос без решения.',
+    },
+    impliesAction: {
+      type: 'boolean',
+      description:
+        'true — решение влечёт конкретную работу, которую надо выполнить; false — «решили НЕ делать»/стратегия без конкретного действия.',
+    },
+    actionTitle: {
+      type: ['string', 'null'],
+      maxLength: 300,
+      description:
+        'Действие в повелительном наклонении («Мигрировать БД на PostgreSQL»); null если impliesAction=false.',
     },
     statement: {
       type: 'string',

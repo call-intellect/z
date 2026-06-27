@@ -191,6 +191,16 @@ Default chain (см. `scripts/seed-llm-task-routes-decisions.ts`):
 - **Защита supersede:** `markTasksForReviewOnSupersede` не трогает уже закрытые задачи.
 - ТЗ [`2026-06-22-tasks-subsystem-unified-fix`](../../plans/tz/2026-06-22-tasks-subsystem-unified-fix.md) (Блок D3). Миграций нет.
 
+## Две оси: память vs исполнение — actionable-решение авто-заводит задачу (2026-06-27, Ф2)
+
+Решение живёт по **двум ортогональным осям**: **память** (что решили — `Decision`.statement/rationale, это ретро и источник правды, не меняется) и **исполнение** (нужно ли из решения завести конкретную работу). Разводит их пара полей `Decision.impliesAction` + `Decision.actionExtractedAt` (миграция `20260627210000_decision_implies_action`, см. [[../02_architecture/data-model]]).
+
+- **Извлечение:** `decision-extract` помечает `impliesAction=true` + `actionTitle` (повелит. наклонение), если решение влечёт конкретное дело (мигрировать/настроить/подготовить). «Решили НЕ делать X» (`status=rejected`) и стратегический/ценностный выбор без действия → `impliesAction=false`.
+- **Авто-задача:** `specialist-3-3-decisions.maybeEnqueueActionableTask` для actionable-решения зовёт `IntakeService.create(source='decision', extractedTitle=actionTitle)` → штатный auto-triage → авто-`Issue` + `DecisionTaskLink('derived')` (то же замыкание, что выше). `IntakeSourceSchema` расширен `'decision'`.
+- **Идемпотентность:** маркер `actionExtractedAt` + source-block guard — повторный прогон/merge не плодит второй intake (merge bump'ит `impliesAction=true` на существующем Decision для дашборда).
+- **Дашборд (Ф4):** `impliesAction` — знаменатель «доведения»: не-actionable решение никогда не «застрявшее» и вне throughput; индикатор-утечка «Решения без действия» = actionable без задачи. См. [[director-dashboard]] §«Дашборд-контроль на исполнении».
+- ТЗ [`2026-06-27-task-decision-execution-unified`](../../plans/tz/2026-06-27-task-decision-execution-unified-tz.md) (Ф2/Ф4). **Старые решения** `impliesAction=false` по дефолту → бэкфилл-ре-экстракция отложена (см. [[../04_не-сделано/README]]).
+
 ## Связи
 
 - **β-4 Insights** будет читать Decision'ы, чтобы связать «эта проблема — следствие решения X».

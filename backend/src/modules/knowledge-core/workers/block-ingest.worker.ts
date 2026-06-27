@@ -9,6 +9,7 @@ import {
 import {
   type Entity,
   type EntityType,
+  type ParticipantRole,
   Prisma,
   type RawEvent,
   type SignalType,
@@ -69,6 +70,21 @@ export interface PropertySpan {
   startMs: number;
   endMs: number;
 }
+
+interface MeetingSummaryResult {
+  blockId: string | null;
+  text: string | null;
+  vector: number[] | null;
+}
+
+const SOURCE_EPISODE_KIND_BY_TYPE: Partial<Record<RawEvent['sourceType'], 'meeting' | 'document' | 'chat'>> = {
+  meeting: 'meeting',
+  meeting_report: 'meeting',
+  external: 'document',
+  chat: 'chat',
+  chatbox: 'chat',
+  bitrix: 'chat',
+};
 
 export type TypedFailReason = 'age_unavailable' | 'idempotent_skip' | 'validation_error' | 'other';
 
@@ -318,7 +334,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      const summaryBlockId = await this.maybePersistMeetingSummary({
+      const summary = await this.maybePersistMeetingSummary({
         event,
         payload,
         contextHeader,
@@ -327,9 +343,9 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           { rawEventId, err: err instanceof Error ? err.message : String(err) },
           'block-ingest: summary-блок «суть встречи» не создан — пропуск',
         );
-        return null;
+        return { blockId: null, text: null, vector: null } as MeetingSummaryResult;
       });
-      if (summaryBlockId) blockIds.push(summaryBlockId);
+      if (summary.blockId) blockIds.push(summary.blockId);
 
       await this.createStructuralEntityEdges(event.tenantId, blockIds).catch((err) => {
         this.logger.warn(
@@ -342,6 +358,19 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(
           { rawEventId, err: err instanceof Error ? err.message : String(err) },
           'block-ingest: документная привязка (ТЗ-4 Ф4) не удалась — пропуск',
+        );
+      });
+
+      await this.persistSourceLayer({
+        event,
+        payload,
+        blockIds,
+        summaryText: summary.text,
+        summaryVector: summary.vector,
+      }).catch((err) => {
+        this.logger.warn(
+          { rawEventId, err: err instanceof Error ? err.message : String(err) },
+          'block-ingest: слой источника (SourceEpisode/Participant/Entity) не материализован — пропуск',
         );
       });
 
@@ -978,11 +1007,11 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     event: RawEvent;
     payload: unknown;
     contextHeader: string;
-  }): Promise<string | null> {
+  }): Promise<MeetingSummaryResult> {
     const { event, payload, contextHeader } = args;
-    if (event.sourceType !== 'meeting_report') return null;
+    if (event.sourceType !== 'meeting_report') return { blockId: null, text: null, vector: null };
     const summaryMd = this.tryGetReportSummaryMarkdown(payload);
-    if (!summaryMd) return null;
+    if (!summaryMd) return { blockId: null, text: null, vector: null };
 
     const meetingTitle = this.tryGetMeetingTitle(payload);
     const answer = summaryMd.slice(0, 4000);
@@ -1000,7 +1029,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       role_relevant: false,
     };
     const [vector] = await this.embeddings.embedBlocks([summaryBlock], contextHeader);
-    return this.persistBlock({
+    const blockId = await this.persistBlock({
       event,
       block: summaryBlock,
       embedding: vector ?? null,
@@ -1010,6 +1039,185 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       authorUserId: null,
       isMeetingSummary: true,
     });
+    return { blockId, text: answer, vector: vector ?? null };
+  }
+
+  private resolveSourceEpisodeKind(
+    sourceType: RawEvent['sourceType'],
+  ): 'meeting' | 'document' | 'chat' | null {
+    return SOURCE_EPISODE_KIND_BY_TYPE[sourceType] ?? null;
+  }
+
+  private tryGetPayloadMeetingId(payload: unknown): string | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const v = (payload as { meetingId?: unknown }).meetingId;
+    return typeof v === 'string' && v.trim().length > 0 ? v.trim() : null;
+  }
+
+  private resolveEpisodeMeetingId(event: RawEvent, payload: unknown): string | null {
+    if (event.sourceType === 'meeting') return event.sourceExternalId ?? null;
+    if (event.sourceType === 'meeting_report') return this.tryGetPayloadMeetingId(payload);
+    return null;
+  }
+
+  private resolveEpisodeTitle(event: RawEvent, payload: unknown): string {
+    const fromEvent = event.sourceTitle?.trim();
+    if (fromEvent && fromEvent.length > 0) return fromEvent.slice(0, 500);
+    const meetingTitle = this.tryGetMeetingTitle(payload)?.trim();
+    if (meetingTitle && meetingTitle.length > 0) return meetingTitle.slice(0, 500);
+    return event.sourceExternalId?.trim() || `${event.sourceType}:${event.id}`;
+  }
+
+  private mapParticipantRole(role: ParticipantRole): string {
+    return role === 'host' ? 'host' : 'guest';
+  }
+
+  private async persistSourceLayer(args: {
+    event: RawEvent;
+    payload: unknown;
+    blockIds: string[];
+    summaryText: string | null;
+    summaryVector: number[] | null;
+  }): Promise<void> {
+    const { event, payload, blockIds, summaryText, summaryVector } = args;
+    const kind = this.resolveSourceEpisodeKind(event.sourceType);
+    if (!kind) return;
+
+    const tenantId = event.tenantId;
+    const rawEventId = event.id;
+    const title = this.resolveEpisodeTitle(event, payload);
+    const embeddingModelVersion = this.cfg.ai.embeddings.model;
+
+    await this.prisma.sourceEpisode.upsert({
+      where: { rawEventId_tenantId: { rawEventId, tenantId } },
+      create: {
+        tenantId,
+        rawEventId,
+        kind,
+        title,
+        occurredAt: event.occurredAt,
+        summary: summaryText,
+        embeddingModelVersion: summaryVector ? embeddingModelVersion : null,
+      },
+      update: {
+        kind,
+        title,
+        occurredAt: event.occurredAt,
+        summary: summaryText,
+        embeddingModelVersion: summaryVector ? embeddingModelVersion : null,
+      },
+    });
+
+    if (summaryVector && summaryVector.length > 0) {
+      await this.prisma.$executeRawUnsafe(
+        'UPDATE "SourceEpisode" SET embedding = $1::vector(1536) WHERE "rawEventId" = $2 AND "tenantId" = $3',
+        this.toVectorLiteral(summaryVector),
+        rawEventId,
+        tenantId,
+      );
+    }
+
+    await this.persistSourceParticipants({ event, payload, kind });
+    await this.persistSourceEntities({ tenantId, rawEventId, blockIds });
+  }
+
+  private async persistSourceParticipants(args: {
+    event: RawEvent;
+    payload: unknown;
+    kind: 'meeting' | 'document' | 'chat';
+  }): Promise<void> {
+    const { event, payload, kind } = args;
+    const tenantId = event.tenantId;
+    const rawEventId = event.id;
+
+    if (kind === 'meeting') {
+      const meetingId = this.resolveEpisodeMeetingId(event, payload);
+      if (!meetingId) return;
+      const participants = await this.prisma.participant.findMany({
+        where: { meetingId, personId: { not: null } },
+        select: { personId: true, role: true },
+      });
+      const seen = new Set<string>();
+      for (const p of participants) {
+        const personId = p.personId;
+        if (!personId || seen.has(personId)) continue;
+        seen.add(personId);
+        await this.upsertSourceParticipant({
+          rawEventId,
+          personId,
+          tenantId,
+          role: this.mapParticipantRole(p.role),
+        }).catch((err) => {
+          this.logger.warn(
+            { rawEventId, personId, err: err instanceof Error ? err.message : String(err) },
+            'block-ingest: SourceParticipant (встреча) не записан — пропуск',
+          );
+        });
+      }
+      return;
+    }
+
+    if (kind === 'chat') {
+      const authorPersonId = this.tryGetActorIdentity(payload).authorPersonId;
+      if (!authorPersonId) return;
+      await this.upsertSourceParticipant({
+        rawEventId,
+        personId: authorPersonId,
+        tenantId,
+        role: 'author',
+      }).catch((err) => {
+        this.logger.warn(
+          { rawEventId, personId: authorPersonId, err: err instanceof Error ? err.message : String(err) },
+          'block-ingest: SourceParticipant (чат-автор) не записан — пропуск',
+        );
+      });
+    }
+  }
+
+  private async upsertSourceParticipant(args: {
+    rawEventId: string;
+    personId: string;
+    tenantId: string;
+    role: string;
+  }): Promise<void> {
+    const { rawEventId, personId, tenantId, role } = args;
+    await this.prisma.sourceParticipant.upsert({
+      where: { rawEventId_personId: { rawEventId, personId } },
+      create: { rawEventId, personId, tenantId, role },
+      update: { tenantId, role },
+    });
+  }
+
+  private async persistSourceEntities(args: {
+    tenantId: string;
+    rawEventId: string;
+    blockIds: string[];
+  }): Promise<void> {
+    const { tenantId, rawEventId, blockIds } = args;
+    if (blockIds.length === 0) return;
+
+    const grouped = await this.prisma.ideaBlockEntity.groupBy({
+      by: ['entityId'],
+      where: { blockId: { in: blockIds }, tenantId },
+      _count: { entityId: true },
+    });
+
+    for (const row of grouped) {
+      const entityId = row.entityId;
+      const mentionsCount = row._count.entityId;
+      await this.prisma.sourceEntity
+        .upsert({
+          where: { rawEventId_entityId: { rawEventId, entityId } },
+          create: { rawEventId, entityId, tenantId, mentionsCount },
+          update: { tenantId, mentionsCount },
+        })
+        .catch((err) => {
+          this.logger.warn(
+            { rawEventId, entityId, err: err instanceof Error ? err.message : String(err) },
+            'block-ingest: SourceEntity не записан — пропуск',
+          );
+        });
+    }
   }
 
   private async persistBlock(args: {

@@ -765,6 +765,12 @@ const STEPS: Step[] = [
     skipBootstrap: true,
   },
   {
+    phase: 'backfill',
+    script: 'scripts/backfill-source-layer.ts',
+    hint: 'SourceEpisode/SourceParticipant/SourceEntity для существующих RawEvent (слой источника Ф2); embedding=null, проставится при ре-эмбеддинге',
+    skipBootstrap: true,
+  },
+  {
     phase: 'migrate',
     script: 'scripts/migrate-telegram-channels-to-global.ts',
     skipBootstrap: true,

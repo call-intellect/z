@@ -2536,6 +2536,9 @@ model Org {
   ideaBlockEntities      IdeaBlockEntity[]
   themeIdeaBlocks        ThemeIdeaBlock[]
   themeEntities          ThemeEntity[]
+  sourceEpisodes         SourceEpisode[]
+  sourceParticipants     SourceParticipant[]
+  sourceEntities         SourceEntity[]
   goals                  Goal[]
   goalAlignmentSnapshots GoalAlignmentSnapshot[]
   retentionPolicy        OrgRetentionPolicy?
@@ -3302,8 +3305,83 @@ model RawEvent {
   source   Source              @relation(fields: [sourceId], references: [id], onDelete: Restrict)
   evidence IdeaBlockEvidence[]
 
+  sourceEpisodes     SourceEpisode[]
+  sourceParticipants SourceParticipant[]
+  sourceEntities     SourceEntity[]
+
   @@index([tenantId, sourceId, occurredAt])
   @@index([tenantId, processingStatus])
+}
+
+// ──────────────────────────── слой источника: SourceEpisode / SourceParticipant / SourceEntity (Ф2) ────────────────────────────
+
+/// Эпизод-источник как первоклассный объект поиска (встреча / документ / чат-тред).
+/// Один на RawEvent. Несёт human-резюме + собственный вектор для семантического
+/// поиска ПО ИСТОЧНИКУ (класс К2/К4), отдельно от поблочного IdeaBlock.embedding.
+/// Ф1-стиль: HASH-партиционирован по tenantId, составной PK (id, tenantId);
+/// HNSW на embedding — в postgres-init.sql (Prisma 7 их не описывает).
+model SourceEpisode {
+  id                    String                       @default(cuid())
+  tenantId              String
+  rawEventId            String
+  /// 'meeting' | 'document' | 'chat'.
+  kind                  String                       @db.VarChar(16)
+  title                 String
+  occurredAt            DateTime
+  summary               String?                      @db.Text
+  embedding             Unsupported("vector(1536)")?
+  /// Версия embedding-модели для безопасной смены без слепого бэкфилла.
+  embeddingModelVersion String?                      @db.VarChar(40)
+  branch                ThemeBranch?
+  createdAt             DateTime                     @default(now())
+  updatedAt             DateTime                     @updatedAt
+
+  org      Org      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rawEvent RawEvent @relation(fields: [rawEventId], references: [id], onDelete: Cascade)
+
+  @@id([id, tenantId])
+  @@unique([rawEventId, tenantId])
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, kind, occurredAt])
+}
+
+/// Ребро «человек присутствовал в источнике» на УРОВНЕ ИСТОЧНИКА (не блока).
+/// Детерминированный фундамент К1 «все встречи/чаты с человеком X».
+/// FK на Person — простой (Person PK простой).
+model SourceParticipant {
+  rawEventId    String
+  personId      String
+  tenantId      String
+  /// 'host' | 'guest' | 'author' | 'member' — роль в источнике.
+  role          String   @db.VarChar(16)
+  /// Доля реплик (0..1), null для не-встреч. Для ранжирования, не фильтра.
+  speakingShare Decimal? @db.Decimal(4, 3)
+  createdAt     DateTime @default(now())
+
+  org      Org      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rawEvent RawEvent @relation(fields: [rawEventId], references: [id], onDelete: Cascade)
+  person   Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@id([rawEventId, personId])
+  @@index([tenantId, personId, createdAt])
+}
+
+/// Ребро «компания/сущность упомянута в источнике» — агрегат на уровне источника
+/// (НЕ дубль IdeaBlockEntity, который mention на уровне блока). Для К1/К4.
+/// FK на Entity — составной (Entity PK составной).
+model SourceEntity {
+  rawEventId    String
+  entityId      String
+  tenantId      String
+  mentionsCount Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  org      Org      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rawEvent RawEvent @relation(fields: [rawEventId], references: [id], onDelete: Cascade)
+  entity   Entity   @relation(fields: [entityId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@id([rawEventId, entityId])
+  @@index([tenantId, entityId, createdAt])
 }
 
 // ──────────────────────────── knowledge-core: IdeaBlock + Entity (Фаза 2) ────────────────────────────
@@ -3575,6 +3653,7 @@ model Entity {
   /// TZ-1 Фаза 1 (daily-value-engine) — дневные снимки риска клиента
   /// (только для Entity{type=customer}).
   customerRiskSnapshots CustomerRiskSnapshot[] @relation("CustomerRiskSnapshotEntity")
+  sourceEntities        SourceEntity[]
 
   @@id([id, tenantId])
   @@index([tenantId, type])
@@ -5072,6 +5151,7 @@ model Person {
   /// ТЗ-5 Ф1 (meeting-upload-diarization) — спикеры загруженных встреч,
   /// сопоставленные с этим Person (assignment=employee).
   uploadSpeakers              MeetingUploadSpeaker[]
+  sourceParticipations        SourceParticipant[]
 
   @@unique([tenantId, email, deletedAt])
   @@index([tenantId, userId])

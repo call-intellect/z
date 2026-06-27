@@ -114,6 +114,26 @@ BEGIN
   END IF;
 END $$;
 
+-- 3-Ф2. HNSW на SourceEpisode.embedding — поиск ПО ИСТОЧНИКУ (К2/К4).
+--    SourceEpisode HASH-партиционирован по tenantId: CREATE INDEX на родителе
+--    распространяется на все 64 партиции (pgvector). Параметры m=16,
+--    ef_construction=128 как у IdeaBlock/Entity/Theme.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'SourceEpisode'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "SourceEpisode_embedding_hnsw_cosine_idx"
+      ON "SourceEpisode" USING hnsw (embedding vector_cosine_ops)
+      WITH (m = 16, ef_construction = 128)
+      WHERE embedding IS NOT NULL
+    $sql$;
+  END IF;
+END $$;
+
 -- 3c. Фаза E — partial unique на MeetingReport: запрет двух pending/running
 --     отчётов с одним и тем же `promptTemplateId` в рамках одной встречи.
 --     Prisma `@@unique` не поддерживает WHERE-условие, поэтому индекс

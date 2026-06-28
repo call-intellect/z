@@ -1,0 +1,252 @@
+import {
+  BadRequestException,
+  Body,
+  ConflictException,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  Inject,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
+import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
+import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
+import { TenantGuard } from '../rbac/guards/tenant.guard';
+import { RbacService } from '../rbac/rbac.service';
+
+import {
+  AddMemberSchema,
+  type AddMemberDto,
+  CreateConversationSchema,
+  type CreateConversationDto,
+  type CreateConversationResponse,
+  ListMessagesQuerySchema,
+  type ListMessagesQuery,
+  type ListMessagesResponse,
+  MarkReadSchema,
+  type MarkReadDto,
+  type OkResponse,
+  ReactionSchema,
+  type ReactionDto,
+  type ReactionsResponse,
+  SendMessageSchema,
+  type SendMessageDto,
+  type SendMessageResponse,
+} from './dto/conversation.dto';
+import { ConversationService } from './services/conversation.service';
+import { MessageService } from './services/message.service';
+import { ReadCursorService } from './services/read-cursor.service';
+
+@ApiTags('messaging / conversations')
+@ApiBearerAuth()
+@Controller('api/v1')
+@UseGuards(CookieAuthGuard, TenantGuard)
+export class ConversationController {
+  constructor(
+    @Inject(ConversationService) private readonly conversations: ConversationService,
+    @Inject(MessageService) private readonly messages: MessageService,
+    @Inject(ReadCursorService) private readonly readCursors: ReadCursorService,
+    @Inject(RbacService) private readonly rbac: RbacService,
+  ) {}
+
+  @Post('conversations')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Создать разговор (dm/group/channel); создатель — owner' })
+  async create(
+    @Body(new ZodValidationPipe(CreateConversationSchema)) body: CreateConversationDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<CreateConversationResponse> {
+    const t = this.requireTenant(tenantId);
+    const conversation = await this.conversations.createConversation({
+      tenantId: t,
+      kind: body.kind,
+      title: body.title ?? null,
+      createdByUserId: user.id,
+      memberUserIds: body.memberUserIds,
+    });
+    return { conversationId: conversation.id };
+  }
+
+  @Post('conversations/company-channel')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Идемпотентно создать обязательный канал «Вся компания» (owner/admin)' })
+  async companyChannel(
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<CreateConversationResponse> {
+    const t = this.requireTenant(tenantId);
+    await this.requireOrgWrite(user.id, t);
+    const channel = await this.conversations.ensureCompanyChannel(t, user.id);
+    return { conversationId: channel.id };
+  }
+
+  @Post('conversations/:id/members')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Добавить участника (owner/admin разговора)' })
+  async addMember(
+    @Param('id') conversationId: string,
+    @Body(new ZodValidationPipe(AddMemberSchema)) body: AddMemberDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<OkResponse> {
+    this.requireTenant(tenantId);
+    const role = await this.conversations.getMemberRole(conversationId, user.id);
+    if (role !== 'owner' && role !== 'admin') {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Только owner/admin разговора могут добавлять участников',
+        },
+      });
+    }
+    await this.conversations.addMember({ conversationId, userId: body.userId });
+    return { ok: true };
+  }
+
+  @Delete('conversations/:id/members/me')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Выйти из разговора (запрещено для обязательного канала)' })
+  async leave(
+    @Param('id') conversationId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<OkResponse> {
+    this.requireTenant(tenantId);
+    if (await this.conversations.isMandatory(conversationId)) {
+      throw new ConflictException({
+        ok: false,
+        error: {
+          code: 'MANDATORY_CHANNEL_LEAVE_FORBIDDEN',
+          message: 'Нельзя выйти из обязательного канала',
+        },
+      });
+    }
+    await this.conversations.removeMember(conversationId, user.id);
+    return { ok: true };
+  }
+
+  @Post('conversations/:id/messages')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Отправить сообщение в разговор' })
+  async sendMessage(
+    @Param('id') conversationId: string,
+    @Body(new ZodValidationPipe(SendMessageSchema)) body: SendMessageDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<SendMessageResponse> {
+    const t = this.requireTenant(tenantId);
+    await this.requireMember(conversationId, user.id);
+    const result = await this.messages.sendMessage({
+      tenantId: t,
+      conversationId,
+      authorUserId: user.id,
+      content: body.content,
+      clientMessageId: body.clientMessageId,
+      parentMessageId: body.parentMessageId ?? null,
+      access: body.access,
+      mentions: body.mentions,
+      voice: body.voice ?? null,
+    });
+    return result;
+  }
+
+  @Get('conversations/:id/messages')
+  @ApiOperation({ summary: 'Лента сообщений разговора (cursor по seq)' })
+  async listMessages(
+    @Param('id') conversationId: string,
+    @Query(new ZodValidationPipe(ListMessagesQuerySchema)) query: ListMessagesQuery,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<ListMessagesResponse> {
+    this.requireTenant(tenantId);
+    await this.requireMember(conversationId, user.id);
+    return this.messages.getMessages({
+      conversationId,
+      sinceSeq: query.sinceSeq ?? null,
+      limit: query.limit,
+    });
+  }
+
+  @Post('message-threads/:id/read')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Отметить прочитанным до cursorSeq' })
+  async markRead(
+    @Param('id') conversationId: string,
+    @Body(new ZodValidationPipe(MarkReadSchema)) body: MarkReadDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<OkResponse> {
+    this.requireTenant(tenantId);
+    await this.requireMember(conversationId, user.id);
+    await this.readCursors.markRead({
+      conversationId,
+      userId: user.id,
+      cursorSeq: String(body.cursorSeq),
+    });
+    return { ok: true };
+  }
+
+  @Post('conversations/:id/messages/:messageId/reactions')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Переключить реакцию на сообщение' })
+  async toggleReaction(
+    @Param('id') conversationId: string,
+    @Param('messageId') messageId: string,
+    @Body(new ZodValidationPipe(ReactionSchema)) body: ReactionDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<ReactionsResponse> {
+    this.requireTenant(tenantId);
+    await this.requireMember(conversationId, user.id);
+    const { reactions } = await this.messages.toggleReaction({
+      conversationId,
+      messageId,
+      userId: user.id,
+      emoji: body.emoji,
+    });
+    return { messageId, reactions };
+  }
+
+  private requireTenant(tenantId: string | undefined): string {
+    if (!tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: { code: 'tenant_required', message: 'Организация не определена' },
+      });
+    }
+    return tenantId;
+  }
+
+  private async requireMember(conversationId: string, userId: string): Promise<void> {
+    const ok = await this.conversations.assertMember(conversationId, userId);
+    if (!ok) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'NOT_MEMBER', message: 'Вы не участник этого разговора' },
+      });
+    }
+  }
+
+  private async requireOrgWrite(userId: string, tenantId: string): Promise<void> {
+    const ok = await this.rbac.canWrite(userId, tenantId, 'conversation');
+    if (!ok) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Только owner/admin могут управлять каналом компании',
+        },
+      });
+    }
+  }
+}

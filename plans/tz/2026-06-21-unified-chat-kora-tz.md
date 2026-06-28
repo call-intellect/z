@@ -509,8 +509,8 @@ _Заполняется tz-orchestrator по факту реализации ф�
 |---|---|---|---|
 | Ф0 — Мост-загрузки | ✅ DONE | R1, R2 | Модуль `message-bridge` (`Source(type='chat')` + `ingestChatMessage` + Telegram-export-загрузчик + backfill), ветка `chat_message` в `segment-builder`, флаг `MESSAGE_BRIDGE_ENABLED`. Bitrix prod-путь оставлен на session-transcript (без двойного ingest) — R1 для Bitrix доказан unit-тестом через мост. typecheck/lint/build/vitest зелёные (42/42). |
 | Ф1 — Единое ядро | ✅ DONE | R3–R8 | Ф1a: миграция `unified_chat_core`, `MessageService` (row-lock→gap-free seq, outbox в транзакции, dedup clientMessageId, AES-256-GCM at-rest), read-cursor, RBAC conversation/message, `CHAT_ENABLED`. Ф1b: `@socket.io/redis-adapter` + `RedisIoAdapter`, WS `conversation.*` + presence-Redis (TTL, переживает рестарт), outbox-relay воркер (BullMQ + `@Cron` sweep `FOR UPDATE SKIP LOCKED`, идемпотентно), офлайн-сигнал без тела/имён + `assertNoExternalBody` (ФЗ-41 gate). typecheck/lint/build зелёные, vitest 309 (messaging+tracker+conversational без регрессий). Контроллеры — Ф2/Ф4. Cross-instance broadcast подтверждён статически (типы+NestJS-паттерн), рантайм-smoke на проде. |
-| Ф2 — Внутренний чат | ⏳ в работе | R9, R10 | |
-| Ф2.5 — work_chat | ⬜ | R27–R31 | |
+| Ф2 — Внутренний чат | ✅ DONE (backend) | R9, R10 | `ConversationController` (`/conversations` create dm/group/channel, members, leave-mandatory→409, send/list/read, реакции, company-channel) + Zod-DTO + enforcement членства (`NOT_MEMBER` 403 — закрывает carry-forward Ф1 про super_admin/не-член). `toggleReaction` (FOR UPDATE), `ensureCompanyChannel` (идемпотентно). **Hardening:** `assertUsersInTenant` — участник обязан принадлежать org (cross-tenant gap закрыт). vitest 55, typecheck/lint/build зелёные. FE data-слой + визуальный экран — в Ф4 (строю UI один раз). |
+| Ф2.5 — work_chat | ⏳ в работе | R27–R31 | |
 | Ф3 — Поддержка на ядре | ⬜ | R11–R14 | |
 | Ф3.5 — Внешняя переписка | ⬜ | R35–R40 | |
 | Ф4 — Единый экран | ⬜ | R15, R16, R32, R33 | |

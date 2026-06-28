@@ -291,6 +291,59 @@ describe('MessageService.sendMessage', () => {
   });
 });
 
+describe('MessageService.toggleReaction', () => {
+  function makeReactionPrisma(initialReactions: Record<string, string[]> | null) {
+    let stored = initialReactions;
+    const update = vi.fn((args: { data: { reactions: unknown } }) => {
+      const r = args.data.reactions;
+      stored = r === null || (typeof r === 'object' && r !== null && Object.getPrototypeOf(r) === null)
+        ? null
+        : (r as Record<string, string[]>);
+      return Promise.resolve({});
+    });
+    const queryRaw = vi.fn(() => Promise.resolve([{ id: 'msg-1', reactions: stored }]));
+    const tx = { $queryRaw: queryRaw, message: { update } };
+    const prisma = {
+      $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(tx)),
+    } as unknown as PrismaService;
+    return { prisma, update, get stored() { return stored; } };
+  }
+
+  it('первый вызов добавляет userId; повторный убирает (idempotent toggle)', async () => {
+    const harness = makeReactionPrisma(null);
+    const service = new MessageService(harness.prisma, makeCrypto(), makeCfg(), makeOutboxQueue());
+
+    const first = await service.toggleReaction({
+      conversationId: 'conv-1',
+      messageId: 'msg-1',
+      userId: 'user-1',
+      emoji: '👍',
+    });
+    expect(first.reactions).toEqual({ '👍': ['user-1'] });
+
+    const second = await service.toggleReaction({
+      conversationId: 'conv-1',
+      messageId: 'msg-1',
+      userId: 'user-1',
+      emoji: '👍',
+    });
+    expect(second.reactions).toEqual({});
+  });
+
+  it('другой userId добавляется к существующей реакции, не затирая', async () => {
+    const harness = makeReactionPrisma({ '👍': ['user-1'] });
+    const service = new MessageService(harness.prisma, makeCrypto(), makeCfg(), makeOutboxQueue());
+
+    const res = await service.toggleReaction({
+      conversationId: 'conv-1',
+      messageId: 'msg-1',
+      userId: 'user-2',
+      emoji: '👍',
+    });
+    expect(res.reactions).toEqual({ '👍': ['user-1', 'user-2'] });
+  });
+});
+
 describe('MessageService.getMessages', () => {
   it('decrypt content, seq→string, фильтр deletedAt, nextSeq = последний', async () => {
     const rows = [

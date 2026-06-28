@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -26,6 +32,15 @@ interface GetMessagesArgs {
   sinceSeq?: bigint | string | null;
   limit?: number;
 }
+
+interface ToggleReactionArgs {
+  conversationId: string;
+  messageId: string;
+  userId: string;
+  emoji: string;
+}
+
+type ReactionMap = Record<string, string[]>;
 
 type MessageRow = Prisma.MessageGetPayload<Record<string, never>>;
 
@@ -141,6 +156,46 @@ export class MessageService {
     const items = rows.map((row) => this.toDto(row));
     const nextSeq = rows.length > 0 ? rows[rows.length - 1]!.seq.toString() : null;
     return { items, nextSeq };
+  }
+
+  async toggleReaction(args: ToggleReactionArgs): Promise<{ reactions: ReactionMap }> {
+    const { conversationId, messageId, userId, emoji } = args;
+
+    return this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<Array<{ id: string; reactions: ReactionMap | null }>>`
+        SELECT id, reactions FROM "Message"
+        WHERE id = ${messageId} AND "conversationId" = ${conversationId}
+        FOR UPDATE
+      `;
+      const current = rows[0];
+      if (!current) {
+        throw new NotFoundException({ code: 'MESSAGE_NOT_FOUND', message: 'Сообщение не найдено' });
+      }
+
+      const reactions: ReactionMap = { ...(current.reactions ?? {}) };
+      const users = reactions[emoji] ?? [];
+      const next = users.includes(userId)
+        ? users.filter((u) => u !== userId)
+        : [...users, userId];
+
+      if (next.length === 0) {
+        delete reactions[emoji];
+      } else {
+        reactions[emoji] = next;
+      }
+
+      await tx.message.update({
+        where: { id: messageId },
+        data: {
+          reactions:
+            Object.keys(reactions).length === 0
+              ? Prisma.JsonNull
+              : (reactions as Prisma.InputJsonValue),
+        },
+      });
+
+      return { reactions };
+    });
   }
 
   private toDto(row: MessageRow): MessageDto {

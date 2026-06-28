@@ -66,6 +66,8 @@ describe('UsersService.upsertFromCrossmark', () => {
     isSuperAdmin: false,
     signupSource: 'crossmark',
     signupRef: null,
+    kind: 'member',
+    verified: false,
     passwordHash: null,
     mustChangePassword: false,
     consentDataProcessing: false,

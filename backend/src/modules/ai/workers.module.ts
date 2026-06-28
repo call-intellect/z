@@ -67,6 +67,10 @@ import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cr
 import { ThemeSummarizeCron } from '../knowledge-core/workers/theme-summarize.cron';
 import { MeetingUploadIngestWorker } from '../meeting-uploads/workers/meeting-upload-ingest.worker';
 import { MeetingUploadTranscribeWorker } from '../meeting-uploads/workers/meeting-upload-transcribe.worker';
+import { MessagingModule } from '../messaging/messaging.module';
+import { ChatIngestWorker } from '../messaging/queue/chat-ingest.worker';
+import { MessageOutboxRelayWorker } from '../messaging/queue/message-outbox.worker';
+import { VoiceTranscribeWorker } from '../messaging/queue/voice-transcribe.worker';
 import { PersonalRelationBuilderWorker } from '../operations/workers/personal-relation-builder.worker';
 import { ProcessesModule } from '../processes/processes.module';
 import { FaststartWorker } from '../recordings/workers/faststart.worker';
@@ -106,6 +110,7 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     BitrixModule,
     DocumentsModule,
     IntegrationObservabilityModule,
+    MessagingModule,
   ],
   providers: [
     VoxService,
@@ -200,6 +205,10 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     StrategicAlignmentCron,
 
     PersonalRelationBuilderWorker,
+
+    MessageOutboxRelayWorker,
+    ChatIngestWorker,
+    VoiceTranscribeWorker,
 
     DocumentIngestAdapter,
     TextIngestAdapter,

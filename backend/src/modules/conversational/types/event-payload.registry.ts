@@ -286,14 +286,22 @@ const MeetingInvitePayloadSchema = z
 const SupportTicketEventPayloadSchema = z
   .object({
     ticketId: z.string().min(1).max(80),
-    ticketNumber: z.string().min(1).max(40),
+    ticketNumber: z.string().min(1).max(40).optional(),
     subject: z.string().min(1).max(300),
     snippet: z.string().max(2_000).optional(),
     actionUrl: z.string().max(2_000).optional(),
   })
   .strict();
 
+const ChatNewMessagePayloadSchema = z
+  .object({
+    conversationId: z.string().min(1).max(80),
+    actionUrl: z.string().max(2_000).optional(),
+  })
+  .strict();
+
 const registry = new Map<string, z.ZodTypeAny>([
+  ['chat.new_message', ChatNewMessagePayloadSchema],
   ['probe.question', ProbeQuestionPayloadSchema],
   ['probe.digest', ProbeDigestPayloadSchema],
   ['probe.clarify', ProbeClarifyPayloadSchema],

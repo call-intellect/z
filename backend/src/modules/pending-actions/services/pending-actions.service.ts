@@ -5,6 +5,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
+import { WorkChatService } from '../../messaging/services/work-chat.service';
 import { IntakeService } from '../../tracker/services/intake.service';
 import { IssuesService } from '../../tracker/services/issues.service';
 import { ProgressUpdatesService } from '../../tracker/services/progress-updates.service';
@@ -117,6 +118,8 @@ export class PendingActionsService {
     // авто-черновика прогресса (Ф6-сервис; бизнес-логику НЕ дублируем).
     @Inject(ProgressUpdatesService)
     private readonly progressUpdatesService: ProgressUpdatesService,
+    @Inject(WorkChatService)
+    private readonly workChat: WorkChatService,
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
@@ -562,25 +565,21 @@ export class PendingActionsService {
         ? `✅ Решение: ${decisionText}`
         : `✅ Решение (из разговора): ${decisionText}`;
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.issueComment.create({
-        data: {
-          issueId: issue.id,
-          authorId: input.userId,
-          authorType: 'human',
-          access: 'internal',
-          content: decisionContent,
-          contentStripped: decisionContent,
-        },
-      });
-      await tx.taskClosureCandidate.update({
-        where: { id: candidate.id },
-        data: {
-          status: 'accepted',
-          decidedByUserId: input.userId,
-          decidedAt: new Date(),
-        },
-      });
+    await this.prisma.taskClosureCandidate.update({
+      where: { id: candidate.id },
+      data: {
+        status: 'accepted',
+        decidedByUserId: input.userId,
+        decidedAt: new Date(),
+      },
+    });
+    await this.workChat.appendMessage({
+      issueId: issue.id,
+      authorUserId: input.userId,
+      content: decisionContent,
+      contentStripped: decisionContent,
+      access: 'internal',
+      authorType: 'human',
     });
     this.logger.log(
       { tenantId: input.tenantId, userId: input.userId, resourceId: candidate.id, issueId: issue.id },

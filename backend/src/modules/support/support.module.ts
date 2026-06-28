@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 
-import { TrackerModule } from '../tracker/tracker.module';
+import { MessagingModule } from '../messaging/messaging.module';
 
 import { SupportAdminController } from './controllers/support-admin.controller';
 import { SupportClientController } from './controllers/support-client.controller';
@@ -21,7 +21,7 @@ import { SupportLearningService } from './services/support-learning.service';
 import { SupportSlaService } from './services/support-sla.service';
 
 @Module({
-  imports: [TrackerModule],
+  imports: [MessagingModule],
   controllers: [SupportClientController, SupportDeskController, SupportAdminController],
   providers: [
     SupportAccessService,

@@ -2,13 +2,22 @@ import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common'
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { ActivityRecorderService } from '../../tracker/services/activity-recorder.service';
+import { MessageService } from '../../messaging/services/message.service';
 
 import { SupportAccessService } from './support-access.service';
 import { SupportContourService } from './support-contour.service';
 import { SupportEditClassifyService } from './support-edit-classify.service';
 
 const BLOCK_CITATION_REGEX = /\[BLOCK:[a-zA-Z0-9_-]+\]/g;
+
+interface PendingDraft {
+  id: string;
+  conversationId: string;
+  tenantId: string;
+  content: string;
+  cloneConfidence: string | null;
+  groundednessScore: string | null;
+}
 
 @Injectable()
 export class SupportLearningService {
@@ -22,66 +31,48 @@ export class SupportLearningService {
     private readonly contour: SupportContourService,
     @Inject(SupportAccessService)
     private readonly access: SupportAccessService,
-    @Inject(ActivityRecorderService)
-    private readonly activity: ActivityRecorderService,
+    @Inject(MessageService) private readonly messages: MessageService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  async accept(draftCommentId: string, agentUserId: string): Promise<{ ok: true }> {
-    const { comment, issue } = await this.requirePendingDraft(draftCommentId);
+  async accept(draftMessageId: string, agentUserId: string): Promise<{ ok: true }> {
+    const draft = await this.requirePendingDraft(draftMessageId);
 
-    const draftText = comment.content;
+    const draftText = draft.content;
     const externalText = toClientFacingText(draftText);
 
+    await this.messages.appendTicketMessage({
+      tenantId: draft.tenantId,
+      conversationId: draft.conversationId,
+      authorUserId: agentUserId,
+      content: externalText,
+      access: 'external',
+      authorType: 'human',
+    });
+
+    await this.messages.setDraftState({ messageId: draft.id, draftState: 'accepted' });
+
+    await this.markFirstResponded(draft.conversationId);
+
     await this.prisma.$transaction(async (tx) => {
-      await tx.issueComment.create({
-        data: {
-          issueId: issue.id,
-          authorId: agentUserId,
-          content: externalText,
-          contentStripped: externalText,
-          access: 'external',
-          authorType: 'human',
-        },
-      });
-
-      if (!issue.firstRespondedAt) {
-        await tx.issue.update({
-          where: { id: issue.id },
-          data: { firstRespondedAt: new Date(), updatedAt: new Date() },
-        });
-      } else {
-        await tx.issue.update({
-          where: { id: issue.id },
-          data: { updatedAt: new Date() },
-        });
-      }
-
-      await tx.issueComment.update({
-        where: { id: comment.id },
-        data: { draftState: 'accepted' },
-      });
-
       await tx.supportDraftOutcome.create({
         data: {
-          tenantId: issue.tenantId,
-          issueId: issue.id,
-          draftCommentId: comment.id,
+          tenantId: draft.tenantId,
+          conversationId: draft.conversationId,
+          draftMessageId: draft.id,
           draftText,
           finalText: externalText,
           outcome: 'accepted',
-          cloneConfidence: comment.cloneConfidence ? comment.cloneConfidence.toString() : null,
-          groundednessScore: comment.groundednessScore
-            ? comment.groundednessScore.toString()
-            : null,
+          cloneConfidence: draft.cloneConfidence,
+          groundednessScore: draft.groundednessScore,
         },
       });
 
       await tx.llmPreferenceSample.create({
         data: {
-          tenantId: issue.tenantId,
+          tenantId: draft.tenantId,
           taskType: 'support-clone-draft',
-          inputContext: { issueId: issue.id },
+          inputContext: { conversationId: draft.conversationId },
           modelOutput: { answer: draftText },
           label: 'correct',
           recordedBy: agentUserId,
@@ -89,120 +80,79 @@ export class SupportLearningService {
       });
     });
 
-    await this.recordActivitySafe({
-      tenantId: issue.tenantId,
-      issueId: issue.id,
-      actorUserId: agentUserId,
-      verb: 'draft_accepted',
-    });
-
     return { ok: true };
   }
 
-  async reject(draftCommentId: string, agentUserId: string): Promise<{ ok: true }> {
-    const { comment, issue } = await this.requirePendingDraft(draftCommentId);
+  async reject(draftMessageId: string, agentUserId: string): Promise<{ ok: true }> {
+    const draft = await this.requirePendingDraft(draftMessageId);
+
+    await this.messages.setDraftState({ messageId: draft.id, draftState: 'rejected' });
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.issueComment.update({
-        where: { id: comment.id },
-        data: { draftState: 'rejected' },
-      });
-
       await tx.supportDraftOutcome.create({
         data: {
-          tenantId: issue.tenantId,
-          issueId: issue.id,
-          draftCommentId: comment.id,
-          draftText: comment.content,
+          tenantId: draft.tenantId,
+          conversationId: draft.conversationId,
+          draftMessageId: draft.id,
+          draftText: draft.content,
           finalText: null,
           outcome: 'rejected',
-          cloneConfidence: comment.cloneConfidence ? comment.cloneConfidence.toString() : null,
-          groundednessScore: comment.groundednessScore
-            ? comment.groundednessScore.toString()
-            : null,
+          cloneConfidence: draft.cloneConfidence,
+          groundednessScore: draft.groundednessScore,
         },
       });
 
       await tx.llmPreferenceSample.create({
         data: {
-          tenantId: issue.tenantId,
+          tenantId: draft.tenantId,
           taskType: 'support-clone-draft',
-          inputContext: { issueId: issue.id },
-          modelOutput: { answer: comment.content },
+          inputContext: { conversationId: draft.conversationId },
+          modelOutput: { answer: draft.content },
           label: 'wrong',
           recordedBy: agentUserId,
         },
       });
     });
 
-    await this.recordActivitySafe({
-      tenantId: issue.tenantId,
-      issueId: issue.id,
-      actorUserId: agentUserId,
-      verb: 'draft_rejected',
-    });
-
     return { ok: true };
   }
 
-  async recordEdit(draftCommentId: string, finalText: string, agentUserId: string): Promise<void> {
-    const comment = await this.prisma.issueComment.findUnique({
-      where: { id: draftCommentId },
-      select: {
-        id: true,
-        issueId: true,
-        content: true,
-        authorType: true,
-        draftState: true,
-        cloneConfidence: true,
-        groundednessScore: true,
-      },
-    });
-    if (!comment || comment.authorType !== 'clone') {
+  async recordEdit(draftMessageId: string, finalText: string, agentUserId: string): Promise<void> {
+    const draft = await this.messages.getDraftMessage(draftMessageId);
+    if (!draft || draft.authorType !== 'clone') {
       return;
     }
 
-    const issue = await this.prisma.issue.findUnique({
-      where: { id: comment.issueId },
-      select: { id: true, tenantId: true },
-    });
-    if (!issue) return;
-
     const editType = await this.editClassify.classify({
-      tenantId: issue.tenantId,
+      tenantId: draft.tenantId,
       userId: agentUserId,
-      draft: comment.content,
+      draft: draft.content,
       final: finalText,
     });
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.issueComment.update({
-        where: { id: comment.id },
-        data: { draftState: 'edited' },
-      });
+    await this.messages.setDraftState({ messageId: draft.id, draftState: 'edited' });
 
+    await this.prisma.$transaction(async (tx) => {
       await tx.supportDraftOutcome.create({
         data: {
-          tenantId: issue.tenantId,
-          issueId: issue.id,
-          draftCommentId: comment.id,
-          draftText: comment.content,
+          tenantId: draft.tenantId,
+          conversationId: draft.conversationId,
+          draftMessageId: draft.id,
+          draftText: draft.content,
           finalText,
           outcome: 'edited',
           editType,
-          cloneConfidence: comment.cloneConfidence ? comment.cloneConfidence.toString() : null,
-          groundednessScore: comment.groundednessScore
-            ? comment.groundednessScore.toString()
-            : null,
+          cloneConfidence: draft.cloneConfidence,
+          groundednessScore: draft.groundednessScore,
         },
       });
 
       await tx.llmPreferenceSample.create({
         data: {
-          tenantId: issue.tenantId,
+          tenantId: draft.tenantId,
           taskType: 'support-clone-draft',
-          inputContext: { issueId: issue.id },
-          modelOutput: { answer: comment.content },
+          inputContext: { conversationId: draft.conversationId },
+          modelOutput: { answer: draft.content },
           label: 'edited',
           recordedBy: agentUserId,
         },
@@ -210,27 +160,28 @@ export class SupportLearningService {
     });
   }
 
-  async maybePromote(issueId: string): Promise<{ promoted: number }> {
+  async maybePromote(conversationId: string): Promise<{ promoted: number }> {
     const minCsat = await this.cfg.getDynamic<number>('support_promote_min_csat', undefined, 4);
 
     const rating = await this.prisma.issueRating.findUnique({
-      where: { issueId },
+      where: { conversationId },
       select: { score: true },
     });
     if (!rating || rating.score < minCsat) {
       return { promoted: 0 };
     }
 
-    const issue = await this.prisma.issue.findUnique({
-      where: { id: issueId },
-      select: { id: true, tenantId: true, title: true },
+    const ticket = await this.prisma.supportTicket.findUnique({
+      where: { conversationId },
+      select: { tenantId: true, conversation: { select: { title: true } } },
     });
-    if (!issue) return { promoted: 0 };
+    if (!ticket) return { promoted: 0 };
+    const question = ticket.conversation.title ?? '';
 
     const outcomes = await this.prisma.supportDraftOutcome.findMany({
       where: {
-        tenantId: issue.tenantId,
-        issueId,
+        tenantId: ticket.tenantId,
+        conversationId,
         outcome: { in: ['accepted', 'edited'] },
         promotedToContour: false,
       },
@@ -242,7 +193,7 @@ export class SupportLearningService {
       const finalText = outcome.finalText?.trim();
       if (!finalText) continue;
       try {
-        const r = await this.contour.promoteAnswer(issue.title, finalText);
+        const r = await this.contour.promoteAnswer(question, finalText);
         if (r.promoted) {
           await this.prisma.supportDraftOutcome.update({
             where: { id: outcome.id },
@@ -253,7 +204,7 @@ export class SupportLearningService {
       } catch (err) {
         this.logger.warn(
           {
-            issueId,
+            conversationId,
             outcomeId: outcome.id,
             err: err instanceof Error ? err.message : String(err),
           },
@@ -265,28 +216,9 @@ export class SupportLearningService {
     return { promoted };
   }
 
-  private async requirePendingDraft(draftCommentId: string): Promise<{
-    comment: {
-      id: string;
-      content: string;
-      cloneConfidence: { toString(): string } | null;
-      groundednessScore: { toString(): string } | null;
-    };
-    issue: { id: string; tenantId: string; firstRespondedAt: Date | null };
-  }> {
-    const comment = await this.prisma.issueComment.findUnique({
-      where: { id: draftCommentId },
-      select: {
-        id: true,
-        issueId: true,
-        content: true,
-        authorType: true,
-        draftState: true,
-        cloneConfidence: true,
-        groundednessScore: true,
-      },
-    });
-    if (!comment || comment.authorType !== 'clone' || comment.draftState !== 'pending') {
+  private async requirePendingDraft(draftMessageId: string): Promise<PendingDraft> {
+    const draft = await this.messages.getDraftMessage(draftMessageId);
+    if (!draft || draft.authorType !== 'clone' || draft.draftState !== 'pending') {
       throw new BadRequestException({
         ok: false,
         error: {
@@ -295,55 +227,26 @@ export class SupportLearningService {
         },
       });
     }
-
-    const issue = await this.prisma.issue.findUnique({
-      where: { id: comment.issueId },
-      select: { id: true, tenantId: true, firstRespondedAt: true },
-    });
-    if (!issue) {
-      throw new BadRequestException({
-        ok: false,
-        error: {
-          code: 'draft_not_available',
-          message: 'Черновик недоступен',
-        },
-      });
-    }
-
     return {
-      comment: {
-        id: comment.id,
-        content: comment.content,
-        cloneConfidence: comment.cloneConfidence,
-        groundednessScore: comment.groundednessScore,
-      },
-      issue,
+      id: draft.id,
+      conversationId: draft.conversationId,
+      tenantId: draft.tenantId,
+      content: draft.content,
+      cloneConfidence: draft.cloneConfidence,
+      groundednessScore: draft.groundednessScore,
     };
   }
 
-  private async recordActivitySafe(args: {
-    tenantId: string;
-    issueId: string;
-    actorUserId: string;
-    verb: string;
-  }): Promise<void> {
-    try {
-      await this.activity.record({
-        tenantId: args.tenantId,
-        issueId: args.issueId,
-        actorUserId: args.actorUserId,
-        actorType: 'user',
-        verb: args.verb,
+  private async markFirstResponded(conversationId: string): Promise<void> {
+    const ticket = await this.prisma.supportTicket.findUnique({
+      where: { conversationId },
+      select: { firstRespondedAt: true },
+    });
+    if (ticket && !ticket.firstRespondedAt) {
+      await this.prisma.supportTicket.update({
+        where: { conversationId },
+        data: { firstRespondedAt: new Date() },
       });
-    } catch (err) {
-      this.logger.warn(
-        {
-          issueId: args.issueId,
-          verb: args.verb,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        'recordActivitySafe: запись активности упала — продолжаю',
-      );
     }
   }
 }

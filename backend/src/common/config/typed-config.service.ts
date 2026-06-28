@@ -695,6 +695,7 @@ export class TypedConfigService {
       meetingAnalyzeV2DebounceMs: this.get('MEETING_ANALYZE_V2_DEBOUNCE_MS'),
       meetingReportFastEnabled: this.get('MEETING_REPORT_FAST_ENABLED'),
       reportIngestEnabled: this.get('REPORT_INGEST_ENABLED'),
+      messageBridgeEnabled: this.get('MESSAGE_BRIDGE_ENABLED'),
       chatV2Enabled: this.get('CHAT_V2_ENABLED'),
       chatV2TopBlocks: this.get('CHAT_V2_TOP_BLOCKS'),
       chatV2GraphHops: this.get('CHAT_V2_GRAPH_HOPS'),
@@ -721,6 +722,25 @@ export class TypedConfigService {
   get graph() {
     return {
       ageEnabled: this.resolveSync<boolean>('graph.ageEnabled', 'GRAPH_AGE_ENABLED', true),
+    } as const;
+  }
+
+  get chat() {
+    return {
+      enabled: this.get('CHAT_ENABLED'),
+      ingestEnabled: this.get('CHAT_INGEST_ENABLED'),
+    } as const;
+  }
+
+  get externalChat() {
+    return {
+      enabled: this.get('EXTERNAL_CHAT_ENABLED'),
+    } as const;
+  }
+
+  get huddles() {
+    return {
+      enabled: this.get('HUDDLES_ENABLED'),
     } as const;
   }
 
@@ -1823,12 +1843,50 @@ export class TypedConfigService {
   get push() {
     const publicKey = String(this.get('VAPID_PUBLIC_KEY') ?? '').trim();
     const privateKey = String(this.get('VAPID_PRIVATE_KEY') ?? '').trim();
+
+    const apnsKeyId = String(this.get('APNS_KEY_ID') ?? '').trim();
+    const apnsTeamId = String(this.get('APNS_TEAM_ID') ?? '').trim();
+    const apnsPrivateKey = String(this.get('APNS_PRIVATE_KEY') ?? '').trim();
+    const apnsBundleId = String(this.get('APNS_BUNDLE_ID') ?? '').trim();
+
+    const fcmProjectId = String(this.get('FCM_PROJECT_ID') ?? '').trim();
+    const fcmClientEmail = String(this.get('FCM_CLIENT_EMAIL') ?? '').trim();
+    const fcmPrivateKey = String(this.get('FCM_PRIVATE_KEY') ?? '').trim();
+
+    const rustoreProjectId = String(this.get('RUSTORE_PROJECT_ID') ?? '').trim();
+    const rustoreServiceToken = String(this.get('RUSTORE_SERVICE_TOKEN') ?? '').trim();
+
     return {
       vapidPublicKey: publicKey.length > 0 ? publicKey : undefined,
       vapidPrivateKey: privateKey.length > 0 ? privateKey : undefined,
       vapidSubject: String(this.get('VAPID_SUBJECT') ?? 'mailto:noreply@kora.app'),
       maxFailures: Number(this.get('PUSH_MAX_FAILURES') ?? 5),
       isSendEnabled: publicKey.length > 0 && privateKey.length > 0,
+      chatPushEnabled: this.get('CHAT_PUSH_ENABLED') === true,
+      apns: {
+        keyId: apnsKeyId.length > 0 ? apnsKeyId : undefined,
+        teamId: apnsTeamId.length > 0 ? apnsTeamId : undefined,
+        privateKey: apnsPrivateKey.length > 0 ? apnsPrivateKey : undefined,
+        bundleId: apnsBundleId.length > 0 ? apnsBundleId : undefined,
+        useSandbox: this.get('APNS_USE_SANDBOX') === true,
+        isConfigured:
+          apnsKeyId.length > 0 &&
+          apnsTeamId.length > 0 &&
+          apnsPrivateKey.length > 0 &&
+          apnsBundleId.length > 0,
+      },
+      fcm: {
+        projectId: fcmProjectId.length > 0 ? fcmProjectId : undefined,
+        clientEmail: fcmClientEmail.length > 0 ? fcmClientEmail : undefined,
+        privateKey: fcmPrivateKey.length > 0 ? fcmPrivateKey : undefined,
+        isConfigured:
+          fcmProjectId.length > 0 && fcmClientEmail.length > 0 && fcmPrivateKey.length > 0,
+      },
+      rustore: {
+        projectId: rustoreProjectId.length > 0 ? rustoreProjectId : undefined,
+        serviceToken: rustoreServiceToken.length > 0 ? rustoreServiceToken : undefined,
+        isConfigured: rustoreProjectId.length > 0 && rustoreServiceToken.length > 0,
+      },
     } as const;
   }
 

@@ -9,13 +9,10 @@ describe('SupportCloneService.generateDraft', () => {
   const AGENT = 'agent-user-1';
 
   let prismaStub: {
-    issue: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
-    issueComment: {
-      findFirst: ReturnType<typeof vi.fn>;
-      create: ReturnType<typeof vi.fn>;
-    };
+    supportTicket: { findFirst: ReturnType<typeof vi.fn> };
     ideaBlock: { findMany: ReturnType<typeof vi.fn> };
     supportDraftOutcome: { findMany: ReturnType<typeof vi.fn> };
+    conversation: { findMany: ReturnType<typeof vi.fn> };
   };
   let accessStub: {
     getVendorOrgId: ReturnType<typeof vi.fn>;
@@ -25,22 +22,22 @@ describe('SupportCloneService.generateDraft', () => {
   let llmStub: { call: ReturnType<typeof vi.fn> };
   let criticStub: { check: ReturnType<typeof vi.fn> };
   let calibrationStub: { calibrate: ReturnType<typeof vi.fn> };
+  let messagesStub: {
+    getLastExternalQuestion: ReturnType<typeof vi.fn>;
+    appendTicketMessage: ReturnType<typeof vi.fn>;
+  };
   let svc: SupportCloneService;
 
   beforeEach(() => {
     prismaStub = {
-      issue: { findFirst: vi.fn(), findMany: vi.fn() },
-      issueComment: { findFirst: vi.fn(), create: vi.fn() },
+      supportTicket: { findFirst: vi.fn() },
       ideaBlock: { findMany: vi.fn() },
       supportDraftOutcome: { findMany: vi.fn() },
+      conversation: { findMany: vi.fn() },
     };
-    prismaStub.issue.findFirst.mockResolvedValue({
-      id: TICKET,
-      title: 'Как сбросить пароль?',
-    });
-    prismaStub.issueComment.findFirst.mockResolvedValue({
-      content: 'Не могу войти, забыл пароль',
-      contentStripped: 'Не могу войти, забыл пароль',
+    prismaStub.supportTicket.findFirst.mockResolvedValue({
+      conversationId: TICKET,
+      conversation: { title: 'Как сбросить пароль?' },
     });
     prismaStub.ideaBlock.findMany.mockResolvedValue([
       {
@@ -51,8 +48,7 @@ describe('SupportCloneService.generateDraft', () => {
       },
     ]);
     prismaStub.supportDraftOutcome.findMany.mockResolvedValue([]);
-    prismaStub.issue.findMany.mockResolvedValue([]);
-    prismaStub.issueComment.create.mockResolvedValue({ id: 'draft-comment-1' });
+    prismaStub.conversation.findMany.mockResolvedValue([]);
 
     accessStub = {
       getVendorOrgId: vi.fn(async () => VENDOR),
@@ -77,6 +73,10 @@ describe('SupportCloneService.generateDraft', () => {
     calibrationStub = {
       calibrate: vi.fn(async (raw: number) => raw),
     };
+    messagesStub = {
+      getLastExternalQuestion: vi.fn(async () => 'Не могу войти, забыл пароль'),
+      appendTicketMessage: vi.fn(async () => ({ messageId: 'draft-msg-1', seq: '2' })),
+    };
 
     svc = new SupportCloneService(
       prismaStub as unknown as never,
@@ -85,31 +85,47 @@ describe('SupportCloneService.generateDraft', () => {
       llmStub as unknown as never,
       criticStub as unknown as never,
       calibrationStub as unknown as never,
+      messagesStub as unknown as never,
     );
   });
 
   it('создаёт черновик клона (authorType=clone, draftState=pending, citation, scores)', async () => {
     const res = await svc.generateDraft(TICKET, AGENT);
 
-    expect(res).toEqual({ draftCommentId: 'draft-comment-1' });
-    expect(prismaStub.issueComment.create).toHaveBeenCalledWith(
+    expect(res).toEqual({ draftMessageId: 'draft-msg-1' });
+    expect(messagesStub.appendTicketMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
-          issueId: TICKET,
-          authorId: AGENT,
-          access: 'internal',
-          authorType: 'clone',
-          draftState: 'pending',
-        }),
+        conversationId: TICKET,
+        tenantId: VENDOR,
+        authorUserId: AGENT,
+        access: 'internal',
+        authorType: 'clone',
+        draftState: 'pending',
+        emitOutbox: false,
       }),
     );
 
-    const createArg = prismaStub.issueComment.create.mock.calls[0]?.[0] as {
-      data: Record<string, unknown>;
-    };
-    expect(createArg.data.cloneConfidence).toBe('0.800');
-    expect(createArg.data.groundednessScore).toBe('0.900');
-    expect(String(createArg.data.content)).toContain('[BLOCK:b1]');
+    const appendArg = messagesStub.appendTicketMessage.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(appendArg.cloneConfidence).toBe('0.800');
+    expect(appendArg.groundednessScore).toBe('0.900');
+    expect(String(appendArg.content)).toContain('[BLOCK:b1]');
+  });
+
+  it('вопрос берётся из последнего external Message клиента', async () => {
+    await svc.generateDraft(TICKET, AGENT);
+
+    expect(messagesStub.getLastExternalQuestion).toHaveBeenCalledWith(TICKET);
+    const llmArg = llmStub.call.mock.calls[0]?.[0] as { userMessage: string };
+    expect(llmArg.userMessage).toContain('Не могу войти, забыл пароль');
+  });
+
+  it('нет external Message → вопрос = заголовок тикета (fallback)', async () => {
+    messagesStub.getLastExternalQuestion.mockResolvedValueOnce(null);
+
+    await svc.generateDraft(TICKET, AGENT);
+
+    const llmArg = llmStub.call.mock.calls[0]?.[0] as { userMessage: string };
+    expect(llmArg.userMessage).toContain('Как сбросить пароль?');
   });
 
   it('R-INV-1: fetchCandidates вызывается с contourGroupId (изоляция контура)', async () => {
@@ -125,6 +141,17 @@ describe('SupportCloneService.generateDraft', () => {
     );
   });
 
+  it('контур-изоляция: черновик цитирует только блоки контура (по blockId из retrieval)', async () => {
+    await svc.generateDraft(TICKET, AGENT);
+
+    const ideaArg = prismaStub.ideaBlock.findMany.mock.calls[0]?.[0] as {
+      where: { id: { in: string[] } };
+    };
+    expect(ideaArg.where.id.in).toEqual(['b1']);
+    const appendArg = messagesStub.appendTicketMessage.mock.calls[0]?.[0] as { content: string };
+    expect(appendArg.content).toContain('[BLOCK:b1]');
+  });
+
   it('критик не answer → пометка-предупреждение сверху + clarify-рекомендация', async () => {
     criticStub.check.mockResolvedValueOnce({
       groundedness: 0.4,
@@ -134,10 +161,8 @@ describe('SupportCloneService.generateDraft', () => {
 
     await svc.generateDraft(TICKET, AGENT);
 
-    const createArg = prismaStub.issueComment.create.mock.calls[0]?.[0] as {
-      data: Record<string, unknown>;
-    };
-    expect(String(createArg.data.content)).toContain('Клон не уверен');
-    expect(String(createArg.data.content)).toContain('уточнить детали');
+    const appendArg = messagesStub.appendTicketMessage.mock.calls[0]?.[0] as { content: string };
+    expect(String(appendArg.content)).toContain('Клон не уверен');
+    expect(String(appendArg.content)).toContain('уточнить детали');
   });
 });

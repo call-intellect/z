@@ -1,0 +1,178 @@
+import { z } from 'zod';
+
+import type { MessageDto } from './message.dto';
+
+export const CreateConversationSchema = z
+  .object({
+    kind: z.enum(['dm', 'group', 'channel']),
+    title: z.string().min(1).max(200).optional(),
+    memberUserIds: z.array(z.string().min(1)).max(500).default([]),
+  })
+  .strict();
+export type CreateConversationDto = z.infer<typeof CreateConversationSchema>;
+
+export interface CreateConversationResponse {
+  conversationId: string;
+}
+
+export const AddMemberSchema = z
+  .object({
+    userId: z.string().min(1),
+  })
+  .strict();
+export type AddMemberDto = z.infer<typeof AddMemberSchema>;
+
+export const VoiceSchema = z
+  .object({
+    url: z.string().min(1),
+    duration: z.number().int().min(0).optional(),
+    transcript: z.string().optional(),
+  })
+  .strict();
+
+export const SendMessageSchema = z
+  .object({
+    content: z.string().min(1).max(20_000),
+    clientMessageId: z.string().min(1).max(200),
+    parentMessageId: z.string().min(1).optional(),
+    access: z.enum(['normal', 'internal', 'external']).optional(),
+    mentions: z.array(z.string().min(1)).max(100).optional(),
+    voice: VoiceSchema.optional(),
+  })
+  .strict();
+export type SendMessageDto = z.infer<typeof SendMessageSchema>;
+
+export const ListMessagesQuerySchema = z
+  .object({
+    sinceSeq: z.string().regex(/^\d+$/u).optional(),
+    limit: z.coerce.number().int().min(1).max(200).optional(),
+  })
+  .strict();
+export type ListMessagesQuery = z.infer<typeof ListMessagesQuerySchema>;
+
+export const MarkReadSchema = z
+  .object({
+    cursorSeq: z.union([z.string().regex(/^\d+$/u), z.number().int().min(0)]),
+  })
+  .strict();
+export type MarkReadDto = z.infer<typeof MarkReadSchema>;
+
+export const ReactionSchema = z
+  .object({
+    emoji: z.string().min(1).max(32),
+  })
+  .strict();
+export type ReactionDto = z.infer<typeof ReactionSchema>;
+
+export const AskKoraSchema = z
+  .object({
+    question: z.string().min(1).max(4000),
+  })
+  .strict();
+export type AskKoraDto = z.infer<typeof AskKoraSchema>;
+
+export const MessageToTaskSchema = z
+  .object({
+    title: z.string().min(1).max(500).optional(),
+  })
+  .strict();
+export type MessageToTaskDto = z.infer<typeof MessageToTaskSchema>;
+
+export interface WhatsNewResponse {
+  summary: string | null;
+  skipped: 'too_few' | null;
+  fromSeq: string | null;
+  toSeq: string | null;
+  messageCount: number;
+}
+
+export interface AskKoraResponse {
+  answer: string;
+  citations: unknown[];
+  sourceMessageIds: string[];
+}
+
+export interface MessageToTaskResponse {
+  issueId: string;
+}
+
+export interface MessageToDecisionResponse {
+  decisionId: string;
+}
+
+export interface SendMessageResponse {
+  message: MessageDto;
+  deduped: boolean;
+}
+
+export interface ListMessagesResponse {
+  items: MessageDto[];
+  nextSeq: string | null;
+}
+
+export interface ReactionsResponse {
+  messageId: string;
+  reactions: Record<string, string[]>;
+}
+
+export interface OkResponse {
+  ok: true;
+}
+
+export const BlockMemberSchema = z
+  .object({
+    userId: z.string().min(1),
+  })
+  .strict();
+export type BlockMemberDto = z.infer<typeof BlockMemberSchema>;
+
+export const ReportMessageSchema = z
+  .object({
+    reason: z.string().min(1).max(500).optional(),
+  })
+  .strict();
+export type ReportMessageDto = z.infer<typeof ReportMessageSchema>;
+
+export const CreatePollSchema = z
+  .object({
+    question: z.string().min(1).max(500),
+    options: z.array(z.string().min(1).max(200)).min(2).max(20),
+  })
+  .strict();
+export type CreatePollDto = z.infer<typeof CreatePollSchema>;
+
+export interface CreatePollResponse {
+  pollId: string;
+}
+
+export const VotePollSchema = z
+  .object({
+    optionId: z.string().min(1),
+  })
+  .strict();
+export type VotePollDto = z.infer<typeof VotePollSchema>;
+
+export interface ClosePollResponse {
+  pollId: string;
+  status: string;
+  decisionBlockId: string | null;
+  winningOptionId: string | null;
+}
+
+export interface PollResponse {
+  id: string;
+  conversationId: string;
+  question: string;
+  status: string;
+  closedAt: string | null;
+  decisionBlockId: string | null;
+  createdByUserId: string;
+  totalVotes: number;
+  options: Array<{ id: string; text: string; sortOrder: number; voteCount: number }>;
+}
+
+export interface HuddleStartResponse {
+  meetingId: string;
+  roomToken: string;
+  joinUrl: string;
+}

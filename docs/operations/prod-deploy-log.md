@@ -71,6 +71,81 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-28 — Единый чат: Ф6a backend push-фундамент + удаление аккаунта + блокировка пользователя (ветка feat/unified-chat-kora)
+
+> ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф6a. Транспорт-агностичный `PushService` (APNs/FCM/RuStore/web-push) + `PushToken` + push-канал conversational для офлайн-сигнала `chat.new_message` (ФЗ-41: payload без тела/имён). Самоудаление аккаунта (App Review 5.1.1(v)) + блокировка собеседника в dm + жалоба на сообщение (UGC-модерация App Store/Play).
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260628205102_push_tokens` (ALTER TYPE `ChannelKind` += `push` + CREATE TABLE `PushToken`/`UserBlock`/`MessageReport`). 🟡 1 НОВЫЙ ENV-флаг `CHAT_PUSH_ENABLED` (kill-switch ON) + опциональные push-секреты (APNS_*/FCM_*/RUSTORE_*/VAPID_* теперь в env.schema).** 2 новые крутилки (расширен существующий сид `seed-admin-setting-chat.ts`). Docker rebuild backend.
+
+- **Шаг 1 — ENV: 1 новый флаг + push-секреты.** `CHAT_PUSH_ENABLED` (zBool default true, kill-switch тип A — ВКЛ, действий владельца не требует; выкл → `PushChannelAdapter.send` no-op). **Опциональные push-секреты (наличие = отправка по транспорту, отсутствие = транспорт no-op, R34):** `APNS_KEY_ID`/`APNS_TEAM_ID`/`APNS_PRIVATE_KEY`/`APNS_BUNDLE_ID`/`APNS_USE_SANDBOX`, `FCM_PROJECT_ID`/`FCM_CLIENT_EMAIL`/`FCM_PRIVATE_KEY`, `RUSTORE_PROJECT_ID`/`RUSTORE_SERVICE_TOKEN`. **Также формализованы в env.schema:** `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT`/`PUSH_MAX_FAILURES` (раньше читались мимо схемы — теперь часть `PushSchema`; без значений web-push остаётся no-op как и был). Реестр — `docs/operations/feature-flags.md` (push-секреты в разделе «🔑 НЕ флаг, но ждёт прод-ENV»).
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260628205102_push_tokens` — `ALTER TYPE "ChannelKind" ADD VALUE IF NOT EXISTS 'push'` + `CREATE TABLE "PushToken"` (unique `[userId,transport,token]`, index `[tenantId,userId]`, FK → `User` `ON DELETE CASCADE`) + `CREATE TABLE "UserBlock"` (unique `[tenantId,blockerUserId,blockedUserId]`, FK ×2 → `User` `ON DELETE CASCADE`) + `CREATE TABLE "MessageReport"` (2 индекса). Аддитивная (ADD VALUE + CREATE TABLE, без DROP), без потери данных, backfill не нужен. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«PushToken / UserBlock / MessageReport».
+- **Шаг 7 — Seed крутилок (идемпотентный, сид УЖЕ в STEPS, расширен существующий):** доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`:
+  - `seed-admin-setting-chat.ts` (`phase:'seed-base'`) — `push_debounce_seconds` (30 — окно дебаунса push, код-fallback 30) + `unread_smart_badge` (true — умный бейдж непрочитанного, код-fallback true).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend (push: `PushService` транспорт-агностичный + `ApnsSender`/`FcmSender`/`RustoreSender` + `PushChannelAdapter` (kind=push, регистрируется в `ChannelRegistry`); `PushTokensController` POST/DELETE `/push/tokens`; `chat.new_message` policy += `push`. accounts: `AccountDeletionController` POST `/account/delete` + `AccountsService.deleteAccount` (soft-delete + чистка push/binding/member + revoke сессий). messaging: `UserBlockService` + `MessageReportService`; `block-member`/`report` эндпоинты; dm-send-гард на `UserBlock`).
+- **Шаг 12 — Smoke** (после выката): Swagger `POST /api/v1/push/tokens` + `DELETE`; `POST /api/v1/account/delete`; `POST /api/v1/conversations/:id/block-member`; `POST /api/v1/messages/:messageId/report`. Флаг `CHAT_PUSH_ENABLED` в админке. `psql \dT "ChannelKind"` содержит `push`; `\d "PushToken"`/`"UserBlock"`/`"MessageReport"` существуют. Боевая отправка push требует прод-кредов (APNS_*/FCM_*/RUSTORE_*/VAPID_*) — без них транспорты no-op, ядро не падает.
+
+---
+
+### 📄 2026-06-28 — Единый чат: Ф3.5a внешняя переписка с клиентами + relay-access фикс (ветка feat/unified-chat-kora)
+
+> ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф3.5a. Ядро внешней переписки (magic-link к одному разговору, sha256-хэш токена) + security-фикс relay: `internal`-сообщения больше не утекают клиенту-члену (эмит только в staff-room).
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260628190000_external_chat` (CREATE TABLE `ConversationAccessLink` + `User += kind/verified`). 🟡 1 НОВЫЙ ENV-флаг `EXTERNAL_CHAT_ENABLED` (kill-switch ON).** 2 новые крутилки (расширен существующий сид). Docker rebuild backend.
+
+- **Шаг 1 — ENV: 1 новый флаг** `EXTERNAL_CHAT_ENABLED` (zBool default true, kill-switch тип A — ВКЛ, действий владельца не требует; выкл → `startExternalConversation` бросает `503 EXTERNAL_CHAT_DISABLED`). В `ADMIN_FALLBACK_ENV_KEYS`. Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260628190000_external_chat` — `CREATE TABLE "ConversationAccessLink"` (unique `tokenHash`, index `conversationId`, FK → `Conversation` `ON DELETE CASCADE`) + `ALTER TABLE "User" ADD COLUMN "kind" TEXT NOT NULL DEFAULT 'member'` + `ADD COLUMN "verified" BOOLEAN NOT NULL DEFAULT false`. Аддитивная (CREATE TABLE + ADD COLUMN, без DROP), без потери данных, backfill не нужен. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«ConversationAccessLink / User.kind/verified».
+- **Шаг 7 — Seed крутилок (идемпотентный, сид УЖЕ в STEPS, расширен существующий):** доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`:
+  - `seed-admin-setting-chat.ts` (`phase:'seed-base'`) — `external_link_ttl_hours` (168 — TTL magic-link, код-fallback 168) + `external_inbound_rate_limit` (30 — лимит входящих/час, код-fallback 30).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend (messaging/external: `AccessLinkService` create/verify/revoke/claim хэш-токена; `ExternalConversationService` старт внешнего чата + email-приглашение через `MailService.sendPlain` (доставка по телефону — TODO Ф3.5b); `ExternalConversationController POST /external-conversations`; `ExternalGuestGuard` + JWT `signExternalGuestSession`/`verifyExternalGuestSession`; tracker.gateway `conversationStaffRoom` + join staff для не-client; outbox-relay фильтр access internal→staff-room).
+- **Шаг 12 — Smoke** (после выката): Swagger `/api/v1/external-conversations` (POST) присутствует; флаг `EXTERNAL_CHAT_ENABLED` в админке; `psql \d "ConversationAccessLink"` существует; `\d "User"` имеет `kind`/`verified`.
+
+---
+
+### 📄 2026-06-28 — Единый чат: Ф5a AI-крючки — chat.ingest + voice ASR + системное сообщение закрытия встречи (ветка feat/unified-chat-kora)
+
+> ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф5 (R17/R20). Чат кормит граф: после `relay` (доставка) сообщение в `feedsGraph=true`-треде (вкл. dm, кроме `authorType='system'`) ставится job `chat.ingest` → `ChatIngestService` → `ingest.ingest(kind='chat_message', sourceExternalId='msg:<id>')` (один источник `Message`, без двойного ingest; внешний мост Ф0 — отдельный путь). Голосовые: при отправке сообщения с `voiceUrl` ставится `voice.transcribe` → ASR Vox → `Message.voiceTranscript` + пере-enqueue `chat.ingest` (chat-ingest берёт `voiceTranscript`, если `content` пуст). Закрытие встречи (`transitionStatus → ai_ready/ai_failed`) → системное `Message(authorType='system')` в work_chat связанных задач (`Issue.linkedMeetingIds has meetingId`), идемпотентно по `clientMessageId='meeting-closed:<id>'`.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟡 1 НОВЫЙ ENV-флаг `CHAT_INGEST_ENABLED` (kill-switch ON). 2 новые BullMQ-очереди (`chat.ingest`, `voice.transcribe`).** Новых seed/patch/backfill/postgres-init НЕТ. Docker rebuild backend.
+
+- **Шаг 1 — ENV: 1 новый флаг** `CHAT_INGEST_ENABLED` (zBool default true, kill-switch тип A — ВКЛ, действий владельца не требует; выкл → relay/voice-transcribe не ставят `chat.ingest`, переписка не втекает в граф; доставка/WS/notify не затронуты). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend (messaging: `ChatIngestQueueService`+`ChatIngestWorker`+`ChatIngestService`; `VoiceTranscribeQueueService`+`VoiceTranscribeWorker`; relay-триггер `chat.ingest` после markSent; `MessageService.appendSystemMessage` + enqueue `voice.transcribe` на voice; meetings: `MeetingsService.transitionStatus` → системное сообщение в work_chat). Воркеры — in-process через `WorkersModule`, отдельного процесса нет.
+- **Шаг 12 — Smoke** (после выката): флаг `CHAT_INGEST_ENABLED` в админке; в Redis появляются очереди `chat.ingest` и `voice.transcribe` после отправки сообщения/голосового (`grep` логов воркеров `ChatIngestWorker запущен` / `VoiceTranscribeWorker запущен`); отправка обычного сообщения в feedsGraph-тред → IdeaBlock из `Source(type='chat', name='Сообщения Коры')`; закрытие встречи со связанной задачей → системное сообщение в её work_chat (повтор закрытия не дублирует — `meeting-closed:<id>`).
+
+---
+
+### 📄 2026-06-28 — Единый чат: Ф5b AI-крючки — «Что пропустил» + «Спросить Кору» + сообщение→задача/решение (ветка feat/unified-chat-kora)
+
+> ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф5 (R19). Новый `taskType='chat-summary'` (стабильный SYSTEM, переменное в конце user — prompt caching). `GET /conversations/:id/whats-new` → AI-сводка непрочитанного с цитатами `[MSG:<id>]` при N≥`chat_summary_min_messages`. `POST /conversations/:id/ask` → «Спросить Кору» поверх chat-v2 (`askEphemeral`, scope=org) со ссылками на исходные `Message.id` (маппинг `usedBlockIds`→`IdeaBlockEvidence`→`RawEvent.sourceExternalId LIKE 'msg:%'`). `POST /conversations/:id/messages/:messageId/to-task` → intake-кандидат (`source='chat'`, provenance `externalId='msg:<id>'`); `…/to-decision` → `Decision(status='proposed')` с provenance в `previewSourceRef`.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ.** 1 новый seed LLM-routes + 2 новые AdminSetting-крутилки (расширен существующий сид). Docker rebuild backend.
+
+- **Шаг 1 — ENV: новых нет.** Обе крутилки (`chat_summary_min_messages`=5, `chat_summary_idle_days`=3) — чистые AdminSetting (см. Шаг 7). Новых флагов нет (`POST /ask` уважает существующий `CHAT_V2_ENABLED` — выкл → 503).
+- **Шаг 7 — Seed крутилок (идемпотентный, сид УЖЕ в STEPS `phase:'seed-base'`, новых сидов НЕТ — расширен существующий):** `seed-admin-setting-chat.ts` теперь сидит `chat_summary_min_messages` (5 — минимум непрочитанных для AI-сводки) + `chat_summary_idle_days` (3). Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 7 (LLM-routes) — Seed маршрута (идемпотентный, авторитетный upsert, НОВЫЙ сид УЖЕ в STEPS `phase:'seed-llm-routes'`):** `docker compose exec backend bun run scripts/seed-llm-task-routes-chat.ts` — маршрут `chat-summary` (primary `deepseek/deepseek-v4-flash`, secondary `openai-via-proxy/gpt-5.4-mini`, tertiary `ollama/qwen3.5:9b`). Уважает `editedByAdmin`. Прогоняется агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend (messaging: `ChatSummaryService`+`AskKoraService`+`MessageActionsService`, 4 новых эндпоинта в `ConversationController`; `MessagingModule` импортирует `ChatV2Module` + `forwardRef(TrackerModule)`; новый prompt `chat-summary.prompt.ts`; `IntakeSourceSchema` += `'chat'`).
+- **Шаг 12 — Smoke** (после выката): маршрут `chat-summary` виден в `/admin/ai-models`; `GET /conversations/:id/whats-new` на тред с ≥5 непрочитанными → сводка с `[MSG:<id>]`; `POST /conversations/:id/ask` → ответ + `sourceMessageIds`; `POST …/to-task` → intake-карточка `source='chat'`; `POST …/to-decision` → `Decision(status='proposed')`. Swagger: 4 эндпоинта в теге `messaging / conversations`.
+
+---
+
+### 📄 2026-06-28 — Единый чат: Ф4a бэкенд экрана «Сообщения» — агрегатор `/message-threads` + GIN-поиск `/message-search` (ветка feat/unified-chat-kora)
+
+> ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф4 (INV-A1/A3). Единый контроллер ленты (`InboxController`): `GET /message-threads` (один запрос по `Conversation` члена, фильтр `type`, `sort=recent|active|unread`, `q=` по людям/группам/PROJ-NN, составной курсор) + `GET /message-threads/unread-count` (Redis-кэш TTL 15с) + `GET /message-search` (полнотекст GIN по `Message.contentStripped`). `MessageService.insertMessageRow` теперь заполняет `contentStripped` плейнтекстом (`stripToPlain`) на записи.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ. 1 НОВЫЙ GIN-индекс в `postgres-init.sql` (авто). 1 новый backfill (в STEPS, опц.).** Docker rebuild backend.
+
+- **Шаг 1 — ENV: новых нет.**
+- **Шаг 5 — postgres-init (новый GIN-индекс, авто на `apply-postgres-init`):** `Message_contentStripped_gin` — `CREATE INDEX IF NOT EXISTS "Message_contentStripped_gin" ON "Message" USING gin (to_tsvector('russian', coalesce("contentStripped", '')))` (русский словарь, как у `IdeaBlock.search_tsv`/`decisions`/`insights`). Нужен полнотексту `/message-search`. Обёрнут в `DO $$ ... IF table 'Message' exists`, идемпотентно (`IF NOT EXISTS`); едет существующим schema-этапом (`apply-prod-deploy --with-schema` или `docker compose exec backend bun run apply-postgres-init`).
+- **Шаг 8 — Backfill (1 новый, УЖЕ в STEPS `phase:'backfill'`, `skipBootstrap`):** `backfill-message-contentstripped.ts` — расшифровывает `Message.content` → `stripToPlain` → пишет в `contentStripped` для существующих сообщений (новые индексируются на записи). Идемпотентно (фильтр `contentStripped: null`, повтор → no-op). Опционален: без него ищутся только сообщения, созданные после выката. Прогон: `docker compose exec backend bun run scripts/backfill-message-contentstripped.ts` (или агрегатором `--mode update`); `--dry-run` для проверки counts.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend (messaging: `InboxController` + `InboxService` listThreads/unreadCount/searchMessages; `stripToPlain` util в `insertMessageRow`; `InboxController`/`InboxService` зарегистрированы в `MessagingModule`).
+- **Шаг 12 — Smoke** (после выката):
+  - Swagger `/api/docs` тег `messaging / inbox` показывает `GET /api/v1/message-threads`, `GET /api/v1/message-threads/unread-count`, `GET /api/v1/message-search`.
+  - GIN: после `apply-postgres-init` — `psql \di "Message_contentStripped_gin"` существует.
+  - Поведение (из сессии члена): `/message-threads?type=all` отдаёт разговоры всех kind; `type=ticket` несёт `status/slaBreachedAt`, `work_chat` — `linkedIssue`, прочие — `null`; `sort=active|unread` меняют порядок; `q=PROJ-` фильтрует work_chat; `/message-search?q=<слово>` находит по телу.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-27 — Задача·решение·исполнение — единый контур (ветка feature/task-decision-execution-unified)
 
 > ТЗ `plans/tz/2026-06-27-task-decision-execution-unified-tz.md` (Ф0–Ф5). P0-фикс краша создания задач (advisory-lock Prisma 7) + три класса извлечения (idea/задача/решение) + actionable-решение авто-заводит задачу (`Decision.impliesAction`) + закрытие из разговора (embed-resilience + журнал хода) + дашборд на исполнении + надёжность пайплайна (не терять RawEvent + JSON-ремонт воркеров). Коммиты `66c69295` (Ф0) … `1b27ff2a` (Ф5).

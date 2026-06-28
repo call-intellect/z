@@ -338,6 +338,18 @@ const KnowledgeCoreSchema = z.object({
 
   REPORT_INGEST_ENABLED: zBool(true),
 
+  MESSAGE_BRIDGE_ENABLED: zBool(true),
+
+  CHAT_ENABLED: zBool(true),
+
+  CHAT_INGEST_ENABLED: zBool(true),
+
+  CHAT_PUSH_ENABLED: zBool(true),
+
+  EXTERNAL_CHAT_ENABLED: zBool(true),
+
+  HUDDLES_ENABLED: zBool(true),
+
   CHAT_V2_ENABLED: zBool(false),
   CHAT_V2_TOP_BLOCKS: z.coerce.number().int().positive().default(12),
   CHAT_V2_GRAPH_HOPS: z.coerce.number().int().min(0).max(2).default(1),
@@ -440,6 +452,26 @@ const ConversationalSchema = z.object({
 const TelegramBotChannelSchema = z.object({
   TELEGRAM_BOT_API_BASE: z.string().url().default('https://api.telegram.org'),
   TELEGRAM_BOT_GLOBAL_RPS: z.coerce.number().int().positive().default(25),
+});
+
+const PushSchema = z.object({
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().default('mailto:noreply@kora.app'),
+  PUSH_MAX_FAILURES: z.coerce.number().int().positive().default(5),
+
+  APNS_KEY_ID: z.string().optional(),
+  APNS_TEAM_ID: z.string().optional(),
+  APNS_PRIVATE_KEY: z.string().optional(),
+  APNS_BUNDLE_ID: z.string().optional(),
+  APNS_USE_SANDBOX: zBool(false),
+
+  FCM_PROJECT_ID: z.string().optional(),
+  FCM_CLIENT_EMAIL: z.string().optional(),
+  FCM_PRIVATE_KEY: z.string().optional(),
+
+  RUSTORE_PROJECT_ID: z.string().optional(),
+  RUSTORE_SERVICE_TOKEN: z.string().optional(),
 });
 
 const TelegramProxySchema = z.object({
@@ -824,6 +856,7 @@ export const EnvSchema: z.ZodTypeAny = (RuntimeSchema as unknown as any)
   .merge(DocumentIngestSchema)
   .merge(ExtractionSchema)
   .merge(ConversationalSchema)
+  .merge(PushSchema)
   .merge(TelegramBotChannelSchema)
   .merge(TelegramProxySchema)
   .merge(MaxBotChannelSchema)

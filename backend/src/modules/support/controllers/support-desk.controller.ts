@@ -67,8 +67,8 @@ export class SupportDeskController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(DeskReplySchema)) body: DeskReplyDto,
     @CurrentUser() user: CurrentUserPayload,
-  ): Promise<{ ok: true; commentId: string }> {
-    return this.desk.reply(id, user.id, body.message, body.fromDraftCommentId);
+  ): Promise<{ ok: true; messageId: string }> {
+    return this.desk.reply(id, user.id, body.message, body.fromDraftMessageId);
   }
 
   @Post('tickets/:id/draft')
@@ -79,32 +79,32 @@ export class SupportDeskController {
   async draft(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
-  ): Promise<{ draftCommentId: string }> {
+  ): Promise<{ draftMessageId: string }> {
     return this.clone.generateDraft(id, user.id);
   }
 
-  @Post('drafts/:commentId/accept')
+  @Post('drafts/:messageId/accept')
   @HttpCode(200)
   @ApiOperation({
     summary: 'Принять черновик клона как есть (ответить клиенту, Ф3)',
   })
   async acceptDraft(
-    @Param('commentId') commentId: string,
+    @Param('messageId') messageId: string,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<{ ok: true }> {
-    return this.learning.accept(commentId, user.id);
+    return this.learning.accept(messageId, user.id);
   }
 
-  @Post('drafts/:commentId/reject')
+  @Post('drafts/:messageId/reject')
   @HttpCode(200)
   @ApiOperation({
     summary: 'Отклонить черновик клона (учебный сигнал, без ответа, Ф3)',
   })
   async rejectDraft(
-    @Param('commentId') commentId: string,
+    @Param('messageId') messageId: string,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<{ ok: true }> {
-    return this.learning.reject(commentId, user.id);
+    return this.learning.reject(messageId, user.id);
   }
 
   @Post('tickets/:id/note')
@@ -114,7 +114,7 @@ export class SupportDeskController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(DeskNoteSchema)) body: DeskNoteDto,
     @CurrentUser() user: CurrentUserPayload,
-  ): Promise<{ ok: true; commentId: string }> {
+  ): Promise<{ ok: true; messageId: string }> {
     return this.desk.note(id, user.id, body.message);
   }
 
@@ -137,6 +137,6 @@ export class SupportDeskController {
     @Body(new ZodValidationPipe(DeskTransitionSchema)) body: DeskTransitionDto,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<{ ok: true }> {
-    return this.desk.transition(id, user.id, body.stateId);
+    return this.desk.transition(id, user.id, body.status);
   }
 }

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import type { PushSubscriptionsService } from '../services/push-subscriptions.service';
+import type { PushService } from '../services/push.service';
 
 import { PushSubscriptionsController } from './push-subscriptions.controller';
 
@@ -53,8 +54,12 @@ function build(): {
       createdAt: '2026-05-23T00:00:00.000Z',
     })),
   };
+  const push = {
+    ensurePushBinding: vi.fn(async () => undefined),
+  };
   const ctl = new PushSubscriptionsController(
     svc as unknown as PushSubscriptionsService,
+    push as unknown as PushService,
   );
   return { ctl, svc };
 }

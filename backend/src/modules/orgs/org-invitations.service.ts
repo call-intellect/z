@@ -9,6 +9,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { MembershipRole, OrgInvitation, Prisma } from '@prisma/client';
 import argon2 from 'argon2';
 import { nanoid } from 'nanoid';
@@ -18,6 +19,10 @@ import { BusinessMetricsService } from '../../common/metrics/business-metrics.se
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ConversationalLinkCodeService } from '../conversational/link-code.service';
 import { MailService } from '../mail/mail.service';
+import {
+  MEMBERSHIP_CREATED,
+  type MembershipCreatedPayload,
+} from '../messaging/messaging.events';
 import { RbacService } from '../rbac/rbac.service';
 
 
@@ -65,7 +70,12 @@ export class OrgInvitationsService {
     private readonly linkCodes: ConversationalLinkCodeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(EventEmitter2) private readonly events: EventEmitter2,
   ) {}
+
+  private emitMembershipCreated(payload: MembershipCreatedPayload): void {
+    this.events.emit(MEMBERSHIP_CREATED, payload);
+  }
 
   async createInvitation(input: {
     orgId: string;
@@ -432,6 +442,7 @@ export class OrgInvitationsService {
 
     this.rbac.invalidate(userId, invite.orgId);
     this.metrics.incInviteAccepted({ path: 'password' });
+    this.emitMembershipCreated({ tenantId: invite.orgId, userId });
 
     return {
       orgId: invite.orgId,
@@ -532,6 +543,7 @@ export class OrgInvitationsService {
     });
 
     this.rbac.invalidate(user.id, invite.orgId);
+    this.emitMembershipCreated({ tenantId: invite.orgId, userId: user.id });
 
     const { token } = await input.issueSession({
       userId: user.id,

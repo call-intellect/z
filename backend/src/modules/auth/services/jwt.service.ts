@@ -24,6 +24,16 @@ export interface GuestSessionPayload {
   meetingId: string;
 }
 
+export interface ExternalGuestSessionPayload {
+  userId: string;
+  conversationId: string;
+  accessLinkId: string;
+}
+
+export interface VerifiedExternalGuestSessionPayload extends ExternalGuestSessionPayload {
+  exp: number;
+}
+
 export interface BitrixStatePayload {
   purpose: 'bitrix_oauth';
   sub: string;
@@ -48,6 +58,8 @@ export interface VerifiedGuestSessionPayload extends GuestSessionPayload {
 }
 
 const GUEST_SESSION_TTL_SECONDS = 24 * 60 * 60;
+
+const EXTERNAL_GUEST_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 const BITRIX_STATE_TTL_SECONDS = 15 * 60;
 
@@ -119,6 +131,30 @@ export class JwtService {
 
   get guestSessionTtlSeconds(): number {
     return GUEST_SESSION_TTL_SECONDS;
+  }
+
+  signExternalGuestSession(payload: ExternalGuestSessionPayload): string {
+    const options: SignOptions = {
+      algorithm: ALGORITHM,
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      expiresIn: EXTERNAL_GUEST_SESSION_TTL_SECONDS,
+    };
+    return jwt.sign(payload, this.cfg.auth.sessionSecret, options);
+  }
+
+  verifyExternalGuestSession(token: string): VerifiedExternalGuestSessionPayload {
+    const verifyOptions: VerifyOptions = {
+      algorithms: [ALGORITHM],
+      issuer: ISSUER,
+      audience: AUDIENCE,
+    };
+    const decoded = jwt.verify(token, this.cfg.auth.sessionSecret, verifyOptions);
+    return this.assertExternalGuestSessionPayload(decoded);
+  }
+
+  get externalGuestSessionTtlSeconds(): number {
+    return EXTERNAL_GUEST_SESSION_TTL_SECONDS;
   }
 
   signBitrixState(payload: Omit<BitrixStatePayload, 'purpose'>): string {
@@ -219,5 +255,27 @@ export class JwtService {
       throw new Error('Невалидный guest-session JWT payload');
     }
     return { participantId, meetingId, exp };
+  }
+
+  private assertExternalGuestSessionPayload(
+    decoded: unknown,
+  ): VerifiedExternalGuestSessionPayload {
+    if (typeof decoded !== 'object' || decoded === null) {
+      throw new Error('JWT payload должен быть объектом');
+    }
+    const obj = decoded as Record<string, unknown>;
+    const userId = obj['userId'];
+    const conversationId = obj['conversationId'];
+    const accessLinkId = obj['accessLinkId'];
+    const exp = obj['exp'];
+    if (
+      typeof userId !== 'string' ||
+      typeof conversationId !== 'string' ||
+      typeof accessLinkId !== 'string' ||
+      typeof exp !== 'number'
+    ) {
+      throw new Error('Невалидный external-guest-session JWT payload');
+    }
+    return { userId, conversationId, accessLinkId, exp };
   }
 }

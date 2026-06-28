@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { CurationModule } from '../curation/curation.module';
+import { MessagingModule } from '../messaging/messaging.module';
 import { TrackerModule } from '../tracker/tracker.module';
 
 import { PendingActionsController } from './pending-actions.controller';
@@ -39,7 +40,7 @@ import { PendingActionsReminderCron } from './workers/pending-actions-reminder.c
   // (делегаты резолва). Редизайн Ф4 — TrackerModule экспортирует IntakeService
   // (резолв intake через triage). ConversationalService — @Global (respondToProbe).
   // Цикла нет: curation/tracker НЕ импортируют pending-actions.
-  imports: [PrismaModule, CurationModule, TrackerModule],
+  imports: [PrismaModule, CurationModule, TrackerModule, MessagingModule],
   controllers: [PendingActionsController],
   providers: [
     PendingActionsService,

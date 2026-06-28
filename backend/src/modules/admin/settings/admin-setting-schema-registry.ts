@@ -339,6 +339,17 @@ const registry = new Map<string, ZodTypeAny>([
   ['router.llmFallbackEnabled', z.boolean()],
   ['router.fallbackCacheTtlSeconds', POSITIVE_INT],
 
+  ['chat_presence_ttl_seconds', POSITIVE_INT],
+  ['chat_outbox_sweep_stale_seconds', POSITIVE_INT],
+  ['chat_outbox_sweep_batch_limit', POSITIVE_INT],
+  ['chat_summary_min_messages', POSITIVE_INT],
+  ['chat_summary_idle_days', POSITIVE_INT],
+  ['external_link_ttl_hours', POSITIVE_INT],
+  ['external_inbound_rate_limit', POSITIVE_INT],
+  ['message_retention_days', NON_NEGATIVE_INT],
+  ['hr_auto_subscribe_enabled', z.boolean()],
+  ['huddle_max_participants', POSITIVE_INT],
+
   ['orchestrator.enabled', z.boolean()],
   ['orchestrator.maxSubagentsPerRun', POSITIVE_INT],
   ['orchestrator.runTimeoutMinutes', POSITIVE_INT],
@@ -467,6 +478,9 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['recording.trackWatchdogEnabled', z.boolean()],
   ['recording.trackWatchdogTimeoutMinutes', z.coerce.number()],
+
+  ['push_debounce_seconds', z.number().int().nonnegative()],
+  ['unread_smart_badge', z.boolean()],
 ]);
 
 export function getSchemaForKey(key: string): ZodTypeAny {

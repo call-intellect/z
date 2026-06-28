@@ -11,6 +11,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { ChatV2RetrievalService } from '../../knowledge-core/services/chat-v2-retrieval.service';
 import { ConfidenceCalibrationService } from '../../knowledge-core/services/confidence-calibration.service';
+import { MessageService } from '../../messaging/services/message.service';
 import {
   SUPPORT_CLONE_DRAFT_JSON_SCHEMA,
   SUPPORT_CLONE_DRAFT_SYSTEM_PROMPT,
@@ -47,9 +48,10 @@ export class SupportCloneService {
     private readonly critic: SupportAnswerCriticService,
     @Inject(ConfidenceCalibrationService)
     private readonly calibration: ConfidenceCalibrationService,
+    @Inject(MessageService) private readonly messages: MessageService,
   ) {}
 
-  async generateDraft(ticketId: string, agentUserId: string): Promise<{ draftCommentId: string }> {
+  async generateDraft(ticketId: string, agentUserId: string): Promise<{ draftMessageId: string }> {
     const vendorOrgId = await this.access.getVendorOrgId();
     if (!vendorOrgId) {
       throw new BadRequestException({
@@ -71,34 +73,19 @@ export class SupportCloneService {
       });
     }
 
-    const issue = await this.prisma.issue.findFirst({
-      where: {
-        id: ticketId,
-        tenantId: vendorOrgId,
-        supportCustomerUserId: { not: null },
-        deletedAt: null,
-      },
-      select: { id: true, title: true },
+    const ticket = await this.prisma.supportTicket.findFirst({
+      where: { conversationId: ticketId, tenantId: vendorOrgId },
+      select: { conversationId: true, conversation: { select: { title: true } } },
     });
-    if (!issue) {
+    if (!ticket) {
       throw new NotFoundException({
         ok: false,
         error: { code: 'ticket_not_found', message: 'Тикет не найден' },
       });
     }
 
-    const lastExternal = await this.prisma.issueComment.findFirst({
-      where: {
-        issueId: issue.id,
-        access: 'external',
-        authorType: { not: 'clone' },
-        deletedAt: null,
-      },
-      orderBy: { createdAt: 'desc' },
-      select: { content: true, contentStripped: true },
-    });
-    const question =
-      lastExternal?.contentStripped?.trim() || lastExternal?.content?.trim() || issue.title;
+    const lastQuestion = await this.messages.getLastExternalQuestion(ticket.conversationId);
+    const question = lastQuestion ?? ticket.conversation.title ?? '';
 
     try {
       const ranked = await this.retrieval.fetchCandidates({
@@ -148,7 +135,7 @@ export class SupportCloneService {
           strict: true,
           schema: SUPPORT_CLONE_DRAFT_JSON_SCHEMA,
         },
-        sourceRef: { type: 'support_ticket', id: issue.id },
+        sourceRef: { type: 'support_ticket', id: ticket.conversationId },
       });
 
       const parsed = parseDraftJson(llmResult.text);
@@ -193,22 +180,20 @@ export class SupportCloneService {
         draftContent = `${draftContent}\n\n(без ссылок на базу — проверьте обоснованность)`;
       }
 
-      const comment = await this.prisma.issueComment.create({
-        data: {
-          issueId: issue.id,
-          authorId: agentUserId,
-          content: draftContent,
-          contentStripped: draftContent,
-          access: 'internal',
-          authorType: 'clone',
-          draftState: 'pending',
-          cloneConfidence: clamp01(cloneConfidence).toFixed(3),
-          groundednessScore: clamp01(crit.groundedness).toFixed(3),
-        },
-        select: { id: true },
+      const { messageId } = await this.messages.appendTicketMessage({
+        tenantId: vendorOrgId,
+        conversationId: ticket.conversationId,
+        authorUserId: agentUserId,
+        content: draftContent,
+        access: 'internal',
+        authorType: 'clone',
+        draftState: 'pending',
+        cloneConfidence: clamp01(cloneConfidence).toFixed(3),
+        groundednessScore: clamp01(crit.groundedness).toFixed(3),
+        emitOutbox: false,
       });
 
-      return { draftCommentId: comment.id };
+      return { draftMessageId: messageId };
     } catch (err) {
       if (
         err instanceof ServiceUnavailableException ||
@@ -243,21 +228,21 @@ export class SupportCloneService {
       },
       orderBy: { createdAt: 'desc' },
       take: FEW_SHOT_LIMIT,
-      select: { issueId: true, finalText: true },
+      select: { conversationId: true, finalText: true },
     });
     if (outcomes.length === 0) return [];
 
-    const issueIds = [...new Set(outcomes.map((o) => o.issueId))];
-    const issues = await this.prisma.issue.findMany({
-      where: { id: { in: issueIds } },
+    const conversationIds = [...new Set(outcomes.map((o) => o.conversationId))];
+    const conversations = await this.prisma.conversation.findMany({
+      where: { id: { in: conversationIds } },
       select: { id: true, title: true },
     });
-    const titleById = new Map(issues.map((i) => [i.id, i.title]));
+    const titleById = new Map(conversations.map((c) => [c.id, c.title]));
 
     return outcomes
       .filter((o): o is typeof o & { finalText: string } => !!o.finalText)
       .map((o) => ({
-        question: titleById.get(o.issueId) ?? '',
+        question: titleById.get(o.conversationId) ?? '',
         answer: o.finalText,
       }));
   }

@@ -1139,3 +1139,19 @@ p, demo_observer, *, *, appointment, read
 # мутации перехватываются на самом tool-call внутри ToolRouterService). См. ТЗ §4.3 «AssistantSidebar».
 p, demo_observer, *, self, concierge, read
 p, demo_observer, *, self, concierge, write
+
+# conversation / message — единое ядро сообщений (unified-chat Ф1).
+# Casbin-уровень даёт ресурс ролям Org; фактическое членство в разговоре
+# проверяет ConversationService.assertMember (member-scope в сервисе, не в Casbin).
+p, owner, *, *, conversation, read
+p, owner, *, *, conversation, write
+p, owner, *, *, message, read
+p, owner, *, *, message, write
+p, admin, *, *, conversation, read
+p, admin, *, *, conversation, write
+p, admin, *, *, message, read
+p, admin, *, *, message, write
+p, manager, *, *, conversation, read
+p, manager, *, *, conversation, write
+p, manager, *, *, message, read
+p, manager, *, *, message, write

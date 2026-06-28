@@ -42,10 +42,10 @@ describe('SupportSlaService', () => {
   });
 
   it('markBreaches: 1 просроченный тикет → updateMany вызван с его id, slaBreachedAt', async () => {
-    const findMany = vi.fn(async () => [{ id: 'issue-late-1' }]);
+    const findMany = vi.fn(async () => [{ id: 'ticket-late-1' }]);
     const updateMany = vi.fn(async () => ({ count: 1 }));
     const prisma = {
-      issue: { findMany, updateMany },
+      supportTicket: { findMany, updateMany },
     } as unknown as PrismaService;
     const svc = new SupportSlaService(prisma, makeAccess(VENDOR_ORG));
     const now = new Date('2026-06-09T12:00:00Z');
@@ -58,19 +58,20 @@ describe('SupportSlaService', () => {
     expect(whereArg.where.tenantId).toBe(VENDOR_ORG);
     expect(whereArg.where.firstRespondedAt).toBeNull();
     expect(whereArg.where.slaBreachedAt).toBeNull();
+    expect(whereArg.where.status).toEqual({ notIn: ['resolved', 'closed'] });
 
     const updArg = (updateMany.mock.calls[0] as unknown[])[0] as {
       where: { id: { in: string[] } };
       data: { slaBreachedAt: Date };
     };
-    expect(updArg.where.id.in).toEqual(['issue-late-1']);
+    expect(updArg.where.id.in).toEqual(['ticket-late-1']);
     expect(updArg.data.slaBreachedAt).toBe(now);
   });
 
   it('markBreaches: нет вендор-Org → 0 без запроса', async () => {
     const findMany = vi.fn();
     const prisma = {
-      issue: { findMany },
+      supportTicket: { findMany },
     } as unknown as PrismaService;
     const svc = new SupportSlaService(prisma, makeAccess(null));
     const count = await svc.markBreaches(new Date());

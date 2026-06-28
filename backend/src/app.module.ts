@@ -85,6 +85,8 @@ import { MeetingReportsModule } from './modules/meeting-reports/meeting-reports.
 import { MeetingUploadsModule } from './modules/meeting-uploads/meeting-uploads.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
 import { MeetingsBalanceModule } from './modules/meetings-balance/meetings-balance.module';
+import { MessageBridgeModule } from './modules/message-bridge/message-bridge.module';
+import { MessagingModule } from './modules/messaging/messaging.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { OrchestratorModule } from './modules/orchestrator/orchestrator.module';
@@ -186,6 +188,8 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     HealthModule,
     MeetingsBalanceModule,
     MeetingsModule,
+    MessageBridgeModule,
+    MessagingModule,
     ParticipantsModule,
     RecordingsModule,
     WebhooksModule,

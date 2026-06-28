@@ -14,6 +14,8 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
+import { MessageService } from '../../messaging/services/message.service';
+import { WorkChatService } from '../../messaging/services/work-chat.service';
 import { S3Service } from '../../recordings/s3.service';
 import type { ImportErrorEntry } from '../dto/imports/import-log-response.dto';
 import { type ImportTrackerJobData, TRACKER_QUEUE_NAMES } from '../queues';
@@ -49,6 +51,10 @@ export class ImportTrackerWorker implements OnModuleInit, OnModuleDestroy {
     private readonly yandex: YandexTrackerImportStrategy,
     @Inject(TrackerEventsService)
     private readonly events: TrackerEventsService,
+    @Inject(WorkChatService)
+    private readonly workChat: WorkChatService,
+    @Inject(MessageService)
+    private readonly messageService: MessageService,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -129,6 +135,8 @@ export class ImportTrackerWorker implements OnModuleInit, OnModuleDestroy {
       s3: this.s3,
       metrics: this.metrics,
       events: this.events,
+      workChat: this.workChat,
+      messageService: this.messageService,
     };
 
     let lastProgressAt = 0;

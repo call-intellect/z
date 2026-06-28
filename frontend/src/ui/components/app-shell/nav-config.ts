@@ -21,6 +21,7 @@ import {
   Lightbulb,
   ListChecks,
   MessageCircle,
+  MessageSquare,
   Palette,
   Plug,
   Settings,
@@ -57,7 +58,7 @@ export interface NavConfigItem {
   comingSoon?: boolean;
   tourTarget?: string;
   overviewTarget?: string;
-  badge?: "myInbox";
+  badge?: "myInbox" | "unreadMessages";
   dot?: "cloneGrants";
   access?: "regulations" | "entities";
   requiresDesk?: boolean;
@@ -172,6 +173,13 @@ const WORK_SECTION: NavConfigSection = {
       matchPrefix: "/projects",
       tourTarget: "welcome.sidebar-projects",
       overviewTarget: "overview.projects",
+    },
+    {
+      href: "/messages",
+      label: "Сообщения",
+      icon: MessageSquare,
+      matchPrefix: "/messages",
+      badge: "unreadMessages",
     },
     {
       href: "/chat",

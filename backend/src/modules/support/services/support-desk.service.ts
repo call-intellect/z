@@ -1,8 +1,9 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
+import { CryptoService } from '../../../common/crypto/crypto.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { ActivityRecorderService } from '../../tracker/services/activity-recorder.service';
+import { MessageService } from '../../messaging/services/message.service';
 import type { DeskListQueryDto } from '../dto/desk-list-query.dto';
 
 import { SupportAccessService } from './support-access.service';
@@ -10,7 +11,18 @@ import { SupportLearningService } from './support-learning.service';
 
 const DESK_PAGE_SIZE = 50;
 
-const SUPPORT_PROJECT_IDENTIFIER = 'SUP';
+export const TICKET_STATUSES = [
+  'new',
+  'in_progress',
+  'waiting',
+  'resolved',
+  'closed',
+  'spam',
+] as const;
+
+type TicketStatus = (typeof TICKET_STATUSES)[number];
+
+const CLOSED_STATUSES: TicketStatus[] = ['resolved', 'closed'];
 
 export interface DeskMetaState {
   id: string;
@@ -30,9 +42,8 @@ export interface DeskMeta {
 
 export interface DeskTicketListItem {
   ticketId: string;
-  ticketNumber: string;
   subject: string;
-  status: string | null;
+  status: string;
   customerContact: string | null;
   assigneeUserIds: string[];
   firstResponseDueAt: string | null;
@@ -41,7 +52,7 @@ export interface DeskTicketListItem {
   updatedAt: string;
 }
 
-export interface DeskTicketComment {
+export interface DeskTicketMessage {
   id: string;
   authorId: string;
   authorType: string;
@@ -52,9 +63,8 @@ export interface DeskTicketComment {
 
 export interface DeskTicketDetail {
   ticketId: string;
-  ticketNumber: string;
   subject: string;
-  status: string | null;
+  status: string;
   customerOrgId: string | null;
   customerUserId: string | null;
   customerContact: string | null;
@@ -65,8 +75,17 @@ export interface DeskTicketDetail {
   slaBreachedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  messages: DeskTicketComment[];
+  messages: DeskTicketMessage[];
 }
+
+const STATUS_LABELS: Record<TicketStatus, { name: string; category: string }> = {
+  new: { name: 'Новое', category: 'backlog' },
+  in_progress: { name: 'В работе', category: 'started' },
+  waiting: { name: 'Ожидание', category: 'started' },
+  resolved: { name: 'Решено', category: 'completed' },
+  closed: { name: 'Закрыто', category: 'completed' },
+  spam: { name: 'Спам', category: 'cancelled' },
+};
 
 @Injectable()
 export class SupportDeskService {
@@ -74,10 +93,10 @@ export class SupportDeskService {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(CryptoService) private readonly crypto: CryptoService,
+    @Inject(MessageService) private readonly messages: MessageService,
     @Inject(SupportAccessService)
     private readonly access: SupportAccessService,
-    @Inject(ActivityRecorderService)
-    private readonly activity: ActivityRecorderService,
     @Inject(SupportLearningService)
     private readonly learning: SupportLearningService,
   ) {}
@@ -87,46 +106,44 @@ export class SupportDeskService {
     query: DeskListQueryDto,
   ): Promise<{ items: DeskTicketListItem[]; nextCursor: string | null }> {
     const vendorOrgId = await this.requireVendorOrg();
-    const where: Prisma.IssueWhereInput = {
-      tenantId: vendorOrgId,
-      supportCustomerUserId: { not: null },
-      deletedAt: null,
-    };
+    const where: Prisma.SupportTicketWhereInput = { tenantId: vendorOrgId };
     const view = query.view ?? 'all';
     if (view === 'unassigned') {
-      where.assignees = { none: {} };
+      where.conversation = { members: { none: { role: 'agent' } } };
     } else if (view === 'mine') {
-      where.assignees = { some: { userId } };
+      where.conversation = { members: { some: { role: 'agent', userId } } };
     } else if (view === 'closed') {
-      where.state = { category: { in: ['completed', 'cancelled'] } };
+      where.status = { in: CLOSED_STATUSES };
     } else if (view === 'spam') {
-      where.state = { name: 'Спам' };
+      where.status = 'spam';
     }
-    const rows = await this.prisma.issue.findMany({
+    const rows = await this.prisma.supportTicket.findMany({
       where,
       orderBy: [{ updatedAt: 'desc' }],
       take: DESK_PAGE_SIZE,
       select: {
-        id: true,
-        identifier: true,
-        title: true,
-        supportCustomerContact: true,
+        conversationId: true,
+        status: true,
+        customerContact: true,
         firstResponseDueAt: true,
         slaBreachedAt: true,
         createdAt: true,
         updatedAt: true,
-        state: { select: { name: true } },
-        assignees: { select: { userId: true } },
+        conversation: {
+          select: {
+            title: true,
+            members: { where: { role: 'agent' }, select: { userId: true } },
+          },
+        },
       },
     });
     return {
       items: rows.map((r) => ({
-        ticketId: r.id,
-        ticketNumber: r.identifier,
-        subject: r.title,
-        status: r.state?.name ?? null,
-        customerContact: r.supportCustomerContact,
-        assigneeUserIds: r.assignees.map((a) => a.userId),
+        ticketId: r.conversationId,
+        subject: r.conversation.title ?? '',
+        status: r.status,
+        customerContact: r.customerContact,
+        assigneeUserIds: r.conversation.members.map((m) => m.userId),
         firstResponseDueAt: r.firstResponseDueAt?.toISOString() ?? null,
         slaBreachedAt: r.slaBreachedAt?.toISOString() ?? null,
         createdAt: r.createdAt.toISOString(),
@@ -137,51 +154,44 @@ export class SupportDeskService {
   }
 
   async getTicket(ticketId: string): Promise<DeskTicketDetail> {
-    const issue = await this.requireTicket(ticketId);
-    const comments = await this.prisma.issueComment.findMany({
-      where: { issueId: issue.id, deletedAt: null },
-      orderBy: { createdAt: 'asc' },
+    const ticket = await this.requireTicket(ticketId);
+    const messages = await this.prisma.message.findMany({
+      where: { conversationId: ticket.conversationId, deletedAt: null },
+      orderBy: { seq: 'asc' },
       select: {
         id: true,
-        authorId: true,
+        authorUserId: true,
         authorType: true,
         access: true,
         content: true,
         createdAt: true,
       },
     });
-    const assignees = await this.prisma.issueAssignee.findMany({
-      where: { issueId: issue.id },
+    const agents = await this.prisma.conversationMember.findMany({
+      where: { conversationId: ticket.conversationId, role: 'agent' },
       select: { userId: true },
     });
-    const state = issue.stateId
-      ? await this.prisma.issueState.findUnique({
-          where: { id: issue.stateId },
-          select: { name: true },
-        })
-      : null;
     return {
-      ticketId: issue.id,
-      ticketNumber: issue.identifier,
-      subject: issue.title,
-      status: state?.name ?? null,
-      customerOrgId: issue.supportCustomerOrgId,
-      customerUserId: issue.supportCustomerUserId,
-      customerContact: issue.supportCustomerContact,
-      assigneeUserIds: assignees.map((a) => a.userId),
-      firstResponseDueAt: issue.firstResponseDueAt?.toISOString() ?? null,
-      resolutionDueAt: issue.resolutionDueAt?.toISOString() ?? null,
-      firstRespondedAt: issue.firstRespondedAt?.toISOString() ?? null,
-      slaBreachedAt: issue.slaBreachedAt?.toISOString() ?? null,
-      createdAt: issue.createdAt.toISOString(),
-      updatedAt: issue.updatedAt.toISOString(),
-      messages: comments.map((c) => ({
-        id: c.id,
-        authorId: c.authorId,
-        authorType: c.authorType,
-        access: c.access,
-        content: c.content,
-        createdAt: c.createdAt.toISOString(),
+      ticketId: ticket.conversationId,
+      subject: ticket.conversation.title ?? '',
+      status: ticket.status,
+      customerOrgId: ticket.customerOrgId,
+      customerUserId: ticket.customerUserId,
+      customerContact: ticket.customerContact,
+      assigneeUserIds: agents.map((a) => a.userId),
+      firstResponseDueAt: ticket.firstResponseDueAt?.toISOString() ?? null,
+      resolutionDueAt: ticket.resolutionDueAt?.toISOString() ?? null,
+      firstRespondedAt: ticket.firstRespondedAt?.toISOString() ?? null,
+      slaBreachedAt: ticket.slaBreachedAt?.toISOString() ?? null,
+      createdAt: ticket.createdAt.toISOString(),
+      updatedAt: ticket.updatedAt.toISOString(),
+      messages: messages.map((m) => ({
+        id: m.id,
+        authorId: m.authorUserId,
+        authorType: m.authorType,
+        access: m.access,
+        content: this.crypto.decrypt(m.content),
+        createdAt: m.createdAt.toISOString(),
       })),
     };
   }
@@ -190,47 +200,32 @@ export class SupportDeskService {
     ticketId: string,
     userId: string,
     message: string,
-    fromDraftCommentId?: string,
-  ): Promise<{ ok: true; commentId: string }> {
-    const issue = await this.requireTicket(ticketId);
-    let commentId = '';
-    await this.prisma.$transaction(async (tx) => {
-      const comment = await tx.issueComment.create({
-        data: {
-          issueId: issue.id,
-          authorId: userId,
-          content: message,
-          contentStripped: message,
-          access: 'external',
-          authorType: 'human',
-        },
-        select: { id: true },
-      });
-      commentId = comment.id;
-      const data: Prisma.IssueUpdateInput = { updatedAt: new Date() };
-      if (!issue.firstRespondedAt) {
-        data.firstRespondedAt = new Date();
-      }
-      await tx.issue.update({ where: { id: issue.id }, data });
-      await this.activity.record({
-        tenantId: issue.tenantId,
-        issueId: issue.id,
-        actorUserId: userId,
-        actorType: 'user',
-        verb: 'commented',
-        newValue: { access: 'external' },
-        metadata: fromDraftCommentId ? { fromDraftCommentId } : null,
-        tx,
-      });
+    fromDraftMessageId?: string,
+  ): Promise<{ ok: true; messageId: string }> {
+    const ticket = await this.requireTicket(ticketId);
+    const { messageId } = await this.messages.appendTicketMessage({
+      tenantId: ticket.tenantId,
+      conversationId: ticket.conversationId,
+      authorUserId: userId,
+      content: message,
+      access: 'external',
+      authorType: 'human',
     });
 
-    if (fromDraftCommentId) {
+    if (!ticket.firstRespondedAt) {
+      await this.prisma.supportTicket.update({
+        where: { conversationId: ticket.conversationId },
+        data: { firstRespondedAt: new Date() },
+      });
+    }
+
+    if (fromDraftMessageId) {
       try {
-        await this.learning.recordEdit(fromDraftCommentId, message, userId);
+        await this.learning.recordEdit(fromDraftMessageId, message, userId);
       } catch (err) {
         this.logger.warn(
           {
-            fromDraftCommentId,
+            fromDraftMessageId,
             err: err instanceof Error ? err.message : String(err),
           },
           'reply: recordEdit упал — ответ уже отправлен, продолжаю',
@@ -238,98 +233,62 @@ export class SupportDeskService {
       }
     }
 
-    return { ok: true, commentId };
+    return { ok: true, messageId };
   }
 
   async note(
     ticketId: string,
     userId: string,
     message: string,
-  ): Promise<{ ok: true; commentId: string }> {
-    const issue = await this.requireTicket(ticketId);
-    const comment = await this.prisma.issueComment.create({
-      data: {
-        issueId: issue.id,
-        authorId: userId,
-        content: message,
-        contentStripped: message,
-        access: 'internal',
-        authorType: 'human',
-      },
-      select: { id: true },
+  ): Promise<{ ok: true; messageId: string }> {
+    const ticket = await this.requireTicket(ticketId);
+    const { messageId } = await this.messages.appendTicketMessage({
+      tenantId: ticket.tenantId,
+      conversationId: ticket.conversationId,
+      authorUserId: userId,
+      content: message,
+      access: 'internal',
+      authorType: 'human',
     });
-    return { ok: true, commentId: comment.id };
+    return { ok: true, messageId };
   }
 
   async assign(
     ticketId: string,
     assigneeUserId: string,
-    actorUserId: string,
+    _actorUserId: string,
   ): Promise<{ ok: true }> {
-    const issue = await this.requireTicket(ticketId);
-    const existing = await this.prisma.issueAssignee.findUnique({
-      where: { issueId_userId: { issueId: issue.id, userId: assigneeUserId } },
-      select: { id: true },
-    });
-    if (existing) return { ok: true };
-    await this.prisma.$transaction(async (tx) => {
-      await tx.issueAssignee.create({
-        data: {
-          issueId: issue.id,
+    const ticket = await this.requireTicket(ticketId);
+    await this.prisma.conversationMember.upsert({
+      where: {
+        conversationId_userId: {
+          conversationId: ticket.conversationId,
           userId: assigneeUserId,
-          assignedById: actorUserId,
         },
-      });
-      await this.activity.record({
-        tenantId: issue.tenantId,
-        issueId: issue.id,
-        actorUserId,
-        actorType: 'user',
-        verb: 'assigned',
-        newValue: { userId: assigneeUserId },
-        tx,
-      });
+      },
+      update: { role: 'agent' },
+      create: {
+        conversationId: ticket.conversationId,
+        userId: assigneeUserId,
+        role: 'agent',
+        source: 'support_assign',
+      },
     });
     return { ok: true };
   }
 
-  async transition(ticketId: string, userId: string, stateId: string): Promise<{ ok: true }> {
-    const issue = await this.requireTicket(ticketId);
-    const state = await this.prisma.issueState.findFirst({
-      where: { id: stateId, projectId: issue.projectId },
-      select: { id: true, category: true },
-    });
-    if (!state) {
+  async transition(ticketId: string, _userId: string, status: string): Promise<{ ok: true }> {
+    const ticket = await this.requireTicket(ticketId);
+    if (!isTicketStatus(status)) {
       throw new BadRequestException({
         ok: false,
-        error: {
-          code: 'invalid_state_id',
-          message: 'Статус не найден или принадлежит другому проекту',
-        },
+        error: { code: 'invalid_status', message: 'Недопустимый статус тикета' },
       });
     }
-    if (issue.stateId === stateId) return { ok: true };
-    await this.prisma.$transaction(async (tx) => {
-      const data: Prisma.IssueUpdateInput = {
-        state: { connect: { id: stateId } },
-      };
-      if (state.category === 'completed' && !issue.completedAt) {
-        data.completedAt = new Date();
-      } else if (state.category !== 'completed' && issue.completedAt) {
-        data.completedAt = null;
-      }
-      await tx.issue.update({ where: { id: issue.id }, data });
-      await this.activity.record({
-        tenantId: issue.tenantId,
-        issueId: issue.id,
-        actorUserId: userId,
-        actorType: 'user',
-        verb: 'status_changed',
-        field: 'stateId',
-        oldValue: issue.stateId,
-        newValue: stateId,
-        tx,
-      });
+    if (ticket.status === status) return { ok: true };
+    await this.prisma.supportTicket.update({
+      where: { conversationId: ticket.conversationId },
+      data: { status },
     });
     return { ok: true };
   }
@@ -337,23 +296,11 @@ export class SupportDeskService {
   async getMeta(): Promise<DeskMeta> {
     const vendorOrgId = await this.requireVendorOrg();
 
-    const project = await this.prisma.project.findFirst({
-      where: {
-        tenantId: vendorOrgId,
-        systemGenerated: true,
-        identifier: SUPPORT_PROJECT_IDENTIFIER,
-      },
-      select: { id: true },
-    });
-    const states: DeskMetaState[] = project
-      ? (
-          await this.prisma.issueState.findMany({
-            where: { projectId: project.id },
-            orderBy: { sequence: 'asc' },
-            select: { id: true, name: true, category: true },
-          })
-        ).map((s) => ({ id: s.id, name: s.name, category: s.category }))
-      : [];
+    const states: DeskMetaState[] = TICKET_STATUSES.map((status) => ({
+      id: status,
+      name: STATUS_LABELS[status].name,
+      category: STATUS_LABELS[status].category,
+    }));
 
     const agents: DeskMetaAgent[] = [];
     const groupId = await this.access.getSupportGroupId(vendorOrgId);
@@ -399,38 +346,34 @@ export class SupportDeskService {
 
   private async requireTicket(ticketId: string) {
     const vendorOrgId = await this.requireVendorOrg();
-    const issue = await this.prisma.issue.findFirst({
-      where: {
-        id: ticketId,
-        tenantId: vendorOrgId,
-        supportCustomerUserId: { not: null },
-        deletedAt: null,
-      },
+    const ticket = await this.prisma.supportTicket.findFirst({
+      where: { conversationId: ticketId, tenantId: vendorOrgId },
       select: {
-        id: true,
+        conversationId: true,
         tenantId: true,
-        projectId: true,
-        identifier: true,
-        title: true,
-        stateId: true,
-        completedAt: true,
-        supportCustomerOrgId: true,
-        supportCustomerUserId: true,
-        supportCustomerContact: true,
+        status: true,
+        customerOrgId: true,
+        customerUserId: true,
+        customerContact: true,
         firstResponseDueAt: true,
         resolutionDueAt: true,
         firstRespondedAt: true,
         slaBreachedAt: true,
         createdAt: true,
         updatedAt: true,
+        conversation: { select: { title: true } },
       },
     });
-    if (!issue) {
+    if (!ticket) {
       throw new NotFoundException({
         ok: false,
         error: { code: 'ticket_not_found', message: 'Тикет не найден' },
       });
     }
-    return issue;
+    return ticket;
   }
+}
+
+function isTicketStatus(value: string): value is TicketStatus {
+  return (TICKET_STATUSES as readonly string[]).includes(value);
 }

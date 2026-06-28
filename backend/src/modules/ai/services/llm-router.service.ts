@@ -680,7 +680,13 @@ export type LlmTaskType =
   //   Capable модель + tool-use. Primary = deepseek-v4-pro; secondary = gpt-5.4
   //   (proxy); tertiary = ollama qwen3.5:9b (см. seed-маршрут). За kill-switch
   //   docCompilerEnabled (дефолт ON).
-  | 'compile-org-document';
+  | 'compile-org-document'
+  // Единый чат Ф5b (2026-06-28) — chat-summary «Что пропустил»: сводка
+  //   непрочитанной переписки разговора с цитатами [MSG:<id>]. Стабильный
+  //   SYSTEM, переменное (непрочитанные сообщения) в КОНЦЕ user (prompt
+  //   caching). Дешёвая задача — primary deepseek-v4-flash, secondary
+  //   openai-via-proxy.
+  | 'chat-summary';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -947,6 +953,9 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // Волна 6 Стадия C, A7 (2026-06-10) — compile-org-document (агент-компилятор
   // contentMd орг-документа; tool-use, capable; за kill-switch docCompilerEnabled ON).
   'compile-org-document',
+  // Единый чат Ф5b (2026-06-28) — chat-summary («Что пропустил»: сводка
+  // непрочитанной переписки с цитатами [MSG:<id>]; стабильный SYSTEM, дешёвый).
+  'chat-summary',
 ] as const;
 
 /**

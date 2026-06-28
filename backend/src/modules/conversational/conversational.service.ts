@@ -58,6 +58,7 @@ export interface SendNotificationInput {
 }
 
 const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
+  'chat.new_message': ['in_app', 'telegram_bot', 'max_bot', 'push'],
   'probe.question': ['telegram_bot', 'max_bot', 'in_app'],
   'probe.digest': ['telegram_bot', 'max_bot', 'in_app'],
   'probe.clarify': ['telegram_bot', 'max_bot', 'in_app'],

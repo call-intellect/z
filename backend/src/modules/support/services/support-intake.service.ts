@@ -8,22 +8,20 @@ import {
 } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { CryptoService } from '../../../common/crypto/crypto.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
-import { ActivityRecorderService } from '../../tracker/services/activity-recorder.service';
+import { MessageService } from '../../messaging/services/message.service';
 import type { CreateTicketDto } from '../dto/create-ticket.dto';
 
 import { SupportAccessService } from './support-access.service';
 import { SupportLearningService } from './support-learning.service';
 import { SupportSlaService } from './support-sla.service';
 
-const SUPPORT_PROJECT_IDENTIFIER = 'SUP';
-
 export interface MyTicketListItem {
   ticketId: string;
-  ticketNumber: string;
   subject: string;
-  status: string | null;
+  status: string;
   updatedAt: string;
 }
 
@@ -37,9 +35,8 @@ export interface MyTicketMessage {
 
 export interface MyTicketDetail {
   ticketId: string;
-  ticketNumber: string;
   subject: string;
-  status: string | null;
+  status: string;
   createdAt: string;
   updatedAt: string;
   messages: MyTicketMessage[];
@@ -52,13 +49,13 @@ export class SupportIntakeService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(CryptoService) private readonly crypto: CryptoService,
     @Inject(SupportAccessService)
     private readonly access: SupportAccessService,
     @Inject(SupportSlaService) private readonly sla: SupportSlaService,
+    @Inject(MessageService) private readonly messages: MessageService,
     @Inject(ConversationalService)
     private readonly conversational: ConversationalService,
-    @Inject(ActivityRecorderService)
-    private readonly activity: ActivityRecorderService,
     @Inject(SupportLearningService)
     private readonly learning: SupportLearningService,
   ) {}
@@ -67,7 +64,7 @@ export class SupportIntakeService {
     callerUserId: string,
     callerOrgId: string | null,
     dto: CreateTicketDto,
-  ): Promise<{ ticketId: string; ticketNumber: string }> {
+  ): Promise<{ ticketId: string }> {
     if (!this.cfg.supportDesk.enabled) {
       throw new ServiceUnavailableException({
         ok: false,
@@ -88,24 +85,6 @@ export class SupportIntakeService {
       });
     }
 
-    const project = await this.prisma.project.findFirst({
-      where: {
-        tenantId: vendorOrgId,
-        systemGenerated: true,
-        identifier: SUPPORT_PROJECT_IDENTIFIER,
-      },
-      select: { id: true, identifier: true, defaultStateId: true },
-    });
-    if (!project) {
-      throw new ServiceUnavailableException({
-        ok: false,
-        error: {
-          code: 'SUPPORT_DESK_DISABLED',
-          message: 'Support-проект не инициализирован (запустите seed)',
-        },
-      });
-    }
-
     const caller = await this.prisma.user.findUnique({
       where: { id: callerUserId },
       select: { email: true, name: true },
@@ -118,131 +97,100 @@ export class SupportIntakeService {
       createdAt,
     );
 
-    const issue = await this.prisma.$transaction(async (tx) => {
-      const maxRow = await tx.issue.aggregate({
-        where: { projectId: project.id },
-        _max: { sequenceId: true },
-      });
-      const sequenceId = (maxRow._max.sequenceId ?? 0) + 1;
-      const identifier = `${project.identifier}-${sequenceId}`;
-
-      const created = await tx.issue.create({
+    const conversation = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.conversation.create({
         data: {
           tenantId: vendorOrgId,
-          projectId: project.id,
-          identifier,
-          sequenceId,
+          kind: 'ticket',
           title: dto.subject,
-          description: dto.message,
-          descriptionStripped: dto.message,
-          stateId: project.defaultStateId,
-          createdById: callerUserId,
-          createdManually: true,
-          externalSource: 'support_widget',
-          supportCustomerOrgId: callerOrgId,
-          supportCustomerUserId: callerUserId,
-          supportCustomerContact: contact,
+          createdByUserId: callerUserId,
+          feedsGraph: true,
+        },
+        select: { id: true },
+      });
+      await tx.supportTicket.create({
+        data: {
+          tenantId: vendorOrgId,
+          conversationId: created.id,
+          status: 'new',
+          customerOrgId: callerOrgId,
+          customerUserId: callerUserId,
+          customerContact: contact,
           firstResponseDueAt,
           resolutionDueAt,
         },
       });
-
-      await tx.issueComment.create({
-        data: {
-          issueId: created.id,
-          authorId: callerUserId,
-          content: dto.message,
-          contentStripped: dto.message,
-          access: 'external',
-          authorType: 'human',
-        },
-      });
-
-      await this.activity.record({
-        tenantId: vendorOrgId,
-        issueId: created.id,
-        actorUserId: callerUserId,
-        actorType: 'user',
-        verb: 'created',
-        newValue: { title: created.title, identifier: created.identifier },
-        tx,
-      });
       return created;
     });
 
-    await this.notifyStaff(vendorOrgId, 'support.ticket_created', {
-      ticketId: issue.id,
-      ticketNumber: issue.identifier,
-      subject: issue.title,
-      snippet: dto.message.slice(0, 500),
-      actionUrl: `/support/desk/tickets/${issue.id}`,
+    await this.messages.appendTicketMessage({
+      tenantId: vendorOrgId,
+      conversationId: conversation.id,
+      authorUserId: callerUserId,
+      content: dto.message,
+      access: 'external',
+      authorType: 'human',
     });
 
-    return { ticketId: issue.id, ticketNumber: issue.identifier };
+    await this.notifyStaff(vendorOrgId, 'support.ticket_created', {
+      ticketId: conversation.id,
+      subject: dto.subject,
+      snippet: dto.message.slice(0, 500),
+      actionUrl: `/support/desk/tickets/${conversation.id}`,
+    });
+
+    return { ticketId: conversation.id };
   }
 
   async listMyTickets(callerUserId: string): Promise<{ items: MyTicketListItem[] }> {
     const vendorOrgId = await this.access.getVendorOrgId();
     if (!vendorOrgId) return { items: [] };
 
-    const rows = await this.prisma.issue.findMany({
-      where: {
-        tenantId: vendorOrgId,
-        supportCustomerUserId: callerUserId,
-        deletedAt: null,
-      },
+    const rows = await this.prisma.supportTicket.findMany({
+      where: { tenantId: vendorOrgId, customerUserId: callerUserId },
       select: {
-        id: true,
-        identifier: true,
-        title: true,
+        conversationId: true,
+        status: true,
         updatedAt: true,
-        state: { select: { name: true } },
+        conversation: { select: { title: true, lastMessageAt: true } },
       },
       orderBy: { updatedAt: 'desc' },
     });
     return {
       items: rows.map((r) => ({
-        ticketId: r.id,
-        ticketNumber: r.identifier,
-        subject: r.title,
-        status: r.state?.name ?? null,
-        updatedAt: r.updatedAt.toISOString(),
+        ticketId: r.conversationId,
+        subject: r.conversation.title ?? '',
+        status: r.status,
+        updatedAt: (r.conversation.lastMessageAt ?? r.updatedAt).toISOString(),
       })),
     };
   }
 
   async getMyTicket(callerUserId: string, ticketId: string): Promise<MyTicketDetail> {
-    const issue = await this.requireMyTicket(callerUserId, ticketId);
-    const comments = await this.prisma.issueComment.findMany({
-      where: { issueId: issue.id, access: 'external', deletedAt: null },
-      orderBy: { createdAt: 'asc' },
+    const ticket = await this.requireMyTicket(callerUserId, ticketId);
+    const messages = await this.prisma.message.findMany({
+      where: { conversationId: ticket.conversationId, access: 'external', deletedAt: null },
+      orderBy: { seq: 'asc' },
       select: {
         id: true,
-        authorId: true,
+        authorUserId: true,
         authorType: true,
         content: true,
         createdAt: true,
       },
     });
-    const state = issue.stateId
-      ? await this.prisma.issueState.findUnique({
-          where: { id: issue.stateId },
-          select: { name: true },
-        })
-      : null;
     return {
-      ticketId: issue.id,
-      ticketNumber: issue.identifier,
-      subject: issue.title,
-      status: state?.name ?? null,
-      createdAt: issue.createdAt.toISOString(),
-      updatedAt: issue.updatedAt.toISOString(),
-      messages: comments.map((c) => ({
-        id: c.id,
-        authorId: c.authorId,
-        authorType: c.authorType,
-        content: c.content,
-        createdAt: c.createdAt.toISOString(),
+      ticketId: ticket.conversationId,
+      subject: ticket.conversation.title ?? '',
+      status: ticket.status,
+      createdAt: ticket.createdAt.toISOString(),
+      updatedAt: ticket.updatedAt.toISOString(),
+      messages: messages.map((m) => ({
+        id: m.id,
+        authorId: m.authorUserId,
+        authorType: m.authorType,
+        content: this.crypto.decrypt(m.content),
+        createdAt: m.createdAt.toISOString(),
       })),
     };
   }
@@ -251,32 +199,24 @@ export class SupportIntakeService {
     callerUserId: string,
     ticketId: string,
     message: string,
-  ): Promise<{ ok: true; commentId: string }> {
-    const issue = await this.requireMyTicket(callerUserId, ticketId);
-    const comment = await this.prisma.issueComment.create({
-      data: {
-        issueId: issue.id,
-        authorId: callerUserId,
-        content: message,
-        contentStripped: message,
-        access: 'external',
-        authorType: 'human',
-      },
-      select: { id: true },
-    });
-    await this.prisma.issue.update({
-      where: { id: issue.id },
-      data: { updatedAt: new Date() },
+  ): Promise<{ ok: true; messageId: string }> {
+    const ticket = await this.requireMyTicket(callerUserId, ticketId);
+    const { messageId } = await this.messages.appendTicketMessage({
+      tenantId: ticket.tenantId,
+      conversationId: ticket.conversationId,
+      authorUserId: callerUserId,
+      content: message,
+      access: 'external',
+      authorType: 'human',
     });
 
-    await this.notifyStaff(issue.tenantId, 'support.ticket_reply', {
-      ticketId: issue.id,
-      ticketNumber: issue.identifier,
-      subject: issue.title,
+    await this.notifyStaff(ticket.tenantId, 'support.ticket_reply', {
+      ticketId: ticket.conversationId,
+      subject: ticket.conversation.title ?? '',
       snippet: message.slice(0, 500),
-      actionUrl: `/support/desk/tickets/${issue.id}`,
+      actionUrl: `/support/desk/tickets/${ticket.conversationId}`,
     });
-    return { ok: true, commentId: comment.id };
+    return { ok: true, messageId };
   }
 
   async rateTicket(
@@ -285,13 +225,13 @@ export class SupportIntakeService {
     score: number,
     comment?: string,
   ): Promise<{ ok: true }> {
-    const issue = await this.requireMyTicket(callerUserId, ticketId);
+    const ticket = await this.requireMyTicket(callerUserId, ticketId);
     await this.prisma.issueRating.upsert({
-      where: { issueId: issue.id },
+      where: { conversationId: ticket.conversationId },
       update: { score, comment: comment ?? null, ratedByUserId: callerUserId },
       create: {
-        tenantId: issue.tenantId,
-        issueId: issue.id,
+        tenantId: ticket.tenantId,
+        conversationId: ticket.conversationId,
         score,
         comment: comment ?? null,
         ratedByUserId: callerUserId,
@@ -299,11 +239,11 @@ export class SupportIntakeService {
     });
 
     try {
-      await this.learning.maybePromote(issue.id);
+      await this.learning.maybePromote(ticket.conversationId);
     } catch (err) {
       this.logger.warn(
         {
-          ticketId: issue.id,
+          ticketId: ticket.conversationId,
           err: err instanceof Error ? err.message : String(err),
         },
         'rateTicket: maybePromote упал — оценка сохранена, продолжаю',
@@ -321,26 +261,25 @@ export class SupportIntakeService {
         error: { code: 'ticket_not_found', message: 'Обращение не найдено' },
       });
     }
-    const issue = await this.prisma.issue.findFirst({
-      where: { id: ticketId, tenantId: vendorOrgId, deletedAt: null },
+    const ticket = await this.prisma.supportTicket.findFirst({
+      where: { conversationId: ticketId, tenantId: vendorOrgId },
       select: {
-        id: true,
+        conversationId: true,
         tenantId: true,
-        identifier: true,
-        title: true,
-        stateId: true,
+        status: true,
+        customerUserId: true,
         createdAt: true,
         updatedAt: true,
-        supportCustomerUserId: true,
+        conversation: { select: { title: true } },
       },
     });
-    if (!issue) {
+    if (!ticket) {
       throw new NotFoundException({
         ok: false,
         error: { code: 'ticket_not_found', message: 'Обращение не найдено' },
       });
     }
-    if (issue.supportCustomerUserId !== callerUserId) {
+    if (ticket.customerUserId !== callerUserId) {
       throw new ForbiddenException({
         ok: false,
         error: {
@@ -349,7 +288,7 @@ export class SupportIntakeService {
         },
       });
     }
-    return issue;
+    return ticket;
   }
 
   private async notifyStaff(

@@ -128,6 +128,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-chat.ts',
+    hint: 'chat_presence_ttl_seconds + chat_outbox_sweep_{stale_seconds,batch_limit} — крутилки presence-TTL и backstop-sweep transactional outbox единого чата (unified-chat Ф1b); external_link_ttl_hours + external_inbound_rate_limit — крутилки внешней переписки (unified-chat Ф3.5); huddle_max_participants — лимит участников созвона из чата (unified-chat Ф7b)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-worker-knobs.ts',
     hint: 'knowledge.axisClassifyEnabled + roleProfiles.minBlocks + curation.consistencyChecker* + curation.completenessScannerEnabled + tracker.goalAlignmentLowEnabled + conversational.telegramDigestHourLocal + recording.trackWatchdog{Enabled,TimeoutMinutes} — крутилки воркеров (config-knobs-to-admin-settings)',
   },
@@ -271,7 +276,7 @@ const STEPS: Step[] = [
   {
     phase: 'seed-base',
     script: 'scripts/seed-support-project.ts',
-    hint: 'Support-проект SUP + 6 states + SupportSlaPolicy (TZ support-desk Ф1); no-op без support.vendor_org_id',
+    hint: 'SupportSlaPolicy (60/480) для вендор-Org (TZ support-desk; тикеты на Conversation/Message, не Issue); no-op без support.vendor_org_id',
   },
   {
     phase: 'seed-base',
@@ -341,6 +346,7 @@ const STEPS: Step[] = [
     'clone-method',
     'day-signal',
     'edinyy-pomoshnik',
+    'chat',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,
@@ -779,6 +785,25 @@ const STEPS: Step[] = [
   {
     phase: 'migrate',
     script: 'scripts/migrate-telegram-channels-to-global.ts',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-chat-bridge-telegram.ts',
+    hint: 'мост-загрузка Telegram-экспорта в граф (Ф0): требует --tenant=<orgId> --file=<result.json>; запускается оператором вручную, идемпотентно по messageExternalId',
+    skipBootstrap: true,
+    skipUpdate: true,
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-issuecomment-to-message.ts',
+    hint: 'перенос legacy IssueComment → Message в work_chat (единый чат Ф2.5b); ensureWorkChat + insertHistorical, перепривязка attachments/recognition, маркер IssueComment.messageId. Идемпотентно (messageId!=null пропускается, clientMessageId=ic:<id> дедуп)',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-message-contentstripped.ts',
+    hint: 'plaintext в Message.contentStripped для GIN-поиска (единый чат Ф4a); decrypt(content)→stripToPlain. Идемпотентно (contentStripped=null фильтр)',
     skipBootstrap: true,
   },
 ];

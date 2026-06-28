@@ -353,61 +353,49 @@ export const DAY_COMPANY_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-const VerdictAxisSchema = z
-  .object({
-    key: z.enum(AXIS_KEYS),
-    state: z.enum(VERDICT_STATES),
-    label: z.string().min(1).max(120),
-    why: z.string().min(1).max(600),
-  })
-  .strict();
+const VerdictStateSchema = z.enum(VERDICT_STATES).catch('warn');
 
-const LetterCiteSchema = z
-  .object({
-    label: z.string().min(1).max(240),
-    ref: z.string().min(1).max(400),
-  })
-  .strict();
+const VerdictAxisSchema = z.object({
+  key: z.enum(AXIS_KEYS).catch('overall'),
+  state: VerdictStateSchema,
+  label: z.string().catch(''),
+  why: z.string().catch(''),
+});
 
-const LetterSectionSchema = z
-  .object({
-    key: z.enum(LETTER_KEYS),
-    title: z.string().min(1).max(240),
-    prose: z.string().min(1).max(8000),
-    cites: z.array(LetterCiteSchema).max(20).optional(),
-  })
-  .strict();
+const LetterCiteSchema = z.object({
+  label: z.string().catch(''),
+  ref: z.string().catch(''),
+});
 
-export const DayCompanyResponseSchema = z
-  .object({
-    verdict: z
-      .object({
-        overall: z
-          .object({
-            state: z.enum(VERDICT_STATES),
-            emoji: z.string().min(1).max(16),
-            title: z.string().min(1).max(240),
-            oneLiner: z.string().min(1).max(800),
-          })
-          .strict(),
-        axes: z.array(VerdictAxisSchema).length(4),
-      })
-      .strict(),
-    letter: z.array(LetterSectionSchema).min(1).max(11),
-    goalAlignmentDay: z
-      .object({
-        direction: z.enum(COMPASS_DIRECTIONS),
-        score: z.number().int().min(0).max(100).nullable(),
-        todayDelta: z.string().max(240),
-        why: z.string().max(1200),
-        pro: z.array(z.string()).max(20),
-        contra: z.array(z.string()).max(20),
-      })
-      .strict(),
-    risksSummary: z.string().min(1).max(1600),
-    ideasSummary: z.string().min(1).max(1600),
-  })
-  .strict();
+const LetterSectionSchema = z.object({
+  key: z.string().catch('main'),
+  title: z.string().catch(''),
+  prose: z.string().catch(''),
+  cites: z.array(LetterCiteSchema).optional().catch(undefined),
+});
+
+export const DayCompanyResponseSchema = z.object({
+  verdict: z.object({
+    overall: z.object({
+      state: VerdictStateSchema,
+      emoji: z.string().catch('⚠️'),
+      title: z.string().catch('День компании'),
+      oneLiner: z.string().catch(''),
+    }),
+    axes: z.array(VerdictAxisSchema).min(1),
+  }),
+  letter: z.array(LetterSectionSchema).min(1),
+  goalAlignmentDay: z.object({
+    direction: z.enum(COMPASS_DIRECTIONS).catch('drift'),
+    score: z.number().nullable().catch(null),
+    todayDelta: z.string().catch(''),
+    why: z.string().catch(''),
+    pro: z.array(z.string()).catch([]),
+    contra: z.array(z.string()).catch([]),
+  }),
+  risksSummary: z.string().catch(''),
+  ideasSummary: z.string().catch(''),
+});
 
 export type DayCompanyResponse = z.infer<typeof DayCompanyResponseSchema>;
 

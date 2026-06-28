@@ -33,6 +33,7 @@ import {
   buildFallbackDigestMarkdown,
   dayCompanyToBodyMarkdown,
   type DayCompanyPackage,
+  type DayCompanyResponse,
 } from '../prompts/daily-digest.prompt';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
@@ -139,6 +140,34 @@ export function previousDateLocal(dateLocal: string): string {
   if (!y || !m || !d) return dateLocal;
   const prev = new Date(Date.UTC(y, m - 1, d - 1));
   return prev.toISOString().slice(0, 10);
+}
+
+function unwrapEnvelopes(value: unknown): unknown[] {
+  const out: unknown[] = [value];
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    for (const key of ['result', 'data', 'output', 'response']) {
+      if (obj[key] && typeof obj[key] === 'object') out.push(obj[key]);
+    }
+  }
+  return out;
+}
+
+export function extractDayCompanyResponse(result: {
+  text: string;
+  toolCalls?: Array<{ input: unknown }>;
+}): DayCompanyResponse | null {
+  const roots: unknown[] = [];
+  const firstTool = result.toolCalls?.[0];
+  if (firstTool) roots.push(firstTool.input);
+  roots.push(tryParseJson(result.text ?? ''));
+  for (const root of roots) {
+    for (const candidate of unwrapEnvelopes(root)) {
+      const parsed = DayCompanyResponseSchema.safeParse(candidate);
+      if (parsed.success) return parsed.data;
+    }
+  }
+  return null;
 }
 
 @Injectable()
@@ -287,21 +316,20 @@ export class DailyDigestService {
         maxTokens: 8_000,
         sourceRef: { type: 'daily-digest', id: `${args.tenantId}:${args.dateLocal}` },
       });
-      const parsed = tryParseJson(result.text);
-      const validated = DayCompanyResponseSchema.safeParse(parsed);
-      if (!validated.success) throw new Error('schema_mismatch');
-      const verdict = clampVerdict(validated.data.verdict, signals);
+      const validatedData = extractDayCompanyResponse(result);
+      if (!validatedData) throw new Error('schema_mismatch');
+      const verdict = clampVerdict(validatedData.verdict, signals);
       const goalAlignmentDay: DailyDigestGoalAlignmentDayDto = {
-        ...validated.data.goalAlignmentDay,
+        ...validatedData.goalAlignmentDay,
         goalId: pkg.goalId ?? null,
         goalName: pkg.goalName ?? null,
       };
       verdictObj = verdict;
-      letterArr = validated.data.letter;
+      letterArr = validatedData.letter;
       goalDayObj = goalAlignmentDay;
-      risksSummary = validated.data.risksSummary;
-      ideasSummary = validated.data.ideasSummary;
-      bodyMarkdown = dayCompanyToBodyMarkdown(verdict, validated.data.letter);
+      risksSummary = validatedData.risksSummary;
+      ideasSummary = validatedData.ideasSummary;
+      bodyMarkdown = dayCompanyToBodyMarkdown(verdict, validatedData.letter);
       shortSummary = verdict.overall.oneLiner;
       llmTaskRouteId = `${DAY_COMPANY_PROMPT_VERSION}+${result.modelUsed}`;
     } catch (err) {

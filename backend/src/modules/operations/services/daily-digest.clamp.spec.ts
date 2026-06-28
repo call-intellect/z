@@ -6,8 +6,34 @@ import type { DayCompanyPackage } from '../prompts/daily-digest.prompt';
 import {
   clampVerdict,
   computeVerdictSignals,
+  extractDayCompanyResponse,
   type DayVerdictSignals,
 } from './daily-digest.service';
+
+function validContract() {
+  return {
+    verdict: {
+      overall: { state: 'risk', emoji: '🔴', title: 'Тяжёлый день', oneLiner: 'Клиент молчит.' },
+      axes: [
+        { key: 'team', state: 'warn', label: 'Перегруз', why: 'Айназ в красной зоне' },
+        { key: 'clients', state: 'risk', label: 'Риск', why: 'Молочные реки молчат' },
+        { key: 'execution', state: 'warn', label: 'Буксует', why: 'Блокер 6 дней' },
+        { key: 'overall', state: 'risk', label: 'Критично', why: '1 красная зона' },
+      ],
+    },
+    letter: [{ key: 'main', title: 'Главное за день', prose: 'Текст письма.' }],
+    goalAlignmentDay: {
+      direction: 'drift',
+      score: 46,
+      todayDelta: '+0 из 10',
+      why: 'Активность мимо цели.',
+      pro: ['согласован подрядчик'],
+      contra: ['блокер не снят'],
+    },
+    risksSummary: 'Клиент без ответа.',
+    ideasSummary: 'Растёт спрос на онбординг.',
+  };
+}
 
 function baseVerdict(overrides?: {
   clients?: 'ok' | 'warn' | 'risk';
@@ -157,5 +183,45 @@ describe('computeVerdictSignals', () => {
     const signals = computeVerdictSignals(emptyMetrics(), emptyPackage(), 5);
     expect(signals.hasNegativeClientSignal).toBe(false);
     expect(signals.executionStrained).toBe(false);
+  });
+});
+
+describe('extractDayCompanyResponse', () => {
+  it('toolCalls + обёртка {result} (поведение deepseek-v4-pro) ⇒ распарсено', () => {
+    const out = extractDayCompanyResponse({
+      text: 'рассуждение модели без чистого JSON',
+      toolCalls: [{ input: { result: validContract() } }],
+    });
+    expect(out).not.toBeNull();
+    expect(out!.verdict.axes.find((a) => a.key === 'clients')!.state).toBe('risk');
+    expect(out!.letter).toHaveLength(1);
+  });
+
+  it('обёртка {result} в text ⇒ распарсено', () => {
+    const out = extractDayCompanyResponse({ text: JSON.stringify({ result: validContract() }) });
+    expect(out).not.toBeNull();
+    expect(out!.goalAlignmentDay.score).toBe(46);
+  });
+
+  it('чистый контракт верхнего уровня в text ⇒ распарсено', () => {
+    const out = extractDayCompanyResponse({ text: JSON.stringify(validContract()) });
+    expect(out).not.toBeNull();
+    expect(out!.risksSummary).toContain('без ответа');
+  });
+
+  it('обёртка {data} в toolCalls ⇒ распарсено', () => {
+    const out = extractDayCompanyResponse({ text: '', toolCalls: [{ input: { data: validContract() } }] });
+    expect(out).not.toBeNull();
+  });
+
+  it('мусор без JSON ⇒ null (срабатывает сухой fallback)', () => {
+    const out = extractDayCompanyResponse({ text: 'это не json' });
+    expect(out).toBeNull();
+  });
+
+  it('невалидная структура (нет letter) ⇒ null', () => {
+    const broken = { ...validContract(), letter: undefined };
+    const out = extractDayCompanyResponse({ text: JSON.stringify(broken) });
+    expect(out).toBeNull();
   });
 });

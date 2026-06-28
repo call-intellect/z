@@ -74,6 +74,7 @@ function buildSvc(overrides: {
     pendingActions as never,
     customerRisk as never,
     blockerSynthesis as never,
+    {} as never,
   );
   return { svc, prisma };
 }

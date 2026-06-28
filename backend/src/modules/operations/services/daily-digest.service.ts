@@ -1,8 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { tryParseJson } from '../../ai/services/json-extract.util';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { PendingActionsService } from '../../pending-actions/services/pending-actions.service';
 import type {
@@ -17,19 +19,30 @@ import type {
   DailyDigestCustomerAtRiskDto,
   DailyDigestChronicBlockerDto,
   DailyDigestTrendPointDto,
+  DailyDigestVerdictDto,
+  DailyDigestLetterSectionDto,
+  DailyDigestGoalAlignmentDayDto,
 } from '../dto/daily-digest.dto';
 import {
-  DAILY_DIGEST_PROMPT_VERSION,
-  DAILY_DIGEST_SYSTEM_PROMPT,
   DAILY_DIGEST_TASK_TYPE,
-  buildDailyDigestUserMessage,
+  DAY_COMPANY_JSON_SCHEMA,
+  DAY_COMPANY_PROMPT_VERSION,
+  DAY_COMPANY_SYSTEM_PROMPT,
+  DayCompanyResponseSchema,
+  buildDayCompanyUserMessage,
   buildFallbackDigestMarkdown,
-  parseDailyDigestLlmResponse,
+  dayCompanyToBodyMarkdown,
+  type DayCompanyPackage,
 } from '../prompts/daily-digest.prompt';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
 import { BlockerSynthesisService } from './blocker-synthesis.service';
 import { CustomerRiskRadarService } from './customer-risk-radar.service';
+
+export interface DayVerdictSignals {
+  hasNegativeClientSignal: boolean;
+  executionStrained: boolean;
+}
 
 export function mapDailyDigestRowsToTrend(
   rowsDesc: Array<{ dateLocal: string; metricsJson: unknown }>,
@@ -52,6 +65,82 @@ export function mapDailyDigestRowsToTrend(
     .reverse();
 }
 
+export function computeVerdictSignals(
+  metrics: DailyDigestMetricsDto,
+  pkg: DayCompanyPackage,
+  staleDaysThreshold: number,
+): DayVerdictSignals {
+  const criticalCustomer = pkg.customersAtRisk.some((c) => c.riskLevel === 'critical');
+  const severeInsight = pkg.topInsights.some(
+    (i) => i.severity === 'high' || i.severity === 'critical',
+  );
+  const hasNegativeClientSignal = criticalCustomer || severeInsight;
+
+  const strongBlocker = metrics.newBlockers.some((b) => b.confidence >= 0.8);
+  const overdueAged = countOverdueAged(metrics.overdueCommitments, staleDaysThreshold) >= 1;
+  const executionStrained = strongBlocker || overdueAged;
+
+  return { hasNegativeClientSignal, executionStrained };
+}
+
+function countOverdueAged(
+  overdue: DailyDigestMetricsDto['overdueCommitments'],
+  staleDaysThreshold: number,
+): number {
+  const now = Date.now();
+  let count = 0;
+  for (const c of overdue) {
+    if (!c.dueDate) {
+      count += 1;
+      continue;
+    }
+    const due = new Date(`${c.dueDate}T00:00:00.000Z`).getTime();
+    if (Number.isNaN(due)) {
+      count += 1;
+      continue;
+    }
+    const ageDays = (now - due) / (24 * 60 * 60 * 1000);
+    if (ageDays >= staleDaysThreshold) count += 1;
+  }
+  return count;
+}
+
+export function clampVerdict(
+  verdict: DailyDigestVerdictDto,
+  signals: DayVerdictSignals,
+): DailyDigestVerdictDto {
+  const axes = verdict.axes.map((a) => ({ ...a }));
+  const overall = { ...verdict.overall };
+
+  const clientsAxis = axes.find((a) => a.key === 'clients');
+  if (signals.hasNegativeClientSignal && clientsAxis && clientsAxis.state === 'ok') {
+    clientsAxis.state = 'risk';
+  }
+
+  const executionAxis = axes.find((a) => a.key === 'execution');
+  if (signals.executionStrained && executionAxis && executionAxis.state === 'ok') {
+    executionAxis.state = 'warn';
+  }
+
+  const anyDomainRisk = axes.some(
+    (a) => (a.key === 'team' || a.key === 'clients' || a.key === 'execution') && a.state === 'risk',
+  );
+  if (anyDomainRisk) {
+    if (overall.state === 'ok') overall.state = 'warn';
+    const overallAxis = axes.find((a) => a.key === 'overall');
+    if (overallAxis && overallAxis.state === 'ok') overallAxis.state = 'warn';
+  }
+
+  return { overall, axes };
+}
+
+export function previousDateLocal(dateLocal: string): string {
+  const [y, m, d] = dateLocal.split('-').map(Number);
+  if (!y || !m || !d) return dateLocal;
+  const prev = new Date(Date.UTC(y, m - 1, d - 1));
+  return prev.toISOString().slice(0, 10);
+}
+
 @Injectable()
 export class DailyDigestService {
   private readonly logger = new Logger(DailyDigestService.name);
@@ -67,6 +156,8 @@ export class DailyDigestService {
     private readonly customerRisk: CustomerRiskRadarService,
     @Inject(BlockerSynthesisService)
     private readonly blockerSynthesis: BlockerSynthesisService,
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService,
   ) {}
 
   async getStored(args: {
@@ -161,22 +252,58 @@ export class DailyDigestService {
       })),
     };
 
+    const pkg = await this.buildDayPackage({
+      tenantId: args.tenantId,
+      dateLocal: args.dateLocal,
+    });
+    const staleDays = await this.cfg.getDynamic<number>(
+      'dashboard.stuck.staleDaysThreshold',
+      'DASHBOARD_STUCK_STALE_DAYS',
+      5,
+    );
+    const signals = computeVerdictSignals(aggregates.metrics, pkg, staleDays);
+
     let bodyMarkdown: string;
     let shortSummary: string | null;
-    let llmTaskRouteId: string | null = null;
+    let llmTaskRouteId: string | null;
+    let verdictObj: DailyDigestVerdictDto | null;
+    let letterArr: DailyDigestLetterSectionDto[] | null;
+    let goalDayObj: DailyDigestGoalAlignmentDayDto | null;
+    let risksSummary: string | null;
+    let ideasSummary: string | null;
     try {
       const result = await this.llm.call({
         taskType: DAILY_DIGEST_TASK_TYPE,
         tenantId: args.tenantId,
-        systemPrompt: DAILY_DIGEST_SYSTEM_PROMPT,
-        userMessage: buildDailyDigestUserMessage(promptInput),
-        maxTokens: 4_000,
+        systemPrompt: DAY_COMPANY_SYSTEM_PROMPT,
+        userMessage: buildDayCompanyUserMessage(pkg, aggregates.metrics, args.dateLocal),
+        responseFormat: {
+          type: 'json_schema',
+          name: 'DayCompany',
+          schema: DAY_COMPANY_JSON_SCHEMA,
+          strict: true,
+        },
+        reasoningEffort: 'high',
+        maxTokens: 8_000,
         sourceRef: { type: 'daily-digest', id: `${args.tenantId}:${args.dateLocal}` },
       });
-      const parsed = parseDailyDigestLlmResponse(result.text);
-      bodyMarkdown = parsed.bodyMarkdown;
-      shortSummary = parsed.shortSummary;
-      llmTaskRouteId = `${DAILY_DIGEST_PROMPT_VERSION}+${result.modelUsed}`;
+      const parsed = tryParseJson(result.text);
+      const validated = DayCompanyResponseSchema.safeParse(parsed);
+      if (!validated.success) throw new Error('schema_mismatch');
+      const verdict = clampVerdict(validated.data.verdict, signals);
+      const goalAlignmentDay: DailyDigestGoalAlignmentDayDto = {
+        ...validated.data.goalAlignmentDay,
+        goalId: pkg.goalId ?? null,
+        goalName: pkg.goalName ?? null,
+      };
+      verdictObj = verdict;
+      letterArr = validated.data.letter;
+      goalDayObj = goalAlignmentDay;
+      risksSummary = validated.data.risksSummary;
+      ideasSummary = validated.data.ideasSummary;
+      bodyMarkdown = dayCompanyToBodyMarkdown(verdict, validated.data.letter);
+      shortSummary = verdict.overall.oneLiner;
+      llmTaskRouteId = `${DAY_COMPANY_PROMPT_VERSION}+${result.modelUsed}`;
     } catch (err) {
       this.metrics.incCooDailyDigestFailed({
         tenantTop,
@@ -193,7 +320,15 @@ export class DailyDigestService {
       const fallback = buildFallbackDigestMarkdown(promptInput);
       bodyMarkdown = fallback.bodyMarkdown;
       shortSummary = fallback.shortSummary;
+      verdictObj = null;
+      letterArr = null;
+      goalDayObj = null;
+      risksSummary = null;
+      ideasSummary = null;
+      llmTaskRouteId = null;
     }
+
+    const metricsToStore = { ...aggregates.metrics, risksSummary, ideasSummary };
 
     const row = await this.prisma.dailyOperationsDigest.upsert({
       where: {
@@ -207,16 +342,30 @@ export class DailyDigestService {
         dateLocal: args.dateLocal,
         bodyMarkdown,
         shortSummary,
-        metricsJson: aggregates.metrics as unknown as Prisma.InputJsonValue,
+        metricsJson: metricsToStore as unknown as Prisma.InputJsonValue,
         sourcesJson: aggregates.sources as unknown as Prisma.InputJsonValue,
         llmTaskRouteId,
+        verdictJson: verdictObj
+          ? (verdictObj as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+        letterJson: letterArr ? (letterArr as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+        goalAlignmentDayJson: goalDayObj
+          ? (goalDayObj as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
       },
       update: {
         bodyMarkdown,
         shortSummary,
-        metricsJson: aggregates.metrics as unknown as Prisma.InputJsonValue,
+        metricsJson: metricsToStore as unknown as Prisma.InputJsonValue,
         sourcesJson: aggregates.sources as unknown as Prisma.InputJsonValue,
         llmTaskRouteId,
+        verdictJson: verdictObj
+          ? (verdictObj as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+        letterJson: letterArr ? (letterArr as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+        goalAlignmentDayJson: goalDayObj
+          ? (goalDayObj as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
       },
     });
 
@@ -459,6 +608,164 @@ export class DailyDigestService {
     return { metrics, sources };
   }
 
+  private async buildDayPackage(args: {
+    tenantId: string;
+    dateLocal: string;
+  }): Promise<DayCompanyPackage> {
+    const [dayStart, dayEnd] = this.parseDayBoundsMsk(args.dateLocal);
+
+    const [meetingRows, ideaRows, insightRows] = await Promise.all([
+      this.prisma.meeting.findMany({
+        where: {
+          tenantId: args.tenantId,
+          endedAt: { gte: dayStart, lt: dayEnd },
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          title: true,
+          aiResult: { select: { summaryFast: true } },
+        },
+        take: 20,
+        orderBy: { endedAt: 'asc' },
+      }),
+      this.prisma.idea.findMany({
+        where: { tenantId: args.tenantId },
+        select: {
+          id: true,
+          statement: true,
+          weight: true,
+          supporterCount: true,
+        },
+        orderBy: [{ weight: 'desc' }, { lastDiscussedAt: 'desc' }],
+        take: 5,
+      }),
+      this.prisma.insight.findMany({
+        where: {
+          tenantId: args.tenantId,
+          status: { in: ['active', 'mitigating'] },
+          severity: { in: ['high', 'critical'] },
+        },
+        select: { id: true, statement: true, severity: true, kind: true },
+        orderBy: [{ severity: 'desc' }, { lastObservedAt: 'desc' }],
+        take: 5,
+      }),
+    ]);
+
+    let goalId: string | null = null;
+    let goalName: string | null = null;
+    let compass: DayCompanyPackage['compass'] = null;
+    try {
+      const primaryGoal = await this.prisma.goal.findFirst({
+        where: { tenantId: args.tenantId, isPrimary: true },
+        select: { id: true, name: true },
+      });
+      const goal =
+        primaryGoal ??
+        (await this.prisma.goal.findFirst({
+          where: { tenantId: args.tenantId, status: 'active' },
+          orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+          select: { id: true, name: true },
+        }));
+      if (goal) {
+        goalId = goal.id;
+        goalName = goal.name;
+        const snapshot = await this.prisma.goalAlignmentSnapshot.findFirst({
+          where: { tenantId: args.tenantId, goalId: goal.id },
+          orderBy: { createdAt: 'desc' },
+          select: { score: true, delta: true, explanation: true, signals: true },
+        });
+        const sig = parseSnapshotSignals(snapshot?.signals);
+        compass = {
+          goalName: goal.name,
+          score: snapshot ? snapshot.score : null,
+          delta: snapshot?.delta ?? null,
+          explanation: snapshot?.explanation ?? null,
+          pro: sig.pro,
+          contra: sig.contra,
+        };
+      }
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'daily-digest: сбор компаса для пакета упал — деградирую без цели',
+      );
+    }
+
+    let customersAtRisk: DayCompanyPackage['customersAtRisk'] = [];
+    try {
+      const top = await this.customerRisk.topForDigest({
+        tenantId: args.tenantId,
+        limit: 5,
+      });
+      customersAtRisk = top.map((c) => ({
+        customerName: c.customerName,
+        riskLevel: c.riskLevel,
+        signals: buildCustomerRiskBadge(c.signalCounts),
+      }));
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'daily-digest: клиенты под риском для пакета упали — пропускаю',
+      );
+    }
+
+    let yesterday: DayCompanyPackage['yesterday'] = null;
+    try {
+      const prev = await this.getStored({
+        tenantId: args.tenantId,
+        dateLocal: previousDateLocal(args.dateLocal),
+      });
+      if (prev) {
+        yesterday = {
+          state: prev.verdict?.overall.state ?? null,
+          title: prev.verdict?.overall.title ?? null,
+          shortSummary: prev.shortSummary,
+        };
+      }
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'daily-digest: вчерашний снапшот для пакета не получен — без петли',
+      );
+    }
+
+    return {
+      dateLocal: args.dateLocal,
+      goalId,
+      goalName,
+      meetings: meetingRows.map((m) => ({
+        id: m.id,
+        title: m.title ?? 'Встреча',
+        summary: m.aiResult?.summaryFast ?? null,
+      })),
+      topInsights: insightRows.map((i) => ({
+        id: i.id,
+        statement: (i.statement ?? '').slice(0, 400),
+        severity: i.severity,
+        kind: i.kind,
+      })),
+      topIdeas: ideaRows.map((i) => ({
+        id: i.id,
+        statement: (i.statement ?? '').slice(0, 400),
+        weight: Number(i.weight),
+        supporterCount: i.supporterCount,
+      })),
+      customersAtRisk,
+      compass,
+      yesterday,
+    };
+  }
+
   private async buildDailyTrend(
     tenantId: string,
     dateLocal: string,
@@ -488,6 +795,9 @@ export class DailyDigestService {
     shortSummary: string | null;
     deliveredAt: Date | null;
     createdAt: Date;
+    verdictJson?: unknown;
+    letterJson?: unknown;
+    goalAlignmentDayJson?: unknown;
   }): DailyOperationsDigestDto {
     return {
       id: row.id,
@@ -507,6 +817,9 @@ export class DailyDigestService {
       customersAtRisk: [],
       chronicBlockers: [],
       trend: [],
+      verdict: (row.verdictJson as DailyDigestVerdictDto | null) ?? null,
+      letter: (row.letterJson as DailyDigestLetterSectionDto[] | null) ?? null,
+      goalAlignmentDay: (row.goalAlignmentDayJson as DailyDigestGoalAlignmentDayDto | null) ?? null,
     };
   }
 
@@ -1016,6 +1329,18 @@ function pluralizeBlagodarnost(n: number): string {
 
 function pluralizeObeshchanie(n: number): string {
   return pluralRu(n, 'обещание', 'обещания', 'обещаний');
+}
+
+function parseSnapshotSignals(raw: unknown): { pro: string[]; contra: string[] } {
+  if (!raw || typeof raw !== 'object') return { pro: [], contra: [] };
+  const obj = raw as Record<string, unknown>;
+  const pro = Array.isArray(obj.pro)
+    ? obj.pro.filter((x): x is string => typeof x === 'string')
+    : [];
+  const contra = Array.isArray(obj.contra)
+    ? obj.contra.filter((x): x is string => typeof x === 'string')
+    : [];
+  return { pro, contra };
 }
 
 function buildCustomerRiskBadge(counts: {

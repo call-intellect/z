@@ -2580,4 +2580,13 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **Связь встреча↔задача** — `Issue.linkedMeetingIds` (GIN-индекс `Issue_linkedMeetingIds_gin_idx`); новый фильтр `GET /api/v1/issues?linkedMeetingId`; вкладка задач встречи на фронте пишет/читает Issue (`useMeetingIssues`, `issuesApi`).
 - **`shares.service`** (публичная шара) переведён на `Issue`. `TaskSource` остаётся провенанс-моделью (только `issueId`).
 
+## Единый чат Коры — модуль `messaging/` (2026-06-28)
+
+**Источник:** ТЗ [`plans/tz/2026-06-21-unified-chat-kora-tz.md`](../../plans/tz/2026-06-21-unified-chat-kora-tz.md) (Ф0–Ф7). Профиль — [[../01_projects/unified-chat]]; модели — [[data-model]]; очереди — [[../01_projects/workers-queues]].
+
+- **`backend/src/modules/messaging/`** — единое ядро: `services/` (conversation/message/read-cursor/work-chat/presence/inbox/chat-ingest/chat-summary/ask-kora/message-actions/message-retention/poll/huddle/user-block/message-report), `queue/` (message.outbox / chat.ingest / voice.transcribe relay-воркеры), `external/` (access-link/external-conversation/guest-controller/guard), `inbox.controller`/`conversation.controller`, `MessageBubble` UI. Один склад `Conversation/Message` на чат+work_chat+ticket+external.
+- **WS** — расширен `tracker/gateways/tracker.gateway.ts` (`conversation.*` + staff-под-room для access-изоляции); `common/ws/redis-io.adapter.ts` (`@socket.io/redis-adapter`, свои pub/sub из cfg).
+- **Пересажено на ядро:** support (`support/*` → Conversation/Message+SupportTicket, 0 Issue-пути), чат задачи (`tracker` comments → Message под work_chat).
+- **Push:** `push/` расширен транспорт-агностичным `PushService` (PushToken apns/fcm/rustore/webpush). **Mobile:** `kora-mobile/` (Expo RN scaffold).
+
 [[../index|← index]]

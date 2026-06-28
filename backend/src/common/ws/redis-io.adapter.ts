@@ -1,10 +1,10 @@
 import type { INestApplicationContext } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
-import type { Redis } from 'ioredis';
+import IORedis, { type Redis } from 'ioredis';
 import type { Server, ServerOptions } from 'socket.io';
 
-import { RedisService } from '../redis/redis.service';
+import { TypedConfigService } from '../config/index';
 
 export class RedisIoAdapter extends IoAdapter {
   private adapterConstructor?: ReturnType<typeof createAdapter>;
@@ -16,10 +16,11 @@ export class RedisIoAdapter extends IoAdapter {
   }
 
   async connectToRedis(): Promise<void> {
-    const redis = this.app.get(RedisService);
-    this.pubClient = redis.client.duplicate();
-    this.subClient = redis.client.duplicate();
-    await Promise.all([this.ensureReady(this.pubClient), this.ensureReady(this.subClient)]);
+    const cfg = this.app.get(TypedConfigService);
+    const url = cfg.redis.url;
+    this.pubClient = new IORedis(url, { lazyConnect: true, maxRetriesPerRequest: null });
+    this.subClient = new IORedis(url, { lazyConnect: true, maxRetriesPerRequest: null });
+    await Promise.all([this.pubClient.connect(), this.subClient.connect()]);
     this.adapterConstructor = createAdapter(this.pubClient, this.subClient);
   }
 
@@ -29,17 +30,5 @@ export class RedisIoAdapter extends IoAdapter {
       server.adapter(this.adapterConstructor);
     }
     return server;
-  }
-
-  private async ensureReady(client: Redis): Promise<void> {
-    if (client.status === 'ready') return;
-    if (client.status === 'wait' || client.status === 'close' || client.status === 'end') {
-      await client.connect();
-      return;
-    }
-    await new Promise<void>((resolve, reject) => {
-      client.once('ready', resolve);
-      client.once('error', reject);
-    });
   }
 }

@@ -270,13 +270,16 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
       where: {
         conversationId_userId: { conversationId: body.conversationId, userId: ctx.userId },
       },
-      select: { id: true },
+      select: { id: true, role: true },
     });
     if (!member) return { ok: false, error: 'not_member' };
 
     const room = this.conversationRoom(body.conversationId);
     const wasAlreadyIn = ctx.presenceConversationIds.has(body.conversationId);
     await client.join(room);
+    if (member.role !== 'client') {
+      await client.join(this.conversationStaffRoom(body.conversationId));
+    }
     ctx.presenceConversationIds.add(body.conversationId);
     await this.presence.join({
       conversationId: body.conversationId,
@@ -345,6 +348,10 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     return `conversation:${conversationId}`;
   }
 
+  conversationStaffRoom(conversationId: string): string {
+    return `conversation:${conversationId}:staff`;
+  }
+
   private async leaveConversationPresence(
     client: Socket,
     conversationId: string,
@@ -352,6 +359,7 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
   ): Promise<void> {
     ctx.presenceConversationIds.delete(conversationId);
     await client.leave(this.conversationRoom(conversationId));
+    await client.leave(this.conversationStaffRoom(conversationId));
     try {
       await this.presence.leave({ conversationId, userId: ctx.userId });
     } catch (e) {

@@ -1117,6 +1117,8 @@ model User {
   isSuperAdmin          Boolean          @default(false)
   signupSource          UserSignupSource @default(crossmark)
   signupRef             String?          @db.VarChar(255)
+  kind                  String           @default("member")
+  verified              Boolean          @default(false)
   // argon2id (standalone) или bcrypt (admin local login). Опционально для Crossmark-провижененных юзеров.
   passwordHash          String?
   mustChangePassword    Boolean          @default(false)
@@ -12482,8 +12484,26 @@ model Conversation {
   members       ConversationMember[]
   messages      Message[]
   supportTicket SupportTicket?
+  accessLinks   ConversationAccessLink[]
 
   @@index([tenantId, kind, lastMessageAt])
+}
+
+model ConversationAccessLink {
+  id              String    @id @default(cuid())
+  tokenHash       String    @unique
+  conversationId  String
+  contactEmail    String?   @db.VarChar(320)
+  contactPhone    String?
+  createdByUserId String
+  claimedByUserId String?
+  expiresAt       DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
 }
 
 model ConversationMember {

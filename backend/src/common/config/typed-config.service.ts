@@ -731,6 +731,12 @@ export class TypedConfigService {
     } as const;
   }
 
+  get externalChat() {
+    return {
+      enabled: this.get('EXTERNAL_CHAT_ENABLED'),
+    } as const;
+  }
+
   get supportDesk() {
     return {
       enabled: this.resolveSync<boolean>('support_desk.enabled', 'SUPPORT_DESK_ENABLED', true),

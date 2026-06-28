@@ -35,6 +35,7 @@ interface Deps {
   outboxStatus: string | null;
   members: Array<{ userId: string; mutedUntil: Date | null }>;
   online: Array<{ userId: string; displayName: string }>;
+  messageAccess?: string;
 }
 
 function build(deps: Deps) {
@@ -45,7 +46,13 @@ function build(deps: Deps) {
       findUnique: vi.fn().mockResolvedValue(outboxRow),
       update: updateOutbox,
     },
-    message: { findUnique: vi.fn().mockResolvedValue(makeMessageRow()) },
+    message: {
+      findUnique: vi
+        .fn()
+        .mockResolvedValue(
+          makeMessageRow(deps.messageAccess ? { access: deps.messageAccess } : {}),
+        ),
+    },
     conversationMember: { findMany: vi.fn().mockResolvedValue(deps.members) },
   } as unknown as PrismaService;
 
@@ -56,6 +63,7 @@ function build(deps: Deps) {
   const emitToRooms = vi.fn();
   const gateway = {
     conversationRoom: (id: string) => `conversation:${id}`,
+    conversationStaffRoom: (id: string) => `conversation:${id}:staff`,
     emitToRooms,
   } as unknown as TrackerGateway;
 
@@ -183,5 +191,51 @@ describe('MessageOutboxRelayWorker — офлайн-сигнал ФЗ-41', () =>
     expect(() => assertNoExternalBody({ conversationId: 'c1', content: 'hi' })).toThrow();
     expect(() => assertNoExternalBody({ conversationId: 'c1', authorName: 'Alice' })).toThrow();
     expect(() => assertNoExternalBody({ conversationId: 'c1', text: 'leak' })).toThrow();
+  });
+});
+
+describe('MessageOutboxRelayWorker — relay-access (internal не клиенту)', () => {
+  it('internal → message.new ТОЛЬКО в staff-room (не в общий room)', async () => {
+    const { worker, emitToRooms } = build({
+      outboxStatus: 'pending',
+      members: [{ userId: 'author-1', mutedUntil: null }],
+      online: [],
+      messageAccess: 'internal',
+    });
+
+    await worker.relay('msg-1');
+
+    expect(emitToRooms).toHaveBeenCalledTimes(1);
+    const [rooms] = emitToRooms.mock.calls[0]!;
+    expect(rooms).toEqual(['conversation:conv-1:staff']);
+    expect(rooms).not.toContain('conversation:conv-1');
+  });
+
+  it('external → message.new в общий room (клиент-член его получает)', async () => {
+    const { worker, emitToRooms } = build({
+      outboxStatus: 'pending',
+      members: [{ userId: 'author-1', mutedUntil: null }],
+      online: [],
+      messageAccess: 'external',
+    });
+
+    await worker.relay('msg-1');
+
+    const [rooms] = emitToRooms.mock.calls[0]!;
+    expect(rooms).toEqual(['conversation:conv-1']);
+  });
+
+  it('normal → message.new в общий room', async () => {
+    const { worker, emitToRooms } = build({
+      outboxStatus: 'pending',
+      members: [{ userId: 'author-1', mutedUntil: null }],
+      online: [],
+      messageAccess: 'normal',
+    });
+
+    await worker.relay('msg-1');
+
+    const [rooms] = emitToRooms.mock.calls[0]!;
+    expect(rooms).toEqual(['conversation:conv-1']);
   });
 });

@@ -71,6 +71,21 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-28 — Единый чат: Ф3.5a внешняя переписка с клиентами + relay-access фикс (ветка feat/unified-chat-kora)
+
+> ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф3.5a. Ядро внешней переписки (magic-link к одному разговору, sha256-хэш токена) + security-фикс relay: `internal`-сообщения больше не утекают клиенту-члену (эмит только в staff-room).
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260628190000_external_chat` (CREATE TABLE `ConversationAccessLink` + `User += kind/verified`). 🟡 1 НОВЫЙ ENV-флаг `EXTERNAL_CHAT_ENABLED` (kill-switch ON).** 2 новые крутилки (расширен существующий сид). Docker rebuild backend.
+
+- **Шаг 1 — ENV: 1 новый флаг** `EXTERNAL_CHAT_ENABLED` (zBool default true, kill-switch тип A — ВКЛ, действий владельца не требует; выкл → `startExternalConversation` бросает `503 EXTERNAL_CHAT_DISABLED`). В `ADMIN_FALLBACK_ENV_KEYS`. Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260628190000_external_chat` — `CREATE TABLE "ConversationAccessLink"` (unique `tokenHash`, index `conversationId`, FK → `Conversation` `ON DELETE CASCADE`) + `ALTER TABLE "User" ADD COLUMN "kind" TEXT NOT NULL DEFAULT 'member'` + `ADD COLUMN "verified" BOOLEAN NOT NULL DEFAULT false`. Аддитивная (CREATE TABLE + ADD COLUMN, без DROP), без потери данных, backfill не нужен. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«ConversationAccessLink / User.kind/verified».
+- **Шаг 7 — Seed крутилок (идемпотентный, сид УЖЕ в STEPS, расширен существующий):** доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`:
+  - `seed-admin-setting-chat.ts` (`phase:'seed-base'`) — `external_link_ttl_hours` (168 — TTL magic-link, код-fallback 168) + `external_inbound_rate_limit` (30 — лимит входящих/час, код-fallback 30).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend (messaging/external: `AccessLinkService` create/verify/revoke/claim хэш-токена; `ExternalConversationService` старт внешнего чата + email-приглашение через `MailService.sendPlain` (доставка по телефону — TODO Ф3.5b); `ExternalConversationController POST /external-conversations`; `ExternalGuestGuard` + JWT `signExternalGuestSession`/`verifyExternalGuestSession`; tracker.gateway `conversationStaffRoom` + join staff для не-client; outbox-relay фильтр access internal→staff-room).
+- **Шаг 12 — Smoke** (после выката): Swagger `/api/v1/external-conversations` (POST) присутствует; флаг `EXTERNAL_CHAT_ENABLED` в админке; `psql \d "ConversationAccessLink"` существует; `\d "User"` имеет `kind`/`verified`.
+
+---
+
 ### 📄 2026-06-27 — Задача·решение·исполнение — единый контур (ветка feature/task-decision-execution-unified)
 
 > ТЗ `plans/tz/2026-06-27-task-decision-execution-unified-tz.md` (Ф0–Ф5). P0-фикс краша создания задач (advisory-lock Prisma 7) + три класса извлечения (idea/задача/решение) + actionable-решение авто-заводит задачу (`Decision.impliesAction`) + закрытие из разговора (embed-resilience + журнал хода) + дашборд на исполнении + надёжность пайплайна (не терять RawEvent + JSON-ремонт воркеров). Коммиты `66c69295` (Ф0) … `1b27ff2a` (Ф5).

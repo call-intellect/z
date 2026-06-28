@@ -95,7 +95,10 @@ export class MessageOutboxRelayWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const room = this.gateway.conversationRoom(message.conversationId);
+    const room =
+      message.access === 'internal'
+        ? this.gateway.conversationStaffRoom(message.conversationId)
+        : this.gateway.conversationRoom(message.conversationId);
     this.gateway.emitToRooms([room], 'message.new', {
       id: message.id,
       conversationId: message.conversationId,

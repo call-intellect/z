@@ -43,6 +43,24 @@ const SEEDS: SettingSeed[] = [
     description:
       'Лимит батча backstop-sweep transactional outbox за один проход. По умолчанию 200.',
   },
+  {
+    key: 'external_link_ttl_hours',
+    value: 168,
+    category: 'chat',
+    section: 'external',
+    severity: 'medium',
+    description:
+      'TTL (часов) magic-link доступа внешнего клиента к одному разговору (ConversationAccessLink). Просрочка → 403. По умолчанию 168 (7 дней).',
+  },
+  {
+    key: 'external_inbound_rate_limit',
+    value: 30,
+    category: 'chat',
+    section: 'external',
+    severity: 'medium',
+    description:
+      'Лимит входящих сообщений внешнего клиента в час на разговор (анти-абьюз публичного входа). Превышение → 429. По умолчанию 30.',
+  },
 ];
 
 interface Counters {

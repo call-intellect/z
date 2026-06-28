@@ -725,6 +725,12 @@ export class TypedConfigService {
     } as const;
   }
 
+  get chat() {
+    return {
+      enabled: this.get('CHAT_ENABLED'),
+    } as const;
+  }
+
   get supportDesk() {
     return {
       enabled: this.resolveSync<boolean>('support_desk.enabled', 'SUPPORT_DESK_ENABLED', true),

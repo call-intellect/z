@@ -12442,3 +12442,91 @@ model BitrixCrmNote {
   @@unique([tenantId, kind, externalId])
   @@index([tenantId, occurredAt])
 }
+
+enum ConversationKind {
+  dm
+  group
+  channel
+  work_chat
+  external
+  ticket
+}
+
+model Conversation {
+  id              String           @id @default(cuid())
+  tenantId        String
+  kind            ConversationKind
+  title           String?
+  isMandatory     Boolean          @default(false)
+  feedsGraph      Boolean          @default(true)
+  createdByUserId String
+  lastMessageAt   DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  members  ConversationMember[]
+  messages Message[]
+
+  @@index([tenantId, kind, lastMessageAt])
+}
+
+model ConversationMember {
+  id             String    @id @default(cuid())
+  conversationId String
+  userId         String
+  role           String    @default("member")
+  lastReadSeq    BigInt    @default(0)
+  mutedUntil     DateTime?
+  source         String    @default("manual")
+  joinedAt       DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id                String    @id @default(cuid())
+  tenantId          String
+  conversationId    String
+  seq               BigInt
+  authorUserId      String
+  authorType        String    @default("human")
+  access            String    @default("normal")
+  content           String    @db.Text
+  contentHtml       String?   @db.Text
+  contentStripped   String?   @db.Text
+  parentMessageId   String?
+  clientMessageId   String
+  voiceUrl          String?
+  voiceDuration     Int?
+  voiceTranscript   String?   @db.Text
+  attachments       Json?
+  mentions          String[]
+  reactions         Json?
+  thanksUserIds     String[]  @default([])
+  draftState        String?
+  cloneConfidence   Decimal?  @db.Decimal(4, 3)
+  groundednessScore Decimal?  @db.Decimal(4, 3)
+  editedAt          DateTime?
+  deletedAt         DateTime?
+  createdAt         DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, clientMessageId])
+  @@unique([conversationId, seq])
+  @@index([conversationId, seq])
+  @@index([tenantId, createdAt])
+}
+
+model MessageOutbox {
+  id        String   @id @default(cuid())
+  messageId String   @unique
+  status    String   @default("pending")
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([status, createdAt])
+}

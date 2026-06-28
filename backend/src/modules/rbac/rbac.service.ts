@@ -101,6 +101,8 @@ export const RESOURCE_TYPES = [
   'table',
   'chatbox',
   'bitrix',
+  'conversation',
+  'message',
 ] as const;
 
 export type ResourceType = (typeof RESOURCE_TYPES)[number];

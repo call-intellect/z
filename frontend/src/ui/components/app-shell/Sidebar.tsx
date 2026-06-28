@@ -42,6 +42,7 @@ import { cn } from "@/ui/shadcn/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { useEntitlement } from "@/hooks/useEntitlement";
 import { useMyInboxCount } from "@/hooks/tracker/useMyInboxCount";
+import { useUnreadMessageCount } from "@/hooks/messaging/useUnreadMessageCount";
 import { useSupportStatus } from "@/hooks/useSupportStatus";
 import { useUnseenCloneGrants } from "@/hooks/useUnseenCloneGrants";
 import { FEATURE_MIN_TIER, tierLabel } from "@/domain/entitlement";
@@ -72,6 +73,8 @@ export function Sidebar({
 
   const { count: myInboxCount } = useMyInboxCount(currentOrgId);
 
+  const { total: unreadMessagesCount } = useUnreadMessageCount(currentOrgId);
+
   const hasUnseenCloneGrants = useUnseenCloneGrants(currentOrgId);
 
   const support = useSupportStatus();
@@ -86,6 +89,7 @@ export function Sidebar({
   const overlay = (item: NavConfigItem): ResolvedNavItem => {
     const out: ResolvedNavItem = { ...item };
     if (item.badge === "myInbox") out.badgeCount = myInboxCount;
+    if (item.badge === "unreadMessages") out.badgeCount = unreadMessagesCount;
     if (item.dot === "cloneGrants") out.showDot = hasUnseenCloneGrants;
     return out;
   };

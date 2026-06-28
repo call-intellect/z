@@ -1,6 +1,7 @@
 "use client";
 
-import { Loader2, Send } from "lucide-react";
+import { Loader2, MessageSquare, Send } from "lucide-react";
+import { useRouter } from "next/navigation";
 import {
   type ChangeEvent,
   type KeyboardEvent,
@@ -12,6 +13,7 @@ import {
 } from "react";
 
 import { commentsApi } from "@/api/tracker/comments.api";
+import { messagingApi } from "@/api/messaging.api";
 import {
   memberDisplayName,
   memberHandle,
@@ -45,11 +47,28 @@ export function IssueComments({
   issueId,
   projectId,
 }: IssueCommentsProps) {
+  const router = useRouter();
   const { comments, isLoading, error, mutate } = useIssueComments(
     orgId,
     issueId,
   );
   const { members } = useProjectMembers(orgId, projectId ?? null);
+
+  const [openingChat, setOpeningChat] = useState(false);
+
+  const handleOpenInMessages = useCallback(async () => {
+    if (openingChat) return;
+    setOpeningChat(true);
+    try {
+      const { conversationId } = await messagingApi.issueConversation(
+        orgId,
+        issueId,
+      );
+      router.push(`/messages?conversation=${encodeURIComponent(conversationId)}`);
+    } catch {
+      setOpeningChat(false);
+    }
+  }, [openingChat, orgId, issueId, router]);
 
   useTrackerLiveRefresh(orgId, { issueId }, true);
 
@@ -180,6 +199,22 @@ export function IssueComments({
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex justify-end">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1.5 text-fg-secondary"
+          onClick={() => void handleOpenInMessages()}
+          disabled={openingChat}
+        >
+          {openingChat ? (
+            <Loader2 size={13} className="animate-spin" />
+          ) : (
+            <MessageSquare size={13} />
+          )}
+          Открыть в Сообщениях
+        </Button>
+      </div>
       {}
       {onlineSummary ? (
         <div className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-elevated px-3 py-1.5 text-xs text-fg-secondary">

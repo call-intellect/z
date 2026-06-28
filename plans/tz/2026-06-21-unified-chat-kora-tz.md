@@ -24,7 +24,7 @@ relates_to:
 
 ## Вне scope / отложено владельцем
 - **Треды-форумы (Zulip/Discord-стиль) и иерархия workspace→команды→каналы** — не v1 (Р4). Только плоские каналы + плоский reply (`parentMessageId`).
-- **E2EE приватных каналов, федерация серверов, бот-платформа (Bot API), коллаб для внешних контрагентов** — vNext. _(Опросы — входят в Ф7 доводки.)_
+- **E2EE приватных каналов, федерация серверов, бот-платформа (Bot API)** — vNext. _(Опросы — входят в Ф7 доводки; переписка с внешними клиентами — входит в Ф3.5, решение Р10; полноценный клиентский портал-кабинет — vNext.)_
 - **`Issue` как МОДЕЛЬ задачи** (поля/доска/статусы/прогресс/чек-листы) — НЕ трогаем, остаётся в трекере. НО **переписка задачи (`IssueComment`) переезжает на общее ядро** как `Conversation(kind='work_chat')` (Ф2.5, решение Р9) — это и есть «рабочий чат из задачи» на едином экране. На общее ядро также переезжают тикеты поддержки.
 - **Миграция живых данных поддержки** — не нужна (поддержка не запущена, тикетов нет). Старые support-поля на `Issue`/`IssueComment` (миграция 2026-06-09) становятся неиспользуемыми; их удаление — опциональная уборка (Ф3, не блокер).
 
@@ -75,6 +75,7 @@ relates_to:
 | Р7 | Huddles (созвон из чата на LiveKit) = Ф7 (доводка), не блокирует ядро | LiveKit в стеке; «вау», не ядро |
 | Р8 | Мобильность — сквозное (Ф6 + учёт в UI-фазах); пуш APNs/RuStore, FCM никогда фундамент | Линейный персонал — главные пострадавшие от блокировок [06-mobile-ux] |
 | Р9 | **Чат задачи = `work_chat` на едином ядре.** Каждая задача лениво получает `Conversation(kind='work_chat')` (`Issue.conversationId @unique`); переписка `IssueComment` мигрирует в `Message`; заголовок чата = `PROJ-123 · <задача>`; рабочий чат виден в общем списке «Сообщения» и горит непрочитанным наравне с личкой/группами; двусторонняя навигация карточка↔переписка. `Issue` как модель задачи (поля/доска/статусы/прогресс) не трогаем | Цель ТЗ обещает «рабочие чаты из задач на одном экране» (стр. 34) и `work_chat` в `InboxItem` — без Ф2.5 обещание не выполнено; один склад сообщений (вариант A) распространяется и на чат задачи. Владелец 2026-06-28 |
+| Р10 | **Внешняя переписка с клиентами на едином ядре.** Проактивный клиентский чат = `Conversation(kind='external')` (сотрудник пишет клиенту первым) + реактивная поддержка = `ticket` (Ф3); клиент входит по **magic-link БЕЗ пароля** с опц. лёгкой дорегистрацией (email/телефон+код: теневой → подтверждённый `User(kind='external_client')`); жёсткая граница — только своя переписка, только `external`-сообщения, закрытый контур | Владелец 2026-06-28: «клиенту тоже нравится новая чат-платформа, переписка с клиентами важна»; переиспользует support-контур (Ф3) + паттерн гостя встречи; дорегистрация даёт continuity при минимуме трения. Прежний vNext-пункт «коллаб для внешних контрагентов» снят |
 
 ### Инварианты сведения (при едином ядре — встроены, не костыли)
 Единое ядро устраняет 4 из 7 инвариантов red-team (они были нужны лишь чтобы склеить ДВА склада): **единый read-cursor** (один `lastReadSeq` на `ConversationMember`), **единый поисковый индекс** (один склад `Message`, GIN по `contentStripped`), **единый AI-ingest** (один источник `Message`), **схема расхождений** (одна схема) — стали свойством архитектуры. Остаются 3 как здоровая практика:
@@ -100,7 +101,7 @@ relates_to:
 ---
 
 ## Scope
-**Входит:** Ф0 мост-загрузки; Ф1 единое ядро (`Conversation/ConversationMember/Message/MessageOutbox` + слой корректности + WS + presence-Redis + RBAC + шифрование + ФЗ-41 gate); Ф2 внутренний чат (личка/группы/каналы); Ф2.5 рабочий чат задачи (work_chat: связка Issue↔Conversation + миграция IssueComment→Message + двусторонняя навигация карточка↔переписка); Ф3 поддержка на ядре (`SupportTicket`-обёртка + пересадка контур/клон/critic/куратор/SLA/CSAT); Ф4 единый экран «Сообщения» (один список + контроллер + общий UI + поиск); Ф5 AI-крючки; Ф6 мобильное приложение; Ф7 доводка (huddles/опросы/автоудаление/HR-подписки).
+**Входит:** Ф0 мост-загрузки; Ф1 единое ядро (`Conversation/ConversationMember/Message/MessageOutbox` + слой корректности + WS + presence-Redis + RBAC + шифрование + ФЗ-41 gate); Ф2 внутренний чат (личка/группы/каналы); Ф2.5 рабочий чат задачи (work_chat: связка Issue↔Conversation + миграция IssueComment→Message + двусторонняя навигация карточка↔переписка); Ф3 поддержка на ядре (`SupportTicket`-обёртка + пересадка контур/клон/critic/куратор/SLA/CSAT); Ф3.5 внешняя переписка с клиентами (`external` + magic-link-гость + лёгкая дорегистрация); Ф4 единый экран «Сообщения» (один список + контроллер + общий UI + поиск); Ф5 AI-крючки; Ф6 мобильное приложение; Ф7 доводка (huddles/опросы/автоудаление/HR-подписки).
 
 **Не входит:** см. «Вне scope».
 
@@ -124,6 +125,7 @@ enum ConversationKind {
   group
   channel
   work_chat /// чат задачи трекера = разговор + связь Issue.conversationId (Ф2.5)
+  external  /// проактивный клиентский чат (сотрудник↔клиент-вне-компании), вход по magic-link (Ф3.5)
   ticket    /// обращение клиента = разговор + обёртка SupportTicket
 }
 
@@ -228,12 +230,34 @@ model SupportTicket { /// обёртка-ярлыки поверх Conversation(
 // IssueMention — userId упоминания едет в Message.mentions[]; @-уведомления перепривязать на messageId (сохранить by-whom для нотификаций).
 // IssueProgressUpdate (прогресс/health задачи) — НЕ трогаем, это не переписка.
 ```
+
+```prisma
+// --- внешняя переписка с клиентами (Ф3.5) ---
+model ConversationAccessLink { /// bearer-доступ внешнего клиента к ОДНОМУ разговору (magic-link)
+  id              String    @id @default(cuid())
+  token           String    @unique /// в ссылке; хранить хэш, отдавать сырое только при выдаче
+  conversationId  String
+  contactEmail    String?   @db.VarChar(320)
+  contactPhone    String?
+  createdByUserId String
+  claimedByUserId String?   /// заполняется при дорегистрации (теневой → подтверждённый User)
+  expiresAt       DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  @@index([conversationId])
+}
+// User (существующая модель) — расширить: kind String @default("member") /// member|external_client; verified Boolean @default(false).
+//   Теневой external_client создаётся при первом открытии magic-link; дорегистрация (email/телефон+код) → verified=true + уведомления.
+// ConversationMember(role='client') ВСЕГДА указывает на User (теневой или подтверждённый) — членство единообразно (без отдельной guest-ветки).
+// Conversation(kind='external') — проактивный клиентский чат; Message.access external/internal/normal как у ticket (клиент не видит internal).
+```
 > GIN полнотекста по `Message.contentStripped` — в `postgres-init.sql` (Шаг 5), НЕ в schema. `BigInt seq` — атомарный инкремент per-conversation в транзакции (НЕ `now()`).
 
 ### Единый list-DTO (Zod + Swagger), INV-A1
 ```ts
 InboxItem = {
-  kind: 'dm' | 'group' | 'channel' | 'ticket' | 'work_chat',
+  kind: 'dm' | 'group' | 'channel' | 'ticket' | 'work_chat' | 'external',
   refId: string,                 // conversationId
   title: string,
   snippet: string,
@@ -266,7 +290,13 @@ GET  /api/v1/conversations/:id/linked-issue                                    �
 POST /api/v1/support/tickets          body:{ subject, message } (клиент)       → 201 { conversationId }
 POST /api/v1/conversations/:id/ticket/transition body:{ status }              → 200
 POST /api/v1/conversations/:id/ticket/draft                                    → 202 (клон-черновик)
-// ошибки: CHAT_DISABLED(503), NOT_MEMBER(403), MANDATORY_CHANNEL_LEAVE_FORBIDDEN(409), SUPPORT_DESK_DISABLED(503)
+// внешняя переписка с клиентами (Ф3.5):
+POST /api/v1/external-conversations   body:{ title?, clientContact:{email?|phone?}, message? } → 201 { conversationId, inviteLink }  (сотрудник начинает чат)
+POST /api/v1/external/access          body:{ token }                          → 200 { sessionToken, conversationId }  (гость входит по magic-link)
+POST /api/v1/external/register        body:{ token, email|phone, code }        → 200  (дорегистрация: теневой → verified)
+GET  /api/v1/external/conversations/:id/messages?sinceSeq=   (guest-scope)     → { items, nextSeq }  (только access external/normal, НИКОГДА internal)
+POST /api/v1/external/conversations/:id/messages  body:{ content, clientMessageId }  (guest-scope) → 201
+// ошибки: CHAT_DISABLED(503), NOT_MEMBER(403), MANDATORY_CHANNEL_LEAVE_FORBIDDEN(409), SUPPORT_DESK_DISABLED(503), EXTERNAL_CHAT_DISABLED(503), ACCESS_LINK_EXPIRED(403), ACCESS_LINK_REVOKED(403), EXTERNAL_RATE_LIMITED(429)
 ```
 
 ### BullMQ / WS
@@ -295,15 +325,15 @@ taskType 'chat-summary' (Ф5 «Что пропустил»)
 ---
 
 ## Границы фичи
-- ✅ Always: tenant-scoping `@@index([tenantId,...])`; Zod-DTO+Swagger; `seq` атомарный per-conversation; идемпотентность `clientMessageId`; наружу только сигнал; super_admin не читает тела; `Message.access` проверять на КАЖДОМ чтении ленты клиентом (тикет); крутилки в AdminSetting.
+- ✅ Always: tenant-scoping `@@index([tenantId,...])`; Zod-DTO+Swagger; `seq` атомарный per-conversation; идемпотентность `clientMessageId`; наружу только сигнал; super_admin не читает тела; `Message.access` проверять на КАЖДОМ чтении ленты клиентом (тикет и external); magic-link — хэш+TTL+отзыв, scope строго в один разговор; крутилки в AdminSetting.
 - ⚠️ Ask first: трогать `Issue` как модель задач; общий retrieval chat-v2; открывать прямое чтение тел чужой переписки (граф — да, тела — member-scoped); новый ENV вместо AdminSetting.
-- 🚫 Never: тело во внешний канал; пост-фильтрация доступа (только pre-filter по членству); `seq` от timestamp; прямой вызов фронтом разрозненных движков в обход `/message-threads` (INV-A3); `process.env.*` мимо env.schema; `prisma migrate dev` мимо файловых миграций; `new PrismaClient()` в скриптах; код ради кода.
+- 🚫 Never: тело во внешний канал; отдавать внешнему участнику сообщения `access='internal'`; magic-link без TTL/отзыва/scope-в-один-разговор; пост-фильтрация доступа (только pre-filter по членству); `seq` от timestamp; прямой вызов фронтом разрозненных движков в обход `/message-threads` (INV-A3); `process.env.*` мимо env.schema; `prisma migrate dev` мимо файловых миграций; `new PrismaClient()` в скриптах; код ради кода.
 
 ---
 
 ## Фазы (dependency-ordered)
 
-**Граф:** Ф0 ∥ Ф1 (независимы) → Ф2 ∥ Ф2.5 ∥ Ф3 (все на ядре Ф1) → Ф4 (нужны Ф2+Ф2.5+Ф3) → Ф5 → Ф6 → Ф7. Внутри фазы: Prisma → сервис → контроллер → фронт → e2e.
+**Граф:** Ф0 ∥ Ф1 (независимы) → Ф2 ∥ Ф2.5 ∥ Ф3 (все на ядре Ф1) → Ф3.5 (на Ф3: контур/access) → Ф4 (нужны Ф2+Ф2.5+Ф3.5) → Ф5 → Ф6 → Ф7. Внутри фазы: Prisma → сервис → контроллер → фронт → e2e.
 
 ### Ф0 — Мост-загрузки (moat на полу).
 **Картография:** `conversational-ingest.adapter.ts:19/31`, `ingest.service.ts`, `segment-builder.service.ts` (ветка `free_note`), `SourceType.chat` (`schema.prisma:~253`), Bitrix-ingest (REALITY-CHECK).
@@ -355,13 +385,23 @@ taskType 'chat-summary' (Ф5 «Что пропустил»)
 **Тесты:** `support-*.spec.ts` переписаны на ядро (contour-isolation на Message, clone-draft, critic, learning, sla, curator).
 **Закрывает:** R11, R12, R13, R14.
 
+### Ф3.5 — Внешняя переписка с клиентами (`external`) + лёгкий вход клиента (magic-link → дорегистрация).
+**Картография:** Ф3 (`SupportTicket`, закрытый контур `support-contour.service.ts`, pre-filter `chat-v2-retrieval.service.ts:~377`, `Message.access`), ядро Ф1 (`Conversation/ConversationMember/Message`), паттерн гостя встречи (guest-токены LiveKit/`auth`), `auth` (сессии/JWT/cookie), `conversational.service.ts` `sendNotification` (email/SMS/telegram сигнал), `rbac`, `common/crypto`.
+**Цель.** Клиент (внешний человек вне компании) переписывается с командой на той же платформе: сотрудник может начать чат с клиентом первым (продажи/онбординг/аккаунт) И клиент может написать сам (поддержка, Ф3); клиент входит по magic-link БЕЗ пароля, при желании — лёгкая дорегистрация (email/телефон+код) ради истории и уведомлений; клиент видит ТОЛЬКО свою переписку и только внешние сообщения, без графа/внутренних заметок/других клиентов.
+**Входит:** `ConversationKind.external`; модель `ConversationAccessLink` (Контракт-first: token-хэш, conversationId, contact, expiresAt/revokedAt, claimedByUserId) — bearer-доступ к ОДНОМУ разговору; расширение `User` (`kind='external_client'`, `verified`) — теневой аккаунт при первом открытии ссылки, дорегистрация email/телефон+код → `verified=true` + уведомления; `ConversationMember(role='client')` всегда на `User` (единообразное членство); проактивный старт сотрудником (`POST /external-conversations` → `Conversation(kind='external')` + ссылка + сигнал-приглашение через `conversational`); guest-вход (`POST /external/access`) + guest-scope чтение/отправка (только `access` external/normal, НИКОГДА internal); анти-абьюз публичного входа (rate-limit, captcha для неаутентифицированных, report/block); ФЗ-152 (перс.данные клиента — уведомление/согласие); `feedsGraph=true` через закрытый контур (знание об отношениях с клиентом → память, тело member-scoped); kill-switch `EXTERNAL_CHAT_ENABLED`; крутилки `external_link_ttl_hours`, `external_inbound_rate_limit`.
+**Не входит:** E2EE; полноценный клиентский портал-кабинet (vNext); федерация/бот-платформа; зеркало переписки клиента в WhatsApp/Telegram как ТРАНСПОРТ (отдельный owner-go — тело наружу, осторожно ФЗ-41).
+**Файлы:** `backend/src/modules/messaging/external/*` (external-conversation.service, access-link.service, guest-auth.guard); миграция (`ConversationKind.external`, `ConversationAccessLink`, `User` external-поля); правка `auth` (guest-сессия по ссылке), `conversational` (шаблон приглашения); фронт `frontend/app/(public)/c/[token]/*` (веб-чат клиента) + экран дорегистрации; e2e.
+**Acceptance:** сотрудник создаёт `external`-чат с контактом → ссылка → клиент открывает БЕЗ пароля и пишет (теневой `User` + `ConversationMember role='client'`); дорегистрация email/телефон+код → `verified=true`, та же история; клиент НЕ видит `access='internal'` (negative), не видит другие разговоры/граф/других клиентов (contour-isolation на `external`); просроченная/отозванная ссылка → 403; rate-limit на публичном входе → 429; чат виден сотруднику в Ф4 как `external`; `feedsGraph` идёт через контур; `typecheck/lint/build` зелёные.
+**Тесты:** `external-conversation.spec.ts` (проактивный старт, membership, contour-isolation, internal-невидимость), `access-link.spec.ts` (magic-link, expire/revoke, claim/дорегистрация), `external-abuse.spec.ts` (rate-limit/block).
+**Закрывает:** R35, R36, R37, R38, R39, R40.
+
 ### Ф4 — Единый экран «Сообщения» (агрегатор + общий UI).
 **Картография:** ядро Ф1–Ф3, прототип (раскладка список/чат/контекст), `tailwind.config.ts` (парные токены).
 **Цель.** Единая точка входа: один список — личка+группы+каналы+рабочие чаты задач+тикеты; видно все переписки в одном месте, новое сообщение (вкл. чат задачи) «горит» непрочитанным; клик по work_chat → переход в карточку задачи; слева — поиск/фильтр по людям/группам/задачам, сверху — сортировка ленты; общий компонент сообщения; доступ через единый контроллер. Раскладка — фундамент под мобильное приложение (Ф6).
-**Входит:** `GET /message-threads` — один запрос по `Conversation` (+join `SupportTicket`, +join `Issue` для work_chat) с фильтром `type` (вкл. `work_chat`), **сортировкой `sort=recent|active|unread`** и **поиском ленты `q=`** (по людям/группам/задачам: title + имена участников + `PROJ-NN`), составной курсор `(сорт-ключ,id)` (INV-A1/A3); единый badge непрочитанного по ВСЕМ kind вкл. work_chat (Redis-кэш TTL) — «красный» индикатор новой переписки в задаче; `/message-search` (GIN по `Message.contentStripped`, полнотекст по телам); фронт раздел «Сообщения» (левая колонка: поиск+фильтр-табы «Всё·Личные·Работа·Задачи·Поддержка·Непрочитанное» + переключатель сортировки; центр: чат; правая контекст-панель) + общий `<MessageBubble sourceKind>` (INV-A2) + chip «PROJ-NN» в строке work_chat (дип-линк в карточку) + композер с переключателем «клиент/заметка» для тикета; **адаптивная одноколоночная раскладка-фундамент под Ф6** (список→чат→контекст как стек).
+**Входит:** `GET /message-threads` — один запрос по `Conversation` (+join `SupportTicket`, +join `Issue` для work_chat) с фильтром `type` (вкл. `work_chat`), **сортировкой `sort=recent|active|unread`** и **поиском ленты `q=`** (по людям/группам/задачам: title + имена участников + `PROJ-NN`), составной курсор `(сорт-ключ,id)` (INV-A1/A3); единый badge непрочитанного по ВСЕМ kind вкл. work_chat (Redis-кэш TTL) — «красный» индикатор новой переписки в задаче; `/message-search` (GIN по `Message.contentStripped`, полнотекст по телам); фронт раздел «Сообщения» (левая колонка: поиск+фильтр-табы «Всё·Личные·Работа·Задачи·Клиенты·Поддержка·Непрочитанное» + переключатель сортировки; центр: чат; правая контекст-панель) + общий `<MessageBubble sourceKind>` (INV-A2) + chip «PROJ-NN» в строке work_chat (дип-линк в карточку) + композер с переключателем «клиент/заметка» для тикета; **адаптивная одноколоночная раскладка-фундамент под Ф6** (список→чат→контекст как стек).
 **Не входит:** AI-крючки (Ф5); нативное мобильное приложение и пуш (Ф6 — здесь десктоп отзывчивый + адаптив-фундамент).
 **Файлы:** `messaging/inbox.controller`+inbox.service (один запрос, без фасада-провайдеров — один склад); `frontend/app/(authenticated)/messages/*`, `frontend/src/ui/messaging/MessageBubble.tsx`, `messaging.api.ts`, `domain/messaging.ts`.
-**Acceptance:** `/message-threads?type=all` отдаёт `Conversation` всех kind (вкл. ticket и work_chat) одним списком; `sort=recent` — свежее сверху, `sort=active` — по числу сообщений, `sort=unread` — непрочитанные сверху; `q=` фильтрует по имени человека/группы/`PROJ-NN`; курсор через ≥2 страницы без дублей/пропусков на каждом `sort`; `InboxItem` ticket несёт `status/slaBreachedAt`, work_chat несёт `linkedIssue`, прочие — `null` (INV-A1 negative); клик по work_chat ведёт в карточку (`linkedIssue.id`); непрочитанное по задаче поднимает общий badge; `/message-search` ищет по одному складу `Message`; grep INV-A3 (фронт «Сообщения» зовёт только `/message-threads`); grep INV-A2 (один `<MessageBubble>`); `typecheck/lint/build` (front+back); UI русский; парные токены.
+**Acceptance:** `/message-threads?type=all` отдаёт `Conversation` всех kind (вкл. ticket, work_chat и external) одним списком; `sort=recent` — свежее сверху, `sort=active` — по числу сообщений, `sort=unread` — непрочитанные сверху; `q=` фильтрует по имени человека/группы/`PROJ-NN`; курсор через ≥2 страницы без дублей/пропусков на каждом `sort`; `InboxItem` ticket несёт `status/slaBreachedAt`, work_chat несёт `linkedIssue`, прочие — `null` (INV-A1 negative); клик по work_chat ведёт в карточку (`linkedIssue.id`); непрочитанное по задаче поднимает общий badge; `/message-search` ищет по одному складу `Message`; grep INV-A3 (фронт «Сообщения» зовёт только `/message-threads`); grep INV-A2 (один `<MessageBubble>`); `typecheck/lint/build` (front+back); UI русский; парные токены.
 **Тесты:** `inbox.spec.ts` (один запрос, kind-фильтр вкл work_chat, sort-режимы, q-поиск, INV-A1 null), `message-search.spec.ts`; front `test:unit` (MessageBubble chat+ticket+work_chat).
 **Закрывает:** R15, R16 (INV-A1/A2/A3), R32, R33.
 
@@ -430,6 +470,12 @@ taskType 'chat-summary' (Ф5 «Что пропустил»)
 - **R32** `GET /message-threads` shall поддерживать `sort=recent|active|unread` с корректным курсором (без дублей/пропусков) на каждом режиме.
 - **R33** `GET /message-threads?q=` shall фильтровать ленту по людям/группам/задачам (title + имена участников + `PROJ-NN`); полнотекст по телам остаётся на `/message-search`.
 - **R34** Мобильное приложение shall публиковаться в App Store, Google Play и RuStore на одном фундаменте: `PushService` транспорт-агностичен (APNs/FCM/RuStore/VAPID, FCM — не единственная опора); из приложения доступны удаление аккаунта и жалоба/блокировка пользователя (gate App Review / Play UGC).
+- **R35** Сотрудник shall создавать `Conversation(kind='external')` с внешним клиентом и приглашать его ссылкой; клиент shall писать сам через поддержку (`ticket`, Ф3) — оба на едином ядре.
+- **R36** Клиент shall входить в свой разговор по magic-link БЕЗ пароля; `ConversationAccessLink` — bearer-доступ к одному разговору, с `expiresAt`/`revokedAt` (просрочка/отзыв → 403).
+- **R37** Клиент shall иметь возможность лёгкой дорегистрации (email/телефон + код) → `User(kind='external_client').verified=true`, та же история и уведомления; до этого — теневой аккаунт.
+- **R38** Внешний участник shall видеть ТОЛЬКО свою переписку и только сообщения `access` external/normal — НИКОГДА `internal`, граф, другие разговоры или данные других клиентов (закрытый контур).
+- **R39** Публичный вход внешней переписки shall иметь анти-абьюз (rate-limit → 429, captcha для неаутентифицированных, report/block).
+- **R40** Внешняя переписка shall кормить граф через закрытый контур (тела member-scoped; наружу — только сигнал, ФЗ-41/152).
 
 ---
 
@@ -445,15 +491,16 @@ taskType 'chat-summary' (Ф5 «Что пропустил»)
 - **Self-improving (клон/«что пропустил»)** — без «человек одобри», только авто; human gate лишь kill-switch.
 - **Миграция чата задачи (Ф2.5):** `IssueComment`→`Message` идемпотентно с маркером; не потерять вложения/упоминания/«спасибо»/voice; нельзя плодить >1 work_chat на задачу (`Issue.conversationId @unique`); CI-grep — нет новой записи в `IssueComment`; двойной ingest исключить (единый `Message`-источник Ф5).
 - **Store-readiness (Ф6):** App Store/Google Play отклоняют соцприложения без удаления аккаунта из приложения и UGC-модерации (жалоба/блокировка) — закладывать с старта, не «потом»; FCM-транспорт нужен для Play global, но ядро доставки не должно от него зависеть (Р8: один из транспортов, не фундамент).
+- **Внешний публичный вход (Ф3.5) — поверхность атаки:** magic-link = bearer-доступ → хранить хэш токена, короткий TTL, отзыв, scope строго в ОДИН разговор; обязательны rate-limit/captcha/abuse-report на неаутентифицированном входе; negative-тест «клиент не видит `internal`/граф/другие разговоры» — обязателен (утечка тела клиенту = инцидент + ФЗ-152). Contour-isolation тест переиспользовать на `external`, не только `ticket`.
 
 ## Idempotency / feature-flag / prod-deploy
-- **Флаги (Ship-On → `docs/operations/feature-flags.md`):** `CHAT_ENABLED` (kill-switch ON, Ф1), `MESSAGE_BRIDGE_ENABLED` (Ф0), `SUPPORT_DESK_ENABLED`/`SUPPORT_CURATOR_ENABLED` (сохраняются, Ф3), `CHAT_PUSH_ENABLED` (Ф6). Все ON при выкате.
+- **Флаги (Ship-On → `docs/operations/feature-flags.md`):** `CHAT_ENABLED` (kill-switch ON, Ф1), `MESSAGE_BRIDGE_ENABLED` (Ф0), `SUPPORT_DESK_ENABLED`/`SUPPORT_CURATOR_ENABLED` (сохраняются, Ф3), `EXTERNAL_CHAT_ENABLED` (kill-switch ON, Ф3.5), `CHAT_PUSH_ENABLED` (Ф6). Все ON при выкате.
 - **Параметр владельца:** AdminSetting `support.vendor_org_id` + entitlement `feature.support_desk` (вендор-эксклюзив) — сохраняются.
-- **Крутилки (AdminSetting):** `chat_unread_smart_badge`, `chat_notify_debounce_seconds`, `chat_summary_min_messages`, `chat_summary_idle_days`, `chat_presence_ttl_seconds`, `message_retention_days`, `push_debounce_seconds`, `huddle_max_participants`, `support_critic_min_groundedness`, `support_promote_min_csat` (последние два — из поддержки).
-- **prod-deploy-log.md:** Шаг 1 (флаги), Шаг 4 (модели Conversation/ConversationMember/Message/MessageOutbox/SupportTicket/PushToken + enum ConversationKind вкл. `work_chat`; `Issue.conversationId @unique` + `IssueAttachment.messageId` + `Message.contentHtml/thanksUserIds` (Ф2.5); транспорт `fcm` в PushToken (Ф6); депрекейт неиспользуемых support-полей Issue/IssueComment), Шаг 5 (GIN по Message.contentStripped), Шаг 7 (seed-support-* перенастроены + seed-llm-task-routes-chat), Шаг 8 (backfill-chat-bridge-*, **backfill-issuecomment-to-message-*** Ф2.5 — идемпотентно, маркер), Шаг 12 (smoke: WS conversation.*, очереди message.outbox/chat.ingest, taskType chat-summary, Swagger /message-threads(+sort,q),/conversations,/issues/:id/conversation,/conversations/:id/linked-issue,/support/tickets,/message-search). Все скрипты — `apply-prod-deploy.ts STEPS`, `createPrismaClient()`, импорты `../src`.
+- **Крутилки (AdminSetting):** `chat_unread_smart_badge`, `chat_notify_debounce_seconds`, `chat_summary_min_messages`, `chat_summary_idle_days`, `chat_presence_ttl_seconds`, `message_retention_days`, `push_debounce_seconds`, `huddle_max_participants`, `support_critic_min_groundedness`, `support_promote_min_csat` (последние два — из поддержки), `external_link_ttl_hours`, `external_inbound_rate_limit` (Ф3.5).
+- **prod-deploy-log.md:** Шаг 1 (флаги), Шаг 4 (модели Conversation/ConversationMember/Message/MessageOutbox/SupportTicket/PushToken + enum ConversationKind вкл. `work_chat` и `external`; `Issue.conversationId @unique` + `IssueAttachment.messageId` + `Message.contentHtml/thanksUserIds` (Ф2.5); `ConversationAccessLink` + `User.kind/verified` (Ф3.5); транспорт `fcm` в PushToken (Ф6); депрекейт неиспользуемых support-полей Issue/IssueComment), Шаг 5 (GIN по Message.contentStripped), Шаг 7 (seed-support-* перенастроены + seed-llm-task-routes-chat), Шаг 8 (backfill-chat-bridge-*, **backfill-issuecomment-to-message-*** Ф2.5 — идемпотентно, маркер), Шаг 12 (smoke: WS conversation.*, очереди message.outbox/chat.ingest, taskType chat-summary, Swagger /message-threads(+sort,q),/conversations,/issues/:id/conversation,/conversations/:id/linked-issue,/support/tickets,/external-conversations,/external/access,/external/register,/message-search). Все скрипты — `apply-prod-deploy.ts STEPS`, `createPrismaClient()`, импорты `../src`.
 
 ## DoD
-typecheck (вкл `.spec`)/lint/build зелёные (front+back); vitest по новым/переписанным spec; миграции применяются и идемпотентны; second-brain обновлён (новый `messaging`→`module-map`; модели→`data-model`; очереди/cron→`workers-queues`+`ai-jobs`; эндпоинты→`api-layer`; страница «Сообщения»→`frontend-pages`; контекст/хук→`frontend-contexts-hooks`; новый `01_projects/unified-chat.md`; обновить `support-desk.md` — переезд на ядро; **обновить `tracker.md` + `03_processes/issue-lifecycle.md` — чат задачи переехал на `work_chat`/`Message`, `IssueComment` депрекейтнут**; строка в `04_не-сделано` про отложенные E2EE/федерацию/Ф6-Ф7 + store-compliance чек-лист Ф6); `prod-deploy-log.md`; реестр флагов; prompt-методология для chat-summary; рефлексия после push.
+typecheck (вкл `.spec`)/lint/build зелёные (front+back); vitest по новым/переписанным spec; миграции применяются и идемпотентны; second-brain обновлён (новый `messaging`→`module-map`; модели→`data-model`; очереди/cron→`workers-queues`+`ai-jobs`; эндпоинты→`api-layer`; страница «Сообщения»→`frontend-pages`; контекст/хук→`frontend-contexts-hooks`; новый `01_projects/unified-chat.md` (вкл. раздел внешней переписки Ф3.5); обновить `support-desk.md` — переезд на ядро + внешний `external`-чат рядом с тикетами; **обновить `tracker.md` + `03_processes/issue-lifecycle.md` — чат задачи переехал на `work_chat`/`Message`, `IssueComment` депрекейтнут**; строка в `04_не-сделано` про отложенные E2EE/федерацию/Ф6-Ф7 + store-compliance чек-лист Ф6); `prod-deploy-log.md`; реестр флагов; prompt-методология для chat-summary; рефлексия после push.
 
 ## Итог
 _(заполнит tz-orchestrator по факту реализации фаз.)_

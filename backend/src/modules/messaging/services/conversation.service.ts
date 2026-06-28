@@ -17,6 +17,7 @@ interface AddMemberArgs {
   conversationId: string;
   userId: string;
   role?: string;
+  source?: string;
 }
 
 @Injectable()
@@ -68,6 +69,7 @@ export class ConversationService {
         conversationId: args.conversationId,
         userId: args.userId,
         role: args.role ?? 'member',
+        source: args.source ?? 'manual',
       },
       update: args.role ? { role: args.role } : {},
     });
@@ -117,6 +119,24 @@ export class ConversationService {
     await this.prisma.conversationMember.deleteMany({
       where: { conversationId, userId },
     });
+  }
+
+  async findCompanyChannel(tenantId: string): Promise<{ id: string } | null> {
+    return this.prisma.conversation.findFirst({
+      where: { tenantId, kind: 'channel', isMandatory: true },
+      select: { id: true },
+    });
+  }
+
+  async removeAutoMembershipsForUser(tenantId: string, userId: string): Promise<number> {
+    const result = await this.prisma.conversationMember.deleteMany({
+      where: {
+        userId,
+        source: 'auto',
+        conversation: { tenantId },
+      },
+    });
+    return result.count;
   }
 
   async ensureCompanyChannel(tenantId: string, creatorUserId: string): Promise<Conversation> {

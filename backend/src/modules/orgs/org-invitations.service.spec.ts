@@ -1,4 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import type { EventEmitter2 } from '@nestjs/event-emitter';
 import argon2 from 'argon2';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -112,6 +113,7 @@ describe('OrgInvitationsService (β-9)', () => {
       cfg,
       linkCodes as unknown as ConversationalLinkCodeService,
       metrics as unknown as BusinessMetricsService,
+      { emit: vi.fn() } as unknown as EventEmitter2,
     );
   }
 

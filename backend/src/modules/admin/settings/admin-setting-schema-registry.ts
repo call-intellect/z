@@ -346,6 +346,8 @@ const registry = new Map<string, ZodTypeAny>([
   ['chat_summary_idle_days', POSITIVE_INT],
   ['external_link_ttl_hours', POSITIVE_INT],
   ['external_inbound_rate_limit', POSITIVE_INT],
+  ['message_retention_days', NON_NEGATIVE_INT],
+  ['hr_auto_subscribe_enabled', z.boolean()],
 
   ['orchestrator.enabled', z.boolean()],
   ['orchestrator.maxSubagentsPerRun', POSITIVE_INT],

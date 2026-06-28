@@ -1,4 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
+import type { EventEmitter2 } from '@nestjs/event-emitter';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../common/prisma/prisma.service';
@@ -35,6 +36,7 @@ describe('OrgsService.listTeamRoster', () => {
       {} as unknown as SubscriptionService,
       {} as unknown as TablesAutoProvisionService,
       {} as unknown as PersonsService,
+      { emit: vi.fn() } as unknown as EventEmitter2,
     );
   }
 
@@ -238,6 +240,7 @@ describe('OrgsService.createForOwner — Person владельца (Ф9)', () =>
       subscriptions as unknown as SubscriptionService,
       tablesAutoProvision as unknown as TablesAutoProvisionService,
       persons as unknown as PersonsService,
+      { emit: vi.fn() } as unknown as EventEmitter2,
     );
 
     const org = await svc.createForOwner({ name: 'Кора', ownerId: 'u-owner' }, client as never);

@@ -10,6 +10,8 @@ import { ExternalConversationService } from './external/external-conversation.se
 import { ExternalGuestController } from './external/external-guest.controller';
 import { ExternalGuestGuard } from './external/external-guest.guard';
 import { InboxController } from './inbox.controller';
+import { HrMembershipListener } from './listeners/hr-membership.listener';
+import { MessageRetentionCron } from './message-retention.cron';
 import { ChatIngestQueueService } from './queue/chat-ingest.queue.service';
 import { MessageOutboxQueueService } from './queue/message-outbox.queue.service';
 import { VoiceTranscribeQueueService } from './queue/voice-transcribe.queue.service';
@@ -20,6 +22,7 @@ import { ConversationService } from './services/conversation.service';
 import { InboxService } from './services/inbox.service';
 import { MessageActionsService } from './services/message-actions.service';
 import { MessageReportService } from './services/message-report.service';
+import { MessageRetentionService } from './services/message-retention.service';
 import { MessageService } from './services/message.service';
 import { PresenceService } from './services/presence.service';
 import { ReadCursorService } from './services/read-cursor.service';
@@ -53,6 +56,9 @@ import { WorkChatService } from './services/work-chat.service';
     MessageActionsService,
     UserBlockService,
     MessageReportService,
+    MessageRetentionService,
+    MessageRetentionCron,
+    HrMembershipListener,
   ],
   exports: [
     ConversationService,
@@ -73,6 +79,7 @@ import { WorkChatService } from './services/work-chat.service';
     MessageActionsService,
     UserBlockService,
     MessageReportService,
+    MessageRetentionService,
   ],
 })
 export class MessagingModule {}

@@ -25,7 +25,7 @@ relates_to:
 ## Вне scope / отложено владельцем
 - **Треды-форумы (Zulip/Discord-стиль) и иерархия workspace→команды→каналы** — не v1 (Р4). Только плоские каналы + плоский reply (`parentMessageId`).
 - **E2EE приватных каналов, федерация серверов, бот-платформа (Bot API), коллаб для внешних контрагентов** — vNext. _(Опросы — входят в Ф7 доводки.)_
-- **Перенос ЗАДАЧ трекера (`Issue` для задач, НЕ для тикетов) на общее ядро** — НЕ трогаем; `Issue` остаётся моделью задач трекера. На общее ядро переезжают только **тикеты поддержки**.
+- **`Issue` как МОДЕЛЬ задачи** (поля/доска/статусы/прогресс/чек-листы) — НЕ трогаем, остаётся в трекере. НО **переписка задачи (`IssueComment`) переезжает на общее ядро** как `Conversation(kind='work_chat')` (Ф2.5, решение Р9) — это и есть «рабочий чат из задачи» на едином экране. На общее ядро также переезжают тикеты поддержки.
 - **Миграция живых данных поддержки** — не нужна (поддержка не запущена, тикетов нет). Старые support-поля на `Issue`/`IssueComment` (миграция 2026-06-09) становятся неиспользуемыми; их удаление — опциональная уборка (Ф3, не блокер).
 
 ---
@@ -74,6 +74,7 @@ relates_to:
 | Р6 | Мост-загрузки (Bitrix24/Telegram-экспорт → граф без перехода) = Ф0, первым/параллельно | «Moat на полу» [2026-06-03 §8] |
 | Р7 | Huddles (созвон из чата на LiveKit) = Ф7 (доводка), не блокирует ядро | LiveKit в стеке; «вау», не ядро |
 | Р8 | Мобильность — сквозное (Ф6 + учёт в UI-фазах); пуш APNs/RuStore, FCM никогда фундамент | Линейный персонал — главные пострадавшие от блокировок [06-mobile-ux] |
+| Р9 | **Чат задачи = `work_chat` на едином ядре.** Каждая задача лениво получает `Conversation(kind='work_chat')` (`Issue.conversationId @unique`); переписка `IssueComment` мигрирует в `Message`; заголовок чата = `PROJ-123 · <задача>`; рабочий чат виден в общем списке «Сообщения» и горит непрочитанным наравне с личкой/группами; двусторонняя навигация карточка↔переписка. `Issue` как модель задачи (поля/доска/статусы/прогресс) не трогаем | Цель ТЗ обещает «рабочие чаты из задач на одном экране» (стр. 34) и `work_chat` в `InboxItem` — без Ф2.5 обещание не выполнено; один склад сообщений (вариант A) распространяется и на чат задачи. Владелец 2026-06-28 |
 
 ### Инварианты сведения (при едином ядре — встроены, не костыли)
 Единое ядро устраняет 4 из 7 инвариантов red-team (они были нужны лишь чтобы склеить ДВА склада): **единый read-cursor** (один `lastReadSeq` на `ConversationMember`), **единый поисковый индекс** (один склад `Message`, GIN по `contentStripped`), **единый AI-ingest** (один источник `Message`), **схема расхождений** (одна схема) — стали свойством архитектуры. Остаются 3 как здоровая практика:
@@ -99,12 +100,12 @@ relates_to:
 ---
 
 ## Scope
-**Входит:** Ф0 мост-загрузки; Ф1 единое ядро (`Conversation/ConversationMember/Message/MessageOutbox` + слой корректности + WS + presence-Redis + RBAC + шифрование + ФЗ-41 gate); Ф2 внутренний чат (личка/группы/каналы); Ф3 поддержка на ядре (`SupportTicket`-обёртка + пересадка контур/клон/critic/куратор/SLA/CSAT); Ф4 единый экран «Сообщения» (один список + контроллер + общий UI + поиск); Ф5 AI-крючки; Ф6 мобильное приложение; Ф7 доводка (huddles/опросы/автоудаление/HR-подписки).
+**Входит:** Ф0 мост-загрузки; Ф1 единое ядро (`Conversation/ConversationMember/Message/MessageOutbox` + слой корректности + WS + presence-Redis + RBAC + шифрование + ФЗ-41 gate); Ф2 внутренний чат (личка/группы/каналы); Ф2.5 рабочий чат задачи (work_chat: связка Issue↔Conversation + миграция IssueComment→Message + двусторонняя навигация карточка↔переписка); Ф3 поддержка на ядре (`SupportTicket`-обёртка + пересадка контур/клон/critic/куратор/SLA/CSAT); Ф4 единый экран «Сообщения» (один список + контроллер + общий UI + поиск); Ф5 AI-крючки; Ф6 мобильное приложение; Ф7 доводка (huddles/опросы/автоудаление/HR-подписки).
 
 **Не входит:** см. «Вне scope».
 
 ## Граничные контракты с другими ТЗ / подсистемами
-- **`Issue` (трекер задач)** — НЕ трогаем как модель задач. На ядро переезжают только тикеты поддержки (которые сейчас тоже на `Issue` — это и есть пересадка). Связь «задача из сообщения» (Ф5) создаёт обычный `Issue`-task через intake.
+- **`Issue` (трекер задач)** — модель задачи (поля/доска/статусы/прогресс) НЕ трогаем. На ядро переезжают: тикеты поддержки (Ф3) и **переписка задачи `IssueComment`→`Message` под `work_chat`-Conversation** (Ф2.5, `Issue.conversationId @unique`). Связь «задача из сообщения» (Ф5) по-прежнему создаёт обычный `Issue`-task через intake.
 - **chat-v2** — переиспользуем как движок ответа «Спросить Кору / Что решили» (RAG поверх графа) со ссылкой на `Message.id`; не дублируем retrieval.
 - **conversational** — `sendNotification` как outbound-будильник; тело наружу не шлём (ФЗ-41).
 - **knowledge-core ingest** — кормим через `ingest()` + `kind:'chat_message'`; не вводим новый `signalType` (используем `expertise`/`reasoning`); воркеры in-process через `WorkersModule` (CLAUDE.md — отдельного worker-процесса нет).
@@ -122,7 +123,8 @@ enum ConversationKind {
   dm
   group
   channel
-  ticket   /// обращение клиента = разговор + обёртка SupportTicket
+  work_chat /// чат задачи трекера = разговор + связь Issue.conversationId (Ф2.5)
+  ticket    /// обращение клиента = разговор + обёртка SupportTicket
 }
 
 model Conversation {
@@ -165,6 +167,7 @@ model Message {
   authorType      String    @default("human") /// human|clone|system (clone — черновик клона в тикете)
   access          String    @default("normal") /// normal (чат) | internal (заметка команды) | external (видно клиенту) — тикет
   content         String    @db.Text
+  contentHtml     String?   @db.Text /// рендер-кэш rich-text (паритет с IssueComment, Ф2.5)
   contentStripped String?   @db.Text /// для поиска (GIN)
   parentMessageId String?   /// плоский reply (НЕ форум, Р4)
   clientMessageId String    /// идемпотентность отправки
@@ -174,6 +177,7 @@ model Message {
   attachments     Json?
   mentions        String[]
   reactions       Json?     /// {"👍":["userId"]}
+  thanksUserIds   String[]  @default([]) /// gamification «спасибо» (паритет IssueComment → Recognition-бридж, Ф2.5)
   // support-специфика черновика клона (nullable, только тикеты):
   draftState        String?  /// null|pending|accepted|edited|rejected
   cloneConfidence   Decimal? @db.Decimal(4,3)
@@ -217,6 +221,12 @@ model SupportTicket { /// обёртка-ярлыки поверх Conversation(
 }
 // SupportSlaPolicy / SupportDraftOutcome / SupportCuratorAction — остаются; привязку issueId/issueCommentId заменить на conversationId/messageId.
 // IssueRating (CSAT) — переиспользовать с привязкой к conversationId (или новая ConversationRating; решает Ф3 по фактической схеме).
+// --- work_chat: связка задачи трекера с ядром (Ф2.5) ---
+// Issue.conversationId String? @unique — ленивая 1:1-связь задачи с её Conversation(kind='work_chat'); reverse-relation отдаёт задачу из чата.
+// IssueComment → Message: переписка задачи мигрирует в Message под work_chat-Conversation (поля совпадают по «анатомии» REALITY-CHECK).
+// IssueAttachment.messageId String? — перепривязать вложения (commentId → messageId), S3-пайплайн (25MB, MIME-whitelist) НЕ трогаем.
+// IssueMention — userId упоминания едет в Message.mentions[]; @-уведомления перепривязать на messageId (сохранить by-whom для нотификаций).
+// IssueProgressUpdate (прогресс/health задачи) — НЕ трогаем, это не переписка.
 ```
 > GIN полнотекста по `Message.contentStripped` — в `postgres-init.sql` (Шаг 5), НЕ в schema. `BigInt seq` — атомарный инкремент per-conversation в транзакции (НЕ `now()`).
 
@@ -228,22 +238,30 @@ InboxItem = {
   title: string,
   snippet: string,
   lastMessageAt: string,
-  unreadCount: number,
+  unreadCount: number,            // >0 → «горит» непрочитанным (вкл. work_chat задачи)
   // только-ticket: для прочих kind = null (INV-A1)
   status: string | null,
   slaBreachedAt: string | null,
+  // только-work_chat: для прочих kind = null (Ф2.5) — дип-линк в карточку задачи
+  linkedIssue: { id: string, identifier: string, title: string } | null,
 }
 ```
 
 ### Единый контроллер (INV-A3)
 ```
-GET  /api/v1/message-threads?type=all|dm|group|channel|ticket|unread&cursor=  → { items: InboxItem[], nextCursor }
+GET  /api/v1/message-threads?type=all|dm|group|channel|work_chat|ticket|unread&sort=recent|active|unread&q=&cursor=
+                                                                              → { items: InboxItem[], nextCursor }
+     // q= — поиск ленты по людям/группам/задачам (title + имена участников + PROJ-NN); sort= — recent(свежее сверху, default)|active(больше сообщений)|unread(непрочитанные сверху)
 POST /api/v1/message-threads/:conversationId/read  body:{ cursorSeq }          → 200
 GET  /api/v1/conversations/:id/messages?sinceSeq=                              → { items: Message[], nextSeq }
 POST /api/v1/conversations/:id/messages  body:{ content, clientMessageId, parentMessageId?, voice?, access? } → 201
 POST /api/v1/conversations            body:{ kind, title?, memberUserIds[] }   → 201
 POST /api/v1/conversations/:id/members body:{ userId }                         → 200
 GET  /api/v1/message-search?q=&type=all                                        → { items: [{conversationId, messageId, snippet}] }
+     // полнотекст по ТЕЛАМ сообщений (GIN), в отличие от q= в /message-threads (поиск по веткам/контактам)
+// work_chat задачи (Ф2.5) — ленивое получение/создание чата задачи + обратная навигация:
+GET  /api/v1/issues/:issueId/conversation                                      → { conversationId }  (создаёт work_chat при первом обращении, идемпотентно)
+GET  /api/v1/conversations/:id/linked-issue                                    → { id, identifier, title } | 404
 // тикеты-специфика (поверх той же Conversation):
 POST /api/v1/support/tickets          body:{ subject, message } (клиент)       → 201 { conversationId }
 POST /api/v1/conversations/:id/ticket/transition body:{ status }              → 200
@@ -285,7 +303,7 @@ taskType 'chat-summary' (Ф5 «Что пропустил»)
 
 ## Фазы (dependency-ordered)
 
-**Граф:** Ф0 ∥ Ф1 (независимы) → Ф2 ∥ Ф3 (оба на ядре Ф1) → Ф4 (нужны Ф2+Ф3) → Ф5 → Ф6 → Ф7. Внутри фазы: Prisma → сервис → контроллер → фронт → e2e.
+**Граф:** Ф0 ∥ Ф1 (независимы) → Ф2 ∥ Ф2.5 ∥ Ф3 (все на ядре Ф1) → Ф4 (нужны Ф2+Ф2.5+Ф3) → Ф5 → Ф6 → Ф7. Внутри фазы: Prisma → сервис → контроллер → фронт → e2e.
 
 ### Ф0 — Мост-загрузки (moat на полу).
 **Картография:** `conversational-ingest.adapter.ts:19/31`, `ingest.service.ts`, `segment-builder.service.ts` (ветка `free_note`), `SourceType.chat` (`schema.prisma:~253`), Bitrix-ingest (REALITY-CHECK).
@@ -317,6 +335,16 @@ taskType 'chat-summary' (Ф5 «Что пропустил»)
 **Тесты:** `conversation.spec.ts` (типы, mandatory-leave, membership).
 **Закрывает:** R9, R10.
 
+### Ф2.5 — Рабочий чат задачи (`work_chat`): связка `Issue`↔`Conversation` (двусторонняя навигация).
+**Картография:** `Issue:9463`/`IssueComment:9719`/`IssueMention:9700`/`IssueAttachment:9949` (`schema.prisma`), `tracker.gateway.ts` `issue.chat.*` (presence/typing — переиспользуется через `conversation.*` Ф1), фронт карточки задачи (вкладка обсуждения), `IssueChat`/Recognition-бридж (`thanksUserIds`). Снять факт `run_pipeline`/Grep по `IssueComment`-писателям ДО старта (мест записи может быть несколько).
+**Цель.** Каждая задача имеет ровно один `Conversation(kind='work_chat')` (ленивое создание); вся переписка задачи — `Message`; заголовок чата = `PROJ-123 · <заголовок задачи>`; из карточки открывается та же переписка, из общего списка «Сообщения» (work_chat) — дип-линк в карточку (журнал/файлы/прогресс); новое сообщение в задаче «горит» непрочитанным в общем списке как и личка/группа.
+**Входит:** миграция — `ConversationKind.work_chat`; `Issue.conversationId String? @unique`; `IssueAttachment.messageId` (перепривязка `commentId→messageId`, S3-пайплайн не трогаем); перенос `IssueComment`→`Message` под work_chat-Conversation (`backfill-issuecomment-to-message-*.ts`, идемпотентно: маркер перенесённых, повтор=no-op); `IssueMention`-userId → `Message.mentions[]` + перепривязка @-уведомлений на `messageId`; `thanksUserIds` сохраняется (Recognition-бридж не переписываем); ленивое создание work_chat при первом сообщении/обращении (`GET /issues/:id/conversation`); членство work_chat = участники задачи (assignee + подписчики + упомянутые), далее через `ConversationMember`; обратная навигация `GET /conversations/:id/linked-issue`; `InboxItem.linkedIssue` (chip «PROJ-123» → карточка) + заголовок `PROJ-NN · …`; депрекейт старого `issue.chat.*`-пути записи в `IssueComment` (чтение легаси — до завершения backfill); `feedsGraph=true` (переписка задачи кормит граф как раньше — единый `Message`-источник Ф5, без двойного ingest).
+**Не входит:** новый UI чата (переиспользуется `<MessageBubble>` Ф4); агрегатор/поиск/сортировка (Ф4); huddles из задачи (Ф7).
+**Файлы:** миграция (`Issue.conversationId`, `IssueAttachment.messageId`, enum); `backend/src/modules/messaging/work-chat.service.ts` (ленивое создание + членство-из-задачи); правка `tracker` (карточка зовёт `conversation.*`, не `issue.chat.*`); `backfill-issuecomment-to-message-*.ts` (в `apply-prod-deploy.ts`, `createPrismaClient()`, импорты `../src`); фронт — вкладка «Обсуждение» карточки рендерит work_chat-Conversation, кнопка «к карточке» из ленты.
+**Acceptance:** у задачи без чата `GET /issues/:id/conversation` создаёт ровно один `Conversation(kind='work_chat')` с `Issue.conversationId` (повтор=тот же id, не плодит); backfill переносит `IssueComment`→`Message` 1:1 без дублей (идемпотентно, маркер), вложения/упоминания/«спасибо»/voice сохранены; из карточки и из общего списка открывается ОДНА и та же переписка (`refId`=conversationId); `InboxItem(work_chat).linkedIssue` несёт `identifier`/title, заголовок `PROJ-NN · …`, прочие kind = `null` (INV-A1); непрочитанное по work_chat входит в общий badge; presence/typing работают через `conversation.*`; grep — нет новых записей в `IssueComment` (старый путь записи мёртв); `typecheck/lint/build` зелёные.
+**Тесты:** `work-chat.spec.ts` (ленивое создание идемпотентно, членство-из-задачи, linked-issue навигация, unread в общем badge), `backfill-issuecomment-to-message.spec.ts` (1:1, идемпотентность, вложения/упоминания).
+**Закрывает:** R27, R28, R29, R30, R31.
+
 ### Ф3 — Поддержка на едином ядре (пересадка, НЕ переписывание логики с нуля).
 **Картография:** `backend/src/modules/support/*` (contour/clone/critic/edit-classify/curator/sla/learning, controllers), `chat-v2-retrieval.service.ts:~377` (pre-filter контура), модели `SupportSlaPolicy/IssueRating/SupportDraftOutcome/SupportCuratorAction`, `KnowledgeGroup(kind='support')`.
 **Цель.** Тикет = `Conversation(kind='ticket')` + `SupportTicket`-обёртка; переписка тикета = `Message`; вся логика поддержки (контур/клон/critic/куратор/SLA/CSAT/обучение) пересажена с `Issue/IssueComment` на ядро.
@@ -329,13 +357,13 @@ taskType 'chat-summary' (Ф5 «Что пропустил»)
 
 ### Ф4 — Единый экран «Сообщения» (агрегатор + общий UI).
 **Картография:** ядро Ф1–Ф3, прототип (раскладка список/чат/контекст), `tailwind.config.ts` (парные токены).
-**Цель.** Один список: личка+группы+каналы+рабочие чаты+тикеты; общий компонент сообщения; доступ через единый контроллер.
-**Входит:** `GET /message-threads` — один запрос по `Conversation` (+join `SupportTicket`) с фильтром `type`, составной курсор `(lastMessageAt,id)` (INV-A1/A3); единый badge непрочитанного (Redis-кэш TTL); `/message-search` (GIN по `Message.contentStripped`); фронт раздел «Сообщения» (лента/чат/контекст-панель) + общий `<MessageBubble sourceKind>` (INV-A2) + композер с переключателем «клиент/заметка» для тикета.
-**Не входит:** AI-крючки (Ф5); мобайл-приложение (Ф6 — десктоп тут отзывчивый).
+**Цель.** Единая точка входа: один список — личка+группы+каналы+рабочие чаты задач+тикеты; видно все переписки в одном месте, новое сообщение (вкл. чат задачи) «горит» непрочитанным; клик по work_chat → переход в карточку задачи; слева — поиск/фильтр по людям/группам/задачам, сверху — сортировка ленты; общий компонент сообщения; доступ через единый контроллер. Раскладка — фундамент под мобильное приложение (Ф6).
+**Входит:** `GET /message-threads` — один запрос по `Conversation` (+join `SupportTicket`, +join `Issue` для work_chat) с фильтром `type` (вкл. `work_chat`), **сортировкой `sort=recent|active|unread`** и **поиском ленты `q=`** (по людям/группам/задачам: title + имена участников + `PROJ-NN`), составной курсор `(сорт-ключ,id)` (INV-A1/A3); единый badge непрочитанного по ВСЕМ kind вкл. work_chat (Redis-кэш TTL) — «красный» индикатор новой переписки в задаче; `/message-search` (GIN по `Message.contentStripped`, полнотекст по телам); фронт раздел «Сообщения» (левая колонка: поиск+фильтр-табы «Всё·Личные·Работа·Задачи·Поддержка·Непрочитанное» + переключатель сортировки; центр: чат; правая контекст-панель) + общий `<MessageBubble sourceKind>` (INV-A2) + chip «PROJ-NN» в строке work_chat (дип-линк в карточку) + композер с переключателем «клиент/заметка» для тикета; **адаптивная одноколоночная раскладка-фундамент под Ф6** (список→чат→контекст как стек).
+**Не входит:** AI-крючки (Ф5); нативное мобильное приложение и пуш (Ф6 — здесь десктоп отзывчивый + адаптив-фундамент).
 **Файлы:** `messaging/inbox.controller`+inbox.service (один запрос, без фасада-провайдеров — один склад); `frontend/app/(authenticated)/messages/*`, `frontend/src/ui/messaging/MessageBubble.tsx`, `messaging.api.ts`, `domain/messaging.ts`.
-**Acceptance:** `/message-threads?type=all` отдаёт `Conversation` всех kind (вкл. ticket) одним списком, сортировка `lastMessageAt`, курсор через ≥2 страницы без дублей/пропусков; `InboxItem` ticket несёт `status/slaBreachedAt`, прочие — `null` (INV-A1 negative); `/message-search` ищет по одному складу `Message`; grep INV-A3 (фронт «Сообщения» зовёт только `/message-threads`); grep INV-A2 (один `<MessageBubble>`); `typecheck/lint/build` (front+back); UI русский; парные токены.
-**Тесты:** `inbox.spec.ts` (один запрос, kind-фильтр, INV-A1 null), `message-search.spec.ts`; front `test:unit` (MessageBubble chat+ticket).
-**Закрывает:** R15, R16 (INV-A1/A2/A3).
+**Acceptance:** `/message-threads?type=all` отдаёт `Conversation` всех kind (вкл. ticket и work_chat) одним списком; `sort=recent` — свежее сверху, `sort=active` — по числу сообщений, `sort=unread` — непрочитанные сверху; `q=` фильтрует по имени человека/группы/`PROJ-NN`; курсор через ≥2 страницы без дублей/пропусков на каждом `sort`; `InboxItem` ticket несёт `status/slaBreachedAt`, work_chat несёт `linkedIssue`, прочие — `null` (INV-A1 negative); клик по work_chat ведёт в карточку (`linkedIssue.id`); непрочитанное по задаче поднимает общий badge; `/message-search` ищет по одному складу `Message`; grep INV-A3 (фронт «Сообщения» зовёт только `/message-threads`); grep INV-A2 (один `<MessageBubble>`); `typecheck/lint/build` (front+back); UI русский; парные токены.
+**Тесты:** `inbox.spec.ts` (один запрос, kind-фильтр вкл work_chat, sort-режимы, q-поиск, INV-A1 null), `message-search.spec.ts`; front `test:unit` (MessageBubble chat+ticket+work_chat).
+**Закрывает:** R15, R16 (INV-A1/A2/A3), R32, R33.
 
 ### Ф5 — AI-крючки (дифференциатор).
 **Картография:** `ingest`/`conversational-ingest.adapter` (Ф0), chat-v2 retrieval, `llm-router.service.ts`, intake-воркер, Meeting-закрытие, ASR.
@@ -347,15 +375,15 @@ taskType 'chat-summary' (Ф5 «Что пропустил»)
 **Тесты:** `chat-ingest.spec.ts`, `chat-summary.spec.ts`, `message-to-task.spec.ts`, `privacy-body-scope.spec.ts`.
 **Закрывает:** R17, R18, R19, R20.
 
-### Ф6 — Мобильное приложение (сквозное Р8).
+### Ф6 — Мобильное приложение (сквозное Р8) — публикация в App Store + Google Play + RuStore.
 **Картография:** `kora-mobile` (RN, «не начато» по 2026-06-03), `06-mobile-ux.md`, пуш (VAPID есть, нативного нет).
-**Цель.** Единый чат удобен на телефоне; нативный пуш без Google.
-**Входит:** одноколоночный поток (список→чат→контекст-шторка снизу); нижняя навигация (Сообщения·Поддержка·AI/Кора·Я; «Поддержка» по RBAC); композер с голосом hold→swipe-up-lock→swipe-left-cancel + выбор «голос/расшифровка»; `PushService` (зеркало llm-router): APNs(iOS)/RuStore(Android) primary, VAPID(web), FCM НИКОГДА фундамент; `PushToken{platform,transport,token}`; офлайн-очередь+докачка `sinceSeq`; деск на мобиле — переключатель «клиент/заметка» с цветом фона; collision-detection; умный бейдж; утренняя пуш-сводка.
+**Цель.** Единый чат удобен на телефоне; нативный пуш; приложение готово к публикации в App Store, Google Play и RuStore на ОДНОМ фундаменте (API-first ядро Ф1 + транспорт-агностичный пуш), без архитектурной переделки под каждый магазин.
+**Входит:** одноколоночный поток (список→чат→контекст-шторка снизу) — переиспользует адаптив-фундамент Ф4; нижняя навигация (Сообщения·Поддержка·AI/Кора·Я; «Поддержка» по RBAC); композер с голосом hold→swipe-up-lock→swipe-left-cancel + выбор «голос/расшифровка»; **`PushService` (зеркало llm-router) — транспорт-агностичный**: `APNs`(iOS/App Store) · `FCM`(Android/Google Play global — ОДИН из транспортов, НЕ фундамент Р8) · `RuStore`(Android/RU) · `VAPID`(web); выбор транспорта по сборке/`PushToken{platform,transport,token}` — ядро работает при любом, отсутствие любого одного не «выключает» доставку; офлайн-очередь+докачка `sinceSeq`; деск на мобиле — переключатель «клиент/заметка» с цветом фона; collision-detection; умный бейдж; утренняя пуш-сводка; **store-compliance ядро**: privacy policy + Apple privacy-nutrition / Google Data-safety формы (что собираем: переписка→память компании — Р5), **удаление аккаунта из приложения** (Apple App Review Guideline 5.1.1(v) / Play Account Deletion — обязательно для соцфич), **жалоба на контент/блокировка пользователя** (App Store 1.2 UGC / Play UGC — обязательны для приложений с перепиской), возрастной рейтинг, корректные разрешения (микрофон для голосовых — usage-string).
 **Не входит:** huddles (Ф7).
-**Файлы:** `kora-mobile/*`; backend `PushService`+`PushToken` миграция+регистрация; крутилки `push_debounce_seconds`/`unread_smart_badge`.
-**Acceptance:** Reliability-gate (фон будится пушем ≤N сек на iOS-APNs и Android-RuStore — ручной прод-тест в DoD); нет FCM как фундамента (grep); офлайн-сообщение доставляется при сети без дублей (`clientMessageId`); голос hold-lock-cancel; `typecheck` (RN).
-**Тесты:** доступные RN unit + ручной reliability-gate.
-**Закрывает:** R21, R22.
+**Файлы:** `kora-mobile/*`; backend `PushService`+`PushToken` миграция+регистрация (+транспорт `fcm`); endpoint удаления аккаунта + жалобы/блокировки; крутилки `push_debounce_seconds`/`unread_smart_badge`.
+**Acceptance:** Reliability-gate (фон будится пушем ≤N сек на iOS-APNs, Android-FCM (Play) и Android-RuStore — ручной прод-тест в DoD); FCM присутствует как ТРАНСПОРТ, но не как единственная опора (grep: ядро доставки не падает при выключенном FCM); офлайн-сообщение доставляется при сети без дублей (`clientMessageId`); голос hold-lock-cancel; экраны «удалить аккаунт» и «пожаловаться/заблокировать» доступны из приложения (gate App Review/Play); `typecheck` (RN).
+**Тесты:** доступные RN unit + ручной reliability-gate + чек-лист store-compliance (удаление аккаунта, UGC-модерация, privacy-формы).
+**Закрывает:** R21, R22, R34.
 
 ### Ф7 — Доводка.
 **Цель.** Huddles, поиск, опросы, автоудаление, HR-подписки.
@@ -394,6 +422,14 @@ taskType 'chat-summary' (Ф5 «Что пропустил»)
 - **R24** HR-событие shall пересчитывать `ConversationMember(source='auto')`.
 - **R25** Полнотекстовый поиск shall использовать GIN-индекс.
 - **R26** Huddle из чата shall сохранять запись и резюме в тот же чат.
+- **R27** Каждая задача shall иметь не более одного `Conversation(kind='work_chat')` (`Issue.conversationId @unique`); повторный запрос — тот же чат (без дублей).
+- **R28** Переписка задачи (`IssueComment`) shall быть перенесена в `Message` под work_chat-Conversation идемпотентно (повтор backfill = no-op), с сохранением вложений, упоминаний, «спасибо» и голосовых.
+- **R29** Из карточки задачи и из общего списка «Сообщения» shall открываться одна и та же переписка (один `conversationId`); `InboxItem` work_chat shall нести `linkedIssue{identifier,title}` и заголовок `PROJ-NN · …` для дип-линка в карточку.
+- **R30** Непрочитанное по work_chat задачи shall входить в единый badge непрочитанного наравне с личкой/группами.
+- **R31** Система shall не писать новые сообщения в legacy-`IssueComment` после Ф2.5 (старый `issue.chat.*`-путь записи депрекейтнут).
+- **R32** `GET /message-threads` shall поддерживать `sort=recent|active|unread` с корректным курсором (без дублей/пропусков) на каждом режиме.
+- **R33** `GET /message-threads?q=` shall фильтровать ленту по людям/группам/задачам (title + имена участников + `PROJ-NN`); полнотекст по телам остаётся на `/message-search`.
+- **R34** Мобильное приложение shall публиковаться в App Store, Google Play и RuStore на одном фундаменте: `PushService` транспорт-агностичен (APNs/FCM/RuStore/VAPID, FCM — не единственная опора); из приложения доступны удаление аккаунта и жалоба/блокировка пользователя (gate App Review / Play UGC).
 
 ---
 
@@ -407,15 +443,17 @@ taskType 'chat-summary' (Ф5 «Что пропустил»)
 - **Ненадёжные уведомления** — частая жалоба RU-конкурентов [01/02]; доставка/пуш — повышенное тестирование (Reliability-gate Ф6).
 - **Приватность «всё в граф» (Р5):** граф кормится всей перепиской, прямое чтение тел member-scoped (R18); AI-чат не цитирует тело личной переписки не-членам дословно.
 - **Self-improving (клон/«что пропустил»)** — без «человек одобри», только авто; human gate лишь kill-switch.
+- **Миграция чата задачи (Ф2.5):** `IssueComment`→`Message` идемпотентно с маркером; не потерять вложения/упоминания/«спасибо»/voice; нельзя плодить >1 work_chat на задачу (`Issue.conversationId @unique`); CI-grep — нет новой записи в `IssueComment`; двойной ingest исключить (единый `Message`-источник Ф5).
+- **Store-readiness (Ф6):** App Store/Google Play отклоняют соцприложения без удаления аккаунта из приложения и UGC-модерации (жалоба/блокировка) — закладывать с старта, не «потом»; FCM-транспорт нужен для Play global, но ядро доставки не должно от него зависеть (Р8: один из транспортов, не фундамент).
 
 ## Idempotency / feature-flag / prod-deploy
 - **Флаги (Ship-On → `docs/operations/feature-flags.md`):** `CHAT_ENABLED` (kill-switch ON, Ф1), `MESSAGE_BRIDGE_ENABLED` (Ф0), `SUPPORT_DESK_ENABLED`/`SUPPORT_CURATOR_ENABLED` (сохраняются, Ф3), `CHAT_PUSH_ENABLED` (Ф6). Все ON при выкате.
 - **Параметр владельца:** AdminSetting `support.vendor_org_id` + entitlement `feature.support_desk` (вендор-эксклюзив) — сохраняются.
 - **Крутилки (AdminSetting):** `chat_unread_smart_badge`, `chat_notify_debounce_seconds`, `chat_summary_min_messages`, `chat_summary_idle_days`, `chat_presence_ttl_seconds`, `message_retention_days`, `push_debounce_seconds`, `huddle_max_participants`, `support_critic_min_groundedness`, `support_promote_min_csat` (последние два — из поддержки).
-- **prod-deploy-log.md:** Шаг 1 (флаги), Шаг 4 (модели Conversation/ConversationMember/Message/MessageOutbox/SupportTicket/PushToken + enum ConversationKind; депрекейт неиспользуемых support-полей Issue/IssueComment), Шаг 5 (GIN по Message.contentStripped), Шаг 7 (seed-support-* перенастроены + seed-llm-task-routes-chat), Шаг 8 (backfill-chat-bridge-*), Шаг 12 (smoke: WS conversation.*, очереди message.outbox/chat.ingest, taskType chat-summary, Swagger /message-threads,/conversations,/support/tickets,/message-search). Все скрипты — `apply-prod-deploy.ts STEPS`, `createPrismaClient()`, импорты `../src`.
+- **prod-deploy-log.md:** Шаг 1 (флаги), Шаг 4 (модели Conversation/ConversationMember/Message/MessageOutbox/SupportTicket/PushToken + enum ConversationKind вкл. `work_chat`; `Issue.conversationId @unique` + `IssueAttachment.messageId` + `Message.contentHtml/thanksUserIds` (Ф2.5); транспорт `fcm` в PushToken (Ф6); депрекейт неиспользуемых support-полей Issue/IssueComment), Шаг 5 (GIN по Message.contentStripped), Шаг 7 (seed-support-* перенастроены + seed-llm-task-routes-chat), Шаг 8 (backfill-chat-bridge-*, **backfill-issuecomment-to-message-*** Ф2.5 — идемпотентно, маркер), Шаг 12 (smoke: WS conversation.*, очереди message.outbox/chat.ingest, taskType chat-summary, Swagger /message-threads(+sort,q),/conversations,/issues/:id/conversation,/conversations/:id/linked-issue,/support/tickets,/message-search). Все скрипты — `apply-prod-deploy.ts STEPS`, `createPrismaClient()`, импорты `../src`.
 
 ## DoD
-typecheck (вкл `.spec`)/lint/build зелёные (front+back); vitest по новым/переписанным spec; миграции применяются и идемпотентны; second-brain обновлён (новый `messaging`→`module-map`; модели→`data-model`; очереди/cron→`workers-queues`+`ai-jobs`; эндпоинты→`api-layer`; страница «Сообщения»→`frontend-pages`; контекст/хук→`frontend-contexts-hooks`; новый `01_projects/unified-chat.md`; обновить `support-desk.md` — переезд на ядро; строка в `04_не-сделано` про отложенные E2EE/федерацию/Ф6-Ф7); `prod-deploy-log.md`; реестр флагов; prompt-методология для chat-summary; рефлексия после push.
+typecheck (вкл `.spec`)/lint/build зелёные (front+back); vitest по новым/переписанным spec; миграции применяются и идемпотентны; second-brain обновлён (новый `messaging`→`module-map`; модели→`data-model`; очереди/cron→`workers-queues`+`ai-jobs`; эндпоинты→`api-layer`; страница «Сообщения»→`frontend-pages`; контекст/хук→`frontend-contexts-hooks`; новый `01_projects/unified-chat.md`; обновить `support-desk.md` — переезд на ядро; **обновить `tracker.md` + `03_processes/issue-lifecycle.md` — чат задачи переехал на `work_chat`/`Message`, `IssueComment` депрекейтнут**; строка в `04_не-сделано` про отложенные E2EE/федерацию/Ф6-Ф7 + store-compliance чек-лист Ф6); `prod-deploy-log.md`; реестр флагов; prompt-методология для chat-summary; рефлексия после push.
 
 ## Итог
 _(заполнит tz-orchestrator по факту реализации фаз.)_

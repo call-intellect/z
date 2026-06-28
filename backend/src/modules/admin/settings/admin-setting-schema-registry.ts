@@ -342,6 +342,8 @@ const registry = new Map<string, ZodTypeAny>([
   ['chat_presence_ttl_seconds', POSITIVE_INT],
   ['chat_outbox_sweep_stale_seconds', POSITIVE_INT],
   ['chat_outbox_sweep_batch_limit', POSITIVE_INT],
+  ['chat_summary_min_messages', POSITIVE_INT],
+  ['chat_summary_idle_days', POSITIVE_INT],
   ['external_link_ttl_hours', POSITIVE_INT],
   ['external_inbound_rate_limit', POSITIVE_INT],
 

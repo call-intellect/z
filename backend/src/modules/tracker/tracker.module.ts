@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { MessagingModule } from '../messaging/messaging.module';
@@ -99,7 +99,7 @@ import { RecurrenceMaterializeCron } from './workers/recurrence-materialize.cron
 import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
 
 @Module({
-  imports: [PrismaModule, MessagingModule],
+  imports: [PrismaModule, forwardRef(() => MessagingModule)],
   controllers: [
     ProjectsController,
     BoardsController,

@@ -64,6 +64,42 @@ export const ReactionSchema = z
   .strict();
 export type ReactionDto = z.infer<typeof ReactionSchema>;
 
+export const AskKoraSchema = z
+  .object({
+    question: z.string().min(1).max(4000),
+  })
+  .strict();
+export type AskKoraDto = z.infer<typeof AskKoraSchema>;
+
+export const MessageToTaskSchema = z
+  .object({
+    title: z.string().min(1).max(500).optional(),
+  })
+  .strict();
+export type MessageToTaskDto = z.infer<typeof MessageToTaskSchema>;
+
+export interface WhatsNewResponse {
+  summary: string | null;
+  skipped: 'too_few' | null;
+  fromSeq: string | null;
+  toSeq: string | null;
+  messageCount: number;
+}
+
+export interface AskKoraResponse {
+  answer: string;
+  citations: unknown[];
+  sourceMessageIds: string[];
+}
+
+export interface MessageToTaskResponse {
+  issueId: string;
+}
+
+export interface MessageToDecisionResponse {
+  decisionId: string;
+}
+
 export interface SendMessageResponse {
   message: MessageDto;
   deduped: boolean;

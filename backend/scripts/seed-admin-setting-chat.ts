@@ -44,6 +44,24 @@ const SEEDS: SettingSeed[] = [
       'Лимит батча backstop-sweep transactional outbox за один проход. По умолчанию 200.',
   },
   {
+    key: 'chat_summary_min_messages',
+    value: 5,
+    category: 'chat',
+    section: 'ai',
+    severity: 'low',
+    description:
+      'Минимум непрочитанных сообщений в разговоре, чтобы «Что пропустил» выдало AI-сводку. Меньше порога → сводка не строится (читай сами сообщения). По умолчанию 5.',
+  },
+  {
+    key: 'chat_summary_idle_days',
+    value: 3,
+    category: 'chat',
+    section: 'ai',
+    severity: 'low',
+    description:
+      'Сколько дней разговор считается «давно не открывали» для предложения сводки «Что пропустил». По умолчанию 3.',
+  },
+  {
     key: 'external_link_ttl_hours',
     value: 168,
     category: 'chat',

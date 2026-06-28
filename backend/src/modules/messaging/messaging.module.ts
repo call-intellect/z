@@ -1,4 +1,7 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
+
+import { ChatV2Module } from '../chat-v2/chat-v2.module';
+import { TrackerModule } from '../tracker/tracker.module';
 
 import { ConversationController } from './conversation.controller';
 import { AccessLinkService } from './external/access-link.service';
@@ -10,15 +13,19 @@ import { InboxController } from './inbox.controller';
 import { ChatIngestQueueService } from './queue/chat-ingest.queue.service';
 import { MessageOutboxQueueService } from './queue/message-outbox.queue.service';
 import { VoiceTranscribeQueueService } from './queue/voice-transcribe.queue.service';
+import { AskKoraService } from './services/ask-kora.service';
 import { ChatIngestService } from './services/chat-ingest.service';
+import { ChatSummaryService } from './services/chat-summary.service';
 import { ConversationService } from './services/conversation.service';
 import { InboxService } from './services/inbox.service';
+import { MessageActionsService } from './services/message-actions.service';
 import { MessageService } from './services/message.service';
 import { PresenceService } from './services/presence.service';
 import { ReadCursorService } from './services/read-cursor.service';
 import { WorkChatService } from './services/work-chat.service';
 
 @Module({
+  imports: [ChatV2Module, forwardRef(() => TrackerModule)],
   controllers: [
     ConversationController,
     InboxController,
@@ -39,6 +46,9 @@ import { WorkChatService } from './services/work-chat.service';
     AccessLinkService,
     ExternalConversationService,
     ExternalGuestGuard,
+    ChatSummaryService,
+    AskKoraService,
+    MessageActionsService,
   ],
   exports: [
     ConversationService,
@@ -54,6 +64,9 @@ import { WorkChatService } from './services/work-chat.service';
     AccessLinkService,
     ExternalConversationService,
     ExternalGuestGuard,
+    ChatSummaryService,
+    AskKoraService,
+    MessageActionsService,
   ],
 })
 export class MessagingModule {}

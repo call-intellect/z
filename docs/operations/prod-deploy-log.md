@@ -98,6 +98,20 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-28 — Единый чат: Ф5b AI-крючки — «Что пропустил» + «Спросить Кору» + сообщение→задача/решение (ветка feat/unified-chat-kora)
+
+> ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф5 (R19). Новый `taskType='chat-summary'` (стабильный SYSTEM, переменное в конце user — prompt caching). `GET /conversations/:id/whats-new` → AI-сводка непрочитанного с цитатами `[MSG:<id>]` при N≥`chat_summary_min_messages`. `POST /conversations/:id/ask` → «Спросить Кору» поверх chat-v2 (`askEphemeral`, scope=org) со ссылками на исходные `Message.id` (маппинг `usedBlockIds`→`IdeaBlockEvidence`→`RawEvent.sourceExternalId LIKE 'msg:%'`). `POST /conversations/:id/messages/:messageId/to-task` → intake-кандидат (`source='chat'`, provenance `externalId='msg:<id>'`); `…/to-decision` → `Decision(status='proposed')` с provenance в `previewSourceRef`.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ.** 1 новый seed LLM-routes + 2 новые AdminSetting-крутилки (расширен существующий сид). Docker rebuild backend.
+
+- **Шаг 1 — ENV: новых нет.** Обе крутилки (`chat_summary_min_messages`=5, `chat_summary_idle_days`=3) — чистые AdminSetting (см. Шаг 7). Новых флагов нет (`POST /ask` уважает существующий `CHAT_V2_ENABLED` — выкл → 503).
+- **Шаг 7 — Seed крутилок (идемпотентный, сид УЖЕ в STEPS `phase:'seed-base'`, новых сидов НЕТ — расширен существующий):** `seed-admin-setting-chat.ts` теперь сидит `chat_summary_min_messages` (5 — минимум непрочитанных для AI-сводки) + `chat_summary_idle_days` (3). Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 7 (LLM-routes) — Seed маршрута (идемпотентный, авторитетный upsert, НОВЫЙ сид УЖЕ в STEPS `phase:'seed-llm-routes'`):** `docker compose exec backend bun run scripts/seed-llm-task-routes-chat.ts` — маршрут `chat-summary` (primary `deepseek/deepseek-v4-flash`, secondary `openai-via-proxy/gpt-5.4-mini`, tertiary `ollama/qwen3.5:9b`). Уважает `editedByAdmin`. Прогоняется агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend (messaging: `ChatSummaryService`+`AskKoraService`+`MessageActionsService`, 4 новых эндпоинта в `ConversationController`; `MessagingModule` импортирует `ChatV2Module` + `forwardRef(TrackerModule)`; новый prompt `chat-summary.prompt.ts`; `IntakeSourceSchema` += `'chat'`).
+- **Шаг 12 — Smoke** (после выката): маршрут `chat-summary` виден в `/admin/ai-models`; `GET /conversations/:id/whats-new` на тред с ≥5 непрочитанными → сводка с `[MSG:<id>]`; `POST /conversations/:id/ask` → ответ + `sourceMessageIds`; `POST …/to-task` → intake-карточка `source='chat'`; `POST …/to-decision` → `Decision(status='proposed')`. Swagger: 4 эндпоинта в теге `messaging / conversations`.
+
+---
+
 ### 📄 2026-06-28 — Единый чат: Ф4a бэкенд экрана «Сообщения» — агрегатор `/message-threads` + GIN-поиск `/message-search` (ветка feat/unified-chat-kora)
 
 > ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф4 (INV-A1/A3). Единый контроллер ленты (`InboxController`): `GET /message-threads` (один запрос по `Conversation` члена, фильтр `type`, `sort=recent|active|unread`, `q=` по людям/группам/PROJ-NN, составной курсор) + `GET /message-threads/unread-count` (Redis-кэш TTL 15с) + `GET /message-search` (полнотекст GIN по `Message.contentStripped`). `MessageService.insertMessageRow` теперь заполняет `contentStripped` плейнтекстом (`stripToPlain`) на записи.

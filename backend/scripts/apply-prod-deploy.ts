@@ -346,6 +346,7 @@ const STEPS: Step[] = [
     'clone-method',
     'day-signal',
     'edinyy-pomoshnik',
+    'chat',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,

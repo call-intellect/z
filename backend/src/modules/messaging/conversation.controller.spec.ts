@@ -12,7 +12,10 @@ import type { RbacService } from '../rbac/rbac.service';
 
 import { ConversationController } from './conversation.controller';
 import { CreateConversationSchema } from './dto/conversation.dto';
+import type { AskKoraService } from './services/ask-kora.service';
+import type { ChatSummaryService } from './services/chat-summary.service';
 import type { ConversationService } from './services/conversation.service';
+import type { MessageActionsService } from './services/message-actions.service';
 import type { MessageService } from './services/message.service';
 import type { ReadCursorService } from './services/read-cursor.service';
 import type { WorkChatService } from './services/work-chat.service';
@@ -26,6 +29,9 @@ function makeController(overrides: {
   readCursors?: Partial<ReadCursorService>;
   rbac?: Partial<RbacService>;
   workChat?: Partial<WorkChatService>;
+  chatSummary?: Partial<ChatSummaryService>;
+  askKora?: Partial<AskKoraService>;
+  messageActions?: Partial<MessageActionsService>;
 }) {
   const conversations = {
     createConversation: vi.fn(),
@@ -56,13 +62,38 @@ function makeController(overrides: {
     getLinkedIssue: vi.fn(),
     ...overrides.workChat,
   } as unknown as WorkChatService;
+  const chatSummary = {
+    summarizeUnread: vi.fn(),
+    ...overrides.chatSummary,
+  } as unknown as ChatSummaryService;
+  const askKora = {
+    ask: vi.fn(),
+    ...overrides.askKora,
+  } as unknown as AskKoraService;
+  const messageActions = {
+    messageToTask: vi.fn(),
+    messageToDecision: vi.fn(),
+    ...overrides.messageActions,
+  } as unknown as MessageActionsService;
   return {
-    controller: new ConversationController(conversations, messages, readCursors, rbac, workChat),
+    controller: new ConversationController(
+      conversations,
+      messages,
+      readCursors,
+      rbac,
+      workChat,
+      chatSummary,
+      askKora,
+      messageActions,
+    ),
     conversations,
     messages,
     readCursors,
     rbac,
     workChat,
+    chatSummary,
+    askKora,
+    messageActions,
   };
 }
 
@@ -323,5 +354,142 @@ describe('ConversationController GET /conversations/:id/linked-issue', () => {
     const { controller } = makeController({ workChat: { getLinkedIssue } });
 
     await expect(controller.linkedIssue('conv_x', TENANT)).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('ConversationController GET /conversations/:id/whats-new', () => {
+  it('член, есть сводка → возвращает summary + границы', async () => {
+    const summarizeUnread = vi.fn(async () => ({
+      summary: 'кратко',
+      fromSeq: '4',
+      toSeq: '9',
+      messageCount: 6,
+    }));
+    const { controller } = makeController({
+      conversations: { assertMember: vi.fn(async () => true) },
+      chatSummary: { summarizeUnread },
+    });
+    const res = await controller.whatsNew('conv_1', USER, TENANT);
+    expect(res).toEqual({
+      summary: 'кратко',
+      skipped: null,
+      fromSeq: '4',
+      toSeq: '9',
+      messageCount: 6,
+    });
+  });
+
+  it('мало сообщений → skipped=too_few, summary=null', async () => {
+    const { controller } = makeController({
+      conversations: { assertMember: vi.fn(async () => true) },
+      chatSummary: { summarizeUnread: vi.fn(async () => ({ skipped: 'too_few' as const })) },
+    });
+    const res = await controller.whatsNew('conv_1', USER, TENANT);
+    expect(res.skipped).toBe('too_few');
+    expect(res.summary).toBeNull();
+  });
+
+  it('не член → 403, summarizeUnread не вызван', async () => {
+    const summarizeUnread = vi.fn();
+    const { controller } = makeController({
+      conversations: { assertMember: vi.fn(async () => false) },
+      chatSummary: { summarizeUnread },
+    });
+    await expect(controller.whatsNew('conv_1', USER, TENANT)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(summarizeUnread).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConversationController POST /conversations/:id/ask', () => {
+  it('член → делегирует в askKora.ask со scope разговора', async () => {
+    const ask = vi.fn(async () => ({ answer: 'A', citations: [], sourceMessageIds: ['m1'] }));
+    const { controller } = makeController({
+      conversations: { assertMember: vi.fn(async () => true) },
+      askKora: { ask },
+    });
+    const res = await controller.ask('conv_1', { question: 'что решили?' }, USER, TENANT);
+    expect(res.answer).toBe('A');
+    expect(res.sourceMessageIds).toEqual(['m1']);
+    expect(ask).toHaveBeenCalledWith({
+      tenantId: TENANT,
+      userId: USER.id,
+      conversationId: 'conv_1',
+      question: 'что решили?',
+    });
+  });
+
+  it('не член → 403, ask не вызван', async () => {
+    const ask = vi.fn();
+    const { controller } = makeController({
+      conversations: { assertMember: vi.fn(async () => false) },
+      askKora: { ask },
+    });
+    await expect(
+      controller.ask('conv_1', { question: 'x' }, USER, TENANT),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(ask).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConversationController POST /conversations/:id/messages/:messageId/to-task', () => {
+  it('член → делегирует в messageActions.messageToTask, возвращает issueId', async () => {
+    const messageToTask = vi.fn(async () => ({ issueId: 'iss_1' }));
+    const { controller } = makeController({
+      conversations: { assertMember: vi.fn(async () => true) },
+      messageActions: { messageToTask },
+    });
+    const res = await controller.messageToTask('conv_1', 'm1', { title: 'T' }, USER, TENANT);
+    expect(res.issueId).toBe('iss_1');
+    expect(messageToTask).toHaveBeenCalledWith({
+      tenantId: TENANT,
+      userId: USER.id,
+      conversationId: 'conv_1',
+      messageId: 'm1',
+      title: 'T',
+    });
+  });
+
+  it('не член → 403', async () => {
+    const messageToTask = vi.fn();
+    const { controller } = makeController({
+      conversations: { assertMember: vi.fn(async () => false) },
+      messageActions: { messageToTask },
+    });
+    await expect(
+      controller.messageToTask('conv_1', 'm1', {}, USER, TENANT),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(messageToTask).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConversationController POST /conversations/:id/messages/:messageId/to-decision', () => {
+  it('член → делегирует в messageActions.messageToDecision', async () => {
+    const messageToDecision = vi.fn(async () => ({ decisionId: 'dec_1' }));
+    const { controller } = makeController({
+      conversations: { assertMember: vi.fn(async () => true) },
+      messageActions: { messageToDecision },
+    });
+    const res = await controller.messageToDecision('conv_1', 'm1', USER, TENANT);
+    expect(res.decisionId).toBe('dec_1');
+    expect(messageToDecision).toHaveBeenCalledWith({
+      tenantId: TENANT,
+      userId: USER.id,
+      conversationId: 'conv_1',
+      messageId: 'm1',
+    });
+  });
+
+  it('не член → 403', async () => {
+    const messageToDecision = vi.fn();
+    const { controller } = makeController({
+      conversations: { assertMember: vi.fn(async () => false) },
+      messageActions: { messageToDecision },
+    });
+    await expect(
+      controller.messageToDecision('conv_1', 'm1', USER, TENANT),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(messageToDecision).not.toHaveBeenCalled();
   });
 });

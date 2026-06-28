@@ -26,6 +26,9 @@ import { RbacService } from '../rbac/rbac.service';
 import {
   AddMemberSchema,
   type AddMemberDto,
+  AskKoraSchema,
+  type AskKoraDto,
+  type AskKoraResponse,
   CreateConversationSchema,
   type CreateConversationDto,
   type CreateConversationResponse,
@@ -34,6 +37,10 @@ import {
   type ListMessagesResponse,
   MarkReadSchema,
   type MarkReadDto,
+  MessageToTaskSchema,
+  type MessageToTaskDto,
+  type MessageToDecisionResponse,
+  type MessageToTaskResponse,
   type OkResponse,
   ReactionSchema,
   type ReactionDto,
@@ -41,8 +48,12 @@ import {
   SendMessageSchema,
   type SendMessageDto,
   type SendMessageResponse,
+  type WhatsNewResponse,
 } from './dto/conversation.dto';
+import { AskKoraService } from './services/ask-kora.service';
+import { ChatSummaryService } from './services/chat-summary.service';
 import { ConversationService } from './services/conversation.service';
+import { MessageActionsService } from './services/message-actions.service';
 import { MessageService } from './services/message.service';
 import { ReadCursorService } from './services/read-cursor.service';
 import { WorkChatService } from './services/work-chat.service';
@@ -58,6 +69,10 @@ export class ConversationController {
     @Inject(ReadCursorService) private readonly readCursors: ReadCursorService,
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(WorkChatService) private readonly workChat: WorkChatService,
+    @Inject(ChatSummaryService) private readonly chatSummary: ChatSummaryService,
+    @Inject(AskKoraService) private readonly askKora: AskKoraService,
+    @Inject(MessageActionsService)
+    private readonly messageActions: MessageActionsService,
   ) {}
 
   @Post('conversations')
@@ -245,6 +260,93 @@ export class ConversationController {
       });
     }
     return issue;
+  }
+
+  @Get('conversations/:id/whats-new')
+  @ApiOperation({ summary: 'AI-сводка непрочитанного «Что пропустил» (chat-summary)' })
+  async whatsNew(
+    @Param('id') conversationId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<WhatsNewResponse> {
+    this.requireTenant(tenantId);
+    await this.requireMember(conversationId, user.id);
+    const result = await this.chatSummary.summarizeUnread({ conversationId, userId: user.id });
+    if ('skipped' in result) {
+      return {
+        summary: null,
+        skipped: result.skipped,
+        fromSeq: null,
+        toSeq: null,
+        messageCount: 0,
+      };
+    }
+    return {
+      summary: result.summary,
+      skipped: null,
+      fromSeq: result.fromSeq,
+      toSeq: result.toSeq,
+      messageCount: result.messageCount,
+    };
+  }
+
+  @Post('conversations/:id/ask')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Спросить Кору по памяти компании со ссылкой на сообщения' })
+  async ask(
+    @Param('id') conversationId: string,
+    @Body(new ZodValidationPipe(AskKoraSchema)) body: AskKoraDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<AskKoraResponse> {
+    const t = this.requireTenant(tenantId);
+    await this.requireMember(conversationId, user.id);
+    return this.askKora.ask({
+      tenantId: t,
+      userId: user.id,
+      conversationId,
+      question: body.question,
+    });
+  }
+
+  @Post('conversations/:id/messages/:messageId/to-task')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Создать задачу из сообщения (intake-кандидат)' })
+  async messageToTask(
+    @Param('id') conversationId: string,
+    @Param('messageId') messageId: string,
+    @Body(new ZodValidationPipe(MessageToTaskSchema)) body: MessageToTaskDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<MessageToTaskResponse> {
+    const t = this.requireTenant(tenantId);
+    await this.requireMember(conversationId, user.id);
+    return this.messageActions.messageToTask({
+      tenantId: t,
+      userId: user.id,
+      conversationId,
+      messageId,
+      title: body.title ?? null,
+    });
+  }
+
+  @Post('conversations/:id/messages/:messageId/to-decision')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Зафиксировать решение из сообщения (реестр решений)' })
+  async messageToDecision(
+    @Param('id') conversationId: string,
+    @Param('messageId') messageId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<MessageToDecisionResponse> {
+    const t = this.requireTenant(tenantId);
+    await this.requireMember(conversationId, user.id);
+    return this.messageActions.messageToDecision({
+      tenantId: t,
+      userId: user.id,
+      conversationId,
+      messageId,
+    });
   }
 
   private requireTenant(tenantId: string | undefined): string {

@@ -7,6 +7,7 @@ import {
   ForbiddenException,
   Get,
   Inject,
+  NotFoundException,
   Param,
   Post,
   Query,
@@ -44,6 +45,7 @@ import {
 import { ConversationService } from './services/conversation.service';
 import { MessageService } from './services/message.service';
 import { ReadCursorService } from './services/read-cursor.service';
+import { WorkChatService } from './services/work-chat.service';
 
 @ApiTags('messaging / conversations')
 @ApiBearerAuth()
@@ -55,6 +57,7 @@ export class ConversationController {
     @Inject(MessageService) private readonly messages: MessageService,
     @Inject(ReadCursorService) private readonly readCursors: ReadCursorService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(WorkChatService) private readonly workChat: WorkChatService,
   ) {}
 
   @Post('conversations')
@@ -215,6 +218,33 @@ export class ConversationController {
       emoji: body.emoji,
     });
     return { messageId, reactions };
+  }
+
+  @Get('issues/:issueId/conversation')
+  @ApiOperation({ summary: 'Идемпотентно создать/получить work_chat задачи' })
+  async issueConversation(
+    @Param('issueId') issueId: string,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ conversationId: string }> {
+    this.requireTenant(tenantId);
+    return this.workChat.ensureWorkChat(issueId);
+  }
+
+  @Get('conversations/:id/linked-issue')
+  @ApiOperation({ summary: 'Задача, к которой привязан work_chat (если есть)' })
+  async linkedIssue(
+    @Param('id') conversationId: string,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ id: string; identifier: string; title: string }> {
+    this.requireTenant(tenantId);
+    const issue = await this.workChat.getLinkedIssue(conversationId);
+    if (!issue) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'LINKED_ISSUE_NOT_FOUND', message: 'Задача для разговора не найдена' },
+      });
+    }
+    return issue;
   }
 
   private requireTenant(tenantId: string | undefined): string {

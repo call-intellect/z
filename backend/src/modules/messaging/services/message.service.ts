@@ -18,11 +18,13 @@ interface SendMessageArgs {
   conversationId: string;
   authorUserId: string;
   content: string;
+  contentHtml?: string | null;
+  contentStripped?: string | null;
   clientMessageId: string;
   parentMessageId?: string | null;
-  access?: MessageAccess;
+  access?: MessageAccess | string;
   authorType?: string;
-  voice?: { url: string; duration?: number; transcript?: string } | null;
+  voice?: { url?: string | null; duration?: number | null; transcript?: string | null } | null;
   attachments?: unknown;
   mentions?: string[];
 }
@@ -93,6 +95,8 @@ export class MessageService {
             authorType: args.authorType ?? 'human',
             access: args.access ?? 'normal',
             content: encrypted,
+            contentHtml: args.contentHtml ?? null,
+            contentStripped: args.contentStripped ?? null,
             clientMessageId,
             parentMessageId: args.parentMessageId ?? null,
             voiceUrl: args.voice?.url ?? null,

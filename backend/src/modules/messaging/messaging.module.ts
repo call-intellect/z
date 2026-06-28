@@ -6,6 +6,7 @@ import { ConversationService } from './services/conversation.service';
 import { MessageService } from './services/message.service';
 import { PresenceService } from './services/presence.service';
 import { ReadCursorService } from './services/read-cursor.service';
+import { WorkChatService } from './services/work-chat.service';
 
 @Module({
   controllers: [ConversationController],
@@ -15,6 +16,7 @@ import { ReadCursorService } from './services/read-cursor.service';
     ReadCursorService,
     PresenceService,
     MessageOutboxQueueService,
+    WorkChatService,
   ],
   exports: [
     ConversationService,
@@ -22,6 +24,7 @@ import { ReadCursorService } from './services/read-cursor.service';
     ReadCursorService,
     PresenceService,
     MessageOutboxQueueService,
+    WorkChatService,
   ],
 })
 export class MessagingModule {}

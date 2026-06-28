@@ -9533,6 +9533,10 @@ model Issue {
   // Граф знаний
   entityId String?
 
+  /// Единый чат (TZ 2026-06-21, Ф2.5a) — work_chat карточки задачи.
+  /// Скаляр без relation: связь односторонняя, Issue владеет ссылкой.
+  conversationId String? @unique
+
   /// Р4 (TZ 2026-06-16, Ф4) — задача помечена «под вопросом» после отмены/замены
   /// связанного решения (supersede). null — обычная задача. НЕ авто-снос:
   /// показывается человеку в pending-actions, снимается при ручном решении.
@@ -9742,6 +9746,10 @@ model IssueComment {
   // Gamification (Wave 2): кто нажал «спасибо»
   thanksUserIds String[] @default([])
 
+  /// Единый чат (TZ 2026-06-21, Ф2.5a) — reverse-указатель на мигрированное
+  /// Message. null = legacy-комментарий, ещё не перенесён (read мержит такие).
+  messageId String?
+
   createdAt DateTime  @default(now())
   editedAt  DateTime?
   deletedAt DateTime?
@@ -9755,6 +9763,7 @@ model IssueComment {
   @@index([issueId, createdAt])
   @@index([authorId])
   @@index([parentCommentId])
+  @@index([messageId])
 }
 
 /// Датированное обновление прогресса задачи (Asana/Linear Project Update-стиль).
@@ -9958,11 +9967,16 @@ model IssueAttachment {
   thumbnailUrl String? // для картинок
   createdAt    DateTime @default(now())
 
+  /// Единый чат (TZ 2026-06-21, Ф2.5a) — перепривязка вложения на Message
+  /// при миграции комментария. null = вложение ещё на legacy IssueComment.
+  messageId String?
+
   issue   Issue         @relation(fields: [issueId], references: [id], onDelete: Cascade)
   comment IssueComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
 
   @@index([issueId])
   @@index([commentId])
+  @@index([messageId])
 }
 
 /// Внешняя ссылка на задаче (URL + title).

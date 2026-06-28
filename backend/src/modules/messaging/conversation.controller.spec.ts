@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -10,6 +15,7 @@ import { CreateConversationSchema } from './dto/conversation.dto';
 import type { ConversationService } from './services/conversation.service';
 import type { MessageService } from './services/message.service';
 import type { ReadCursorService } from './services/read-cursor.service';
+import type { WorkChatService } from './services/work-chat.service';
 
 const TENANT = 'org_1';
 const USER: CurrentUserPayload = { id: 'user_1', email: 'u@example.com', role: 'user' };
@@ -19,6 +25,7 @@ function makeController(overrides: {
   messages?: Partial<MessageService>;
   readCursors?: Partial<ReadCursorService>;
   rbac?: Partial<RbacService>;
+  workChat?: Partial<WorkChatService>;
 }) {
   const conversations = {
     createConversation: vi.fn(),
@@ -44,12 +51,18 @@ function makeController(overrides: {
     canWrite: vi.fn(async () => true),
     ...overrides.rbac,
   } as unknown as RbacService;
+  const workChat = {
+    ensureWorkChat: vi.fn(),
+    getLinkedIssue: vi.fn(),
+    ...overrides.workChat,
+  } as unknown as WorkChatService;
   return {
-    controller: new ConversationController(conversations, messages, readCursors, rbac),
+    controller: new ConversationController(conversations, messages, readCursors, rbac, workChat),
     conversations,
     messages,
     readCursors,
     rbac,
+    workChat,
   };
 }
 
@@ -270,5 +283,45 @@ describe('ConversationController POST /conversations/company-channel', () => {
       ForbiddenException,
     );
     expect(conversations.ensureCompanyChannel).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConversationController GET /issues/:id/conversation', () => {
+  it('идемпотентно: повторный вызов даёт тот же conversationId', async () => {
+    const ensureWorkChat = vi.fn(async () => ({ conversationId: 'conv_work' }));
+    const { controller } = makeController({ workChat: { ensureWorkChat } });
+
+    const a = await controller.issueConversation('i1', TENANT);
+    const b = await controller.issueConversation('i1', TENANT);
+
+    expect(a.conversationId).toBe('conv_work');
+    expect(b.conversationId).toBe('conv_work');
+    expect(ensureWorkChat).toHaveBeenCalledTimes(2);
+    expect(ensureWorkChat).toHaveBeenCalledWith('i1');
+  });
+
+  it('без tenant → 400', async () => {
+    const { controller, workChat } = makeController({});
+    await expect(controller.issueConversation('i1', undefined)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(workChat.ensureWorkChat).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConversationController GET /conversations/:id/linked-issue', () => {
+  it('возвращает задачу, привязанную к разговору', async () => {
+    const getLinkedIssue = vi.fn(async () => ({ id: 'i1', identifier: 'PRJ-7', title: 'T' }));
+    const { controller } = makeController({ workChat: { getLinkedIssue } });
+
+    const res = await controller.linkedIssue('conv_1', TENANT);
+    expect(res).toEqual({ id: 'i1', identifier: 'PRJ-7', title: 'T' });
+  });
+
+  it('нет задачи → 404', async () => {
+    const getLinkedIssue = vi.fn(async () => null);
+    const { controller } = makeController({ workChat: { getLinkedIssue } });
+
+    await expect(controller.linkedIssue('conv_x', TENANT)).rejects.toBeInstanceOf(NotFoundException);
   });
 });

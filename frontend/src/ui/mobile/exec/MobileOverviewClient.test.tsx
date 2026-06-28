@@ -78,6 +78,8 @@ function director(
       decisionsExtracted: 3,
       questionsAnsweredByMemory: 7,
       commitmentsKept: 9,
+      tasksResolved: 0,
+      ideasCollected: 0,
     },
     mainReworkEnabled: true,
     degraded: false,

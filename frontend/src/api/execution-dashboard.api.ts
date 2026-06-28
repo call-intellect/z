@@ -60,6 +60,23 @@ export interface OperationsTrendApi {
   deltas: Record<string, number>;
 }
 
+export interface StuckIssueRowApi {
+  issueId: string;
+  identifier: string;
+  title: string;
+  projectId: string;
+  projectName: string;
+  daysStuck: number;
+  assigneeUserId: string | null;
+  assigneeName: string | null;
+  dueDate: string | null;
+}
+
+export interface StuckIssuesResponseApi {
+  items: StuckIssueRowApi[];
+  staleDaysThreshold: number;
+}
+
 export const executionDashboardApi = {
   getGoalVectorByPerson: (
     orgId: string,
@@ -100,6 +117,12 @@ export const executionDashboardApi = {
       `/api/v1/dashboard/operations/trend?period=${encodeURIComponent(
         params.period,
       )}`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  stuckCrossProject: (orgId: string) =>
+    apiClient.get<StuckIssuesResponseApi>(
+      "/api/v1/dashboard/stuck/cross-project",
       { headers: orgHeaders(orgId) },
     ),
 };

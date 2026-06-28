@@ -41,6 +41,43 @@ export interface DailyDigestMetricsApi {
     statement: string;
     status: string;
   }>;
+  risksSummary?: string | null;
+  ideasSummary?: string | null;
+}
+
+export interface DailyDigestVerdictAxisApi {
+  key: "team" | "clients" | "execution" | "overall";
+  state: "ok" | "warn" | "risk";
+  label: string;
+  why: string;
+}
+
+export interface DailyDigestVerdictApi {
+  overall: {
+    state: "ok" | "warn" | "risk";
+    emoji: string;
+    title: string;
+    oneLiner: string;
+  };
+  axes: DailyDigestVerdictAxisApi[];
+}
+
+export interface DailyDigestLetterSectionApi {
+  key: string;
+  title: string;
+  prose: string;
+  cites?: Array<{ label: string; ref: string }>;
+}
+
+export interface DailyDigestGoalAlignmentDayApi {
+  direction: "to_goal" | "drift" | "against";
+  score: number | null;
+  todayDelta: string;
+  why: string;
+  pro: string[];
+  contra: string[];
+  goalId?: string | null;
+  goalName?: string | null;
 }
 
 export interface DailyDigestSourcesApi {
@@ -130,6 +167,9 @@ export interface DailyDigestApi {
   customersAtRisk: DailyDigestCustomerAtRiskApi[];
   chronicBlockers: DailyDigestChronicBlockerApi[];
   trend: DailyDigestTrendPointApi[];
+  verdict?: DailyDigestVerdictApi | null;
+  letter?: DailyDigestLetterSectionApi[] | null;
+  goalAlignmentDay?: DailyDigestGoalAlignmentDayApi | null;
 }
 
 async function tolerantGet(path: string): Promise<DailyDigestApi | null> {

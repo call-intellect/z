@@ -7,6 +7,7 @@ import { Calendar, Sparkles } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { CHART, MODERN_PAGE_BG } from "@/ui/components/dashboard/modern";
 import { DashboardCanvas } from "@/ui/components/dashboard/registry/DashboardCanvas";
+import { DayCompanyHero } from "@/ui/components/dashboard/day-company/DayCompanyHero";
 import { toDashboardRole } from "@/ui/components/dashboard/registry/presets";
 
 export function DirectorDashboardClient() {
@@ -54,6 +55,8 @@ export function DirectorDashboardClient() {
             </Link>
           </div>
         </header>
+
+        {currentOrgRole === "owner" ? <DayCompanyHero /> : null}
 
         <DashboardCanvas role={role} rhythm="today" />
       </div>

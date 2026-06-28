@@ -45,6 +45,8 @@ function makeDirector(
       decisionsExtracted: 0,
       questionsAnsweredByMemory: 0,
       commitmentsKept: 0,
+      tasksResolved: 0,
+      ideasCollected: 0,
     },
     mainReworkEnabled: true,
     degraded: false,

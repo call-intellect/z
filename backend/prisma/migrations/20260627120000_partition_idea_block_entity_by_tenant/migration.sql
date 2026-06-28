@@ -139,6 +139,9 @@ BEGIN
     WHERE c.relname = 'IdeaBlock'
   ) THEN
     ALTER TABLE "IdeaBlock" RENAME TO "IdeaBlock_old";
+    -- RENAME TABLE не переименовывает индекс pkey → освобождаем имя "IdeaBlock_pkey"
+    --   под составной PK новой таблицы (входящие FK уже сняты в ШАГ 2).
+    EXECUTE 'ALTER TABLE "IdeaBlock_old" DROP CONSTRAINT IF EXISTS "IdeaBlock_pkey"';
 
     EXECUTE 'CREATE TABLE "IdeaBlock" (LIKE "IdeaBlock_old" INCLUDING DEFAULTS INCLUDING GENERATED) PARTITION BY HASH ("tenantId")';
 
@@ -174,6 +177,9 @@ BEGIN
     WHERE c.relname = 'Entity'
   ) THEN
     ALTER TABLE "Entity" RENAME TO "Entity_old";
+    -- RENAME TABLE не переименовывает индекс pkey → освобождаем имя "Entity_pkey"
+    --   под составной PK новой таблицы (входящие FK уже сняты в ШАГ 2).
+    EXECUTE 'ALTER TABLE "Entity_old" DROP CONSTRAINT IF EXISTS "Entity_pkey"';
 
     EXECUTE 'CREATE TABLE "Entity" (LIKE "Entity_old" INCLUDING DEFAULTS INCLUDING GENERATED) PARTITION BY HASH ("tenantId")';
 

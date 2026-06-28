@@ -1116,6 +1116,15 @@ model DailyOperationsDigest {
 
 Глобальный cron `operations-daily-digest` (`0 22 * * *` UTC = 01:00 МСК, см. [[../01_projects/workers-queues|workers-queues]]) собирает запись на каждую `Org` за вчера. Тумблеры через `AdminSetting`: `operations.daily_digest.enabled`, `operations.daily_digest.deliver_to_telegram` (default false). Telegram-рассылка через `ConversationalService.sendNotification(eventType='operations.daily_digest')` — получатели **только `coo+owner`** (admin исключён). Метрики Prometheus: `coo_daily_digest_generated_total`, `coo_daily_digest_failed_total{reason}`, `coo_daily_digest_delivered_total{channel}`, `coo_daily_digest_age_seconds` (gauge).
 
+**Расширение «День компании» (2026-06-29):** к `DailyOperationsDigest` добавлены 3 nullable JSONB-поля для owner-героя на `/dashboard` (миграция `20260629000000_add_day_company_fields_to_digest`, аддитивная — 3× `ADD COLUMN JSONB`):
+- `verdictJson` — вердикт дня: `overall{state, emoji, title, oneLiner}` + `axes[4]{key∈team|clients|execution|overall, state∈ok|warn|risk, label, why}`.
+- `letterJson` — письмо-проза: `[{key, title, prose, cites?}]`.
+- `goalAlignmentDayJson` — дневной компас: `{direction∈to_goal|drift|against, score, todayDelta, why, pro[], contra[], goalId, goalName}`.
+
+Поля заполняются ОДНИМ capable LLM-вызовом (`taskType operations-daily-digest`, json_schema strict) в `DailyDigestService.generate`; при провале LLM/JSON — «сухой» fallback (NULL новых полей). Дневные AI-резюме `risksSummary`/`ideasSummary` персистятся в `metricsJson`. Крон перенесён `0 22 * * *` → `0 3 * * *` (03:00 UTC, после ночных синков). Это **расширение** существующего дайджеста, НЕ новая модель/пайплайн. Подробности — [[../01_projects/director-dashboard]] §«День компании».
+
+Сопутствующие расширения DTO-формы (новых DB-колонок нет): строка зависшей задачи `getStuckCrossProject` (execution-dashboard) += `assigneeUserId`/`assigneeName`/`dueDate`; value-strip директора (director-dashboard) += `tasksResolved` (`Issue.completedAt` в периоде) + `ideasCollected` (`Idea.createdAt` в периоде).
+
 ### SBA β-8.2 — IdeaBlock.commitment* + ребро `resolves` (2026-05-25)
 
 **Источник:** [`plans/archive/2026-05-24-sba-beta-8-2-promise-keeper.md`](../../plans/archive/2026-05-24-sba-beta-8-2-promise-keeper.md), [`plans/analysis/2026-05-24-zamykanie-obeschanij.md`](../../plans/analysis/2026-05-24-zamykanie-obeschanij.md).

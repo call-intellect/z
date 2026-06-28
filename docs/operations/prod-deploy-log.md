@@ -71,6 +71,22 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-29 — День компании: ежедневный брифинг владельца на `/dashboard` (ветка dev)
+
+> Расширение существующего дневного дайджеста (`DailyOperationsDigest` + `operations-daily-digest` taskType + `OperationsDailyDigestCron` + `DailyDigestService`), НЕ новый пайплайн/модель/агент. Owner-герой `DayCompanyHero` над `DashboardCanvas`. Коммиты `dd9b809d..a66e13ee`.
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260629000000_add_day_company_fields_to_digest` (3 nullable JSONB-колонки в `daily_operations_digests`). 🟢 НОВЫХ ENV/ФЛАГОВ НЕТ** (kill-switch `operations.daily_digest.enabled` переиспользован — теперь гейтит и «День компании»). Seed/patch/backfill/postgres-init — **НЕ требуются**. Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** Новый флаг НЕ вводился — переиспользован существующий kill-switch `operations.daily_digest.enabled` (он теперь гейтит синтез+доставку «Дня компании»). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260629000000_add_day_company_fields_to_digest` — `ALTER TABLE "daily_operations_digests"` ×3: `ADD COLUMN "verdictJson" JSONB` (вердикт дня: overall + 4 оси) + `ADD COLUMN "letterJson" JSONB` (письмо-проза) + `ADD COLUMN "goalAlignmentDayJson" JSONB` (дневной компас). Аддитивная (3× ADD COLUMN JSONB, без DROP), без потери данных, **backfill НЕ нужен** (поля nullable; заполняются ближайшим прогоном `operations-daily-digest` cron'а в 03:00 UTC; до этого «День компании» отдаёт «сухой» fallback). Повторный deploy = no-op. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«DailyOperationsDigest» (расширение «День компании»).
+- **Шаги 5–10 (postgres-init/patch/seed/backfill/migrate/setup) — НЕ затронуты.** Новых HNSW/GIN-индексов, seed-крутилок, backfill-скриптов нет. risksSummary/ideasSummary персистятся в существующем `metricsJson`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`DailyDigestService.generate` + `daily-digest.prompt.ts` — один capable LLM-вызов json_schema strict → вердикт/письмо/компас + `clampVerdict`; `OperationsDailyDigestCron` `@Cron('0 3 * * *')`; `getStuckCrossProject` += `assigneeUserId`/`assigneeName`/`dueDate`; value-strip директора += `tasksResolved`/`ideasCollected`). Frontend (`DayCompanyHero` над `DashboardCanvas` на `/dashboard`, owner-only).
+- **Шаг 12 — Smoke** (после выката): `psql \d "daily_operations_digests"` содержит `verdictJson`/`letterJson`/`goalAlignmentDayJson`; крон `operations-daily-digest` в логах стоит на 03:00 UTC; после прогона `POST /api/v1/dashboard/operations/daily-digest/generate` (admin) запись несёт непустые `verdictJson`/`letterJson`; на `/dashboard` под owner виден герой «День компании» (обложка-вердикт → письмо → компас → зависшие задачи → что мешает/идеи → польза Коры). Флаг `operations.daily_digest.enabled` в админке.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-28 — Единый чат: Ф6a backend push-фундамент + удаление аккаунта + блокировка пользователя (ветка feat/unified-chat-kora)
 
 > ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф6a. Транспорт-агностичный `PushService` (APNs/FCM/RuStore/web-push) + `PushToken` + push-канал conversational для офлайн-сигнала `chat.new_message` (ФЗ-41: payload без тела/имён). Самоудаление аккаунта (App Review 5.1.1(v)) + блокировка собеседника в dm + жалоба на сообщение (UGC-модерация App Store/Play).

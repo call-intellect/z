@@ -503,4 +503,17 @@ taskType 'chat-summary' (Ф5 «Что пропустил»)
 typecheck (вкл `.spec`)/lint/build зелёные (front+back); vitest по новым/переписанным spec; миграции применяются и идемпотентны; second-brain обновлён (новый `messaging`→`module-map`; модели→`data-model`; очереди/cron→`workers-queues`+`ai-jobs`; эндпоинты→`api-layer`; страница «Сообщения»→`frontend-pages`; контекст/хук→`frontend-contexts-hooks`; новый `01_projects/unified-chat.md` (вкл. раздел внешней переписки Ф3.5); обновить `support-desk.md` — переезд на ядро + внешний `external`-чат рядом с тикетами; **обновить `tracker.md` + `03_processes/issue-lifecycle.md` — чат задачи переехал на `work_chat`/`Message`, `IssueComment` депрекейтнут**; строка в `04_не-сделано` про отложенные E2EE/федерацию/Ф6-Ф7 + store-compliance чек-лист Ф6); `prod-deploy-log.md`; реестр флагов; prompt-методология для chat-summary; рефлексия после push.
 
 ## Итог
-_(заполнит tz-orchestrator по факту реализации фаз.)_
+_Заполняется tz-orchestrator по факту реализации фаз (ветка `feat/unified-chat-kora`, коммиты по фазам, push по подтверждению владельца)._
+
+| Фаза | Статус | Закрывает | Примечание |
+|---|---|---|---|
+| Ф0 — Мост-загрузки | ✅ DONE | R1, R2 | Модуль `message-bridge` (`Source(type='chat')` + `ingestChatMessage` + Telegram-export-загрузчик + backfill), ветка `chat_message` в `segment-builder`, флаг `MESSAGE_BRIDGE_ENABLED`. Bitrix prod-путь оставлен на session-transcript (без двойного ingest) — R1 для Bitrix доказан unit-тестом через мост. typecheck/lint/build/vitest зелёные (42/42). |
+| Ф1 — Единое ядро | ⏳ в работе | R3–R8 | |
+| Ф2 — Внутренний чат | ⬜ | R9, R10 | |
+| Ф2.5 — work_chat | ⬜ | R27–R31 | |
+| Ф3 — Поддержка на ядре | ⬜ | R11–R14 | |
+| Ф3.5 — Внешняя переписка | ⬜ | R35–R40 | |
+| Ф4 — Единый экран | ⬜ | R15, R16, R32, R33 | |
+| Ф5 — AI-крючки | ⬜ | R17–R20 | |
+| Ф6 — Мобильное приложение | ⬜ | R21, R22, R34 | |
+| Ф7 — Доводка | ⬜ | R23–R26 | |

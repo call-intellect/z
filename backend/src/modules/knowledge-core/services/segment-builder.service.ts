@@ -108,6 +108,10 @@ export class SegmentBuilderService {
     if (freeNote) {
       return [{ startMs: 0, endMs: 0, speakers: [], text: freeNote }];
     }
+    const chatMessage = this.tryGetChatMessageText(payload);
+    if (chatMessage) {
+      return [{ startMs: 0, endMs: 0, speakers: [], text: chatMessage }];
+    }
     // Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md
     // §2.1): payload `{ kind:'meeting_report', reportFacts, reportSummaryMarkdown,
     // chapters }` (см. ReportIngestAdapter). Разворачиваем в ГРАНУЛЯРНЫЕ
@@ -199,6 +203,13 @@ export class SegmentBuilderService {
     if (typeof payload !== 'object' || payload === null) return null;
     const p = payload as { kind?: unknown; text?: unknown };
     if (p.kind !== 'free_note') return null;
+    return typeof p.text === 'string' && p.text.trim().length > 0 ? p.text : null;
+  }
+
+  private tryGetChatMessageText(payload: unknown): string | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const p = payload as { kind?: unknown; text?: unknown };
+    if (p.kind !== 'chat_message') return null;
     return typeof p.text === 'string' && p.text.trim().length > 0 ? p.text : null;
   }
 

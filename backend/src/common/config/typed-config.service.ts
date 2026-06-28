@@ -695,6 +695,7 @@ export class TypedConfigService {
       meetingAnalyzeV2DebounceMs: this.get('MEETING_ANALYZE_V2_DEBOUNCE_MS'),
       meetingReportFastEnabled: this.get('MEETING_REPORT_FAST_ENABLED'),
       reportIngestEnabled: this.get('REPORT_INGEST_ENABLED'),
+      messageBridgeEnabled: this.get('MESSAGE_BRIDGE_ENABLED'),
       chatV2Enabled: this.get('CHAT_V2_ENABLED'),
       chatV2TopBlocks: this.get('CHAT_V2_TOP_BLOCKS'),
       chatV2GraphHops: this.get('CHAT_V2_GRAPH_HOPS'),

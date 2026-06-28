@@ -781,6 +781,13 @@ const STEPS: Step[] = [
     script: 'scripts/migrate-telegram-channels-to-global.ts',
     skipBootstrap: true,
   },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-chat-bridge-telegram.ts',
+    hint: 'мост-загрузка Telegram-экспорта в граф (Ф0): требует --tenant=<orgId> --file=<result.json>; запускается оператором вручную, идемпотентно по messageExternalId',
+    skipBootstrap: true,
+    skipUpdate: true,
+  },
 ];
 
 interface ParsedArgs {

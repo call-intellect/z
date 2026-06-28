@@ -338,6 +338,8 @@ const KnowledgeCoreSchema = z.object({
 
   REPORT_INGEST_ENABLED: zBool(true),
 
+  MESSAGE_BRIDGE_ENABLED: zBool(true),
+
   CHAT_V2_ENABLED: zBool(false),
   CHAT_V2_TOP_BLOCKS: z.coerce.number().int().positive().default(12),
   CHAT_V2_GRAPH_HOPS: z.coerce.number().int().min(0).max(2).default(1),

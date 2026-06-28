@@ -1,10 +1,11 @@
-import { Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { CryptoService } from '../../../common/crypto/crypto.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { GetMessagesResult, MessageAccess, MessageDto, SendMessageResult } from '../dto/message.dto';
+import { MessageOutboxQueueService } from '../queue/message-outbox.queue.service';
 
 interface SendMessageArgs {
   tenantId: string;
@@ -33,10 +34,13 @@ const MAX_GET_LIMIT = 200;
 
 @Injectable()
 export class MessageService {
+  private readonly logger = new Logger(MessageService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CryptoService) private readonly crypto: CryptoService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(MessageOutboxQueueService) private readonly outboxQueue: MessageOutboxQueueService,
   ) {}
 
   async sendMessage(args: SendMessageArgs): Promise<SendMessageResult> {
@@ -95,6 +99,15 @@ export class MessageService {
 
         return row;
       });
+
+      try {
+        await this.outboxQueue.enqueue(created.id);
+      } catch (err) {
+        this.logger.warn(
+          { messageId: created.id, err: err instanceof Error ? err.message : String(err) },
+          'sendMessage: outbox enqueue не удался (backstop-sweep догонит)',
+        );
+      }
 
       return { message: this.toDto(created), deduped: false };
     } catch (err) {

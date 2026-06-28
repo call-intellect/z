@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { MessagingModule } from '../messaging/messaging.module';
 
 import { ActivityDigestController } from './controllers/activity-digest.controller';
 import { AttachmentsController } from './controllers/attachments.controller';
@@ -98,7 +99,7 @@ import { RecurrenceMaterializeCron } from './workers/recurrence-materialize.cron
 import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, MessagingModule],
   controllers: [
     ProjectsController,
     BoardsController,
@@ -210,6 +211,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     ActivityRecorderService,
     TrackerEventsService,
     TrackerEmitterService,
+    TrackerGateway,
     MeetingExtractActionsService,
     IntakeService,
     CommentsService,

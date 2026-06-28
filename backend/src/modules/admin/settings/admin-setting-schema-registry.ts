@@ -339,6 +339,10 @@ const registry = new Map<string, ZodTypeAny>([
   ['router.llmFallbackEnabled', z.boolean()],
   ['router.fallbackCacheTtlSeconds', POSITIVE_INT],
 
+  ['chat_presence_ttl_seconds', POSITIVE_INT],
+  ['chat_outbox_sweep_stale_seconds', POSITIVE_INT],
+  ['chat_outbox_sweep_batch_limit', POSITIVE_INT],
+
   ['orchestrator.enabled', z.boolean()],
   ['orchestrator.maxSubagentsPerRun', POSITIVE_INT],
   ['orchestrator.runTimeoutMinutes', POSITIVE_INT],

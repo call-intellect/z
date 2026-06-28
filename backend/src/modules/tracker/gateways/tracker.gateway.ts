@@ -13,6 +13,7 @@ import type { Server, Socket } from 'socket.io';
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { JwtService } from '../../auth/services/jwt.service';
+import { PresenceService } from '../../messaging/services/presence.service';
 import { RbacService } from '../../rbac/rbac.service';
 
 interface SocketContext {
@@ -21,6 +22,7 @@ interface SocketContext {
   tenantId: string;
   displayName: string;
   presenceIssueIds: Set<string>;
+  presenceConversationIds: Set<string>;
 }
 
 @Injectable()
@@ -42,6 +44,7 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(PresenceService) private readonly presence: PresenceService,
   ) {}
 
   async handleConnection(client: Socket): Promise<void> {
@@ -52,6 +55,7 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
         return;
       }
       if (!ctx.presenceIssueIds) ctx.presenceIssueIds = new Set();
+      if (!ctx.presenceConversationIds) ctx.presenceConversationIds = new Set();
       this.socketContext.set(client.id, ctx);
       await client.join(this.tenantRoom(ctx.tenantId));
       this.logger.debug(
@@ -77,6 +81,9 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     if (ctx) {
       for (const issueId of ctx.presenceIssueIds) {
         this.broadcastPresenceLeave(client, issueId, ctx);
+      }
+      for (const conversationId of ctx.presenceConversationIds) {
+        void this.leaveConversationPresence(client, conversationId, ctx);
       }
     }
     this.socketContext.delete(client.id);
@@ -244,6 +251,80 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
     return { ok: true, onlineUsers: this.collectPresence(body.issueId) };
   }
 
+  @SubscribeMessage('conversation.join')
+  async onConversationJoin(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { conversationId: string },
+  ): Promise<{
+    ok: boolean;
+    error?: string;
+    onlineUsers?: Array<{ userId: string; displayName: string }>;
+  }> {
+    const ctx = this.socketContext.get(client.id);
+    if (!ctx) return { ok: false, error: 'not_authenticated' };
+    if (!body?.conversationId || typeof body.conversationId !== 'string') {
+      return { ok: false, error: 'invalid_conversation_id' };
+    }
+
+    const member = await this.prisma.conversationMember.findUnique({
+      where: {
+        conversationId_userId: { conversationId: body.conversationId, userId: ctx.userId },
+      },
+      select: { id: true },
+    });
+    if (!member) return { ok: false, error: 'not_member' };
+
+    const room = this.conversationRoom(body.conversationId);
+    const wasAlreadyIn = ctx.presenceConversationIds.has(body.conversationId);
+    await client.join(room);
+    ctx.presenceConversationIds.add(body.conversationId);
+    await this.presence.join({
+      conversationId: body.conversationId,
+      userId: ctx.userId,
+      displayName: ctx.displayName,
+    });
+
+    if (!wasAlreadyIn) {
+      client.to(room).emit('presence:user_joined', {
+        conversationId: body.conversationId,
+        userId: ctx.userId,
+        displayName: ctx.displayName,
+      });
+    }
+
+    const onlineUsers = await this.presence.collect(body.conversationId);
+    return { ok: true, onlineUsers };
+  }
+
+  @SubscribeMessage('conversation.leave')
+  async onConversationLeave(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { conversationId: string },
+  ): Promise<{ ok: boolean }> {
+    const ctx = this.socketContext.get(client.id);
+    if (!ctx || !body?.conversationId) return { ok: false };
+    if (!ctx.presenceConversationIds.has(body.conversationId)) return { ok: true };
+    await this.leaveConversationPresence(client, body.conversationId, ctx);
+    return { ok: true };
+  }
+
+  @SubscribeMessage('conversation.typing')
+  onConversationTyping(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { conversationId: string; isTyping: boolean },
+  ): { ok: boolean } {
+    const ctx = this.socketContext.get(client.id);
+    if (!ctx || !body?.conversationId) return { ok: false };
+    if (!ctx.presenceConversationIds.has(body.conversationId)) return { ok: false };
+    client.to(this.conversationRoom(body.conversationId)).emit('presence:user_typing', {
+      conversationId: body.conversationId,
+      userId: ctx.userId,
+      displayName: ctx.displayName,
+      isTyping: Boolean(body.isTyping),
+    });
+    return { ok: true };
+  }
+
   tenantRoom(tenantId: string): string {
     return `tenant:${tenantId}`;
   }
@@ -258,6 +339,32 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
   presenceRoom(issueId: string): string {
     return `presence:issue:${issueId}`;
+  }
+
+  conversationRoom(conversationId: string): string {
+    return `conversation:${conversationId}`;
+  }
+
+  private async leaveConversationPresence(
+    client: Socket,
+    conversationId: string,
+    ctx: SocketContext,
+  ): Promise<void> {
+    ctx.presenceConversationIds.delete(conversationId);
+    await client.leave(this.conversationRoom(conversationId));
+    try {
+      await this.presence.leave({ conversationId, userId: ctx.userId });
+    } catch (e) {
+      this.logger.debug(
+        { conversationId, err: e instanceof Error ? e.message : String(e) },
+        'tracker WS: presence leave (Redis) сбой',
+      );
+    }
+    client.to(this.conversationRoom(conversationId)).emit('presence:user_left', {
+      conversationId,
+      userId: ctx.userId,
+      displayName: ctx.displayName,
+    });
   }
 
   private collectPresence(issueId: string): Array<{ userId: string; displayName: string }> {
@@ -366,6 +473,7 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
       tenantId,
       displayName,
       presenceIssueIds: new Set<string>(),
+      presenceConversationIds: new Set<string>(),
     };
   }
 

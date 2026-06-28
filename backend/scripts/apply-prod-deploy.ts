@@ -128,6 +128,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-chat.ts',
+    hint: 'chat_presence_ttl_seconds + chat_outbox_sweep_{stale_seconds,batch_limit} — крутилки presence-TTL и backstop-sweep transactional outbox единого чата (unified-chat Ф1b)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-worker-knobs.ts',
     hint: 'knowledge.axisClassifyEnabled + roleProfiles.minBlocks + curation.consistencyChecker* + curation.completenessScannerEnabled + tracker.goalAlignmentLowEnabled + conversational.telegramDigestHourLocal + recording.trackWatchdog{Enabled,TimeoutMinutes} — крутилки воркеров (config-knobs-to-admin-settings)',
   },

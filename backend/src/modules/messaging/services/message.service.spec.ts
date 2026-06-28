@@ -5,8 +5,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TypedConfigService } from '../../../common/config/index';
 import type { CryptoService } from '../../../common/crypto/crypto.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { MessageOutboxQueueService } from '../queue/message-outbox.queue.service';
 
 import { MessageService } from './message.service';
+
+function makeOutboxQueue() {
+  return {
+    enqueue: vi.fn().mockResolvedValue(undefined),
+  } as unknown as MessageOutboxQueueService & { enqueue: ReturnType<typeof vi.fn> };
+}
 
 function makeRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -85,7 +92,7 @@ describe('MessageService.sendMessage', () => {
       message: { findUnique: vi.fn() },
       $transaction: vi.fn(),
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, crypto, makeCfg(false));
+    const service = new MessageService(prisma, crypto, makeCfg(false), makeOutboxQueue());
 
     await expect(
       service.sendMessage({
@@ -101,13 +108,14 @@ describe('MessageService.sendMessage', () => {
     expect(crypto.encrypt).not.toHaveBeenCalled();
   });
 
-  it('fast-path дедуп: findUnique нашёл → existing, deduped:true, транзакции нет', async () => {
+  it('fast-path дедуп: findUnique нашёл → existing, deduped:true, транзакции нет, enqueue НЕ вызван', async () => {
     const existing = makeRow({ content: 'gcm:v1:hello', seq: 7n });
     const prisma = {
       message: { findUnique: vi.fn().mockResolvedValue(existing) },
       $transaction: vi.fn(),
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, crypto, makeCfg());
+    const outbox = makeOutboxQueue();
+    const service = new MessageService(prisma, crypto, makeCfg(), outbox);
 
     const res = await service.sendMessage({
       tenantId: 'org-1',
@@ -121,6 +129,28 @@ describe('MessageService.sendMessage', () => {
     expect(res.message.seq).toBe('7');
     expect(res.message.content).toBe('hello');
     expect((prisma.$transaction as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('enqueue после commit: новое сообщение → outboxQueue.enqueue(messageId) ровно один раз', async () => {
+    const tx = makeTx(0n, (data) => makeRow({ id: 'msg-new', seq: 1n, content: (data as { content: string }).content }));
+    const prisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(tx)),
+    } as unknown as PrismaService;
+    const outbox = makeOutboxQueue();
+    const service = new MessageService(prisma, crypto, makeCfg(), outbox);
+
+    await service.sendMessage({
+      tenantId: 'org-1',
+      conversationId: 'conv-1',
+      authorUserId: 'user-1',
+      content: 'hi',
+      clientMessageId: 'cmid-1',
+    });
+
+    expect(outbox.enqueue).toHaveBeenCalledTimes(1);
+    expect(outbox.enqueue).toHaveBeenCalledWith('msg-new');
   });
 
   it('encryption at-rest: encrypt на content перед create, в data уходит шифр, в DTO — открытый текст', async () => {
@@ -133,7 +163,7 @@ describe('MessageService.sendMessage', () => {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(tx)),
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, crypto, makeCfg());
+    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue());
 
     const res = await service.sendMessage({
       tenantId: 'org-1',
@@ -166,6 +196,7 @@ describe('MessageService.sendMessage', () => {
       } as unknown as PrismaService,
       crypto,
       makeCfg(),
+      makeOutboxQueue(),
     );
 
     for (let i = 0; i < 100; i++) {
@@ -195,7 +226,7 @@ describe('MessageService.sendMessage', () => {
       message: { findUnique },
       $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(tx)),
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, crypto, makeCfg());
+    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue());
 
     const res = await service.sendMessage({
       tenantId: 'org-1',
@@ -223,7 +254,7 @@ describe('MessageService.sendMessage', () => {
         return cb(tx);
       }),
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, crypto, makeCfg());
+    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue());
 
     const base = {
       tenantId: 'org-1',
@@ -245,7 +276,7 @@ describe('MessageService.sendMessage', () => {
         cb(makeTx(41n, () => makeRow({ seq: 42n }))),
       ),
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, crypto, makeCfg());
+    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue());
 
     const res = await service.sendMessage({
       tenantId: 'org-1',
@@ -268,7 +299,7 @@ describe('MessageService.getMessages', () => {
     ];
     const findMany = vi.fn().mockResolvedValue(rows);
     const prisma = { message: { findMany } } as unknown as PrismaService;
-    const service = new MessageService(prisma, makeCrypto(), makeCfg());
+    const service = new MessageService(prisma, makeCrypto(), makeCfg(), makeOutboxQueue());
 
     const res = await service.getMessages({ conversationId: 'conv-1', sinceSeq: '4' });
 
@@ -284,7 +315,7 @@ describe('MessageService.getMessages', () => {
     const prisma = {
       message: { findMany: vi.fn().mockResolvedValue([]) },
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, makeCrypto(), makeCfg());
+    const service = new MessageService(prisma, makeCrypto(), makeCfg(), makeOutboxQueue());
 
     const res = await service.getMessages({ conversationId: 'conv-1' });
     expect(res.items).toEqual([]);

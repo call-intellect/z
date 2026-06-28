@@ -96,6 +96,14 @@ export class AccessLinkService {
     });
   }
 
+  async revokeLinksForConversation(conversationId: string): Promise<number> {
+    const result = await this.prisma.conversationAccessLink.updateMany({
+      where: { conversationId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return result.count;
+  }
+
   async claimLink(id: string, userId: string): Promise<void> {
     await this.prisma.conversationAccessLink.update({
       where: { id },

@@ -1,4 +1,12 @@
-import { BadRequestException, Body, Controller, Inject, Post, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Inject,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
@@ -47,5 +55,21 @@ export class ExternalConversationController {
       title: body.title ?? null,
       message: body.message ?? null,
     });
+  }
+
+  @Post('external-conversations/:id/block')
+  @ApiOperation({ summary: 'Сотрудник блокирует клиента (отзыв всех ссылок + снятие client-member)' })
+  async block(
+    @Param('id') conversationId: string,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true }> {
+    if (!tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: { code: 'tenant_required', message: 'Организация не определена' },
+      });
+    }
+    await this.external.blockConversation({ conversationId, tenantId });
+    return { ok: true };
   }
 }

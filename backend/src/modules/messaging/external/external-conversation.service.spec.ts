@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { RedisService } from '../../../common/redis/redis.service';
 import type { MailService } from '../../mail/mail.service';
+import type { ConversationService } from '../services/conversation.service';
 import type { MessageService } from '../services/message.service';
 
 import type { AccessLinkService } from './access-link.service';
@@ -31,7 +33,18 @@ function build(opts: { enabled: boolean }) {
   const sendPlain = vi.fn().mockResolvedValue({ ok: true });
   const mail = { sendPlain } as unknown as MailService;
 
-  const service = new ExternalConversationService(prisma, cfg, messages, accessLinks, mail);
+  const redis = { client: {} } as unknown as RedisService;
+  const conversations = {} as unknown as ConversationService;
+
+  const service = new ExternalConversationService(
+    prisma,
+    cfg,
+    messages,
+    accessLinks,
+    mail,
+    redis,
+    conversations,
+  );
   return { service, conversationCreate, appendTicketMessage, createLink, sendPlain };
 }
 

@@ -103,6 +103,9 @@ export const StuckIssueRowSchema = z.object({
   projectId: z.string(),
   projectName: z.string(),
   daysStuck: z.number(),
+  assigneeUserId: z.string().nullable(),
+  assigneeName: z.string().nullable(),
+  dueDate: z.string().nullable(),
 });
 export type StuckIssueRow = z.infer<typeof StuckIssueRowSchema>;
 

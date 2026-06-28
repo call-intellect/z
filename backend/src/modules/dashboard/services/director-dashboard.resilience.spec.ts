@@ -25,6 +25,7 @@ function buildService(opts: { sentimentThrows?: boolean } = {}): DirectorDashboa
     meeting: { count: vi.fn(async () => 0) },
     issue: { count: vi.fn(async () => 0) },
     decision: { count: vi.fn(async () => 0) },
+    idea: { count: vi.fn(async () => 0) },
     $queryRaw: vi.fn(async () => []),
   } as unknown as PrismaService;
 

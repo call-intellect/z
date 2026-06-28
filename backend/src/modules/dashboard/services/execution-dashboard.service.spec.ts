@@ -238,6 +238,7 @@ describe('ExecutionDashboardService.getStuckCrossProject (D2)', () => {
     const freshActivity = new Date(now.getTime() - 1 * day);
     const oldCreated = new Date(now.getTime() - 20 * day);
 
+    const dueDate = new Date(now.getTime() + 3 * day);
     const prisma = {
       issue: {
         findMany: vi.fn().mockResolvedValue([
@@ -246,24 +247,30 @@ describe('ExecutionDashboardService.getStuckCrossProject (D2)', () => {
             identifier: 'PROJ-1',
             title: 'Зависшая',
             createdAt: new Date(now.getTime() - 30 * day),
+            dueDate: null,
             projectId: 'p1',
             project: { name: 'Проект А' },
+            assignees: [],
           },
           {
             id: 'i-fresh',
             identifier: 'PROJ-2',
             title: 'Свежая',
             createdAt: new Date(now.getTime() - 30 * day),
+            dueDate: null,
             projectId: 'p1',
             project: { name: 'Проект А' },
+            assignees: [],
           },
           {
             id: 'i-noactivity',
             identifier: 'PROJ-3',
             title: 'Без активности',
             createdAt: oldCreated,
+            dueDate,
             projectId: 'p2',
             project: { name: 'Проект Б' },
+            assignees: [{ userId: 'u1', assignedAt: oldCreated }],
           },
         ]),
       },
@@ -272,6 +279,9 @@ describe('ExecutionDashboardService.getStuckCrossProject (D2)', () => {
           { issueId: 'i-stale', _max: { createdAt: oldActivity } },
           { issueId: 'i-fresh', _max: { createdAt: freshActivity } },
         ]),
+      },
+      person: {
+        findMany: vi.fn().mockResolvedValue([{ userId: 'u1', name: 'Иван' }]),
       },
     };
 
@@ -286,7 +296,13 @@ describe('ExecutionDashboardService.getStuckCrossProject (D2)', () => {
 
     const noActivity = res.items.find((i) => i.issueId === 'i-noactivity');
     expect(noActivity).toEqual(
-      expect.objectContaining({ projectName: 'Проект Б', daysStuck: 20 }),
+      expect.objectContaining({
+        projectName: 'Проект Б',
+        daysStuck: 20,
+        assigneeUserId: 'u1',
+        assigneeName: 'Иван',
+        dueDate: dueDate.toISOString(),
+      }),
     );
     expect(res.items[0]!.daysStuck).toBeGreaterThanOrEqual(res.items[res.items.length - 1]!.daysStuck);
   });

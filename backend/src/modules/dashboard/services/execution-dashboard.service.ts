@@ -417,8 +417,14 @@ export class ExecutionDashboardService {
         identifier: true,
         title: true,
         createdAt: true,
+        dueDate: true,
         projectId: true,
         project: { select: { name: true } },
+        assignees: {
+          select: { userId: true, assignedAt: true },
+          orderBy: { assignedAt: 'asc' },
+          take: 1,
+        },
       },
       take: 500,
     });
@@ -437,11 +443,30 @@ export class ExecutionDashboardService {
       if (row._max.createdAt) lastMovementByIssue.set(row.issueId, row._max.createdAt);
     }
 
+    const assigneeUserIds = Array.from(
+      new Set(
+        issues
+          .map((i) => i.assignees[0]?.userId)
+          .filter((id): id is string => typeof id === 'string'),
+      ),
+    );
+    const nameByUserId = new Map<string, string>();
+    if (assigneeUserIds.length > 0) {
+      const persons = await this.prisma.person.findMany({
+        where: { tenantId, userId: { in: assigneeUserIds }, deletedAt: null },
+        select: { name: true, userId: true },
+      });
+      for (const p of persons) {
+        if (p.userId) nameByUserId.set(p.userId, p.name);
+      }
+    }
+
     const day = 86_400_000;
     const items: StuckIssueRow[] = [];
     for (const issue of issues) {
       const lastMovement = lastMovementByIssue.get(issue.id) ?? issue.createdAt;
       if (lastMovement.getTime() >= cutoff.getTime()) continue;
+      const assigneeUserId = issue.assignees[0]?.userId ?? null;
       items.push({
         issueId: issue.id,
         identifier: issue.identifier,
@@ -449,6 +474,9 @@ export class ExecutionDashboardService {
         projectId: issue.projectId,
         projectName: issue.project?.name ?? 'Без проекта',
         daysStuck: Math.floor((now.getTime() - lastMovement.getTime()) / day),
+        assigneeUserId,
+        assigneeName: assigneeUserId ? (nameByUserId.get(assigneeUserId) ?? null) : null,
+        dueDate: issue.dueDate ? issue.dueDate.toISOString() : null,
       });
     }
 

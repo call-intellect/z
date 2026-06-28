@@ -1,4 +1,4 @@
-import { ServiceUnavailableException } from '@nestjs/common';
+import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -373,5 +373,171 @@ describe('MessageService.getMessages', () => {
     const res = await service.getMessages({ conversationId: 'conv-1' });
     expect(res.items).toEqual([]);
     expect(res.nextSeq).toBeNull();
+  });
+});
+
+describe('MessageService.insertHistorical', () => {
+  let crypto: ReturnType<typeof makeCrypto>;
+
+  beforeEach(() => {
+    crypto = makeCrypto();
+  });
+
+  it('seq назначается, content зашифрован, outbox НЕ создаётся, custom createdAt сохранён', async () => {
+    let captured: Record<string, unknown> | undefined;
+    const createdAt = new Date('2025-01-02T03:04:05.000Z');
+    const tx = makeTx(4n, (data) => {
+      captured = data as Record<string, unknown>;
+      return makeRow({
+        id: 'msg-hist',
+        seq: 5n,
+        content: (data as { content: string }).content,
+        createdAt,
+      });
+    });
+    const outbox = makeOutboxQueue();
+    const prisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(tx)),
+    } as unknown as PrismaService;
+    const service = new MessageService(prisma, crypto, makeCfg(), outbox);
+
+    const res = await service.insertHistorical({
+      tenantId: 'org-1',
+      conversationId: 'conv-1',
+      authorUserId: 'user-1',
+      content: 'historic',
+      createdAt,
+      clientMessageId: 'ic:comment-1',
+    });
+
+    expect(res.deduped).toBe(false);
+    expect(res.messageId).toBe('msg-hist');
+    expect(crypto.encrypt).toHaveBeenCalledWith('historic');
+    expect(captured!.content).toBe('gcm:v1:historic');
+    expect(captured!.seq).toBe(5n);
+    expect(captured!.createdAt).toBe(createdAt);
+    expect(tx.messageOutbox.create).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('dedup по clientMessageId: повтор → deduped:true, без новой строки', async () => {
+    const existing = makeRow({ id: 'msg-existing' });
+    const tx = makeTx(0n, () => makeRow());
+    const prisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(existing) },
+      $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(tx)),
+    } as unknown as PrismaService;
+    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue());
+
+    const res = await service.insertHistorical({
+      tenantId: 'org-1',
+      conversationId: 'conv-1',
+      authorUserId: 'user-1',
+      content: 'historic',
+      createdAt: new Date('2025-01-01T00:00:00.000Z'),
+      clientMessageId: 'ic:comment-1',
+    });
+
+    expect(res.deduped).toBe(true);
+    expect(res.messageId).toBe('msg-existing');
+    expect((prisma.$transaction as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+
+  it('P2002-гонка: create бросает P2002 → re-query existing, deduped:true', async () => {
+    const existing = makeRow({ id: 'msg-raced' });
+    const tx = makeTx(0n, () => {
+      throw makeP2002();
+    });
+    const findUnique = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(existing);
+    const prisma = {
+      message: { findUnique },
+      $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(tx)),
+    } as unknown as PrismaService;
+    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue());
+
+    const res = await service.insertHistorical({
+      tenantId: 'org-1',
+      conversationId: 'conv-1',
+      authorUserId: 'user-1',
+      content: 'historic',
+      createdAt: new Date('2025-01-01T00:00:00.000Z'),
+      clientMessageId: 'ic:comment-1',
+    });
+
+    expect(res.deduped).toBe(true);
+    expect(res.messageId).toBe('msg-raced');
+    expect(findUnique).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('MessageService.editMessage', () => {
+  it('чужой автор → ForbiddenException, update НЕ вызван', async () => {
+    const update = vi.fn();
+    const prisma = {
+      message: {
+        findUnique: vi.fn().mockResolvedValue({ authorUserId: 'other' }),
+        update,
+      },
+    } as unknown as PrismaService;
+    const service = new MessageService(prisma, makeCrypto(), makeCfg(), makeOutboxQueue());
+
+    await expect(
+      service.editMessage({ messageId: 'm1', userId: 'user-1', content: 'new' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('свой автор → content re-encrypt, editedAt выставлен', async () => {
+    const crypto = makeCrypto();
+    const update = vi.fn().mockResolvedValue({});
+    const prisma = {
+      message: {
+        findUnique: vi.fn().mockResolvedValue({ authorUserId: 'user-1' }),
+        update,
+      },
+    } as unknown as PrismaService;
+    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue());
+
+    await service.editMessage({ messageId: 'm1', userId: 'user-1', content: 'edited' });
+
+    expect(crypto.encrypt).toHaveBeenCalledWith('edited');
+    const data = update.mock.calls[0]![0].data;
+    expect(data.content).toBe('gcm:v1:edited');
+    expect(data.editedAt).toBeInstanceOf(Date);
+  });
+});
+
+describe('MessageService.softDeleteMessage', () => {
+  it('чужой автор → ForbiddenException', async () => {
+    const update = vi.fn();
+    const prisma = {
+      message: {
+        findUnique: vi.fn().mockResolvedValue({ authorUserId: 'other' }),
+        update,
+      },
+    } as unknown as PrismaService;
+    const service = new MessageService(prisma, makeCrypto(), makeCfg(), makeOutboxQueue());
+
+    await expect(
+      service.softDeleteMessage({ messageId: 'm1', userId: 'user-1' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('свой автор → deletedAt выставлен', async () => {
+    const update = vi.fn().mockResolvedValue({});
+    const prisma = {
+      message: {
+        findUnique: vi.fn().mockResolvedValue({ authorUserId: 'user-1' }),
+        update,
+      },
+    } as unknown as PrismaService;
+    const service = new MessageService(prisma, makeCrypto(), makeCfg(), makeOutboxQueue());
+
+    await service.softDeleteMessage({ messageId: 'm1', userId: 'user-1' });
+
+    const data = update.mock.calls[0]![0].data;
+    expect(data.deletedAt).toBeInstanceOf(Date);
   });
 });

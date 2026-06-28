@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -27,6 +28,69 @@ interface SendMessageArgs {
   voice?: { url?: string | null; duration?: number | null; transcript?: string | null } | null;
   attachments?: unknown;
   mentions?: string[];
+}
+
+interface InsertHistoricalArgs {
+  tenantId: string;
+  conversationId: string;
+  authorUserId: string;
+  content: string;
+  contentHtml?: string | null;
+  contentStripped?: string | null;
+  access?: MessageAccess | string;
+  authorType?: string;
+  parentMessageId?: string | null;
+  voice?: { url?: string | null; duration?: number | null; transcript?: string | null } | null;
+  attachments?: unknown;
+  mentions?: string[];
+  thanksUserIds?: string[];
+  draftState?: string | null;
+  cloneConfidence?: number | string | null;
+  groundednessScore?: number | string | null;
+  createdAt: Date;
+  editedAt?: Date | null;
+  deletedAt?: Date | null;
+  clientMessageId: string;
+}
+
+interface InsertMessageRowArgs {
+  tenantId: string;
+  conversationId: string;
+  authorUserId: string;
+  content: string;
+  contentHtml?: string | null;
+  contentStripped?: string | null;
+  access?: MessageAccess | string;
+  authorType?: string;
+  parentMessageId?: string | null;
+  voice?: { url?: string | null; duration?: number | null; transcript?: string | null } | null;
+  attachments?: unknown;
+  mentions?: string[];
+  thanksUserIds?: string[];
+  draftState?: string | null;
+  cloneConfidence?: number | string | null;
+  groundednessScore?: number | string | null;
+  clientMessageId: string;
+  createdAt?: Date;
+  editedAt?: Date | null;
+  deletedAt?: Date | null;
+}
+
+interface EditMessageArgs {
+  messageId: string;
+  userId: string;
+  content: string;
+  contentHtml?: string | null;
+}
+
+interface SoftDeleteMessageArgs {
+  messageId: string;
+  userId: string;
+}
+
+interface InsertHistoricalResult {
+  messageId: string;
+  deduped: boolean;
 }
 
 interface GetMessagesArgs {
@@ -74,40 +138,22 @@ export class MessageService {
       return { message: this.toDto(existing), deduped: true };
     }
 
-    const encrypted = this.crypto.encrypt(content);
-
     try {
       const created = await this.prisma.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT id FROM "Conversation" WHERE id = ${conversationId} FOR UPDATE`;
-
-        const agg = await tx.message.aggregate({
-          where: { conversationId },
-          _max: { seq: true },
-        });
-        const nextSeq = (agg._max.seq ?? 0n) + 1n;
-
-        const row = await tx.message.create({
-          data: {
-            tenantId,
-            conversationId,
-            seq: nextSeq,
-            authorUserId,
-            authorType: args.authorType ?? 'human',
-            access: args.access ?? 'normal',
-            content: encrypted,
-            contentHtml: args.contentHtml ?? null,
-            contentStripped: args.contentStripped ?? null,
-            clientMessageId,
-            parentMessageId: args.parentMessageId ?? null,
-            voiceUrl: args.voice?.url ?? null,
-            voiceDuration: args.voice?.duration ?? null,
-            voiceTranscript: args.voice?.transcript ?? null,
-            attachments:
-              args.attachments == null
-                ? Prisma.JsonNull
-                : (args.attachments as Prisma.InputJsonValue),
-            mentions: args.mentions ?? [],
-          },
+        const row = await this.insertMessageRow(tx, {
+          tenantId,
+          conversationId,
+          authorUserId,
+          content,
+          contentHtml: args.contentHtml ?? null,
+          contentStripped: args.contentStripped ?? null,
+          access: args.access,
+          authorType: args.authorType,
+          parentMessageId: args.parentMessageId ?? null,
+          voice: args.voice ?? null,
+          attachments: args.attachments,
+          mentions: args.mentions ?? [],
+          clientMessageId,
         });
 
         await tx.messageOutbox.create({ data: { messageId: row.id } });
@@ -140,6 +186,153 @@ export class MessageService {
       }
       throw err;
     }
+  }
+
+  private async insertMessageRow(
+    tx: Prisma.TransactionClient,
+    args: InsertMessageRowArgs,
+  ): Promise<MessageRow> {
+    await tx.$queryRaw`SELECT id FROM "Conversation" WHERE id = ${args.conversationId} FOR UPDATE`;
+
+    const agg = await tx.message.aggregate({
+      where: { conversationId: args.conversationId },
+      _max: { seq: true },
+    });
+    const nextSeq = (agg._max.seq ?? 0n) + 1n;
+
+    const encrypted = this.crypto.encrypt(args.content);
+
+    return tx.message.create({
+      data: {
+        tenantId: args.tenantId,
+        conversationId: args.conversationId,
+        seq: nextSeq,
+        authorUserId: args.authorUserId,
+        authorType: args.authorType ?? 'human',
+        access: args.access ?? 'normal',
+        content: encrypted,
+        contentHtml: args.contentHtml ?? null,
+        contentStripped: args.contentStripped ?? null,
+        clientMessageId: args.clientMessageId,
+        parentMessageId: args.parentMessageId ?? null,
+        voiceUrl: args.voice?.url ?? null,
+        voiceDuration: args.voice?.duration ?? null,
+        voiceTranscript: args.voice?.transcript ?? null,
+        attachments:
+          args.attachments == null
+            ? Prisma.JsonNull
+            : (args.attachments as Prisma.InputJsonValue),
+        mentions: args.mentions ?? [],
+        thanksUserIds: args.thanksUserIds ?? [],
+        draftState: args.draftState ?? null,
+        cloneConfidence: args.cloneConfidence ?? null,
+        groundednessScore: args.groundednessScore ?? null,
+        ...(args.createdAt ? { createdAt: args.createdAt } : {}),
+        ...(args.editedAt !== undefined ? { editedAt: args.editedAt } : {}),
+        ...(args.deletedAt !== undefined ? { deletedAt: args.deletedAt } : {}),
+      },
+    });
+  }
+
+  async insertHistorical(args: InsertHistoricalArgs): Promise<InsertHistoricalResult> {
+    const existing = await this.prisma.message.findUnique({
+      where: {
+        conversationId_clientMessageId: {
+          conversationId: args.conversationId,
+          clientMessageId: args.clientMessageId,
+        },
+      },
+    });
+    if (existing) {
+      return { messageId: existing.id, deduped: true };
+    }
+
+    try {
+      const created = await this.prisma.$transaction((tx) =>
+        this.insertMessageRow(tx, {
+          tenantId: args.tenantId,
+          conversationId: args.conversationId,
+          authorUserId: args.authorUserId,
+          content: args.content,
+          contentHtml: args.contentHtml ?? null,
+          contentStripped: args.contentStripped ?? null,
+          access: args.access,
+          authorType: args.authorType,
+          parentMessageId: args.parentMessageId ?? null,
+          voice: args.voice ?? null,
+          attachments: args.attachments,
+          mentions: args.mentions ?? [],
+          thanksUserIds: args.thanksUserIds ?? [],
+          draftState: args.draftState ?? null,
+          cloneConfidence: args.cloneConfidence ?? null,
+          groundednessScore: args.groundednessScore ?? null,
+          clientMessageId: args.clientMessageId,
+          createdAt: args.createdAt,
+          editedAt: args.editedAt ?? null,
+          deletedAt: args.deletedAt ?? null,
+        }),
+      );
+      return { messageId: created.id, deduped: false };
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const raced = await this.prisma.message.findUnique({
+          where: {
+            conversationId_clientMessageId: {
+              conversationId: args.conversationId,
+              clientMessageId: args.clientMessageId,
+            },
+          },
+        });
+        if (raced) {
+          return { messageId: raced.id, deduped: true };
+        }
+      }
+      throw err;
+    }
+  }
+
+  async editMessage(args: EditMessageArgs): Promise<void> {
+    const row = await this.prisma.message.findUnique({
+      where: { id: args.messageId },
+      select: { authorUserId: true },
+    });
+    if (!row) {
+      throw new NotFoundException({ code: 'MESSAGE_NOT_FOUND', message: 'Сообщение не найдено' });
+    }
+    if (row.authorUserId !== args.userId) {
+      throw new ForbiddenException({
+        code: 'MESSAGE_NOT_AUTHOR',
+        message: 'Редактировать может только автор',
+      });
+    }
+    await this.prisma.message.update({
+      where: { id: args.messageId },
+      data: {
+        content: this.crypto.encrypt(args.content),
+        contentHtml: args.contentHtml ?? null,
+        editedAt: new Date(),
+      },
+    });
+  }
+
+  async softDeleteMessage(args: SoftDeleteMessageArgs): Promise<void> {
+    const row = await this.prisma.message.findUnique({
+      where: { id: args.messageId },
+      select: { authorUserId: true },
+    });
+    if (!row) {
+      throw new NotFoundException({ code: 'MESSAGE_NOT_FOUND', message: 'Сообщение не найдено' });
+    }
+    if (row.authorUserId !== args.userId) {
+      throw new ForbiddenException({
+        code: 'MESSAGE_NOT_AUTHOR',
+        message: 'Удалить может только автор',
+      });
+    }
+    await this.prisma.message.update({
+      where: { id: args.messageId },
+      data: { deletedAt: new Date() },
+    });
   }
 
   async getMessages(args: GetMessagesArgs): Promise<GetMessagesResult> {

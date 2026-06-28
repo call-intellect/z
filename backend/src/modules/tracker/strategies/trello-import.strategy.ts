@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { nanoid } from 'nanoid';
@@ -148,6 +150,7 @@ export class TrelloImportStrategy implements ImportStrategy {
             for (const action of cardActions) {
               try {
                 await this.createCommentFromAction({
+                  tenantId,
                   issueId: created.id,
                   action,
                   memberByTrelloId,
@@ -487,27 +490,32 @@ export class TrelloImportStrategy implements ImportStrategy {
   }
 
   private async createCommentFromAction(args: {
+    tenantId: string;
     issueId: string;
     action: TrelloAction;
     memberByTrelloId: Map<string, string | null>;
     defaultUserId: string;
     services: ImportStrategyArgs['services'];
   }): Promise<void> {
-    const { issueId, action, memberByTrelloId, defaultUserId, services } = args;
+    const { tenantId, issueId, action, memberByTrelloId, defaultUserId, services } = args;
     const text = action.data?.text ?? '';
     if (!text.trim()) return;
     const authorId =
       (action.idMemberCreator && memberByTrelloId.get(action.idMemberCreator)) || defaultUserId;
-    await services.prisma.issueComment.create({
-      data: {
-        issueId,
-        authorId,
-        content: text.slice(0, 50_000),
-        contentHtml: null,
-        contentStripped: text.slice(0, 50_000),
-        access: 'internal',
-        createdAt: action.date ? (safeParseDate(action.date) ?? new Date()) : new Date(),
-      },
+    const body = text.slice(0, 50_000);
+    const { conversationId } = await services.workChat.ensureWorkChat(issueId);
+    const clientMessageId = action.id ? `import:trello:${action.id}` : `import:trello:${issueId}:${createHash('sha1').update(`${authorId}|${action.date ?? ''}|${body}`).digest('hex')}`;
+    await services.messageService.insertHistorical({
+      tenantId,
+      conversationId,
+      authorUserId: authorId,
+      content: body,
+      contentHtml: null,
+      contentStripped: body,
+      access: 'internal',
+      authorType: 'human',
+      createdAt: action.date ? (safeParseDate(action.date) ?? new Date()) : new Date(),
+      clientMessageId,
     });
   }
 

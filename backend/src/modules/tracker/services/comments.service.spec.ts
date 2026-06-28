@@ -1,10 +1,13 @@
+import { ForbiddenException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CryptoService } from '../../../common/crypto/crypto.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { ConversationalService } from '../../conversational/conversational.service';
+import type { MessageService } from '../../messaging/services/message.service';
 import type { WorkChatService } from '../../messaging/services/work-chat.service';
 import type { CreateCommentDto } from '../dto/comments/create-comment.dto';
+import type { UpdateCommentDto } from '../dto/comments/update-comment.dto';
 
 import type { ActivityRecorderService } from './activity-recorder.service';
 import { CommentsService } from './comments.service';
@@ -82,6 +85,10 @@ function makeService(opts: { users: UserRow[] }): {
     seq: '1',
   }));
   const workChat = { appendMessage } as unknown as WorkChatService;
+  const messages = {
+    editMessage: vi.fn(async () => undefined),
+    softDeleteMessage: vi.fn(async () => undefined),
+  } as unknown as MessageService;
   const crypto = {
     encrypt: vi.fn((s: string) => `gcm:v1:${s}`),
     decrypt: vi.fn((s: string) => s.replace(/^gcm:v1:/, '')),
@@ -99,6 +106,7 @@ function makeService(opts: { users: UserRow[] }): {
     webhooks,
     emitter,
     workChat,
+    messages,
     crypto,
     conversational,
   );
@@ -288,6 +296,10 @@ describe('CommentsService.findByIssue: мерж Message + legacy IssueComment', 
       { dispatch: vi.fn() } as unknown as WebhookDispatcher,
       { emitCommentCreated: vi.fn(), emitMentionCreated: vi.fn() } as unknown as TrackerEmitterService,
       { appendMessage: vi.fn() } as unknown as WorkChatService,
+      {
+        editMessage: vi.fn(),
+        softDeleteMessage: vi.fn(),
+      } as unknown as MessageService,
       crypto,
       null,
     );
@@ -340,5 +352,170 @@ describe('CommentsService.findByIssue: мерж Message + legacy IssueComment', 
     const res = await svc.findByIssue('i1', 'tenant-1');
     expect(res.map((r) => r.id)).toEqual(['legacy-1']);
     expect(messageFindMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('CommentsService: update/softDelete redirect (message-backed vs legacy)', () => {
+  function makeMessageRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'msg-1',
+      tenantId: 'tenant-1',
+      conversationId: 'conv-1',
+      seq: 1n,
+      authorUserId: 'author-1',
+      authorType: 'human',
+      access: 'normal',
+      content: 'gcm:v1:текст',
+      contentHtml: null,
+      contentStripped: null,
+      parentMessageId: null,
+      clientMessageId: 'ic:c1',
+      voiceUrl: null,
+      voiceDuration: null,
+      voiceTranscript: null,
+      attachments: null,
+      mentions: [],
+      reactions: null,
+      thanksUserIds: [],
+      draftState: null,
+      cloneConfidence: null,
+      groundednessScore: null,
+      editedAt: null,
+      deletedAt: null,
+      createdAt: new Date('2026-06-28T00:00:00Z'),
+      ...overrides,
+    };
+  }
+
+  function makeService(args: {
+    messageRow: Record<string, unknown> | null;
+    legacyComment?: Record<string, unknown> | null;
+  }) {
+    const messageFindUnique = vi.fn(async () => args.messageRow);
+    const messageUpdate = vi.fn(async (_args: { where: unknown; data: { deletedAt?: Date } }) => ({}));
+    const issueCommentFindUnique = vi.fn(async () => args.legacyComment ?? null);
+    const issueCommentUpdate = vi.fn(async (_args: unknown) => ({}));
+    const getLinkedIssue = vi.fn(async () => ({ id: 'iss-1', identifier: 'T-1', title: 'Task' }));
+    const editMessage = vi.fn(async () => undefined);
+    const softDeleteMessage = vi.fn(async () => undefined);
+
+    const prisma = {
+      message: { findUnique: messageFindUnique, update: messageUpdate },
+      issueComment: {
+        findUnique: issueCommentFindUnique,
+        update: issueCommentUpdate,
+        findMany: vi.fn(async () => []),
+      },
+    } as unknown as PrismaService;
+    const crypto = {
+      decrypt: vi.fn((s: string) => s.replace(/^gcm:v1:/, '')),
+    } as unknown as CryptoService;
+    const messages = { editMessage, softDeleteMessage } as unknown as MessageService;
+    const workChat = { getLinkedIssue, appendMessage: vi.fn() } as unknown as WorkChatService;
+
+    const svc = new CommentsService(
+      prisma,
+      { record: vi.fn() } as unknown as ActivityRecorderService,
+      { requireIssue: vi.fn() } as unknown as IssuesService,
+      {
+        publishCommentUpdated: vi.fn(),
+        publishCommentDeleted: vi.fn(),
+      } as unknown as TrackerEventsService,
+      { dispatch: vi.fn(async () => {}) } as unknown as WebhookDispatcher,
+      { emitCommentCreated: vi.fn(), emitMentionCreated: vi.fn() } as unknown as TrackerEmitterService,
+      workChat,
+      messages,
+      crypto,
+      null,
+    );
+    return {
+      svc,
+      editMessage,
+      softDeleteMessage,
+      messageUpdate,
+      issueCommentUpdate,
+    };
+  }
+
+  const updateDto = {
+    content: 'обновлено',
+    contentHtml: null,
+    contentStripped: 'обновлено',
+  } as unknown as UpdateCommentDto;
+
+  it('update: message-backed → MessageService.editMessage, issueComment.update НЕ вызван', async () => {
+    const { svc, editMessage, issueCommentUpdate } = makeService({
+      messageRow: makeMessageRow(),
+    });
+    await svc.update('msg-1', updateDto, 'tenant-1', 'author-1');
+    expect(editMessage).toHaveBeenCalledWith({
+      messageId: 'msg-1',
+      userId: 'author-1',
+      content: 'обновлено',
+      contentHtml: null,
+    });
+    expect(issueCommentUpdate).not.toHaveBeenCalled();
+  });
+
+  it('update: legacy (нет Message) → issueComment.update, editMessage НЕ вызван', async () => {
+    const { svc, editMessage, issueCommentUpdate } = makeService({
+      messageRow: null,
+      legacyComment: {
+        id: 'c1',
+        issueId: 'iss-1',
+        authorId: 'author-1',
+        parentCommentId: null,
+        content: 'старый',
+        contentHtml: null,
+        contentStripped: 'старый',
+        access: 'internal',
+        voiceUrl: null,
+        voiceDuration: null,
+        voiceTranscript: null,
+        createdAt: new Date('2026-06-28T00:00:00Z'),
+        editedAt: null,
+        deletedAt: null,
+        mentions: [],
+        issue: { tenantId: 'tenant-1' },
+      },
+    });
+    await svc.update('c1', updateDto, 'tenant-1', 'author-1');
+    expect(issueCommentUpdate).toHaveBeenCalled();
+    expect(editMessage).not.toHaveBeenCalled();
+  });
+
+  it('softDelete: message-backed → message.update (deletedAt), softDeleteMessage не нужен (admin/author)', async () => {
+    const { svc, messageUpdate, issueCommentUpdate } = makeService({
+      messageRow: makeMessageRow(),
+    });
+    await svc.softDelete('msg-1', 'tenant-1', 'author-1', false);
+    expect(messageUpdate.mock.calls[0]![0].data.deletedAt).toBeInstanceOf(Date);
+    expect(issueCommentUpdate).not.toHaveBeenCalled();
+  });
+
+  it('softDelete: message-backed чужим не-админом → Forbidden, message.update НЕ вызван', async () => {
+    const { svc, messageUpdate } = makeService({
+      messageRow: makeMessageRow({ authorUserId: 'other' }),
+    });
+    await expect(svc.softDelete('msg-1', 'tenant-1', 'author-1', false)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(messageUpdate).not.toHaveBeenCalled();
+  });
+
+  it('softDelete: legacy → issueComment.update, message.update НЕ вызван', async () => {
+    const { svc, messageUpdate, issueCommentUpdate } = makeService({
+      messageRow: null,
+      legacyComment: {
+        id: 'c1',
+        issueId: 'iss-1',
+        authorId: 'author-1',
+        deletedAt: null,
+        issue: { tenantId: 'tenant-1' },
+      },
+    });
+    await svc.softDelete('c1', 'tenant-1', 'author-1', false);
+    expect(issueCommentUpdate).toHaveBeenCalled();
+    expect(messageUpdate).not.toHaveBeenCalled();
   });
 });

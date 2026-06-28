@@ -11,6 +11,7 @@ import { type IssueComment, type Message } from '@prisma/client';
 import { CryptoService } from '../../../common/crypto/crypto.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
+import { MessageService } from '../../messaging/services/message.service';
 import { WorkChatService } from '../../messaging/services/work-chat.service';
 import type { CreateCommentDto } from '../dto/comments/create-comment.dto';
 import type { UpdateCommentDto } from '../dto/comments/update-comment.dto';
@@ -58,6 +59,8 @@ export class CommentsService {
     private readonly emitter: TrackerEmitterService,
     @Inject(WorkChatService)
     private readonly workChat: WorkChatService,
+    @Inject(MessageService)
+    private readonly messages: MessageService,
     @Inject(CryptoService)
     private readonly crypto: CryptoService,
     @Optional()
@@ -194,6 +197,25 @@ export class CommentsService {
     tenantId: string,
     userId: string,
   ): Promise<CommentResponseDto> {
+    const message = await this.requireMessageComment(commentId, tenantId);
+    if (message) {
+      await this.messages.editMessage({
+        messageId: commentId,
+        userId,
+        content: dto.content,
+        contentHtml: dto.contentHtml ?? null,
+      });
+      const response = await this.assembleFromMessage(commentId, message.issueId);
+      this.events.publishCommentUpdated(response, tenantId);
+      void this.webhooks.dispatch(tenantId, 'comment.updated', { comment: response }).catch((e) => {
+        this.logger.warn(
+          { commentId, err: e instanceof Error ? e.message : String(e) },
+          'comment.updated webhook dispatch failed',
+        );
+      });
+      return response;
+    }
+
     const existing = await this.requireComment(commentId, tenantId);
     if (existing.authorId !== userId) {
       throw new ForbiddenException({
@@ -230,6 +252,36 @@ export class CommentsService {
     userId: string,
     isAdmin: boolean,
   ): Promise<{ ok: true }> {
+    const message = await this.requireMessageComment(commentId, tenantId);
+    if (message) {
+      if (message.authorUserId !== userId && !isAdmin) {
+        throw new ForbiddenException({
+          ok: false,
+          error: {
+            code: 'comment_not_author',
+            message: 'Удалить комментарий может только автор или администратор',
+          },
+        });
+      }
+      await this.prisma.message.update({
+        where: { id: commentId },
+        data: { deletedAt: new Date() },
+      });
+      this.events.publishCommentDeleted(commentId, tenantId, message.issueId);
+      void this.webhooks
+        .dispatch(tenantId, 'comment.deleted', {
+          commentId,
+          issueId: message.issueId,
+        })
+        .catch((e) => {
+          this.logger.warn(
+            { commentId, err: e instanceof Error ? e.message : String(e) },
+            'comment.deleted webhook dispatch failed',
+          );
+        });
+      return { ok: true };
+    }
+
     const existing = await this.requireComment(commentId, tenantId);
     if (existing.authorId !== userId && !isAdmin) {
       throw new ForbiddenException({
@@ -281,6 +333,37 @@ export class CommentsService {
     return [...legacy, ...fromMessages].sort(
       (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
     );
+  }
+
+  private async requireMessageComment(
+    commentId: string,
+    tenantId: string,
+  ): Promise<{ message: Message; authorUserId: string; issueId: string } | null> {
+    const message = await this.prisma.message.findUnique({
+      where: { id: commentId },
+    });
+    if (!message || message.tenantId !== tenantId || message.deletedAt !== null) {
+      return null;
+    }
+    const issue = await this.workChat.getLinkedIssue(message.conversationId);
+    if (!issue) {
+      return null;
+    }
+    return { message, authorUserId: message.authorUserId, issueId: issue.id };
+  }
+
+  private async assembleFromMessage(
+    messageId: string,
+    issueId: string,
+  ): Promise<CommentResponseDto> {
+    const m = await this.prisma.message.findUnique({ where: { id: messageId } });
+    if (!m) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'comment_not_found', message: 'Комментарий не найден' },
+      });
+    }
+    return this.toResponseFromMessage(m, issueId);
   }
 
   private async requireComment(

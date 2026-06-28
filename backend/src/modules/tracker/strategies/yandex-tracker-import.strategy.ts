@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { nanoid } from 'nanoid';
@@ -417,16 +419,21 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
           }
           const text = (c.text ?? '').slice(0, 50_000);
           if (!text.trim()) continue;
-          await services.prisma.issueComment.create({
-            data: {
-              issueId: created.id,
-              authorId,
-              content: text,
-              contentHtml: null,
-              contentStripped: text,
-              access: 'internal',
-              createdAt: c.createdAt ? (safeParseDate(c.createdAt) ?? new Date()) : new Date(),
-            },
+          const { conversationId } = await services.workChat.ensureWorkChat(created.id);
+          const clientMessageId = c.id
+            ? `import:yandex:${c.id}`
+            : `import:yandex:${created.id}:${createHash('sha1').update(`${authorId}|${c.createdAt ?? ''}|${text}`).digest('hex')}`;
+          await services.messageService.insertHistorical({
+            tenantId,
+            conversationId,
+            authorUserId: authorId,
+            content: text,
+            contentHtml: null,
+            contentStripped: text,
+            access: 'internal',
+            authorType: 'human',
+            createdAt: c.createdAt ? (safeParseDate(c.createdAt) ?? new Date()) : new Date(),
+            clientMessageId,
           });
           commentsCount += 1;
         } catch (err) {

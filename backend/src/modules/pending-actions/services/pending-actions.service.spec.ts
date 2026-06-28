@@ -5,6 +5,7 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { ConversationalService } from '../../conversational/conversational.service';
 import type { ConflictService } from '../../curation/services/conflict.service';
 import type { CurationService } from '../../curation/services/curation.service';
+import type { WorkChatService } from '../../messaging/services/work-chat.service';
 import type { IntakeService } from '../../tracker/services/intake.service';
 import type { IssuesService } from '../../tracker/services/issues.service';
 import type { ProgressUpdatesService } from '../../tracker/services/progress-updates.service';
@@ -56,6 +57,7 @@ describe('PendingActionsService (B0)', () => {
   let conversational: ConversationalService;
   let issuesService: IssuesService;
   let progressUpdatesService: ProgressUpdatesService;
+  let workChat: WorkChatService;
   let cfg: TypedConfigService;
   let sendNotification: ReturnType<typeof vi.fn>;
   let progressConfirm: ReturnType<typeof vi.fn>;
@@ -128,6 +130,13 @@ describe('PendingActionsService (B0)', () => {
       confirm: progressConfirm,
       reject: progressReject,
     } as unknown as ProgressUpdatesService;
+    workChat = {
+      appendMessage: vi.fn().mockResolvedValue({
+        messageId: 'msg-1',
+        conversationId: 'conv-1',
+        seq: '1',
+      }),
+    } as unknown as WorkChatService;
     cfg = {
       tracker: { closureNotifyCreatorEnabled: true },
     } as unknown as TypedConfigService;
@@ -183,6 +192,7 @@ describe('PendingActionsService (B0)', () => {
       conversational,
       issuesService,
       progressUpdatesService,
+      workChat,
       cfg,
     );
   });
@@ -469,8 +479,8 @@ describe('PendingActionsService (B0)', () => {
     expect((dto as { stateId: string }).stateId).toBe('state-done');
     expect(tenantId).toBe('t-1');
     expect(userId).toBe('u-1');
-    // Кандидат → accepted (через транзакцию).
-    expect(txTaskClosureUpdate.mock.calls[0]![0].data.status).toBe('accepted');
+    // Кандидат → accepted.
+    expect(taskClosureUpdate.mock.calls[0]![0].data.status).toBe('accepted');
   });
 
   it('confirm task_closure approve с comment → IssueComment с решением (метка) + accepted в одной транзакции', async () => {
@@ -490,12 +500,12 @@ describe('PendingActionsService (B0)', () => {
       resolution: 'approve',
       comment: 'Сделано вчера, выкатили на прод',
     });
-    // транзакция: комментарий + accepted атомарно.
-    expect(prismaTransaction).toHaveBeenCalledTimes(1);
-    expect(issueCommentCreate).toHaveBeenCalledTimes(1);
-    const commentData = issueCommentCreate.mock.calls[0]![0].data;
+    // решение пишется сообщением work_chat; кандидат → accepted.
+    const appendMessageMock = workChat.appendMessage as ReturnType<typeof vi.fn>;
+    expect(appendMessageMock).toHaveBeenCalledTimes(1);
+    const commentData = appendMessageMock.mock.calls[0]![0];
     expect(commentData.issueId).toBe('iss-1');
-    expect(commentData.authorId).toBe('u-1');
+    expect(commentData.authorUserId).toBe('u-1');
     expect(commentData.authorType).toBe('human');
     expect(commentData.access).toBe('internal');
     expect(commentData.content).toContain('Сделано вчера, выкатили на прод');
@@ -504,7 +514,7 @@ describe('PendingActionsService (B0)', () => {
     expect(commentData.contentStripped).toBe(commentData.content);
     // вне разговора (ручной ввод) — не приоритет evidenceQuote.
     expect(commentData.content).not.toContain('цитата из разговора');
-    expect(txTaskClosureUpdate.mock.calls[0]![0].data.status).toBe('accepted');
+    expect(taskClosureUpdate.mock.calls[0]![0].data.status).toBe('accepted');
   });
 
   it('confirm task_closure approve без comment → fallback на evidenceQuote с меткой «(из разговора)»', async () => {
@@ -523,8 +533,9 @@ describe('PendingActionsService (B0)', () => {
       resourceId: 'tcc-e',
       resolution: 'approve',
     });
-    expect(issueCommentCreate).toHaveBeenCalledTimes(1);
-    const commentData = issueCommentCreate.mock.calls[0]![0].data;
+    const appendMessageMock = workChat.appendMessage as ReturnType<typeof vi.fn>;
+    expect(appendMessageMock).toHaveBeenCalledTimes(1);
+    const commentData = appendMessageMock.mock.calls[0]![0];
     expect(commentData.content).toContain('я закрыл эту задачу');
     expect(commentData.content).toContain('из разговора');
     // evidenceQuote приоритетнее rationale.
@@ -547,7 +558,8 @@ describe('PendingActionsService (B0)', () => {
       resourceId: 'tcc-r',
       resolution: 'approve',
     });
-    const commentData = issueCommentCreate.mock.calls[0]![0].data;
+    const appendMessageMock = workChat.appendMessage as ReturnType<typeof vi.fn>;
+    const commentData = appendMessageMock.mock.calls[0]![0];
     expect(commentData.content).toContain('итог обсуждения');
   });
 
@@ -576,7 +588,8 @@ describe('PendingActionsService (B0)', () => {
       resourceId: 'tcc-i',
       resolution: 'approve',
     });
-    expect(issueCommentCreate).toHaveBeenCalledTimes(1);
+    const appendMessageMock = workChat.appendMessage as ReturnType<typeof vi.fn>;
+    expect(appendMessageMock).toHaveBeenCalledTimes(1);
     // повторный confirm: кандидат уже accepted → guard → BadRequest, комментарий не создаётся.
     await expect(
       svc.confirm({
@@ -587,7 +600,7 @@ describe('PendingActionsService (B0)', () => {
         resolution: 'approve',
       }),
     ).rejects.toThrow();
-    expect(issueCommentCreate).toHaveBeenCalledTimes(1);
+    expect(appendMessageMock).toHaveBeenCalledTimes(1);
   });
 
   it('confirm task_closure reject → Issue НЕ тронут, кандидат rejected, комментарий НЕ создан', async () => {
@@ -608,9 +621,8 @@ describe('PendingActionsService (B0)', () => {
     });
     expect(transitionState).not.toHaveBeenCalled();
     expect(taskClosureUpdate.mock.calls[0]![0].data.status).toBe('rejected');
-    // reject-ветка не пишет решение комментарием.
-    expect(issueCommentCreate).not.toHaveBeenCalled();
-    expect(prismaTransaction).not.toHaveBeenCalled();
+    // reject-ветка не пишет решение сообщением.
+    expect(workChat.appendMessage as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
   });
 
   it('confirm task_closure: уже не pending → BadRequest, Issue не тронут', async () => {
@@ -756,7 +768,7 @@ describe('PendingActionsService (B0)', () => {
     });
     expect(res).toEqual({ ok: true });
     expect(transitionState).toHaveBeenCalledTimes(1);
-    expect(txTaskClosureUpdate.mock.calls[0]![0].data.status).toBe('accepted');
+    expect(taskClosureUpdate.mock.calls[0]![0].data.status).toBe('accepted');
   });
 
   // ──── task_review (TZ task-dedup, 2026-06-16, Ф4, R11/R13) ────

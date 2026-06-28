@@ -738,6 +738,12 @@ export class TypedConfigService {
     } as const;
   }
 
+  get huddles() {
+    return {
+      enabled: this.get('HUDDLES_ENABLED'),
+    } as const;
+  }
+
   get supportDesk() {
     return {
       enabled: this.resolveSync<boolean>('support_desk.enabled', 'SUPPORT_DESK_ENABLED', true),

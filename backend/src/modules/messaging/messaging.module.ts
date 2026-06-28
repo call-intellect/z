@@ -19,11 +19,13 @@ import { AskKoraService } from './services/ask-kora.service';
 import { ChatIngestService } from './services/chat-ingest.service';
 import { ChatSummaryService } from './services/chat-summary.service';
 import { ConversationService } from './services/conversation.service';
+import { HuddleService } from './services/huddle.service';
 import { InboxService } from './services/inbox.service';
 import { MessageActionsService } from './services/message-actions.service';
 import { MessageReportService } from './services/message-report.service';
 import { MessageRetentionService } from './services/message-retention.service';
 import { MessageService } from './services/message.service';
+import { PollService } from './services/poll.service';
 import { PresenceService } from './services/presence.service';
 import { ReadCursorService } from './services/read-cursor.service';
 import { UserBlockService } from './services/user-block.service';
@@ -59,6 +61,8 @@ import { WorkChatService } from './services/work-chat.service';
     MessageRetentionService,
     MessageRetentionCron,
     HrMembershipListener,
+    PollService,
+    HuddleService,
   ],
   exports: [
     ConversationService,
@@ -80,6 +84,8 @@ import { WorkChatService } from './services/work-chat.service';
     UserBlockService,
     MessageReportService,
     MessageRetentionService,
+    PollService,
+    HuddleService,
   ],
 })
 export class MessagingModule {}

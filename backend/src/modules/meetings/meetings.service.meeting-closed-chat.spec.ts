@@ -18,6 +18,7 @@ function makeService(args: {
   issues?: Array<{ id: string }>;
   recordingUrl?: string | null;
   summaryFast?: string | null;
+  huddleConversationId?: string | null;
 }) {
   const meetingFindUniqueTx = vi.fn().mockResolvedValue({
     id: 'm-1',
@@ -30,6 +31,7 @@ function makeService(args: {
     id: 'm-1',
     title: 'Синк по проекту',
     ownerId: 'owner-1',
+    huddleConversationId: args.huddleConversationId ?? null,
     recording: { mainVideoUrl: args.recordingUrl ?? 'https://s3/rec.mp4' },
     aiResult: { summaryFast: args.summaryFast ?? 'Кратко: договорились о сроках.', summary: null },
   });
@@ -118,5 +120,38 @@ describe('MeetingsService.transitionStatus → системное сообщен
 
     expect(ensureWorkChat).not.toHaveBeenCalled();
     expect(appendSystemMessage).not.toHaveBeenCalled();
+  });
+
+  it('huddleConversationId задан → запись+резюме постятся в разговор созвона (huddle-closed:<id>)', async () => {
+    const { svc, appendSystemMessage } = makeService({
+      toStatus: 'ai_ready',
+      issues: [],
+      huddleConversationId: 'huddle-conv-1',
+    });
+
+    await svc.transitionStatus('m-1', 'ai_ready');
+
+    expect(appendSystemMessage).toHaveBeenCalledTimes(1);
+    const arg = appendSystemMessage.mock.calls[0]![0];
+    expect(arg.conversationId).toBe('huddle-conv-1');
+    expect(arg.tenantId).toBe('org-1');
+    expect(arg.clientMessageId).toBe('huddle-closed:m-1');
+    expect(arg.content).toContain('Запись:');
+    expect(arg.content).toContain('Резюме:');
+  });
+
+  it('идемпотентность huddle: один huddle-closed:<id> на встречу', async () => {
+    const { svc, appendSystemMessage } = makeService({
+      toStatus: 'ai_ready',
+      issues: [],
+      huddleConversationId: 'huddle-conv-1',
+    });
+
+    await svc.transitionStatus('m-1', 'ai_ready');
+    await svc.transitionStatus('m-1', 'ai_ready');
+
+    expect(appendSystemMessage).toHaveBeenCalledTimes(2);
+    expect(appendSystemMessage.mock.calls[0]![0].clientMessageId).toBe('huddle-closed:m-1');
+    expect(appendSystemMessage.mock.calls[1]![0].clientMessageId).toBe('huddle-closed:m-1');
   });
 });

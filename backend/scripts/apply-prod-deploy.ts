@@ -129,7 +129,7 @@ const STEPS: Step[] = [
   {
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-chat.ts',
-    hint: 'chat_presence_ttl_seconds + chat_outbox_sweep_{stale_seconds,batch_limit} — крутилки presence-TTL и backstop-sweep transactional outbox единого чата (unified-chat Ф1b); external_link_ttl_hours + external_inbound_rate_limit — крутилки внешней переписки (unified-chat Ф3.5)',
+    hint: 'chat_presence_ttl_seconds + chat_outbox_sweep_{stale_seconds,batch_limit} — крутилки presence-TTL и backstop-sweep transactional outbox единого чата (unified-chat Ф1b); external_link_ttl_hours + external_inbound_rate_limit — крутилки внешней переписки (unified-chat Ф3.5); huddle_max_participants — лимит участников созвона из чата (unified-chat Ф7b)',
   },
   {
     phase: 'seed-base',

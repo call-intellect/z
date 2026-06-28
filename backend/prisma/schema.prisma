@@ -1411,6 +1411,11 @@ model Meeting {
   /// ТЗ-5 Ф1 — спикеры диаризации загруженной встречи (для ручной разметки).
   uploadSpeakers MeetingUploadSpeaker[]
 
+  /// Ф7b unified-chat (R26) — созвон («huddle»), запущенный из разговора единого
+  /// чата. NULL для обычных встреч. При закрытии встречи (ai_ready/ai_failed)
+  /// запись+резюме постятся системным сообщением в этот разговор.
+  huddleConversationId String?
+
   @@index([ownerId, createdAt])
   @@index([status, endedAt])
   @@index([deletedAt])
@@ -1419,6 +1424,7 @@ model Meeting {
   @@index([linkedIssueId])
   @@index([linkedCycleId])
   @@index([tenantId, source, createdAt])
+  @@index([huddleConversationId])
 }
 
 /// ТЗ 2026-06-10 meeting-visibility — явный грант доступа к встрече (scope='custom').
@@ -12534,8 +12540,53 @@ model Conversation {
   messages      Message[]
   supportTicket SupportTicket?
   accessLinks   ConversationAccessLink[]
+  polls         Poll[]
 
   @@index([tenantId, kind, lastMessageAt])
+}
+
+model Poll {
+  id              String    @id @default(cuid())
+  tenantId        String
+  conversationId  String
+  question        String    @db.Text
+  createdByUserId String
+  status          String    @default("open")
+  closedAt        DateTime?
+  decisionBlockId String?
+  createdAt       DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  options      PollOption[]
+  votes        PollVote[]
+
+  @@index([tenantId, conversationId])
+}
+
+model PollOption {
+  id        String @id @default(cuid())
+  pollId    String
+  text      String
+  sortOrder Int    @default(0)
+
+  poll  Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes PollVote[]
+
+  @@index([pollId])
+}
+
+model PollVote {
+  id        String   @id @default(cuid())
+  pollId    String
+  optionId  String
+  userId    String
+  createdAt DateTime @default(now())
+
+  poll   Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  option PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@unique([pollId, userId])
+  @@index([optionId])
 }
 
 model ConversationAccessLink {

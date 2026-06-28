@@ -812,11 +812,41 @@ export class MeetingsService {
         id: true,
         title: true,
         ownerId: true,
+        huddleConversationId: true,
         recording: { select: { mainVideoUrl: true } },
         aiResult: { select: { summaryFast: true, summary: true } },
       },
     });
     if (!meeting) return;
+
+    const content = this.buildMeetingClosedContent(
+      meeting.title,
+      meeting.recording?.mainVideoUrl ?? null,
+      meeting.aiResult?.summaryFast ?? meeting.aiResult?.summary ?? null,
+    );
+
+    if (meeting.huddleConversationId) {
+      try {
+        const conversation = await this.prisma.conversation.findUnique({
+          where: { id: meeting.huddleConversationId },
+          select: { tenantId: true },
+        });
+        if (conversation) {
+          await this.messages.appendSystemMessage({
+            tenantId: conversation.tenantId,
+            conversationId: meeting.huddleConversationId,
+            authorUserId: meeting.ownerId,
+            content,
+            access: 'normal',
+            clientMessageId: `huddle-closed:${meetingId}`,
+          });
+        }
+      } catch (err) {
+        this.logger.warn(
+          `postMeetingClosedToLinkedChats huddle=${meeting.huddleConversationId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
 
     const issues = await this.prisma.issue.findMany({
       where: { linkedMeetingIds: { has: meetingId } },
@@ -824,11 +854,6 @@ export class MeetingsService {
     });
     if (issues.length === 0) return;
 
-    const content = this.buildMeetingClosedContent(
-      meeting.title,
-      meeting.recording?.mainVideoUrl ?? null,
-      meeting.aiResult?.summaryFast ?? meeting.aiResult?.summary ?? null,
-    );
     const clientMessageId = `meeting-closed:${meetingId}`;
 
     for (const issue of issues) {

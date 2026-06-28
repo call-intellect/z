@@ -31,9 +31,14 @@ import {
   type AskKoraResponse,
   BlockMemberSchema,
   type BlockMemberDto,
+  type ClosePollResponse,
   CreateConversationSchema,
   type CreateConversationDto,
   type CreateConversationResponse,
+  CreatePollSchema,
+  type CreatePollDto,
+  type CreatePollResponse,
+  type HuddleStartResponse,
   ListMessagesQuerySchema,
   type ListMessagesQuery,
   type ListMessagesResponse,
@@ -47,19 +52,24 @@ import {
   ReactionSchema,
   type ReactionDto,
   type ReactionsResponse,
+  type PollResponse,
   ReportMessageSchema,
   type ReportMessageDto,
   SendMessageSchema,
   type SendMessageDto,
   type SendMessageResponse,
+  VotePollSchema,
+  type VotePollDto,
   type WhatsNewResponse,
 } from './dto/conversation.dto';
 import { AskKoraService } from './services/ask-kora.service';
 import { ChatSummaryService } from './services/chat-summary.service';
 import { ConversationService } from './services/conversation.service';
+import { HuddleService } from './services/huddle.service';
 import { MessageActionsService } from './services/message-actions.service';
 import { MessageReportService } from './services/message-report.service';
 import { MessageService } from './services/message.service';
+import { PollService } from './services/poll.service';
 import { ReadCursorService } from './services/read-cursor.service';
 import { UserBlockService } from './services/user-block.service';
 import { WorkChatService } from './services/work-chat.service';
@@ -81,6 +91,8 @@ export class ConversationController {
     private readonly messageActions: MessageActionsService,
     @Inject(UserBlockService) private readonly userBlocks: UserBlockService,
     @Inject(MessageReportService) private readonly messageReports: MessageReportService,
+    @Inject(PollService) private readonly polls: PollService,
+    @Inject(HuddleService) private readonly huddles: HuddleService,
   ) {}
 
   @Post('conversations')
@@ -394,6 +406,91 @@ export class ConversationController {
       reason: body.reason ?? null,
     });
     return { ok: true };
+  }
+
+  @Post('conversations/:id/polls')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Создать опрос в разговоре (вопрос + варианты)' })
+  async createPoll(
+    @Param('id') conversationId: string,
+    @Body(new ZodValidationPipe(CreatePollSchema)) body: CreatePollDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<CreatePollResponse> {
+    const t = this.requireTenant(tenantId);
+    await this.requireMember(conversationId, user.id);
+    return this.polls.createPoll({
+      tenantId: t,
+      conversationId,
+      userId: user.id,
+      question: body.question,
+      options: body.options,
+    });
+  }
+
+  @Post('polls/:id/vote')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Проголосовать в опросе (один голос на участника, смена допустима)' })
+  async votePoll(
+    @Param('id') pollId: string,
+    @Body(new ZodValidationPipe(VotePollSchema)) body: VotePollDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<OkResponse> {
+    this.requireTenant(tenantId);
+    await this.polls.vote({ pollId, userId: user.id, optionId: body.optionId });
+    return { ok: true };
+  }
+
+  @Post('polls/:id/close')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Закрыть опрос — итог фиксируется как решение (IdeaBlock)' })
+  async closePoll(
+    @Param('id') pollId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<ClosePollResponse> {
+    this.requireTenant(tenantId);
+    return this.polls.closePoll({ pollId, userId: user.id });
+  }
+
+  @Get('polls/:id')
+  @ApiOperation({ summary: 'Опрос: вопрос, варианты, счётчики голосов' })
+  async getPoll(
+    @Param('id') pollId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<PollResponse> {
+    this.requireTenant(tenantId);
+    const poll = await this.polls.getPoll(pollId);
+    await this.requireMember(poll.conversationId, user.id);
+    return poll;
+  }
+
+  @Post('conversations/:id/huddle/start')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Начать созвон из разговора (huddle): встреча + токен инициатора' })
+  async startHuddle(
+    @Param('id') conversationId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<HuddleStartResponse> {
+    const t = this.requireTenant(tenantId);
+    await this.requireMember(conversationId, user.id);
+    return this.huddles.startHuddle({ tenantId: t, conversationId, userId: user.id });
+  }
+
+  @Post('conversations/:id/huddle/join')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Присоединиться к идущему созвону разговора (huddle): токен участника' })
+  async joinHuddle(
+    @Param('id') conversationId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<HuddleStartResponse> {
+    const t = this.requireTenant(tenantId);
+    await this.requireMember(conversationId, user.id);
+    return this.huddles.joinHuddle({ tenantId: t, conversationId, userId: user.id });
   }
 
   private requireTenant(tenantId: string | undefined): string {

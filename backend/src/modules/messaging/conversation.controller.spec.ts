@@ -15,9 +15,11 @@ import { CreateConversationSchema } from './dto/conversation.dto';
 import type { AskKoraService } from './services/ask-kora.service';
 import type { ChatSummaryService } from './services/chat-summary.service';
 import type { ConversationService } from './services/conversation.service';
+import type { HuddleService } from './services/huddle.service';
 import type { MessageActionsService } from './services/message-actions.service';
 import type { MessageReportService } from './services/message-report.service';
 import type { MessageService } from './services/message.service';
+import type { PollService } from './services/poll.service';
 import type { ReadCursorService } from './services/read-cursor.service';
 import type { UserBlockService } from './services/user-block.service';
 import type { WorkChatService } from './services/work-chat.service';
@@ -36,6 +38,8 @@ function makeController(overrides: {
   messageActions?: Partial<MessageActionsService>;
   userBlocks?: Partial<UserBlockService>;
   messageReports?: Partial<MessageReportService>;
+  polls?: Partial<PollService>;
+  huddles?: Partial<HuddleService>;
 }) {
   const conversations = {
     createConversation: vi.fn(),
@@ -87,6 +91,18 @@ function makeController(overrides: {
     report: vi.fn(),
     ...overrides.messageReports,
   } as unknown as MessageReportService;
+  const polls = {
+    createPoll: vi.fn(),
+    vote: vi.fn(),
+    closePoll: vi.fn(),
+    getPoll: vi.fn(),
+    ...overrides.polls,
+  } as unknown as PollService;
+  const huddles = {
+    startHuddle: vi.fn(),
+    joinHuddle: vi.fn(),
+    ...overrides.huddles,
+  } as unknown as HuddleService;
   return {
     controller: new ConversationController(
       conversations,
@@ -99,6 +115,8 @@ function makeController(overrides: {
       messageActions,
       userBlocks,
       messageReports,
+      polls,
+      huddles,
     ),
     conversations,
     messages,

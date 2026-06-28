@@ -132,3 +132,47 @@ export const ReportMessageSchema = z
   })
   .strict();
 export type ReportMessageDto = z.infer<typeof ReportMessageSchema>;
+
+export const CreatePollSchema = z
+  .object({
+    question: z.string().min(1).max(500),
+    options: z.array(z.string().min(1).max(200)).min(2).max(20),
+  })
+  .strict();
+export type CreatePollDto = z.infer<typeof CreatePollSchema>;
+
+export interface CreatePollResponse {
+  pollId: string;
+}
+
+export const VotePollSchema = z
+  .object({
+    optionId: z.string().min(1),
+  })
+  .strict();
+export type VotePollDto = z.infer<typeof VotePollSchema>;
+
+export interface ClosePollResponse {
+  pollId: string;
+  status: string;
+  decisionBlockId: string | null;
+  winningOptionId: string | null;
+}
+
+export interface PollResponse {
+  id: string;
+  conversationId: string;
+  question: string;
+  status: string;
+  closedAt: string | null;
+  decisionBlockId: string | null;
+  createdByUserId: string;
+  totalVotes: number;
+  options: Array<{ id: string; text: string; sortOrder: number; voteCount: number }>;
+}
+
+export interface HuddleStartResponse {
+  meetingId: string;
+  roomToken: string;
+  joinUrl: string;
+}

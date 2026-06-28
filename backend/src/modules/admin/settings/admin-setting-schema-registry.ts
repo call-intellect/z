@@ -348,6 +348,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['external_inbound_rate_limit', POSITIVE_INT],
   ['message_retention_days', NON_NEGATIVE_INT],
   ['hr_auto_subscribe_enabled', z.boolean()],
+  ['huddle_max_participants', POSITIVE_INT],
 
   ['orchestrator.enabled', z.boolean()],
   ['orchestrator.maxSubagentsPerRun', POSITIVE_INT],

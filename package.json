@@ -4,6 +4,8 @@
   "description": "Z — память компании. Корневые dev-скрипты (оркестрация локального стека). MVP-вертикаль — AI-встречи на LiveKit.",
   "scripts": {
     "dev": "bun scripts/dev.ts",
+    "dev:local": "bun scripts/dev-local.ts",
+    "make-local-env": "bun scripts/make-local-env.ts",
     "livekit": "infra/livekit/livekit-dev.sh up",
     "livekit:down": "infra/livekit/livekit-dev.sh down",
     "livekit:rm": "infra/livekit/livekit-dev.sh rm",

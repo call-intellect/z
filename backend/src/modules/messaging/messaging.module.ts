@@ -6,15 +6,22 @@ import { ExternalConversationController } from './external/external-conversation
 import { ExternalConversationService } from './external/external-conversation.service';
 import { ExternalGuestController } from './external/external-guest.controller';
 import { ExternalGuestGuard } from './external/external-guest.guard';
+import { InboxController } from './inbox.controller';
 import { MessageOutboxQueueService } from './queue/message-outbox.queue.service';
 import { ConversationService } from './services/conversation.service';
+import { InboxService } from './services/inbox.service';
 import { MessageService } from './services/message.service';
 import { PresenceService } from './services/presence.service';
 import { ReadCursorService } from './services/read-cursor.service';
 import { WorkChatService } from './services/work-chat.service';
 
 @Module({
-  controllers: [ConversationController, ExternalConversationController, ExternalGuestController],
+  controllers: [
+    ConversationController,
+    InboxController,
+    ExternalConversationController,
+    ExternalGuestController,
+  ],
   providers: [
     ConversationService,
     MessageService,
@@ -22,6 +29,7 @@ import { WorkChatService } from './services/work-chat.service';
     PresenceService,
     MessageOutboxQueueService,
     WorkChatService,
+    InboxService,
     AccessLinkService,
     ExternalConversationService,
     ExternalGuestGuard,
@@ -33,6 +41,7 @@ import { WorkChatService } from './services/work-chat.service';
     PresenceService,
     MessageOutboxQueueService,
     WorkChatService,
+    InboxService,
     AccessLinkService,
     ExternalConversationService,
     ExternalGuestGuard,

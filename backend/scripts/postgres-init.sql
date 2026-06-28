@@ -1018,3 +1018,19 @@ END $$;
 CREATE INDEX IF NOT EXISTS "idx_concierge_conversations_pending_summary"
   ON "concierge_conversations" ("lastMessageAt")
   WHERE "summary" IS NULL AND "archivedAt" IS NULL;
+
+-- Единый чат (Ф4a) — полнотекст по телам сообщений (русский словарь).
+-- /message-search ходит to_tsvector('russian', contentStripped) @@ plainto_tsquery.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'Message'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "Message_contentStripped_gin"
+      ON "Message" USING gin (to_tsvector('russian', coalesce("contentStripped", '')))
+    $sql$;
+  END IF;
+END $$;

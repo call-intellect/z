@@ -799,6 +799,12 @@ const STEPS: Step[] = [
     hint: 'перенос legacy IssueComment → Message в work_chat (единый чат Ф2.5b); ensureWorkChat + insertHistorical, перепривязка attachments/recognition, маркер IssueComment.messageId. Идемпотентно (messageId!=null пропускается, clientMessageId=ic:<id> дедуп)',
     skipBootstrap: true,
   },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-message-contentstripped.ts',
+    hint: 'plaintext в Message.contentStripped для GIN-поиска (единый чат Ф4a); decrypt(content)→stripToPlain. Идемпотентно (contentStripped=null фильтр)',
+    skipBootstrap: true,
+  },
 ];
 
 interface ParsedArgs {

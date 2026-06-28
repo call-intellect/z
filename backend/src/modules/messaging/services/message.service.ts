@@ -15,6 +15,8 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { GetMessagesResult, MessageAccess, MessageDto, SendMessageResult } from '../dto/message.dto';
 import { MessageOutboxQueueService } from '../queue/message-outbox.queue.service';
 
+import { stripToPlain } from './strip-to-plain';
+
 interface SendMessageArgs {
   tenantId: string;
   conversationId: string;
@@ -325,6 +327,7 @@ export class MessageService {
     const nextSeq = (agg._max.seq ?? 0n) + 1n;
 
     const encrypted = this.crypto.encrypt(args.content);
+    const stripped = stripToPlain(args.contentStripped ?? args.content);
 
     return tx.message.create({
       data: {
@@ -336,7 +339,7 @@ export class MessageService {
         access: args.access ?? 'normal',
         content: encrypted,
         contentHtml: args.contentHtml ?? null,
-        contentStripped: args.contentStripped ?? null,
+        contentStripped: stripped.length > 0 ? stripped : null,
         clientMessageId: args.clientMessageId,
         parentMessageId: args.parentMessageId ?? null,
         voiceUrl: args.voice?.url ?? null,

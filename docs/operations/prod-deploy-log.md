@@ -86,6 +86,25 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-28 — Единый чат: Ф4a бэкенд экрана «Сообщения» — агрегатор `/message-threads` + GIN-поиск `/message-search` (ветка feat/unified-chat-kora)
+
+> ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф4 (INV-A1/A3). Единый контроллер ленты (`InboxController`): `GET /message-threads` (один запрос по `Conversation` члена, фильтр `type`, `sort=recent|active|unread`, `q=` по людям/группам/PROJ-NN, составной курсор) + `GET /message-threads/unread-count` (Redis-кэш TTL 15с) + `GET /message-search` (полнотекст GIN по `Message.contentStripped`). `MessageService.insertMessageRow` теперь заполняет `contentStripped` плейнтекстом (`stripToPlain`) на записи.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ. 1 НОВЫЙ GIN-индекс в `postgres-init.sql` (авто). 1 новый backfill (в STEPS, опц.).** Docker rebuild backend.
+
+- **Шаг 1 — ENV: новых нет.**
+- **Шаг 5 — postgres-init (новый GIN-индекс, авто на `apply-postgres-init`):** `Message_contentStripped_gin` — `CREATE INDEX IF NOT EXISTS "Message_contentStripped_gin" ON "Message" USING gin (to_tsvector('russian', coalesce("contentStripped", '')))` (русский словарь, как у `IdeaBlock.search_tsv`/`decisions`/`insights`). Нужен полнотексту `/message-search`. Обёрнут в `DO $$ ... IF table 'Message' exists`, идемпотентно (`IF NOT EXISTS`); едет существующим schema-этапом (`apply-prod-deploy --with-schema` или `docker compose exec backend bun run apply-postgres-init`).
+- **Шаг 8 — Backfill (1 новый, УЖЕ в STEPS `phase:'backfill'`, `skipBootstrap`):** `backfill-message-contentstripped.ts` — расшифровывает `Message.content` → `stripToPlain` → пишет в `contentStripped` для существующих сообщений (новые индексируются на записи). Идемпотентно (фильтр `contentStripped: null`, повтор → no-op). Опционален: без него ищутся только сообщения, созданные после выката. Прогон: `docker compose exec backend bun run scripts/backfill-message-contentstripped.ts` (или агрегатором `--mode update`); `--dry-run` для проверки counts.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend (messaging: `InboxController` + `InboxService` listThreads/unreadCount/searchMessages; `stripToPlain` util в `insertMessageRow`; `InboxController`/`InboxService` зарегистрированы в `MessagingModule`).
+- **Шаг 12 — Smoke** (после выката):
+  - Swagger `/api/docs` тег `messaging / inbox` показывает `GET /api/v1/message-threads`, `GET /api/v1/message-threads/unread-count`, `GET /api/v1/message-search`.
+  - GIN: после `apply-postgres-init` — `psql \di "Message_contentStripped_gin"` существует.
+  - Поведение (из сессии члена): `/message-threads?type=all` отдаёт разговоры всех kind; `type=ticket` несёт `status/slaBreachedAt`, `work_chat` — `linkedIssue`, прочие — `null`; `sort=active|unread` меняют порядок; `q=PROJ-` фильтрует work_chat; `/message-search?q=<слово>` находит по телу.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-27 — Задача·решение·исполнение — единый контур (ветка feature/task-decision-execution-unified)
 
 > ТЗ `plans/tz/2026-06-27-task-decision-execution-unified-tz.md` (Ф0–Ф5). P0-фикс краша создания задач (advisory-lock Prisma 7) + три класса извлечения (idea/задача/решение) + actionable-решение авто-заводит задачу (`Decision.impliesAction`) + закрытие из разговора (embed-resilience + журнал хода) + дашборд на исполнении + надёжность пайплайна (не терять RawEvent + JSON-ремонт воркеров). Коммиты `66c69295` (Ф0) … `1b27ff2a` (Ф5).

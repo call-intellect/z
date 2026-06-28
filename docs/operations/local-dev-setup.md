@@ -145,10 +145,12 @@ curl -fsS http://localhost:3001 -o /dev/null -w "frontend:%{http_code}\n"
 3. **Супер-админ платформы** — `http://localhost:3001/admin/login`, e-mail из `ADMIN_BOOTSTRAP_EMAIL`
    (создан сидом bootstrap-admin).
 
-**Готовый тестовый аккаунт (создан 2026-06-28):**
-- Email: `test@kora.local` · пароль: `Korateam2026` · компания «Тест Компания» (свежая, пустая).
-- Демо-данные для просмотра живут в отдельной эталонной Demo-Org «ТехноСтрим» (сид
-  `patch-create-reference-demo-org`, `ZDEMO_ORG_ID`).
+**Готовые аккаунты (логины/пароли) — в gitignored-файле `/.local-dev-accounts.md`** (корень репо).
+Там: тест-юзер (owner орга с данными «Демо: ТехноСтрим» — 20 встреч + граф) и супер-админ для `/admin/login`,
+плюс команды пересоздания. Пароли в git НЕ коммитим — только в этом локальном файле.
+- Демо-данные живут в эталонной Demo-Org «ТехноСтрим» (сид `patch-create-reference-demo-org`, `ZDEMO_ORG_ID`).
+- Завести вручную: пароль+супер-админ — `bun run scripts/set-admin-password.ts <email> <pwd> --super`;
+  членство в орге — строка в `Membership` (`orgId`,`userId`,`role='owner'`). Это правки ЛОКАЛЬНОЙ БД, не код.
 
 ## 5. Фаза B — весь стек в Docker (финал, после стабилизации кабинета)
 

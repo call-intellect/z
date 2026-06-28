@@ -15,6 +15,9 @@ out/
 # Локальные креды прод-SSH (точечные прогоны скриптов на проде). НЕ коммитить.
 /.prod-access.local.json
 
+# Локальные dev-аккаунты (логины/пароли для `bun run dev:local`). НЕ коммитить.
+/.local-dev-accounts.md
+
 *.log
 coverage/
 

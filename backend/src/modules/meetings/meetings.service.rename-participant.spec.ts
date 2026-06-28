@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../common/config/index';
 import {
   NotAuthorizedError,
   ParticipantNotFoundError,
@@ -7,7 +8,6 @@ import {
 } from '../../common/errors/domain-errors';
 import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../common/prisma/prisma.service';
-import type { TypedConfigService } from '../../common/config/index';
 import type { JwtService } from '../auth/services/jwt.service';
 import type { MeetingsBalanceService } from '../meetings-balance/meetings-balance.service';
 import type { UsersService } from '../users/users.service';
@@ -70,6 +70,8 @@ function makeService(args: {
     {} as never,
     {} as never,
     { assertCanView: vi.fn(async () => ({})) } as never,
+    {} as never,
+    {} as never,
   );
 
   return { svc, prisma, repository, metrics, participantFindFirst, participantUpdate };

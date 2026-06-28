@@ -728,6 +728,7 @@ export class TypedConfigService {
   get chat() {
     return {
       enabled: this.get('CHAT_ENABLED'),
+      ingestEnabled: this.get('CHAT_INGEST_ENABLED'),
     } as const;
   }
 

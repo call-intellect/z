@@ -16,6 +16,7 @@ import { ConversationalService } from '../../conversational/conversational.servi
 import { TrackerGateway } from '../../tracker/gateways/tracker.gateway';
 import { PresenceService } from '../services/presence.service';
 
+import { ChatIngestQueueService } from './chat-ingest.queue.service';
 import { MESSAGE_OUTBOX_QUEUE, type MessageOutboxJobData } from './message-outbox.queue';
 import { MessageOutboxQueueService } from './message-outbox.queue.service';
 
@@ -53,6 +54,7 @@ export class MessageOutboxRelayWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(ConversationalService) private readonly conversational: ConversationalService,
     @Inject(PresenceService) private readonly presence: PresenceService,
     @Inject(MessageOutboxQueueService) private readonly queue: MessageOutboxQueueService,
+    @Inject(ChatIngestQueueService) private readonly chatIngestQueue: ChatIngestQueueService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
@@ -122,6 +124,23 @@ export class MessageOutboxRelayWorker implements OnModuleInit, OnModuleDestroy {
     });
 
     await this.markSent(messageId);
+
+    if (this.cfg.chat.ingestEnabled && message.authorType !== 'system') {
+      try {
+        const conversation = await this.prisma.conversation.findUnique({
+          where: { id: message.conversationId },
+          select: { feedsGraph: true },
+        });
+        if (conversation?.feedsGraph) {
+          await this.chatIngestQueue.enqueue(messageId);
+        }
+      } catch (err) {
+        this.logger.warn(
+          { messageId, err: err instanceof Error ? err.message : String(err) },
+          'relay: chat.ingest enqueue не удался',
+        );
+      }
+    }
   }
 
   private async notifyOffline(args: {

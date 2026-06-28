@@ -342,6 +342,8 @@ const KnowledgeCoreSchema = z.object({
 
   CHAT_ENABLED: zBool(true),
 
+  CHAT_INGEST_ENABLED: zBool(true),
+
   EXTERNAL_CHAT_ENABLED: zBool(true),
 
   CHAT_V2_ENABLED: zBool(false),

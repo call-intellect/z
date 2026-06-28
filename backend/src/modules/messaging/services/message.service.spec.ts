@@ -6,6 +6,7 @@ import type { TypedConfigService } from '../../../common/config/index';
 import type { CryptoService } from '../../../common/crypto/crypto.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { MessageOutboxQueueService } from '../queue/message-outbox.queue.service';
+import type { VoiceTranscribeQueueService } from '../queue/voice-transcribe.queue.service';
 
 import { MessageService } from './message.service';
 
@@ -13,6 +14,12 @@ function makeOutboxQueue() {
   return {
     enqueue: vi.fn().mockResolvedValue(undefined),
   } as unknown as MessageOutboxQueueService & { enqueue: ReturnType<typeof vi.fn> };
+}
+
+function makeVoiceQueue() {
+  return {
+    enqueue: vi.fn().mockResolvedValue(undefined),
+  } as unknown as VoiceTranscribeQueueService & { enqueue: ReturnType<typeof vi.fn> };
 }
 
 function makeRow(overrides: Record<string, unknown> = {}) {
@@ -92,7 +99,7 @@ describe('MessageService.sendMessage', () => {
       message: { findUnique: vi.fn() },
       $transaction: vi.fn(),
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, crypto, makeCfg(false), makeOutboxQueue());
+    const service = new MessageService(prisma, crypto, makeCfg(false), makeOutboxQueue(), makeVoiceQueue());
 
     await expect(
       service.sendMessage({
@@ -115,7 +122,7 @@ describe('MessageService.sendMessage', () => {
       $transaction: vi.fn(),
     } as unknown as PrismaService;
     const outbox = makeOutboxQueue();
-    const service = new MessageService(prisma, crypto, makeCfg(), outbox);
+    const service = new MessageService(prisma, crypto, makeCfg(), outbox, makeVoiceQueue());
 
     const res = await service.sendMessage({
       tenantId: 'org-1',
@@ -139,7 +146,7 @@ describe('MessageService.sendMessage', () => {
       $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(tx)),
     } as unknown as PrismaService;
     const outbox = makeOutboxQueue();
-    const service = new MessageService(prisma, crypto, makeCfg(), outbox);
+    const service = new MessageService(prisma, crypto, makeCfg(), outbox, makeVoiceQueue());
 
     await service.sendMessage({
       tenantId: 'org-1',
@@ -163,7 +170,7 @@ describe('MessageService.sendMessage', () => {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(tx)),
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue());
+    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue(), makeVoiceQueue());
 
     const res = await service.sendMessage({
       tenantId: 'org-1',
@@ -197,6 +204,7 @@ describe('MessageService.sendMessage', () => {
       crypto,
       makeCfg(),
       makeOutboxQueue(),
+      makeVoiceQueue(),
     );
 
     for (let i = 0; i < 100; i++) {
@@ -226,7 +234,7 @@ describe('MessageService.sendMessage', () => {
       message: { findUnique },
       $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(tx)),
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue());
+    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue(), makeVoiceQueue());
 
     const res = await service.sendMessage({
       tenantId: 'org-1',
@@ -254,7 +262,7 @@ describe('MessageService.sendMessage', () => {
         return cb(tx);
       }),
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue());
+    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue(), makeVoiceQueue());
 
     const base = {
       tenantId: 'org-1',
@@ -276,7 +284,7 @@ describe('MessageService.sendMessage', () => {
         cb(makeTx(41n, () => makeRow({ seq: 42n }))),
       ),
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue());
+    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue(), makeVoiceQueue());
 
     const res = await service.sendMessage({
       tenantId: 'org-1',
@@ -304,7 +312,7 @@ describe('MessageService.appendTicketMessage', () => {
       message: { findUnique: vi.fn() },
       $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(tx)),
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, crypto, makeCfg(false), makeOutboxQueue());
+    const service = new MessageService(prisma, crypto, makeCfg(false), makeOutboxQueue(), makeVoiceQueue());
 
     const ext = await service.appendTicketMessage({
       tenantId: 'org-1',
@@ -338,6 +346,7 @@ describe('MessageService.appendTicketMessage', () => {
       crypto,
       makeCfg(),
       outboxOn,
+      makeVoiceQueue(),
     );
     await serviceOn.appendTicketMessage({
       tenantId: 'org-1',
@@ -359,6 +368,7 @@ describe('MessageService.appendTicketMessage', () => {
       crypto,
       makeCfg(),
       outboxOff,
+      makeVoiceQueue(),
     );
     await serviceOff.appendTicketMessage({
       tenantId: 'org-1',
@@ -393,7 +403,7 @@ describe('MessageService.toggleReaction', () => {
 
   it('первый вызов добавляет userId; повторный убирает (idempotent toggle)', async () => {
     const harness = makeReactionPrisma(null);
-    const service = new MessageService(harness.prisma, makeCrypto(), makeCfg(), makeOutboxQueue());
+    const service = new MessageService(harness.prisma, makeCrypto(), makeCfg(), makeOutboxQueue(), makeVoiceQueue());
 
     const first = await service.toggleReaction({
       conversationId: 'conv-1',
@@ -414,7 +424,7 @@ describe('MessageService.toggleReaction', () => {
 
   it('другой userId добавляется к существующей реакции, не затирая', async () => {
     const harness = makeReactionPrisma({ '👍': ['user-1'] });
-    const service = new MessageService(harness.prisma, makeCrypto(), makeCfg(), makeOutboxQueue());
+    const service = new MessageService(harness.prisma, makeCrypto(), makeCfg(), makeOutboxQueue(), makeVoiceQueue());
 
     const res = await service.toggleReaction({
       conversationId: 'conv-1',
@@ -434,7 +444,7 @@ describe('MessageService.getMessages', () => {
     ];
     const findMany = vi.fn().mockResolvedValue(rows);
     const prisma = { message: { findMany } } as unknown as PrismaService;
-    const service = new MessageService(prisma, makeCrypto(), makeCfg(), makeOutboxQueue());
+    const service = new MessageService(prisma, makeCrypto(), makeCfg(), makeOutboxQueue(), makeVoiceQueue());
 
     const res = await service.getMessages({ conversationId: 'conv-1', sinceSeq: '4' });
 
@@ -450,7 +460,7 @@ describe('MessageService.getMessages', () => {
     const prisma = {
       message: { findMany: vi.fn().mockResolvedValue([]) },
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, makeCrypto(), makeCfg(), makeOutboxQueue());
+    const service = new MessageService(prisma, makeCrypto(), makeCfg(), makeOutboxQueue(), makeVoiceQueue());
 
     const res = await service.getMessages({ conversationId: 'conv-1' });
     expect(res.items).toEqual([]);
@@ -482,7 +492,7 @@ describe('MessageService.insertHistorical', () => {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(tx)),
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, crypto, makeCfg(), outbox);
+    const service = new MessageService(prisma, crypto, makeCfg(), outbox, makeVoiceQueue());
 
     const res = await service.insertHistorical({
       tenantId: 'org-1',
@@ -510,7 +520,7 @@ describe('MessageService.insertHistorical', () => {
       message: { findUnique: vi.fn().mockResolvedValue(existing) },
       $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(tx)),
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue());
+    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue(), makeVoiceQueue());
 
     const res = await service.insertHistorical({
       tenantId: 'org-1',
@@ -536,7 +546,7 @@ describe('MessageService.insertHistorical', () => {
       message: { findUnique },
       $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(tx)),
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue());
+    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue(), makeVoiceQueue());
 
     const res = await service.insertHistorical({
       tenantId: 'org-1',
@@ -562,7 +572,7 @@ describe('MessageService.editMessage', () => {
         update,
       },
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, makeCrypto(), makeCfg(), makeOutboxQueue());
+    const service = new MessageService(prisma, makeCrypto(), makeCfg(), makeOutboxQueue(), makeVoiceQueue());
 
     await expect(
       service.editMessage({ messageId: 'm1', userId: 'user-1', content: 'new' }),
@@ -579,7 +589,7 @@ describe('MessageService.editMessage', () => {
         update,
       },
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue());
+    const service = new MessageService(prisma, crypto, makeCfg(), makeOutboxQueue(), makeVoiceQueue());
 
     await service.editMessage({ messageId: 'm1', userId: 'user-1', content: 'edited' });
 
@@ -599,7 +609,7 @@ describe('MessageService.softDeleteMessage', () => {
         update,
       },
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, makeCrypto(), makeCfg(), makeOutboxQueue());
+    const service = new MessageService(prisma, makeCrypto(), makeCfg(), makeOutboxQueue(), makeVoiceQueue());
 
     await expect(
       service.softDeleteMessage({ messageId: 'm1', userId: 'user-1' }),
@@ -615,7 +625,7 @@ describe('MessageService.softDeleteMessage', () => {
         update,
       },
     } as unknown as PrismaService;
-    const service = new MessageService(prisma, makeCrypto(), makeCfg(), makeOutboxQueue());
+    const service = new MessageService(prisma, makeCrypto(), makeCfg(), makeOutboxQueue(), makeVoiceQueue());
 
     await service.softDeleteMessage({ messageId: 'm1', userId: 'user-1' });
 

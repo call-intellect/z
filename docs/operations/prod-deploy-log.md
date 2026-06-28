@@ -86,6 +86,18 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-28 — Единый чат: Ф5a AI-крючки — chat.ingest + voice ASR + системное сообщение закрытия встречи (ветка feat/unified-chat-kora)
+
+> ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф5 (R17/R20). Чат кормит граф: после `relay` (доставка) сообщение в `feedsGraph=true`-треде (вкл. dm, кроме `authorType='system'`) ставится job `chat.ingest` → `ChatIngestService` → `ingest.ingest(kind='chat_message', sourceExternalId='msg:<id>')` (один источник `Message`, без двойного ingest; внешний мост Ф0 — отдельный путь). Голосовые: при отправке сообщения с `voiceUrl` ставится `voice.transcribe` → ASR Vox → `Message.voiceTranscript` + пере-enqueue `chat.ingest` (chat-ingest берёт `voiceTranscript`, если `content` пуст). Закрытие встречи (`transitionStatus → ai_ready/ai_failed`) → системное `Message(authorType='system')` в work_chat связанных задач (`Issue.linkedMeetingIds has meetingId`), идемпотентно по `clientMessageId='meeting-closed:<id>'`.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟡 1 НОВЫЙ ENV-флаг `CHAT_INGEST_ENABLED` (kill-switch ON). 2 новые BullMQ-очереди (`chat.ingest`, `voice.transcribe`).** Новых seed/patch/backfill/postgres-init НЕТ. Docker rebuild backend.
+
+- **Шаг 1 — ENV: 1 новый флаг** `CHAT_INGEST_ENABLED` (zBool default true, kill-switch тип A — ВКЛ, действий владельца не требует; выкл → relay/voice-transcribe не ставят `chat.ingest`, переписка не втекает в граф; доставка/WS/notify не затронуты). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend (messaging: `ChatIngestQueueService`+`ChatIngestWorker`+`ChatIngestService`; `VoiceTranscribeQueueService`+`VoiceTranscribeWorker`; relay-триггер `chat.ingest` после markSent; `MessageService.appendSystemMessage` + enqueue `voice.transcribe` на voice; meetings: `MeetingsService.transitionStatus` → системное сообщение в work_chat). Воркеры — in-process через `WorkersModule`, отдельного процесса нет.
+- **Шаг 12 — Smoke** (после выката): флаг `CHAT_INGEST_ENABLED` в админке; в Redis появляются очереди `chat.ingest` и `voice.transcribe` после отправки сообщения/голосового (`grep` логов воркеров `ChatIngestWorker запущен` / `VoiceTranscribeWorker запущен`); отправка обычного сообщения в feedsGraph-тред → IdeaBlock из `Source(type='chat', name='Сообщения Коры')`; закрытие встречи со связанной задачей → системное сообщение в её work_chat (повтор закрытия не дублирует — `meeting-closed:<id>`).
+
+---
+
 ### 📄 2026-06-28 — Единый чат: Ф4a бэкенд экрана «Сообщения» — агрегатор `/message-threads` + GIN-поиск `/message-search` (ветка feat/unified-chat-kora)
 
 > ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф4 (INV-A1/A3). Единый контроллер ленты (`InboxController`): `GET /message-threads` (один запрос по `Conversation` члена, фильтр `type`, `sort=recent|active|unread`, `q=` по людям/группам/PROJ-NN, составной курсор) + `GET /message-threads/unread-count` (Redis-кэш TTL 15с) + `GET /message-search` (полнотекст GIN по `Message.contentStripped`). `MessageService.insertMessageRow` теперь заполняет `contentStripped` плейнтекстом (`stripToPlain`) на записи.

@@ -8,6 +8,7 @@ import type { ConversationalService } from '../../conversational/conversational.
 import type { TrackerGateway } from '../../tracker/gateways/tracker.gateway';
 import type { PresenceService } from '../services/presence.service';
 
+import type { ChatIngestQueueService } from './chat-ingest.queue.service';
 import type { MessageOutboxQueueService } from './message-outbox.queue.service';
 import { assertNoExternalBody, MessageOutboxRelayWorker } from './message-outbox.worker';
 
@@ -36,22 +37,27 @@ interface Deps {
   members: Array<{ userId: string; mutedUntil: Date | null }>;
   online: Array<{ userId: string; displayName: string }>;
   messageAccess?: string;
+  messageAuthorType?: string;
+  feedsGraph?: boolean;
+  ingestEnabled?: boolean;
 }
 
 function build(deps: Deps) {
   const outboxRow = deps.outboxStatus == null ? null : { messageId: 'msg-1', status: deps.outboxStatus };
   const updateOutbox = vi.fn().mockResolvedValue({});
+  const messageOverrides: Record<string, unknown> = {};
+  if (deps.messageAccess) messageOverrides.access = deps.messageAccess;
+  if (deps.messageAuthorType) messageOverrides.authorType = deps.messageAuthorType;
   const prisma = {
     messageOutbox: {
       findUnique: vi.fn().mockResolvedValue(outboxRow),
       update: updateOutbox,
     },
     message: {
-      findUnique: vi
-        .fn()
-        .mockResolvedValue(
-          makeMessageRow(deps.messageAccess ? { access: deps.messageAccess } : {}),
-        ),
+      findUnique: vi.fn().mockResolvedValue(makeMessageRow(messageOverrides)),
+    },
+    conversation: {
+      findUnique: vi.fn().mockResolvedValue({ feedsGraph: deps.feedsGraph ?? true }),
     },
     conversationMember: { findMany: vi.fn().mockResolvedValue(deps.members) },
   } as unknown as PrismaService;
@@ -75,8 +81,13 @@ function build(deps: Deps) {
   } as unknown as PresenceService;
 
   const queue = { enqueue: vi.fn() } as unknown as MessageOutboxQueueService;
+  const chatIngestEnqueue = vi.fn().mockResolvedValue(undefined);
+  const chatIngestQueue = { enqueue: chatIngestEnqueue } as unknown as ChatIngestQueueService;
   const redis = { client: {} } as unknown as RedisService;
-  const cfg = { getDynamic: vi.fn().mockResolvedValue(30) } as unknown as TypedConfigService;
+  const cfg = {
+    getDynamic: vi.fn().mockResolvedValue(30),
+    chat: { enabled: true, ingestEnabled: deps.ingestEnabled ?? true },
+  } as unknown as TypedConfigService;
 
   const worker = new MessageOutboxRelayWorker(
     redis,
@@ -86,10 +97,11 @@ function build(deps: Deps) {
     conversational,
     presence,
     queue,
+    chatIngestQueue,
     cfg,
   );
 
-  return { worker, emitToRooms, sendNotification, updateOutbox, prisma };
+  return { worker, emitToRooms, sendNotification, updateOutbox, prisma, chatIngestEnqueue };
 }
 
 describe('MessageOutboxRelayWorker.relay — идемпотентность', () => {
@@ -142,6 +154,63 @@ describe('MessageOutboxRelayWorker.relay — идемпотентность', ()
     await w2.relay('msg-1');
     expect(emitToRooms).not.toHaveBeenCalled();
     expect(sendNotification).not.toHaveBeenCalled();
+  });
+});
+
+describe('MessageOutboxRelayWorker — chat.ingest триггер', () => {
+  it('feedsGraph=true + не system → enqueue chat.ingest', async () => {
+    const { worker, chatIngestEnqueue } = build({
+      outboxStatus: 'pending',
+      members: [{ userId: 'author-1', mutedUntil: null }],
+      online: [],
+      feedsGraph: true,
+    });
+
+    await worker.relay('msg-1');
+
+    expect(chatIngestEnqueue).toHaveBeenCalledTimes(1);
+    expect(chatIngestEnqueue).toHaveBeenCalledWith('msg-1');
+  });
+
+  it('feedsGraph=false → НЕ enqueue chat.ingest', async () => {
+    const { worker, chatIngestEnqueue } = build({
+      outboxStatus: 'pending',
+      members: [{ userId: 'author-1', mutedUntil: null }],
+      online: [],
+      feedsGraph: false,
+    });
+
+    await worker.relay('msg-1');
+
+    expect(chatIngestEnqueue).not.toHaveBeenCalled();
+  });
+
+  it('authorType=system → НЕ enqueue chat.ingest', async () => {
+    const { worker, chatIngestEnqueue } = build({
+      outboxStatus: 'pending',
+      members: [{ userId: 'author-1', mutedUntil: null }],
+      online: [],
+      feedsGraph: true,
+      messageAuthorType: 'system',
+    });
+
+    await worker.relay('msg-1');
+
+    expect(chatIngestEnqueue).not.toHaveBeenCalled();
+  });
+
+  it('CHAT_INGEST_ENABLED=false → НЕ enqueue chat.ingest', async () => {
+    const { worker, chatIngestEnqueue } = build({
+      outboxStatus: 'pending',
+      members: [{ userId: 'author-1', mutedUntil: null }],
+      online: [],
+      feedsGraph: true,
+      ingestEnabled: false,
+    });
+
+    await worker.relay('msg-1');
+
+    expect(chatIngestEnqueue).not.toHaveBeenCalled();
   });
 });
 

@@ -14,6 +14,7 @@ import { CryptoService } from '../../../common/crypto/crypto.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { GetMessagesResult, MessageAccess, MessageDto, SendMessageResult } from '../dto/message.dto';
 import { MessageOutboxQueueService } from '../queue/message-outbox.queue.service';
+import { VoiceTranscribeQueueService } from '../queue/voice-transcribe.queue.service';
 
 import { stripToPlain } from './strip-to-plain';
 
@@ -97,6 +98,21 @@ interface AppendTicketMessageResult {
   seq: string;
 }
 
+interface AppendSystemMessageArgs {
+  tenantId: string;
+  conversationId: string;
+  authorUserId: string;
+  content: string;
+  access?: MessageAccess | string;
+  clientMessageId?: string;
+}
+
+interface AppendSystemMessageResult {
+  messageId: string;
+  seq: string;
+  deduped: boolean;
+}
+
 interface DraftMessageView {
   id: string;
   conversationId: string;
@@ -154,6 +170,8 @@ export class MessageService {
     @Inject(CryptoService) private readonly crypto: CryptoService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(MessageOutboxQueueService) private readonly outboxQueue: MessageOutboxQueueService,
+    @Inject(VoiceTranscribeQueueService)
+    private readonly voiceTranscribeQueue: VoiceTranscribeQueueService,
   ) {}
 
   async sendMessage(args: SendMessageArgs): Promise<SendMessageResult> {
@@ -205,6 +223,8 @@ export class MessageService {
           'sendMessage: outbox enqueue не удался (backstop-sweep догонит)',
         );
       }
+
+      await this.maybeEnqueueVoiceTranscribe(created);
 
       return { message: this.toDto(created), deduped: false };
     } catch (err) {
@@ -262,6 +282,76 @@ export class MessageService {
     }
 
     return { messageId: created.id, seq: created.seq.toString() };
+  }
+
+  async appendSystemMessage(args: AppendSystemMessageArgs): Promise<AppendSystemMessageResult> {
+    const clientMessageId = args.clientMessageId ?? `sys:${nanoid()}`;
+
+    const existing = await this.prisma.message.findUnique({
+      where: {
+        conversationId_clientMessageId: { conversationId: args.conversationId, clientMessageId },
+      },
+    });
+    if (existing) {
+      return { messageId: existing.id, seq: existing.seq.toString(), deduped: true };
+    }
+
+    try {
+      const created = await this.prisma.$transaction(async (tx) => {
+        const row = await this.insertMessageRow(tx, {
+          tenantId: args.tenantId,
+          conversationId: args.conversationId,
+          authorUserId: args.authorUserId,
+          content: args.content,
+          access: args.access ?? 'normal',
+          authorType: 'system',
+          clientMessageId,
+          createdAt: new Date(),
+        });
+        await tx.messageOutbox.create({ data: { messageId: row.id } });
+        await tx.conversation.update({
+          where: { id: args.conversationId },
+          data: { lastMessageAt: new Date() },
+        });
+        return row;
+      });
+
+      try {
+        await this.outboxQueue.enqueue(created.id);
+      } catch (err) {
+        this.logger.warn(
+          { messageId: created.id, err: err instanceof Error ? err.message : String(err) },
+          'appendSystemMessage: outbox enqueue не удался (backstop-sweep догонит)',
+        );
+      }
+
+      return { messageId: created.id, seq: created.seq.toString(), deduped: false };
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const raced = await this.prisma.message.findUnique({
+          where: {
+            conversationId_clientMessageId: { conversationId: args.conversationId, clientMessageId },
+          },
+        });
+        if (raced) {
+          return { messageId: raced.id, seq: raced.seq.toString(), deduped: true };
+        }
+      }
+      throw err;
+    }
+  }
+
+  private async maybeEnqueueVoiceTranscribe(row: MessageRow): Promise<void> {
+    if (!row.voiceUrl) return;
+    if (row.voiceTranscript && row.voiceTranscript.trim().length > 0) return;
+    try {
+      await this.voiceTranscribeQueue.enqueue(row.id);
+    } catch (err) {
+      this.logger.warn(
+        { messageId: row.id, err: err instanceof Error ? err.message : String(err) },
+        'maybeEnqueueVoiceTranscribe: enqueue не удался',
+      );
+    }
   }
 
   async setDraftState(args: { messageId: string; draftState: string }): Promise<void> {

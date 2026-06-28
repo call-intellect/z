@@ -23,7 +23,7 @@ export class OperationsDailyDigestCron {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  @Cron('0 22 * * *')
+  @Cron('0 3 * * *')
   async run(): Promise<void> {
     const enabled = await this.cfg.getDynamic<boolean>(
       'operations.daily_digest.enabled',
@@ -175,10 +175,10 @@ export class OperationsDailyDigestCron {
     });
     if (memberships.length === 0) return 0;
 
-    const title = `Ежедневный отчёт операционного директора за ${args.dateLocal}`;
+    const title = `День компании за ${args.dateLocal}`;
     const body =
       args.shortSummary ??
-      'Готов ежедневный отчёт за вчера. Откройте «Ежедневный отчёт» в панели операций.';
+      'Готов «День компании» за вчера. Откройте главный экран.';
     let safeBody = body.length > 2000 ? body.slice(0, 1999) + '…' : body;
     try {
       const customersLine = await this.digestService.buildCustomersAtRiskLine({
@@ -194,7 +194,7 @@ export class OperationsDailyDigestCron {
         'operations-daily-digest.cron: секция «Клиенты под риском» упала — пропускаю',
       );
     }
-    const actionUrl = `/dashboard/operations/daily?date=${args.dateLocal}`;
+    const actionUrl = '/dashboard';
 
     let sent = 0;
     for (const m of memberships) {

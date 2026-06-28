@@ -69,6 +69,11 @@ describe('OperationsDailyDigestCron', () => {
     expect(yesterdayInMoscow(now)).toBe('2026-05-24');
   });
 
+  it('yesterdayInMoscow: 03:00 UTC (06:00 МСК) даёт полностью завершённый вчерашний МСК-день', () => {
+    const now = new Date('2026-05-25T03:00:00Z');
+    expect(yesterdayInMoscow(now)).toBe('2026-05-24');
+  });
+
   it('runOnce: доставка по умолчанию → шлёт coo + owner и помечает delivered', async () => {
     const { cron, digestService, conversational } = buildCron({
       orgs: [{ id: 'org-1' }],

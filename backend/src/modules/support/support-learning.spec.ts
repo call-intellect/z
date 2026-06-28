@@ -4,17 +4,12 @@ import { SupportLearningService } from './services/support-learning.service';
 
 describe('SupportLearningService', () => {
   const TENANT = 'vendor-org-1';
-  const ISSUE_ID = 'issue-1';
-  const DRAFT_ID = 'draft-comment-1';
+  const CONV_ID = 'conv-1';
+  const DRAFT_ID = 'draft-msg-1';
   const AGENT = 'agent-1';
 
   let prismaStub: {
-    issueComment: {
-      findUnique: ReturnType<typeof vi.fn>;
-      create: ReturnType<typeof vi.fn>;
-      update: ReturnType<typeof vi.fn>;
-    };
-    issue: {
+    supportTicket: {
       findUnique: ReturnType<typeof vi.fn>;
       update: ReturnType<typeof vi.fn>;
     };
@@ -33,19 +28,32 @@ describe('SupportLearningService', () => {
     getVendorOrgId: ReturnType<typeof vi.fn>;
     getSupportGroupId: ReturnType<typeof vi.fn>;
   };
-  let activityStub: { record: ReturnType<typeof vi.fn> };
+  let messagesStub: {
+    getDraftMessage: ReturnType<typeof vi.fn>;
+    appendTicketMessage: ReturnType<typeof vi.fn>;
+    setDraftState: ReturnType<typeof vi.fn>;
+  };
   let cfgStub: { getDynamic: ReturnType<typeof vi.fn> };
   let svc: SupportLearningService;
 
+  function draftView(overrides: Record<string, unknown> = {}) {
+    return {
+      id: DRAFT_ID,
+      conversationId: CONV_ID,
+      tenantId: TENANT,
+      authorType: 'clone',
+      draftState: 'pending',
+      content: 'Сбросьте пароль по ссылке [BLOCK:b1] восстановления.',
+      cloneConfidence: '0.800',
+      groundednessScore: '0.900',
+      ...overrides,
+    };
+  }
+
   beforeEach(() => {
     prismaStub = {
-      issueComment: {
-        findUnique: vi.fn(),
-        create: vi.fn(async () => ({ id: 'external-1' })),
-        update: vi.fn(async () => ({})),
-      },
-      issue: {
-        findUnique: vi.fn(),
+      supportTicket: {
+        findUnique: vi.fn(async () => ({ firstRespondedAt: null })),
         update: vi.fn(async () => ({})),
       },
       supportDraftOutcome: {
@@ -63,7 +71,11 @@ describe('SupportLearningService', () => {
       getVendorOrgId: vi.fn(async () => TENANT),
       getSupportGroupId: vi.fn(async () => 'grp-support'),
     };
-    activityStub = { record: vi.fn(async () => 'act-1') };
+    messagesStub = {
+      getDraftMessage: vi.fn(async () => draftView()),
+      appendTicketMessage: vi.fn(async () => ({ messageId: 'external-1', seq: '3' })),
+      setDraftState: vi.fn(async () => undefined),
+    };
     cfgStub = { getDynamic: vi.fn(async () => 4) };
 
     svc = new SupportLearningService(
@@ -71,101 +83,84 @@ describe('SupportLearningService', () => {
       editClassifyStub as unknown as never,
       contourStub as unknown as never,
       accessStub as unknown as never,
-      activityStub as unknown as never,
+      messagesStub as unknown as never,
       cfgStub as unknown as never,
     );
   });
 
   describe('accept', () => {
-    beforeEach(() => {
-      prismaStub.issueComment.findUnique.mockResolvedValue({
-        id: DRAFT_ID,
-        issueId: ISSUE_ID,
-        content: 'Сбросьте пароль по ссылке [BLOCK:b1] восстановления.',
-        authorType: 'clone',
-        draftState: 'pending',
-        cloneConfidence: { toString: () => '0.800' },
-        groundednessScore: { toString: () => '0.900' },
-      });
-      prismaStub.issue.findUnique.mockResolvedValue({
-        id: ISSUE_ID,
-        tenantId: TENANT,
-        firstRespondedAt: null,
-      });
-    });
-
-    it('создаёт внешний ответ (external/human) + accepted-исход + correct-sample', async () => {
+    it('создаёт внешний Message (external/human) + accepted-исход + correct-sample', async () => {
       const res = await svc.accept(DRAFT_ID, AGENT);
       expect(res).toEqual({ ok: true });
 
-      expect(prismaStub.issueComment.create).toHaveBeenCalledTimes(1);
-      const createArg = prismaStub.issueComment.create.mock.calls[0]?.[0] as {
-        data: Record<string, unknown>;
-      };
-      expect(createArg.data.access).toBe('external');
-      expect(createArg.data.authorType).toBe('human');
-      expect(createArg.data.issueId).toBe(ISSUE_ID);
+      expect(messagesStub.appendTicketMessage).toHaveBeenCalledTimes(1);
+      const appendArg = messagesStub.appendTicketMessage.mock.calls[0]?.[0] as Record<
+        string,
+        unknown
+      >;
+      expect(appendArg.access).toBe('external');
+      expect(appendArg.authorType).toBe('human');
+      expect(appendArg.conversationId).toBe(CONV_ID);
 
-      expect(prismaStub.issueComment.update).toHaveBeenCalledWith({
-        where: { id: DRAFT_ID },
-        data: { draftState: 'accepted' },
+      expect(messagesStub.setDraftState).toHaveBeenCalledWith({
+        messageId: DRAFT_ID,
+        draftState: 'accepted',
       });
 
       const outcomeArg = prismaStub.supportDraftOutcome.create.mock.calls[0]?.[0] as {
         data: Record<string, unknown>;
       };
       expect(outcomeArg.data.outcome).toBe('accepted');
+      expect(outcomeArg.data.conversationId).toBe(CONV_ID);
+      expect(outcomeArg.data.draftMessageId).toBe(DRAFT_ID);
 
       const prefArg = prismaStub.llmPreferenceSample.create.mock.calls[0]?.[0] as {
         data: Record<string, unknown>;
       };
       expect(prefArg.data.label).toBe('correct');
       expect(prefArg.data.taskType).toBe('support-clone-draft');
+      expect(prefArg.data.inputContext).toEqual({ conversationId: CONV_ID });
+    });
 
-      expect(activityStub.record).toHaveBeenCalledWith(
-        expect.objectContaining({ verb: 'draft_accepted', actorType: 'user' }),
-      );
+    it('выставляет firstRespondedAt когда пуст', async () => {
+      await svc.accept(DRAFT_ID, AGENT);
+      expect(prismaStub.supportTicket.update).toHaveBeenCalledWith({
+        where: { conversationId: CONV_ID },
+        data: { firstRespondedAt: expect.any(Date) },
+      });
+    });
+
+    it('firstRespondedAt уже стоит → update тикета не вызывается', async () => {
+      prismaStub.supportTicket.findUnique.mockResolvedValue({ firstRespondedAt: new Date() });
+      await svc.accept(DRAFT_ID, AGENT);
+      expect(prismaStub.supportTicket.update).not.toHaveBeenCalled();
     });
 
     it('внешний текст НЕ содержит цитат [BLOCK:', async () => {
       await svc.accept(DRAFT_ID, AGENT);
-      const createArg = prismaStub.issueComment.create.mock.calls[0]?.[0] as {
-        data: { content: string };
-      };
-      expect(createArg.data.content).not.toContain('[BLOCK:');
+      const appendArg = messagesStub.appendTicketMessage.mock.calls[0]?.[0] as { content: string };
+      expect(appendArg.content).not.toContain('[BLOCK:');
     });
 
     it('убирает ведущую ⚠-пометку клона из ответа клиенту', async () => {
-      prismaStub.issueComment.findUnique.mockResolvedValue({
-        id: DRAFT_ID,
-        issueId: ISSUE_ID,
-        content:
-          '⚠ Клон не уверен (обоснованность 40%). Рекомендация: уточнить.\n\nВот ответ [BLOCK:b1].',
-        authorType: 'clone',
-        draftState: 'pending',
-        cloneConfidence: null,
-        groundednessScore: null,
-      });
+      messagesStub.getDraftMessage.mockResolvedValue(
+        draftView({
+          content:
+            '⚠ Клон не уверен (обоснованность 40%). Рекомендация: уточнить.\n\nВот ответ [BLOCK:b1].',
+          cloneConfidence: null,
+          groundednessScore: null,
+        }),
+      );
 
       await svc.accept(DRAFT_ID, AGENT);
-      const createArg = prismaStub.issueComment.create.mock.calls[0]?.[0] as {
-        data: { content: string };
-      };
-      expect(createArg.data.content).not.toContain('⚠');
-      expect(createArg.data.content).not.toContain('[BLOCK:');
-      expect(createArg.data.content).toContain('Вот ответ');
+      const appendArg = messagesStub.appendTicketMessage.mock.calls[0]?.[0] as { content: string };
+      expect(appendArg.content).not.toContain('⚠');
+      expect(appendArg.content).not.toContain('[BLOCK:');
+      expect(appendArg.content).toContain('Вот ответ');
     });
 
     it('черновик не pending → BadRequest', async () => {
-      prismaStub.issueComment.findUnique.mockResolvedValue({
-        id: DRAFT_ID,
-        issueId: ISSUE_ID,
-        content: 'x',
-        authorType: 'clone',
-        draftState: 'accepted',
-        cloneConfidence: null,
-        groundednessScore: null,
-      });
+      messagesStub.getDraftMessage.mockResolvedValue(draftView({ draftState: 'accepted' }));
       await expect(svc.accept(DRAFT_ID, AGENT)).rejects.toMatchObject({
         response: { error: { code: 'draft_not_available' } },
       });
@@ -174,29 +169,18 @@ describe('SupportLearningService', () => {
 
   describe('reject', () => {
     beforeEach(() => {
-      prismaStub.issueComment.findUnique.mockResolvedValue({
-        id: DRAFT_ID,
-        issueId: ISSUE_ID,
-        content: 'плохой черновик',
-        authorType: 'clone',
-        draftState: 'pending',
-        cloneConfidence: null,
-        groundednessScore: null,
-      });
-      prismaStub.issue.findUnique.mockResolvedValue({
-        id: ISSUE_ID,
-        tenantId: TENANT,
-        firstRespondedAt: null,
-      });
+      messagesStub.getDraftMessage.mockResolvedValue(
+        draftView({ content: 'плохой черновик', cloneConfidence: null, groundednessScore: null }),
+      );
     });
 
-    it('rejected-исход + wrong-sample, БЕЗ внешнего комментария', async () => {
+    it('rejected-исход + wrong-sample, БЕЗ внешнего Message', async () => {
       const res = await svc.reject(DRAFT_ID, AGENT);
       expect(res).toEqual({ ok: true });
 
-      expect(prismaStub.issueComment.update).toHaveBeenCalledWith({
-        where: { id: DRAFT_ID },
-        data: { draftState: 'rejected' },
+      expect(messagesStub.setDraftState).toHaveBeenCalledWith({
+        messageId: DRAFT_ID,
+        draftState: 'rejected',
       });
 
       const outcomeArg = prismaStub.supportDraftOutcome.create.mock.calls[0]?.[0] as {
@@ -210,29 +194,15 @@ describe('SupportLearningService', () => {
       };
       expect(prefArg.data.label).toBe('wrong');
 
-      expect(prismaStub.issueComment.create).not.toHaveBeenCalled();
-
-      expect(activityStub.record).toHaveBeenCalledWith(
-        expect.objectContaining({ verb: 'draft_rejected' }),
-      );
+      expect(messagesStub.appendTicketMessage).not.toHaveBeenCalled();
     });
   });
 
   describe('recordEdit', () => {
     it('classify вызван; outcome=edited + editType', async () => {
-      prismaStub.issueComment.findUnique.mockResolvedValue({
-        id: DRAFT_ID,
-        issueId: ISSUE_ID,
-        content: 'черновик клона',
-        authorType: 'clone',
-        draftState: 'pending',
-        cloneConfidence: null,
-        groundednessScore: null,
-      });
-      prismaStub.issue.findUnique.mockResolvedValue({
-        id: ISSUE_ID,
-        tenantId: TENANT,
-      });
+      messagesStub.getDraftMessage.mockResolvedValue(
+        draftView({ content: 'черновик клона', cloneConfidence: null, groundednessScore: null }),
+      );
       editClassifyStub.classify.mockResolvedValue('factual');
 
       await svc.recordEdit(DRAFT_ID, 'финальный текст человека', AGENT);
@@ -244,6 +214,11 @@ describe('SupportLearningService', () => {
           final: 'финальный текст человека',
         }),
       );
+
+      expect(messagesStub.setDraftState).toHaveBeenCalledWith({
+        messageId: DRAFT_ID,
+        draftState: 'edited',
+      });
 
       const outcomeArg = prismaStub.supportDraftOutcome.create.mock.calls[0]?.[0] as {
         data: Record<string, unknown>;
@@ -258,15 +233,9 @@ describe('SupportLearningService', () => {
     });
 
     it('не клон-черновик → no-op (defensive)', async () => {
-      prismaStub.issueComment.findUnique.mockResolvedValue({
-        id: DRAFT_ID,
-        issueId: ISSUE_ID,
-        content: 'обычный комментарий',
-        authorType: 'human',
-        draftState: null,
-        cloneConfidence: null,
-        groundednessScore: null,
-      });
+      messagesStub.getDraftMessage.mockResolvedValue(
+        draftView({ authorType: 'human', draftState: null }),
+      );
 
       await svc.recordEdit(DRAFT_ID, 'текст', AGENT);
 
@@ -279,7 +248,7 @@ describe('SupportLearningService', () => {
     it('CSAT 3 (<4) → promoteAnswer НЕ вызван, {promoted:0}', async () => {
       prismaStub.issueRating.findUnique.mockResolvedValue({ score: 3 });
 
-      const res = await svc.maybePromote(ISSUE_ID);
+      const res = await svc.maybePromote(CONV_ID);
 
       expect(res).toEqual({ promoted: 0 });
       expect(contourStub.promoteAnswer).not.toHaveBeenCalled();
@@ -287,17 +256,16 @@ describe('SupportLearningService', () => {
 
     it('нет оценки → {promoted:0}', async () => {
       prismaStub.issueRating.findUnique.mockResolvedValue(null);
-      const res = await svc.maybePromote(ISSUE_ID);
+      const res = await svc.maybePromote(CONV_ID);
       expect(res).toEqual({ promoted: 0 });
       expect(contourStub.promoteAnswer).not.toHaveBeenCalled();
     });
 
     it('CSAT 5 + один accepted-неотпромоученный → promoteAnswer вызван + промоут отмечен', async () => {
       prismaStub.issueRating.findUnique.mockResolvedValue({ score: 5 });
-      prismaStub.issue.findUnique.mockResolvedValue({
-        id: ISSUE_ID,
+      prismaStub.supportTicket.findUnique.mockResolvedValue({
         tenantId: TENANT,
-        title: 'Как сбросить пароль?',
+        conversation: { title: 'Как сбросить пароль?' },
       });
       prismaStub.supportDraftOutcome.findMany.mockResolvedValue([
         { id: 'outcome-1', finalText: 'Ответ клиенту.' },
@@ -307,7 +275,7 @@ describe('SupportLearningService', () => {
         blockId: 'blk-1',
       });
 
-      const res = await svc.maybePromote(ISSUE_ID);
+      const res = await svc.maybePromote(CONV_ID);
 
       expect(res).toEqual({ promoted: 1 });
       expect(contourStub.promoteAnswer).toHaveBeenCalledWith(

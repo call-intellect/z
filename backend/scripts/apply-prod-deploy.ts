@@ -276,7 +276,7 @@ const STEPS: Step[] = [
   {
     phase: 'seed-base',
     script: 'scripts/seed-support-project.ts',
-    hint: 'Support-проект SUP + 6 states + SupportSlaPolicy (TZ support-desk Ф1); no-op без support.vendor_org_id',
+    hint: 'SupportSlaPolicy (60/480) для вендор-Org (TZ support-desk; тикеты на Conversation/Message, не Issue); no-op без support.vendor_org_id',
   },
   {
     phase: 'seed-base',

@@ -95,6 +95,17 @@ interface AppendTicketMessageResult {
   seq: string;
 }
 
+interface DraftMessageView {
+  id: string;
+  conversationId: string;
+  tenantId: string;
+  authorType: string;
+  draftState: string | null;
+  content: string;
+  cloneConfidence: string | null;
+  groundednessScore: string | null;
+}
+
 interface EditMessageArgs {
   messageId: string;
   userId: string;
@@ -249,6 +260,56 @@ export class MessageService {
     }
 
     return { messageId: created.id, seq: created.seq.toString() };
+  }
+
+  async setDraftState(args: { messageId: string; draftState: string }): Promise<void> {
+    await this.prisma.message.update({
+      where: { id: args.messageId },
+      data: { draftState: args.draftState },
+    });
+  }
+
+  async getLastExternalQuestion(conversationId: string): Promise<string | null> {
+    const row = await this.prisma.message.findFirst({
+      where: {
+        conversationId,
+        access: 'external',
+        authorType: { not: 'clone' },
+        deletedAt: null,
+      },
+      orderBy: { seq: 'desc' },
+      select: { content: true },
+    });
+    if (!row) return null;
+    const text = this.crypto.decrypt(row.content).trim();
+    return text.length > 0 ? text : null;
+  }
+
+  async getDraftMessage(messageId: string): Promise<DraftMessageView | null> {
+    const row = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: {
+        id: true,
+        conversationId: true,
+        tenantId: true,
+        authorType: true,
+        draftState: true,
+        content: true,
+        cloneConfidence: true,
+        groundednessScore: true,
+      },
+    });
+    if (!row) return null;
+    return {
+      id: row.id,
+      conversationId: row.conversationId,
+      tenantId: row.tenantId,
+      authorType: row.authorType,
+      draftState: row.draftState,
+      content: this.crypto.decrypt(row.content),
+      cloneConfidence: row.cloneConfidence ? row.cloneConfidence.toString() : null,
+      groundednessScore: row.groundednessScore ? row.groundednessScore.toString() : null,
+    };
   }
 
   private async insertMessageRow(

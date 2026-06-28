@@ -17,6 +17,7 @@ import { MessageOutboxQueueService } from '../queue/message-outbox.queue.service
 import { VoiceTranscribeQueueService } from '../queue/voice-transcribe.queue.service';
 
 import { stripToPlain } from './strip-to-plain';
+import { UserBlockService } from './user-block.service';
 
 interface SendMessageArgs {
   tenantId: string;
@@ -172,6 +173,7 @@ export class MessageService {
     @Inject(MessageOutboxQueueService) private readonly outboxQueue: MessageOutboxQueueService,
     @Inject(VoiceTranscribeQueueService)
     private readonly voiceTranscribeQueue: VoiceTranscribeQueueService,
+    @Inject(UserBlockService) private readonly blocks: UserBlockService,
   ) {}
 
   async sendMessage(args: SendMessageArgs): Promise<SendMessageResult> {
@@ -180,6 +182,10 @@ export class MessageService {
     }
 
     const { tenantId, conversationId, authorUserId, content, clientMessageId } = args;
+
+    if (args.authorType !== 'system') {
+      await this.assertNotBlocked({ tenantId, conversationId, authorUserId });
+    }
 
     const existing = await this.prisma.message.findUnique({
       where: { conversationId_clientMessageId: { conversationId, clientMessageId } },
@@ -237,6 +243,20 @@ export class MessageService {
         }
       }
       throw err;
+    }
+  }
+
+  private async assertNotBlocked(args: {
+    tenantId: string;
+    conversationId: string;
+    authorUserId: string;
+  }): Promise<void> {
+    const blocked = await this.blocks.isSendBlockedInConversation(args);
+    if (blocked) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'BLOCKED_BY_RECIPIENT', message: 'Получатель ограничил переписку с вами' },
+      });
     }
   }
 

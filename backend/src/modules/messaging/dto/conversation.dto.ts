@@ -118,3 +118,17 @@ export interface ReactionsResponse {
 export interface OkResponse {
   ok: true;
 }
+
+export const BlockMemberSchema = z
+  .object({
+    userId: z.string().min(1),
+  })
+  .strict();
+export type BlockMemberDto = z.infer<typeof BlockMemberSchema>;
+
+export const ReportMessageSchema = z
+  .object({
+    reason: z.string().min(1).max(500).optional(),
+  })
+  .strict();
+export type ReportMessageDto = z.infer<typeof ReportMessageSchema>;

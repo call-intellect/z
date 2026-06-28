@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { OrgsModule } from '../orgs/orgs.module';
 
+import { AccountDeletionController } from './account-deletion.controller';
 import { AccountsController } from './accounts.controller';
 import { AccountsRepository } from './accounts.repository';
 import { AccountsService } from './accounts.service';
@@ -11,7 +12,7 @@ import { UnifiedLoginController } from './unified-login.controller';
 
 @Module({
   imports: [OrgsModule],
-  controllers: [AccountsController, UnifiedLoginController],
+  controllers: [AccountsController, UnifiedLoginController, AccountDeletionController],
   providers: [AccountsService, AccountsRepository, PasswordService, SessionService],
   exports: [AccountsService, SessionService],
 })

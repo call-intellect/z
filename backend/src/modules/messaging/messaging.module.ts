@@ -19,9 +19,11 @@ import { ChatSummaryService } from './services/chat-summary.service';
 import { ConversationService } from './services/conversation.service';
 import { InboxService } from './services/inbox.service';
 import { MessageActionsService } from './services/message-actions.service';
+import { MessageReportService } from './services/message-report.service';
 import { MessageService } from './services/message.service';
 import { PresenceService } from './services/presence.service';
 import { ReadCursorService } from './services/read-cursor.service';
+import { UserBlockService } from './services/user-block.service';
 import { WorkChatService } from './services/work-chat.service';
 
 @Module({
@@ -49,6 +51,8 @@ import { WorkChatService } from './services/work-chat.service';
     ChatSummaryService,
     AskKoraService,
     MessageActionsService,
+    UserBlockService,
+    MessageReportService,
   ],
   exports: [
     ConversationService,
@@ -67,6 +71,8 @@ import { WorkChatService } from './services/work-chat.service';
     ChatSummaryService,
     AskKoraService,
     MessageActionsService,
+    UserBlockService,
+    MessageReportService,
   ],
 })
 export class MessagingModule {}

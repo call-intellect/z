@@ -232,6 +232,32 @@ export class AccountsService {
     await this.sessions.revokeByJti(jti);
   }
 
+  async deleteAccount(userId: string): Promise<{ ok: true }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, deletedAt: true },
+    });
+    if (!user) {
+      return { ok: true };
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (!user.deletedAt) {
+        await tx.user.update({ where: { id: userId }, data: { deletedAt: new Date() } });
+      }
+      await tx.pushToken.deleteMany({ where: { userId } });
+      await tx.channelBinding.deleteMany({ where: { userId } });
+      await tx.conversationMember.deleteMany({ where: { userId } });
+      await tx.userSession.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    });
+
+    this.logger.log({ userId }, 'deleteAccount: аккаунт помечен удалённым, контактные точки очищены');
+    return { ok: true };
+  }
+
   async forgotPassword(email: string): Promise<void> {
     const normalized = AccountsService.normalizeEmail(email);
     const user = await this.repo.findStandaloneByEmail(normalized);

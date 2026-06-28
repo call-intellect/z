@@ -71,6 +71,21 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-28 — Единый чат: Ф6a backend push-фундамент + удаление аккаунта + блокировка пользователя (ветка feat/unified-chat-kora)
+
+> ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф6a. Транспорт-агностичный `PushService` (APNs/FCM/RuStore/web-push) + `PushToken` + push-канал conversational для офлайн-сигнала `chat.new_message` (ФЗ-41: payload без тела/имён). Самоудаление аккаунта (App Review 5.1.1(v)) + блокировка собеседника в dm + жалоба на сообщение (UGC-модерация App Store/Play).
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260628205102_push_tokens` (ALTER TYPE `ChannelKind` += `push` + CREATE TABLE `PushToken`/`UserBlock`/`MessageReport`). 🟡 1 НОВЫЙ ENV-флаг `CHAT_PUSH_ENABLED` (kill-switch ON) + опциональные push-секреты (APNS_*/FCM_*/RUSTORE_*/VAPID_* теперь в env.schema).** 2 новые крутилки (расширен существующий сид `seed-admin-setting-chat.ts`). Docker rebuild backend.
+
+- **Шаг 1 — ENV: 1 новый флаг + push-секреты.** `CHAT_PUSH_ENABLED` (zBool default true, kill-switch тип A — ВКЛ, действий владельца не требует; выкл → `PushChannelAdapter.send` no-op). **Опциональные push-секреты (наличие = отправка по транспорту, отсутствие = транспорт no-op, R34):** `APNS_KEY_ID`/`APNS_TEAM_ID`/`APNS_PRIVATE_KEY`/`APNS_BUNDLE_ID`/`APNS_USE_SANDBOX`, `FCM_PROJECT_ID`/`FCM_CLIENT_EMAIL`/`FCM_PRIVATE_KEY`, `RUSTORE_PROJECT_ID`/`RUSTORE_SERVICE_TOKEN`. **Также формализованы в env.schema:** `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT`/`PUSH_MAX_FAILURES` (раньше читались мимо схемы — теперь часть `PushSchema`; без значений web-push остаётся no-op как и был). Реестр — `docs/operations/feature-flags.md` (push-секреты в разделе «🔑 НЕ флаг, но ждёт прод-ENV»).
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260628205102_push_tokens` — `ALTER TYPE "ChannelKind" ADD VALUE IF NOT EXISTS 'push'` + `CREATE TABLE "PushToken"` (unique `[userId,transport,token]`, index `[tenantId,userId]`, FK → `User` `ON DELETE CASCADE`) + `CREATE TABLE "UserBlock"` (unique `[tenantId,blockerUserId,blockedUserId]`, FK ×2 → `User` `ON DELETE CASCADE`) + `CREATE TABLE "MessageReport"` (2 индекса). Аддитивная (ADD VALUE + CREATE TABLE, без DROP), без потери данных, backfill не нужен. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«PushToken / UserBlock / MessageReport».
+- **Шаг 7 — Seed крутилок (идемпотентный, сид УЖЕ в STEPS, расширен существующий):** доезжает агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`:
+  - `seed-admin-setting-chat.ts` (`phase:'seed-base'`) — `push_debounce_seconds` (30 — окно дебаунса push, код-fallback 30) + `unread_smart_badge` (true — умный бейдж непрочитанного, код-fallback true).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend (push: `PushService` транспорт-агностичный + `ApnsSender`/`FcmSender`/`RustoreSender` + `PushChannelAdapter` (kind=push, регистрируется в `ChannelRegistry`); `PushTokensController` POST/DELETE `/push/tokens`; `chat.new_message` policy += `push`. accounts: `AccountDeletionController` POST `/account/delete` + `AccountsService.deleteAccount` (soft-delete + чистка push/binding/member + revoke сессий). messaging: `UserBlockService` + `MessageReportService`; `block-member`/`report` эндпоинты; dm-send-гард на `UserBlock`).
+- **Шаг 12 — Smoke** (после выката): Swagger `POST /api/v1/push/tokens` + `DELETE`; `POST /api/v1/account/delete`; `POST /api/v1/conversations/:id/block-member`; `POST /api/v1/messages/:messageId/report`. Флаг `CHAT_PUSH_ENABLED` в админке. `psql \dT "ChannelKind"` содержит `push`; `\d "PushToken"`/`"UserBlock"`/`"MessageReport"` существуют. Боевая отправка push требует прод-кредов (APNS_*/FCM_*/RUSTORE_*/VAPID_*) — без них транспорты no-op, ядро не падает.
+
+---
+
 ### 📄 2026-06-28 — Единый чат: Ф3.5a внешняя переписка с клиентами + relay-access фикс (ветка feat/unified-chat-kora)
 
 > ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф3.5a. Ядро внешней переписки (magic-link к одному разговору, sha256-хэш токена) + security-фикс relay: `internal`-сообщения больше не утекают клиенту-члену (эмит только в staff-room).

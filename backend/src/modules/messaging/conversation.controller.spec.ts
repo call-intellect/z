@@ -16,8 +16,10 @@ import type { AskKoraService } from './services/ask-kora.service';
 import type { ChatSummaryService } from './services/chat-summary.service';
 import type { ConversationService } from './services/conversation.service';
 import type { MessageActionsService } from './services/message-actions.service';
+import type { MessageReportService } from './services/message-report.service';
 import type { MessageService } from './services/message.service';
 import type { ReadCursorService } from './services/read-cursor.service';
+import type { UserBlockService } from './services/user-block.service';
 import type { WorkChatService } from './services/work-chat.service';
 
 const TENANT = 'org_1';
@@ -32,6 +34,8 @@ function makeController(overrides: {
   chatSummary?: Partial<ChatSummaryService>;
   askKora?: Partial<AskKoraService>;
   messageActions?: Partial<MessageActionsService>;
+  userBlocks?: Partial<UserBlockService>;
+  messageReports?: Partial<MessageReportService>;
 }) {
   const conversations = {
     createConversation: vi.fn(),
@@ -75,6 +79,14 @@ function makeController(overrides: {
     messageToDecision: vi.fn(),
     ...overrides.messageActions,
   } as unknown as MessageActionsService;
+  const userBlocks = {
+    blockInConversation: vi.fn(),
+    ...overrides.userBlocks,
+  } as unknown as UserBlockService;
+  const messageReports = {
+    report: vi.fn(),
+    ...overrides.messageReports,
+  } as unknown as MessageReportService;
   return {
     controller: new ConversationController(
       conversations,
@@ -85,6 +97,8 @@ function makeController(overrides: {
       chatSummary,
       askKora,
       messageActions,
+      userBlocks,
+      messageReports,
     ),
     conversations,
     messages,

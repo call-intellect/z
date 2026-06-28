@@ -79,6 +79,24 @@ const SEEDS: SettingSeed[] = [
     description:
       'Лимит входящих сообщений внешнего клиента в час на разговор (анти-абьюз публичного входа). Превышение → 429. По умолчанию 30.',
   },
+  {
+    key: 'push_debounce_seconds',
+    value: 30,
+    category: 'chat',
+    section: 'push',
+    severity: 'low',
+    description:
+      'Окно дебаунса (сек) push-уведомлений о новых сообщениях одному получателю: повторные сигналы в пределах окна схлопываются в один. По умолчанию 30.',
+  },
+  {
+    key: 'unread_smart_badge',
+    value: true,
+    category: 'chat',
+    section: 'push',
+    severity: 'low',
+    description:
+      'Умный бейдж непрочитанного: показывать счётчик непрочитанных на иконке/в приложении. Выкл → бейдж не подсвечивается. По умолчанию вкл.',
+  },
 ];
 
 interface Counters {

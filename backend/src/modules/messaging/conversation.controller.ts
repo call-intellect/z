@@ -29,6 +29,8 @@ import {
   AskKoraSchema,
   type AskKoraDto,
   type AskKoraResponse,
+  BlockMemberSchema,
+  type BlockMemberDto,
   CreateConversationSchema,
   type CreateConversationDto,
   type CreateConversationResponse,
@@ -45,6 +47,8 @@ import {
   ReactionSchema,
   type ReactionDto,
   type ReactionsResponse,
+  ReportMessageSchema,
+  type ReportMessageDto,
   SendMessageSchema,
   type SendMessageDto,
   type SendMessageResponse,
@@ -54,8 +58,10 @@ import { AskKoraService } from './services/ask-kora.service';
 import { ChatSummaryService } from './services/chat-summary.service';
 import { ConversationService } from './services/conversation.service';
 import { MessageActionsService } from './services/message-actions.service';
+import { MessageReportService } from './services/message-report.service';
 import { MessageService } from './services/message.service';
 import { ReadCursorService } from './services/read-cursor.service';
+import { UserBlockService } from './services/user-block.service';
 import { WorkChatService } from './services/work-chat.service';
 
 @ApiTags('messaging / conversations')
@@ -73,6 +79,8 @@ export class ConversationController {
     @Inject(AskKoraService) private readonly askKora: AskKoraService,
     @Inject(MessageActionsService)
     private readonly messageActions: MessageActionsService,
+    @Inject(UserBlockService) private readonly userBlocks: UserBlockService,
+    @Inject(MessageReportService) private readonly messageReports: MessageReportService,
   ) {}
 
   @Post('conversations')
@@ -347,6 +355,45 @@ export class ConversationController {
       conversationId,
       messageId,
     });
+  }
+
+  @Post('conversations/:id/block-member')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Заблокировать собеседника в разговоре (UGC-модерация)' })
+  async blockMember(
+    @Param('id') conversationId: string,
+    @Body(new ZodValidationPipe(BlockMemberSchema)) body: BlockMemberDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<OkResponse> {
+    const t = this.requireTenant(tenantId);
+    await this.requireMember(conversationId, user.id);
+    await this.userBlocks.blockInConversation({
+      tenantId: t,
+      conversationId,
+      blockerUserId: user.id,
+      blockedUserId: body.userId,
+    });
+    return { ok: true };
+  }
+
+  @Post('messages/:messageId/report')
+  @RequireSubscription()
+  @ApiOperation({ summary: 'Пожаловаться на сообщение (UGC report)' })
+  async reportMessage(
+    @Param('messageId') messageId: string,
+    @Body(new ZodValidationPipe(ReportMessageSchema)) body: ReportMessageDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<OkResponse> {
+    const t = this.requireTenant(tenantId);
+    await this.messageReports.report({
+      tenantId: t,
+      messageId,
+      reporterUserId: user.id,
+      reason: body.reason ?? null,
+    });
+    return { ok: true };
   }
 
   private requireTenant(tenantId: string | undefined): string {

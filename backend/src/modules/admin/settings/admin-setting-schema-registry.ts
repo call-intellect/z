@@ -475,6 +475,9 @@ const registry = new Map<string, ZodTypeAny>([
 
   ['recording.trackWatchdogEnabled', z.boolean()],
   ['recording.trackWatchdogTimeoutMinutes', z.coerce.number()],
+
+  ['push_debounce_seconds', z.number().int().nonnegative()],
+  ['unread_smart_badge', z.boolean()],
 ]);
 
 export function getSchemaForKey(key: string): ZodTypeAny {

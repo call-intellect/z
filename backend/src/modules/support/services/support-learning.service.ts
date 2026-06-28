@@ -65,8 +65,8 @@ export class SupportLearningService {
       await tx.supportDraftOutcome.create({
         data: {
           tenantId: issue.tenantId,
-          issueId: issue.id,
-          draftCommentId: comment.id,
+          conversationId: issue.id,
+          draftMessageId: comment.id,
           draftText,
           finalText: externalText,
           outcome: 'accepted',
@@ -111,8 +111,8 @@ export class SupportLearningService {
       await tx.supportDraftOutcome.create({
         data: {
           tenantId: issue.tenantId,
-          issueId: issue.id,
-          draftCommentId: comment.id,
+          conversationId: issue.id,
+          draftMessageId: comment.id,
           draftText: comment.content,
           finalText: null,
           outcome: 'rejected',
@@ -184,8 +184,8 @@ export class SupportLearningService {
       await tx.supportDraftOutcome.create({
         data: {
           tenantId: issue.tenantId,
-          issueId: issue.id,
-          draftCommentId: comment.id,
+          conversationId: issue.id,
+          draftMessageId: comment.id,
           draftText: comment.content,
           finalText,
           outcome: 'edited',
@@ -210,11 +210,11 @@ export class SupportLearningService {
     });
   }
 
-  async maybePromote(issueId: string): Promise<{ promoted: number }> {
+  async maybePromote(conversationId: string): Promise<{ promoted: number }> {
     const minCsat = await this.cfg.getDynamic<number>('support_promote_min_csat', undefined, 4);
 
     const rating = await this.prisma.issueRating.findUnique({
-      where: { issueId },
+      where: { conversationId },
       select: { score: true },
     });
     if (!rating || rating.score < minCsat) {
@@ -222,7 +222,7 @@ export class SupportLearningService {
     }
 
     const issue = await this.prisma.issue.findUnique({
-      where: { id: issueId },
+      where: { id: conversationId },
       select: { id: true, tenantId: true, title: true },
     });
     if (!issue) return { promoted: 0 };
@@ -230,7 +230,7 @@ export class SupportLearningService {
     const outcomes = await this.prisma.supportDraftOutcome.findMany({
       where: {
         tenantId: issue.tenantId,
-        issueId,
+        conversationId,
         outcome: { in: ['accepted', 'edited'] },
         promotedToContour: false,
       },
@@ -253,7 +253,7 @@ export class SupportLearningService {
       } catch (err) {
         this.logger.warn(
           {
-            issueId,
+            conversationId,
             outcomeId: outcome.id,
             err: err instanceof Error ? err.message : String(err),
           },

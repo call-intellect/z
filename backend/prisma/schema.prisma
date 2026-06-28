@@ -9904,13 +9904,14 @@ model SupportSlaPolicy {
 
 /// CSAT/оценка тикета поддержки клиентом. TZ support-desk Ф1 (R-INV-2/R3 — чистый сигнал петле).
 model IssueRating {
-  id            String   @id @default(cuid())
-  tenantId      String
-  issueId       String   @unique
-  score         Int /// 1..5
-  comment       String?  @db.Text
-  ratedByUserId String? /// клиент (User.id)
-  createdAt     DateTime @default(now())
+  id             String   @id @default(cuid())
+  tenantId       String
+  issueId        String?  @unique
+  conversationId String?  @unique
+  score          Int /// 1..5
+  comment        String?  @db.Text
+  ratedByUserId  String? /// клиент (User.id)
+  createdAt      DateTime @default(now())
 
   @@index([tenantId, createdAt])
 }
@@ -9920,8 +9921,8 @@ model IssueRating {
 model SupportDraftOutcome {
   id                String   @id @default(cuid())
   tenantId          String /// вендор-Org
-  issueId           String
-  draftCommentId    String?
+  conversationId    String
+  draftMessageId    String?
   taskType          String   @default("support-clone-draft")
   draftText         String   @db.Text
   finalText         String?  @db.Text /// что реально ушло клиенту (null если отклонён)
@@ -9933,7 +9934,7 @@ model SupportDraftOutcome {
   createdAt         DateTime @default(now())
 
   @@index([tenantId, taskType, createdAt])
-  @@index([tenantId, issueId])
+  @@index([tenantId, conversationId])
 }
 
 /// Аудит действий ночного куратора контура поддержки (TZ Ф4, R-INV-6/R24).
@@ -12478,8 +12479,9 @@ model Conversation {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  members  ConversationMember[]
-  messages Message[]
+  members       ConversationMember[]
+  messages      Message[]
+  supportTicket SupportTicket?
 
   @@index([tenantId, kind, lastMessageAt])
 }
@@ -12543,4 +12545,25 @@ model MessageOutbox {
   createdAt DateTime @default(now())
 
   @@index([status, createdAt])
+}
+
+model SupportTicket {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  conversationId     String    @unique
+  status             String    @default("new")
+  customerOrgId      String?
+  customerUserId     String?
+  customerContact    String?   @db.VarChar(320)
+  firstResponseDueAt DateTime?
+  resolutionDueAt    DateTime?
+  firstRespondedAt   DateTime?
+  slaBreachedAt      DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([tenantId, firstResponseDueAt])
 }

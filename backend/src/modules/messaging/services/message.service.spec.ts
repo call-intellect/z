@@ -291,6 +291,88 @@ describe('MessageService.sendMessage', () => {
   });
 });
 
+describe('MessageService.appendTicketMessage', () => {
+  const crypto = makeCrypto();
+
+  it('external/internal access пробрасывается; clientMessageId с префиксом tkt:; нет CHAT-гейта', async () => {
+    const captures: Record<string, unknown>[] = [];
+    const tx = makeTx(0n, (data) => {
+      captures.push(data as Record<string, unknown>);
+      return makeRow({ access: (data as { access: string }).access, seq: 1n });
+    });
+    const prisma = {
+      message: { findUnique: vi.fn() },
+      $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(tx)),
+    } as unknown as PrismaService;
+    const service = new MessageService(prisma, crypto, makeCfg(false), makeOutboxQueue());
+
+    const ext = await service.appendTicketMessage({
+      tenantId: 'org-1',
+      conversationId: 'conv-1',
+      authorUserId: 'agent-1',
+      content: 'видно клиенту',
+      access: 'external',
+    });
+    await service.appendTicketMessage({
+      tenantId: 'org-1',
+      conversationId: 'conv-1',
+      authorUserId: 'agent-1',
+      content: 'внутренняя заметка',
+      access: 'internal',
+    });
+
+    expect(ext.messageId).toBe('msg-1');
+    expect(ext.seq).toBe('1');
+    expect(captures.map((c) => c.access)).toEqual(['external', 'internal']);
+    expect((captures[0]!.clientMessageId as string).startsWith('tkt:')).toBe(true);
+  });
+
+  it('emitOutbox=true → outbox.create + enqueue; emitOutbox=false → ни create, ни enqueue', async () => {
+    const outboxOn = makeOutboxQueue();
+    const txOn = makeTx(0n, () => makeRow({ id: 'm-on', seq: 1n }));
+    const serviceOn = new MessageService(
+      {
+        message: { findUnique: vi.fn() },
+        $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(txOn)),
+      } as unknown as PrismaService,
+      crypto,
+      makeCfg(),
+      outboxOn,
+    );
+    await serviceOn.appendTicketMessage({
+      tenantId: 'org-1',
+      conversationId: 'conv-1',
+      authorUserId: 'agent-1',
+      content: 'x',
+      access: 'external',
+    });
+    expect(txOn.messageOutbox.create).toHaveBeenCalledTimes(1);
+    expect(outboxOn.enqueue).toHaveBeenCalledWith('m-on');
+
+    const outboxOff = makeOutboxQueue();
+    const txOff = makeTx(0n, () => makeRow({ id: 'm-off', seq: 1n }));
+    const serviceOff = new MessageService(
+      {
+        message: { findUnique: vi.fn() },
+        $transaction: vi.fn((cb: (t: unknown) => unknown) => cb(txOff)),
+      } as unknown as PrismaService,
+      crypto,
+      makeCfg(),
+      outboxOff,
+    );
+    await serviceOff.appendTicketMessage({
+      tenantId: 'org-1',
+      conversationId: 'conv-1',
+      authorUserId: 'agent-1',
+      content: 'x',
+      access: 'internal',
+      emitOutbox: false,
+    });
+    expect(txOff.messageOutbox.create).not.toHaveBeenCalled();
+    expect(outboxOff.enqueue).not.toHaveBeenCalled();
+  });
+});
+
 describe('MessageService.toggleReaction', () => {
   function makeReactionPrisma(initialReactions: Record<string, string[]> | null) {
     let stored = initialReactions;

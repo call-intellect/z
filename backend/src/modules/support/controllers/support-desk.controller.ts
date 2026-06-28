@@ -67,8 +67,8 @@ export class SupportDeskController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(DeskReplySchema)) body: DeskReplyDto,
     @CurrentUser() user: CurrentUserPayload,
-  ): Promise<{ ok: true; commentId: string }> {
-    return this.desk.reply(id, user.id, body.message, body.fromDraftCommentId);
+  ): Promise<{ ok: true; messageId: string }> {
+    return this.desk.reply(id, user.id, body.message, body.fromDraftMessageId);
   }
 
   @Post('tickets/:id/draft')
@@ -114,7 +114,7 @@ export class SupportDeskController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(DeskNoteSchema)) body: DeskNoteDto,
     @CurrentUser() user: CurrentUserPayload,
-  ): Promise<{ ok: true; commentId: string }> {
+  ): Promise<{ ok: true; messageId: string }> {
     return this.desk.note(id, user.id, body.message);
   }
 
@@ -137,6 +137,6 @@ export class SupportDeskController {
     @Body(new ZodValidationPipe(DeskTransitionSchema)) body: DeskTransitionDto,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<{ ok: true }> {
-    return this.desk.transition(id, user.id, body.stateId);
+    return this.desk.transition(id, user.id, body.status);
   }
 }

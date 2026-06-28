@@ -286,7 +286,7 @@ const MeetingInvitePayloadSchema = z
 const SupportTicketEventPayloadSchema = z
   .object({
     ticketId: z.string().min(1).max(80),
-    ticketNumber: z.string().min(1).max(40),
+    ticketNumber: z.string().min(1).max(40).optional(),
     subject: z.string().min(1).max(300),
     snippet: z.string().max(2_000).optional(),
     actionUrl: z.string().max(2_000).optional(),

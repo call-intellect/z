@@ -7,6 +7,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { nanoid } from 'nanoid';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { CryptoService } from '../../../common/crypto/crypto.service';
@@ -74,6 +75,24 @@ interface InsertMessageRowArgs {
   createdAt?: Date;
   editedAt?: Date | null;
   deletedAt?: Date | null;
+}
+
+interface AppendTicketMessageArgs {
+  tenantId: string;
+  conversationId: string;
+  authorUserId: string;
+  content: string;
+  access: 'external' | 'internal';
+  authorType?: string;
+  draftState?: string | null;
+  cloneConfidence?: number | string | null;
+  groundednessScore?: number | string | null;
+  emitOutbox?: boolean;
+}
+
+interface AppendTicketMessageResult {
+  messageId: string;
+  seq: string;
 }
 
 interface EditMessageArgs {
@@ -186,6 +205,50 @@ export class MessageService {
       }
       throw err;
     }
+  }
+
+  async appendTicketMessage(args: AppendTicketMessageArgs): Promise<AppendTicketMessageResult> {
+    const emitOutbox = args.emitOutbox !== false;
+    const clientMessageId = `tkt:${nanoid()}`;
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const row = await this.insertMessageRow(tx, {
+        tenantId: args.tenantId,
+        conversationId: args.conversationId,
+        authorUserId: args.authorUserId,
+        content: args.content,
+        access: args.access,
+        authorType: args.authorType ?? 'human',
+        draftState: args.draftState ?? null,
+        cloneConfidence: args.cloneConfidence ?? null,
+        groundednessScore: args.groundednessScore ?? null,
+        clientMessageId,
+        createdAt: new Date(),
+      });
+
+      if (emitOutbox) {
+        await tx.messageOutbox.create({ data: { messageId: row.id } });
+      }
+      await tx.conversation.update({
+        where: { id: args.conversationId },
+        data: { lastMessageAt: new Date() },
+      });
+
+      return row;
+    });
+
+    if (emitOutbox) {
+      try {
+        await this.outboxQueue.enqueue(created.id);
+      } catch (err) {
+        this.logger.warn(
+          { messageId: created.id, err: err instanceof Error ? err.message : String(err) },
+          'appendTicketMessage: outbox enqueue не удался (backstop-sweep догонит)',
+        );
+      }
+    }
+
+    return { messageId: created.id, seq: created.seq.toString() };
   }
 
   private async insertMessageRow(

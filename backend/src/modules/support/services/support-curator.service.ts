@@ -91,7 +91,7 @@ export class SupportCuratorService {
     const since = new Date(now.getTime() - SIGNALS_WINDOW_MS);
     const signals = await this.prisma.supportDraftOutcome.findMany({
       where: { tenantId: vendorOrgId, createdAt: { gte: since } },
-      select: { issueId: true, outcome: true, editType: true },
+      select: { conversationId: true, outcome: true, editType: true },
     });
 
     let proposals: CuratorProposal[];

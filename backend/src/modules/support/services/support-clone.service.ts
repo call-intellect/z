@@ -243,21 +243,21 @@ export class SupportCloneService {
       },
       orderBy: { createdAt: 'desc' },
       take: FEW_SHOT_LIMIT,
-      select: { issueId: true, finalText: true },
+      select: { conversationId: true, finalText: true },
     });
     if (outcomes.length === 0) return [];
 
-    const issueIds = [...new Set(outcomes.map((o) => o.issueId))];
-    const issues = await this.prisma.issue.findMany({
-      where: { id: { in: issueIds } },
+    const conversationIds = [...new Set(outcomes.map((o) => o.conversationId))];
+    const conversations = await this.prisma.conversation.findMany({
+      where: { id: { in: conversationIds } },
       select: { id: true, title: true },
     });
-    const titleById = new Map(issues.map((i) => [i.id, i.title]));
+    const titleById = new Map(conversations.map((c) => [c.id, c.title]));
 
     return outcomes
       .filter((o): o is typeof o & { finalText: string } => !!o.finalText)
       .map((o) => ({
-        question: titleById.get(o.issueId) ?? '',
+        question: titleById.get(o.conversationId) ?? '',
         answer: o.finalText,
       }));
   }

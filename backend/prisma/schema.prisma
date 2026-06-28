@@ -7987,6 +7987,14 @@ model DailyOperationsDigest {
   shortSummary   String?   @db.Text
   /// Telegram-доставка прошла. NULL — ещё не доставлено или выключено.
   deliveredAt    DateTime?
+  /// Вердикт дня: { overall:{state,emoji,title,oneLiner}, axes:[{key,state,label,why}] }.
+  /// state ∈ 'ok'|'warn'|'risk'; key ∈ 'team'|'clients'|'execution'|'overall'. NULL для legacy/сухого fallback.
+  verdictJson          Json?
+  /// Письмо «как прошёл день»: [{ key, title, prose, cites:[{label,ref}] }] — чистая проза (TTS-friendly).
+  /// key ∈ 'main'|'done'|'not_done'|'reporting'|'blocked'|'decisions'|'clients'|'ideas'|'reflection'|'actions'|'delta'.
+  letterJson           Json?
+  /// Дневной компас к цели: { direction:'to_goal'|'drift'|'against', score, todayDelta, why, pro:[], contra:[], goalId, goalName }.
+  goalAlignmentDayJson Json?
   createdAt      DateTime  @default(now())
 
   tenant         Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)

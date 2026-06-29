@@ -158,7 +158,10 @@ export class ProbeResponseHandler {
         contextBlockId: event.contextBlockId,
         contextCardId: event.contextCardId,
         questionText: this.extractQuestionText(probePayload),
-        signalTypeHint: probe.reason === 'skill.cdm_interview' ? 'reasoning' : undefined,
+        signalTypeHint:
+          probe.reason === 'skill.cdm_interview' || probe.reason === 'task.method_capture'
+            ? 'reasoning'
+            : undefined,
       });
       this.metrics.incProbeClosed({
         tenantTop: this.normalizeTenantTop(event.tenantId),

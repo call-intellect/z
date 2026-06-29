@@ -1820,3 +1820,58 @@ describe('ProbeResponseHandler — Ф6 деградация (LLM-классиф�
     expect(mocks.metrics.incProbeResponseClassified).not.toHaveBeenCalled();
   });
 });
+
+describe('ProbeResponseHandler — Ф6 мостик task.method_capture → дальняя цепочка', () => {
+  function setMethodCaptureProbe(mocks: Mocks): void {
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi.fn().mockResolvedValue({
+      ...buildProbe(),
+      reason: 'task.method_capture',
+      payload: {
+        contextCardId: 'issue-mc-1',
+        contextCardKind: 'issue',
+        contextCardTitle: 'Найти подрядчика',
+        formulatedQuestion: 'Как вы решали эту задачу?',
+      },
+    });
+  }
+
+  it('(bridge-1) ответ «как решал» уходит в дальнюю цепочку с signalTypeHint=reasoning', async () => {
+    const mocks = makeMocks();
+    setMethodCaptureProbe(mocks);
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({
+      ...event,
+      payload: { text: 'сначала погуглил, потом списался с подрядчиком и сравнил цены' },
+    });
+
+    expect(mocks.ingestAdapter.ingestNotificationResponse).toHaveBeenCalledTimes(1);
+    expect(mocks.ingestAdapter.ingestNotificationResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        signalTypeHint: 'reasoning',
+        payload: expect.objectContaining({
+          text: 'сначала погуглил, потом списался с подрядчиком и сравнил цены',
+        }),
+      }),
+    );
+  });
+
+  it('(bridge-2) мостик идёт с тем же notificationId (ключ идемпотентности resp:<id>)', async () => {
+    const mocks = makeMocks();
+    setMethodCaptureProbe(mocks);
+    const handler = makeHandler({ mocks, classifyEnabled: false });
+
+    await handler.handle({
+      ...event,
+      payload: { text: 'разбил на шаги и делал по порядку' },
+    });
+
+    expect(mocks.ingestAdapter.ingestNotificationResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notificationId: 'notif-classify-1',
+        tenantId: 'org-classify',
+        questionText: 'Как вы решали эту задачу?',
+      }),
+    );
+  });
+});

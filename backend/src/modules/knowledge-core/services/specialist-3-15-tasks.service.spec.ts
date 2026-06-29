@@ -65,7 +65,10 @@ interface Mocks {
     issue: { findFirst: ReturnType<typeof vi.fn> };
     taskSource: { create: ReturnType<typeof vi.fn> };
     membership: { findFirst: ReturnType<typeof vi.fn> };
-    person: { findMany: ReturnType<typeof vi.fn> };
+    person: {
+      findMany: ReturnType<typeof vi.fn>;
+      findFirst: ReturnType<typeof vi.fn>;
+    };
     $queryRaw: ReturnType<typeof vi.fn>;
     $executeRaw: ReturnType<typeof vi.fn>;
     $transaction: ReturnType<typeof vi.fn>;
@@ -107,7 +110,10 @@ function buildService(linkSemantics: 'link' | 'delete' = 'link'): {
       membership: {
         findFirst: vi.fn().mockResolvedValue({ userId: 'owner-1' }),
       },
-      person: { findMany: vi.fn().mockResolvedValue([]) },
+      person: {
+        findMany: vi.fn().mockResolvedValue([]),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
       $queryRaw: vi.fn().mockResolvedValue([]),
       $executeRaw: vi.fn().mockResolvedValue(0),
       $transaction: vi.fn(),
@@ -308,6 +314,110 @@ describe('Specialist315TasksService.processBlock', () => {
 
     expect(m.prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
     expect(m.probe.suggest).not.toHaveBeenCalled();
+  });
+
+  it('(p) автор реплики определён → probe адресован автору, НЕ владельцу', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(
+      makeBlock('chatbox', {
+        evidence: [
+          {
+            quote: 'подготовь смету',
+            sourceType: 'chatbox',
+            authorPersonId: 'p-setter',
+          },
+        ],
+      }),
+    );
+    m.llm.call.mockResolvedValueOnce(
+      llmResult(taskJson({ sourceQuote: 'подготовь смету' })),
+    );
+    m.assigneeResolver.resolve.mockResolvedValue({ kind: 'not_found' });
+    m.prisma.person.findFirst.mockResolvedValue({ userId: 'user-setter' });
+    m.prisma.membership.findFirst.mockResolvedValue({ userId: 'owner-1' });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.person.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: TENANT,
+          id: 'p-setter',
+          userId: { not: null },
+        }),
+      }),
+    );
+    expect(m.probe.suggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'task.assignee_unresolved',
+        recipientCandidates: ['user-setter'],
+      }),
+    );
+    expect(m.probe.suggest).not.toHaveBeenCalledWith(
+      expect.objectContaining({ recipientCandidates: ['owner-1'] }),
+    );
+  });
+
+  it('(q) автор без userId → фолбэк owner', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(
+      makeBlock('chatbox', {
+        evidence: [
+          {
+            quote: 'подготовь смету',
+            sourceType: 'chatbox',
+            authorPersonId: 'p-setter',
+          },
+        ],
+      }),
+    );
+    m.llm.call.mockResolvedValueOnce(
+      llmResult(taskJson({ sourceQuote: 'подготовь смету' })),
+    );
+    m.assigneeResolver.resolve.mockResolvedValue({ kind: 'not_found' });
+    m.prisma.person.findFirst.mockResolvedValue(null);
+    m.prisma.membership.findFirst.mockResolvedValue({ userId: 'owner-1' });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.probe.suggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'task.assignee_unresolved',
+        recipientCandidates: ['owner-1'],
+      }),
+    );
+  });
+
+  it('(r) tenant-изоляция: автор из другого Org не матчится → фолбэк owner', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(
+      makeBlock('chatbox', {
+        evidence: [
+          {
+            quote: 'подготовь смету',
+            sourceType: 'chatbox',
+            authorPersonId: 'p-foreign',
+          },
+        ],
+      }),
+    );
+    m.llm.call.mockResolvedValueOnce(
+      llmResult(taskJson({ sourceQuote: 'подготовь смету' })),
+    );
+    m.assigneeResolver.resolve.mockResolvedValue({ kind: 'not_found' });
+    m.prisma.person.findFirst.mockResolvedValue(null);
+    m.prisma.membership.findFirst.mockResolvedValue({ userId: 'owner-1' });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.person.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ tenantId: TENANT }),
+      }),
+    );
+    expect(m.probe.suggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'task.assignee_unresolved',
+        recipientCandidates: ['owner-1'],
+      }),
+    );
   });
 
   it('(g) generic-API канал (external) → create с source:api (новый канал без нового кода)', async () => {

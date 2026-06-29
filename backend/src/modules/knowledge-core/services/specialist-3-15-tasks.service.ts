@@ -331,7 +331,7 @@ export class Specialist315TasksService {
       this.probe
     ) {
       try {
-        const recipient = await this.resolveProbeRecipient(block.tenantId);
+        const recipient = await this.resolveSetterRecipient(block, draft);
         if (recipient) {
           await this.probe.suggest({
             tenantId: block.tenantId,
@@ -542,6 +542,39 @@ export class Specialist315TasksService {
   private normalizePriority(input: unknown): string {
     if (input === 'low' || input === 'medium' || input === 'high') return input;
     return '';
+  }
+
+  private pickSetterAuthorPersonId(
+    block: IdeaBlock & { evidence: IdeaBlockEvidence[] },
+    draft: TaskDraft,
+  ): string | null {
+    const sourceQuote = (draft.sourceQuote ?? '').trim();
+    if (sourceQuote) {
+      const matched = block.evidence.find(
+        (e) =>
+          !!e.authorPersonId &&
+          !!e.quote &&
+          (e.quote.includes(sourceQuote) || sourceQuote.includes(e.quote)),
+      );
+      if (matched?.authorPersonId) return matched.authorPersonId;
+    }
+    const firstWithAuthor = block.evidence.find((e) => !!e.authorPersonId);
+    return firstWithAuthor?.authorPersonId ?? null;
+  }
+
+  private async resolveSetterRecipient(
+    block: IdeaBlock & { evidence: IdeaBlockEvidence[] },
+    draft: TaskDraft,
+  ): Promise<string | null> {
+    const authorPersonId = this.pickSetterAuthorPersonId(block, draft);
+    if (authorPersonId) {
+      const person = await this.prisma.person.findFirst({
+        where: { tenantId: block.tenantId, id: authorPersonId, userId: { not: null } },
+        select: { userId: true },
+      });
+      if (person?.userId) return person.userId;
+    }
+    return this.resolveProbeRecipient(block.tenantId);
   }
 
   private async resolveProbeRecipient(tenantId: string): Promise<string | null> {

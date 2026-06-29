@@ -13,12 +13,15 @@ import {
   type DirectorDashboardValueStripDomain,
 } from "@/domain/director-dashboard";
 import { useWeekCompanyDigest } from "@/hooks/useWeekCompany";
+import { useStaleTasksCrossProject } from "@/hooks/useDayCompany";
 import { useSwrWithToast } from "@/hooks/useSwrWithToast";
 import { toast } from "@/ui/shadcn/toast";
 import { Button } from "@/ui/shadcn/button";
 import { CHART } from "@/ui/components/dashboard/modern";
 import { RisksIdeas } from "@/ui/components/dashboard/day-company/RisksIdeas";
 import { PeriodValue } from "@/ui/components/dashboard/day-company/PeriodValue";
+import { StaleTasksLinked } from "@/ui/components/dashboard/day-company/StaleTasksLinked";
+import { WeeklyPerPersonWidget } from "@app/(authenticated)/dashboard/operations/weekly/WeeklyPerPersonWidget";
 
 import { WeekGoalCompass } from "./WeekGoalCompass";
 import { WeekLetter } from "./WeekLetter";
@@ -65,6 +68,8 @@ export function WeekCompanyHero() {
     error: digestError,
     mutate: mutateDigest,
   } = useWeekCompanyDigest(currentOrgId);
+
+  const { items: staleItems } = useStaleTasksCrossProject(currentOrgId);
 
   const insightsSwr = useSwrWithToast(
     currentOrgId ? ["week-company.insights", currentOrgId] : null,
@@ -197,6 +202,13 @@ export function WeekCompanyHero() {
       {digest.goalAlignmentWeek ? (
         <WeekGoalCompass goal={digest.goalAlignmentWeek} />
       ) : null}
+
+      <WeeklyPerPersonWidget
+        weekStart={digest.weekStart}
+        weekEnd={digest.weekEnd}
+      />
+
+      <StaleTasksLinked items={staleItems} />
 
       <RisksIdeas
         insights={insightsSwr.data ?? []}

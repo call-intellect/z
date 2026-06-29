@@ -14,6 +14,7 @@ export interface WeeklyPersonRowApi {
   tasksPlanned: number;
   tasksNotDone: number;
   checkInsCompleted: number;
+  goalContributionNet: number | null;
 }
 
 export interface WeeklyPerPersonApi {
@@ -55,12 +56,18 @@ export interface WeeklyPersonItemsApi {
 export const weeklyPerPersonApi = {
   get: (
     weekStart: string,
-    opts?: { limit?: number; offset?: number; sort?: "reliability" | "risk" },
+    opts?: {
+      limit?: number;
+      offset?: number;
+      sort?: "reliability" | "risk";
+      weekEnd?: string;
+    },
   ) => {
     const p = new URLSearchParams({ weekStart });
     if (opts?.limit != null) p.set("limit", String(opts.limit));
     if (opts?.offset != null) p.set("offset", String(opts.offset));
     if (opts?.sort) p.set("sort", opts.sort);
+    if (opts?.weekEnd) p.set("weekEnd", opts.weekEnd);
     return apiClient.get<WeeklyPerPersonApi>(
       `/api/v1/dashboard/operations/weekly-per-person?${p.toString()}`,
     );

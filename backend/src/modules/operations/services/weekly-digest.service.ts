@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { tryParseJson } from '../../ai/services/json-extract.util';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import type {
   WeeklyDeltaDto,
@@ -14,15 +15,29 @@ import type {
   WeeklySectionDeltasDto,
   WeeklyTeamDynamicsRowDto,
   WeeklyDigestTrendPointDto,
+  WeeklyDigestVerdictDto,
+  WeeklyDigestLetterSectionDto,
+  WeeklyDigestGoalAlignmentWeekDto,
+  WeeklyDayTrendAxisDto,
+  WeeklyDayTrendState,
 } from '../dto/weekly-digest.dto';
 import {
-  WEEKLY_DIGEST_PROMPT_VERSION,
-  WEEKLY_DIGEST_SYSTEM_PROMPT,
+  WEEK_COMPANY_PROMPT_VERSION,
+  WEEKLY_DIGEST_TASK_TYPE,
+  WEEK_COMPANY_JSON_SCHEMA,
+  WEEK_COMPANY_SYSTEM_PROMPT,
+  WeekCompanyResponseSchema,
   buildFallbackDigestMarkdown,
-  buildWeeklyDigestUserMessage,
+  buildWeekCompanyUserMessage,
+  weekCompanyToBodyMarkdown,
   type WeeklyDigestAggregates,
+  type WeekCompanyPackage,
+  type WeekCompanyPackageDay,
+  type WeekCompanyResponse,
 } from '../prompts/weekly-digest.prompt';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
+
+import { WeeklyPerPersonService } from './weekly-per-person.service';
 
 export function mapWeeklyDigestRowsToTrend(
   rowsDesc: Array<{ weekStart: string; metricsJson: unknown }>,
@@ -49,6 +64,118 @@ export function mapWeeklyDigestRowsToTrend(
     .reverse();
 }
 
+export interface WeekVerdictSignals {
+  hasNegativeClientSignal: boolean;
+  executionStrained: boolean;
+}
+
+export function computeWeekVerdictSignals(pkg: WeekCompanyPackage): WeekVerdictSignals {
+  const hasNegativeClientSignal = pkg.days.some((d) =>
+    d.axes.some((a) => a.key === 'clients' && a.state === 'risk'),
+  );
+  const executionStrained =
+    pkg.team.tasksPlanned >= 1 && pkg.team.tasksDone / pkg.team.tasksPlanned < 0.5;
+  return { hasNegativeClientSignal, executionStrained };
+}
+
+export function clampWeekVerdict(
+  verdict: WeeklyDigestVerdictDto,
+  signals: WeekVerdictSignals,
+): WeeklyDigestVerdictDto {
+  const axes = verdict.axes.map((a) => ({ ...a }));
+  const overall = { ...verdict.overall };
+
+  const clientsAxis = axes.find((a) => a.key === 'clients');
+  if (signals.hasNegativeClientSignal && clientsAxis && clientsAxis.state === 'ok') {
+    clientsAxis.state = 'risk';
+  }
+
+  const executionAxis = axes.find((a) => a.key === 'execution');
+  if (signals.executionStrained && executionAxis && executionAxis.state === 'ok') {
+    executionAxis.state = 'warn';
+  }
+
+  const anyDomainRisk = axes.some(
+    (a) => (a.key === 'team' || a.key === 'clients' || a.key === 'execution') && a.state === 'risk',
+  );
+  if (anyDomainRisk) {
+    if (overall.state === 'ok') overall.state = 'warn';
+    const overallAxis = axes.find((a) => a.key === 'overall');
+    if (overallAxis && overallAxis.state === 'ok') overallAxis.state = 'warn';
+  }
+
+  return { overall, axes };
+}
+
+function unwrapWeekEnvelopes(value: unknown): unknown[] {
+  const out: unknown[] = [value];
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    for (const key of ['result', 'data', 'output', 'response']) {
+      if (obj[key] && typeof obj[key] === 'object') out.push(obj[key]);
+    }
+  }
+  return out;
+}
+
+export function extractWeekCompanyResponse(result: {
+  text: string;
+  toolCalls?: Array<{ input: unknown }>;
+}): WeekCompanyResponse | null {
+  const roots: unknown[] = [];
+  const firstTool = result.toolCalls?.[0];
+  if (firstTool) roots.push(firstTool.input);
+  roots.push(tryParseJson(result.text ?? ''));
+  for (const root of roots) {
+    for (const candidate of unwrapWeekEnvelopes(root)) {
+      const parsed = WeekCompanyResponseSchema.safeParse(candidate);
+      if (parsed.success) return parsed.data;
+    }
+  }
+  return null;
+}
+
+export function buildWeekDayTrend(
+  days: WeekCompanyPackageDay[],
+  weekDates: string[],
+): WeeklyDayTrendAxisDto[] {
+  const AXES: Array<'team' | 'clients' | 'execution' | 'overall'> = [
+    'team',
+    'clients',
+    'execution',
+    'overall',
+  ];
+  const byDate = new Map(days.map((d) => [d.dateLocal, d]));
+  return AXES.map((key) => ({
+    key,
+    days: weekDates.map((dateLocal) => {
+      const day = byDate.get(dateLocal);
+      let state: WeeklyDayTrendState = 'none';
+      if (day) {
+        if (key === 'overall') state = day.overallState ?? 'none';
+        else state = day.axes.find((a) => a.key === key)?.state ?? 'none';
+      }
+      return { dateLocal, state };
+    }),
+  }));
+}
+
+export function previousWeekStart(weekStart: string): string {
+  return shiftDateStr(weekStart, -7);
+}
+
+function parseWeekSnapshotSignals(raw: unknown): { pro: string[]; contra: string[] } {
+  if (!raw || typeof raw !== 'object') return { pro: [], contra: [] };
+  const obj = raw as Record<string, unknown>;
+  const pro = Array.isArray(obj.pro)
+    ? obj.pro.filter((x): x is string => typeof x === 'string')
+    : [];
+  const contra = Array.isArray(obj.contra)
+    ? obj.contra.filter((x): x is string => typeof x === 'string')
+    : [];
+  return { pro, contra };
+}
+
 @Injectable()
 export class WeeklyDigestService {
   private readonly logger = new Logger(WeeklyDigestService.name);
@@ -58,6 +185,8 @@ export class WeeklyDigestService {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(WeeklyPerPersonService)
+    private readonly perPerson: WeeklyPerPersonService,
   ) {}
 
   async getStored(args: {
@@ -142,19 +271,52 @@ export class WeeklyDigestService {
         : {}),
     };
 
+    const pkg = await this.buildWeekPackage(
+      { tenantId: args.tenantId, weekStart: args.weekStart, weekEnd: args.weekEnd },
+      aggregates.metrics,
+    );
+
+    const weekDates = [0, 1, 2, 3, 4].map((i) => shiftDateStr(args.weekStart, i));
+    const dayTrend = buildWeekDayTrend(pkg.days, weekDates);
+    const signals = computeWeekVerdictSignals(pkg);
+
     let bodyMarkdown: string;
-    let llmTaskRouteId: string | null = null;
+    let llmTaskRouteId: string | null;
+    let verdictObj: WeeklyDigestVerdictDto | null;
+    let letterArr: WeeklyDigestLetterSectionDto[] | null;
+    let goalWeekObj: WeeklyDigestGoalAlignmentWeekDto | null;
+    let risksSummary: string | null;
+    let ideasSummary: string | null;
     try {
       const result = await this.llm.call({
-        taskType: 'operations-weekly-digest',
+        taskType: WEEKLY_DIGEST_TASK_TYPE,
         tenantId: args.tenantId,
-        systemPrompt: WEEKLY_DIGEST_SYSTEM_PROMPT,
-        userMessage: buildWeeklyDigestUserMessage(promptInput),
-        maxTokens: 4_000,
+        systemPrompt: WEEK_COMPANY_SYSTEM_PROMPT,
+        userMessage: buildWeekCompanyUserMessage(pkg),
+        responseFormat: {
+          type: 'json_schema',
+          name: 'WeekCompany',
+          schema: WEEK_COMPANY_JSON_SCHEMA,
+          strict: true,
+        },
+        reasoningEffort: 'high',
+        maxTokens: 8_000,
         sourceRef: { type: 'weekly-digest', id: `${args.tenantId}:${args.weekStart}` },
       });
-      bodyMarkdown = result.text.trim();
-      llmTaskRouteId = `${WEEKLY_DIGEST_PROMPT_VERSION}+${result.modelUsed}`;
+      const validated = extractWeekCompanyResponse(result);
+      if (!validated) throw new Error('schema_mismatch');
+      const verdict = clampWeekVerdict(validated.verdict, signals);
+      goalWeekObj = {
+        ...validated.goalAlignmentWeek,
+        goalId: pkg.goalId ?? null,
+        goalName: pkg.goalName ?? null,
+      };
+      verdictObj = verdict;
+      letterArr = validated.letter;
+      risksSummary = validated.risksSummary;
+      ideasSummary = validated.ideasSummary;
+      bodyMarkdown = weekCompanyToBodyMarkdown(verdict, validated.letter);
+      llmTaskRouteId = `${WEEK_COMPANY_PROMPT_VERSION}+${result.modelUsed}`;
     } catch (err) {
       this.metrics.incCooWeeklyDigestFailed({
         tenantTop,
@@ -169,7 +331,15 @@ export class WeeklyDigestService {
         'weekly-digest: LLM упал — сохраняю «сухой» вариант',
       );
       bodyMarkdown = buildFallbackDigestMarkdown(promptInput);
+      verdictObj = null;
+      letterArr = null;
+      goalWeekObj = null;
+      risksSummary = null;
+      ideasSummary = null;
+      llmTaskRouteId = null;
     }
+
+    const metricsToStore = { ...aggregates.metrics, risksSummary, ideasSummary };
 
     const row = await this.prisma.weeklyOperationsDigest.upsert({
       where: {
@@ -183,21 +353,226 @@ export class WeeklyDigestService {
         weekStart: args.weekStart,
         weekEnd: args.weekEnd,
         bodyMarkdown,
-        metricsJson: aggregates.metrics as unknown as Prisma.InputJsonValue,
+        metricsJson: metricsToStore as unknown as Prisma.InputJsonValue,
         sourcesJson: aggregates.sources as unknown as Prisma.InputJsonValue,
         llmTaskRouteId,
+        verdictJson: verdictObj
+          ? (verdictObj as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+        letterJson: letterArr ? (letterArr as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+        goalAlignmentWeekJson: goalWeekObj
+          ? (goalWeekObj as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+        dayTrendJson: dayTrend as unknown as Prisma.InputJsonValue,
       },
       update: {
         weekEnd: args.weekEnd,
         bodyMarkdown,
-        metricsJson: aggregates.metrics as unknown as Prisma.InputJsonValue,
+        metricsJson: metricsToStore as unknown as Prisma.InputJsonValue,
         sourcesJson: aggregates.sources as unknown as Prisma.InputJsonValue,
         llmTaskRouteId,
+        verdictJson: verdictObj
+          ? (verdictObj as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+        letterJson: letterArr ? (letterArr as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+        goalAlignmentWeekJson: goalWeekObj
+          ? (goalWeekObj as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+        dayTrendJson: dayTrend as unknown as Prisma.InputJsonValue,
       },
     });
 
     this.metrics.incCooWeeklyDigestGenerated({ tenantTop });
     return this.enrichDto(this.toDto(row));
+  }
+
+  private async buildWeekPackage(
+    args: { tenantId: string; weekStart: string; weekEnd: string },
+    metrics: WeeklyDigestMetricsDto,
+  ): Promise<WeekCompanyPackage> {
+    const weekDates = [0, 1, 2, 3, 4].map((i) => shiftDateStr(args.weekStart, i));
+
+    const days: WeekCompanyPackageDay[] = [];
+    const missingDays: string[] = [];
+    try {
+      const dayRows = await Promise.all(
+        weekDates.map((dateLocal) =>
+          this.prisma.dailyOperationsDigest.findUnique({
+            where: { tenantId_dateLocal: { tenantId: args.tenantId, dateLocal } },
+            select: { dateLocal: true, shortSummary: true, verdictJson: true },
+          }),
+        ),
+      );
+      for (let i = 0; i < weekDates.length; i++) {
+        const dateLocal = weekDates[i]!;
+        const row = dayRows[i];
+        if (!row) {
+          missingDays.push(dateLocal);
+          continue;
+        }
+        const parsed = parseDayVerdict(row.verdictJson);
+        days.push({
+          dateLocal,
+          overallState: parsed.overallState,
+          title: parsed.title,
+          shortSummary: row.shortSummary ?? null,
+          axes: parsed.axes,
+        });
+      }
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          weekStart: args.weekStart,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'weekly-digest: сбор дневных снапшотов для пакета упал — деградирую без дней',
+      );
+    }
+
+    let team: WeekCompanyPackage['team'] = {
+      reliabilityPercent: null,
+      tasksDone: 0,
+      tasksPlanned: 0,
+      tasksNotDone: 0,
+      topRisk: [],
+    };
+    try {
+      const pp = await this.perPerson.compute(
+        {
+          tenantId: args.tenantId,
+          weekStart: args.weekStart,
+          limit: 100,
+          offset: 0,
+          sort: 'risk',
+        },
+        new Date(),
+      );
+      let tasksDone = 0;
+      let tasksPlanned = 0;
+      let tasksNotDone = 0;
+      let kept = 0;
+      let denom = 0;
+      for (const r of pp.rows) {
+        tasksDone += r.tasksDone;
+        tasksPlanned += r.tasksPlanned;
+        tasksNotDone += r.tasksNotDone;
+        kept += r.promisesKept;
+        denom += r.promisesKept + r.promisesBroken + r.promisesOverdue;
+      }
+      team = {
+        reliabilityPercent: denom > 0 ? Math.round((kept / denom) * 100) : null,
+        tasksDone,
+        tasksPlanned,
+        tasksNotDone,
+        topRisk: pp.topRisk.slice(0, 3).map((r) => ({
+          personName: r.personName,
+          broken: r.promisesBroken,
+          overdue: r.promisesOverdue,
+        })),
+      };
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          weekStart: args.weekStart,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'weekly-digest: сбор команды (per-person) для пакета упал — деградирую без команды',
+      );
+    }
+
+    const repeatedBlockers = metrics.topBlockers.map((b) => ({ text: b.text, count: b.count }));
+    const repeatedRisks = metrics.topInsights.map((i) => ({
+      statement: i.statement,
+      kind: i.kind,
+      dynamicLabel: i.dynamicLabel,
+    }));
+
+    let goalId: string | null = null;
+    let goalName: string | null = null;
+    let compass: WeekCompanyPackage['compass'] = null;
+    try {
+      const primaryGoal = await this.prisma.goal.findFirst({
+        where: { tenantId: args.tenantId, isPrimary: true },
+        select: { id: true, name: true },
+      });
+      const goal =
+        primaryGoal ??
+        (await this.prisma.goal.findFirst({
+          where: { tenantId: args.tenantId, status: 'active' },
+          orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+          select: { id: true, name: true },
+        }));
+      if (goal) {
+        goalId = goal.id;
+        goalName = goal.name;
+        const snapshot = await this.prisma.goalAlignmentSnapshot.findFirst({
+          where: { tenantId: args.tenantId, goalId: goal.id },
+          orderBy: { createdAt: 'desc' },
+          select: { score: true, delta: true, explanation: true, signals: true },
+        });
+        const sig = parseWeekSnapshotSignals(snapshot?.signals);
+        compass = {
+          goalName: goal.name,
+          score: snapshot ? snapshot.score : null,
+          delta: snapshot?.delta ?? null,
+          explanation: snapshot?.explanation ?? null,
+          pro: sig.pro,
+          contra: sig.contra,
+        };
+      }
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          weekStart: args.weekStart,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'weekly-digest: сбор компаса для пакета упал — деградирую без цели',
+      );
+      goalId = null;
+      goalName = null;
+      compass = null;
+    }
+
+    let prevWeek: WeekCompanyPackage['prevWeek'] = null;
+    try {
+      const prev = await this.getStored({
+        tenantId: args.tenantId,
+        weekStart: previousWeekStart(args.weekStart),
+      });
+      if (prev) {
+        prevWeek = {
+          state: prev.verdict?.overall.state ?? null,
+          title: prev.verdict?.overall.title ?? null,
+          shortSummary: prev.verdict?.overall.oneLiner ?? null,
+        };
+      }
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          weekStart: args.weekStart,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'weekly-digest: снапшот прошлой недели для пакета не получен — без петли',
+      );
+    }
+
+    return {
+      weekStart: args.weekStart,
+      weekEnd: args.weekEnd,
+      goalId,
+      goalName,
+      days,
+      team,
+      repeatedBlockers,
+      repeatedRisks,
+      compass,
+      prevWeek,
+      missingDays,
+    };
   }
 
   async aggregate(args: {
@@ -437,6 +812,10 @@ export class WeeklyDigestService {
     sourcesJson: unknown;
     llmTaskRouteId: string | null;
     createdAt: Date;
+    verdictJson?: unknown;
+    letterJson?: unknown;
+    goalAlignmentWeekJson?: unknown;
+    dayTrendJson?: unknown;
   }): WeeklyOperationsDigestDto {
     return {
       id: row.id,
@@ -453,6 +832,11 @@ export class WeeklyDigestService {
       forecast: [],
       sectionDeltas: emptySectionDeltas(),
       trend: [],
+      verdict: (row.verdictJson as WeeklyDigestVerdictDto | null) ?? null,
+      letter: (row.letterJson as WeeklyDigestLetterSectionDto[] | null) ?? null,
+      goalAlignmentWeek:
+        (row.goalAlignmentWeekJson as WeeklyDigestGoalAlignmentWeekDto | null) ?? null,
+      dayTrend: (row.dayTrendJson as WeeklyDayTrendAxisDto[] | null) ?? null,
     };
   }
 
@@ -1059,6 +1443,44 @@ function shiftDateStr(dateLocal: string, days: number): string {
   const m = String(d.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(d.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${dd}`;
+}
+
+function normalizeVerdictState(raw: unknown): 'ok' | 'warn' | 'risk' | null {
+  return raw === 'ok' || raw === 'warn' || raw === 'risk' ? raw : null;
+}
+
+function parseDayVerdict(raw: unknown): {
+  overallState: 'ok' | 'warn' | 'risk' | null;
+  title: string | null;
+  axes: WeekCompanyPackageDay['axes'];
+} {
+  if (!raw || typeof raw !== 'object') {
+    return { overallState: null, title: null, axes: [] };
+  }
+  const obj = raw as Record<string, unknown>;
+  const overall =
+    obj.overall && typeof obj.overall === 'object'
+      ? (obj.overall as Record<string, unknown>)
+      : {};
+  const overallState = normalizeVerdictState(overall.state);
+  const title = typeof overall.title === 'string' ? overall.title : null;
+
+  const axes: WeekCompanyPackageDay['axes'] = [];
+  if (Array.isArray(obj.axes)) {
+    for (const a of obj.axes) {
+      if (!a || typeof a !== 'object') continue;
+      const axis = a as Record<string, unknown>;
+      const key = axis.key;
+      const state = normalizeVerdictState(axis.state);
+      if (
+        (key === 'team' || key === 'clients' || key === 'execution' || key === 'overall') &&
+        state !== null
+      ) {
+        axes.push({ key, state });
+      }
+    }
+  }
+  return { overallState, title, axes };
 }
 
 function computeSentimentIndex(checkIns: Array<{ sentiment: string | null }>): number | null {

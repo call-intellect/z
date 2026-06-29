@@ -22,6 +22,8 @@ export interface WeeklyDigestMetricsDto {
     weight: number;
     supporterCount: number;
   }>;
+  risksSummary?: string | null;
+  ideasSummary?: string | null;
 }
 
 export interface WeeklyDigestSourcesDto {
@@ -76,6 +78,43 @@ export interface WeeklyDigestTrendPointDto {
   hangingDecisions: number;
 }
 
+export interface WeeklyDigestVerdictAxisDto {
+  key: 'team' | 'clients' | 'execution' | 'overall';
+  state: 'ok' | 'warn' | 'risk';
+  label: string;
+  why: string;
+}
+
+export interface WeeklyDigestVerdictDto {
+  overall: { state: 'ok' | 'warn' | 'risk'; emoji: string; title: string; oneLiner: string };
+  axes: WeeklyDigestVerdictAxisDto[];
+}
+
+export interface WeeklyDigestLetterSectionDto {
+  key: string;
+  title: string;
+  prose: string;
+  cites?: Array<{ label: string; ref: string }>;
+}
+
+export interface WeeklyDigestGoalAlignmentWeekDto {
+  direction: 'to_goal' | 'drift' | 'against';
+  score: number | null;
+  weekDelta: string;
+  why: string;
+  pro: string[];
+  contra: string[];
+  goalId?: string | null;
+  goalName?: string | null;
+}
+
+export type WeeklyDayTrendState = 'ok' | 'warn' | 'risk' | 'none';
+
+export interface WeeklyDayTrendAxisDto {
+  key: 'team' | 'clients' | 'execution' | 'overall';
+  days: Array<{ dateLocal: string; state: WeeklyDayTrendState }>;
+}
+
 export interface WeeklyOperationsDigestDto {
   id: string;
   tenantId: string;
@@ -91,6 +130,10 @@ export interface WeeklyOperationsDigestDto {
   forecast: WeeklyForecastItemDto[];
   sectionDeltas: WeeklySectionDeltasDto;
   trend: WeeklyDigestTrendPointDto[];
+  verdict?: WeeklyDigestVerdictDto | null;
+  letter?: WeeklyDigestLetterSectionDto[] | null;
+  goalAlignmentWeek?: WeeklyDigestGoalAlignmentWeekDto | null;
+  dayTrend?: WeeklyDayTrendAxisDto[] | null;
 }
 
 export const WeeklyDigestQuerySchema = z

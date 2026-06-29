@@ -648,6 +648,20 @@ LLM-judge текстового подтверждения мутаций в ка
 
 [[../index|← index]]
 
+## Пересмотр уточняющих вопросов — снос инспекторов решений/обещаний + задачная петля (2026-06-29)
+
+**Источник:** ТЗ [`plans/tz/2026-06-29-kora-clarify-questions-overhaul.md`](../../plans/tz/2026-06-29-kora-clarify-questions-overhaul.md) (6 фаз, ветка `work/2026-06-29`). Карта движка — [[probe-agent]] §«Пересмотр уточняющих вопросов», наблюдатели — [[probe-observers-catalog]], cron/триггер — [[workers-queues]].
+
+**Новых LLM-taskType НЕТ** — фича двигает cron/триггеры и probe-reasons, переиспользуя существующие taskType (`probe-formulate`, `task-closure-verify`).
+
+- **МИНУС cron-проходы:** удалён 05:00 UTC-проход решений изнутри `specialist-3-3-probe.service.ts` (Ф1, поводы `decision.*` сняты — `decision-extract`/извлечение решений **остаётся**) + cron `commitment-followup` (Ф2, probe-инспектор обещаний; `commitment-extract-dates`/`commitment-extract-status` для соц-слоя **остаются**).
+- **ПЛЮС `TaskClarifySweepCron`** (Ф4, hourly МСК, `src/modules/ai/workers.module.ts`) → `Specialist315TasksService.runClarifySweep`: ежедневный добор pending-задач без исполнителя/срока → probe `task.assignee_unresolved`/`task.due_date_missing` постановщику (резолвер `resolveSetterRecipient`). Без LLM-вызова на сборку — формулирует общий `probe-formulate`.
+- **ПЛЮС событийный триггер `task-method-capture`** (Ф5, НЕ cron): хук в `IssuesService.transitionState` при ПЕРВОМ переходе задачи в completed → probe `task.method_capture` исполнителю «расскажи, как решал» на значимых задачах (эвристика `computeMethodCaptureComplexity`, эмиттеры `task-method-capture`/`specialist-3-15-tasks-sweep`).
+- **Ответ «как решал» = метод-знание** (Ф6): `probe-response.handler.ts` помечает ответ `signalTypeHint:'reasoning'` (как `skill.cdm_interview`) → специалисты регламентов/клона/журнала трактуют его как метод. Мостик `ingestResponseAsRawEvent → RawEvent(kind='notification_response')`, идемпотентность по `sourceExternalId='resp:<notificationId>'`.
+- **Крутилки** (AdminSetting, kill-switch ON / Ship-On): `tracker.taskClarifySweep.{enabled,hourMsk(10),minAgeHours(20)}` + `tracker.methodCaptureEnabled` + `tracker.methodCaptureMinComplexity(0.5)` + `tracker.methodCapturePriorityHint(0.7)`. Реестр — [[../../docs/operations/feature-flags|feature-flags]].
+
+[[../index|← index]]
+
 ## Ревизия 12 промптов клона M5 + фиксы конвейера/кронов (2026-06-16)
 
 **Источник:** ТЗ [`plans/tz/2026-06-16-clone-agents-prompt-revision.md`](../../plans/tz/2026-06-16-clone-agents-prompt-revision.md) (Приложения A–D + Раздел 8). Ветка `devsv`, 9 коммитов. **Новых taskType / провайдеров НЕТ.** Карта модуля — [[skill-and-clone]] §«Доработки 2026-06-16»; кроны — [[workers-queues]] §История 2026-06-16.

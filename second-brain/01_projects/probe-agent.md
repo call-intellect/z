@@ -28,23 +28,25 @@ related:
 ```ts
 const res = await probeService.suggest({
   tenantId,
-  emittedByService: '3-3-decisions',
-  reason: 'decision.overdue',
+  emittedByService: 'specialist-3-15-tasks',
+  reason: 'task.assignee_unresolved',
   payload: {
-    message: 'Решение «X» просрочено на 7 дней — что делаем?',
-    suggestedActions: ['Продлить', 'Отменить', 'Закрыть'],
-    contextCardId: decisionId,
-    contextCardKind: 'decision',
-    contextCardTitle: decision.statement.slice(0, 100),
-    actionUrl: `/decisions/${decisionId}`,
-    dataClass: 'sensitive',
+    message: 'Задача «X» без исполнителя — на кого назначить?',
+    suggestedActions: ['Назначить', 'Не задача'],
+    contextCardId: intakeIssueId,
+    contextCardKind: 'intake_issue',
+    contextCardTitle: intakeIssue.title.slice(0, 100),
+    actionUrl: `/intake/${intakeIssueId}`,
+    dataClass: 'internal',
   },
-  recipientCandidates: [ownerUserId, adminUserId],
+  recipientCandidates: [setterUserId],   // постановщик (автор реплики), фолбэк → owner Org
   priorityHint: 0.7,           // 0..1; severity_weight в priority-формуле.
-  dataClass: 'sensitive',
+  dataClass: 'internal',
 });
 // → { ok: true, probeEventId } | { dropped: 'dedup' | 'rate_limit' | 'cold_start' }
 ```
+
+> _Поводы `decision.*` (`decision.overdue`/`missing_decider`/...) и probe-инспектор решений **удалены 2026-06-29** (ТЗ kora-clarify-questions-overhaul Ф1). Решение — пассивная память, вопросов по нему Кора не задаёт._
 
 ## Внутренний pipeline
 
@@ -83,8 +85,8 @@ ProbePriorityCron (*/15 * * * *):
 
 | Поле | Тип | Значение |
 |---|---|---|
-| `emittedByService` | varchar | `'3-3-decisions'`, `'3-5-insights'`, ... |
-| `reason` | varchar | `'decision.overdue'`, `'insight.escalation_suggested'`, ... |
+| `emittedByService` | varchar | `'specialist-3-15-tasks'`, `'3-5-insights'`, ... _(`'3-3-decisions'` probe снят 2026-06-29)_ |
+| `reason` | varchar | `'task.assignee_unresolved'`, `'task.method_capture'`, `'insight.escalation_suggested'`, ... _(`decision.*` сняты 2026-06-29)_ |
 | `payload` | JSON | message, suggestedActions, contextCardId, contextCardKind, contextCardTitle, actionUrl, dataClass |
 | `recipientCandidates` | string[] | userId[] |
 | `selectedRecipientId` | string? | После dispatch |
@@ -318,6 +320,19 @@ eventType `probe.confirm` (Zod + policy + responseStatus pending + рендер 
 Метрики (`business-metrics.service.ts`): `probe_dialog_transition_total{from,to}`, `probe_dialog_outcome_total{outcome}` (applied/escalated_to_human/abandoned), `probe_dialog_degraded_total{reason}`. Graceful degradation: при падении LLM-классификатора (`tryClassifyResponse` catch) → откат к детерминированному one-shot (`mapExistenceConfirmAnswer`) + инкремент degraded. Новый cron `ProbeDialogTtlCron` (`@Cron('17 * * * *')`): `awaiting_clarification` / `awaiting_confirmation` старше `probe.dialogConfirmTtlHours` → `phase=resolved` + `ProbeEvent.status=abandoned` (идемпотентно, best-effort).
 
 Kill-switch / крутилки — [[../../docs/operations/feature-flags|feature-flags]]; прод-выкат — `docs/operations/prod-deploy-log.md` (блок 2026-06-27 «Диалоговое уточнение probe»). Открытые хвосты vNext — [[../04_не-сделано/README|не-сделано]].
+
+## Пересмотр уточняющих вопросов: снос инспекторов решений/обещаний + задачная петля (2026-06-29)
+
+**Источник:** ТЗ [`plans/tz/2026-06-29-kora-clarify-questions-overhaul.md`](../../plans/tz/2026-06-29-kora-clarify-questions-overhaul.md) (6 фаз), архитектура [`plans/architecture/2026-06-29-kora-clarify-questions-overhaul.md`](../../plans/architecture/2026-06-29-kora-clarify-questions-overhaul.md). Ветка `work/2026-06-29`. Кора задаёт меньше шумных вопросов и спрашивает того, кто реально может ответить.
+
+- **Ф1 — снос probe-инспектора РЕШЕНИЙ.** Удалён `specialist-3-3-probe.service.ts` (cron 05:00 UTC + checkAndEmitForDecision/emitCompetingVersions/overdue/outcome), proactive-правило `decision_no_owner`, все поводы `decision.*` (missing_decider/no_deadline_critical/overdue/outcome_unknown/competing_versions/confirm_status) из probe-реестров и ветка `maybeApplyDecisionProbeAnswer`. Сущность Decision, её извлечение, card-handler и авто-задача из решения — **остались** (решение = пассивная память).
+- **Ф2 — снос probe-инспектора ОБЕЩАНИЙ** (только вопросы). Удалены `commitment-followup.cron.ts`, `specialist-3-9-promise-keeper.service.ts`, `commitment-response.handler.ts`; флаги `betaOps.commitmentFollowupEnabled`/`commitmentFollowupLocalHour`/`commitmentEscalationDays`; поводы `commitment.followup`/`commitment.silence_escalation`. Соц-слой обещаний (надёжность/сеть/дашборд/мост обещание→задача/`promise-cascade`) — **остался** (отдельное ТЗ).
+- **Ф3 — адресат probe задачи = ПОСТАНОВЩИК (автор реплики).** `task.assignee_unresolved`/`task.due_date_missing` на извлечении адресуются автору реплики через резолвер `resolveSetterRecipient` (`authorPersonId` ведущей evidence → `Person.userId`, tenant-scoped); фолбэк на owner Org только если автор не определён. Раньше уходило первому owner Org (был баг).
+- **Ф4 — probe про срок на извлечении + ежедневный свод.** Если исполнитель есть, а `dueDate==null` → probe `task.due_date_missing` постановщику (одно уведомление за раз, приоритет — исполнитель). Новый cron `TaskClarifySweepCron` (`task-clarify-sweep.cron.ts`, `@Cron` hourly Europe/Moscow, зарегистрирован в `src/modules/ai/workers.module.ts`) → `Specialist315TasksService.runClarifySweep`: ежедневный добор pending `IntakeIssue` старше N часов без исполнителя/срока → probe постановщику (дедуп probe = идемпотентность). Крутилки `tracker.taskClarifySweep.enabled` (kill-switch true) / `.hourMsk` (10) / `.minAgeHours` (20).
+- **Ф5 — НОВЫЙ повод `task.method_capture` («расскажи, как решал»).** Хук в `IssuesService.transitionState` при ПЕРВОМ переходе задачи в completed (gate `!existing.completedAt`) → `maybeRaiseMethodCaptureProbe`: на ЗНАЧИМЫХ задачах (эвристика `computeMethodCaptureComplexity` по длине описания/числу `IssueActivity`/времени жизни/приоритету ≥ порога) шлёт **исполнителю** probe «расскажи пошагово, как решал (можно голосом)», без inline-кнопок. Старый узкий probe `task.completion_detail_missing` (`me-tasks.completeTask`) снят (остаётся синхронный inline-гейт `needs_detail`; reason+apply-handler сохранены для обратной совместимости). «1 напоминание» = общий probe re-ask. Эмиттеры `task-method-capture` (хук) и `specialist-3-15-tasks-sweep` (свод). Крутилки `tracker.methodCaptureEnabled` (kill-switch true) / `.methodCaptureMinComplexity` (0.5) / `.methodCapturePriorityHint` (0.7).
+- **Ф6 — ответ «как решал» = метод-знание.** Ответ на `task.method_capture` помечается `signalTypeHint:'reasoning'` в `probe-response.handler.ts` (как `skill.cdm_interview`) → специалисты регламентов/клона/журнала трактуют его как метод. Мостик `ingestResponseAsRawEvent → ingestNotificationResponse → RawEvent(kind='notification_response')` универсален; идемпотентность по `sourceExternalId='resp:<notificationId>'`.
+
+Kill-switch / крутилки — [[../../docs/operations/feature-flags|feature-flags]]; прод-выкат — `docs/operations/prod-deploy-log.md`. Каталог наблюдателей — [[probe-observers-catalog]] §«Группа D» / §«3-3 Решения» / §«Promise Keeper». Главный потребитель — [[tracker]].
 
 ## См. также
 

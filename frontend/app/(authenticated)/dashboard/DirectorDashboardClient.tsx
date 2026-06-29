@@ -1,17 +1,21 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Calendar, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 
 import { useAuth } from "@/contexts/auth-context";
-import { CHART, MODERN_PAGE_BG } from "@/ui/components/dashboard/modern";
+import { CHART, GRAD, MODERN_PAGE_BG } from "@/ui/components/dashboard/modern";
 import { DashboardCanvas } from "@/ui/components/dashboard/registry/DashboardCanvas";
 import { DayCompanyHero } from "@/ui/components/dashboard/day-company/DayCompanyHero";
+import { WeekCompanyHero } from "@/ui/components/dashboard/week-company/WeekCompanyHero";
 import { toDashboardRole } from "@/ui/components/dashboard/registry/presets";
 
 export function DirectorDashboardClient() {
   const { user, currentOrgRole } = useAuth();
+  const [rhythm, setRhythm] = useState<"day" | "week">(() =>
+    new Date().getDay() === 1 ? "week" : "day",
+  );
 
   const greetingName = useMemo(() => {
     return user?.name?.trim() || user?.email?.split("@")[0] || "друг";
@@ -34,31 +38,67 @@ export function DirectorDashboardClient() {
               Что случилось, что буксует, куда движемся — за 30 секунд.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/week"
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
-              style={{ background: "var(--surface-inset)", color: CHART.dim }}
-              aria-label="Открыть Неделю"
+          <div
+            className="inline-flex shrink-0 items-center gap-1 rounded-[13px] p-1"
+            style={{
+              background: "var(--surface-inset)",
+              border: "1px solid var(--glass-border)",
+            }}
+            role="tablist"
+            aria-label="Ритм отчёта"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={rhythm === "day"}
+              onClick={() => setRhythm("day")}
+              className="rounded-[9px] px-5 py-2 text-[13px] font-semibold transition-colors"
+              style={
+                rhythm === "day"
+                  ? { background: GRAD.violet, color: CHART.text }
+                  : { background: "transparent", color: CHART.dim }
+              }
             >
-              <Calendar size={14} strokeWidth={1.75} className="shrink-0" />
-              <span>Неделя</span>
-            </Link>
+              День
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={rhythm === "week"}
+              onClick={() => setRhythm("week")}
+              className="rounded-[9px] px-5 py-2 text-[13px] font-semibold transition-colors"
+              style={
+                rhythm === "week"
+                  ? { background: GRAD.violet, color: CHART.text }
+                  : { background: "transparent", color: CHART.dim }
+              }
+            >
+              Неделя
+            </button>
             <Link
               href="/month"
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
-              style={{ background: "var(--surface-inset)", color: CHART.dim }}
+              className="inline-flex items-center gap-1.5 rounded-[9px] px-5 py-2 text-[13px] font-semibold transition-colors"
+              style={{ background: "transparent", color: CHART.dim }}
               aria-label="Открыть Итоги месяца"
             >
               <Sparkles size={14} strokeWidth={1.75} className="shrink-0" />
-              <span>Итоги месяца</span>
+              <span>Месяц</span>
             </Link>
           </div>
         </header>
 
-        {currentOrgRole === "owner" ? <DayCompanyHero /> : null}
+        {currentOrgRole === "owner" ? (
+          rhythm === "week" ? (
+            <WeekCompanyHero />
+          ) : (
+            <DayCompanyHero />
+          )
+        ) : null}
 
-        <DashboardCanvas role={role} rhythm="today" />
+        <DashboardCanvas
+          role={role}
+          rhythm={rhythm === "week" ? "week" : "today"}
+        />
       </div>
     </div>
   );

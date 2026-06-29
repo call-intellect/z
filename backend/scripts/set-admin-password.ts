@@ -1,15 +1,19 @@
-import bcrypt from 'bcrypt';
-import { PrismaClient } from '@prisma/client';
+import argon2 from 'argon2';
 import { createPrismaClient } from './_lib/prisma';
 
-const BCRYPT_ROUNDS = 12;
+const ARGON_OPTS = {
+  type: argon2.argon2id,
+  memoryCost: Number.parseInt(process.env['ARGON_MEMORY_KB'] ?? '19456', 10),
+  timeCost: Number.parseInt(process.env['ARGON_ITERATIONS'] ?? '2', 10),
+  parallelism: Number.parseInt(process.env['ARGON_PARALLELISM'] ?? '1', 10),
+} as const;
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const isSuper = argv.includes('--super');
   const [rawEmail, password] = argv.filter((a) => !a.startsWith('--'));
   if (!rawEmail || !password) {
-    // eslint-disable-next-line no-console
+     
     console.error('usage: bun run scripts/set-admin-password.ts <email> <password> [--super]');
     process.exit(1);
     return;
@@ -17,7 +21,7 @@ async function main(): Promise<void> {
 
   const email = rawEmail.trim().toLowerCase();
   if (password.length < 8) {
-    // eslint-disable-next-line no-console
+     
     console.error('Пароль должен быть не короче 8 символов.');
     process.exit(1);
     return;
@@ -31,7 +35,7 @@ async function main(): Promise<void> {
       },
     });
 
-    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    const passwordHash = await argon2.hash(password, ARGON_OPTS);
 
     if (!existing) {
       const created = await prisma.user.create({
@@ -43,7 +47,7 @@ async function main(): Promise<void> {
           passwordHash,
         },
       });
-      // eslint-disable-next-line no-console
+       
       console.log(
         `[set-admin-password] Создан ${isSuper ? 'SUPER-' : ''}admin id=${created.id}, email=${email}.`,
       );
@@ -51,7 +55,7 @@ async function main(): Promise<void> {
     }
 
     if (existing.role !== 'admin') {
-      // eslint-disable-next-line no-console
+       
       console.error(
         `[set-admin-password] Пользователь email=${email} существует, но role=${existing.role}. Отказ.`,
       );
@@ -63,7 +67,7 @@ async function main(): Promise<void> {
       where: { id: existing.id },
       data: { passwordHash, ...(isSuper ? { isSuperAdmin: true } : {}) },
     });
-    // eslint-disable-next-line no-console
+     
     console.log(
       `[set-admin-password] Обновлён passwordHash${isSuper ? ' + isSuperAdmin=true' : ''} для admin id=${existing.id}, email=${email}.`,
     );
@@ -73,7 +77,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error('[set-admin-password] FATAL:', err);
   process.exit(1);
 });

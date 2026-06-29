@@ -65,6 +65,7 @@ describe('AccountsService', () => {
   let passwords: {
     hash: ReturnType<typeof vi.fn>;
     verify: ReturnType<typeof vi.fn>;
+    needsRehash: ReturnType<typeof vi.fn>;
   };
   let sessions: {
     issue: ReturnType<typeof vi.fn>;
@@ -117,6 +118,7 @@ describe('AccountsService', () => {
     passwords = {
       hash: vi.fn(async () => 'hashed'),
       verify: vi.fn(async () => true),
+      needsRehash: vi.fn(() => false),
     };
     sessions = {
       issue: vi.fn(async () => ({ session: { id: 's1', jti: 'jti-1' }, token: 'jwt' })),

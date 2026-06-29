@@ -25,6 +25,7 @@
 - [[01_projects/onboarding-wizard]] — wizard «Знакомство с компанией» (Фаза 0c): 5 шагов, owner-only, AppShell скрыт. С 2026-06-01 в hub-секции описана shared-demo-org-model (новые пользователи → demo_observer наблюдателями к эталону «Демо: ТехноСтрим» без копий).
 - [[01_projects/demo-workspace]] — Демо-кабинет как shared эталон (2026-06-01): одна Org с `isReferenceDemo=true`, роль `demo_observer`, DemoObserverGuard (read-only), listener снимает membership при оплате. Заменяет старую модель «копия в каждую Org».
 - [[01_projects/company-framework-slots]] — слоты каркаса 5 уровней группы Б (Mission/Vision/Strategy/Process/Regulation/Policy/Tool/Metric/Decision): модели без UI до Фазы γ, наполняются автоматически
+- [[01_projects/ai-coo-layers-blueprint]] — ⚠️ **внешний референс, НЕ текущее состояние.** Блюпринт «AI COO» из слоёв 0–3 (Company Memory → Execution → Operations → Executive), восстановлен из присланного ТЗ-черновика + мой маппинг на Кору (что есть / что взять / что отложить). Парный к рыночному исследованию [[06_marketing/research/2026-06-28-ai-coo-market-research]]
 - [[01_projects/document-ingest]] — pipeline загрузки документов (Фаза 0b): PDF/DOCX/MD/TXT через document.adapter, text.adapter для /dump, extraction группы Б с провенансом
 - [[01_projects/role-profile-agent]] — RoleProfileAgent (Фаза 0d): BullMQ-воркер карты должности, cron каждые 4 часа + on-demand rebuild, порог N=5
 - [[01_projects/conversational-channels]] — SBA α-1 Conversational Channels Foundation: omnichannel-слой (in_app + email), Notification/Delivery, BullMQ outbound, REST `/me/channels` `/me/notifications`, free-note ingest
@@ -102,10 +103,11 @@
 - [[03_processes/_template]] — шаблон карточки
 - [[03_processes/meeting-post-processing]] ⭐ — пост-обработка встречи (запись → транскрипт → AI-отчёт → граф знаний)
 - [[03_processes/telegram-inbox-ingestion]] ⭐ — входящие сообщения из Telegram (зафиксирован критический gap по `free_note`)
-- [[03_processes/coo-daily-digest]] ⭐ — ежедневный отчёт AI-операционного директора
+- [[03_processes/coo-daily-digest]] ⭐ — ежедневный отчёт AI-операционного директора. Расширен **«Днём компании»** (2026-06-29): owner-герой на `/dashboard` (вердикт дня + письмо-проза + дневной компас) — расширение этого дайджеста, не новый пайплайн. См. [[01_projects/director-dashboard]] §«День компании». Недельный близнец — **«Неделя компании»** (2026-06-29): rhythm-switcher День↔Неделя на `/dashboard`, герой `WeekCompanyHero` (вердикт недели + тренд по дням пн–пт + письмо + компас + план/факт по людям с «вкладом в цель» + «зависло»), свод 5 дневных «Дней компании» одним capable LLM-проходом; общий премиум-компас `GoalCompass3D`. См. [[01_projects/director-dashboard]] §«Неделя компании», ТЗ `plans/tz/2026-06-29-week-company-weekly-brief.md`. Месячный третий ритм — **«Месяц компании»** (2026-06-30): герой `MonthCompanyHero` на `/month` (вердикт месяца + тренд по неделям + письмо + компас + pace факт/план/ETA + «что решить собственнику» + «фокус месяца» + план/факт по людям), новая модель `MonthlyOperationsDigest`, свод 4 недельных дайджестов одним capable LLM-проходом (`operations-monthly-digest`), крон 1/мес. Вместе с **навигацией по датам + архивом отчётов** на всех 3 ритмах (`PeriodNavigator` + `…/available-periods`). См. [[01_projects/director-dashboard]] §«Месяц компании», ТЗ `plans/tz/2026-06-29-month-company-monthly-brief.md` + `plans/tz/2026-06-30-report-date-navigation-archive.md`.
 
 ## Решения / ADR
-_пусто_
+
+- [[06_marketing/2026-06-29-strategy-session-aicoo-smb-pricing]] — 🧭 **стратегический разворот 2026-06-29:** Кора → «AI операционный директор» для среднего бизнеса (НЕ микро 5–15), цена за компанию ~60к/мес + партнёрка «3 привёл → бесплатно», нарратив «память под капотом», 6 карточек образа будущего на сайт, план месяца «выкатить + наполнить», 5 фич на 2–3 мес. Приоритет над [[06_marketing/positioning]] / gtm-700m до их переписывания
 
 ## Активные ТЗ
 
@@ -233,6 +235,7 @@ _пусто_
 - [[06_marketing/messaging]] — ключевые сообщения, заголовки, tone of voice
 - [[06_marketing/client-value-framework]] — методология клиентской ценности (по Гордееву) + роль Value Officer
 - [[06_marketing/company-ontology]] — онтология компании (13 классов сущностей + ~40 типов рёбер, клон сотрудника как subgraph, специфика РФ) — фундамент архитектуры «второго мозга»
+- [[06_marketing/research/2026-06-28-ai-coo-market-research]] — рынок AI-операционного директора (AI COO) для SMB 20–100: 3 слоя (record/action/memory), 30+ коммерческих/российских решений + open-source, пустая ниша, маппинг на Кору (внешний deep-research, 2026-06-28)
 
 ## Инфраструктура агента Claude Code
 

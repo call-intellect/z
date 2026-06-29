@@ -71,6 +71,23 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-29 — Месяц компании + навигация по датам/архив (ветка feature/month-company-and-report-navigation)
+
+> Две парные фичи. **Месяц компании** — месячный executive-брифинг владельца на `/month` (зеркало «Недели компании»): новая модель `MonthlyOperationsDigest` + `MonthlyDigestService` (свод 4 недель одним LLM-вызовом) + `OperationsMonthlyDigestCron` (1-е число) + `MonthCompanyHero` над canvas. **Навигация/архив** — `available-periods` на 3 ритма + общий `PeriodNavigator` (‹ › + клик-дата + архив-список) + empty-state на героях дня/недели/месяца. Коммиты `9c36a0b6..82e3a893`.
+
+- **Шаг 1 — ENV: 2 новых опциональных** (`backend/src/common/config/env.schema.ts`): `COO_MONTHLY_DIGEST_ENABLED` (zBool default true) + `COO_MONTHLY_DIGEST_LOCAL_HOUR` (int 0..23 default 6). Оба — ENV-fallback для крутилок AdminSetting (`betaOps.monthlyDigestEnabled`/`monthlyDigestLocalHour`, читаются через `resolveSync` admin→ENV→code, работают и без ENV). Kill-switch `betaOps.monthlyDigestEnabled` — тип A (ВКЛ, действий владельца не требует). Крутилка лимита архива `operations.report_archive.recent_limit` (default 12) — чистый AdminSetting (getDynamic, ENV не заведён). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260630000000_add_monthly_operations_digest` — `CREATE TABLE "monthly_operations_digests"` (periodYm VarChar(7) + bodyMarkdown/metricsJson/sourcesJson/llmTaskRouteId + verdictJson/letterJson/goalAlignmentMonthJson/weekTrendJson/shortSummary/deliveredAt/externalSource) + INDEX + UNIQUE `[tenantId,periodYm]` + FK → `Org` ON DELETE CASCADE. Аддитивная (один CREATE TABLE, без DROP), без потери данных, **backfill НЕ нужен** (заполнится ближайшим прогоном `operations-monthly-digest` крона 1-го числа; до этого `/month` отдаёт «сухой» fallback / empty-state). Повторный deploy = no-op. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«MonthlyOperationsDigest».
+- **Шаг 7 — Seed (3 сида, УЖЕ в STEPS, идемпотентны):** доезжают агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts [--mode all|update]`:
+  - `scripts/seed-llm-task-routes-month-company.ts` (`phase:'seed-llm-core'`) — route taskType `operations-monthly-digest` (primary deepseek-v4-pro, secondary gpt-5.4-mini, tertiary qwen3.5:9b).
+  - `scripts/seed-admin-setting-month-company.ts` (`phase:'seed-base'`) — крутилки `betaOps.monthlyDigestEnabled`=true / `betaOps.monthlyDigestLocalHour`=6 (защита admin-edited).
+  - `scripts/seed-admin-setting-report-archive.ts` (`phase:'seed-base'`) — крутилка `operations.report_archive.recent_limit`=12.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`MonthlyDigestService` + `monthly-digest.prompt.ts` — один capable LLM-вызов json_schema strict → вердикт/письмо/компас/тренд + `clampMonthVerdict`; `OperationsMonthlyDigestCron` `@Cron('0 * * * *')` + МСК-гейт 1-е число/час; `MonthlyDigestController` 4 эндпоинта; `available-periods` на daily/weekly/monthly; `weekly-per-person` goalContributionNet range-sum; метрики `coo_monthly_digest_*`). Frontend (`MonthCompanyHero` на `/month` owner-only; `PeriodNavigator`+`PeriodEmptyState` на героях дня/недели/месяца; value-recap переведён на `PeriodNavigator`).
+- **Шаг 12 — Smoke** (после выката): `psql \d "monthly_operations_digests"` содержит `periodYm`/`verdictJson`/`weekTrendJson`/`deliveredAt`; крон `operations-monthly-digest` в логах виден (часовой, гейт 1-го числа); после `POST /api/v1/dashboard/operations/monthly-digest/generate?period=YYYY-MM` (admin) запись несёт непустой `verdictJson`; Swagger `GET monthly-digest/{latest,available-periods}` + `GET {daily,weekly}-digest/available-periods` → 200 под owner, 403 под member; на `/month` под owner виден «Месяц компании» (вердикт+тренд по неделям → письмо → компас+темп → таблица план/факт → решить/фокус); на героях дня/недели/месяца работает ‹ ›-навигатор + архив-попап + «К последнему». Флаги `betaOps.monthlyDigestEnabled` / `operations.report_archive.recent_limit` в админке.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-29 — День компании: ежедневный брифинг владельца на `/dashboard` (ветка dev)
 
 > Расширение существующего дневного дайджеста (`DailyOperationsDigest` + `operations-daily-digest` taskType + `OperationsDailyDigestCron` + `DailyDigestService`), НЕ новый пайплайн/модель/агент. Owner-герой `DayCompanyHero` над `DashboardCanvas`. Коммиты `dd9b809d..a66e13ee`.

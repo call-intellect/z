@@ -1983,6 +1983,26 @@ mail-inbound/
 - `conversational/conversational.service.ts` — eventType `operations.daily_digest` (получатели **только `coo+owner`**, admin исключён).
 - `metrics/business-metrics.service.ts` — `coo_daily_digest_{generated,failed,delivered}_total` + `coo_daily_digest_age_seconds`, `coo_insights_by_cause_total{cause}`, `coo_company_maturity_score`.
 
+### «Месяц компании» — третий ритм брифинга в `operations/` (2026-06-30)
+
+**Источник:** `plans/tz/2026-06-29-month-company-monthly-brief.md` (ветка `feature/month-company-and-report-navigation`). Зеркало Weekly/Daily-дайджеста на месячном окне. Новое в `backend/src/modules/operations/`:
+
+- **Контроллер** `MonthlyDigestController` (`/api/v1/dashboard/operations/monthly-digest`) — 4 GET/POST: `/?period=YYYY-MM`, `/latest`, `POST /generate` (owner/admin/super), `/available-periods?limit=`. RBAC чтения — `canViewOperationsDashboard`. Daily/Weekly-контроллеры получили `/available-periods` (метод `listAvailablePeriods` в 3 сервисах; shared `available-periods.dto.ts`).
+- **Сервис** `MonthlyDigestService` (`operations/services/monthly-digest.service.ts`) — `getStored/getLatest/getOrGenerate/generate/listAvailablePeriods/markDelivered/mondaysInMonth`; сводит 4 недельных `WeeklyOperationsDigest` ОДНИМ LLM-вызовом `operations-monthly-digest` (компресс-вход без `letterJson`, missingWeeks graceful), `clampMonthVerdict`, детерминированный `weekTrendJson`, `pace` (факт/план/ETA) считает КОД, «сухой» fallback.
+- **Cron** `OperationsMonthlyDigestCron` (`operations/workers/operations-monthly-digest.cron.ts`, `@Cron('0 * * * *')` + МСК-гейт «1-е число && час===`monthlyDigestLocalHour`») → генерит за прошлый месяц + доставка `operations.monthly_digest` (`actionUrl /month`) + `markDelivered`.
+- **Промпт** `operations/prompts/monthly-digest.prompt.ts` (`MONTH_COMPANY_SYSTEM_PROMPT` стабилен — prompt-caching).
+- **Скрипты:** `seed-llm-task-routes-month-company.ts`, `seed-admin-setting-month-company.ts`, `seed-admin-setting-report-archive.ts`.
+
+**Внешние пересечения:**
+- `prisma/schema.prisma` — новая модель `MonthlyOperationsDigest` (миграция `20260630000000_add_monthly_operations_digest`, см. [[data-model|data-model]]).
+- `ai/services/llm-router.service.ts` — новый taskType `operations-monthly-digest` (capable `deepseek-v4-pro`, `maxTokens 8000`).
+- `admin/settings/*` — крутилки `betaOps.monthlyDigestEnabled` (kill-switch ON), `betaOps.monthlyDigestLocalHour` (6), `operations.report_archive.recent_limit` (12).
+- `conversational/conversational.service.ts` — eventType `operations.monthly_digest` (роли owner/coo).
+- `metrics/business-metrics.service.ts` — `coo_monthly_digest_{generated,failed,delivered}_total`.
+- `operations/services/weekly-per-person.service.ts` — колонка «Вклад в цель» (`goalContributionNet`) переведена на range-sum по окну.
+
+См. [[../01_projects/director-dashboard]] §«Месяц компании», [[../01_projects/ai-jobs]] §«operations-monthly-digest», [[../01_projects/workers-queues]], [[../01_projects/api-layer]].
+
 ## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
 
 **Источник:** [`plans/archive/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/archive/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[../01_projects/feedback]].

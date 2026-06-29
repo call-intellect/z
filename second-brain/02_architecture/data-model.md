@@ -1131,6 +1131,35 @@ model DailyOperationsDigest {
 
 Поля заполняются ОДНИМ capable LLM-вызовом (`taskType operations-daily-digest`, json_schema strict) в `DailyDigestService.generate`; при провале LLM/JSON — «сухой» fallback (NULL новых полей). Дневные AI-резюме `risksSummary`/`ideasSummary` персистятся в `metricsJson`. Крон перенесён `0 22 * * *` → `0 3 * * *` (03:00 UTC, после ночных синков). Это **расширение** существующего дайджеста, НЕ новая модель/пайплайн. Подробности — [[../01_projects/director-dashboard]] §«День компании».
 
+### MonthlyOperationsDigest — «Месяц компании» (2026-06-30)
+
+**Источник:** `plans/tz/2026-06-29-month-company-monthly-brief.md`.
+
+**`MonthlyOperationsDigest` (новая, третий ритм рядом с Weekly/Daily; миграция `20260630000000_add_monthly_operations_digest`):**
+
+```prisma
+model MonthlyOperationsDigest {
+  id                      String   @id @default(cuid())
+  tenantId                String
+  periodYm                String   @db.VarChar(7)   // YYYY-MM, месяц в локали Org
+  verdictJson             Json?    // вердикт месяца (4 оси + overall)
+  letterJson              Json?    // письмо-проза «как прошёл месяц»
+  goalAlignmentMonthJson  Json?    // месячный компас к цели + pace (факт/план/ETA)
+  weekTrendJson           Json?    // тренд осей по неделям месяца (детерминированно)
+  shortSummary            String?  @db.Text
+  deliveredAt             DateTime?
+  metricsJson             Json?
+  sourcesJson             Json?
+  llmTaskRouteId          String?
+  externalSource          String?
+  createdAt               DateTime @default(now())
+  @@unique([tenantId, periodYm])                    // идемпотентность cron'а
+  @@map("monthly_operations_digests")
+}
+```
+
+Заполняется ОДНИМ capable LLM-вызовом (`taskType operations-monthly-digest`, json_schema strict + lenient Zod), который сводит **4 недельных `WeeklyOperationsDigest`** месяца (компресс-вход: select без `letterJson`; пропущенные недели — graceful) в `MonthlyDigestService.generate`. Post-LLM `clampMonthVerdict` (нельзя зелёный при красном клиенте); `weekTrendJson` всегда детерминирован; `pace` (факт/план/ETA) считает **КОД** — LLM отдаёт только текст `leadingSignal`; при провале — «сухой» fallback. Это **новая модель**, но зеркало Weekly/Daily-пайплайна (новый извлекающий agent НЕ вводился). Подробности — [[../01_projects/director-dashboard]] §«Месяц компании», [[../01_projects/ai-jobs]] §«operations-monthly-digest».
+
 Сопутствующие расширения DTO-формы (новых DB-колонок нет): строка зависшей задачи `getStuckCrossProject` (execution-dashboard) += `assigneeUserId`/`assigneeName`/`dueDate`; value-strip директора (director-dashboard) += `tasksResolved` (`Issue.completedAt` в периоде) + `ideasCollected` (`Idea.createdAt` в периоде).
 
 ### SBA β-8.2 — IdeaBlock.commitment* + ребро `resolves` (2026-05-25)

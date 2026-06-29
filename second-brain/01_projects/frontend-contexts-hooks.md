@@ -139,6 +139,34 @@ FeedClient.tsx) **удалена** (сиблинги `/feed/insights`, `/feed/pr
 коммиты `9aa3945e`+`10dbbe35`. См. также [[frontend-pages]]. Ф5 (визуальная qa) —
 НЕ выполнена.
 
+## «Месяц компании» + навигация по датам/архив (2026-06-30)
+
+Хуки героев-брифингов и общий навигатор периодов (ветка
+`feature/month-company-and-report-navigation`):
+
+- **`useMonthCompany`** (`src/hooks/useMonthCompany.ts`) — SWR к
+  `GET /dashboard/operations/monthly-digest/latest|?period=`; слои
+  `src/api/monthly-digest.api.ts` → `src/domain/operations-monthly-digest.ts`.
+  Питает героя `MonthCompanyHero` на `/month`.
+- **`useDayAvailablePeriods` / `useWeekAvailablePeriods` / `useMonthAvailablePeriods`**
+  — SWR к `…/{daily,weekly,monthly}-digest/available-periods?limit=` → список
+  доступных периодов с `stateHint` + `latest` для навигатора/архива.
+- **`PeriodNavigator`** (`src/ui/components/dashboard/shared/PeriodNavigator.tsx`)
+  — общий stepper по ритму («вперёд» disabled на latest), клик-подпись → попап
+  «Недавние отчёты» (архив с цветной точкой `stateHint`) + «Выбрать дату…»
+  (нативный picker). Подключён к 3 героям (день/неделя/месяц); `value-recap`
+  переведён с локального `PeriodSelector` на него.
+- **`PeriodEmptyState`** — нет данных за период → CTA на ближайший/«К последнему»;
+  первый запуск → обучающий пустой-стейт.
+- **`src/domain/period.ts`** — чистые хелперы дат:
+  `shiftDate/mondayOf/shiftWeek/shiftPeriodYm/shiftPeriod/formatPeriodLabel/currentPeriod/comparePeriods/nearestAvailablePeriod`.
+- **`GoalCompass3D`** (`src/ui/components/dashboard/shared/GoalCompass3D.tsx`,
+  введён 2026-06-29) переиспользован в месячном компасе (`MonthGoalCompass`).
+
+**Источники:** `plans/tz/2026-06-29-month-company-monthly-brief.md`,
+`plans/tz/2026-06-30-report-date-navigation-archive.md`. См.
+[[director-dashboard]] §«Месяц компании», [[frontend-pages]], [[api-layer]].
+
 ---
 
 [[../index|← index]] · [[frontend-pages]]

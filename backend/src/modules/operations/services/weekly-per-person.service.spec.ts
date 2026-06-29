@@ -266,6 +266,27 @@ describe('WeeklyPerPersonService', () => {
       expect(dto.generatedAt).toBe(NOW.toISOString());
       expect(() => new Date(dto.generatedAt).toISOString()).not.toThrow();
     });
+
+    it('явный weekEnd → окно недели до переданной даты (пн–пт)', async () => {
+      const { service, prisma } = buildService(baseFixture());
+      const dto = await service.compute(
+        {
+          tenantId: 't-1',
+          weekStart: WEEK_START,
+          weekEnd: '2026-06-05',
+          limit: 100,
+          offset: 0,
+          sort: 'reliability',
+        },
+        NOW,
+      );
+      expect(dto.weekStart).toBe(WEEK_START);
+      expect(dto.weekEnd).toBe('2026-06-05');
+
+      const ibCall = prisma.ideaBlock.findMany.mock.calls[0]![0];
+      const lte = ibCall.where.commitmentDueDate.lte as Date;
+      expect(lte.toISOString()).toBe('2026-06-05T23:59:59.999Z');
+    });
   });
 
   describe('R8 — деление на ноль', () => {
@@ -456,13 +477,33 @@ describe('WeeklyPerPersonService', () => {
       expect(dto.total).toBe(3);
     });
 
-    it('cache-ключ включает tenantId+weekStart+sort+limit+offset', async () => {
+    it('cache-ключ включает tenantId+weekStart+weekEnd+sort+limit+offset', async () => {
       const { service, redisGet } = buildService({ commitments: [] });
       await service.compute(
         { tenantId: 't-1', weekStart: WEEK_START, limit: 10, offset: 5, sort: 'risk' },
         NOW,
       );
-      expect(redisGet).toHaveBeenCalledWith(`weekly_per_person:t-1:${WEEK_START}:risk:10:5`);
+      expect(redisGet).toHaveBeenCalledWith(
+        `weekly_per_person:t-1:${WEEK_START}:2026-06-07:risk:10:5`,
+      );
+    });
+
+    it('cache-ключ различает окно пн–пт и пн–вс по сегменту weekEnd', async () => {
+      const { service, redisGet } = buildService({ commitments: [] });
+      await service.compute(
+        {
+          tenantId: 't-1',
+          weekStart: WEEK_START,
+          weekEnd: '2026-06-05',
+          limit: 10,
+          offset: 5,
+          sort: 'risk',
+        },
+        NOW,
+      );
+      expect(redisGet).toHaveBeenCalledWith(
+        `weekly_per_person:t-1:${WEEK_START}:2026-06-05:risk:10:5`,
+      );
     });
   });
 

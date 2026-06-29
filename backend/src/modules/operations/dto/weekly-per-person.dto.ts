@@ -2,6 +2,10 @@ import { z } from 'zod';
 
 export const WeeklyPerPersonQuerySchema = z.object({
   weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'invalid_week_start'),
+  weekEnd: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'invalid_week_end')
+    .optional(),
   limit: z.coerce.number().int().min(1).max(100).default(5),
   offset: z.coerce.number().int().min(0).default(0),
   sort: z.enum(['reliability', 'risk']).default('reliability'),
@@ -43,6 +47,10 @@ export interface MyWeeklyPerPersonDto {
 
 export const WeeklyPersonItemsQuerySchema = z.object({
   weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'invalid_week_start'),
+  weekEnd: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'invalid_week_end')
+    .optional(),
 });
 export type WeeklyPersonItemsQuery = z.infer<typeof WeeklyPersonItemsQuerySchema>;
 

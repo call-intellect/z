@@ -73,7 +73,7 @@ describe('OperationsWeeklyDigestCron', () => {
       weekEnd: string;
     };
     expect(arg.weekStart).toBe('2026-05-18');
-    expect(arg.weekEnd).toBe('2026-05-24');
+    expect(arg.weekEnd).toBe('2026-05-22');
     expect(conversational.sendNotification).toHaveBeenCalledTimes(2);
     expect(stats.notificationsSent).toBe(2);
   });

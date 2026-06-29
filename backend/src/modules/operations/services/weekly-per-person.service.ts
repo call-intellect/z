@@ -49,6 +49,7 @@ interface PersonAcc {
 export interface WeeklyPerPersonArgs {
   tenantId: string;
   weekStart: string;
+  weekEnd?: string;
   limit: number;
   offset: number;
   sort: 'reliability' | 'risk';
@@ -58,6 +59,7 @@ export interface WeeklyPersonWeekItemsArgs {
   tenantId: string;
   personId: string;
   weekStart: string;
+  weekEnd?: string;
 }
 
 interface CheckInRow {
@@ -86,11 +88,19 @@ export class WeeklyPerPersonService {
     const { tenantId, weekStart, limit, offset, sort } = args;
 
     const weekStartDate = new Date(`${weekStart}T00:00:00.000Z`);
-    const weekEndDate = new Date(weekStartDate.getTime() + 6 * DAY_MS);
-    weekEndDate.setUTCHours(23, 59, 59, 999);
-    const weekEndStr = this.formatDate(weekEndDate);
+    let weekEndDate: Date;
+    let weekEndStr: string;
+    if (args.weekEnd) {
+      weekEndDate = new Date(`${args.weekEnd}T00:00:00.000Z`);
+      weekEndDate.setUTCHours(23, 59, 59, 999);
+      weekEndStr = args.weekEnd;
+    } else {
+      weekEndDate = new Date(weekStartDate.getTime() + 6 * DAY_MS);
+      weekEndDate.setUTCHours(23, 59, 59, 999);
+      weekEndStr = this.formatDate(weekEndDate);
+    }
 
-    const cacheKey = `weekly_per_person:${tenantId}:${weekStart}:${sort}:${limit}:${offset}`;
+    const cacheKey = `weekly_per_person:${tenantId}:${weekStart}:${weekEndStr}:${sort}:${limit}:${offset}`;
     const cached = await this.tryReadCache(cacheKey);
     if (cached) {
       return cached;
@@ -126,9 +136,17 @@ export class WeeklyPerPersonService {
     const { tenantId, personId, weekStart } = args;
 
     const weekStartDate = new Date(`${weekStart}T00:00:00.000Z`);
-    const weekEndDate = new Date(weekStartDate.getTime() + 6 * DAY_MS);
-    weekEndDate.setUTCHours(23, 59, 59, 999);
-    const weekEndStr = this.formatDate(weekEndDate);
+    let weekEndDate: Date;
+    let weekEndStr: string;
+    if (args.weekEnd) {
+      weekEndDate = new Date(`${args.weekEnd}T00:00:00.000Z`);
+      weekEndDate.setUTCHours(23, 59, 59, 999);
+      weekEndStr = args.weekEnd;
+    } else {
+      weekEndDate = new Date(weekStartDate.getTime() + 6 * DAY_MS);
+      weekEndDate.setUTCHours(23, 59, 59, 999);
+      weekEndStr = this.formatDate(weekEndDate);
+    }
     const nowMs = now.getTime();
 
     const person = await this.prisma.person.findFirst({

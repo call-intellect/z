@@ -76,7 +76,7 @@ export class OperationsWeeklyDigestCron {
 
       const todayLocal = getLocalDate(now, timezone);
       const weekStart = shiftDateLocal(todayLocal, -7);
-      const weekEnd = shiftDateLocal(weekStart, 6);
+      const weekEnd = shiftDateLocal(weekStart, 4);
 
       const tenantTop = resolveOperationsTenantTop(org.id);
 

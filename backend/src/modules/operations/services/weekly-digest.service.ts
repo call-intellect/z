@@ -442,6 +442,7 @@ export class WeeklyDigestService {
         {
           tenantId: args.tenantId,
           weekStart: args.weekStart,
+          weekEnd: args.weekEnd,
           limit: 100,
           offset: 0,
           sort: 'risk',

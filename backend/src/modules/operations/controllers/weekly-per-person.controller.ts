@@ -54,6 +54,7 @@ export class WeeklyPerPersonController {
       {
         tenantId: tenantId!,
         weekStart: q.weekStart,
+        weekEnd: q.weekEnd,
         limit: q.limit,
         offset: q.offset,
         sort: q.sort,
@@ -77,7 +78,7 @@ export class WeeklyPerPersonController {
     this.requireTenant(tenantId);
     await this.requireReadAccess(uid, tenantId!);
     return this.svc.getPersonWeekItems(
-      { tenantId: tenantId!, personId, weekStart: q.weekStart },
+      { tenantId: tenantId!, personId, weekStart: q.weekStart, weekEnd: q.weekEnd },
       new Date(),
     );
   }

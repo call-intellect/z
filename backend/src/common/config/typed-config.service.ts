@@ -1561,7 +1561,7 @@ export class TypedConfigService {
       weeklyDigestLocalHour: this.resolveSync<number>(
         'betaOps.weeklyDigestLocalHour',
         'COO_WEEKLY_DIGEST_LOCAL_HOUR',
-        8,
+        6,
       ),
       weeklyDigestLocalDay: this.resolveSync<number>(
         'betaOps.weeklyDigestLocalDay',

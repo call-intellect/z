@@ -247,7 +247,7 @@ const startOfTomorrowMskUtc = new Date(startOfTodayMskUtc.getTime() + 24 * 3600_
 
 Граф зависимостей: **Ф0 → Ф1 → Ф2**; **Ф3, Ф4 зависят от Ф0** (контракт payload), параллельны Ф2 и друг другу; **Ф5 зависит от Ф0** (ключи) и логически до прод-выката; **Ф6** — финал после Ф1–Ф5. Строгий порядок только Ф0→Ф1→Ф2. Ф3/Ф4/Ф5 можно вести параллельной волной после Ф0.
 
-### Ф0 — Контракты: eventType + AdminSetting-ключи `[ ]`
+### Ф0 — Контракты: eventType + AdminSetting-ключи `[x]`
 **Ценность:** как «почтальон» и админ-слой, получаю валидируемый контракт `tasks.daily_open` и зарегистрированные крутилки, чтобы остальные фазы опирались на канон.
 **Цель:** добавить payload-схему (§К1), строку политики (§К2), 5 валидаторов в реестр (§К3).
 **Что входит:** правки [event-payload.registry.ts](../../backend/src/modules/conversational/types/event-payload.registry.ts), [conversational.service.ts](../../backend/src/modules/conversational/conversational.service.ts) (одна строка политики), [admin-setting-schema-registry.ts](../../backend/src/modules/admin/settings/admin-setting-schema-registry.ts) (5 строк).
@@ -260,7 +260,7 @@ const startOfTomorrowMskUtc = new Date(startOfTodayMskUtc.getTime() + 24 * 3600_
 - Негатив: `validateEventPayload('tasks.daily_open', { groups: 'oops' })` бросает (проверить юнит-тестом или в Ф6).
 **Закрывает:** R10 (контракт), частично R3/R7/R8 (ключи).
 
-### Ф1 — Сервис-строитель `MorningTasksDigestService` (чистая логика) `[ ]`
+### Ф1 — Сервис-строитель `MorningTasksDigestService` (чистая логика) `[x]`
 **Ценность:** как воркер задачного трекера, получаю детерминированный сборщик «открытые задачи сотрудника → сгруппированный payload», чтобы cron остался тонким и логика была юнит-тестируема.
 **Цель:** сервис без побочных эффектов доставки: методы перечисления активных сотрудников по тенанту, сбора открытых задач по assignee, группировки (§К4), сборки payload (включая пустой случай и overflow).
 **Что входит:** новый файл `backend/src/modules/tracker/services/morning-tasks-digest.service.ts`; провайдер в [tracker.module.ts](../../backend/src/modules/tracker/tracker.module.ts) (providers, рядом с другими сервисами). Зависимости: `PrismaService`, `TypedConfigService`. Экспорт чистых функций группировки для тестов.
@@ -283,7 +283,7 @@ buildPayloadForUser(args: {
 - `bun run typecheck` + `bunx vitest run backend/src/modules/tracker/services/morning-tasks-digest.service.spec.ts` зелёные.
 **Закрывает:** R5, R6, R7, R8 (сборка пустого).
 
-### Ф2 — Cron `MorningTasksDigestCron` (тик + гейт + дедуп + отправка) `[ ]`
+### Ф2 — Cron `MorningTasksDigestCron` (тик + гейт + дедуп + отправка) `[x]`
 **Ценность:** как сотрудник, получаю утром одно уведомление со своими задачами, потому что cron в нужный МСК-час собирает и отправляет сводку через «почтальона».
 **Цель:** ежечасный `@Cron('0 * * * *', { timeZone: 'Europe/Moscow' })` → kill-switch → гейт по часу (§К5) → перечисление активных сотрудников → дедуп (§К6) → `conversational.sendNotification` с `preferredChannelKinds` из настроек → метрика. Best-effort per-user (try/catch).
 **Что входит:** новый `backend/src/modules/tracker/workers/morning-tasks-digest.cron.ts`; провайдер в [tracker.module.ts](../../backend/src/modules/tracker/tracker.module.ts) (рядом с `IssueOverdueDetectorCron`, якорь `IssueOverdueDetectorCron,`). Инжект **глобального** `ConversationalService` (импорт типа из `../../conversational/conversational.service`; модуль НЕ импортировать — он `@Global`). Метрика: добавить счётчик в `BusinessMetricsService` (например `incMorningTasksDigest({ isEmpty })`) — по образцу существующих `inc*` в [business-metrics.service.ts](../../backend/src/common/metrics/business-metrics.service.ts).
@@ -296,7 +296,7 @@ buildPayloadForUser(args: {
 - `bun run typecheck` (вкл. `.spec`) + `bun run lint` + `bunx vitest run …cron.spec.ts` зелёные.
 **Закрывает:** R1, R2, R3, R4, R9, R10, R12, R13.
 
-### Ф3 — Рендер `tasks.daily_open` в каналах (telegram / max / email) `[ ]`
+### Ф3 — Рендер `tasks.daily_open` в каналах (telegram / max / email) `[x]`
 **Ценность:** как сотрудник, читаю аккуратный список задач в Telegram/MAX/почте, а не «Уведомление: tasks.daily_open».
 **Цель:** добавить `case 'tasks.daily_open':` в `renderText` ([telegram-bot.adapter.ts:1131](../../backend/src/modules/conversational/adapters/telegram-bot/telegram-bot.adapter.ts), [max-bot.adapter.ts:868](../../backend/src/modules/conversational/adapters/max-bot/max-bot.adapter.ts)) и в `subjectFor`+`renderPlainText` ([email-smtp.adapter.ts:63/:76](../../backend/src/modules/conversational/adapters/email-smtp.adapter.ts)). Текст строить из `payload.groups`: заголовок + по группам (label + строки `IDENTIFIER — title [· срок]`), хвост `+ ещё N` при `overflowCount>0`; пустой (`isEmpty`) → «На сегодня открытых задач нет — хорошего дня». Telegram/MAX — HTML с `escapeHtml`, обрезка `.slice(0,4000)` (как соседние case). Email — plain + ссылка `actionUrl`.
 **Что входит:** 3 адаптера. **Что НЕ входит:** фронт (Ф4), payload (Ф0).
@@ -307,7 +307,7 @@ buildPayloadForUser(args: {
 - `bun run typecheck` зелёный.
 **Закрывает:** R11 (каналы).
 
-### Ф4 — Фронт: label + рендер сводки в кабинете `[ ]`
+### Ф4 — Фронт: label + рендер сводки в кабинете `[x]`
 **Ценность:** как сотрудник, открываю уведомление в кабинете и вижу сгруппированный список задач со ссылками, а не сырой payload.
 **Цель:** (1) добавить `'tasks.daily_open': 'Задачи на сегодня'` в `EVENT_TYPE_LABELS` ([domain/conversational.ts:78](../../frontend/src/domain/conversational.ts)); (2) выделенный рендер в `NotificationDetail` ([NotificationsClient.tsx:260](../../frontend/app/(authenticated)/me/notifications/NotificationsClient.tsx)) — если `n.eventType==='tasks.daily_open'`, отрисовать группы (label + список задач-ссылок на `/issues/${issueId}`, бейдж приоритета, срок), пустой случай — «всё чисто». Слои `ApiDto→DomainModel→UiModel`, парные токены `bg-*`/`text-*-fg`, без `text-white`/hex.
 **Что входит:** 2 файла фронта. **Что НЕ входит:** новые API-вызовы (payload уже приходит в `mapNotificationDetail`).
@@ -318,7 +318,7 @@ buildPayloadForUser(args: {
 - Playwright/визуально (в Ф6): уведомление показывает группы и ссылки; пустое — «всё чисто».
 **Закрывает:** R11 (in_app).
 
-### Ф5 — AdminSetting: сид + UI + регистрация в прод-агрегаторе `[ ]`
+### Ф5 — AdminSetting: сид + UI + регистрация в прод-агрегаторе `[x]`
 **Ценность:** как владелец, в админке включаю/выключаю рассылку, меняю час и каналы — без правки кода.
 **Цель:** (1) новый сид `backend/scripts/seed-admin-setting-morning-tasks-digest.ts` (5 ключей §К3, category `'ai'`/section `'tracker'` или category `'tracker'`/section `'workers'` — по образцу [seed-admin-setting-tracker.ts](../../backend/scripts/seed-admin-setting-tracker.ts), `createPrismaClient()`, защита admin-edited); (2) группа в [TrackerSettingsClient.tsx](../../frontend/app/(admin)/admin/tracker/TrackerSettingsClient.tsx) (`SettingsGroup` «Утренняя сводка задач» с 5 spec'ами; для `channels` — мульти-селект/массив, schema `z.array(z.enum([...]))`); (3) регистрация сида в `STEPS` [apply-prod-deploy.ts](../../backend/scripts/apply-prod-deploy.ts): строка `{ phase: 'seed-base', script: 'scripts/seed-admin-setting-morning-tasks-digest.ts' }` (рядом с `seed-admin-setting-daily-digest.ts`, якорь `seed-admin-setting-daily-digest`).
 **Что входит:** сид, UI-группа, STEPS. **Что НЕ входит:** логика крона (Ф2).
@@ -331,7 +331,7 @@ buildPayloadForUser(args: {
 - `bun run typecheck` (backend+frontend) зелёный; `bunx tsx backend/scripts/seed-admin-setting-morning-tasks-digest.ts` — dry-проверка синтаксиса (если есть локальная БД; иначе typecheck).
 **Закрывает:** R7/R8/R10 (значения крутилок), В4/В5/В6.
 
-### Ф6 — Документация, метрики-флаги, верификация `[ ]`
+### Ф6 — Документация, метрики-флаги, верификация `[x]`
 **Ценность:** как команда, имею прод-инструкцию, реестр флага и обновлённый second-brain, чтобы фича была сопровождаема.
 **Цель:** дописать `feature-flags.md` (kill-switch `tracker.morningDigest.enabled` + крутилки), `prod-deploy-log.md` (Шаг 1 — новый сид/настройки, Шаг 12 — smoke grep по cron/eventType), second-brain (`01_projects/tracker.md`, `01_projects/ai-jobs.md`/`workers-queues.md` — новый cron, `01_projects/api-layer.md` — новый eventType если описывается, `04_не-сделано` — vNext: командный разрез, BullMQ-очередь при >2000), рефлексия.
 **Что входит:** только docs/second-brain. **Файлы:** перечисленные.
@@ -383,4 +383,11 @@ buildPayloadForUser(args: {
 - Ни одного `process.env.*`/`new PrismaClient()`/`prisma migrate` в добавленном коде; UI/тексты — только русский.
 
 ## Итог
-> Заполняет tz-orchestrator по завершении: реализовано целиком / остаток. Ожидаемо: cron + сервис + payload + 3 рендера + фронт(label+рендер) + 5 крутилок (реестр+сид+UI) + docs. Новых миграций нет.
+> **Реализовано целиком (2026-06-29, ветка `feature/morning-tasks-digest`).** Все 6 фаз закрыты:
+> - Ф0 контракты (`bb3ef20d`) · Ф1 сервис+5/5 тестов (`6c8fcfef`) · Ф2 cron+6/6 спека (`d65dfd23`) · Ф3 рендер telegram/max/email (`2fb6b98d`) · Ф4 фронт label+рендер (`2a9f0da6`) · Ф5 сид+UI+STEPS (`40191e7e`) · Ф6 docs+second-brain+рефлексия.
+> - Верификация: backend `typecheck`=0, `build`=0 (8GB heap), оба спека зелёные, eslint 0 err; frontend `typecheck`=0/`lint`=0 err.
+> - Новых Prisma-моделей/колонок/миграций НЕТ (дедуп по существующей `Notification`). Прод-операции: только новый сид через агрегатор (`--mode update`) — см. `docs/operations/prod-deploy-log.md` блок 2026-06-29.
+> - Хвосты (vNext в `04_не-сделано`): командный разрез · BullMQ при >2000 сотрудников · пер-юзерная подписка в кабинете.
+
+### Изначальный план (для истории)
+> Ожидаемо: cron + сервис + payload + 3 рендера + фронт(label+рендер) + 5 крутилок (реестр+сид+UI) + docs. Новых миграций нет.

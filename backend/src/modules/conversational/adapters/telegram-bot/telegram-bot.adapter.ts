@@ -1328,6 +1328,44 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         const link = actionUrl ? `\n\nОткрыть:\n${escapeHtml(actionUrl)}` : '';
         return `${head}${list}${link}`.slice(0, 4000);
       }
+      case 'tasks.daily_open': {
+        const title = (payload['title'] as string | undefined) ?? 'Ваши задачи на сегодня';
+        const isEmpty = payload['isEmpty'] === true;
+        const groups = Array.isArray(payload['groups'])
+          ? (payload['groups'] as Array<Record<string, unknown>>)
+          : [];
+        const overflowCount = Number(payload['overflowCount'] ?? 0);
+        if (isEmpty || groups.length === 0) {
+          return `<b>${escapeHtml(title)}</b>\n\nНа сегодня открытых задач нет — хорошего дня.`.slice(
+            0,
+            4000,
+          );
+        }
+        const fmtDay = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' });
+        const blocks = groups
+          .map((group) => {
+            const label = (group['label'] as string | undefined) ?? '';
+            const items = Array.isArray(group['items'])
+              ? (group['items'] as Array<Record<string, unknown>>)
+              : [];
+            const itemLines = items
+              .map((item) => {
+                const identifier = (item['identifier'] as string | undefined) ?? '';
+                const itemTitle = (item['title'] as string | undefined) ?? '';
+                const dueDate = item['dueDate'] as string | null | undefined;
+                const due =
+                  dueDate && !Number.isNaN(new Date(dueDate).getTime())
+                    ? ` · до ${escapeHtml(fmtDay.format(new Date(dueDate)))}`
+                    : '';
+                return `${escapeHtml(identifier)} — ${escapeHtml(itemTitle)}${due}`;
+              })
+              .join('\n');
+            return `<b>${escapeHtml(label)}</b>\n${itemLines}`;
+          })
+          .join('\n\n');
+        const tail = overflowCount > 0 ? `\n\n…и ещё ${overflowCount}` : '';
+        return `<b>${escapeHtml(title)}</b>\n\n${blocks}${tail}`.slice(0, 4000);
+      }
       default:
         break;
     }

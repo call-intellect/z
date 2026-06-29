@@ -86,6 +86,7 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   'checkin.prompt': ['telegram_bot', 'max_bot', 'in_app'],
   'support.ticket_created': ['telegram_bot', 'email_smtp', 'in_app'],
   'support.ticket_reply': ['telegram_bot', 'email_smtp', 'in_app'],
+  'tasks.daily_open': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
 };
 
 const DEFAULT_POLICY: ChannelKind[] = ['in_app'];

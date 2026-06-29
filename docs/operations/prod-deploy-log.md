@@ -87,6 +87,23 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-29 — Утренняя сводка задач: ежедневный персональный дайджест открытых задач (ветка feature/morning-tasks-digest)
+
+> ТЗ `plans/tz/2026-06-29-morning-tasks-digest.md`. Новый eventType `tasks.daily_open` + `MorningTasksDigestService` (сбор/группировка) + `MorningTasksDigestCron` (ежечасный тик МСК + гейт по часу + дедуп по `Notification` + отправка через `ConversationalService`). Переиспользует «почтальона», адаптеры, AdminSetting. **Новых Prisma-моделей/колонок/миграций НЕТ** (дедуп по существующей `Notification`). Коммиты `bb3ef20d..d65dfd23`.
+>
+> **🟢 НОВЫХ ENV НЕТ. 🟢 МИГРАЦИЙ НЕТ. 🟢 1 НОВЫЙ СИД** (`seed-admin-setting-morning-tasks-digest.ts`, 5 крутилок, зарегистрирован в STEPS `phase:'seed-base'`). 🟢 1 НОВЫЙ kill-switch `tracker.morningDigest.enabled` (AdminSetting, code-default true, Ship-On ON). Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** Все 5 настроек — чистые AdminSetting (`tracker.morningDigest.{enabled,hourMsk,channels,maxItemsTotal,sendWhenEmpty}`), читаются через `getDynamic` с code-fallback (работают до сида — Ship-On). kill-switch `tracker.morningDigest.enabled` — тип A (ВКЛ, действий владельца не требует). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 (Prisma) — НЕ затронут.** Новых моделей/колонок нет; идемпотентность рассылки — дедуп по существующей `Notification` (eventType `tasks.daily_open` за МСК-сутки).
+- **Шаги 5/6/8/9/10 (postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.**
+- **Шаг 7 — Seed крутилок (идемпотентный, сид УЖЕ в STEPS `phase:'seed-base'`):** `seed-admin-setting-morning-tasks-digest.ts` сидит 5 ключей (`enabled`=true, `hourMsk`=9, `channels`=[in_app,email_smtp,telegram_bot,max_bot], `maxItemsTotal`=50, `sendWhenEmpty`=true), защита admin-edited. Доезжает агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Повтор = no-op (created=0).
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`MorningTasksDigestCron` `@Cron('0 * * * *', Europe/Moscow)`, `MorningTasksDigestService`, рендер `tasks.daily_open` в telegram/max/email-адаптерах, метрика `z_tracker_morning_digest_total`). Frontend (label + рендер сводки в `/me/notifications`, UI-группа «Утренняя сводка задач» в `/admin/tracker`).
+- **Шаг 12 — Smoke** (после выката): `docker compose exec backend grep -rl "tasks.daily_open" dist || true`; в нужный МСК-час лог `MorningTasksDigestCron`/`morning-tasks-digest: проход завершён`; метрика `z_tracker_morning_digest_total` на `/metrics`; группа «Утренняя сводка задач» с 5 полями в `/admin/tracker`; уведомление «Задачи на сегодня» приходит сотруднику с открытыми задачами (in_app/email/telegram/max). Флаг `tracker.morningDigest.enabled` в админке.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-28 — Единый чат: Ф6a backend push-фундамент + удаление аккаунта + блокировка пользователя (ветка feat/unified-chat-kora)
 
 > ТЗ `plans/tz/2026-06-21-unified-chat-kora-tz.md` Ф6a. Транспорт-агностичный `PushService` (APNs/FCM/RuStore/web-push) + `PushToken` + push-канал conversational для офлайн-сигнала `chat.new_message` (ФЗ-41: payload без тела/имён). Самоудаление аккаунта (App Review 5.1.1(v)) + блокировка собеседника в dm + жалоба на сообщение (UGC-модерация App Store/Play).

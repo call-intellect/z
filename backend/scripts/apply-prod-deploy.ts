@@ -143,6 +143,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-morning-tasks-digest.ts',
+    hint: 'tracker.morningDigest.{enabled,hourMsk,channels,maxItemsTotal,sendWhenEmpty} — крутилки утренней сводки открытых задач сотруднику',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-knowledge-extract.ts',
     hint: 'knowledge.{decisions,ideas,insights}ExtractMinConfidence — пороги уверенности извлекателей решений/идей/инсайтов (task-decision-disambiguation Ф5)',
   },

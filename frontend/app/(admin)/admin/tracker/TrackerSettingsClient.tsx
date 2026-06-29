@@ -155,6 +155,55 @@ const GROUPS: SettingsGroup[] = [
       },
     ],
   },
+  {
+    title: "Утренняя сводка задач",
+    description:
+      "Утренний дайджест открытых задач сотруднику: каждое утро Кора присылает список того, что в работе.",
+    specs: [
+      {
+        key: "tracker.morningDigest.enabled",
+        label: "Утренняя сводка задач включена",
+        description:
+          "Рубильник утренней рассылки открытых задач. Выкл — дайджест не отправляется. По умолчанию вкл (Ship-On).",
+        schema: z.boolean(),
+        defaultValue: true,
+      },
+      {
+        key: "tracker.morningDigest.hourMsk",
+        label: "Час рассылки (МСК)",
+        description:
+          "В какой час по московскому времени уходит утренняя сводка. По умолчанию 9, диапазон 0–23.",
+        schema: z.number().int().min(0).max(23),
+        defaultValue: 9,
+      },
+      {
+        key: "tracker.morningDigest.channels",
+        label: "Каналы доставки",
+        description:
+          "Список каналов доставки сводки (JSON-массив). Допустимо: in_app, email_smtp, telegram_bot, max_bot, push.",
+        schema: z.array(
+          z.enum(["in_app", "email_smtp", "telegram_bot", "max_bot", "push"]),
+        ),
+        defaultValue: ["in_app", "email_smtp", "telegram_bot", "max_bot"],
+      },
+      {
+        key: "tracker.morningDigest.maxItemsTotal",
+        label: "Максимум задач в письме",
+        description:
+          "Сколько задач показывать в сводке; остальные сворачиваются в «и ещё N». По умолчанию 50, диапазон 1–500.",
+        schema: z.number().int().min(1).max(500),
+        defaultValue: 50,
+      },
+      {
+        key: "tracker.morningDigest.sendWhenEmpty",
+        label: "Слать, даже если задач нет",
+        description:
+          "Отправлять сводку «всё чисто», когда открытых задач у сотрудника нет. По умолчанию вкл.",
+        schema: z.boolean(),
+        defaultValue: true,
+      },
+    ],
+  },
 ];
 
 export function TrackerSettingsClient(): JSX.Element {

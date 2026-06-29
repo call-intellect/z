@@ -95,6 +95,7 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   "issue.created": "Создана задача",
   "issue.overdue": "Просрочена задача",
   "task.closed_for_review": "Задача закрыта — нужна проверка",
+  "tasks.daily_open": "Задачи на сегодня",
   "note.ack": "Заметка принята",
   "clone.access_requested": "Запрос доступа к клону",
   "clone.access_granted": "Выдан доступ к клону",

@@ -68,6 +68,13 @@ export class EmailSmtpChannelAdapter implements IChannel, OnModuleInit {
         return 'Кора: нужна ваша модерация';
       case 'system.message':
         return 'Кора — уведомление';
+      case 'tasks.daily_open': {
+        const payload = notification.payload as Record<string, unknown> | null;
+        const title = (payload?.['title'] as string | undefined) ?? 'Ваши задачи на сегодня';
+        const isEmpty = payload?.['isEmpty'] === true;
+        const total = Number(payload?.['total'] ?? 0);
+        return isEmpty || total === 0 ? `${title}: на сегодня задач нет` : `${title}: ${total} шт.`;
+      }
       default:
         return `Кора — уведомление (${notification.eventType})`;
     }
@@ -116,6 +123,43 @@ export class EmailSmtpChannelAdapter implements IChannel, OnModuleInit {
         if (title) lines.push(title, '');
         if (body) lines.push(body, '');
         lines.push(`Подробности: ${deepLink}`);
+        break;
+      }
+      case 'tasks.daily_open': {
+        const title = (payload?.['title'] as string | undefined) ?? 'Ваши задачи на сегодня';
+        const isEmpty = payload?.['isEmpty'] === true;
+        const groups = Array.isArray(payload?.['groups'])
+          ? (payload?.['groups'] as Array<Record<string, unknown>>)
+          : [];
+        const overflowCount = Number(payload?.['overflowCount'] ?? 0);
+        const actionUrl = (payload?.['actionUrl'] as string | undefined) ?? '';
+        lines.push(title, '');
+        if (isEmpty || groups.length === 0) {
+          lines.push('На сегодня открытых задач нет — хорошего дня.');
+        } else {
+          const fmtDay = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' });
+          for (const group of groups) {
+            const label = (group['label'] as string | undefined) ?? '';
+            const items = Array.isArray(group['items'])
+              ? (group['items'] as Array<Record<string, unknown>>)
+              : [];
+            if (label) lines.push(label);
+            for (const item of items) {
+              const identifier = (item['identifier'] as string | undefined) ?? '';
+              const itemTitle = (item['title'] as string | undefined) ?? '';
+              const dueDate = item['dueDate'] as string | null | undefined;
+              const due =
+                dueDate && !Number.isNaN(new Date(dueDate).getTime())
+                  ? ` · до ${fmtDay.format(new Date(dueDate))}`
+                  : '';
+              lines.push(`${identifier} — ${itemTitle}${due}`);
+            }
+            lines.push('');
+          }
+          if (overflowCount > 0) lines.push(`…и ещё ${overflowCount}`, '');
+        }
+        const tasksLink = actionUrl ? `${frontend}${actionUrl}` : deepLink;
+        lines.push(`Открыть: ${tasksLink}`);
         break;
       }
       default: {

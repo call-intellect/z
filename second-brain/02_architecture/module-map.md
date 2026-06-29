@@ -270,7 +270,9 @@ LiveKit чистит атрибуты автоматически при disconne
 - `business-metrics.service.ts` — gauges/counters/histograms `core_*`. Обёртки `setCoreBlocks`, `observeCorePipelineDuration`, `addCoreLlmTokens`, `incCoreErasure`, `incCoreRetentionDeleted`, `incCoreDataClassViolation`.
 
 ### `backend/src/modules/ai/services/llm-router.service.ts` (Phase 11)
-- Расширение `call({taskType, dataClass?, ...})`. Фильтр провайдеров по `provider.maxDataClass >= dataClass`. На фейл — `NoEligibleProviderError` + инкремент метрики.
+- Расширение `call({taskType, dataClass?, ...})`. Фильтр провайдеров по `provider.maxDataClass >= dataClass` (источник — код-константа `PROVIDER_CAPABILITY`, единственный потребитель). На фейл — `NoEligibleProviderError` + инкремент метрики.
+- **`PROVIDER_CAPABILITY.maxDataClass` (2026-06-29):** `deepseek` и `openai-via-proxy` подняты `internal`→`private` (решение владельца, приватность в деприоритете — как ранее у `kie`). Следствие: оба eligible+primary для запросов любого класса (вкл. `private`/`sensitive`), цепочка резерва `DeepSeek → OpenAI → KIE` работает для chat-v2 на любом вопросе. Раньше для `private`/`sensitive` оставался единственный `kie` → зависание → «Помощник временно недоступен». ТЗ `plans/tz/2026-06-29-chat-v2-dataclass-routing-fallback.md`.
+- **Таймаут KIE — крутилка `ai.kie.timeoutMs`** (AdminSetting, `resolveSync`, code-fallback 180000 мс) вместо захардкоженных 60_000; `knowledge.chatV2SynthesisTimeoutMs` code-fallback поднят до 180_000 (не меньше таймаута KIE).
 - Экспорт `ALL_LLM_TASK_TYPES` (Phase 7).
 
 ### `backend/src/modules/entitlements/` (Phase 12)

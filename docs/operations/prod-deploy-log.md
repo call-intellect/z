@@ -71,6 +71,24 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-29 — Помощник «временно недоступен»: DeepSeek-first для всех классов данных + крутилка таймаута KIE (ветка work/2026-06-29)
+
+> ТЗ `plans/tz/2026-06-29-chat-v2-dataclass-routing-fallback.md`. `PROVIDER_CAPABILITY` поднял `deepseek`/`openai-via-proxy` `maxDataClass` `internal`→`private` → оба eligible+primary для любого класса данных, цепочка резерва `DeepSeek → OpenAI → KIE` работает для приватных/чувствительных вопросов (раньше для них оставался единственный зависающий `kie` → «Помощник временно недоступен»). Захардкоженный таймаут KIE 60_000 вынесен в крутилку `ai.kie.timeoutMs` (code-fallback 180000). Сиды chat-v2 выровнены на `deepseek-v4-pro`. Коммиты `3f8f23ad`, `1c83fc71`, `f9a9a63d`.
+>
+> **🟢 МИГРАЦИЙ PRISMA НЕТ. 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ ФЛАГОВ НЕТ** (правка значений/крутилка — не feature-flag). 🟢 1 НОВЫЙ СИД (`seed-admin-setting-kie-timeout.ts`, зарегистрирован в STEPS `phase:'seed-base'`). Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** Таймаут KIE — чистая AdminSetting `ai.kie.timeoutMs` (resolveSync, code-fallback 180000). Прямого `PROVIDER_CAPABILITY` в ENV нет (код-константа, единственный потребитель — фильтр eligibility роутера). `chatV2SynthesisTimeoutMs` code-fallback поднят 90_000→180_000.
+- **Шаги 4/5/6/8/9/10 (Prisma/postgres-init/patch/backfill/migrate/setup) — НЕ затронуты.** Новых моделей/колонок/индексов/patch-скриптов нет.
+- **Шаг 7 — Seed (идемпотентные, доезжают агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):**
+  - `scripts/seed-admin-setting-kie-timeout.ts` (НОВЫЙ, `phase:'seed-base'`, зарегистрирован в STEPS) — крутилка `ai.kie.timeoutMs`=180000 (таймаут вызова провайдера KIE, мс). Защита admin-edited; повтор = no-op (created=0).
+  - `scripts/seed-llm-task-routes-knowledge-core.ts` / `seed-llm-task-routes-default.ts` (УЖЕ в STEPS `phase:'seed-llm-*'`) — реконсиляция: primary chat-v2 выровнен на `deepseek-v4-pro` (было `deepseek-v4-flash`) + tertiary `kie/gemini-3.1-pro`. ⚠️ **На проде primary chat-v2=`deepseek-v4-pro` уже держит everyDeploy-патч `scripts/patch-chat-v2-to-pro.ts` (в STEPS `phase:'patch'`) — отдельного действия не требует.** Правка сидов — гигиена fresh-DB + устранение рассинхрона сид↔прод; уважает `editedByAdmin`.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`PROVIDER_CAPABILITY` deepseek/openai-via-proxy→`private`; `KieService` читает `this.cfg.ai.kie.timeoutMs`; `typed-config` `ai.kie.timeoutMs` + `chatV2SynthesisTimeoutMs` fallback 180_000; `admin-setting-schema-registry` += `ai.kie.timeoutMs` POSITIVE_INT). Frontend (UI-группа «Провайдер KIE» с полем таймаута в `OrchestratorSettingsClient`).
+- **Шаг 12 — Smoke** (после выката): крутилка `ai.kie.timeoutMs` видна в админ-настройках AI (группа «Провайдер KIE»); chat-v2 на приватный/чувствительный вопрос отвечает (диспатчит DeepSeek первым, не падает в «Помощник временно недоступен»); в реестре `/api/v1/admin/usage/calls?task=chat-v2` первый провайдер — `deepseek`, а не `kie`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-29 — Месяц компании + навигация по датам/архив (ветка feature/month-company-and-report-navigation)
 
 > Две парные фичи. **Месяц компании** — месячный executive-брифинг владельца на `/month` (зеркало «Недели компании»): новая модель `MonthlyOperationsDigest` + `MonthlyDigestService` (свод 4 недель одним LLM-вызовом) + `OperationsMonthlyDigestCron` (1-е число) + `MonthCompanyHero` над canvas. **Навигация/архив** — `available-periods` на 3 ритма + общий `PeriodNavigator` (‹ › + клик-дата + архив-список) + empty-state на героях дня/недели/месяца. Коммиты `9c36a0b6..82e3a893`.

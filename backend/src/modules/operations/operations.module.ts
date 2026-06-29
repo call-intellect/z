@@ -60,6 +60,7 @@ import { CheckinSentimentBatchCron } from './workers/checkin-sentiment-batch.cro
 import { CommitmentFollowupCron } from './workers/commitment-followup.cron';
 import { CustomerRiskRadarCron } from './workers/customer-risk-radar.cron';
 import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
+import { DayReportCollectorCron } from './workers/day-report-collector.cron';
 import { DaySignalAggregatorCron } from './workers/day-signal-aggregator.cron';
 import { DecisionImplementationCron } from './workers/decision-implementation.cron';
 import { ExecMorningPushCron } from './workers/exec-morning-push.cron';
@@ -107,6 +108,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     DaySignalAggregatorService,
     DaySignalAggregatorCron,
     DayReportCollectorService,
+    DayReportCollectorCron,
     ClosureVerifierService,
     MeetingCheckinListener,
     OperationsDashboardService,

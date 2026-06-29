@@ -876,6 +876,11 @@ export class BusinessMetricsService implements OnModuleInit {
   private cooDailyDigestDeliveredTotal!: Counter<'tenant_top' | 'channel'>;
   private cooDailyDigestAgeSeconds!: Gauge<'tenant_top'>;
 
+  // ── «Месяц компании» — месячный отчёт COO ─────────────────────────
+  private cooMonthlyDigestGeneratedTotal!: Counter<'tenant_top'>;
+  private cooMonthlyDigestFailedTotal!: Counter<'tenant_top' | 'reason'>;
+  private cooMonthlyDigestDeliveredTotal!: Counter<'tenant_top' | 'channel'>;
+
   // ── TZ-1 Ф3.D (daily-value-engine) — фиксы достоверности агентов ────
   // Cardinality-safe: tenant_top — top-100 bucket; trigger — фиксированный
   // whitelist probe-триггеров (reply_latency_rise|workload_overload|
@@ -3517,6 +3522,23 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'coo_daily_digest_age_seconds',
       help: 'SBA β-8.3 — возраст последнего ежедневного дайджеста (now − createdAt) в секундах. Тревога Grafana при > 25 часов.',
       labelNames: ['tenant_top'] as const,
+    });
+
+    // ── «Месяц компании» — месячный отчёт COO ──
+    this.cooMonthlyDigestGeneratedTotal = this.getOrCreateCounter({
+      name: 'coo_monthly_digest_generated_total',
+      help: '«Месяц компании» — успешно сгенерированный месячный дайджест операционного директора.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.cooMonthlyDigestFailedTotal = this.getOrCreateCounter({
+      name: 'coo_monthly_digest_failed_total',
+      help: '«Месяц компании» — провал генерации месячного дайджеста (reason ∈ llm_failed|aggregation_failed|notify_failed|exception).',
+      labelNames: ['tenant_top', 'reason'] as const,
+    });
+    this.cooMonthlyDigestDeliveredTotal = this.getOrCreateCounter({
+      name: 'coo_monthly_digest_delivered_total',
+      help: '«Месяц компании» — счётчик удачных доставок месячного дайджеста (channel ∈ conversational).',
+      labelNames: ['tenant_top', 'channel'] as const,
     });
 
     // ── TZ-1 Ф3.D — фиксы достоверности агентов ──
@@ -7630,6 +7652,35 @@ export class BusinessMetricsService implements OnModuleInit {
       { tenant_top: args.tenantTop },
       Math.max(0, args.value),
     );
+  }
+
+  // ────────────────────── «Месяц компании» — Monthly Digest ───────────
+
+  /** Counter `coo_monthly_digest_generated_total{tenant_top}`. */
+  incCooMonthlyDigestGenerated(args: { tenantTop: string }): void {
+    this.cooMonthlyDigestGeneratedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** Counter `coo_monthly_digest_failed_total{tenant_top, reason}`. */
+  incCooMonthlyDigestFailed(args: {
+    tenantTop: string;
+    reason: string;
+  }): void {
+    this.cooMonthlyDigestFailedTotal.inc({
+      tenant_top: args.tenantTop,
+      reason: args.reason,
+    });
+  }
+
+  /** Counter `coo_monthly_digest_delivered_total{tenant_top, channel}`. */
+  incCooMonthlyDigestDelivered(args: {
+    tenantTop: string;
+    channel: string;
+  }): void {
+    this.cooMonthlyDigestDeliveredTotal.inc({
+      tenant_top: args.tenantTop,
+      channel: args.channel,
+    });
   }
 
   // ────────────────────── TZ-1 Ф3.D — фиксы достоверности ──────────────

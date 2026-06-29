@@ -1,0 +1,1176 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кора — прототип «Месяц компании» (2026-06-29)</title>
+<link rel="stylesheet" href="design-system.css">
+<style>
+  .role-switch { position: fixed; right: 18px; bottom: 18px; z-index: 50; display: flex; gap: 6px; padding: 6px; border-radius: 999px; background: oklch(0.16 0.03 280 / 0.9); border: 1px solid oklch(1 0 0 / 0.1); backdrop-filter: blur(14px); box-shadow: 0 18px 40px -18px oklch(0 0 0 / 0.8); }
+  .role-switch button { padding: 7px 14px; border-radius: 999px; border: none; background: none; color: var(--dim); font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: var(--font); }
+  .role-switch button.active { background: var(--grad-violet); color: var(--text); }
+
+  /* ====== ПЕРЕКЛЮЧАТЕЛЬ РИТМА День ↔ Неделя ↔ Месяц ====== */
+  .rhythm-seg { display: inline-flex; gap: 4px; padding: 4px; border-radius: 13px; background: var(--surface-soft); border: 1px solid oklch(1 0 0 / 0.08); }
+  .rhythm-seg button { padding: 8px 20px; border-radius: 9px; border: none; background: none; color: var(--dim); font-size: 13px; font-weight: 600; cursor: pointer; font-family: var(--font); display: flex; align-items: center; gap: 7px; transition: background .14s, color .14s; }
+  .rhythm-seg button:hover { color: var(--text); }
+  .rhythm-seg button.active { background: var(--grad-violet); color: var(--text); box-shadow: 0 8px 20px -10px oklch(0.6 0.2 300 / 0.8); }
+
+  /* ====== ⭐ НАВИГАТОР ПО МЕСЯЦАМ + АРХИВ (фича B) ====== */
+  .period-nav { position: relative; display: inline-flex; align-items: center; gap: 2px; padding: 4px; border-radius: 12px; background: var(--surface-soft); border: 1px solid oklch(1 0 0 / 0.08); }
+  .period-nav .pn-arrow { width: 32px; height: 32px; border-radius: 8px; border: none; background: none; color: var(--dim); cursor: pointer; display: grid; place-items: center; transition: background .14s, color .14s; }
+  .period-nav .pn-arrow:hover { background: oklch(1 0 0 / 0.08); color: var(--text); }
+  .period-nav .pn-arrow:disabled { opacity: .3; cursor: not-allowed; }
+  .period-nav .pn-current { display: flex; flex-direction: column; align-items: center; padding: 2px 14px; cursor: pointer; border-radius: 8px; transition: background .14s; min-width: 118px; }
+  .period-nav .pn-current:hover { background: oklch(1 0 0 / 0.06); }
+  .period-nav .pn-month { font-size: 13.5px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+  .period-nav .pn-tag { font-size: 10px; font-weight: 600; color: var(--faint); margin-top: 1px; }
+  .period-nav .pn-tag.latest { color: var(--mint); }
+  .archive-pop[hidden] { display: none; }
+  .archive-pop { position: absolute; top: calc(100% + 8px); right: 0; z-index: 40; width: 248px; padding: 8px; border-radius: 14px;
+    background: oklch(0.16 0.03 280 / 0.97); border: 1px solid oklch(1 0 0 / 0.1); box-shadow: 0 24px 50px -20px oklch(0 0 0 / 0.85); backdrop-filter: blur(16px); animation: reveal .2s ease; }
+  .archive-pop .ap-head { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); padding: 6px 10px 8px; }
+  .ap-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px; cursor: pointer; transition: background .12s; }
+  .ap-item:hover { background: oklch(1 0 0 / 0.06); }
+  .ap-item.active { background: oklch(0.40 0.14 280 / 0.4); }
+  .ap-item .ap-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; }
+  .ap-item .ap-dot.ok { background: var(--mint); box-shadow: 0 0 8px var(--mint); } .ap-item .ap-dot.warn { background: var(--amber); box-shadow: 0 0 8px var(--amber); } .ap-item .ap-dot.risk { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  .ap-item .ap-name { font-size: 13px; font-weight: 600; color: var(--text); flex: 1; }
+  .ap-item .ap-state { font-size: 11px; color: var(--faint); }
+  .ap-item.empty .ap-name { color: var(--faint); font-weight: 500; }
+  .ap-item.empty .ap-dot { background: oklch(1 0 0 / 0.12); box-shadow: none; }
+
+  /* ====== ОБЛОЖКА «МЕСЯЦ КОМПАНИИ» ====== */
+  .day-cover {
+    position: relative; overflow: hidden; border-radius: 24px; padding: 28px 30px;
+    background:
+      radial-gradient(150% 120% at 0% 0%, oklch(0.40 0.14 280 / 0.55), transparent 55%),
+      linear-gradient(180deg, oklch(0.30 0.04 280 / 0.6), oklch(0.21 0.03 278 / 0.55));
+    border: var(--glass-border); box-shadow: var(--glass-shadow); backdrop-filter: var(--glass-blur);
+  }
+  .dc-top { display: flex; align-items: flex-start; gap: 18px; }
+  .dc-emoji { font-size: 42px; line-height: 1; filter: drop-shadow(0 4px 14px oklch(0 0 0 / 0.5)); }
+  .dc-title { flex: 1; min-width: 0; }
+  .dc-title h2 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 4px; }
+  .dc-date { font-size: 13px; color: var(--dim); }
+  .dc-actions { display: flex; gap: 8px; flex: none; }
+  .dc-oneliner { font-size: 16px; line-height: 1.6; color: var(--text); margin: 18px 0 22px; max-width: 820px; }
+  .dc-oneliner b { font-weight: 700; }
+  .dc-meta { font-size: 11.5px; color: var(--faint); margin-top: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .dc-meta .dot { width: 3px; height: 3px; border-radius: 9px; background: var(--faint); }
+
+  .axes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .axis { border-radius: 16px; padding: 14px 16px; background: oklch(1 0 0 / 0.05); border: 1px solid oklch(1 0 0 / 0.08); display: flex; flex-direction: column; gap: 7px; }
+  .axis .ax-h { display: flex; align-items: center; gap: 8px; }
+  .axis .ax-led { width: 10px; height: 10px; border-radius: 999px; background: currentColor; box-shadow: 0 0 12px currentColor; flex: none; }
+  .axis .ax-name { font-size: 12.5px; color: var(--dim); font-weight: 600; }
+  .axis .ax-state { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+  .axis .ax-why { font-size: 11.5px; color: var(--faint); line-height: 1.4; }
+  .axis .ax-spark { display: flex; align-items: flex-end; gap: 3px; height: 16px; margin-top: 2px; }
+  .axis .ax-spark span { flex: 1; border-radius: 2px; background: currentColor; opacity: .5; }
+  .axis.ok { color: var(--mint); } .axis.warn { color: var(--amber); } .axis.risk { color: var(--red); }
+  .axis.ok .ax-state, .axis.warn .ax-state, .axis.risk .ax-state { color: var(--text); }
+
+  /* ====== ТРЕНД ПО НЕДЕЛЯМ внутри обложки ====== */
+  .wk-trend { margin-top: 22px; padding-top: 18px; border-top: var(--row-line); }
+  .wk-trend-h { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); margin-bottom: 14px; }
+  .trend-grid { display: grid; grid-template-columns: 104px repeat(4, 1fr); gap: 9px 10px; align-items: center; }
+  .trend-day-head { font-size: 11px; color: var(--faint); text-align: center; font-weight: 600; }
+  .trend-axis-name { font-size: 12px; color: var(--dim); font-weight: 600; }
+  .trend-cell { display: flex; justify-content: center; }
+  .trend-led { width: 100%; max-width: 62px; height: 16px; border-radius: 6px; }
+  .trend-led.ok { background: var(--ok-bg); box-shadow: inset 0 0 0 1px oklch(0.78 0.16 165 / 0.5); }
+  .trend-led.warn { background: var(--warn-bg); box-shadow: inset 0 0 0 1px oklch(0.84 0.16 80 / 0.5); }
+  .trend-led.risk { background: var(--risk-bg); box-shadow: inset 0 0 0 1px oklch(0.66 0.22 25 / 0.55); }
+  .trend-led.none { background: oklch(1 0 0 / 0.04); }
+
+  /* ====== ЕДИНАЯ КНОПКА «ЧИТАТЬ ПИСЬМО МЕСЯЦА» ====== */
+  .read-cta {
+    width: 100%; margin: 20px 0 0; display: flex; align-items: center; justify-content: center; gap: 10px;
+    padding: 16px; border-radius: 16px; cursor: pointer; font-family: var(--font); font-size: 14.5px; font-weight: 600;
+    color: var(--text); background: var(--grad-violet); border: none;
+    box-shadow: 0 12px 30px -12px oklch(0.6 0.2 300 / 0.9); transition: transform .14s;
+  }
+  .read-cta:hover { transform: translateY(-2px); }
+  .read-cta .chev { transition: transform .25s; }
+  .read-cta[aria-expanded="true"] { background: var(--surface-soft); color: var(--dim); box-shadow: none; border: 1px solid oklch(1 0 0 / 0.1); }
+  .read-cta[aria-expanded="true"] .chev { transform: rotate(180deg); }
+
+  /* ====== ПИСЬМО ====== */
+  .letter[hidden] { display: none; }
+  .letter { margin-top: 18px; padding: 32px 36px; border-radius: 24px;
+    background: var(--glass-bg); border: var(--glass-border); box-shadow: var(--glass-shadow); backdrop-filter: var(--glass-blur);
+    animation: reveal .3s ease; }
+  @keyframes reveal { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  .letter-intro { display: flex; align-items: flex-start; gap: 14px; padding-bottom: 24px; border-bottom: var(--row-line); }
+  .letter-intro .li-ico { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: var(--grad-violet); box-shadow: 0 12px 28px -10px oklch(0.6 0.2 300 / 0.9); flex: none; }
+  .letter-intro p { font-size: 16px; line-height: 1.65; color: var(--text); margin: 4px 0 0; }
+  .letter-intro p b { font-weight: 700; }
+
+  .lsec { padding: 24px 0; border-bottom: var(--row-line); }
+  .lsec:last-of-type { border-bottom: none; padding-bottom: 4px; }
+  .lsec-head { display: flex; align-items: center; gap: 11px; margin-bottom: 14px; }
+  .lsec-ico { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: oklch(0.18 0.03 280); flex: none; }
+  .lsec-head h4 { font-size: 16px; font-weight: 700; margin: 0; letter-spacing: -0.01em; flex: 1; }
+  .lsec-head .lsec-tag { font-size: 11.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+
+  .lsec p { font-size: 14.5px; line-height: 1.7; color: var(--dim); margin: 0 0 12px; }
+  .lsec p:last-child { margin-bottom: 0; }
+  .lsec p b, .lsec li b { color: var(--text); font-weight: 600; }
+  .lsec ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 11px; }
+  .lsec li { font-size: 14.5px; line-height: 1.6; color: var(--dim); display: flex; gap: 11px; align-items: flex-start; }
+  .lsec li .li-dot { width: 7px; height: 7px; border-radius: 999px; margin-top: 8px; flex: none; background: var(--violet); box-shadow: 0 0 8px var(--violet); }
+  .lsec li .li-dot.ok { background: var(--mint); box-shadow: 0 0 8px var(--mint); }
+  .lsec li .li-dot.warn { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .lsec li .li-dot.risk { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  .cite { color: var(--cyan); cursor: pointer; border-bottom: 1px dashed oklch(0.80 0.13 205 / 0.5); white-space: nowrap; font-size: 13px; }
+  .mini-bar { display: flex; align-items: center; gap: 12px; margin: 4px 0 14px; }
+  .mini-bar .mb-track { flex: 1; max-width: 280px; height: 9px; border-radius: 999px; background: oklch(1 0 0 / 0.08); overflow: hidden; }
+  .mini-bar .mb-fill { height: 100%; border-radius: 999px; background: var(--grad-amber); box-shadow: 0 0 10px -2px oklch(0.84 0.16 80 / 0.8); }
+  .mini-bar .mb-label { font-size: 13px; color: var(--dim); font-weight: 600; }
+  .callout { border-radius: 16px; padding: 18px 20px; margin: 4px 0 0; }
+  .callout.reflect { background: radial-gradient(120% 120% at 0% 0%, oklch(0.40 0.18 295 / 0.5), oklch(0.22 0.04 280 / 0.4)); border: 1px solid oklch(0.66 0.2 300 / 0.25); }
+  .callout.reflect p { color: oklch(0.9 0.02 280); }
+  .callout.act { background: linear-gradient(180deg, oklch(0.32 0.06 55/.45), oklch(0.22 0.04 50/.4)); border: 1px solid oklch(0.84 0.16 80/.22); }
+  .callout.decide { background: linear-gradient(180deg, oklch(0.34 0.08 25/.4), oklch(0.22 0.04 25/.4)); border: 1px solid oklch(0.66 0.22 25/.28); }
+  .actions-list { display: flex; flex-direction: column; gap: 12px; }
+  .action-item { display: flex; gap: 13px; align-items: flex-start; }
+  .action-num { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; font-size: 13px; font-weight: 800; color: oklch(0.2 0.04 55); background: var(--grad-amber); flex: none; }
+  .action-num.decide { background: var(--grad-red); color: oklch(0.96 0.02 20); }
+  .action-item .a-body { font-size: 14px; line-height: 1.5; color: var(--text); }
+  .action-item .a-why { font-size: 12.5px; color: var(--faint); margin-top: 3px; }
+  .delta-row { display: flex; align-items: center; gap: 12px; font-size: 13.5px; padding: 9px 0; border-top: var(--row-line); }
+  .delta-row:first-child { border-top: none; }
+  .delta-row .d-name { width: 130px; color: var(--dim); font-weight: 600; }
+  .delta-arrow { font-weight: 700; min-width: 80px; }
+
+  /* ====== КОМПАС ====== */
+  .compass-card { margin-top: 18px; padding: 22px 24px; }
+  .compass-row { display: flex; gap: 24px; align-items: center; }
+  .compass-left { flex: none; }
+  .compass-right { flex: 1; min-width: 0; }
+  .compass-goal { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.07em; font-weight: 700; margin-bottom: 5px; }
+  .compass-goal-name { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 11px; }
+  .compass-verdict { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; color: var(--amber); }
+  .compass-verdict .cv-led { width: 9px; height: 9px; border-radius: 999px; background: currentColor; box-shadow: 0 0 10px currentColor; }
+  .compass-today { font-size: 13.5px; color: var(--dim); margin-top: 10px; line-height: 1.55; }
+  .compass-today b { color: var(--text); font-weight: 600; }
+  .compass-head { display: flex; align-items: center; gap: 11px; margin-bottom: 4px; }
+  .compass-head .more-toggle { margin-left: auto; }
+  .more-toggle { display: inline-flex; align-items: center; gap: 5px; background: var(--surface-soft); border: 1px solid oklch(1 0 0 / 0.10); color: var(--dim); font-family: var(--font); font-size: 12px; font-weight: 600; padding: 6px 11px; border-radius: 9px; cursor: pointer; transition: background .15s; }
+  .more-toggle:hover { background: oklch(1 0 0 / 0.10); color: var(--text); }
+  .more-toggle .chev { transition: transform .2s; }
+  .more-toggle[aria-expanded="true"] .chev { transform: rotate(180deg); }
+  .compass-why[hidden] { display: none; }
+  .compass-why { margin-top: 16px; padding-top: 16px; border-top: var(--row-line); }
+  .compass-why > p { font-size: 13.5px; line-height: 1.65; color: var(--dim); margin: 0 0 14px; }
+  .compass-why > p b { color: var(--text); font-weight: 600; }
+  .why-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .why-col h5 { font-size: 12px; font-weight: 700; margin: 0 0 9px; display: flex; align-items: center; gap: 7px; }
+  .why-col.pro h5 { color: var(--mint); } .why-col.contra h5 { color: var(--red); }
+  .why-col ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .why-col li { font-size: 13px; line-height: 1.5; color: var(--dim); display: flex; gap: 9px; }
+  .why-col li .wl-dot { width: 6px; height: 6px; border-radius: 999px; margin-top: 7px; flex: none; }
+  .why-col.pro li .wl-dot { background: var(--mint); } .why-col.contra li .wl-dot { background: var(--red); }
+  .compass-src { font-size: 11.5px; color: var(--faint); margin-top: 14px; }
+
+  /* прогноз темпа к цели — месячное усиление компаса */
+  .pace { margin-top: 14px; padding: 14px 16px; border-radius: 14px; background: oklch(1 0 0 / 0.04); border: 1px solid oklch(1 0 0 / 0.08); }
+  .pace-h { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); margin-bottom: 10px; }
+  .pace-track { position: relative; height: 10px; border-radius: 999px; background: oklch(1 0 0 / 0.08); overflow: visible; }
+  .pace-fact { position: absolute; left: 0; top: 0; height: 100%; border-radius: 999px; background: var(--grad-amber); box-shadow: 0 0 10px -2px oklch(0.84 0.16 80 / 0.8); }
+  .pace-plan { position: absolute; top: -3px; height: 16px; width: 2px; background: var(--mint); box-shadow: 0 0 8px var(--mint); }
+  .pace-plan::after { content: "план"; position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 9px; font-weight: 700; color: var(--mint); }
+  .pace-row { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; font-size: 13px; }
+  .pace-row .pr-fact { color: var(--text); font-weight: 600; } .pace-row .pr-eta { color: var(--amber); font-weight: 700; }
+
+  /* ====== ПРЕМИУМ-КОМПАС GoalCompass3D (CSS/SVG-3D, 0 зависимостей) ====== */
+  .compass3d { width: 170px; height: 170px; perspective: 720px; flex: none; }
+  .c3d-stage { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .25s cubic-bezier(.2,.8,.2,1); will-change: transform; }
+  .c3d-bezel { position: absolute; inset: 0; border-radius: 50%;
+    background: linear-gradient(145deg, oklch(0.37 0.05 280 / 0.95), oklch(0.17 0.03 280 / 0.95));
+    box-shadow: 0 20px 44px -16px oklch(0 0 0 / 0.85), inset 0 2px 6px oklch(1 0 0 / 0.14), inset 0 -12px 22px oklch(0 0 0 / 0.55);
+    border: 1px solid oklch(1 0 0 / 0.10); }
+  .c3d-zones { position: absolute; inset: 13px; border-radius: 50%;
+    background: conic-gradient(from 0deg,
+      oklch(0.80 0.16 165 / 0.9) 0deg 34deg,
+      oklch(0.85 0.16 80 / 0.82) 58deg 138deg,
+      oklch(0.64 0.22 25 / 0.85) 160deg 200deg,
+      oklch(0.85 0.16 80 / 0.82) 222deg 302deg,
+      oklch(0.80 0.16 165 / 0.9) 326deg 360deg);
+    -webkit-mask: radial-gradient(circle at 50% 50%, transparent 55%, #000 56%, #000 97%, transparent 98%);
+            mask: radial-gradient(circle at 50% 50%, transparent 55%, #000 56%, #000 97%, transparent 98%);
+    filter: saturate(1.15) drop-shadow(0 0 12px oklch(0.66 0.2 300 / 0.22)); }
+  .c3d-dish { position: absolute; inset: 25px; border-radius: 50%;
+    background: radial-gradient(125% 125% at 50% 28%, oklch(0.27 0.04 280 / 0.96), oklch(0.12 0.02 280 / 0.98));
+    box-shadow: inset 0 7px 18px oklch(0 0 0 / 0.65), inset 0 -3px 9px oklch(1 0 0 / 0.05); }
+  .c3d-cap { position: absolute; font-size: 10px; font-weight: 700; letter-spacing: .02em; z-index: 3; }
+  .c3d-cap.to { top: 8px; left: 50%; transform: translateX(-50%); color: var(--mint); }
+  .c3d-cap.drift { right: 11px; top: 50%; transform: translateY(-50%); color: var(--amber); }
+  .c3d-cap.against { bottom: 8px; left: 50%; transform: translateX(-50%); color: var(--red); }
+  .c3d-needle { position: absolute; left: 50%; top: 50%; width: 6px; height: 58px; transform-origin: 50% 100%; z-index: 4;
+    transform: translate(-50%, -100%) rotate(var(--angle, 0deg)); animation: c3d-sweep 1.25s cubic-bezier(.34,1.56,.64,1) both; }
+  .c3d-needle::before { content: ""; position: absolute; inset: 0; border-radius: 4px 4px 2px 2px;
+    background: linear-gradient(180deg, oklch(0.92 0.16 92), oklch(0.72 0.19 62) 45%, oklch(0.56 0.2 300) 100%);
+    box-shadow: 0 0 13px oklch(0.84 0.16 80 / 0.7), 0 0 4px oklch(0.84 0.16 80 / 0.95); }
+  .c3d-needle .tip { position: absolute; top: -5px; left: 50%; width: 11px; height: 11px; transform: translateX(-50%); border-radius: 50%;
+    background: oklch(0.93 0.15 95); box-shadow: 0 0 16px oklch(0.84 0.16 80 / 0.95), 0 0 6px oklch(0.93 0.15 95); }
+  .c3d-needle .tail { position: absolute; bottom: -15px; left: 50%; width: 5px; height: 16px; transform: translateX(-50%); border-radius: 3px;
+    background: linear-gradient(180deg, oklch(0.52 0.18 300), oklch(0.32 0.1 290)); opacity: .85; }
+  .c3d-hub { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 54px; height: 54px; border-radius: 50%; z-index: 5;
+    background: radial-gradient(circle at 50% 34%, oklch(0.35 0.06 285), oklch(0.15 0.03 280));
+    box-shadow: 0 7px 18px oklch(0 0 0 / 0.75), inset 0 1px 3px oklch(1 0 0 / 0.2); border: 1px solid oklch(1 0 0 / 0.12);
+    display: grid; place-items: center; }
+  .c3d-score { font-size: 18px; font-weight: 800; color: var(--text); line-height: 1; letter-spacing: -0.02em; }
+  .c3d-score-cap { font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--amber); margin-top: 2px; }
+  .c3d-dome { position: absolute; inset: 4px; border-radius: 50%; pointer-events: none; z-index: 6;
+    background: radial-gradient(58% 40% at 32% 20%, oklch(1 0 0 / 0.24), transparent 62%); mix-blend-mode: screen; }
+  @keyframes c3d-sweep { 0% { transform: translate(-50%, -100%) rotate(-58deg); } 100% { transform: translate(-50%, -100%) rotate(var(--angle, 0deg)); } }
+  @media (prefers-reduced-motion: reduce) { .c3d-needle { animation: none; } .c3d-stage { transition: none; } }
+
+  /* ====== ⭐ МЕСЯЧНЫЕ СРЕЗЫ: ЗРЕЛОСТЬ + НЕЗАМЕНИМОСТЬ ====== */
+  .mo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; align-items: start; }
+  .mat-top { display: flex; align-items: center; gap: 16px; margin: 6px 0 18px; }
+  .mat-score { font-size: 44px; font-weight: 800; letter-spacing: -0.03em; color: var(--text); line-height: 1; }
+  .mat-score small { font-size: 18px; color: var(--faint); font-weight: 600; }
+  .mat-delta { font-size: 13px; font-weight: 700; }
+  .mat-delta.ok { color: var(--mint); } .mat-delta .mt-sub { color: var(--faint); font-weight: 500; display: block; font-size: 11.5px; margin-top: 2px; }
+  .mat-axes { display: flex; flex-direction: column; gap: 13px; }
+  .mat-axis .ma-h { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 5px; }
+  .mat-axis .ma-name { color: var(--dim); font-weight: 600; } .mat-axis .ma-val { color: var(--text); font-weight: 700; }
+  .mat-axis .ma-track { height: 7px; border-radius: 999px; background: oklch(1 0 0 / 0.08); overflow: hidden; }
+  .mat-axis .ma-track > span { display: block; height: 100%; border-radius: 999px; background: var(--grad-teal); }
+  .mat-foot { font-size: 11.5px; color: var(--faint); margin-top: 14px; line-height: 1.5; }
+
+  .bf-row { display: flex; align-items: center; gap: 12px; padding: 12px 8px; border-top: var(--row-line); }
+  .bf-row.first { border-top: none; }
+  .bf-led { width: 9px; height: 9px; border-radius: 999px; flex: none; }
+  .bf-led.risk { background: var(--red); box-shadow: 0 0 8px var(--red); } .bf-led.warn { background: var(--amber); box-shadow: 0 0 8px var(--amber); } .bf-led.ok { background: var(--mint); box-shadow: 0 0 8px var(--mint); }
+  .bf-body { flex: 1; min-width: 0; }
+  .bf-zone { font-size: 13.5px; font-weight: 600; color: var(--text); }
+  .bf-holder { font-size: 11.5px; color: var(--faint); margin-top: 2px; display: flex; align-items: center; gap: 6px; }
+  .bf-holder .ava { width: 17px; height: 17px; border-radius: 999px; display: grid; place-items: center; font-size: 8.5px; font-weight: 700; color: oklch(0.2 0.03 280); }
+  .bf-chg { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; flex: none; white-space: nowrap; }
+  .bf-chg.worse { color: var(--red); background: var(--risk-bg); } .bf-chg.same { color: var(--amber); background: var(--warn-bg); } .bf-chg.better { color: var(--mint); background: var(--ok-bg); }
+  .bf-hint { font-size: 11.5px; color: var(--faint); margin-top: 12px; line-height: 1.5; }
+
+  /* достижения месяца */
+  .ach-row { display: flex; align-items: flex-start; gap: 12px; padding: 11px 8px; border-top: var(--row-line); }
+  .ach-row.first { border-top: none; }
+  .ach-ico { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; flex: none; color: oklch(0.18 0.03 280); }
+  .ach-body { flex: 1; min-width: 0; } .ach-title { font-size: 13.5px; font-weight: 600; color: var(--text); } .ach-meta { font-size: 11.5px; color: var(--faint); margin-top: 2px; }
+  .ach-rag { font-size: 10.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; flex: none; white-space: nowrap; }
+  .ach-rag.g { color: var(--mint); background: var(--ok-bg); } .ach-rag.y { color: var(--amber); background: var(--warn-bg); } .ach-rag.r { color: var(--red); background: var(--risk-bg); }
+
+  /* ====== ⭐ ТАБЛИЦА ПЛАН / ФАКТ ПО СОТРУДНИКАМ (за месяц) ====== */
+  .pft-card { margin-top: 26px; padding: 24px 26px; }
+  .pft-head-row { display: flex; align-items: center; gap: 11px; margin-bottom: 6px; }
+  .pft-head-row h3 { font-size: 17px; font-weight: 700; margin: 0; letter-spacing: -0.01em; flex: 1; }
+  .pft-sub { font-size: 12.5px; color: var(--faint); margin: 0 0 18px 41px; line-height: 1.5; max-width: 760px; }
+  .pft-sub b { color: var(--dim); font-weight: 600; }
+  .pft-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .pft-kpi { border-radius: 14px; padding: 13px 15px; background: oklch(1 0 0 / 0.04); border: 1px solid oklch(1 0 0 / 0.07); }
+  .pft-kpi .k-label { font-size: 11px; color: var(--faint); font-weight: 600; margin-bottom: 6px; }
+  .pft-kpi .k-value { font-size: 21px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
+  .pft-kpi .k-value small { font-size: 13px; color: var(--faint); font-weight: 600; }
+  .pft-kpi .k-foot { font-size: 11.5px; margin-top: 4px; }
+  .pft-kpi .k-foot.ok { color: var(--mint); } .pft-kpi .k-foot.warn { color: var(--amber); } .pft-kpi .k-foot.risk { color: var(--red); }
+  .pft-sorts { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .pft-sorts .sort-label { font-size: 12px; color: var(--faint); margin-right: 2px; }
+  .pft-sort { font-size: 12.5px; font-weight: 600; padding: 6px 13px; border-radius: 9px; border: 1px solid oklch(1 0 0 / 0.09); background: var(--surface-soft); color: var(--dim); cursor: pointer; font-family: var(--font); }
+  .pft-sort.active { background: oklch(0.40 0.14 280 / 0.45); color: var(--text); border-color: oklch(0.66 0.2 300 / 0.35); }
+  .pft-table { border-radius: 14px; overflow: hidden; border: 1px solid oklch(1 0 0 / 0.07); }
+  .pft-grid-head, .pft-grid-row {
+    display: grid;
+    grid-template-columns: minmax(138px,1.3fr) 96px 1.25fr 1fr 78px 64px 92px 24px;
+    align-items: center; gap: 9px;
+  }
+  .pft-grid-head { padding: 11px 16px; background: oklch(1 0 0 / 0.045); border-bottom: 1px solid oklch(1 0 0 / 0.07); }
+  .pft-grid-head > span { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); }
+  .pft-grid-head .th-center { text-align: center; }
+  .pft-grid-row { padding: 13px 16px; cursor: pointer; transition: background .12s; border-bottom: 1px solid oklch(1 0 0 / 0.05); }
+  .pft-grid-row:last-of-type { border-bottom: none; }
+  .pft-grid-row:hover { background: oklch(1 0 0 / 0.045); }
+  .pft-grid-row.owner-row { background: oklch(0.40 0.14 280 / 0.10); }
+  .pft-grid-row.owner-row:hover { background: oklch(0.40 0.14 280 / 0.16); }
+  .pft-person { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .pft-person .ava { width: 30px; height: 30px; border-radius: 999px; display: grid; place-items: center; font-size: 11.5px; font-weight: 700; color: oklch(0.2 0.03 280); flex: none; }
+  .pft-person .pp-name { font-size: 13.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pft-person .pp-dept { font-size: 11px; color: var(--faint); }
+  .pft-person .pp-tag { font-size: 9.5px; font-weight: 700; color: var(--violet); background: oklch(0.40 0.14 280 / 0.3); padding: 1px 7px; border-radius: 999px; margin-top: 2px; display: inline-block; }
+  .pft-rel { display: flex; flex-direction: column; gap: 5px; }
+  .pft-rel .rel-num { font-size: 14px; font-weight: 700; }
+  .pft-rel .rel-num.ok { color: var(--mint); } .pft-rel .rel-num.warn { color: var(--amber); } .pft-rel .rel-num.risk { color: var(--red); } .pft-rel .rel-num.none { color: var(--faint); font-size: 12px; font-weight: 600; }
+  .pft-rel .rel-track { height: 5px; border-radius: 999px; background: oklch(1 0 0 / 0.08); overflow: hidden; }
+  .pft-rel .rel-track > span { display: block; height: 100%; border-radius: 999px; }
+  .pft-rel .rel-track > span.ok { background: var(--grad-teal); } .pft-rel .rel-track > span.warn { background: var(--grad-amber); } .pft-rel .rel-track > span.risk { background: var(--grad-red); }
+  .pft-prom { display: flex; flex-wrap: wrap; gap: 5px; }
+  .prom-pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .prom-pill.given { color: var(--dim); background: oklch(1 0 0 / 0.06); }
+  .prom-pill.kept { color: var(--mint); background: var(--ok-bg); }
+  .prom-pill.broken { color: var(--red); background: var(--risk-bg); }
+  .prom-pill.overdue { color: var(--amber); background: var(--warn-bg); }
+  .pft-tasks { display: flex; align-items: center; gap: 8px; }
+  .pft-tasks .tk-planfact { font-size: 14px; font-weight: 700; color: var(--text); white-space: nowrap; }
+  .pft-tasks .tk-planfact .arr { color: var(--faint); margin: 0 3px; font-weight: 500; }
+  .pft-tasks .tk-not { font-size: 11px; font-weight: 700; color: var(--red); background: var(--risk-bg); padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .pft-tasks .tk-allok { font-size: 11px; font-weight: 700; color: var(--mint); background: var(--ok-bg); padding: 2px 8px; border-radius: 999px; }
+  .pft-goal { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .pft-goal .goal-net { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+  .pft-goal .goal-net.pos { color: var(--mint); } .pft-goal .goal-net.zero { color: var(--faint); } .pft-goal .goal-net.neg { color: var(--red); }
+  .pft-goal .goal-cap { font-size: 9.5px; color: var(--faint); font-weight: 600; }
+  .pft-checkins { text-align: center; font-size: 13px; font-weight: 700; }
+  .pft-checkins .ci { color: var(--text); } .pft-checkins .ci.warn { color: var(--amber); } .pft-checkins .ci.risk { color: var(--red); }
+  .pft-checkins .ci-of { color: var(--faint); font-weight: 500; }
+  .pft-status { display: flex; justify-content: center; }
+  .status-badge { font-size: 10.5px; font-weight: 700; padding: 4px 11px; border-radius: 999px; white-space: nowrap; text-align: center; }
+  .status-badge.ok { color: var(--mint); background: var(--ok-bg); }
+  .status-badge.warn { color: var(--amber); background: var(--warn-bg); }
+  .status-badge.risk { color: var(--red); background: var(--risk-bg); }
+  .status-badge.node { color: var(--violet); background: oklch(0.40 0.14 280 / 0.3); }
+  .pft-chev { display: flex; justify-content: center; color: var(--faint); transition: transform .2s, color .12s; }
+  .pft-grid-row:hover .pft-chev { color: var(--cyan); }
+  .pft-grid-row.open .pft-chev { transform: rotate(180deg); color: var(--cyan); }
+  .pft-drill[hidden] { display: none; }
+  .pft-drill { padding: 4px 16px 18px 58px; background: oklch(0 0 0 / 0.16); border-bottom: 1px solid oklch(1 0 0 / 0.05); animation: reveal .2s ease; }
+  .drill-title { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); margin: 14px 0 10px; }
+  .drill-item { display: flex; align-items: center; gap: 11px; padding: 8px 0; border-top: 1px solid oklch(1 0 0 / 0.04); }
+  .drill-item:first-of-type { border-top: none; }
+  .drill-kind { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; flex: none; color: oklch(0.2 0.03 280); }
+  .drill-kind.task { background: var(--grad-blue); } .drill-kind.commitment { background: var(--grad-amber); } .drill-kind.checkin { background: var(--grad-teal); }
+  .drill-body { flex: 1; min-width: 0; }
+  .drill-name { font-size: 13px; color: var(--text); }
+  .drill-meta { font-size: 11px; color: var(--faint); margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .drill-meta .blocked { color: var(--amber); }
+  .drill-badge { font-size: 10.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; flex: none; white-space: nowrap; }
+  .drill-badge.done { color: var(--mint); background: var(--ok-bg); }
+  .drill-badge.overdue { color: var(--amber); background: var(--warn-bg); }
+  .drill-badge.missed { color: var(--red); background: var(--risk-bg); }
+  .drill-badge.planned { color: var(--blue); background: var(--info-bg); }
+  .pft-foot { font-size: 12px; color: var(--faint); margin-top: 14px; line-height: 1.55; }
+  .pft-foot b { color: var(--dim); font-weight: 600; }
+
+  /* ====== «Зависло ↔ кто держит» ====== */
+  .stuck-note { font-size: 12.5px; color: var(--faint); margin: 26px 0 10px; line-height: 1.5; display: flex; align-items: center; gap: 9px; }
+  .stuck-note .sn-ico { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; background: var(--grad-amber); color: oklch(0.2 0.04 55); flex: none; }
+  .stuck-note b { color: var(--dim); font-weight: 600; }
+  .tasks-grid { display: grid; grid-template-columns: 1.7fr 1fr; gap: 18px; align-items: start; }
+  .task-row { display: flex; align-items: center; gap: 12px; padding: 11px 8px; border-top: var(--row-line); cursor: pointer; border-radius: 10px; transition: background .12s; }
+  .task-row:hover { background: oklch(1 0 0 / 0.05); }
+  .task-row.first { border-top: none; }
+  .task-row.extra[hidden], .task-row.filtered-out { display: none; }
+  .task-chip { font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; flex: none; white-space: nowrap; }
+  .task-chip.risk { color: var(--red); background: var(--risk-bg); } .task-chip.warn { color: var(--amber); background: var(--warn-bg); } .task-chip.info { color: var(--blue); background: var(--info-bg); }
+  .task-body { flex: 1; min-width: 0; }
+  .task-title { font-size: 13.5px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .task-assignee { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--faint); margin-top: 3px; }
+  .task-assignee .ava { width: 18px; height: 18px; border-radius: 999px; display: grid; place-items: center; font-size: 9px; font-weight: 700; color: oklch(0.2 0.03 280); }
+  .task-arrow { color: var(--faint); flex: none; opacity: .6; }
+  .task-row:hover .task-arrow { opacity: 1; color: var(--cyan); }
+  .task-sub { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); margin: 16px 0 2px; }
+  .filter-chip { display: none; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; color: var(--blue); background: var(--info-bg); padding: 4px 6px 4px 11px; border-radius: 999px; cursor: pointer; margin-left: auto; }
+  .filter-chip.on { display: inline-flex; }
+  .filter-chip .fc-x { width: 16px; height: 16px; border-radius: 999px; display: grid; place-items: center; background: oklch(1 0 0 / 0.15); font-size: 11px; }
+  .emp-row { display: flex; align-items: center; gap: 11px; padding: 10px 8px; border-top: var(--row-line); cursor: pointer; border-radius: 10px; transition: background .12s; }
+  .emp-row:hover { background: oklch(1 0 0 / 0.05); }
+  .emp-row.first { border-top: none; }
+  .emp-row.active { background: var(--risk-bg); box-shadow: inset 0 0 0 1px oklch(0.66 0.22 25 / 0.3); }
+  .emp-ava { width: 32px; height: 32px; border-radius: 999px; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: oklch(0.2 0.03 280); flex: none; }
+  .emp-body { flex: 1; min-width: 0; }
+  .emp-name { font-size: 13.5px; font-weight: 600; }
+  .emp-bar { height: 6px; border-radius: 999px; background: oklch(1 0 0 / 0.08); margin-top: 6px; overflow: hidden; }
+  .emp-bar > span { display: block; height: 100%; background: var(--grad-red); border-radius: 999px; box-shadow: 0 0 8px -2px oklch(0.66 0.22 25 / 0.8); }
+  .emp-count { font-size: 15px; font-weight: 700; color: var(--red); flex: none; }
+  .emp-hint { font-size: 11.5px; color: var(--faint); margin-top: 10px; line-height: 1.45; }
+
+  /* ====== «Что мешало ↔ Идеи» ====== */
+  .rt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; align-items: start; }
+  .ai-mini { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; line-height: 1.5; color: var(--dim); background: radial-gradient(120% 120% at 0 0, oklch(0.40 0.18 295 / 0.28), transparent 70%); border: 1px solid oklch(0.66 0.20 300 / 0.2); border-radius: 12px; padding: 11px 13px; margin-bottom: 6px; }
+  .ai-mini .ai-dot { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; background: var(--grad-violet); flex: none; }
+  .ai-mini b { color: var(--text); font-weight: 600; }
+  .signal-row { display: flex; align-items: center; gap: 11px; padding: 11px 8px; border-top: var(--row-line); cursor: pointer; border-radius: 10px; transition: background .12s; }
+  .signal-row:hover { background: oklch(1 0 0 / 0.05); }
+  .signal-row.first { border-top: none; }
+  .signal-row.extra[hidden] { display: none; }
+  .signal-led { width: 8px; height: 8px; border-radius: 999px; flex: none; }
+  .signal-led.risk { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  .signal-led.warn { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .signal-led.idea { background: var(--mint); box-shadow: 0 0 8px var(--mint); }
+  .signal-body { flex: 1; min-width: 0; }
+  .signal-title { font-size: 13.5px; font-weight: 500; color: var(--text); }
+  .signal-meta { font-size: 11.5px; color: var(--faint); margin-top: 2px; }
+  .signal-badge { font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; flex: none; white-space: nowrap; }
+  .signal-badge.spike { color: var(--red); background: var(--risk-bg); }
+  .signal-badge.grow { color: var(--amber); background: var(--warn-bg); }
+  .signal-badge.sup { color: var(--mint); background: var(--ok-bg); }
+  .signal-badge.calm { color: var(--faint); background: var(--surface-soft); }
+  .signal-arrow { color: var(--faint); flex: none; opacity: .6; }
+  .signal-row:hover .signal-arrow { opacity: 1; color: var(--cyan); }
+  .show-all { margin-top: 12px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 10px; border-radius: 11px; background: var(--surface-soft); border: 1px dashed oklch(1 0 0 / 0.14); color: var(--dim); font-family: var(--font); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+  .show-all:hover { background: oklch(1 0 0 / 0.08); color: var(--text); }
+
+  .section-h { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+</style>
+</head>
+<body data-role="owner">
+<div class="app">
+  <!-- САЙДБАР -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">К</div>
+      <div><div class="brand-name">Кора</div><div class="brand-sub">ООО «Луа»</div></div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label">Ритмы</div>
+      <a class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>Сегодня</a>
+      <a class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Неделя</a>
+      <a class="nav-item active"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/></svg>Месяц компании</a>
+      <a class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M7 14l3-3 3 3 5-6"/></svg>Аналитика</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label">Работа</div>
+      <a class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l4.5-2.5v9L15 14M3 7h12v10H3z"/></svg>Встречи</a>
+      <a class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 8v8M15 8v5"/></svg>Задачи</a>
+      <a class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>Память</a>
+      <a class="nav-item"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2.5"/><path d="M3 20a6 6 0 0 1 12 0M15 20a5 5 0 0 1 6 0"/></svg>Команда</a>
+    </div>
+    <div style="margin-top:auto; padding:12px 8px 4px; display:flex; align-items:center; gap:10px;">
+      <div class="avatar" style="background:var(--grad-violet); width:34px; height:34px;">С</div>
+      <div style="min-width:0;"><div style="font-size:13px; font-weight:600;">Сергей</div><div class="faint" style="font-size:11px;">Владелец</div></div>
+    </div>
+  </aside>
+
+  <!-- ОСНОВНАЯ ОБЛАСТЬ -->
+  <main class="main">
+    <div class="page">
+      <div class="topbar">
+        <div class="topbar-left">
+          <h1>Месяц компании</h1>
+          <span class="topbar-sub">Понедельник, 1 июня · итог мая 2026</span>
+        </div>
+        <div class="topbar-right">
+          <!-- ⭐ НАВИГАТОР ПО МЕСЯЦАМ + АРХИВ (фича B: вернуться к прошлому отчёту) -->
+          <div class="period-nav">
+            <button class="pn-arrow" data-pn="prev" title="Предыдущий месяц"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+            <div class="pn-current" data-archive-toggle>
+              <span class="pn-month">Май 2026</span>
+              <span class="pn-tag latest">последний завершённый</span>
+            </div>
+            <button class="pn-arrow" data-pn="next" disabled title="Июнь ещё не завершён"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
+            <!-- лёгкий архив: список доступных месяцев -->
+            <div class="archive-pop" hidden>
+              <div class="ap-head">Архив отчётов · доступные месяцы</div>
+              <div class="ap-item active"><span class="ap-dot warn"></span><span class="ap-name">Май 2026</span><span class="ap-state">половина пути</span></div>
+              <div class="ap-item"><span class="ap-dot ok"></span><span class="ap-name">Апрель 2026</span><span class="ap-state">ровный</span></div>
+              <div class="ap-item"><span class="ap-dot risk"></span><span class="ap-name">Март 2026</span><span class="ap-state">с трением</span></div>
+              <div class="ap-item"><span class="ap-dot ok"></span><span class="ap-name">Февраль 2026</span><span class="ap-state">старт</span></div>
+              <div class="ap-item empty"><span class="ap-dot"></span><span class="ap-name">Январь 2026</span><span class="ap-state">нет данных</span></div>
+            </div>
+          </div>
+          <div class="rhythm-seg">
+            <button data-rhythm="day">День</button>
+            <button data-rhythm="week">Неделя</button>
+            <button class="active" data-rhythm="month">Месяц</button>
+          </div>
+          <button class="avatar-btn"></button>
+        </div>
+      </div>
+
+      <!-- ОБЛОЖКА МЕСЯЦА -->
+      <div class="day-cover">
+        <div class="dc-top">
+          <div class="dc-emoji">⚠️</div>
+          <div class="dc-title">
+            <h2>Месяц половины пути</h2>
+            <div class="dc-date">Май 2026 · 1–31 мая · 4 рабочих недели</div>
+          </div>
+          <div class="dc-actions">
+            <button class="btn ghost" title="Скоро: озвучка отчёта"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px"><path d="M11 5L6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg>Озвучить</button>
+            <button class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>Пересобрать</button>
+          </div>
+        </div>
+
+        <p class="dc-oneliner">
+          За май компания <b>окрепла, но прошла ровно половину пути к цели</b>: из плановых 10 тестов сделали <b>6</b> — темп ниже плана. Команда к концу месяца стала надёжнее (с 58% до 68%), но <b>один и тот же узел держал исполнение три недели подряд</b> — оплаты и интеграции идут только через тебя. Клиент <b>«Молочные реки»</b> тлел весь месяц и к 3-й неделе дошёл до красного.
+        </p>
+
+        <div class="axes">
+          <div class="axis ok"><div class="ax-h"><span class="ax-led"></span><span class="ax-name">Команда</span></div><div class="ax-state">Окрепла</div><div class="ax-why">надёжность 58% → 68% за месяц</div><div class="ax-spark"><span style="height:55%"></span><span style="height:62%"></span><span style="height:64%"></span><span style="height:72%"></span></div></div>
+          <div class="axis warn"><div class="ax-h"><span class="ax-led"></span><span class="ax-name">Клиенты</span></div><div class="ax-state">Под нагрузкой</div><div class="ax-why">«Молочные реки» — 9 сигналов за месяц</div><div class="ax-spark"><span style="height:60%"></span><span style="height:58%"></span><span style="height:90%"></span><span style="height:70%"></span></div></div>
+          <div class="axis warn"><div class="ax-h"><span class="ax-led"></span><span class="ax-name">Исполнение</span></div><div class="ax-state">Рывками</div><div class="ax-why">цель 6/10 · блокер повторялся 3 недели</div><div class="ax-spark"><span style="height:50%"></span><span style="height:80%"></span><span style="height:55%"></span><span style="height:58%"></span></div></div>
+          <div class="axis warn"><div class="ax-h"><span class="ax-led"></span><span class="ax-name">Общий</span></div><div class="ax-state">Половина пути</div><div class="ax-why">2 ровные недели из 4 · нужен твой шаг</div><div class="ax-spark"><span style="height:55%"></span><span style="height:78%"></span><span style="height:55%"></span><span style="height:60%"></span></div></div>
+        </div>
+
+        <!-- ТРЕНД ПО НЕДЕЛЯМ -->
+        <div class="wk-trend">
+          <div class="wk-trend-h">Как менялись оси по неделям мая</div>
+          <div class="trend-grid">
+            <span></span>
+            <span class="trend-day-head">Нед 1 · 4–8</span><span class="trend-day-head">Нед 2 · 11–15</span><span class="trend-day-head">Нед 3 · 18–22</span><span class="trend-day-head">Нед 4 · 25–29</span>
+
+            <span class="trend-axis-name">Команда</span>
+            <span class="trend-cell"><span class="trend-led warn"></span></span><span class="trend-cell"><span class="trend-led ok"></span></span><span class="trend-cell"><span class="trend-led ok"></span></span><span class="trend-cell"><span class="trend-led ok"></span></span>
+
+            <span class="trend-axis-name">Клиенты</span>
+            <span class="trend-cell"><span class="trend-led warn"></span></span><span class="trend-cell"><span class="trend-led warn"></span></span><span class="trend-cell"><span class="trend-led risk"></span></span><span class="trend-cell"><span class="trend-led warn"></span></span>
+
+            <span class="trend-axis-name">Исполнение</span>
+            <span class="trend-cell"><span class="trend-led warn"></span></span><span class="trend-cell"><span class="trend-led ok"></span></span><span class="trend-cell"><span class="trend-led warn"></span></span><span class="trend-cell"><span class="trend-led warn"></span></span>
+
+            <span class="trend-axis-name">Общий</span>
+            <span class="trend-cell"><span class="trend-led warn"></span></span><span class="trend-cell"><span class="trend-led ok"></span></span><span class="trend-cell"><span class="trend-led warn"></span></span><span class="trend-cell"><span class="trend-led warn"></span></span>
+          </div>
+        </div>
+
+        <div class="dc-meta">
+          <span>Собрано 1 июня 06:07 МСК</span><span class="dot"></span>
+          <span>сведено из 4 недельных «Недель компании» мая</span><span class="dot"></span>
+          <span>покрыто: 28 встреч · 84 чата · 96 чек-инов · 142 задачи · 31 решение</span>
+        </div>
+      </div>
+
+      <!-- ОДНА КНОПКА: всё письмо месяца -->
+      <button class="read-cta" data-letter aria-expanded="false">
+        Читать письмо месяца <span class="chev">▾</span>
+      </button>
+
+      <!-- ПИСЬМО МЕСЯЦА -->
+      <div class="letter" hidden>
+        <div class="letter-intro">
+          <span class="li-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg></span>
+          <p>Сергей, итог мая коротко — <b>месяц прошёл половину пути</b>. Компания стала зрелее и команда — дисциплинированнее, но к главной цели за месяц дошли только наполовину: <b>6 тестов из 10</b>. И каждую из четырёх недель повторялась одна и та же причина — критичное завязано на тебе. Ниже — как прошёл месяц по порядку, что решить в июне и куда ведём дальше.</p>
+        </div>
+
+        <!-- Главное за месяц -->
+        <div class="lsec">
+          <div class="lsec-head"><span class="lsec-ico" style="background:var(--grad-violet)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4-6.3-4.6L5.7 21 8 14 2 9.4h7.6z"/></svg></span><h4>Главное за месяц</h4></div>
+          <ul>
+            <li><span class="li-dot warn"></span><div><b>Цель: 6 тестов из плановых 10.</b> Хороший рывок на 2-й неделе (3 теста), но 3-я и 4-я просели — те же блокеры. <span class="cite">цель «10 тестов»</span></div></li>
+            <li><span class="li-dot ok"></span><div><b>Команда окрепла:</b> надёжность за месяц выросла с 58% до 68%, зрелость компании +6 пунктов. <span class="cite">таблица + зрелость ниже</span></div></li>
+            <li><span class="li-dot risk"></span><div><b>«Молочные реки» тлели весь месяц</b> — 9 сигналов про молчание поддержки, к 3-й неделе риск стал красным. <span class="cite">радар · ×9 за май</span></div></li>
+            <li><span class="li-dot warn"></span><div><b>Системный узел «всё на Сергее»</b> держал исполнение три недели из четырёх — это про незаменимость, не про команду. <span class="cite">незаменимость ниже</span></div></li>
+          </ul>
+        </div>
+
+        <!-- Траектория месяца -->
+        <div class="lsec">
+          <div class="lsec-head"><span class="lsec-ico" style="background:var(--grad-blue)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8M21 7v5h-5"/></svg></span><h4>Траектория месяца — как шло от недели к неделе</h4></div>
+          <p><b>Неделя 1</b> стартовала вяло — раскачка после праздников, 1 тест. <b>Неделя 2 — лучшая:</b> 3 теста, исполнение зелёное, команда вошла в ритм. <b>Неделя 3</b> сломала темп: «Молочные реки» дошли до красного и оттянули фокус на поддержку, цель встала. <b>Неделя 4</b> выправилась по команде, но цель так и не вернулась к темпу 2-й недели — мешал блокер оплаты.</p>
+          <p style="margin-bottom:0">Вывод месяца: <b>когда узел не мешает — команда тянет цель (неделя 2 это доказала).</b> Значит проблема не в людях, а в одной точке — тебе.</p>
+        </div>
+
+        <!-- Что сделано / достижения -->
+        <div class="lsec">
+          <div class="lsec-head"><span class="lsec-ico" style="background:var(--grad-teal)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span><h4>Что сделано за месяц</h4><span class="lsec-tag" style="color:var(--mint);background:var(--ok-bg)">96 задач · 28 встреч</span></div>
+          <ul>
+            <li><span class="li-dot ok"></span><div>Запущено <b>6 тестов</b> по главной цели (Орбита, Гамма, Дельта, Сигма, Веста, Нова). <span class="cite">6/10</span></div></li>
+            <li><span class="li-dot ok"></span><div>Подписан и стартовал <b>подрядчик внедрения</b> — ускорит следующие тесты. <span class="cite">решение 25.05</span></div></li>
+            <li><span class="li-dot ok"></span><div>Полностью закрыт <b>цикл чат-бокса</b> (вебхуки, атрибуция, групповой чат). <span class="cite">14 задач</span></div></li>
+          </ul>
+        </div>
+
+        <!-- На что обратить внимание -->
+        <div class="lsec">
+          <div class="lsec-head"><span class="lsec-ico" style="background:var(--grad-violet)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg></span><h4>На что обратить внимание</h4></div>
+          <div class="callout reflect">
+            <p style="margin-bottom:11px"><b>Главный риск месяца — незаменимость, а не темп.</b> Цель тормозит не потому, что команда слабая, а потому что оплаты, интеграции и цены для КП идут только через тебя. Любая твоя занятая неделя автоматически останавливает цель — так было 3 недели из 4.</p>
+            <p style="margin:0"><b>Петля месяца:</b> «Молочные реки» появились ещё в марте как жёлтый сигнал и за два месяца дозрели до красного — закрыть так и не дошли руки. Это не разовый случай, это паттерн «важное-несрочное копится».</p>
+          </div>
+        </div>
+
+        <!-- ⭐ Что решить собственнику в июне -->
+        <div class="lsec">
+          <div class="lsec-head"><span class="lsec-ico" style="background:var(--grad-red)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span><h4>Что решить в июне</h4><span class="lsec-tag" style="color:var(--red);background:var(--risk-bg)">решения за тобой</span></div>
+          <div class="callout decide">
+            <div class="actions-list">
+              <div class="action-item"><span class="action-num decide">1</span><div class="a-body">Снять с себя оплаты и интеграции — делегировать или дать команде доступ.<div class="a-why">это узел №1: держал цель 3 недели из 4 в мае</div></div></div>
+              <div class="action-item"><span class="action-num decide">2</span><div class="a-body">«Молочные реки»: либо закрыть до середины июня, либо осознанно отпустить.<div class="a-why">тлеет с марта, риск красный — нерешение тоже решение</div></div></div>
+              <div class="action-item"><span class="action-num decide">3</span><div class="a-body">Назначить дублёра на знание ключевых клиентов (сейчас только Айназ).<div class="a-why">незаменимость №2 — если Айназ уйдёт, контекст клиентов потеряется</div></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ⭐ Фокус следующего месяца -->
+        <div class="lsec">
+          <div class="lsec-head"><span class="lsec-ico" style="background:var(--grad-amber)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg></span><h4>Фокус июня — 3 приоритета</h4></div>
+          <div class="callout act">
+            <div class="actions-list">
+              <div class="action-item"><span class="action-num">1</span><div class="a-body">Дожать цель: оставшиеся 4 теста до 10.<div class="a-why">при темпе 2-й недели реально к середине июля — но нужен снятый узел</div></div></div>
+              <div class="action-item"><span class="action-num">2</span><div class="a-body">Разгрузить владельца — вынести критичное из единственной точки.<div class="a-why">иначе июнь повторит май: цель встанет на твоей занятой неделе</div></div></div>
+              <div class="action-item"><span class="action-num">3</span><div class="a-body">Поднять дисциплину продаж — Айназ, 55% надёжность.<div class="a-why">слабое звено воронки: сорванные КП = ушедшие клиенты</div></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Динамика к прошлому месяцу -->
+        <div class="lsec">
+          <div class="lsec-head"><span class="lsec-ico" style="background:var(--grad-blue)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8M21 7v5h-5"/></svg></span><h4>Динамика к апрелю</h4></div>
+          <div class="delta-row"><span class="d-name">Цель (тесты)</span><span class="delta-arrow" style="color:var(--mint)">4 → 6</span><span class="faint">за месяц быстрее, но плана 10 не достигли</span></div>
+          <div class="delta-row"><span class="d-name">Надёжность</span><span class="delta-arrow" style="color:var(--mint)">58% → 68%</span><span class="faint">дисциплина выросла за месяц</span></div>
+          <div class="delta-row"><span class="d-name">Зрелость</span><span class="delta-arrow" style="color:var(--mint)">52 → 58</span><span class="faint">+6 пунктов, обновление подтянулось</span></div>
+          <div class="delta-row"><span class="d-name">Клиенты</span><span class="delta-arrow" style="color:var(--red)">⚠️ → 🔴</span><span class="faint">«Молочные реки» дозрели до риска</span></div>
+        </div>
+      </div>
+
+      <!-- КОМПАС ЗА МЕСЯЦ (с темпом/прогнозом) -->
+      <div class="glass float compass-card">
+        <span class="glow teal"></span>
+        <div class="compass-head">
+          <span class="card-ico" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 12l4-6"/></svg></span>
+          <h3 style="font-size:15px;font-weight:600;margin:0;letter-spacing:-0.01em">Цель и компас месяца</h3>
+          <button class="more-toggle" data-why aria-expanded="false">Почему так? <span class="chev">▾</span></button>
+        </div>
+        <div class="compass-row">
+          <div class="compass-left">
+            <div class="compass3d" data-compass3d>
+              <div class="c3d-stage">
+                <div class="c3d-bezel"></div>
+                <div class="c3d-zones"></div>
+                <div class="c3d-dish"></div>
+                <span class="c3d-cap to">к цели</span>
+                <span class="c3d-cap drift">дрейф</span>
+                <span class="c3d-cap against">против</span>
+                <div class="c3d-needle" style="--angle:38deg"><span class="tip"></span><span class="tail"></span></div>
+                <div class="c3d-hub"><span class="c3d-score">58</span><span class="c3d-score-cap">дрейф</span></div>
+                <div class="c3d-dome"></div>
+              </div>
+            </div>
+          </div>
+          <div class="compass-right">
+            <div class="compass-goal">Главная цель</div>
+            <div class="compass-goal-name">Запустить 10 компаний на бесплатные тесты и собрать кейсы</div>
+            <div class="compass-verdict"><span class="cv-led"></span>Дрейф к цели — за май +6 из 10, но темп ниже плановой линии</div>
+
+            <!-- ⭐ прогноз темпа (месячное усиление компаса) -->
+            <div class="pace">
+              <div class="pace-h">Темп к цели и прогноз</div>
+              <div class="pace-track">
+                <span class="pace-fact" style="width:60%"></span>
+                <span class="pace-plan" style="left:80%"></span>
+              </div>
+              <div class="pace-row">
+                <span class="pr-fact">Факт: 6 из 10 · план был 8 к концу мая</span>
+                <span class="pr-eta">При текущем темпе 10 → ~18 июля</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="compass-why" hidden>
+          <p><b>Почему «дрейф»:</b> движение к цели стабильное, но темп неровный — лучшую неделю (3 теста) сделали только когда узел не мешал. Среднемесячный темп — 1,5 теста в неделю, для цели «10 к концу июня» нужно было 2,5. Отсюда отставание от плановой линии и прогноз сдвига срока.</p>
+          <div class="why-cols">
+            <div class="why-col pro">
+              <h5><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>Двигало к цели</h5>
+              <ul>
+                <li><span class="wl-dot"></span>Неделя 2: 3 теста за раз — доказали, что темп возможен. <span class="cite">нед 2 мая</span></li>
+                <li><span class="wl-dot"></span>Подрядчик внедрения снимет часть ручной работы. <span class="cite">решение 25.05</span></li>
+              </ul>
+            </div>
+            <div class="why-col contra">
+              <h5><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>Тормозило</h5>
+              <ul>
+                <li><span class="wl-dot"></span>Блокер оплаты держал тесты 3 недели из 4. <span class="cite">незаменимость</span></li>
+                <li><span class="wl-dot"></span>«Молочные реки» оттянули неделю 3 на поддержку. <span class="cite">радар</span></li>
+              </ul>
+            </div>
+          </div>
+          <div class="compass-src">Ведущий сигнал на июнь: если узел оплаты снят к 1-й неделе — прогноз сдвигается к началу июля. Источник: месячный расчёт согласованности (агент goal-alignment) + сведение 4 недель.</div>
+        </div>
+      </div>
+
+      <!-- ⭐ МЕСЯЧНЫЕ СРЕЗЫ: ЗРЕЛОСТЬ + НЕЗАМЕНИМОСТЬ (чего нет в неделе) -->
+      <div class="mo-grid">
+        <!-- ЗРЕЛОСТЬ КОМПАНИИ -->
+        <div class="glass float">
+          <div class="card-title">
+            <span class="card-ico" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg></span>
+            <h3>Зрелость компании</h3>
+            <span class="more" style="font-size:12px">Подробно →</span>
+          </div>
+          <div class="mat-top">
+            <div class="mat-score">58<small>/100</small></div>
+            <div class="mat-delta ok">↑ +6 к апрелю<span class="mt-sub">медленный показатель — считаем раз в месяц</span></div>
+          </div>
+          <div class="mat-axes">
+            <div class="mat-axis"><div class="ma-h"><span class="ma-name">Согласованность (все ли про одно)</span><span class="ma-val">62</span></div><div class="ma-track"><span style="width:62%"></span></div></div>
+            <div class="mat-axis"><div class="ma-h"><span class="ma-name">Исполнение (доводим до конца)</span><span class="ma-val">54</span></div><div class="ma-track"><span style="width:54%"></span></div></div>
+            <div class="mat-axis"><div class="ma-h"><span class="ma-name">Обновление (учимся, меняемся)</span><span class="ma-val">59</span></div><div class="ma-track"><span style="width:59%"></span></div></div>
+          </div>
+          <div class="mat-foot">Те же 3 опоры, что у вердикта месяца, но в накопленной шкале: исполнение — самое слабое звено, тянет его узкое место владельца.</div>
+        </div>
+
+        <!-- НЕЗАМЕНИМОСТЬ / BUS-FACTOR -->
+        <div class="glass float">
+          <div class="card-title">
+            <span class="card-ico" style="background:var(--grad-red)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a5 5 0 0 0-5 5v2a5 5 0 0 0 10 0V7a5 5 0 0 0-5-5zM4 21a8 8 0 0 1 16 0"/></svg></span>
+            <h3>Незаменимость</h3>
+            <span class="more" style="font-size:12px">Карта знаний →</span>
+          </div>
+          <div class="bf-row first">
+            <span class="bf-led risk"></span>
+            <div class="bf-body"><div class="bf-zone">Оплаты и интеграции</div><div class="bf-holder"><span class="ava" style="background:var(--grad-violet)">С</span>только Сергей · критично для цели</div></div>
+            <span class="bf-chg worse">стало хуже</span>
+          </div>
+          <div class="bf-row">
+            <span class="bf-led warn"></span>
+            <div class="bf-body"><div class="bf-zone">Знание клиента «Молочные реки»</div><div class="bf-holder"><span class="ava" style="background:var(--grad-pink)">А</span>только Айназ</div></div>
+            <span class="bf-chg same">без изменений</span>
+          </div>
+          <div class="bf-row">
+            <span class="bf-led ok"></span>
+            <div class="bf-body"><div class="bf-zone">Архитектура чат-бокса</div><div class="bf-holder"><span class="ava" style="background:var(--grad-teal)">М</span>Марат + Лена (был соло)</div></div>
+            <span class="bf-chg better">стало лучше</span>
+          </div>
+          <div class="bf-hint">«Критичность × хрупкость»: где знание держится на одном человеке. Действие — назначить дублёра с датой. За май чат-бокс продублировали, но оплаты — нет.</div>
+        </div>
+      </div>
+
+      <!-- ⭐ ТАБЛИЦА ПЛАН / ФАКТ ПО СОТРУДНИКАМ (за месяц) -->
+      <div class="glass float pft-card">
+        <span class="glow violet"></span>
+        <div class="pft-head-row">
+          <span class="card-ico" style="background:var(--grad-pink)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20a6 6 0 0 1 12 0M15 20a5 5 0 0 1 6 0"/></svg></span>
+          <h3>Команда за месяц · план ↔ факт</h3>
+          <span class="more" style="font-size:12px">Открыть «Отчётность» →</span>
+        </div>
+        <p class="pft-sub">По каждому сотруднику за весь май: <b>надёжность</b> (сдержанные обещания), <b>обещания</b> дано/сдержал/сорвал, <b>задачи план→факт</b>, <b>вклад в цель</b> (двигал ли главную цель за месяц, +/−) и <b>чек-ины</b>. Числа — за 4 недели. Клик по строке — разворот по человеку.</p>
+
+        <div class="pft-summary">
+          <div class="pft-kpi"><div class="k-label">Надёжность команды</div><div class="k-value">68<small>%</small></div><div class="k-foot ok">↑ 10 п.п. за месяц</div></div>
+          <div class="pft-kpi"><div class="k-label">Задачи план → факт</div><div class="k-value">96 <small>из 142</small></div><div class="k-foot warn">46 не закрыто за месяц</div></div>
+          <div class="pft-kpi"><div class="k-label">Чек-ины</div><div class="k-value">96 <small>из 120</small></div><div class="k-foot ok">дисциплина 80%</div></div>
+          <div class="pft-kpi"><div class="k-label">Главный «узел»</div><div class="k-value" style="font-size:16px;padding-top:3px">Сергей</div><div class="k-foot risk">31 из 46 несделанных — на нём</div></div>
+        </div>
+
+        <div class="pft-sorts">
+          <span class="sort-label">Сортировка:</span>
+          <button class="pft-sort active" data-sort="reliability">По надёжности</button>
+          <button class="pft-sort" data-sort="risk">По риску</button>
+        </div>
+
+        <div class="pft-table">
+          <div class="pft-grid-head">
+            <span>Сотрудник</span>
+            <span>Надёжность</span>
+            <span>Обещания</span>
+            <span>Задачи план→факт</span>
+            <span class="th-center">Вклад в цель</span>
+            <span class="th-center">Чек-ины</span>
+            <span class="th-center">Итог</span>
+            <span></span>
+          </div>
+
+          <!-- Марат -->
+          <div class="pft-grid-row" data-row>
+            <div class="pft-person"><span class="ava" style="background:var(--grad-teal)">М</span><div><div class="pp-name">Марат</div><div class="pp-dept">Разработка</div></div></div>
+            <div class="pft-rel"><span class="rel-num ok">90%</span><div class="rel-track"><span class="ok" style="width:90%"></span></div></div>
+            <div class="pft-prom"><span class="prom-pill given">дал 19</span><span class="prom-pill kept">сдержал 17</span><span class="prom-pill overdue">просрочил 2</span></div>
+            <div class="pft-tasks"><span class="tk-planfact">34<span class="arr">→</span>31</span><span class="tk-not">3 не сделал</span></div>
+            <div class="pft-goal"><span class="goal-net pos">+8</span><span class="goal-cap">к цели</span></div>
+            <div class="pft-checkins"><span class="ci">19</span><span class="ci-of">/20</span></div>
+            <div class="pft-status"><span class="status-badge ok">Надёжный</span></div>
+            <div class="pft-chev"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+          </div>
+          <div class="pft-drill" hidden>
+            <div class="drill-title">Главное за месяц → что вышло</div>
+            <div class="drill-item"><span class="drill-kind task"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span><div class="drill-body"><div class="drill-name">Закрыл цикл чат-бокса (14 задач за месяц)</div><div class="drill-meta"><span>недели 1–3</span></div></div><span class="drill-badge done">сделано</span></div>
+            <div class="drill-item"><span class="drill-kind commitment"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3 8-8"/></svg></span><div class="drill-body"><div class="drill-name">Обучил Лену архитектуре чат-бокса — снял bus-factor</div><div class="drill-meta"><span>неделя 4</span></div></div><span class="drill-badge done">сдержал</span></div>
+            <div class="drill-item"><span class="drill-kind task"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span><div class="drill-body"><div class="drill-name">Рефактор очереди задач</div><div class="drill-meta"><span class="blocked">перенёс — приоритет на тесты</span></div></div><span class="drill-badge planned">в плане</span></div>
+          </div>
+
+          <!-- Лена -->
+          <div class="pft-grid-row" data-row>
+            <div class="pft-person"><span class="ava" style="background:var(--grad-blue)">Л</span><div><div class="pp-name">Лена</div><div class="pp-dept">Поддержка</div></div></div>
+            <div class="pft-rel"><span class="rel-num ok">85%</span><div class="rel-track"><span class="ok" style="width:85%"></span></div></div>
+            <div class="pft-prom"><span class="prom-pill given">дал 16</span><span class="prom-pill kept">сдержал 14</span><span class="prom-pill overdue">просрочил 2</span></div>
+            <div class="pft-tasks"><span class="tk-planfact">28<span class="arr">→</span>24</span><span class="tk-not">4 не сделал</span></div>
+            <div class="pft-goal"><span class="goal-net zero">0</span><span class="goal-cap">нейтрально</span></div>
+            <div class="pft-checkins"><span class="ci">18</span><span class="ci-of">/20</span></div>
+            <div class="pft-status"><span class="status-badge ok">Надёжный</span></div>
+            <div class="pft-chev"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+          </div>
+          <div class="pft-drill" hidden>
+            <div class="drill-title">Главное за месяц → что вышло</div>
+            <div class="drill-item"><span class="drill-kind task"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span><div class="drill-body"><div class="drill-name">Держала поддержку весь месяц, разобрала очередь тикетов</div><div class="drill-meta"><span>недели 1–4</span></div></div><span class="drill-badge done">сделано</span></div>
+            <div class="drill-item"><span class="drill-kind checkin"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg></span><div class="drill-body"><div class="drill-name">«Молочные реки» — тушила всю неделю 3</div><div class="drill-meta"><span class="blocked">без решения от Сергея по цене КП</span></div></div><span class="drill-badge planned">тянется</span></div>
+          </div>
+
+          <!-- Алия -->
+          <div class="pft-grid-row" data-row>
+            <div class="pft-person"><span class="ava" style="background:var(--grad-mint)">А</span><div><div class="pp-name">Алия</div><div class="pp-dept">Маркетинг</div></div></div>
+            <div class="pft-rel"><span class="rel-num warn">66%</span><div class="rel-track"><span class="warn" style="width:66%"></span></div></div>
+            <div class="pft-prom"><span class="prom-pill given">дал 18</span><span class="prom-pill kept">сдержал 12</span><span class="prom-pill broken">сорвал 3</span><span class="prom-pill overdue">просрочил 3</span></div>
+            <div class="pft-tasks"><span class="tk-planfact">30<span class="arr">→</span>19</span><span class="tk-not">11 не сделал</span></div>
+            <div class="pft-goal"><span class="goal-net pos">+5</span><span class="goal-cap">к цели</span></div>
+            <div class="pft-checkins"><span class="ci warn">16</span><span class="ci-of">/20</span></div>
+            <div class="pft-status"><span class="status-badge warn">В норме</span></div>
+            <div class="pft-chev"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+          </div>
+          <div class="pft-drill" hidden>
+            <div class="drill-title">Главное за месяц → что вышло</div>
+            <div class="drill-item"><span class="drill-kind task"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span><div class="drill-body"><div class="drill-name">Собрала пост-кейсы по «Орбите» и «Гамме» — двигало цель</div><div class="drill-meta"><span>недели 2–3</span></div></div><span class="drill-badge done">сделано</span></div>
+            <div class="drill-item"><span class="drill-kind commitment"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3 8-8"/></svg></span><div class="drill-body"><div class="drill-name">Обещала макеты лендинга</div><div class="drill-meta"><span class="blocked">сорвала дважды за месяц</span></div></div><span class="drill-badge missed">сорвала</span></div>
+            <div class="drill-item"><span class="drill-kind task"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span><div class="drill-body"><div class="drill-name">Аналитика по воронке</div><div class="drill-meta"><span class="blocked">⛔ ждёт выгрузку Bitrix весь месяц</span></div></div><span class="drill-badge overdue">просрочено</span></div>
+          </div>
+
+          <!-- Айназ -->
+          <div class="pft-grid-row" data-row>
+            <div class="pft-person"><span class="ava" style="background:var(--grad-pink)">А</span><div><div class="pp-name">Айназ</div><div class="pp-dept">Продажи</div></div></div>
+            <div class="pft-rel"><span class="rel-num risk">55%</span><div class="rel-track"><span class="risk" style="width:55%"></span></div></div>
+            <div class="pft-prom"><span class="prom-pill given">дал 16</span><span class="prom-pill kept">сдержал 9</span><span class="prom-pill broken">сорвал 4</span><span class="prom-pill overdue">просрочил 3</span></div>
+            <div class="pft-tasks"><span class="tk-planfact">24<span class="arr">→</span>13</span><span class="tk-not">11 не сделал</span></div>
+            <div class="pft-goal"><span class="goal-net neg">−2</span><span class="goal-cap">мимо</span></div>
+            <div class="pft-checkins"><span class="ci warn">14</span><span class="ci-of">/20</span></div>
+            <div class="pft-status"><span class="status-badge risk">Риск</span></div>
+            <div class="pft-chev"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+          </div>
+          <div class="pft-drill" hidden>
+            <div class="drill-title">Главное за месяц → что вышло</div>
+            <div class="drill-item"><span class="drill-kind commitment"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3 8-8"/></svg></span><div class="drill-body"><div class="drill-name">КП «Молочным рекам» — тянул весь месяц</div><div class="drill-meta"><span class="blocked">⛔ ждёт цену от Сергея</span></div></div><span class="drill-badge overdue">просрочено</span></div>
+            <div class="drill-item"><span class="drill-kind task"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span><div class="drill-body"><div class="drill-name">Завёл новых лидов в CRM, прозвон базы</div><div class="drill-meta"><span>недели 2, 4</span></div></div><span class="drill-badge done">сделано</span></div>
+            <div class="drill-item"><span class="drill-kind checkin"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg></span><div class="drill-body"><div class="drill-name">Единственный носитель знания о клиентах</div><div class="drill-meta"><span class="blocked">риск незаменимости — нужен дублёр</span></div></div><span class="drill-badge missed">риск</span></div>
+          </div>
+
+          <!-- Дамир -->
+          <div class="pft-grid-row" data-row>
+            <div class="pft-person"><span class="ava" style="background:var(--grad-amber)">Д</span><div><div class="pp-name">Дамир</div><div class="pp-dept">Аналитика</div></div></div>
+            <div class="pft-rel"><span class="rel-num risk">48%</span><div class="rel-track"><span class="risk" style="width:48%"></span></div></div>
+            <div class="pft-prom"><span class="prom-pill given">дал 9</span><span class="prom-pill kept">сдержал 4</span><span class="prom-pill broken">сорвал 2</span><span class="prom-pill overdue">просрочил 3</span></div>
+            <div class="pft-tasks"><span class="tk-planfact">14<span class="arr">→</span>6</span><span class="tk-not">8 не сделал</span></div>
+            <div class="pft-goal"><span class="goal-net zero">0</span><span class="goal-cap">нейтрально</span></div>
+            <div class="pft-checkins"><span class="ci risk">9</span><span class="ci-of">/20</span></div>
+            <div class="pft-status"><span class="status-badge risk">Молчит</span></div>
+            <div class="pft-chev"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+          </div>
+          <div class="pft-drill" hidden>
+            <div class="drill-title">Главное за месяц → что вышло</div>
+            <div class="drill-item"><span class="drill-kind checkin"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg></span><div class="drill-body"><div class="drill-name">Чек-ины: 9 из 20 за месяц — провал дисциплины</div><div class="drill-meta"><span class="blocked">полнедели без чек-инов — план/факт не свести</span></div></div><span class="drill-badge missed">молчит</span></div>
+            <div class="drill-item"><span class="drill-kind task"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span><div class="drill-body"><div class="drill-name">Отчёты по заявкам — большая часть не сделана</div><div class="drill-meta"><span>8 из 14 задач не закрыто</span></div></div><span class="drill-badge missed">не сделано</span></div>
+          </div>
+
+          <!-- Сергей (владелец, узкое место) -->
+          <div class="pft-grid-row owner-row" data-row>
+            <div class="pft-person"><span class="ava" style="background:var(--grad-violet)">С</span><div><div class="pp-name">Сергей</div><span class="pp-tag">владелец · узел</span></div></div>
+            <div class="pft-rel"><span class="rel-num risk">42%</span><div class="rel-track"><span class="risk" style="width:42%"></span></div></div>
+            <div class="pft-prom"><span class="prom-pill given">дал 22</span><span class="prom-pill kept">сдержал 9</span><span class="prom-pill broken">сорвал 5</span><span class="prom-pill overdue">просрочил 8</span></div>
+            <div class="pft-tasks"><span class="tk-planfact">40<span class="arr">→</span>9</span><span class="tk-not">31 не сделал</span></div>
+            <div class="pft-goal"><span class="goal-net pos">+3</span><span class="goal-cap">к цели</span></div>
+            <div class="pft-checkins"><span class="ci warn">15</span><span class="ci-of">/20</span></div>
+            <div class="pft-status"><span class="status-badge node">Узкое место</span></div>
+            <div class="pft-chev"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+          </div>
+          <div class="pft-drill" hidden>
+            <div class="drill-title">Главное за месяц → что вышло · 31 из 46 несделанных задач месяца — здесь</div>
+            <div class="drill-item"><span class="drill-kind task"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span><div class="drill-body"><div class="drill-name">Оплатить коннекторы интеграции</div><div class="drill-meta"><span class="blocked">⛔ держал тесты по цели 3 недели из 4</span></div></div><span class="drill-badge overdue">висит весь май</span></div>
+            <div class="drill-item"><span class="drill-kind commitment"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3 8-8"/></svg></span><div class="drill-body"><div class="drill-name">Дать цену для КП «Молочным рекам»</div><div class="drill-meta"><span class="blocked">сорвано трижды за месяц</span></div></div><span class="drill-badge missed">сорвал</span></div>
+            <div class="drill-item"><span class="drill-kind task"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span><div class="drill-body"><div class="drill-name">Подписать подрядчика внедрения</div><div class="drill-meta"><span>неделя 4</span></div></div><span class="drill-badge done">сделано</span></div>
+          </div>
+        </div>
+
+        <div class="pft-foot">Надёжность = доля сдержанных обещаний за месяц (при ≥3 обещаниях). Числа агрегированы из 4 недель мая. Видно паттерн: <b>узкое место «всё на Сергее» — устойчивое, не разовое.</b> Полная история по неделям и людям — в разделе <b>«Отчётность»</b>.</div>
+      </div>
+
+      <!-- ЗАВИСЛО К КОНЦУ МЕСЯЦА ↔ КТО ДЕРЖИТ -->
+      <div class="stuck-note">
+        <span class="sn-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+        <div>Другой срез, чем таблица выше: тут <b>накопленный долг</b> — что зависло к концу месяца и у кого, включая задачи, висящие ещё с апреля.</div>
+      </div>
+      <div class="tasks-grid">
+        <!-- ЛЕВО -->
+        <div class="glass float">
+          <div class="card-title">
+            <span class="card-ico" style="background:var(--grad-amber)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+            <h3>Зависло к концу мая</h3>
+            <span class="filter-chip" data-filterchip>Сергей <span class="fc-x">✕</span></span>
+          </div>
+          <div id="moTaskList">
+            <div class="task-row first" data-assignee="Сергей" title="Открыть в трекере →">
+              <span class="task-chip risk">висит 38 дн</span>
+              <div class="task-body"><div class="task-title">Оплатить коннекторы интеграции</div><div class="task-assignee"><span class="ava" style="background:var(--grad-violet)">С</span>Сергей</div></div>
+              <svg class="task-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M9 7h8v8"/></svg>
+            </div>
+            <div class="task-row" data-assignee="Айназ" title="Открыть в трекере →">
+              <span class="task-chip risk">висит 29 дн</span>
+              <div class="task-body"><div class="task-title">Отправить КП «Молочным рекам»</div><div class="task-assignee"><span class="ava" style="background:var(--grad-pink)">А</span>Айназ</div></div>
+              <svg class="task-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M9 7h8v8"/></svg>
+            </div>
+            <div class="task-row" data-assignee="Сергей" title="Открыть в трекере →">
+              <span class="task-chip risk">висит 41 дн</span>
+              <div class="task-body"><div class="task-title">Обновить регламент по сделкам (с апреля)</div><div class="task-assignee"><span class="ava" style="background:var(--grad-violet)">С</span>Сергей</div></div>
+              <svg class="task-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M9 7h8v8"/></svg>
+            </div>
+            <div class="task-row" data-assignee="Алия" title="Открыть в трекере →">
+              <span class="task-chip warn">висит 21 дн</span>
+              <div class="task-body"><div class="task-title">Свести аналитику по воронке за месяц</div><div class="task-assignee"><span class="ava" style="background:var(--grad-mint)">А</span>Алия</div></div>
+              <svg class="task-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M9 7h8v8"/></svg>
+            </div>
+            <div class="task-row" data-assignee="Дамир" title="Открыть в трекере →">
+              <span class="task-chip warn">висит 18 дн</span>
+              <div class="task-body"><div class="task-title">Отчёт по заявкам за апрель</div><div class="task-assignee"><span class="ava" style="background:var(--grad-amber)">Д</span>Дамир</div></div>
+              <svg class="task-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M9 7h8v8"/></svg>
+            </div>
+            <div class="task-row extra" data-assignee="Сергей" hidden title="Открыть в трекере →">
+              <span class="task-chip warn">висит 15 дн</span>
+              <div class="task-body"><div class="task-title">Завести задачи из решения с подрядчиком</div><div class="task-assignee"><span class="ava" style="background:var(--grad-violet)">С</span>Сергей</div></div>
+              <svg class="task-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M9 7h8v8"/></svg>
+            </div>
+            <div class="task-row extra" data-assignee="Айназ" hidden title="Открыть в трекере →">
+              <span class="task-chip warn">висит 12 дн</span>
+              <div class="task-body"><div class="task-title">Прозвонить тёплую базу (вторая волна)</div><div class="task-assignee"><span class="ava" style="background:var(--grad-pink)">А</span>Айназ</div></div>
+              <svg class="task-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M9 7h8v8"/></svg>
+            </div>
+          </div>
+          <button class="show-all" data-showall data-total="46" aria-expanded="false">Показать все (46) <span class="chev">▾</span></button>
+
+          <div class="task-sub">Без ответственного или без срока</div>
+          <div id="moTaskListNoOwner">
+            <div class="task-row first" data-assignee="—" title="Открыть в трекере →">
+              <span class="task-chip info">без ответственного</span>
+              <div class="task-body"><div class="task-title">Подготовить сводный кейс по 6 тестам</div><div class="task-assignee">не назначен</div></div>
+              <svg class="task-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M9 7h8v8"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- ПРАВО -->
+        <div class="glass float">
+          <div class="card-title">
+            <span class="card-ico" style="background:var(--grad-red)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20a6 6 0 0 1 12 0M15 20a5 5 0 0 1 6 0"/></svg></span>
+            <h3>У кого зависло</h3>
+          </div>
+          <div class="emp-row first" data-emp="Сергей">
+            <span class="emp-ava" style="background:var(--grad-violet)">С</span>
+            <div class="emp-body"><div class="emp-name">Сергей</div><div class="emp-bar"><span style="width:100%"></span></div></div>
+            <span class="emp-count">31</span>
+          </div>
+          <div class="emp-row" data-emp="Айназ">
+            <span class="emp-ava" style="background:var(--grad-pink)">А</span>
+            <div class="emp-body"><div class="emp-name">Айназ</div><div class="emp-bar"><span style="width:35%"></span></div></div>
+            <span class="emp-count">11</span>
+          </div>
+          <div class="emp-row" data-emp="Дамир">
+            <span class="emp-ava" style="background:var(--grad-amber)">Д</span>
+            <div class="emp-body"><div class="emp-name">Дамир</div><div class="emp-bar"><span style="width:26%"></span></div></div>
+            <span class="emp-count">8</span>
+          </div>
+          <div class="emp-row" data-emp="Алия">
+            <span class="emp-ava" style="background:var(--grad-mint)">А</span>
+            <div class="emp-body"><div class="emp-name">Алия</div><div class="emp-bar"><span style="width:23%"></span></div></div>
+            <span class="emp-count">7</span>
+          </div>
+          <div class="emp-hint">Клик по сотруднику фильтрует список слева. «Узел» месяца — Сергей: 31 зависшая задача, и часть тянется с апреля.</div>
+        </div>
+      </div>
+
+      <!-- ЧТО МЕШАЛО ↔ ИДЕИ ЗА МЕСЯЦ -->
+      <div class="rt-grid">
+        <div class="glass float">
+          <div class="card-title">
+            <span class="card-ico" style="background:var(--grad-red)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
+            <h3>Что мешало за месяц</h3>
+            <span class="more" style="font-size:12px">Радар →</span>
+          </div>
+          <div class="ai-mini">
+            <span class="ai-dot"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg></span>
+            <div><b>Резюме месяца:</b> один и тот же узел — «всё на Сергее» — держал цель 3 недели из 4. Это не разовая помеха, а системный паттерн месяца.</div>
+          </div>
+          <div id="riskList">
+            <div class="signal-row first" title="Открыть в радаре →">
+              <span class="signal-led risk"></span>
+              <div class="signal-body"><div class="signal-title">Узкое место «всё на Сергее»</div><div class="signal-meta">держал цель 3 недели из 4 · 2-й месяц подряд</div></div>
+              <span class="signal-badge spike">системное</span>
+              <svg class="signal-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M9 7h8v8"/></svg>
+            </div>
+            <div class="signal-row" title="Открыть в радаре →">
+              <span class="signal-led risk"></span>
+              <div class="signal-body"><div class="signal-title">Молчание поддержки — «Молочные реки»</div><div class="signal-meta">9 сигналов за месяц · тлеет с марта</div></div>
+              <span class="signal-badge grow">копится 3 мес</span>
+              <svg class="signal-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M9 7h8v8"/></svg>
+            </div>
+            <div class="signal-row" title="Открыть в радаре →">
+              <span class="signal-led warn"></span>
+              <div class="signal-body"><div class="signal-title">Битрикс24 не держит дисциплину задач</div><div class="signal-meta">боль из 11 встреч за месяц · растёт</div></div>
+              <span class="signal-badge grow">растёт ×11</span>
+              <svg class="signal-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M9 7h8v8"/></svg>
+            </div>
+          </div>
+          <button class="show-all" data-showall data-total="14" aria-expanded="false">Показать все (14) <span class="chev">▾</span></button>
+        </div>
+
+        <div class="glass float">
+          <div class="card-title">
+            <span class="card-ico" style="background:var(--grad-mint)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1h6c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/></svg></span>
+            <h3>Идеи за месяц</h3>
+            <span class="more" style="font-size:12px">Все идеи →</span>
+          </div>
+          <div class="ai-mini">
+            <span class="ai-dot"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg></span>
+            <div><b>Резюме месяца:</b> онбординг-чеклист собрал поддержку 8 человек за месяц — самый сильный кластер. Перевести из идеи в задачу.</div>
+          </div>
+          <div id="ideaList">
+            <div class="signal-row first" title="Открыть идею →">
+              <span class="signal-led idea"></span>
+              <div class="signal-body"><div class="signal-title">Чек-лист онбординга клиента</div><div class="signal-meta">кластер «онбординг» · копится месяц</div></div>
+              <span class="signal-badge sup">поддержали 8</span>
+              <svg class="signal-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M9 7h8v8"/></svg>
+            </div>
+            <div class="signal-row" title="Открыть идею →">
+              <span class="signal-led idea"></span>
+              <div class="signal-body"><div class="signal-title">Доступ команде к оплатам без Сергея</div><div class="signal-meta">прямо снимает узел месяца · поддержали 6</div></div>
+              <span class="signal-badge sup">поддержали 6</span>
+              <svg class="signal-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M9 7h8v8"/></svg>
+            </div>
+            <div class="signal-row" title="Открыть идею →">
+              <span class="signal-led idea"></span>
+              <div class="signal-body"><div class="signal-title">Шаблон КП для типовых клиентов</div><div class="signal-meta">из встреч · поддержали 4</div></div>
+              <span class="signal-badge sup">поддержали 4</span>
+              <svg class="signal-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M9 7h8v8"/></svg>
+            </div>
+          </div>
+          <button class="show-all" data-showall data-total="31" aria-expanded="false">Показать все (31) <span class="chev">▾</span></button>
+        </div>
+      </div>
+
+      <!-- ПОЛЬЗА КОРЫ ЗА МЕСЯЦ (снятая рутина, накопительно) -->
+      <div class="section-h" style="display:flex; align-items:center; gap:10px; margin-top:26px;">
+        Польза Коры за месяц <span class="faint" style="font-weight:500">· что AI снял с команды в мае</span>
+      </div>
+      <div class="grid" style="grid-template-columns:repeat(5,1fr); gap:16px; margin-top:14px;">
+        <div class="stat">
+          <div class="stat-top"><span class="stat-icon" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l4.5-2.5v9L15 14M3 7h12v10H3z"/></svg></span></div>
+          <div class="stat-label">Встреч запротоколировано</div>
+          <div class="stat-value">28</div>
+          <div class="stat-foot"><span class="delta up">↑ 6</span><span class="stat-sub">к апрелю</span></div>
+        </div>
+        <div class="stat">
+          <div class="stat-top"><span class="stat-icon" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/></svg></span></div>
+          <div class="stat-label">Задач извлечено</div>
+          <div class="stat-value">142</div>
+          <div class="stat-foot"><span class="delta up">↑ 38</span></div>
+        </div>
+        <div class="stat">
+          <div class="stat-top"><span class="stat-icon" style="background:var(--grad-blue)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span></div>
+          <div class="stat-label">Задач решено</div>
+          <div class="stat-value">96</div>
+          <div class="stat-foot"><span class="delta up">↑ 24</span></div>
+        </div>
+        <div class="stat">
+          <div class="stat-top"><span class="stat-icon" style="background:var(--grad-pink)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span></div>
+          <div class="stat-label">Ответов из памяти</div>
+          <div class="stat-value">410</div>
+          <div class="stat-foot"><span class="delta up">↑ 86</span></div>
+        </div>
+        <div class="stat">
+          <div class="stat-top"><span class="stat-icon" style="background:var(--grad-mint)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1h6c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/></svg></span></div>
+          <div class="stat-label">Идей собрано</div>
+          <div class="stat-value">31</div>
+          <div class="stat-foot"><span class="delta up">↑ 9</span></div>
+        </div>
+      </div>
+
+    </div><!-- /page -->
+  </main>
+</div>
+
+<div class="role-switch">
+  <button class="active" data-role="owner">Владелец</button>
+  <button data-role="coo">COO</button>
+</div>
+
+<script>
+  // письмо
+  document.querySelector('[data-letter]').addEventListener('click', (e) => {
+    const btn = e.currentTarget;
+    const letter = document.querySelector('.letter');
+    const open = letter.hasAttribute('hidden');
+    if (open) letter.removeAttribute('hidden'); else letter.setAttribute('hidden', '');
+    btn.setAttribute('aria-expanded', String(open));
+    btn.firstChild.textContent = open ? 'Свернуть письмо месяца ' : 'Читать письмо месяца ';
+    if (!open) btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+  // компас «почему»
+  document.querySelector('[data-why]').addEventListener('click', (e) => {
+    const btn = e.currentTarget; const why = btn.closest('.compass-card').querySelector('.compass-why');
+    const open = why.hasAttribute('hidden');
+    if (open) why.removeAttribute('hidden'); else why.setAttribute('hidden', '');
+    btn.setAttribute('aria-expanded', String(open));
+    btn.firstChild.textContent = open ? 'Свернуть ' : 'Почему так? ';
+  });
+  // ⭐ архив-навигатор по месяцам (фича B)
+  const archToggle = document.querySelector('[data-archive-toggle]');
+  const archPop = document.querySelector('.archive-pop');
+  archToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (archPop.hasAttribute('hidden')) archPop.removeAttribute('hidden'); else archPop.setAttribute('hidden', '');
+  });
+  document.addEventListener('click', () => archPop.setAttribute('hidden', ''));
+  archPop.addEventListener('click', (e) => e.stopPropagation());
+  document.querySelectorAll('.ap-item:not(.empty)').forEach(it => it.addEventListener('click', () => {
+    document.querySelectorAll('.ap-item').forEach(x => x.classList.toggle('active', x === it));
+    const name = it.querySelector('.ap-name').textContent;
+    document.querySelector('.pn-month').textContent = name;
+    const isLatest = it.querySelector('.ap-state').textContent.includes('половина');
+    document.querySelector('.pn-tag').textContent = isLatest ? 'последний завершённый' : 'из архива';
+    document.querySelector('.pn-tag').classList.toggle('latest', isLatest);
+    archPop.setAttribute('hidden', '');
+  }));
+  // разворот строки таблицы план/факт
+  document.querySelectorAll('[data-row]').forEach(row => row.addEventListener('click', () => {
+    const drill = row.nextElementSibling;
+    if (!drill || !drill.classList.contains('pft-drill')) return;
+    const open = drill.hasAttribute('hidden');
+    if (open) drill.removeAttribute('hidden'); else drill.setAttribute('hidden', '');
+    row.classList.toggle('open', open);
+  }));
+  // сортировка (визуальная)
+  document.querySelectorAll('.pft-sort').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.pft-sort').forEach(x => x.classList.toggle('active', x === b));
+  }));
+  // «Показать все»
+  document.querySelectorAll('[data-showall]').forEach(btn => btn.addEventListener('click', () => {
+    const card = btn.closest('.glass');
+    const extra = card.querySelectorAll('.extra');
+    if (!extra.length) return;
+    const open = extra[0].hasAttribute('hidden');
+    extra.forEach(r => { if (open) r.removeAttribute('hidden'); else r.setAttribute('hidden', ''); });
+    btn.setAttribute('aria-expanded', String(open));
+    const total = btn.dataset.total ? ` (${btn.dataset.total})` : '';
+    btn.firstChild.textContent = open ? 'Свернуть список ' : ('Показать все' + total + ' ');
+  }));
+  // связка «зависло ↔ кто держит»
+  let activeEmp = null;
+  function applyEmpFilter(emp) {
+    activeEmp = (activeEmp === emp) ? null : emp;
+    document.querySelectorAll('#moTaskList .task-row, #moTaskListNoOwner .task-row').forEach(r => {
+      r.classList.toggle('filtered-out', !!activeEmp && r.dataset.assignee !== activeEmp);
+    });
+    document.querySelectorAll('.emp-row').forEach(e => e.classList.toggle('active', e.dataset.emp === activeEmp));
+    const chip = document.querySelector('[data-filterchip]');
+    if (activeEmp) { chip.classList.add('on'); chip.firstChild.textContent = 'Фильтр: ' + activeEmp + ' '; }
+    else chip.classList.remove('on');
+  }
+  document.querySelectorAll('.emp-row').forEach(e => e.addEventListener('click', () => applyEmpFilter(e.dataset.emp)));
+  document.querySelector('[data-filterchip]').addEventListener('click', () => applyEmpFilter(activeEmp));
+
+  // премиум-компас: parallax-наклон по мыши
+  const c3d = document.querySelector('[data-compass3d]');
+  if (c3d && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const stage = c3d.querySelector('.c3d-stage');
+    c3d.addEventListener('mousemove', (e) => {
+      const r = c3d.getBoundingClientRect();
+      const px = (e.clientX - r.left) / r.width - 0.5;
+      const py = (e.clientY - r.top) / r.height - 0.5;
+      stage.style.transform = `rotateY(${px * 16}deg) rotateX(${-py * 16}deg)`;
+    });
+    c3d.addEventListener('mouseleave', () => { stage.style.transform = 'rotateY(0deg) rotateX(0deg)'; });
+  }
+  // ритм-переключатель (демо)
+  document.querySelectorAll('.rhythm-seg button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.rhythm-seg button').forEach(x => x.classList.toggle('active', x === b));
+  }));
+  // роль
+  document.querySelectorAll('.role-switch button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.role-switch button').forEach(x => x.classList.toggle('active', x === b));
+  }));
+</script>
+</body>
+</html>

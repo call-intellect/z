@@ -481,13 +481,19 @@ export class WeeklyPerPersonService {
             where: {
               tenantId,
               goalId,
-              weekStart: new Date(`${weekStart}T00:00:00.000Z`),
+              weekStart: {
+                gte: new Date(`${weekStart}T00:00:00.000Z`),
+                lte: new Date(`${weekEndStr}T00:00:00.000Z`),
+              },
               personId: { in: authorPersonIds },
             },
             select: { personId: true, netScore: true },
           });
           for (const c of contributions) {
-            goalNetByPersonId.set(c.personId, Number(c.netScore));
+            goalNetByPersonId.set(
+              c.personId,
+              (goalNetByPersonId.get(c.personId) ?? 0) + Number(c.netScore),
+            );
           }
         }
       } catch (err) {

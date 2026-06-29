@@ -13,11 +13,17 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
+import {
+  AvailablePeriodsQuerySchema,
+  type AvailablePeriodsQuery,
+  type AvailablePeriodsDto,
+} from '../dto/available-periods.dto';
 import {
   WeeklyDigestQuerySchema,
   type WeeklyDigestQuery,
@@ -33,6 +39,7 @@ export class WeeklyDigestController {
     @Inject(WeeklyDigestService)
     private readonly svc: WeeklyDigestService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   @Get()
@@ -82,6 +89,25 @@ export class WeeklyDigestController {
       });
     }
     return dto;
+  }
+
+  @Get('available-periods')
+  @ApiOperation({ summary: 'Список доступных периодов отчёта (для навигатора/архива)' })
+  async availablePeriods(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Query(new ZodValidationPipe(AvailablePeriodsQuerySchema)) q: AvailablePeriodsQuery,
+  ): Promise<AvailablePeriodsDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireReadAccess(uid, tenantId!);
+    const knob = await this.cfg.getDynamic<number>(
+      'operations.report_archive.recent_limit',
+      'REPORT_ARCHIVE_RECENT_LIMIT',
+      12,
+    );
+    const limit = Math.min(Math.max(q.limit ?? knob, 1), 50);
+    return this.svc.listAvailablePeriods({ tenantId: tenantId!, limit });
   }
 
   @Post('generate')

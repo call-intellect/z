@@ -475,11 +475,14 @@ const registry = new Map<string, ZodTypeAny>([
   ['ai.mainReport.primary', z.enum(['minimax', 'deepseek'])],
   ['mail.dryRun', z.boolean()],
   ['operations.daily_digest.deliver_to_webpush', z.boolean()],
+  ['operations.report_archive.recent_limit', z.number().int().min(1).max(50)],
 
   ['betaOps.morningLocalHour', z.number().int().min(0).max(23)],
   ['betaOps.eveningLocalHour', z.number().int().min(0).max(23)],
   ['betaOps.weeklyDigestLocalHour', z.number().int().min(0).max(23)],
   ['betaOps.weeklyDigestLocalDay', z.number().int().min(0).max(6)],
+  ['betaOps.monthlyDigestEnabled', z.boolean()],
+  ['betaOps.monthlyDigestLocalHour', z.number().int().min(0).max(23)],
   ['betaOps.dailyDigestHourUtc', z.number().int().min(0).max(23)],
   ['betaOps.commitmentFollowupLocalHour', z.number().int().min(0).max(23)],
 

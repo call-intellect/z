@@ -1568,6 +1568,16 @@ export class TypedConfigService {
         'COO_WEEKLY_DIGEST_LOCAL_DAY',
         1,
       ),
+      monthlyDigestEnabled: this.resolveSync<boolean>(
+        'betaOps.monthlyDigestEnabled',
+        'COO_MONTHLY_DIGEST_ENABLED',
+        true,
+      ),
+      monthlyDigestLocalHour: this.resolveSync<number>(
+        'betaOps.monthlyDigestLocalHour',
+        'COO_MONTHLY_DIGEST_LOCAL_HOUR',
+        6,
+      ),
       dailyDigestEnabled: this.get('COO_DAILY_DIGEST_ENABLED') !== false,
       dailyDigestHourUtc: this.resolveSync<number>(
         'betaOps.dailyDigestHourUtc',

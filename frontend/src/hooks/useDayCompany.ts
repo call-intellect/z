@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import useSWR from "swr";
 
 import { operationsDailyDigestApi } from "@/api/operations-daily-digest.api";
+import type { AvailablePeriodApi } from "@/api/available-periods.api";
 import {
   executionDashboardApi,
   type StuckIssueRowApi,
@@ -13,18 +14,25 @@ import {
   type DailyDigestDomain,
 } from "@/domain/operations-daily-digest";
 
-export function useDayCompanyDigest(orgId: string | null): {
+export function useDayCompanyDigest(
+  orgId: string | null,
+  period: string | null,
+): {
   digest: DailyDigestDomain | null;
   isLoading: boolean;
   error: unknown;
   mutate: () => Promise<unknown>;
 } {
-  const key = orgId ? ["day-company.digest", orgId] : null;
+  const key = orgId
+    ? ["day-company.digest", orgId, period ?? "__latest__"]
+    : null;
 
   const swr = useSWR(
     key,
     async () => {
-      const dto = await operationsDailyDigestApi.getLatest();
+      const dto = period
+        ? await operationsDailyDigestApi.getByDate(period)
+        : await operationsDailyDigestApi.getLatest();
       return dto ? fromDailyDigestApi(dto) : null;
     },
     { revalidateOnFocus: false },
@@ -35,6 +43,34 @@ export function useDayCompanyDigest(orgId: string | null): {
     isLoading: swr.isLoading,
     error: swr.error,
     mutate: () => swr.mutate(),
+  };
+}
+
+export function useDayAvailablePeriods(orgId: string | null): {
+  periods: AvailablePeriodApi[];
+  latest: string | null;
+  isLoading: boolean;
+  error: unknown;
+} {
+  const key = orgId ? ["day-company.available", orgId] : null;
+
+  const swr = useSWR(
+    key,
+    async () => {
+      try {
+        return await operationsDailyDigestApi.availablePeriods();
+      } catch {
+        return { rhythm: "day" as const, periods: [], latest: null };
+      }
+    },
+    { revalidateOnFocus: false },
+  );
+
+  return {
+    periods: swr.data?.periods ?? [],
+    latest: swr.data?.latest ?? null,
+    isLoading: swr.isLoading,
+    error: swr.error,
   };
 }
 

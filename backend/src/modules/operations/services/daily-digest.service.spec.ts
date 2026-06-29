@@ -333,4 +333,27 @@ describe('DailyDigestService', () => {
     });
     expect(line).toBeNull();
   });
+
+  it('listAvailablePeriods: DESC-порядок, stateHint/title из verdictJson, legacy→null, latest=первый', async () => {
+    const { svc, prisma } = buildSvc({});
+    prisma.dailyOperationsDigest.findMany.mockResolvedValueOnce([
+      { dateLocal: '2026-06-28', verdictJson: { overall: { state: 'warn', title: 'Сдвиг вправо' } } },
+      { dateLocal: '2026-06-27', verdictJson: { overall: { state: 'ok', title: 'Спокойно' } } },
+      { dateLocal: '2026-06-26', verdictJson: null },
+    ]);
+    const result = await svc.listAvailablePeriods({ tenantId: 't1', limit: 12 });
+    expect(result.rhythm).toBe('day');
+    expect(result.periods.map((p) => p.period)).toEqual([
+      '2026-06-28',
+      '2026-06-27',
+      '2026-06-26',
+    ]);
+    expect(result.periods[0]).toEqual({
+      period: '2026-06-28',
+      stateHint: 'warn',
+      title: 'Сдвиг вправо',
+    });
+    expect(result.periods[2]).toEqual({ period: '2026-06-26', stateHint: null, title: null });
+    expect(result.latest).toBe('2026-06-28');
+  });
 });

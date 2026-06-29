@@ -68,6 +68,11 @@ const STEPS: Step[] = [
     script: 'scripts/seed-llm-task-routes-default.ts',
     hint: 'дефолтные цепочки',
   },
+  {
+    phase: 'seed-llm-core',
+    script: 'scripts/seed-llm-task-routes-month-company.ts',
+    hint: 'маршрут operations-monthly-digest (Месяц компании Ф6)',
+  },
 
   { phase: 'seed-base', script: 'scripts/seed-entitlements.ts' },
   { phase: 'seed-base', script: 'scripts/seed-retention-policies.ts' },
@@ -81,6 +86,16 @@ const STEPS: Step[] = [
     hint: '6 ключей billing.* для tier_standard',
   },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-daily-digest.ts' },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-report-archive.ts',
+    hint: 'operations.report_archive.recent_limit (навигатор/архив отчётов день/неделя/месяц)',
+  },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-month-company.ts',
+    hint: 'betaOps.monthlyDigest{Enabled,LocalHour} (Месяц компании Ф6)',
+  },
   {
     phase: 'seed-base',
     script: 'scripts/seed-admin-setting-dashboard-main.ts',

@@ -7,6 +7,10 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { tryParseJson } from '../../ai/services/json-extract.util';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { PendingActionsService } from '../../pending-actions/services/pending-actions.service';
+import {
+  mapAvailablePeriod,
+  type AvailablePeriodsDto,
+} from '../dto/available-periods.dto';
 import type {
   DailyDigestMetricsDto,
   DailyDigestSourcesDto,
@@ -221,6 +225,20 @@ export class DailyDigestService {
     const existing = await this.getStored(args);
     if (existing) return existing;
     return this.generate(args);
+  }
+
+  async listAvailablePeriods(args: {
+    tenantId: string;
+    limit: number;
+  }): Promise<AvailablePeriodsDto> {
+    const rows = await this.prisma.dailyOperationsDigest.findMany({
+      where: { tenantId: args.tenantId },
+      orderBy: { dateLocal: 'desc' },
+      take: args.limit,
+      select: { dateLocal: true, verdictJson: true },
+    });
+    const periods = rows.map((r) => mapAvailablePeriod(r.dateLocal, r.verdictJson));
+    return { rhythm: 'day', periods, latest: periods[0]?.period ?? null };
   }
 
   async generate(args: { tenantId: string; dateLocal: string }): Promise<DailyOperationsDigestDto> {

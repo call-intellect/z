@@ -4,7 +4,6 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   CheckCircle2,
-  ChevronLeft,
   ChevronRight,
   Clock3,
   Download,
@@ -19,12 +18,12 @@ import useSWR from "swr";
 import { ApiError, humanizeApiError } from "@/api/api-error";
 import { valueRecapApi, type ValueRecapTeamApi } from "@/api/value-recap.api";
 import { useAuth } from "@/contexts/auth-context";
+import { currentPeriod } from "@/domain/period";
 import {
   chatHelpedText,
   decisionsThroughputText,
   formatPeriodYm,
   reliabilityText,
-  shiftPeriodYm,
   valueRecapFromApi,
   type ValueRecapDecision,
   type ValueRecapDomain,
@@ -38,6 +37,7 @@ import {
   MODERN_PAGE_BG,
   STATUS_TONE,
 } from "@/ui/components/dashboard/modern";
+import { PeriodNavigator } from "@/ui/components/dashboard/shared/PeriodNavigator";
 
 export function ValueRecapDashboardClient({
   embedded = false,
@@ -132,17 +132,11 @@ export function ValueRecapDashboardClient({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 print:hidden">
-            <PeriodSelector
-              periodLabel={periodLabel}
-              onPrev={() =>
-                setSelectedPeriod((p) =>
-                  shiftPeriodYm(p ?? effectivePeriod, -1),
-                )
-              }
-              onNext={() =>
-                setSelectedPeriod((p) => shiftPeriodYm(p ?? effectivePeriod, 1))
-              }
-              disabled={!effectivePeriod}
+            <PeriodNavigator
+              rhythm="month"
+              value={effectivePeriod || currentPeriod("month")}
+              latest={currentPeriod("month")}
+              onChange={(p) => setSelectedPeriod(p)}
             />
             {domain?.hasPayload && (
               <>
@@ -589,51 +583,3 @@ function EmptyMonthFootnote({
   );
 }
 
-function PeriodSelector({
-  periodLabel,
-  onPrev,
-  onNext,
-  disabled,
-}: {
-  periodLabel: string;
-  onPrev: () => void;
-  onNext: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div
-      className="inline-flex items-center gap-1 rounded-xl p-1"
-      style={{
-        background: "var(--surface-inset)",
-        border: "1px solid var(--border-inset)",
-      }}
-    >
-      <button
-        type="button"
-        onClick={onPrev}
-        disabled={disabled}
-        aria-label="Предыдущий месяц"
-        className="grid h-7 w-7 place-items-center rounded-lg disabled:opacity-40"
-        style={{ color: CHART.dim }}
-      >
-        <ChevronLeft size={16} />
-      </button>
-      <span
-        className="min-w-[120px] text-center text-xs font-medium"
-        style={{ color: CHART.text }}
-      >
-        {periodLabel}
-      </span>
-      <button
-        type="button"
-        onClick={onNext}
-        disabled={disabled}
-        aria-label="Следующий месяц"
-        className="grid h-7 w-7 place-items-center rounded-lg disabled:opacity-40"
-        style={{ color: CHART.dim }}
-      >
-        <ChevronRight size={16} />
-      </button>
-    </div>
-  );
-}

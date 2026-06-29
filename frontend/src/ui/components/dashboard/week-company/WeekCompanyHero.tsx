@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Loader2, RotateCw } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import { dashboardApi } from "@/api/dashboard.api";
 import { ideasApi } from "@/api/ideas.api";
@@ -12,12 +12,22 @@ import {
   directorDashboardFromApi,
   type DirectorDashboardValueStripDomain,
 } from "@/domain/director-dashboard";
-import { useWeekCompanyDigest } from "@/hooks/useWeekCompany";
+import {
+  useWeekAvailablePeriods,
+  useWeekCompanyDigest,
+} from "@/hooks/useWeekCompany";
 import { useStaleTasksCrossProject } from "@/hooks/useDayCompany";
 import { useSwrWithToast } from "@/hooks/useSwrWithToast";
+import {
+  comparePeriods,
+  currentPeriod,
+  formatPeriodLabel,
+  nearestAvailablePeriod,
+} from "@/domain/period";
 import { toast } from "@/ui/shadcn/toast";
-import { Button } from "@/ui/shadcn/button";
 import { CHART } from "@/ui/components/dashboard/modern";
+import { PeriodNavigator } from "@/ui/components/dashboard/shared/PeriodNavigator";
+import { PeriodEmptyState } from "@/ui/components/dashboard/shared/PeriodEmptyState";
 import { RisksIdeas } from "@/ui/components/dashboard/day-company/RisksIdeas";
 import { PeriodValue } from "@/ui/components/dashboard/day-company/PeriodValue";
 import { StaleTasksLinked } from "@/ui/components/dashboard/day-company/StaleTasksLinked";
@@ -61,13 +71,17 @@ function HeroSkeleton() {
 export function WeekCompanyHero() {
   const { currentOrgId } = useAuth();
   const [regenerating, setRegenerating] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const { periods, latest } = useWeekAvailablePeriods(currentOrgId);
+  const effective = selected ?? latest;
 
   const {
     digest,
     isLoading: digestLoading,
     error: digestError,
     mutate: mutateDigest,
-  } = useWeekCompanyDigest(currentOrgId);
+  } = useWeekCompanyDigest(currentOrgId, effective);
 
   const { items: staleItems } = useStaleTasksCrossProject(currentOrgId);
 
@@ -96,7 +110,7 @@ export function WeekCompanyHero() {
     if (regenerating) return;
     setRegenerating(true);
     try {
-      const weekStart = digest?.weekStart ?? currentWeekStart();
+      const weekStart = digest?.weekStart ?? effective ?? currentWeekStart();
       await weeklyDigestApi.generate(weekStart);
       await mutateDigest();
       toast.success("Отчёт пересобран");
@@ -105,7 +119,7 @@ export function WeekCompanyHero() {
     } finally {
       setRegenerating(false);
     }
-  }, [regenerating, digest?.weekStart, mutateDigest]);
+  }, [regenerating, digest?.weekStart, effective, mutateDigest]);
 
   if (!currentOrgId) return null;
 
@@ -141,38 +155,46 @@ export function WeekCompanyHero() {
   }
 
   if (!digest) {
+    const hasOtherPeriods = periods.length > 0;
+    const nearest = nearestAvailablePeriod(
+      effective ?? currentPeriod("week"),
+      periods.map((p) => p.period),
+    );
     return (
-      <div className="mb-8">
-        <div
-          className="flex flex-col items-start gap-3 p-7"
-          style={{
-            background: "var(--glass-surface)",
-            border: "1px solid var(--glass-border)",
-            borderRadius: 24,
-          }}
-        >
-          <h2 className="text-lg font-semibold" style={{ color: CHART.text }}>
-            Недельная сводка ещё не собрана
-          </h2>
-          <p className="text-sm" style={{ color: CHART.dim }}>
-            Кора сводит «Неделю компании» из ежедневных отчётов, встреч и
-            решений. Можно запустить сборку вручную.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={regenerate}
-            disabled={regenerating}
-            className="gap-1.5"
-          >
-            <RotateCw
-              size={14}
-              aria-hidden
-              className={regenerating ? "animate-spin" : undefined}
-            />
-            Пересобрать
-          </Button>
+      <div className="mb-8 flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <PeriodNavigator
+            rhythm="week"
+            value={effective ?? currentPeriod("week")}
+            latest={latest ?? currentPeriod("week")}
+            available={periods}
+            onChange={(p) => setSelected(p)}
+          />
+          {selected && latest && comparePeriods(selected, latest) !== 0 ? (
+            <button
+              type="button"
+              onClick={() => setSelected(null)}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+              style={{ background: "var(--surface-inset)", color: CHART.dim }}
+            >
+              К последнему
+            </button>
+          ) : null}
         </div>
+        <PeriodEmptyState
+          surface="week"
+          hasOtherPeriods={hasOtherPeriods}
+          periodLabel={formatPeriodLabel(
+            "week",
+            effective ?? currentPeriod("week"),
+          )}
+          onJumpNearest={() => {
+            if (nearest) setSelected(nearest);
+          }}
+          onToLatest={() => setSelected(null)}
+          onRegenerate={regenerate}
+          isRegenerating={regenerating}
+        />
       </div>
     );
   }
@@ -186,6 +208,26 @@ export function WeekCompanyHero() {
 
   return (
     <div className="mb-8 flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <PeriodNavigator
+          rhythm="week"
+          value={effective ?? currentPeriod("week")}
+          latest={latest ?? currentPeriod("week")}
+          available={periods}
+          onChange={(p) => setSelected(p)}
+        />
+        {selected && latest && comparePeriods(selected, latest) !== 0 ? (
+          <button
+            type="button"
+            onClick={() => setSelected(null)}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+            style={{ background: "var(--surface-inset)", color: CHART.dim }}
+          >
+            К последнему
+          </button>
+        ) : null}
+      </div>
+
       <WeekVerdictCover
         emoji={verdict?.overall.emoji ?? null}
         title={coverTitle}

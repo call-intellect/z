@@ -353,6 +353,8 @@ export type LlmTaskType =
   //   агрегата за вчерашние сутки. Один вызов в день на Org. Та же цепочка
   //   провайдеров, что и у operations-weekly-digest.
   | 'operations-daily-digest'
+  // «Месяц компании» — свод 4 недельных дайджестов в месячный executive-брифинг.
+  | 'operations-monthly-digest'
   // TZ-1 Фаза 1 (daily-value-engine) — Радар клиентов под риском.
   // 'customer-risk-digest' — ТОЛЬКО финальная человекочитаемая формулировка
   //   подсказки по клиенту под риском (агрегация — чистый SQL/TS, без LLM).
@@ -836,6 +838,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'operations-weekly-digest',
   // SBA β-8.3 — ежедневный отчёт COO
   'operations-daily-digest',
+  // «Месяц компании» — свод 4 недель в месячный брифинг
+  'operations-monthly-digest',
   // TZ-1 Фаза 1 (daily-value-engine) — Радар клиентов под риском
   'customer-risk-digest',
   // TZ-1 Фаза 2 (daily-value-engine) — движок рядового «Твой день»

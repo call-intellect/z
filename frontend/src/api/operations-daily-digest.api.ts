@@ -1,6 +1,7 @@
 import { apiClient } from "./api-client";
 
 import { ApiError } from "./api-error";
+import type { AvailablePeriodsApi } from "./available-periods.api";
 
 export interface DailyDigestMetricsApi {
   totalCheckIns: number;
@@ -194,5 +195,10 @@ export const operationsDailyDigestApi = {
     apiClient.post<DailyDigestApi>(
       `/api/v1/dashboard/operations/daily-digest/generate?date=${date}`,
       undefined,
+    ),
+
+  availablePeriods: (limit?: number) =>
+    apiClient.get<AvailablePeriodsApi>(
+      `/api/v1/dashboard/operations/daily-digest/available-periods${limit ? `?limit=${limit}` : ""}`,
     ),
 };

@@ -163,6 +163,8 @@ export class DailyCheckInService {
     items: Array<{ text: string; priority?: number }>;
     dones: Array<{ text: string }>;
     blockers: Array<{ text: string; severity?: 'low' | 'medium' | 'high' }>;
+    ideas?: Array<{ text: string; sourceBlockId?: string }>;
+    notDone?: Array<{ text: string; sourcePlanText?: string; verdictConfidence?: number }>;
     rawResponseText: string;
     parseConfidence: number;
     source: 'meeting' | 'bitrix' | 'chatbox' | 'email' | 'phone_call' | 'self_initiated';
@@ -188,6 +190,16 @@ export class DailyCheckInService {
     const existingBlockers = Array.isArray(existing?.blockersJson)
       ? (existing!.blockersJson as Array<{ text: string; severity?: 'low' | 'medium' | 'high' }>)
       : [];
+    const existingIdeas = Array.isArray(existing?.ideasJson)
+      ? (existing!.ideasJson as Array<{ text: string; sourceBlockId?: string }>)
+      : [];
+    const existingNotDone = Array.isArray(existing?.notDoneJson)
+      ? (existing!.notDoneJson as Array<{
+          text: string;
+          sourcePlanText?: string;
+          verdictConfidence?: number;
+        }>)
+      : [];
 
     const plans =
       args.kind === 'morning' ? mergeByText(existingPlans, args.items) : existingPlans;
@@ -195,6 +207,9 @@ export class DailyCheckInService {
       args.kind === 'evening' ? mergeByText(existingDones, args.dones) : existingDones;
     const blockers =
       args.kind === 'evening' ? mergeByText(existingBlockers, args.blockers) : existingBlockers;
+    const ideas = args.kind === 'evening' ? mergeByText(existingIdeas, args.ideas ?? []) : existingIdeas;
+    const notDone =
+      args.kind === 'evening' && args.notDone !== undefined ? args.notDone : existingNotDone;
 
     const existingRank = existing ? sourceRank(existing.source) : -1;
     const newRank = sourceRank(args.source);
@@ -231,6 +246,8 @@ export class DailyCheckInService {
       completed: true,
       source: winnerSource,
       sourceContributions: contributions as Prisma.InputJsonValue,
+      notDone,
+      ideas,
     });
 
     try {
@@ -373,6 +390,9 @@ export class DailyCheckInService {
     onlyIfMissing?: boolean;
     source: DailyCheckInSource;
     sourceContributions?: Prisma.InputJsonValue | null;
+    notDone?: Array<{ text: string; sourcePlanText?: string; verdictConfidence?: number }>;
+    ideas?: Array<{ text: string; sourceBlockId?: string }>;
+    reportCompleteness?: 'draft' | 'full' | null;
   }): Promise<DailyCheckInDto> {
     if (args.kind !== 'morning' && args.kind !== 'evening') {
       throw new BadRequestException({
@@ -390,6 +410,16 @@ export class DailyCheckInService {
               | typeof Prisma.JsonNull,
           }
         : {};
+    const notDonePatch =
+      args.notDone !== undefined
+        ? { notDoneJson: (args.notDone ?? Prisma.JsonNull) as Prisma.InputJsonValue | typeof Prisma.JsonNull }
+        : {};
+    const ideasPatch =
+      args.ideas !== undefined
+        ? { ideasJson: (args.ideas ?? Prisma.JsonNull) as Prisma.InputJsonValue | typeof Prisma.JsonNull }
+        : {};
+    const reportCompletenessPatch =
+      args.reportCompleteness !== undefined ? { reportCompleteness: args.reportCompleteness } : {};
     const upsertData = {
       plansJson: (args.plans ?? Prisma.JsonNull) as Prisma.InputJsonValue | typeof Prisma.JsonNull,
       donesJson: (args.dones ?? Prisma.JsonNull) as Prisma.InputJsonValue | typeof Prisma.JsonNull,
@@ -436,8 +466,17 @@ export class DailyCheckInService {
         dateLocal: args.dateLocal,
         ...upsertData,
         ...sourceContributionsPatch,
+        ...notDonePatch,
+        ...ideasPatch,
+        ...reportCompletenessPatch,
       },
-      update: { ...upsertData, ...sourceContributionsPatch },
+      update: {
+        ...upsertData,
+        ...sourceContributionsPatch,
+        ...notDonePatch,
+        ...ideasPatch,
+        ...reportCompletenessPatch,
+      },
     });
 
     if (args.completed) {

@@ -4,8 +4,40 @@ import type { SignalType } from '@prisma/client';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { getLocalDate } from '../utils/local-date';
+import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
 import { ClosureVerifierService } from './closure-verifier.service';
+import { DailyCheckInService } from './daily-checkin.service';
+
+export type DayReportSource =
+  | 'meeting'
+  | 'bitrix'
+  | 'chatbox'
+  | 'email'
+  | 'phone_call'
+  | 'self_initiated';
+
+const SOURCE_TYPE_TO_CHECKIN_SOURCE: Record<string, DayReportSource> = {
+  meeting: 'meeting',
+  meeting_report: 'meeting',
+  chatbox: 'chatbox',
+  chat: 'chatbox',
+  bitrix: 'bitrix',
+  email: 'email',
+  phone_call: 'phone_call',
+  conversational: 'self_initiated',
+  daily_checkin: 'self_initiated',
+  bot: 'self_initiated',
+};
+
+const DAY_REPORT_SOURCE_RANK: Record<DayReportSource, number> = {
+  self_initiated: 4,
+  meeting: 3,
+  bitrix: 2,
+  chatbox: 2,
+  email: 1,
+  phone_call: 1,
+};
 
 export const DAY_REPORT_SIGNAL_BUCKETS = {
   plans: ['plan_item', 'action_item'],
@@ -39,11 +71,28 @@ export interface DayReportRaw {
   dones: DayReportItem[];
   blockers: DayReportItem[];
   ideas: DayReportItem[];
+  source: DayReportSource;
 }
 
 interface PersonAccumulator {
   buckets: Record<DayReportBucket, DayReportItem[]>;
   seen: Record<DayReportBucket, Set<string>>;
+  sourceCounts: Map<DayReportSource, number>;
+}
+
+function pickDominantSource(counts: Map<DayReportSource, number>): DayReportSource {
+  let winner: DayReportSource = 'self_initiated';
+  let winnerCount = 0;
+  for (const [source, count] of counts) {
+    if (
+      count > winnerCount ||
+      (count === winnerCount && DAY_REPORT_SOURCE_RANK[source] > DAY_REPORT_SOURCE_RANK[winner])
+    ) {
+      winner = source;
+      winnerCount = count;
+    }
+  }
+  return winner;
 }
 
 @Injectable()
@@ -56,6 +105,8 @@ export class DayReportCollectorService {
     private readonly metrics: BusinessMetricsService,
     @Inject(ClosureVerifierService)
     private readonly closureVerifier: ClosureVerifierService,
+    @Inject(DailyCheckInService)
+    private readonly checkins: DailyCheckInService,
   ) {}
 
   async collectForDay(args: {
@@ -120,6 +171,7 @@ export class DayReportCollectorService {
           acc = {
             buckets: { plans: [], dones: [], blockers: [], ideas: [] },
             seen: { plans: new Set(), dones: new Set(), blockers: new Set(), ideas: new Set() },
+            sourceCounts: new Map<DayReportSource, number>(),
           };
           accumulators.set(ev.authorPersonId, acc);
         }
@@ -127,6 +179,8 @@ export class DayReportCollectorService {
         if (acc.seen[bucket].has(normalized)) continue;
         acc.seen[bucket].add(normalized);
         acc.buckets[bucket].push({ text, blockId: block.id });
+        const mapSource = SOURCE_TYPE_TO_CHECKIN_SOURCE[ev.sourceType] ?? 'self_initiated';
+        acc.sourceCounts.set(mapSource, (acc.sourceCounts.get(mapSource) ?? 0) + 1);
         collectedBlocks += 1;
       }
     }
@@ -140,6 +194,7 @@ export class DayReportCollectorService {
         dones: acc.buckets.dones,
         blockers: acc.buckets.blockers,
         ideas: acc.buckets.ideas,
+        source: pickDominantSource(acc.sourceCounts),
       });
     }
 
@@ -195,5 +250,69 @@ export class DayReportCollectorService {
     }
 
     return notDone;
+  }
+
+  async assembleAndUpsert(args: {
+    tenantId: string;
+    dateLocal: string;
+    personIds?: string[];
+  }): Promise<{ persons: number; morningUpserts: number; eveningUpserts: number }> {
+    const { tenantId } = args;
+    const raws = await this.collectForDay(args);
+    let morningUpserts = 0;
+    let eveningUpserts = 0;
+
+    for (const raw of raws) {
+      if (raw.plans.length > 0) {
+        await this.checkins.upsertFromDaySignal({
+          tenantId,
+          personId: raw.personId,
+          kind: 'morning',
+          dateLocal: raw.dateLocal,
+          items: raw.plans.map((p) => ({ text: p.text })),
+          dones: [],
+          blockers: [],
+          ideas: [],
+          rawResponseText: raw.plans
+            .map((p) => p.text)
+            .join('\n')
+            .slice(0, 4000),
+          parseConfidence: 1,
+          source: raw.source,
+        });
+        morningUpserts += 1;
+      }
+
+      const notDone = await this.computeNotDone({ tenantId, raw });
+
+      if (raw.dones.length || raw.blockers.length || raw.ideas.length || notDone.length) {
+        await this.checkins.upsertFromDaySignal({
+          tenantId,
+          personId: raw.personId,
+          kind: 'evening',
+          dateLocal: raw.dateLocal,
+          items: [],
+          dones: raw.dones.map((d) => ({ text: d.text })),
+          blockers: raw.blockers.map((b) => ({ text: b.text })),
+          ideas: raw.ideas.map((i) => ({ text: i.text, sourceBlockId: i.blockId })),
+          notDone,
+          rawResponseText: [...raw.dones, ...raw.blockers]
+            .map((x) => x.text)
+            .join('\n')
+            .slice(0, 4000),
+          parseConfidence: 1,
+          source: raw.source,
+        });
+        eveningUpserts += 1;
+      }
+
+      this.metrics.incDayReportCollected({ tenantTop: resolveOperationsTenantTop(tenantId) });
+    }
+
+    this.logger.debug(
+      `Сборщик дневных отчётов: сборка+upsert tenantId=${tenantId} день=${args.dateLocal}: людей=${raws.length}, morning=${morningUpserts}, evening=${eveningUpserts}`,
+    );
+
+    return { persons: raws.length, morningUpserts, eveningUpserts };
   }
 }

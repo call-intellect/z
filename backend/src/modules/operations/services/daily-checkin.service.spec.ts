@@ -237,4 +237,85 @@ describe('DailyCheckInService.upsertFromDaySignal', () => {
       expect.objectContaining({ kind: 'evening', personId: 'p1' }),
     );
   });
+
+  it('evening: notDone/ideas прокидываются в upsert (create+update содержат notDoneJson/ideasJson)', async () => {
+    const { service, findUnique, upsert } = ctx;
+    findUnique.mockResolvedValueOnce(null);
+
+    await service.upsertFromDaySignal({
+      tenantId: 't1',
+      personId: 'p1',
+      kind: 'evening',
+      dateLocal: '2026-06-21',
+      items: [],
+      dones: [{ text: 'D' }],
+      blockers: [],
+      ideas: [{ text: 'Идея 1', sourceBlockId: 'blk-1' }],
+      notDone: [{ text: 'не дожал', sourcePlanText: 'не дожал', verdictConfidence: 0.7 }],
+      rawResponseText: 'raw',
+      parseConfidence: 0.9,
+      source: 'chatbox',
+      now: NOW,
+    });
+
+    const call = upsert.mock.calls[0]![0];
+    expect(call.create).toEqual(
+      expect.objectContaining({
+        notDoneJson: [{ text: 'не дожал', sourcePlanText: 'не дожал', verdictConfidence: 0.7 }],
+        ideasJson: [{ text: 'Идея 1', sourceBlockId: 'blk-1' }],
+      }),
+    );
+    expect(call.update).toEqual(
+      expect.objectContaining({
+        notDoneJson: [{ text: 'не дожал', sourcePlanText: 'не дожал', verdictConfidence: 0.7 }],
+        ideasJson: [{ text: 'Идея 1', sourceBlockId: 'blk-1' }],
+      }),
+    );
+  });
+
+  it('morning не затирает существующий notDone/ideas (сохраняет старые значения)', async () => {
+    const { service, findUnique, upsert } = ctx;
+    findUnique.mockResolvedValueOnce({
+      id: 'ci-1',
+      tenantId: 't1',
+      personId: 'p1',
+      kind: 'morning',
+      dateLocal: '2026-06-21',
+      plansJson: [{ text: 'A' }],
+      donesJson: null,
+      blockersJson: null,
+      ideasJson: [{ text: 'старая идея' }],
+      notDoneJson: [{ text: 'старый недодел' }],
+      notificationId: null,
+      rawResponseText: 'raw',
+      parseConfidence: 0.9,
+      curatorReview: false,
+      completedAt: NOW,
+      source: 'bitrix',
+      sourceContributions: [{ source: 'bitrix', at: NOW.toISOString(), rank: 2 }],
+      sentiment: null,
+    });
+
+    await service.upsertFromDaySignal({
+      tenantId: 't1',
+      personId: 'p1',
+      kind: 'morning',
+      dateLocal: '2026-06-21',
+      items: [{ text: 'A' }, { text: 'B' }],
+      dones: [],
+      blockers: [],
+      rawResponseText: 'raw-2',
+      parseConfidence: 0.9,
+      source: 'bitrix',
+      now: NOW,
+    });
+
+    const call = upsert.mock.calls[0]![0];
+    expect(call.update).toEqual(
+      expect.objectContaining({
+        notDoneJson: [{ text: 'старый недодел' }],
+        ideasJson: [{ text: 'старая идея' }],
+      }),
+    );
+  });
 });

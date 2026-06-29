@@ -13,7 +13,11 @@ function makeBlock(args: {
   signalType: string;
   name: string;
   trustedAnswer: string;
-  evidence: Array<{ authorPersonId: string | null; sourceTimestamp: Date | null }>;
+  evidence: Array<{
+    authorPersonId: string | null;
+    sourceTimestamp: Date | null;
+    sourceType?: string;
+  }>;
 }) {
   return {
     id: args.id,
@@ -28,6 +32,7 @@ function makeBlock(args: {
       blockId: args.id,
       authorPersonId: e.authorPersonId,
       sourceTimestamp: e.sourceTimestamp,
+      sourceType: e.sourceType,
       createdAt: e.sourceTimestamp ?? DATE_X,
       quote: 'q',
     })),
@@ -51,12 +56,16 @@ function makeService(opts: {
   const closureVerifier = {
     verify: opts.verify ?? vi.fn().mockResolvedValue(null),
   };
+  const checkins = {
+    upsertFromDaySignal: vi.fn().mockResolvedValue({}),
+  };
   const svc = new DayReportCollectorService(
     prisma as never,
     metrics as never,
     closureVerifier as never,
+    checkins as never,
   );
-  return { svc, prisma, metrics, closureVerifier };
+  return { svc, prisma, metrics, closureVerifier, checkins };
 }
 
 function makeRaw(args: {
@@ -71,6 +80,7 @@ function makeRaw(args: {
     dones: args.dones ?? [],
     blockers: args.blockers ?? [],
     ideas: [],
+    source: 'self_initiated' as const,
   };
 }
 
@@ -293,6 +303,62 @@ describe('DayReportCollectorService', () => {
 
       expect(notDone).toEqual([]);
       expect(closureVerifier.verify).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('assembleAndUpsert', () => {
+    it('собирает план+сделанное одного человека → 1 morning + 1 evening upsert, source=bitrix (dominant), notDone непуст', async () => {
+      const verify = vi.fn().mockResolvedValue({
+        done: false,
+        confidence: 0.7,
+        rationale: 'Не завершено.',
+        positiveSignals: [],
+        negativeSignals: ['не закрыто'],
+      });
+      const { svc, checkins } = makeService({
+        blocks: [
+          makeBlock({
+            id: 'block1',
+            signalType: 'plan_item',
+            name: 'План A',
+            trustedAnswer: 'Сделать план A',
+            evidence: [
+              { authorPersonId: 'A', sourceTimestamp: DATE_X, sourceType: 'bitrix' },
+            ],
+          }),
+          makeBlock({
+            id: 'block2',
+            signalType: 'done_item',
+            name: 'Готово A',
+            trustedAnswer: 'Завершил другое A',
+            evidence: [
+              { authorPersonId: 'A', sourceTimestamp: DATE_X, sourceType: 'bitrix' },
+            ],
+          }),
+        ],
+        persons: [{ id: 'A', timezone: 'Europe/Moscow' }],
+        verify,
+      });
+
+      const res = await svc.assembleAndUpsert({ tenantId: TENANT, dateLocal: DATE_X_LOCAL });
+
+      expect(res).toEqual({ persons: 1, morningUpserts: 1, eveningUpserts: 1 });
+
+      expect(checkins.upsertFromDaySignal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'morning',
+          source: 'bitrix',
+          items: [expect.objectContaining({ text: 'Сделать план A' })],
+        }),
+      );
+      expect(checkins.upsertFromDaySignal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'evening',
+          source: 'bitrix',
+          dones: [expect.objectContaining({ text: 'Завершил другое A' })],
+          notDone: [expect.objectContaining({ text: 'Сделать план A' })],
+        }),
+      );
     });
   });
 });

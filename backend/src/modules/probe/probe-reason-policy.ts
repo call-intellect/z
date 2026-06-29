@@ -21,6 +21,7 @@ export const PROBE_REASON_WINDOW: Record<string, ProbeWindow> = {
   'task.poorly_specified': 'immediate',
   'task.false_positive': 'immediate',
   'task.completion_detail_missing': 'immediate',
+  'task.method_capture': 'immediate',
 };
 
 export function probeWindow(reason: string): ProbeWindow {

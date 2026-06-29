@@ -753,19 +753,12 @@ describe('MeTasksService.resolveOpenTaskByName', () => {
 });
 
 describe('MeTasksService.completeTask', () => {
-  it('(а) пустой note + gate ON → probe completion_detail_missing, кандидат НЕ создан, needsDetail', async () => {
+  it('(а) пустой note + gate ON → inline needs_detail, probe НЕ шлётся, кандидат НЕ создан', async () => {
     const h = buildResolveHarness();
     h.issueFindMany.mockResolvedValueOnce([{ id: 'i1', title: 'Сделать макет' }]);
     const res = await h.service.completeTask({ taskName: 'сделать макет' }, TENANT, USER);
 
-    expect(h.probeSuggest).toHaveBeenCalledWith(
-      expect.objectContaining({
-        reason: 'task.completion_detail_missing',
-        emittedByService: 'me-tasks-complete',
-        recipientCandidates: [USER],
-        payload: expect.objectContaining({ contextCardId: 'i1', contextCardKind: 'issue' }),
-      }),
-    );
+    expect(h.probeSuggest).not.toHaveBeenCalled();
     expect(h.closureUpsert).not.toHaveBeenCalled();
     expect(res).toEqual({
       candidateId: null,
@@ -819,7 +812,7 @@ describe('MeTasksService.completeTask', () => {
     });
   });
 
-  it('(б2) конкретный note + LLM verdict.done=false → недостаточно, probe + needsDetail', async () => {
+  it('(б2) конкретный note + LLM verdict.done=false → недостаточно, inline needsDetail без probe', async () => {
     const h = buildResolveHarness({
       llmCall: vi.fn(async () => ({
         text: JSON.stringify({
@@ -837,9 +830,7 @@ describe('MeTasksService.completeTask', () => {
       TENANT,
       USER,
     );
-    expect(h.probeSuggest).toHaveBeenCalledWith(
-      expect.objectContaining({ reason: 'task.completion_detail_missing' }),
-    );
+    expect(h.probeSuggest).not.toHaveBeenCalled();
     expect(h.closureUpsert).not.toHaveBeenCalled();
     expect(res.needsDetail).toBe(true);
     expect(res.candidateId).toBeNull();

@@ -242,6 +242,33 @@ const SEEDS: SettingSeed[] = [
       'Минимальный возраст pending-задачи (в часах) для попадания в свод-добор уточнений: задачу дозапрашиваем, только если она «висит» дольше этого порога. По умолчанию 20, диапазон 1–168.',
   },
   {
+    key: 'tracker.methodCaptureEnabled',
+    value: true,
+    category: 'tracker',
+    section: 'workers',
+    severity: 'high',
+    description:
+      'Рубильник агента «расскажи, как решал»: при первом переходе значимой задачи в «Готово» исполнителю поднимается уточняющий вопрос с просьбой описать пошагово, как он её решал (можно голосом). По умолчанию вкл (Ship-On).',
+  },
+  {
+    key: 'tracker.methodCaptureMinComplexity',
+    value: 0.5,
+    category: 'tracker',
+    section: 'workers',
+    severity: 'low',
+    description:
+      'Минимальная сложность задачи (0–1) для подъёма вопроса «как решал» при закрытии. Сложность считается из длины описания, числа записей активности, времени жизни задачи и приоритета. По умолчанию 0.5: тривиальные задачи вопросом не беспокоят.',
+  },
+  {
+    key: 'tracker.methodCapturePriorityHint',
+    value: 0.7,
+    category: 'tracker',
+    section: 'workers',
+    severity: 'low',
+    description:
+      'Приоритет (0–1) уточняющего вопроса «как решал» при закрытии значимой задачи. По умолчанию 0.7.',
+  },
+  {
     key: 'taskClosure.embedMaxAttempts',
     value: 3,
     category: 'operations',

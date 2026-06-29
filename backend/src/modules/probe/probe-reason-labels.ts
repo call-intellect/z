@@ -52,6 +52,7 @@ export const PROBE_REASON_LABEL: Record<string, string> = {
   'task.poorly_specified': 'задача сформулирована нечётко',
   'task.false_positive': 'возможно, это не задача',
   'task.completion_detail_missing': 'не хватает деталей о выполнении',
+  'task.method_capture': 'как именно решалась задача',
   'companyprofile.missing_mission': 'Миссия компании не задана',
   'companyprofile.missing_vision': 'Видение компании не задано',
   'companyprofile.missing_strategy': 'Стратегия компании не задана',
@@ -116,6 +117,8 @@ export const PROBE_REASON_FALLBACK: Record<string, string> = {
   'consistency_violation.R5': 'Здесь есть расхождение в данных. Какой вариант верный?',
   'consistency_violation.R6': 'Здесь есть расхождение в данных. Какой вариант верный?',
   'task.completion_detail_missing': 'Что конкретно вы сделали с этой задачей?',
+  'task.method_capture':
+    'Расскажи, пожалуйста, пошагово, как ты решал эту задачу? Можно текстом, а удобнее — наговори голосом.',
   'companyprofile.missing_mission':
     'Какая у компании миссия? Кора набросала черновик из ваших решений — проверьте и поправьте.',
   'companyprofile.missing_vision':

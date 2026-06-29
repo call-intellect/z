@@ -9,10 +9,12 @@ import {
 } from '@nestjs/common';
 import { Prisma, type Issue } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import type { ProvenancePreviewRef } from '../../knowledge-core/services/provenance.service';
+import { ProbeService } from '../../probe/probe.service';
 import type { CreateIssueDto } from '../dto/issues/create-issue.dto';
 import type {
   IssueActivityDto,
@@ -110,6 +112,12 @@ export class IssuesService {
     @Optional()
     @Inject(TaskDedupService)
     private readonly taskDedup?: TaskDedupService,
+    @Optional()
+    @Inject(ProbeService)
+    private readonly probe?: ProbeService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
 
   /**
@@ -1197,6 +1205,16 @@ export class IssuesService {
           'transitionState: maybeMarkDecisionsImplementedForIssue упал — пропуск (best-effort)',
         );
       }
+      if (!existing.completedAt) {
+        void this.maybeRaiseMethodCaptureProbe({ issueId: id, tenantId }).catch(
+          (e) => {
+            this.logger.warn(
+              { issueId: id, err: e instanceof Error ? e.message : String(e) },
+              'transitionState: maybeRaiseMethodCaptureProbe упал — пропуск (best-effort)',
+            );
+          },
+        );
+      }
     }
     const response = await this.assemble(id, tenantId);
     this.events.publishIssueUpdated(response, tenantId, ['stateId']);
@@ -1226,6 +1244,108 @@ export class IssuesService {
         );
       });
     return response;
+  }
+
+  private async maybeRaiseMethodCaptureProbe(args: {
+    issueId: string;
+    tenantId: string;
+  }): Promise<void> {
+    if (!this.probe || !this.cfg) return;
+    const enabled = await this.cfg.getDynamic<boolean>(
+      'tracker.methodCaptureEnabled',
+      undefined,
+      true,
+    );
+    if (!enabled) return;
+
+    const issue = await this.prisma.issue.findFirst({
+      where: { id: args.issueId, tenantId: args.tenantId, deletedAt: null },
+      select: {
+        id: true,
+        title: true,
+        descriptionStripped: true,
+        description: true,
+        priority: true,
+        createdAt: true,
+        completedAt: true,
+        assignees: { select: { userId: true } },
+      },
+    });
+    if (!issue) return;
+
+    const recipientCandidates = issue.assignees
+      .map((a) => a.userId)
+      .filter((u): u is string => !!u);
+    if (recipientCandidates.length === 0) return;
+
+    const activityCount = await this.prisma.issueActivity.count({
+      where: { issueId: args.issueId, tenantId: args.tenantId },
+    });
+    const descriptionLength = (
+      issue.descriptionStripped ??
+      issue.description ??
+      ''
+    ).length;
+    const lifetimeMs =
+      (issue.completedAt ?? new Date()).getTime() - issue.createdAt.getTime();
+    const lifetimeDays = Math.max(0, lifetimeMs / (24 * 3600_000));
+    const complexity = IssuesService.computeMethodCaptureComplexity({
+      descriptionLength,
+      activityCount,
+      lifetimeDays,
+      priority: issue.priority,
+    });
+    const minComplexity = await this.cfg.getDynamic<number>(
+      'tracker.methodCaptureMinComplexity',
+      undefined,
+      0.5,
+    );
+    if (complexity < minComplexity) return;
+
+    const priorityHint = await this.cfg.getDynamic<number>(
+      'tracker.methodCapturePriorityHint',
+      undefined,
+      0.7,
+    );
+    const title = issue.title;
+    await this.probe.suggest({
+      tenantId: args.tenantId,
+      emittedByService: 'task-method-capture',
+      reason: 'task.method_capture',
+      payload: {
+        contextCardId: issue.id,
+        contextCardKind: 'issue',
+        contextCardTitle: title,
+        objectName: title,
+        objectKindRu: 'задача',
+        source: 'task_method_capture',
+        message: `Ты закрыл задачу «${title}». Задача была непростая — это важно для памяти компании.`,
+        suggestedQuestion: `Расскажи, пожалуйста, пошагово, как ты её решал? Можно текстом, а удобнее — наговори голосом, я распознаю.`,
+      },
+      recipientCandidates,
+      priorityHint,
+    });
+  }
+
+  static computeMethodCaptureComplexity(input: {
+    descriptionLength: number;
+    activityCount: number;
+    lifetimeDays: number;
+    priority: string;
+  }): number {
+    const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
+    const priorityWeight =
+      input.priority === 'urgent' || input.priority === 'high'
+        ? 1
+        : input.priority === 'medium'
+          ? 0.5
+          : 0;
+    return clamp01(
+      0.4 * clamp01(input.descriptionLength / 280) +
+        0.3 * clamp01(input.activityCount / 8) +
+        0.2 * clamp01(input.lifetimeDays / 7) +
+        0.1 * priorityWeight,
+    );
   }
 
   /**

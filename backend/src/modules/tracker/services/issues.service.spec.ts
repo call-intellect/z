@@ -1,7 +1,9 @@
 import type { Issue } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { ProbeService } from '../../probe/probe.service';
 import type { CreateIssueDto } from '../dto/issues/create-issue.dto';
 import type { UpdateIssueDto } from '../dto/issues/update-issue.dto';
 
@@ -1335,5 +1337,180 @@ describe('IssuesService.addAssignee — viaRouting метрика', () => {
 
     expect(assigneeCreate).toHaveBeenCalledTimes(1);
     expect(incRoutingSuggestionAccepted).not.toHaveBeenCalled();
+  });
+});
+
+describe('IssuesService.computeMethodCaptureComplexity', () => {
+  it('значимая задача → ≥ 0.5', () => {
+    const c = IssuesService.computeMethodCaptureComplexity({
+      descriptionLength: 400,
+      activityCount: 10,
+      lifetimeDays: 10,
+      priority: 'high',
+    });
+    expect(c).toBeGreaterThanOrEqual(0.5);
+  });
+
+  it('тривиальная задача → < 0.5', () => {
+    const c = IssuesService.computeMethodCaptureComplexity({
+      descriptionLength: 10,
+      activityCount: 1,
+      lifetimeDays: 0,
+      priority: 'none',
+    });
+    expect(c).toBeLessThan(0.5);
+  });
+});
+
+describe('IssuesService.maybeRaiseMethodCaptureProbe', () => {
+  const TENANT = 'org_1';
+
+  function buildService(opts: {
+    issue: Record<string, unknown> | null;
+    activityCount?: number;
+    enabled?: boolean;
+    probeSuggest?: ReturnType<typeof vi.fn>;
+  }): {
+    service: IssuesService;
+    probeSuggest: ReturnType<typeof vi.fn>;
+  } {
+    const probeSuggest =
+      opts.probeSuggest ?? vi.fn().mockResolvedValue({ ok: true, probeEventId: 'pe1' });
+    const prisma = {
+      issue: { findFirst: vi.fn().mockResolvedValue(opts.issue) },
+      issueActivity: {
+        count: vi.fn().mockResolvedValue(opts.activityCount ?? 0),
+      },
+    } as unknown as PrismaService;
+
+    const probe = { suggest: probeSuggest } as unknown as ProbeService;
+    const cfg = {
+      getDynamic: vi.fn(async (key: string, _env?: string, def?: unknown) => {
+        if (key === 'tracker.methodCaptureEnabled') return opts.enabled ?? true;
+        return def;
+      }),
+    } as unknown as TypedConfigService;
+
+    const service = new IssuesService(
+      prisma,
+      {} as unknown as ActivityRecorderService,
+      {} as unknown as ProjectsService,
+      {} as unknown as TrackerEventsService,
+      {} as unknown as WebhookDispatcher,
+      {} as unknown as TrackerEmitterService,
+      undefined, // embedQueue
+      undefined, // inferFieldsSvc
+      undefined, // goalSuggestSvc
+      undefined, // holiday
+      undefined, // boards
+      undefined, // metrics
+      undefined, // taskDedup
+      probe,
+      cfg,
+    );
+
+    return { service, probeSuggest };
+  }
+
+  const significantIssue = {
+    id: 'i1',
+    title: 'Сложная задача',
+    descriptionStripped: 'x'.repeat(400),
+    description: null,
+    priority: 'high',
+    createdAt: new Date('2026-06-01T00:00:00Z'),
+    completedAt: new Date('2026-06-11T00:00:00Z'),
+    assignees: [{ userId: 'u_assignee' }],
+  };
+
+  it('значимая задача с assignee → probe.suggest с reason task.method_capture', async () => {
+    const { service, probeSuggest } = buildService({
+      issue: significantIssue,
+      activityCount: 10,
+    });
+    await (
+      service as unknown as {
+        maybeRaiseMethodCaptureProbe: (a: {
+          issueId: string;
+          tenantId: string;
+        }) => Promise<void>;
+      }
+    ).maybeRaiseMethodCaptureProbe({ issueId: 'i1', tenantId: TENANT });
+
+    expect(probeSuggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'task.method_capture',
+        emittedByService: 'task-method-capture',
+        recipientCandidates: ['u_assignee'],
+        payload: expect.objectContaining({
+          contextCardId: 'i1',
+          contextCardKind: 'issue',
+          suggestedQuestion: expect.stringContaining('как ты её решал'),
+        }),
+      }),
+    );
+    const arg = probeSuggest.mock.calls[0]![0] as {
+      payload: Record<string, unknown>;
+    };
+    expect(arg.payload.suggestedQuestion).toContain('голос');
+    expect(arg.payload).not.toHaveProperty('suggestedActions');
+  });
+
+  it('тривиальная задача → probe.suggest НЕ вызван', async () => {
+    const { service, probeSuggest } = buildService({
+      issue: {
+        ...significantIssue,
+        descriptionStripped: 'короткое',
+        priority: 'none',
+        createdAt: new Date('2026-06-11T00:00:00Z'),
+        completedAt: new Date('2026-06-11T00:00:00Z'),
+      },
+      activityCount: 1,
+    });
+    await (
+      service as unknown as {
+        maybeRaiseMethodCaptureProbe: (a: {
+          issueId: string;
+          tenantId: string;
+        }) => Promise<void>;
+      }
+    ).maybeRaiseMethodCaptureProbe({ issueId: 'i1', tenantId: TENANT });
+
+    expect(probeSuggest).not.toHaveBeenCalled();
+  });
+
+  it('нет assignee → probe.suggest НЕ вызван', async () => {
+    const { service, probeSuggest } = buildService({
+      issue: { ...significantIssue, assignees: [] },
+      activityCount: 10,
+    });
+    await (
+      service as unknown as {
+        maybeRaiseMethodCaptureProbe: (a: {
+          issueId: string;
+          tenantId: string;
+        }) => Promise<void>;
+      }
+    ).maybeRaiseMethodCaptureProbe({ issueId: 'i1', tenantId: TENANT });
+
+    expect(probeSuggest).not.toHaveBeenCalled();
+  });
+
+  it('methodCaptureEnabled=false → probe.suggest НЕ вызван', async () => {
+    const { service, probeSuggest } = buildService({
+      issue: significantIssue,
+      activityCount: 10,
+      enabled: false,
+    });
+    await (
+      service as unknown as {
+        maybeRaiseMethodCaptureProbe: (a: {
+          issueId: string;
+          tenantId: string;
+        }) => Promise<void>;
+      }
+    ).maybeRaiseMethodCaptureProbe({ issueId: 'i1', tenantId: TENANT });
+
+    expect(probeSuggest).not.toHaveBeenCalled();
   });
 });

@@ -395,6 +395,9 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.taskClarifySweep.enabled', z.boolean()],
   ['tracker.taskClarifySweep.hourMsk', z.number().int().min(0).max(23)],
   ['tracker.taskClarifySweep.minAgeHours', z.number().int().min(1).max(168)],
+  ['tracker.methodCaptureEnabled', z.boolean()],
+  ['tracker.methodCaptureMinComplexity', UNIT_INTERVAL],
+  ['tracker.methodCapturePriorityHint', UNIT_INTERVAL],
   ['chatbox.analyze.stuckAnalyzingMin', POSITIVE_INT],
 
   ['taskClosure.enabled', z.boolean()],

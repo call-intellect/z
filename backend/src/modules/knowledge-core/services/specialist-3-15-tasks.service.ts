@@ -325,30 +325,45 @@ export class Specialist315TasksService {
       },
     });
 
-    if (
-      suggestedAssigneeId == null &&
-      this.cfg?.tracker.assigneeClarifyEnabled &&
-      this.probe
-    ) {
+    if (this.probe && (suggestedAssigneeId == null || dueDate == null)) {
       try {
         const recipient = await this.resolveSetterRecipient(block, draft);
         if (recipient) {
-          await this.probe.suggest({
-            tenantId: block.tenantId,
-            emittedByService: 'specialist-3-15-tasks',
-            reason: 'task.assignee_unresolved',
-            payload: {
-              contextCardId: intakeIssueId,
-              contextCardKind: 'intake_issue',
-              contextCardTitle: draft.title,
-              objectName: draft.title,
-              objectKindRu: 'задача',
-              message: `Из ${channel ?? 'внешнего'}-сообщения извлечена задача «${draft.title}», но не определён исполнитель.`,
-              suggestedQuestion: `Кому поручить задачу «${draft.title}»?`,
-            },
-            recipientCandidates: [recipient],
-            priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
-          });
+          if (suggestedAssigneeId == null && this.cfg?.tracker.assigneeClarifyEnabled) {
+            await this.probe.suggest({
+              tenantId: block.tenantId,
+              emittedByService: 'specialist-3-15-tasks',
+              reason: 'task.assignee_unresolved',
+              payload: {
+                contextCardId: intakeIssueId,
+                contextCardKind: 'intake_issue',
+                contextCardTitle: draft.title,
+                objectName: draft.title,
+                objectKindRu: 'задача',
+                message: `Из ${channel ?? 'внешнего'}-сообщения извлечена задача «${draft.title}», но не определён исполнитель.`,
+                suggestedQuestion: `Кому поручить задачу «${draft.title}»?`,
+              },
+              recipientCandidates: [recipient],
+              priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
+            });
+          } else if (dueDate == null && this.cfg?.tracker.dueDateClarifyEnabled) {
+            await this.probe.suggest({
+              tenantId: block.tenantId,
+              emittedByService: 'specialist-3-15-tasks',
+              reason: 'task.due_date_missing',
+              payload: {
+                contextCardId: intakeIssueId,
+                contextCardKind: 'intake_issue',
+                contextCardTitle: draft.title,
+                objectName: draft.title,
+                objectKindRu: 'задача',
+                message: `Из ${channel ?? 'внешнего'}-сообщения извлечена задача «${draft.title}», но не указан срок.`,
+                suggestedQuestion: `К какому сроку нужно сделать «${draft.title}»?`,
+              },
+              recipientCandidates: [recipient],
+              priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
+            });
+          }
         }
       } catch {
         // best-effort
@@ -591,6 +606,103 @@ export class Specialist315TasksService {
       select: { userId: true },
     });
     return anyMember?.userId ?? null;
+  }
+
+  async runClarifySweep(
+    now: Date = new Date(),
+  ): Promise<{ orgsScanned: number; probed: number }> {
+    if (!this.probe || !this.cfg) return { orgsScanned: 0, probed: 0 };
+    const enabled = await this.cfg.getDynamic<boolean>(
+      'tracker.taskClarifySweep.enabled',
+      undefined,
+      true,
+    );
+    if (!enabled) return { orgsScanned: 0, probed: 0 };
+    const minAgeHours = await this.cfg.getDynamic<number>(
+      'tracker.taskClarifySweep.minAgeHours',
+      undefined,
+      20,
+    );
+    const cutoff = new Date(now.getTime() - minAgeHours * 3600_000);
+    const orgs = await this.prisma.org.findMany({
+      where: { deletedAt: null },
+      select: { id: true },
+      take: 5_000,
+    });
+    let probed = 0;
+    for (const org of orgs) {
+      const intakes = await this.prisma.intakeIssue.findMany({
+        where: {
+          tenantId: org.id,
+          status: 'pending',
+          createdAt: { lt: cutoff },
+          OR: [{ suggestedAssigneeId: null }, { suggestedDueDate: null }],
+        },
+        select: {
+          id: true,
+          tenantId: true,
+          extractedTitle: true,
+          extractedDescription: true,
+          suggestedAssigneeId: true,
+          suggestedDueDate: true,
+          sourceBlockIds: true,
+        },
+        take: 200,
+      });
+      for (const intake of intakes) {
+        try {
+          const recipient = await this.resolveSetterRecipientFromIntake(intake);
+          if (!recipient) continue;
+          const title = intake.extractedTitle ?? 'задача';
+          const askAssignee = intake.suggestedAssigneeId == null;
+          const res = await this.probe.suggest({
+            tenantId: intake.tenantId,
+            emittedByService: 'specialist-3-15-tasks-sweep',
+            reason: askAssignee ? 'task.assignee_unresolved' : 'task.due_date_missing',
+            payload: {
+              contextCardId: intake.id,
+              contextCardKind: 'intake_issue',
+              contextCardTitle: title,
+              objectName: title,
+              objectKindRu: 'задача',
+              message: askAssignee
+                ? `У задачи «${title}» из недавнего разговора так и не определён исполнитель.`
+                : `У задачи «${title}» из недавнего разговора так и не указан срок.`,
+              suggestedQuestion: askAssignee
+                ? `Кому поручить задачу «${title}»?`
+                : `К какому сроку нужно сделать «${title}»?`,
+            },
+            recipientCandidates: [recipient],
+            priorityHint: this.cfg.tracker.assigneeProbePriorityHint,
+          });
+          if (!('dropped' in res)) probed++;
+        } catch {
+          // best-effort: одна задача не валит проход
+        }
+      }
+    }
+    return { orgsScanned: orgs.length, probed };
+  }
+
+  private async resolveSetterRecipientFromIntake(intake: {
+    tenantId: string;
+    extractedDescription: string | null;
+    sourceBlockIds: string[];
+  }): Promise<string | null> {
+    const blockId = intake.sourceBlockIds[0];
+    if (blockId) {
+      const block = await this.prisma.ideaBlock.findUnique({
+        where: { id_tenantId: { id: blockId, tenantId: intake.tenantId } },
+        include: {
+          evidence: { orderBy: { sourceTimestamp: { sort: 'asc', nulls: 'last' } } },
+        },
+      });
+      if (block) {
+        const draft = { sourceQuote: intake.extractedDescription ?? '' } as TaskDraft;
+        return this.resolveSetterRecipient(block, draft);
+      }
+    }
+    return this.resolveProbeRecipient(intake.tenantId);
   }
 }
 

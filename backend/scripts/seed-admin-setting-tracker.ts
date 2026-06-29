@@ -215,6 +215,33 @@ const SEEDS: SettingSeed[] = [
       'Порог уверенности для записи хода выполнения задачи из разговорного блока (живая карточка). Если уверенность LLM-вердикта (или близость матча) ниже порога, запись прогресса не создаётся — анти-fatigue. По умолчанию 0.6, диапазон 0–1.',
   },
   {
+    key: 'tracker.taskClarifySweep.enabled',
+    value: true,
+    category: 'tracker',
+    section: 'workers',
+    severity: 'high',
+    description:
+      'Рубильник ежедневного свода-добора: проходит по задачам без исполнителя/срока старше N часов и шлёт постановщику уточняющий вопрос (probe). По умолчанию вкл (Ship-On).',
+  },
+  {
+    key: 'tracker.taskClarifySweep.hourMsk',
+    value: 10,
+    category: 'tracker',
+    section: 'workers',
+    severity: 'low',
+    description:
+      'Час по МСК, в который запускается ежедневный свод-добор уточнений по задачам без исполнителя/срока. По умолчанию 10, диапазон 0–23.',
+  },
+  {
+    key: 'tracker.taskClarifySweep.minAgeHours',
+    value: 20,
+    category: 'tracker',
+    section: 'workers',
+    severity: 'low',
+    description:
+      'Минимальный возраст pending-задачи (в часах) для попадания в свод-добор уточнений: задачу дозапрашиваем, только если она «висит» дольше этого порога. По умолчанию 20, диапазон 1–168.',
+  },
+  {
     key: 'taskClosure.embedMaxAttempts',
     value: 3,
     category: 'operations',

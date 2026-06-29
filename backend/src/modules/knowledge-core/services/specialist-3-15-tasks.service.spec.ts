@@ -57,9 +57,11 @@ function makeBlock(sourceType: string, overrides: Record<string, unknown> = {}) 
 
 interface Mocks {
   prisma: {
+    org: { findMany: ReturnType<typeof vi.fn> };
     ideaBlock: { findUnique: ReturnType<typeof vi.fn> };
     intakeIssue: {
       findFirst: ReturnType<typeof vi.fn>;
+      findMany: ReturnType<typeof vi.fn>;
       create: ReturnType<typeof vi.fn>;
     };
     issue: { findFirst: ReturnType<typeof vi.fn> };
@@ -86,7 +88,11 @@ interface Mocks {
   cfg: {
     getDynamic: ReturnType<typeof vi.fn>;
     pendingActions: { intakeTtlDays: number };
-    tracker: { assigneeClarifyEnabled: boolean; assigneeProbePriorityHint: number };
+    tracker: {
+      assigneeClarifyEnabled: boolean;
+      dueDateClarifyEnabled: boolean;
+      assigneeProbePriorityHint: number;
+    };
     aiFeatures: { promptInjectionGuardEnabled: boolean };
   };
   autoTriageQueue: { enqueue: ReturnType<typeof vi.fn> };
@@ -100,9 +106,11 @@ function buildService(linkSemantics: 'link' | 'delete' = 'link'): {
 } {
   const m: Mocks = {
     prisma: {
+      org: { findMany: vi.fn().mockResolvedValue([]) },
       ideaBlock: { findUnique: vi.fn() },
       intakeIssue: {
         findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
         create: vi.fn().mockResolvedValue({ id: 'intake-new' }),
       },
       issue: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -140,7 +148,11 @@ function buildService(linkSemantics: 'link' | 'delete' = 'link'): {
             key === 'tracker.taskDedupLinkSemantics' ? linkSemantics : def,
         ),
       pendingActions: { intakeTtlDays: 14 },
-      tracker: { assigneeClarifyEnabled: true, assigneeProbePriorityHint: 0.5 },
+      tracker: {
+        assigneeClarifyEnabled: true,
+        dueDateClarifyEnabled: true,
+        assigneeProbePriorityHint: 0.5,
+      },
       aiFeatures: { promptInjectionGuardEnabled: true },
     },
     autoTriageQueue: { enqueue: vi.fn().mockResolvedValue(undefined) },
@@ -616,5 +628,147 @@ describe('Specialist315TasksService.processBlock', () => {
     const sqlArg = m.prisma.$executeRaw.mock.calls[0]![0] as TemplateStringsArray;
     expect(sqlArg.join('')).toContain('pg_advisory_xact_lock');
     expect(m.prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('(s) срок не извлечён, исполнитель ЕСТЬ → due-probe постановщику', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(
+      makeBlock('chatbox', {
+        evidence: [
+          {
+            quote: 'подготовь смету',
+            sourceType: 'chatbox',
+            authorPersonId: 'p-setter',
+          },
+        ],
+      }),
+    );
+    m.llm.call.mockResolvedValueOnce(
+      llmResult(taskJson({ sourceQuote: 'подготовь смету', dueHint: '' })),
+    );
+    m.assigneeResolver.resolve.mockResolvedValue({
+      kind: 'resolved',
+      userId: 'user-7',
+    });
+    m.prisma.person.findFirst.mockResolvedValue({ userId: 'user-setter' });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.intakeIssue.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ suggestedAssigneeId: 'user-7' }),
+      }),
+    );
+    expect(m.probe.suggest).toHaveBeenCalledTimes(1);
+    expect(m.probe.suggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'task.due_date_missing',
+        emittedByService: 'specialist-3-15-tasks',
+        recipientCandidates: ['user-setter'],
+      }),
+    );
+  });
+
+  it('(t) нет ни исполнителя, ни срока → шлём ТОЛЬКО assignee-probe (одно за раз)', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(llmResult(taskJson({ dueHint: '' })));
+    m.assigneeResolver.resolve.mockResolvedValue({ kind: 'not_found' });
+    m.prisma.membership.findFirst.mockResolvedValue({ userId: 'owner-1' });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.probe.suggest).toHaveBeenCalledTimes(1);
+    expect(m.probe.suggest).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'task.assignee_unresolved' }),
+    );
+    expect(m.probe.suggest).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'task.due_date_missing' }),
+    );
+  });
+
+  it('(u) срок ЕСТЬ и исполнитель есть → probe НЕ шлём', async () => {
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(makeBlock('chatbox'));
+    m.llm.call.mockResolvedValueOnce(
+      llmResult(taskJson({ dueHint: '2026-07-01' })),
+    );
+    m.assigneeResolver.resolve.mockResolvedValue({
+      kind: 'resolved',
+      userId: 'user-7',
+    });
+
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
+
+    expect(m.prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+    expect(m.probe.suggest).not.toHaveBeenCalled();
+  });
+});
+
+describe('Specialist315TasksService.runClarifySweep', () => {
+  let svc: Specialist315TasksService;
+  let m: Mocks;
+
+  beforeEach(() => {
+    ({ svc, m } = buildService());
+  });
+
+  it('(v) stale pending intake без срока → due-probe постановщику', async () => {
+    m.prisma.org.findMany.mockResolvedValue([{ id: TENANT }]);
+    m.prisma.intakeIssue.findMany.mockResolvedValue([
+      {
+        id: 'intake-stale',
+        tenantId: TENANT,
+        extractedTitle: 'Подготовить смету',
+        extractedDescription: 'подготовь смету',
+        suggestedAssigneeId: 'user-7',
+        suggestedDueDate: null,
+        sourceBlockIds: [BLOCK_ID],
+      },
+    ]);
+    m.prisma.ideaBlock.findUnique.mockResolvedValue(
+      makeBlock('chatbox', {
+        evidence: [
+          {
+            quote: 'подготовь смету',
+            sourceType: 'chatbox',
+            authorPersonId: 'p-setter',
+          },
+        ],
+      }),
+    );
+    m.prisma.person.findFirst.mockResolvedValue({ userId: 'user-setter' });
+
+    const res = await svc.runClarifySweep(new Date('2026-06-29T10:00:00.000Z'));
+
+    expect(m.probe.suggest).toHaveBeenCalledTimes(1);
+    expect(m.probe.suggest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'task.due_date_missing',
+        emittedByService: 'specialist-3-15-tasks-sweep',
+        recipientCandidates: ['user-setter'],
+      }),
+    );
+    expect(res.probed).toBe(1);
+  });
+
+  it('(w) intake с исполнителем И сроком не попадает в выборку → probe НЕ вызван', async () => {
+    m.prisma.org.findMany.mockResolvedValue([{ id: TENANT }]);
+    m.prisma.intakeIssue.findMany.mockResolvedValue([]);
+
+    const res = await svc.runClarifySweep(new Date('2026-06-29T10:00:00.000Z'));
+
+    expect(m.probe.suggest).not.toHaveBeenCalled();
+    expect(res.probed).toBe(0);
+  });
+
+  it('(x) enabled=false → ранний выход, probe не вызван', async () => {
+    m.cfg.getDynamic.mockImplementation(
+      (key: string, _env: string | undefined, def: unknown) =>
+        key === 'tracker.taskClarifySweep.enabled' ? false : def,
+    );
+
+    const res = await svc.runClarifySweep(new Date('2026-06-29T10:00:00.000Z'));
+
+    expect(m.prisma.org.findMany).not.toHaveBeenCalled();
+    expect(m.probe.suggest).not.toHaveBeenCalled();
+    expect(res).toEqual({ orgsScanned: 0, probed: 0 });
   });
 });

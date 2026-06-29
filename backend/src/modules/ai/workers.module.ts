@@ -63,6 +63,7 @@ import { SprintHelperCron } from '../knowledge-core/workers/sprint-helper.cron';
 import { SprintHelperWorker } from '../knowledge-core/workers/sprint-helper.worker';
 import { StrategicAlignmentCron } from '../knowledge-core/workers/strategic-alignment.cron';
 import { StrategicAlignmentWorker } from '../knowledge-core/workers/strategic-alignment.worker';
+import { TaskClarifySweepCron } from '../knowledge-core/workers/task-clarify-sweep.cron';
 import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cron';
 import { ThemeSummarizeCron } from '../knowledge-core/workers/theme-summarize.cron';
 import { MeetingUploadIngestWorker } from '../meeting-uploads/workers/meeting-upload-ingest.worker';
@@ -183,6 +184,7 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     Specialist314GoalsWorker,
     Specialist315TasksService,
     Specialist315TasksWorker,
+    TaskClarifySweepCron,
     // Ф5 (TZ 2026-06-16 task-dedup) — consumer `core.goal-embed`. Считает
     // pgvector-embedding цели (name+description) для семантического дедупа
     // целей (specialist-3-14 KNN по Goal.embedding вместо ILIKE). Зеркало

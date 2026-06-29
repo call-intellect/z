@@ -28,6 +28,7 @@ import { CommitmentsService } from './services/commitments.service';
 import { CustomerRiskRadarService } from './services/customer-risk-radar.service';
 import { DailyCheckInService } from './services/daily-checkin.service';
 import { DailyDigestService } from './services/daily-digest.service';
+import { DayReportCollectorService } from './services/day-report-collector.service';
 import { DaySignalAggregatorService } from './services/day-signal-aggregator.service';
 import { DaySignalDetectorService } from './services/day-signal-detector.service';
 import { DaySignalExtractorService } from './services/day-signal-extractor.service';
@@ -104,6 +105,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     DaySignalExtractorService,
     DaySignalAggregatorService,
     DaySignalAggregatorCron,
+    DayReportCollectorService,
     MeetingCheckinListener,
     OperationsDashboardService,
     PersonalRelationService,
@@ -192,6 +194,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     PortfolioHealthService,
     // ТЗ coo-orphan-agents Ф7 — экспортируем для тестов / reuse.
     PromiseNetworkService,
+    DayReportCollectorService,
   ],
 })
 export class OperationsModule {}

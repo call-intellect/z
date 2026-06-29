@@ -254,6 +254,11 @@ export class BusinessMetricsService implements OnModuleInit {
   private channelBindingCampaignInvitedTotal!: Counter<'tenant_top'>;
   private checkinPromptDeliveredTotal!: Counter<'channel'>;
 
+  // ── ТЗ checkin-day-report-from-graph (Ф2/Ф3/Ф4) — сборщик дневных отчётов из графа ──
+  private dayReportCollectedTotal!: Counter<'tenant_top'>;
+  private dayReportBlockDroppedNoPersonTotal!: Counter<string>;
+  private dayReportNotDoneVerifyCallsTotal!: Counter<string>;
+
   // ── TZ-1 Фаза 1 (daily-value-engine) — радар клиентов под риском ──
   private customerRiskSnapshotsTotal!: Counter<'level'>;
   private customerRiskRadarFailedTotal!: Counter<'reason'>;
@@ -1812,6 +1817,22 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'checkin_prompt_delivered_total',
       help: 'TZ-1 Ф0 — доставлен дневной чек-ин prompt по каналу (channel ∈ telegram_bot|max_bot|in_app|email_smtp).',
       labelNames: ['channel'] as const,
+    });
+
+    this.dayReportCollectedTotal = this.getOrCreateCounter({
+      name: 'day_report_collected_total',
+      help: 'Сколько (человек×день) дневных отчётов собрано сборщиком. tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.dayReportBlockDroppedNoPersonTotal = this.getOrCreateCounter({
+      name: 'day_report_block_dropped_no_person_total',
+      help: 'Сколько блоков отброшено сборщиком из-за отсутствия authorPersonId.',
+      labelNames: [] as const,
+    });
+    this.dayReportNotDoneVerifyCallsTotal = this.getOrCreateCounter({
+      name: 'day_report_not_done_verify_calls_total',
+      help: 'Сколько вызовов LLM-проверщика закрытия сделал расчёт notDone.',
+      labelNames: [] as const,
     });
 
     // ── TZ-1 Фаза 1 (daily-value-engine) — радар клиентов под риском ──
@@ -5108,6 +5129,18 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Counter `checkin_prompt_delivered_total{channel}`. */
   incCheckinPromptDelivered(args: { channel: string }): void {
     this.checkinPromptDeliveredTotal.inc({ channel: args.channel });
+  }
+
+  incDayReportCollected(args: { tenantTop: string }): void {
+    this.dayReportCollectedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  incDayReportBlockDroppedNoPerson(): void {
+    this.dayReportBlockDroppedNoPersonTotal.inc();
+  }
+
+  incDayReportNotDoneVerifyCalls(): void {
+    this.dayReportNotDoneVerifyCallsTotal.inc();
   }
 
   // ──────────────── TZ-1 Фаза 1 — радар клиентов под риском ───────────

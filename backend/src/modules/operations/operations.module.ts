@@ -31,9 +31,6 @@ import { CustomerRiskRadarService } from './services/customer-risk-radar.service
 import { DailyCheckInService } from './services/daily-checkin.service';
 import { DailyDigestService } from './services/daily-digest.service';
 import { DayReportCollectorService } from './services/day-report-collector.service';
-import { DaySignalAggregatorService } from './services/day-signal-aggregator.service';
-import { DaySignalDetectorService } from './services/day-signal-detector.service';
-import { DaySignalExtractorService } from './services/day-signal-extractor.service';
 import { DecisionImplementationService } from './services/decision-implementation.service';
 import { GoalCascadeService } from './services/goal-cascade.service';
 import { KnowledgeAtRiskService } from './services/knowledge-at-risk.service';
@@ -62,7 +59,6 @@ import { CommitmentFollowupCron } from './workers/commitment-followup.cron';
 import { CustomerRiskRadarCron } from './workers/customer-risk-radar.cron';
 import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
 import { DayReportCollectorCron } from './workers/day-report-collector.cron';
-import { DaySignalAggregatorCron } from './workers/day-signal-aggregator.cron';
 import { DecisionImplementationCron } from './workers/decision-implementation.cron';
 import { ExecMorningPushCron } from './workers/exec-morning-push.cron';
 import { MeetingCheckinListener } from './workers/meeting-checkin.listener';
@@ -104,10 +100,6 @@ import { ValueRecapCron } from './workers/value-recap.cron';
   ],
   providers: [
     DailyCheckInService,
-    DaySignalDetectorService,
-    DaySignalExtractorService,
-    DaySignalAggregatorService,
-    DaySignalAggregatorCron,
     DayReportCollectorService,
     DayReportCollectorCron,
     CheckinExpectationService,

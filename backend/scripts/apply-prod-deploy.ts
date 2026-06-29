@@ -369,7 +369,6 @@ const STEPS: Step[] = [
     'compile-org-document',
     'conflict-arbiter',
     'clone-method',
-    'day-signal',
     'edinyy-pomoshnik',
     'chat',
   ].map<Step>((sub) => ({

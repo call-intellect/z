@@ -238,9 +238,8 @@ const registry = new Map<string, ZodTypeAny>([
   ['subjectMemory.shadowToCanaryMinConfirm', NON_NEGATIVE_INT],
   ['subjectMemory.judgeModels', z.array(z.string())],
 
-  ['daySignals.detectThreshold', UNIT_INTERVAL],
-  ['daySignals.processLocalHour', z.number().int().min(0).max(23)],
-  ['daySignals.enabled', z.boolean()],
+  ['dayReport.enabled', z.boolean()],
+  ['dayReport.completenessQualityThreshold', UNIT_INTERVAL],
 
   ['daily-checkin.skipNonWorkingDays', z.boolean()],
   ['daily-checkin.skipHolidays', z.boolean()],

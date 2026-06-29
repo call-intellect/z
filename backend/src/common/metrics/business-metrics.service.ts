@@ -831,8 +831,6 @@ export class BusinessMetricsService implements OnModuleInit {
   // 'morning'|'evening'; severity — 'low'|'medium'|'high'|'unknown'.
   private dailyCheckinsCompletedTotal!: Counter<'tenant_top' | 'kind'>;
   private dailyCheckinsSkippedTotal!: Counter<'tenant_top' | 'kind' | 'reason'>;
-  private daySignalDroppedNoPersonTotal!: Counter<'sourceType'>;
-  private daySignalBelowGateTotal!: Counter<string>;
   private operationsBlockersTotal!: Gauge<'tenant_top' | 'severity'>;
   private teamFrictionsTotal!: Gauge<'tenant_top'>;
   private goalCascadeMissesTotal!: Counter<'tenant_top'>;
@@ -3412,16 +3410,6 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'daily_checkins_skipped_total',
       help: 'SBA β-8 — пропуски prompt-cron (reason ∈ already_completed|outside_window|disabled|no_channel|no_person|low_confidence).',
       labelNames: ['tenant_top', 'kind', 'reason'] as const,
-    });
-    this.daySignalDroppedNoPersonTotal = this.getOrCreateCounter({
-      name: 'day_signal_dropped_no_person_total',
-      help: 'Day-сигнал отброшен: автор не резолвится в personId.',
-      labelNames: ['sourceType'] as const,
-    });
-    this.daySignalBelowGateTotal = this.getOrCreateCounter({
-      name: 'day_signal_below_gate_total',
-      help: 'Day-сигнал не прошёл гейт качества (confidence ниже порога или личное/нерабочее).',
-      labelNames: [] as const,
     });
     this.operationsBlockersTotal = this.getOrCreateGauge({
       name: 'operations_blockers_total',
@@ -7440,16 +7428,6 @@ export class BusinessMetricsService implements OnModuleInit {
       kind: args.kind,
       reason: args.reason,
     });
-  }
-
-  /** Counter `day_signal_dropped_no_person_total{sourceType}`. */
-  incDaySignalDroppedNoPerson(args: { sourceType: string }): void {
-    this.daySignalDroppedNoPersonTotal.inc({ sourceType: args.sourceType });
-  }
-
-  /** Counter `day_signal_below_gate_total`. */
-  incDaySignalBelowGate(): void {
-    this.daySignalBelowGateTotal.inc();
   }
 
   /** Gauge `operations_blockers_total{tenant_top, severity}`. */

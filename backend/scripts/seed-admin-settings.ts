@@ -1792,28 +1792,22 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'ai', section: 'task-routing', severity, description });
   }
 
-  const daySignals: Array<[string, unknown, Severity, string]> = [
+  const dayReport: Array<[string, unknown, Severity, string]> = [
     [
-      'daySignals.enabled',
+      'dayReport.enabled',
       true,
       'high',
-      'Рубильник универсального фиксатора чек-инов: детектирует план/отчёт сотрудника из всех каналов (встречи, Bitrix, чаты, почта, заметки) и пишет чек-ин (kill-switch, ON). Выкл → дневной cron-агрегатор и мост встреч не работают',
+      'Рубильник сборщика дневных отчётов из графа (block-ingest): cron 05:00 МСК + мост встреч собирают план/отчёт по 4 сущностям (сделано/не сделано/помешало/идеи). Kill-switch, ON. Выкл → сборка и мост встреч не пишут чек-ины',
     ],
     [
-      'daySignals.detectThreshold',
-      0.7,
+      'dayReport.completenessQualityThreshold',
+      0.5,
       'low',
-      'Минимальная уверенность (0-1) LLM-детектора плана/отчёта, с которой чек-ин фиксируется; ниже — сигнал отбрасывается',
-    ],
-    [
-      'daySignals.processLocalHour',
-      21,
-      'low',
-      'Локальный час сотрудника (0-23), в который дневной cron собирает его сообщения за день и фиксирует чек-ин',
+      'Порог качества рефлексии (0–1), с которого дневной отчёт помечается «полным» (full) при ≥3 из 4 частей; ниже — «черновой» (draft). На «сдал» не влияет',
     ],
   ];
-  for (const [key, value, severity, description] of daySignals) {
-    out.push({ key, value, category: 'platform', section: 'day-signals', severity, description });
+  for (const [key, value, severity, description] of dayReport) {
+    out.push({ key, value, category: 'platform', section: 'day-report', severity, description });
   }
 
   const dailyCheckin: Array<[string, unknown, Severity, string]> = [

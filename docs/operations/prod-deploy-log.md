@@ -4555,7 +4555,7 @@ docker compose up -d --force-recreate postgres
 
 ### B.6 — Бутстрап первого супер-админа
 
-**Интерактивно (рекомендуется)** — вводишь только email и пароль, скрипт сам хеширует (bcrypt 12) и ставит `role='admin'` + `isSuperAdmin=true`:
+**Интерактивно (рекомендуется)** — вводишь только email и пароль, скрипт сам хеширует (**argon2id**, с 2026-06-29; прежние bcrypt-хэши остаются валидны через fallback в `PasswordService`) и ставит `role='admin'` + `isSuperAdmin=true`:
 ```bash
 docker compose exec backend bun run scripts/set-admin-password.ts <email> '<пароль>' --super
 # нет юзера → создаст; есть с role=admin → обновит пароль (+ isSuperAdmin при --super)

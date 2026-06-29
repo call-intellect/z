@@ -1514,3 +1514,110 @@ describe('IssuesService.maybeRaiseMethodCaptureProbe', () => {
     expect(probeSuggest).not.toHaveBeenCalled();
   });
 });
+
+describe('IssuesService.update — method-capture хук на переходе в Готово', () => {
+  const EXISTING: Partial<Issue> = {
+    id: 'i1',
+    tenantId: 'org_1',
+    projectId: 'p1',
+    stateId: 's_old',
+    boardId: null,
+    completedAt: null,
+  };
+
+  function buildUpdateService(existing: Partial<Issue>): IssuesService {
+    const prisma = {
+      issue: { findFirst: vi.fn().mockResolvedValue(existing) },
+      $transaction: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          issue: { update: vi.fn().mockResolvedValue(existing) },
+          issueState: {
+            findUnique: vi.fn().mockResolvedValue({ category: 'completed' }),
+          },
+        }),
+    } as unknown as PrismaService;
+    const activity = {
+      record: vi.fn().mockResolvedValue('act_1'),
+    } as unknown as ActivityRecorderService;
+    const events = {
+      publishIssueUpdated: vi.fn(),
+      publishActivity: vi.fn(),
+    } as unknown as TrackerEventsService;
+    const webhooks = {
+      dispatch: vi.fn().mockResolvedValue(undefined),
+    } as unknown as WebhookDispatcher;
+    return new IssuesService(
+      prisma,
+      activity,
+      {} as unknown as ProjectsService,
+      events,
+      webhooks,
+      {} as unknown as TrackerEmitterService,
+    );
+  }
+
+  function wire(
+    service: IssuesService,
+    stateCategory: string,
+  ): ReturnType<typeof vi.spyOn> {
+    vi.spyOn(
+      service as unknown as { requireStateInProject: () => Promise<void> },
+      'requireStateInProject',
+    ).mockResolvedValue(undefined);
+    vi.spyOn(
+      service as unknown as { emitStateChangeIfNeeded: () => Promise<void> },
+      'emitStateChangeIfNeeded',
+    ).mockResolvedValue(undefined);
+    vi.spyOn(
+      service as unknown as { assemble: () => Promise<unknown> },
+      'assemble',
+    ).mockResolvedValue({ id: 'i1', stateCategory });
+    return vi
+      .spyOn(
+        service as unknown as {
+          maybeRaiseMethodCaptureProbe: () => Promise<void>;
+        },
+        'maybeRaiseMethodCaptureProbe',
+      )
+      .mockResolvedValue(undefined);
+  }
+
+  it('PATCH stateId → completed-статус (минуя transitionState) → хук вызван', async () => {
+    const service = buildUpdateService(EXISTING);
+    const hookSpy = wire(service, 'completed');
+    await service.update(
+      'i1',
+      { stateId: 's_done' } as unknown as UpdateIssueDto,
+      'org_1',
+      'u1',
+    );
+    expect(hookSpy).toHaveBeenCalledWith({ issueId: 'i1', tenantId: 'org_1' });
+  });
+
+  it('PATCH stateId → НЕ-completed статус → хук НЕ вызван', async () => {
+    const service = buildUpdateService(EXISTING);
+    const hookSpy = wire(service, 'started');
+    await service.update(
+      'i1',
+      { stateId: 's_started' } as unknown as UpdateIssueDto,
+      'org_1',
+      'u1',
+    );
+    expect(hookSpy).not.toHaveBeenCalled();
+  });
+
+  it('уже завершённая задача (completedAt стоит) → хук НЕ вызван', async () => {
+    const service = buildUpdateService({
+      ...EXISTING,
+      completedAt: new Date('2026-06-01T00:00:00Z'),
+    });
+    const hookSpy = wire(service, 'completed');
+    await service.update(
+      'i1',
+      { stateId: 's_done' } as unknown as UpdateIssueDto,
+      'org_1',
+      'u1',
+    );
+    expect(hookSpy).not.toHaveBeenCalled();
+  });
+});

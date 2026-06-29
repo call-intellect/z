@@ -504,8 +504,6 @@ export class Specialist33Service {
           });
         }
       }
-
-      void createdNew;
     } catch (err) {
       this.metrics.incCoreSpecialistExtractionFailure({
         type: 'decision',

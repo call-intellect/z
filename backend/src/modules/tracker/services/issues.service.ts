@@ -1090,6 +1090,20 @@ export class IssuesService {
           );
         });
       }
+      if (
+        changedFields.includes('stateId') &&
+        !existing.completedAt &&
+        response.stateCategory === 'completed'
+      ) {
+        void this.maybeRaiseMethodCaptureProbe({ issueId: id, tenantId }).catch(
+          (e) => {
+            this.logger.warn(
+              { issueId: id, err: e instanceof Error ? e.message : String(e) },
+              'update: maybeRaiseMethodCaptureProbe упал — пропуск (best-effort)',
+            );
+          },
+        );
+      }
       void this.webhooks
         .dispatch(tenantId, 'issue.updated', {
           issue: response,

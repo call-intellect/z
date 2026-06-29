@@ -71,6 +71,28 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-29 — Дневной план/отчёт из общего анализа графа (checkin-day-report-from-graph, ветка work/2026-06-29)
+
+> ТЗ `plans/tz/2026-06-29-checkin-day-report-from-graph.md` (8 фаз). План/отчёт сотрудника собираются НЕ отдельным свипом `day-signal-*` (СНЕСЁН), а тонким НЕ-LLM сборщиком `DayReportCollectorService` из разметки `block-ingest` в 4 сущности (сделано/не сделано/помешало/идеи); «не сделано» — через переиспользуемый `ClosureVerifierService` (вынесен из `task-completion.handler`). Новый `DayReportCollectorCron` (05:00 МСК) + переписан `MeetingCheckinListener` (graph-derive). Коммиты `114fc0f4..0ab7090b`.
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260630010000_daily_checkin_report_4_entities` (3 nullable-колонки в `daily_check_ins`). 🟢 НОВЫХ ENV НЕТ.** Крутилки `daySignals.*` → `dayReport.enabled` (kill-switch ON) + `dayReport.completenessQualityThreshold` (0.5); удалён маршрут `seed-llm-task-routes-day-signal.ts` (taskType `day-signal-detect` снят). 🟢 1 BACKFILL (идемпотентный, в STEPS). Docker rebuild backend+frontend.
+
+- **Шаг 1 — ENV: новых нет.** Крутилки — чистые AdminSetting (`dayReport.enabled` kill-switch тип A ВКЛ; `dayReport.completenessQualityThreshold` 0.5), читаются через `resolveSync`/`getDynamic` с code-fallback (работают до сида — Ship-On). Реестр — `docs/operations/feature-flags.md` (ключи `daySignals.*` заменены на `dayReport.*`).
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260630010000_daily_checkin_report_4_entities` — `ALTER TABLE "daily_check_ins"` ×3: `ADD COLUMN "notDoneJson" JSONB` (`Array<{text,sourcePlanText?,verdictConfidence?}>`) + `ADD COLUMN "ideasJson" JSONB` (`Array<{text,sourceBlockId?}>`) + `ADD COLUMN "reportCompleteness" VARCHAR(8)` (draft/full, выводится в `toDto`). Аддитивная (3× ADD COLUMN nullable, без DROP), без потери данных, **backfill отчётов** опционален (см. Шаг 8). Повторный deploy = no-op. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«`DailyCheckIn` += 4 сущности отчёта».
+- **Шаг 5 — postgres-init — НЕ затронут.** Новых HNSW/GIN-индексов нет.
+- **Шаг 6 — patch — НЕ затронут.**
+- **Шаг 7 — Seed (идемпотентные, доезжают агрегатором `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`):**
+  - `scripts/seed-admin-settings.ts` (УЖЕ в STEPS) — новые крутилки `dayReport.enabled`=true (kill-switch ON) / `dayReport.completenessQualityThreshold`=0.5 (защита admin-edited; повтор = no-op). Прежние ключи `daySignals.*` сняты.
+  - **Удалён маршрут** `seed-llm-task-routes-day-signal.ts` (taskType `day-signal-detect` снесён вместе со слоем) — изъят из STEPS; на проде маршрут просто перестаёт диспатчиться (мёртвой LLM-роуты не остаётся).
+- **Шаг 8 — Backfill (идемпотентный, зарегистрирован в STEPS `phase:'backfill'`):** `docker compose exec backend bun run scripts/backfill-day-report.ts --days 30` — пересборка дневных отчётов за 30 дней из уже построенной разметки `block-ingest` (НЕ-LLM, дёшево; закрывает исторические «не сдал»). Доезжает агрегатором `apply-prod-deploy.ts --mode update`. Повтор = no-op (upsert патч-стиль).
+- **Шаги 9/10 (migrate/setup) — НЕ затронуты.**
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend frontend`. Backend (`DayReportCollectorService.collectForDay/assembleAndUpsert`; `ClosureVerifierService` вынесен из `task-completion.handler`; `DayReportCollectorCron` `@Cron('0 5 * * *', Europe/Moscow)` + `CheckinExpectationService.ensureForDay`; переписан `MeetingCheckinListener` на graph-derive; `DailyCheckInService` `upsertFromDaySignal`/`upsertInternal` += `notDone`/`ideas`, `toDto` выводит `reportCompleteness`; метрики `day_report_{collected,block_dropped_no_person,not_done_verify_calls}_total`; снесён слой `day-signal-*`). Frontend (`DailyCheckInApi` += `notDone`/`ideas`/`reportCompleteness`).
+- **Шаг 12 — Smoke** (после выката): `psql \d "daily_check_ins"` содержит `notDoneJson`/`ideasJson`/`reportCompleteness`; новый `@Cron DayReportCollectorCron` (05:00 МСК) виден в логах/зарегистрирован; в маршрутах LLM **нет** `day-signal-detect` (`/api/v1/admin/usage/calls?task=day-signal-detect` пуст); метрики `day_report_*` на `/metrics`; крутилки `dayReport.enabled`/`dayReport.completenessQualityThreshold` в админке. **R0 (ручной, pre-deploy gate):** `docker compose exec backend bun run scripts/diag-day-report-recall.ts --days 14 --limit 50` (read-only) — оценить покрытие/recall `plan_item`/`done_item`; при recall <0.7 — сначала усилить `block-ingest.prompt.ts`, затем доверять дашборду (см. анализ `plans/analysis/2026-06-29-checkin-ingest-rebuild.md` §«Проверка recall (R0 pre-flight)»).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-29 — Помощник «временно недоступен»: DeepSeek-first для всех классов данных + крутилка таймаута KIE (ветка work/2026-06-29)
 
 > ТЗ `plans/tz/2026-06-29-chat-v2-dataclass-routing-fallback.md`. `PROVIDER_CAPABILITY` поднял `deepseek`/`openai-via-proxy` `maxDataClass` `internal`→`private` → оба eligible+primary для любого класса данных, цепочка резерва `DeepSeek → OpenAI → KIE` работает для приватных/чувствительных вопросов (раньше для них оставался единственный зависающий `kie` → «Помощник временно недоступен»). Захардкоженный таймаут KIE 60_000 вынесен в крутилку `ai.kie.timeoutMs` (code-fallback 180000). Сиды chat-v2 выровнены на `deepseek-v4-pro`. Коммиты `3f8f23ad`, `1c83fc71`, `f9a9a63d`.

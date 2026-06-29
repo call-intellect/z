@@ -46,6 +46,58 @@ import { ReadablePayload } from "@/ui/readable-payload";
 type Filter = "unread" | "pending_response" | "all";
 type Tab = "inbox" | "proactive";
 
+type TaskPriority = "urgent" | "high" | "medium" | "low" | "none";
+
+interface DailyTaskItem {
+  issueId: string;
+  identifier: string;
+  title: string;
+  dueDate: string | null;
+  priority: TaskPriority;
+  actionUrl: string;
+}
+
+interface DailyTaskGroup {
+  key: "overdue" | "due_today" | "in_progress" | "backlog";
+  label: string;
+  items: DailyTaskItem[];
+}
+
+interface DailyOpenTasksPayload {
+  dateMsk: string;
+  isEmpty: boolean;
+  total: number;
+  shownCount: number;
+  overflowCount: number;
+  title: string;
+  actionUrl: string;
+  groups: DailyTaskGroup[];
+}
+
+const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
+  urgent: "Срочно",
+  high: "Высокий",
+  medium: "Средний",
+  low: "Низкий",
+  none: "Без приоритета",
+};
+
+const TASK_PRIORITY_VARIANT: Record<
+  TaskPriority,
+  "default" | "secondary" | "outline" | "warning" | "danger"
+> = {
+  urgent: "danger",
+  high: "warning",
+  medium: "default",
+  low: "secondary",
+  none: "outline",
+};
+
+const taskDueDateFormatter = new Intl.DateTimeFormat("ru-RU", {
+  day: "2-digit",
+  month: "short",
+});
+
 const FILTER_LABELS: Record<Filter, string> = {
   unread: "Непрочитанные",
   pending_response: "Ждут ответа",
@@ -280,6 +332,7 @@ function NotificationDetail({
   };
 
   const isProbeQuestion = n.eventType === "probe.question";
+  const isDailyOpenTasks = n.eventType === "tasks.daily_open";
   const probeQuestion =
     payload.formulatedQuestion?.trim() || payload.question?.trim() || "";
 
@@ -339,8 +392,13 @@ function NotificationDetail({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
+        {isDailyOpenTasks && (
+          <DailyOpenTasksView
+            payload={n.payload as unknown as DailyOpenTasksPayload}
+          />
+        )}
         {}
-        {!isProbeQuestion && payload.question && (
+        {!isDailyOpenTasks && !isProbeQuestion && payload.question && (
           <div>
             <div className="text-xs uppercase text-muted-foreground">
               Вопрос
@@ -349,7 +407,7 @@ function NotificationDetail({
           </div>
         )}
         {}
-        {!isProbeQuestion && payload.context && (
+        {!isDailyOpenTasks && !isProbeQuestion && payload.context && (
           <div>
             <div className="text-xs uppercase text-muted-foreground">
               Контекст
@@ -357,7 +415,7 @@ function NotificationDetail({
             <p className="whitespace-pre-wrap">{payload.context}</p>
           </div>
         )}
-        {!isProbeQuestion && payload.summary && (
+        {!isDailyOpenTasks && !isProbeQuestion && payload.summary && (
           <div>
             <div className="text-xs uppercase text-muted-foreground">
               Карточка
@@ -365,7 +423,7 @@ function NotificationDetail({
             <p className="whitespace-pre-wrap">{payload.summary}</p>
           </div>
         )}
-        {!isProbeQuestion && payload.title && (
+        {!isDailyOpenTasks && !isProbeQuestion && payload.title && (
           <div>
             <div className="text-xs uppercase text-muted-foreground">
               Заголовок
@@ -373,7 +431,9 @@ function NotificationDetail({
             <p className="whitespace-pre-wrap font-medium">{payload.title}</p>
           </div>
         )}
-        {payload.body && <p className="whitespace-pre-wrap">{payload.body}</p>}
+        {!isDailyOpenTasks && payload.body && (
+          <p className="whitespace-pre-wrap">{payload.body}</p>
+        )}
 
         {isProbeQuestion && payload.quote && (
           <div>
@@ -486,6 +546,68 @@ function NotificationDetail({
         </details>
       </CardContent>
     </Card>
+  );
+}
+
+function DailyOpenTasksView({ payload }: { payload: DailyOpenTasksPayload }) {
+  const groups = payload.groups ?? [];
+
+  if (payload.isEmpty || groups.length === 0) {
+    return (
+      <div className="space-y-2">
+        <p className="font-medium">{payload.title}</p>
+        <p className="text-muted-foreground">
+          На сегодня открытых задач нет — хорошего дня.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="font-medium">{payload.title}</p>
+      {groups.map((group) => (
+        <div key={group.key} className="space-y-2">
+          <div className="text-xs uppercase text-muted-foreground">
+            {group.label}
+          </div>
+          <ul className="space-y-1">
+            {group.items.map((item) => (
+              <li key={item.issueId}>
+                <a
+                  href={item.actionUrl}
+                  className="flex items-center gap-2 rounded-md border border-border p-2 transition hover:bg-muted"
+                >
+                  <Badge
+                    variant={TASK_PRIORITY_VARIANT[item.priority]}
+                    className="shrink-0 text-[10px]"
+                  >
+                    {TASK_PRIORITY_LABELS[item.priority]}
+                  </Badge>
+                  <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                    {item.identifier}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                  {item.dueDate && (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {taskDueDateFormatter.format(new Date(item.dueDate))}
+                    </span>
+                  )}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      {payload.overflowCount > 0 && (
+        <a
+          href={payload.actionUrl}
+          className="block text-sm text-accent hover:underline"
+        >
+          …и ещё {payload.overflowCount} — Открыть все
+        </a>
+      )}
+    </div>
   );
 }
 

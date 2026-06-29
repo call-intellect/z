@@ -7364,6 +7364,12 @@ model DailyCheckIn {
   donesJson       Json?
   /// Массив блокеров: Array<{ text, severity? ∈ {low|medium|high}, ownerHint? }>.
   blockersJson    Json?
+  /// Не сделано за день: Array<{ text, sourcePlanText?, verdictConfidence? }>. Заполняет сборщик (ТЗ Ф3). NULL до сборки.
+  notDoneJson  Json?
+  /// Идеи за день: Array<{ text, sourceBlockId? }> из signalType idea/suggestion/hypothesis. NULL до сборки.
+  ideasJson    Json?
+  /// Полнота отчёта: 'draft' | 'full' (ТЗ Ф5). NULL до расчёта.
+  reportCompleteness String? @db.VarChar(8)
   /// id исходной нотификации (cron probe). NULL для manual create.
   notificationId  String?
   /// Сырой текст ответа пользователя (если есть). Для аудита и curator review.

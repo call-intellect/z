@@ -2631,6 +2631,9 @@ model Org {
   // ── SBA β-8.3 — Daily operations digest (ежедневный отчёт COO) ──
   dailyOperationsDigests DailyOperationsDigest[]
 
+  // ── «Месяц компании» — месячный operations digest (executive-брифинг) ──
+  monthlyOperationsDigests MonthlyOperationsDigest[]
+
   // ── Goals OKR v2 Фаза 4 — еженедельный пульс целей ──
   weeklyGoalsPulseDigests WeeklyGoalsPulseDigest[]
 
@@ -8014,6 +8017,48 @@ model DailyOperationsDigest {
   @@unique([tenantId, dateLocal])
   @@index([tenantId, dateLocal])
   @@map("daily_operations_digests")
+}
+
+/// «Месяц компании» — месячный executive-дайджест операционного директора.
+/// Зеркало WeeklyOperationsDigest с окном «прошлый календарный месяц». Генерируется
+/// глобальным OperationsMonthlyDigestCron 1-го числа ~06:00. MonthlyDigestService.generate
+/// сводит 4 недельных WeeklyOperationsDigest месяца одним LLM-вызовом operations-monthly-digest.
+/// Идемпотентность — @@unique([tenantId, periodYm]).
+model MonthlyOperationsDigest {
+  id             String   @id @default(cuid())
+  tenantId       String
+  /// YYYY-MM — месяц отчёта (например 2026-05).
+  periodYm       String   @db.VarChar(7)
+  /// Связный текст от LLM (markdown). «Сухой» вариант при падении LLM.
+  bodyMarkdown   String   @db.Text
+  /// Структурированные показатели месяца для виджетов. Свободный JSON.
+  metricsJson    Json
+  /// Провенанс: id недельных снапшотов/целей/решений, использованных в дайджесте.
+  sourcesJson    Json
+  /// Маршрут/модель LLM (`<promptVersion>+<model>`). NULL при сухом fallback.
+  llmTaskRouteId String?
+  /// Вердикт месяца: { overall:{state,emoji,title,oneLiner}, axes:[{key,state,label,why}] }.
+  /// state ∈ 'ok'|'warn'|'risk'; key ∈ 'team'|'clients'|'execution'|'overall'. NULL для сухого fallback.
+  verdictJson           Json?
+  /// Письмо «как прошёл месяц»: [{ key, title, prose, cites:[{label,ref}] }] (TTS-friendly).
+  letterJson            Json?
+  /// Месячный компас к цели: { direction:'to_goal'|'drift'|'against', score, monthDelta, pace:{factToGoal,planToGoal,etaIso,leadingSignal}, why, pro:[], contra:[], goalId, goalName }.
+  goalAlignmentMonthJson Json?
+  /// Тренд осей по неделям: [{ key:'team'|'clients'|'execution'|'overall', weeks:[{weekStart, state}] }] (детерминированно из 4 недельных вердиктов).
+  weekTrendJson         Json?
+  /// Короткое резюме для рассылки/блока (как DailyOperationsDigest.shortSummary).
+  shortSummary          String?  @db.Text
+  /// Момент успешной доставки уведомления. NULL — не доставлено.
+  deliveredAt           DateTime?
+  createdAt      DateTime @default(now())
+  /// audit — источник записи. 'demo' для seed демо-кабинета; null для боевых.
+  externalSource String?
+
+  tenant Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, periodYm])
+  @@index([tenantId, periodYm])
+  @@map("monthly_operations_digests")
 }
 
 // ──────────────────────────── SBA δ-2 — ProactiveWatcher (2026-05-23) ────────────────────────────

@@ -55,6 +55,8 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── семантический дедуп задач встречи (Ф5 Р2) ────────────────────────
   private taskDedupeTotal!: Counter<'result'>;
 
+  private morningTasksDigestTotal!: Counter<'is_empty'>;
+
   // ── петля закрытия задачи (TZ task-loop Ф2b) ─────────────────────────
   private taskClosureOutcomeTotal!: Counter<'outcome'>;
 
@@ -1271,6 +1273,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_task_dedupe_total',
       help: 'Ф5 Р2 — семантический дедуп задач встречи. result=knn_merged|llm_merged|kept|skipped.',
       labelNames: ['result'] as const,
+    });
+
+    this.morningTasksDigestTotal = this.getOrCreateCounter({
+      name: 'z_tracker_morning_digest_total',
+      help: 'Утренняя сводка задач: отправлено уведомлений. is_empty=true|false (пустой день или со списком).',
+      labelNames: ['is_empty'] as const,
     });
 
     this.taskClosureOutcomeTotal = this.getOrCreateCounter({
@@ -4594,6 +4602,10 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incTaskDedupe(args: { result: string }): void {
     this.taskDedupeTotal?.inc({ result: args.result });
+  }
+
+  incMorningTasksDigest(args: { isEmpty: boolean }): void {
+    this.morningTasksDigestTotal?.inc({ is_empty: String(args.isEmpty) });
   }
 
   /**

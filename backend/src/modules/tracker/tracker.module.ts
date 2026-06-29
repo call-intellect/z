@@ -95,6 +95,7 @@ import { ImportTrackerWorker } from './workers/import-tracker.worker';
 import { IntakeAutoTriageWorker } from './workers/intake-auto-triage.worker';
 import { IssueOverdueDetectorCron } from './workers/issue-overdue-detector.cron';
 import { IssueStateGaugeCron } from './workers/issue-state-gauge.cron';
+import { MorningTasksDigestCron } from './workers/morning-tasks-digest.cron';
 import { ProgressAutoDraftCron } from './workers/progress-auto-draft.cron';
 import { RecurrenceMaterializeCron } from './workers/recurrence-materialize.cron';
 import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
@@ -183,6 +184,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     WebhookDeliveryWorker,
     TrackerEmitterService,
     IssueOverdueDetectorCron,
+    MorningTasksDigestCron,
     IssueStateGaugeCron,
     GoalAlignmentLowCron,
     ProgressAutoDraftCron,

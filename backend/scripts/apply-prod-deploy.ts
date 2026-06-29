@@ -88,6 +88,11 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-daily-digest.ts' },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-report-archive.ts',
+    hint: 'operations.report_archive.recent_limit (навигатор/архив отчётов день/неделя/месяц)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-month-company.ts',
     hint: 'betaOps.monthlyDigest{Enabled,LocalHour} (Месяц компании Ф6)',
   },

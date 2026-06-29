@@ -5,6 +5,10 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { tryParseJson } from '../../ai/services/json-extract.util';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  mapAvailablePeriod,
+  type AvailablePeriodsDto,
+} from '../dto/available-periods.dto';
 import type {
   WeeklyDeltaDto,
   WeeklyDigestMetricsDto,
@@ -207,6 +211,20 @@ export class WeeklyDigestService {
     });
     if (!row) return null;
     return this.enrichDto(this.toDto(row));
+  }
+
+  async listAvailablePeriods(args: {
+    tenantId: string;
+    limit: number;
+  }): Promise<AvailablePeriodsDto> {
+    const rows = await this.prisma.weeklyOperationsDigest.findMany({
+      where: { tenantId: args.tenantId },
+      orderBy: { weekStart: 'desc' },
+      take: args.limit,
+      select: { weekStart: true, verdictJson: true },
+    });
+    const periods = rows.map((r) => mapAvailablePeriod(r.weekStart, r.verdictJson));
+    return { rhythm: 'week', periods, latest: periods[0]?.period ?? null };
   }
 
   async getOrGenerate(args: {

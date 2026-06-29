@@ -84,6 +84,7 @@ describe('WeeklyDigestService', () => {
       weeklyOperationsDigest: {
         findUnique: vi.fn().mockResolvedValue(overrides.existing ?? null),
         findFirst: vi.fn().mockResolvedValue(overrides.latest ?? null),
+        findMany: vi.fn().mockResolvedValue([]),
         upsert: vi
           .fn()
           .mockImplementation(
@@ -281,5 +282,31 @@ describe('WeeklyDigestService', () => {
     const result = await svc.getLatest({ tenantId: 't1' });
     expect(result).toBeNull();
     expect(llm.call).not.toHaveBeenCalled();
+  });
+
+  it('listAvailablePeriods: rhythm=week, weekStart DESC, stateHint/title, legacy→null, latest', async () => {
+    const { svc, prisma } = buildSvc({});
+    prisma.weeklyOperationsDigest.findMany.mockResolvedValueOnce([
+      { weekStart: '2026-06-22', verdictJson: { overall: { state: 'risk', title: 'Тяжёлая неделя' } } },
+      { weekStart: '2026-06-15', verdictJson: { overall: { state: 'ok', title: 'Ровно' } } },
+      { weekStart: '2026-06-08', verdictJson: null },
+    ]);
+    const result = await svc.listAvailablePeriods({ tenantId: 't1', limit: 12 });
+    expect(result.rhythm).toBe('week');
+    expect(result.periods.map((p) => p.period)).toEqual([
+      '2026-06-22',
+      '2026-06-15',
+      '2026-06-08',
+    ]);
+    expect(result.periods[0]).toEqual({
+      period: '2026-06-22',
+      stateHint: 'risk',
+      title: 'Тяжёлая неделя',
+    });
+    expect(result.periods[2]).toEqual({ period: '2026-06-08', stateHint: null, title: null });
+    expect(result.latest).toBe('2026-06-22');
+    expect(prisma.weeklyOperationsDigest.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { weekStart: 'desc' }, take: 12 }),
+    );
   });
 });

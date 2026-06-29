@@ -4,6 +4,10 @@ import { Prisma } from '@prisma/client';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  mapAvailablePeriod,
+  type AvailablePeriodsDto,
+} from '../dto/available-periods.dto';
 import type {
   MonthlyDigestGoalAlignmentMonthDto,
   MonthlyDigestLetterSectionDto,
@@ -210,6 +214,20 @@ export class MonthlyDigestService {
     });
     if (!row) return null;
     return this.toDto(row);
+  }
+
+  async listAvailablePeriods(args: {
+    tenantId: string;
+    limit: number;
+  }): Promise<AvailablePeriodsDto> {
+    const rows = await this.prisma.monthlyOperationsDigest.findMany({
+      where: { tenantId: args.tenantId },
+      orderBy: { periodYm: 'desc' },
+      take: args.limit,
+      select: { periodYm: true, verdictJson: true },
+    });
+    const periods = rows.map((r) => mapAvailablePeriod(r.periodYm, r.verdictJson));
+    return { rhythm: 'month', periods, latest: periods[0]?.period ?? null };
   }
 
   async getOrGenerate(args: {

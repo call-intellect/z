@@ -82,6 +82,7 @@ describe('MonthlyDigestService', () => {
     });
     const monthlyFindUnique = vi.fn().mockResolvedValue(overrides.existing ?? null);
     const monthlyFindFirst = vi.fn().mockResolvedValue(overrides.latest ?? null);
+    const monthlyFindMany = vi.fn().mockResolvedValue([]);
     const monthlyUpsert = vi
       .fn()
       .mockImplementation(
@@ -118,6 +119,7 @@ describe('MonthlyDigestService', () => {
       monthlyOperationsDigest: {
         findUnique: monthlyFindUnique,
         findFirst: monthlyFindFirst,
+        findMany: monthlyFindMany,
         upsert: monthlyUpsert,
       },
       goal: {
@@ -283,6 +285,28 @@ describe('MonthlyDigestService', () => {
     expect(result?.periodYm).toBe('2026-06');
     expect(prisma.monthlyOperationsDigest.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ orderBy: { periodYm: 'desc' } }),
+    );
+  });
+
+  it('listAvailablePeriods: rhythm=month, periodYm DESC, stateHint/title, legacy→null, latest', async () => {
+    const { svc, prisma } = buildSvc({});
+    prisma.monthlyOperationsDigest.findMany.mockResolvedValueOnce([
+      { periodYm: '2026-06', verdictJson: { overall: { state: 'ok', title: 'Сильный месяц' } } },
+      { periodYm: '2026-05', verdictJson: { overall: { state: 'warn', title: 'Месяц сдвига' } } },
+      { periodYm: '2026-04', verdictJson: null },
+    ]);
+    const result = await svc.listAvailablePeriods({ tenantId: 't1', limit: 12 });
+    expect(result.rhythm).toBe('month');
+    expect(result.periods.map((p) => p.period)).toEqual(['2026-06', '2026-05', '2026-04']);
+    expect(result.periods[0]).toEqual({
+      period: '2026-06',
+      stateHint: 'ok',
+      title: 'Сильный месяц',
+    });
+    expect(result.periods[2]).toEqual({ period: '2026-04', stateHint: null, title: null });
+    expect(result.latest).toBe('2026-06');
+    expect(prisma.monthlyOperationsDigest.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { periodYm: 'desc' }, take: 12 }),
     );
   });
 });

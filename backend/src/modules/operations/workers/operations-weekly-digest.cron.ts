@@ -145,10 +145,10 @@ export class OperationsWeeklyDigestCron {
     });
     if (memberships.length === 0) return 0;
 
-    const title = `Недельная сводка операционного директора ${args.weekStart} — ${args.weekEnd}`;
+    const title = `Неделя компании ${args.weekStart} — ${args.weekEnd}`;
     const body =
-      'Готов еженедельный обзор: температура команды, повторяющиеся блокеры, цели и висящие решения. Откройте «Недельную сводку» в панели операций.';
-    const actionUrl = `/dashboard/operations/weekly?weekStart=${args.weekStart}`;
+      'Готов недельный брифинг: вердикт по 4 осям, тренд по дням пн–пт, письмо «как прошла неделя», компас к цели и таблица план↔факт по людям. Открой «Неделю компании» на главном экране.';
+    const actionUrl = `/dashboard?rhythm=week`;
 
     let sent = 0;
     for (const m of memberships) {

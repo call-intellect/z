@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
 
@@ -16,6 +16,11 @@ export function DirectorDashboardClient() {
   const [rhythm, setRhythm] = useState<"day" | "week">(() =>
     new Date().getDay() === 1 ? "week" : "day",
   );
+
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("rhythm");
+    if (q === "week" || q === "day") setRhythm(q);
+  }, []);
 
   const greetingName = useMemo(() => {
     return user?.name?.trim() || user?.email?.split("@")[0] || "друг";

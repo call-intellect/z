@@ -98,7 +98,7 @@ export function clampWeekVerdict(
   const anyDomainRisk = axes.some(
     (a) => (a.key === 'team' || a.key === 'clients' || a.key === 'execution') && a.state === 'risk',
   );
-  if (anyDomainRisk) {
+  if (anyDomainRisk || signals.executionStrained) {
     if (overall.state === 'ok') overall.state = 'warn';
     const overallAxis = axes.find((a) => a.key === 'overall');
     if (overallAxis && overallAxis.state === 'ok') overallAxis.state = 'warn';

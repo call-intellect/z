@@ -106,13 +106,15 @@ describe('clampWeekVerdict', () => {
     expect(out.axes.find((a) => a.key === 'clients')!.state).toBe('risk');
   });
 
-  it('execution ok + executionStrained → execution !== ok', () => {
+  it('execution ok + executionStrained → execution !== ok и overall не зелёный', () => {
     const v = verdict({ team: 'ok', clients: 'ok', execution: 'ok', overall: 'ok' });
     const out = clampWeekVerdict(v, {
       hasNegativeClientSignal: false,
       executionStrained: true,
     });
     expect(out.axes.find((a) => a.key === 'execution')!.state).not.toBe('ok');
+    expect(out.overall.state).not.toBe('ok');
+    expect(out.axes.find((a) => a.key === 'overall')!.state).not.toBe('ok');
   });
 
   it('нет сигналов → вердикт не меняется, повторный clamp идемпотентен', () => {

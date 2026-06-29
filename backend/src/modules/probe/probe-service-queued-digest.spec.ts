@@ -96,9 +96,9 @@ describe('ProbeService.suggest — бюджет исчерпан', () => {
   it('immediate reason → dropped_rate_limit (прежнее поведение)', async () => {
     const res = await env.service.suggest({
       tenantId: 'org-1',
-      emittedByService: '3-3-decisions',
-      reason: 'decision.overdue',
-      payload: { message: 'Решение просрочено' },
+      emittedByService: 'specialist-3-15-tasks',
+      reason: 'task.assignee_unresolved',
+      payload: { message: 'У задачи не определён исполнитель' },
       recipientCandidates: ['user-1'],
       priorityHint: 0.7,
     });

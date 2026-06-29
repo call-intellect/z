@@ -9,7 +9,7 @@ import {
 
 describe('probe-reason-labels', () => {
   it('ярлык для известного reason — человеческий рус. текст', () => {
-    expect(PROBE_REASON_LABEL['decision.overdue']).toBe('решение просрочено');
+    expect(PROBE_REASON_LABEL['task.assignee_unresolved']).toBe('у задачи не определён исполнитель');
     expect(PROBE_REASON_LABEL['regulation.missing_owner']).toBe('у регламента нет ответственного');
   });
 
@@ -19,9 +19,9 @@ describe('probe-reason-labels', () => {
   });
 
   it('fallback-вопрос — готовый человеческий вопрос без кодов', () => {
-    const q = PROBE_REASON_FALLBACK['decision.overdue'];
+    const q = PROBE_REASON_FALLBACK['regulation.missing_owner'];
     expect(q).toBeDefined();
-    expect(q).not.toContain('decision');
+    expect(q).not.toContain('regulation');
     expect(q!.length).toBeGreaterThan(0);
   });
 

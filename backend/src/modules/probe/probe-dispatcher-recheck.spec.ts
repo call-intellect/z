@@ -19,9 +19,9 @@ function buildProbe() {
   return {
     id: 'probe-recheck-1',
     tenantId: 'org-1',
-    emittedByService: '3-3-decisions',
-    reason: 'decision.missing_decider',
-    payload: { contextCardId: 'dec-1', contextCardKind: 'decision' },
+    emittedByService: 'specialist-3-15-tasks',
+    reason: 'task.assignee_unresolved',
+    payload: { contextCardId: 'issue-1', contextCardKind: 'issue' },
     recipientCandidates: ['user-1'],
     selectedRecipientId: null,
     status: 'pending',
@@ -35,7 +35,7 @@ function buildProbe() {
   };
 }
 
-function makeWorker(args: { decisionFindFirst: ReturnType<typeof vi.fn> }): {
+function makeWorker(args: { issueFindFirst: ReturnType<typeof vi.fn> }): {
   worker: ProbeDispatcherWorker;
   updateCalls: Array<{ data: Record<string, unknown> }>;
   sendNotification: ReturnType<typeof vi.fn>;
@@ -51,7 +51,7 @@ function makeWorker(args: { decisionFindFirst: ReturnType<typeof vi.fn> }): {
         return { ...probe, ...p.data };
       }),
     },
-    decision: { findFirst: args.decisionFindFirst },
+    issue: { findFirst: args.issueFindFirst },
   } as unknown as PrismaService;
 
   const llmCall = vi
@@ -133,9 +133,7 @@ async function run(worker: ProbeDispatcherWorker): Promise<void> {
 describe('ProbeDispatcherWorker — recheck повода (Фаза 4)', () => {
   it('пробел закрылся (решающий назначен) → suppressed_stale, не шлём', async () => {
     const env = makeWorker({
-      decisionFindFirst: vi
-        .fn()
-        .mockResolvedValue({ decidedByPersonIds: ['p1'], decidedByPersonId: null }),
+      issueFindFirst: vi.fn().mockResolvedValue({ assignees: [{ id: 'a1' }] }),
     });
     await run(env.worker);
 
@@ -147,9 +145,7 @@ describe('ProbeDispatcherWorker — recheck повода (Фаза 4)', () => {
 
   it('пробел открыт (решающего нет) → probe отправляется', async () => {
     const env = makeWorker({
-      decisionFindFirst: vi
-        .fn()
-        .mockResolvedValue({ decidedByPersonIds: [], decidedByPersonId: null }),
+      issueFindFirst: vi.fn().mockResolvedValue({ assignees: [] }),
     });
     await run(env.worker);
 
@@ -161,7 +157,7 @@ describe('ProbeDispatcherWorker — recheck повода (Фаза 4)', () => {
 
   it('предикат упал → best-effort: probe всё равно отправляется', async () => {
     const env = makeWorker({
-      decisionFindFirst: vi.fn().mockRejectedValue(new Error('db down')),
+      issueFindFirst: vi.fn().mockRejectedValue(new Error('db down')),
     });
     await run(env.worker);
 

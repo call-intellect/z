@@ -39,7 +39,6 @@ interface ProbeClassification {
 type ClarifyGap =
   | 'assignee_unresolved'
   | 'date_unparsed'
-  | 'decider_unresolved'
   | 'counter_question';
 
 type ApplyResult =
@@ -344,17 +343,6 @@ export class ProbeResponseHandler {
     if (probe.reason === 'task.completion_detail_missing') {
       applyResult = await this.maybeApplyCompletionDetailAnswer({
         tenantId: event.tenantId,
-        actorUserId: event.recipientUserId,
-        probePayload,
-        eventPayload: event.payload,
-        classification,
-      });
-    }
-
-    if (probe.reason.startsWith('decision.')) {
-      applyResult = await this.maybeApplyDecisionProbeAnswer({
-        tenantId: event.tenantId,
-        reason: probe.reason,
         actorUserId: event.recipientUserId,
         probePayload,
         eventPayload: event.payload,
@@ -962,125 +950,6 @@ export class ProbeResponseHandler {
     });
   }
 
-  private async maybeApplyDecisionProbeAnswer(args: {
-    tenantId: string;
-    reason: string;
-    actorUserId: string;
-    probePayload: Record<string, unknown>;
-    eventPayload: Record<string, unknown>;
-    classification: ProbeClassification | null;
-  }): Promise<ApplyResult> {
-    const decisionId = this.toStringOrUndef(args.probePayload.contextCardId);
-    if (!decisionId) return { status: 'noop' };
-    const rawAnswer =
-      args.classification?.value?.trim() || this.extractResponseText(args.eventPayload);
-    if (!rawAnswer) return { status: 'noop' };
-
-    const mode = this.resolveApplyMode(args.classification, rawAnswer);
-    if (mode.kind === 'unclear') return { status: 'skipped_unclear' };
-    if (mode.kind === 'counter_question') {
-      return { status: 'needs_clarification', gap: 'counter_question' };
-    }
-
-    try {
-      const isReject =
-        mode.kind === 'delete' ||
-        (mode.kind === 'degraded' &&
-          mapExistenceConfirmAnswer(mode.answer)?.decisionType === 'reject');
-      if (isReject) {
-        await this.prisma.decision.updateMany({
-          where: { id: decisionId, tenantId: args.tenantId, deletedAt: null },
-          data: { deletedAt: new Date() },
-        });
-        this.logger.log(
-          `decision-probe-apply: dismissed decision=${decisionId} reason=${args.reason} (мягкое удаление по ответу человека)`,
-        );
-        return { status: 'applied' };
-      }
-
-      const answer = mode.kind === 'value' ? mode.value : mode.answer;
-
-      if (args.reason === 'decision.missing_decider') {
-        const personId = await this.resolveDeciderPersonId(args.tenantId, answer);
-        if (!personId) {
-          if (mode.kind === 'value') {
-            return { status: 'needs_clarification', gap: 'decider_unresolved' };
-          }
-          return { status: 'noop' };
-        }
-        await this.prisma.decision.updateMany({
-          where: {
-            id: decisionId,
-            tenantId: args.tenantId,
-            deletedAt: null,
-            decidedByPersonId: null,
-          },
-          data: {
-            decidedByPersonId: personId,
-            decidedByPersonIds: [personId],
-          },
-        });
-        return { status: 'applied' };
-      }
-
-      if (args.reason === 'decision.no_deadline_critical' || args.reason === 'decision.overdue') {
-        const due = parseRussianDueDate(answer, new Date());
-        if (!due) {
-          if (mode.kind === 'value') {
-            return { status: 'needs_clarification', gap: 'date_unparsed' };
-          }
-          return { status: 'noop' };
-        }
-        if (args.reason === 'decision.no_deadline_critical') {
-          await this.prisma.decision.updateMany({
-            where: {
-              id: decisionId,
-              tenantId: args.tenantId,
-              deletedAt: null,
-              deadline: null,
-            },
-            data: { deadline: due },
-          });
-          return { status: 'applied' };
-        }
-        await this.prisma.decision.updateMany({
-          where: {
-            id: decisionId,
-            tenantId: args.tenantId,
-            deletedAt: null,
-            deadline: { not: due },
-          },
-          data: { deadline: due },
-        });
-        return { status: 'applied' };
-      }
-
-      if (args.reason === 'decision.outcome_unknown') {
-        await this.prisma.decision.updateMany({
-          where: {
-            id: decisionId,
-            tenantId: args.tenantId,
-            deletedAt: null,
-            actualOutcomes: null,
-          },
-          data: { actualOutcomes: answer.trim() },
-        });
-        return { status: 'applied' };
-      }
-      return { status: 'noop' };
-    } catch (err) {
-      this.logger.warn(
-        {
-          tenantId: args.tenantId,
-          decisionId,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        'decision-probe-apply: best-effort, пропускаю',
-      );
-      return { status: 'noop' };
-    }
-  }
-
   private async maybeApplyExperimentLessonAnswer(args: {
     tenantId: string;
     actorUserId: string;
@@ -1227,28 +1096,6 @@ export class ProbeResponseHandler {
     if (raw === null || typeof raw !== 'object') return false;
     const contentMd = (raw as { contentMd?: unknown }).contentMd;
     return typeof contentMd === 'string' && contentMd.trim().length > 0;
-  }
-
-  private async resolveDeciderPersonId(tenantId: string, answer: string): Promise<string | null> {
-    if (this.assigneeResolver) {
-      const resolution = await this.assigneeResolver.resolve(tenantId, answer);
-      if (resolution.kind === 'resolved') {
-        const person = await this.prisma.person.findFirst({
-          where: { tenantId, userId: resolution.userId, deletedAt: null },
-          select: { id: true },
-        });
-        if (person) return person.id;
-      }
-    }
-    const byName = await this.prisma.person.findFirst({
-      where: {
-        tenantId,
-        name: { equals: answer.trim(), mode: 'insensitive' },
-        deletedAt: null,
-      },
-      select: { id: true },
-    });
-    return byName?.id ?? null;
   }
 
   private async sendAnswerAck(args: {

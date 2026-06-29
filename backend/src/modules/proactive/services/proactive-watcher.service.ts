@@ -120,11 +120,6 @@ export class ProactiveWatcherService {
     const flags = this.cfg.proactive.rules;
     return [
       {
-        code: 'decision_no_owner',
-        enabled: flags.decisionNoOwner,
-        runner: (a) => this.ruleDecisionNoOwner(a),
-      },
-      {
         code: 'insight_no_mitigation',
         enabled: flags.insightNoMitigation,
         runner: (a) => this.ruleInsightNoMitigation(a),
@@ -160,52 +155,6 @@ export class ProactiveWatcherService {
         runner: (a) => this.rulePlanItemOverdue(a),
       },
     ];
-  }
-
-  private async ruleDecisionNoOwner(args: {
-    tenantId: string;
-    now: Date;
-  }): Promise<{ sent: number; dedupSkipped: number }> {
-    const threshold = new Date(args.now.getTime() - 3 * 24 * 3600 * 1000);
-    const candidates = await this.prisma.decision.findMany({
-      where: {
-        tenantId: args.tenantId,
-        deletedAt: null,
-        createdAt: { lt: threshold },
-        status: { in: ['approved', 'proposed'] as never[] },
-        decidedByPersonIds: { isEmpty: true },
-      },
-      select: { id: true, statement: true, text: true, createdAt: true },
-      take: ProactiveWatcherService.MAX_NOTIFICATIONS_PER_RULE_PER_ORG,
-      orderBy: { createdAt: 'asc' },
-    });
-    if (candidates.length === 0) return { sent: 0, dedupSkipped: 0 };
-
-    const recipient = await this.firstAdminUserId(args.tenantId);
-    if (!recipient) return { sent: 0, dedupSkipped: 0 };
-
-    let sent = 0;
-    let dedupSkipped = 0;
-    for (const d of candidates) {
-      const ageDays = Math.floor((args.now.getTime() - d.createdAt.getTime()) / (24 * 3600 * 1000));
-      const name = (d.statement ?? d.text ?? 'без названия').slice(0, 80);
-      const result = await this.emit({
-        tenantId: args.tenantId,
-        userId: recipient,
-        ruleType: 'decision_no_owner',
-        severity: ageDays > 14 ? 'high' : ageDays > 7 ? 'medium' : 'low',
-        now: args.now,
-        facts: {
-          name,
-          decisionId: d.id,
-          ageDays,
-        },
-        actionUrl: `/decisions/${d.id}`,
-      });
-      if (result === 'sent') sent++;
-      else if (result === 'dedup_skipped') dedupSkipped++;
-    }
-    return { sent, dedupSkipped };
   }
 
   private async ruleInsightNoMitigation(args: {

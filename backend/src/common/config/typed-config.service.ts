@@ -1623,7 +1623,6 @@ export class TypedConfigService {
         1,
       ),
       rules: {
-        decisionNoOwner: this.get('PROACTIVE_RULE_DECISION_NO_OWNER_ENABLED') !== false,
         insightNoMitigation: this.get('PROACTIVE_RULE_INSIGHT_NO_MITIGATION_ENABLED') !== false,
         experimentRunningTooLong:
           this.get('PROACTIVE_RULE_EXPERIMENT_RUNNING_TOO_LONG_ENABLED') !== false,

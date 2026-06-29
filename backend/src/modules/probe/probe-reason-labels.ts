@@ -3,12 +3,6 @@ export const PROBE_REASON_LABEL_DEFAULT = 'требуется уточнение
 export const PROBE_REASON_FALLBACK_DEFAULT = 'Можете уточнить, пожалуйста?';
 
 export const PROBE_REASON_LABEL: Record<string, string> = {
-  'decision.competing_versions': 'по решению есть конкурирующие версии',
-  'decision.missing_decider': 'у решения нет ответственного за принятие',
-  'decision.no_deadline_critical': 'у важного решения нет срока',
-  'decision.overdue': 'решение просрочено',
-  'decision.outcome_unknown': 'неизвестен итог решения',
-  'decision.confirm_status': 'нужно подтвердить статус решения',
   'temporal.fact_stale_contradiction': 'факт устарел / расхождение',
   'temporal.fact_stale_contradiction.escalated': 'давнее расхождение в фактах',
   'experiment.result_without_lesson': 'у эксперимента есть результат, но нет вывода',
@@ -66,12 +60,6 @@ export const PROBE_REASON_LABEL: Record<string, string> = {
 };
 
 export const PROBE_REASON_FALLBACK: Record<string, string> = {
-  'decision.competing_versions': 'По этому решению есть несколько версий — какая актуальная?',
-  'decision.missing_decider': 'Кто отвечает за это решение?',
-  'decision.no_deadline_critical': 'К какому сроку нужно принять это решение?',
-  'decision.overdue': 'Это решение должно было исполниться. На каком оно сейчас этапе?',
-  'decision.outcome_unknown': 'Чем в итоге закончилось это решение?',
-  'decision.confirm_status': 'Какой сейчас статус у этого решения?',
   'temporal.fact_stale_contradiction': 'Здесь есть расхождение в данных. Какой вариант верный?',
   'temporal.fact_stale_contradiction.escalated':
     'Это расхождение давно не разрешено. Какой вариант актуальный?',

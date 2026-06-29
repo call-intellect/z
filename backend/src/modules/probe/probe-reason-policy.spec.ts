@@ -12,8 +12,7 @@ import {
 
 describe('probeWindow', () => {
   it('immediate для критичных reason', () => {
-    expect(probeWindow('decision.overdue')).toBe('immediate');
-    expect(probeWindow('decision.missing_decider')).toBe('immediate');
+    expect(probeWindow('task.assignee_unresolved')).toBe('immediate');
     expect(probeWindow('regulation.missing_owner')).toBe('immediate');
     expect(probeWindow('consistency_violation.R3')).toBe('immediate');
     expect(probeWindow('kr_checkpoint_suggested')).toBe('immediate');
@@ -32,49 +31,49 @@ describe('probeWindow', () => {
 });
 
 describe('PROBE_REASON_RECHECK', () => {
-  it('decision.missing_decider: решающий назначен → пробел закрыт (false)', async () => {
+  it('idea.status_unclear: идея зависла в обсуждении → пробел открыт (true)', async () => {
     const prisma = {
-      decision: {
+      idea: {
         findFirst: vi
           .fn()
-          .mockResolvedValue({ decidedByPersonIds: ['p1'], decidedByPersonId: null }),
+          .mockResolvedValue({ status: 'in_discussion', statusChangedAt: null }),
       },
     } as unknown as PrismaService;
-    const rel = await PROBE_REASON_RECHECK['decision.missing_decider']!({
+    const rel = await PROBE_REASON_RECHECK['idea.status_unclear']!({
       prisma,
       tenantId: 'org-1',
-      contextCardId: 'dec-1',
-      contextCardKind: 'decision',
-    });
-    expect(rel).toBe(false);
-  });
-
-  it('decision.missing_decider: решающего нет → пробел открыт (true)', async () => {
-    const prisma = {
-      decision: {
-        findFirst: vi
-          .fn()
-          .mockResolvedValue({ decidedByPersonIds: [], decidedByPersonId: null }),
-      },
-    } as unknown as PrismaService;
-    const rel = await PROBE_REASON_RECHECK['decision.missing_decider']!({
-      prisma,
-      tenantId: 'org-1',
-      contextCardId: 'dec-1',
-      contextCardKind: 'decision',
+      contextCardId: 'idea-1',
+      contextCardKind: 'idea',
     });
     expect(rel).toBe(true);
   });
 
-  it('сущность удалена (null) → подавляем (false)', async () => {
+  it('idea.status_unclear: статус сменён → пробел закрыт (false)', async () => {
     const prisma = {
-      decision: { findFirst: vi.fn().mockResolvedValue(null) },
+      idea: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ status: 'accepted', statusChangedAt: new Date() }),
+      },
     } as unknown as PrismaService;
-    const rel = await PROBE_REASON_RECHECK['decision.overdue']!({
+    const rel = await PROBE_REASON_RECHECK['idea.status_unclear']!({
       prisma,
       tenantId: 'org-1',
-      contextCardId: 'dec-x',
-      contextCardKind: 'decision',
+      contextCardId: 'idea-1',
+      contextCardKind: 'idea',
+    });
+    expect(rel).toBe(false);
+  });
+
+  it('сущность удалена (null) → подавляем (false)', async () => {
+    const prisma = {
+      idea: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK['idea.status_unclear']!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'idea-x',
+      contextCardKind: 'idea',
     });
     expect(rel).toBe(false);
   });

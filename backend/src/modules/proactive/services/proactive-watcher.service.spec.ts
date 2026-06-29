@@ -4,7 +4,6 @@ import { ProactiveWatcherService } from './proactive-watcher.service';
 
 describe('ProactiveWatcherService', () => {
   const allRulesEnabled = {
-    decisionNoOwner: true,
     insightNoMitigation: true,
     experimentRunningTooLong: true,
     processStaleReview: true,
@@ -16,12 +15,6 @@ describe('ProactiveWatcherService', () => {
 
   function buildSvc(opts: {
     rules?: Partial<typeof allRulesEnabled>;
-    decisions?: Array<{
-      id: string;
-      statement: string | null;
-      text: string | null;
-      createdAt: Date;
-    }>;
     membershipUserId?: string | null;
     dedupReturns?: boolean[];
     morningCheckIns?: Array<{
@@ -37,7 +30,6 @@ describe('ProactiveWatcherService', () => {
     planItemOverdueThresholdDays?: number;
     eveningLocalHour?: number;
   }) {
-    const decisionsMany = vi.fn().mockResolvedValue(opts.decisions ?? []);
     const insightsMany = vi.fn().mockResolvedValue([]);
     const experimentsMany = vi.fn().mockResolvedValue([]);
     const processesMany = vi.fn().mockResolvedValue([]);
@@ -62,7 +54,6 @@ describe('ProactiveWatcherService', () => {
       org: {
         findMany: vi.fn().mockResolvedValue([{ id: 't1' }]),
       },
-      decision: { findMany: decisionsMany },
       insight: { findMany: insightsMany, count: insightCount },
       experiment: { findMany: experimentsMany },
       process: { findMany: processesMany },
@@ -179,7 +170,6 @@ describe('ProactiveWatcherService', () => {
   }
 
   const onlyPlanRule = {
-    decisionNoOwner: false,
     insightNoMitigation: false,
     experimentRunningTooLong: false,
     processStaleReview: false,
@@ -189,39 +179,9 @@ describe('ProactiveWatcherService', () => {
     planItemOverdue: true,
   };
 
-  it('anti-spam: 2 trigger одного user за день → только 1 notification', async () => {
-    const now = new Date('2026-05-23T12:00:00Z');
-    const oldDate = new Date('2026-05-15T00:00:00Z');
-    const { svc, sendNotification, metrics } = buildSvc({
-      rules: {
-        decisionNoOwner: true,
-        insightNoMitigation: false,
-        experimentRunningTooLong: false,
-        processStaleReview: false,
-        roleLowCompleteness: false,
-        departmentNoDomain: false,
-        insightsSiloedInDomain: false,
-        planItemOverdue: false,
-      },
-      decisions: [
-        { id: 'd1', statement: 'Решение 1', text: null, createdAt: oldDate },
-        { id: 'd2', statement: 'Решение 2', text: null, createdAt: oldDate },
-      ],
-      dedupReturns: [true, false],
-    });
-
-    const stats = await svc.runOnce(now);
-    expect(stats.notificationsSent).toBe(1);
-    expect(stats.dedupSkipped).toBe(1);
-    expect(sendNotification).toHaveBeenCalledTimes(1);
-    expect(metrics.incProactiveEmitted).toHaveBeenCalledTimes(1);
-    expect(metrics.incProactiveDedupSkipped).toHaveBeenCalledTimes(1);
-  });
-
   it('правило disabled → не выполняется (rulesSkippedDisabled++)', async () => {
     const { svc, sendNotification } = buildSvc({
       rules: {
-        decisionNoOwner: false,
         insightNoMitigation: false,
         experimentRunningTooLong: false,
         processStaleReview: false,
@@ -233,56 +193,7 @@ describe('ProactiveWatcherService', () => {
     });
     const stats = await svc.runOnce(new Date());
     expect(stats.rulesExecuted).toBe(0);
-    expect(stats.rulesSkippedDisabled).toBe(8);
-    expect(sendNotification).not.toHaveBeenCalled();
-  });
-
-  it('Decision новее 3 дней → emit не происходит', async () => {
-    const now = new Date('2026-05-23T12:00:00Z');
-    const recent = new Date('2026-05-23T08:00:00Z');
-    const { svc, sendNotification } = buildSvc({
-      rules: {
-        decisionNoOwner: true,
-        insightNoMitigation: false,
-        experimentRunningTooLong: false,
-        processStaleReview: false,
-        roleLowCompleteness: false,
-        departmentNoDomain: false,
-        insightsSiloedInDomain: false,
-        planItemOverdue: false,
-      },
-      decisions: [],
-    });
-    const stats = await svc.runOnce(now);
-    expect(stats.notificationsSent).toBe(0);
-    expect(sendNotification).not.toHaveBeenCalled();
-    void recent;
-  });
-
-  it('нет admin/owner → детектор тихо пропускает', async () => {
-    const { svc, sendNotification } = buildSvc({
-      rules: {
-        decisionNoOwner: true,
-        insightNoMitigation: false,
-        experimentRunningTooLong: false,
-        processStaleReview: false,
-        roleLowCompleteness: false,
-        departmentNoDomain: false,
-        insightsSiloedInDomain: false,
-        planItemOverdue: false,
-      },
-      decisions: [
-        {
-          id: 'd1',
-          statement: 'X',
-          text: null,
-          createdAt: new Date('2026-05-15T00:00:00Z'),
-        },
-      ],
-      membershipUserId: null,
-    });
-    const stats = await svc.runOnce(new Date('2026-05-23T12:00:00Z'));
-    expect(stats.notificationsSent).toBe(0);
+    expect(stats.rulesSkippedDisabled).toBe(7);
     expect(sendNotification).not.toHaveBeenCalled();
   });
 

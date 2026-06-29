@@ -1,6 +1,7 @@
 import { apiClient } from "./api-client";
 
 import { ApiError } from "./api-error";
+import type { AvailablePeriodsApi } from "./available-periods.api";
 
 export interface WeeklyDigestMetricsApi {
   totalCheckIns: number;
@@ -177,5 +178,9 @@ export const weeklyDigestApi = {
     apiClient.post<WeeklyOperationsDigestApi>(
       `/api/v1/dashboard/operations/weekly-digest/generate?weekStart=${weekStart}`,
       undefined,
+    ),
+  availablePeriods: (limit?: number) =>
+    apiClient.get<AvailablePeriodsApi>(
+      `/api/v1/dashboard/operations/weekly-digest/available-periods${limit ? `?limit=${limit}` : ""}`,
     ),
 };

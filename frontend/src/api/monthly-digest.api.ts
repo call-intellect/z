@@ -1,6 +1,7 @@
 import { apiClient } from "./api-client";
 
 import { ApiError } from "./api-error";
+import type { AvailablePeriodsApi } from "./available-periods.api";
 
 export interface MonthlyDigestMetricsApi {
   weeksCount: number;
@@ -117,5 +118,9 @@ export const monthlyDigestApi = {
     apiClient.post<MonthlyOperationsDigestApi>(
       `/api/v1/dashboard/operations/monthly-digest/generate?period=${period}`,
       undefined,
+    ),
+  availablePeriods: (limit?: number) =>
+    apiClient.get<AvailablePeriodsApi>(
+      `/api/v1/dashboard/operations/monthly-digest/available-periods${limit ? `?limit=${limit}` : ""}`,
     ),
 };

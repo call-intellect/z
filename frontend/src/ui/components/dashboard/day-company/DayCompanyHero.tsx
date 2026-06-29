@@ -13,13 +13,16 @@ import {
   type DirectorDashboardValueStripDomain,
 } from "@/domain/director-dashboard";
 import {
+  useDayAvailablePeriods,
   useDayCompanyDigest,
   useStaleTasksCrossProject,
 } from "@/hooks/useDayCompany";
 import { useSwrWithToast } from "@/hooks/useSwrWithToast";
+import { comparePeriods, currentPeriod } from "@/domain/period";
 import { toast } from "@/ui/shadcn/toast";
 import { Button } from "@/ui/shadcn/button";
 import { CHART } from "@/ui/components/dashboard/modern";
+import { PeriodNavigator } from "@/ui/components/dashboard/shared/PeriodNavigator";
 
 import { DayLetter } from "./DayLetter";
 import { DayVerdictCover } from "./DayVerdictCover";
@@ -58,13 +61,17 @@ function HeroSkeleton() {
 export function DayCompanyHero() {
   const { currentOrgId } = useAuth();
   const [regenerating, setRegenerating] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const { periods, latest } = useDayAvailablePeriods(currentOrgId);
+  const effective = selected ?? latest;
 
   const {
     digest,
     isLoading: digestLoading,
     error: digestError,
     mutate: mutateDigest,
-  } = useDayCompanyDigest(currentOrgId);
+  } = useDayCompanyDigest(currentOrgId, effective);
 
   const { items: staleItems } = useStaleTasksCrossProject(currentOrgId);
 
@@ -93,7 +100,7 @@ export function DayCompanyHero() {
     if (regenerating) return;
     setRegenerating(true);
     try {
-      const date = digest?.dateLocal ?? localToday();
+      const date = digest?.dateLocal ?? effective ?? localToday();
       await operationsDailyDigestApi.generate(date);
       await mutateDigest();
       toast.success("Отчёт пересобран");
@@ -102,7 +109,7 @@ export function DayCompanyHero() {
     } finally {
       setRegenerating(false);
     }
-  }, [regenerating, digest?.dateLocal, mutateDigest]);
+  }, [regenerating, digest?.dateLocal, effective, mutateDigest]);
 
   if (digestLoading) {
     return (
@@ -137,7 +144,26 @@ export function DayCompanyHero() {
 
   if (!digest) {
     return (
-      <div className="mb-8">
+      <div className="mb-8 flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <PeriodNavigator
+            rhythm="day"
+            value={effective ?? currentPeriod("day")}
+            latest={latest ?? currentPeriod("day")}
+            available={periods}
+            onChange={(p) => setSelected(p)}
+          />
+          {selected && latest && comparePeriods(selected, latest) !== 0 ? (
+            <button
+              type="button"
+              onClick={() => setSelected(null)}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+              style={{ background: "var(--surface-inset)", color: CHART.dim }}
+            >
+              К последнему
+            </button>
+          ) : null}
+        </div>
         <div
           className="flex flex-col items-start gap-3 p-7"
           style={{
@@ -183,6 +209,26 @@ export function DayCompanyHero() {
 
   return (
     <div className="mb-8 flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <PeriodNavigator
+          rhythm="day"
+          value={effective ?? currentPeriod("day")}
+          latest={latest ?? currentPeriod("day")}
+          available={periods}
+          onChange={(p) => setSelected(p)}
+        />
+        {selected && latest && comparePeriods(selected, latest) !== 0 ? (
+          <button
+            type="button"
+            onClick={() => setSelected(null)}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+            style={{ background: "var(--surface-inset)", color: CHART.dim }}
+          >
+            К последнему
+          </button>
+        ) : null}
+      </div>
+
       <DayVerdictCover
         emoji={verdict?.overall.emoji ?? null}
         title={coverTitle}

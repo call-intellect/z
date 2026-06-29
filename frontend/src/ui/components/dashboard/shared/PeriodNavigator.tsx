@@ -16,7 +16,7 @@ import { CHART } from "@/ui/components/dashboard/modern";
 type PeriodNavigatorAvailable = {
   period: string;
   stateHint?: "ok" | "warn" | "risk" | null;
-  title?: string;
+  title?: string | null;
 };
 
 type PeriodNavigatorProps = {

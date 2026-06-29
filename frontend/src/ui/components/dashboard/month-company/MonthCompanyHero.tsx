@@ -7,12 +7,17 @@ import { ideasApi } from "@/api/ideas.api";
 import { insightsApi } from "@/api/insights.api";
 import { monthlyDigestApi } from "@/api/monthly-digest.api";
 import { useAuth } from "@/contexts/auth-context";
-import { useMonthCompanyDigest } from "@/hooks/useMonthCompany";
+import {
+  useMonthAvailablePeriods,
+  useMonthCompanyDigest,
+} from "@/hooks/useMonthCompany";
 import { useStaleTasksCrossProject } from "@/hooks/useDayCompany";
 import { useSwrWithToast } from "@/hooks/useSwrWithToast";
+import { comparePeriods, currentPeriod } from "@/domain/period";
 import { toast } from "@/ui/shadcn/toast";
 import { Button } from "@/ui/shadcn/button";
 import { CHART } from "@/ui/components/dashboard/modern";
+import { PeriodNavigator } from "@/ui/components/dashboard/shared/PeriodNavigator";
 import { RisksIdeas } from "@/ui/components/dashboard/day-company/RisksIdeas";
 import { StaleTasksLinked } from "@/ui/components/dashboard/day-company/StaleTasksLinked";
 import { WeeklyPerPersonWidget } from "@app/(authenticated)/dashboard/operations/weekly/WeeklyPerPersonWidget";
@@ -85,13 +90,17 @@ function HeroSkeleton() {
 export function MonthCompanyHero() {
   const { currentOrgId } = useAuth();
   const [regenerating, setRegenerating] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const { periods, latest } = useMonthAvailablePeriods(currentOrgId);
+  const effective = selected ?? latest;
 
   const {
     digest,
     isLoading: digestLoading,
     error: digestError,
     mutate: mutateDigest,
-  } = useMonthCompanyDigest(currentOrgId);
+  } = useMonthCompanyDigest(currentOrgId, effective);
 
   const { items: staleItems } = useStaleTasksCrossProject(currentOrgId);
 
@@ -111,7 +120,7 @@ export function MonthCompanyHero() {
     if (regenerating) return;
     setRegenerating(true);
     try {
-      const period = digest?.periodYm ?? currentPeriodYm();
+      const period = digest?.periodYm ?? effective ?? currentPeriodYm();
       await monthlyDigestApi.generate(period);
       await mutateDigest();
       toast.success("Отчёт пересобран");
@@ -120,7 +129,7 @@ export function MonthCompanyHero() {
     } finally {
       setRegenerating(false);
     }
-  }, [regenerating, digest?.periodYm, mutateDigest]);
+  }, [regenerating, digest?.periodYm, effective, mutateDigest]);
 
   if (!currentOrgId) return null;
 
@@ -157,7 +166,26 @@ export function MonthCompanyHero() {
 
   if (!digest) {
     return (
-      <div className="mb-8">
+      <div className="mb-8 flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <PeriodNavigator
+            rhythm="month"
+            value={effective ?? currentPeriod("month")}
+            latest={latest ?? currentPeriod("month")}
+            available={periods}
+            onChange={(p) => setSelected(p)}
+          />
+          {selected && latest && comparePeriods(selected, latest) !== 0 ? (
+            <button
+              type="button"
+              onClick={() => setSelected(null)}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+              style={{ background: "var(--surface-inset)", color: CHART.dim }}
+            >
+              К последнему
+            </button>
+          ) : null}
+        </div>
         <div
           className="flex flex-col items-start gap-3 p-7"
           style={{
@@ -202,6 +230,26 @@ export function MonthCompanyHero() {
 
   return (
     <div className="mb-8 flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <PeriodNavigator
+          rhythm="month"
+          value={effective ?? currentPeriod("month")}
+          latest={latest ?? currentPeriod("month")}
+          available={periods}
+          onChange={(p) => setSelected(p)}
+        />
+        {selected && latest && comparePeriods(selected, latest) !== 0 ? (
+          <button
+            type="button"
+            onClick={() => setSelected(null)}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+            style={{ background: "var(--surface-inset)", color: CHART.dim }}
+          >
+            К последнему
+          </button>
+        ) : null}
+      </div>
+
       <MonthVerdictCover
         emoji={verdict?.overall.emoji ?? null}
         title={coverTitle}

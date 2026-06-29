@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 
-import { DailyCheckInService } from './daily-checkin.service';
+import { DailyCheckInService, computeReportCompleteness } from './daily-checkin.service';
 
 function makeService() {
   const findUnique = vi.fn();
@@ -317,5 +317,113 @@ describe('DailyCheckInService.upsertFromDaySignal', () => {
         ideasJson: [{ text: 'старая идея' }],
       }),
     );
+  });
+});
+
+describe('computeReportCompleteness', () => {
+  const x = [{ text: 't' }];
+
+  it('full: качество ≥ порога и ≥3 непустых частей', () => {
+    expect(
+      computeReportCompleteness(
+        { qualityScore: 0.7, dones: x, notDone: x, blockers: x, ideas: x },
+        0.5,
+      ),
+    ).toBe('full');
+  });
+
+  it('draft: качество ниже порога', () => {
+    expect(
+      computeReportCompleteness(
+        { qualityScore: 0.3, dones: x, notDone: [], blockers: [], ideas: [] },
+        0.5,
+      ),
+    ).toBe('draft');
+  });
+
+  it('draft: qualityScore=null (ещё не проставлен скорером)', () => {
+    expect(
+      computeReportCompleteness(
+        { qualityScore: null, dones: x, notDone: x, blockers: x, ideas: x },
+        0.5,
+      ),
+    ).toBe('draft');
+  });
+
+  it('draft: меньше 3 непустых частей', () => {
+    expect(
+      computeReportCompleteness(
+        { qualityScore: 0.9, dones: x, notDone: x, blockers: [], ideas: [] },
+        0.5,
+      ),
+    ).toBe('draft');
+  });
+});
+
+describe('DailyCheckInService.toDto (reportCompleteness/notDone/ideas)', () => {
+  function eveningRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'ci-1',
+      tenantId: 't1',
+      personId: 'p1',
+      kind: 'evening',
+      dateLocal: '2026-06-21',
+      plansJson: null,
+      donesJson: [{ text: 'D' }],
+      blockersJson: [{ text: 'B' }],
+      notDoneJson: [{ text: 'не дожал', sourcePlanText: 'план', verdictConfidence: 0.7 }],
+      ideasJson: [{ text: 'Идея 1', sourceBlockId: 'blk-1' }],
+      qualityScore: 0.7,
+      notificationId: null,
+      parseConfidence: 0.9,
+      curatorReview: false,
+      completedAt: NOW,
+      createdAt: new Date('2026-06-21T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-21T00:00:00.000Z'),
+      source: 'chatbox',
+      sourceContributions: null,
+      sentiment: null,
+      sentimentRationale: null,
+      sentimentVersion: null,
+      sentimentDeterminedAt: null,
+      ...overrides,
+    };
+  }
+
+  it('evening с 4 непустыми частями и качеством ≥ порога → full, notDone/ideas заполнены', async () => {
+    const { service, findUnique } = makeService();
+    findUnique.mockResolvedValueOnce(eveningRow());
+
+    const dto = await service.getMine({
+      tenantId: 't1',
+      personId: 'p1',
+      dateLocal: '2026-06-21',
+      kind: 'evening',
+    });
+
+    expect(dto).not.toBeNull();
+    expect(dto!.reportCompleteness).toBe('full');
+    expect(dto!.notDone).toEqual([
+      { text: 'не дожал', sourcePlanText: 'план', verdictConfidence: 0.7 },
+    ]);
+    expect(dto!.ideas).toEqual([{ text: 'Идея 1', sourceBlockId: 'blk-1' }]);
+  });
+
+  it('morning → reportCompleteness=null', async () => {
+    const { service, findUnique } = makeService();
+    findUnique.mockResolvedValueOnce(
+      eveningRow({ kind: 'morning', notDoneJson: null, ideasJson: null, qualityScore: null }),
+    );
+
+    const dto = await service.getMine({
+      tenantId: 't1',
+      personId: 'p1',
+      dateLocal: '2026-06-21',
+      kind: 'morning',
+    });
+
+    expect(dto!.reportCompleteness).toBeNull();
+    expect(dto!.notDone).toEqual([]);
+    expect(dto!.ideas).toEqual([]);
   });
 });

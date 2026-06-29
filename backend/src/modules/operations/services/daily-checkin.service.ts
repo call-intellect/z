@@ -9,6 +9,7 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DailyCheckInSource, Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CreateCheckInInput, DailyCheckInDto } from '../dto/daily-check-in.dto';
@@ -39,6 +40,23 @@ function mergeByText<T extends { text: string }>(existing: T[], incoming: T[]): 
   return out;
 }
 
+export function computeReportCompleteness(
+  args: {
+    qualityScore: number | null;
+    dones: unknown[];
+    notDone: unknown[];
+    blockers: unknown[];
+    ideas: unknown[];
+  },
+  threshold: number,
+): 'draft' | 'full' {
+  const partsFilled = [args.dones, args.notDone, args.blockers, args.ideas].filter(
+    (p) => Array.isArray(p) && p.length > 0,
+  ).length;
+  const qualityOk = args.qualityScore != null && args.qualityScore >= threshold;
+  return qualityOk && partsFilled >= 3 ? 'full' : 'draft';
+}
+
 @Injectable()
 export class DailyCheckInService {
   private readonly logger = new Logger(DailyCheckInService.name);
@@ -51,6 +69,9 @@ export class DailyCheckInService {
     @Optional()
     @Inject(EventEmitter2)
     private readonly eventEmitter?: EventEmitter2,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService | null = null,
   ) {}
 
   async resolveSelfPerson(args: {
@@ -505,6 +526,9 @@ export class DailyCheckInService {
     updatedAt: Date;
     source?: string | null;
     sourceContributions?: unknown;
+    notDoneJson?: unknown;
+    ideasJson?: unknown;
+    qualityScore?: unknown;
     sentiment?: string | null;
     sentimentRationale?: string | null;
     sentimentVersion?: string | null;
@@ -533,6 +557,24 @@ export class DailyCheckInService {
     )
       ? (row.source as DailyCheckInDto['source'])
       : 'cron_prompted';
+    const dones = Array.isArray(row.donesJson) ? (row.donesJson as DailyCheckInDto['dones']) : [];
+    const blockers = Array.isArray(row.blockersJson)
+      ? (row.blockersJson as DailyCheckInDto['blockers'])
+      : [];
+    const notDone = Array.isArray(row.notDoneJson)
+      ? (row.notDoneJson as DailyCheckInDto['notDone'])
+      : [];
+    const ideas = Array.isArray(row.ideasJson) ? (row.ideasJson as DailyCheckInDto['ideas']) : [];
+    const qualityScore =
+      row.qualityScore == null
+        ? null
+        : Number((row.qualityScore as { toString(): string }).toString());
+    const threshold =
+      this.cfg?.resolveSync<number>('dayReport.completenessQualityThreshold', undefined, 0.5) ?? 0.5;
+    const reportCompleteness =
+      row.kind === 'evening'
+        ? computeReportCompleteness({ qualityScore, dones, notDone, blockers, ideas }, threshold)
+        : null;
     return {
       id: row.id,
       tenantId: row.tenantId,
@@ -541,10 +583,11 @@ export class DailyCheckInService {
       dateLocal: row.dateLocal,
       source,
       plans: Array.isArray(row.plansJson) ? (row.plansJson as DailyCheckInDto['plans']) : [],
-      dones: Array.isArray(row.donesJson) ? (row.donesJson as DailyCheckInDto['dones']) : [],
-      blockers: Array.isArray(row.blockersJson)
-        ? (row.blockersJson as DailyCheckInDto['blockers'])
-        : [],
+      dones,
+      blockers,
+      notDone,
+      ideas,
+      reportCompleteness,
       notificationId: row.notificationId,
       parseConfidence: confidence,
       curatorReview: row.curatorReview,

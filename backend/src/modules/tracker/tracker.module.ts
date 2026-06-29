@@ -63,6 +63,7 @@ import { IssuesService } from './services/issues.service';
 import { LabelsService } from './services/labels.service';
 import { MeTasksService } from './services/me-tasks.service';
 import { MeetingExtractActionsService } from './services/meeting-extract-actions.service';
+import { MorningTasksDigestService } from './services/morning-tasks-digest.service';
 import { MyMentionsService } from './services/my-mentions.service';
 import { OverviewService } from './services/overview.service';
 import { PersonLeaveService } from './services/person-leave.service';
@@ -148,6 +149,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     BoardsService,
     IssuesService,
     MeTasksService,
+    MorningTasksDigestService,
     SimilarIssuesService,
     SkillRoutingService,
     // TZ task-dedup (2026-06-16, Ф1) — единый дедуп-гейт перед записью задачи
@@ -221,6 +223,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     PersonLeaveService,
     SprintAnalystService,
     SkillRoutingService,
+    MorningTasksDigestService,
     // TZ task-dedup (2026-06-16, Ф2) — TaskCompletionHandler (operations)
     // переиспользует findSimilarByVector для семантического матча
     // сигнал-блок «сделал X» → открытая Issue (кандидат на закрытие).

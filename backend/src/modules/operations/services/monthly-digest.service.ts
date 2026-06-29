@@ -389,6 +389,13 @@ export class MonthlyDigestService {
     return this.toDto(row);
   }
 
+  async markDelivered(args: { tenantId: string; periodYm: string }): Promise<void> {
+    await this.prisma.monthlyOperationsDigest.update({
+      where: { tenantId_periodYm: { tenantId: args.tenantId, periodYm: args.periodYm } },
+      data: { deliveredAt: new Date() },
+    });
+  }
+
   private async buildMonthPackage(args: {
     tenantId: string;
     periodYm: string;

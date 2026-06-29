@@ -1089,6 +1089,14 @@ model WeeklyOperationsDigest {
 }
 ```
 
+**Расширение «Неделя компании» (2026-06-29):** к `WeeklyOperationsDigest` добавлены 4 nullable JSONB-поля для owner-героя на `/dashboard` (миграция `20260629010000_add_week_company_fields_to_digest`, аддитивная — 4× `ADD COLUMN JSONB`):
+- `verdictJson` — вердикт недели: `overall{state, emoji, title, oneLiner}` + `axes[4]{key∈team|clients|execution|overall, state∈ok|warn|risk, label, why}`.
+- `letterJson` — письмо-проза «как прошла неделя»: `[{key, title, prose, cites?}]`.
+- `goalAlignmentWeekJson` — недельный компас: `{direction∈to_goal|drift|against, score, weekDelta, why, pro[], contra[], goalId, goalName}`.
+- `dayTrendJson` — тренд осей по дням пн–пт: `[{key, days:[{dateLocal, state}]}]` (детерминированно из 5 дневных вердиктов, без LLM; пустой день → `state:'none'`).
+
+Поля заполняются ОДНИМ capable LLM-вызовом (`taskType operations-weekly-digest`, json_schema strict) в `WeeklyDigestService.generate` (свод 5 дневных `DailyOperationsDigest` пн–пт); post-LLM `clampWeekVerdict` (клиентский risk в дневных ⇒ `clients≠ok`; план/факт<50% ⇒ `execution≠ok`); `dayTrendJson` всегда детерминирован; при провале LLM/JSON — «сухой» fallback (NULL новых полей). Зеркало расширения «День компании» (см. выше). Подробности — [[../01_projects/director-dashboard]] §«Неделя компании», [[../01_projects/ai-jobs]] §«operations-weekly-digest».
+
 **`Org` (расширение):** добавлено поле `timezone String? @default("Europe/Moscow")`. Backfill — `backend/scripts/patch-org-timezone-default.ts`.
 
 ### SBA β-8.3 — DailyOperationsDigest (2026-05-25)

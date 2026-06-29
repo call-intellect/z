@@ -322,4 +322,30 @@ describe('LlmRouterService', () => {
       }),
     ).rejects.toThrow();
   });
+
+  it('dataClass=private: deepseek eligible и диспатчится первым (Б1 — поднят до private)', async () => {
+    const ctx = build({
+      routes: [
+        {
+          taskType: 'chat-v2',
+          providers: ['deepseek', 'openai-via-proxy', 'kie'],
+          isActive: true,
+        },
+      ],
+    });
+    await ctx.router.refreshCache();
+
+    const out = await ctx.router.call({
+      ...baseParams,
+      taskType: 'chat-v2' as LlmTaskType,
+      dataClass: 'private',
+    });
+
+    expect(ctx.deepseek.complete).toHaveBeenCalledOnce();
+    expect(ctx.openai.complete).not.toHaveBeenCalled();
+    expect(out.modelUsed.startsWith('deepseek:')).toBe(true);
+    expect(ctx.incLlmRouterDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'deepseek', status: 'success' }),
+    );
+  });
 });

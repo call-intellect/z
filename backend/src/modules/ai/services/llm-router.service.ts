@@ -994,7 +994,6 @@ const ALL_PROVIDERS: LlmProviderName[] = [
  * `anthropic` — прямой Anthropic API; для нас это «sensitive» (договор).
  *   Если ANTHROPIC_USE_PROXY=true — фактически идёт через сторонний прокси,
  *   но capability в текущем MVP мы не понижаем (отслеживается ENV-флагом).
- * `minimax` / `openai-via-proxy` / `deepseek` — внешние, internal-only.
  * `ollama` — локальный, формально может обрабатывать private.
  *
  * Карта намеренно жёсткая — config-driven вариант (через БД) — vNext.
@@ -1005,13 +1004,9 @@ const PROVIDER_CAPABILITY: Record<
 > = {
   anthropic: { maxDataClass: 'sensitive', localOnly: false },
   minimax: { maxDataClass: 'internal', localOnly: false },
-  'openai-via-proxy': { maxDataClass: 'internal', localOnly: false },
-  deepseek: { maxDataClass: 'internal', localOnly: false },
+  'openai-via-proxy': { maxDataClass: 'private', localOnly: false },
+  deepseek: { maxDataClass: 'private', localOnly: false },
   ollama: { maxDataClass: 'private', localOnly: true },
-  // KIE / GRSAI — внешние мульти-провайдер прокси (Claude/GPT/Gemini).
-  // grsai пропускает только internal-данные; sensitive — никогда.
-  // kie поднят до private (2026-06-05), т.к. стал универсальным tertiary;
-  // приватность сейчас в деприоритете — решение владельца.
   kie: { maxDataClass: 'private', localOnly: false },
   grsai: { maxDataClass: 'internal', localOnly: false },
 };

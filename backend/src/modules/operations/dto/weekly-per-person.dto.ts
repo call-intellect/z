@@ -26,6 +26,7 @@ export interface WeeklyPersonRowDto {
   tasksPlanned: number;
   tasksNotDone: number;
   checkInsCompleted: number;
+  goalContributionNet: number | null;
 }
 
 export interface WeeklyPerPersonDto {

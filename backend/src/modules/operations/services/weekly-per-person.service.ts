@@ -462,8 +462,43 @@ export class WeeklyPerPersonService {
       for (const d of departments) deptNameById.set(d.id, d.name);
     }
 
+    const goalNetByPersonId = new Map<string, number>();
+    if (authorPersonIds.length > 0) {
+      try {
+        const primaryGoal =
+          (await this.prisma.goal.findFirst({
+            where: { tenantId, isPrimary: true },
+            select: { id: true },
+          })) ??
+          (await this.prisma.goal.findFirst({
+            where: { tenantId, status: 'active' },
+            orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+            select: { id: true },
+          }));
+        const goalId = primaryGoal?.id;
+        if (goalId) {
+          const contributions = await this.prisma.personGoalContribution.findMany({
+            where: {
+              tenantId,
+              goalId,
+              weekStart: new Date(`${weekStart}T00:00:00.000Z`),
+              personId: { in: authorPersonIds },
+            },
+            select: { personId: true, netScore: true },
+          });
+          for (const c of contributions) {
+            goalNetByPersonId.set(c.personId, Number(c.netScore));
+          }
+        }
+      } catch (err) {
+        this.logger.warn(
+          `goalContributionNet lookup failed for ${tenantId}/${weekStart}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     const allRows: WeeklyPersonRowDto[] = [...accByPerson.values()].map((acc) =>
-      this.buildRow(acc, deptNameById, minDenom),
+      this.buildRow(acc, deptNameById, minDenom, goalNetByPersonId),
     );
     const total = allRows.length;
 
@@ -588,6 +623,7 @@ export class WeeklyPerPersonService {
     acc: PersonAcc,
     deptNameById: Map<string, string>,
     minDenom: number,
+    goalNetByPersonId: Map<string, number>,
   ): WeeklyPersonRowDto {
     return {
       personId: acc.personId,
@@ -604,6 +640,7 @@ export class WeeklyPerPersonService {
       tasksPlanned: acc.tasksPlanned,
       tasksNotDone: Math.max(0, acc.tasksPlanned - acc.tasksPlannedDone),
       checkInsCompleted: acc.checkInsCompleted,
+      goalContributionNet: goalNetByPersonId.get(acc.personId) ?? null,
     };
   }
 

@@ -26,6 +26,7 @@ const baseRow: WeeklyPersonRowApi = {
   tasksPlanned: 4,
   tasksNotDone: 1,
   checkInsCompleted: 5,
+  goalContributionNet: null,
 };
 
 describe("reliabilityLabel", () => {

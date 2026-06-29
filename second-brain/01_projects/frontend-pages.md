@@ -279,6 +279,8 @@ CTA «Создать встречу» (Plus + ссылка на `/meetings/creat
 
 Историческая нота: до 2026-06-02 главная имела 5 `<StatCard>` сверху + Sticky header + плоские секции виджетов. Sticky header убран, чтобы не конфликтовать с Hero. Все 12 эталонных виджетов из `dashboards-registry.md` переехали в табы без потерь.
 
+**rhythm-switcher День↔Неделя + герои «День/Неделя компании» (2026-06-29):** `DirectorDashboardClient` получил состояние ритма `day`|`week` (`month` — disabled/vNext) вместо hardcoded `rhythm="today"`; дефолт `day`, в пн по локали Org → «Неделя», `?rhythm=week` из URL. На «Неделя» owner видит героя `WeekCompanyHero` (`frontend/src/ui/components/dashboard/week-company/*`: `WeekVerdictCover`/`WeekLetter`/`WeekGoalCompass` + таблица план/факт с колонкой «Вклад в цель» + «Зависло ↔ кто держит»); читает `GET /dashboard/operations/weekly-digest/latest` + `weekly-per-person?weekEnd=`. Компас вынесен в **общий** `frontend/src/ui/components/dashboard/shared/GoalCompass3D.tsx` (CSS/SVG-3D, 0 зависимостей: conic-зоны + стеклянный безель + металлическая стрелка `--angle` из score + parallax/взмах за `prefers-reduced-motion`) — заменил плоский `MiniArrow` и используется в недельном И дневном (`day-company/GoalCompassCard`). См. [[director-dashboard]] §«Неделя компании». Источник — `plans/tz/2026-06-29-week-company-weekly-brief.md`.
+
 ### Toast — sonner единственный
 
 - `frontend/app/layout.tsx`: `<ToastProvider>` удалён, sonner `<Toaster />` смонтирован один раз.

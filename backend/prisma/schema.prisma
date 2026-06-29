@@ -7937,6 +7937,15 @@ model WeeklyOperationsDigest {
   /// Идентификатор маршрута/модели LLM (или `prompt-v1+<model>`), который
   /// реально отработал. NULL если LLM упал и сохранён «сухой» вариант.
   llmTaskRouteId String?
+  /// Вердикт недели: { overall:{state,emoji,title,oneLiner}, axes:[{key,state,label,why}] }.
+  /// state ∈ 'ok'|'warn'|'risk'; key ∈ 'team'|'clients'|'execution'|'overall'. NULL для legacy/сухого fallback.
+  verdictJson           Json?
+  /// Письмо «как прошла неделя»: [{ key, title, prose, cites:[{label,ref}] }] — чистая проза (TTS-friendly).
+  letterJson            Json?
+  /// Недельный компас к цели: { direction:'to_goal'|'drift'|'against', score, weekDelta, why, pro:[], contra:[], goalId, goalName }.
+  goalAlignmentWeekJson Json?
+  /// Тренд осей по дням пн–пт: [{ key:'team'|'clients'|'execution'|'overall', days:[{dateLocal, state}] }] (детерминированно из 5 дневных вердиктов).
+  dayTrendJson          Json?
   createdAt      DateTime @default(now())
 
   tenant         Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)

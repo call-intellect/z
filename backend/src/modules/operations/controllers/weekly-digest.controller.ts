@@ -62,6 +62,28 @@ export class WeeklyDigestController {
     return dto;
   }
 
+  @Get('latest')
+  @ApiOperation({ summary: 'Последний недельный дайджест операционного директора' })
+  async getLatest(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+  ): Promise<WeeklyOperationsDigestDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireReadAccess(uid, tenantId!);
+    const dto = await this.svc.getLatest({ tenantId: tenantId! });
+    if (!dto) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'digest_not_found',
+          message: 'Недельная сводка ещё не сгенерирована',
+        },
+      });
+    }
+    return dto;
+  }
+
   @Post('generate')
   @ApiOperation({
     summary: 'Принудительно пересобрать недельный дайджест (admin/owner; для отладки)',
@@ -75,7 +97,7 @@ export class WeeklyDigestController {
     const uid = this.requireUser(req);
     this.requireTenant(tenantId);
     await this.requireWriteAccess(uid, tenantId!);
-    const weekEnd = addDaysToDateLocal(q.weekStart, 6);
+    const weekEnd = addDaysToDateLocal(q.weekStart, 4);
     return this.svc.generate({
       tenantId: tenantId!,
       weekStart: q.weekStart,

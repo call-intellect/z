@@ -66,6 +66,8 @@ function buildService(
     cacheGetError?: Error;
     cacheSetError?: Error;
     minDenom?: number;
+    primaryGoal?: { id: string } | null;
+    contributions?: Array<{ personId: string; netScore: number }>;
   } = {},
 ): {
   service: WeeklyPerPersonService;
@@ -76,6 +78,8 @@ function buildService(
     department: { findMany: ReturnType<typeof vi.fn> };
     cycle: { findMany: ReturnType<typeof vi.fn> };
     issue: { findMany: ReturnType<typeof vi.fn> };
+    goal: { findFirst: ReturnType<typeof vi.fn> };
+    personGoalContribution: { findMany: ReturnType<typeof vi.fn> };
   };
   redisGet: ReturnType<typeof vi.fn>;
   redisSet: ReturnType<typeof vi.fn>;
@@ -97,6 +101,8 @@ function buildService(
         return opts.cycleIssues ?? [];
       }),
     },
+    goal: { findFirst: vi.fn(async () => opts.primaryGoal ?? null) },
+    personGoalContribution: { findMany: vi.fn(async () => opts.contributions ?? []) },
   };
 
   const redisGet = vi.fn(async () => {
@@ -265,6 +271,27 @@ describe('WeeklyPerPersonService', () => {
       expect(dto.weekEnd).toBe('2026-06-07');
       expect(dto.generatedAt).toBe(NOW.toISOString());
       expect(() => new Date(dto.generatedAt).toISOString()).not.toThrow();
+    });
+
+    it('явный weekEnd → окно недели до переданной даты (пн–пт)', async () => {
+      const { service, prisma } = buildService(baseFixture());
+      const dto = await service.compute(
+        {
+          tenantId: 't-1',
+          weekStart: WEEK_START,
+          weekEnd: '2026-06-05',
+          limit: 100,
+          offset: 0,
+          sort: 'reliability',
+        },
+        NOW,
+      );
+      expect(dto.weekStart).toBe(WEEK_START);
+      expect(dto.weekEnd).toBe('2026-06-05');
+
+      const ibCall = prisma.ideaBlock.findMany.mock.calls[0]![0];
+      const lte = ibCall.where.commitmentDueDate.lte as Date;
+      expect(lte.toISOString()).toBe('2026-06-05T23:59:59.999Z');
     });
   });
 
@@ -456,13 +483,33 @@ describe('WeeklyPerPersonService', () => {
       expect(dto.total).toBe(3);
     });
 
-    it('cache-ключ включает tenantId+weekStart+sort+limit+offset', async () => {
+    it('cache-ключ включает tenantId+weekStart+weekEnd+sort+limit+offset', async () => {
       const { service, redisGet } = buildService({ commitments: [] });
       await service.compute(
         { tenantId: 't-1', weekStart: WEEK_START, limit: 10, offset: 5, sort: 'risk' },
         NOW,
       );
-      expect(redisGet).toHaveBeenCalledWith(`weekly_per_person:t-1:${WEEK_START}:risk:10:5`);
+      expect(redisGet).toHaveBeenCalledWith(
+        `weekly_per_person:t-1:${WEEK_START}:2026-06-07:risk:10:5`,
+      );
+    });
+
+    it('cache-ключ различает окно пн–пт и пн–вс по сегменту weekEnd', async () => {
+      const { service, redisGet } = buildService({ commitments: [] });
+      await service.compute(
+        {
+          tenantId: 't-1',
+          weekStart: WEEK_START,
+          weekEnd: '2026-06-05',
+          limit: 10,
+          offset: 5,
+          sort: 'risk',
+        },
+        NOW,
+      );
+      expect(redisGet).toHaveBeenCalledWith(
+        `weekly_per_person:t-1:${WEEK_START}:2026-06-05:risk:10:5`,
+      );
     });
   });
 
@@ -850,6 +897,96 @@ describe('WeeklyPerPersonService', () => {
       expect(cycleIssueCall.where.deletedAt).toBeNull();
       expect(cycleIssueCall.where.archivedAt).toBeNull();
       expect(cycleIssueCall.where.cycleId).toEqual({ in: ['C1'] });
+    });
+  });
+
+  describe('Ф5b — goalContributionNet (вклад в главную цель)', () => {
+    it('нет главной цели → goalContributionNet=null у всех строк', async () => {
+      const { service, prisma } = buildService(baseFixture());
+      const dto = await service.compute(
+        { tenantId: 't-1', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      for (const r of dto.rows) {
+        expect(r.goalContributionNet).toBeNull();
+      }
+      expect(prisma.personGoalContribution.findMany).not.toHaveBeenCalled();
+    });
+
+    it('главная цель есть + вклад у P1 → net у P1, у остальных null; weekStart матчится UTC-полночью', async () => {
+      const { service, prisma } = buildService({
+        ...baseFixture(),
+        primaryGoal: { id: 'g1' },
+        contributions: [{ personId: 'P1', netScore: 2 }],
+      });
+      const dto = await service.compute(
+        { tenantId: 't-9', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      const byId = new Map(dto.rows.map((r) => [r.personId, r]));
+      expect(byId.get('P1')!.goalContributionNet).toBe(2);
+      expect(byId.get('P2')!.goalContributionNet).toBeNull();
+      expect(byId.get('P3')!.goalContributionNet).toBeNull();
+
+      const pgcCall = prisma.personGoalContribution.findMany.mock.calls[0]![0];
+      expect(pgcCall.where.tenantId).toBe('t-9');
+      expect(pgcCall.where.goalId).toBe('g1');
+      expect((pgcCall.where.weekStart as Date).toISOString()).toBe(`${WEEK_START}T00:00:00.000Z`);
+      expect(pgcCall.where.personId).toEqual({ in: ['P1', 'P2', 'P3'] });
+    });
+
+    it('topReliable/topRisk также несут goalContributionNet', async () => {
+      const { service } = buildService({
+        ...baseFixture(),
+        primaryGoal: { id: 'g1' },
+        contributions: [{ personId: 'P1', netScore: 2 }],
+      });
+      const dto = await service.compute(
+        { tenantId: 't-1', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      const reliP1 = dto.topReliable.find((r) => r.personId === 'P1')!;
+      const riskP1 = dto.topRisk.find((r) => r.personId === 'P1')!;
+      expect(reliP1.goalContributionNet).toBe(2);
+      expect(riskP1.goalContributionNet).toBe(2);
+      for (const r of [...dto.topReliable, ...dto.topRisk]) {
+        expect('goalContributionNet' in r).toBe(true);
+      }
+    });
+
+    it('fallback на active-цель, когда нет isPrimary', async () => {
+      const { service, prisma } = buildService({
+        ...baseFixture(),
+        primaryGoal: null,
+        contributions: [{ personId: 'P2', netScore: -1.5 }],
+      });
+      prisma.goal.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'g-active' });
+      const dto = await service.compute(
+        { tenantId: 't-1', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      const byId = new Map(dto.rows.map((r) => [r.personId, r]));
+      expect(byId.get('P2')!.goalContributionNet).toBe(-1.5);
+      const pgcCall = prisma.personGoalContribution.findMany.mock.calls[0]![0];
+      expect(pgcCall.where.goalId).toBe('g-active');
+    });
+
+    it('ошибка выборки вклада → деградация: goalContributionNet=null, не падает', async () => {
+      const { service, prisma } = buildService({
+        ...baseFixture(),
+        primaryGoal: { id: 'g1' },
+      });
+      prisma.personGoalContribution.findMany.mockRejectedValueOnce(new Error('db down'));
+      const dto = await service.compute(
+        { tenantId: 't-1', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      expect(dto.total).toBe(3);
+      for (const r of dto.rows) {
+        expect(r.goalContributionNet).toBeNull();
+      }
     });
   });
 

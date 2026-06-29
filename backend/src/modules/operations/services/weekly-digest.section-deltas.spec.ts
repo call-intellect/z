@@ -65,7 +65,23 @@ function buildSvc(overrides: {
     incCooWeeklyDigestGenerated: vi.fn(),
     incCooWeeklyDigestFailed: vi.fn(),
   };
-  const svc = new WeeklyDigestService(prisma as never, llm as never, metrics as never);
+  const perPerson = {
+    compute: vi.fn().mockResolvedValue({
+      weekStart: WEEK_START,
+      weekEnd: WEEK_END,
+      generatedAt: '',
+      total: 0,
+      topReliable: [],
+      topRisk: [],
+      rows: [],
+    }),
+  };
+  const svc = new WeeklyDigestService(
+    prisma as never,
+    llm as never,
+    metrics as never,
+    perPerson as never,
+  );
   return { svc, prisma, ideaBlockCount, insightCount, ideaCount };
 }
 

@@ -108,12 +108,12 @@ const SEEDS: SettingSeed[] = [
   },
   {
     key: 'betaOps.weeklyDigestLocalHour',
-    value: 8,
+    value: 6,
     category: 'operations',
     section: 'digest_hours',
     severity: 'low',
     description:
-      'Локальный час недельного COO-дайджеста (0..23). Читается per-run. По умолчанию 8.',
+      'Локальный час недельного COO-дайджеста (0..23). Читается per-run. По умолчанию 6.',
   },
   {
     key: 'betaOps.weeklyDigestLocalDay',

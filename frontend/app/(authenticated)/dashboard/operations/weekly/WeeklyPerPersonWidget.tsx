@@ -6,6 +6,7 @@ import { ChevronDown, ChevronRight, Download, Users } from "lucide-react";
 import { ApiError } from "@/api/api-error";
 import { weeklyPerPersonApi } from "@/api/weekly-per-person.api";
 import {
+  goalContributionDisplay,
   pluralRu,
   reliabilityDisplay,
   weeklyPerPersonFromApi,
@@ -19,7 +20,13 @@ import { buildPlanerkaCsv, type PlanerkaPerson } from "@/domain/planerka-csv";
 import { CardTitle, GlassCard, GRAD } from "@/ui/components/dashboard/modern";
 import { toast } from "@/ui/shadcn/toast";
 
-export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
+export function WeeklyPerPersonWidget({
+  weekStart,
+  weekEnd,
+}: {
+  weekStart: string;
+  weekEnd?: string;
+}) {
   const [data, setData] = useState<WeeklyPerPersonUi | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -39,7 +46,7 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
     setAllRows(null);
     setAllError(null);
     weeklyPerPersonApi
-      .get(weekStart, { sort: "reliability" })
+      .get(weekStart, { sort: "reliability", weekEnd })
       .then((res) => {
         if (cancelled) return;
         setData(weeklyPerPersonFromApi(res));
@@ -55,13 +62,13 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
     return () => {
       cancelled = true;
     };
-  }, [weekStart]);
+  }, [weekStart, weekEnd]);
 
   const loadAll = () => {
     setAllLoading(true);
     setAllError(null);
     weeklyPerPersonApi
-      .get(weekStart, { limit: 100, offset: 0, sort: "reliability" })
+      .get(weekStart, { limit: 100, offset: 0, sort: "reliability", weekEnd })
       .then((res) => {
         setAllRows(weeklyPerPersonFromApi(res).rows);
         setExpanded(true);
@@ -83,6 +90,7 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
           limit: 100,
           offset: 0,
           sort: "reliability",
+          weekEnd,
         }),
       );
       const rows = full.rows;
@@ -378,11 +386,30 @@ function PersonRow({
               </span>
             ) : null}
             <span>· Чек-ины: {row.checkInsCompleted}</span>
+            <GoalContributionChip net={row.goalContributionNet} />
           </span>
         </span>
       </button>
       {drill.open ? <PersonItemsDrill drill={drill} /> : null}
     </li>
+  );
+}
+
+function GoalContributionChip({ net }: { net: number | null }) {
+  const goal = goalContributionDisplay(net);
+  const chip =
+    goal.tone === "pos"
+      ? "bg-chip-success-bg text-chip-success-fg"
+      : goal.tone === "neg"
+        ? "bg-chip-danger-bg text-chip-danger-fg"
+        : "bg-bg-subtle text-fg-tertiary";
+  return (
+    <span
+      className={`rounded px-1.5 py-0.5 tabular-nums ${chip}`}
+      title="Вклад в главную цель за неделю: pro−contra"
+    >
+      Вклад в цель: {goal.label}
+    </span>
   );
 }
 
@@ -562,6 +589,9 @@ function AllRowItem({
         ) : null}
         <span className="shrink-0 text-xs tabular-nums text-fg-secondary">
           Чек-ины {row.checkInsCompleted}
+        </span>
+        <span className="shrink-0 text-[11px]">
+          <GoalContributionChip net={row.goalContributionNet} />
         </span>
         <span
           className={`shrink-0 rounded px-2 py-0.5 text-[11px] tabular-nums ${

@@ -50,6 +50,16 @@ export function reliabilityDisplay(
   return { kind: "none", label: "—" };
 }
 
+export function goalContributionDisplay(net: number | null): {
+  label: string;
+  tone: "pos" | "neg" | "zero" | "none";
+} {
+  if (net == null) return { label: "нет цели", tone: "none" };
+  if (net > 0) return { label: `+${Math.round(net * 10) / 10}`, tone: "pos" };
+  if (net < 0) return { label: `${Math.round(net * 10) / 10}`, tone: "neg" };
+  return { label: "0", tone: "zero" };
+}
+
 export function weeklyPersonRowFromApi(
   api: WeeklyPersonRowApi,
 ): WeeklyPersonRowUi {

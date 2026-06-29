@@ -3,13 +3,13 @@
 import { useState } from "react";
 import { ArrowUp, ChevronDown, Compass } from "lucide-react";
 
-import type { DailyDigestGoalAlignmentDayApi } from "@/api/operations-daily-digest.api";
+import type { WeeklyDigestGoalAlignmentWeekApi } from "@/api/weekly-digest.api";
 import { CHART, GRAD, glass } from "@/ui/components/dashboard/modern";
 import { CardTitle } from "@/ui/components/dashboard/modern";
 import { GoalCompass3D } from "@/ui/components/dashboard/shared/GoalCompass3D";
 import { cn } from "@/ui/shadcn/lib/utils";
 
-type Direction = DailyDigestGoalAlignmentDayApi["direction"];
+type Direction = WeeklyDigestGoalAlignmentWeekApi["direction"];
 
 const DIRECTION_CAPTION: Record<Direction, string> = {
   to_goal: "к цели",
@@ -18,9 +18,9 @@ const DIRECTION_CAPTION: Record<Direction, string> = {
 };
 
 const DIRECTION_VERDICT: Record<Direction, string> = {
-  to_goal: "К цели — активность приближает к главной цели",
-  drift: "Дрейф — активность есть, но к цели двигает малая часть",
-  against: "Против — день увёл компанию от цели",
+  to_goal: "К цели — за неделю усилия приближали к главной цели",
+  drift: "Дрейф — движение есть, но к цели двигала малая часть",
+  against: "Против — неделя увела от цели",
 };
 
 const DIRECTION_TONE: Record<Direction, string> = {
@@ -29,10 +29,10 @@ const DIRECTION_TONE: Record<Direction, string> = {
   against: CHART.red,
 };
 
-export function GoalCompassCard({
+export function WeekGoalCompass({
   goal,
 }: {
-  goal: DailyDigestGoalAlignmentDayApi;
+  goal: WeeklyDigestGoalAlignmentWeekApi;
 }) {
   const [open, setOpen] = useState(false);
   const tone = DIRECTION_TONE[goal.direction];
@@ -41,7 +41,7 @@ export function GoalCompassCard({
     <div style={glass()} className="p-6">
       <div className="flex items-center gap-3">
         <CardTitle icon={<Compass size={17} />} grad={GRAD.teal}>
-          Цель и компас
+          Цель и компас недели
         </CardTitle>
         <button
           type="button"
@@ -94,12 +94,12 @@ export function GoalCompassCard({
               <span style={{ color: CHART.dim }}>· балл {goal.score}</span>
             ) : null}
           </div>
-          {goal.todayDelta ? (
+          {goal.weekDelta ? (
             <div
               className="mt-2.5 text-[13.5px] leading-snug"
               style={{ color: CHART.dim }}
             >
-              {goal.todayDelta}
+              {goal.weekDelta}
             </div>
           ) : null}
         </div>
@@ -125,7 +125,7 @@ export function GoalCompassCard({
                 style={{ color: CHART.mint }}
               >
                 <ArrowUp size={14} aria-hidden />
-                Двигает к цели
+                Двигало к цели
               </h5>
               <ul className="flex flex-col gap-2">
                 {goal.pro.length > 0 ? (
@@ -145,7 +145,7 @@ export function GoalCompassCard({
                   ))
                 ) : (
                   <li className="text-[13px]" style={{ color: CHART.faint }}>
-                    За день ничего не приблизило к цели.
+                    За неделю ничего не приблизило к цели.
                   </li>
                 )}
               </ul>
@@ -156,7 +156,7 @@ export function GoalCompassCard({
                 style={{ color: CHART.red }}
               >
                 <ChevronDown size={14} aria-hidden />
-                Мимо цели / тормозит
+                Мимо цели / тормозило
               </h5>
               <ul className="flex flex-col gap-2">
                 {goal.contra.length > 0 ? (

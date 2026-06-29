@@ -20,6 +20,7 @@ import { CHART } from "@/ui/components/dashboard/modern";
 import { RisksIdeas } from "@/ui/components/dashboard/day-company/RisksIdeas";
 import { PeriodValue } from "@/ui/components/dashboard/day-company/PeriodValue";
 
+import { WeekGoalCompass } from "./WeekGoalCompass";
 import { WeekLetter } from "./WeekLetter";
 import { WeekVerdictCover } from "./WeekVerdictCover";
 
@@ -192,6 +193,10 @@ export function WeekCompanyHero() {
       />
 
       <WeekLetter sections={digest.letter} fallbackProse={digest.bodyMarkdown} />
+
+      {digest.goalAlignmentWeek ? (
+        <WeekGoalCompass goal={digest.goalAlignmentWeek} />
+      ) : null}
 
       <RisksIdeas
         insights={insightsSwr.data ?? []}

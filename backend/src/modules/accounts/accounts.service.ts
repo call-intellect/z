@@ -213,6 +213,15 @@ export class AccountsService {
       throw new LoginInvalidError();
     }
 
+    if (this.passwords.needsRehash(user.passwordHash)) {
+      try {
+        const rehashed = await this.passwords.hash(input.password);
+        await this.repo.updatePassword(user.id, rehashed, user.mustChangePassword);
+      } catch (err) {
+        this.logger.warn({ userId: user.id, err }, 'login: lazy rehash failed');
+      }
+    }
+
     const { token } = await this.sessions.issue({
       userId: user.id,
       email: user.email,

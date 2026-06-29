@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { PasswordModule } from '../accounts/password.module';
 import { BillingModule } from '../billing/billing.module';
 import { ConversationalLinkCodeService } from '../conversational/link-code.service';
 import { MailModule } from '../mail/mail.module';
@@ -14,7 +15,7 @@ import { OrgInvitationsAcceptController, OrgsController } from './orgs.controlle
 import { OrgsService } from './orgs.service';
 
 @Module({
-  imports: [PrismaModule, MailModule, BillingModule, TablesModule, PersonsModule],
+  imports: [PrismaModule, MailModule, BillingModule, TablesModule, PersonsModule, PasswordModule],
   controllers: [OrgsController, OrgInvitationsAcceptController],
   providers: [
     OrgsService,

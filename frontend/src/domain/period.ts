@@ -160,3 +160,12 @@ export function comparePeriods(a: string, b: string): number {
   if (a > b) return 1;
   return 0;
 }
+
+export function nearestAvailablePeriod(
+  target: string,
+  periods: string[],
+): string | null {
+  if (periods.length === 0) return null;
+  const pastOrEqual = periods.find((p) => comparePeriods(p, target) <= 0);
+  return pastOrEqual ?? periods[periods.length - 1] ?? null;
+}

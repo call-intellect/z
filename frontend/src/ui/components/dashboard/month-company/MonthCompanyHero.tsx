@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Loader2, RotateCw } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import { ideasApi } from "@/api/ideas.api";
 import { insightsApi } from "@/api/insights.api";
@@ -13,11 +13,16 @@ import {
 } from "@/hooks/useMonthCompany";
 import { useStaleTasksCrossProject } from "@/hooks/useDayCompany";
 import { useSwrWithToast } from "@/hooks/useSwrWithToast";
-import { comparePeriods, currentPeriod } from "@/domain/period";
+import {
+  comparePeriods,
+  currentPeriod,
+  formatPeriodLabel,
+  nearestAvailablePeriod,
+} from "@/domain/period";
 import { toast } from "@/ui/shadcn/toast";
-import { Button } from "@/ui/shadcn/button";
 import { CHART } from "@/ui/components/dashboard/modern";
 import { PeriodNavigator } from "@/ui/components/dashboard/shared/PeriodNavigator";
+import { PeriodEmptyState } from "@/ui/components/dashboard/shared/PeriodEmptyState";
 import { RisksIdeas } from "@/ui/components/dashboard/day-company/RisksIdeas";
 import { StaleTasksLinked } from "@/ui/components/dashboard/day-company/StaleTasksLinked";
 import { WeeklyPerPersonWidget } from "@app/(authenticated)/dashboard/operations/weekly/WeeklyPerPersonWidget";
@@ -165,6 +170,11 @@ export function MonthCompanyHero() {
   }
 
   if (!digest) {
+    const hasOtherPeriods = periods.length > 0;
+    const nearest = nearestAvailablePeriod(
+      effective ?? currentPeriod("month"),
+      periods.map((p) => p.period),
+    );
     return (
       <div className="mb-8 flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -186,36 +196,20 @@ export function MonthCompanyHero() {
             </button>
           ) : null}
         </div>
-        <div
-          className="flex flex-col items-start gap-3 p-7"
-          style={{
-            background: "var(--glass-surface)",
-            border: "1px solid var(--glass-border)",
-            borderRadius: 24,
+        <PeriodEmptyState
+          surface="month"
+          hasOtherPeriods={hasOtherPeriods}
+          periodLabel={formatPeriodLabel(
+            "month",
+            effective ?? currentPeriod("month"),
+          )}
+          onJumpNearest={() => {
+            if (nearest) setSelected(nearest);
           }}
-        >
-          <h2 className="text-lg font-semibold" style={{ color: CHART.text }}>
-            Месячная сводка ещё не собрана
-          </h2>
-          <p className="text-sm" style={{ color: CHART.dim }}>
-            Кора сводит «Месяц компании» из недельных отчётов, целей и решений.
-            Можно запустить сборку вручную.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={regenerate}
-            disabled={regenerating}
-            className="gap-1.5"
-          >
-            <RotateCw
-              size={14}
-              aria-hidden
-              className={regenerating ? "animate-spin" : undefined}
-            />
-            Пересобрать
-          </Button>
-        </div>
+          onToLatest={() => setSelected(null)}
+          onRegenerate={regenerate}
+          isRegenerating={regenerating}
+        />
       </div>
     );
   }

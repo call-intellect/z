@@ -25,7 +25,6 @@ import { CheckinIngestService } from './services/checkin-ingest.service';
 import { CheckinParserService } from './services/checkin-parser.service';
 import { CheckinResponseHandler } from './services/checkin-response.handler';
 import { ClosureVerifierService } from './services/closure-verifier.service';
-import { CommitmentResponseHandler } from './services/commitment-response.handler';
 import { CommitmentsService } from './services/commitments.service';
 import { CustomerRiskRadarService } from './services/customer-risk-radar.service';
 import { DailyCheckInService } from './services/daily-checkin.service';
@@ -43,7 +42,6 @@ import { PersonalRelationService } from './services/personal-relation.service';
 import { PortfolioHealthService } from './services/portfolio-health.service';
 import { PromiseCascadeService } from './services/promise-cascade.service';
 import { PromiseNetworkService } from './services/promise-network.service';
-import { Specialist39PromiseKeeperService } from './services/specialist-3-9-promise-keeper.service';
 import { TaskCompletionHandler } from './services/task-completion.handler';
 import { TaskReconcileService } from './services/task-reconcile.service';
 import { TeamCapacityService } from './services/team-capacity.service';
@@ -55,7 +53,6 @@ import { ChannelBindingCampaignCron } from './workers/channel-binding-campaign.c
 import { CheckinGraphIngestListener } from './workers/checkin-graph-ingest.listener';
 import { CheckinSentimentAnalyzerWorker } from './workers/checkin-sentiment-analyzer.worker';
 import { CheckinSentimentBatchCron } from './workers/checkin-sentiment-batch.cron';
-import { CommitmentFollowupCron } from './workers/commitment-followup.cron';
 import { CustomerRiskRadarCron } from './workers/customer-risk-radar.cron';
 import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
 import { DayReportCollectorCron } from './workers/day-report-collector.cron';
@@ -121,11 +118,8 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     CheckinSentimentAnalyzerWorker,
     CheckinSentimentBatchCron,
     CommitmentsService,
-    Specialist39PromiseKeeperService,
-    CommitmentFollowupCron,
-    CommitmentResponseHandler,
     // TZ task-dedup (2026-06-16, Ф2) — петля «разговор → кандидат на закрытие
-    // задачи». Зеркало CommitmentResponseHandler: @OnEvent('task.completion_signalled'),
+    // задачи». @OnEvent('task.completion_signalled'),
     // семантический матч открытой Issue + LLM-верификатор → обратимый
     // TaskClosureCandidate (авто-закрытие запрещено, R13).
     TaskCompletionHandler,
@@ -177,7 +171,6 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     WeeklyDigestService,
     MonthlyDigestService,
     CommitmentsService,
-    Specialist39PromiseKeeperService,
     DailyDigestService,
     CustomerRiskRadarService,
     PersonalDailyBriefService,

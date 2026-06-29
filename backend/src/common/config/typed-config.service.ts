@@ -1585,14 +1585,7 @@ export class TypedConfigService {
         'COO_DAILY_DIGEST_HOUR_UTC',
         22,
       ),
-      commitmentFollowupEnabled: this.get('COMMITMENT_FOLLOWUP_ENABLED') !== false,
-      commitmentFollowupLocalHour: this.resolveSync<number>(
-        'betaOps.commitmentFollowupLocalHour',
-        'COMMITMENT_FOLLOWUP_LOCAL_HOUR',
-        9,
-      ),
       commitmentFallbackDueWorkdays: Number(this.get('COMMITMENT_FALLBACK_DUE_WORKDAYS') ?? 5),
-      commitmentEscalationDays: Number(this.get('COMMITMENT_ESCALATION_DAYS') ?? 3),
       commitmentMaxRetries: Number(this.get('COMMITMENT_MAX_RETRIES') ?? 2),
     } as const;
   }

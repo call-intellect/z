@@ -7,7 +7,6 @@ export type ProbeWindow = 'immediate' | 'deferrable';
 export const PROBE_REASON_WINDOW: Record<string, ProbeWindow> = {
   'regulation.missing_owner': 'immediate',
   'temporal.fact_stale_contradiction.escalated': 'immediate',
-  'commitment.silence_escalation': 'immediate',
   'consistency_violation.R1': 'immediate',
   'consistency_violation.R2': 'immediate',
   'consistency_violation.R3': 'immediate',
@@ -30,8 +29,6 @@ export function probeWindow(reason: string): ProbeWindow {
 
 export const NUDGE_REASONS: ReadonlySet<string> = new Set([
   'goal.kr_checkpoint_suggested',
-  'commitment.followup',
-  'commitment.silence_escalation',
   'goal_alignment_low',
   'card.missing_deadline',
 ]);

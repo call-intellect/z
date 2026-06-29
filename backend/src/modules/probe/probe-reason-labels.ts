@@ -38,8 +38,6 @@ export const PROBE_REASON_LABEL: Record<string, string> = {
   'helpfulness.unrecognized_high_contributor': 'активный помощник остаётся незамеченным',
   'helpfulness.mentor_emerging': 'появляется наставник',
   'helpfulness.question_chain_unanswered': 'цепочка вопросов осталась без ответа',
-  'commitment.followup': 'нужно уточнить по обещанию',
-  'commitment.silence_escalation': 'по обещанию давно нет ответа',
   'consistency_violation.R1': 'обнаружено расхождение в данных',
   'consistency_violation.R2': 'обнаружено расхождение в данных',
   'consistency_violation.R3': 'обнаружено расхождение в данных',
@@ -91,8 +89,6 @@ export const PROBE_REASON_FALLBACK: Record<string, string> = {
   'idea.status_unclear': 'Эта идея давно обсуждается. К чему в итоге пришли?',
   'process_template.step_without_owner': 'Кто отвечает за этот шаг процесса?',
   'helpfulness.question_chain_unanswered': 'Этот вопрос так и остался без ответа. Подскажете?',
-  'commitment.followup': 'Как продвигается то, что вы обещали?',
-  'commitment.silence_escalation': 'По вашему обещанию давно нет новостей. Как с ним сейчас?',
   'attribution.unresolved_at_ingest':
     'К какому отделу, проекту или клиенту это относится?',
   'task.assignee_unresolved': 'Для кого эта задача — кому её поручить?',

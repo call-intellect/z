@@ -427,3 +427,66 @@ describe('DailyCheckInService.toDto (reportCompleteness/notDone/ideas)', () => {
     expect(dto!.ideas).toEqual([]);
   });
 });
+
+describe('DailyCheckInService.ensureExpectationRow (onlyIfMissing — защита заполненной строки)', () => {
+  it('существует заполненная completed-строка → upsert НЕ вызывается, completedAt сохранён', async () => {
+    const { service, findUnique, upsert } = makeService();
+    const completedAt = new Date('2026-06-29T15:00:00.000Z');
+    findUnique.mockResolvedValueOnce({
+      id: 'ci-existing',
+      tenantId: 't1',
+      personId: 'p1',
+      kind: 'morning',
+      dateLocal: '2026-06-29',
+      plansJson: [{ text: 'A' }],
+      donesJson: null,
+      blockersJson: null,
+      notDoneJson: null,
+      ideasJson: null,
+      qualityScore: null,
+      notificationId: null,
+      rawResponseText: 'raw',
+      parseConfidence: 0.9,
+      curatorReview: false,
+      completedAt,
+      createdAt: new Date('2026-06-29T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-29T00:00:00.000Z'),
+      source: 'manual',
+      sourceContributions: null,
+      sentiment: null,
+      sentimentRationale: null,
+      sentimentVersion: null,
+      sentimentDeterminedAt: null,
+    });
+
+    const dto = await service.ensureExpectationRow({
+      tenantId: 't1',
+      personId: 'p1',
+      kind: 'morning',
+      dateLocal: '2026-06-29',
+    });
+
+    expect(upsert).not.toHaveBeenCalled();
+    expect(dto.id).toBe('ci-existing');
+    expect(dto.completedAt).toBe(completedAt.toISOString());
+  });
+
+  it('строки нет → upsert создаёт ожидание с completedAt=null', async () => {
+    const { service, findUnique, upsert } = makeService();
+    findUnique.mockResolvedValueOnce(null);
+    upsert.mockImplementation((callArgs: any) => rowFromUpsertArgs(callArgs, 'ci-new'));
+
+    const dto = await service.ensureExpectationRow({
+      tenantId: 't1',
+      personId: 'p1',
+      kind: 'evening',
+      dateLocal: '2026-06-29',
+    });
+
+    expect(upsert).toHaveBeenCalledTimes(1);
+    const call = upsert.mock.calls[0]![0];
+    expect(call.create.completedAt).toBeNull();
+    expect(call.create.source).toBe('cron_prompted');
+    expect(dto.completedAt).toBeNull();
+  });
+});

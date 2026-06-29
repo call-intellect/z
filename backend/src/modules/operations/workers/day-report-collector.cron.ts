@@ -4,6 +4,7 @@ import { Cron } from '@nestjs/schedule';
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { CheckinExpectationService } from '../services/checkin-expectation.service';
 import { DayReportCollectorService } from '../services/day-report-collector.service';
 import { getLocalDate } from '../utils/local-date';
 
@@ -17,6 +18,8 @@ export class DayReportCollectorCron {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(DayReportCollectorService) private readonly collector: DayReportCollectorService,
+    @Inject(CheckinExpectationService)
+    private readonly expectations: CheckinExpectationService,
   ) {}
 
   @Cron('0 5 * * *', { timeZone: 'Europe/Moscow' })
@@ -55,6 +58,7 @@ export class DayReportCollectorCron {
         }
 
         try {
+          await this.expectations.ensureForDay({ tenantId: org.id, dateLocal });
           await this.collector.assembleAndUpsert({ tenantId: org.id, dateLocal });
           processed += 1;
         } catch (err) {

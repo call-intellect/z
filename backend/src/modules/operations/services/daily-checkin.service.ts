@@ -317,6 +317,30 @@ export class DailyCheckInService {
     });
   }
 
+  async ensureExpectationRow(args: {
+    tenantId: string;
+    personId: string;
+    kind: 'morning' | 'evening';
+    dateLocal: string;
+  }): Promise<DailyCheckInDto> {
+    return this.upsertInternal({
+      tenantId: args.tenantId,
+      personId: args.personId,
+      kind: args.kind,
+      dateLocal: args.dateLocal,
+      plans: null,
+      dones: null,
+      blockers: null,
+      notificationId: null,
+      rawResponseText: null,
+      parseConfidence: null,
+      curatorReview: false,
+      completed: false,
+      onlyIfMissing: true,
+      source: 'cron_prompted',
+    });
+  }
+
   async hasCompletedToday(args: {
     tenantId: string;
     personId: string;

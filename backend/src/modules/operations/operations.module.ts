@@ -20,6 +20,7 @@ import { PersonalRelationsController } from './controllers/personal-relations.co
 import { WeeklyDigestController } from './controllers/weekly-digest.controller';
 import { WeeklyPerPersonController } from './controllers/weekly-per-person.controller';
 import { BlockerSynthesisService } from './services/blocker-synthesis.service';
+import { CheckinExpectationService } from './services/checkin-expectation.service';
 import { CheckinIngestService } from './services/checkin-ingest.service';
 import { CheckinParserService } from './services/checkin-parser.service';
 import { CheckinResponseHandler } from './services/checkin-response.handler';
@@ -109,6 +110,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     DaySignalAggregatorCron,
     DayReportCollectorService,
     DayReportCollectorCron,
+    CheckinExpectationService,
     ClosureVerifierService,
     MeetingCheckinListener,
     OperationsDashboardService,

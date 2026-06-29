@@ -931,8 +931,41 @@ describe('WeeklyPerPersonService', () => {
       const pgcCall = prisma.personGoalContribution.findMany.mock.calls[0]![0];
       expect(pgcCall.where.tenantId).toBe('t-9');
       expect(pgcCall.where.goalId).toBe('g1');
-      expect((pgcCall.where.weekStart as Date).toISOString()).toBe(`${WEEK_START}T00:00:00.000Z`);
+      const weekStartRange = pgcCall.where.weekStart as { gte: Date; lte: Date };
+      expect(weekStartRange.gte.toISOString()).toBe(`${WEEK_START}T00:00:00.000Z`);
+      expect(weekStartRange.lte.toISOString()).toBe('2026-06-07T00:00:00.000Z');
       expect(pgcCall.where.personId).toEqual({ in: ['P1', 'P2', 'P3'] });
+    });
+
+    it('месячное окно (явный weekEnd) → вклад суммируется по нескольким понедельникам', async () => {
+      const { service, prisma } = buildService({
+        ...baseFixture(),
+        primaryGoal: { id: 'g1' },
+        contributions: [
+          { personId: 'P1', netScore: 2 },
+          { personId: 'P1', netScore: 1.5 },
+          { personId: 'P2', netScore: -1 },
+        ],
+      });
+      const dto = await service.compute(
+        {
+          tenantId: 't-1',
+          weekStart: WEEK_START,
+          weekEnd: '2026-06-30',
+          limit: 100,
+          offset: 0,
+          sort: 'reliability',
+        },
+        NOW,
+      );
+      const byId = new Map(dto.rows.map((r) => [r.personId, r]));
+      expect(byId.get('P1')!.goalContributionNet).toBe(3.5);
+      expect(byId.get('P2')!.goalContributionNet).toBe(-1);
+
+      const pgcCall = prisma.personGoalContribution.findMany.mock.calls[0]![0];
+      const weekStartRange = pgcCall.where.weekStart as { gte: Date; lte: Date };
+      expect(weekStartRange.gte.toISOString()).toBe(`${WEEK_START}T00:00:00.000Z`);
+      expect(weekStartRange.lte.toISOString()).toBe('2026-06-30T00:00:00.000Z');
     });
 
     it('topReliable/topRisk также несут goalContributionNet', async () => {

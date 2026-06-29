@@ -23,9 +23,15 @@ import { toast } from "@/ui/shadcn/toast";
 export function WeeklyPerPersonWidget({
   weekStart,
   weekEnd,
+  title,
+  subtitle,
+  emptyHint,
 }: {
   weekStart: string;
   weekEnd?: string;
+  title?: string;
+  subtitle?: string;
+  emptyHint?: string;
 }) {
   const [data, setData] = useState<WeeklyPerPersonUi | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -138,10 +144,11 @@ export function WeeklyPerPersonWidget({
   return (
     <GlassCard>
       <CardTitle icon={<Users size={16} />} grad={GRAD.blue}>
-        Кто держит слово — за неделю
+        {title ?? "Кто держит слово — за неделю"}
       </CardTitle>
       <p className="mt-1 text-sm text-fg-secondary">
-        План-факт по людям: обещания, задачи и чек-ины за неделю.
+        {subtitle ??
+          "План-факт по людям: обещания, задачи и чек-ины за неделю."}
       </p>
 
       {loading ? (
@@ -154,8 +161,8 @@ export function WeeklyPerPersonWidget({
         </p>
       ) : !data || data.total === 0 ? (
         <p className="mt-3 rounded border bg-bg-subtle p-4 text-sm text-fg-secondary">
-          За эту неделю ещё нет данных по людям — обещания, задачи и чек-ины
-          появятся по мере работы команды.
+          {emptyHint ??
+            "За эту неделю ещё нет данных по людям — обещания, задачи и чек-ины появятся по мере работы команды."}
         </p>
       ) : (
         <>

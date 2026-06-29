@@ -382,6 +382,15 @@ const registry = new Map<string, ZodTypeAny>([
   ['tracker.closureNotifyCreatorEnabled', z.boolean()],
   ['tracker.livingCardEnabled', z.boolean()],
   ['tracker.progressFromConversationMinConfidence', UNIT_INTERVAL],
+
+  ['tracker.morningDigest.enabled', z.boolean()],
+  ['tracker.morningDigest.hourMsk', z.number().int().min(0).max(23)],
+  [
+    'tracker.morningDigest.channels',
+    z.array(z.enum(['in_app', 'email_smtp', 'telegram_bot', 'max_bot', 'push'])),
+  ],
+  ['tracker.morningDigest.maxItemsTotal', z.number().int().min(1).max(500)],
+  ['tracker.morningDigest.sendWhenEmpty', z.boolean()],
   ['chatbox.analyze.stuckAnalyzingMin', POSITIVE_INT],
 
   ['taskClosure.enabled', z.boolean()],

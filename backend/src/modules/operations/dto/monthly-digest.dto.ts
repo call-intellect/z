@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export interface MonthlyDigestMetricsDto {
   weeksCount: number;
   missingWeeks: string[];
@@ -83,3 +85,8 @@ export interface MonthlyOperationsDigestDto {
   goalAlignmentMonth?: MonthlyDigestGoalAlignmentMonthDto | null;
   weekTrend?: MonthWeekTrendAxisDto[] | null;
 }
+
+export const MonthlyDigestQuerySchema = z
+  .object({ period: z.string().regex(/^\d{4}-\d{2}$/, 'period должен быть YYYY-MM') })
+  .strict();
+export type MonthlyDigestQuery = z.infer<typeof MonthlyDigestQuerySchema>;

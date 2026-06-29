@@ -480,6 +480,8 @@ const registry = new Map<string, ZodTypeAny>([
   ['betaOps.eveningLocalHour', z.number().int().min(0).max(23)],
   ['betaOps.weeklyDigestLocalHour', z.number().int().min(0).max(23)],
   ['betaOps.weeklyDigestLocalDay', z.number().int().min(0).max(6)],
+  ['betaOps.monthlyDigestEnabled', z.boolean()],
+  ['betaOps.monthlyDigestLocalHour', z.number().int().min(0).max(23)],
   ['betaOps.dailyDigestHourUtc', z.number().int().min(0).max(23)],
   ['betaOps.commitmentFollowupLocalHour', z.number().int().min(0).max(23)],
 

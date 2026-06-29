@@ -610,6 +610,7 @@ const STEPS: Step[] = [
   { phase: 'backfill', script: 'scripts/backfill-entity-link-types-fase0.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-commitment-due-dates.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-meeting-linked-ids.ts', hint: 'IntakeIssue.meetingId → Issue.linkedMeetingIds backfill (intake-issue-linked-meeting-ids-fix, только meeting:-формат externalId)', skipBootstrap: true },
+  { phase: 'backfill', script: 'scripts/backfill-day-report.ts', skipBootstrap: true, hint: 'сборка дневных отчётов из block-ingest за 30 дней (4 сущности)' },
   {
     phase: 'backfill',
     script: 'scripts/backfill-decision-linked-task-count.ts',

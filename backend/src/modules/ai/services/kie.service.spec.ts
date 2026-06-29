@@ -11,6 +11,7 @@ function makeCfg(): TypedConfigService {
       kie: {
         apiKey: 'kie-test-key',
         baseUrl: 'https://api.kie.ai',
+        timeoutMs: 180_000,
       },
     },
   } as unknown as TypedConfigService;
@@ -301,5 +302,35 @@ describe('KieService.complete — retry/error handling', () => {
     const out = await promise;
     expect(out.text).toBe('ok');
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('KieService — таймаут из крутилки ai.kie.timeoutMs', () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('AbortSignal.timeout вызывается со значением из cfg (не захардкоженные 60_000)', async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            content: [{ type: 'text', text: 'ok' }],
+            usage: { input_tokens: 1, output_tokens: 1 },
+          }),
+          { status: 200 },
+        ),
+    ) as unknown as typeof fetch;
+
+    const cfg = {
+      ai: { kie: { apiKey: 'k', baseUrl: 'https://api.kie.ai', timeoutMs: 123_456 } },
+    } as unknown as TypedConfigService;
+    const svc = new KieService(cfg);
+    await svc.complete({ system: { text: 's' }, user: 'u', model: 'claude-opus-4-7' });
+
+    expect(timeoutSpy).toHaveBeenCalledWith(123_456);
   });
 });

@@ -338,6 +338,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['router.fallbackNegativeTtlSeconds', POSITIVE_INT],
   ['router.llmFallbackEnabled', z.boolean()],
   ['router.fallbackCacheTtlSeconds', POSITIVE_INT],
+  ['ai.kie.timeoutMs', POSITIVE_INT],
 
   ['chat_presence_ttl_seconds', POSITIVE_INT],
   ['chat_outbox_sweep_stale_seconds', POSITIVE_INT],

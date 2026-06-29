@@ -269,6 +269,7 @@ export class TypedConfigService {
       kie: {
         apiKey: this.get('KIE_API_KEY'),
         baseUrl: this.get('KIE_BASE_URL'),
+        timeoutMs: this.resolveSync<number>('ai.kie.timeoutMs', undefined, 180_000),
       },
       proxy: {
         baseUrl: this.get('PROXY_BASE_URL'),
@@ -702,7 +703,7 @@ export class TypedConfigService {
       chatV2SynthesisTimeoutMs: this.resolveSync<number>(
         'knowledge.chatV2SynthesisTimeoutMs',
         undefined,
-        90_000,
+        180_000,
       ),
       biTemporalEdgesEnabled: this.get('BI_TEMPORAL_EDGES_ENABLED'),
       ideaDirectPathEnabled: this.resolveSync<boolean>(

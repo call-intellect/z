@@ -200,6 +200,15 @@ export class WeeklyDigestService {
     return this.enrichDto(this.toDto(row));
   }
 
+  async getLatest(args: { tenantId: string }): Promise<WeeklyOperationsDigestDto | null> {
+    const row = await this.prisma.weeklyOperationsDigest.findFirst({
+      where: { tenantId: args.tenantId },
+      orderBy: { weekStart: 'desc' },
+    });
+    if (!row) return null;
+    return this.enrichDto(this.toDto(row));
+  }
+
   async getOrGenerate(args: {
     tenantId: string;
     weekStart: string;

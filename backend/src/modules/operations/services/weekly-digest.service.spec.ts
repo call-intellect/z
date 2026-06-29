@@ -42,6 +42,7 @@ describe('WeeklyDigestService', () => {
     decisions?: unknown[];
     ideas?: unknown[];
     existing?: unknown;
+    latest?: unknown;
     dailyDigest?: unknown;
     ppResult?: WeeklyPerPersonDto;
     llmResult?: { text: string; modelUsed: string };
@@ -82,6 +83,7 @@ describe('WeeklyDigestService', () => {
       },
       weeklyOperationsDigest: {
         findUnique: vi.fn().mockResolvedValue(overrides.existing ?? null),
+        findFirst: vi.fn().mockResolvedValue(overrides.latest ?? null),
         upsert: vi
           .fn()
           .mockImplementation(
@@ -249,6 +251,35 @@ describe('WeeklyDigestService', () => {
       weekEnd: '2026-05-24',
     });
     expect(result.bodyMarkdown).toBe('старый текст');
+    expect(llm.call).not.toHaveBeenCalled();
+  });
+
+  it('getLatest: возвращает последний дайджест', async () => {
+    const { svc, prisma } = buildSvc({
+      latest: {
+        id: 'wd9',
+        tenantId: 't1',
+        weekStart: '2026-06-22',
+        weekEnd: '2026-06-26',
+        bodyMarkdown: 'последний',
+        metricsJson: {},
+        sourcesJson: {},
+        llmTaskRouteId: 'week-company-v1+deepseek:deepseek-v4-pro',
+        verdictJson: null,
+        createdAt: new Date('2026-06-27T08:00:00Z'),
+      },
+    });
+    const result = await svc.getLatest({ tenantId: 't1' });
+    expect(result?.weekStart).toBe('2026-06-22');
+    expect(prisma.weeklyOperationsDigest.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { weekStart: 'desc' } }),
+    );
+  });
+
+  it('getLatest: null если дайджестов нет', async () => {
+    const { svc, llm } = buildSvc({});
+    const result = await svc.getLatest({ tenantId: 't1' });
+    expect(result).toBeNull();
     expect(llm.call).not.toHaveBeenCalled();
   });
 });

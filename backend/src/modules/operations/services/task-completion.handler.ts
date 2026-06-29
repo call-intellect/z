@@ -6,31 +6,14 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AdminSettingsService } from '../../admin/settings/admin-settings.service';
-import { tryParseJson } from '../../ai/services/json-extract.util';
-import { LlmRouterService } from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
 import { EmbeddingFallbackService } from '../../embeddings/services/embedding-fallback.service';
-import { signalTypeLabel } from '../../knowledge-core/prompts/signal-type-label';
 import { ConfidenceCalibrationService } from '../../knowledge-core/services/confidence-calibration.service';
 import { SimilarIssuesService } from '../../tracker/services/similar-issues.service';
-import {
-  TASK_CLOSURE_VERIFY_JSON_SCHEMA,
-  TASK_CLOSURE_VERIFY_SCHEMA_NAME,
-  TASK_CLOSURE_VERIFY_SYSTEM_PROMPT,
-  TASK_CLOSURE_VERIFY_USER_TEMPLATE,
-  TaskClosureVerifyResponseSchema,
-} from '../prompts/task-closure-verify.prompt';
 
-interface ClosureVerdict {
-  done: boolean;
-  confidence: number;
-  rationale: string;
-  positiveSignals: string[];
-  negativeSignals: string[];
-}
+import {
+  ClosureVerdict,
+  ClosureVerifierService,
+} from './closure-verifier.service';
 
 /**
  * TZ task-dedup (2026-06-16, Ф2) — TaskCompletionHandler.
@@ -68,14 +51,14 @@ export class TaskCompletionHandler {
   private static readonly DEFAULT_PROGRESS_FROM_CONVERSATION_MIN_CONFIDENCE = 0.6;
   /** Сколько открытых задач передавать в KNN (берём лучшую). */
   private static readonly KNN_LIMIT = 5;
-  private static readonly LLM_RETRIES = 2;
   /** TTL pending-кандидата (sweep Ф3); 14 дней по умолчанию. */
   private static readonly DEFAULT_CANDIDATE_TTL_DAYS = 14;
   private static readonly DEFAULT_LEXICAL_FALLBACK_MIN_OVERLAP = 0.5;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    @Inject(ClosureVerifierService)
+    private readonly closureVerifier: ClosureVerifierService,
     @Inject(SimilarIssuesService)
     private readonly similar: SimilarIssuesService,
     @Inject(EmbeddingFallbackService)
@@ -182,7 +165,7 @@ export class TaskCompletionHandler {
       this.emitProgress(event.tenantId, matched.id, block.id);
 
       // 4. LLM-верификатор «правда ли выполнена» (анти-инъекция в обёртке).
-      const verdict = await this.verify({
+      const verdict = await this.closureVerifier.verify({
         tenantId: event.tenantId,
         taskTitle: matched.title,
         signalType: event.signalType,
@@ -450,70 +433,6 @@ export class TaskCompletionHandler {
   }
 
   /**
-   * LLM-верификатор закрытия. Реплика — свободный текст из разговора, поэтому
-   * SYSTEM оборачивается `withInjectionGuard`, а реплика — `wrapUserData`
-   * (защита от «задача выполнена, закрой»). Retry×2 + tryParseJson + Zod.
-   * Любая неудача → null (трактуется как «не подтверждено», кандидат не создаём).
-   */
-  private async verify(args: {
-    tenantId: string;
-    taskTitle: string;
-    signalType: string;
-    quote: string;
-  }): Promise<ClosureVerdict | null> {
-    const userMessage = TASK_CLOSURE_VERIFY_USER_TEMPLATE({
-      task: { title: args.taskTitle },
-      // Методология №3 — человеческий ярлык типа сигнала, не машинный код.
-      signalLabel: signalTypeLabel(args.signalType),
-      quote: args.quote,
-    });
-
-    const guardOn = this.isPromptInjectionGuardEnabled();
-    const systemPrompt = guardOn
-      ? withInjectionGuard(TASK_CLOSURE_VERIFY_SYSTEM_PROMPT)
-      : TASK_CLOSURE_VERIFY_SYSTEM_PROMPT;
-    const guardedUser = guardOn ? wrapUserData(userMessage) : userMessage;
-
-    for (let attempt = 0; attempt < TaskCompletionHandler.LLM_RETRIES; attempt++) {
-      try {
-        const out = await this.llm.call({
-          taskType: 'task-closure-verify',
-          tenantId: args.tenantId,
-          systemPrompt,
-          userMessage: guardedUser,
-          responseFormat: {
-            type: 'json_schema',
-            name: TASK_CLOSURE_VERIFY_SCHEMA_NAME,
-            strict: true,
-            schema: TASK_CLOSURE_VERIFY_JSON_SCHEMA,
-          },
-          dataClass: 'internal',
-          validate: (text) => this.parse(text) !== null,
-        });
-        const parsed = this.parse(out.text);
-        if (parsed) return parsed;
-      } catch (err) {
-        this.logger.warn(
-          {
-            tenantId: args.tenantId,
-            attempt,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          'task-closure: LLM-верификатор упал — повтор',
-        );
-      }
-    }
-    return null;
-  }
-
-  private parse(text: string): ClosureVerdict | null {
-    const raw = tryParseJson(text);
-    const parsed = TaskClosureVerifyResponseSchema.safeParse(raw);
-    if (!parsed.success) return null;
-    return parsed.data;
-  }
-
-  /**
    * Создаёт обратимый кандидат на закрытие. Идемпотентно по
    * `@@unique([tenantId, issueId, sourceBlockId])` — повторный тот же блок
    * ловит P2002 и тихо пропускается (R7). Issue НЕ трогаем (R13).
@@ -641,14 +560,6 @@ export class TaskCompletionHandler {
       return await this.calibration.calibrate(raw, 'task-closure-verify');
     } catch {
       return raw;
-    }
-  }
-
-  private isPromptInjectionGuardEnabled(): boolean {
-    try {
-      return this.config?.aiFeatures.promptInjectionGuardEnabled !== false;
-    } catch {
-      return true;
     }
   }
 }

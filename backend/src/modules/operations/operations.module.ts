@@ -23,6 +23,7 @@ import { BlockerSynthesisService } from './services/blocker-synthesis.service';
 import { CheckinIngestService } from './services/checkin-ingest.service';
 import { CheckinParserService } from './services/checkin-parser.service';
 import { CheckinResponseHandler } from './services/checkin-response.handler';
+import { ClosureVerifierService } from './services/closure-verifier.service';
 import { CommitmentResponseHandler } from './services/commitment-response.handler';
 import { CommitmentsService } from './services/commitments.service';
 import { CustomerRiskRadarService } from './services/customer-risk-radar.service';
@@ -106,6 +107,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     DaySignalAggregatorService,
     DaySignalAggregatorCron,
     DayReportCollectorService,
+    ClosureVerifierService,
     MeetingCheckinListener,
     OperationsDashboardService,
     PersonalRelationService,

@@ -71,6 +71,29 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📄 2026-06-30 — Единый движок задач, заход B: combo эмитит tasks[] → материализатор + снос старых движков задач (task-extraction-pipeline-unification + extraction-layer-rewrite Ф7/Ф11в-г, ветка work/2026-06-29)
+
+> ТЗ `plans/tz/2026-06-29-task-extraction-pipeline-unification.md` (Ф1/Ф2/Ф4, вариант А) + `plans/tz/2026-06-30-extraction-layer-rewrite.md` (Ф7, Ф11в/г), коммиты `6816cacd`..`fa55ddf2`. Реализует то, что заход A отложил: общий разборщик `specialists-combined` (combo) достаёт задачи/обещания тем же проходом, что граф, из уже разобранных canonical-блоков встречи И чата → отдаёт черновики в новый `TaskDraftMaterializerService` → IntakeIssue. Подзадачи многошагового поручения собираются в чек-лист одной карточки. После этого старые движки задач выведены: per-block извлекающий спайн `specialist-3-15-tasks.worker` (спайн-СЕРВИС жив — `runClarifySweep`) и `MeetingExtractActionsService`. **combo — единственный движок задач всех каналов; фолбэка нет (принято владельцем ВР8); откат — рубильник `knowledge.specialistsCombinedEnabled`.**
+>
+> **🟢 1 АДДИТИВНАЯ МИГРАЦИЯ PRISMA (авто через `migrate deploy`): `20260630030000_add_intake_issue_checklist_json` (1 nullable-колонка `IntakeIssue.checklistJson JSONB`). 🟢 НОВЫХ ENV НЕТ. 🟢 НОВЫХ SEED НЕТ** (дедуп использует существующий `taskDedup.enabled`). Docker rebuild backend.
+>
+> **⚠️⚠️ ГЕЙТ ВЫКАТА (build-then-delete, point 5 / ВР8):** коммиты сноса `a7434d72` (Ф11в) и `fa55ddf2` (Ф11г) удаляют старые движки задач. **Перед тем как полагаться ТОЛЬКО на combo — сделай разовую проверку глазами в проде, что combo создаёт задачи** (встреча + чат → IntakeIssue во «Входящих»). A/B недоступно (ВР8); страховка = рубильник combo + метрики + эта проверка. Хочешь строгое стейджирование — выкати combo-эмиссию (HEAD до `a7434d72`) первой, убедись, затем сносовые коммиты. Откат сноса — `git revert a7434d72 fa55ddf2`; откат combo — рубильник.
+
+- **Шаг 1 — ENV: новых нет.**
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up -d`): `20260630030000_add_intake_issue_checklist_json` — `ALTER TABLE "IntakeIssue" ADD COLUMN "checklistJson" JSONB` (AI-подзадачи до промоута: форма `[{title?, items:[{text}]}]`; материализуются в `IssueChecklist` при accept — `intake-auto-triage.worker` + `intake.service`). Аддитивная nullable, без backfill (историческую переписку не доразбираем — суточный проход идёт вперёд). Повтор deploy = no-op. **В STEPS не регистрируется** (миграция схемы). Соответствует `data-model.md` §«IntakeIssue».
+- **Шаги 5/6/7/8/9/10 (postgres-init/patch/seed/backfill/migrate/setup) — НЕ затронуты.** Новых индексов/скриптов/сидов нет.
+- **Шаг 11 — Docker rebuild** — `docker compose up -d --build backend`. Backend: combo эмитит `tasks[]` (tool `submit_all_8_entities`→`submit_all_entities`, +правило «обещание=задача»/группировка подзадач); новый `TaskDraftMaterializerService` (tracker); материализация чек-листа в обоих accept-местах intake; снесён извлекающий спайн `specialist-3-15-tasks.worker` + роут `action_item→TASKS` (TASKS убран из `SPECIALIST`/`PRIORITY` → fallback тоже не достанет; спайн-СЕРВИС жив для `runClarifySweep`); снесён `MeetingExtractActionsService` + его caller в `analyze.worker`. Frontend не затронут. ⚠️ Combo-промпт изменён → prompt-cache combo инвалидируется один раз (норма).
+- **Шаг 12 — Smoke** (после выката):
+  - combo создаёт задачи: на встрече с поручением И на чате с «я сделаю X к пятнице» → IntakeIssue во «Входящих» (`/intake`); многошаговое поручение одного автора → 1 карточка с чек-листом «0 из N» после принятия.
+  - `docker compose exec backend grep -rL "specialist-3-15-tasks.worker" dist` (извлекающий спайн-ВОРКЕР снесён); `grep -rl "task-clarify-sweep" dist` (clarify-cron ЖИВ); в `analyze.worker` нет вызова meeting-extract.
+  - `/metrics` содержит `task_draft_materialized_total{channel,status}`; **retired:** `ai_meeting_actions_extracted_total` исчезла (движок выведен; если есть Grafana-панель на неё — опустеет).
+  - `psql \d "IntakeIssue"` содержит `checklistJson`.
+- ⚠️ **Гейт сноса (повтор):** выкат коммитов `a7434d72`/`fa55ddf2` — только после разовой проверки, что combo даёт задачи (см. шапку). Residual: недостижимый `processBlock` в спайн-сервисе — follow-up trim (см. `04_не-сделано`).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📄 2026-06-30 — Переписывание извлекающего слоя, заход A: combo основной + сшивка нити + реестр 57 типов + хроносверка (extraction-layer-rewrite, ветка work/2026-06-29)
 
 > ТЗ `plans/tz/2026-06-30-extraction-layer-rewrite.md` (Ф1–Ф10 + Ф12a, коммиты `41736929`..`c8fef016`). Объединённый разборщик `specialists-combined` стал основным путём разбора (не A/B): рубильник переведён в AdminSetting + `zBool`-фикс; combo канало-агностичен (chat/chatbox/Bitrix), воспроизводит 4 побочки (rebuild профиля/навыков, гигиена решений, ProcessTemplate через раздельный process-detector); few-shot реестр всех 57 типов; нахлёст окон + позиция + gleaning; скелет-карта `meeting-skeleton`; привязка регламентов в combo (scope роли + владелец); хроносверка фактов/решений; граф-детектор конфликтов. **Снос старых движков (Ф11) и combo-tasks[] (заход B) ОТЛОЖЕНЫ в пост-прод** — см. `second-brain/04_не-сделано/README.md`. **Вариант A:** движок `block-ingest` НЕ менялся (остаётся `deepseek-v4-pro`; Opus отменён владельцем).

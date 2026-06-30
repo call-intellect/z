@@ -213,6 +213,28 @@ LiveKit чистит атрибуты автоматически при disconne
     только прямых полей Regulation/Process/Policy/Experiment; Card и шаги
     процессов — только probe-выбор. Метрика `z_owner_resolution_total`.
 
+- **knowledge-core ↔ tracker — задачи через combo (заход B извлекающего
+  слоя, 2026-06-30).** `knowledge-specialists-combined` (combo) эмитит `tasks[]`
+  9-м выходом (tool `submit_all_8_entities`→`submit_all_entities`) из
+  canonical-блоков **встречи И чата** и отдаёт task-черновики в
+  **`backend/src/modules/tracker/services/task-draft-materializer.service.ts`**
+  (`TaskDraftMaterializerService`, provider+export в `TrackerModule`, инжектится
+  в combo — оба модуля `@Global`, без цикла). Материализатор канало-агностичен:
+  idempotency `externalId=mat_<sha1(channel:sourceId:quote|title)>`, резолв
+  исполнителя org-wide (`AssigneeResolverService`→skill-routing), дедуп-suggest
+  (`TaskDedupService.evaluate`), подзадачи → `IntakeIssue.checklistJson` (→
+  `IssueChecklist` при accept через `intake-checklist-materialize.util.ts`),
+  enqueue `core.intake-auto-triage`. Метрика
+  `task_draft_materialized_total{channel,status}`. **Снесены:**
+  `MeetingExtractActionsService` (+ caller в `analyze.worker` + метрика
+  `ai_meeting_actions_extracted_total`) и извлекающий спайн-воркер `3-15-tasks`
+  (`Specialist315TasksWorker` + роут `action_item→TASKS` из
+  `RouterService.SPECIALIST`/`PRIORITY`). `Specialist315TasksService` жив —
+  держит `runClarifySweep`. Откат задач = рубильник combo
+  `knowledge.specialistsCombinedEnabled` (отдельного фолбэка нет). См.
+  [[../01_projects/tracker]] §«Combo — единый источник задач»,
+  [[../01_projects/ai-jobs]] §«заход B».
+
 - **`backend/src/modules/rbac/policies/policy.csv`** — добавлены ресурсы
   `block` и `entity` (read/write/delete для owner/admin, read для всех
   member'ов Org). **Мастер-ТЗ промптов (2026-06-10):** `RESOURCE_TYPES` +=
@@ -2609,7 +2631,7 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **Схема:** `model Task`, `enum TaskStatus`, FK back-refs (`User`/`Meeting`/`Org`), `TaskSource.taskId` (миграция `20260625000000_drop_legacy_task_model`).
 
 ### Канон после дропа
-- **Извлечение задач — только спайн** (`specialist-3-15-tasks`: `IdeaBlock(action_item)` → `task-extract` → `IntakeIssue` → `Issue`). Встречи — через `meeting-action-items` (Issue-путь по `linkedMeetingIds`).
+- **Извлечение задач — только спайн** (`specialist-3-15-tasks`: `IdeaBlock(action_item)` → `task-extract` → `IntakeIssue` → `Issue`). Встречи — через `meeting-action-items` (Issue-путь по `linkedMeetingIds`). _(Заход B извлекающего слоя, 2026-06-30: извлекающий спайн `Specialist315TasksWorker` и `MeetingExtractActionsService` снесены — задачи извлекает combo → `TaskDraftMaterializerService`; см. §«Knowledge-core модули» → «knowledge-core ↔ tracker — задачи через combo».)_
 - **Аналитика** (director-dashboard, value-recap, personal-daily-brief, weekly-per-person, meeting-roi-scorer) читает `Issue`, не `Task`.
 - **Связь встреча↔задача** — `Issue.linkedMeetingIds` (GIN-индекс `Issue_linkedMeetingIds_gin_idx`); новый фильтр `GET /api/v1/issues?linkedMeetingId`; вкладка задач встречи на фронте пишет/читает Issue (`useMeetingIssues`, `issuesApi`).
 - **`shares.service`** (публичная шара) переведён на `Issue`. `TaskSource` остаётся провенанс-моделью (только `issueId`).

@@ -44,6 +44,12 @@ import { signalTypeLabel } from './signal-type-label';
 export const SPECIALISTS_COMBINED_TASK_TYPE =
   'knowledge-specialists-combined' as const;
 
+export type CombinedChannelKind = 'meeting' | 'chat';
+
+export function channelLabel(kind: CombinedChannelKind): string {
+  return kind === 'chat' ? 'переписки' : 'встречи';
+}
+
 /** Имя tool'а для structured output (LLM tool-use). */
 export const SPECIALISTS_COMBINED_TOOL_NAME = 'submit_all_8_entities';
 
@@ -497,15 +503,18 @@ export const SUBMIT_ALL_8_ENTITIES_TOOL: LlmTool = {
  * НЕ поддерживает `tool_choice='required'`, поэтому полагаемся на жёсткую
  * формулировку в system и user).
  */
-export function buildSpecialistsCombinedSystemPrompt(): string {
+export function buildSpecialistsCombinedSystemPrompt(
+  channelKind: CombinedChannelKind = 'meeting',
+): string {
   // A9 (2026-06-10): у каждой извлечённой сущности есть `confidence`, которая
   // течёт в вес/порог downstream (canonical draft → проекции). Единая шкала
   // уверенности (`withConfidenceCalibration`) дописывается в КОНЕЦ SYSTEM
   // (cache-friendly). Локальная калибровка confidence для regulations
   // (голое упоминание → 0.5, шаги/роли/сроки → 0.9) остаётся в теле и не
   // конфликтует с общей шкалой — это частный якорь для одного типа.
+  const sourceWord = channelKind === 'chat' ? 'переписки (чат)' : 'встречи';
   const body = [
-    'Ты — knowledge-инженер компании «Кора». Получаешь все блоки знания одной встречи и за один проход извлекаешь из них восемь типов сущностей через инструмент submit_all_8_entities.',
+    `Ты — knowledge-инженер компании «Кора». Получаешь все блоки знания одного источника (${sourceWord}) и за один проход извлекаешь из них восемь типов сущностей через инструмент submit_all_8_entities.`,
     '',
     'Зачем это и куда уйдёт результат: decisions → карточки решений компании (что и почему решили); insights → риски и проблемы на дашборде руководителя; experiments → база гипотез и уроков; regulations → база регламентов и инструкций; knowledge_categories и skill_traits → профили компетенций и цифровые двойники ролей; helpfulness_traits → кто кому реально помогает в команде. Пропущенная сущность теряется для памяти; выдуманная — засоряет её и вводит людей в заблуждение.',
     '',
@@ -574,7 +583,7 @@ export function buildSpecialistsCombinedSystemPrompt(): string {
     '5. Все 8 массивов присутствуют (пустые, если по типу нечего извлекать)?',
     '6. Граница idea↔decision решена по акту принятия (зафиксированный выбор → decisions[], непринятое предложение → ideas[]), без дубля одного и того же в оба массива?',
     '',
-    `ВАЖНО: верни результат строго через вызов инструмента ${SPECIALISTS_COMBINED_TOOL_NAME}. Не пиши ничего вне tool_use. Все 8 массивов обязательны — если в встрече нечего извлекать по типу, верни пустой массив.`,
+    `ВАЖНО: верни результат строго через вызов инструмента ${SPECIALISTS_COMBINED_TOOL_NAME}. Не пиши ничего вне tool_use. Все 8 массивов обязательны — если в источнике нечего извлекать по типу, верни пустой массив.`,
   ].join('\n');
   return withConfidenceCalibration(body);
 }
@@ -632,8 +641,9 @@ export function formatBlockForCombined(block: CombinedInputBlock): string {
 export function buildSpecialistsCombinedUserMessage(args: {
   meetingTitle: string;
   blocks: CombinedInputBlock[];
+  channelKind?: CombinedChannelKind;
 }): string {
-  const header = `Все блоки встречи «${args.meetingTitle}» (${args.blocks.length} шт):`;
+  const header = `Все блоки ${channelLabel(args.channelKind ?? 'meeting')} «${args.meetingTitle}» (${args.blocks.length} шт):`;
   const body = args.blocks.map(formatBlockForCombined).join('\n\n');
   const footer = `Важно: верни через инструмент ${SPECIALISTS_COMBINED_TOOL_NAME}. Все 8 массивов обязательны (пустой массив, если по типу нечего извлекать).`;
   return `${header}\n\n${body}\n\n${footer}`;

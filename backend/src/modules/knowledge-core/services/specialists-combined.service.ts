@@ -20,6 +20,7 @@ import { DashboardQueueService } from '../../dashboard/services/dashboard-queue.
 import {
   buildSpecialistsCombinedSystemPrompt,
   buildSpecialistsCombinedUserMessage,
+  type CombinedChannelKind,
   type CombinedInputBlock,
   type SpecialistsCombinedOutput,
   SPECIALISTS_COMBINED_MAX_TOKENS,
@@ -38,6 +39,8 @@ export interface SpecialistsCombinedExtractArgs {
   blocks: CombinedInputBlock[];
   jobId?: string;
   dataClass?: DataClass;
+  channelKind?: CombinedChannelKind;
+  sourceType?: string;
 }
 
 export interface SpecialistsCombinedExtractResult {
@@ -122,10 +125,12 @@ export class SpecialistsCombinedService {
       });
     }
 
-    const systemPrompt = buildSpecialistsCombinedSystemPrompt();
+    const channelKind: CombinedChannelKind = args.channelKind ?? 'meeting';
+    const systemPrompt = buildSpecialistsCombinedSystemPrompt(channelKind);
     const userMessage = buildSpecialistsCombinedUserMessage({
       meetingTitle: args.meetingTitle ?? `meeting:${args.meetingId}`,
       blocks: args.blocks,
+      channelKind,
     });
 
     const startedAt = Date.now();
@@ -134,11 +139,11 @@ export class SpecialistsCombinedService {
       systemPrompt,
       userMessage,
       tenantId: args.tenantId,
-      meetingId: args.meetingId,
+      ...(channelKind === 'meeting' ? { meetingId: args.meetingId } : {}),
       ...(args.jobId ? { jobId: args.jobId } : {}),
       maxTokens: SPECIALISTS_COMBINED_MAX_TOKENS,
       tools: [SUBMIT_ALL_8_ENTITIES_TOOL],
-      sourceRef: { type: 'meeting', id: args.meetingId },
+      sourceRef: { type: args.sourceType ?? 'meeting', id: args.meetingId },
       dataClass: args.dataClass ?? 'internal',
     });
 
@@ -209,7 +214,7 @@ export class SpecialistsCombinedService {
 
     await this.enqueueSideEffects({
       tenantId: args.tenantId,
-      sourceLabel: `meeting:${args.meetingId}`,
+      sourceLabel: `${args.sourceType ?? 'meeting'}:${args.meetingId}`,
       decisionIds,
       knowledgePersonIds,
       skillProfileIds,

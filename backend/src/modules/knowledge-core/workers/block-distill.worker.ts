@@ -195,20 +195,26 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       });
 
     if (this.cfg.specialistsCombined.enabled) {
-      const meetingId = await this.resolveMeetingIdForBlock(
+      const source = await this.resolveSourceDescriptorForBlock(
         block.id,
         block.tenantId,
       );
-      if (meetingId) {
+      if (source) {
         await this.coreQueue
-          .enqueueSpecialistsCombined(meetingId, {
-            delayMs: this.cfg.specialistsCombined.delayMs,
-          })
+          .enqueueSpecialistsCombined(
+            {
+              tenantId: block.tenantId,
+              sourceType: source.sourceType,
+              externalId: source.externalId,
+            },
+            { delayMs: this.cfg.specialistsCombined.delayMs },
+          )
           .catch((err) => {
             this.logger.warn(
               {
                 blockId: block.id,
-                meetingId,
+                sourceType: source.sourceType,
+                externalId: source.externalId,
                 err: err instanceof Error ? err.message : String(err),
               },
               'block-distill: enqueueSpecialistsCombined упал — combined-разбор отложен',
@@ -239,20 +245,21 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async resolveMeetingIdForBlock(
+  private async resolveSourceDescriptorForBlock(
     blockId: string,
     tenantId: string,
-  ): Promise<string | null> {
+  ): Promise<{ sourceType: string; externalId: string } | null> {
     const ev = await this.prisma.ideaBlockEvidence.findFirst({
       where: { blockId },
       select: { rawEventId: true },
     });
     if (!ev?.rawEventId) return null;
     const raw = await this.prisma.rawEvent.findFirst({
-      where: { id: ev.rawEventId, tenantId, sourceType: 'meeting' },
-      select: { sourceExternalId: true },
+      where: { id: ev.rawEventId, tenantId },
+      select: { sourceType: true, sourceExternalId: true },
     });
-    return raw?.sourceExternalId ?? null;
+    if (!raw?.sourceExternalId) return null;
+    return { sourceType: raw.sourceType, externalId: raw.sourceExternalId };
   }
 
   private async mergeInto(args: {

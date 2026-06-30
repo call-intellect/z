@@ -207,7 +207,7 @@ for (let i = 0; i < segments.length; i += step) { ... processWindow({ windowInde
 Acceptance: тест «`SPECIALISTS_COMBINED_ENABLED=false` → enabled=false»; правка `knowledge.blockIngestWindowSegments` в AdminSetting меняет рантайм (без передеплоя); маршрут block-ingest БЕЗ изменений (grep `LlmTaskRoute` block-ingest = deepseek-v4-pro primary, Opus НЕ добавлен); `taskType:'meeting-skeleton'` зарегистрирован в обоих местах llm-router + сид-маршрут есть; `typecheck/lint/build` зелёные. ⚠️ Разработчику: подтвердить прод-значение ENV и что выключение было легаси.
 Закрывает: 🔧4 (рубильник), §9-нарушения нарезки.
 
-### [ ] Ф2 — Канало-агностичный комбо (chat/Telegram/Bitrix/chatbox) (WP-A)
+### [x] Ф2 — Канало-агностичный комбо (chat/Telegram/Bitrix/chatbox) (WP-A)
 **Ценность:** как компания, решения/идеи/навыки из чата попадают в память так же связно, как со встречи.
 Картография: карта изменений §WP-A.
 Что входит: резолвинг любого источника в `block-distill.worker` (не `sourceType:'meeting'`); `getCanonicalBlocksForSource` в `block-fetch`; `specialists-combined.worker` принимает source-дескриптор; `channelKind` в промпт; ключ группировки чата + delayMs (AdminSetting).

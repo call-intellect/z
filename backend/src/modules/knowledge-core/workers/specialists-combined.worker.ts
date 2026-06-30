@@ -6,6 +6,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
+import type { SourceType } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -13,7 +14,10 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { CORE_QUEUE_NAMES, type SpecialistsCombinedJobData } from '../../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
-import type { CombinedInputBlock } from '../prompts/specialists-combined.prompt';
+import type {
+  CombinedChannelKind,
+  CombinedInputBlock,
+} from '../prompts/specialists-combined.prompt';
 import { BlockFetchService } from '../services/block-fetch.service';
 import {
   SpecialistsCombinedParseError,
@@ -46,7 +50,7 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
         this.pipe.meeting(
           SystemLogPipeline.AI_ANALYSIS,
           'kc.specialists-combined',
-          job.data.meetingId,
+          this.resolveExternalId(job.data),
           () => this.process(job),
         ),
       {
@@ -58,7 +62,8 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
       this.logger.warn(
         {
           jobId: job?.id,
-          meetingId: job?.data.meetingId,
+          sourceType: job?.data.sourceType ?? 'meeting',
+          externalId: job ? this.resolveExternalId(job.data) : undefined,
           attempt: job?.attemptsMade,
           err: err.message,
         },
@@ -78,44 +83,69 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
   }
 
   async process(job: Job<SpecialistsCombinedJobData>): Promise<void> {
-    const { meetingId } = job.data;
+    const sourceType = job.data.sourceType ?? 'meeting';
+    const externalId = this.resolveExternalId(job.data);
 
     if (this.cfg && this.cfg.specialistsCombined.enabled === false) {
       this.logger.debug(
-        { meetingId },
+        { sourceType, externalId },
         'specialists-combined: SPECIALISTS_COMBINED_ENABLED=false — skip',
       );
       return;
     }
 
-    const meeting = await this.prisma.meeting.findUnique({
-      where: { id: meetingId },
-      select: { id: true, tenantId: true, title: true, deletedAt: true },
-    });
-    if (!meeting) {
-      this.logger.debug({ meetingId }, 'specialists-combined: meeting не найден — skip');
+    const tenantId = job.data.tenantId;
+    if (!tenantId) {
+      this.logger.warn(
+        { sourceType, externalId },
+        'specialists-combined: tenantId отсутствует в payload — skip',
+      );
       return;
     }
-    if (meeting.deletedAt) {
-      this.logger.debug({ meetingId }, 'specialists-combined: meeting удалён — skip');
-      return;
-    }
-    if (!meeting.tenantId) {
-      this.logger.warn({ meetingId }, 'specialists-combined: tenantId=null (legacy) — skip');
-      return;
-    }
-    const tenantId = meeting.tenantId;
 
-    const meetingBlocks = await this.blockFetch.getCanonicalBlocksForMeeting(meetingId, tenantId);
-    if (meetingBlocks.length === 0) {
+    const rawEvent = await this.prisma.rawEvent.findFirst({
+      where: { tenantId, sourceType: sourceType as SourceType, sourceExternalId: externalId },
+      select: { sourceTitle: true, dataClass: true },
+      orderBy: { occurredAt: 'desc' },
+    });
+    if (!rawEvent) {
       this.logger.debug(
-        { meetingId, tenantId },
+        { sourceType, externalId, tenantId },
+        'specialists-combined: RawEvent источника не найден — skip',
+      );
+      return;
+    }
+
+    const channelKind: CombinedChannelKind = sourceType === 'meeting' ? 'meeting' : 'chat';
+
+    if (channelKind === 'meeting') {
+      const meeting = await this.prisma.meeting.findUnique({
+        where: { id: externalId },
+        select: { deletedAt: true },
+      });
+      if (meeting?.deletedAt) {
+        this.logger.debug({ externalId }, 'specialists-combined: meeting удалён — skip');
+        return;
+      }
+    }
+
+    const sourceTitle =
+      rawEvent.sourceTitle ?? (channelKind === 'chat' ? 'Переписка' : `meeting:${externalId}`);
+
+    const sourceBlocks = await this.blockFetch.getCanonicalBlocksForSource(
+      tenantId,
+      sourceType,
+      externalId,
+    );
+    if (sourceBlocks.length === 0) {
+      this.logger.debug(
+        { sourceType, externalId, tenantId },
         'specialists-combined: нет canonical-блоков — skip',
       );
       return;
     }
 
-    const blockIds = meetingBlocks.map((b) => b.id);
+    const blockIds = sourceBlocks.map((b) => b.id);
     const personMentions = await this.prisma.ideaBlockEntity.findMany({
       where: {
         blockId: { in: blockIds },
@@ -135,8 +165,9 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
       personNamesByBlock.set(m.blockId, list);
     }
 
-    const inputBlocks: CombinedInputBlock[] = meetingBlocks.map((b) => {
+    const inputBlocks: CombinedInputBlock[] = sourceBlocks.map((b) => {
       const evidence0 = b.evidence[0];
+      const speaker = evidence0?.authorLabel?.trim();
       return {
         id: b.id,
         name: b.name,
@@ -146,7 +177,7 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
         personNames: personNamesByBlock.get(b.id) ?? [],
         evidence: {
           quote: evidence0?.quote ?? '',
-          speaker: '—',
+          speaker: speaker && speaker.length > 0 ? speaker : '—',
         },
       };
     });
@@ -154,14 +185,18 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
     try {
       const result = await this.combined.extractAll({
         tenantId,
-        meetingId,
-        meetingTitle: meeting.title,
+        meetingId: externalId,
+        meetingTitle: sourceTitle,
         blocks: inputBlocks,
+        channelKind,
+        sourceType,
+        dataClass: rawEvent.dataClass,
         ...(job.id ? { jobId: job.id } : {}),
       });
       this.logger.debug(
         {
-          meetingId,
+          sourceType,
+          externalId,
           tenantId,
           blocksUsed: inputBlocks.length,
           created: result.created,
@@ -176,7 +211,8 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
       if (err instanceof SpecialistsCombinedParseError) {
         this.logger.error(
           {
-            meetingId,
+            sourceType,
+            externalId,
             tenantId,
             err: err.message,
             rawTextPreview: err.rawText?.slice(0, 500) ?? '',
@@ -187,5 +223,9 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
       }
       throw err;
     }
+  }
+
+  private resolveExternalId(data: SpecialistsCombinedJobData): string {
+    return data.externalId ?? data.meetingId ?? '';
   }
 }

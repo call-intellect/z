@@ -1968,7 +1968,7 @@ model MeetingTranscriptChunk {
   startMs   Int
   endMs     Int
   text      String                       @db.Text
-  embedding Unsupported("vector(1536)")?
+  embedding Unsupported("vector(768)")?
   createdAt DateTime                     @default(now())
 
   @@unique([meetingId, startMs, endMs])
@@ -3343,7 +3343,7 @@ model SourceEpisode {
   title                 String
   occurredAt            DateTime
   summary               String?                      @db.Text
-  embedding             Unsupported("vector(1536)")?
+  embedding             Unsupported("vector(768)")?
   /// Версия embedding-модели для безопасной смены без слепого бэкфилла.
   embeddingModelVersion String?                      @db.VarChar(40)
   branch                ThemeBranch?
@@ -3426,7 +3426,7 @@ model IdeaBlock {
   signalType                  SignalType
   confidence                  Decimal                      @default(0.5) @db.Decimal(4, 3)
   dataClass                   DataClass                    @default(internal)
-  embedding                   Unsupported("vector(1536)")?
+  embedding                   Unsupported("vector(768)")?
   contextHeaderVersion        String?                      @db.VarChar(16)
   status                      IdeaBlockStatus              @default(draft)
   mergedIntoId                String?
@@ -3627,7 +3627,7 @@ model Entity {
   /// SetNull-FK self-merge (mergedInto). Совпадает с tenantId родителя.
   mergedIntoTenantId String?
   mentionsCount  Int                          @default(0)
-  embedding      Unsupported("vector(1536)")?
+  embedding      Unsupported("vector(768)")?
   metadata       Json?
   /// KC-Temporal W3.4 — strong-IDs (ИНН/ОГРН/email/phone/domain).
   /// Все nullable; partial unique через postgres-init.sql.
@@ -4416,7 +4416,7 @@ model Theme {
   status         ThemeStatus                  @default(active)
   mergedIntoId   String?
   branch         ThemeBranch?
-  embedding      Unsupported("vector(1536)")?
+  embedding      Unsupported("vector(768)")?
   lastSignalAt   DateTime?
   /// Ф8 (граф-ингест 2026-06-23) — retrievable «суть темы/кластера»,
   /// обновляется инкрементально воркером theme-summarize (map-reduce
@@ -4612,7 +4612,7 @@ model Goal {
 
   /// Ф5 (TZ 2026-06-16) — pgvector embedding цели (text-embedding-3-small, 1536).
   /// Генерируется goal-embed.worker. HNSW-индекс — в postgres-init.sql (Prisma не умеет).
-  embedding     Unsupported("vector(1536)")?
+  embedding     Unsupported("vector(768)")?
   embeddingHash String?
 
   keyResults   GoalKeyResult[]
@@ -5187,7 +5187,7 @@ model PersonKnowledgeCategoryEmbedding {
   categoryName        String                       @db.VarChar(200)
   /// 'low' | 'medium' | 'high' — копия, чтобы фильтровать без чтения JSON.
   confidence          String                       @db.VarChar(16)
-  embedding           Unsupported("vector(1536)")?
+  embedding           Unsupported("vector(768)")?
   builtAt             DateTime                     @default(now())
   /// = Person.profileBuildVersion на момент построения этого embedding.
   profileBuildVersion Int
@@ -5891,7 +5891,7 @@ model Process {
   /// W4.2 (2026-05-25) — audit-trail вычисления dataClass (policyVersion + sources).
   dataClassAudit     Json?
   /// Эмбеддинг (name + первый абзац description) — для KNN-дедупа в Specialist31Service.
-  embedding          Unsupported("vector(1536)")?
+  embedding          Unsupported("vector(768)")?
   /// Когда последний раз процесс подтверждался (auto после canonical или вручную куратором).
   lastConfirmedAt    DateTime?
   /// SBA α-7 — структурированный ввод/вывод процесса (см. sub-TZ §4).
@@ -5957,7 +5957,7 @@ model ProcessTemplate {
   /// IdeaBlock-источники последнего обновления template (provenance).
   sourceBlockIds       String[]                     @default([])
   dataClass            DataClass                    @default(internal)
-  embedding            Unsupported("vector(1536)")?
+  embedding            Unsupported("vector(768)")?
   lastConfirmedAt      DateTime?
   metadata             Json?
   /// SBA γ-3 — флаг «сквозного» процесса (cross-functional). Auto-computed
@@ -6190,7 +6190,7 @@ model Regulation {
   /// W4.2 (2026-05-25) — audit-trail вычисления dataClass (policyVersion + sources).
   dataClassAudit   Json?
   /// Эмбеддинг (name + statement) — для KNN-дедупа.
-  embedding        Unsupported("vector(1536)")?
+  embedding        Unsupported("vector(768)")?
   lastConfirmedAt  DateTime?
   createdAt        DateTime                     @default(now())
   updatedAt        DateTime                     @updatedAt
@@ -6247,7 +6247,7 @@ model Instruction {
   /// audit-trail вычисления dataClass (policyVersion + sources).
   dataClassAudit   Json?
   /// Эмбеддинг (name + statement) — для KNN-дедупа.
-  embedding        Unsupported("vector(1536)")?
+  embedding        Unsupported("vector(768)")?
   lastConfirmedAt  DateTime?
   createdAt        DateTime                     @default(now())
   updatedAt        DateTime                     @updatedAt
@@ -6290,7 +6290,7 @@ model Policy {
   /// W4.2 (2026-05-25) — audit-trail вычисления dataClass (policyVersion + sources).
   dataClassAudit   Json?
   /// Эмбеддинг (name + contentMd preview) — для KNN-дедупа.
-  embedding        Unsupported("vector(1536)")?
+  embedding        Unsupported("vector(768)")?
   lastConfirmedAt  DateTime?
   createdAt        DateTime                     @default(now())
   updatedAt        DateTime                     @updatedAt
@@ -6449,7 +6449,7 @@ model Decision {
   /// Последняя активная CardVersion (после triage).
   currentVersionId   String?
   /// Эмбеддинг (statement + rationale preview) — для KNN-дедупа.
-  embedding          Unsupported("vector(1536)")?
+  embedding          Unsupported("vector(768)")?
   /// Для evolving: с какого момента решение действительно.
   validFrom          DateTime?
   /// Для evolving: до какого момента (если superseded — заполняется в момент supersede).
@@ -6598,7 +6598,7 @@ model Insight {
   /// Последняя активная CardVersion (после triage).
   currentVersionId String?
   /// Эмбеддинг (statement) — для KNN-кластеризации.
-  embedding        Unsupported("vector(1536)")?
+  embedding        Unsupported("vector(768)")?
 
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -6726,7 +6726,7 @@ model Idea {
   /// W4.2 (2026-05-25) — audit-trail вычисления dataClass (policyVersion + sources).
   dataClassAudit        Json?
   currentVersionId      String?
-  embedding             Unsupported("vector(1536)")?
+  embedding             Unsupported("vector(768)")?
   /// Author User.id — кто первый запостил блок-источник (если идея от
   /// сотрудника). NULL — клиентская идея или не определилось.
   createdByUserId       String?
@@ -6768,7 +6768,7 @@ model IdeaCluster {
   description   String?                      @db.Text
   ideaIds       String[]                     @default([])
   clusterWeight Decimal                      @default(0) @db.Decimal(6, 3)
-  embedding     Unsupported("vector(1536)")?
+  embedding     Unsupported("vector(768)")?
   createdAt     DateTime                     @default(now())
   updatedAt     DateTime                     @updatedAt
 
@@ -6811,7 +6811,7 @@ model ProbeEvent {
 
   /// Ф4 (2026-06-17) — эмбеддинг сформулированного/исходного вопроса для
   /// семантического дедупа близких по смыслу probe (а не только точного content-hash).
-  questionEmbedding Unsupported("vector(1536)")?
+  questionEmbedding Unsupported("vector(768)")?
 
   org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -8514,7 +8514,7 @@ model SkillTrait {
   misleadingFlaggedByUserId String?
   misleadingFlaggedAt       DateTime?
   /// Эмбеддинг (category + statement) для KNN-merge при rebuild'е.
-  embedding                 Unsupported("vector(1536)")?
+  embedding                 Unsupported("vector(768)")?
   createdAt                 DateTime                     @default(now())
   updatedAt                 DateTime                     @updatedAt
 
@@ -8557,7 +8557,7 @@ model SkillTraitConcept {
   /// Все наблюдённые варианты названия (для прозрачности и debug).
   variants      String[]                     @default([])
   /// Семантический отпечаток canonicalName + description.
-  embedding     Unsupported("vector(1536)")?
+  embedding     Unsupported("vector(768)")?
   status        SkillTraitConceptStatus      @default(active)
   /// Куда слит, если status='merged_into'.
   mergedIntoId  String?
@@ -8605,7 +8605,7 @@ model SubjectMemory {
   kind           SubjectMemoryKind
   contextText    String                       @db.Text
   ruleText       String                       @db.Text
-  embedding      Unsupported("vector(1536)")?
+  embedding      Unsupported("vector(768)")?
   status         SubjectMemoryStatus          @default(shadow)
   confirmCount   Int                          @default(0)
   refuteCount    Int                          @default(0)
@@ -8663,7 +8663,7 @@ model RolePrinciple {
   observationCount  Int                          @default(0)
   confidence        SkillConfidence
   /// Эмбеддинг (situation+statement) — дедуп/ретрив. HNSW — postgres-init.sql.
-  embedding         Unsupported("vector(1536)")?
+  embedding         Unsupported("vector(768)")?
   status            RolePrincipleStatus          @default(active)
   supersededById    String?
   lastSynthesizedAt DateTime                     @default(now())
@@ -8740,7 +8740,7 @@ model PracticeSkill {
   /// Embedding `trigger` (text-embedding-3-small, 1536d). Используется в KNN
   /// retrieval (cosine ≥ cfg.practiceSkills.knnRetrievalThreshold) и dedup
   /// при extraction (cosine ≥ cfg.practiceSkills.knnDedupThreshold).
-  triggerEmbedding        Unsupported("vector(1536)")?
+  triggerEmbedding        Unsupported("vector(768)")?
   /// Шаги процедуры: [{order:1, action:"...", emotionalRegister?:"...", redFlags?:[]}].
   steps                   Json
   /// Примеры применения: [{episodeBlockId, outcome:'success'|'fail'|'mixed', editDistance?}].
@@ -9597,7 +9597,7 @@ model Issue {
   /// Phase 3 — pgvector embedding (text-embedding-3-small, 1536 dim).
   /// Генерируется `issue-embed.worker` на create/update title+description.
   /// HNSW-индекс (cosine) создаётся через postgres-init.sql.
-  embedding     Unsupported("vector(1536)")?
+  embedding     Unsupported("vector(768)")?
   embeddingHash String? // sha256(title + description) — чтобы не пересчитывать без изменений
 
   // Внешний источник
@@ -10537,7 +10537,7 @@ model HelpfulnessTrait {
   contextEntityType String? // issue_comment | meeting_transcript_chunk | checkin
   contextEntityId   String?
 
-  embedding Unsupported("vector(1536)")?
+  embedding Unsupported("vector(768)")?
 
   confidence Decimal @db.Decimal(4, 3)
 
@@ -11519,7 +11519,7 @@ model PromptFeedback {
   /// Эмбеддинг input'а (system+user) для KNN-группировки похожих контекстов.
   /// Лениво заполняется PromptFeedbackCollectorService через
   /// `EmbeddingFallbackService.embed`. Если null — group by inputDigest.
-  inputEmbedding    Unsupported("vector(1536)")?
+  inputEmbedding    Unsupported("vector(768)")?
   originalOutput    String                       @db.Text
   /// Текст после правки пользователя. NULL пока правка не пришла.
   editedOutput      String?                      @db.Text
@@ -11564,7 +11564,7 @@ model PromptRule {
   /// Метрики shadow-A/B: { runs, withRuleScore, withoutRuleScore }.
   shadowMetrics  Json?
   /// Эмбеддинг текста rule — для KNN-дедупа похожих правил (≥0.90 = дубль).
-  embedding      Unsupported("vector(1536)")?
+  embedding      Unsupported("vector(768)")?
   createdAt      DateTime                     @default(now())
   updatedAt      DateTime                     @updatedAt
   /// Когда правило промоутили в `status='active'` (в Фазе B всегда NULL).

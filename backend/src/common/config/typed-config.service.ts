@@ -278,14 +278,14 @@ export class TypedConfigService {
         provider: this.resolveSync<string>(
           'embeddings.provider',
           'EMBEDDING_PROVIDER',
-          'openai-via-proxy',
+          'local',
         ),
         model: this.resolveSync<string>(
           'embeddings.model',
           'EMBEDDING_MODEL',
-          'text-embedding-3-small',
+          'embeddinggemma:latest',
         ),
-        dimensions: this.resolveSync<number>('embeddings.dimensions', 'EMBEDDING_DIMENSIONS', 1536),
+        dimensions: this.resolveSync<number>('embeddings.dimensions', 'EMBEDDING_DIMENSIONS', 768),
         proxyApiKey: this.get('OPENAI_PROXY_API_KEY'),
         proxyEmbeddingsUrl: this.resolveSync<string>(
           'embeddings.proxyEmbeddingsUrl',
@@ -295,6 +295,10 @@ export class TypedConfigService {
         fallbackLocalUrl: this.resolveSync<string | undefined>(
           'embeddings.fallbackLocalUrl',
           'EMBEDDING_FALLBACK_LOCAL_URL',
+        ),
+        localApiKey: this.resolveSync<string | undefined>(
+          'embeddings.localApiKey',
+          'EMBEDDING_LOCAL_API_KEY',
         ),
         batchSize: this.resolveSync<number>('embeddings.batchSize', 'EMBEDDING_BATCH_SIZE', 100),
         chunkTargetTokens: this.resolveSync<number>(

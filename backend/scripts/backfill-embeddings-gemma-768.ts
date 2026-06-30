@@ -170,6 +170,17 @@ export async function backfillTable(
   const hasVersion = Boolean(spec.versionColumn);
   const updateSql = buildUpdateSql(spec, hasVersion);
 
+  try {
+    await prisma.$queryRawUnsafe(`SELECT 1 FROM "${spec.table}" LIMIT 0`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/does not exist|relation .* does not exist/i.test(msg)) {
+      console.warn(`[backfill] ${spec.table}: таблица отсутствует — skip`);
+      return stats;
+    }
+    throw err;
+  }
+
   while (true) {
     const rows = await prisma.$queryRawUnsafe<RowBase[]>(
       `${buildSelect(spec)} AND "id" > $1 ORDER BY "id" ASC LIMIT ${opts.batchSize}`,

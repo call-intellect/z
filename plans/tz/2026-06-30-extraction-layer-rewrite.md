@@ -215,7 +215,7 @@ Acceptance: тест «`SPECIALISTS_COMBINED_ENABLED=false` → enabled=false»;
 Acceptance: e2e на чат-RawEvent — извлекаются сущности; нет дублей чат×встреча (опора на KNN-merge block-distill); `dataClass` чат-источника верный; `typecheck/lint/build` зелёные.
 Закрывает: R2.
 
-### [ ] Ф3 — Комбо восстанавливает 4 побочки (rebuild профиля · гигиена · ProcessTemplate) (WP-B) 🔴
+### [x] Ф3 — Комбо восстанавливает 4 побочки (rebuild профиля · гигиена · ProcessTemplate) (WP-B) 🔴
 **Ценность:** как пользователь клона, получаю свежий профиль/навыки/процедуры сразу после разбора, а не через 6 часов.
 Картография: карта изменений §WP-B; контракт-first.
 Что входит: инжект `CoreQueueService` + `enqueueRebuild*` по `Set<personId>`; `enqueueDecisionHygiene` per-decision; убрать `PROCESS_DETECTOR` из COMBINED_COVERED (Вариант A); не писать мёртвые embedding-версии; инвариант-тест «деривер с side-effect не в COMBINED_COVERED».

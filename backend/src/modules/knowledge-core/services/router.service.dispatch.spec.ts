@@ -148,4 +148,35 @@ describe('RouterService.dispatch — гибрид combined (skip 9 покрыт�
     const result = await router.dispatch(makeBlock('decision'));
     expect(result.dispatched).toEqual([RouterService.SPECIALIST.DECISIONS]);
   });
+
+  it('WP-B combined ON: process_step → REGULATIONS убран (covered), PROCESS_DETECTOR остаётся раздельным', async () => {
+    const m = makeMocks({ hasEmployeeSubject: false, combinedEnabled: true });
+    const router = new RouterService(m.prisma, m.coreQueue, m.metrics, m.cfg);
+    const result = await router.dispatch(makeBlock('process_step'));
+    expect(result.dispatched).toEqual([RouterService.SPECIALIST.PROCESS_DETECTOR]);
+    expect(m.enqueueSpecialistRouting).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('RouterService.COMBINED_COVERED — инвариант (WP-B)', () => {
+  it('НЕ содержит PROCESS_DETECTOR (process-detector диспатчится раздельно)', () => {
+    expect(RouterService.COMBINED_COVERED.has(RouterService.SPECIALIST.PROCESS_DETECTOR)).toBe(
+      false,
+    );
+  });
+
+  it('содержит derive-only специалистов (decisions/regulations/insights/ideas/skill/knowledge-clone/experiments/helpfulness)', () => {
+    for (const s of [
+      RouterService.SPECIALIST.DECISIONS,
+      RouterService.SPECIALIST.REGULATIONS,
+      RouterService.SPECIALIST.INSIGHTS,
+      RouterService.SPECIALIST.IDEAS,
+      RouterService.SPECIALIST.SKILL,
+      RouterService.SPECIALIST.KNOWLEDGE_CLONE,
+      RouterService.SPECIALIST.EXPERIMENT_TRACKER,
+      RouterService.SPECIALIST.HELPFULNESS,
+    ]) {
+      expect(RouterService.COMBINED_COVERED.has(s)).toBe(true);
+    }
+  });
 });

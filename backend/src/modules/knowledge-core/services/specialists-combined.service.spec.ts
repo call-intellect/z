@@ -93,6 +93,19 @@ function makeMetricsMock() {
   };
 }
 
+function makeCoreQueueMock() {
+  return {
+    enqueueRebuildKnowledgeProfile: vi.fn().mockResolvedValue({ jobId: 'kp1' }),
+    enqueueRebuildSkillProfile: vi.fn().mockResolvedValue({ jobId: 'sp1' }),
+  };
+}
+
+function makeDashboardQueueMock() {
+  return {
+    enqueueDecisionHygiene: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 const VALID_8_EMPTY = {
   decisions: [],
   ideas: [],
@@ -242,7 +255,7 @@ describe('SpecialistsCombinedService.extractAll', () => {
     expect(prisma.insight.create).toHaveBeenCalledTimes(1);
     expect(prisma.experiment.create).toHaveBeenCalledTimes(1);
     expect(prisma.regulation.upsert).toHaveBeenCalledTimes(1);
-    expect(prisma.personKnowledgeCategoryEmbedding.create).toHaveBeenCalledTimes(1);
+    expect(prisma.personKnowledgeCategoryEmbedding.create).not.toHaveBeenCalled();
     expect(prisma.skillProfile.findUnique).toHaveBeenCalledTimes(1);
     expect(prisma.skillProfile.create).toHaveBeenCalledTimes(1);
     expect(prisma.skillTrait.create).toHaveBeenCalledTimes(1);
@@ -688,6 +701,117 @@ describe('SpecialistsCombinedService.extractAll', () => {
 
     expect(prisma.idea.create).toHaveBeenCalledTimes(1);
     expect(result.created.ideas).toBe(1);
+    expect(result.errors).toEqual([]);
+  });
+
+  // ─────────────────── WP-B: enqueue побочек (rebuild профилей + гигиена) ───────────────────
+
+  it('WP-B: combined enqueue rebuild knowledge/skill + decision-hygiene по уникальным person/profile/decision', async () => {
+    const prisma = makePrismaMock();
+    prisma.person.findMany.mockResolvedValue([
+      { id: 'p1', name: 'Иван', email: 'ivan@ex.com', userId: 'u1' },
+    ]);
+    const coreQueue = makeCoreQueueMock();
+    const dashboardQueue = makeDashboardQueueMock();
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      decisions: [{ sourceBlockId: 'blk_1', statement: 'Решили X', confidence: 0.9 }],
+      knowledge_categories: [
+        {
+          personName: 'Иван',
+          category: 'BI',
+          confidence: 'medium',
+          sampleStatements: ['s1'],
+          sourceBlockIds: ['blk_1'],
+        },
+      ],
+      skill_traits: [
+        {
+          personName: 'Иван',
+          category: 'оценка',
+          statement: 'склонен...',
+          confidence: 'low',
+          sourceBlockIds: ['blk_1'],
+        },
+      ],
+    });
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      llm as any,
+      makeMetricsMock() as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      coreQueue as any,
+      dashboardQueue as any,
+    );
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    expect(coreQueue.enqueueRebuildKnowledgeProfile).toHaveBeenCalledTimes(1);
+    expect(coreQueue.enqueueRebuildKnowledgeProfile).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'org-1', personId: 'p1' }),
+    );
+    expect(coreQueue.enqueueRebuildSkillProfile).toHaveBeenCalledTimes(1);
+    expect(coreQueue.enqueueRebuildSkillProfile).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'org-1', profileId: 'sp1' }),
+    );
+    expect(dashboardQueue.enqueueDecisionHygiene).toHaveBeenCalledTimes(1);
+    expect(dashboardQueue.enqueueDecisionHygiene).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'org-1', decisionId: 'd1' }),
+    );
+  });
+
+  it('WP-B: enqueue best-effort — если coreQueue.enqueue бросает, extractAll не падает (карточки записаны)', async () => {
+    const prisma = makePrismaMock();
+    prisma.person.findMany.mockResolvedValue([{ id: 'p1', name: 'Иван' }]);
+    const coreQueue = makeCoreQueueMock();
+    coreQueue.enqueueRebuildKnowledgeProfile.mockRejectedValue(new Error('queue down'));
+    const dashboardQueue = makeDashboardQueueMock();
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      decisions: [{ sourceBlockId: 'blk_1', statement: 'Решили X', confidence: 0.9 }],
+      knowledge_categories: [
+        {
+          personName: 'Иван',
+          category: 'BI',
+          confidence: 'medium',
+          sampleStatements: ['s1'],
+          sourceBlockIds: ['blk_1'],
+        },
+      ],
+    });
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      llm as any,
+      makeMetricsMock() as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      coreQueue as any,
+      dashboardQueue as any,
+    );
+
+    const result = await svc.extractAll({ ...argsTemplate() });
+
+    expect(result.created.decisions).toBe(1);
+    expect(result.errors).toEqual([]);
+    expect(dashboardQueue.enqueueDecisionHygiene).toHaveBeenCalledTimes(1);
+  });
+
+  it('WP-B: без очередей в DI (undefined) — extractAll не падает, карточки записаны', async () => {
+    const prisma = makePrismaMock();
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      decisions: [{ sourceBlockId: 'blk_1', statement: 'Решили X', confidence: 0.9 }],
+    });
+    const svc = new SpecialistsCombinedService(prisma as any, llm as any, makeMetricsMock() as any);
+
+    const result = await svc.extractAll({ ...argsTemplate() });
+
+    expect(result.created.decisions).toBe(1);
     expect(result.errors).toEqual([]);
   });
 });

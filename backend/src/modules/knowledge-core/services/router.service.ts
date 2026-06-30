@@ -92,7 +92,6 @@ export class RouterService {
     RouterService.SPECIALIST.IDEAS,
     RouterService.SPECIALIST.SKILL,
     RouterService.SPECIALIST.KNOWLEDGE_CLONE,
-    RouterService.SPECIALIST.PROCESS_DETECTOR,
     RouterService.SPECIALIST.EXPERIMENT_TRACKER,
     RouterService.SPECIALIST.HELPFULNESS,
   ]);

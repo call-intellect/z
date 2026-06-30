@@ -3,6 +3,7 @@ import { Global, Module } from '@nestjs/common';
 import { ConfigModule } from '../../common/config/index';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { CurationModule } from '../curation/curation.module';
+import { DashboardModule } from '../dashboard/dashboard.module';
 import { S3Service } from '../recordings/s3.service';
 import { TablesModule } from '../tables/tables.module';
 import { TrackerModule } from '../tracker/tracker.module';
@@ -81,7 +82,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
 
 @Global()
 @Module({
-  imports: [ConfigModule, PrismaModule, CurationModule, TablesModule, TrackerModule],
+  imports: [ConfigModule, PrismaModule, CurationModule, TablesModule, TrackerModule, DashboardModule],
   providers: [
     RoleClonePersonaVersioningHandler,
     S3Service,

@@ -425,6 +425,7 @@ export class BlockExtractionService {
 
     const skeleton =
       this.cfg.knowledgeCore.skeletonPassEnabled &&
+      this.cfg.knowledgeCore.headerMapEnabled &&
       args.segments.length > this.cfg.knowledgeCore.skeletonMinSegments
         ? await this.skeletonService.buildSkeleton({
             tenantId: args.tenantId,

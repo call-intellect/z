@@ -2,7 +2,6 @@ import {
   withAsrNote,
   withConfidenceCalibration,
   withDecisionDiscriminator,
-  wrapUserData,
 } from '../../ai/services/prompts/common';
 import type { MeetingSkeleton } from '../services/meeting-skeleton.service';
 import { renderMeetingSkeleton } from '../services/meeting-skeleton.service';
@@ -512,7 +511,7 @@ export function buildBlockIngestPrompt(args: BuildArgs): {
     : '';
   const mapSection =
     skeletonRendered.length > 0
-      ? `# Карта встречи (справочный контекст)\nЭто справочная карта всего разговора для понимания «он/это/проект». Истина — сегменты ниже; если карта противоречит сегментам, верь сегментам.\n${wrapUserData(skeletonRendered)}\n\n`
+      ? `# Карта встречи (справочный контекст)\nЭто справочная карта всего разговора для понимания «он/это/проект». Истина — сегменты ниже; если карта противоречит сегментам, верь сегментам.\n${skeletonRendered}\n\n`
       : '';
 
   const excludeSection =

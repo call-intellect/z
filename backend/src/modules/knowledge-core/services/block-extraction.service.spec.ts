@@ -447,7 +447,7 @@ describe('BlockExtractionService.extractFull — скелет → шапка-к�
     }
   });
 
-  it('headerMapEnabled=false → скелет построен, но НЕ попал в prompt', async () => {
+  it('headerMapEnabled=false → buildSkeleton НЕ зван', async () => {
     const cfg = makeCfg({
       windowSize: 3,
       overlap: 0,
@@ -464,7 +464,7 @@ describe('BlockExtractionService.extractFull — скелет → шапка-к�
 
     await svc.extractFull(baseArgs(segments));
 
-    expect(buildSkeleton).toHaveBeenCalledTimes(1);
+    expect(buildSkeleton).not.toHaveBeenCalled();
     for (let n = 0; n < call.mock.calls.length; n++) {
       expect(userMsgAt(call, n)).not.toContain('Карта встречи');
     }

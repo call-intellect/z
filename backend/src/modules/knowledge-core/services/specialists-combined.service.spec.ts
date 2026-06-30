@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
+import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { SPECIALISTS_COMBINED_TOOL_NAME } from '../prompts/specialists-combined.prompt';
 
 import {
@@ -917,8 +918,25 @@ describe('SpecialistsCombinedService — Фаза 7б: scope/owner для regula
     const upsertArg = prisma.regulation.upsert.mock.calls[0][0];
     expect(upsertArg.create.scope).toBe('role:НетТакойРоли');
     expect(metrics.incRegulationScopeUnresolved).toHaveBeenCalledWith({
-      tenant: 'org-1',
+      tenantTop: tenantTopOf('org-1'),
     });
+  });
+
+  it('scope длиннее 120 → усечён до 120, регламент НЕ дропнут', async () => {
+    const prisma = makePrismaMock();
+    const longScope = 'role:' + 'Я'.repeat(200);
+    const entities = makeEntitiesMock({
+      resolveRoleByHint: vi.fn().mockResolvedValue(null),
+    });
+    const llm = makeLlmMock(regToolOutput({ scope: longScope }));
+    const svc = buildSvc({ prisma, llm, metrics: makeMetricsMock(), entities });
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    expect(prisma.regulation.upsert).toHaveBeenCalledTimes(1);
+    const upsertArg = prisma.regulation.upsert.mock.calls[0][0];
+    expect(upsertArg.create.scope.length).toBe(120);
+    expect(upsertArg.create.scope).toBe(longScope.slice(0, 120));
   });
 
   it('scope=org / null → без изменений, резолвер роли не зовётся', async () => {
@@ -973,7 +991,7 @@ describe('SpecialistsCombinedService — Фаза 7б: scope/owner для regula
     await svcAmb.extractAll({ ...argsTemplate() });
     expect(prismaAmb.regulation.upsert.mock.calls[0][0].create.ownerPersonId).toBeNull();
     expect(metricsAmb.incRegulationOwnerUnresolved).toHaveBeenCalledWith({
-      tenant: 'org-1',
+      tenantTop: tenantTopOf('org-1'),
     });
   });
 

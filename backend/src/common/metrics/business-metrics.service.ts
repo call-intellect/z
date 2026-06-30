@@ -496,8 +496,8 @@ export class BusinessMetricsService implements OnModuleInit {
   // метрика в finally на ВСЕХ путях). reason: 'block_not_found' /
   // 'tenant_mismatch' / 'not_canonical' / 'signal_out_of_scope'.
   private coreSpecialistSkippedTotal!: Counter<'specialist' | 'reason'>;
-  private regulationScopeRoleUnresolvedTotal!: Counter<'tenant'>;
-  private regulationOwnerHintUnresolvedTotal!: Counter<'tenant'>;
+  private regulationScopeRoleUnresolvedTotal!: Counter<'tenant_top'>;
+  private regulationOwnerHintUnresolvedTotal!: Counter<'tenant_top'>;
   // МТЗ «разблокировка конвейера» Ф5 — провалы записи типизированной сущности
   // группы Б (Process/Regulation/Policy/Tool/Metric/Decision) в block-ingest.
   // reason: 'age_unavailable' (системный отказ графа — cypher не резолвится) /
@@ -2533,12 +2533,12 @@ export class BusinessMetricsService implements OnModuleInit {
     this.regulationScopeRoleUnresolvedTotal = this.getOrCreateCounter({
       name: 'regulation_scope_role_unresolved_total',
       help: 'Combo-извлечение: scope=role:<имя> не разрешился в Role.id (роль ещё не создана) — записан сырой scope, перерезолвится backfill-ом после создания роли.',
-      labelNames: ['tenant'] as const,
+      labelNames: ['tenant_top'] as const,
     });
     this.regulationOwnerHintUnresolvedTotal = this.getOrCreateCounter({
       name: 'regulation_owner_hint_unresolved_total',
       help: 'Combo-извлечение: ownerHint не разрешился в Person.id (нет персоны / тёзки fail-closed) — ownerPersonId не проставлен.',
-      labelNames: ['tenant'] as const,
+      labelNames: ['tenant_top'] as const,
     });
     // Ф5 МТЗ «разблокировка конвейера» — провалы типизированных сущностей
     // группы Б в block-ingest (по type × reason).
@@ -6066,12 +6066,12 @@ export class BusinessMetricsService implements OnModuleInit {
     });
   }
 
-  incRegulationScopeUnresolved(args: { tenant: string }): void {
-    this.regulationScopeRoleUnresolvedTotal.inc({ tenant: args.tenant });
+  incRegulationScopeUnresolved(args: { tenantTop: string }): void {
+    this.regulationScopeRoleUnresolvedTotal.inc({ tenant_top: args.tenantTop });
   }
 
-  incRegulationOwnerUnresolved(args: { tenant: string }): void {
-    this.regulationOwnerHintUnresolvedTotal.inc({ tenant: args.tenant });
+  incRegulationOwnerUnresolved(args: { tenantTop: string }): void {
+    this.regulationOwnerHintUnresolvedTotal.inc({ tenant_top: args.tenantTop });
   }
 
   /**

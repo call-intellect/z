@@ -49,7 +49,7 @@ function buildWorker(
       ),
     },
     meeting: {
-      findUnique: vi.fn(async () => ({ deletedAt: opts.meetingDeletedAt ?? null })),
+      findFirst: vi.fn(async () => ({ deletedAt: opts.meetingDeletedAt ?? null })),
     },
     ideaBlockEntity: {
       findMany: vi.fn(async () => []),
@@ -104,7 +104,7 @@ describe('SpecialistsCombinedWorker — WP-A канало-агностичный
 
     await worker.process(chatJob());
 
-    expect(deps.prisma.meeting.findUnique).not.toHaveBeenCalled();
+    expect(deps.prisma.meeting.findFirst).not.toHaveBeenCalled();
     expect(deps.prisma.rawEvent.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -169,8 +169,8 @@ describe('SpecialistsCombinedWorker — WP-A канало-агностичный
 
     await worker.process(meetingJob());
 
-    expect(deps.prisma.meeting.findUnique).toHaveBeenCalledWith({
-      where: { id: 'm-1' },
+    expect(deps.prisma.meeting.findFirst).toHaveBeenCalledWith({
+      where: { id: 'm-1', tenantId: 'tenant-1' },
       select: { deletedAt: true },
     });
     const callArg = (deps.combined.extractAll.mock.calls[0]![0] as any);

@@ -119,8 +119,8 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
     const channelKind: CombinedChannelKind = sourceType === 'meeting' ? 'meeting' : 'chat';
 
     if (channelKind === 'meeting') {
-      const meeting = await this.prisma.meeting.findUnique({
-        where: { id: externalId },
+      const meeting = await this.prisma.meeting.findFirst({
+        where: { id: externalId, tenantId },
         select: { deletedAt: true },
       });
       if (meeting?.deletedAt) {

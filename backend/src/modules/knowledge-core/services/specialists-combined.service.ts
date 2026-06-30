@@ -17,6 +17,7 @@ import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
 import { CurationService } from '../../curation/services/curation.service';
 import { DashboardQueueService } from '../../dashboard/services/dashboard-queue.service';
+import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import {
   buildSpecialistsCombinedSystemPrompt,
   buildSpecialistsCombinedUserMessage,
@@ -1076,9 +1077,9 @@ export class SpecialistsCombinedService {
     rawScope: string | null | undefined,
   ): Promise<string | null> {
     const raw = rawScope?.trim() ?? null;
-    if (!raw || !raw.startsWith('role:')) return raw ?? null;
+    if (!raw || !raw.startsWith('role:')) return raw ? raw.slice(0, 120) : null;
     const hint = raw.slice('role:'.length).trim();
-    if (!hint) return raw;
+    if (!hint) return raw.slice(0, 120);
     const existing = await this.prisma.role.findFirst({
       where: { id: hint, tenantId, deletedAt: null },
       select: { id: true },
@@ -1086,8 +1087,8 @@ export class SpecialistsCombinedService {
     if (existing) return `role:${existing.id}`;
     const resolved = await this.entities?.resolveRoleByHint(tenantId, hint);
     if (resolved) return `role:${resolved}`;
-    this.metrics?.incRegulationScopeUnresolved?.({ tenant: tenantId });
-    return raw;
+    this.metrics?.incRegulationScopeUnresolved?.({ tenantTop: tenantTopOf(tenantId) });
+    return raw.slice(0, 120);
   }
 
   private async resolveOwnerPersonHint(
@@ -1098,7 +1099,8 @@ export class SpecialistsCombinedService {
     const trimmed = hint.trim();
     if (trimmed.length < 2) return null;
     const personId = await this.entities?.resolvePersonByHint(tenantId, trimmed);
-    if (!personId) this.metrics?.incRegulationOwnerUnresolved?.({ tenant: tenantId });
+    if (!personId)
+      this.metrics?.incRegulationOwnerUnresolved?.({ tenantTop: tenantTopOf(tenantId) });
     return personId ?? null;
   }
 

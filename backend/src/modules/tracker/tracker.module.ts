@@ -80,6 +80,7 @@ import { SprintHintsService } from './services/sprint-hints.service';
 import { SprintsService } from './services/sprints.service';
 import { StatesService } from './services/states.service';
 import { TaskDedupService } from './services/task-dedup.service';
+import { TaskDraftMaterializerService } from './services/task-draft-materializer.service';
 import { TrackerEmitterService } from './services/tracker-emitter.service';
 import { TrackerEventsService } from './services/tracker-events.service';
 import { WebhookDispatcher } from './services/webhook-dispatcher.service';
@@ -157,6 +158,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // (intake + прямой create). Зависит от @Global Ai/Embeddings/AdminSettings/
     // KnowledgeCore (Llm/Embedding/Calibration). Только suggest, авто-merge нет.
     TaskDedupService,
+    TaskDraftMaterializerService,
     CyclesService,
     IntakeService,
     CommentsService,
@@ -212,6 +214,7 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     IssuesService,
     AssigneeResolverService,
     TaskDedupService,
+    TaskDraftMaterializerService,
     ActivityRecorderService,
     TrackerEventsService,
     TrackerEmitterService,

@@ -679,6 +679,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private routingSuggestionAcceptedTotal!: Counter<string>;
   private routingNoCandidateTotal!: Counter<string>;
   private taskSkillRoutingAssignedTotal!: Counter<'path'>;
+  private taskDraftMaterializedTotal!: Counter<'channel' | 'status'>;
   private companyCapsuleInjectedTotal!: Counter<'surface'>;
   private subjectMemoryProbeSuppressedTotal!: Counter<'reason'>;
   private subjectMemoryRuleActivatedTotal!: Counter<never>;
@@ -2904,8 +2905,13 @@ export class BusinessMetricsService implements OnModuleInit {
     });
     this.taskSkillRoutingAssignedTotal = this.getOrCreateCounter({
       name: 'task_skill_routing_assigned_total',
-      help: 'Авто-назначение исполнителя по навыкам (умный подбор) в авто-пути (path): meeting | intake.',
+      help: 'Авто-назначение исполнителя по навыкам (умный подбор) в авто-пути (path): meeting | intake | conversation.',
       labelNames: ['path'] as const,
+    });
+    this.taskDraftMaterializedTotal = this.getOrCreateCounter({
+      name: 'task_draft_materialized_total',
+      help: 'TaskDraftMaterializerService материализовал task-черновик в IntakeIssue по каналу (channel) и статусу (status): created | skipped_idempotent.',
+      labelNames: ['channel', 'status'] as const,
     });
     this.companyCapsuleInjectedTotal = this.getOrCreateCounter({
       name: 'company_capsule_injected_total',
@@ -6662,8 +6668,15 @@ export class BusinessMetricsService implements OnModuleInit {
     this.routingNoCandidateTotal.inc();
   }
 
-  incTaskSkillRoutingAssigned(args: { path: 'meeting' | 'intake' }): void {
+  incTaskSkillRoutingAssigned(args: { path: 'meeting' | 'intake' | 'conversation' }): void {
     this.taskSkillRoutingAssignedTotal.inc({ path: args.path });
+  }
+
+  incTaskDraftMaterialized(args: { channel: string; status: string; by?: number }): void {
+    this.taskDraftMaterializedTotal.inc(
+      { channel: args.channel, status: args.status },
+      args.by ?? 1,
+    );
   }
 
   incCompanyCapsuleInjected(args: { surface: string }): void {

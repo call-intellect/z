@@ -654,6 +654,9 @@ export class TypedConfigService {
       blockIngestWindowOverlapSegments: this.resolveSync<number>('knowledge.blockIngestWindowOverlapSegments', undefined, 1),
       blockIngestGleaningRounds: this.resolveSync<number>('knowledge.blockIngestGleaningRounds', undefined, 1),
       blockIngestGleaningMinSegments: this.resolveSync<number>('knowledge.blockIngestGleaningMinSegments', undefined, 2),
+      skeletonPassEnabled: this.resolveSync<boolean>('knowledge.skeleton_pass_enabled', undefined, true),
+      headerMapEnabled: this.resolveSync<boolean>('knowledge.header_map_enabled', undefined, true),
+      skeletonMinSegments: this.resolveSync<number>('knowledge.skeletonMinSegments', undefined, 6),
       segmentMaxTokens: this.resolveSync<number>('knowledge.segment_max_tokens', undefined, 600),
       segmentOverlapRatio: this.resolveSync<number>(
         'knowledge.segment_overlap_ratio',

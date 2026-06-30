@@ -35,6 +35,7 @@ import { GoalTaskLinkerService } from './services/goal-task-linker.service';
 import { GoalThemeLinkerService } from './services/goal-theme-linker.service';
 import { GoalsCheckpointProbeHandler } from './services/goals-checkpoint-probe.handler';
 import { GraphMaterializationService } from './services/graph-materialization.service';
+import { MeetingSkeletonService } from './services/meeting-skeleton.service';
 import { MeetingTitleService } from './services/meeting-title.service';
 import { OwnerResolverService } from './services/owner-resolver.service';
 import { PersonaLayerValidationService } from './services/persona-layer-validation.service';
@@ -88,6 +89,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
     S3Service,
     SegmentBuilderService,
     BlockExtractionService,
+    MeetingSkeletonService,
     KnowledgeEmbeddingService,
     ChunkContextService,
     RoleRegulationRetrievalService,
@@ -161,6 +163,7 @@ import { VoiceNoteAudioRetentionCron } from './workers/voice-note-audio-retentio
   exports: [
     SegmentBuilderService,
     BlockExtractionService,
+    MeetingSkeletonService,
     KnowledgeEmbeddingService,
     ChunkContextService,
     RoleRegulationRetrievalService,

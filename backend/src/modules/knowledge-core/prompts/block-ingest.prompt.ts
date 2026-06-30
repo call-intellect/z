@@ -2,7 +2,10 @@ import {
   withAsrNote,
   withConfidenceCalibration,
   withDecisionDiscriminator,
+  wrapUserData,
 } from '../../ai/services/prompts/common';
+import type { MeetingSkeleton } from '../services/meeting-skeleton.service';
+import { renderMeetingSkeleton } from '../services/meeting-skeleton.service';
 import type { Segment } from '../services/segment-builder.service';
 
 import { renderSignalTypeRegistry } from './signal-type-registry';
@@ -460,6 +463,7 @@ interface BuildArgs {
   windowIndex?: number | undefined;
   totalWindows?: number | undefined;
   gleaningExclude?: { name: string; signalType: string }[] | undefined;
+  skeleton?: MeetingSkeleton | undefined;
 }
 
 function formatDateRu(iso: string): string | null {
@@ -503,6 +507,14 @@ export function buildBlockIngestPrompt(args: BuildArgs): {
   const header =
     contextLines.length > 0 ? `Контекст эпизода:\n${contextLines.join('\n')}\n\n` : '';
 
+  const skeletonRendered = args.skeleton
+    ? renderMeetingSkeleton(args.skeleton).trim()
+    : '';
+  const mapSection =
+    skeletonRendered.length > 0
+      ? `# Карта встречи (справочный контекст)\nЭто справочная карта всего разговора для понимания «он/это/проект». Истина — сегменты ниже; если карта противоречит сегментам, верь сегментам.\n${wrapUserData(skeletonRendered)}\n\n`
+      : '';
+
   const excludeSection =
     args.gleaningExclude && args.gleaningExclude.length > 0
       ? `Уже найдено в этом окне (НЕ повторяй, верни ТОЛЬКО дополнительно пропущенное):\n${args.gleaningExclude
@@ -510,6 +522,6 @@ export function buildBlockIngestPrompt(args: BuildArgs): {
           .join('\n')}\n\n`
       : '';
 
-  const user = `${header}${excludeSection}Сегменты (порядок сохраняй для таймкодов):\n${JSON.stringify(segmentsJson, null, 2)}\n\nВерни JSON по схеме.`;
+  const user = `${header}${mapSection}${excludeSection}Сегменты (порядок сохраняй для таймкодов):\n${JSON.stringify(segmentsJson, null, 2)}\n\nВерни JSON по схеме.`;
   return { system: SYSTEM_PROMPT, user };
 }

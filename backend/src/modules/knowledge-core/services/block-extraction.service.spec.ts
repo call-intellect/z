@@ -4,6 +4,8 @@ import type { TypedConfigService } from '../../../common/config/index';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
 import { BlockExtractionService } from './block-extraction.service';
+import type { MeetingSkeleton } from './meeting-skeleton.service';
+import type { MeetingSkeletonService } from './meeting-skeleton.service';
 import type { Segment } from './segment-builder.service';
 
 interface CfgKnobs {
@@ -12,6 +14,9 @@ interface CfgKnobs {
   gleaningRounds: number;
   gleaningMinSegments: number;
   minConfidence?: number;
+  skeletonPassEnabled?: boolean;
+  headerMapEnabled?: boolean;
+  skeletonMinSegments?: number;
 }
 
 function makeCfg(knobs: CfgKnobs): TypedConfigService {
@@ -21,6 +26,9 @@ function makeCfg(knobs: CfgKnobs): TypedConfigService {
       blockIngestWindowOverlapSegments: knobs.overlap,
       blockIngestGleaningRounds: knobs.gleaningRounds,
       blockIngestGleaningMinSegments: knobs.gleaningMinSegments,
+      skeletonPassEnabled: knobs.skeletonPassEnabled ?? false,
+      headerMapEnabled: knobs.headerMapEnabled ?? true,
+      skeletonMinSegments: knobs.skeletonMinSegments ?? 6,
     },
     extraction: { typedEntityMinConfidence: knobs.minConfidence ?? 0 },
     aiFeatures: { promptInjectionGuardEnabled: false },
@@ -57,9 +65,15 @@ type LlmCall = (req: LlmCallArg) => Promise<{ text: string }>;
 function makeService(
   cfg: TypedConfigService,
   call: ReturnType<typeof vi.fn<LlmCall>>,
+  buildSkeleton?: (args: {
+    segments: Segment[];
+  }) => Promise<MeetingSkeleton | null>,
 ): BlockExtractionService {
   const llm = { call } as unknown as LlmRouterService;
-  return new BlockExtractionService(cfg, llm);
+  const skeletonService = {
+    buildSkeleton: buildSkeleton ?? (async () => null),
+  } as unknown as MeetingSkeletonService;
+  return new BlockExtractionService(cfg, llm, skeletonService);
 }
 
 function userMsgAt(
@@ -338,5 +352,125 @@ describe('BlockExtractionService.extractFull — overlap + позиция + glea
     const out = await svc.extractFull(baseArgs(segments));
 
     expect(out.blocksInOrder.map((b) => b.evidenceQuote)).toEqual(['A']);
+  });
+});
+
+describe('BlockExtractionService.extractFull — скелет → шапка-карта (Ф6)', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  const longSegments = (): Segment[] =>
+    Array.from({ length: 8 }, (_, i) => seg(i * 1000, `s${i}`));
+
+  const skeletonFixture: MeetingSkeleton = {
+    agenda: 'Обсуждение переноса склада',
+    milestones: [{ title: 'Старт', fromIndex: 0, toIndex: 2 }],
+    keyNames: ['Марина', 'ООО Ромашка'],
+  };
+
+  it('skeletonPassEnabled=false → buildSkeleton НЕ зван', async () => {
+    const cfg = makeCfg({
+      windowSize: 3,
+      overlap: 0,
+      gleaningRounds: 0,
+      gleaningMinSegments: 99,
+      skeletonPassEnabled: false,
+      skeletonMinSegments: 6,
+    });
+    const call = vi.fn(async () => jsonOf({ blocks: [] }));
+    const buildSkeleton = vi.fn(async () => skeletonFixture);
+    const svc = makeService(cfg, call, buildSkeleton);
+
+    await svc.extractFull(baseArgs(longSegments()));
+
+    expect(buildSkeleton).not.toHaveBeenCalled();
+  });
+
+  it('segments.length <= skeletonMinSegments → buildSkeleton НЕ зван', async () => {
+    const cfg = makeCfg({
+      windowSize: 3,
+      overlap: 0,
+      gleaningRounds: 0,
+      gleaningMinSegments: 99,
+      skeletonPassEnabled: true,
+      skeletonMinSegments: 10,
+    });
+    const call = vi.fn(async () => jsonOf({ blocks: [] }));
+    const buildSkeleton = vi.fn(async () => skeletonFixture);
+    const svc = makeService(cfg, call, buildSkeleton);
+
+    await svc.extractFull(baseArgs(longSegments()));
+
+    expect(buildSkeleton).not.toHaveBeenCalled();
+  });
+
+  it('skeleton=null (fail-open) → окна извлекаются как раньше', async () => {
+    const cfg = makeCfg({
+      windowSize: 3,
+      overlap: 0,
+      gleaningRounds: 0,
+      gleaningMinSegments: 99,
+      skeletonPassEnabled: true,
+      skeletonMinSegments: 6,
+    });
+    const segments = longSegments();
+    const call = vi.fn(async () => jsonOf({ blocks: [block('A', 0)] }));
+    const buildSkeleton = vi.fn(async () => null);
+    const svc = makeService(cfg, call, buildSkeleton);
+
+    const out = await svc.extractFull(baseArgs(segments));
+
+    expect(buildSkeleton).toHaveBeenCalledTimes(1);
+    expect(out.blocksInOrder.map((b) => b.evidenceQuote)).toEqual(['A']);
+    for (let n = 0; n < call.mock.calls.length; n++) {
+      expect(userMsgAt(call, n)).not.toContain('Карта встречи');
+    }
+  });
+
+  it('headerMapEnabled=false → скелет построен, но НЕ попал в prompt', async () => {
+    const cfg = makeCfg({
+      windowSize: 3,
+      overlap: 0,
+      gleaningRounds: 0,
+      gleaningMinSegments: 99,
+      skeletonPassEnabled: true,
+      headerMapEnabled: false,
+      skeletonMinSegments: 6,
+    });
+    const segments = longSegments();
+    const call = vi.fn(async () => jsonOf({ blocks: [] }));
+    const buildSkeleton = vi.fn(async () => skeletonFixture);
+    const svc = makeService(cfg, call, buildSkeleton);
+
+    await svc.extractFull(baseArgs(segments));
+
+    expect(buildSkeleton).toHaveBeenCalledTimes(1);
+    for (let n = 0; n < call.mock.calls.length; n++) {
+      expect(userMsgAt(call, n)).not.toContain('Карта встречи');
+    }
+  });
+
+  it('happy: секция «Карта встречи» в user-промпте каждого окна', async () => {
+    const cfg = makeCfg({
+      windowSize: 3,
+      overlap: 0,
+      gleaningRounds: 0,
+      gleaningMinSegments: 99,
+      skeletonPassEnabled: true,
+      headerMapEnabled: true,
+      skeletonMinSegments: 6,
+    });
+    const segments = longSegments();
+    const call = vi.fn(async () => jsonOf({ blocks: [] }));
+    const buildSkeleton = vi.fn(async () => skeletonFixture);
+    const svc = makeService(cfg, call, buildSkeleton);
+
+    await svc.extractFull(baseArgs(segments));
+
+    expect(buildSkeleton).toHaveBeenCalledTimes(1);
+    expect(call.mock.calls.length).toBeGreaterThan(0);
+    for (let n = 0; n < call.mock.calls.length; n++) {
+      expect(userMsgAt(call, n)).toContain('Карта встречи');
+      expect(userMsgAt(call, n)).toContain('Обсуждение переноса склада');
+    }
   });
 });

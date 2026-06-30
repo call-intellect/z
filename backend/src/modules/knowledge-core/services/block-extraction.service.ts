@@ -19,6 +19,8 @@ import {
   buildBlockIngestPrompt,
 } from '../prompts/block-ingest.prompt';
 
+import type { MeetingSkeleton } from './meeting-skeleton.service';
+import { MeetingSkeletonService } from './meeting-skeleton.service';
 import type { Segment } from './segment-builder.service';
 
 /**
@@ -360,6 +362,8 @@ export class BlockExtractionService {
   constructor(
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    @Inject(MeetingSkeletonService)
+    private readonly skeletonService: MeetingSkeletonService,
   ) {}
 
   /**
@@ -414,6 +418,22 @@ export class BlockExtractionService {
         ? 1
         : Math.ceil((args.segments.length - windowSize) / step) + 1;
 
+    const skeleton =
+      this.cfg.knowledgeCore.skeletonPassEnabled &&
+      args.segments.length > this.cfg.knowledgeCore.skeletonMinSegments
+        ? await this.skeletonService.buildSkeleton({
+            tenantId: args.tenantId,
+            rawEventId: args.rawEventId,
+            segments: args.segments,
+            meetingTitle: args.meetingTitle,
+            meetingType: args.meetingType,
+            dataClass: args.dataClass,
+          })
+        : null;
+    const headerSkeleton = this.cfg.knowledgeCore.headerMapEnabled
+      ? skeleton
+      : null;
+
     const seen = new Map<string, number>();
     const dedupKeys = new Set<string>();
     let prevSliceEnd = -1;
@@ -434,6 +454,7 @@ export class BlockExtractionService {
         totalWindows,
         segments: slice,
         dataClass: args.dataClass,
+        skeleton: headerSkeleton,
       });
       windowIdx += 1;
       if (win.failed) failedWindows += 1;
@@ -528,6 +549,7 @@ export class BlockExtractionService {
     totalWindows?: number | undefined;
     segments: Segment[];
     dataClass?: DataClass;
+    skeleton?: MeetingSkeleton | null;
   }): Promise<ExtractedWindow> {
     const callWindow = async (
       gleaningExclude?: { name: string; signalType: string }[],
@@ -541,6 +563,7 @@ export class BlockExtractionService {
         windowIndex: args.windowIndex,
         totalWindows: args.totalWindows,
         gleaningExclude,
+        skeleton: args.skeleton ?? undefined,
       });
       const guardOn = this.isPromptInjectionGuardEnabled();
       const guardedSystem = guardOn ? withInjectionGuard(system) : system;

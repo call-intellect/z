@@ -922,6 +922,89 @@ describe('MeTasksService.completeTask', () => {
   });
 });
 
+describe('MeTasksService — оба контура помощника идут через дедуп-гейт (TZ task-dedup WP-J)', () => {
+  function build(): {
+    service: MeTasksService;
+    issuesCreate: ReturnType<typeof vi.fn>;
+  } {
+    const issuesCreate = vi.fn(async () => makeIssueResponse({}));
+    const prisma = {
+      issueState: { findUnique: vi.fn(async () => ({ category: 'backlog' })) },
+      issue: {
+        findUnique: vi.fn(async () => ({
+          id: 'issue_1',
+          tenantId: TENANT,
+          identifier: 'INB-1',
+          title: 'Задача',
+          description: null,
+          projectId: INBOX,
+          stateId: 'state_backlog',
+          dueDate: null,
+        })),
+      },
+    } as unknown as PrismaService;
+    const issues = { create: issuesCreate } as unknown as IssuesService;
+    const projects = { ensureInboxProjectId: vi.fn(async () => INBOX) } as unknown as ProjectsService;
+    const resolver = {
+      resolve: vi.fn(async () => ({
+        kind: 'resolved',
+        userId: 'assignee_1',
+        name: 'Айназ',
+        via: 'name',
+      })),
+    } as unknown as AssigneeResolverService;
+    const emitter = {
+      emitIssueAssigneeChanged: vi.fn(),
+    } as unknown as TrackerEmitterService;
+    const skillRouting = {
+      suggestAssignee: vi.fn(async () => []),
+    } as unknown as SkillRoutingService;
+    const metrics = {
+      incRoutingSuggestionAccepted: vi.fn(),
+      incTaskAssigneeClarify: vi.fn(),
+    } as unknown as BusinessMetricsService;
+    const progressUpdates = { create: vi.fn() } as unknown as ProgressUpdatesService;
+    const probe = { suggest: vi.fn(async () => ({ ok: true, probeEventId: 'probe_1' })) } as unknown as ProbeService;
+    const cfg = makeCfg();
+
+    const service = new MeTasksService(
+      prisma,
+      issues,
+      projects,
+      resolver,
+      emitter,
+      skillRouting,
+      metrics,
+      progressUpdates,
+      probe,
+      cfg,
+    );
+    return { service, issuesCreate };
+  }
+
+  it('createSelfTask → issues.create вызван БЕЗ skipDedup (гейт срабатывает)', async () => {
+    const { service, issuesCreate } = build();
+    await service.createSelfTask({ title: 'Позвонить клиенту' }, TENANT, USER);
+
+    expect(issuesCreate).toHaveBeenCalledTimes(1);
+    const [, dtoArg] = issuesCreate.mock.calls[0] as [string, Record<string, unknown>, string, string];
+    expect(dtoArg).not.toHaveProperty('skipDedup');
+  });
+
+  it('assignTask → issues.create вызван БЕЗ skipDedup (гейт срабатывает)', async () => {
+    const { service, issuesCreate } = build();
+    await service.assignTask(
+      { title: 'Протестировать бота', assigneeName: 'Айназ', dueDate: '2026-06-20' },
+      TENANT,
+      USER,
+    );
+
+    expect(issuesCreate).toHaveBeenCalledTimes(1);
+    const [, dtoArg] = issuesCreate.mock.calls[0] as [string, Record<string, unknown>, string, string];
+    expect(dtoArg).not.toHaveProperty('skipDedup');
+  });
+});
+
 describe('MeTasksService.reportTaskProgress', () => {
   it('resolved → progressUpdates.create с health on_track и body=progress', async () => {
     const h = buildResolveHarness();

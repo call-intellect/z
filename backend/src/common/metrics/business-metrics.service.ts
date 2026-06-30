@@ -55,6 +55,9 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── семантический дедуп задач встречи (Ф5 Р2) ────────────────────────
   private taskDedupeTotal!: Counter<'result'>;
 
+  // ── дедуп-гейт прямого create (TZ task-dedup, WP-J) ──────────────────
+  private taskDedupSuggestedTotal!: Counter<'tenant_top'>;
+
   private morningTasksDigestTotal!: Counter<'is_empty'>;
 
   // ── петля закрытия задачи (TZ task-loop Ф2b) ─────────────────────────
@@ -1272,6 +1275,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_task_dedupe_total',
       help: 'Ф5 Р2 — семантический дедуп задач встречи. result=knn_merged|llm_merged|kept|skipped.',
       labelNames: ['result'] as const,
+    });
+
+    this.taskDedupSuggestedTotal = this.getOrCreateCounter({
+      name: 'task_dedup_suggested_total',
+      help: 'TZ task-dedup WP-J — дедуп-гейт прямого create вернул verdict=same (заведена связь duplicates, suggest).',
+      labelNames: ['tenant_top'] as const,
     });
 
     this.morningTasksDigestTotal = this.getOrCreateCounter({
@@ -4614,6 +4623,10 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incTaskDedupe(args: { result: string }): void {
     this.taskDedupeTotal?.inc({ result: args.result });
+  }
+
+  incTaskDedupSuggested(args: { tenantTop: string }): void {
+    this.taskDedupSuggestedTotal?.inc({ tenant_top: args.tenantTop });
   }
 
   incMorningTasksDigest(args: { isEmpty: boolean }): void {

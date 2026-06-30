@@ -2,6 +2,7 @@ import type { Issue } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { ProbeService } from '../../probe/probe.service';
 import type { CreateIssueDto } from '../dto/issues/create-issue.dto';
@@ -11,6 +12,7 @@ import type { ActivityRecorderService } from './activity-recorder.service';
 import type { HolidayService } from './holiday.service';
 import { IssuesService } from './issues.service';
 import type { ProjectsService } from './projects.service';
+import type { TaskDedupService } from './task-dedup.service';
 import type { TrackerEmitterService } from './tracker-emitter.service';
 import type { TrackerEventsService } from './tracker-events.service';
 import type { WebhookDispatcher } from './webhook-dispatcher.service';
@@ -1619,5 +1621,244 @@ describe('IssuesService.update — method-capture хук на переходе �
       'u1',
     );
     expect(hookSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('IssuesService.create — дедуп-гейт (TZ task-dedup WP-J)', () => {
+  const baseIssue = {
+    id: 'i1',
+    tenantId: 'org_1',
+    projectId: 'p1',
+    identifier: 'KORA-1',
+    sequenceId: 1,
+    title: 'Позвонить клиенту',
+    description: null,
+    descriptionHtml: null,
+    descriptionStripped: null,
+    priority: 'none',
+    stateId: null,
+    parentId: null,
+    estimatePoints: null,
+    sortOrder: 0,
+    startDate: null,
+    dueDate: null,
+    completedAt: null,
+    cycleId: null,
+    goalId: null,
+    boardId: null,
+    meetingId: null,
+    linkedMeetingIds: [],
+    sourceBlockIds: [],
+    confidence: null,
+    createdManually: true,
+    externalSource: 'assistant',
+    externalId: null,
+    entityId: null,
+    createdById: 'u1',
+    createdAt: new Date('2026-06-15T00:00:00Z'),
+    updatedAt: new Date('2026-06-15T00:00:00Z'),
+    archivedAt: null,
+    deletedAt: null,
+  } as unknown as Issue;
+
+  function buildService(opts: { withoutDedup?: boolean } = {}): {
+    service: IssuesService;
+    dedupEvaluate: ReturnType<typeof vi.fn>;
+    relationCreate: ReturnType<typeof vi.fn>;
+    incTaskDedupSuggested: ReturnType<typeof vi.fn>;
+  } {
+    const dedupEvaluate = vi.fn();
+    const relationCreate = vi.fn().mockResolvedValue({ id: 'rel_1' });
+    const incTaskDedupSuggested = vi.fn();
+
+    const issueCreate = vi.fn().mockImplementation(async ({ data }) => ({
+      ...baseIssue,
+      ...data,
+    }));
+    const issueAggregate = vi.fn().mockResolvedValue({ _max: { sequenceId: 0 } });
+    const issueFindFirst = vi.fn().mockImplementation(async () => ({
+      ...baseIssue,
+      assignees: [],
+      labels: [],
+    }));
+
+    const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          issue: { aggregate: issueAggregate, create: issueCreate },
+          issueAssignee: { createMany: vi.fn() },
+          issueLabel: { createMany: vi.fn() },
+          label: { findMany: vi.fn().mockResolvedValue([]) },
+          issueState: { findUnique: vi.fn().mockResolvedValue(null) },
+        }),
+      issue: { findFirst: issueFindFirst },
+      issueRelation: { create: relationCreate },
+    } as unknown as PrismaService;
+
+    const activity = {
+      record: vi.fn().mockResolvedValue('act_1'),
+    } as unknown as ActivityRecorderService;
+    const projects = {
+      requireProject: vi.fn().mockResolvedValue({
+        id: 'p1',
+        tenantId: 'org_1',
+        identifier: 'KORA',
+        defaultStateId: null,
+      }),
+    } as unknown as ProjectsService;
+    const events = {
+      publishIssueCreated: vi.fn(),
+    } as unknown as TrackerEventsService;
+    const webhooks = {
+      dispatch: vi.fn().mockResolvedValue(undefined),
+    } as unknown as WebhookDispatcher;
+    const emitter = {
+      emitIssueCreated: vi.fn(),
+    } as unknown as TrackerEmitterService;
+    const metrics = {
+      incTaskDedupSuggested,
+    } as unknown as BusinessMetricsService;
+    const taskDedup = opts.withoutDedup
+      ? undefined
+      : ({ evaluate: dedupEvaluate } as unknown as TaskDedupService);
+
+    const service = new IssuesService(
+      prisma,
+      activity,
+      projects,
+      events,
+      webhooks,
+      emitter,
+      undefined, // embedQueue
+      undefined, // inferFieldsSvc
+      undefined, // goalSuggestSvc
+      undefined, // holiday
+      undefined, // boards
+      metrics,
+      taskDedup,
+    );
+
+    return { service, dedupEvaluate, relationCreate, incTaskDedupSuggested };
+  }
+
+  const dto: CreateIssueDto = {
+    title: 'Позвонить клиенту',
+    descriptionStripped: 'до пятницы',
+    priority: 'none',
+    sortOrder: 0,
+    assigneeUserIds: [],
+    labelIds: [],
+    externalSource: 'assistant',
+  } as unknown as CreateIssueDto;
+
+  it("verdict='same' → задача создаётся + связь duplicates на matchedIssueId + метрика, без авто-merge", async () => {
+    const { service, dedupEvaluate, relationCreate, incTaskDedupSuggested } =
+      buildService();
+    dedupEvaluate.mockResolvedValue({
+      verdict: 'same',
+      matchedIssueId: 'i_existing',
+      similarity: 0.92,
+      confidence: 0.8,
+      rationale: 'тот же звонок',
+    });
+
+    const res = await service.create('p1', dto, 'org_1', 'u1');
+
+    expect(dedupEvaluate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'org_1',
+        title: 'Позвонить клиенту',
+        description: 'до пятницы',
+      }),
+    );
+    expect(res.id).toBe('i1');
+    expect(relationCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          sourceIssueId: 'i1',
+          targetIssueId: 'i_existing',
+          relationType: 'duplicates',
+          createdById: 'u1',
+        }),
+      }),
+    );
+    expect(incTaskDedupSuggested).toHaveBeenCalledTimes(1);
+  });
+
+  it("verdict='different' → задача создаётся обычно, без связи duplicates и без метрики", async () => {
+    const { service, dedupEvaluate, relationCreate, incTaskDedupSuggested } =
+      buildService();
+    dedupEvaluate.mockResolvedValue({
+      verdict: 'different',
+      matchedIssueId: null,
+      similarity: 0.5,
+      confidence: null,
+      rationale: null,
+    });
+
+    const res = await service.create('p1', dto, 'org_1', 'u1');
+
+    expect(res.id).toBe('i1');
+    expect(relationCreate).not.toHaveBeenCalled();
+    expect(incTaskDedupSuggested).not.toHaveBeenCalled();
+  });
+
+  it("verdict='nil' → задача создаётся обычно, без связи duplicates", async () => {
+    const { service, dedupEvaluate, relationCreate, incTaskDedupSuggested } =
+      buildService();
+    dedupEvaluate.mockResolvedValue({
+      verdict: 'nil',
+      matchedIssueId: null,
+      similarity: null,
+      confidence: null,
+      rationale: null,
+    });
+
+    const res = await service.create('p1', dto, 'org_1', 'u1');
+
+    expect(res.id).toBe('i1');
+    expect(relationCreate).not.toHaveBeenCalled();
+    expect(incTaskDedupSuggested).not.toHaveBeenCalled();
+  });
+
+  it('skipDedup=true → evaluate НЕ вызывается, задача создаётся', async () => {
+    const { service, dedupEvaluate, relationCreate } = buildService();
+
+    const res = await service.create(
+      'p1',
+      { ...dto, skipDedup: true } as unknown as CreateIssueDto,
+      'org_1',
+      'u1',
+    );
+
+    expect(res.id).toBe('i1');
+    expect(dedupEvaluate).not.toHaveBeenCalled();
+    expect(relationCreate).not.toHaveBeenCalled();
+  });
+
+  it('TaskDedupService не инжектится (kill-switch на уровне DI) → задача создаётся без гейта', async () => {
+    const { service, relationCreate } = buildService({ withoutDedup: true });
+
+    const res = await service.create('p1', dto, 'org_1', 'u1');
+
+    expect(res.id).toBe('i1');
+    expect(relationCreate).not.toHaveBeenCalled();
+  });
+
+  it("verdict='same' но matchedIssueId == созданная задача → self-ссылку не заводим", async () => {
+    const { service, dedupEvaluate, relationCreate, incTaskDedupSuggested } =
+      buildService();
+    dedupEvaluate.mockResolvedValue({
+      verdict: 'same',
+      matchedIssueId: 'i1',
+      similarity: 0.99,
+      confidence: 0.9,
+      rationale: 'self',
+    });
+
+    await service.create('p1', dto, 'org_1', 'u1');
+
+    expect(relationCreate).not.toHaveBeenCalled();
+    expect(incTaskDedupSuggested).not.toHaveBeenCalled();
   });
 });

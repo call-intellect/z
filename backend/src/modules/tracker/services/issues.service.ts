@@ -297,6 +297,9 @@ export class IssuesService {
             createdById: userId,
           },
         });
+        this.metrics?.incTaskDedupSuggested({
+          tenantTop: tenantTopOf(tenantId),
+        });
         this.logger.log(
           { issueId: issue.id, duplicateOfIssueId: dedupMatchedIssueId },
           'issues.create: дедуп-арбитр нашёл дубль — заведена связь duplicates (suggest)',

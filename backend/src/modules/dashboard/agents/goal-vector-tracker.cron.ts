@@ -2,11 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 
-import { TypedConfigService } from '../../../common/config';
-import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
-import { resolveOperationsTenantTop } from '../../operations/utils/tenant-top';
 import {
   GOAL_VECTOR_TRACKER_JSON_SCHEMA,
   GOAL_VECTOR_TRACKER_SYSTEM_PROMPT,
@@ -22,14 +19,10 @@ export class GoalVectorTrackerCron {
   private static readonly MAX_ORGS_PER_RUN = 5_000;
   private static readonly MAX_ARTEFACTS_PER_GOAL = 100;
   private static readonly TEXT_TRUNCATE = 280;
-  private static readonly DEFAULT_AUTHOR_COVERAGE_MIN = 0.6;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
-    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-    @Inject(BusinessMetricsService)
-    private readonly metrics: BusinessMetricsService,
   ) {}
 
   @Cron('0 5 * * 1', { timeZone: 'Europe/Moscow' })
@@ -67,22 +60,9 @@ export class GoalVectorTrackerCron {
     let parseErrors = 0;
     let errors = 0;
 
-    const authorCoverageMin = await this.cfg.getDynamic<number>(
-      'goals.author_coverage_min',
-      'GOALS_AUTHOR_COVERAGE_MIN',
-      GoalVectorTrackerCron.DEFAULT_AUTHOR_COVERAGE_MIN,
-    );
-
     for (const org of orgs) {
       orgsProcessed++;
       try {
-        const attribution = await this.resolveAttributionField(
-          org.id,
-          weekStart,
-          weekEnd,
-          authorCoverageMin,
-        );
-
         const goals = await this.prisma.goal.findMany({
           where: {
             tenantId: org.id,
@@ -102,7 +82,6 @@ export class GoalVectorTrackerCron {
               goalDescription: goal.description,
               weekStart,
               weekEnd,
-              attributionField: attribution,
             });
             contributionsUpserted += stats.contributionsUpserted;
             parseErrors += stats.parseErrors;
@@ -132,40 +111,6 @@ export class GoalVectorTrackerCron {
     };
   }
 
-  private async resolveAttributionField(
-    tenantId: string,
-    weekStart: Date,
-    weekEnd: Date,
-    authorCoverageMin: number,
-  ): Promise<'author' | 'recipient'> {
-    const baseWhere: Prisma.IdeaBlockWhereInput = {
-      tenantId,
-      signalType: 'commitment',
-      commitmentDueDate: { gte: weekStart, lt: weekEnd },
-    };
-
-    const [total, withAuthor] = await Promise.all([
-      this.prisma.ideaBlock.count({ where: baseWhere }),
-      this.prisma.ideaBlock.count({
-        where: { ...baseWhere, commitmentAuthorPersonId: { not: null } },
-      }),
-    ]);
-
-    const coverage = total === 0 ? 1 : withAuthor / total;
-    const tenantTop = resolveOperationsTenantTop(tenantId);
-    this.metrics.setCommitmentAuthorCoverageRatio({ tenantTop, value: coverage });
-
-    const field = chooseAttributionField(coverage, authorCoverageMin);
-    if (field === 'recipient' && total > 0) {
-      this.logger.warn(
-        `goal-vector-tracker org=${tenantId}: покрытие commitmentAuthorPersonId ` +
-          `${(coverage * 100).toFixed(1)}% < порога ${(authorCoverageMin * 100).toFixed(0)}% ` +
-          '— атрибуция commitment откатывается на адресата (recipient) на этот прогон.',
-      );
-    }
-    return field;
-  }
-
   private async processGoal(args: {
     tenantId: string;
     tenantName: string;
@@ -174,7 +119,6 @@ export class GoalVectorTrackerCron {
     goalDescription: string;
     weekStart: Date;
     weekEnd: Date;
-    attributionField: 'author' | 'recipient';
   }): Promise<{ contributionsUpserted: number; parseErrors: number }> {
     const artefacts = await this.collectArtefacts(args);
     if (artefacts.length === 0) {
@@ -253,7 +197,6 @@ export class GoalVectorTrackerCron {
     tenantId: string;
     weekStart: Date;
     weekEnd: Date;
-    attributionField: 'author' | 'recipient';
   }): Promise<GoalVectorArtefact[]> {
     const out: GoalVectorArtefact[] = [];
 
@@ -371,10 +314,6 @@ function truncate(text: string, limit: number): string {
 
 function round3(v: number): number {
   return Math.round(v * 1000) / 1000;
-}
-
-export function chooseAttributionField(coverage: number, min: number): 'author' | 'recipient' {
-  return coverage >= min ? 'author' : 'recipient';
 }
 
 function pickAuthor(

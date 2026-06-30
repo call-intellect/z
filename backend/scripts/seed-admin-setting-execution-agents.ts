@@ -17,15 +17,6 @@ interface SettingSeed {
 
 const SEEDS: SettingSeed[] = [
   {
-    key: 'goals.author_coverage_min',
-    value: 0.6,
-    category: 'goals',
-    section: 'goal_vector',
-    severity: 'medium',
-    description:
-      'Минимальная доля (0..1) commitment с непустым автором (commitmentAuthorPersonId) в прогоне goal-vector. При покрытии ниже порога атрибуция kept/broken на этот прогон откатывается на адресата (recipient), чтобы не выбросить молча обещания с NULL-автором. По умолчанию 0.6.',
-  },
-  {
     key: 'probe.reply_latency_rise.factor',
     value: 2,
     category: 'operations',

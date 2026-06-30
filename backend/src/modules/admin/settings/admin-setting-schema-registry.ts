@@ -182,7 +182,6 @@ const registry = new Map<string, ZodTypeAny>([
   ['goals.autoPromoteConfidence', z.coerce.number()],
   ['goals.maxActiveGoalsPerHorizon', z.coerce.number()],
 
-  ['goals.author_coverage_min', UNIT_INTERVAL],
   ['provenance.confidence_review_threshold', UNIT_INTERVAL],
   ['provenance.voiceNoteAudioRetentionDays', POSITIVE_INT],
   ['provenance.voiceNoteAudioPresignTtlSeconds', POSITIVE_INT],

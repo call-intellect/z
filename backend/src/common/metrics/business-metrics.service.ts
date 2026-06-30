@@ -888,11 +888,7 @@ export class BusinessMetricsService implements OnModuleInit {
   // Cardinality-safe: tenant_top — top-100 bucket; trigger — фиксированный
   // whitelist probe-триггеров (reply_latency_rise|workload_overload|
   // meeting_noshows).
-  // - commitment_author_coverage_ratio: доля commitment с непустым
-  //   commitmentAuthorPersonId в прогоне goal-vector (0..1). Ниже
-  //   goals.author_coverage_min → fallback на адресата.
   // - probe_suggested_total: сработавший risk/probe-триггер burnout-детектора.
-  private commitmentAuthorCoverageRatio!: Gauge<'tenant_top'>;
   private probeSuggestedTotal!: Counter<'trigger'>;
 
   // ── SBA β-8.3 Wave 2 — COO overview расширения ─────────────────────
@@ -3554,11 +3550,6 @@ export class BusinessMetricsService implements OnModuleInit {
     });
 
     // ── TZ-1 Ф3.D — фиксы достоверности агентов ──
-    this.commitmentAuthorCoverageRatio = this.getOrCreateGauge({
-      name: 'commitment_author_coverage_ratio',
-      help: 'TZ-1 Ф3.D.1 — доля commitment с непустым commitmentAuthorPersonId в прогоне goal-vector (0..1). Ниже goals.author_coverage_min → атрибуция откатывается на адресата.',
-      labelNames: ['tenant_top'] as const,
-    });
     this.probeSuggestedTotal = this.getOrCreateCounter({
       name: 'probe_suggested_total',
       help: 'TZ-1 Ф3.D.3 — сработавший risk/probe-триггер burnout-детектора (trigger ∈ reply_latency_rise|workload_overload|meeting_noshows).',
@@ -7675,21 +7666,6 @@ export class BusinessMetricsService implements OnModuleInit {
   }
 
   // ────────────────────── TZ-1 Ф3.D — фиксы достоверности ──────────────
-
-  /**
-   * Gauge `commitment_author_coverage_ratio{tenant_top}` (0..1). Доля
-   * commitment с непустым commitmentAuthorPersonId в прогоне goal-vector.
-   */
-  setCommitmentAuthorCoverageRatio(args: {
-    tenantTop: string;
-    value: number;
-  }): void {
-    if (!Number.isFinite(args.value)) return;
-    this.commitmentAuthorCoverageRatio.set(
-      { tenant_top: args.tenantTop },
-      Math.min(1, Math.max(0, args.value)),
-    );
-  }
 
   /** Counter `probe_suggested_total{trigger}`. */
   incProbeSuggested(args: { trigger: string }): void {

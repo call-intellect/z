@@ -641,7 +641,6 @@ const BetaOpsSchema = z.object({
   COO_MONTHLY_DIGEST_LOCAL_HOUR: z.coerce.number().int().min(0).max(23).default(6),
 
   COMMITMENT_FALLBACK_DUE_WORKDAYS: z.coerce.number().int().positive().default(5),
-  COMMITMENT_MAX_RETRIES: z.coerce.number().int().positive().default(2),
 
   TTS_PROVIDER: z.string().min(1).default('openai'),
   TTS_VOICE: z.string().min(1).default('alloy'),

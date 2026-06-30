@@ -658,15 +658,11 @@ describe('MACHINE_FILLABLE_REASONS (защита human-only)', () => {
     expect(MACHINE_FILLABLE_REASONS.has('regulation.scope_unclear')).toBe(true);
   });
 
-  it('НЕ содержит attribution / decision / commitment (human-only)', () => {
+  it('НЕ содержит attribution / decision (human-only)', () => {
     expect(
       MACHINE_FILLABLE_REASONS.has('attribution.unresolved_at_ingest'),
     ).toBe(false);
     expect(MACHINE_FILLABLE_REASONS.has('decision.missing_decider')).toBe(false);
     expect(MACHINE_FILLABLE_REASONS.has('decision.overdue')).toBe(false);
-    expect(MACHINE_FILLABLE_REASONS.has('commitment.followup')).toBe(false);
-    expect(MACHINE_FILLABLE_REASONS.has('commitment.silence_escalation')).toBe(
-      false,
-    );
   });
 });

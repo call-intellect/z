@@ -902,16 +902,6 @@ export class BusinessMetricsService implements OnModuleInit {
   private cooInsightsByCauseTotal!: Gauge<'tenant_top' | 'cause'>;
   private cooCompanyMaturityScore!: Gauge<'tenant_top'>;
 
-  // ── SBA β-8.2 — Promise Keeper («Хранитель обещаний») ──────────────
-  // Cardinality-safe: tenant_top — top-100 bucket; reason — короткий
-  // whitelist причин («llm_failed', 'parse_failed', 'no_block', 'exception').
-  private commitmentsOpenTotal!: Gauge<'tenant_top'>;
-  private commitmentsAskedTotal!: Counter<'tenant_top'>;
-  private commitmentsFulfilledTotal!: Counter<'tenant_top'>;
-  private commitmentsMissedTotal!: Counter<'tenant_top'>;
-  private commitmentsEscalatedTotal!: Counter<'tenant_top'>;
-  private commitmentsExtractFailedTotal!: Counter<'tenant_top' | 'reason'>;
-
   // ── SBA γ-2 — Concierge Agent ──────────────────────────────────────
   // Cardinality-safe: `tenant_top` — top-100 bucket (hash mod 100);
   // `tool` — имя whitelist tool'а (ограниченный набор ServiceMap'а);
@@ -3591,38 +3581,6 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'coo_company_maturity_score',
       help: 'SBA β-8.3 Wave 2 — текущий CompanyProfile.maturityScore (0..1). Не публикуется, если значение null.',
       labelNames: ['tenant_top'] as const,
-    });
-
-    // ── SBA β-8.2 — Promise Keeper («Хранитель обещаний») ──
-    this.commitmentsOpenTotal = this.getOrCreateGauge({
-      name: 'commitments_open_total',
-      help: 'SBA β-8.2 — снапшот висящих обещаний (commitmentStatus="open"|"asked").',
-      labelNames: ['tenant_top'] as const,
-    });
-    this.commitmentsAskedTotal = this.getOrCreateCounter({
-      name: 'commitments_asked_total',
-      help: 'SBA β-8.2 — сколько раз cron Хранителя обещаний отправил followup probe.',
-      labelNames: ['tenant_top'] as const,
-    });
-    this.commitmentsFulfilledTotal = this.getOrCreateCounter({
-      name: 'commitments_fulfilled_total',
-      help: 'SBA β-8.2 — подтверждённые «сделано» по обещаниям.',
-      labelNames: ['tenant_top'] as const,
-    });
-    this.commitmentsMissedTotal = this.getOrCreateCounter({
-      name: 'commitments_missed_total',
-      help: 'SBA β-8.2 — подтверждённые «не сделано» по обещаниям.',
-      labelNames: ['tenant_top'] as const,
-    });
-    this.commitmentsEscalatedTotal = this.getOrCreateCounter({
-      name: 'commitments_escalated_total',
-      help: 'SBA β-8.2 — счётчик эскалаций (probe COO + owner) при молчании сотрудника N дней.',
-      labelNames: ['tenant_top'] as const,
-    });
-    this.commitmentsExtractFailedTotal = this.getOrCreateCounter({
-      name: 'commitments_extract_failed_total',
-      help: 'SBA β-8.2 — провал LLM-разбора ответа сотрудника на followup (reason ∈ llm_failed|parse_failed|no_block|exception).',
-      labelNames: ['tenant_top', 'reason'] as const,
     });
 
     // ── SBA γ-2 — Concierge Agent ─────────────────────────────────────
@@ -7796,48 +7754,6 @@ export class BusinessMetricsService implements OnModuleInit {
       { tenant_top: args.tenantTop },
       Math.max(0, Math.min(1, args.value)),
     );
-  }
-
-  // ────────────────────── SBA β-8.2 — Promise Keeper ──────────────────
-
-  /** Gauge `commitments_open_total{tenant_top}`. */
-  setCommitmentsOpenTotal(args: { tenantTop: string; value: number }): void {
-    if (!Number.isFinite(args.value)) return;
-    this.commitmentsOpenTotal.set(
-      { tenant_top: args.tenantTop },
-      Math.max(0, Math.floor(args.value)),
-    );
-  }
-
-  /** Counter `commitments_asked_total{tenant_top}`. */
-  incCommitmentsAsked(args: { tenantTop: string }): void {
-    this.commitmentsAskedTotal.inc({ tenant_top: args.tenantTop });
-  }
-
-  /** Counter `commitments_fulfilled_total{tenant_top}`. */
-  incCommitmentsFulfilled(args: { tenantTop: string }): void {
-    this.commitmentsFulfilledTotal.inc({ tenant_top: args.tenantTop });
-  }
-
-  /** Counter `commitments_missed_total{tenant_top}`. */
-  incCommitmentsMissed(args: { tenantTop: string }): void {
-    this.commitmentsMissedTotal.inc({ tenant_top: args.tenantTop });
-  }
-
-  /** Counter `commitments_escalated_total{tenant_top}`. */
-  incCommitmentsEscalated(args: { tenantTop: string }): void {
-    this.commitmentsEscalatedTotal.inc({ tenant_top: args.tenantTop });
-  }
-
-  /**
-   * Counter `commitments_extract_failed_total{tenant_top, reason}`.
-   * reason ∈ llm_failed|parse_failed|no_block|exception.
-   */
-  incCommitmentsExtractFailed(args: { tenantTop: string; reason: string }): void {
-    this.commitmentsExtractFailedTotal.inc({
-      tenant_top: args.tenantTop,
-      reason: args.reason,
-    });
   }
 
   // ────────────────────── SBA δ-3 — VoiceChannelAdapter ───────────────

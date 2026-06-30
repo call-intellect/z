@@ -1592,7 +1592,6 @@ export class TypedConfigService {
         22,
       ),
       commitmentFallbackDueWorkdays: Number(this.get('COMMITMENT_FALLBACK_DUE_WORKDAYS') ?? 5),
-      commitmentMaxRetries: Number(this.get('COMMITMENT_MAX_RETRIES') ?? 2),
     } as const;
   }
 

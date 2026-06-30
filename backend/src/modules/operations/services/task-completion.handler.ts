@@ -18,9 +18,9 @@ import {
 /**
  * TZ task-dedup (2026-06-16, Ф2) — TaskCompletionHandler.
  *
- * Зеркало уже работающей петли обещаний (`CommitmentResponseHandler`), но для
- * задач трекера. Слушает `task.completion_signalled` (эмит RouterService на
- * блоках signalType ∈ {task_completed, task_status_changed, done_item}).
+ * Петля для задач трекера. Слушает `task.completion_signalled` (эмит
+ * RouterService на блоках signalType ∈ {task_completed, task_status_changed,
+ * done_item}).
  *
  * Алгоритм:
  *   1. Гард от ЗАЦИКЛИВАНИЯ: блок из самого трекера (`sourceType='tracker_event'`)
@@ -34,7 +34,7 @@ import {
  *      создать `TaskClosureCandidate(status='pending')` ИДЕМПОТЕНТНО (P2002-skip,
  *      R7), НЕ закрывая Issue (R13 — закрытие только через confirm человека).
  *
- * Никаких throw'ов — handler best-effort (как commitment-response): сбой не
+ * Никаких throw'ов — handler best-effort: сбой не
  * должен ломать pipeline усвоения. Никогда не вызывает `transitionState`/
  * `issue.update` — инвариант R13 (закрытие только через TaskClosurePendingProvider
  * по подтверждению человека).

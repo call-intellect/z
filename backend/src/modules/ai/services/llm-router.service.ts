@@ -384,10 +384,7 @@ export type LlmTaskType =
   // 'commitment-extract-dates' — извлечь срок и адресата из текста обещания
   //   (вызов из block-ingest для уточнения если основной prompt не справился).
   //   Primary deepseek-chat, secondary gpt-4o-mini, tertiary ollama qwen3.5.
-  // 'commitment-extract-status' — разобрать ответ сотрудника на followup
-  //   ('fulfilled' | 'missed' + rationale + blockerText?). Та же цепочка.
   | 'commitment-extract-dates'
-  | 'commitment-extract-status'
   // SBA δ-1 — Orchestrator (multi-agent research).
   // 'orchestrator-plan'        — план шагов: primary gpt-4o (важно качество reasoning).
   // 'orchestrator-subagent'    — универсальный subagent-call: primary deepseek (массово+дёшево).
@@ -851,7 +848,6 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'value-recap-narrative',
   // SBA β-8.2 — Promise Keeper
   'commitment-extract-dates',
-  'commitment-extract-status',
   // SBA δ-1 — Orchestrator
   'orchestrator-plan',
   'orchestrator-subagent',

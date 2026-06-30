@@ -62,7 +62,6 @@ import { IssueTemplatesService } from './services/issue-templates.service';
 import { IssuesService } from './services/issues.service';
 import { LabelsService } from './services/labels.service';
 import { MeTasksService } from './services/me-tasks.service';
-import { MeetingExtractActionsService } from './services/meeting-extract-actions.service';
 import { MorningTasksDigestService } from './services/morning-tasks-digest.service';
 import { MyMentionsService } from './services/my-mentions.service';
 import { OverviewService } from './services/overview.service';
@@ -193,7 +192,6 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     RecurrenceMaterializeCron,
     IssueInferFieldsService,
     IssueGoalSuggestService,
-    MeetingExtractActionsService,
     IntakeAutoTriageQueueService,
     IntakeAutoTriageWorker,
     ImportService,
@@ -219,7 +217,6 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     TrackerEventsService,
     TrackerEmitterService,
     TrackerGateway,
-    MeetingExtractActionsService,
     IntakeService,
     CommentsService,
     ProgressUpdatesService,

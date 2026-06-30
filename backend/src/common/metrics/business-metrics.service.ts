@@ -1028,17 +1028,13 @@ export class BusinessMetricsService implements OnModuleInit {
   private aiIssueGoalSuggestedTotal!: Counter<
     'tenant_top' | 'accepted' | 'source'
   >;
-  // Tracker Phase 3 part B (2026-05-24) — meeting-extract-actions + auto-triage Intake.
-  // ai_meeting_actions_extracted_total{tenant_top, status} — status='created'|'skipped_idempotent'|'llm_empty'|'llm_error'.
-  //   Caller — `MeetingExtractActionsService`. Каждый вызов = одна метрика.
-  //   count извлечённых задач отдельно через `incBy` (см. ниже).
+  // Tracker Phase 3 part B (2026-05-24) — auto-triage Intake.
   // ai_intake_auto_accepted_total{tenant_top} — IntakeIssue, который IntakeAutoTriageWorker
   //   автоматически перевёл в accepted (создав Issue). Условие: confidence ≥ 0.92
   //   + source='meeting' + suggestedAssigneeId != null.
   // ai_intake_suggested_total{tenant_top, accepted_or_pending} — IntakeIssue, для которого
   //   worker заполнил suggested* (но не auto-accepted). accepted_or_pending — для
   //   совместимости с метрикой auto_accepted (легче считать ratio).
-  private aiMeetingActionsExtractedTotal!: Counter<'tenant_top' | 'status'>;
   private aiIntakeAutoAcceptedTotal!: Counter<
     'tenant_top' | 'source' | 'via_default_project'
   >;
@@ -3923,12 +3919,7 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'Tracker Phase 3 part C — IssueGoalSuggestService предложил goalId (source ∈ knn|llm|none; accepted=false на момент инференса).',
       labelNames: ['tenant_top', 'accepted', 'source'] as const,
     });
-    // Tracker Phase 3 part B — meeting-extract-actions + auto-triage Intake.
-    this.aiMeetingActionsExtractedTotal = this.getOrCreateCounter({
-      name: 'ai_meeting_actions_extracted_total',
-      help: 'Tracker Phase 3 part B — MeetingExtractActionsService отработал. status ∈ created|skipped_idempotent|llm_empty|llm_error.',
-      labelNames: ['tenant_top', 'status'] as const,
-    });
+    // Tracker Phase 3 part B — auto-triage Intake.
     this.aiIntakeAutoAcceptedTotal = this.getOrCreateCounter({
       name: 'ai_intake_auto_accepted_total',
       help: 'Tracker Phase 3 part B + W4 autonomy (2026-06-12) — IntakeAutoTriageWorker автоматически принял IntakeIssue (confidence ≥ порога, любой source; via_default_project=true — Issue создан в дефолт-проект «Входящие»).',
@@ -8386,27 +8377,6 @@ export class BusinessMetricsService implements OnModuleInit {
       accepted: args.accepted,
       source: args.source,
     });
-  }
-
-  /**
-   * Tracker Phase 3 part B — MeetingExtractActionsService завершил вызов.
-   * Если count>0 — `incBy` для каждой созданной задачи отдельно (через цикл
-   * у caller'а). Здесь — только агрегатный статус (created / empty / error /
-   * skipped_idempotent).
-   */
-  incAiMeetingActionsExtracted(args: {
-    tenantTop: string;
-    status:
-      | 'created'
-      | 'skipped_idempotent'
-      | 'llm_empty'
-      | 'llm_error';
-    by?: number;
-  }): void {
-    this.aiMeetingActionsExtractedTotal.inc(
-      { tenant_top: args.tenantTop, status: args.status },
-      args.by ?? 1,
-    );
   }
 
   /**

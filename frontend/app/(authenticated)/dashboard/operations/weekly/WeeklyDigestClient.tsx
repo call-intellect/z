@@ -4,7 +4,6 @@ import { useState } from "react";
 import {
   Activity,
   AlertTriangle,
-  CalendarClock,
   Sparkles,
   Target,
   TrendingUp,
@@ -194,7 +193,6 @@ function DigestView(props: { data: WeeklyOperationsDigestApi }) {
         insights={data.metrics.topInsights}
         delta={sectionDeltas?.insights ?? null}
       />
-      <HangingDecisionsSection decisions={data.metrics.hangingDecisions} />
 
       <TeamDynamicsSection items={teamDynamics} />
       <ForecastSection items={forecast} />
@@ -248,7 +246,6 @@ function HeroTrendSection({ trend }: { trend: TrendPoint[] }) {
   const execData = trend.map((p) => ({
     weekStart: formatRuShort(p.weekStart),
     goalsCompleted: p.goalsCompleted,
-    hangingDecisions: p.hangingDecisions,
   }));
   const blockersData = trend.map((p) => ({
     weekStart: formatRuShort(p.weekStart),
@@ -280,11 +277,6 @@ function HeroTrendSection({ trend }: { trend: TrendPoint[] }) {
               key: "goalsCompleted",
               color: CHART.mint,
               label: "Закрытые цели",
-            },
-            {
-              key: "hangingDecisions",
-              color: CHART.red,
-              label: "Висящие решения",
             },
           ]}
           height={240}
@@ -391,8 +383,6 @@ function GoalStat({
 
 type Blocker = WeeklyOperationsDigestApi["metrics"]["topBlockers"][number];
 type Insight = WeeklyOperationsDigestApi["metrics"]["topInsights"][number];
-type HangingDecision =
-  WeeklyOperationsDigestApi["metrics"]["hangingDecisions"][number];
 
 function BlockersSection({
   blockers,
@@ -479,43 +469,6 @@ function InsightsSection({
   );
 }
 
-function HangingDecisionsSection({
-  decisions,
-}: {
-  decisions: HangingDecision[];
-}) {
-  if (decisions.length === 0) return null;
-  return (
-    <GlassCard>
-      <CardTitle icon={<CalendarClock size={16} />} grad={GRAD.pink}>
-        Висящие решения
-      </CardTitle>
-      <ul className="mt-3 space-y-1 text-sm">
-        {decisions.map((d) => {
-          const tone = hangingTone(d.ageDays);
-          return (
-            <li
-              key={d.decisionId}
-              className="flex items-start gap-2 rounded-md p-1.5"
-            >
-              <UrgencyDot tone={tone} title={URGENCY_TITLE[tone]} />
-              <span className="flex-1" style={{ color: CHART.text }}>
-                {d.statement}
-              </span>
-              <span className="text-xs" style={{ color: CHART.dim }}>
-                возраст: {d.ageDays} дн.
-              </span>
-              <OpenLink
-                href={`/decisions/${encodeURIComponent(d.decisionId)}`}
-              />
-            </li>
-          );
-        })}
-      </ul>
-    </GlassCard>
-  );
-}
-
 function defaultLastMondayUtc(): string {
   const d = new Date();
   const dow = d.getUTCDay();
@@ -575,16 +528,8 @@ function weeklyDigestErrorMessage(err: unknown): string | null {
 
 type UrgencyTone = "danger" | "warning" | "neutral";
 
-const HANGING_DANGER_DAYS = 14;
-const HANGING_WARNING_DAYS = 7;
 const BLOCKER_DANGER_COUNT = 5;
 const BLOCKER_WARNING_COUNT = 3;
-
-function hangingTone(ageDays: number): UrgencyTone {
-  if (ageDays >= HANGING_DANGER_DAYS) return "danger";
-  if (ageDays >= HANGING_WARNING_DAYS) return "warning";
-  return "neutral";
-}
 
 function blockerTone(count: number): UrgencyTone {
   if (count >= BLOCKER_DANGER_COUNT) return "danger";
@@ -664,7 +609,6 @@ function KpiDeltasSection({ items }: { items: WeeklyKpiDeltaApi[] }) {
 }
 
 function KpiStatCard({ k, i }: { k: WeeklyKpiDeltaApi; i: number }) {
-  const isInverse = k.label === "Висящие решения";
   const grad = KPI_GRADS[i % KPI_GRADS.length];
   const tone = KPI_TONES[i % KPI_TONES.length];
   const icon = KPI_ICONS[i % KPI_ICONS.length];
@@ -681,7 +625,7 @@ function KpiStatCard({ k, i }: { k: WeeklyKpiDeltaApi; i: number }) {
       />
     );
   }
-  const isGood = isInverse ? k.delta <= 0 : k.delta >= 0;
+  const isGood = k.delta >= 0;
   return (
     <StatCard
       icon={icon}
@@ -843,8 +787,6 @@ function forecastMetricLabel(metric: WeeklyForecastItemApi["metric"]): string {
       return "Настроение";
     case "promises":
       return "Обещания";
-    case "hanging_decisions":
-      return "Висящие решения";
     default:
       return metric;
   }

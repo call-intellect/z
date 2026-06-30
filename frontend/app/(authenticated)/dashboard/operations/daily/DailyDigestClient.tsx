@@ -32,7 +32,6 @@ import {
   CheckCircle2,
   FileText,
   Flag,
-  Gauge,
   Sparkles,
   Star,
   ThermometerSun,
@@ -336,7 +335,7 @@ function DigestView(props: {
         >
           Главное за день
         </h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <StatCard
             icon={<AlertTriangle size={20} />}
             grad={GRAD.amber}
@@ -371,13 +370,6 @@ function DigestView(props: {
             label="Новые сигналы"
             value={String(m.newHighInsights.length)}
             tone={CHART.violet}
-          />
-          <StatCard
-            icon={<Gauge size={20} />}
-            grad={GRAD.blue}
-            label="Решения"
-            value={String(m.decisions.length)}
-            tone={CHART.blue}
           />
         </div>
       </div>
@@ -885,8 +877,6 @@ function urgentIcon(kind: DailyDigestUrgentItemDomain["kind"]): string {
   switch (kind) {
     case "overdue_commitment":
       return "⏰";
-    case "raised_decision":
-      return "↑";
     case "high_insight":
       return "!";
     default:
@@ -898,8 +888,6 @@ function eventIcon(kind: DailyDigestEventDomain["kind"]): string {
   switch (kind) {
     case "meeting":
       return "◉";
-    case "decision":
-      return "✓";
     case "signal":
       return "△";
     default:

@@ -29,11 +29,6 @@ export interface WeeklyDigestMetricsApi {
     completedDelta: number;
     failedDelta: number;
   };
-  hangingDecisions: Array<{
-    decisionId: string;
-    statement: string;
-    ageDays: number;
-  }>;
   risksSummary?: string | null;
   ideasSummary?: string | null;
 }
@@ -84,7 +79,6 @@ export interface WeeklyDigestSourcesApi {
   blockerCheckInIds: string[];
   insightIds: string[];
   goalIds: string[];
-  decisionIds: string[];
 }
 
 export interface WeeklyKpiDeltaApi {
@@ -107,7 +101,7 @@ export interface WeeklyTeamDynamicsRowApi {
 }
 
 export interface WeeklyForecastItemApi {
-  metric: "sentiment" | "promises" | "hanging_decisions";
+  metric: "sentiment" | "promises";
   projection: string;
   confidence: "low" | "medium";
 }
@@ -126,7 +120,6 @@ export interface WeeklyDigestTrendPointApi {
   goalsCompleted: number;
   goalsFailed: number;
   blockers: number;
-  hangingDecisions: number;
 }
 
 export interface WeeklyOperationsDigestApi {

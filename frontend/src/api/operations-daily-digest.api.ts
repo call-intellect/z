@@ -37,11 +37,6 @@ export interface DailyDigestMetricsApi {
     kind: string;
     causeCategory: string | null;
   }>;
-  decisions: Array<{
-    decisionId: string;
-    statement: string;
-    status: string;
-  }>;
   risksSummary?: string | null;
   ideasSummary?: string | null;
 }
@@ -87,11 +82,10 @@ export interface DailyDigestSourcesApi {
   commitmentIds: string[];
   goalIds: string[];
   insightIds: string[];
-  decisionIds: string[];
 }
 
 export interface DailyDigestEventApi {
-  kind: "meeting" | "decision" | "signal";
+  kind: "meeting" | "signal";
   id: string;
   title: string;
   occurredAt: string;
@@ -100,7 +94,7 @@ export interface DailyDigestEventApi {
 }
 
 export interface DailyDigestUrgentItemApi {
-  kind: "overdue_commitment" | "raised_decision" | "high_insight";
+  kind: "overdue_commitment" | "high_insight";
   id: string;
   title: string;
   link: string;

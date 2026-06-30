@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { GoalThemeLinkerService } from '../services/goal-theme-linker.service';
@@ -16,6 +17,7 @@ export class GoalThemeLinkerCron {
     @Inject(GoalThemeLinkerService)
     private readonly linker: GoalThemeLinkerService,
     @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   @Cron(CronExpression.EVERY_30_MINUTES, { timeZone: 'Europe/Moscow' })
@@ -37,6 +39,11 @@ export class GoalThemeLinkerCron {
     scannedOrgs: number;
     linkedGoals: number;
   }> {
+    const perOrgLimit = await this.cfg.getDynamic<number>(
+      'goals.linkerPerOrgLimit',
+      undefined,
+      GoalThemeLinkerCron.GOALS_PER_ORG_LIMIT,
+    );
     const orgs = await this.prisma.org.findMany({
       where: {
         deletedAt: null,
@@ -64,7 +71,7 @@ export class GoalThemeLinkerCron {
           themes: { none: {} },
         },
         select: { id: true },
-        take: GoalThemeLinkerCron.GOALS_PER_ORG_LIMIT,
+        take: perOrgLimit,
       });
 
       for (const goal of goals) {

@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import {
@@ -23,6 +24,7 @@ export class GoalVectorTrackerCron {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   @Cron('0 5 * * 1', { timeZone: 'Europe/Moscow' })
@@ -48,10 +50,21 @@ export class GoalVectorTrackerCron {
     const weekStart = computeWeekStart(now);
     const weekEnd = new Date(weekStart.getTime() + GoalVectorTrackerCron.WEEK_MS);
 
+    const maxOrgs = await this.cfg.getDynamic<number>(
+      'goals.vectorMaxOrgsPerRun',
+      undefined,
+      GoalVectorTrackerCron.MAX_ORGS_PER_RUN,
+    );
+    const maxArtefacts = await this.cfg.getDynamic<number>(
+      'goals.vectorMaxArtefactsPerGoal',
+      undefined,
+      GoalVectorTrackerCron.MAX_ARTEFACTS_PER_GOAL,
+    );
+
     const orgs = await this.prisma.org.findMany({
       where: { deletedAt: null },
       select: { id: true, name: true },
-      take: GoalVectorTrackerCron.MAX_ORGS_PER_RUN,
+      take: maxOrgs,
     });
 
     let orgsProcessed = 0;
@@ -82,6 +95,7 @@ export class GoalVectorTrackerCron {
               goalDescription: goal.description,
               weekStart,
               weekEnd,
+              maxArtefacts,
             });
             contributionsUpserted += stats.contributionsUpserted;
             parseErrors += stats.parseErrors;
@@ -119,6 +133,7 @@ export class GoalVectorTrackerCron {
     goalDescription: string;
     weekStart: Date;
     weekEnd: Date;
+    maxArtefacts: number;
   }): Promise<{ contributionsUpserted: number; parseErrors: number }> {
     const artefacts = await this.collectArtefacts(args);
     if (artefacts.length === 0) {
@@ -197,6 +212,7 @@ export class GoalVectorTrackerCron {
     tenantId: string;
     weekStart: Date;
     weekEnd: Date;
+    maxArtefacts: number;
   }): Promise<GoalVectorArtefact[]> {
     const out: GoalVectorArtefact[] = [];
 
@@ -225,7 +241,7 @@ export class GoalVectorTrackerCron {
           },
         },
       },
-      take: GoalVectorTrackerCron.MAX_ARTEFACTS_PER_GOAL,
+      take: args.maxArtefacts,
       orderBy: { createdAt: 'desc' },
     });
     for (const b of ideas) {
@@ -253,7 +269,7 @@ export class GoalVectorTrackerCron {
           select: { userId: true },
         },
       },
-      take: GoalVectorTrackerCron.MAX_ARTEFACTS_PER_GOAL,
+      take: args.maxArtefacts,
       orderBy: { completedAt: 'desc' },
     });
     if (issues.length > 0) {
@@ -288,8 +304,8 @@ export class GoalVectorTrackerCron {
       }
     }
 
-    if (out.length > GoalVectorTrackerCron.MAX_ARTEFACTS_PER_GOAL) {
-      return out.slice(0, GoalVectorTrackerCron.MAX_ARTEFACTS_PER_GOAL);
+    if (out.length > args.maxArtefacts) {
+      return out.slice(0, args.maxArtefacts);
     }
     return out;
   }

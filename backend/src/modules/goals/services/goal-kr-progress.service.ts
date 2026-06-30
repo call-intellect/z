@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
@@ -16,6 +17,7 @@ export class GoalKrProgressService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   async runForAllOrgs(): Promise<GoalKrProgressSummary> {
@@ -246,9 +248,18 @@ export class GoalKrProgressService {
 
     if (krs.length === 0) return false;
 
-    const since = new Date(
-      Date.now() - GoalKrProgressService.TREND_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    const trendWindowDays = await this.cfg.getDynamic<number>(
+      'goals.krTrendWindowDays',
+      undefined,
+      GoalKrProgressService.TREND_WINDOW_DAYS,
     );
+    const atRiskMargin = await this.cfg.getDynamic<number>(
+      'goals.krAtRiskMargin',
+      undefined,
+      GoalKrProgressService.AT_RISK_MARGIN,
+    );
+
+    const since = new Date(Date.now() - trendWindowDays * 24 * 60 * 60 * 1000);
 
     const baselines = await Promise.all(
       krs.map(async (kr) => {
@@ -275,6 +286,7 @@ export class GoalKrProgressService {
       createdAt: goal.createdAt,
       targetDate: goal.targetDate,
       now: new Date(),
+      atRiskMargin,
     });
 
     if (next === goal.progressStatus) return false;
@@ -299,8 +311,9 @@ export class GoalKrProgressService {
     createdAt: Date;
     targetDate: Date | null;
     now: Date;
+    atRiskMargin: number;
   }): GoalProgressStatusValue {
-    const { krs, createdAt, targetDate, now } = args;
+    const { krs, createdAt, targetDate, now, atRiskMargin } = args;
     if (krs.length === 0) return 'on_track';
 
     const avgProgress =
@@ -320,7 +333,7 @@ export class GoalKrProgressService {
         targetDate,
         now,
       });
-      if (avgProgress < expected - GoalKrProgressService.AT_RISK_MARGIN) {
+      if (avgProgress < expected - atRiskMargin) {
         return 'at_risk';
       }
     }

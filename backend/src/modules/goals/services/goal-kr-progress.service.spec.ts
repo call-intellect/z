@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 
@@ -65,7 +66,10 @@ function makeService(prisma: PrismaStub): {
   inc: Fn;
 } {
   const { metrics, inc } = makeMetrics();
-  const svc = new GoalKrProgressService(prisma as unknown as PrismaService, metrics);
+  const cfg = {
+    getDynamic: vi.fn(async (_k: string, _e: unknown, fallback: unknown) => fallback),
+  } as unknown as TypedConfigService;
+  const svc = new GoalKrProgressService(prisma as unknown as PrismaService, metrics, cfg);
   return { svc, inc };
 }
 
@@ -297,6 +301,7 @@ describe('GoalKrProgressService.computeStatus (pure)', () => {
       ...base,
       targetDate: new Date('2026-08-01T00:00:00.000Z'),
       krs: [{ start: 0, target: 100, current: 100, baseline: 50 }],
+      atRiskMargin: 25,
     });
     expect(status).toBe('achieved');
   });
@@ -306,6 +311,7 @@ describe('GoalKrProgressService.computeStatus (pure)', () => {
       ...base,
       targetDate: new Date('2026-08-01T00:00:00.000Z'),
       krs: [{ start: 0, target: 100, current: 30, baseline: 30 }],
+      atRiskMargin: 25,
     });
     expect(status).toBe('stalled');
   });
@@ -316,6 +322,7 @@ describe('GoalKrProgressService.computeStatus (pure)', () => {
       now: new Date('2026-05-15T00:00:00.000Z'),
       targetDate: new Date('2026-05-29T00:00:00.000Z'),
       krs: [{ start: 0, target: 100, current: 10, baseline: 2 }],
+      atRiskMargin: 25,
     });
     expect(status).toBe('at_risk');
   });
@@ -326,6 +333,7 @@ describe('GoalKrProgressService.computeStatus (pure)', () => {
       now: new Date('2026-05-15T00:00:00.000Z'),
       targetDate: new Date('2026-05-29T00:00:00.000Z'),
       krs: [{ start: 0, target: 100, current: 60, baseline: 40 }],
+      atRiskMargin: 25,
     });
     expect(status).toBe('on_track');
   });
@@ -335,6 +343,7 @@ describe('GoalKrProgressService.computeStatus (pure)', () => {
       ...base,
       targetDate: null,
       krs: [{ start: 0, target: 100, current: 5, baseline: 1 }],
+      atRiskMargin: 25,
     });
     expect(status).toBe('on_track');
   });

@@ -108,6 +108,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-goals-knobs.ts',
+    hint: 'goals.* + tracker.goalAlignmentLow* пороги/лимиты (Ф9 крутилки goals-engine)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-chatbox.ts',
     hint: 'chatbox.session.idle_gap_hours + chatbox.enabled (ChatBox-интеграция)',
   },

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
@@ -73,8 +74,12 @@ function buildCron(opts: BuildOpts): {
   });
   const llm = { call: llmCall } as unknown as LlmRouterService;
 
+  const cfg = {
+    getDynamic: vi.fn(async (_k: string, _e: unknown, fallback: unknown) => fallback),
+  } as unknown as TypedConfigService;
+
   return {
-    cron: new GoalVectorTrackerCron(prisma, llm),
+    cron: new GoalVectorTrackerCron(prisma, llm, cfg),
     llmCall,
     contributionUpsert,
   };

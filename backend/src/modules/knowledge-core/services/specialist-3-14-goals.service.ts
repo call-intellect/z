@@ -650,6 +650,17 @@ export class Specialist314GoalsService {
     const queryText = args.queryText.trim().slice(0, 2_000);
     if (!queryText) return [];
 
+    const knnTopKRaw =
+      (await this.cfg?.getDynamic<number>(
+        'goals.knnTopK',
+        undefined,
+        Specialist314GoalsService.KNN_TOP_K,
+      )) ?? Specialist314GoalsService.KNN_TOP_K;
+    const knnTopK =
+      Number.isInteger(knnTopKRaw) && knnTopKRaw > 0
+        ? knnTopKRaw
+        : Specialist314GoalsService.KNN_TOP_K;
+
     // 1. Семантический путь — embed запроса + pgvector KNN.
     let embedding: number[] | null;
     try {
@@ -677,7 +688,7 @@ export class Specialist314GoalsService {
               AND "promotionState" <> 'dismissed'
               AND "validUntil" IS NULL
             ORDER BY "embedding" <=> $2::vector
-            LIMIT ${Specialist314GoalsService.KNN_TOP_K}`,
+            LIMIT ${knnTopK}`,
           args.tenantId,
           vec,
         );
@@ -726,7 +737,7 @@ export class Specialist314GoalsService {
         horizon: true,
         promotionState: true,
       },
-      take: Specialist314GoalsService.KNN_TOP_K,
+      take: knnTopK,
     });
     return rows.map((r) => ({
       id: r.id,

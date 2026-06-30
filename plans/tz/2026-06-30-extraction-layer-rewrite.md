@@ -16,6 +16,8 @@ relates_to:
 
 > Архитектура (одобрена владельцем 2026-06-30, вариант А): `plans/architecture/2026-06-30-extraction-layer-rewrite.md` (status: approved) · Карта изменений по коду (TZ-ready, `файл:строка` перепроверены): `plans/analysis/2026-06-30-extraction-change-map-pre-tz.md` · Доказательство архитектуры: `…FINAL-technical.md`.
 > **Каждая фаза = пакет работ (WP-X) карты изменений** — там полная картография `файл:строка`; здесь — контракт + приёмка + порядок. Не дублировать: за деталями кода — карта изменений.
+>
+> **⚠️ AMENDMENT Opus (владелец, 2026-06-30, Вариант A):** постановка Claude Opus primary на `block-ingest` (исходные Б7/Ф1/блюпринт §3.8) **ОТМЕНЕНА**. Движок остаётся `deepseek-v4-pro` — инфра-стандарт «DeepSeek primary везде, НЕ anthropic» (memory `project_z_infra_and_ai`); `anthropic.maxDataClass='sensitive'`(2) < `private`(3) → на private-данных Opus молча отфильтровывается ([llm-router.service.ts:1567](../../backend/src/modules/ai/services/llm-router.service.ts#L1567)), а block-ingest — самый частый LLM-вызов (дорого). Качество извлечения даёт модель-агностичная связка **Ф4** (реестр типов) + **Ф5** (overlap/gleaning) + **Ф6** (скелет-карта). Ф1 движок block-ingest НЕ трогает; маршрут `meeting-skeleton` сидится на дешёвую модель по стандарту (deepseek-flash/gpt-nano), НЕ anthropic.
 
 # ТЗ: Переписывание извлекающего слоя (связный общий разборщик + сшивка нити)
 
@@ -49,7 +51,7 @@ relates_to:
 - **Профиль клона:** rebuild дёргают раздельные [3-2:109](../../backend/src/modules/knowledge-core/workers/specialist-3-2-knowledge-clone.worker.ts#L109)/[3-7:126](../../backend/src/modules/knowledge-core/workers/specialist-3-7-skill.worker.ts#L126); cron-страховка [knowledge-clone-rebuild.cron.ts:21](../../backend/src/modules/knowledge-core/workers/knowledge-clone-rebuild.cron.ts#L21) (0 */6). В combo DI нет `CoreQueueService`.
 - **Гигиена решений:** [dashboard-queue.service.ts:71](../../backend/src/modules/dashboard/services/dashboard-queue.service.ts#L71) `enqueueDecisionHygiene`, дёргает раздельный [3-3.worker:108-126](../../backend/src/modules/knowledge-core/workers/specialist-3-3-decisions.worker.ts#L108-L126).
 - **Конфликты — два детектора** ([personal-relation-builder.worker.ts](../../backend/src/modules/operations/workers/personal-relation-builder.worker.ts)): граф (:43-206, гейт `isFriction` :96-107, conf 0.65 :110) + регэксп-крон (:209-476, `@Cron('0 4 * * *')` :232, conf 0.55, 7 паттернов по сырому `DailyCheckIn`). Оба пишут `EntityLinkType.conflicted_with` (дедуп на ребре). friction в промпте не обучен.
-- **Движок из БД `LlmTaskRoute`:** block-ingest = 3 тира deepseek-v4-pro/gpt-5.4/gemini-3.1-pro ([seed-llm-task-routes-default.ts:122-131](../../backend/scripts/seed-llm-task-routes-default.ts#L122-L131)); провайдер `anthropic` `maxDataClass='sensitive'` ([llm-router.service.ts:1003](../../backend/src/modules/ai/services/llm-router.service.ts#L1003)) — Opus проходит фильтр.
+- **Движок из БД `LlmTaskRoute` (стандарт, НЕ менять):** block-ingest = 3 тира deepseek-v4-pro/gpt-5.4/gemini-3.1-pro ([seed-llm-task-routes-default.ts:122-131](../../backend/scripts/seed-llm-task-routes-default.ts#L122-L131)) — инфра-стандарт «DeepSeek primary везде, НЕ anthropic». Провайдер `anthropic` `maxDataClass='sensitive'`(2) < `private`(3) ([llm-router.service.ts:1003,1567](../../backend/src/modules/ai/services/llm-router.service.ts#L1567)) → на private-данных Opus отфильтровывается, едет DeepSeek. **Opus отменён (Вариант A, см. AMENDMENT Opus).**
 - **Крутилки нарезки:** `blockIngest*` читаются `this.get(ENV)` без `resolveSync` ([typed-config.service.ts:652-653](../../backend/src/common/config/typed-config.service.ts#L652-L653)) → админка для них мертва; сид `seed-admin-settings.ts:424-435` (max-tokens=1500 ≠ env 2000). `segmentMaxTokens`/`segmentOverlapRatio` — правильно через `resolveSync` ([:654-655]). Эталон kill-switch: `getDynamic('knowledge.contextual_header_enabled', undefined, true)` ([chunk-context.service.ts:94-99](../../backend/src/modules/knowledge-core/services/chunk-context.service.ts#L94-L99)).
 - **derive-by-signalType примитив есть, не подключён:** `KnowledgeBlockResolver.getActive` ([block-fetch.service.ts:146-164](../../backend/src/modules/knowledge-core/services/block-fetch.service.ts#L146-L164)) — `Inject(KnowledgeBlockResolver)`=0. (Отложен.)
 
@@ -61,7 +63,7 @@ relates_to:
 | ВР2 | ProcessTemplate в combo → **Вариант A** (вернуть `process-detector` в раздельный dispatch); авто-handoffs/decisionPoints НЕ строим |
 | ВР3 | Хроносверка — **факты И решения**; рёбра графа не трогаем |
 | ВР4 | Рубильник комбо → в AdminSetting, чинить `zBool`, **дефолт ON** (Ship-On) |
-| ВР5 | Размер куска — **мелко** (не раздуваем под Opus) |
+| ВР5 | Размер куска — **мелко** (нить сшиваем оглавлением/графом, не размером) |
 | ВР6 | Кросс-анализ по типу (WP-H) — **отложен** (реестр «не-сделано») |
 | ВР7 | **Задачи — внутри общего агента (вариант А):** общий разборщик достаёт задачи/обещания из разобранного полного разговора → в `TaskDraftMaterializerService`; отдельного движка/крона нет |
 | ВР8 | **Владелец НЕ может проводить A/B-сравнение → снос старого БЕЗ параллельного A/B.** Страховка = рубильник + метрики + разовая проверка глазами. Для задач: `meeting-extract` + спайн `3-15` убираются СРАЗУ после Ф7, combo — единственный движок задач (после сноса фолбэка задач нет — принято) |
@@ -76,11 +78,11 @@ relates_to:
 | Б4 | Хроносверка — **поставщик вердикта**, не писатель оси | Второй писатель `validUntil` = гонка (R7) |
 | Б5 | Снос (раздельные специалисты / regex-крон / per-block task-спайн) — **каждый отдельным коммитом, без A/B** (ВР8), не бандлить | R9; «нет склада выключенного»; порядок-гейты (обучить/восстановить ДО сноса) — корректность, не тест |
 | Б6 | Общий агент эмитит `tasks[]` из тех же canonical-блоков (вариант А), отдаёт в `TaskDraftMaterializerService` | Один мозг, два выхода (граф+трекер); машинерия трекера — ТЗ задач |
-| Б7 | Opus на block-ingest — правкой `LlmTaskRoute` (seed+UI), старый маршрут не удалять | Откат = вернуть deepseek; модель не в коде |
+| Б7 | ~~Opus на block-ingest~~ **ОТМЕНЕНО (владелец, 2026-06-30, Вариант A):** оставляем `deepseek-v4-pro` primary (стандарт «DeepSeek везде, НЕ anthropic») | Opus cap=`sensitive`<`private` → молча отфильтровывается на private; block-ingest — самый частый вызов (дорого); качество даёт Ф4/Ф5/Ф6 (модель-агностично) |
 
 ## Scope
 
-**Входит:** рубильник комбо в AdminSetting + `zBool` + крутилки нарезки на `resolveSync` + Opus-маршрут + новые крутилки; канало-агностичный комбо (chat); восстановление 4 побочек комбо (rebuild профиля, гигиена, ProcessTemplate через Вариант A); few-shot реестр 57 типов (вкл. friction); сшивка нити слой 0 (overlap+позиция+gleaning); скелет→шапка-карта (слой 1); общий агент эмитит `tasks[]`; **привязка регламентов/инструкций в combo (scope роли + владелец, из C1)**; хроносверка-вердикт (факты+решения); усиление граф-детектора конфликтов; me-tasks дедуп-guard; **снос** обходчиков (без A/B, ВР8); метрики/тесты/прод-шаги/second-brain.
+**Входит:** рубильник комбо в AdminSetting + `zBool` + крутилки нарезки на `resolveSync` + новые крутилки (движок block-ingest НЕ трогаем — Вариант A); канало-агностичный комбо (chat); восстановление 4 побочек комбо (rebuild профиля, гигиена, ProcessTemplate через Вариант A); few-shot реестр 57 типов (вкл. friction); сшивка нити слой 0 (overlap+позиция+gleaning); скелет→шапка-карта (слой 1); общий агент эмитит `tasks[]`; **привязка регламентов/инструкций в combo (scope роли + владелец, из C1)**; хроносверка-вердикт (факты+решения); усиление граф-детектора конфликтов; me-tasks дедуп-guard; **снос** обходчиков (без A/B, ВР8); метрики/тесты/прод-шаги/second-brain.
 
 **Не входит:** кросс-анализ по типу (WP-H, отложен); авто-handoffs/decisionPoints; хроносверка рёбер; трекер-сторона задач — материализатор/чек-лист/дедуп/intake (ТЗ задач Ф1-Ф4,Ф7); смена enum `SignalType`; чтение `RawEvent.payload` в read-path. **NB:** вывод `meeting-extract-actions` — **здесь** (Ф11г), т.к. его caller живёт в `analyze.worker`/tracker, а не в трекер-машинерии ТЗ задач (иначе owner сноса бесхозный).
 
@@ -197,12 +199,12 @@ for (let i = 0; i < segments.length; i += step) { ... processWindow({ windowInde
 
 Граф зависимостей: **Ф1 → всё** (рубильник — фундамент отката). **Ф4 → Ф9** (friction обучается до усиления детектора). **Ф2 → Ф7** (чат-агностичность → задачи из чата). **Ф3** независима после Ф1. **Ф5/Ф6** независимы после Ф1. **Ф8** последней из build. **Ф11 (снос) → задачные (в/г) сразу после Ф7; (а) после Ф3; (б) сразу после Ф9. Без A/B/watch — порядок-гейты (обучить friction / восстановить побочки ДО сноса) = корректность; откат — рубильник (ВР8)**.
 
-### [ ] Ф1 — Рубильник в AdminSetting + zBool + крутилки нарезки на resolveSync + Opus + новые крутилки (WP-I) 🔴 первым
+### [x] Ф1 — Рубильник в AdminSetting + zBool + крутилки нарезки на resolveSync + новые крутилки (WP-I) 🔴 первым
 **Ценность:** как оператор, могу мгновенно откатить комбо из админки при инциденте, и правки порогов нарезки реально влияют на рантайм.
 Картография: карта изменений §WP-I; контракт-first выше.
-Что входит: `zBool` для SPECIALISTS_COMBINED_ENABLED; перенос его + `blockIngest*` на `resolveSync` (envFallbackKey обязателен); выравнивание сида 1500→2000; registry+seed для нового рубильника и 5 новых крутилок; Opus-маршрут `LlmTaskRoute` block-ingest (anthropic/claude-opus, старый тир жив); сид-маршрут `meeting-skeleton` (заготовка под Ф6).
+Что входит: `zBool` для SPECIALISTS_COMBINED_ENABLED; перенос его + `blockIngest*` (+ `specialistsCombined.delayMs`) на `resolveSync` (envFallbackKey обязателен); выравнивание сида 1500→2000; registry+seed для нового рубильника и 5 новых крутилок; **движок block-ingest НЕ трогаем — остаётся `deepseek-v4-pro` (Вариант A, Б7);** регистрация `taskType:'meeting-skeleton'` (union + ALL_LLM_TASK_TYPES) + сид-маршрут на дешёвую модель по стандарту (deepseek-flash/gpt-nano, НЕ anthropic) — заготовка под Ф6.
 Что НЕ входит: потребление новых крутилок (Ф5/Ф6).
-Acceptance: тест «`SPECIALISTS_COMBINED_ENABLED=false` → enabled=false»; правка `knowledge.blockIngestWindowSegments` в AdminSetting меняет рантайм (без передеплоя); Opus-маршрут активен, fallback deepseek жив (grep `LlmTaskRoute` block-ingest); `typecheck/lint/build` зелёные. ⚠️ Разработчику: подтвердить прод-значение ENV и что выключение было легаси.
+Acceptance: тест «`SPECIALISTS_COMBINED_ENABLED=false` → enabled=false»; правка `knowledge.blockIngestWindowSegments` в AdminSetting меняет рантайм (без передеплоя); маршрут block-ingest БЕЗ изменений (grep `LlmTaskRoute` block-ingest = deepseek-v4-pro primary, Opus НЕ добавлен); `taskType:'meeting-skeleton'` зарегистрирован в обоих местах llm-router + сид-маршрут есть; `typecheck/lint/build` зелёные. ⚠️ Разработчику: подтвердить прод-значение ENV и что выключение было легаси.
 Закрывает: 🔧4 (рубильник), §9-нарушения нарезки.
 
 ### [ ] Ф2 — Канало-агностичный комбо (chat/Telegram/Bitrix/chatbox) (WP-A)
@@ -301,7 +303,7 @@ Acceptance: после каждого сноса — целевой путь п�
 Acceptance: метрики на `/metrics`; second-brain/prod-deploy-log/flags обновлены; e2e по каналам зелёные.
 
 ## Сквозные аспекты
-- **RBAC/tenant:** все запросы с `tenantId`. **Observability:** Ф12 (метрики+логи), новый воркер/проход без метрик — нарушение. **Errors+idempotency:** скелет/gleaning fail-open; хроносверка идемпотентна (`updateMany WHERE validUntil IS NULL`); дедуп best-effort. **Миграция данных:** новых таблиц нет (enum не трогаем, скелет in-memory); только AdminSetting-сиды + LlmTaskRoute. **Rollout:** всё под Ship-On ON; откат — рубильник комбо + per-этап kill-switch (skeleton/header/gleaning) + Opus-маршрут возвратный. **Тесты:** golden промпта (Ф4/Ф6/Ф7), needle-in-the-middle (Ф5), e2e каналов (Ф2/Ф7), инвариант COMBINED_COVERED (Ф3).
+- **RBAC/tenant:** все запросы с `tenantId`. **Observability:** Ф12 (метрики+логи), новый воркер/проход без метрик — нарушение. **Errors+idempotency:** скелет/gleaning fail-open; хроносверка идемпотентна (`updateMany WHERE validUntil IS NULL`); дедуп best-effort. **Миграция данных:** новых таблиц нет (enum не трогаем, скелет in-memory); только AdminSetting-сиды + LlmTaskRoute. **Rollout:** всё под Ship-On ON; откат — рубильник комбо + per-этап kill-switch (skeleton/header/gleaning). **Тесты:** golden промпта (Ф4/Ф6/Ф7), needle-in-the-middle (Ф5), e2e каналов (Ф2/Ф7), инвариант COMBINED_COVERED (Ф3).
 
 ## Pre-mortem / Риски (из карты изменений §WP, перепроверено)
 - **Рубильник чинится, а в проде `.env=false`** → после фикса комбо выключится. Митигейт: дефолт ON в AdminSetting перебивает; подтвердить с разработчиком (Ф1).
@@ -311,14 +313,14 @@ Acceptance: метрики на `/metrics`; second-brain/prod-deploy-log/flags �
 - **Второй писатель оси (хроносверка)** → только вердикт-провайдер (Ф8, запрещено иначе).
 - **Снос regex до обучения friction** → порядок-гейт Ф4→Ф9→Ф11б (обучить friction ДО сноса — корректность, не тест; без watch, ВР8).
 - **Заморозка клона при ON** → rebuild-enqueue из combo (Ф3) — критичный фикс.
-- **Opus дорог** → tier с замером cost, fallback жив (Ф1).
+- **Движок block-ingest** → остаётся `deepseek-v4-pro` (Вариант A); Opus НЕ ставим (стандарт «НЕ anthropic» + cap `sensitive`<`private` + стоимость на самом частом вызове); качество — Ф4/Ф5/Ф6.
 - **Скелет — инъекция/галлюцинация** → user-data + wrapUserData + fail-open (Ф6).
 - **Снос спайна задач рассинхрон с ТЗ задач** → координировать Ф11(в) с ТЗ задач Ф7 (общий `router.service.ts`).
 
 ## Idempotency / feature-flag / prod-deploy
 - **Idempotency:** хроносверка — `updateMany WHERE validUntil IS NULL`; combined jobId per-meeting/conversation; задачи — externalId (ТЗ задач). Повтор = no-op.
 - **Флаги (реестр `feature-flags.md`):** `knowledge.specialistsCombinedEnabled` (kill-switch, ON); `knowledge.skeletonPassEnabled`/`headerMapEnabled` (kill-switch, ON); `blockIngestGleaningRounds`/`blockIngestWindowOverlapSegments` (knob); пороги конфликтов (knob).
-- **prod-deploy-log:** Шаг 1 (ENV `zBool` + перенос крутилок + новые), Шаг 7 (сиды AdminSetting + LlmTaskRoute Opus/skeleton), Шаг 12 (smoke `meeting-skeleton`-маршрут + combo на чате + grep ProcessDetector в dispatch). Миграций БД нет.
+- **prod-deploy-log:** Шаг 1 (ENV `zBool` + перенос крутилок + новые), Шаг 7 (сиды AdminSetting + LlmTaskRoute `meeting-skeleton`), Шаг 12 (smoke `meeting-skeleton`-маршрут + combo на чате + grep ProcessDetector в dispatch). Миграций БД нет.
 
 ## DoD
 - `bun run typecheck`/`lint`/`build` зелёные; `bunx vitest run` затронутых — зелёные; needle-in-the-middle и golden-фикстуры зелёные.

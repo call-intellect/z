@@ -48,7 +48,6 @@ import {
   MiniDonut,
   MiniSparkline,
 } from "@/ui/components/dashboard/charts";
-import { KpiHero } from "@/ui/components/shared/KpiHero";
 import { PersonSubpagesNav } from "@/ui/components/persons/PersonSubpagesNav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 import { Skeleton } from "@/ui/shadcn/skeleton";
@@ -185,9 +184,6 @@ function PersonPulseContent({
           <MoodTrendCard data={data} isSelf={isSelf} />
           <CheckInsCard data={data} />
         </div>
-      </StaggerSection>
-      <StaggerSection delayMs={180}>
-        <PromisesCard data={data} isSelf={isSelf} />
       </StaggerSection>
       {}
       {!isSelf && (
@@ -339,12 +335,6 @@ function computePulseScore(data: PersonPulse): number | null {
     const greens = moods.filter((p) => p.sentiment === "green").length;
     const yellows = moods.filter((p) => p.sentiment === "yellow").length;
     parts.push((greens + yellows * 0.5) / moods.length);
-  }
-
-  const totalPromises =
-    data.promisesKept14d + data.promisesBroken14d + data.promisesOverdue14d;
-  if (totalPromises > 0) {
-    parts.push(data.promisesReliabilityPercent / 100);
   }
 
   if (parts.length === 0) return null;
@@ -802,81 +792,6 @@ function CheckInsCard({ data }: { data: PersonPulse }) {
   );
 }
 
-function PromisesCard({
-  data,
-  isSelf,
-}: {
-  data: PersonPulse;
-  isSelf: boolean;
-}) {
-  return (
-    <Card className="transition-shadow hover:shadow-md">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <MessageCircle size={16} className="text-accent" />
-          Надёжность обещаний (14 дней)
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid gap-4 md:grid-cols-2 md:items-stretch">
-          <KpiHero
-            label="Reliability"
-            value={`${data.promisesReliabilityPercent}%`}
-            numericValue={data.promisesReliabilityPercent}
-            format={(n) => `${Math.round(n)}%`}
-            delta={data.promisesDelta14d}
-            deltaLabel="за 14 дней"
-            threshold={{ green: 80, yellow: 60 }}
-            className="md:h-full"
-          />
-          <div className="grid grid-cols-3 gap-2 rounded-xl bg-bg-overlay/40 p-4">
-            <PromiseStat
-              label="выполнено"
-              value={data.promisesKept14d}
-              tone="success"
-            />
-            <PromiseStat
-              label="нарушено"
-              value={data.promisesBroken14d}
-              tone="danger"
-            />
-            <PromiseStat
-              label="просрочено"
-              value={data.promisesOverdue14d}
-              tone="warning"
-            />
-          </div>
-        </div>
-        <p className="mt-3 text-[11px] text-fg-tertiary">
-          Учитываются обещания, адресованные этому сотруднику. Reliability =
-          выполнено ÷ (выполнено + нарушено + просрочено).
-        </p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function PromiseStat({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: Tone;
-}) {
-  return (
-    <div>
-      <div className={cn("text-2xl font-semibold tabular-nums", TONE_FG[tone])}>
-        {value}
-      </div>
-      <div className="text-[11px] uppercase tracking-wider text-fg-tertiary">
-        {label}
-      </div>
-    </div>
-  );
-}
-
 function RiskFlagsSection({ data }: { data: PersonPulse }) {
   if (data.riskFlags.length === 0) return null;
   return (
@@ -944,8 +859,6 @@ function riskFlagLabel(type: string): string {
       return "Реже отвечает в чатах";
     case "missed_checkins":
       return "Пропускает чек-ины";
-    case "broken_promises":
-      return "Не выполняет обещания";
     case "workload_overload":
       return "Признаки перегрузки";
     case "meeting_noshows":

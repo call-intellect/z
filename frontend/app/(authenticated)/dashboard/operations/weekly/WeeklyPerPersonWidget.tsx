@@ -7,8 +7,6 @@ import { ApiError } from "@/api/api-error";
 import { weeklyPerPersonApi } from "@/api/weekly-per-person.api";
 import {
   goalContributionDisplay,
-  pluralRu,
-  reliabilityDisplay,
   weeklyPerPersonFromApi,
   weeklyPersonItemFromApi,
   type WeeklyPerPersonUi,
@@ -52,7 +50,7 @@ export function WeeklyPerPersonWidget({
     setAllRows(null);
     setAllError(null);
     weeklyPerPersonApi
-      .get(weekStart, { sort: "reliability", weekEnd })
+      .get(weekStart, { sort: "risk", weekEnd })
       .then((res) => {
         if (cancelled) return;
         setData(weeklyPerPersonFromApi(res));
@@ -74,7 +72,7 @@ export function WeeklyPerPersonWidget({
     setAllLoading(true);
     setAllError(null);
     weeklyPerPersonApi
-      .get(weekStart, { limit: 100, offset: 0, sort: "reliability", weekEnd })
+      .get(weekStart, { limit: 100, offset: 0, sort: "risk", weekEnd })
       .then((res) => {
         setAllRows(weeklyPerPersonFromApi(res).rows);
         setExpanded(true);
@@ -95,7 +93,7 @@ export function WeeklyPerPersonWidget({
         await weeklyPerPersonApi.get(weekStart, {
           limit: 100,
           offset: 0,
-          sort: "reliability",
+          sort: "risk",
           weekEnd,
         }),
       );
@@ -144,11 +142,10 @@ export function WeeklyPerPersonWidget({
   return (
     <GlassCard>
       <CardTitle icon={<Users size={16} />} grad={GRAD.blue}>
-        {title ?? "Кто держит слово — за неделю"}
+        {title ?? "План-факт недели по людям"}
       </CardTitle>
       <p className="mt-1 text-sm text-fg-secondary">
-        {subtitle ??
-          "План-факт по людям: обещания, задачи и чек-ины за неделю."}
+        {subtitle ?? "План-факт по людям: задачи и чек-ины за неделю."}
       </p>
 
       {loading ? (
@@ -162,7 +159,7 @@ export function WeeklyPerPersonWidget({
       ) : !data || data.total === 0 ? (
         <p className="mt-3 rounded border bg-bg-subtle p-4 text-sm text-fg-secondary">
           {emptyHint ??
-            "За эту неделю ещё нет данных по людям — обещания, задачи и чек-ины появятся по мере работы команды."}
+            "За эту неделю ещё нет данных по людям — задачи и чек-ины появятся по мере работы команды."}
         </p>
       ) : (
         <>
@@ -240,21 +237,16 @@ function ReliableColumn({
         >
           ✓
         </span>
-        <h3 className="text-sm font-semibold text-fg-primary">Держат слово</h3>
+        <h3 className="text-sm font-semibold text-fg-primary">В графике</h3>
       </div>
       {rows.length === 0 ? (
         <p className="text-xs text-fg-tertiary">
-          Пока некого выделить — обещания за неделю не закрыты.
+          Пока некого выделить — задачи за неделю не закрыты.
         </p>
       ) : (
         <ul className="space-y-2">
           {rows.map((r) => (
-            <PersonRow
-              key={r.personId}
-              row={r}
-              tone="success"
-              weekStart={weekStart}
-            />
+            <PersonRow key={r.personId} row={r} weekStart={weekStart} />
           ))}
         </ul>
       )}
@@ -282,17 +274,12 @@ function RiskColumn({
       </div>
       {rows.length === 0 ? (
         <p className="text-xs text-fg-tertiary">
-          Срывов и просрочек за неделю не видно.
+          Незакрытых задач за неделю не видно.
         </p>
       ) : (
         <ul className="space-y-2">
           {rows.map((r) => (
-            <PersonRow
-              key={r.personId}
-              row={r}
-              tone="danger"
-              weekStart={weekStart}
-            />
+            <PersonRow key={r.personId} row={r} weekStart={weekStart} />
           ))}
         </ul>
       )}
@@ -302,30 +289,12 @@ function RiskColumn({
 
 function PersonRow({
   row,
-  tone,
   weekStart,
 }: {
   row: WeeklyPersonRowUi;
-  tone: "success" | "danger";
   weekStart: string;
 }) {
   const drill = usePersonItems(weekStart, row.personId);
-  const toneChip =
-    tone === "success"
-      ? "bg-chip-success-bg text-chip-success-fg"
-      : "bg-chip-danger-bg text-chip-danger-fg";
-  const broken = row.promisesBroken + row.promisesOverdue;
-  const reliability = reliabilityDisplay(row);
-  const reliabilityChip =
-    reliability.kind === "low_data"
-      ? "bg-chip-warning-bg text-chip-warning-fg"
-      : reliability.kind === "none"
-        ? "bg-bg-subtle text-fg-tertiary"
-        : toneChip;
-  const reliabilityTitle =
-    reliability.kind === "low_data"
-      ? "Слишком мало обещаний за неделю, чтобы считать надёжность."
-      : "Надёжность: доля сдержанных обещаний за неделю";
   return (
     <li className="rounded-md bg-bg-card">
       <button
@@ -347,42 +316,8 @@ function PersonRow({
                 · {row.departmentName}
               </span>
             ) : null}
-            <span
-              className={`ml-auto rounded px-2 py-0.5 text-[11px] tabular-nums ${reliabilityChip}`}
-              title={reliabilityTitle}
-            >
-              {reliability.label}
-            </span>
           </span>
-          <span className="mt-1 block text-xs text-fg-secondary">
-            {tone === "success" ? (
-              <>
-                Сдержал {row.promisesKept} из {row.promisesGiven}{" "}
-                {pluralRu(row.promisesGiven, [
-                  "обещания",
-                  "обещаний",
-                  "обещаний",
-                ])}
-                .
-              </>
-            ) : broken > 0 ? (
-              <>
-                {row.promisesOverdue > 0
-                  ? `Просрочил ${row.promisesOverdue}`
-                  : `Сорвал ${row.promisesBroken}`}{" "}
-                из {row.promisesGiven}{" "}
-                {pluralRu(row.promisesGiven, [
-                  "обещания",
-                  "обещаний",
-                  "обещаний",
-                ])}
-                .
-              </>
-            ) : (
-              <>Дал {row.promisesGiven}, но ещё не закрыл.</>
-            )}
-          </span>
-          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-fg-tertiary">
+          <span className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-fg-tertiary">
             <span>
               Задачи: {row.tasksDone}
               {row.tasksPlanned > 0 ? `/${row.tasksPlanned}` : ""}
@@ -564,7 +499,6 @@ function AllRowItem({
   weekStart: string;
 }) {
   const drill = usePersonItems(weekStart, row.personId);
-  const reliability = reliabilityDisplay(row);
   return (
     <li className="rounded-md border border-border-subtle bg-bg-card">
       <button
@@ -583,9 +517,6 @@ function AllRowItem({
           {row.departmentName ?? "—"}
         </span>
         <span className="shrink-0 text-xs tabular-nums text-fg-secondary">
-          Сдержал {row.promisesKept}/{row.promisesGiven}
-        </span>
-        <span className="shrink-0 text-xs tabular-nums text-fg-secondary">
           Задачи {row.tasksDone}
           {row.tasksPlanned > 0 ? `/${row.tasksPlanned}` : ""}
         </span>
@@ -599,22 +530,6 @@ function AllRowItem({
         </span>
         <span className="shrink-0 text-[11px]">
           <GoalContributionChip net={row.goalContributionNet} />
-        </span>
-        <span
-          className={`shrink-0 rounded px-2 py-0.5 text-[11px] tabular-nums ${
-            reliability.kind === "low_data"
-              ? "bg-chip-warning-bg text-chip-warning-fg"
-              : reliability.kind === "none"
-                ? "bg-bg-subtle text-fg-tertiary"
-                : "bg-chip-info-bg text-chip-info-fg"
-          }`}
-          title={
-            reliability.kind === "low_data"
-              ? "Слишком мало обещаний за неделю, чтобы считать надёжность."
-              : "Надёжность: доля сдержанных обещаний за неделю"
-          }
-        >
-          {reliability.label}
         </span>
       </button>
       {drill.open ? <PersonItemsDrill drill={drill} /> : null}

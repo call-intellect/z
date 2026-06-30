@@ -82,7 +82,6 @@ export interface DirectorDashboardValueStripDto {
   tasksExtracted: number;
   decisionsExtracted: number;
   questionsAnsweredByMemory: number;
-  commitmentsKept: number;
   tasksResolved: number;
   ideasCollected: number;
 }
@@ -149,7 +148,6 @@ export interface DirectorDashboardDto {
   openQuestions: DirectorDashboardOpenQuestionDto[];
   narrativeSummary: NarrativeSummaryDto | null;
   kpiSentimentIndex: DirectorDashboardKpiDto;
-  kpiCommitmentReliability: DirectorDashboardKpiDto;
   strategicAlignment?: DirectorDashboardStrategicAlignmentDto;
   requiresAction?: DirectorDashboardRequiresActionDto;
   goalsTree?: DirectorDashboardGoalTreeNodeDto[];

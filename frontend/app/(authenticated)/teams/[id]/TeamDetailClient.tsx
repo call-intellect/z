@@ -180,7 +180,7 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
       </header>
 
       {}
-      <section className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
+      <section className="mb-8">
         <KpiHero
           label="Настроение команды · 7 дней"
           value={formatSigned(data.sentimentIndex)}
@@ -188,15 +188,6 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
           format={(n) => formatSigned(Math.round(n))}
           trend={data.sentimentTrend}
           threshold={{ green: 30, yellow: 0 }}
-        />
-        <KpiHero
-          label="Надёжность обещаний · 14 дней"
-          value={`${data.commitmentReliabilityPercent}%`}
-          numericValue={data.commitmentReliabilityPercent}
-          format={(n) => `${Math.round(n)}%`}
-          delta={data.commitmentDelta14d}
-          deltaLabel="за 14 дней"
-          threshold={{ green: 80, yellow: 60 }}
         />
       </section>
 
@@ -224,7 +215,7 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
           Цели команды ({data.goals.length})
         </SectionTitle>
         {data.goals.length === 0 ? (
-          <EmptyState text="Привязка целей к команде появится в Wave 6.5 (Promise Network). Пока цели связаны с автором, не с отделом." />
+          <EmptyState text="Привязка целей к команде появится позже. Пока цели связаны с автором, не с отделом." />
         ) : (
           <div className="overflow-hidden rounded-xl bg-bg-card shadow-card-soft">
             <ul className="divide-y divide-border-subtle">

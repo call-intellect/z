@@ -3,8 +3,6 @@ import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 
-import { CommitmentReliabilityService } from './commitment-reliability.service';
-
 export interface TeamDetailMemberDto {
   personId: string;
   personName: string;
@@ -39,8 +37,6 @@ export interface TeamDetailDto {
 
   sentimentIndex: number;
   sentimentTrend: 'up' | 'flat' | 'down';
-  commitmentReliabilityPercent: number;
-  commitmentDelta14d: number | null;
 
   goals: TeamDetailGoalDto[];
   topThemes: TeamDetailThemeDto[];
@@ -55,8 +51,6 @@ export class TeamDetailService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RedisService) private readonly redis: RedisService,
-    @Inject(CommitmentReliabilityService)
-    private readonly commits: CommitmentReliabilityService,
   ) {}
 
   async getDetail(args: { tenantId: string; departmentId: string }): Promise<TeamDetailDto> {
@@ -176,12 +170,6 @@ export class TeamDetailService {
       else if (delta < -TeamDetailService.TREND_THRESHOLD) sentimentTrend = 'down';
     }
 
-    const commitRes = await this.commits.getReliability({
-      tenantId: args.tenantId,
-      scope: 'team',
-      scopeId: args.departmentId,
-    });
-
     const goalRows =
       personIds.length === 0
         ? []
@@ -260,8 +248,6 @@ export class TeamDetailService {
       members,
       sentimentIndex,
       sentimentTrend,
-      commitmentReliabilityPercent: commitRes.reliabilityPercent,
-      commitmentDelta14d: commitRes.delta14d,
       goals: goalsDto,
       topThemes,
     };

@@ -35,21 +35,12 @@ describe('ValueRecapService', () => {
       decision: { count: vi.fn(async () => 8) },
       ideaBlock: {
         count: vi.fn(async () => 15),
-        findMany: vi.fn(async () => [
-          { commitmentStatus: 'fulfilled', commitmentDueDate: new Date('2026-05-10') },
-          { commitmentStatus: 'fulfilled', commitmentDueDate: new Date('2026-05-11') },
-          { commitmentStatus: 'missed', commitmentDueDate: new Date('2026-05-12') },
-          { commitmentStatus: 'fulfilled', commitmentDueDate: new Date('2026-05-13') },
-        ]),
       },
       dailyCheckIn: { count: vi.fn(async () => 60) },
       idea: { count: vi.fn(async () => 3) },
       valueRecapSnapshot: { findUnique, upsert },
     };
 
-    const cfg = {
-      getDynamic: vi.fn(async (_k: string, _e: string, def: unknown) => def),
-    };
     const metrics = { incValueRecapBuilt: vi.fn() };
     const llm = {
       call: vi.fn(async () => {
@@ -73,7 +64,6 @@ describe('ValueRecapService', () => {
     };
     const svc = new ValueRecapService(
       prisma as never,
-      cfg as never,
       metrics as never,
       llm as never,
       chatFeedback as never,
@@ -88,8 +78,6 @@ describe('ValueRecapService', () => {
     expect(res.payload.routine.meetingsAutoProtocoled).toBe(12);
     expect(res.payload.routine.tasksExtracted).toBe(40);
     expect(res.payload.routine.questionsAnsweredWithCitation).toBe(22);
-    expect(res.payload.team.reliabilityPercent).toBe(75);
-    expect(res.payload.team.reliabilityDenominator).toBe(4);
     expect(res.payload.routine.decisionsExtracted).toBe(8);
     expect(findForbiddenMetricKeys(res.payload)).toEqual([]);
     expect(metrics.incValueRecapBuilt).toHaveBeenCalledTimes(1);
@@ -142,7 +130,6 @@ describe('ValueRecapService', () => {
       };
       const svc = new ValueRecapService(
         prisma as never,
-        {} as never,
         {} as never,
         {} as never,
         {} as never,

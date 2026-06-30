@@ -25,13 +25,7 @@ import { Button } from "@/ui/shadcn/button";
 import { Skeleton } from "@/ui/shadcn/skeleton";
 import { cn } from "@/ui/shadcn/lib/utils";
 
-type SortKey =
-  | "name"
-  | "size"
-  | "sentiment"
-  | "promises"
-  | "conflicts"
-  | "overall";
+type SortKey = "name" | "size" | "sentiment" | "conflicts" | "overall";
 
 type SortDir = "asc" | "desc";
 
@@ -177,14 +171,6 @@ export function TeamsListClient() {
                   align="center"
                 />
                 <SortHeader
-                  label="Обещания"
-                  thisKey="promises"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onClick={toggleSort}
-                  align="center"
-                />
-                <SortHeader
                   label="Конфликты"
                   thisKey="conflicts"
                   sortKey={sortKey}
@@ -268,7 +254,7 @@ function TeamRow({ row }: { row: TeamHealthRowDomain }) {
           </Link>
         </td>
         <td className="px-3 py-3 text-center text-xs">{row.size}</td>
-        <td colSpan={4} className="px-3 py-3 text-center text-xs">
+        <td colSpan={3} className="px-3 py-3 text-center text-xs">
           Слишком маленький отдел
         </td>
       </tr>
@@ -291,9 +277,6 @@ function TeamRow({ row }: { row: TeamHealthRowDomain }) {
       </td>
       <td className="px-3 py-3 text-center">
         <AttrChip attr={row.sentiment} formatter={formatSigned} />
-      </td>
-      <td className="px-3 py-3 text-center">
-        <AttrChip attr={row.promises} formatter={(v) => `${v}%`} />
       </td>
       <td className="px-3 py-3 text-center">
         <AttrChip attr={row.conflicts} formatter={(v) => String(v)} />
@@ -334,17 +317,13 @@ function AttrChip({
 }
 
 function OverallChip({ row }: { row: TeamHealthRowDomain }) {
-  const tones: HealthToneDomain[] = [
-    row.sentiment.tone,
-    row.promises.tone,
-    row.conflicts.tone,
-  ];
+  const tones: HealthToneDomain[] = [row.sentiment.tone, row.conflicts.tone];
   const counts = { success: 0, warning: 0, danger: 0, neutral: 0 };
   for (const t of tones) counts[t]++;
   const overall: HealthToneDomain =
-    counts.danger >= 2
+    counts.danger >= 1
       ? "danger"
-      : counts.danger >= 1 || counts.warning >= 2
+      : counts.warning >= 1
         ? "warning"
         : "success";
   const label =
@@ -378,16 +357,10 @@ function keyValue(row: TeamHealthRowDomain, key: SortKey): number | string {
       return row.size;
     case "sentiment":
       return -TONE_RANK[row.sentiment.tone] * 1000 - row.sentiment.value;
-    case "promises":
-      return -TONE_RANK[row.promises.tone] * 1000 - row.promises.value;
     case "conflicts":
       return TONE_RANK[row.conflicts.tone] * 1000 + row.conflicts.value;
     case "overall": {
-      const tones = [
-        row.sentiment.tone,
-        row.promises.tone,
-        row.conflicts.tone,
-      ];
+      const tones = [row.sentiment.tone, row.conflicts.tone];
       const score = tones.reduce((acc, t) => acc + TONE_RANK[t], 0);
       return -score;
     }

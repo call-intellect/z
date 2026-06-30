@@ -4,7 +4,7 @@ import type { OperationsOverviewDomain } from "@/domain/operations-dashboard";
 export type ZoneTone = "ok" | "warn" | "danger" | "neutral";
 
 export interface OverviewZone {
-  key: "team" | "deals" | "goal" | "blockers";
+  key: "team" | "goal" | "blockers";
   title: string;
   value: string;
   caption?: string;
@@ -17,13 +17,6 @@ function teamTone(greenShare: number, totalCheckIns: number): ZoneTone {
   if (totalCheckIns === 0) return "neutral";
   if (greenShare >= 0.7) return "ok";
   if (greenShare >= 0.4) return "warn";
-  return "danger";
-}
-
-function reliabilityTone(percent: number | null): ZoneTone {
-  if (percent === null) return "neutral";
-  if (percent >= 80) return "ok";
-  if (percent >= 60) return "warn";
   return "danger";
 }
 
@@ -66,13 +59,6 @@ export function mainGoalPercent(
   return null;
 }
 
-export function commitmentReliabilityPercent(
-  director: DirectorDashboardDomain | null,
-): number | null {
-  const v = director?.kpiCommitmentReliability?.value;
-  return v === null || v === undefined ? null : Math.round(v);
-}
-
 export function overviewZonesFromDomain(
   director: DirectorDashboardDomain | null,
   operations: OperationsOverviewDomain | null,
@@ -88,16 +74,6 @@ export function overviewZonesFromDomain(
     caption: totalCheckIns > 0 ? "в добром настрое" : "нет чек-инов за неделю",
     tone: teamTone(greenShare, totalCheckIns),
     href: "/dashboard/operations",
-  };
-
-  const reliability = commitmentReliabilityPercent(director);
-  const dealsZone: OverviewZone = {
-    key: "deals",
-    title: "Дела",
-    value: reliability === null ? "—" : `${reliability}%`,
-    caption: "обещания держим",
-    tone: reliabilityTone(reliability),
-    href: "/dashboard/operations/weekly",
   };
 
   const goalPct = mainGoalPercent(director);
@@ -121,7 +97,7 @@ export function overviewZonesFromDomain(
     href: "/dashboard/operations",
   };
 
-  return [teamZone, dealsZone, goalZone, blockersZone];
+  return [teamZone, goalZone, blockersZone];
 }
 
 export function isOverviewColdStart(

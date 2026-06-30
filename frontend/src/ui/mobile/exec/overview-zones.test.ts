@@ -32,7 +32,6 @@ function makeDirector(
     openQuestions: [],
     narrativeSummary: null,
     kpiSentimentIndex: null,
-    kpiCommitmentReliability: null,
     strategicAlignment: null,
     requiresAction: null,
     goalsTree: null,
@@ -43,7 +42,6 @@ function makeDirector(
       tasksExtracted: 0,
       decisionsExtracted: 0,
       questionsAnsweredByMemory: 0,
-      commitmentsKept: 0,
       tasksResolved: 0,
       ideasCollected: 0,
     },
@@ -103,14 +101,9 @@ function makeOperations(
 }
 
 describe("overviewZonesFromDomain", () => {
-  it("возвращает ровно 4 зоны в порядке Команда/Дела/Главная цель/Что мешает", () => {
+  it("возвращает ровно 3 зоны в порядке Команда/Главная цель/Что мешает", () => {
     const zones = overviewZonesFromDomain(makeDirector(), makeOperations());
-    expect(zones.map((z) => z.key)).toEqual([
-      "team",
-      "deals",
-      "goal",
-      "blockers",
-    ]);
+    expect(zones.map((z) => z.key)).toEqual(["team", "goal", "blockers"]);
   });
 
   it("Команда: greenShare 0.8 → 80% и тон ok", () => {
@@ -137,25 +130,6 @@ describe("overviewZonesFromDomain", () => {
     )!;
     expect(team.value).toBe("—");
     expect(team.tone).toBe("neutral");
-  });
-
-  it("Дела: commitmentReliability 90% → ok, 50% → danger", () => {
-    const ok = overviewZonesFromDomain(
-      makeDirector({
-        kpiCommitmentReliability: { value: 90, sparkline: [], delta: null },
-      }),
-      makeOperations(),
-    ).find((z) => z.key === "deals")!;
-    expect(ok.value).toBe("90%");
-    expect(ok.tone).toBe("ok");
-
-    const bad = overviewZonesFromDomain(
-      makeDirector({
-        kpiCommitmentReliability: { value: 50, sparkline: [], delta: null },
-      }),
-      makeOperations(),
-    ).find((z) => z.key === "deals")!;
-    expect(bad.tone).toBe("danger");
   });
 
   it("Главная цель: strategicAlignment.average 0.75 → 75% (gaugePercent)", () => {

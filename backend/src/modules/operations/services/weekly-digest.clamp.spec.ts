@@ -7,11 +7,9 @@ import { clampWeekVerdict, computeWeekVerdictSignals } from './weekly-digest.ser
 
 function emptyTeam(over?: Partial<WeekCompanyPackage['team']>): WeekCompanyPackage['team'] {
   return {
-    reliabilityPercent: null,
     tasksDone: 0,
     tasksPlanned: 0,
     tasksNotDone: 0,
-    topRisk: [],
     ...over,
   };
 }

@@ -246,11 +246,9 @@ export interface MonthCompanyPackageWeek {
 }
 
 export interface MonthCompanyPackageTeam {
-  reliabilityPercent: number | null;
   tasksDone: number;
   tasksPlanned: number;
   tasksNotDone: number;
-  topRisk: Array<{ personName: string; broken: number; overdue: number }>;
 }
 
 export interface MonthCompanyPackageBlocker {
@@ -321,18 +319,11 @@ export function buildMonthCompanyUserMessage(pkg: MonthCompanyPackage): string {
   }
 
   lines.push('');
-  lines.push('Команда за месяц (план↔факт, надёжность):');
+  lines.push('Команда за месяц (план↔факт):');
   lines.push(
-    `  надёжность ${pkg.team.reliabilityPercent ?? '—'}%, задачи план→факт ${pkg.team.tasksDone} ` +
+    `  задачи план→факт ${pkg.team.tasksDone} ` +
       `из ${pkg.team.tasksPlanned} (не сделано ${pkg.team.tasksNotDone}).`,
   );
-  if (pkg.team.topRisk.length > 0) {
-    lines.push(
-      `  По риску: ${pkg.team.topRisk
-        .map((r) => `${r.personName} (сорвал ${r.broken}, просрочил ${r.overdue})`)
-        .join('; ')}.`,
-    );
-  }
 
   if (pkg.repeatedBlockers.length > 0) {
     lines.push('');
@@ -426,7 +417,7 @@ export function buildFallbackMonthMarkdown(pkg: MonthCompanyPackage): string {
   lines.push('');
   lines.push('## Команда');
   lines.push(
-    `Надёжность ${pkg.team.reliabilityPercent ?? '—'}%, задачи план→факт ${pkg.team.tasksDone} ` +
+    `Задачи план→факт ${pkg.team.tasksDone} ` +
       `из ${pkg.team.tasksPlanned} (не сделано ${pkg.team.tasksNotDone}).`,
   );
 

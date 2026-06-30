@@ -131,7 +131,6 @@ export const SAMPLE_STORY_DATASET = {
   | 'strategicAlignment'
   | 'isEmpty'
   | 'kpiSentimentIndex'
-  | 'kpiCommitmentReliability'
   | 'valueStrip'
   | 'mainReworkEnabled'
 >;

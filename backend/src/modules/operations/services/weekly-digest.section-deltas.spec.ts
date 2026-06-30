@@ -71,7 +71,6 @@ function buildSvc(overrides: {
       weekEnd: WEEK_END,
       generatedAt: '',
       total: 0,
-      topReliable: [],
       topRisk: [],
       rows: [],
     }),

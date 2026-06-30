@@ -8,7 +8,7 @@ export const VALUE_RECAP_NARRATIVE_SYSTEM_PROMPT = [
   '  - Только твёрдые данные из ввода. НИЧЕГО не выдумывай.',
   '  - НИКАКИХ оценок в рублях, часах или деньгах. Не пиши «сэкономлено X рублей/часов» — этих данных нет.',
   '  - НЕ сравнивай «было до системы» — контрольной группы нет, такое сравнение запрещено.',
-  '  - Мягкие цифры (надёжность обещаний, доля «ответ помог») подавай со словом «оценка» и всегда с знаменателем.',
+  '  - Мягкие цифры (доля «ответ помог») подавай со словом «оценка» и всегда с знаменателем.',
   '  - Ведущая мысль — «снятая рутина» (что система собрала и оформила сама): встречи, задачи, решения, статусы, ответы по памяти.',
   '  - Тон спокойный, деловой, без восторгов и алармизма. 2-4 коротких предложения. Без markdown, без списков.',
 ].join('\n');
@@ -25,8 +25,6 @@ export interface ValueRecapNarrativePromptInput {
     ideasShipped: number;
   };
   team: {
-    reliabilityPercent: number | null;
-    reliabilityDenominator: number;
     chatHelpedRatePercent: number | null;
     chatRated: number;
   };
@@ -56,13 +54,6 @@ export function buildValueRecapNarrativeUserMessage(input: ValueRecapNarrativePr
   lines.push('');
   lines.push('Команда (оценочные показатели, всегда со знаменателем):');
   lines.push(
-    `  надёжность обещаний: ${
-      t.reliabilityPercent === null
-        ? 'мало данных'
-        : `оценка ${t.reliabilityPercent}% (знаменатель ${t.reliabilityDenominator})`
-    }`,
-  );
-  lines.push(
     `  доля «ответ помог»: ${
       t.chatHelpedRatePercent === null
         ? 'мало данных'
@@ -81,7 +72,6 @@ export function buildValueRecapNarrativeUserMessage(input: ValueRecapNarrativePr
 
 export function buildValueRecapFallbackNarrative(input: ValueRecapNarrativePromptInput): string {
   const r = input.routine;
-  const t = input.team;
   const parts: string[] = [];
   parts.push(
     `За ${input.periodYm} система собрала и оформила: встреч ${r.meetingsAutoProtocoled}, ` +
@@ -92,11 +82,6 @@ export function buildValueRecapFallbackNarrative(input: ValueRecapNarrativePromp
     `Вопросов отвечено памятью с привязкой к источнику: ${r.questionsAnsweredWithCitation}; ` +
       `идей доведено до релиза: ${r.ideasShipped}.`,
   );
-  if (t.reliabilityPercent !== null) {
-    parts.push(
-      `Надёжность обещаний (оценка): ${t.reliabilityPercent}% при знаменателе ${t.reliabilityDenominator}.`,
-    );
-  }
   return parts.join(' ').slice(0, 1_500);
 }
 

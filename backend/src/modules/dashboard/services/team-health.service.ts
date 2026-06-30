@@ -4,8 +4,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { OperationsDashboardService } from '../../operations/services/operations-dashboard.service';
 
-import { CommitmentReliabilityService } from './commitment-reliability.service';
-
 export type HealthTone = 'success' | 'warning' | 'danger' | 'neutral';
 
 export interface TeamHealthAttrDto {
@@ -35,7 +33,6 @@ export interface TeamHealthRowDto {
   size: number;
   belowCohort: boolean;
   sentiment: TeamHealthAttrDto;
-  promises: TeamHealthAttrDto;
   conflicts: TeamHealthAttrDto;
   healthSummary?: TeamHealthSummaryDto | null;
 }
@@ -56,8 +53,6 @@ export class TeamHealthService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RedisService) private readonly redis: RedisService,
-    @Inject(CommitmentReliabilityService)
-    private readonly commits: CommitmentReliabilityService,
     @Inject(OperationsDashboardService)
     private readonly ops: OperationsDashboardService,
   ) {}
@@ -127,20 +122,6 @@ export class TeamHealthService {
 
       const sentiment = this.computeSentiment(personIds, sentimentByPerson);
 
-      const promisesRes = await this.commits.getReliability({
-        tenantId: args.tenantId,
-        scope: 'team',
-        scopeId: dept.id,
-      });
-      const promises: TeamHealthAttrDto = {
-        value: promisesRes.reliabilityPercent,
-        tone: this.tonePromises(promisesRes.reliabilityPercent),
-        delta: promisesRes.delta14d,
-        ...(promisesRes.delta14d !== null && {
-          trend: this.deltaToTrend(promisesRes.delta14d / 100),
-        }),
-      };
-
       const conflictsInDept = conflictLinks.filter(
         (l) =>
           (l.fromEntityId && entityIds.has(l.fromEntityId)) ||
@@ -157,7 +138,6 @@ export class TeamHealthService {
         size,
         belowCohort: false,
         sentiment,
-        promises,
         conflicts,
         healthSummary: this.parseHealthSummary(dept.healthSummaryJson),
       });
@@ -214,12 +194,6 @@ export class TeamHealthService {
     return 'danger';
   }
 
-  private tonePromises(v: number): HealthTone {
-    if (v >= 80) return 'success';
-    if (v >= 60) return 'warning';
-    return 'danger';
-  }
-
   private toneConflicts(v: number): HealthTone {
     if (v === 0) return 'success';
     if (v <= 2) return 'warning';
@@ -269,7 +243,6 @@ export class TeamHealthService {
       size,
       belowCohort: true,
       sentiment: neutral,
-      promises: neutral,
       conflicts: neutral,
       healthSummary: null,
     };

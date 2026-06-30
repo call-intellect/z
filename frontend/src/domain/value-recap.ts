@@ -137,11 +137,6 @@ export function valueRecapFromApi(
   };
 }
 
-export function reliabilityText(team: ValueRecapTeamApi): string {
-  if (team.reliabilityPercent === null) return "мало данных";
-  return `${Math.round(team.reliabilityPercent)}% (из ${team.reliabilityDenominator})`;
-}
-
 export function chatHelpedText(team: ValueRecapTeamApi): string {
   if (team.chatHelpedRatePercent === null) return "мало оценок";
   return `${Math.round(team.chatHelpedRatePercent)}% (из ${team.chatRated} оценок)`;

@@ -52,7 +52,7 @@ export class MyWeeklyPerPersonController {
 
   @Get('weekly-per-person')
   @ApiOperation({
-    summary: 'Мой недельный план-факт (self-scope: моя строка + среднее команды)',
+    summary: 'Мой недельный план-факт (self-scope: моя строка)',
   })
   async get(
     @CurrentOrg() tenantId: string | undefined,
@@ -83,13 +83,12 @@ export class MyWeeklyPerPersonController {
         weekStart: q.weekStart,
         limit: SELF_LIMIT,
         offset: 0,
-        sort: 'reliability',
+        sort: 'risk',
       },
       new Date(),
     );
 
     const row = dto.rows.find((r) => r.personId === selfPersonId) ?? null;
-    const teamAverageReliabilityPercent = this.averageReliability(dto.rows);
 
     this.metrics.incWeeklyPerPersonSelfViewServed({
       tenantTop: tenantTopOf(tenantId!),
@@ -99,7 +98,6 @@ export class MyWeeklyPerPersonController {
       weekStart: dto.weekStart,
       weekEnd: dto.weekEnd,
       row,
-      teamAverageReliabilityPercent,
     };
   }
 
@@ -134,15 +132,6 @@ export class MyWeeklyPerPersonController {
     );
   }
 
-  private averageReliability(
-    rows: ReadonlyArray<{ reliabilityPercent: number | null }>,
-  ): number | null {
-    const values = rows.map((r) => r.reliabilityPercent).filter((v): v is number => v !== null);
-    if (values.length === 0) return null;
-    const sum = values.reduce((acc, v) => acc + v, 0);
-    return Math.round(sum / values.length);
-  }
-
   private empty(weekStart: string): MyWeeklyPerPersonDto {
     const weekStartDate = new Date(`${weekStart}T00:00:00.000Z`);
     const weekEndDate = new Date(weekStartDate.getTime() + 6 * 24 * 60 * 60 * 1000);
@@ -153,7 +142,6 @@ export class MyWeeklyPerPersonController {
       weekStart,
       weekEnd: `${y}-${m}-${d}`,
       row: null,
-      teamAverageReliabilityPercent: null,
     };
   }
 

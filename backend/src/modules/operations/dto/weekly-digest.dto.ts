@@ -43,12 +43,12 @@ export interface WeeklyKpiDeltaDto {
 export interface WeeklyTeamDynamicsRowDto {
   departmentId: string;
   departmentName: string;
-  signal: 'sentiment_improved' | 'sentiment_dropped' | 'promises_improved' | 'promises_dropped';
+  signal: 'sentiment_improved' | 'sentiment_dropped';
   detail: string;
 }
 
 export interface WeeklyForecastItemDto {
-  metric: 'sentiment' | 'promises';
+  metric: 'sentiment';
   projection: string;
   confidence: 'low' | 'medium';
 }

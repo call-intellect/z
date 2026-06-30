@@ -453,11 +453,9 @@ export class WeeklyDigestService {
     }
 
     let team: WeekCompanyPackage['team'] = {
-      reliabilityPercent: null,
       tasksDone: 0,
       tasksPlanned: 0,
       tasksNotDone: 0,
-      topRisk: [],
     };
     try {
       const pp = await this.perPerson.compute(
@@ -474,25 +472,15 @@ export class WeeklyDigestService {
       let tasksDone = 0;
       let tasksPlanned = 0;
       let tasksNotDone = 0;
-      let kept = 0;
-      let denom = 0;
       for (const r of pp.rows) {
         tasksDone += r.tasksDone;
         tasksPlanned += r.tasksPlanned;
         tasksNotDone += r.tasksNotDone;
-        kept += r.promisesKept;
-        denom += r.promisesKept + r.promisesBroken + r.promisesOverdue;
       }
       team = {
-        reliabilityPercent: denom > 0 ? Math.round((kept / denom) * 100) : null,
         tasksDone,
         tasksPlanned,
         tasksNotDone,
-        topRisk: pp.topRisk.slice(0, 3).map((r) => ({
-          personName: r.personName,
-          broken: r.promisesBroken,
-          overdue: r.promisesOverdue,
-        })),
       };
     } catch (err) {
       this.logger.warn(
@@ -873,8 +861,6 @@ export class WeeklyDigestService {
     const [
       curCheckIns,
       prevCheckIns,
-      curCommitments,
-      prevCommitments,
       curBlockerCount,
       prevBlockerCount,
       curInsightCount,
@@ -906,38 +892,6 @@ export class WeeklyDigestService {
           sentiment: true,
           personId: true,
           person: { select: { primaryDepartmentId: true } },
-        },
-      }),
-      this.prisma.ideaBlock.findMany({
-        where: {
-          tenantId: args.tenantId,
-          signalType: 'commitment',
-          commitmentDueDate: { gte: curStartUtc, lte: curEndUtc },
-        },
-        select: {
-          id: true,
-          commitmentStatus: true,
-          commitmentDueDate: true,
-          commitmentRecipientPersonId: true,
-          commitmentRecipient: {
-            select: { id: true, primaryDepartmentId: true },
-          },
-        },
-      }),
-      this.prisma.ideaBlock.findMany({
-        where: {
-          tenantId: args.tenantId,
-          signalType: 'commitment',
-          commitmentDueDate: { gte: prevStartUtc, lte: prevEndUtc },
-        },
-        select: {
-          id: true,
-          commitmentStatus: true,
-          commitmentDueDate: true,
-          commitmentRecipientPersonId: true,
-          commitmentRecipient: {
-            select: { id: true, primaryDepartmentId: true },
-          },
         },
       }),
       this.prisma.ideaBlock.count({
@@ -987,15 +941,11 @@ export class WeeklyDigestService {
     const curSent = computeSentimentIndex(curCheckIns);
     const prevSent = computeSentimentIndex(prevCheckIns);
 
-    const curRel = computeReliabilityPercent(curCommitments);
-    const prevRel = computeReliabilityPercent(prevCommitments);
-
     const curTotal = curCheckIns.length;
     const prevTotal = prevCheckIns.length;
 
     const kpiDeltas: WeeklyKpiDeltaDto[] = [
       buildKpi('Индекс настроения', curSent, prevSent, 'pts'),
-      buildKpi('Надёжность обещаний', curRel, prevRel, '%'),
       buildKpi('Чек-инов всего', curTotal, prevTotal, 'шт'),
     ];
 
@@ -1003,16 +953,12 @@ export class WeeklyDigestService {
       tenantId: args.tenantId,
       curCheckIns,
       prevCheckIns,
-      curCommitments,
-      prevCommitments,
     });
 
     const forecast = await this.buildForecast({
       tenantId: args.tenantId,
       curSent,
       prevSent,
-      curRel,
-      prevRel,
     });
 
     const sectionDeltas: WeeklySectionDeltasDto = {
@@ -1028,8 +974,6 @@ export class WeeklyDigestService {
     tenantId: string;
     curSent: number | null;
     prevSent: number | null;
-    curRel: number | null;
-    prevRel: number | null;
   }): Promise<WeeklyForecastItemDto[]> {
     const since14d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
     const snapshot = await this.prisma.forecastSnapshot.findFirst({
@@ -1046,10 +990,7 @@ export class WeeklyDigestService {
       if (mapped !== null) return mapped;
     }
 
-    return [
-      buildLinearForecast('sentiment', args.curSent, args.prevSent),
-      buildLinearForecast('promises', args.curRel, args.prevRel),
-    ];
+    return [buildLinearForecast('sentiment', args.curSent, args.prevSent)];
   }
 
   private mapForecastSnapshotToDto(payload: unknown): WeeklyForecastItemDto[] | null {
@@ -1081,7 +1022,6 @@ export class WeeklyDigestService {
 
     const result: WeeklyForecastItemDto[] = [];
     result.push(this.shiftToDto('sentiment', byMetric.get('sentiment_index')));
-    result.push(this.shiftToDto('promises', byMetric.get('commitment_kept_ratio')));
     return result;
   }
 
@@ -1098,40 +1038,21 @@ export class WeeklyDigestService {
     }
     const confidence: 'low' | 'medium' = shift.confidence >= 0.5 ? 'medium' : 'low';
     const direction = shift.direction;
-    if (metric === 'sentiment') {
-      if (direction === 'up')
-        return {
-          metric,
-          projection: 'Forecaster: настроение продолжит расти на следующей неделе.',
-          confidence,
-        };
-      if (direction === 'down')
-        return {
-          metric,
-          projection: 'Forecaster: ожидается просадка настроения.',
-          confidence,
-        };
-      return {
-        metric,
-        projection: 'Forecaster: настроение стабильно — особых сдвигов не ожидается.',
-        confidence,
-      };
-    }
     if (direction === 'up')
       return {
         metric,
-        projection: 'Forecaster: надёжность обещаний продолжит расти.',
+        projection: 'Forecaster: настроение продолжит расти на следующей неделе.',
         confidence,
       };
     if (direction === 'down')
       return {
         metric,
-        projection: 'Forecaster: ожидается просадка надёжности обещаний.',
+        projection: 'Forecaster: ожидается просадка настроения.',
         confidence,
       };
     return {
       metric,
-      projection: 'Forecaster: надёжность обещаний стабильна.',
+      projection: 'Forecaster: настроение стабильно — особых сдвигов не ожидается.',
       confidence,
     };
   }
@@ -1148,16 +1069,6 @@ export class WeeklyDigestService {
       personId: string;
       person: { primaryDepartmentId: string | null } | null;
     }>;
-    curCommitments: Array<{
-      commitmentStatus: string | null;
-      commitmentDueDate: Date | null;
-      commitmentRecipient: { primaryDepartmentId: string | null } | null;
-    }>;
-    prevCommitments: Array<{
-      commitmentStatus: string | null;
-      commitmentDueDate: Date | null;
-      commitmentRecipient: { primaryDepartmentId: string | null } | null;
-    }>;
   }): Promise<WeeklyTeamDynamicsRowDto[]> {
     const depIds = new Set<string>();
     for (const c of args.curCheckIns) {
@@ -1165,14 +1076,6 @@ export class WeeklyDigestService {
     }
     for (const c of args.prevCheckIns) {
       if (c.person?.primaryDepartmentId) depIds.add(c.person.primaryDepartmentId);
-    }
-    for (const c of args.curCommitments) {
-      if (c.commitmentRecipient?.primaryDepartmentId)
-        depIds.add(c.commitmentRecipient.primaryDepartmentId);
-    }
-    for (const c of args.prevCommitments) {
-      if (c.commitmentRecipient?.primaryDepartmentId)
-        depIds.add(c.commitmentRecipient.primaryDepartmentId);
     }
 
     if (depIds.size === 0) return [];
@@ -1198,43 +1101,10 @@ export class WeeklyDigestService {
       return map;
     };
 
-    const relByDep = (commits: typeof args.curCommitments) => {
-      const map = new Map<
-        string,
-        { kept: number; broken: number; overdue: number; total: number }
-      >();
-      const now = new Date();
-      for (const c of commits) {
-        const dep = c.commitmentRecipient?.primaryDepartmentId;
-        if (!dep) continue;
-        const v = map.get(dep) ?? { kept: 0, broken: 0, overdue: 0, total: 0 };
-        const status = c.commitmentStatus;
-        if (status === 'fulfilled') {
-          v.kept++;
-          v.total++;
-        } else if (status === 'missed') {
-          v.broken++;
-          v.total++;
-        } else if (
-          (status === 'open' || status === 'asked') &&
-          c.commitmentDueDate &&
-          c.commitmentDueDate < now
-        ) {
-          v.overdue++;
-          v.total++;
-        }
-        map.set(dep, v);
-      }
-      return map;
-    };
-
     const sentCur = sentByDep(args.curCheckIns);
     const sentPrev = sentByDep(args.prevCheckIns);
-    const relCur = relByDep(args.curCommitments);
-    const relPrev = relByDep(args.prevCommitments);
 
     const SENTIMENT_THRESHOLD = 10;
-    const PROMISES_THRESHOLD = 10;
     const MIN_TEAM_SIZE = 3;
 
     type Candidate = {
@@ -1273,31 +1143,6 @@ export class WeeklyDigestService {
           });
         }
       }
-
-      const rc = relCur.get(depId);
-      const rp = relPrev.get(depId);
-      if (rc && rp && rc.total >= MIN_TEAM_SIZE && rp.total >= MIN_TEAM_SIZE) {
-        const curPct = Math.round((rc.kept / Math.max(1, rc.total)) * 100);
-        const prevPct = Math.round((rp.kept / Math.max(1, rp.total)) * 100);
-        const delta = curPct - prevPct;
-        if (delta >= PROMISES_THRESHOLD) {
-          candidates.push({
-            depId,
-            depName: name,
-            signal: 'promises_improved',
-            delta,
-            detail: `Обещания +${delta} п.п. (${prevPct}% → ${curPct}%); ${rc.total} обещаний`,
-          });
-        } else if (delta <= -PROMISES_THRESHOLD) {
-          candidates.push({
-            depId,
-            depName: name,
-            signal: 'promises_dropped',
-            delta,
-            detail: `Обещания ${delta} п.п. (${prevPct}% → ${curPct}%); ${rc.total} обещаний`,
-          });
-        }
-      }
     }
 
     const sentUp = candidates
@@ -1308,16 +1153,8 @@ export class WeeklyDigestService {
       .filter((c) => c.signal === 'sentiment_dropped')
       .sort((a, b) => a.delta - b.delta)
       .slice(0, 2);
-    const promUp = candidates
-      .filter((c) => c.signal === 'promises_improved')
-      .sort((a, b) => b.delta - a.delta)
-      .slice(0, 1);
-    const promDown = candidates
-      .filter((c) => c.signal === 'promises_dropped')
-      .sort((a, b) => a.delta - b.delta)
-      .slice(0, 1);
 
-    return [...sentUp, ...sentDown, ...promUp, ...promDown].slice(0, 6).map((c) => ({
+    return [...sentUp, ...sentDown].slice(0, 6).map((c) => ({
       departmentId: c.depId,
       departmentName: c.depName,
       signal: c.signal,
@@ -1443,28 +1280,6 @@ function computeSentimentIndex(checkIns: Array<{ sentiment: string | null }>): n
   return Math.round(((g - r) / total) * 100);
 }
 
-function computeReliabilityPercent(
-  commits: Array<{
-    commitmentStatus: string | null;
-    commitmentDueDate: Date | null;
-  }>,
-): number | null {
-  const now = new Date();
-  let kept = 0;
-  let broken = 0;
-  let overdue = 0;
-  for (const c of commits) {
-    const s = c.commitmentStatus;
-    if (s === 'fulfilled') kept++;
-    else if (s === 'missed') broken++;
-    else if ((s === 'open' || s === 'asked') && c.commitmentDueDate && c.commitmentDueDate < now)
-      overdue++;
-  }
-  const denom = kept + broken + overdue;
-  if (denom === 0) return null;
-  return Math.round((kept / denom) * 100);
-}
-
 function buildKpi(
   label: string,
   current: number | null,
@@ -1491,59 +1306,30 @@ function buildLinearForecast(
   const confidence: 'low' | 'medium' = delta !== null && Math.abs(delta) >= 10 ? 'medium' : 'low';
   const projected = delta !== null && current !== null ? current + delta : current;
 
-  if (metric === 'sentiment') {
-    if (current === null) {
-      return {
-        metric,
-        projection: 'Недостаточно данных для прогноза настроения.',
-        confidence: 'low',
-      };
-    }
-    if (delta === null || delta === 0) {
-      return {
-        metric,
-        projection: 'Настроение стабильно — особых сдвигов не ожидается.',
-        confidence,
-      };
-    }
-    if (delta > 0) {
-      return {
-        metric,
-        projection: `Настроение продолжит расти, ожидаемое значение ~${projected} балл. к концу недели.`,
-        confidence,
-      };
-    }
-    return {
-      metric,
-      projection: `При сохранении тренда настроение может упасть до ~${projected} балл.`,
-      confidence,
-    };
-  }
-
   if (current === null) {
     return {
       metric,
-      projection: 'Недостаточно данных для прогноза по обещаниям.',
+      projection: 'Недостаточно данных для прогноза настроения.',
       confidence: 'low',
     };
   }
   if (delta === null || delta === 0) {
     return {
       metric,
-      projection: 'Надёжность обещаний стабильна — особых сдвигов не ожидается.',
+      projection: 'Настроение стабильно — особых сдвигов не ожидается.',
       confidence,
     };
   }
   if (delta > 0) {
     return {
       metric,
-      projection: `Надёжность обещаний продолжит расти, ожидаемое значение ~${projected}% к концу недели.`,
+      projection: `Настроение продолжит расти, ожидаемое значение ~${projected} балл. к концу недели.`,
       confidence,
     };
   }
   return {
     metric,
-    projection: `При сохранении тренда надёжность обещаний может упасть до ~${projected}%.`,
+    projection: `При сохранении тренда настроение может упасть до ~${projected} балл.`,
     confidence,
   };
 }

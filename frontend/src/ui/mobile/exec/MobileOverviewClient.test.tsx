@@ -62,7 +62,6 @@ function director(
     openQuestions: [],
     narrativeSummary: null,
     kpiSentimentIndex: null,
-    kpiCommitmentReliability: { value: 88, sparkline: [], delta: null },
     strategicAlignment: { average: 0.72, goalsCount: 3, alertGoals: [] },
     requiresAction: {
       total: 0,
@@ -76,7 +75,6 @@ function director(
       tasksExtracted: 12,
       decisionsExtracted: 3,
       questionsAnsweredByMemory: 7,
-      commitmentsKept: 9,
       tasksResolved: 0,
       ideasCollected: 0,
     },
@@ -136,7 +134,7 @@ function operations(
 }
 
 describe("MobileOverviewClient", () => {
-  it("(а) с данными — 4 зоны + «Кора за неделю» + «Спросить»", () => {
+  it("(а) с данными — 3 зоны + «Кора за неделю» + «Спросить»", () => {
     directorState = { data: director(), error: undefined, isLoading: false };
     operationsState = {
       data: operations(),
@@ -146,7 +144,7 @@ describe("MobileOverviewClient", () => {
     render(<MobileOverviewClient />);
 
     expect(screen.getByText("Команда")).toBeInTheDocument();
-    expect(screen.getByText("Дела")).toBeInTheDocument();
+    expect(screen.queryByText("Дела")).toBeNull();
     expect(screen.getByText("Главная цель")).toBeInTheDocument();
     expect(screen.getByText("Что мешает")).toBeInTheDocument();
     expect(screen.getByText("Кора за неделю")).toBeInTheDocument();

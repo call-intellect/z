@@ -4,12 +4,6 @@ export interface WeeklyPersonRowApi {
   personId: string;
   personName: string;
   departmentName: string | null;
-  promisesGiven: number;
-  promisesKept: number;
-  promisesBroken: number;
-  promisesOverdue: number;
-  promisesNoAnswer: number;
-  reliabilityPercent: number | null;
   tasksDone: number;
   tasksPlanned: number;
   tasksNotDone: number;
@@ -27,7 +21,7 @@ export interface WeeklyPerPersonApi {
   rows: WeeklyPersonRowApi[];
 }
 
-export type WeeklyPersonItemKindApi = "task" | "commitment" | "checkin";
+export type WeeklyPersonItemKindApi = "task" | "checkin";
 
 export type WeeklyPersonItemFactStatusApi =
   | "done"
@@ -59,7 +53,7 @@ export const weeklyPerPersonApi = {
     opts?: {
       limit?: number;
       offset?: number;
-      sort?: "reliability" | "risk";
+      sort?: "risk";
       weekEnd?: string;
     },
   ) => {

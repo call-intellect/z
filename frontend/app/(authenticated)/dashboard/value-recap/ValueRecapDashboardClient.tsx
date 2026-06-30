@@ -20,7 +20,6 @@ import { currentPeriod } from "@/domain/period";
 import {
   chatHelpedText,
   formatPeriodYm,
-  reliabilityText,
   valueRecapFromApi,
   type ValueRecapDomain,
 } from "@/domain/value-recap";
@@ -320,7 +319,6 @@ function VerdictBar({ domain }: { domain: ValueRecapDomain }) {
 
 function TeamLayer({ team }: { team: ValueRecapTeamApi }) {
   const items: { label: string; value: string }[] = [
-    { label: "Надёжность обещаний", value: reliabilityText(team) },
     { label: "Чат помог", value: chatHelpedText(team) },
   ];
   return (
@@ -340,7 +338,7 @@ function TeamLayer({ team }: { team: ValueRecapTeamApi }) {
           оценка Коры, не точная метрика
         </span>
       </div>
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid grid-cols-1 gap-3">
         {items.map((it) => (
           <div
             key={it.label}

@@ -17,9 +17,6 @@ export interface ValueRecapRoutineApi {
 }
 
 export interface ValueRecapTeamApi {
-  reliabilityPercent: number | null;
-  reliabilityDenominator: number;
-  reliabilityDelta: number | null;
   chatHelpedRatePercent: number | null;
   chatRated: number;
   chatAnsweredWithCitation: number;

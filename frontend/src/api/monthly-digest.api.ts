@@ -12,7 +12,6 @@ export interface MonthlyDigestMetricsApi {
   goalsCompleted: number;
   goalsFailed: number;
   topBlockers: Array<{ text: string; count: number }>;
-  reliabilityPercent: number | null;
   tasksDone: number;
   tasksPlanned: number;
   tasksNotDone: number;

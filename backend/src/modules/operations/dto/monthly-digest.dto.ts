@@ -9,7 +9,6 @@ export interface MonthlyDigestMetricsDto {
   goalsCompleted: number;
   goalsFailed: number;
   topBlockers: Array<{ text: string; count: number }>;
-  reliabilityPercent: number | null;
   tasksDone: number;
   tasksPlanned: number;
   tasksNotDone: number;

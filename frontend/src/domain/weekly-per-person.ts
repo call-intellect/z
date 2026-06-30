@@ -6,9 +6,7 @@ import type {
   WeeklyPersonRowApi,
 } from "@/api/weekly-per-person.api";
 
-export interface WeeklyPersonRowUi extends WeeklyPersonRowApi {
-  reliabilityLabel: string;
-}
+export type WeeklyPersonRowUi = WeeklyPersonRowApi;
 
 export interface WeeklyPerPersonUi {
   weekStart: string;
@@ -18,36 +16,6 @@ export interface WeeklyPerPersonUi {
   topReliable: WeeklyPersonRowUi[];
   topRisk: WeeklyPersonRowUi[];
   rows: WeeklyPersonRowUi[];
-}
-
-export function reliabilityLabel(percent: number | null): string {
-  if (percent === null || percent === undefined || Number.isNaN(percent)) {
-    return "—";
-  }
-  return `${Math.round(percent)}%`;
-}
-
-export function reliabilityDisplay(
-  row: Pick<
-    WeeklyPersonRowApi,
-    "reliabilityPercent" | "promisesKept" | "promisesBroken" | "promisesOverdue"
-  >,
-): { kind: "percent" | "low_data" | "none"; label: string } {
-  if (
-    row.reliabilityPercent !== null &&
-    row.reliabilityPercent !== undefined &&
-    !Number.isNaN(row.reliabilityPercent)
-  ) {
-    return {
-      kind: "percent",
-      label: `${Math.round(row.reliabilityPercent)}%`,
-    };
-  }
-  const denom = row.promisesKept + row.promisesBroken + row.promisesOverdue;
-  if (denom > 0) {
-    return { kind: "low_data", label: "мало данных" };
-  }
-  return { kind: "none", label: "—" };
 }
 
 export function goalContributionDisplay(net: number | null): {
@@ -63,10 +31,7 @@ export function goalContributionDisplay(net: number | null): {
 export function weeklyPersonRowFromApi(
   api: WeeklyPersonRowApi,
 ): WeeklyPersonRowUi {
-  return {
-    ...api,
-    reliabilityLabel: reliabilityLabel(api.reliabilityPercent),
-  };
+  return { ...api };
 }
 
 export function weeklyPerPersonFromApi(
@@ -107,7 +72,6 @@ export interface WeeklyPersonItemUi {
 
 const KIND_LABELS: Record<WeeklyPersonItemKindApi, string> = {
   task: "задача",
-  commitment: "обещание",
   checkin: "план дня",
 };
 

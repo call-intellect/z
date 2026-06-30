@@ -26,7 +26,6 @@ const DTO: MonthlyOperationsDigestDto = {
     goalsCompleted: 0,
     goalsFailed: 0,
     topBlockers: [],
-    reliabilityPercent: null,
     tasksDone: 0,
     tasksPlanned: 0,
     tasksNotDone: 0,

@@ -43,22 +43,14 @@ export interface MyWeeklySelfRowDomain {
   personId: string;
   personName: string;
   departmentName: string | null;
-  promisesGiven: number;
-  promisesKept: number;
-  promisesBroken: number;
-  promisesOverdue: number;
-  promisesNoAnswer: number;
-  reliabilityPercent: number | null;
   tasksDone: number;
   checkInsCompleted: number;
-  reliabilityDenominator: number;
 }
 
 export interface MyWeeklySelfDomain {
   weekStart: string;
   weekEnd: string;
   row: MyWeeklySelfRowDomain | null;
-  teamAverageReliabilityPercent: number | null;
 }
 
 function mapMyWeeklyRow(api: MyWeeklyPersonRowApi): MyWeeklySelfRowDomain {
@@ -66,16 +58,8 @@ function mapMyWeeklyRow(api: MyWeeklyPersonRowApi): MyWeeklySelfRowDomain {
     personId: api.personId,
     personName: api.personName,
     departmentName: api.departmentName,
-    promisesGiven: api.promisesGiven,
-    promisesKept: api.promisesKept,
-    promisesBroken: api.promisesBroken,
-    promisesOverdue: api.promisesOverdue,
-    promisesNoAnswer: api.promisesNoAnswer,
-    reliabilityPercent: api.reliabilityPercent,
     tasksDone: api.tasksDone,
     checkInsCompleted: api.checkInsCompleted,
-    reliabilityDenominator:
-      api.promisesKept + api.promisesBroken + api.promisesOverdue,
   };
 }
 
@@ -84,6 +68,5 @@ export function mapMyWeeklySelf(api: MyWeeklyPerPersonApi): MyWeeklySelfDomain {
     weekStart: api.weekStart,
     weekEnd: api.weekEnd,
     row: api.row ? mapMyWeeklyRow(api.row) : null,
-    teamAverageReliabilityPercent: api.teamAverageReliabilityPercent,
   };
 }

@@ -132,7 +132,6 @@ describe('WeeklyDigestService', () => {
           weekEnd: '2026-05-24',
           generatedAt: '',
           total: 0,
-          topReliable: [],
           topRisk: [],
           rows: [],
         },

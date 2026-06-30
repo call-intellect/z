@@ -25,11 +25,6 @@ export function buildValueRecapSlides(payload: ValueRecapPayload | null): ValueR
     title: 'Команда работает лучше',
     subtitle: 'Оценочные показатели — всегда со знаменателем',
     bullets: [
-      `Надёжность обещаний: ${
-        t.reliabilityPercent === null
-          ? 'мало данных'
-          : `оценка ${t.reliabilityPercent}% (знаменатель ${t.reliabilityDenominator})`
-      }`,
       `Доля «ответ помог»: ${
         t.chatHelpedRatePercent === null
           ? 'мало данных'

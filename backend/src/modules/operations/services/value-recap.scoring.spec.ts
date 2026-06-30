@@ -22,9 +22,6 @@ describe('value-recap.scoring', () => {
   };
 
   const team: ValueRecapTeam = {
-    reliabilityPercent: 80,
-    reliabilityDenominator: 10,
-    reliabilityDelta: 5,
     chatHelpedRatePercent: 75,
     chatRated: 12,
     chatAnsweredWithCitation: 22,
@@ -85,10 +82,9 @@ describe('value-recap.scoring', () => {
   });
 
   describe('findForbiddenMetricKeys', () => {
-    it('allow-list: helpedRate/reliabilityPercent НЕ запрещены', () => {
+    it('allow-list: helpedRate НЕ запрещён', () => {
       const ok = {
         helpedRatePercent: 75,
-        reliabilityPercent: 80,
         feedbackCoveragePercent: 40,
         estimate: true,
       };

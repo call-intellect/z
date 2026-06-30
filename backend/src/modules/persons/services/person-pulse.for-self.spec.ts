@@ -28,19 +28,6 @@ function buildPerson() {
   };
 }
 
-function buildCommitsStub() {
-  return {
-    getReliability: vi.fn(async () => ({
-      kept: 3,
-      broken: 1,
-      overdue: 0,
-      reliabilityPercent: 75,
-      delta14d: 5,
-      weeklyTrend: [],
-    })),
-  };
-}
-
 function buildService(opts?: { person?: unknown }) {
   const person = 'person' in (opts ?? {}) ? opts!.person : buildPerson();
 
@@ -59,11 +46,9 @@ function buildService(opts?: { person?: unknown }) {
   );
   const redis = { client: { get: redisGet, set: redisSet } };
 
-  const commits = buildCommitsStub();
+  const svc = new PersonPulseService(prisma as never, redis as never);
 
-  const svc = new PersonPulseService(prisma as never, redis as never, commits as never);
-
-  return { svc, redisGet, redisSet, prisma, commits };
+  return { svc, redisGet, redisSet, prisma };
 }
 
 describe('PersonPulseService.getPulse — self-режим (ТЗ-E Фаза 2)', () => {

@@ -14,7 +14,6 @@ import type {
   TeamHealthRowDomain,
 } from "@/domain/team-health";
 import { teamHealthFromApi } from "@/domain/team-health";
-import { MiniDonut } from "@/ui/components/dashboard/charts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 import { Skeleton } from "@/ui/shadcn/skeleton";
 import { cn } from "@/ui/shadcn/lib/utils";
@@ -36,11 +35,6 @@ const TONE_ROW_HOVER: Record<HealthToneDomain, string> = {
   danger: "hover:bg-chip-danger-bg/10",
   neutral: "hover:bg-bg-overlay/40",
 };
-
-function normalizePromisesScore(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(1, value / 100));
-}
 
 export function TeamHealthGrid({ className }: Props) {
   const { currentOrgId } = useAuth();
@@ -100,7 +94,6 @@ function Grid({ data }: { data: TeamHealthDomain }) {
           <tr className="text-[11px] uppercase tracking-wide text-fg-tertiary">
             <th className="px-2 py-2 text-left font-medium">Команда</th>
             <th className="px-2 py-2 text-center font-medium">Настроение</th>
-            <th className="px-2 py-2 text-center font-medium">Обещания</th>
             <th className="px-2 py-2 text-center font-medium">Конфликты</th>
           </tr>
         </thead>
@@ -122,14 +115,13 @@ function Row({ row }: { row: TeamHealthRowDomain }) {
           <div>{row.departmentName}</div>
           <div className="text-[11px]">{row.size} чел. · нужно ≥3</div>
         </td>
-        <td colSpan={3} className="px-2 py-3 text-center text-xs">
+        <td colSpan={2} className="px-2 py-3 text-center text-xs">
           Слишком маленький отдел — здоровье не считается
         </td>
       </tr>
     );
   }
   const rowHoverClass = TONE_ROW_HOVER[row.sentiment.tone];
-  const promisesScore = normalizePromisesScore(row.promises.value);
   return (
     <tr
       className={cn(
@@ -144,16 +136,6 @@ function Row({ row }: { row: TeamHealthRowDomain }) {
       </td>
       <td className="px-2 py-3 text-center">
         <AttrChip attr={row.sentiment} formatter={formatSigned} />
-      </td>
-      <td className="px-2 py-3">
-        <div className="flex items-center justify-center gap-2">
-          <MiniDonut
-            value={promisesScore}
-            tone={row.promises.tone}
-            size={28}
-            centerLabel={`${row.promises.value}%`}
-          />
-        </div>
       </td>
       <td className="px-2 py-3 text-center">
         <AttrChip attr={row.conflicts} formatter={(v) => String(v)} />

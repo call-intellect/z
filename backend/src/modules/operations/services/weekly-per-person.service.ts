@@ -1,11 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import { TypedConfigService } from '../../../common/config';
-import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
-import { reliabilityOrLowData } from '../../dashboard/services/commitment-reliability.service';
-import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import type {
   WeeklyPerPersonDto,
   WeeklyPersonItemDto,
@@ -13,18 +9,14 @@ import type {
   WeeklyPersonItemsDto,
   WeeklyPersonRowDto,
 } from '../dto/weekly-per-person.dto';
-import { completeCommitmentWhere } from '../utils/commitment-completeness';
 
 const CACHE_TTL_SECONDS = 5 * 60;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TOP_N = 5;
-const DEFAULT_MIN_DENOMINATOR = 3;
 
 interface CommitmentRow {
   id: string;
   commitmentAuthorPersonId: string | null;
-  commitmentStatus: string | null;
-  commitmentDueDate: Date | null;
 }
 
 interface PersonAcc {
@@ -32,11 +24,6 @@ interface PersonAcc {
   personName: string;
   departmentId: string | null;
   userId: string | null;
-  promisesGiven: number;
-  promisesKept: number;
-  promisesBroken: number;
-  promisesOverdue: number;
-  promisesNoAnswer: number;
   tasksDone: number;
   tasksPlanned: number;
   tasksPlannedDone: number;
@@ -52,7 +39,7 @@ export interface WeeklyPerPersonArgs {
   weekEnd?: string;
   limit: number;
   offset: number;
-  sort: 'reliability' | 'risk';
+  sort: 'risk';
 }
 
 export interface WeeklyPersonWeekItemsArgs {
@@ -79,9 +66,6 @@ export class WeeklyPerPersonService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RedisService) private readonly redis: RedisService,
-    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-    @Inject(BusinessMetricsService)
-    private readonly metrics: BusinessMetricsService,
   ) {}
 
   async compute(args: WeeklyPerPersonArgs, now: Date): Promise<WeeklyPerPersonDto> {
@@ -106,12 +90,6 @@ export class WeeklyPerPersonService {
       return cached;
     }
 
-    const minDenom = await this.cfg.getDynamic<number>(
-      'reliability.min_denominator',
-      'RELIABILITY_MIN_DENOMINATOR',
-      DEFAULT_MIN_DENOMINATOR,
-    );
-
     const dto = await this.computeFromDb(
       tenantId,
       weekStart,
@@ -120,9 +98,7 @@ export class WeeklyPerPersonService {
       weekEndStr,
       limit,
       offset,
-      sort,
       now,
-      minDenom,
     );
 
     await this.tryWriteCache(cacheKey, dto);
@@ -154,17 +130,7 @@ export class WeeklyPerPersonService {
       select: { userId: true },
     });
 
-    const [commitmentRows, taskRows, checkInRows] = await Promise.all([
-      this.prisma.ideaBlock.findMany({
-        where: {
-          tenantId,
-          signalType: 'commitment',
-          commitmentAuthorPersonId: personId,
-          commitmentDueDate: { gte: weekStartDate, lte: weekEndDate },
-          ...completeCommitmentWhere(),
-        },
-        select: { name: true, commitmentStatus: true, commitmentDueDate: true },
-      }),
+    const [taskRows, checkInRows] = await Promise.all([
       person?.userId
         ? this.prisma.issue.findMany({
             where: {
@@ -198,18 +164,6 @@ export class WeeklyPerPersonService {
 
     const items: WeeklyPersonItemDto[] = [];
 
-    for (const c of commitmentRows) {
-      const dueMs = c.commitmentDueDate?.getTime();
-      const factStatus = this.commitmentFactStatus(c.commitmentStatus, dueMs, nowMs);
-      items.push({
-        kind: 'commitment',
-        title: c.name,
-        plannedDue: c.commitmentDueDate ? c.commitmentDueDate.toISOString() : null,
-        factStatus,
-        blockedBy: factStatus === 'overdue' || factStatus === 'missed' ? nearestBlocker : null,
-      });
-    }
-
     for (const t of taskRows) {
       const dueMs = t.dueDate?.getTime();
       const factStatus = this.taskFactStatus(t.completedAt !== null, dueMs, nowMs);
@@ -242,18 +196,6 @@ export class WeeklyPerPersonService {
     }
 
     return { personId, weekStart, weekEnd: weekEndStr, items };
-  }
-
-  private commitmentFactStatus(
-    status: string | null,
-    dueMs: number | undefined,
-    nowMs: number,
-  ): WeeklyPersonItemFactStatus {
-    if (status === 'fulfilled') return 'fulfilled';
-    if (status === 'missed') return 'missed';
-    if (dueMs !== undefined && dueMs < nowMs) return 'overdue';
-    if (status === 'asked') return 'asked';
-    return 'open';
   }
 
   private taskFactStatus(
@@ -298,48 +240,27 @@ export class WeeklyPerPersonService {
     weekEndStr: string,
     limit: number,
     offset: number,
-    sort: 'reliability' | 'risk',
     now: Date,
-    minDenom: number,
   ): Promise<WeeklyPerPersonDto> {
     const commitmentRows = (await this.prisma.ideaBlock.findMany({
       where: {
         tenantId,
         signalType: 'commitment',
         commitmentDueDate: { gte: weekStartDate, lte: weekEndDate },
-        ...completeCommitmentWhere(),
       },
       select: {
         id: true,
         commitmentAuthorPersonId: true,
-        commitmentStatus: true,
-        commitmentDueDate: true,
       },
     })) as CommitmentRow[];
 
     const accByPerson = new Map<string, PersonAcc>();
-    const nowMs = now.getTime();
 
     for (const row of commitmentRows) {
       const personId = row.commitmentAuthorPersonId;
       if (!personId) continue;
       const acc = this.ensureAcc(accByPerson, personId);
-      acc.promisesGiven += 1;
       acc.countedCommitmentBlockIds.add(row.id);
-      const status = row.commitmentStatus;
-      if (status === 'fulfilled') {
-        acc.promisesKept += 1;
-      } else if (status === 'missed') {
-        acc.promisesBroken += 1;
-      } else if (status === 'open' || status === 'asked') {
-        if (status === 'asked') {
-          acc.promisesNoAnswer += 1;
-        }
-        const dueMs = row.commitmentDueDate?.getTime();
-        if (dueMs !== undefined && dueMs < nowMs) {
-          acc.promisesOverdue += 1;
-        }
-      }
     }
 
     const authorPersonIds = [...accByPerson.keys()];
@@ -504,21 +425,13 @@ export class WeeklyPerPersonService {
     }
 
     const allRows: WeeklyPersonRowDto[] = [...accByPerson.values()].map((acc) =>
-      this.buildRow(acc, deptNameById, minDenom, goalNetByPersonId),
+      this.buildRow(acc, deptNameById, goalNetByPersonId),
     );
     const total = allRows.length;
 
-    const noAnswerTotal = allRows.reduce((sum, r) => sum + r.promisesNoAnswer, 0);
-    this.metrics.recordWeeklyPerPersonCompute({
-      tenantTop: tenantTopOf(tenantId),
-      noAnswerTotal,
-    });
-
-    const topReliable = this.sortByReliability([...allRows]).slice(0, TOP_N);
     const topRisk = this.sortByRisk([...allRows]).slice(0, TOP_N);
 
-    const sorted =
-      sort === 'risk' ? this.sortByRisk([...allRows]) : this.sortByReliability([...allRows]);
+    const sorted = this.sortByRisk([...allRows]);
     const rows = sorted.slice(offset, offset + limit);
 
     return {
@@ -526,7 +439,6 @@ export class WeeklyPerPersonService {
       weekEnd: weekEndStr,
       generatedAt: now.toISOString(),
       total,
-      topReliable,
       topRisk,
       rows,
     };
@@ -540,11 +452,6 @@ export class WeeklyPerPersonService {
         personName: '',
         departmentId: null,
         userId: null,
-        promisesGiven: 0,
-        promisesKept: 0,
-        promisesBroken: 0,
-        promisesOverdue: 0,
-        promisesNoAnswer: 0,
         tasksDone: 0,
         tasksPlanned: 0,
         tasksPlannedDone: 0,
@@ -628,7 +535,6 @@ export class WeeklyPerPersonService {
   private buildRow(
     acc: PersonAcc,
     deptNameById: Map<string, string>,
-    minDenom: number,
     goalNetByPersonId: Map<string, number>,
   ): WeeklyPersonRowDto {
     return {
@@ -636,12 +542,6 @@ export class WeeklyPerPersonService {
       personName: acc.personName,
       departmentName:
         acc.departmentId !== null ? (deptNameById.get(acc.departmentId) ?? null) : null,
-      promisesGiven: acc.promisesGiven,
-      promisesKept: acc.promisesKept,
-      promisesBroken: acc.promisesBroken,
-      promisesOverdue: acc.promisesOverdue,
-      promisesNoAnswer: acc.promisesNoAnswer,
-      reliabilityPercent: this.calcReliability(acc, minDenom),
       tasksDone: acc.tasksDone,
       tasksPlanned: acc.tasksPlanned,
       tasksNotDone: Math.max(0, acc.tasksPlanned - acc.tasksPlannedDone),
@@ -650,35 +550,12 @@ export class WeeklyPerPersonService {
     };
   }
 
-  private calcReliability(acc: PersonAcc, minDenom: number): number | null {
-    const denom = acc.promisesKept + acc.promisesBroken + acc.promisesOverdue;
-    return reliabilityOrLowData(acc.promisesKept, denom, minDenom);
-  }
-
-  private sortByReliability(rows: WeeklyPersonRowDto[]): WeeklyPersonRowDto[] {
-    return rows.sort((a, b) => {
-      const ra = a.reliabilityPercent;
-      const rb = b.reliabilityPercent;
-      if (ra !== rb) {
-        if (ra === null) return 1;
-        if (rb === null) return -1;
-        return rb - ra;
-      }
-      return b.promisesKept - a.promisesKept;
-    });
-  }
-
   private sortByRisk(rows: WeeklyPersonRowDto[]): WeeklyPersonRowDto[] {
     return rows.sort((a, b) => {
-      const riskA = a.promisesBroken + a.promisesOverdue;
-      const riskB = b.promisesBroken + b.promisesOverdue;
+      const riskA = a.tasksNotDone;
+      const riskB = b.tasksNotDone;
       if (riskA !== riskB) return riskB - riskA;
-      const ra = a.reliabilityPercent;
-      const rb = b.reliabilityPercent;
-      if (ra === rb) return 0;
-      if (ra === null) return -1;
-      if (rb === null) return 1;
-      return ra - rb;
+      return b.tasksPlanned - a.tasksPlanned;
     });
   }
 

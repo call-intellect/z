@@ -68,7 +68,6 @@ function emptyMetrics(): MonthlyDigestMetricsDto {
     goalsCompleted: 0,
     goalsFailed: 0,
     topBlockers: [],
-    reliabilityPercent: null,
     tasksDone: 0,
     tasksPlanned: 0,
     tasksNotDone: 0,
@@ -350,7 +349,6 @@ export class MonthlyDigestService {
       goalsCompleted: built.weeklyMetrics.reduce((s, m) => s + m.goalsCompleted, 0),
       goalsFailed: built.weeklyMetrics.reduce((s, m) => s + m.goalsFailed, 0),
       topBlockers: mergeBlockers(built.weeklyMetrics),
-      reliabilityPercent: pkg.team.reliabilityPercent,
       tasksDone: pkg.team.tasksDone,
       tasksPlanned: pkg.team.tasksPlanned,
       tasksNotDone: pkg.team.tasksNotDone,
@@ -476,11 +474,9 @@ export class MonthlyDigestService {
     }
 
     let team: MonthCompanyPackage['team'] = {
-      reliabilityPercent: null,
       tasksDone: 0,
       tasksPlanned: 0,
       tasksNotDone: 0,
-      topRisk: [],
     };
     try {
       const pp = await this.perPerson.compute(
@@ -497,25 +493,15 @@ export class MonthlyDigestService {
       let tasksDone = 0;
       let tasksPlanned = 0;
       let tasksNotDone = 0;
-      let kept = 0;
-      let denom = 0;
       for (const r of pp.rows) {
         tasksDone += r.tasksDone;
         tasksPlanned += r.tasksPlanned;
         tasksNotDone += r.tasksNotDone;
-        kept += r.promisesKept;
-        denom += r.promisesKept + r.promisesBroken + r.promisesOverdue;
       }
       team = {
-        reliabilityPercent: denom > 0 ? Math.round((kept / denom) * 100) : null,
         tasksDone,
         tasksPlanned,
         tasksNotDone,
-        topRisk: pp.topRisk.slice(0, 3).map((r) => ({
-          personName: r.personName,
-          broken: r.promisesBroken,
-          overdue: r.promisesOverdue,
-        })),
       };
     } catch (err) {
       this.logger.warn(

@@ -7,7 +7,6 @@ import type { AdminCacheService } from '../../admin/services/admin-cache.service
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 import type { PendingActionsService } from '../../pending-actions/services/pending-actions.service';
 
-import type { CommitmentReliabilityService } from './commitment-reliability.service';
 import { DirectorDashboardService } from './director-dashboard.service';
 import type { NarrativeCitationsParserService } from './narrative-citations-parser.service';
 import type { SentimentIndexService } from './sentiment-index.service';
@@ -43,14 +42,6 @@ function buildService(opts: { sentimentThrows?: boolean } = {}): DirectorDashboa
       return { value: 0, sparkline12w: [], trend: 'flat' };
     }),
   } as unknown as SentimentIndexService;
-  const commitSvc = {
-    getReliability: vi.fn(async () => ({
-      reliabilityPercent: 0,
-      sparkline12w: [],
-      delta14d: null,
-    })),
-  } as unknown as CommitmentReliabilityService;
-
   const pendingActions = {
     getCount: vi.fn(async () => ({
       total: 0,
@@ -72,7 +63,6 @@ function buildService(opts: { sentimentThrows?: boolean } = {}): DirectorDashboa
     llm,
     citations,
     sentimentSvc,
-    commitSvc,
     pendingActions,
     config,
     metrics,

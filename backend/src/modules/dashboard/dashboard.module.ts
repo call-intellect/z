@@ -18,7 +18,6 @@ import { ThemeSilenceDetectorCron } from './agents/theme-silence-detector.cron';
 import { TopicRecurrenceDetectorCron } from './agents/topic-recurrence-detector.cron';
 import { DirectorDashboardController } from './director-dashboard.controller';
 import { ExecutionDashboardController } from './execution-dashboard.controller';
-import { CommitmentReliabilityService } from './services/commitment-reliability.service';
 import { DashboardQueueService } from './services/dashboard-queue.service';
 import { DirectorDashboardService } from './services/director-dashboard.service';
 import { ExecutionDashboardService } from './services/execution-dashboard.service';
@@ -35,7 +34,6 @@ import { TeamHealthService } from './services/team-health.service';
   providers: [
     DirectorDashboardService,
     ExecutionDashboardService,
-    CommitmentReliabilityService,
     SentimentIndexService,
     NarrativeCitationsParserService,
     TeamHealthService,
@@ -57,7 +55,6 @@ import { TeamHealthService } from './services/team-health.service';
     DecisionHygieneScorerWorker,
   ],
   exports: [
-    CommitmentReliabilityService,
     SentimentIndexService,
     TeamHealthService,
     TeamDetailService,

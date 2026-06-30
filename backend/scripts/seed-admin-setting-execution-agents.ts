@@ -26,15 +26,6 @@ const SEEDS: SettingSeed[] = [
       'Минимальная доля (0..1) commitment с непустым автором (commitmentAuthorPersonId) в прогоне goal-vector. При покрытии ниже порога атрибуция kept/broken на этот прогон откатывается на адресата (recipient), чтобы не выбросить молча обещания с NULL-автором. По умолчанию 0.6.',
   },
   {
-    key: 'reliability.min_denominator',
-    value: 3,
-    category: 'operations',
-    section: 'reliability',
-    severity: 'low',
-    description:
-      'Минимальный знаменатель надёжности обещаний (kept+broken+overdue), ниже которого процент помечается как «мало данных» (не показываем 1/1=100%). По умолчанию 3.',
-  },
-  {
     key: 'probe.reply_latency_rise.factor',
     value: 2,
     category: 'operations',

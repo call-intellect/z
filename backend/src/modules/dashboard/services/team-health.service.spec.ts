@@ -5,7 +5,6 @@ import type { RedisService } from '../../../common/redis/redis.service';
 import type { OperationsTeamTemperatureDto } from '../../operations/dto/operations-dashboard.dto';
 import type { OperationsDashboardService } from '../../operations/services/operations-dashboard.service';
 
-import type { CommitmentReliabilityService } from './commitment-reliability.service';
 import { TeamHealthService, type TeamHealthDto } from './team-health.service';
 
 interface DepartmentRow {
@@ -25,7 +24,6 @@ function buildService(
     departments?: DepartmentRow[];
     conflicts?: ConflictRow[];
     temperature?: OperationsTeamTemperatureDto;
-    reliabilityByDept?: Record<string, { reliabilityPercent: number; delta14d: number | null }>;
     cacheValue?: string | null;
     cacheGetError?: Error;
     cacheSetError?: Error;
@@ -36,7 +34,6 @@ function buildService(
   entityLinkFindMany: ReturnType<typeof vi.fn>;
   redisGet: ReturnType<typeof vi.fn>;
   redisSet: ReturnType<typeof vi.fn>;
-  commitsGet: ReturnType<typeof vi.fn>;
   opsGet: ReturnType<typeof vi.fn>;
 } {
   const deptFindMany = vi.fn(async () => opts.departments ?? []);
@@ -74,27 +71,7 @@ function buildService(
     getTeamTemperature: opsGet,
   } as unknown as OperationsDashboardService;
 
-  const commitsGet = vi.fn(async (args: { tenantId: string; scopeId?: string }) => {
-    const dflt = { reliabilityPercent: 0, delta14d: null as number | null };
-    const r = opts.reliabilityByDept?.[args.scopeId ?? ''] ?? dflt;
-    return {
-      scope: 'team' as const,
-      scopeId: args.scopeId ?? null,
-      windowDays: 14,
-      kept: 0,
-      broken: 0,
-      overdue: 0,
-      pendingActive: 0,
-      reliabilityPercent: r.reliabilityPercent,
-      delta14d: r.delta14d,
-      sparkline12w: [],
-    };
-  });
-  const commits = {
-    getReliability: commitsGet,
-  } as unknown as CommitmentReliabilityService;
-
-  const service = new TeamHealthService(prisma, redis, commits, ops);
+  const service = new TeamHealthService(prisma, redis, ops);
 
   return {
     service,
@@ -102,7 +79,6 @@ function buildService(
     entityLinkFindMany,
     redisGet,
     redisSet,
-    commitsGet,
     opsGet,
   };
 }
@@ -131,7 +107,7 @@ describe('TeamHealthService', () => {
   });
 
   it('отдел с 2 чел. → belowCohort=true, все attrs neutral', async () => {
-    const { service, commitsGet } = buildService({
+    const { service } = buildService({
       departments: [
         {
           id: 'd-1',
@@ -149,10 +125,8 @@ describe('TeamHealthService', () => {
     expect(row.belowCohort).toBe(true);
     expect(row.size).toBe(2);
     expect(row.sentiment).toEqual({ value: 0, tone: 'neutral' });
-    expect(row.promises).toEqual({ value: 0, tone: 'neutral' });
     expect(row.conflicts).toEqual({ value: 0, tone: 'neutral' });
     expect(row.healthSummary).toBeNull();
-    expect(commitsGet).not.toHaveBeenCalled();
   });
 
   it('отдел 3+ чел. с 2 green + 1 red → sentiment value=33, tone=success', async () => {
@@ -172,7 +146,6 @@ describe('TeamHealthService', () => {
     const { service } = buildService({
       departments: [{ id: 'd-1', name: 'Отдел', persons }],
       temperature,
-      reliabilityByDept: { 'd-1': { reliabilityPercent: 85, delta14d: null } },
     });
     const res = await service.getHealth({ tenantId: 't-1' });
     const row = res.teams[0]!;
@@ -198,7 +171,6 @@ describe('TeamHealthService', () => {
     const { service } = buildService({
       departments: [{ id: 'd-1', name: 'Отдел', persons }],
       temperature,
-      reliabilityByDept: { 'd-1': { reliabilityPercent: 90, delta14d: null } },
     });
     const res = await service.getHealth({ tenantId: 't-1' });
     expect(res.teams[0]!.sentiment.value).toBe(-50);
@@ -222,44 +194,10 @@ describe('TeamHealthService', () => {
     const { service } = buildService({
       departments: [{ id: 'd-1', name: 'Отдел', persons }],
       temperature,
-      reliabilityByDept: { 'd-1': { reliabilityPercent: 90, delta14d: null } },
     });
     const res = await service.getHealth({ tenantId: 't-1' });
     expect(res.teams[0]!.sentiment.value).toBe(20);
     expect(res.teams[0]!.sentiment.tone).toBe('warning');
-  });
-
-  it('promises=85, delta=null → tone=success, нет trend', async () => {
-    const persons = [
-      { id: 'p-1', entityId: null },
-      { id: 'p-2', entityId: null },
-      { id: 'p-3', entityId: null },
-    ];
-    const { service } = buildService({
-      departments: [{ id: 'd-1', name: 'Отдел', persons }],
-      reliabilityByDept: { 'd-1': { reliabilityPercent: 85, delta14d: null } },
-    });
-    const res = await service.getHealth({ tenantId: 't-1' });
-    expect(res.teams[0]!.promises.value).toBe(85);
-    expect(res.teams[0]!.promises.tone).toBe('success');
-    expect(res.teams[0]!.promises.trend).toBeUndefined();
-    expect(res.teams[0]!.promises.delta).toBeNull();
-  });
-
-  it('promises=50, delta=10 → tone=danger, trend=up', async () => {
-    const persons = [
-      { id: 'p-1', entityId: null },
-      { id: 'p-2', entityId: null },
-      { id: 'p-3', entityId: null },
-    ];
-    const { service } = buildService({
-      departments: [{ id: 'd-1', name: 'Отдел', persons }],
-      reliabilityByDept: { 'd-1': { reliabilityPercent: 50, delta14d: 10 } },
-    });
-    const res = await service.getHealth({ tenantId: 't-1' });
-    expect(res.teams[0]!.promises.tone).toBe('danger');
-    expect(res.teams[0]!.promises.trend).toBe('up');
-    expect(res.teams[0]!.promises.delta).toBe(10);
   });
 
   it('conflicts: 0 → success, 1 → warning, 5 → danger', async () => {
@@ -283,11 +221,6 @@ describe('TeamHealthService', () => {
     const { service } = buildService({
       departments: [makeRow('d-ok', []), makeRow('d-warn', []), makeRow('d-dang', [])],
       conflicts,
-      reliabilityByDept: {
-        'd-ok': { reliabilityPercent: 90, delta14d: null },
-        'd-warn': { reliabilityPercent: 90, delta14d: null },
-        'd-dang': { reliabilityPercent: 90, delta14d: null },
-      },
     });
     const res = await service.getHealth({ tenantId: 't-1' });
     const byId = new Map(res.teams.map((t) => [t.departmentId, t]));
@@ -326,7 +259,6 @@ describe('TeamHealthService', () => {
             },
           },
         ],
-        reliabilityByDept: { 'd-1': { reliabilityPercent: 90, delta14d: null } },
       });
       const res = await service.getHealth({ tenantId: 't-1' });
       const row = res.teams[0]!;
@@ -346,7 +278,6 @@ describe('TeamHealthService', () => {
             healthSummaryJson: { summary: 'x' },
           },
         ],
-        reliabilityByDept: { 'd-1': { reliabilityPercent: 90, delta14d: null } },
       });
       const res = await service.getHealth({ tenantId: 't-1' });
       expect(res.teams[0]!.healthSummary).toBeNull();
@@ -358,7 +289,7 @@ describe('TeamHealthService', () => {
       teams: [],
       totalDepartments: 0,
     };
-    const { service, deptFindMany, entityLinkFindMany, opsGet, commitsGet } = buildService({
+    const { service, deptFindMany, entityLinkFindMany, opsGet } = buildService({
       cacheValue: JSON.stringify(cached),
     });
     const res = await service.getHealth({ tenantId: 't-1' });
@@ -366,7 +297,6 @@ describe('TeamHealthService', () => {
     expect(deptFindMany).not.toHaveBeenCalled();
     expect(entityLinkFindMany).not.toHaveBeenCalled();
     expect(opsGet).not.toHaveBeenCalled();
-    expect(commitsGet).not.toHaveBeenCalled();
   });
 
   it('Redis.get падает → fallback на Prisma (не падает)', async () => {

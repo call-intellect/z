@@ -9,9 +9,6 @@ export interface ValueRecapRoutine {
 }
 
 export interface ValueRecapTeam {
-  reliabilityPercent: number | null;
-  reliabilityDenominator: number;
-  reliabilityDelta: number | null;
   chatHelpedRatePercent: number | null;
   chatRated: number;
   chatAnsweredWithCitation: number;
@@ -68,9 +65,6 @@ export function findForbiddenMetricKeys(payload: unknown): string[] {
     'feedbackcoveragepercent',
     'groundedratepercent',
     'helpedratehidden',
-    'reliabilitypercent',
-    'reliabilitydelta',
-    'reliabilitydenominator',
     'estimate',
   ]);
   const found = new Set<string>();

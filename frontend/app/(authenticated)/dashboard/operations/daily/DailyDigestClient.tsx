@@ -26,7 +26,6 @@ import {
   type DailyDigestUrgentItemDomain,
 } from "@/domain/operations-daily-digest";
 import {
-  AlarmClock,
   AlertTriangle,
   CalendarDays,
   CheckCircle2,
@@ -125,7 +124,7 @@ export function DailyDigestClient() {
   return (
     <ModernPageShell
       title="Ежедневный отчёт"
-      subtitle="Сводка за сутки в МСК: температура команды, новые блокеры, просроченные обещания, цели, сигналы. Генерируется автоматически каждый день в 01:00 МСК."
+      subtitle="Сводка за сутки в МСК: температура команды, новые блокеры, цели, сигналы. Генерируется автоматически каждый день в 01:00 МСК."
     >
       {}
       <OperationsTabs />
@@ -335,20 +334,13 @@ function DigestView(props: {
         >
           Главное за день
         </h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             icon={<AlertTriangle size={20} />}
             grad={GRAD.amber}
             label="Новые блокеры"
             value={String(m.newBlockers.length)}
             tone={CHART.red}
-          />
-          <StatCard
-            icon={<AlarmClock size={20} />}
-            grad={GRAD.amber}
-            label="Просроченные обещания"
-            value={String(m.overdueCommitments.length)}
-            tone={CHART.amber}
           />
           <StatCard
             icon={<CheckCircle2 size={20} />}
@@ -391,31 +383,6 @@ function DigestView(props: {
                 <span className="text-xs" style={{ color: CHART.faint }}>
                   уверенность {Math.round(b.confidence * 100)}%
                 </span>
-              </li>
-            ))}
-          </ul>
-        </GlassCard>
-      ) : null}
-
-      {m.overdueCommitments.length > 0 ? (
-        <GlassCard>
-          <CardTitle icon={<AlarmClock size={16} />} grad={GRAD.amber}>
-            Просроченные обещания
-          </CardTitle>
-          <ul className="mt-3 space-y-1 text-sm">
-            {m.overdueCommitments.map((c) => (
-              <li
-                key={c.blockId}
-                className="flex items-start gap-2 rounded-md p-2"
-                style={{ color: CHART.text }}
-              >
-                <span style={{ color: CHART.faint }}>·</span>
-                <span className="flex-1">{c.name}</span>
-                {c.dueDate ? (
-                  <span className="text-xs" style={{ color: CHART.faint }}>
-                    срок {formatRu(c.dueDate.slice(0, 10))}
-                  </span>
-                ) : null}
               </li>
             ))}
           </ul>
@@ -500,14 +467,7 @@ function HeroTrend({ trend }: { trend: DailyDigestTrendPointApi[] }) {
         data={trend as unknown as Record<string, unknown>[]}
         xKey="dateLocal"
         height={220}
-        series={[
-          { key: "blockers", color: CHART.amber, label: "Блокеры" },
-          {
-            key: "overdueCommitments",
-            color: CHART.pink,
-            label: "Просроченные обещания",
-          },
-        ]}
+        series={[{ key: "blockers", color: CHART.amber, label: "Блокеры" }]}
       />
     </div>
   );
@@ -875,8 +835,6 @@ function chronicStatusChipClass(
 
 function urgentIcon(kind: DailyDigestUrgentItemDomain["kind"]): string {
   switch (kind) {
-    case "overdue_commitment":
-      return "⏰";
     case "high_insight":
       return "!";
     default:
@@ -903,8 +861,6 @@ function shinedReasonLabel(
       return "получил признание";
     case "helpful_acts":
       return "помог коллегам";
-    case "commitments_kept":
-      return "сдержал обещания";
     default:
       return reason;
   }
@@ -916,8 +872,6 @@ function struggledReasonLabel(
   switch (reason) {
     case "red_checkin":
       return "красный чек-ин";
-    case "broken_commitment":
-      return "не выполнено обещание";
     case "silent_3_days":
       return "молчит 3 дня";
     default:

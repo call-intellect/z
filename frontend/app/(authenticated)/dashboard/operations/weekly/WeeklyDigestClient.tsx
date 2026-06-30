@@ -651,9 +651,7 @@ function TeamDynamicsSection({ items }: { items: WeeklyTeamDynamicsRowApi[] }) {
       </p>
       <ul className="space-y-1">
         {items.map((row) => {
-          const isImproved =
-            row.signal === "sentiment_improved" ||
-            row.signal === "promises_improved";
+          const isImproved = row.signal === "sentiment_improved";
           const toneColor = isImproved ? CHART.mint : CHART.red;
           return (
             <li
@@ -697,10 +695,6 @@ function teamDynamicsLabel(signal: WeeklyTeamDynamicsRowApi["signal"]): string {
       return "настроение улучшилось";
     case "sentiment_dropped":
       return "настроение упало";
-    case "promises_improved":
-      return "обещания выправились";
-    case "promises_dropped":
-      return "обещания просели";
     default:
       return signal;
   }
@@ -724,8 +718,8 @@ function ForecastSection({ items }: { items: WeeklyForecastItemApi[] }) {
             className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed"
             style={{ color: CHART.faint }}
           >
-            Чтобы Кора строила прогноз, нужно несколько недель истории встреч и
-            обещаний. Прогноз появится, когда накопится достаточно недель.
+            Чтобы Кора строила прогноз, нужно несколько недель истории встреч.
+            Прогноз появится, когда накопится достаточно недель.
           </p>
         </div>
       </GlassCard>
@@ -785,8 +779,6 @@ function forecastMetricLabel(metric: WeeklyForecastItemApi["metric"]): string {
   switch (metric) {
     case "sentiment":
       return "Настроение";
-    case "promises":
-      return "Обещания";
     default:
       return metric;
   }

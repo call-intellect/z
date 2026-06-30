@@ -451,7 +451,7 @@ function HrResumeSection({ data }: { data: PersonPulse }) {
           <p className="text-sm text-fg-tertiary">
             Пока без рекомендаций Коры. Они появятся после первого недельного
             прогона HR-Recommender или когда наберётся достаточно сигналов
-            (встречи, чек-ины, обещания).
+            (встречи, чек-ины).
           </p>
         )}
       </CardContent>

@@ -30,7 +30,7 @@ export function WeekDesktopClient() {
   return (
     <ModernPageShell
       title="Неделя"
-      subtitle="Понедельничный разбор: куда идём, кто держит слово и лучше ли стало."
+      subtitle="Понедельничный разбор: куда идём и лучше ли стало."
     >
       <div className="space-y-6">
         <WeekVerdictBar weekStart={defaultLastMondayUtc()} />
@@ -59,8 +59,7 @@ function WeekVerdictBar({ weekStart }: { weekStart: string }) {
           Понедельничный разбор недели
         </div>
         <div className="mt-0.5 truncate text-xs" style={{ color: CHART.faint }}>
-          Неделя с {formatRu(weekStart)} · температура, обещания и движение
-          целей — ниже.
+          Неделя с {formatRu(weekStart)} · температура и движение целей — ниже.
         </div>
       </div>
     </div>

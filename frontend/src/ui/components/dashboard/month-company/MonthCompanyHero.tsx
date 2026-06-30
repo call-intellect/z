@@ -267,8 +267,8 @@ export function MonthCompanyHero() {
       <WeeklyPerPersonWidget
         weekStart={monthWindow.from}
         weekEnd={monthWindow.to}
-        title="Кто держит слово — за месяц"
-        subtitle="План-факт по людям: обещания, задачи и чек-ины за месяц."
+        title="План-факт за месяц по людям"
+        subtitle="План-факт по людям: задачи и чек-ины за месяц."
         emptyHint="За этот месяц ещё нет данных по людям — появятся по мере работы команды."
       />
 

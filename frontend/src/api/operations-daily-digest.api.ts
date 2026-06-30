@@ -18,12 +18,6 @@ export interface DailyDigestMetricsApi {
     name: string;
     confidence: number;
   }>;
-  overdueCommitments: Array<{
-    blockId: string;
-    name: string;
-    dueDate: string | null;
-    recipientPersonId: string | null;
-  }>;
   goals: {
     completed: number;
     failed: number;
@@ -94,7 +88,7 @@ export interface DailyDigestEventApi {
 }
 
 export interface DailyDigestUrgentItemApi {
-  kind: "overdue_commitment" | "high_insight";
+  kind: "high_insight";
   id: string;
   title: string;
   link: string;
@@ -105,7 +99,7 @@ export interface DailyDigestUrgentItemApi {
 export interface DailyDigestPersonShinedApi {
   personId: string;
   personName: string;
-  reason: "recognition_received" | "helpful_acts" | "commitments_kept";
+  reason: "recognition_received" | "helpful_acts";
   detail: string;
   link: string;
 }
@@ -113,7 +107,7 @@ export interface DailyDigestPersonShinedApi {
 export interface DailyDigestPersonStruggledApi {
   personId: string;
   personName: string;
-  reason: "red_checkin" | "broken_commitment" | "silent_3_days";
+  reason: "red_checkin" | "silent_3_days";
   detail: string;
   link: string;
 }
@@ -139,7 +133,6 @@ export interface DailyDigestTrendPointApi {
   greenShare: number;
   redShare: number;
   blockers: number;
-  overdueCommitments: number;
   goalsCompleted: number;
   goalsFailed: number;
 }

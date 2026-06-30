@@ -44,7 +44,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDescriptor> = {
   },
   "weekly-plan-fact": {
     id: "weekly-plan-fact",
-    title: "Кто держит слово",
+    title: "План-факт по людям",
     rhythm: ["week", "month"],
     roles: ["owner", "coo"],
     size: "xl",

@@ -94,14 +94,12 @@ export interface WeeklyTeamDynamicsRowApi {
   departmentName: string;
   signal:
     | "sentiment_improved"
-    | "sentiment_dropped"
-    | "promises_improved"
-    | "promises_dropped";
+    | "sentiment_dropped";
   detail: string;
 }
 
 export interface WeeklyForecastItemApi {
-  metric: "sentiment" | "promises";
+  metric: "sentiment";
   projection: string;
   confidence: "low" | "medium";
 }

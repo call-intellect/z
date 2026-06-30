@@ -584,7 +584,8 @@ options: ["Я", "Мария Иванова", "Команда продаж", "Р�
 | Tertiary | Ollama (self-hosted) | `qwen3.5:9b` | last-resort |
 | A/B (с 2026-05-25) | KIE | Claude Opus 4.7, GPT-5-4, Gemini | эксперименты |
 | A/B | GRSAI | Gemini через прокси | эксперименты |
-| **Embeddings (единственный)** | proxy | `text-embedding-3-small` (dim=1536) | для pgvector |
+| **Embeddings (primary)** | local | `embeddinggemma:latest` (dim=768) | для pgvector (KNN) |
+| **Embeddings (fallback)** | proxy | `text-embedding-3-small` (dim=1536) | для pgvector (fallback) |
 
 **Массовая миграция на DeepSeek V4 Pro (2026-05-26, Фазы 0-8 ТЗ `2026-05-25-llm-architecture-changes-from-experiments.md`):**
 - Фаза 1 §4 — `isThinkingModel` helper + автоконверт `json_schema → tools` для Pro (метрика `z_deepseek_schema_to_tool_conversion_total`).

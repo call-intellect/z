@@ -31,7 +31,6 @@ type SortKey =
   | "sentiment"
   | "promises"
   | "conflicts"
-  | "decisions"
   | "overall";
 
 type SortDir = "asc" | "desc";
@@ -194,14 +193,6 @@ export function TeamsListClient() {
                   align="center"
                 />
                 <SortHeader
-                  label="Решения"
-                  thisKey="decisions"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onClick={toggleSort}
-                  align="center"
-                />
-                <SortHeader
                   label="Общее"
                   thisKey="overall"
                   sortKey={sortKey}
@@ -277,7 +268,7 @@ function TeamRow({ row }: { row: TeamHealthRowDomain }) {
           </Link>
         </td>
         <td className="px-3 py-3 text-center text-xs">{row.size}</td>
-        <td colSpan={5} className="px-3 py-3 text-center text-xs">
+        <td colSpan={4} className="px-3 py-3 text-center text-xs">
           Слишком маленький отдел
         </td>
       </tr>
@@ -306,9 +297,6 @@ function TeamRow({ row }: { row: TeamHealthRowDomain }) {
       </td>
       <td className="px-3 py-3 text-center">
         <AttrChip attr={row.conflicts} formatter={(v) => String(v)} />
-      </td>
-      <td className="px-3 py-3 text-center">
-        <AttrChip attr={row.decisions} formatter={(v) => String(v)} />
       </td>
       <td className="px-3 py-3 text-center">
         <OverallChip row={row} />
@@ -350,7 +338,6 @@ function OverallChip({ row }: { row: TeamHealthRowDomain }) {
     row.sentiment.tone,
     row.promises.tone,
     row.conflicts.tone,
-    row.decisions.tone,
   ];
   const counts = { success: 0, warning: 0, danger: 0, neutral: 0 };
   for (const t of tones) counts[t]++;
@@ -395,14 +382,11 @@ function keyValue(row: TeamHealthRowDomain, key: SortKey): number | string {
       return -TONE_RANK[row.promises.tone] * 1000 - row.promises.value;
     case "conflicts":
       return TONE_RANK[row.conflicts.tone] * 1000 + row.conflicts.value;
-    case "decisions":
-      return TONE_RANK[row.decisions.tone] * 1000 + row.decisions.value;
     case "overall": {
       const tones = [
         row.sentiment.tone,
         row.promises.tone,
         row.conflicts.tone,
-        row.decisions.tone,
       ];
       const score = tones.reduce((acc, t) => acc + TONE_RANK[t], 0);
       return -score;

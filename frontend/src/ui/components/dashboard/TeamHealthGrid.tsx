@@ -102,7 +102,6 @@ function Grid({ data }: { data: TeamHealthDomain }) {
             <th className="px-2 py-2 text-center font-medium">Настроение</th>
             <th className="px-2 py-2 text-center font-medium">Обещания</th>
             <th className="px-2 py-2 text-center font-medium">Конфликты</th>
-            <th className="px-2 py-2 text-center font-medium">Решения</th>
           </tr>
         </thead>
         <tbody>
@@ -123,7 +122,7 @@ function Row({ row }: { row: TeamHealthRowDomain }) {
           <div>{row.departmentName}</div>
           <div className="text-[11px]">{row.size} чел. · нужно ≥3</div>
         </td>
-        <td colSpan={4} className="px-2 py-3 text-center text-xs">
+        <td colSpan={3} className="px-2 py-3 text-center text-xs">
           Слишком маленький отдел — здоровье не считается
         </td>
       </tr>
@@ -158,9 +157,6 @@ function Row({ row }: { row: TeamHealthRowDomain }) {
       </td>
       <td className="px-2 py-3 text-center">
         <AttrChip attr={row.conflicts} formatter={(v) => String(v)} />
-      </td>
-      <td className="px-2 py-3 text-center">
-        <AttrChip attr={row.decisions} formatter={(v) => String(v)} />
       </td>
     </tr>
   );

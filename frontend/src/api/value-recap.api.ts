@@ -23,8 +23,6 @@ export interface ValueRecapTeamApi {
   chatHelpedRatePercent: number | null;
   chatRated: number;
   chatAnsweredWithCitation: number;
-  decisionsTotal: number;
-  decisionsThroughputPercent: number;
   ideasShipped: number;
   estimate: true;
 }
@@ -39,19 +37,6 @@ export interface ValueRecapDeltaApi {
   ideasShipped: number | null;
 }
 
-export type ValueRecapDecisionStatus =
-  | "done"
-  | "in_progress"
-  | "stalled"
-  | "not_started";
-
-export interface ValueRecapDecisionApi {
-  id: string;
-  statement: string;
-  status: ValueRecapDecisionStatus;
-  throughputPercent: number;
-}
-
 export interface ValueRecapPayloadApi {
   periodYm: string;
   builtAt: string;
@@ -59,7 +44,6 @@ export interface ValueRecapPayloadApi {
   routine: ValueRecapRoutineApi;
   team: ValueRecapTeamApi;
   delta: ValueRecapDeltaApi | null;
-  decisions: ValueRecapDecisionApi[];
   narrative: string;
 }
 

@@ -7,7 +7,6 @@ import { StaleIssuesWidget } from "./widgets/StaleIssuesWidget";
 import { IssueChainsWidget } from "./widgets/IssueChainsWidget";
 import { BlockersByThemeWidget } from "./widgets/BlockersByThemeWidget";
 import { IdeasByThemeWidget } from "./widgets/IdeasByThemeWidget";
-import { DecisionsWidget } from "./widgets/DecisionsWidget";
 import { FeedWidget } from "./widgets/FeedWidget";
 import { ValueWidget } from "./widgets/ValueWidget";
 import { WeeklyPlanFactWidget } from "./widgets/WeeklyPlanFactWidget";
@@ -138,14 +137,6 @@ export const WIDGET_REGISTRY: Record<string, WidgetDescriptor> = {
     roles: ["owner", "coo", "member"],
     size: "md",
     Component: IdeasByThemeWidget,
-  },
-  decisions: {
-    id: "decisions",
-    title: "Решения",
-    rhythm: ["today", "week", "month"],
-    roles: ["owner", "coo"],
-    size: "md",
-    Component: DecisionsWidget,
   },
   feed: {
     id: "feed",

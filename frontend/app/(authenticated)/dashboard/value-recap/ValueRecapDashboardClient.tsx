@@ -3,11 +3,9 @@
 import {
   ArrowDownRight,
   ArrowUpRight,
-  CheckCircle2,
   ChevronRight,
   Clock3,
   Download,
-  ListChecks,
   Printer,
   Users,
 } from "lucide-react";
@@ -21,11 +19,9 @@ import { useAuth } from "@/contexts/auth-context";
 import { currentPeriod } from "@/domain/period";
 import {
   chatHelpedText,
-  decisionsThroughputText,
   formatPeriodYm,
   reliabilityText,
   valueRecapFromApi,
-  type ValueRecapDecision,
   type ValueRecapDomain,
 } from "@/domain/value-recap";
 import {
@@ -35,7 +31,6 @@ import {
   GlassCard,
   GRAD,
   MODERN_PAGE_BG,
-  STATUS_TONE,
 } from "@/ui/components/dashboard/modern";
 import { PeriodNavigator } from "@/ui/components/dashboard/shared/PeriodNavigator";
 
@@ -126,8 +121,7 @@ export function ValueRecapDashboardClient({
               </h1>
             )}
             <p className="mt-1 text-sm" style={{ color: CHART.dim }}>
-              Снятая рутина, дисциплина решений и улучшения команды за{" "}
-              {periodLabel}.
+              Снятая рутина и улучшения команды за {periodLabel}.
             </p>
           </div>
 
@@ -274,9 +268,6 @@ function ValueRecapBody({ domain }: { domain: ValueRecapDomain }) {
 
       {}
       {domain.team && <TeamLayer team={domain.team} />}
-
-      {}
-      <DecisionsBlock domain={domain} />
     </div>
   );
 }
@@ -331,7 +322,6 @@ function TeamLayer({ team }: { team: ValueRecapTeamApi }) {
   const items: { label: string; value: string }[] = [
     { label: "Надёжность обещаний", value: reliabilityText(team) },
     { label: "Чат помог", value: chatHelpedText(team) },
-    { label: "Решения доведены", value: decisionsThroughputText(team) },
   ];
   return (
     <GlassCard>
@@ -370,187 +360,6 @@ function TeamLayer({ team }: { team: ValueRecapTeamApi }) {
         ))}
       </div>
     </GlassCard>
-  );
-}
-
-function DecisionsBlock({ domain }: { domain: ValueRecapDomain }) {
-  const { decisions, decisionBreakdown: bd, team } = domain;
-  const total = team?.decisionsTotal ?? decisions.length;
-  const throughputPercent = team
-    ? Math.round(team.decisionsThroughputPercent)
-    : 0;
-
-  return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
-      {}
-      <GlassCard>
-        <CardTitle icon={<ListChecks size={16} />} grad={GRAD.blue}>
-          Решения месяца
-        </CardTitle>
-        {decisions.length === 0 ? (
-          <p className="mt-4 text-sm" style={{ color: CHART.dim }}>
-            — За месяц решений не зафиксировано.
-          </p>
-        ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr
-                  style={{ color: CHART.faint }}
-                  className="text-left text-xs"
-                >
-                  <th className="pb-3 font-medium">Решение</th>
-                  <th className="pb-3 font-medium">Статус</th>
-                  <th className="pb-3 text-right font-medium">Доведено</th>
-                </tr>
-              </thead>
-              <tbody>
-                {decisions.map((d) => (
-                  <tr
-                    key={d.id}
-                    style={{ borderTop: "1px solid var(--border-inset)" }}
-                  >
-                    <td className="py-3 pr-3" style={{ color: CHART.text }}>
-                      {d.statement}
-                    </td>
-                    <td className="py-3 pr-3">
-                      <DecisionStatusChip decision={d} />
-                    </td>
-                    <td className="py-3">
-                      <DecisionProgress decision={d} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </GlassCard>
-
-      {}
-      <GlassCard
-        glow
-        className="flex flex-col items-center justify-center text-center"
-        style={{
-          background:
-            "linear-gradient(180deg, var(--chip-success-bg), transparent), var(--glass-surface)",
-          borderColor: "var(--chip-success-fg)",
-        }}
-      >
-        <div className="text-xs" style={{ color: CHART.faint }}>
-          Главный итог дисциплины
-        </div>
-        {decisions.length === 0 && total === 0 ? (
-          <div className="mt-3 text-sm" style={{ color: CHART.dim }}>
-            — Решений за месяц нет
-          </div>
-        ) : (
-          <>
-            <div
-              className="mt-2 text-[56px] font-semibold leading-none"
-              style={{ color: CHART.teal }}
-            >
-              {bd.done}
-            </div>
-            <div className="mt-2 text-sm" style={{ color: CHART.dim }}>
-              из {total} решений доведено до внедрения
-            </div>
-            <div className="mt-1 text-xs" style={{ color: CHART.faint }}>
-              {throughputPercent}% доведения
-            </div>
-            <div className="mt-4 flex flex-wrap justify-center gap-2">
-              <BreakdownChip tone="ok" count={bd.done} label="внедрено" />
-              <BreakdownChip
-                tone="info"
-                count={bd.inProgress}
-                label="в работе"
-              />
-              <BreakdownChip
-                tone="warning"
-                count={bd.stalled + bd.notStarted}
-                label="застряло"
-              />
-            </div>
-          </>
-        )}
-      </GlassCard>
-    </div>
-  );
-}
-
-function decisionToneStyle(tone: "ok" | "info" | "warning"): {
-  c: string;
-  bg: string;
-} {
-  if (tone === "ok") return STATUS_TONE.ok;
-  if (tone === "warning") return STATUS_TONE.warning;
-  return { c: CHART.blue, bg: "oklch(0.7 0.16 245 / 0.14)" };
-}
-
-function DecisionStatusChip({ decision }: { decision: ValueRecapDecision }) {
-  const tone = decisionToneStyle(decision.statusTone);
-  const Icon =
-    decision.statusTone === "ok"
-      ? CheckCircle2
-      : decision.statusTone === "info"
-        ? Clock3
-        : ArrowDownRight;
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium"
-      style={{ color: tone.c, background: tone.bg }}
-    >
-      <Icon size={12} />
-      {decision.statusLabel}
-    </span>
-  );
-}
-
-function DecisionProgress({ decision }: { decision: ValueRecapDecision }) {
-  const fill =
-    decision.progressTone === "teal"
-      ? GRAD.teal
-      : decision.progressTone === "warn"
-        ? CHART.amber
-        : CHART.red;
-  return (
-    <div className="flex items-center justify-end gap-2.5">
-      <div
-        className="h-1.5 w-24 overflow-hidden rounded-full"
-        style={{ background: "var(--surface-inset-strong)" }}
-      >
-        <div
-          className="h-full rounded-full"
-          style={{ width: `${decision.throughputPercent}%`, background: fill }}
-        />
-      </div>
-      <span
-        className="min-w-[34px] text-right text-xs"
-        style={{ color: CHART.dim }}
-      >
-        {decision.throughputPercent}%
-      </span>
-    </div>
-  );
-}
-
-function BreakdownChip({
-  tone,
-  count,
-  label,
-}: {
-  tone: "ok" | "info" | "warning";
-  count: number;
-  label: string;
-}) {
-  const t = decisionToneStyle(tone);
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium"
-      style={{ color: t.c, background: t.bg }}
-    >
-      {count} {label}
-    </span>
   );
 }
 

@@ -247,7 +247,6 @@ export type DirectorDashboardApi = {
   narrativeSummary: NarrativeSummaryApi | null;
   kpiSentimentIndex?: DirectorDashboardKpiApi;
   kpiCommitmentReliability?: DirectorDashboardKpiApi;
-  kpiHangingDecisions?: DirectorDashboardKpiApi;
   strategicAlignment?: DirectorDashboardStrategicAlignmentApi;
   requiresAction?: DirectorDashboardRequiresActionApi;
   goalsTree?: GoalTreeNodeApi[];
@@ -352,7 +351,6 @@ export type DirectorDashboardDomain = {
   narrativeSummary: NarrativeSummaryDomain | null;
   kpiSentimentIndex: DirectorDashboardKpiDomain | null;
   kpiCommitmentReliability: DirectorDashboardKpiDomain | null;
-  kpiHangingDecisions: DirectorDashboardKpiDomain | null;
   strategicAlignment: DirectorDashboardStrategicAlignmentDomain | null;
   requiresAction: DirectorDashboardRequiresActionDomain | null;
   goalsTree: GoalTreeNodeDomain[] | null;
@@ -534,7 +532,6 @@ export function directorDashboardFromApi(
     narrativeSummary: api.narrativeSummary,
     kpiSentimentIndex: api.kpiSentimentIndex ?? null,
     kpiCommitmentReliability: api.kpiCommitmentReliability ?? null,
-    kpiHangingDecisions: api.kpiHangingDecisions ?? null,
     strategicAlignment: api.strategicAlignment
       ? strategicAlignmentFromApi(api.strategicAlignment)
       : null,

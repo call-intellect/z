@@ -47,7 +47,6 @@ export function requiresYouCount(
     c.churn_risk +
     c.objection +
     c.risk +
-    c.decision +
     c.commitment +
     c.other
   );

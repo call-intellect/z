@@ -33,7 +33,6 @@ function makeDirector(
     narrativeSummary: null,
     kpiSentimentIndex: null,
     kpiCommitmentReliability: null,
-    kpiHangingDecisions: null,
     strategicAlignment: null,
     requiresAction: null,
     goalsTree: null,
@@ -212,7 +211,7 @@ describe("requiresYouCount", () => {
     expect(requiresYouCount(d)).toBe(0);
   });
 
-  it("нет requiresAction → fallback на сумму signalCounters", () => {
+  it("нет requiresAction → fallback на сумму signalCounters (decision исключён)", () => {
     const d = makeDirector({
       requiresAction: null,
       signalCounters: {
@@ -221,7 +220,7 @@ describe("requiresYouCount", () => {
         churn_risk: 0,
         objection: 0,
         risk: 1,
-        decision: 0,
+        decision: 5,
         commitment: 0,
         other: 0,
       },

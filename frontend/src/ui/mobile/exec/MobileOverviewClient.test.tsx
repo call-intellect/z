@@ -63,7 +63,6 @@ function director(
     narrativeSummary: null,
     kpiSentimentIndex: null,
     kpiCommitmentReliability: { value: 88, sparkline: [], delta: null },
-    kpiHangingDecisions: null,
     strategicAlignment: { average: 0.72, goalsCount: 3, alertGoals: [] },
     requiresAction: {
       total: 0,

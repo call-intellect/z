@@ -29,7 +29,6 @@ export type TeamHealthRowApi = {
   sentiment: TeamHealthAttrApi;
   promises: TeamHealthAttrApi;
   conflicts: TeamHealthAttrApi;
-  decisions: TeamHealthAttrApi;
   healthSummary?: TeamHealthSummaryApi | null;
 };
 

@@ -213,26 +213,6 @@ export interface CheckinDisciplineApi {
   byPerson: CheckinDisciplinePersonApi[];
 }
 
-export interface DecisionThroughputApi {
-  total: number;
-  doneWithOutcomes: number;
-  throughputPercent: number;
-  from: string;
-  to: string;
-}
-
-export interface StalledDecisionApi {
-  id: string;
-  statement: string;
-  decidedAt: string | null;
-  ageDays: number;
-  implementationCheckedAt: string | null;
-}
-
-export interface StalledDecisionsApi {
-  items: StalledDecisionApi[];
-}
-
 export interface CustomerRiskTopBlockApi {
   blockId: string;
   signalType: string;
@@ -373,19 +353,6 @@ export const operationsDashboardApi = {
       `/api/v1/dashboard/operations/customer-risk?${q.toString()}`,
     );
   },
-  getDecisionThroughput: (params?: { from?: string; to?: string }) => {
-    const q = new URLSearchParams();
-    if (params?.from) q.set("from", params.from);
-    if (params?.to) q.set("to", params.to);
-    const suffix = q.toString();
-    return apiClient.get<DecisionThroughputApi>(
-      `/api/v1/dashboard/operations/decisions/throughput${suffix ? `?${suffix}` : ""}`,
-    );
-  },
-  getStalledDecisions: () =>
-    apiClient.get<StalledDecisionsApi>(
-      "/api/v1/dashboard/operations/decisions/stalled",
-    ),
   getKnowledgeAtRisk: () =>
     apiClient.get<KnowledgeAtRiskListApi>(
       "/api/v1/dashboard/operations/knowledge-at-risk",

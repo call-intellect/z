@@ -54,7 +54,6 @@ import { CauseCategoryMapWidget } from "./widgets/CauseCategoryMapWidget";
 import { ChronicBlockersWidget } from "./widgets/ChronicBlockersWidget";
 import { MaturityWidget } from "./widgets/MaturityWidget";
 import { TeamCapacityWidget } from "./widgets/TeamCapacityWidget";
-import { DecisionThroughputWidget } from "./widgets/DecisionThroughputWidget";
 import { CustomerRiskRadarWidget } from "./widgets/CustomerRiskRadarWidget";
 import { KnowledgeAtRiskWidget } from "./widgets/KnowledgeAtRiskWidget";
 import { PromiseOverloadWidget } from "./widgets/PromiseOverloadWidget";
@@ -65,7 +64,6 @@ import { RecurringTopicsWidget } from "@/ui/components/dashboard/RecurringTopics
 import { LowRoiMeetingsWidget } from "@/ui/components/dashboard/LowRoiMeetingsWidget";
 import { BottleneckHeatmapWidget } from "@/ui/components/dashboard/BottleneckHeatmapWidget";
 import { KnowledgeVelocityKpi } from "@/ui/components/dashboard/KnowledgeVelocityKpi";
-import { IrreversibleDecisionsAlert } from "@/ui/components/dashboard/IrreversibleDecisionsAlert";
 
 export function OperationsDashboardClient({
   embedded = false,
@@ -178,12 +176,6 @@ export function OperationsDashboardClient({
       </div>
 
       {}
-      <IrreversibleDecisionsAlert
-        decisions={pulse?.irreversibleDecisions.decisions ?? []}
-        alertCount={pulse?.irreversibleDecisions.alertCount ?? 0}
-      />
-
-      {}
       <div className="mt-6 grid grid-cols-1 gap-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <StatCard
@@ -275,8 +267,6 @@ export function OperationsDashboardClient({
             loading={pulseLoading}
             error={pulseError}
           />
-          {}
-          <DecisionThroughputWidget />
           {}
           <CustomerRiskRadarWidget />
           {}

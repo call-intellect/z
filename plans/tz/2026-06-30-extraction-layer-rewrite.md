@@ -265,7 +265,7 @@ Acceptance: e2e — «я докручу лендинг к пятнице + 3 ш�
 Acceptance: e2e — норма «для менеджера» с роли-scope → клон роли её подтягивает (был «не нашёл»); combo пишет `scope=role:<cuid>`; идемпотентность backfill (повтор=0 изменений); `ownerPersonId` fail-closed (тёзки→null+counter); instruction.scope заполнен; `typecheck/lint/build` зелёные.
 Закрывает: C1-#1, C1-#2 (на боевом combo-пути); biggestConcern анализа клонов.
 
-### [ ] Ф8 — Хроносверка-вердикт: факты И решения (WP-F)
+### [x] Ф8 — Хроносверка-вердикт: факты И решения (WP-F)
 **Ценность:** как память, на «вначале X — в конце Y» показываю актуальное Y, а старое помечаю отменённым.
 Картография: карта изменений §WP-F; контракт-first.
 Что входит: сигнал хронологии в `FactSupersedeService` (вход, не писатель) и в `supersedeDetect` (3-3); доставка через `ConflictService.report`; обработка `sourceTimestamp=null`.

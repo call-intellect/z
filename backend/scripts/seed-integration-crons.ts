@@ -25,9 +25,9 @@ const SEEDS: CronSeed[] = [
     description: 'AI-анализ диалогов Bitrix24 (00:00).',
   },
   {
-    name: 'ChatboxAnalyzeCron.sweep',
-    expression: '0 0 * * *',
-    description: 'AI-анализ диалогов ChatBox (00:00).',
+    name: 'ChatboxStuckRecoveryCron.recover',
+    expression: '0 * * * *',
+    description: 'Часовая safety-net: re-enqueue залипших analyzing-сессий ChatBox (старше chatbox.analyze.stuckAnalyzingMin). Анализ по факту забора — через событие из sync-flow, не через cron.',
   },
   {
     name: 'IntegrationSyncLogPruneCron.run',

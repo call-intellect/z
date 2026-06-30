@@ -2337,8 +2337,10 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 ### Воркеры / cron (in-process, `WorkersModule`)
 - Очереди `chatbox.sync` (синк-job'ы) + `chatbox.analyze` (`chatbox-analyze.worker.ts` — закрытая сессия → LLM-summary → `done`/`failed` + `rawEventId`).
 - `chatbox-sync.cron.ts` — раз в сутки (полночь) ставит incremental-sync по AccessToken для всех не-`disconnected` интеграций. Единственный способ забора (приём вебхуков убран 2026-06-19).
-- `chatbox-analyze.cron.ts` — раз в сутки в 02:00 МСК (`EVERY_DAY_AT_2AM`, после `ChatboxSyncCron` в 00:00) подбирает сессии `analysisStatus='pending'` с `endedAt!=null`. Раньше был каждые 10 минут — лишние расходы, починено (TZ 2026-06-30).
-- Оба cron'а уважают kill-switch `AdminSetting chatbox.enabled`.
+- `chatbox-stuck-recovery.cron.ts` — раз в час safety-net: re-enqueue залипших `analysisStatus='analyzing'` сессий (старше `chatbox.analyze.stuckAnalyzingMin`, default 30). НЕ запускает analyze по расписанию — только recovery.
+- **Анализ по факту** — **event-driven**: `ChatboxSyncService.incrementalSync/fullSync/syncByScope` в самом конце вызывают `enqueuePendingAnalysisIfEnabled` (только для `analysisStatus='pending'` сессий). Никакого крон-анализа по расписанию больше нет. Если событие потерялось (worker crash/Redis flush) — stuck-recovery подхватит.
+- Дедуп гарантирован двумя уровнями: (1) `jobId = chatbox-analyze-${sessionId}` в BullMQ — повторный enqueue no-op; (2) conditional `updateMany({where: {analysisStatus:'pending'}, data: {analyzing}})` в worker'е — race-protection, второй worker'у skip.
+- Все cron'ы уважают kill-switch `AdminSetting chatbox.enabled`.
 - **2026-06-19 — observability:** все 4 воркера (`bitrix-sync/analyze`, `chatbox-sync/analyze`) оборачивают исполнение вызовами `IntegrationSyncLogService.begin/succeed/fail/skip` → таблица `IntegrationSyncRun` (best-effort, без throw). @Cron теперь именованные (name:) → попадают в `CronSchedule`/`CronRunHistory`. Очереди `bitrix.sync/analyze` и `chatbox.sync/analyze` зарегистрированы в `getKnownQueueNames()` → видны в admin/platform/workers.
 
 ### Прочее

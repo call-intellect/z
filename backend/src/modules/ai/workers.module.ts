@@ -27,6 +27,7 @@ import { ExperimentDetectorWorker } from '../knowledge-core/workers/experiment-d
 import { ExperimentStatusResolverCron } from '../knowledge-core/workers/experiment-status-resolver.cron';
 import { ExperimentTransitionsCron } from '../knowledge-core/workers/experiment-transitions.cron';
 import { GoalEmbedWorker } from '../knowledge-core/workers/goal-embed.worker';
+import { GoalHierarchyRebuildCron } from '../knowledge-core/workers/goal-hierarchy-rebuild.cron';
 import { GoalTaskLinkerCron } from '../knowledge-core/workers/goal-task-linker.cron';
 import { GoalThemeLinkerCron } from '../knowledge-core/workers/goal-theme-linker.cron';
 import { GraphMaterializationVerifyCron } from '../knowledge-core/workers/graph-materialization-verify.cron';
@@ -160,6 +161,7 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // берётся из @Global KnowledgeCoreModule, WorkerOrgGate — из @Global CoreQueueModule.
     GoalThemeLinkerCron,
     GoalTaskLinkerCron,
+    GoalHierarchyRebuildCron,
     ReframingCron,
     ThemeClustererCron,
     ThemeSummarizeCron,

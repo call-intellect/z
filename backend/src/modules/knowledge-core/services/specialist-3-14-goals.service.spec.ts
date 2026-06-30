@@ -549,3 +549,158 @@ describe('Specialist314GoalsService.processBlock', () => {
     );
   });
 });
+
+describe('Specialist314GoalsService.rebuildParentForGoal', () => {
+  let svc: Specialist314GoalsService;
+  let m: Mocks;
+
+  const GOAL_ID = 'g-self';
+
+  beforeEach(() => {
+    ({ svc, m } = buildService());
+  });
+
+  function mockGoalLoad(overrides: Record<string, unknown> = {}) {
+    m.prisma.goal.findFirst.mockImplementation((arg: any) => {
+      const sel = arg?.select ?? {};
+      if ('manualOverride' in sel) {
+        return Promise.resolve({
+          id: GOAL_ID,
+          parentGoalId: null,
+          manualOverride: {},
+          ...overrides,
+        });
+      }
+      return Promise.resolve({ parentGoalId: null });
+    });
+  }
+
+  it('manualOverride.parentGoalId===true → manual_override, без update и без арбитра', async () => {
+    mockGoalLoad({ manualOverride: { parentGoalId: true } });
+    const spy = vi.spyOn(svc, 'suggestParentForGoal');
+
+    const res = await svc.rebuildParentForGoal({
+      tenantId: TENANT,
+      goalId: GOAL_ID,
+      minConfidence: 0.7,
+    });
+
+    expect(res).toEqual({ reparented: false, reason: 'manual_override' });
+    expect(spy).not.toHaveBeenCalled();
+    expect(m.prisma.goal.update).not.toHaveBeenCalled();
+  });
+
+  it("verdict 'standalone' → no_child_of, без update", async () => {
+    mockGoalLoad();
+    vi.spyOn(svc, 'suggestParentForGoal').mockResolvedValue({
+      suggestedParentGoalId: null,
+      verdict: 'standalone',
+      candidates: [],
+      reasoning: null,
+      confidence: null,
+    });
+
+    const res = await svc.rebuildParentForGoal({
+      tenantId: TENANT,
+      goalId: GOAL_ID,
+      minConfidence: 0.7,
+    });
+
+    expect(res).toEqual({ reparented: false, reason: 'no_child_of' });
+    expect(m.prisma.goal.update).not.toHaveBeenCalled();
+  });
+
+  it('suggested === current parent → unchanged, без update', async () => {
+    mockGoalLoad({ parentGoalId: 'p-1' });
+    vi.spyOn(svc, 'suggestParentForGoal').mockResolvedValue({
+      suggestedParentGoalId: 'p-1',
+      verdict: 'child_of',
+      candidates: [],
+      reasoning: null,
+      confidence: 0.9,
+    });
+
+    const res = await svc.rebuildParentForGoal({
+      tenantId: TENANT,
+      goalId: GOAL_ID,
+      minConfidence: 0.7,
+    });
+
+    expect(res).toEqual({ reparented: false, reason: 'unchanged' });
+    expect(m.prisma.goal.update).not.toHaveBeenCalled();
+  });
+
+  it('confidence < minConfidence → low_confidence, без update', async () => {
+    mockGoalLoad();
+    vi.spyOn(svc, 'suggestParentForGoal').mockResolvedValue({
+      suggestedParentGoalId: 'p-2',
+      verdict: 'child_of',
+      candidates: [],
+      reasoning: null,
+      confidence: 0.5,
+    });
+
+    const res = await svc.rebuildParentForGoal({
+      tenantId: TENANT,
+      goalId: GOAL_ID,
+      minConfidence: 0.7,
+    });
+
+    expect(res).toEqual({ reparented: false, reason: 'low_confidence' });
+    expect(m.prisma.goal.update).not.toHaveBeenCalled();
+  });
+
+  it('валидный child_of, новый родитель, conf ≥ min, без цикла → update + reparented', async () => {
+    mockGoalLoad();
+    vi.spyOn(svc, 'suggestParentForGoal').mockResolvedValue({
+      suggestedParentGoalId: 'p-3',
+      verdict: 'child_of',
+      candidates: [],
+      reasoning: null,
+      confidence: 0.9,
+    });
+
+    const res = await svc.rebuildParentForGoal({
+      tenantId: TENANT,
+      goalId: GOAL_ID,
+      minConfidence: 0.7,
+    });
+
+    expect(res).toEqual({ reparented: true, reason: 'reparented' });
+    expect(m.prisma.goal.update).toHaveBeenCalledTimes(1);
+    expect(m.prisma.goal.update).toHaveBeenCalledWith({
+      where: { id: GOAL_ID },
+      data: { parentGoalId: 'p-3' },
+    });
+  });
+
+  it('цикл: предок предлагаемого родителя достигает goalId → cycle, без update', async () => {
+    m.prisma.goal.findFirst.mockImplementation((arg: any) => {
+      const sel = arg?.select ?? {};
+      if ('manualOverride' in sel) {
+        return Promise.resolve({
+          id: GOAL_ID,
+          parentGoalId: null,
+          manualOverride: {},
+        });
+      }
+      return Promise.resolve({ parentGoalId: GOAL_ID });
+    });
+    vi.spyOn(svc, 'suggestParentForGoal').mockResolvedValue({
+      suggestedParentGoalId: 'p-cycle',
+      verdict: 'child_of',
+      candidates: [],
+      reasoning: null,
+      confidence: 0.9,
+    });
+
+    const res = await svc.rebuildParentForGoal({
+      tenantId: TENANT,
+      goalId: GOAL_ID,
+      minConfidence: 0.7,
+    });
+
+    expect(res).toEqual({ reparented: false, reason: 'cycle' });
+    expect(m.prisma.goal.update).not.toHaveBeenCalled();
+  });
+});

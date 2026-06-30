@@ -62,7 +62,6 @@ export function mapWeeklyDigestRowsToTrend(
           (s: number, b: unknown) => s + (Number((b as { count?: unknown })?.count) || 0),
           0,
         ),
-        hangingDecisions: Array.isArray(m.hangingDecisions) ? m.hangingDecisions.length : 0,
       };
     })
     .reverse();
@@ -283,10 +282,6 @@ export class WeeklyDigestService {
         dynamicLabel: i.dynamicLabel,
       })),
       goals: aggregates.metrics.goals,
-      hangingDecisions: aggregates.metrics.hangingDecisions.map((d) => ({
-        statement: d.statement,
-        ageDays: d.ageDays,
-      })),
       ...(aggregates.metrics.topIdeas && aggregates.metrics.topIdeas.length > 0
         ? {
             topIdeas: aggregates.metrics.topIdeas.map((i) => ({
@@ -608,16 +603,8 @@ export class WeeklyDigestService {
     weekStart: string;
     weekEnd: string;
   }): Promise<{ metrics: WeeklyDigestMetricsDto; sources: WeeklyDigestSourcesDto }> {
-    const [
-      checkIns,
-      _prevCheckIns,
-      blockerCheckIns,
-      insights,
-      goals,
-      decisions,
-      goalsPrev,
-      ideasRaw,
-    ] = await Promise.all([
+    const [checkIns, _prevCheckIns, blockerCheckIns, insights, goals, goalsPrev, ideasRaw] =
+      await Promise.all([
       this.prisma.dailyCheckIn.findMany({
         where: {
           tenantId: args.tenantId,
@@ -663,18 +650,6 @@ export class WeeklyDigestService {
           },
         },
         select: { id: true, status: true, archivedAt: true },
-      }),
-      this.prisma.decision.findMany({
-        where: {
-          tenantId: args.tenantId,
-          deletedAt: null,
-          status: { in: ['approved', 'proposed', 'active', 'implemented'] },
-          actualOutcomes: null,
-          decidedAt: { lt: addDays(parseDateLocalToUtc(args.weekStart), -7) },
-        },
-        select: { id: true, statement: true, text: true, decidedAt: true },
-        orderBy: { decidedAt: 'asc' },
-        take: 5,
       }),
       this.prisma.goal.findMany({
         where: {
@@ -765,19 +740,6 @@ export class WeeklyDigestService {
     const completedPrev = goalsPrev.filter((g0) => g0.status === 'achieved').length;
     const failedPrev = goalsPrev.filter((g0) => g0.status === 'abandoned').length;
 
-    const now = new Date();
-    const hangingDecisions = decisions.map((d) => {
-      const ageDays = d.decidedAt
-        ? Math.floor((now.getTime() - d.decidedAt.getTime()) / (24 * 60 * 60 * 1000))
-        : 0;
-      const statement = (d.statement ?? d.text ?? '').slice(0, 400);
-      return {
-        decisionId: d.id,
-        statement,
-        ageDays,
-      };
-    });
-
     const metrics: WeeklyDigestMetricsDto = {
       totalCheckIns: total,
       greenShare: total > 0 ? g / total : 0,
@@ -797,7 +759,6 @@ export class WeeklyDigestService {
         completedDelta: completedNow - completedPrev,
         failedDelta: failedNow - failedPrev,
       },
-      hangingDecisions,
       ...(topIdeas.length > 0 ? { topIdeas } : {}),
     };
 
@@ -805,7 +766,6 @@ export class WeeklyDigestService {
       blockerCheckInIds,
       insightIds: insights.map((i) => i.id),
       goalIds: goals.map((g0) => g0.id),
-      decisionIds: decisions.map((d) => d.id),
       ...(topIdeas.length > 0 ? { ideaIds: topIdeas.map((i) => i.ideaId) } : {}),
     };
 
@@ -915,8 +875,6 @@ export class WeeklyDigestService {
       prevCheckIns,
       curCommitments,
       prevCommitments,
-      curHanging,
-      prevHanging,
       curBlockerCount,
       prevBlockerCount,
       curInsightCount,
@@ -982,24 +940,6 @@ export class WeeklyDigestService {
           },
         },
       }),
-      this.prisma.decision.count({
-        where: {
-          tenantId: args.tenantId,
-          deletedAt: null,
-          status: { in: ['active', 'proposed', 'approved'] },
-          raisedCount: { gte: 2 },
-          createdAt: { lt: addDays(curEndUtc, -7) },
-        },
-      }),
-      this.prisma.decision.count({
-        where: {
-          tenantId: args.tenantId,
-          deletedAt: null,
-          status: { in: ['active', 'proposed', 'approved'] },
-          raisedCount: { gte: 2 },
-          createdAt: { lt: addDays(prevEndUtc, -7) },
-        },
-      }),
       this.prisma.ideaBlock.count({
         where: {
           tenantId: args.tenantId,
@@ -1056,7 +996,6 @@ export class WeeklyDigestService {
     const kpiDeltas: WeeklyKpiDeltaDto[] = [
       buildKpi('Индекс настроения', curSent, prevSent, 'pts'),
       buildKpi('Надёжность обещаний', curRel, prevRel, '%'),
-      buildKpi('Висящие решения', curHanging, prevHanging, 'шт'),
       buildKpi('Чек-инов всего', curTotal, prevTotal, 'шт'),
     ];
 
@@ -1074,8 +1013,6 @@ export class WeeklyDigestService {
       prevSent,
       curRel,
       prevRel,
-      curHanging,
-      prevHanging,
     });
 
     const sectionDeltas: WeeklySectionDeltasDto = {
@@ -1093,8 +1030,6 @@ export class WeeklyDigestService {
     prevSent: number | null;
     curRel: number | null;
     prevRel: number | null;
-    curHanging: number;
-    prevHanging: number;
   }): Promise<WeeklyForecastItemDto[]> {
     const since14d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
     const snapshot = await this.prisma.forecastSnapshot.findFirst({
@@ -1114,7 +1049,6 @@ export class WeeklyDigestService {
     return [
       buildLinearForecast('sentiment', args.curSent, args.prevSent),
       buildLinearForecast('promises', args.curRel, args.prevRel),
-      buildLinearForecast('hanging_decisions', args.curHanging, args.prevHanging),
     ];
   }
 
@@ -1148,7 +1082,6 @@ export class WeeklyDigestService {
     const result: WeeklyForecastItemDto[] = [];
     result.push(this.shiftToDto('sentiment', byMetric.get('sentiment_index')));
     result.push(this.shiftToDto('promises', byMetric.get('commitment_kept_ratio')));
-    result.push(this.shiftToDto('hanging_decisions', byMetric.get('hanging_decisions')));
     return result;
   }
 
@@ -1184,40 +1117,21 @@ export class WeeklyDigestService {
         confidence,
       };
     }
-    if (metric === 'promises') {
-      if (direction === 'up')
-        return {
-          metric,
-          projection: 'Forecaster: надёжность обещаний продолжит расти.',
-          confidence,
-        };
-      if (direction === 'down')
-        return {
-          metric,
-          projection: 'Forecaster: ожидается просадка надёжности обещаний.',
-          confidence,
-        };
-      return {
-        metric,
-        projection: 'Forecaster: надёжность обещаний стабильна.',
-        confidence,
-      };
-    }
     if (direction === 'up')
       return {
         metric,
-        projection: 'Forecaster: очередь висящих решений вырастет.',
+        projection: 'Forecaster: надёжность обещаний продолжит расти.',
         confidence,
       };
     if (direction === 'down')
       return {
         metric,
-        projection: 'Forecaster: очередь висящих решений сократится.',
+        projection: 'Forecaster: ожидается просадка надёжности обещаний.',
         confidence,
       };
     return {
       metric,
-      projection: 'Forecaster: очередь висящих решений стабильна.',
+      projection: 'Forecaster: надёжность обещаний стабильна.',
       confidence,
     };
   }
@@ -1427,12 +1341,11 @@ function emptyMetrics(): WeeklyDigestMetricsDto {
       completedDelta: 0,
       failedDelta: 0,
     },
-    hangingDecisions: [],
   };
 }
 
 function emptySources(): WeeklyDigestSourcesDto {
-  return { blockerCheckInIds: [], insightIds: [], goalIds: [], decisionIds: [] };
+  return { blockerCheckInIds: [], insightIds: [], goalIds: [] };
 }
 
 function emptySectionDeltas(): WeeklySectionDeltasDto {
@@ -1607,59 +1520,30 @@ function buildLinearForecast(
     };
   }
 
-  if (metric === 'promises') {
-    if (current === null) {
-      return {
-        metric,
-        projection: 'Недостаточно данных для прогноза по обещаниям.',
-        confidence: 'low',
-      };
-    }
-    if (delta === null || delta === 0) {
-      return {
-        metric,
-        projection: 'Надёжность обещаний стабильна — особых сдвигов не ожидается.',
-        confidence,
-      };
-    }
-    if (delta > 0) {
-      return {
-        metric,
-        projection: `Надёжность обещаний продолжит расти, ожидаемое значение ~${projected}% к концу недели.`,
-        confidence,
-      };
-    }
-    return {
-      metric,
-      projection: `При сохранении тренда надёжность обещаний может упасть до ~${projected}%.`,
-      confidence,
-    };
-  }
-
   if (current === null) {
     return {
       metric,
-      projection: 'Недостаточно данных для прогноза по висящим решениям.',
+      projection: 'Недостаточно данных для прогноза по обещаниям.',
       confidence: 'low',
     };
   }
   if (delta === null || delta === 0) {
     return {
       metric,
-      projection: 'Очередь висящих решений стабильна — особых сдвигов не ожидается.',
+      projection: 'Надёжность обещаний стабильна — особых сдвигов не ожидается.',
       confidence,
     };
   }
   if (delta > 0) {
     return {
       metric,
-      projection: `При сохранении тренда висящих решений станет ~${Math.max(0, projected ?? 0)} к концу недели.`,
+      projection: `Надёжность обещаний продолжит расти, ожидаемое значение ~${projected}% к концу недели.`,
       confidence,
     };
   }
   return {
     metric,
-    projection: `Очередь висящих решений сокращается, ожидаемое значение ~${Math.max(0, projected ?? 0)} к концу недели.`,
+    projection: `При сохранении тренда надёжность обещаний может упасть до ~${projected}%.`,
     confidence,
   };
 }

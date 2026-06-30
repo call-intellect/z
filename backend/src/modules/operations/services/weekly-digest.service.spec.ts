@@ -39,7 +39,6 @@ describe('WeeklyDigestService', () => {
     insights?: unknown[];
     goals?: unknown[];
     goalsPrev?: unknown[];
-    decisions?: unknown[];
     ideas?: unknown[];
     existing?: unknown;
     latest?: unknown;
@@ -71,9 +70,6 @@ describe('WeeklyDigestService', () => {
       },
       goalAlignmentSnapshot: {
         findFirst: vi.fn().mockResolvedValue(null),
-      },
-      decision: {
-        findMany: vi.fn().mockResolvedValue(overrides.decisions ?? []),
       },
       idea: {
         findMany: vi.fn().mockResolvedValue(overrides.ideas ?? []),

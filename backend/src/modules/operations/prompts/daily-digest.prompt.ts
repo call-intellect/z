@@ -23,107 +23,6 @@ function insightKindRu(k: string): string {
   return INSIGHT_KIND_RU[k] ?? k;
 }
 
-const DECISION_STATUS_RU: Record<string, string> = {
-  active: 'действует',
-  rolled_back: 'откатано',
-  superseded: 'заменено',
-  proposed: 'предложено',
-  approved: 'утверждено',
-  rejected: 'отклонено',
-  implemented: 'внедрено',
-  cancelled: 'отменено',
-};
-function decisionStatusRu(s: string): string {
-  return DECISION_STATUS_RU[s] ?? s;
-}
-
-export const DAILY_DIGEST_SYSTEM_PROMPT = [
-  'Ты — аналитик операционного директора. На вход — агрегат показателей компании за прошедшие сутки.',
-  'Твоя задача — собрать связный комментарий из 4-6 коротких разделов в формате Markdown:',
-  '',
-  '  1. Температура команды вчера + красные точки (если есть).',
-  '  2. Новые блокеры за день.',
-  '  3. Просроченные обещания (на кого ждём ответа).',
-  '  4. Что закрыли / что упустили из целей.',
-  '  5. Сигналы (новые важные инсайты).',
-  '  6. Что критично взять в руки сегодня (1-2 пункта).',
-  '',
-  'После основного текста — отдельной секцией строка-разделитель:',
-  `${SHORT_SUMMARY_DELIMITER}`,
-  'а после него — `shortSummary` (3-4 коротких предложения для Telegram-рассылки и блока на главной).',
-  '',
-  'Жёсткие правила:',
-  '  - На русском, plain markdown без HTML и без таблиц.',
-  '  - Только то, что есть в данных. Не додумывай и не давай советов на пустом месте.',
-  '  - Без воды и без преамбулы. Сразу к делу.',
-  '  - Тон — спокойный и фактологичный (не алармизм, не оптимизм).',
-  '  - Если по какому-то блоку данных нет — пропусти раздел, не пиши «нет данных» как пункт.',
-  '  - Имена сотрудников не цитируй и персональные подробности из чек-инов не пересказывай (приватность).',
-  '  - Длина основного текста — 200-450 слов, shortSummary — 3-4 предложения.',
-].join('\n');
-
-export function buildDailyDigestUserMessage(agg: DailyDigestAggregates): string {
-  const lines: string[] = [];
-  lines.push(`Дата отчёта: ${agg.dateLocal} (вчерашние сутки в МСК).`);
-  lines.push('');
-  lines.push('Температура команды:');
-  lines.push(
-    `  всего чек-инов: ${agg.totalCheckIns}; зелёных ${pct(agg.greenShare)}, ` +
-      `жёлтых ${pct(agg.yellowShare)}, красных ${pct(agg.redShare)}.`,
-  );
-
-  if (agg.topRedCheckIns.length > 0) {
-    lines.push('');
-    lines.push('Красные точки (топ-3 по дню):');
-    for (const r of agg.topRedCheckIns.slice(0, 3)) {
-      lines.push(`  - ${truncate(r.excerpt, 200)}.`);
-    }
-  }
-
-  if (agg.newBlockers.length > 0) {
-    lines.push('');
-    lines.push('Новые блокеры за день (топ-5):');
-    for (const b of agg.newBlockers.slice(0, 5)) {
-      lines.push(`  - ${truncate(b.name, 200)} (уверенность ${pct(b.confidence)}).`);
-    }
-  }
-
-  if (agg.overdueCommitments.length > 0) {
-    lines.push('');
-    lines.push('Просроченные обещания (на сегодня, топ-5):');
-    for (const c of agg.overdueCommitments.slice(0, 5)) {
-      const due = c.dueDate ? ` (срок ${c.dueDate})` : '';
-      lines.push(`  - ${truncate(c.name, 200)}${due}.`);
-    }
-  }
-
-  lines.push('');
-  lines.push('Цели (изменения статуса за вчера):');
-  lines.push(
-    `  закрыто ${agg.goals.completed}, провалено ${agg.goals.failed}, ` +
-      `вновь активированы ${agg.goals.activated}.`,
-  );
-
-  if (agg.newHighInsights.length > 0) {
-    lines.push('');
-    lines.push('Новые сигналы (важные, топ-5):');
-    for (const i of agg.newHighInsights.slice(0, 5)) {
-      const cause = i.causeCategory ? `, причина: ${i.causeCategory}` : '';
-      lines.push(`  - [${insightKindRu(i.kind)}${cause}] ${truncate(i.statement, 200)}.`);
-    }
-  }
-
-  if (agg.decisions.length > 0) {
-    lines.push('');
-    lines.push('Решения за вчера (топ-5):');
-    for (const d of agg.decisions.slice(0, 5)) {
-      lines.push(`  - [${decisionStatusRu(d.status)}] ${truncate(d.statement, 200)}.`);
-    }
-  }
-
-  return lines.join('\n');
-}
-
 export function parseDailyDigestLlmResponse(raw: string): {
   bodyMarkdown: string;
   shortSummary: string | null;
@@ -190,14 +89,6 @@ export function buildFallbackDigestMarkdown(agg: DailyDigestAggregates): {
     }
   }
 
-  if (agg.decisions.length > 0) {
-    lines.push('');
-    lines.push('## Решения');
-    for (const d of agg.decisions.slice(0, 5)) {
-      lines.push(`- [${decisionStatusRu(d.status)}] ${d.statement}`);
-    }
-  }
-
   const shortSummary =
     `Сводка за ${agg.dateLocal}: чек-инов ${agg.totalCheckIns} ` +
     `(красных ${pct(agg.redShare)}), новых блокеров ${agg.newBlockers.length}, ` +
@@ -229,7 +120,6 @@ const LETTER_KEYS = [
   'not_done',
   'reporting',
   'blocked',
-  'decisions',
   'clients',
   'ideas',
   'reflection',
@@ -251,7 +141,7 @@ export const DAY_COMPANY_SYSTEM_PROMPT = [
   '',
   'Вердикт — ровно 4 оси в этом порядке: team, clients, execution, overall. У каждой оси state ∈ ok|warn|risk, короткий label по-русски и why (1 фраза, опирается на данные). overall.state в блоке overall — итог дня; overall.emoji — один эмодзи под состояние (🟢/⚠️/🔴 или близкий); overall.title — короткий заголовок дня; overall.oneLiner — одно предложение-резюме для рассылки.',
   '',
-  'Письмо (letter) — массив секций. Каждая секция: key из фиксированного списка (main, done, not_done, reporting, blocked, decisions, clients, ideas, reflection, actions, delta), короткий title и prose — чистая связная проза (для озвучки и Telegram), без списков-маркеров и без markdown-таблиц. cites — опционально, ссылки на источники {label, ref}. Начни с секции key=main («Главное за день»). Пиши только те секции, под которые есть данные.',
+  'Письмо (letter) — массив секций. Каждая секция: key из фиксированного списка (main, done, not_done, reporting, blocked, clients, ideas, reflection, actions, delta), короткий title и prose — чистая связная проза (для озвучки и Telegram), без списков-маркеров и без markdown-таблиц. cites — опционально, ссылки на источники {label, ref}. Начни с секции key=main («Главное за день»). Пиши только те секции, под которые есть данные.',
   '',
   'Дневной компас (goalAlignmentDay) — про главную цель компании: direction ∈ to_goal|drift|against, score — число 0..100 или null (если оценки нет), todayDelta — короткая строка про изменение ко вчера, why — 1-2 предложения, pro и contra — массивы коротких строк (за движение к цели / против). Если данных о цели нет — direction=drift, score=null, пустые pro/contra, честное why.',
   '',
@@ -302,7 +192,7 @@ export const DAY_COMPANY_JSON_SCHEMA: Record<string, unknown> = {
     letter: {
       type: 'array',
       minItems: 1,
-      maxItems: 11,
+      maxItems: 10,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -501,14 +391,6 @@ export function buildDayCompanyUserMessage(
     `  закрыто ${metrics.goals.completed}, провалено ${metrics.goals.failed}, ` +
       `вновь активны ${metrics.goals.activated}.`,
   );
-
-  if (metrics.decisions.length > 0) {
-    lines.push('');
-    lines.push('Решения за день (топ-5):');
-    for (const d of metrics.decisions.slice(0, 5)) {
-      lines.push(`  - [${decisionStatusRu(d.status)}] ${truncate(d.statement, 200)}.`);
-    }
-  }
 
   if (pkg.topInsights.length > 0) {
     lines.push('');

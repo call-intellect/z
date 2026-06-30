@@ -19,7 +19,6 @@ const MONTH_LETTER_KEYS = [
   'not_done',
   'reporting',
   'blocked',
-  'decisions',
   'clients',
   'ideas',
   'reflection',
@@ -44,7 +43,7 @@ export const MONTH_COMPANY_SYSTEM_PROMPT = [
   '',
   'Вердикт — ровно 4 оси в этом порядке: team, clients, execution, overall. У каждой оси state ∈ ok|warn|risk, короткий label по-русски и why (1 фраза по данным месяца). overall.state — итог месяца; overall.emoji — один эмодзи под состояние; overall.title — короткий заголовок месяца; overall.oneLiner — одно предложение-резюме для рассылки.',
   '',
-  'Письмо (letter) — массив секций. Каждая секция: key из фиксированного списка (main, done, not_done, reporting, blocked, decisions, clients, ideas, reflection, actions, delta), короткий title и prose — чистая связная проза (для озвучки и Telegram), без списков-маркеров и markdown-таблиц. cites — опционально {label, ref}. Начни с key=main («Главное за месяц»). Пиши только те секции, под которые есть данные.',
+  'Письмо (letter) — массив секций. Каждая секция: key из фиксированного списка (main, done, not_done, reporting, blocked, clients, ideas, reflection, actions, delta), короткий title и prose — чистая связная проза (для озвучки и Telegram), без списков-маркеров и markdown-таблиц. cites — опционально {label, ref}. Начни с key=main («Главное за месяц»). Пиши только те секции, под которые есть данные.',
   '',
   'Месячный компас (goalAlignmentMonth) — про главную цель компании: direction ∈ to_goal|drift|against, score — число 0..100 или null, monthDelta — короткая строка про движение к цели за месяц, leadingSignal — короткий текст ведущего сигнала (что сильнее всего повлияет на достижение цели), why — 1-2 предложения, pro и contra — массивы коротких строк (за движение к цели / против). Если данных о цели нет — direction=drift, score=null, пустые pro/contra, честное why.',
   '',
@@ -105,7 +104,7 @@ export const MONTH_COMPANY_JSON_SCHEMA: Record<string, unknown> = {
     letter: {
       type: 'array',
       minItems: 1,
-      maxItems: 11,
+      maxItems: 10,
       items: {
         type: 'object',
         additionalProperties: false,

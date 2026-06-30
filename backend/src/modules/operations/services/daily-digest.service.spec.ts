@@ -10,7 +10,6 @@ describe('DailyDigestService', () => {
     overdueCommitments?: unknown[];
     goals?: unknown[];
     highInsights?: unknown[];
-    decisions?: unknown[];
     existing?: unknown;
     latest?: unknown;
     llmResult?: { text: string; modelUsed: string };
@@ -45,9 +44,6 @@ describe('DailyDigestService', () => {
       },
       insight: {
         findMany: vi.fn().mockResolvedValue(overrides.highInsights ?? []),
-      },
-      decision: {
-        findMany: vi.fn().mockResolvedValue(overrides.decisions ?? []),
       },
       meeting: {
         findMany: vi.fn().mockResolvedValue([]),

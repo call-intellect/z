@@ -87,7 +87,6 @@ function emptyMetrics() {
     overdueCommitments: [],
     goals: { completed: 0, failed: 0, activated: 0, completedIds: [], failedIds: [] },
     newHighInsights: [],
-    decisions: [],
   };
 }
 

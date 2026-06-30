@@ -34,11 +34,6 @@ export interface DailyDigestMetricsDto {
     kind: string;
     causeCategory: string | null;
   }>;
-  decisions: Array<{
-    decisionId: string;
-    statement: string;
-    status: string;
-  }>;
   risksSummary?: string | null;
   ideasSummary?: string | null;
 }
@@ -84,11 +79,10 @@ export interface DailyDigestSourcesDto {
   commitmentIds: string[];
   goalIds: string[];
   insightIds: string[];
-  decisionIds: string[];
 }
 
 export interface DailyDigestEventDto {
-  kind: 'meeting' | 'decision' | 'signal';
+  kind: 'meeting' | 'signal';
   id: string;
   title: string;
   occurredAt: string;
@@ -97,7 +91,7 @@ export interface DailyDigestEventDto {
 }
 
 export interface DailyDigestUrgentItemDto {
-  kind: 'overdue_commitment' | 'raised_decision' | 'high_insight';
+  kind: 'overdue_commitment' | 'high_insight';
   id: string;
   title: string;
   link: string;
@@ -189,7 +183,6 @@ export interface DailyDigestAggregates {
     kind: string;
     causeCategory: string | null;
   }>;
-  decisions: Array<{ statement: string; status: string }>;
 }
 
 export const GetDailyDigestQuerySchema = z

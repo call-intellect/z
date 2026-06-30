@@ -23,87 +23,11 @@ export interface WeeklyDigestAggregates {
     completedDelta: number;
     failedDelta: number;
   };
-  hangingDecisions: Array<{ statement: string; ageDays: number }>;
   topIdeas?: Array<{
     statement: string;
     status: string;
     supporterCount: number;
   }>;
-}
-
-export const WEEKLY_DIGEST_SYSTEM_PROMPT = [
-  'Ты — аналитик операционного директора. На вход — агрегат показателей компании за прошедшую неделю.',
-  'Твоя задача — собрать связный комментарий из 5-7 коротких разделов в формате Markdown:',
-  '',
-  '  1. Температура команды (доли зелёных/жёлтых/красных, динамика, тревожные моменты).',
-  '  2. Главные блокеры (повторяющиеся, что мешает регулярно).',
-  '  3. Сигналы недели (топ-инсайты — что обостряется).',
-  '  4. Цели (что закрыли, что провалили, что в работе; динамика к прошлой неделе).',
-  '  5. Висящие решения (что зависло без отметки о результате).',
-  '  6. Главный вывод (1-2 предложения — на что обратить внимание в первую очередь).',
-  '',
-  'Жёсткие правила:',
-  '  - На русском, plain markdown без HTML и без таблиц.',
-  '  - Только то, что есть в данных. Не додумывай и не давай советов на пустом месте.',
-  '  - Без воды и без преамбулы. Сразу к делу.',
-  '  - Тон — спокойный и фактологичный (не алармизм, не оптимизм).',
-  '  - Если по какому-то блоку данных нет — пропусти раздел, не пиши «нет данных» как пункт.',
-  '  - Не называй сотрудников по именам и не цитируй персональные подробности из чек-инов (приватность).',
-  '  - Длина — 250-600 слов.',
-].join('\n');
-
-export function buildWeeklyDigestUserMessage(agg: WeeklyDigestAggregates): string {
-  const lines: string[] = [];
-  lines.push(`Период: ${agg.weekStart} — ${agg.weekEnd}.`);
-  lines.push('');
-  lines.push('Температура команды:');
-  lines.push(
-    `  всего чек-инов: ${agg.totalCheckIns}; зелёных ${pct(agg.greenShare)}, ` +
-      `жёлтых ${pct(agg.yellowShare)}, красных ${pct(agg.redShare)}.`,
-  );
-
-  if (agg.topBlockers.length > 0) {
-    lines.push('');
-    lines.push('Повторяющиеся блокеры (топ-5):');
-    for (const b of agg.topBlockers.slice(0, 5)) {
-      lines.push(`  - ${truncate(b.text, 200)} (упоминаний: ${b.count}).`);
-    }
-  }
-
-  if (agg.topInsights.length > 0) {
-    lines.push('');
-    lines.push('Главные сигналы (топ-3 по динамике):');
-    for (const i of agg.topInsights.slice(0, 3)) {
-      lines.push(`  - [${i.kind}, динамика ${i.dynamicLabel}] ${truncate(i.statement, 200)}.`);
-    }
-  }
-
-  lines.push('');
-  lines.push('Цели:');
-  lines.push(
-    `  закрыто ${agg.goals.completed} (${signed(agg.goals.completedDelta)} к прошлой неделе), ` +
-      `провалено ${agg.goals.failed} (${signed(agg.goals.failedDelta)}), в работе ${agg.goals.inProgress}.`,
-  );
-
-  if (agg.hangingDecisions.length > 0) {
-    lines.push('');
-    lines.push('Висящие решения (старше 7 дней без отметки о результате):');
-    for (const d of agg.hangingDecisions.slice(0, 5)) {
-      lines.push(`  - ${truncate(d.statement, 200)} (возраст ${d.ageDays} дн.).`);
-    }
-  }
-
-  if (agg.topIdeas && agg.topIdeas.length > 0) {
-    lines.push('');
-    lines.push('Идеи недели (топ-5 по весу):');
-    for (const i of agg.topIdeas.slice(0, 5)) {
-      lines.push(
-        `  - [${i.status}, поддержали ${i.supporterCount}] ${truncate(i.statement, 200)}.`,
-      );
-    }
-  }
-
-  return lines.join('\n');
 }
 
 function pct(v: number): string {
@@ -155,14 +79,6 @@ export function buildFallbackDigestMarkdown(agg: WeeklyDigestAggregates): string
       `провалено ${agg.goals.failed} (${signed(agg.goals.failedDelta)}), в работе ${agg.goals.inProgress}.`,
   );
 
-  if (agg.hangingDecisions.length > 0) {
-    lines.push('');
-    lines.push('## Висящие решения');
-    for (const d of agg.hangingDecisions.slice(0, 5)) {
-      lines.push(`- ${d.statement} (возраст ${d.ageDays} дн.)`);
-    }
-  }
-
   if (agg.topIdeas && agg.topIdeas.length > 0) {
     lines.push('');
     lines.push('## Идеи недели');
@@ -185,7 +101,6 @@ const WEEK_LETTER_KEYS = [
   'not_done',
   'reporting',
   'blocked',
-  'decisions',
   'clients',
   'ideas',
   'reflection',
@@ -208,7 +123,7 @@ export const WEEK_COMPANY_SYSTEM_PROMPT = [
   '',
   'Вердикт — ровно 4 оси в этом порядке: team, clients, execution, overall. У каждой оси state ∈ ok|warn|risk, короткий label по-русски и why (1 фраза по данным недели). overall.state — итог недели; overall.emoji — один эмодзи под состояние; overall.title — короткий заголовок недели; overall.oneLiner — одно предложение-резюме для рассылки.',
   '',
-  'Письмо (letter) — массив секций. Каждая секция: key из фиксированного списка (main, done, not_done, reporting, blocked, decisions, clients, ideas, reflection, actions, delta), короткий title и prose — чистая связная проза (для озвучки и Telegram), без списков-маркеров и markdown-таблиц. cites — опционально {label, ref}. Начни с key=main («Главное за неделю»). Пиши только те секции, под которые есть данные. В секции delta опиши динамику к прошлой неделе, если её показатели даны.',
+  'Письмо (letter) — массив секций. Каждая секция: key из фиксированного списка (main, done, not_done, reporting, blocked, clients, ideas, reflection, actions, delta), короткий title и prose — чистая связная проза (для озвучки и Telegram), без списков-маркеров и markdown-таблиц. cites — опционально {label, ref}. Начни с key=main («Главное за неделю»). Пиши только те секции, под которые есть данные. В секции delta опиши динамику к прошлой неделе, если её показатели даны.',
   '',
   'Недельный компас (goalAlignmentWeek) — про главную цель компании: direction ∈ to_goal|drift|against, score — число 0..100 или null, weekDelta — короткая строка про движение к цели за неделю (например «+2 из 10»), why — 1-2 предложения, pro и contra — массивы коротких строк (за движение к цели / против). Если данных о цели нет — direction=drift, score=null, пустые pro/contra, честное why.',
   '',
@@ -259,7 +174,7 @@ export const WEEK_COMPANY_JSON_SCHEMA: Record<string, unknown> = {
     letter: {
       type: 'array',
       minItems: 1,
-      maxItems: 11,
+      maxItems: 10,
       items: {
         type: 'object',
         additionalProperties: false,

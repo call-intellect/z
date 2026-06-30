@@ -14,7 +14,6 @@ export interface WeeklyDigestMetricsDto {
     completedDelta: number;
     failedDelta: number;
   };
-  hangingDecisions: Array<{ decisionId: string; statement: string; ageDays: number }>;
   topIdeas?: Array<{
     ideaId: string;
     statement: string;
@@ -30,7 +29,6 @@ export interface WeeklyDigestSourcesDto {
   blockerCheckInIds: string[];
   insightIds: string[];
   goalIds: string[];
-  decisionIds: string[];
   ideaIds?: string[];
 }
 
@@ -50,7 +48,7 @@ export interface WeeklyTeamDynamicsRowDto {
 }
 
 export interface WeeklyForecastItemDto {
-  metric: 'sentiment' | 'promises' | 'hanging_decisions';
+  metric: 'sentiment' | 'promises';
   projection: string;
   confidence: 'low' | 'medium';
 }
@@ -75,7 +73,6 @@ export interface WeeklyDigestTrendPointDto {
   goalsCompleted: number;
   goalsFailed: number;
   blockers: number;
-  hangingDecisions: number;
 }
 
 export interface WeeklyDigestVerdictAxisDto {

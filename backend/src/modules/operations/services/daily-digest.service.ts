@@ -293,10 +293,6 @@ export class DailyDigestService {
         kind: i.kind,
         causeCategory: i.causeCategory,
       })),
-      decisions: aggregates.metrics.decisions.map((d) => ({
-        statement: d.statement,
-        status: d.status,
-      })),
     };
 
     const pkg = await this.buildDayPackage({
@@ -490,15 +486,8 @@ export class DailyDigestService {
     const dayStart = parseDateLocalToUtc(args.dateLocal);
     const dayEnd = endOfDayUtc(dayStart);
 
-    const [
-      checkIns,
-      redCheckIns,
-      newBlockers,
-      overdueCommitments,
-      goalsChanged,
-      highInsights,
-      decisions,
-    ] = await Promise.all([
+    const [checkIns, redCheckIns, newBlockers, overdueCommitments, goalsChanged, highInsights] =
+      await Promise.all([
       this.prisma.dailyCheckIn.findMany({
         where: {
           tenantId: args.tenantId,
@@ -573,16 +562,6 @@ export class DailyDigestService {
         orderBy: { firstObservedAt: 'desc' },
         take: 5,
       }),
-      this.prisma.decision.findMany({
-        where: {
-          tenantId: args.tenantId,
-          deletedAt: null,
-          decidedAt: { gte: dayStart, lte: dayEnd },
-        },
-        select: { id: true, statement: true, text: true, status: true },
-        orderBy: { decidedAt: 'desc' },
-        take: 5,
-      }),
     ]);
 
     let g = 0;
@@ -635,11 +614,6 @@ export class DailyDigestService {
         kind: i.kind,
         causeCategory: i.causeCategory,
       })),
-      decisions: decisions.map((d) => ({
-        decisionId: d.id,
-        statement: (d.statement ?? d.text ?? '').slice(0, 400),
-        status: d.status,
-      })),
     };
 
     const sources: DailyDigestSourcesDto = {
@@ -648,7 +622,6 @@ export class DailyDigestService {
       commitmentIds: overdueCommitments.map((c) => c.id),
       goalIds: goalsChanged.map((g0) => g0.id),
       insightIds: highInsights.map((i) => i.id),
-      decisionIds: decisions.map((d) => d.id),
     };
 
     return { metrics, sources };
@@ -903,10 +876,8 @@ export class DailyDigestService {
 
     const [
       meetingsToday,
-      decisionsToday,
       criticalSignals,
       overdueCommits,
-      raisedDecisions,
       highInsights,
       redCheckIns,
       brokenCommits,
@@ -924,16 +895,6 @@ export class DailyDigestService {
         select: { id: true, title: true, endedAt: true, durationMs: true },
         take: 30,
         orderBy: { endedAt: 'asc' },
-      }),
-      this.prisma.decision.findMany({
-        where: {
-          tenantId: args.tenantId,
-          deletedAt: null,
-          createdAt: { gte: dayStart, lt: dayEnd },
-        },
-        select: { id: true, statement: true, status: true, createdAt: true },
-        take: 30,
-        orderBy: { createdAt: 'asc' },
       }),
       this.prisma.ideaBlock.findMany({
         where: {
@@ -956,17 +917,6 @@ export class DailyDigestService {
         select: { id: true, name: true, commitmentDueDate: true },
         take: 10,
         orderBy: { commitmentDueDate: 'asc' },
-      }),
-      this.prisma.decision.findMany({
-        where: {
-          tenantId: args.tenantId,
-          deletedAt: null,
-          status: { in: ['proposed', 'approved', 'active'] },
-          raisedCount: { gte: 2 },
-        },
-        select: { id: true, statement: true, raisedCount: true },
-        take: 10,
-        orderBy: { raisedCount: 'desc' },
       }),
       this.prisma.insight.findMany({
         where: {
@@ -1069,16 +1019,6 @@ export class DailyDigestService {
         ...(durationMin ? { detail: `${durationMin} мин` } : {}),
       });
     }
-    for (const d of decisionsToday) {
-      eventsToday.push({
-        kind: 'decision',
-        id: d.id,
-        title: (d.statement ?? 'Решение').slice(0, 100),
-        occurredAt: d.createdAt.toISOString(),
-        link: `/decisions/${encodeURIComponent(d.id)}`,
-        detail: d.status,
-      });
-    }
     for (const s of criticalSignals) {
       eventsToday.push({
         kind: 'signal',
@@ -1106,16 +1046,6 @@ export class DailyDigestService {
         link: `/me/commitments?id=${encodeURIComponent(c.id)}`,
         badge: `просрочено на ${daysOverdue} ${daysOverdue === 1 ? 'день' : 'дн.'}`,
         urgency: daysOverdue >= 3 ? 'high' : 'medium',
-      });
-    }
-    for (const d of raisedDecisions) {
-      urgentItems.push({
-        kind: 'raised_decision',
-        id: d.id,
-        title: (d.statement ?? 'Решение').slice(0, 100),
-        link: `/decisions/${encodeURIComponent(d.id)}`,
-        badge: `поднималось ${d.raisedCount} раз`,
-        urgency: d.raisedCount >= 4 ? 'high' : 'medium',
       });
     }
     for (const i of highInsights) {
@@ -1331,7 +1261,6 @@ function emptyMetrics(): DailyDigestMetricsDto {
       failedIds: [],
     },
     newHighInsights: [],
-    decisions: [],
   };
 }
 
@@ -1342,7 +1271,6 @@ function emptySources(): DailyDigestSourcesDto {
     commitmentIds: [],
     goalIds: [],
     insightIds: [],
-    decisionIds: [],
   };
 }
 

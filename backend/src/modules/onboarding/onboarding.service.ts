@@ -770,12 +770,6 @@ ${featureList}
           }),
         );
         remember(
-          'promiseNetworkSnapshot',
-          await tx.promiseNetworkSnapshot.deleteMany({
-            where: { tenantId },
-          }),
-        );
-        remember(
           'personGoalContribution',
           await tx.personGoalContribution.deleteMany({
             where: { tenantId },

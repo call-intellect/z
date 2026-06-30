@@ -133,7 +133,7 @@ export class ForecasterCron {
     start: Date;
     end: Date;
   }): Promise<ForecasterTrendPoint> {
-    const [checkIns, commits, engagementSnapshots] = await Promise.all([
+    const [checkIns, engagementSnapshots] = await Promise.all([
       this.prisma.dailyCheckIn.findMany({
         where: {
           tenantId: args.tenantId,
@@ -141,14 +141,6 @@ export class ForecasterCron {
           sentiment: { in: ['green', 'yellow', 'red'] },
         },
         select: { sentiment: true },
-      }),
-      this.prisma.ideaBlock.findMany({
-        where: {
-          tenantId: args.tenantId,
-          signalType: 'commitment',
-          commitmentDueDate: { gte: args.start, lt: args.end },
-        },
-        select: { commitmentStatus: true, commitmentDueDate: true },
       }),
       this.prisma.personEngagementSnapshot.findMany({
         where: {
@@ -168,25 +160,6 @@ export class ForecasterCron {
     const total = checkIns.length;
     const sentimentIndex = total > 0 ? round3((g - r) / total) : null;
 
-    let kept = 0;
-    let broken = 0;
-    let overdue = 0;
-    const nowEnd = args.end;
-    for (const c of commits) {
-      const s = c.commitmentStatus;
-      if (s === 'fulfilled') kept++;
-      else if (s === 'missed') broken++;
-      else if (
-        (s === 'open' || s === 'asked') &&
-        c.commitmentDueDate !== null &&
-        c.commitmentDueDate < nowEnd
-      ) {
-        overdue++;
-      }
-    }
-    const denom = kept + broken + overdue;
-    const commitmentKeptRatio = denom > 0 ? round3(kept / denom) : null;
-
     let engagementScore: number | null = null;
     if (engagementSnapshots.length > 0) {
       const sum = engagementSnapshots.reduce((acc, s) => acc + Number(s.score), 0);
@@ -196,7 +169,7 @@ export class ForecasterCron {
     return {
       weekStart: args.start.toISOString().slice(0, 10),
       sentiment_index: sentimentIndex,
-      commitment_kept_ratio: commitmentKeptRatio,
+      commitment_kept_ratio: null,
       engagement_score: engagementScore,
     };
   }

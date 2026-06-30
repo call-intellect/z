@@ -11,16 +11,6 @@ import {
   computeWeekStart,
 } from './goal-vector-tracker.cron';
 
-interface CommitmentRow {
-  id: string;
-  name: string;
-  commitmentStatus: 'fulfilled' | 'missed';
-  commitmentAuthorPersonId: string | null;
-  commitmentAuthor: { id: string; name: string } | null;
-  commitmentRecipientPersonId: string | null;
-  commitmentRecipient: { id: string; name: string } | null;
-}
-
 interface BuildOpts {
   orgs?: Array<{ id: string; name: string }>;
   goals?: Array<{ id: string; name: string; description: string }>;
@@ -32,7 +22,6 @@ interface BuildOpts {
       entity: { persons: Array<{ id: string; name: string }> } | null;
     }>;
   }>;
-  commits?: CommitmentRow[];
   authorCoverage?: number;
   authorCoverageMin?: number;
   llmResult?: { text: string; modelUsed: string };
@@ -48,14 +37,12 @@ function buildCron(opts: BuildOpts): {
   const orgs = opts.orgs ?? [{ id: 'org-1', name: 'ACME' }];
   const goals = opts.goals ?? [];
   const ideas = opts.ideas ?? [];
-  const commits = opts.commits ?? [];
   const coverage = opts.authorCoverage ?? 1;
 
   const orgFindMany = vi.fn(async () => orgs);
   const goalFindMany = vi.fn(async () => goals);
   const ideaBlockFindMany = vi.fn(async (args: { where: { signalType: string } }) => {
     if (args.where.signalType === 'idea') return ideas;
-    if (args.where.signalType === 'commitment') return commits;
     return [];
   });
   const TOTAL = 10;
@@ -241,47 +228,25 @@ describe('GoalVectorTrackerCron.runOnce', () => {
     expect(llmCall).not.toHaveBeenCalled();
   });
 
-  it('покрытие author >= порога → атрибуция по АВТОРУ (commitmentAuthor)', async () => {
-    const { cron, llmCall } = buildCron({
+  it('фиксирует метрику покрытия author по всем commitment в окне срока', async () => {
+    const { cron, setCoverage } = buildCron({
       orgs: [{ id: 'org-1', name: 'ACME' }],
       goals: [{ id: 'g1', name: 'Цель', description: 'Описание' }],
       authorCoverage: 0.9,
-      commits: [
-        {
-          id: 'c1',
-          name: 'Обещание сделать отчёт',
-          commitmentStatus: 'fulfilled',
-          commitmentAuthorPersonId: 'author-1',
-          commitmentAuthor: { id: 'author-1', name: 'Автор' },
-          commitmentRecipientPersonId: 'recip-1',
-          commitmentRecipient: { id: 'recip-1', name: 'Адресат' },
-        },
-      ],
     });
 
     await cron.runOnce();
 
-    const userMessage = (llmCall.mock.calls[0]?.[0] as { userMessage: string }).userMessage;
-    expect(userMessage).toContain('author-1');
-    expect(userMessage).not.toContain('recip-1');
+    expect(setCoverage).toHaveBeenCalledWith(
+      expect.objectContaining({ value: expect.closeTo(0.9, 5) }),
+    );
   });
 
-  it('покрытие author < порога → fallback на адресата (commitmentRecipient)', async () => {
-    const { cron, llmCall, setCoverage } = buildCron({
+  it('низкое покрытие author → метрика отражает фактическое значение', async () => {
+    const { cron, setCoverage } = buildCron({
       orgs: [{ id: 'org-1', name: 'ACME' }],
       goals: [{ id: 'g1', name: 'Цель', description: 'Описание' }],
       authorCoverage: 0.3,
-      commits: [
-        {
-          id: 'c1',
-          name: 'Обещание с NULL-автором',
-          commitmentStatus: 'missed',
-          commitmentAuthorPersonId: null,
-          commitmentAuthor: null,
-          commitmentRecipientPersonId: 'recip-1',
-          commitmentRecipient: { id: 'recip-1', name: 'Адресат' },
-        },
-      ],
     });
 
     await cron.runOnce();
@@ -289,8 +254,6 @@ describe('GoalVectorTrackerCron.runOnce', () => {
     expect(setCoverage).toHaveBeenCalledWith(
       expect.objectContaining({ value: expect.closeTo(0.3, 5) }),
     );
-    const userMessage = (llmCall.mock.calls[0]?.[0] as { userMessage: string }).userMessage;
-    expect(userMessage).toContain('recip-1');
   });
 
   it('LLM throw → errors++ остальные не валятся', async () => {

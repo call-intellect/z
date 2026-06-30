@@ -160,19 +160,10 @@ export class HrRecommenderCron {
   }): Promise<string | null> {
     const since14 = new Date(Date.now() - HrRecommenderCron.WINDOW_14D_MS);
 
-    const [checkIns, commits, recognition] = await Promise.all([
+    const [checkIns, recognition] = await Promise.all([
       this.prisma.dailyCheckIn.findMany({
         where: { personId: person.id, createdAt: { gte: since14 } },
         select: { sentiment: true, createdAt: true },
-      }),
-      this.prisma.ideaBlock.findMany({
-        where: {
-          tenantId: person.tenantId,
-          signalType: 'commitment',
-          commitmentRecipientPersonId: person.id,
-          commitmentDueDate: { gte: since14 },
-        },
-        select: { commitmentStatus: true, name: true },
       }),
       person.userId
         ? this.prisma.activityFeedItem.findMany({
@@ -188,7 +179,7 @@ export class HrRecommenderCron {
         : Promise.resolve([] as Array<{ title: string }>),
     ]);
 
-    if (checkIns.length === 0 && commits.length === 0 && recognition.length === 0) {
+    if (checkIns.length === 0 && recognition.length === 0) {
       return null;
     }
 
@@ -201,11 +192,6 @@ export class HrRecommenderCron {
     const greenCount = checkIns.filter((c) => c.sentiment === 'green').length;
     const redCount = checkIns.filter((c) => c.sentiment === 'red').length;
     lines.push(`Чек-ины: всего ${checkIns.length}, green ${greenCount}, red ${redCount}.`);
-    if (commits.length > 0) {
-      const kept = commits.filter((c) => c.commitmentStatus === 'fulfilled').length;
-      const broken = commits.filter((c) => c.commitmentStatus === 'missed').length;
-      lines.push(`Обещания: ${commits.length} всего, выполнено ${kept}, провалено ${broken}.`);
-    }
     if (recognition.length > 0) {
       const topThree = recognition
         .slice(0, 3)

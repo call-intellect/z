@@ -26,7 +26,6 @@ function buildCron(opts: BuildOpts): {
 
   const dailyCheckInFindMany = vi.fn(async () => []);
   const dailyCheckInCount = vi.fn(async () => 0);
-  const ideaBlockFindMany = vi.fn(async () => []);
 
   const behaviorFindMany = vi.fn(async (args: { where: Record<string, unknown> }) => {
     const where = args.where as {
@@ -54,9 +53,6 @@ function buildCron(opts: BuildOpts): {
     dailyCheckIn: {
       findMany: dailyCheckInFindMany,
       count: dailyCheckInCount,
-    },
-    ideaBlock: {
-      findMany: ideaBlockFindMany,
     },
     meetingParticipantBehavior: {
       findMany: behaviorFindMany,

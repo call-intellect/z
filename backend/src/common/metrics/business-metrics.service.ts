@@ -841,10 +841,9 @@ export class BusinessMetricsService implements OnModuleInit {
   private dashboardValueStripServedTotal!: Counter<'tenant_top'>;
   private dashboardMainFirstScreenWidgetCount!: Gauge<'tenant_top'>;
 
-  // ── ТЗ-2 Ф4 — недельный план-факт по людям (self-view + «без ответа») ──
+  // ── ТЗ-2 Ф4 — недельный план-факт по людям (self-view) ──
   // Cardinality-safe: tenant_top — top-100 bucket через tenantTopOf.
   private weeklyPerPersonSelfViewServedTotal!: Counter<'tenant_top'>;
-  private weeklyPerPersonNoAnswerTotal!: Counter<'tenant_top'>;
 
   // ── ТЗ-2 Ф5 — виджеты ежедневной ценности в /me (self-эндпоинты) ──
   // Cardinality-safe: tenant_top — top-100 bucket через tenantTopOf.
@@ -3451,11 +3450,6 @@ export class BusinessMetricsService implements OnModuleInit {
     this.weeklyPerPersonSelfViewServedTotal = this.getOrCreateCounter({
       name: 'weekly_per_person_self_view_served_total',
       help: 'ТЗ-2 Ф4 — сколько раз отдан self-view недельного план-факта (/me/weekly-per-person). tenant_top — top-100 bucket через tenantTopOf.',
-      labelNames: ['tenant_top'] as const,
-    });
-    this.weeklyPerPersonNoAnswerTotal = this.getOrCreateCounter({
-      name: 'weekly_per_person_no_answer_total',
-      help: 'ТЗ-2 Ф4 — суммарное число обещаний «без ответа» (commitmentStatus=asked) при расчёте недельного план-факта. tenant_top — top-100 bucket через tenantTopOf.',
       labelNames: ['tenant_top'] as const,
     });
 
@@ -7487,24 +7481,6 @@ export class BusinessMetricsService implements OnModuleInit {
       { tenant_top: args.tenantTop },
       args.count,
     );
-  }
-
-  /**
-   * ТЗ-2 Ф4 — фиксируем расчёт недельного план-факта:
-   *  - `weekly_per_person_no_answer_total{tenant_top}` += суммарные «без ответа»
-   *    (commitmentStatus='asked') за этот compute (если > 0).
-   * `tenantTop` нормализуется caller'ом через `tenantTopOf` (top-100 bucket).
-   */
-  recordWeeklyPerPersonCompute(args: {
-    tenantTop: string;
-    noAnswerTotal: number;
-  }): void {
-    if (Number.isFinite(args.noAnswerTotal) && args.noAnswerTotal > 0) {
-      this.weeklyPerPersonNoAnswerTotal.inc(
-        { tenant_top: args.tenantTop },
-        args.noAnswerTotal,
-      );
-    }
   }
 
   /**

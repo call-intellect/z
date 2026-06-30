@@ -1344,7 +1344,6 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             ...(validFromValue !== null ? { validFrom: validFromValue } : {}),
             ...(isCommitment
               ? {
-                  commitmentStatus: 'open',
                   commitmentDueDate: commitmentDueDate ?? null,
                 }
               : {}),

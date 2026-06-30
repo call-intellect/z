@@ -142,7 +142,6 @@ export class GoalVectorTrackerCron {
       tenantId,
       signalType: 'commitment',
       commitmentDueDate: { gte: weekStart, lt: weekEnd },
-      commitmentStatus: { in: ['fulfilled', 'missed'] },
     };
 
     const [total, withAuthor] = await Promise.all([
@@ -295,38 +294,6 @@ export class GoalVectorTrackerCron {
         kind: 'idea',
         refId: b.id,
         text: truncate(b.name, GoalVectorTrackerCron.TEXT_TRUNCATE),
-      });
-    }
-
-    const useAuthor = args.attributionField === 'author';
-    const commits = await this.prisma.ideaBlock.findMany({
-      where: {
-        tenantId: args.tenantId,
-        signalType: 'commitment',
-        commitmentDueDate: { gte: args.weekStart, lt: args.weekEnd },
-        commitmentStatus: { in: ['fulfilled', 'missed'] },
-      },
-      select: {
-        id: true,
-        name: true,
-        commitmentStatus: true,
-        commitmentAuthorPersonId: true,
-        commitmentAuthor: { select: { id: true, name: true } },
-        commitmentRecipientPersonId: true,
-        commitmentRecipient: { select: { id: true, name: true } },
-      },
-      take: GoalVectorTrackerCron.MAX_ARTEFACTS_PER_GOAL,
-      orderBy: { commitmentDueDate: 'desc' },
-    });
-    for (const c of commits) {
-      const subject = useAuthor ? c.commitmentAuthor : c.commitmentRecipient;
-      if (!subject) continue;
-      out.push({
-        personId: subject.id,
-        personName: subject.name,
-        kind: c.commitmentStatus === 'fulfilled' ? 'commitment_kept' : 'commitment_broken',
-        refId: c.id,
-        text: truncate(c.name, GoalVectorTrackerCron.TEXT_TRUNCATE),
       });
     }
 

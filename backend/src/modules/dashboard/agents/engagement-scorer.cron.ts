@@ -8,13 +8,11 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 export class EngagementScorerCron {
   private readonly logger = new Logger(EngagementScorerCron.name);
   private static readonly WINDOW_14D_MS = 14 * 24 * 3600 * 1000;
-  private static readonly WINDOW_30D_MS = 30 * 24 * 3600 * 1000;
 
   private static readonly WEIGHTS = {
-    sentimentIndex: 0.35,
-    checkinRegularity: 0.25,
-    commitmentKept: 0.2,
-    meetingActivity: 0.2,
+    sentimentIndex: 0.4375,
+    checkinRegularity: 0.3125,
+    meetingActivity: 0.25,
   } as const;
 
   private static readonly NEUTRAL_BASELINE = 0.5;
@@ -36,7 +34,6 @@ export class EngagementScorerCron {
   async runOnce(): Promise<{ personsScored: number; errors: number }> {
     const now = new Date();
     const since14 = new Date(now.getTime() - EngagementScorerCron.WINDOW_14D_MS);
-    const since30 = new Date(now.getTime() - EngagementScorerCron.WINDOW_30D_MS);
 
     const persons = await this.prisma.person.findMany({
       where: { deletedAt: null, relationship: 'employee' },
@@ -48,7 +45,7 @@ export class EngagementScorerCron {
 
     for (const person of persons) {
       try {
-        const score = await this.computeForPerson({ person, now, since14, since30 });
+        const score = await this.computeForPerson({ person, now, since14 });
         await this.persistScore({ person, now, ...score });
         personsScored++;
       } catch (err) {
@@ -66,18 +63,16 @@ export class EngagementScorerCron {
     person: { id: string; tenantId: string; userId: string | null };
     now: Date;
     since14: Date;
-    since30: Date;
   }): Promise<{
     score: number;
     signals: {
       sentiment_index: number;
       checkin_regularity: number;
-      commitment_kept_ratio: number;
       meeting_activity: number;
       baseline: number;
     };
   }> {
-    const { person, now, since14, since30 } = args;
+    const { person, since14 } = args;
 
     const checkIns = await this.prisma.dailyCheckIn.findMany({
       where: {
@@ -97,27 +92,6 @@ export class EngagementScorerCron {
     });
     const checkinRegularity = Math.min(1, allCheckInsCount / 14);
 
-    const commits = await this.prisma.ideaBlock.findMany({
-      where: {
-        tenantId: person.tenantId,
-        signalType: 'commitment',
-        commitmentRecipientPersonId: person.id,
-        commitmentDueDate: { gte: since30, lte: now },
-      },
-      select: { commitmentStatus: true, commitmentDueDate: true },
-    });
-    const kept = commits.filter((c) => c.commitmentStatus === 'fulfilled').length;
-    const broken = commits.filter((c) => c.commitmentStatus === 'missed').length;
-    const overdue = commits.filter(
-      (c) =>
-        (c.commitmentStatus === 'open' || c.commitmentStatus === 'asked') &&
-        c.commitmentDueDate !== null &&
-        c.commitmentDueDate < now,
-    ).length;
-    const commitDenom = kept + broken + overdue;
-    const commitmentKeptRatio =
-      commitDenom > 0 ? kept / commitDenom : EngagementScorerCron.NEUTRAL_BASELINE;
-
     const meetingActivity = await this.computeMeetingActivity({
       person,
       since14,
@@ -126,7 +100,6 @@ export class EngagementScorerCron {
     const score =
       EngagementScorerCron.WEIGHTS.sentimentIndex * sentimentIndex +
       EngagementScorerCron.WEIGHTS.checkinRegularity * checkinRegularity +
-      EngagementScorerCron.WEIGHTS.commitmentKept * commitmentKeptRatio +
       EngagementScorerCron.WEIGHTS.meetingActivity * meetingActivity;
 
     return {
@@ -134,7 +107,6 @@ export class EngagementScorerCron {
       signals: {
         sentiment_index: this.roundDecimal3(sentimentIndex),
         checkin_regularity: this.roundDecimal3(checkinRegularity),
-        commitment_kept_ratio: this.roundDecimal3(commitmentKeptRatio),
         meeting_activity: this.roundDecimal3(meetingActivity),
         baseline: EngagementScorerCron.NEUTRAL_BASELINE,
       },

@@ -2801,7 +2801,6 @@ model Org {
   // Pulse Wave 6 — 5 новых snapshot-моделей (C1 batch).
   knowledgeRiskSnapshots     KnowledgeRiskSnapshot[]
   recurringTopics            RecurringTopic[]
-  promiseNetworkSnapshots    PromiseNetworkSnapshot[]
   personGoalContributions    PersonGoalContribution[]
   knowledgeVelocitySnapshots KnowledgeVelocitySnapshot[]
 
@@ -3448,15 +3447,12 @@ model IdeaBlock {
   roleRelevant                Boolean                      @default(false)
   /// Опц. связь блока с Role (бизнес-должность). NULL — общий блок.
   roleId                      String?
-  /// SBA β-8.2 — поля «Хранителя обещаний». Заполняются ТОЛЬКО для
-  /// блоков с signalType='commitment'. Для остальных типов всегда NULL.
+  /// Поля факта обещания (signalType='commitment'). Для остальных типов NULL.
   ///
   /// `commitmentDueDate` — срок исполнения (00:00 UTC соответствующей даты).
   /// Извлекается из текста промптом `block-distill` (`commitmentDueDateGuess`).
   /// Если не извлечён — backfill-скрипт ставит `createdAt + 5 рабочих дней`.
   commitmentDueDate           DateTime?
-  /// 'open' | 'asked' | 'fulfilled' | 'missed' | 'cancelled' | 'superseded'.
-  commitmentStatus            String?                      @db.VarChar(20)
   /// Адресат обещания (Person той же Org). NULL если не извлечён.
   commitmentRecipientPersonId String?
   /// ТЗ-D (2026-06-05) — АВТОР обещания (кто дал слово), Person той же Org.
@@ -3467,10 +3463,6 @@ model IdeaBlock {
   /// EntityResolutionService.resolveSubjectPersonId. NULL если identity не
   /// разрешилась. Атрибуция БЕЗ LLM — prompt-cache сохранён.
   commitmentAuthorPersonId    String?
-  /// Когда последний раз ушёл probe «выполнил ли?».
-  commitmentAskedAt           DateTime?
-  /// Когда эскалировали при молчании (probe ушёл COO + owner).
-  commitmentEscalatedAt       DateTime?
   /// KC-Temporal W1.1 (2026-05-25) — bi-temporal оси факта.
   /// `validFrom` — когда факт стал верен в реальности (default — самый
   /// ранний `IdeaBlockEvidence.sourceTimestamp`, иначе `createdAt`).
@@ -3529,11 +3521,6 @@ model IdeaBlock {
   @@index([tenantId, signalType])
   @@index([tenantId, mergedIntoId])
   @@index([tenantId, roleRelevant, roleId])
-  /// SBA β-8.2 — выборка «висящих обещаний к сроку» (cron Хранителя обещаний).
-  @@index([tenantId, signalType, commitmentStatus, commitmentDueDate])
-  /// SBA β-8.2 — личный кабинет «Мои обещания» (по personId через
-  /// `Person.userId`, фильтр по статусу).
-  @@index([tenantId, signalType, commitmentStatus])
   /// KC-Temporal W1.1 — частые запросы «активные сейчас» (validUntil IS NULL).
   @@index([tenantId, validUntil])
   /// KC-Temporal W1.1 — снапшот «активные блоки данного signalType».
@@ -7799,39 +7786,6 @@ model RecurringTopic {
   @@index([tenantId, snapshotAt(sort: Desc)])
   @@index([tenantId, mentionCount(sort: Desc)])
   @@map("recurring_topics")
-}
-
-/// Pulse Wave 6 §6.5 — Граф обещаний tenant'а.
-///
-/// Создаётся `PromiseNetworkAnalyzerCron` (weekly Mon 05:00 UTC).
-/// Грузим `IdeaBlock` с `signalType='commitment'` за последние 30 дней.
-/// Автор обещания — Person через `IdeaBlockEntity.role='subject'`,
-/// получатель — `IdeaBlock.commitmentRecipientPersonId`.
-///
-/// Для каждого узла графа считаем `inDegree`, `outDegree`, `balance` и
-/// помечаем `role`:
-///   - 'accumulator': inDegree ≥ 3*outDegree (получает много обещаний).
-///   - 'donor':       outDegree ≥ 3*inDegree (раздаёт обещания).
-///   - 'isolated':    inDegree + outDegree ≤ 1.
-///   - 'balanced':    иначе.
-///
-/// `graphJson` структура:
-/// {
-///   nodes: Array<{personId, name, role, inDegree, outDegree, balance}>,
-///   edges: Array<{fromPersonId, toPersonId, count}>,
-///   periodStart: ISO, periodEnd: ISO
-/// }
-model PromiseNetworkSnapshot {
-  id               String   @id @default(cuid())
-  tenantId         String
-  graphJson        Json
-  totalCommitments Int
-  snapshotAt       DateTime @default(now())
-
-  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId, snapshotAt(sort: Desc)])
-  @@map("promise_network_snapshots")
 }
 
 /// Pulse Wave 6 §6.6 — Pro/contra contribution per (person, goal, week).

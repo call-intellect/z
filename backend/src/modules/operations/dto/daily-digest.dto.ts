@@ -15,12 +15,6 @@ export interface DailyDigestMetricsDto {
     name: string;
     confidence: number;
   }>;
-  overdueCommitments: Array<{
-    blockId: string;
-    name: string;
-    dueDate: string | null;
-    recipientPersonId: string | null;
-  }>;
   goals: {
     completed: number;
     failed: number;
@@ -91,7 +85,7 @@ export interface DailyDigestEventDto {
 }
 
 export interface DailyDigestUrgentItemDto {
-  kind: 'overdue_commitment' | 'high_insight';
+  kind: 'high_insight';
   id: string;
   title: string;
   link: string;
@@ -102,7 +96,7 @@ export interface DailyDigestUrgentItemDto {
 export interface DailyDigestPersonShinedDto {
   personId: string;
   personName: string;
-  reason: 'recognition_received' | 'helpful_acts' | 'commitments_kept';
+  reason: 'recognition_received' | 'helpful_acts';
   detail: string;
   link: string;
 }
@@ -110,7 +104,7 @@ export interface DailyDigestPersonShinedDto {
 export interface DailyDigestPersonStruggledDto {
   personId: string;
   personName: string;
-  reason: 'red_checkin' | 'broken_commitment' | 'silent_3_days';
+  reason: 'red_checkin' | 'silent_3_days';
   detail: string;
   link: string;
 }
@@ -136,7 +130,6 @@ export interface DailyDigestTrendPointDto {
   greenShare: number;
   redShare: number;
   blockers: number;
-  overdueCommitments: number;
   goalsCompleted: number;
   goalsFailed: number;
 }
@@ -172,7 +165,6 @@ export interface DailyDigestAggregates {
   redShare: number;
   topRedCheckIns: Array<{ personName: string | null; excerpt: string }>;
   newBlockers: Array<{ name: string; confidence: number }>;
-  overdueCommitments: Array<{ name: string; dueDate: string | null }>;
   goals: {
     completed: number;
     failed: number;

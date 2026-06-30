@@ -2,7 +2,7 @@ export const PERSONAL_BRIEF_HINT_TASK_TYPE = 'personal-brief-hint';
 
 export const PERSONAL_BRIEF_HINT_SYSTEM_PROMPT = [
   'Ты — личный операционный помощник сотрудника. Тебе дают краткую сводку его дня:',
-  'задачи на сегодня/просроченные, его обещания, открытые блокеры, что ему обещали.',
+  'задачи на сегодня/просроченные и открытые блокеры.',
   'Твоя задача — одной короткой фразой на русском подсказать, на чём сфокусироваться сегодня.',
   '',
   'Жёсткие правила:',
@@ -16,9 +16,7 @@ export const PERSONAL_BRIEF_HINT_SYSTEM_PROMPT = [
 export interface PersonalBriefHintPromptInput {
   taskCount: number;
   overdueTaskCount: number;
-  promiseCount: number;
   blockerCount: number;
-  promisedToMeCount: number;
   topTaskTitles: string[];
   topBlockerTexts: string[];
   knowsWhoExpertName?: string | null;
@@ -28,9 +26,7 @@ export function buildPersonalBriefHintUserMessage(input: PersonalBriefHintPrompt
   const lines: string[] = [];
   lines.push('Сводка дня сотрудника:');
   lines.push(`  задачи: ${input.taskCount} (из них просрочено ${input.overdueTaskCount})`);
-  lines.push(`  мои обещания на сегодня/просроченные: ${input.promiseCount}`);
   lines.push(`  открытые блокеры: ${input.blockerCount}`);
-  lines.push(`  обещано мне: ${input.promisedToMeCount}`);
   if (input.topTaskTitles.length > 0) {
     lines.push('  топ-задачи:');
     for (const t of input.topTaskTitles.slice(0, 3)) {
@@ -70,15 +66,6 @@ export function buildPersonalBriefFallbackHint(input: PersonalBriefHintPromptInp
   }
   if (input.taskCount > 0) {
     return `На сегодня ${input.taskCount} задач — начни с самой важной.`.slice(0, 200);
-  }
-  if (input.promiseCount > 0) {
-    return `Не забудь про свои обещания на сегодня (${input.promiseCount}).`.slice(0, 200);
-  }
-  if (input.promisedToMeCount > 0) {
-    return `Тебе обещали ${input.promisedToMeCount} — можно мягко напомнить коллегам.`.slice(
-      0,
-      200,
-    );
   }
   return 'На сегодня срочных дел в памяти нет — хороший день спланировать наперёд.';
 }

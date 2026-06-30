@@ -7,7 +7,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/shadcn/tabs";
 
 import { MeClient } from "./MeClient";
 import { ContributionsView } from "./contributions/ContributionsView";
-import { MyPromisesClient } from "./promises/MyPromisesClient";
 import { MyPulseClient } from "./pulse/MyPulseClient";
 import { MySocialContributionClient } from "./social-contribution/MySocialContributionClient";
 
@@ -16,7 +15,6 @@ const TAB_VALUES = [
   "pulse",
   "contributions",
   "social",
-  "promises",
 ] as const;
 
 type MeTab = (typeof TAB_VALUES)[number];
@@ -28,7 +26,6 @@ const TABS: ReadonlyArray<{ value: MeTab; label: string }> = [
   { value: "pulse", label: "Пульс" },
   { value: "contributions", label: "Чем я полезен компании" },
   { value: "social", label: "Чем я помогаю коллегам" },
-  { value: "promises", label: "Мои обещания" },
 ];
 
 function isMeTab(value: string | null): value is MeTab {
@@ -76,9 +73,6 @@ export function MeTabsClient() {
       </TabsContent>
       <TabsContent value="social" className="mt-0">
         <MySocialContributionClient />
-      </TabsContent>
-      <TabsContent value="promises" className="mt-0">
-        <MyPromisesClient />
       </TabsContent>
     </Tabs>
   );

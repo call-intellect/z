@@ -16,7 +16,6 @@ import {
 import { KnowsWhoService } from './knows-who.service';
 import {
   dedupBriefItems,
-  dropPromisesThatBecameTasks,
   type BriefInsightCoOccurrence,
   type BriefItem,
   type BriefKnowsWhoHint,
@@ -59,33 +58,13 @@ export class PersonalDailyBriefService {
         })
       : [];
 
-    const myPromisesRaw = await this.collectMyPromises({
-      tenantId: args.tenantId,
-      personId: args.personId,
-      dayEnd,
-    });
-
     const myBlockersRaw = await this.collectMyBlockers({
       tenantId: args.tenantId,
       personId: args.personId,
     });
 
-    const promisedToMeRaw = await this.collectPromisedToMe({
-      tenantId: args.tenantId,
-      personId: args.personId,
-    });
-
     const myTasks = dedupBriefItems(myTasksRaw).slice(0, PersonalDailyBriefService.MAX_ITEMS);
-    const myPromisesDeduped = dedupBriefItems(myPromisesRaw);
-    const myPromises = dropPromisesThatBecameTasks({
-      tasks: myTasks,
-      promises: myPromisesDeduped,
-    }).slice(0, PersonalDailyBriefService.MAX_ITEMS);
     const myBlockers = dedupBriefItems(myBlockersRaw).slice(0, PersonalDailyBriefService.MAX_ITEMS);
-    const promisedToMe = dedupBriefItems(promisedToMeRaw).slice(
-      0,
-      PersonalDailyBriefService.MAX_ITEMS,
-    );
 
     const knowsWho = await this.resolveKnowsWhoHint({
       tenantId: args.tenantId,
@@ -103,9 +82,7 @@ export class PersonalDailyBriefService {
     const hintInput: PersonalBriefHintPromptInput = {
       taskCount: myTasks.length,
       overdueTaskCount,
-      promiseCount: myPromises.length,
       blockerCount: myBlockers.length,
-      promisedToMeCount: promisedToMe.length,
       topTaskTitles: myTasks.slice(0, 3).map((t) => t.title),
       topBlockerTexts: myBlockers.slice(0, 2).map((b) => b.title),
       knowsWhoExpertName: knowsWho?.expertName ?? null,
@@ -115,28 +92,19 @@ export class PersonalDailyBriefService {
     return {
       dateLocal: args.dateLocal,
       myTasks,
-      myPromises,
       myBlockers,
-      promisedToMe,
       hint,
       knowsWho,
       insightCoOccurrence,
       counts: {
         tasks: myTasks.length,
-        promises: myPromises.length,
         blockers: myBlockers.length,
-        promisedToMe: promisedToMe.length,
       },
     };
   }
 
   hasContent(payload: PersonalDailyBriefPayload): boolean {
-    return (
-      payload.counts.tasks > 0 ||
-      payload.counts.promises > 0 ||
-      payload.counts.blockers > 0 ||
-      payload.counts.promisedToMe > 0
-    );
+    return payload.counts.tasks > 0 || payload.counts.blockers > 0;
   }
 
   private async collectMyTasks(args: {
@@ -183,40 +151,6 @@ export class PersonalDailyBriefService {
     return out;
   }
 
-  private async collectMyPromises(args: {
-    tenantId: string;
-    personId: string;
-    dayEnd: Date;
-  }): Promise<BriefItem[]> {
-    const blocks = await this.prisma.ideaBlock.findMany({
-      where: {
-        tenantId: args.tenantId,
-        signalType: 'commitment',
-        commitmentAuthorPersonId: args.personId,
-        commitmentStatus: { in: ['open', 'asked'] },
-        commitmentDueDate: { lte: args.dayEnd },
-      },
-      select: {
-        id: true,
-        name: true,
-        criticalQuestion: true,
-        commitmentDueDate: true,
-        commitmentRecipient: { select: { name: true } },
-      },
-      orderBy: [{ commitmentDueDate: 'asc' }],
-      take: PersonalDailyBriefService.MAX_ITEMS,
-    });
-    return blocks.map((b) => ({
-      kind: 'my_promise' as const,
-      dedupKey: b.id,
-      title: (b.name || b.criticalQuestion || 'Обещание').slice(0, 200),
-      dueDateIso: b.commitmentDueDate ? b.commitmentDueDate.toISOString() : null,
-      overdue: this.isOverdue(b.commitmentDueDate, args.dayEnd),
-      priority: 50,
-      counterpartyName: b.commitmentRecipient?.name ?? null,
-    }));
-  }
-
   private async collectMyBlockers(args: {
     tenantId: string;
     personId: string;
@@ -246,38 +180,6 @@ export class PersonalDailyBriefService {
       dueDateIso: null,
       overdue: false,
       priority: 30,
-    }));
-  }
-
-  private async collectPromisedToMe(args: {
-    tenantId: string;
-    personId: string;
-  }): Promise<BriefItem[]> {
-    const blocks = await this.prisma.ideaBlock.findMany({
-      where: {
-        tenantId: args.tenantId,
-        signalType: 'commitment',
-        commitmentRecipientPersonId: args.personId,
-        commitmentStatus: { in: ['open', 'asked'] },
-      },
-      select: {
-        id: true,
-        name: true,
-        criticalQuestion: true,
-        commitmentDueDate: true,
-        commitmentAuthor: { select: { name: true } },
-      },
-      orderBy: [{ commitmentDueDate: 'asc' }],
-      take: PersonalDailyBriefService.MAX_ITEMS,
-    });
-    return blocks.map((b) => ({
-      kind: 'promised_to_me' as const,
-      dedupKey: b.id,
-      title: (b.name || b.criticalQuestion || 'Обещание').slice(0, 200),
-      dueDateIso: b.commitmentDueDate ? b.commitmentDueDate.toISOString() : null,
-      overdue: false,
-      priority: 60,
-      counterpartyName: b.commitmentAuthor?.name ?? null,
     }));
   }
 
@@ -500,21 +402,17 @@ export function parsePayload(raw: Prisma.JsonValue, dateLocal: string): Personal
   const empty: PersonalDailyBriefPayload = {
     dateLocal,
     myTasks: [],
-    myPromises: [],
     myBlockers: [],
-    promisedToMe: [],
     hint: '',
     knowsWho: null,
-    counts: { tasks: 0, promises: 0, blockers: 0, promisedToMe: 0 },
+    counts: { tasks: 0, blockers: 0 },
   };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return empty;
   const obj = raw as Record<string, unknown>;
   return {
     dateLocal: typeof obj.dateLocal === 'string' ? obj.dateLocal : dateLocal,
     myTasks: parseItems(obj.myTasks),
-    myPromises: parseItems(obj.myPromises),
     myBlockers: parseItems(obj.myBlockers),
-    promisedToMe: parseItems(obj.promisedToMe),
     hint: typeof obj.hint === 'string' ? obj.hint : '',
     knowsWho: parseKnowsWho(obj.knowsWho),
     insightCoOccurrence: parseInsightCoOccurrence(obj.insightCoOccurrence),
@@ -576,13 +474,11 @@ function parseKnowsWho(raw: unknown): BriefKnowsWhoHint | null {
 }
 
 function parseCounts(raw: unknown): PersonalDailyBriefPayload['counts'] {
-  const def = { tasks: 0, promises: 0, blockers: 0, promisedToMe: 0 };
+  const def = { tasks: 0, blockers: 0 };
   if (!raw || typeof raw !== 'object') return def;
   const o = raw as Record<string, unknown>;
   return {
     tasks: typeof o.tasks === 'number' ? o.tasks : 0,
-    promises: typeof o.promises === 'number' ? o.promises : 0,
     blockers: typeof o.blockers === 'number' ? o.blockers : 0,
-    promisedToMe: typeof o.promisedToMe === 'number' ? o.promisedToMe : 0,
   };
 }

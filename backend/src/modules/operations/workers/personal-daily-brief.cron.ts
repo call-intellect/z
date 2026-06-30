@@ -153,14 +153,12 @@ export class PersonalDailyBriefCron {
   }
 
   private buildPushBody(payload: {
-    counts: { tasks: number; promises: number; blockers: number; promisedToMe: number };
+    counts: { tasks: number; blockers: number };
     hint: string;
   }): string {
     const parts: string[] = [];
     if (payload.counts.tasks > 0) parts.push(`задач: ${payload.counts.tasks}`);
-    if (payload.counts.promises > 0) parts.push(`обещаний: ${payload.counts.promises}`);
     if (payload.counts.blockers > 0) parts.push(`блокеров: ${payload.counts.blockers}`);
-    if (payload.counts.promisedToMe > 0) parts.push(`обещано тебе: ${payload.counts.promisedToMe}`);
     const summary = parts.length > 0 ? `Сегодня: ${parts.join(', ')}.` : '';
     const hint = payload.hint ? ` ${payload.hint}` : '';
     return `${summary}${hint}`.trim().slice(0, 4_000) || 'Твой день готов.';

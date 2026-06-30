@@ -84,7 +84,6 @@ function emptyMetrics() {
     redShare: 0,
     topRedCheckIns: [],
     newBlockers: [],
-    overdueCommitments: [],
     goals: { completed: 0, failed: 0, activated: 0, completedIds: [], failedIds: [] },
     newHighInsights: [],
   };
@@ -144,7 +143,6 @@ describe('computeVerdictSignals', () => {
       emptyPackage({
         customersAtRisk: [{ customerName: 'Acme', riskLevel: 'critical', signals: 'отток ×2' }],
       }),
-      5,
     );
     expect(signals.hasNegativeClientSignal).toBe(true);
   });
@@ -155,31 +153,18 @@ describe('computeVerdictSignals', () => {
       emptyPackage({
         topInsights: [{ id: 'i1', statement: 's', severity: 'high', kind: 'risk' }],
       }),
-      5,
     );
     expect(signals.hasNegativeClientSignal).toBe(true);
   });
 
   it('блокер confidence≥0.8 ⇒ executionStrained=true', () => {
     const metrics = { ...emptyMetrics(), newBlockers: [{ blockId: 'b1', name: 'b', confidence: 0.9 }] };
-    const signals = computeVerdictSignals(metrics, emptyPackage(), 5);
-    expect(signals.executionStrained).toBe(true);
-  });
-
-  it('просрочка старше порога ⇒ executionStrained=true', () => {
-    const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const metrics = {
-      ...emptyMetrics(),
-      overdueCommitments: [
-        { blockId: 'c1', name: 'c', dueDate: old, recipientPersonId: null },
-      ],
-    };
-    const signals = computeVerdictSignals(metrics, emptyPackage(), 5);
+    const signals = computeVerdictSignals(metrics, emptyPackage());
     expect(signals.executionStrained).toBe(true);
   });
 
   it('пусто ⇒ оба сигнала false', () => {
-    const signals = computeVerdictSignals(emptyMetrics(), emptyPackage(), 5);
+    const signals = computeVerdictSignals(emptyMetrics(), emptyPackage());
     expect(signals.hasNegativeClientSignal).toBe(false);
     expect(signals.executionStrained).toBe(false);
   });

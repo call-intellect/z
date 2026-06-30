@@ -19,52 +19,27 @@ function brief(overrides: Partial<DailyBriefApi> = {}): DailyBriefApi {
     id: "brief-1",
     dateLocal: "2026-06-11",
     myTasks: [],
-    myPromises: [],
     myBlockers: [],
-    promisedToMe: [],
     hint: "",
     knowsWho: null,
-    counts: { tasks: 0, promises: 0, blockers: 0, promisedToMe: 0 },
+    counts: { tasks: 0, blockers: 0 },
     deliveredAt: null,
     openedAt: null,
     ...overrides,
   };
 }
 
-describe("mapDailyBrief — позитивная рамка обещаний (Р4)", () => {
-  it("держишь слово: kept = НЕ overdue, atRisk = overdue", () => {
-    const dto = brief({
-      myPromises: [
-        item({ overdue: false }),
-        item({ overdue: false }),
-        item({ overdue: true }),
-      ],
-    });
-
-    const d = mapDailyBrief(dto);
-    expect(d.promiseKeeping.total).toBe(3);
-    expect(d.promiseKeeping.kept).toBe(2);
-    expect(d.promiseKeeping.atRisk).toBe(1);
-  });
-
-  it("без обещаний — total/kept/atRisk = 0", () => {
-    const d = mapDailyBrief(brief());
-    expect(d.promiseKeeping).toEqual({ total: 0, kept: 0, atRisk: 0 });
-  });
-});
-
 describe("mapDailyBrief — под рукой сегодня / под угрозой", () => {
-  it("onDeckToday = задачи+обещания НЕ overdue; atRiskItems = overdue", () => {
+  it("onDeckToday = задачи НЕ overdue; atRiskItems = overdue", () => {
     const dto = brief({
       myTasks: [
         item({ title: "T1", overdue: false }),
         item({ title: "T2", overdue: true }),
       ],
-      myPromises: [item({ title: "P1", overdue: false })],
     });
 
     const d = mapDailyBrief(dto);
-    expect(d.onDeckToday.map((i) => i.title)).toEqual(["T1", "P1"]);
+    expect(d.onDeckToday.map((i) => i.title)).toEqual(["T1"]);
     expect(d.atRiskItems.map((i) => i.title)).toEqual(["T2"]);
   });
 });

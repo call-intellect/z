@@ -31,11 +31,6 @@ import {
   type CheckinDisciplineQuery,
 } from '../dto/checkin-discipline.dto';
 import {
-  OpenCommitmentsQuerySchema,
-  type OpenCommitmentsQuery,
-  type OpenCommitmentsListDto,
-} from '../dto/commitments.dto';
-import {
   CustomerRiskQuerySchema,
   type CustomerRiskQuery,
   type CustomerRiskListDto,
@@ -74,7 +69,6 @@ import {
 } from '../dto/value-recap.dto';
 import { TeamTemperatureQuerySchema, type TeamTemperatureQuery } from '../dto/weekly-digest.dto';
 import { BlockerSynthesisService } from '../services/blocker-synthesis.service';
-import { CommitmentsService } from '../services/commitments.service';
 import { CustomerRiskRadarService } from '../services/customer-risk-radar.service';
 import { KnowledgeAtRiskService } from '../services/knowledge-at-risk.service';
 import { OnboardingRampService } from '../services/onboarding-ramp.service';
@@ -94,8 +88,6 @@ export class OperationsDashboardController {
     @Inject(OperationsDashboardService)
     private readonly svc: OperationsDashboardService,
     @Inject(RbacService) private readonly rbac: RbacService,
-    @Inject(CommitmentsService)
-    private readonly commitments: CommitmentsService,
     @Inject(CustomerRiskRadarService)
     private readonly customerRisk: CustomerRiskRadarService,
     @Inject(BlockerSynthesisService)
@@ -243,26 +235,6 @@ export class OperationsDashboardController {
       staleDays:
         parsedStale !== undefined && Number.isFinite(parsedStale) ? parsedStale : undefined,
       limit: parsedLimit !== undefined && Number.isFinite(parsedLimit) ? parsedLimit : undefined,
-    });
-  }
-
-  @Get('open-commitments')
-  @ApiOperation({
-    summary: 'COO operations dashboard — открытые обещания (с именами)',
-  })
-  async openCommitments(
-    @CurrentOrg() tenantId: string | undefined,
-    @Req() req: Request,
-    @Query(new ZodValidationPipe(OpenCommitmentsQuerySchema))
-    q: OpenCommitmentsQuery,
-  ): Promise<OpenCommitmentsListDto> {
-    const uid = this.requireUser(req);
-    this.requireTenant(tenantId);
-    await this.requireAccess(uid, tenantId!);
-    return this.commitments.listOpenForTenant({
-      tenantId: tenantId!,
-      days: q.days,
-      limit: q.limit,
     });
   }
 

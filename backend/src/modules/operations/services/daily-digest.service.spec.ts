@@ -7,7 +7,6 @@ describe('DailyDigestService', () => {
     checkIns?: unknown[];
     redCheckIns?: unknown[];
     newBlockers?: unknown[];
-    overdueCommitments?: unknown[];
     goals?: unknown[];
     highInsights?: unknown[];
     existing?: unknown;
@@ -29,7 +28,7 @@ describe('DailyDigestService', () => {
         findMany: vi.fn().mockImplementation(() => {
           const i = blockCallIndex++;
           if (i === 0) return Promise.resolve(overrides.newBlockers ?? []);
-          return Promise.resolve(overrides.overdueCommitments ?? []);
+          return Promise.resolve([]);
         }),
       },
       goal: {

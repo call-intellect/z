@@ -26,7 +26,7 @@ import {
   type WeeklyPersonItemsDto,
   type WeeklyPersonItemsQuery,
 } from '../dto/weekly-per-person.dto';
-import { CommitmentsService } from '../services/commitments.service';
+import { SelfPersonResolverService } from '../services/self-person-resolver.service';
 import { WeeklyPerPersonService } from '../services/weekly-per-person.service';
 
 const SELF_LIMIT = 1000;
@@ -43,8 +43,8 @@ export class MyWeeklyPerPersonController {
   constructor(
     @Inject(WeeklyPerPersonService)
     private readonly svc: WeeklyPerPersonService,
-    @Inject(CommitmentsService)
-    private readonly commitments: CommitmentsService,
+    @Inject(SelfPersonResolverService)
+    private readonly selfPerson: SelfPersonResolverService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
@@ -147,7 +147,7 @@ export class MyWeeklyPerPersonController {
 
   private async resolveSelfPersonId(tenantId: string, userId: string): Promise<string | null> {
     try {
-      const person = await this.commitments.resolveSelfPerson({
+      const person = await this.selfPerson.resolveSelfPerson({
         tenantId,
         userId,
       });

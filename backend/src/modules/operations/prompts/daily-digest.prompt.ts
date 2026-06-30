@@ -65,15 +65,6 @@ export function buildFallbackDigestMarkdown(agg: DailyDigestAggregates): {
     }
   }
 
-  if (agg.overdueCommitments.length > 0) {
-    lines.push('');
-    lines.push('## Просроченные обещания');
-    for (const c of agg.overdueCommitments.slice(0, 5)) {
-      const due = c.dueDate ? ` (срок ${c.dueDate})` : '';
-      lines.push(`- ${c.name}${due}`);
-    }
-  }
-
   lines.push('');
   lines.push('## Цели');
   lines.push(
@@ -92,7 +83,6 @@ export function buildFallbackDigestMarkdown(agg: DailyDigestAggregates): {
   const shortSummary =
     `Сводка за ${agg.dateLocal}: чек-инов ${agg.totalCheckIns} ` +
     `(красных ${pct(agg.redShare)}), новых блокеров ${agg.newBlockers.length}, ` +
-    `просроченных обещаний ${agg.overdueCommitments.length}, ` +
     `новых сигналов ${agg.newHighInsights.length}. ` +
     `Связный комментарий не сгенерирован — LLM недоступна.`;
 
@@ -373,15 +363,6 @@ export function buildDayCompanyUserMessage(
     lines.push('Новые блокеры за день (топ-5):');
     for (const b of metrics.newBlockers.slice(0, 5)) {
       lines.push(`  - ${truncate(b.name, 200)} (уверенность ${pct(b.confidence)}).`);
-    }
-  }
-
-  if (metrics.overdueCommitments.length > 0) {
-    lines.push('');
-    lines.push('Просроченные обещания (топ-5):');
-    for (const c of metrics.overdueCommitments.slice(0, 5)) {
-      const due = c.dueDate ? ` (срок ${c.dueDate})` : '';
-      lines.push(`  - ${truncate(c.name, 200)}${due}.`);
     }
   }
 

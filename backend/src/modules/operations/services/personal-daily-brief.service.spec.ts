@@ -50,7 +50,7 @@ function makeService(
 }
 
 describe('PersonalDailyBriefService.buildFor', () => {
-  it('обещание, ставшее задачей (общий sourceBlockId), считается ОДИН раз', async () => {
+  it('задача из issue попадает в myTasks и считается один раз', async () => {
     const { svc, prisma } = makeService();
     prisma.issue.findMany.mockResolvedValue([
       {
@@ -61,18 +61,7 @@ describe('PersonalDailyBriefService.buildFor', () => {
         sourceBlockIds: ['block-1'],
       },
     ]);
-    prisma.ideaBlock.findMany
-      .mockResolvedValueOnce([
-        {
-          id: 'block-1',
-          name: 'Обещал отчёт',
-          criticalQuestion: '',
-          commitmentDueDate: new Date('2026-06-08T10:00:00.000Z'),
-          commitmentRecipient: { name: 'Маша' },
-        },
-      ])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+    prisma.ideaBlock.findMany.mockResolvedValue([]);
 
     const payload = await svc.buildFor({
       tenantId: 'org1',
@@ -81,32 +70,27 @@ describe('PersonalDailyBriefService.buildFor', () => {
     });
 
     expect(payload.counts.tasks).toBe(1);
-    expect(payload.counts.promises).toBe(0);
-    expect(payload.myPromises).toHaveLength(0);
+    expect(payload.myTasks).toHaveLength(1);
   });
 
-  it('«тебе обещали» собирается отдельно от моих обещаний', async () => {
+  it('блокер собирается в myBlockers', async () => {
     const { svc, prisma } = makeService();
-    prisma.ideaBlock.findMany
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          id: 'b-to-me',
-          name: 'Антон обещал ревью',
-          criticalQuestion: '',
-          commitmentDueDate: null,
-          commitmentAuthor: { name: 'Антон' },
-        },
-      ]);
+    prisma.ideaBlock.findMany.mockResolvedValue([
+      {
+        id: 'b-1',
+        name: 'Жду доступ к проду',
+        criticalQuestion: '',
+        createdAt: new Date('2026-06-07T10:00:00.000Z'),
+      },
+    ]);
 
     const payload = await svc.buildFor({
       tenantId: 'org1',
       personId: 'p1',
       dateLocal: '2026-06-08',
     });
-    expect(payload.counts.promisedToMe).toBe(1);
-    expect(payload.promisedToMe[0]!.counterpartyName).toBe('Антон');
+    expect(payload.counts.blockers).toBe(1);
+    expect(payload.myBlockers[0]!.title).toBe('Жду доступ к проду');
   });
 
   it('задача без срока (issue dueDate=null) попадает в myTasks', async () => {
@@ -178,12 +162,10 @@ describe('PersonalDailyBriefService.upsert (идемпотентность)', ()
       payload: {
         dateLocal: '2026-06-08',
         myTasks: [],
-        myPromises: [],
         myBlockers: [],
-        promisedToMe: [],
         hint: '',
         knowsWho: null,
-        counts: { tasks: 0, promises: 0, blockers: 0, promisedToMe: 0 },
+        counts: { tasks: 0, blockers: 0 },
       },
     });
     expect(res.id).toBe('brief-1');

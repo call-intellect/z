@@ -62,7 +62,6 @@ export function mapDailyDigestRowsToTrend(
         greenShare: Number(m.greenShare ?? 0),
         redShare: Number(m.redShare ?? 0),
         blockers: Array.isArray(m.newBlockers) ? m.newBlockers.length : 0,
-        overdueCommitments: Array.isArray(m.overdueCommitments) ? m.overdueCommitments.length : 0,
         goalsCompleted: Number(goals.completed ?? 0),
         goalsFailed: Number(goals.failed ?? 0),
       };
@@ -73,7 +72,6 @@ export function mapDailyDigestRowsToTrend(
 export function computeVerdictSignals(
   metrics: DailyDigestMetricsDto,
   pkg: DayCompanyPackage,
-  staleDaysThreshold: number,
 ): DayVerdictSignals {
   const criticalCustomer = pkg.customersAtRisk.some((c) => c.riskLevel === 'critical');
   const severeInsight = pkg.topInsights.some(
@@ -81,33 +79,9 @@ export function computeVerdictSignals(
   );
   const hasNegativeClientSignal = criticalCustomer || severeInsight;
 
-  const strongBlocker = metrics.newBlockers.some((b) => b.confidence >= 0.8);
-  const overdueAged = countOverdueAged(metrics.overdueCommitments, staleDaysThreshold) >= 1;
-  const executionStrained = strongBlocker || overdueAged;
+  const executionStrained = metrics.newBlockers.some((b) => b.confidence >= 0.8);
 
   return { hasNegativeClientSignal, executionStrained };
-}
-
-function countOverdueAged(
-  overdue: DailyDigestMetricsDto['overdueCommitments'],
-  staleDaysThreshold: number,
-): number {
-  const now = Date.now();
-  let count = 0;
-  for (const c of overdue) {
-    if (!c.dueDate) {
-      count += 1;
-      continue;
-    }
-    const due = new Date(`${c.dueDate}T00:00:00.000Z`).getTime();
-    if (Number.isNaN(due)) {
-      count += 1;
-      continue;
-    }
-    const ageDays = (now - due) / (24 * 60 * 60 * 1000);
-    if (ageDays >= staleDaysThreshold) count += 1;
-  }
-  return count;
 }
 
 export function clampVerdict(
@@ -279,10 +253,6 @@ export class DailyDigestService {
         name: b.name,
         confidence: b.confidence,
       })),
-      overdueCommitments: aggregates.metrics.overdueCommitments.map((c) => ({
-        name: c.name,
-        dueDate: c.dueDate,
-      })),
       goals: {
         completed: aggregates.metrics.goals.completed,
         failed: aggregates.metrics.goals.failed,
@@ -299,12 +269,7 @@ export class DailyDigestService {
       tenantId: args.tenantId,
       dateLocal: args.dateLocal,
     });
-    const staleDays = await this.cfg.getDynamic<number>(
-      'dashboard.stuck.staleDaysThreshold',
-      'DASHBOARD_STUCK_STALE_DAYS',
-      5,
-    );
-    const signals = computeVerdictSignals(aggregates.metrics, pkg, staleDays);
+    const signals = computeVerdictSignals(aggregates.metrics, pkg);
 
     let bodyMarkdown: string;
     let shortSummary: string | null;
@@ -486,8 +451,7 @@ export class DailyDigestService {
     const dayStart = parseDateLocalToUtc(args.dateLocal);
     const dayEnd = endOfDayUtc(dayStart);
 
-    const [checkIns, redCheckIns, newBlockers, overdueCommitments, goalsChanged, highInsights] =
-      await Promise.all([
+    const [checkIns, redCheckIns, newBlockers, goalsChanged, highInsights] = await Promise.all([
       this.prisma.dailyCheckIn.findMany({
         where: {
           tenantId: args.tenantId,
@@ -522,22 +486,6 @@ export class DailyDigestService {
           confidence: true,
         },
         orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
-        take: 5,
-      }),
-      this.prisma.ideaBlock.findMany({
-        where: {
-          tenantId: args.tenantId,
-          signalType: 'commitment',
-          commitmentStatus: { in: ['open', 'asked'] },
-          commitmentDueDate: { lte: dayEnd },
-        },
-        select: {
-          id: true,
-          name: true,
-          commitmentDueDate: true,
-          commitmentRecipientPersonId: true,
-        },
-        orderBy: { commitmentDueDate: 'asc' },
         take: 5,
       }),
       this.prisma.goal.findMany({
@@ -595,12 +543,6 @@ export class DailyDigestService {
         name: (b.name ?? '').slice(0, 400),
         confidence: Number(b.confidence),
       })),
-      overdueCommitments: overdueCommitments.map((c) => ({
-        blockId: c.id,
-        name: (c.name ?? '').slice(0, 400),
-        dueDate: c.commitmentDueDate ? c.commitmentDueDate.toISOString().slice(0, 10) : null,
-        recipientPersonId: c.commitmentRecipientPersonId,
-      })),
       goals: {
         completed: completedGoals.length,
         failed: failedGoals.length,
@@ -619,7 +561,7 @@ export class DailyDigestService {
     const sources: DailyDigestSourcesDto = {
       checkInIds: checkIns.map((c) => c.id),
       blockerIds: newBlockers.map((b) => b.id),
-      commitmentIds: overdueCommitments.map((c) => c.id),
+      commitmentIds: [],
       goalIds: goalsChanged.map((g0) => g0.id),
       insightIds: highInsights.map((i) => i.id),
     };
@@ -872,18 +814,14 @@ export class DailyDigestService {
     chronicBlockers: DailyDigestChronicBlockerDto[];
   }> {
     const [dayStart, dayEnd] = this.parseDayBoundsMsk(args.dateLocal);
-    const now = new Date();
 
     const [
       meetingsToday,
       criticalSignals,
-      overdueCommits,
       highInsights,
       redCheckIns,
-      brokenCommits,
       recognitionsToday,
       helpfulnessToday,
-      keptCommits,
       persons,
     ] = await Promise.all([
       this.prisma.meeting.findMany({
@@ -906,17 +844,6 @@ export class DailyDigestService {
         select: { id: true, name: true, signalType: true, createdAt: true },
         take: 10,
         orderBy: { createdAt: 'asc' },
-      }),
-      this.prisma.ideaBlock.findMany({
-        where: {
-          tenantId: args.tenantId,
-          signalType: 'commitment',
-          commitmentStatus: { in: ['open', 'asked'] },
-          commitmentDueDate: { lt: now },
-        },
-        select: { id: true, name: true, commitmentDueDate: true },
-        take: 10,
-        orderBy: { commitmentDueDate: 'asc' },
       }),
       this.prisma.insight.findMany({
         where: {
@@ -943,20 +870,6 @@ export class DailyDigestService {
         },
         take: 10,
       }),
-      this.prisma.ideaBlock.findMany({
-        where: {
-          tenantId: args.tenantId,
-          signalType: 'commitment',
-          commitmentStatus: 'missed',
-          updatedAt: { gte: dayStart, lt: dayEnd },
-        },
-        select: {
-          id: true,
-          name: true,
-          commitmentRecipient: { select: { id: true, name: true } },
-        },
-        take: 10,
-      }),
       this.prisma.recognition.findMany({
         where: {
           tenantId: args.tenantId,
@@ -976,22 +889,6 @@ export class DailyDigestService {
         },
         select: { helperUserId: true, helpCount: true },
         orderBy: { helpCount: 'desc' },
-        take: 20,
-      }),
-      this.prisma.ideaBlock.findMany({
-        where: {
-          tenantId: args.tenantId,
-          signalType: 'commitment',
-          commitmentStatus: 'fulfilled',
-          updatedAt: { gte: dayStart, lt: dayEnd },
-          commitmentAuthorPersonId: { not: null },
-        },
-        select: {
-          id: true,
-          name: true,
-          commitmentAuthorPersonId: true,
-        },
-        orderBy: { updatedAt: 'desc' },
         take: 20,
       }),
       this.prisma.person.findMany({
@@ -1032,22 +929,6 @@ export class DailyDigestService {
     eventsToday.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
 
     const urgentItems: DailyDigestUrgentItemDto[] = [];
-    for (const c of overdueCommits) {
-      const daysOverdue = c.commitmentDueDate
-        ? Math.max(
-            1,
-            Math.floor((now.getTime() - c.commitmentDueDate.getTime()) / (24 * 60 * 60 * 1000)),
-          )
-        : 0;
-      urgentItems.push({
-        kind: 'overdue_commitment',
-        id: c.id,
-        title: (c.name ?? '').slice(0, 100),
-        link: `/me/commitments?id=${encodeURIComponent(c.id)}`,
-        badge: `просрочено на ${daysOverdue} ${daysOverdue === 1 ? 'день' : 'дн.'}`,
-        urgency: daysOverdue >= 3 ? 'high' : 'medium',
-      });
-    }
     for (const i of highInsights) {
       urgentItems.push({
         kind: 'high_insight',
@@ -1109,37 +990,6 @@ export class DailyDigestService {
       });
     }
 
-    const keptByAuthor = new Map<string, { count: number; lastName: string }>();
-    for (const c of keptCommits) {
-      const authorId = c.commitmentAuthorPersonId;
-      if (!authorId) continue;
-      const prev = keptByAuthor.get(authorId);
-      if (prev) {
-        prev.count += 1;
-      } else {
-        keptByAuthor.set(authorId, {
-          count: 1,
-          lastName: (c.name ?? '').trim(),
-        });
-      }
-    }
-    for (const [personId, agg] of keptByAuthor) {
-      const name = personById.get(personId);
-      if (!name) continue;
-      if (shinedMap.has(personId)) continue;
-      const detail =
-        agg.count === 1 && agg.lastName
-          ? `сдержал обещание: ${agg.lastName.slice(0, 80)}`
-          : `закрыл ${agg.count} ${pluralizeObeshchanie(agg.count)}`;
-      shinedMap.set(personId, {
-        personId,
-        personName: name,
-        reason: 'commitments_kept',
-        detail,
-        link: `/persons/${encodeURIComponent(personId)}`,
-      });
-    }
-
     const whoShined = Array.from(shinedMap.values()).slice(0, 8);
 
     const struggledMap = new Map<string, DailyDigestPersonStruggledDto>();
@@ -1154,18 +1004,6 @@ export class DailyDigestService {
           link: `/persons/${encodeURIComponent(r.personId)}`,
         });
       }
-    }
-    for (const c of brokenCommits) {
-      if (!c.commitmentRecipient) continue;
-      const pid = c.commitmentRecipient.id;
-      if (struggledMap.has(pid)) continue;
-      struggledMap.set(pid, {
-        personId: pid,
-        personName: c.commitmentRecipient.name ?? 'Без имени',
-        reason: 'broken_commitment',
-        detail: `Не выполнено: ${(c.name ?? '').slice(0, 80)}`,
-        link: `/persons/${encodeURIComponent(pid)}`,
-      });
     }
     const whoStruggled = Array.from(struggledMap.values()).slice(0, 8);
 
@@ -1252,7 +1090,6 @@ function emptyMetrics(): DailyDigestMetricsDto {
     redShare: 0,
     topRedCheckIns: [],
     newBlockers: [],
-    overdueCommitments: [],
     goals: {
       completed: 0,
       failed: 0,
@@ -1299,10 +1136,6 @@ function pluralizeRaz(n: number): string {
 
 function pluralizeBlagodarnost(n: number): string {
   return pluralRu(n, 'благодарность', 'благодарности', 'благодарностей');
-}
-
-function pluralizeObeshchanie(n: number): string {
-  return pluralRu(n, 'обещание', 'обещания', 'обещаний');
 }
 
 function parseSnapshotSignals(raw: unknown): { pro: string[]; contra: string[] } {

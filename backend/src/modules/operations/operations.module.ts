@@ -13,7 +13,6 @@ import { MyCheckInsController } from './controllers/my-check-ins.controller';
 import { MyCustomerRiskController } from './controllers/my-customer-risk.controller';
 import { MyDailyBriefController } from './controllers/my-daily-brief.controller';
 import { MyDailyValueController } from './controllers/my-daily-value.controller';
-import { MyPromisesController } from './controllers/my-promises.controller';
 import { MyWeeklyPerPersonController } from './controllers/my-weekly-per-person.controller';
 import { OperationsDashboardController } from './controllers/operations-dashboard.controller';
 import { PersonalRelationsController } from './controllers/personal-relations.controller';
@@ -25,7 +24,6 @@ import { CheckinIngestService } from './services/checkin-ingest.service';
 import { CheckinParserService } from './services/checkin-parser.service';
 import { CheckinResponseHandler } from './services/checkin-response.handler';
 import { ClosureVerifierService } from './services/closure-verifier.service';
-import { CommitmentsService } from './services/commitments.service';
 import { CustomerRiskRadarService } from './services/customer-risk-radar.service';
 import { DailyCheckInService } from './services/daily-checkin.service';
 import { DailyDigestService } from './services/daily-digest.service';
@@ -39,6 +37,7 @@ import { OperationsDashboardService } from './services/operations-dashboard.serv
 import { PersonalDailyBriefService } from './services/personal-daily-brief.service';
 import { PersonalRelationService } from './services/personal-relation.service';
 import { PortfolioHealthService } from './services/portfolio-health.service';
+import { SelfPersonResolverService } from './services/self-person-resolver.service';
 import { TaskCompletionHandler } from './services/task-completion.handler';
 import { TaskReconcileService } from './services/task-reconcile.service';
 import { TeamCapacityService } from './services/team-capacity.service';
@@ -82,7 +81,6 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     PersonalRelationsController,
     WeeklyDigestController,
     WeeklyPerPersonController,
-    MyPromisesController,
     DailyDigestController,
     MyCustomerRiskController,
     MyDailyBriefController,
@@ -112,7 +110,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     OperationsMonthlyDigestCron,
     CheckinSentimentAnalyzerWorker,
     CheckinSentimentBatchCron,
-    CommitmentsService,
+    SelfPersonResolverService,
     // TZ task-dedup (2026-06-16, Ф2) — петля «разговор → кандидат на закрытие
     // задачи». @OnEvent('task.completion_signalled'),
     // семантический матч открытой Issue + LLM-верификатор → обратимый
@@ -152,7 +150,7 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     CheckinParserService,
     WeeklyDigestService,
     MonthlyDigestService,
-    CommitmentsService,
+    SelfPersonResolverService,
     DailyDigestService,
     CustomerRiskRadarService,
     PersonalDailyBriefService,

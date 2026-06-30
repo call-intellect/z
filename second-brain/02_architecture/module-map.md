@@ -2337,7 +2337,7 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 ### Воркеры / cron (in-process, `WorkersModule`)
 - Очереди `chatbox.sync` (синк-job'ы) + `chatbox.analyze` (`chatbox-analyze.worker.ts` — закрытая сессия → LLM-summary → `done`/`failed` + `rawEventId`).
 - `chatbox-sync.cron.ts` — раз в сутки (полночь) ставит incremental-sync по AccessToken для всех не-`disconnected` интеграций. Единственный способ забора (приём вебхуков убран 2026-06-19).
-- `chatbox-analyze.cron.ts` — каждые 5 мин подбирает сессии `analysisStatus='pending'` с `endedAt!=null`.
+- `chatbox-analyze.cron.ts` — раз в сутки в 02:00 МСК (`EVERY_DAY_AT_2AM`, после `ChatboxSyncCron` в 00:00) подбирает сессии `analysisStatus='pending'` с `endedAt!=null`. Раньше был каждые 10 минут — лишние расходы, починено (TZ 2026-06-30).
 - Оба cron'а уважают kill-switch `AdminSetting chatbox.enabled`.
 - **2026-06-19 — observability:** все 4 воркера (`bitrix-sync/analyze`, `chatbox-sync/analyze`) оборачивают исполнение вызовами `IntegrationSyncLogService.begin/succeed/fail/skip` → таблица `IntegrationSyncRun` (best-effort, без throw). @Cron теперь именованные (name:) → попадают в `CronSchedule`/`CronRunHistory`. Очереди `bitrix.sync/analyze` и `chatbox.sync/analyze` зарегистрированы в `getKnownQueueNames()` → видны в admin/platform/workers.
 

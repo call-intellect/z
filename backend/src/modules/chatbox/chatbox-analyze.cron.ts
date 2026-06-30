@@ -25,7 +25,7 @@ export class ChatboxAnalyzeCron {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  @Cron(CronExpression.EVERY_10_MINUTES, {
+  @Cron(CronExpression.EVERY_DAY_AT_2AM, {
     name: 'ChatboxAnalyzeCron.sweep',
     timeZone: 'Europe/Moscow',
   })

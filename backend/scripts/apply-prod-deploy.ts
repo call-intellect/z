@@ -1098,6 +1098,12 @@ async function runSchemaPhase(
   const preMigrate: Step[] = [
     { phase: 'migrate', script: 'scripts/migrate-task-to-issue.ts', args: ['--apply'] },
     { phase: 'backfill', script: 'scripts/backfill-collapse-legacy-task-duplicates.ts', args: ['--apply'] },
+    {
+      phase: 'backfill',
+      script: 'scripts/backfill-embeddings-gemma-768.ts',
+      hint: 'embeddinggemma 768 dim (TZ 2026-06-30) — после миграции vector(1536)→vector(768) обнуляет все эмбеддинги; backfill через LocalEmbeddingService. Идемпотентно (WHERE embedding IS NULL)',
+      skipBootstrap: true,
+    },
   ];
   for (const s of preMigrate) {
     const r = await runOne(s, false, verbose);

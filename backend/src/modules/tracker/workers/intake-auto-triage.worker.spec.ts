@@ -8,6 +8,7 @@ import type { RedisService } from '../../../common/redis/redis.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 import type { IntakeAutoTriageJobData } from '../queues';
 import type { AssigneeResolverService } from '../services/assignee-resolver.service';
+import type { ChecklistsService } from '../services/checklists.service';
 import type { IssuesService } from '../services/issues.service';
 import type { ProjectsService } from '../services/projects.service';
 import type { AssigneeSuggestion, SkillRoutingService } from '../services/skill-routing.service';
@@ -151,6 +152,11 @@ function mkWorker(opts?: MkOpts): {
     create: vi.fn().mockResolvedValue({ id: 'issue-created-1' }),
   };
 
+  const checklists = {
+    createChecklist: vi.fn().mockResolvedValue({ id: 'cl1' }),
+    bulkCreateItems: vi.fn().mockResolvedValue([]),
+  };
+
   const projects = {
     create: vi.fn().mockResolvedValue({ id: 'proj-inbox' }),
   };
@@ -191,6 +197,7 @@ function mkWorker(opts?: MkOpts): {
     prisma as unknown as PrismaService,
     llm as unknown as LlmRouterService,
     issues as unknown as IssuesService,
+    checklists as unknown as ChecklistsService,
     projects as unknown as ProjectsService,
     cfg,
     metrics as unknown as BusinessMetricsService,

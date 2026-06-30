@@ -24,7 +24,9 @@ import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { type IntakeAutoTriageJobData, TRACKER_QUEUE_NAMES } from '../queues';
 import { AssigneeResolverService } from '../services/assignee-resolver.service';
+import { ChecklistsService } from '../services/checklists.service';
 import { linkDerivedDecisionsForIssue } from '../services/decision-task-link.util';
+import { materializeIntakeChecklist } from '../services/intake-checklist-materialize.util';
 import { IssuesService } from '../services/issues.service';
 import { ProjectsService } from '../services/projects.service';
 import { SkillRoutingService } from '../services/skill-routing.service';
@@ -91,6 +93,7 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(IssuesService) private readonly issues: IssuesService,
+    @Inject(ChecklistsService) private readonly checklists: ChecklistsService,
     @Inject(ProjectsService) private readonly projects: ProjectsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Optional()
@@ -522,6 +525,18 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
       tenantId,
       systemUserId,
     );
+    try {
+      await materializeIntakeChecklist(this.checklists, created.id, intake.checklistJson, tenantId);
+    } catch (e) {
+      this.logger.warn(
+        {
+          intakeIssueId: intake.id,
+          issueId: created.id,
+          err: e instanceof Error ? e.message : String(e),
+        },
+        'intake-auto-triage: материализация чек-листа упала (best-effort)',
+      );
+    }
     try {
       const links = await linkDerivedDecisionsForIssue(this.prisma, {
         tenantId,

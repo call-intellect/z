@@ -254,6 +254,10 @@ export const TaskItemSchema = z
     suggestedPriority: z.enum(['urgent', 'high', 'medium', 'low']).nullable().optional(),
     confidence: z.number().optional(),
     sourceQuote: z.string().optional(),
+    subtasks: z
+      .array(z.object({ title: z.string().min(1) }).strict())
+      .nullable()
+      .optional(),
   })
   .strict();
 

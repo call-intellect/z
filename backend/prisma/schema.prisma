@@ -10262,6 +10262,8 @@ model IntakeIssue {
   /// decision='duplicate'. null — дубль не найден.
   suggestedDuplicateOfIssueId String?
 
+  checklistJson Json?
+
   /// Редизайн Ф4 (2026-06-13) — авто-протухание pending-intake: после
   /// `expiresAt` sweep-крон (CurationItemLifecycleCron) переводит pending →
   /// rejected («авто-закрыт по сроку»), чтобы входящие не висели вечно. TTL

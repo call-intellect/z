@@ -1,7 +1,7 @@
 ---
 title: Аутентификация и аккаунты
 status: actual
-updated: 2026-05-10
+updated: 2026-06-30
 ---
 
 # Аутентификация и аккаунты
@@ -56,6 +56,23 @@ Lead-style: пользователь оставляет `email + name` на `/si
 
 ТЗ: [plans/tz/2026-05-29-unified-login.md](../../plans/tz/2026-05-29-unified-login.md). Старые эндпоинты `/accounts/login` и `/auth/admin-login` живы (deprecated) — откат тривиален. Cleanup и удаление старых форм — в Фазе 4 ТЗ.
 
+## Поток 5 — Приглашение в компанию (e-mail-инвайт, переработан 2026-06-30)
+
+`OrgInvitationsService.createInvitation` ([backend/src/modules/orgs/org-invitations.service.ts](../../backend/src/modules/orgs/org-invitations.service.ts)) ветвится по тому, **есть ли уже standalone-User** с этим e-mail:
+
+- **Пользователь НЕ зарегистрирован** → генерим temp-пароль, кладём `OrgInvitation.tempPasswordHash` (argon2id), письмо `sendInviteWithCredentials` (логин+пароль). На `/login` срабатывает фолбэк `AccountsService.tryLoginViaInvitation` → `OrgInvitationsService.acceptViaPassword`: находит pending-инвайт по e-mail, сверяет пароль с `tempPasswordHash`, провижинит `User` + `Membership` + сессию, ставит `mustChangePassword=true`. То есть присланный пароль работает на `/login` сразу, без обязательного клика по magic-link.
+- **Пользователь уже есть** → пароль НЕ генерим и НЕ трогаем (`tempPasswordHash=null`); письмо-уведомление `sendInviteNotification` (шаблон `INVITE_NOTIFICATION_TEMPLATE`) — «у вас уже есть аккаунт, примите по ссылке / войдите своим паролем». `acceptViaMagicLink` для существующего юзера тоже **не сбрасывает пароль** (через `findOrCreateStandaloneForInvite`: если User есть — возвращаем как есть).
+
+**Почему так:** раньше temp-пароль генерился всегда и клался только в инвайт, а сам `User` под инвайт не создавался до magic-link — присланный пароль не подходил на `/login` («неверный пароль»); для уже существующего юзера ещё и слался бессмысленный новый пароль. Разбор: [05_история/2026-06-30-invite-password-fix-and-multi-org.md](../05_история/2026-06-30-invite-password-fix-and-multi-org.md).
+
+## Multi-org: один пользователь — несколько компаний (2026-06-30)
+
+Снято ограничение «1 юзер = 1 компания» (был `assertNoOtherActiveMembership` в accept-путях). Теперь `Membership` — настоящая many-to-many: пользователь может состоять в нескольких Org.
+
+- **Активная компания — через `X-Org-Id`** (резолвится `TenantMiddleware` → `req.tenantId`, см. [rbac-access-control.md](./rbac-access-control.md)). Серверной персистентности активной орги нет (интерим-дизайн «Фаза 0a.3»).
+- `AccountsService.getMe(userId, activeOrgId?)` отдаёт `currentOrgId`/`currentOrgRole` по активной орге (из `X-Org-Id`), иначе фолбэк на первую свою → demo.
+- **Фронт:** `OrgSwitcher` ([frontend/src/ui/components/app-shell/OrgSwitcher.tsx](../../frontend/src/ui/components/app-shell/OrgSwitcher.tsx)) при переключении дёргает `POST /auth/switch-org` (валидация членства), затем `setApiClientOrgId` + сохраняет выбор в `localStorage['z.activeOrgId']` + `refresh()`. `auth-context` восстанавливает активную орг из localStorage **до первого `/me`**. Список всех компаний — `useMemberships` → `GET /orgs/me` (`listForUser`, любые роли).
+
 ## DB-модели
 
 ```
@@ -84,7 +101,7 @@ Soft-delete юзера: `deletedAt = now`, физическое удаление
 
 ## Org и роли (Фаза 0 knowledge-core, 2026-05-10)
 
-После Фазы 0 каждый юзер имеет **минимум одну Org** (создаётся автоматически при регистрации). См. подробности в [rbac-access-control.md](./rbac-access-control.md).
+После Фазы 0 каждый юзер имеет **минимум одну Org** (создаётся автоматически при регистрации). С 2026-06-30 юзер может состоять и в **нескольких** Org (см. раздел «Multi-org» выше). См. подробности в [rbac-access-control.md](./rbac-access-control.md).
 
 **Регистрация теперь создаёт пару (User + Org + Membership(owner)) в одной Prisma-транзакции:**
 - `companyName` опциональное поле формы. Если пусто — Org называется «Компания {name}».

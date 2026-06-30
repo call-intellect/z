@@ -61,8 +61,6 @@ export class GoalThemeLinkerCron {
       const goals = await this.prisma.goal.findMany({
         where: {
           tenantId: org.id,
-          source: 'ai',
-          sourceBlockIds: { isEmpty: false },
           themes: { none: {} },
         },
         select: { id: true },

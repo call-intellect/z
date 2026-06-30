@@ -1164,6 +1164,16 @@ export class TypedConfigService {
         undefined,
         false,
       ),
+      themeAutolinkKnnMaxDistance: this.resolveSync<number>(
+        'goals.themeAutolinkKnnMaxDistance',
+        undefined,
+        0.45,
+      ),
+      themeAutolinkKnnTopK: this.resolveSync<number>(
+        'goals.themeAutolinkKnnTopK',
+        undefined,
+        5,
+      ),
       goalTaskLinkEnabled: this.resolveSync<boolean>('goals.goalTaskLinkEnabled', undefined, false),
     } as const;
   }

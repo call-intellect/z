@@ -18,6 +18,49 @@ import {
 
 import { KnowledgeEmbeddingService } from './embedding.service';
 
+export function normalizeEntityName(input: string): string {
+  if (!input) return '';
+  return input
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/["'«»“”„‟]/g, '');
+}
+
+export interface RoleLookupPrisma {
+  role: {
+    findMany(args: {
+      where: { tenantId: string; deletedAt: null };
+      select: { id: true; name: true };
+    }): Promise<Array<{ id: string; name: string }>>;
+  };
+}
+
+export async function resolveRoleIdByName(
+  prisma: RoleLookupPrisma,
+  tenantId: string,
+  hint: string,
+): Promise<string | null> {
+  const normalized = normalizeEntityName(hint);
+  if (normalized.length === 0) return null;
+
+  const roles = await prisma.role.findMany({
+    where: { tenantId, deletedAt: null },
+    select: { id: true, name: true },
+  });
+  if (roles.length === 0) return null;
+
+  const lowered = normalized.toLowerCase();
+  const exact = roles.find((r) => r.name.trim().toLowerCase() === lowered);
+  if (exact) return exact.id;
+
+  const fuzzy = roles.filter((r) => {
+    const rn = r.name.trim().toLowerCase();
+    return rn.includes(lowered) || lowered.includes(rn);
+  });
+  if (fuzzy.length === 1 && fuzzy[0]) return fuzzy[0].id;
+  return null;
+}
+
 /**
  * EntityResolutionService (Шаг 2 baseline + Фаза 0b расширения):
  *
@@ -701,27 +744,20 @@ export class EntityResolutionService {
     tenantId: string,
     hint: string,
   ): Promise<string | null> {
+    const resolved = await resolveRoleIdByName(this.prisma, tenantId, hint);
+    if (resolved) return resolved;
+
     const normalized = this.normalizeName(hint);
     if (normalized.length === 0) return null;
-
+    const lowered = normalized.toLowerCase();
     const roles = await this.prisma.role.findMany({
       where: { tenantId, deletedAt: null },
       select: { id: true, name: true },
     });
-    if (roles.length === 0) return null;
-
-    const lowered = normalized.toLowerCase();
-    const exact = roles.find((r) => r.name.trim().toLowerCase() === lowered);
-    if (exact) return exact.id;
-
-    // Fuzzy: ищем те, чьё имя содержит подстроку нашей подсказки или наоборот.
     const fuzzy = roles.filter((r) => {
       const rn = r.name.trim().toLowerCase();
       return rn.includes(lowered) || lowered.includes(rn);
     });
-    if (fuzzy.length === 1 && fuzzy[0]) {
-      return fuzzy[0].id;
-    }
     if (fuzzy.length > 1) {
       this.logger.debug(
         { tenantId, hint, candidates: fuzzy.length },
@@ -1913,11 +1949,7 @@ export class EntityResolutionService {
    * Лемматизация (`morpher` / stemmer) — TODO в γ.
    */
   private normalizeName(input: string): string {
-    if (!input) return '';
-    return input
-      .trim()
-      .replace(/\s+/g, ' ')
-      .replace(/["'«»“”„‟]/g, '');
+    return normalizeEntityName(input);
   }
 
   /**

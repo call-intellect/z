@@ -831,6 +831,13 @@ const STEPS: Step[] = [
     hint: 'plaintext в Message.contentStripped для GIN-поиска (единый чат Ф4a); decrypt(content)→stripToPlain. Идемпотентно (contentStripped=null фильтр)',
     skipBootstrap: true,
   },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-regulation-scope-normalize.ts',
+    args: ['--apply'],
+    hint: 'regulation/instruction/policy/process: scope=role:<сырое имя> → role:<cuid> по созданным ролям (Фаза 7б); идемпотентно (cuid-хвост = no-op, неразрешимое остаётся сырьём)',
+    skipBootstrap: true,
+  },
 ];
 
 interface ParsedArgs {

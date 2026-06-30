@@ -39,6 +39,7 @@ function makePrismaMock(): any {
       upsert: vi.fn().mockResolvedValue({ id: 'instr1' }),
       findUnique: vi.fn().mockResolvedValue(null),
     },
+    role: { findFirst: vi.fn().mockResolvedValue(null) },
     person: { findMany: vi.fn().mockResolvedValue([]) },
     personKnowledgeCategoryEmbedding: {
       create: vi.fn().mockResolvedValue({ id: 'pk1' }),
@@ -90,6 +91,20 @@ function makeMetricsMock() {
     incCoreSpecialistLlmTokens: vi.fn(),
     incCoreSpecialistSkipped: vi.fn(),
     incCoreSpecialistExtractionFailure: vi.fn(),
+    incRegulationScopeUnresolved: vi.fn(),
+    incRegulationOwnerUnresolved: vi.fn(),
+  };
+}
+
+function makeEntitiesMock(
+  overrides?: Partial<{
+    resolveRoleByHint: ReturnType<typeof vi.fn>;
+    resolvePersonByHint: ReturnType<typeof vi.fn>;
+  }>,
+) {
+  return {
+    resolveRoleByHint: overrides?.resolveRoleByHint ?? vi.fn().mockResolvedValue(null),
+    resolvePersonByHint: overrides?.resolvePersonByHint ?? vi.fn().mockResolvedValue(null),
   };
 }
 
@@ -813,5 +828,180 @@ describe('SpecialistsCombinedService.extractAll', () => {
 
     expect(result.created.decisions).toBe(1);
     expect(result.errors).toEqual([]);
+  });
+});
+
+describe('SpecialistsCombinedService — Фаза 7б: scope/owner для regulations/instructions', () => {
+  function buildSvc(args: {
+    prisma: any;
+    llm: any;
+    metrics: any;
+    entities: any;
+  }) {
+    return new SpecialistsCombinedService(
+      args.prisma as any,
+      args.llm as any,
+      args.metrics as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      args.entities as any,
+    );
+  }
+
+  function regToolOutput(reg: Record<string, unknown>) {
+    return {
+      ...VALID_8_EMPTY,
+      regulations: [
+        {
+          sourceBlockId: 'blk_1',
+          kind: 'regulation',
+          name: 'Reg-1',
+          statement: 'Должно быть...',
+          confidence: 0.85,
+          isOrgNorm: true,
+          ...reg,
+        },
+      ],
+    };
+  }
+
+  it('scope=role:<имя> при наличии роли → upsert получает scope=role:<cuid> (create и update)', async () => {
+    const prisma = makePrismaMock();
+    const metrics = makeMetricsMock();
+    const entities = makeEntitiesMock({
+      resolveRoleByHint: vi.fn().mockResolvedValue('role-cuid-123'),
+    });
+    const llm = makeLlmMock(regToolOutput({ scope: 'role:Менеджер' }));
+    const svc = buildSvc({ prisma, llm, metrics, entities });
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    expect(entities.resolveRoleByHint).toHaveBeenCalledWith('org-1', 'Менеджер');
+    const upsertArg = prisma.regulation.upsert.mock.calls[0][0];
+    expect(upsertArg.create.scope).toBe('role:role-cuid-123');
+    expect(upsertArg.update.scope).toBe('role:role-cuid-123');
+    expect(metrics.incRegulationScopeUnresolved).not.toHaveBeenCalled();
+  });
+
+  it('scope=role:<существующий cuid> → без изменений (идемпотентность), резолвер не зовётся', async () => {
+    const prisma = makePrismaMock();
+    prisma.role.findFirst.mockResolvedValue({ id: 'role-cuid-xyz' });
+    const metrics = makeMetricsMock();
+    const entities = makeEntitiesMock();
+    const llm = makeLlmMock(regToolOutput({ scope: 'role:role-cuid-xyz' }));
+    const svc = buildSvc({ prisma, llm, metrics, entities });
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    expect(entities.resolveRoleByHint).not.toHaveBeenCalled();
+    const upsertArg = prisma.regulation.upsert.mock.calls[0][0];
+    expect(upsertArg.create.scope).toBe('role:role-cuid-xyz');
+    expect(upsertArg.update.scope).toBe('role:role-cuid-xyz');
+  });
+
+  it('scope=role:<имя> неразрешимо → сырьё сохранено + counter incRegulationScopeUnresolved', async () => {
+    const prisma = makePrismaMock();
+    const metrics = makeMetricsMock();
+    const entities = makeEntitiesMock({
+      resolveRoleByHint: vi.fn().mockResolvedValue(null),
+    });
+    const llm = makeLlmMock(regToolOutput({ scope: 'role:НетТакойРоли' }));
+    const svc = buildSvc({ prisma, llm, metrics, entities });
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    const upsertArg = prisma.regulation.upsert.mock.calls[0][0];
+    expect(upsertArg.create.scope).toBe('role:НетТакойРоли');
+    expect(metrics.incRegulationScopeUnresolved).toHaveBeenCalledWith({
+      tenant: 'org-1',
+    });
+  });
+
+  it('scope=org / null → без изменений, резолвер роли не зовётся', async () => {
+    const prismaOrg = makePrismaMock();
+    const entitiesOrg = makeEntitiesMock();
+    const svcOrg = buildSvc({
+      prisma: prismaOrg,
+      llm: makeLlmMock(regToolOutput({ scope: 'org' })),
+      metrics: makeMetricsMock(),
+      entities: entitiesOrg,
+    });
+    await svcOrg.extractAll({ ...argsTemplate() });
+    expect(entitiesOrg.resolveRoleByHint).not.toHaveBeenCalled();
+    expect(prismaOrg.regulation.upsert.mock.calls[0][0].create.scope).toBe('org');
+
+    const prismaNull = makePrismaMock();
+    const svcNull = buildSvc({
+      prisma: prismaNull,
+      llm: makeLlmMock(regToolOutput({})),
+      metrics: makeMetricsMock(),
+      entities: makeEntitiesMock(),
+    });
+    await svcNull.extractAll({ ...argsTemplate() });
+    expect(prismaNull.regulation.upsert.mock.calls[0][0].create.scope).toBeNull();
+  });
+
+  it('ownerHint разрешим → ownerPersonId проставлен; тёзки/нет → null + counter', async () => {
+    const prismaOk = makePrismaMock();
+    const svcOk = buildSvc({
+      prisma: prismaOk,
+      llm: makeLlmMock(regToolOutput({ ownerHint: 'Анна' })),
+      metrics: makeMetricsMock(),
+      entities: makeEntitiesMock({
+        resolvePersonByHint: vi.fn().mockResolvedValue('person-cuid-9'),
+      }),
+    });
+    await svcOk.extractAll({ ...argsTemplate() });
+    expect(prismaOk.regulation.upsert.mock.calls[0][0].create.ownerPersonId).toBe(
+      'person-cuid-9',
+    );
+
+    const prismaAmb = makePrismaMock();
+    const metricsAmb = makeMetricsMock();
+    const svcAmb = buildSvc({
+      prisma: prismaAmb,
+      llm: makeLlmMock(regToolOutput({ ownerHint: 'Саша' })),
+      metrics: metricsAmb,
+      entities: makeEntitiesMock({
+        resolvePersonByHint: vi.fn().mockResolvedValue(null),
+      }),
+    });
+    await svcAmb.extractAll({ ...argsTemplate() });
+    expect(prismaAmb.regulation.upsert.mock.calls[0][0].create.ownerPersonId).toBeNull();
+    expect(metricsAmb.incRegulationOwnerUnresolved).toHaveBeenCalledWith({
+      tenant: 'org-1',
+    });
+  });
+
+  it('instruction: roles[0] → scope=role:<cuid> проставлен в upsert', async () => {
+    const prisma = makePrismaMock();
+    const entities = makeEntitiesMock({
+      resolveRoleByHint: vi.fn().mockResolvedValue('role-cuid-mgr'),
+    });
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      regulations: [
+        {
+          sourceBlockId: 'blk_1',
+          kind: 'instruction',
+          name: 'Instr-1',
+          statement: 'Шаг 1...',
+          confidence: 0.8,
+          roles: ['Менеджер'],
+        },
+      ],
+    });
+    const svc = buildSvc({ prisma, llm, metrics: makeMetricsMock(), entities });
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    expect(entities.resolveRoleByHint).toHaveBeenCalledWith('org-1', 'Менеджер');
+    const upsertArg = prisma.instruction.upsert.mock.calls[0][0];
+    expect(upsertArg.create.scope).toBe('role:role-cuid-mgr');
+    expect(upsertArg.update.scope).toBe('role:role-cuid-mgr');
   });
 });

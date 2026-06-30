@@ -31,6 +31,7 @@ import {
 } from '../prompts/specialists-combined.prompt';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
+import { EntityResolutionService } from './entity-resolution.service';
 
 export interface SpecialistsCombinedExtractArgs {
   tenantId: string;
@@ -106,6 +107,9 @@ export class SpecialistsCombinedService {
     @Optional()
     @Inject(DashboardQueueService)
     private readonly dashboardQueue?: DashboardQueueService,
+    @Optional()
+    @Inject(EntityResolutionService)
+    private readonly entities?: EntityResolutionService,
   ) {}
 
   async extractAll(
@@ -723,6 +727,8 @@ export class SpecialistsCombinedService {
         });
         continue;
       }
+      const scope = await this.resolveScope(tenantId, r.scope);
+      const ownerPersonId = await this.resolveOwnerPersonHint(tenantId, r.ownerHint);
       try {
         // Б57 (K4) — провенанс через `set: union(...)` вместо `{ push }`:
         // pre-fetch существующего массива → дедуп при повторной встрече того же
@@ -744,6 +750,8 @@ export class SpecialistsCombinedService {
             },
             confidence: r.confidence,
             category: r.kind === 'standard' ? 'standard' : 'regulation',
+            scope,
+            ownerPersonId,
           },
           create: {
             tenantId,
@@ -753,6 +761,8 @@ export class SpecialistsCombinedService {
             category: r.kind === 'standard' ? 'standard' : 'regulation',
             confidence: r.confidence,
             sourceBlockIds: [r.sourceBlockId],
+            scope,
+            ownerPersonId,
           },
         });
         created += 1;
@@ -783,6 +793,11 @@ export class SpecialistsCombinedService {
         r.extractionStatus === 'нужен' || r.extractionStatus === 'обсуждается'
           ? 'deprecated'
           : 'active';
+      const scope = await this.resolveScope(
+        tenantId,
+        r.scope ?? (forRole ? `role:${forRole}` : null),
+      );
+      const ownerPersonId = await this.resolveOwnerPersonHint(tenantId, r.ownerHint);
       try {
         // Б57 (K4) — провенанс через `set: union(...)` вместо `{ push }`
         // (см. persistRegulations).
@@ -803,6 +818,8 @@ export class SpecialistsCombinedService {
             confidence: r.confidence,
             forRole: forRole ?? undefined,
             status,
+            scope,
+            ownerPersonId,
           },
           create: {
             tenantId,
@@ -813,6 +830,8 @@ export class SpecialistsCombinedService {
             forRole,
             status,
             sourceBlockIds: [r.sourceBlockId],
+            scope,
+            ownerPersonId,
           },
         });
         created += 1;
@@ -1050,6 +1069,37 @@ export class SpecialistsCombinedService {
         );
       }
     }
+  }
+
+  private async resolveScope(
+    tenantId: string,
+    rawScope: string | null | undefined,
+  ): Promise<string | null> {
+    const raw = rawScope?.trim() ?? null;
+    if (!raw || !raw.startsWith('role:')) return raw ?? null;
+    const hint = raw.slice('role:'.length).trim();
+    if (!hint) return raw;
+    const existing = await this.prisma.role.findFirst({
+      where: { id: hint, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+    if (existing) return `role:${existing.id}`;
+    const resolved = await this.entities?.resolveRoleByHint(tenantId, hint);
+    if (resolved) return `role:${resolved}`;
+    this.metrics?.incRegulationScopeUnresolved?.({ tenant: tenantId });
+    return raw;
+  }
+
+  private async resolveOwnerPersonHint(
+    tenantId: string,
+    hint: string | null | undefined,
+  ): Promise<string | null> {
+    if (!hint) return null;
+    const trimmed = hint.trim();
+    if (trimmed.length < 2) return null;
+    const personId = await this.entities?.resolvePersonByHint(tenantId, trimmed);
+    if (!personId) this.metrics?.incRegulationOwnerUnresolved?.({ tenant: tenantId });
+    return personId ?? null;
   }
 
   private clamp01(value: number): number {

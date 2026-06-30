@@ -252,7 +252,7 @@ Acceptance: на длинной встрече кореференции разр
 Acceptance: e2e — «я докручу лендинг к пятнице + 3 шага» → 1 IntakeIssue, assignee=автор, due=пятница, `checklistJson`=3; повтор дела → `verdict='same'` (suggest, не дубль); на чате работает; `typecheck/lint/build` зелёные.
 Закрывает: R-tasks (чат-задачи), ВР7; зависит от ТЗ задач Ф1-Ф4 (трекер-машинерия).
 
-### [ ] Ф7б — Привязка регламентов/инструкций в combo: scope роли + владелец (из C1) 🔴
+### [x] Ф7б — Привязка регламентов/инструкций в combo: scope роли + владелец (из C1) 🔴
 **Ценность:** как клон должности, получаю свои регламенты в ответах, потому что combo пишет `scope=role:<Role.id>` (совпадает с уже задеплоенной читающей стороной «Способ C»), а не теряет привязку целиком.
 **Почему здесь:** combo — живой путь записи регламентов (`COMBINED_COVERED` включает REGULATIONS, `router.service.ts:90,191` → 3-1 обойдён). `specialists-combined.persistRegulations` (:668-731) **НЕ пишет `scope`/`ownerPersonId` вообще**; `persistInstructions` (:733-791) пишет `forRole`=сырое имя, без `scope`. → На боевом пути привязка регламент↔роль не «сломана нормализацией», а **отсутствует**. Исходный C1 ТЗ целился в обойдённый `specialist-3-1` — перенесено сюда (владелец, 2026-06-30).
 Картография: `specialists-combined.prompt.ts` (combo-tool/`SpecialistsCombinedOutputSchema`.regulations[] — сейчас БЕЗ scope/ownerHint), `specialists-combined.service.ts:668-791`. Контракт резолва — [ТЗ C1](2026-06-30-employee-clone-binding-resolution.md) §Контракт-first (`resolveScope`: `EntityResolutionService.resolveRoleByHint`, идемпотентность по `Role.id`, unresolved→сырьём+counter; владелец — `resolvePersonByHint` fail-closed).

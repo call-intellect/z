@@ -15,7 +15,7 @@ EMBEDDING_PROVIDER=local
 EMBEDDING_MODEL=embeddinggemma:latest
 EMBEDDING_DIMENSIONS=768
 EMBEDDING_FALLBACK_LOCAL_URL=https://llm.korateam.ru/v1
-EMBEDDING_LOCAL_API_KEY=REDACTED-EMBEDDING-KEY
+EMBEDDING_LOCAL_API_KEY=<берётся из .env: sk-emb-...>  # секрет, НЕ коммитить
 ```
 
 Чего не хватает (новые задачи этого ТЗ):

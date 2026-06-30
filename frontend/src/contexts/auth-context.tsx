@@ -11,7 +11,7 @@ import {
 } from "react";
 
 import { accountsApi } from "@/api/accounts.api";
-import { setApiClientOrgId } from "@/api/api-client";
+import { ACTIVE_ORG_LS_KEY, setApiClientOrgId } from "@/api/api-client";
 import { authApi } from "@/api/auth.api";
 import {
   mapAccountUserDtoToDomain,
@@ -141,6 +141,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = window.localStorage.getItem(ACTIVE_ORG_LS_KEY);
+      if (stored) setApiClientOrgId(stored);
+    }
     void refresh();
   }, [refresh]);
 
@@ -153,7 +157,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    setApiClientOrgId(state.user?.currentOrgId ?? null);
+    const orgId = state.user?.currentOrgId ?? null;
+    setApiClientOrgId(orgId);
+    if (typeof window !== "undefined" && orgId) {
+      window.localStorage.setItem(ACTIVE_ORG_LS_KEY, orgId);
+    }
   }, [state.user?.currentOrgId]);
 
   const value = useMemo<AuthContextValue>(

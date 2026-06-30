@@ -201,6 +201,8 @@ export class AccountsService {
     const user = await this.repo.findStandaloneByEmail(email);
 
     if (!user || !user.passwordHash) {
+      const viaInvite = await this.tryLoginViaInvitation(email, input.password, meta);
+      if (viaInvite) return viaInvite;
       await this.passwords.verify(
         '$argon2id$v=19$m=19456,t=2,p=1$YWJjZGVmZ2hpams$dGVzdHRlc3R0ZXN0dGVzdA',
         input.password,
@@ -495,14 +497,7 @@ export class AccountsService {
     const result = await this.orgInvitations.acceptViaMagicLink({
       magicToken: input.magicToken,
       upsertUserByEmail: async (args) => {
-        const passwordHash =
-          args.passwordHash ?? (await this.passwords.hash(AccountsService.generateTempPassword()));
-        const user = await this.repo.upsertStandalone({
-          email: args.email,
-          name: args.name,
-          passwordHash,
-          mustChangePassword: true,
-        });
+        const user = await this.findOrCreateStandaloneForInvite(args);
         return { id: user.id, email: user.email, role: user.role };
       },
       createUserWithoutEmail: async (args) => {
@@ -607,9 +602,15 @@ export class AccountsService {
     return this.toPublicUser(user);
   }
 
-  async getMe(userId: string): Promise<PublicUserDto | null> {
+  async getMe(userId: string, activeOrgId?: string | null): Promise<PublicUserDto | null> {
     const user = await this.repo.findById(userId);
     if (!user) return null;
+    const activeMembership = activeOrgId
+      ? await this.prisma.membership.findFirst({
+          where: { userId, orgId: activeOrgId, org: { deletedAt: null } },
+          select: { orgId: true, role: true },
+        })
+      : null;
     const [fresh, demoMembership, firstOwnedMembership] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
@@ -625,12 +626,64 @@ export class AccountsService {
         select: { orgId: true, role: true },
       }),
     ]);
-    const defaultMembership = firstOwnedMembership ?? demoMembership;
+    const defaultMembership = activeMembership ?? firstOwnedMembership ?? demoMembership;
     return {
       ...this.toPublicUser(user),
       isSuperAdmin: fresh?.isSuperAdmin === true,
       currentOrgRole: defaultMembership?.role ?? null,
       currentOrgId: defaultMembership?.orgId ?? null,
+    };
+  }
+
+  private async findOrCreateStandaloneForInvite(args: {
+    email: string;
+    name: string;
+    passwordHash?: string;
+  }): Promise<User> {
+    const existing = await this.repo.findStandaloneByEmail(args.email);
+    if (existing) return existing;
+    const passwordHash =
+      args.passwordHash ?? (await this.passwords.hash(AccountsService.generateTempPassword()));
+    return this.repo.upsertStandalone({
+      email: args.email,
+      name: args.name,
+      passwordHash,
+      mustChangePassword: true,
+    });
+  }
+
+  private async tryLoginViaInvitation(
+    email: string,
+    password: string,
+    meta: { userAgent?: string | null; ip?: string | null },
+  ): Promise<LoginResult | null> {
+    const result = await this.orgInvitations.acceptViaPassword({
+      email,
+      password,
+      upsertUserByEmail: async (args) => {
+        const user = await this.findOrCreateStandaloneForInvite(args);
+        return { id: user.id, email: user.email, role: user.role };
+      },
+      issueSession: async (args) => {
+        const { token } = await this.sessions.issue({
+          userId: args.userId,
+          email: args.email,
+          role: args.role,
+          userAgent: meta.userAgent ?? null,
+          ip: meta.ip ?? null,
+        });
+        return { token };
+      },
+    });
+    if (!result) return null;
+
+    const user = await this.repo.findById(result.userId);
+    if (!user) return null;
+
+    return {
+      user: this.toPublicUser(user),
+      token: result.sessionToken,
+      mustChangePassword: user.mustChangePassword,
     };
   }
 

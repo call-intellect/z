@@ -27,6 +27,8 @@ type BackendErrorPayload = {
 
 const AUTH_EXPIRED_EVENT = "auth:expired";
 
+export const ACTIVE_ORG_LS_KEY = "z.activeOrgId";
+
 let defaultOrgId: string | null = null;
 
 export function setApiClientOrgId(orgId: string | null): void {

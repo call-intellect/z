@@ -5,7 +5,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useSWRConfig } from "swr";
 
-import { apiClient } from "@/api/api-client";
+import {
+  ACTIVE_ORG_LS_KEY,
+  apiClient,
+  setApiClientOrgId,
+} from "@/api/api-client";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
 import { useMemberships, type Membership } from "@/hooks/useMemberships";
@@ -29,8 +33,6 @@ export type OrgSwitcherProps = {
   variant: "sidebar" | "mobile";
 };
 
-const ACTIVE_ORG_LS_KEY = "z.activeOrgId";
-
 export function OrgSwitcher({ variant }: OrgSwitcherProps) {
   const pathname = usePathname() ?? "";
   if (pathname.startsWith("/onboarding/company")) {
@@ -41,7 +43,7 @@ export function OrgSwitcher({ variant }: OrgSwitcherProps) {
 }
 
 function OrgSwitcherInner({ variant }: OrgSwitcherProps) {
-  const { user, isSuperAdmin } = useAuth();
+  const { user, isSuperAdmin, refresh } = useAuth();
   const { memberships, isLoading } = useMemberships();
   const router = useRouter();
   const pathname = usePathname() ?? "/dashboard";
@@ -113,13 +115,12 @@ function OrgSwitcherInner({ variant }: OrgSwitcherProps) {
     if (target.id === activeOrg.id || switching) return;
     setSwitching(true);
     try {
-      try {
-        await apiClient.post("/api/v1/auth/switch-org", { orgId: target.id });
-      } catch {
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem(ACTIVE_ORG_LS_KEY, target.id);
-        }
+      await apiClient.post("/api/v1/auth/switch-org", { orgId: target.id });
+      setApiClientOrgId(target.id);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(ACTIVE_ORG_LS_KEY, target.id);
       }
+      await refresh();
       await mutate(
         (key) => typeof key === "string" && key.startsWith("/api/v1/"),
         undefined,

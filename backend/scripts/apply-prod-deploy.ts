@@ -689,6 +689,13 @@ const STEPS: Step[] = [
   },
   {
     phase: 'backfill',
+    script: 'scripts/backfill-knowledge-clone-person-entity.ts',
+    args: ['--apply'],
+    skipBootstrap: true,
+    hint: 'C1-#4 — Person.entityId/entityTenantId lazy-резолв через EntityResolutionService (оба поля композитного FK); идемпотентно (entityId set → skip)',
+  },
+  {
+    phase: 'backfill',
     script: 'scripts/backfill-skill-profiles-rebuild.ts',
     hint: 'enqueue rebuild всех active SkillProfile после расширения signalType на methodology_step (clone-signaltype-methodology-step Ф3); jobId-дедуп',
     skipBootstrap: true,

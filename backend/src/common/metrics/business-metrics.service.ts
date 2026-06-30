@@ -506,6 +506,7 @@ export class BusinessMetricsService implements OnModuleInit {
   // Ф1 (knowledge-access) — детерминированная subject-атрибуция автора знания
   // по источнику identity (via). Покрывает ВСЕ типы знания (не только reasoning).
   private kcSubjectAttributionTotal!: Counter<'via'>;
+  private kcClonePersonNoEntityTotal!: Counter<'tenant'>;
   // Ф4 (knowledge-access) — гейт доступа к знаниям. shadow: сколько блоков
   // было бы отфильтровано (сверка перед enforce); enforce: сколько исключено.
   private kcAccessShadowDiffTotal!: Counter<'surface'>;
@@ -2532,6 +2533,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'kc_subject_attribution_total',
       help: 'Ф1 (knowledge-access) — детерминированная subject-атрибуция автора знания по источнику identity. via: participant (speakerParticipantId) / userId / personId / email / name (fuzzy) / none (автор не определён).',
       labelNames: ['via'] as const,
+    });
+    this.kcClonePersonNoEntityTotal = this.getOrCreateCounter({
+      name: 'knowledge_clone_person_no_entity_total',
+      help: 'C1-#4 — Person.entityId не заполнен на входе rebuild-движка профиля клона (loadBlocksForPerson): сигнал тихого выпада сотрудника из сборки. Lazy-резолв линкует Entity и пишет оба поля композитного FK.',
+      labelNames: ['tenant'] as const,
     });
     // Ф4 (knowledge-access) — гейт доступа к знаниям (shadow / enforce).
     this.kcAccessShadowDiffTotal = this.getOrCreateCounter({
@@ -6062,6 +6068,10 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incSubjectAttribution(args: { via: string }): void {
     this.kcSubjectAttributionTotal.inc({ via: args.via });
+  }
+
+  incKnowledgeClonePersonNoEntity(args: { tenant: string }): void {
+    this.kcClonePersonNoEntityTotal.inc({ tenant: args.tenant });
   }
 
   /**

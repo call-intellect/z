@@ -82,7 +82,7 @@ const fallbackAuthor = (!args.authorPersonId && seg === null && segAuthors.lengt
 ## Фазы
 Граф: **Ф1, Ф2 — независимы** (разные файлы). Можно параллельно.
 
-### [ ] Ф1 — Person без entityId: видимость + lazy-резолв + backfill
+### [x] Ф1 — Person без entityId: видимость + lazy-резолв + backfill
 **Ценность:** как сотрудник без авто-линковки Entity, всё равно получаю собранный профиль, и пробел больше не тихий.
 Картография: `specialist-3-2-knowledge-clone.service.ts:380-425`; `entity-resolution.service.ts:1403`; `prisma/schema.prisma:2361-2365`; метрики; `apply-prod-deploy.ts`.
 Что входит: контракт выше (loadBlocksForPerson + counter `knowledge_clone_person_no_entity_total`); backfill + STEPS.

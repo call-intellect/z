@@ -24,6 +24,7 @@ import {
 
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
+import { EntityResolutionService } from './entity-resolution.service';
 import { Specialist32ProbeService } from './specialist-3-2-probe.service';
 
 @Injectable()
@@ -46,6 +47,8 @@ export class Specialist32Service {
     private readonly metrics: BusinessMetricsService,
     @Inject(KnowledgeEmbeddingService)
     private readonly embeddings: KnowledgeEmbeddingService,
+    @Inject(EntityResolutionService)
+    private readonly entities: EntityResolutionService,
     @Optional()
     @Inject(DataClassPolicyService)
     private readonly dataClassPolicy?: DataClassPolicyService,
@@ -382,12 +385,26 @@ export class Specialist32Service {
     personId: string;
     entityId: string | null;
   }): Promise<KnowledgeCloneExtractBlockInput[]> {
-    if (!args.entityId) {
-      this.logger.debug(
+    let entityId = args.entityId;
+    if (!entityId) {
+      this.logger.warn(
         { personId: args.personId },
-        'specialist-3-2.loadBlocksForPerson: Person.entityId не заполнен — нечего извлекать',
+        'specialist-3-2.loadBlocksForPerson: Person.entityId не заполнен',
       );
-      return [];
+      this.metrics.incKnowledgeClonePersonNoEntity({ tenant: args.tenantId });
+      const resolvedEntityId = await this.entities.resolveSubjectEntityId(args.tenantId, {
+        authorPersonId: args.personId,
+        authorEmail: null,
+        speakerParticipantId: null,
+        speakerName: null,
+        authorUserId: null,
+      });
+      if (!resolvedEntityId) return [];
+      await this.prisma.person.update({
+        where: { id: args.personId },
+        data: { entityId: resolvedEntityId, entityTenantId: args.tenantId },
+      });
+      entityId = resolvedEntityId;
     }
 
     const lookbackMs = this.cfg.knowledgeClone.lookbackMonths * 30 * 24 * 60 * 60 * 1000;
@@ -395,7 +412,7 @@ export class Specialist32Service {
 
     const mentions = await this.prisma.ideaBlockEntity.findMany({
       where: {
-        entityId: args.entityId,
+        entityId,
         role: { in: ['subject', 'mentioned'] },
         block: {
           tenantId: args.tenantId,

@@ -13,7 +13,6 @@ import { GoalVectorTrackerCron } from './agents/goal-vector-tracker.cron';
 import { HrRecommenderCron } from './agents/hr-recommender.cron';
 import { KnowledgeVelocityTrackerCron } from './agents/knowledge-velocity-tracker.cron';
 import { MeetingRoiScorerWorker } from './agents/meeting-roi-scorer.worker';
-import { PromiseNetworkAnalyzerCron } from './agents/promise-network-analyzer.cron';
 import { TeamHealthAnalyzerCron } from './agents/team-health-analyzer.cron';
 import { ThemeSilenceDetectorCron } from './agents/theme-silence-detector.cron';
 import { TopicRecurrenceDetectorCron } from './agents/topic-recurrence-detector.cron';
@@ -51,7 +50,6 @@ import { TeamHealthService } from './services/team-health.service';
     BusFactorAnalyzerCron,
     TopicRecurrenceDetectorCron,
     ThemeSilenceDetectorCron,
-    PromiseNetworkAnalyzerCron,
     GoalVectorTrackerCron,
     KnowledgeVelocityTrackerCron,
     DashboardQueueService,

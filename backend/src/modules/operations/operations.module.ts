@@ -39,7 +39,6 @@ import { OperationsDashboardService } from './services/operations-dashboard.serv
 import { PersonalDailyBriefService } from './services/personal-daily-brief.service';
 import { PersonalRelationService } from './services/personal-relation.service';
 import { PortfolioHealthService } from './services/portfolio-health.service';
-import { PromiseNetworkService } from './services/promise-network.service';
 import { TaskCompletionHandler } from './services/task-completion.handler';
 import { TaskReconcileService } from './services/task-reconcile.service';
 import { TeamCapacityService } from './services/team-capacity.service';
@@ -144,10 +143,6 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     ValueRecapCron,
     PortfolioHealthService,
     PortfolioHealthSnapshotCron,
-    // ТЗ coo-orphan-agents Ф7 — перегруз ответственностью: read-сервис над
-    // последним PromiseNetworkSnapshot (accumulators). Endpoint
-    // /dashboard/operations/promise-network. Снапшот пишет PromiseNetworkAnalyzerCron.
-    PromiseNetworkService,
   ],
   exports: [
     GoalCascadeService,
@@ -168,8 +163,6 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     OnboardingRampService,
     ValueRecapService,
     PortfolioHealthService,
-    // ТЗ coo-orphan-agents Ф7 — экспортируем для тестов / reuse.
-    PromiseNetworkService,
     DayReportCollectorService,
   ],
 })

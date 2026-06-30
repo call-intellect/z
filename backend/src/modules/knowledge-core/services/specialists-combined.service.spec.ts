@@ -131,6 +131,7 @@ const VALID_8_EMPTY = {
   knowledge_categories: [],
   skill_traits: [],
   helpfulness_traits: [],
+  tasks: [],
 };
 
 function argsTemplate() {
@@ -257,6 +258,7 @@ describe('SpecialistsCombinedService.extractAll', () => {
           confidence: 0.8,
         },
       ],
+      tasks: [],
     };
 
     const llm = makeLlmMock(toolOutput);
@@ -287,6 +289,7 @@ describe('SpecialistsCombinedService.extractAll', () => {
       knowledgeCategories: 1,
       skillTraits: 1,
       helpfulnessTraits: 1,
+      tasks: 0,
     });
     expect(result.errors).toEqual([]);
   });

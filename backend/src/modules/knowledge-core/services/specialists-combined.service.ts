@@ -19,6 +19,10 @@ import { CurationService } from '../../curation/services/curation.service';
 import { DashboardQueueService } from '../../dashboard/services/dashboard-queue.service';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import {
+  TaskDraftMaterializerService,
+  type TaskDraftInput,
+} from '../../tracker/services/task-draft-materializer.service';
+import {
   buildSpecialistsCombinedSystemPrompt,
   buildSpecialistsCombinedUserMessage,
   type CombinedChannelKind,
@@ -28,7 +32,7 @@ import {
   SPECIALISTS_COMBINED_TASK_TYPE,
   SPECIALISTS_COMBINED_TOOL_NAME,
   SpecialistsCombinedOutputSchema,
-  SUBMIT_ALL_8_ENTITIES_TOOL,
+  SUBMIT_ALL_ENTITIES_TOOL,
 } from '../prompts/specialists-combined.prompt';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
@@ -56,6 +60,7 @@ export interface SpecialistsCombinedExtractResult {
     knowledgeCategories: number;
     skillTraits: number;
     helpfulnessTraits: number;
+    tasks: number;
   };
   emptySections: string[];
   llm: {
@@ -111,6 +116,9 @@ export class SpecialistsCombinedService {
     @Optional()
     @Inject(EntityResolutionService)
     private readonly entities?: EntityResolutionService,
+    @Optional()
+    @Inject(TaskDraftMaterializerService)
+    private readonly taskMaterializer?: TaskDraftMaterializerService,
   ) {}
 
   async extractAll(
@@ -147,7 +155,7 @@ export class SpecialistsCombinedService {
       ...(channelKind === 'meeting' ? { meetingId: args.meetingId } : {}),
       ...(args.jobId ? { jobId: args.jobId } : {}),
       maxTokens: SPECIALISTS_COMBINED_MAX_TOKENS,
-      tools: [SUBMIT_ALL_8_ENTITIES_TOOL],
+      tools: [SUBMIT_ALL_ENTITIES_TOOL],
       sourceRef: { type: args.sourceType ?? 'meeting', id: args.meetingId },
       dataClass: args.dataClass ?? 'internal',
     });
@@ -165,6 +173,7 @@ export class SpecialistsCombinedService {
       knowledgeCategories: 0,
       skillTraits: 0,
       helpfulnessTraits: 0,
+      tasks: 0,
     };
 
     const blockIdSet = new Set(args.blocks.map((b) => b.id));
@@ -216,6 +225,14 @@ export class SpecialistsCombinedService {
       blockIdSet,
       errors,
     );
+    created.tasks = await this.persistTasks(
+      args.tenantId,
+      parsed,
+      blockIdSet,
+      args.sourceType ?? 'meeting',
+      args.meetingId,
+      args.meetingTitle ?? null,
+    );
 
     await this.enqueueSideEffects({
       tenantId: args.tenantId,
@@ -236,6 +253,7 @@ export class SpecialistsCombinedService {
     if (parsed.knowledge_categories.length === 0) emptySections.push('knowledge_categories');
     if (parsed.skill_traits.length === 0) emptySections.push('skill_traits');
     if (parsed.helpfulness_traits.length === 0) emptySections.push('helpfulness_traits');
+    if (parsed.tasks.length === 0) emptySections.push('tasks');
 
     return {
       created,
@@ -1021,6 +1039,48 @@ export class SpecialistsCombinedService {
     return created;
   }
 
+  private async persistTasks(
+    tenantId: string,
+    parsed: SpecialistsCombinedOutput,
+    blockIdSet: Set<string>,
+    channel: string,
+    sourceId: string,
+    sourceTitle: string | null,
+  ): Promise<number> {
+    if (!this.taskMaterializer) return 0;
+    const drafts: TaskDraftInput[] = parsed.tasks
+      .filter((t) => blockIdSet.has(t.sourceBlockId))
+      .map((t) => ({
+        title: t.title,
+        assignee: t.assignee ?? null,
+        dueDate: t.dueDate ?? null,
+        suggestedAssigneeHint: t.suggestedAssigneeHint ?? null,
+        suggestedDueDate: t.suggestedDueDate ?? null,
+        suggestedPriority: t.suggestedPriority ?? null,
+        confidence: typeof t.confidence === 'number' ? t.confidence : null,
+        sourceQuote: t.sourceQuote ?? null,
+        subtasks: t.subtasks ?? null,
+        sourceBlockId: t.sourceBlockId,
+      }));
+    if (drafts.length === 0) return 0;
+    try {
+      const created = await this.taskMaterializer.materialize({
+        tenantId,
+        channel,
+        sourceId,
+        sourceTitle,
+        drafts,
+      });
+      return created.length;
+    } catch (err) {
+      this.logger.warn(
+        { channel, sourceId, err: err instanceof Error ? err.message : String(err) },
+        'specialists-combined.persistTasks: материализация задач упала (best-effort)',
+      );
+      return 0;
+    }
+  }
+
   private async enqueueSideEffects(args: {
     tenantId: string;
     sourceLabel: string;
@@ -1143,6 +1203,7 @@ export class SpecialistsCombinedService {
         knowledgeCategories: 0,
         skillTraits: 0,
         helpfulnessTraits: 0,
+        tasks: 0,
       },
       emptySections: [
         'decisions',
@@ -1153,6 +1214,7 @@ export class SpecialistsCombinedService {
         'knowledge_categories',
         'skill_traits',
         'helpfulness_traits',
+        'tasks',
       ],
       llm,
       errors: [],
@@ -1176,7 +1238,8 @@ export class SpecialistsCombinedService {
       created.instructions +
       created.knowledgeCategories +
       created.skillTraits +
-      created.helpfulnessTraits;
+      created.helpfulnessTraits +
+      created.tasks;
     for (let i = 0; i < total; i++) {
       this.metrics.incCoreSpecialistCards({ type, status: 'canonical' });
     }

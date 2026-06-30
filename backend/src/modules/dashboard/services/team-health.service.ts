@@ -5,7 +5,6 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { OperationsDashboardService } from '../../operations/services/operations-dashboard.service';
 
 import { CommitmentReliabilityService } from './commitment-reliability.service';
-import { HangingDecisionsService } from './hanging-decisions.service';
 
 export type HealthTone = 'success' | 'warning' | 'danger' | 'neutral';
 
@@ -38,7 +37,6 @@ export interface TeamHealthRowDto {
   sentiment: TeamHealthAttrDto;
   promises: TeamHealthAttrDto;
   conflicts: TeamHealthAttrDto;
-  decisions: TeamHealthAttrDto;
   healthSummary?: TeamHealthSummaryDto | null;
 }
 
@@ -62,8 +60,6 @@ export class TeamHealthService {
     private readonly commits: CommitmentReliabilityService,
     @Inject(OperationsDashboardService)
     private readonly ops: OperationsDashboardService,
-    @Inject(HangingDecisionsService)
-    private readonly hanging: HangingDecisionsService,
   ) {}
 
   async getHealth(args: { tenantId: string }): Promise<TeamHealthDto> {
@@ -114,25 +110,6 @@ export class TeamHealthService {
       select: { fromEntityId: true, toEntityId: true },
     });
 
-    const hangingDecisions = await this.hanging.listHangingWithAuthors({
-      tenantId: args.tenantId,
-    });
-    const personToDept = new Map<string, string>();
-    for (const dept of departments) {
-      for (const p of dept.persons) personToDept.set(p.id, dept.id);
-    }
-    const decisionsByDept = new Map<string, number>();
-    for (const d of hangingDecisions) {
-      const depts = new Set<string>();
-      for (const pid of d.decidedByPersonIds) {
-        const deptId = personToDept.get(pid);
-        if (deptId) depts.add(deptId);
-      }
-      for (const deptId of depts) {
-        decisionsByDept.set(deptId, (decisionsByDept.get(deptId) ?? 0) + 1);
-      }
-    }
-
     const teams: TeamHealthRowDto[] = [];
 
     for (const dept of departments) {
@@ -174,12 +151,6 @@ export class TeamHealthService {
         tone: this.toneConflicts(conflictsInDept),
       };
 
-      const decisionsCount = decisionsByDept.get(dept.id) ?? 0;
-      const decisions: TeamHealthAttrDto = {
-        value: decisionsCount,
-        tone: this.toneDecisions(decisionsCount),
-      };
-
       teams.push({
         departmentId: dept.id,
         departmentName: dept.name,
@@ -188,7 +159,6 @@ export class TeamHealthService {
         sentiment,
         promises,
         conflicts,
-        decisions,
         healthSummary: this.parseHealthSummary(dept.healthSummaryJson),
       });
     }
@@ -256,12 +226,6 @@ export class TeamHealthService {
     return 'danger';
   }
 
-  private toneDecisions(v: number): HealthTone {
-    if (v === 0) return 'success';
-    if (v <= 2) return 'warning';
-    return 'danger';
-  }
-
   private deltaToTrend(delta: number): 'up' | 'flat' | 'down' {
     if (delta > TeamHealthService.TREND_THRESHOLD) return 'up';
     if (delta < -TeamHealthService.TREND_THRESHOLD) return 'down';
@@ -307,7 +271,6 @@ export class TeamHealthService {
       sentiment: neutral,
       promises: neutral,
       conflicts: neutral,
-      decisions: neutral,
       healthSummary: null,
     };
   }

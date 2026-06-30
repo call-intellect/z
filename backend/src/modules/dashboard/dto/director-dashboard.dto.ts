@@ -150,7 +150,6 @@ export interface DirectorDashboardDto {
   narrativeSummary: NarrativeSummaryDto | null;
   kpiSentimentIndex: DirectorDashboardKpiDto;
   kpiCommitmentReliability: DirectorDashboardKpiDto;
-  kpiHangingDecisions: DirectorDashboardKpiDto;
   strategicAlignment?: DirectorDashboardStrategicAlignmentDto;
   requiresAction?: DirectorDashboardRequiresActionDto;
   goalsTree?: DirectorDashboardGoalTreeNodeDto[];

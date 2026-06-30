@@ -172,7 +172,6 @@ export class TeamHealthAnalyzerCron {
       `- Sentiment (настроение): индекс ${team.sentiment.value} (-100..+100), тон ${team.sentiment.tone}.`,
       `- Обещания (надёжность): ${team.promises.value}%, тон ${team.promises.tone}, изменение к прошлым 14 дням: ${promisesDelta}.`,
       `- Конфликты: ${team.conflicts.value} пар, тон ${team.conflicts.tone}.`,
-      `- Решения: ${team.decisions.value} (placeholder, per-dept ещё не считаем).`,
     ].join('\n');
   }
 

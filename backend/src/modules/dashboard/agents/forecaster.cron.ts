@@ -133,7 +133,7 @@ export class ForecasterCron {
     start: Date;
     end: Date;
   }): Promise<ForecasterTrendPoint> {
-    const [checkIns, commits, hanging, engagementSnapshots] = await Promise.all([
+    const [checkIns, commits, engagementSnapshots] = await Promise.all([
       this.prisma.dailyCheckIn.findMany({
         where: {
           tenantId: args.tenantId,
@@ -149,15 +149,6 @@ export class ForecasterCron {
           commitmentDueDate: { gte: args.start, lt: args.end },
         },
         select: { commitmentStatus: true, commitmentDueDate: true },
-      }),
-      this.prisma.decision.count({
-        where: {
-          tenantId: args.tenantId,
-          deletedAt: null,
-          status: { in: ['active', 'proposed', 'approved'] },
-          raisedCount: { gte: 2 },
-          createdAt: { lt: args.end },
-        },
       }),
       this.prisma.personEngagementSnapshot.findMany({
         where: {
@@ -206,7 +197,6 @@ export class ForecasterCron {
       weekStart: args.start.toISOString().slice(0, 10),
       sentiment_index: sentimentIndex,
       commitment_kept_ratio: commitmentKeptRatio,
-      hanging_decisions: hanging,
       engagement_score: engagementScore,
     };
   }

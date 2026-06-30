@@ -215,7 +215,7 @@ describe('CoraFeedService', () => {
       vi.setSystemTime(NOW);
     });
 
-    it('insight critical → severity=risk; decision stalled → risk; blocker recurring → risk', async () => {
+    it('insight critical → severity=risk; blocker recurring → risk', async () => {
       const prisma = {
         insight: {
           findMany: vi.fn(async () => [
@@ -228,22 +228,6 @@ describe('CoraFeedService', () => {
               createdAt: NOW,
               lastObservedAt: NOW,
               sourceBlockIds: ['b1', 'b2', 'b3'],
-            },
-          ]),
-          count: vi.fn(async () => 1),
-        },
-        decision: {
-          findMany: vi.fn(async () => [
-            {
-              id: 'dec-1',
-              statement: 'Перейти на новый CRM',
-              text: null,
-              status: 'approved',
-              implementationStatus: 'stalled',
-              linkedTaskCount: 0,
-              deadline: null,
-              actualOutcomes: null,
-              createdAt: NOW,
             },
           ]),
           count: vi.fn(async () => 1),
@@ -278,13 +262,10 @@ describe('CoraFeedService', () => {
       });
 
       const ins = res.items.find((i) => i.type === 'insight');
-      const dec = res.items.find((i) => i.type === 'decision');
       const blk = res.items.find((i) => i.type === 'blocker');
       expect(ins?.severity).toBe('risk');
       expect(ins?.analysis).toContain('упоминаний: 3');
       expect(ins?.analysis).toContain('плана реагирования нет');
-      expect(dec?.severity).toBe('risk');
-      expect(dec?.analysis).toContain('застряло');
       expect(blk?.severity).toBe('risk');
       expect(blk?.analysis).toContain('9 дн');
 

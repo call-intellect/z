@@ -9,7 +9,6 @@ import type { PendingActionsService } from '../../pending-actions/services/pendi
 
 import type { CommitmentReliabilityService } from './commitment-reliability.service';
 import { DirectorDashboardService } from './director-dashboard.service';
-import type { HangingDecisionsService } from './hanging-decisions.service';
 import type { NarrativeCitationsParserService } from './narrative-citations-parser.service';
 import type { SentimentIndexService } from './sentiment-index.service';
 
@@ -51,9 +50,6 @@ function buildService(opts: { sentimentThrows?: boolean } = {}): DirectorDashboa
       delta14d: null,
     })),
   } as unknown as CommitmentReliabilityService;
-  const hangingSvc = {
-    count: vi.fn(async () => ({ count: 0, sparkline12w: [] })),
-  } as unknown as HangingDecisionsService;
 
   const pendingActions = {
     getCount: vi.fn(async () => ({
@@ -77,7 +73,6 @@ function buildService(opts: { sentimentThrows?: boolean } = {}): DirectorDashboa
     citations,
     sentimentSvc,
     commitSvc,
-    hangingSvc,
     pendingActions,
     config,
     metrics,

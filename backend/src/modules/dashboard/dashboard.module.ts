@@ -23,7 +23,6 @@ import { CommitmentReliabilityService } from './services/commitment-reliability.
 import { DashboardQueueService } from './services/dashboard-queue.service';
 import { DirectorDashboardService } from './services/director-dashboard.service';
 import { ExecutionDashboardService } from './services/execution-dashboard.service';
-import { HangingDecisionsService } from './services/hanging-decisions.service';
 import { NarrativeCitationsParserService } from './services/narrative-citations-parser.service';
 import { PeopleAtRiskService } from './services/people-at-risk.service';
 import { PulsePatternsService } from './services/pulse-patterns.service';
@@ -38,7 +37,6 @@ import { TeamHealthService } from './services/team-health.service';
     DirectorDashboardService,
     ExecutionDashboardService,
     CommitmentReliabilityService,
-    HangingDecisionsService,
     SentimentIndexService,
     NarrativeCitationsParserService,
     TeamHealthService,
@@ -62,7 +60,6 @@ import { TeamHealthService } from './services/team-health.service';
   ],
   exports: [
     CommitmentReliabilityService,
-    HangingDecisionsService,
     SentimentIndexService,
     TeamHealthService,
     TeamDetailService,

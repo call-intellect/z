@@ -30,7 +30,6 @@ import {
   DASHBOARD_SUMMARY_SYSTEM_PROMPT,
 } from '../prompts/dashboard-summary.prompt';
 import { CommitmentReliabilityService } from './commitment-reliability.service';
-import { HangingDecisionsService } from './hanging-decisions.service';
 import {
   NarrativeCitationsParserService,
   type CitationSource,
@@ -68,8 +67,6 @@ export class DirectorDashboardService {
     private readonly sentimentSvc: SentimentIndexService,
     @Inject(CommitmentReliabilityService)
     private readonly commitSvc: CommitmentReliabilityService,
-    @Inject(HangingDecisionsService)
-    private readonly hangingSvc: HangingDecisionsService,
     @Inject(PendingActionsService)
     private readonly pendingActions: PendingActionsService,
     @Inject(TypedConfigService)
@@ -129,7 +126,6 @@ export class DirectorDashboardService {
       goalsPulse,
       sentimentRes,
       commitRes,
-      hangingRes,
       valueStrip,
       mainReworkEnabled,
     ] = await Promise.all([
@@ -190,12 +186,6 @@ export class DirectorDashboardService {
           sparkline12w: [],
         },
       ),
-      safe('hangingDecisions', () => this.hangingSvc.count({ tenantId: args.tenantId }), {
-        count: 0,
-        minAgeDays: 7,
-        minRaisedCount: 2,
-        sparkline12w: [],
-      }),
       safe('valueStrip', () => this.fetchValueStrip(args.tenantId, args.period), {
         meetingsProtocoled: 0,
         tasksExtracted: 0,
@@ -216,7 +206,7 @@ export class DirectorDashboardService {
     this.metrics.incDashboardValueStripServed({ tenantTop });
     this.metrics.setDashboardMainFirstScreenWidgetCount({
       tenantTop,
-      count: 7,
+      count: 6,
     });
 
     const kpiSentimentIndex: DirectorDashboardKpiDto = {
@@ -229,11 +219,6 @@ export class DirectorDashboardService {
       value: commitRes.reliabilityPercent,
       sparkline: commitRes.sparkline12w,
       delta: commitRes.delta14d,
-    };
-    const kpiHangingDecisions: DirectorDashboardKpiDto = {
-      value: hangingRes.count,
-      sparkline: hangingRes.sparkline12w,
-      delta: null,
     };
 
     const totalSignals =
@@ -269,11 +254,6 @@ export class DirectorDashboardService {
           value: 82,
           sparkline: [70, 72, 75, 78, 79, 81, 80, 82, 83, 82, 82, 82],
           delta: 4,
-        },
-        kpiHangingDecisions: {
-          value: 2,
-          sparkline: [4, 3, 3, 2, 2, 3, 2, 2, 1, 2, 2, 2],
-          delta: null,
         },
         strategicAlignment,
         requiresAction,
@@ -311,7 +291,6 @@ export class DirectorDashboardService {
       narrativeSummary,
       kpiSentimentIndex,
       kpiCommitmentReliability,
-      kpiHangingDecisions,
       strategicAlignment,
       requiresAction,
       goalsTree,

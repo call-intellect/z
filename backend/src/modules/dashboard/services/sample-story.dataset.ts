@@ -132,7 +132,6 @@ export const SAMPLE_STORY_DATASET = {
   | 'isEmpty'
   | 'kpiSentimentIndex'
   | 'kpiCommitmentReliability'
-  | 'kpiHangingDecisions'
   | 'valueStrip'
   | 'mainReworkEnabled'
 >;
